@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, decisions, integrity, policy, rubrics, run_record, verify
+from basicly import decisions, integrity, policy, rubrics, run_record, tracker, verify
 from basicly.config import (
     ENGINE_GATE_PROVIDERS,
     LOOP_PHASES,
@@ -22,6 +22,7 @@ from basicly.config import (
     PolicyConfig,
     SizingConfig,
 )
+from tests import fake_tracker
 
 
 class _Proc:
@@ -121,18 +122,15 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     the queue item behind it (basicly-jr0l.24) and its alias was a second spawn point;
     leaving it unpatched spawned a real br per approval test, and the settle's
     best-effort suppression swallowed the failure. It no longer has one — its markers go
-    through `br.add_comment`/`br.read_comments` (basicly-s5li), which is the same
-    collapse `br.read_record` made and the reason the two funnels below are the whole
+    through `tracker.add_comment`/`tracker.read_comments` (basicly-s5li), which is the same
+    collapse `tracker.read_record` made and the reason the two funnels below are the whole
     installation.
     """
     monkeypatch.setattr(policy, "_write", fake)
-    # The record read goes through `br.read_record` and the marker read and write through
-    # `br.read_comments`/`br.add_comment` — the seams every consumer shares
-    # (basicly-tcmy.14, basicly-s5li), so the fake is installed on the spawns *those* use
-    # rather than on each module's alias. This is the reason the seams exist: one stub
-    # point instead of eleven readers to keep in step.
-    monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
+    # Installed on the seams every consumer shares (basicly-tcmy.14, basicly-s5li) rather
+    # than on each module's alias. This is the reason the seams exist: one stub point
+    # instead of eleven readers to keep in step.
+    fake_tracker.install(monkeypatch, fake)
 
 
 def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -3147,7 +3145,7 @@ def test_check_pass_spend_admits_when_no_ceiling_applies() -> None:
 #
 # gates-and-rework-design.md §1 (the taxonomy) and §2 (a pre-flight gate is
 # read-only). The write the ban has to refuse is a *tracker* write: both incidents
-# §2 cites — a hand-recorded verify gate, an approved ship checkpoint — were br
+# §2 cites — a hand-recorded verify gate, an approved ship checkpoint — were tracker
 # writes that no command can undo.
 
 
@@ -3201,37 +3199,38 @@ def test_a_gate_the_engine_does_not_name_reads_as_a_revision_gate() -> None:
     assert policy.gate_type("consumer-smoke") == policy.REVISION
 
 
-def test_a_preflight_gate_refuses_a_tracker_write(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_a_preflight_gate_refuses_a_tracker_write(tmp_path: Path) -> None:
     """The AC: a write attempted while a pre-flight gate runs is refused.
 
-    Both funnels, because ``try_run_br`` is the soft one — soft about a missing
-    tracker, never about writing when a gate promised not to. ``br`` is taken off
-    PATH so a guard that failed to refuse would be caught returning a result
-    instead of spawning the real tracker.
+    Both funnels, because ``try_write`` is the soft one — soft about a store that cannot
+    answer, never about writing when a gate promised not to. Nothing is stubbed, so a
+    guard that failed to refuse would be caught reaching a ledger that is not there.
     """
-    monkeypatch.setattr(br, "which", lambda: None)
     with policy.preflight_gate(policy.DOR_GATE):
         for write in (["comments", "add", "i", "text"], ["close", "i"], ["gate", "report", "i"]):
-            with pytest.raises(br.TrackerWriteRefusedError):
-                br.try_run_br(tmp_path, write)
-            with pytest.raises(br.TrackerWriteRefusedError):
-                br.run_br(tmp_path, write)
+            with pytest.raises(tracker.TrackerWriteRefusedError):
+                tracker.try_write(tmp_path, write)
+            with pytest.raises(tracker.TrackerWriteRefusedError):
+                tracker.write(tmp_path, write)
 
 
-def test_the_refusal_names_the_gate_and_the_write(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_a_preflight_gate_refuses_a_create(tmp_path: Path) -> None:
+    """The third write funnel, and the one that mints an id nothing can hand back."""
+    with policy.preflight_gate(policy.DOR_GATE), pytest.raises(tracker.TrackerWriteRefusedError):
+        tracker.create_record(
+            tmp_path, ["create", "a bead", "-t", "task", "--parent", "i", "--json"]
+        )
+
+
+def test_the_refusal_names_the_gate_and_the_write(tmp_path: Path) -> None:
     """A traceback has to say which gate must not have written, not only what it ran.
 
     And it must not send the reader to the classifier for a *known* write: the
     remedy for ``comments add`` is to stop calling it, never to file it as a read.
     """
-    monkeypatch.setattr(br, "which", lambda: None)
-    refused = pytest.raises(br.TrackerWriteRefusedError)
+    refused = pytest.raises(tracker.TrackerWriteRefusedError)
     with policy.preflight_gate(policy.DOR_GATE), refused as excinfo:
-        br.try_run_br(tmp_path, ["comments", "add", "i", "text"])
+        tracker.try_write(tmp_path, ["comments", "add", "i", "text"])
 
     message = str(excinfo.value)
     assert policy.DOR_GATE in message
@@ -3239,27 +3238,24 @@ def test_the_refusal_names_the_gate_and_the_write(
     assert "tracker_usage" not in message
 
 
-def test_the_refusal_survives_the_engine_s_own_tracker_error_handling(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_the_refusal_survives_the_engine_s_own_tracker_error_handling(tmp_path: Path) -> None:
     """A guard swallowed by a caller's ``except`` is a guard that does not bind.
 
-    Two dozen call sites wrap a br call in ``except RuntimeError, OSError,
-    ValueError`` and answer None — ``br.read_record`` is one — so a refusal in that
+    Two dozen call sites wrap a tracker call in ``except RuntimeError, OSError,
+    ValueError`` and answer None — ``tracker.read_record`` is one — so a refusal in that
     family would read as "the tracker had nothing to say" at exactly the places a
     leaked write would be hardest to see. The idiom is reproduced here rather than
     asserted against the class hierarchy, which is what the call sites actually do.
     """
-    monkeypatch.setattr(br, "which", lambda: None)
 
-    def soft_reader() -> None:
+    def soft_writer() -> None:
         try:
-            br.run_br(tmp_path, ["comments", "add", "i", "text"])
+            tracker.write(tmp_path, ["comments", "add", "i", "text"])
         except RuntimeError, OSError, ValueError:
             return
 
-    with policy.preflight_gate(policy.DOR_GATE), pytest.raises(br.TrackerWriteRefusedError):
-        soft_reader()
+    with policy.preflight_gate(policy.DOR_GATE), pytest.raises(tracker.TrackerWriteRefusedError):
+        soft_writer()
 
 
 def test_a_preflight_gate_still_permits_a_read(
@@ -3267,57 +3263,54 @@ def test_a_preflight_gate_still_permits_a_read(
 ) -> None:
     """The control the ban must not fail: a gate that cannot read cannot decide.
 
-    With ``br`` off PATH the soft funnel answers None, so reaching that answer is
-    proof the guard let the call through rather than raising.
+    Reads do not pass the guard at all — it is installed on the write funnels — so this
+    asserts the consequence rather than the mechanism: a record read inside the section
+    returns its answer instead of raising.
     """
-    monkeypatch.setattr(br, "which", lambda: None)
+    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y"))
     with policy.preflight_gate(policy.DOR_GATE):
-        assert br.try_run_br(tmp_path, ["lint", "i", "--json"]) is None
-        assert br.try_run_br(tmp_path, ["show", "i", "--json"]) is None
-        assert br.try_run_br(tmp_path, ["gate", "list", "i", "--robot"]) is None
+        record = tracker.read_record(tmp_path, "i")
+        assert record is not None
+        assert tracker.read_comments(tmp_path, "i") == []
 
 
-def test_a_preflight_gate_refuses_an_unclassified_surface(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_a_preflight_gate_refuses_an_unclassified_surface(tmp_path: Path) -> None:
     """Fail-closed: ``READ_SUBCOMMANDS`` is not exhaustive, so unknown is not read.
 
     A refusal is loud and fixed by classifying the surface — which is the one case
-    where the message says so — while a leaked write is silent and, in br,
-    permanent.
+    where the message says so — while a leaked write is silent and, in an append-only
+    log, permanent.
     """
-    monkeypatch.setattr(br, "which", lambda: None)
-    refused = pytest.raises(br.TrackerWriteRefusedError)
+    refused = pytest.raises(tracker.TrackerWriteRefusedError)
     with policy.preflight_gate(policy.DOR_GATE), refused as excinfo:
-        br.try_run_br(tmp_path, ["frobnicate", "i"])
+        tracker.try_write(tmp_path, ["frobnicate", "i"])
 
     assert "tracker_usage" in str(excinfo.value)
 
 
-def test_the_write_ban_lifts_when_the_gate_exits(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Including when the gate leaves by raising — a refused write must not wedge the process."""
-    monkeypatch.setattr(br, "which", lambda: None)
+def test_the_write_ban_lifts_when_the_gate_exits(tmp_path: Path) -> None:
+    """Including when the gate leaves by raising — a refused write must not wedge the process.
+
+    Outside the section the write is attempted for real and fails on the absent store,
+    which is a different exception from the refusal: reaching it is the evidence.
+    """
     with contextlib.suppress(RuntimeError), policy.preflight_gate(policy.DOR_GATE):
         raise RuntimeError("the gate blew up")
 
-    assert br.try_run_br(tmp_path, ["comments", "add", "i", "text"]) is None
+    assert tracker.try_write(tmp_path, ["comments", "add", "i", "text"]) is False
 
 
-def test_the_write_ban_is_scoped_to_the_gate_s_own_thread(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_the_write_ban_is_scoped_to_the_gate_s_own_thread(tmp_path: Path) -> None:
     """A supervised pass runs its lanes in a thread pool, each writing its own bead.
 
     A process-global flag would let one lane's pre-flight gate refuse another
     lane's landing — so the guard is thread-scoped, and this is the assertion that
-    says so.
+    says so. The other lane's write fails on the absent store rather than being
+    refused, which is what discriminates the two.
     """
-    monkeypatch.setattr(br, "which", lambda: None)
     with policy.preflight_gate(policy.DOR_GATE), ThreadPoolExecutor(max_workers=1) as pool:
-        other_lane = pool.submit(br.try_run_br, tmp_path, ["comments", "add", "other", "text"])
-        assert other_lane.result() is None
+        other_lane = pool.submit(tracker.try_write, tmp_path, ["comments", "add", "other", "text"])
+        assert other_lane.result() is False
 
 
 def test_preflight_gate_refuses_a_gate_that_is_not_preflight() -> None:
@@ -3337,21 +3330,23 @@ def test_definition_of_ready_runs_under_the_write_ban(
 
     The fake tracker attempts a comment while answering the gate's own record read,
     which is what a check that recorded state instead of blocking entry looks like
-    from the inside. It goes through ``br.add_comment`` — the marker seam — because
-    that is where a real gate's write would go after basicly-s5li, and because the
-    refusal has to hold on the rung where that seam never reaches ``run_br`` at all.
+    from the inside. It goes through the write funnel, because that is where a real
+    gate's write would go and where the guard is installed.
     """
+    # The real funnel, bound before `_install` replaces it: the stand-in is what the
+    # gate reads through, so a write it made through the stand-in's own seam would
+    # never reach the guard this test is about.
+    real_write = tracker.write
 
     class _WritingFake(_FakeBr):
         def __call__(self, repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
             if args[:1] == ["show"]:
-                br.add_comment(repo_root, "i", "recorded from a pre-flight gate")
+                real_write(repo_root, ["comments", "add", "i", "recorded from a gate"])
             return super().__call__(repo_root, args, _check=_check)
 
-    monkeypatch.setattr(br, "which", lambda: None)
     _install(monkeypatch, _WritingFake(acceptance_criteria="given x then y"))
 
-    with pytest.raises(br.TrackerWriteRefusedError) as excinfo:
+    with pytest.raises(tracker.TrackerWriteRefusedError) as excinfo:
         policy.definition_of_ready(tmp_path, "i")
 
     # Named, so the failure cannot be confused with br simply being absent, which

@@ -27,19 +27,16 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
-import subprocess
-import sys
 import time
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
-from basicly import br, merge, policy, supervise, verify
+from basicly import merge, policy, tracker, tracker_paths, verify
+from tests import flipped_tracker
 
 REPO_ROOT = Path(__file__).parent.parent
-COMMIT_MSG_HOOK = REPO_ROOT / ".basicly" / "core" / "hooks" / "beads-commit-msg.py"
+COMMIT_MSG_HOOK = REPO_ROOT / ".basicly" / "core" / "hooks" / "tracker-commit-msg.py"
 
 
 def _load_hook(path: Path, name: str):
@@ -54,39 +51,46 @@ def _load_hook(path: Path, name: str):
 # --- R1: a timestamp is evidence, never a constraint --------------------------
 
 
-def test_r1_a_backwards_clock_write_rejection_is_not_charged_as_our_failure() -> None:
-    """R1: the replacement must never reject a write on a clock comparison.
+def test_r1_no_write_is_rejected_on_a_clock_comparison(tmp_path: Path) -> None:
+    """R1: a timestamp is evidence, never a constraint.
 
-    br validates ``updated_at >= created_at`` and refuses its own write when the
-    host clock steps backwards between two writes. Nothing in this repo sets either
-    timestamp, yet it failed landings and spent a rework attempt on
-    basicly-m4zv.9 — the re-run test cannot see it, because a clock step persists
-    for a window and so reproduces.
+    The external tracker validated ``updated_at >= created_at`` and refused its own
+    write when the host clock stepped backwards between two writes. Nothing in this repo
+    set either timestamp, yet it failed landings and spent a rework attempt on
+    basicly-m4zv.9. The replacement holds the requirement **by construction**: the store
+    records a stamp and compares none, so there is no rejection to forgive.
 
-    Pinned here in both of br's message shapes, because the first version of the
-    register held only the singular one and a landing reproduced the plural.
+    Asserted as behaviour rather than against a message register: the entry that used to
+    forgive that message left with the process that produced it (basicly-vkh0.42.7), and
+    a source scan would pass on a store that compared under another name.
     """
-    singular = (
-        "RuntimeError: br update basicly-x failed: Validation failed: "
-        "updated_at: updated_at cannot be before created_at"
-    )
-    plural = (
-        "RuntimeError: br update basicly-x failed: Validation errors: "
-        "[ValidationError { field: updated_at, message: updated_at cannot be "
-        "before created_at }]"
-    )
-    for output in (singular, plural):
-        assert verify._defect_reason(output) is not None, output
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    kit = tracker.kit(repo)
+    # The clock takes POSIX seconds; the second write is a minute *earlier* than the
+    # first, which is the step that used to refuse it.
+    later, earlier = 1_786_000_000.0, 1_785_999_940.0
+
+    for stamp in (later, earlier):
+        kit.events.append(
+            tracker.ledger_dir(repo),
+            [kit.events.Draft("b-1", kit.events.KIND_COMMENT, {"text": f"at {stamp:.0f}"})],
+            clock=lambda held=stamp: held,
+        )
+
+    assert [row["text"] for row in tracker.read_comments(repo, "b-1")] == [
+        f"at {later:.0f}",
+        f"at {earlier:.0f}",
+    ]
 
 
 def test_r1_the_signature_does_not_forgive_a_fixture_quoting_the_phrase() -> None:
     """The register must not become a way to launder a real failure.
 
-    Matching is conjunctive per line: the defect phrase *plus* our own br wrapper
-    text, which proves the failure came out of a br subprocess rather than out of a
-    test's own fixture. A bare phrase must not match.
+    Matching is conjunctive per line: the defect phrase *plus* the store's own error
+    class, which proves the failure came out of the ledger rather than out of a test's
+    own fixture. A bare phrase must not match.
     """
-    assert verify._defect_reason("assert 'updated_at cannot be before created_at' in out") is None
+    assert verify._defect_reason("assert 'another writer holds' in out") is None
 
 
 # --- R2: one spelling per field ----------------------------------------------
@@ -108,14 +112,14 @@ def test_r2_a_dependency_edge_reads_in_either_of_brs_two_spellings(dep: dict) ->
     dependencies at all* rather than an error, so it fails silently — which is how
     it degraded every landing order to the caller's (basicly-kjc5.10).
     """
-    assert br.dependency_edge(dep) == ("basicly-a", "blocks")
+    assert tracker.dependency_edge(dep) == ("basicly-a", "blocks")
 
 
 def test_r2_a_row_that_is_not_an_edge_is_rejected_rather_than_guessed() -> None:
     """A missing id must not become an empty-string dependency on some node."""
-    assert br.dependency_edge({"dependency_type": "blocks"}) is None
-    assert br.dependency_edge("basicly-a") is None
-    assert br.dependency_edge({"id": "", "type": "blocks"}) is None
+    assert tracker.dependency_edge({"dependency_type": "blocks"}) is None
+    assert tracker.dependency_edge("basicly-a") is None
+    assert tracker.dependency_edge({"id": "", "type": "blocks"}) is None
 
 
 def test_r2_blocking_dependencies_reads_the_echo_spelling(
@@ -123,13 +127,13 @@ def test_r2_blocking_dependencies_reads_the_echo_spelling(
 ) -> None:
     """The landing order is the consumer that silently broke, so pin it end to end.
 
-    Injected at ``br.read_record`` — the one reader every consumer shares — rather than
+    Injected at ``tracker.read_record`` — the one reader every consumer shares — rather than
     at the spawn under it: since ``[tracker] mode`` became ``owned`` that reader answers
     from the ledger, so a fake on ``try_run_br`` reached nothing and the assertion below
     was comparing two empty sets.
     """
     record = {"id": "basicly-x", "dependencies": [{"depends_on_id": "basicly-a", "type": "blocks"}]}
-    monkeypatch.setattr(br, "read_record", lambda *_a, **_k: record)
+    monkeypatch.setattr(tracker, "read_record", lambda *_a, **_k: record)
     assert merge.blocking_dependencies(tmp_path, "basicly-x") == frozenset({"basicly-a"})
 
 
@@ -157,7 +161,7 @@ def test_r3_acceptance_criteria_are_required_for_a_work_type_lint_never_asks_abo
         "acceptance_criteria": None,
         "description": "",
     }
-    monkeypatch.setattr(br, "read_record", lambda *_a, **_k: record)
+    monkeypatch.setattr(tracker, "read_record", lambda *_a, **_k: record)
     result = policy.definition_of_ready(tmp_path, "basicly-x")
 
     assert result.ready is False
@@ -182,9 +186,9 @@ def test_r4_multi_line_acceptance_criteria_satisfy_the_gate_from_the_body(
     body = "## Acceptance Criteria\n\n- given a thing\n- when it happens\n- then a result\n"
     # The structured field is empty precisely because it cannot hold this.
     record = {"id": "basicly-x", "acceptance_criteria": "", "description": body}
-    # The criteria read goes through `br.read_record`, the one reader every consumer in
+    # The criteria read goes through `tracker.read_record`, the one reader every consumer in
     # the package shares (basicly-tcmy.14), and it is the *only* read this gate makes.
-    monkeypatch.setattr(br, "read_record", lambda *_a, **_k: record)
+    monkeypatch.setattr(tracker, "read_record", lambda *_a, **_k: record)
     result = policy.definition_of_ready(tmp_path, "basicly-x")
 
     assert result.ready is True
@@ -208,7 +212,7 @@ def test_r5_a_slug_shaped_id_is_truncated_by_the_prefix_anchored_gate() -> None:
     the constraint: an id must be opaque and never re-parsed, so the replacement
     may not put meaning in an id's separators.
     """
-    hook = _load_hook(COMMIT_MSG_HOOK, "beads_commit_msg_hook")
+    hook = _load_hook(COMMIT_MSG_HOOK, "tracker_commit_msg_hook")
     known = {"basicly-fix-the-thing", "basicly-m4zv.10"}
 
     assert hook._candidate_ids("fix(x): do it (basicly-fix-the-thing)", known) == {"basicly-fix"}
@@ -224,404 +228,119 @@ def test_r5_the_ids_this_repo_mints_carry_no_internal_hyphen() -> None:
     Read from the live tracker rather than asserted about a generator, because the
     ids that matter are the ones already in the ledger.
     """
-    export = REPO_ROOT / ".beads" / "issues.jsonl"
-    offenders = []
-    for line in export.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        ident = record.get("id") if isinstance(record, dict) else None
-        if isinstance(ident, str) and ident.count("-") > 1:
-            offenders.append(ident)
+    seen = set()
+    for log in sorted((REPO_ROOT / tracker_paths.LEDGER_DIR_NAME).glob("events-*.jsonl")):
+        for line in log.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            record = event.get("record") if isinstance(event, dict) else None
+            if isinstance(record, str):
+                seen.add(record)
+    assert seen, "the ledger is the subject; it must not be empty"
+    offenders = sorted(record for record in seen if record.count("-") > 1)
     assert offenders == [], f"slug-shaped ids break the commit gate: {offenders}"
 
 
 # --- R6: a committed artifact carries no machine-specific path ----------------
 
 
-def test_r6_the_export_publishes_no_machine_specific_path(tmp_path: Path) -> None:
-    """R6: the replacement must never write a host path into a committed artifact.
+def test_r6_the_committed_ledger_publishes_no_machine_specific_path(tmp_path: Path) -> None:
+    """R6: nothing may write a host path into a committed artifact.
 
-    br's export carried ``source_repo_path`` on 328 of 332 records, publishing two
-    users' home-directory layouts to every consumer clone (basicly-vkh0.5). Both
-    shapes are covered: the named field is removed outright, and a path left in
-    free text is redacted.
+    The export published two users' home layouts to every clone (basicly-vkh0.5); the
+    ledger carries the same risk, so the property moved with it.
     """
-    beads = tmp_path / ".beads"
-    beads.mkdir()
-    export = beads / "issues.jsonl"
-    export.write_text(
-        json.dumps({
-            "id": "basicly-x",
-            br.MACHINE_PATH_FIELD: "/home/someone/development/basicly",
-            "description": "see /home/someone/development/basicly/docs for context",
-        })
-        + "\n",
-        encoding="utf-8",
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    kit = tracker.kit(repo)
+    kit.events.append(
+        tracker.ledger_dir(repo),
+        [
+            kit.events.Draft(
+                "b-1",
+                kit.events.KIND_COMMENT,
+                {"text": "see /home/someone/development/basicly/docs for context"},
+            )
+        ],
     )
 
-    changed = br.scrub_export(tmp_path)
+    changed = tracker.scrub_ledger(repo)
 
     assert changed == 1
-    scrubbed = json.loads(export.read_text(encoding="utf-8").strip())
-    assert br.MACHINE_PATH_FIELD not in scrubbed
-    assert "/home/someone" not in json.dumps(scrubbed)
+    committed = (tracker.ledger_dir(repo) / "events-0001.jsonl").read_text(encoding="utf-8")
+    assert "/home/someone" not in committed
 
 
-def test_r6_scrubbing_an_already_clean_export_changes_nothing(tmp_path: Path) -> None:
-    """It runs on the commit path, so a clean export must not churn the file."""
-    beads = tmp_path / ".beads"
-    beads.mkdir()
-    export = beads / "issues.jsonl"
-    # br's own compact rendering: a fixture with default separators would be
-    # rewritten by the re-dump and report a change that is only whitespace.
-    original = (
-        json.dumps({"id": "basicly-x", "description": "no paths here"}, separators=(",", ":"))
-        + "\n"
-    )
-    export.write_text(original, encoding="utf-8")
+def test_r6_scrubbing_an_already_clean_ledger_changes_nothing(tmp_path: Path) -> None:
+    """It runs on the commit path, so a clean ledger must not churn the file."""
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(repo, "b-1", title="no paths here")
+    log = tracker.ledger_dir(repo) / "events-0001.jsonl"
+    original = log.read_text(encoding="utf-8")
 
-    assert br.scrub_export(tmp_path) == 0
-    assert export.read_text(encoding="utf-8") == original
+    assert tracker.scrub_ledger(repo) == 0
+    assert log.read_text(encoding="utf-8") == original
 
 
 # --- R7: concurrent readers and one writer must not corrupt shared state ------
 
-# One reader process. It reads the shared tracker artifact through the harness's own
-# reader in a tight loop until the writer says stop, and reports the smallest record
-# count it ever saw.
-#
-# A separate *process*, not a thread, because that is the shape the defect has: five
-# lane worktrees sharing one tracker through `.beads/redirect` are five OS processes,
-# and a same-process test would be free to share a lock that the real readers cannot.
-_READER = """
-import sys
-from pathlib import Path
 
-from basicly import br
+def test_r7_a_reader_never_observes_a_torn_write_of_the_shared_ledger(tmp_path: Path) -> None:
+    """R7: a reader colliding with a writer sees whole records or none, never half.
 
-repo_root, ready, stop = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
-ready.write_text("", encoding="utf-8")
-worst = None
-reads = 0
-while not stop.exists():
-    seen = len(br.export_records(repo_root))
-    reads += 1
-    if worst is None or seen < worst:
-        worst = seen
-print(f"{worst if worst is not None else -1} {reads}")
-"""
-
-# Large enough that the writer's rewrite is not instantaneous — a torn read has to be
-# reachable or the gate cannot fail — and small enough to stay a unit test.
-_R7_RECORDS = 3000
-_R7_READERS = 4
-_R7_ROUNDS = 40
-# A crude backstop against an orphaned child, never the thing the test waits on: every
-# wait below polls its condition (basicly's wait-for-the-condition rule).
-_R7_TIMEOUT_S = 120.0
-
-# br's observed response, quoted so the classification is pinned to the text br really
-# emits rather than to one composed here (the basicly-aswc lesson).
-_R7_STORAGE_ERROR = (
-    '{"error": {"code": "DATABASE_ERROR", "message": "Database error: WAL file is '
-    'corrupt: short read at frame 12: got 0, need 4120", "retryable": false}}'
-)
-
-
-def _r7_export_body(dirty: bool) -> str:
-    """An export of :data:`_R7_RECORDS` records, in the state before or after a scrub.
-
-    Both states have the same record *count*, which is what makes the count a clean
-    tear detector: a reader that sees fewer records did not catch a different version
-    of the file, it caught half of one.
+    A partially written line must be *discarded* rather than folded — a torn record read
+    as real hands a lane work that does not exist. Asserted by injection, not by racing.
     """
-    leak = "/home/someone/development/basicly" if dirty else "somewhere"
-    return (
-        "\n".join(
-            json.dumps(
-                {"id": f"basicly-r7.{n}", "description": f"record {n} at {leak}", "pad": "x" * 160},
-                separators=(",", ":"),
-            )
-            for n in range(_R7_RECORDS)
-        )
-        + "\n"
-    )
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(repo, "b-1", title="whole")
+    log = tracker.ledger_dir(repo) / "events-0001.jsonl"
+    whole = log.read_text(encoding="utf-8")
+    log.write_text(whole + whole.splitlines()[0][:40], encoding="utf-8")
+
+    records = tracker.all_records(repo)
+
+    assert [record["id"] for record in records] == ["b-1"]
 
 
-def _r7_publish(export: Path, body: str) -> None:
-    """Put *body* in place atomically, so only the code under test can tear a read.
+def test_r7_a_missing_ledger_is_empty_without_waiting(tmp_path: Path) -> None:
+    """R7: absence answers at once — every consumer of the bulk read is telemetry."""
+    started = time.monotonic()
 
-    The rename waits a reader out for the same reason ``br._publish`` does, and this
-    is the platform difference that makes it necessary rather than tidy: CPython
-    opens a file for reading without ``FILE_SHARE_DELETE``, so renaming over a file
-    another process is mid-read raises ``ERROR_SHARING_VIOLATION`` on Windows while
-    succeeding silently on POSIX. This test keeps four readers deliberately mid-read,
-    so on Windows the *fixture* is nearly always the one refused — it failed there
-    with ``WinError 5`` while passing on both other runners.
-
-    Retrying **here** does not soften anything the test asserts. The claim is about
-    what a reader can observe, and the reader path still has no retry: this is setup
-    putting a known-good file in place before the race, and it raises rather than
-    returning False because a fixture that could not publish must fail loudly instead
-    of quietly testing a stale body.
-    """
-    tmp = export.with_suffix(".fixture.tmp")
-    tmp.write_text(body, encoding="utf-8")
-    deadline = time.monotonic() + _R7_TIMEOUT_S
-    delay = 0.005
-    while True:
-        try:
-            tmp.replace(export)
-        except OSError:
-            assert time.monotonic() < deadline, "the fixture could not publish the export"
-            time.sleep(delay)
-            delay = min(delay * 2, 0.1)
-        else:
-            return
+    assert tracker.all_records(tmp_path) == []
+    assert time.monotonic() - started < 1.0
 
 
-def _await(condition, what: str) -> None:
-    """Poll *condition* until true, bounded by a monotonic deadline."""
-    deadline = time.monotonic() + _R7_TIMEOUT_S
-    while not condition():
-        assert time.monotonic() < deadline, f"timed out waiting for {what}"
-        time.sleep(0.005)
+def test_r7_an_unreadable_ledger_is_not_reported_as_a_populated_one(tmp_path: Path) -> None:
+    """R7: an unreadable ledger reads as empty, never as a record set to act on."""
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(repo, "b-1", title="whole")
+    (tracker.ledger_dir(repo) / "events-0001.jsonl").write_text("{not json", encoding="utf-8")
 
-
-def test_r7_concurrent_readers_never_observe_a_torn_write_of_the_shared_export(
-    tmp_path: Path,
-) -> None:
-    """R7: N readers and one writer against one tracker must not corrupt shared state.
-
-    br fails this. Under the engine's own five-lane fan-out its storage layer tore its
-    WAL and four of five lane dispatches died in the pre-flight read, each on a bead it
-    had not been assigned (basicly-vkh0.10). We cannot fix br, so the register asserts
-    the same property of the store *we* own — the committed JSONL export, which
-    ``br.scrub_export`` rewrites on the commit path while every lane reads it through
-    ``.beads/redirect``.
-
-    Our own store had the same defect, in a quieter form: the scrub truncated the file
-    before writing it, and ``export_records`` skips a line it cannot parse rather than
-    raising — so a reader caught in that window got a *partial issue set with no error
-    at all*. A silent wrong answer is worse than the DATABASE_ERROR it mirrors.
-
-    The reader never retries a *parse*, which is the point of the third criterion: a
-    passing run means the write was atomic, not that a reader got a second look at a
-    half-written file. It does retry an *open* that Windows denied, which is a different
-    fact — see ``export_records``, where conflating denial with absence was its own
-    defect and showed up here as a reader observing 0 of 3000 records. The fixture's own
-    publish waits a reader out for the mirror-image reason ``_r7_publish`` records; that
-    is setup, not the assertion.
-    """
-    repo_root = tmp_path / "repo"
-    export = repo_root / ".beads" / "issues.jsonl"
-    export.parent.mkdir(parents=True)
-    _r7_publish(export, _r7_export_body(dirty=True))
-
-    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
-    readers = []
-    for n in range(_R7_READERS):
-        ready, stop = tmp_path / f"ready.{n}", tmp_path / "stop"
-        readers.append((
-            # An argv list, never a shell string: a shell would mangle a Windows
-            # path in `sys.executable` and fail only on that runner (basicly-5tjk).
-            subprocess.Popen(  # nosec B603
-                [sys.executable, "-c", _READER, str(repo_root), str(ready), str(stop)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-            ),
-            ready,
-        ))
-    try:
-        # Start writing only once every reader is actually reading: a writer that
-        # finished first would make this pass by never racing anything.
-        _await(lambda: all(ready.exists() for _, ready in readers), "the readers to start")
-        for _ in range(_R7_ROUNDS):
-            _r7_publish(export, _r7_export_body(dirty=True))
-            assert br.scrub_export(repo_root) == _R7_RECORDS
-    finally:
-        (tmp_path / "stop").write_text("", encoding="utf-8")
-
-    for proc, _ready in readers:
-        stdout, stderr = proc.communicate(timeout=_R7_TIMEOUT_S)
-        assert proc.returncode == 0, stderr
-        worst, reads = (int(part) for part in stdout.split())
-        assert reads > 0, "a reader that never read cannot have observed anything"
-        assert worst == _R7_RECORDS, (
-            f"a reader saw {worst} of {_R7_RECORDS} records: the shared export was "
-            f"observable half-written"
-        )
-
-    # ...and the store is readable afterwards, in the state the last write left it.
-    records = br.export_records(repo_root)
-    assert len(records) == _R7_RECORDS
-    assert "/home/someone" not in json.dumps(records)
-
-
-def test_r7_an_export_that_cannot_be_opened_is_not_reported_as_empty(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """R7: denial and absence are different facts, and only one of them means zero beads.
-
-    `export_records` answered `[]` for any `OSError`, so a reader that collided with a
-    publish for one millisecond was told the tracker has no issues at all — the silent
-    wrong answer this requirement exists to forbid, in its most extreme form. It is
-    Windows-only in practice (CPython opens for reading without `FILE_SHARE_DELETE`, so
-    a rename over a file being read raises there and succeeds on POSIX), which is why it
-    survived local runs and was caught by CI as a reader seeing 0 of 3000 records.
-
-    Asserted by injection rather than by racing a real writer, so the discrimination is
-    checked on every platform instead of only on the one that can produce the error.
-    """
-    repo_root = tmp_path / "repo"
-    export = repo_root / ".beads" / "issues.jsonl"
-    export.parent.mkdir(parents=True)
-    _r7_publish(export, _r7_export_body(dirty=False))
-
-    real_read_text = Path.read_text
-    denials = {"left": 3}
-
-    def denied_then_readable(self: Path, *args: object, **kwargs: object) -> str:
-        if self == export and denials["left"] > 0:
-            denials["left"] -= 1
-            raise PermissionError(5, "Access is denied")
-        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(Path, "read_text", denied_then_readable)
-
-    assert len(br.export_records(repo_root)) == _R7_RECORDS
-    assert denials["left"] == 0, "the read was not retried"
-
-
-def test_r7_a_missing_export_is_empty_without_waiting(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The other half: a repo with no export must answer immediately, not after a wait.
-
-    The known-bad control for the retry above. Without this, widening the retry to every
-    `OSError` would look identical — and would make each of the many telemetry reads on
-    a repo that simply has no tracker export pay the whole deadline.
-
-    Counted rather than timed, and without patching `time.sleep` — `br.time` *is* the
-    real module, so patching through it would reach every other sleeper in the process.
-    """
-    repo_root = tmp_path / "repo"
-    (repo_root / ".beads").mkdir(parents=True)
-
-    real_read_text = Path.read_text
-    attempts = {"n": 0}
-
-    def counted(self: Path, *args: object, **kwargs: object) -> str:
-        attempts["n"] += 1
-        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(Path, "read_text", counted)
-
-    assert br.export_records(repo_root) == []
-    assert attempts["n"] == 1, "a missing export must be answered on the first attempt"
-
-
-def test_r7_a_dispatch_lost_to_the_store_is_retryable_not_terminal(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """R7: a storage-contention failure must reach the caller marked retryable.
-
-    br marks its own ``DATABASE_ERROR`` ``retryable: false``, and the supervisor
-    believed it: the failure was charged to the lane's dispatch rework budget, so
-    ``basicly-tcmy.11`` reached the cap and was parked without an agent ever starting.
-    Nothing about the lane had failed — nothing had run.
-
-    Asserted at the routing boundary rather than on the flag, because the flag is only
-    worth having if it changes which counter is charged.
-    """
-    charged: list[str] = []
-    monkeypatch.setattr(
-        supervise.policy,
-        "record_rework",
-        lambda _repo, _issue, gate: (charged.append(gate), 1)[1],
-    )
-    monkeypatch.setattr(
-        supervise.policy, "load_policy", lambda _repo: SimpleNamespace(max_rework=3)
-    )
-    outcome = supervise.LaneOutcome(
-        issue_id="basicly-tcmy.11",
-        runner_name="claude",
-        result=None,
-        needs_fact=None,
-        occupancy=None,
-        overrun=False,
-        detail="lane dispatch failed: br comments list failed: " + _R7_STORAGE_ERROR,
-        transient=True,
-    )
-
-    routed = supervise._route_failed(tmp_path, outcome.issue_id, outcome)
-
-    assert routed.route == "retry"
-    assert charged == [supervise.TRACKER_GATE], (
-        "the lane's dispatch budget must not pay for the store's contention"
-    )
-
-
-def test_r7_a_lane_failure_that_is_not_the_store_still_costs_a_dispatch_attempt(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The mirror case, so the new counter cannot become an escape from the old one.
-
-    A lane whose agent genuinely failed must still spend its bounded dispatch
-    attempts — otherwise the retryable classification is a way to loop forever.
-    """
-    charged: list[str] = []
-    monkeypatch.setattr(
-        supervise.policy,
-        "record_rework",
-        lambda _repo, _issue, gate: (charged.append(gate), 1)[1],
-    )
-    monkeypatch.setattr(
-        supervise.policy, "load_policy", lambda _repo: SimpleNamespace(max_rework=3)
-    )
-    outcome = supervise.LaneOutcome(
-        issue_id="basicly-x",
-        runner_name="claude",
-        result=None,
-        needs_fact=None,
-        occupancy=None,
-        overrun=False,
-        detail="runner exited 3",
-    )
-
-    assert supervise._route_failed(tmp_path, "basicly-x", outcome).route == "retry"
-    assert charged == [supervise.DISPATCH_GATE]
+    assert tracker.all_records(repo) == []
 
 
 # --- R8: a contended write lock waits, and giving up is retryable -------------
 
-# br 0.2.16's answer to a held `.beads/.write.lock`, reproduced 2026-08-05 by taking
-# the lock and running a write against it, then wrapped as `br.run_br` wraps a failure.
-# Quoted for the same reason :data:`_R7_STORAGE_ERROR` is: composed fixtures are what
-# made the clock recogniser dead code through two "fixes" (basicly-aswc).
+# The ledger's own answer to a held lock, taken from `events.LedgerLock.__enter__`
+# rather than composed: an invented fixture is what made the clock recogniser dead code
+# through two "fixes" (basicly-aswc).
 _R8_LOCK_TIMEOUT = (
-    "E           RuntimeError: br create probe -t task -p 2 failed: "
-    "Error: Configuration error: Timed out after 400ms waiting for write lock at "
-    "/tmp/probe/.beads/.write.lock. Another br process may be holding .write.lock; "
-    "retry after it exits or investigate a stuck process."
+    "E           basicly_tracker_kit_events.LockUnavailableError: another writer holds "
+    "/repo/.basicly/ledger/.events.lock after 5.0s"
 )
 
 
 def test_r8_a_contended_write_lock_does_not_spend_the_lanes_rework_budget(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """R8: a lock the replacement makes a lane *wait* for must not fail its gate.
+    """R8: a lock a lane must *wait* for is not that lane's gate failing.
 
-    br fails a mutating command outright when it cannot take the workspace write lock
-    before the timeout, and the engine's lanes all reach one `.beads` through
-    `redirect`, so a gate contends with every sibling landing and with every other br
-    command running on the host. Two gates failed that way in one session
+    The store fails a write outright when it cannot take the lock before the timeout,
+    and the engine's lanes all reach one ledger through the redirect, so a gate contends
+    with every sibling landing. Two gates failed that way in one session
     (basicly-m4zv.14) and each passed unchanged on the next attempt.
 
     Asserted at the landing's verdict rather than on the recogniser, because the
@@ -643,7 +362,7 @@ def test_r8_a_contended_write_lock_does_not_spend_the_lanes_rework_budget(
     assert result.unreliable is True
     # The reason travels with the verdict: a reader must not have to guess which
     # dependency was forgiven, or on what grounds.
-    assert ".beads/.write.lock" in result.detail
+    assert "one lock" in result.detail
 
 
 # --- R9: a publish never shrinks the artifact silently ------------------------

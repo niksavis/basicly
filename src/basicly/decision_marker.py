@@ -34,7 +34,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .br import read_comments
+from .tracker import read_comments
 
 # Comment marker carrying one queue item (or its answer) — first line is the
 # machine-readable header, the JSON payload follows on the next line.

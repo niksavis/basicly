@@ -12,7 +12,7 @@ import json
 import shutil
 from pathlib import Path
 
-from basicly import owned_store
+from basicly import tracker_paths
 from tests.test_cli import run_basicly
 
 
@@ -83,21 +83,20 @@ def _run_records(work_repo: Path, records: dict) -> None:
     which copies tracked files by design — never carried it. Since `[tracker] mode`
     became `owned` the ledger is tracked and arrives with the copy, handing these tests
     every record this repository has; `usage forecast` then reported a real error ratio
-    over real beads where the test asserts none is computable. `br.all_comment_texts`
+    over real beads where the test asserts none is computable. `tracker.all_comment_texts`
     folds `events-*.jsonl` on this rung, so those are what a blank tracker means.
     """
     usage_dir = work_repo / ".basicly" / "usage"
     shutil.rmtree(usage_dir, ignore_errors=True)
     usage_dir.mkdir(parents=True)
     (usage_dir / "run-records.json").write_text(json.dumps(records), encoding="utf-8")
-    for log in owned_store.ledger_dir(work_repo).glob("events-*.jsonl"):
+    # The redirect is why blanking the log alone is not enough: every reader follows it
+    # to the base checkout, so a fixture copied out of a harness worktree would read the
+    # live repo's ~90 dispatches however empty its own log is.
+    ledger = work_repo / tracker_paths.LEDGER_DIR_NAME
+    (ledger / tracker_paths.REDIRECT_NAME).unlink(missing_ok=True)
+    for log in ledger.glob("events-*.jsonl"):
         log.write_text("", encoding="utf-8")
-    beads = work_repo / ".beads"
-    # The redirect is why blanking the export alone is not enough: `br` follows it to
-    # the base checkout's tracker, so a fixture copied out of a harness worktree reads
-    # the live repo's ~90 dispatches however empty its own export is.
-    (beads / "redirect").unlink(missing_ok=True)
-    (beads / "issues.jsonl").write_text("", encoding="utf-8")
 
 
 def test_cli_usage_forecast_reports_the_ratio_per_paired_dispatch(work_repo: Path) -> None:

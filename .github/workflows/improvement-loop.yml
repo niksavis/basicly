@@ -38,17 +38,14 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - name: Install Python dependencies
         run: uv sync
-      # No external tracker is installed (basicly-vkh0.42.2), and **this job cannot pass
-      # until the label read reaches the owned ledger.** The controller reads its one-lane
-      # bound even on a dry run; that read goes through `label_source.labelled`, which
-      # answers out of the external store below `[tracker] mode = "owned"` and so still
-      # spawns the binary. Measured 2026-08-17 with the binary off PATH: the job dies with
-      # `RuntimeError: br is not on PATH`. Dispatching this workflow is therefore blocked
-      # on basicly-vkh0.29, not on anything in this file.
-      # `--dry-run` is the whole job, and the reason is that a live run here would
-      # be lost. The actuator files a bead into this checkout's `.beads/`, which is
-      # ephemeral — persisting it would need `contents: write` and a push to main
-      # from CI, which is well past what this entry was confirmed for. Filing stays
-      # a human running `basicly loop improve` from the base checkout.
+      # The controller reads its one-lane bound even on a dry run, and that read now
+      # answers out of the committed ledger with nothing spawned (basicly-vkh0.42.7).
+      # This job was blocked on that until the external store was deleted.
+      #
+      # `--dry-run` is the whole job, and the reason is that a live run here would be
+      # lost. The actuator files a record into this checkout's ledger, which is
+      # ephemeral — persisting it would need `contents: write` and a push to main from
+      # CI, which is well past what this entry was confirmed for. Filing stays a human
+      # running `basicly loop improve` from the base checkout.
       - name: Run the improvement controller
         run: uv run basicly loop improve --dry-run

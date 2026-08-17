@@ -27,7 +27,7 @@ Design choices, and the reasoning that forced each one:
   further down a file never blocks an unrelated commit, and history is out of
   scope (a rewrite cannot un-publish what is already public anyway). This is the
   opposite call from ``tracker-path-scan``, which scans whole staged files
-  because a machine-written export is rewritten in bulk — here, any line br
+  because a machine-written log is rewritten in bulk — here, any line the store
   rewrites *is* an added line, so the narrower scan loses nothing.
 - **Reviewed exceptions are silenced inline** with a ``pragma: allow internal``
   marker on the line. A legitimate external citation can contain a denied

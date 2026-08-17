@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from basicly import capability_proof, tracker_usage, usage
+from basicly import capability_proof, usage
 from basicly.capability_proof import CAPABILITY_VERIFY_CHECK
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -34,16 +34,6 @@ def _plant(root: Path, relative: Path, counts: dict[str, int]) -> None:
     )
 
 
-def _plant_tracker_ledger(root: Path) -> None:
-    """Write one measured tracker surface, the committed half of the evidence."""
-    path = root / tracker_usage.LEDGER_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        '{"binary":"br","subcommand":"gate report","site":"engine","ok":true}\n',
-        encoding="utf-8",
-    )
-
-
 def _declare_check(root: Path, name: str, command: list[str]) -> None:
     """Declare one `[[verify.checks]]` capability."""
     rendered = ", ".join(f'"{arg}"' for arg in command)
@@ -53,23 +43,24 @@ def _declare_check(root: Path, name: str, command: list[str]) -> None:
     )
 
 
-def test_recorded_executions_unions_all_three_ledgers(tmp_path: Path) -> None:
+def test_recorded_executions_unions_both_ledgers(tmp_path: Path) -> None:
     """Every ledger on disk is read, and the verify keys cannot collide with a tool name.
 
     A check named `pytest` and a shell that typed `pytest` are different facts; they
     share this map, so the namespace is what keeps the second from answering for the
     first.
+
+    The tracker's measured surfaces were a third ledger and left with the subprocess they
+    measured (basicly-vkh0.42.7).
     """
     _plant(tmp_path, usage.USAGE_FILE, {"pytest": 785, "never-run-tool": 0})
     _plant(tmp_path, usage.VERIFY_CHECKS_FILE, {"pytest": 2})
-    _plant_tracker_ledger(tmp_path)
 
     counts = capability_proof.recorded_executions(tmp_path)
 
     assert counts is not None
     assert counts["pytest"] == 785
     assert counts[f"{usage.VERIFY_CHECK_PREFIX}pytest"] == 2
-    assert counts["br gate report"] == 1
     assert "never-run-tool" not in counts
 
 

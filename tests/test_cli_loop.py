@@ -802,7 +802,7 @@ def test_preflight_does_not_count_the_trees_the_landing_sweeps(
     _preflight_fixture(
         monkeypatch,
         _Preflight(
-            dirty=" M .beads/issues.jsonl\n M .basicly/ledger/events-0001.jsonl\n",
+            dirty=" M .basicly/ledger/events-0001.jsonl\n M .basicly/ledger/events-0002.jsonl\n",
             grant=Grant(level="L1", token_budget=10_000),
         ),
     )

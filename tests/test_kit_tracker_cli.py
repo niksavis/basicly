@@ -150,6 +150,37 @@ def test_a_consumer_without_the_engine_creates_reads_and_queries(consumer: Path)
     assert [held["record"] for held in report["records"]] == [record]
 
 
+def test_a_consumer_without_the_engine_walks_a_whole_unit_of_work(consumer: Path) -> None:
+    """AC: the kit is a *tracker*, not a log — decompose, order, rank, close, re-rank.
+
+    The three verbs the kit shipped with could open a record and never advance one, so a
+    repository that copied it had a backlog it could not work. This is the walk that says
+    it can, and every step runs with the engine barred.
+    """
+    entry = consumer / "tracker" / "cli.py"
+    ledger = str(consumer / "ledger")
+
+    def kit(*args: str) -> dict:
+        proc = _blocked(consumer, entry, args[0], ledger, *args[1:])
+        assert proc.returncode == 0, proc.stderr or proc.stdout
+        return json.loads(proc.stdout)
+
+    root = kit("create", "--prefix", "acme", "--title", "ship it")["record"]
+    first = kit("child", root, "--title", "parse", "--field", "priority=1")["record"]
+    second = kit("child", root, "--title", "render", "--field", "priority=1")["record"]
+    kit("dep", second, first, "--type", "blocks")
+    kit("update", first, "--add-label", "cut-a")
+
+    # The decomposed parent is not the work, and the blocked child is not ready either.
+    assert [row["record"] for row in kit("ready")["records"]] == [first]
+    assert {row["record"] for row in kit("blocked")["records"]} == {root, second}
+
+    kit("close", first, "--reason", "landed")
+
+    assert [row["record"] for row in kit("ready")["records"]] == [second]
+    assert kit("stats")["by_status"] == {"closed": 1, "open": 2}
+
+
 def test_the_consumer_writes_only_inside_its_own_directory(consumer: Path) -> None:
     """The ledger is an argument: nothing is written to a path the kit chose."""
     entry = consumer / "tracker" / "cli.py"

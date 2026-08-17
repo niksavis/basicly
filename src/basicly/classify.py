@@ -31,10 +31,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import integrity, policy
-from .br import add_comment as _add_comment
-from .br import read_comments as _read_comments
-from .br import write as _write
 from .config import WORK_TYPES
+from .tracker import add_comment as _add_comment
+from .tracker import read_comments as _read_comments
+from .tracker import write as _write
 
 CLASSIFICATION_MARKER = integrity.CLASSIFICATION_MARKER
 
@@ -63,7 +63,7 @@ def classify(
 
     Rejects a type outside the fixed br set (:data:`WORK_TYPES`) with a loud
     ``ValueError`` before touching the tracker. The type goes through
-    :func:`basicly.br.write`; the returned :class:`ClassifyResult` carries the
+    :func:`basicly.tracker.write`; the returned :class:`ClassifyResult` carries the
     Definition-of-Ready verdict so the state machine can gate the exit from
     classify, and the integrity level assigned from *scope*.
     """

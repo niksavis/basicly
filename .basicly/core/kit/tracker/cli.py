@@ -1,25 +1,22 @@
-r"""The tracker kit's standalone entry point: create a record, read one, query the set.
+r"""The tracker kit's standalone entry point: the whole work graph from a command line.
 
 The responsibility is *the command line*; the boundary is against the modules it drives.
 Nothing here folds, mints or writes a line — ``events`` appends, ``ids`` mints,
-``snapshot`` reads. This module owns the argument surface, the order of the two writes a
-create is, and the JSON a caller gets back.
+``commands`` writes, ``queries`` reads.
 
-**The gap it closes** (`work-tracker.md` §5, which records it as a named gap against §4's
-promise of a kit consumable with zero basicly imports and nothing on PATH): the read side
-had entry points, ``snapshot.main`` and ``fsck.main``; the write side had only ``basicly
-tracker``, which is the engine, and ``ids.mint_root_id`` had no caller outside its tests.
-A repository that copied the kit could read a ledger it had no way to create.
+**The gap it closes** (`work-tracker.md` §4, a kit consumable with zero basicly imports
+and nothing on PATH): the write side had only ``basicly tracker``, which is the engine, so
+a repository that copied the kit could read a ledger it had no way to advance.
 
-``create`` mints a root id and appends ``created`` then ``status``; ``show`` reads one
-record through the snapshot; ``list`` queries the folded set by status. Three things are
-absent because they are the graph rather than an entry point, and the engine still owns
-them: children (``ids.next_child_id``), edges, and ranking (``scheduler.ranking``).
+``create`` and ``child`` mint an id and open a record; ``show`` and ``list`` read;
+``ready``, ``blocked`` and ``stats`` answer about the set; ``update``, ``close``,
+``comment``, ``dep`` and ``delete`` advance one. ``fsck`` and ``snapshot`` keep their own
+entry points, because each is a whole-ledger operation rather than a verb on a record.
 
 **Redaction stays injected.** §4.2 requires a redaction pass on every write and the kit
 may not import ``basicly.redact``, so :func:`main` takes the callable as a keyword. A bare
 command line passes none and the ledger holds what the operator typed — honest for a typed
-title, wrong for agent output, which belongs on the engine's write path (``br.py``).
+title, wrong for agent output, which belongs on the engine's write path.
 
 Kit rules (`.basicly/core/kit/README.md`): no basicly, standard library only, no network,
 no subprocess, and syntax an interpreter older than this repo's 3.14 floor can parse —
@@ -63,6 +60,8 @@ def _load(file_name: str, module_name: str) -> Any:
 
 snapshot = _load("snapshot.py", "basicly_tracker_kit_snapshot")
 scheduler = _load("scheduler.py", "basicly_tracker_kit_scheduler")
+commands = _load("commands.py", "basicly_tracker_kit_commands")
+queries = _load("queries.py", "basicly_tracker_kit_queries")
 events = snapshot.events
 ids = events.ids
 
@@ -114,96 +113,19 @@ def _fields(title: str, pairs: Sequence[str]) -> dict[str, object]:
     return fields
 
 
-def create_record(
-    directory: Path | str,
-    fields: Mapping[str, object],
-    *,
-    prefix: str,
-    status: str = DEFAULT_STATUS,
-    redact: Callable[[str], str] | None = None,
-) -> list[Any]:
-    """Mint a root id under *prefix* and append the record's first two events.
-
-    The mint and the append are **one critical section**, held over the ledger's own lock
-    and passed into :func:`events.append` as ``held_lock``: minting reads every id the
-    ledger has ever held, so a second writer appending between the read and the write
-    could be handed the same id.
-
-    Two events rather than one, because status is its own kind: the ``created`` event
-    carries the fields and the fold reads status only from a ``status`` event, so a record
-    written without one folds to ``status: null`` and answers no query.
-
-    Returns:
-        The events written, ``created`` first. The record id is ``[0].record``.
-
-    Raises:
-        events.LockUnavailableError: another writer held the ledger. Retryable.
-        ids.IdSpaceExhaustedError: no free id under *prefix*.
-    """
-    ledger = Path(directory)
-    ledger.mkdir(parents=True, exist_ok=True)
-    with events.LedgerLock(ledger) as lock:
-        folded = events.fold(events.read_events(ledger)[0])
-        record = ids.mint_root_id(
-            prefix,
-            ids.minted_ever(
-                [key for key, state in folded.records.items() if not state.tombstoned],
-                [key for key, state in folded.records.items() if state.tombstoned],
-            ),
-        )
-        return events.append(
-            ledger,
-            [
-                events.Draft(record, events.KIND_CREATED, dict(fields)),
-                events.Draft(record, events.KIND_STATUS, {"status": status}),
-            ],
-            redact=redact,
-            held_lock=lock,
-        )
-
-
-def _folded(directory: Path | str) -> dict[str, Any]:
-    """Every record in the ledger at *directory*, folded.
-
-    Raises:
-        events.LedgerError: *directory* is not a directory. Refused rather than answered
-            as an empty ledger: a mistyped path would otherwise read as "no such record",
-            which is the same answer a correct path gives for a record that never existed.
-    """
-    ledger = Path(directory)
-    if not ledger.is_dir():
-        raise events.LedgerError(f"{ledger} is not a ledger directory")
-    return snapshot.load(ledger).records
-
-
-def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
-    """One record's folded state as JSON, or ``None`` when the ledger does not hold it."""
-    state = _folded(directory).get(record)
-    return None if state is None else snapshot.record_to_dict(state)
-
-
-def query_records(
-    directory: Path | str, *, status: str | None = None, limit: int | None = None
-) -> list[dict[str, object]]:
-    """The ledger's records in id order, optionally narrowed to one *status*.
-
-    Tombstoned records are left out. They stay in the fold on purpose — a delete is an
-    event, not a removal — but a query is asking what the tracker currently holds, and
-    ``show`` is still the way to read one back.
-    """
-    records = _folded(directory)
-    matched = [
-        snapshot.record_to_dict(records[key])
-        for key in sorted(records)
-        if not records[key].tombstoned and (status is None or records[key].status == status)
-    ]
-    return matched if limit is None else matched[:limit]
+# The record operations, kept under their original names because this module is the
+# kit's public entry point and `owned_write`, the engine and the kit's own tests reach
+# them here. The bodies moved to the two modules whose boundary they belong to, which is
+# the split this module's docstring already claimed.
+create_record = commands.create_root
+read_record = queries.read_record
+query_records = queries.query_records
 
 
 def _parser() -> argparse.ArgumentParser:
-    """The three subcommands, each taking the ledger directory as its first argument."""
+    """Every subcommand, each taking the ledger directory as its first argument."""
     parser = argparse.ArgumentParser(
-        description="Create, read and query work items in a tracker kit ledger."
+        description="Create, read, query and advance work items in a tracker kit ledger."
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -228,7 +150,94 @@ def _parser() -> argparse.ArgumentParser:
     listing.add_argument("directory", help="the ledger directory")
     listing.add_argument("--status", default=None, help="only records at this status")
     listing.add_argument("--limit", type=int, default=None, help="at most this many records")
+
+    _add_query_parsers(sub)
+    _add_write_parsers(sub)
     return parser
+
+
+def _add_query_parsers(sub: Any) -> None:
+    """The three views a consumer needs to decide what to work on next."""
+    for name, helping in (
+        ("ready", "the ranked ready set: what can be worked on now"),
+        ("blocked", "each dispatchable record that is not ready, and what holds it"),
+        ("stats", "counts by status, plus the ready and blocked counts"),
+    ):
+        view = sub.add_parser(name, help=helping)
+        view.add_argument("directory", help="the ledger directory")
+        if name == "ready":
+            view.add_argument("--limit", type=int, default=None, help="at most this many")
+
+
+def _add_write_parsers(sub: Any) -> None:
+    """The writes that advance a record, as against the ``create`` that opens one."""
+    child = sub.add_parser("child", help="mint the next child id under a parent")
+    child.add_argument("directory", help="the ledger directory")
+    child.add_argument("parent", help="the parent record id")
+    child.add_argument("--title", default="", help="the record's title")
+    child.add_argument("--field", action="append", default=[], metavar="NAME=VALUE")
+    child.add_argument("--status", default=DEFAULT_STATUS, help="the status to open it at")
+
+    update = sub.add_parser("update", help="set a record's fields, status or labels")
+    update.add_argument("directory", help="the ledger directory")
+    update.add_argument("record", help="the record id")
+    update.add_argument("--field", action="append", default=[], metavar="NAME=VALUE")
+    update.add_argument("--status", default="", help="the status to move it to")
+    update.add_argument("--add-label", action="append", default=[], metavar="LABEL")
+    update.add_argument("--remove-label", action="append", default=[], metavar="LABEL")
+
+    closing = sub.add_parser("close", help="move records to the closed status")
+    closing.add_argument("directory", help="the ledger directory")
+    closing.add_argument("record", nargs="+", help="the record ids to close")
+    closing.add_argument("--reason", default="", help="why, recorded as a field")
+
+    note = sub.add_parser("comment", help="append one comment to a record")
+    note.add_argument("directory", help="the ledger directory")
+    note.add_argument("record", help="the record id")
+    note.add_argument("text", help="the comment body")
+
+    dep = sub.add_parser("dep", help="record a dependency edge on the dependent")
+    dep.add_argument("directory", help="the ledger directory")
+    dep.add_argument("record", help="the dependent record id")
+    dep.add_argument("target", help="the record it depends on")
+    dep.add_argument("--type", dest="edge_type", default="blocks", help="the edge type")
+
+    removal = sub.add_parser("delete", help="tombstone a record; its id is never reused")
+    removal.add_argument("directory", help="the ledger directory")
+    removal.add_argument("record", help="the record id")
+
+
+# Each write, as the call it makes. A dispatch table rather than a chain of comparisons,
+# the same shape and the same reason as `mirror._MIRRORED_WRITES`: the write surface is
+# what a reviewer checks against the tracker's documented verbs, and a branch buried in a
+# function body is not readable as a set.
+_WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
+    "child": lambda a, r: commands.create_child(
+        a.directory, a.parent, _fields(a.title, a.field), status=a.status, redact=r
+    ),
+    "update": lambda a, r: commands.update(
+        a.directory,
+        a.record,
+        fields=_fields("", a.field),
+        status=a.status,
+        add_labels=a.add_label,
+        remove_labels=a.remove_label,
+        redact=r,
+    ),
+    "close": lambda a, r: commands.close(a.directory, a.record, reason=a.reason, redact=r),
+    "comment": lambda a, r: commands.comment(a.directory, a.record, a.text, redact=r),
+    "dep": lambda a, r: commands.add_dependency(
+        a.directory, a.record, a.target, edge_type=a.edge_type, redact=r
+    ),
+    "delete": lambda a, r: commands.delete(a.directory, a.record, redact=r),
+}
+
+# Each read that answers about the set rather than about one record.
+_VIEWS: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
+    "ready": lambda a: queries.ready(a.directory, limit=a.limit),
+    "blocked": lambda a: queries.blocked(a.directory),
+    "stats": lambda a: queries.stats(a.directory),
+}
 
 
 def _run(
@@ -249,6 +258,14 @@ def _run(
         if found is None:
             return EXIT_REFUSED, {"record": args.record, "found": False}
         return EXIT_OK, found
+    if (view := _VIEWS.get(args.command)) is not None:
+        return EXIT_OK, view(args)
+    if (write := _WRITES.get(args.command)) is not None:
+        appended = write(args, redact)
+        return EXIT_OK, {
+            "record": appended[0].record,
+            "events": [event.id for event in appended],
+        }
     records = query_records(args.directory, status=args.status, limit=args.limit)
     return EXIT_OK, {"count": len(records), "records": records}
 

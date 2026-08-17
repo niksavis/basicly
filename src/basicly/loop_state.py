@@ -12,7 +12,7 @@ Phase derivation is a reconstruction from what ``br`` records, not a transition
 engine — the state machine (onb.6.3) owns advancement. Gate/checkpoint/rework
 reads are delegated to the policy engine (onb.3) so the block-vs-advise rules
 live in exactly one place. The ready and blocked sets come from the tracker
-rather than being recomputed here, each through its own seam — ``br.read_ranking``
+rather than being recomputed here, each through its own seam — ``tracker.read_ranking``
 (basicly-vkh0.20) and :mod:`basicly.dependency_graph` (basicly-wpc8) — so §12.3's
 rule survives the cutover in the form that mattered: both are the tracker's job
 and this module only reads the answer.
@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, dependency_graph, policy, validate_gate
+from . import dependency_graph, policy, tracker, validate_gate
 from .config import CHECKPOINTS, PolicyConfig, load_policy_config
 
 # The loop phases, ordered from earliest to latest (architecture §23.3). "done"
@@ -66,7 +66,7 @@ def is_dispatchable(status: str) -> bool:
     """True when a child in *status* may be sized, funded and dispatched.
 
     ``br`` lets a project define its own statuses (``workflow.status_groups.ready``
-    in ``.beads/policy.yaml``, e.g. ``rework``), so a status outside
+    in a store's own config, e.g. ``rework``), so a status outside
     :data:`KNOWN_STATUSES` is admitted rather than dropped: refusing an unknown
     status would both defund real work and let its parent fan in over it. The
     refusals are therefore exactly the named non-dispatchable statuses, each one a
@@ -192,7 +192,7 @@ def read_node_state(
     config = config or load_policy_config(repo_root)
     # What this unit owes, so gate read, derived phase and rework tally share one set.
     config = validate_gate.required_config(repo_root, issue_id, config)
-    record = br.require_record(repo_root, issue_id)
+    record = tracker.require_record(repo_root, issue_id)
 
     worktree = parse_worktree_ref(record.get("external_ref"))
     gates = policy.gate_status(repo_root, issue_id, config)
@@ -254,7 +254,7 @@ class Ranking:
     policy behind it. Both scorers are explicitly versioned and state their own
     sort, so carrying those two strings is what makes a recorded rank
     interpretable later (basicly-vkh0.3) — and, since the cutover, what says
-    *which* scorer produced it: ``br.scheduler.v1`` ranks on
+    *which* scorer produced it: ``tracker.scheduler.v1`` ranks on
     ``priority ASC, created_at ASC, id ASC``, while ``basicly.scheduler.v1`` drops
     the age term for ``priority ASC, dependents DESC, id ASC`` (basicly-vkh0.20).
     """
@@ -271,12 +271,12 @@ class Ranking:
 def ready_ranking(repo_root: Path, limit: int | None = None) -> Ranking:
     """The ready set ranked by whichever scorer the repo is flipped to.
 
-    One parser over one payload shape. Which store answers is `basicly.br`'s
-    business and not this module's — ``br.read_ranking`` is the seam, the way
-    ``br.read_record`` is for a record, so the cutover stays in the module that
+    One parser over one payload shape. Which store answers is `basicly.tracker`'s
+    business and not this module's — ``tracker.read_ranking`` is the seam, the way
+    ``tracker.read_record`` is for a record, so the cutover stays in the module that
     owns it rather than putting a mode branch here (basicly-vkh0.19, .20).
     """
-    payload = br.read_ranking(repo_root, limit)
+    payload = tracker.read_ranking(repo_root, limit)
     fallback = payload.get("fallback_policy")
     return Ranking(
         nodes=tuple(

@@ -9,7 +9,7 @@ of ``handoff`` when the module-size ratchet caught it crossing the cap.
 
 The transport is the ``[harness-artifact]`` marker family, a sibling of
 ``[harness-policy]``, ``[harness-run]`` and ``[harness-classification]``, written and read
-through the same ``br.add_comment``/``br.read_comments`` seam they all use — so an
+through the same ``tracker.add_comment``/``tracker.read_comments`` seam they all use — so an
 artifact lands in ``br`` on today's rung and becomes a ledger ``comment`` event the moment
 ``[tracker] mode`` flips to ``owned``. ``handoff``'s module docstring states why that seam
 rather than a new ledger event kind, and the argv-length bound it carries below ``owned``.
@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import br
+from . import tracker
 
 # The marker family this module owns, and how the kind is carried ahead of the payload.
 MARKER = "[harness-artifact]"
@@ -70,7 +70,7 @@ def read(repo_root: Path, issue_id: str, kind: str) -> object | None:
     second artifact, and the plan BUILD is held to is the one that produced the children
     now on the tracker, not the one that was superseded.
 
-    Reads through the hard seam (:func:`br.read_comments`), which raises rather than
+    Reads through the hard seam (:func:`tracker.read_comments`), which raises rather than
     reporting an empty history: this answer feeds a refusal, and a tracker that did not
     answer must not read as "no artifact, carry on".
 
@@ -78,8 +78,8 @@ def read(repo_root: Path, issue_id: str, kind: str) -> object | None:
         RuntimeError: the store could not answer.
     """
     found = None
-    for comment in br.read_comments(repo_root, issue_id):
-        payload = recorded_payload(str(comment.get(br.COMMENT_TEXT_KEY, "")).strip(), kind)
+    for comment in tracker.read_comments(repo_root, issue_id):
+        payload = recorded_payload(str(comment.get(tracker.COMMENT_TEXT_KEY, "")).strip(), kind)
         if payload is not None:
             found = payload
     return found
@@ -101,8 +101,8 @@ def write(repo_root: Path, issue_id: str, kind: str, payload: dict) -> None:
     """
     body = marker_body(kind, payload)
     if any(
-        str(comment.get(br.COMMENT_TEXT_KEY, "")).strip() == body
-        for comment in br.read_comments(repo_root, issue_id)
+        str(comment.get(tracker.COMMENT_TEXT_KEY, "")).strip() == body
+        for comment in tracker.read_comments(repo_root, issue_id)
     ):
         return
-    br.add_comment(repo_root, issue_id, body)
+    tracker.add_comment(repo_root, issue_id, body)

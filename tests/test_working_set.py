@@ -13,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import br, decompose
+from basicly import decompose, tracker
 from basicly.config import load_sizing_config
 from basicly.working_set import WorkingSetAdmission, admit_working_set, band_coverage
 
@@ -99,7 +99,7 @@ def _admit(
 ) -> WorkingSetAdmission:
     """Size a bead whose description is *body* against a band ending at *ceiling*."""
     record = {"issue_type": "task", "description": body}
-    monkeypatch.setattr(br, "read_record", lambda _r, _b: record)
+    monkeypatch.setattr(tracker, "read_record", lambda _r, _b: record)
     sizing = replace(load_sizing_config(repo), working_set_max=ceiling)
     return admit_working_set(repo, "basicly-a", sizing)
 

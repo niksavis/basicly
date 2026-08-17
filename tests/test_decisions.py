@@ -18,8 +18,9 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, decision_marker, decisions, policy, run_record, runner
+from basicly import decision_marker, decisions, policy, run_record, runner, tracker
 from basicly.config import PolicyConfig, RunnerConfig
+from tests import fake_tracker, flipped_tracker
 
 
 class _Proc:
@@ -71,11 +72,10 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     # reads br through its own alias for the subcommands it spawns directly.
     monkeypatch.setattr(policy, "_write", fake)
     # Neither the record read nor the marker traffic is one of those: they go through
-    # `br.read_record` and `br.add_comment`/`br.read_comments`, the seams every consumer
-    # in the package shares (basicly-tcmy.14, basicly-s5li). `decisions` has no alias of
-    # its own left — every call it makes is a marker.
-    monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
+    # `tracker.read_record` and the marker pair, the seams every consumer in the package
+    # shares (basicly-tcmy.14, basicly-s5li). `decisions` has no alias of its own left —
+    # every call it makes is a marker.
+    fake_tracker.install(monkeypatch, fake)
 
 
 def _no_notify(monkeypatch: pytest.MonkeyPatch) -> list:
@@ -93,12 +93,12 @@ def test_enqueue_is_idempotent_per_content(monkeypatch: pytest.MonkeyPatch, tmp_
     _install(monkeypatch, fake)
     notified = _no_notify(monkeypatch)
 
-    first = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?", "docs conflict")
-    again = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?", "docs conflict")
+    first = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?", "docs conflict")
+    again = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?", "docs conflict")
 
     assert first.decision_id == again.decision_id
-    assert first.decision_id.startswith("epic.1#")
-    assert len(fake.comments["epic.1"]) == 1
+    assert first.decision_id.startswith("b-epic.1#")
+    assert len(fake.comments["b-epic.1"]) == 1
     assert len(notified) == 1  # no duplicate notification either
 
 
@@ -106,7 +106,7 @@ def test_enqueue_rejects_unknown_kind(monkeypatch: pytest.MonkeyPatch, tmp_path:
     """The kind vocabulary is closed; a typo must not create an unroutable item."""
     _install(monkeypatch, _FakeBr())
     with pytest.raises(ValueError, match="unknown decision kind"):
-        decisions.enqueue(tmp_path, "epic.1", "vibe", "q")
+        decisions.enqueue(tmp_path, "b-epic.1", "vibe", "q")
 
 
 def test_answer_round_trips_with_attribution(
@@ -116,7 +116,7 @@ def test_answer_round_trips_with_attribution(
     fake = _FakeBr()
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
-    item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
+    item = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?")
 
     answered = decisions.answer(tmp_path, item.decision_id, "postgres", by="human")
 
@@ -136,7 +136,7 @@ def test_answer_refuses_missing_and_double_answers(
     _no_notify(monkeypatch)
     with pytest.raises(ValueError, match="no decision"):
         decisions.answer(tmp_path, "epic.1#abcdef", "x", by="human")
-    item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
+    item = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?")
     decisions.answer(tmp_path, item.decision_id, "postgres", by="human")
     with pytest.raises(ValueError, match="already answered"):
         decisions.answer(tmp_path, item.decision_id, "mysql", by="human")
@@ -144,15 +144,15 @@ def test_answer_refuses_missing_and_double_answers(
 
 def test_pending_scans_the_session_tree(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """`loop decisions` is a pure read over the root's transitive child tree."""
-    child = {"id": "epic.1", "dependency_type": "parent-child"}
-    fake = _FakeBr(records={"epic": {"status": "open", "dependents": [child]}})
+    child = {"id": "b-epic.1", "dependency_type": "parent-child"}
+    fake = _FakeBr(records={"b-epic": {"status": "open", "dependents": [child]}})
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
-    kept = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
-    answered = decisions.enqueue(tmp_path, "epic", "escalation", "rework cap on verify")
+    kept = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?")
+    answered = decisions.enqueue(tmp_path, "b-epic", "escalation", "rework cap on verify")
     decisions.answer(tmp_path, answered.decision_id, "park it", by="human")
 
-    items = decisions.pending(tmp_path, "epic")
+    items = decisions.pending(tmp_path, "b-epic")
 
     assert [i.decision_id for i in items] == [kept.decision_id]
 
@@ -170,12 +170,12 @@ def _gating_track() -> _FakeBr:
     """
     return _FakeBr(
         records={
-            "epic": {
+            "b-epic": {
                 "status": "open",
-                "dependents": [{"id": "epic.1", "dependency_type": "parent-child"}],
+                "dependents": [{"id": "b-epic.1", "dependency_type": "parent-child"}],
                 "dependencies": [{"id": "gated", "dependency_type": "blocks"}],
             },
-            "epic.1": {"status": "open", "dependents": [], "dependencies": []},
+            "b-epic.1": {"status": "open", "dependents": [], "dependencies": []},
             "gated": {"status": "open", "dependents": [], "dependencies": []},
         }
     )
@@ -199,7 +199,7 @@ def test_a_delegated_answer_on_a_gated_bead_counts_against_the_runaway_cap(
         tmp_path, item.decision_id, "postgres", by=f"{decisions.DECIDER_BY_PREFIX}claude"
     )
 
-    assert decisions.decider_answers_count(tmp_path, "epic") == 1
+    assert decisions.decider_answers_count(tmp_path, "b-epic") == 1
 
 
 def test_an_escalation_on_a_gated_bead_is_reported_as_pending(
@@ -215,16 +215,19 @@ def test_an_escalation_on_a_gated_bead_is_reported_as_pending(
     _no_notify(monkeypatch)
     item = decisions.enqueue(tmp_path, "gated", "escalation", "rework cap on verify")
 
-    assert [i.decision_id for i in decisions.pending(tmp_path, "epic")] == [item.decision_id]
+    assert [i.decision_id for i in decisions.pending(tmp_path, "b-epic")] == [item.decision_id]
 
 
 def _write_export(repo_root: Path, statuses: dict[str, str]) -> None:
-    """The committed JSONL export `closed_ids` reads, with one record per id."""
-    beads = repo_root / ".beads"
-    beads.mkdir(parents=True, exist_ok=True)
-    (beads / "issues.jsonl").write_text(
-        "\n".join(json.dumps({"id": i, "status": s}) for i, s in statuses.items()) + "\n",
-        encoding="utf-8",
+    """The committed ledger `closed_ids` reads, with one status event per id."""
+    repo = flipped_tracker.flipped_repo(repo_root)
+    kit = tracker.kit(repo)
+    kit.events.append(
+        tracker.ledger_dir(repo),
+        [
+            kit.events.Draft(record, kit.events.KIND_STATUS, {"status": status})
+            for record, status in statuses.items()
+        ],
     )
 
 
@@ -238,21 +241,21 @@ def test_pending_drops_items_on_closed_beads(
     every pending item to the decider, so the queue spent tokens deciding closed beads
     (basicly-jr0l.24).
     """
-    child = {"id": "epic.1", "dependency_type": "parent-child"}
-    fake = _FakeBr(records={"epic": {"status": "open", "dependents": [child]}})
+    child = {"id": "b-epic.1", "dependency_type": "parent-child"}
+    fake = _FakeBr(records={"b-epic": {"status": "open", "dependents": [child]}})
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
-    stale = decisions.enqueue(tmp_path, "epic.1", "checkpoint", "approve the ship checkpoint")
-    live = decisions.enqueue(tmp_path, "epic", "escalation", "widen the band?")
+    stale = decisions.enqueue(tmp_path, "b-epic.1", "checkpoint", "approve the ship checkpoint")
+    live = decisions.enqueue(tmp_path, "b-epic", "escalation", "widen the band?")
 
-    _write_export(tmp_path, {"epic": "open", "epic.1": "open"})
-    assert {i.decision_id for i in decisions.pending(tmp_path, "epic")} == {
+    _write_export(tmp_path, {"b-epic": "open", "b-epic.1": "open"})
+    assert {i.decision_id for i in decisions.pending(tmp_path, "b-epic")} == {
         stale.decision_id,
         live.decision_id,
     }, "control: while the bead is open its item is outstanding"
 
-    _write_export(tmp_path, {"epic": "open", "epic.1": "closed"})
-    assert [i.decision_id for i in decisions.pending(tmp_path, "epic")] == [live.decision_id]
+    _write_export(tmp_path, {"b-epic": "open", "b-epic.1": "closed"})
+    assert [i.decision_id for i in decisions.pending(tmp_path, "b-epic")] == [live.decision_id]
 
 
 def test_pending_reports_everything_when_the_export_is_unreadable(
@@ -263,13 +266,13 @@ def test_pending_reports_everything_when_the_export_is_unreadable(
     Degrading to the pre-fix behaviour is the safe direction: showing a settled question
     wastes a glance, hiding a live one loses a decision.
     """
-    fake = _FakeBr(records={"epic": {"status": "open", "dependents": []}})
+    fake = _FakeBr(records={"b-epic": {"status": "open", "dependents": []}})
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
-    item = decisions.enqueue(tmp_path, "epic", "escalation", "widen the band?")
+    item = decisions.enqueue(tmp_path, "b-epic", "escalation", "widen the band?")
 
     assert decisions.closed_ids(tmp_path) == frozenset()
-    assert [i.decision_id for i in decisions.pending(tmp_path, "epic")] == [item.decision_id]
+    assert [i.decision_id for i in decisions.pending(tmp_path, "b-epic")] == [item.decision_id]
 
 
 def test_settle_checkpoint_answers_only_the_named_checkpoints_asks(
@@ -284,11 +287,15 @@ def test_settle_checkpoint_answers_only_the_named_checkpoints_asks(
     fake = _FakeBr()
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
-    ship = decisions.enqueue(tmp_path, "epic", "checkpoint", "approve the ship checkpoint for epic")
-    classify = decisions.enqueue(tmp_path, "epic", "checkpoint", "approve the classify checkpoint")
-    other = decisions.enqueue(tmp_path, "epic", "escalation", "ship it or not?")
+    ship = decisions.enqueue(
+        tmp_path, "b-epic", "checkpoint", "approve the ship checkpoint for epic"
+    )
+    classify = decisions.enqueue(
+        tmp_path, "b-epic", "checkpoint", "approve the classify checkpoint"
+    )
+    other = decisions.enqueue(tmp_path, "b-epic", "escalation", "ship it or not?")
 
-    settled = decisions.settle_checkpoint(tmp_path, "epic", "ship", by="human")
+    settled = decisions.settle_checkpoint(tmp_path, "b-epic", "ship", by="human")
 
     assert [i.decision_id for i in settled] == [ship.decision_id]
     for untouched in (classify, other):
@@ -320,11 +327,11 @@ def test_answering_records_how_long_the_queue_held_the_item(
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
     _pin_clocks(monkeypatch, fake, waited_s=3_600)
-    item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
+    item = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?")
 
     decisions.answer(tmp_path, item.decision_id, "postgres", by="niksa")
 
-    (event,) = policy.wait_events(tmp_path, "epic.1")
+    (event,) = policy.wait_events(tmp_path, "b-epic.1")
     assert (event.wait_id, event.kind, event.subject) == (
         item.decision_id,
         "decision",
@@ -341,11 +348,11 @@ def test_a_delegated_answer_is_recorded_as_the_wait_it_removed(
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
     _pin_clocks(monkeypatch, fake, waited_s=45)
-    item = decisions.enqueue(tmp_path, "epic", "needs-input", "which db?")
+    item = decisions.enqueue(tmp_path, "b-epic", "needs-input", "which db?")
 
     decisions.answer(tmp_path, item.decision_id, "postgres", by=f"{decisions.DECIDER_BY_PREFIX}c")
 
-    summary = policy.session_wait_summary(tmp_path, "epic")
+    summary = policy.session_wait_summary(tmp_path, "b-epic")
     assert (summary.human_wait_s, summary.delegated_wait_s) == (0, 45)
     assert [(e.answered_by, e.delegated) for e in summary.events] == [("decider:c", True)]
 
@@ -358,12 +365,12 @@ def test_an_unusable_enqueue_stamp_records_no_wait(
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
     fake.now = "whenever"  # a tracker stamp nothing can measure from
-    item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
+    item = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?")
 
     answered = decisions.answer(tmp_path, item.decision_id, "postgres", by="human")
 
     assert answered.answer == "postgres"  # the answer still lands
-    assert policy.wait_events(tmp_path, "epic.1") == ()
+    assert policy.wait_events(tmp_path, "b-epic.1") == ()
 
 
 # --- Notify hook (design 7.3) --------------------------------------------------
@@ -382,8 +389,8 @@ def test_notify_fires_only_for_human_required(
     calls: list[list[str]] = []
     monkeypatch.setattr(decisions.subprocess, "run", lambda argv, **_k: calls.append(list(argv)))
 
-    item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
-    decisions.enqueue(tmp_path, "epic.1", "escalation", "cap hit", human_required=False)
+    item = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?")
+    decisions.enqueue(tmp_path, "b-epic.1", "escalation", "cap hit", human_required=False)
 
     assert calls == [["notify-send", "basicly", item.decision_id, "which db?"]]
 
@@ -394,7 +401,7 @@ def test_notify_disabled_and_failing_are_tolerated(
     """No notify_command means silence; a broken one must never fail the enqueue."""
     fake = _FakeBr()
     _install(monkeypatch, fake)
-    decisions.enqueue(tmp_path, "epic.1", "needs-input", "no config, no crash")
+    decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "no config, no crash")
 
     config = PolicyConfig(
         required_gates=("verify",), max_rework=2, notify_command=("does-not-exist",)
@@ -405,7 +412,7 @@ def test_notify_disabled_and_failing_are_tolerated(
         raise OSError("command not found")
 
     monkeypatch.setattr(decisions.subprocess, "run", boom)
-    item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "still enqueued")
+    item = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "still enqueued")
     assert decisions.get(tmp_path, item.decision_id) is not None
 
 
@@ -419,10 +426,10 @@ def _decider_setup(
     *,
     usage_format: str | None = None,
 ) -> tuple[_FakeBr, decisions.DecisionItem]:
-    fake = _FakeBr(records={"epic": {"status": "open", "description": "db is postgres"}})
+    fake = _FakeBr(records={"b-epic": {"status": "open", "description": "db is postgres"}})
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
-    item = decisions.enqueue(tmp_path, "epic", "needs-input", "which db?")
+    item = decisions.enqueue(tmp_path, "b-epic", "needs-input", "which db?")
     # deny_style is what makes the fake confinable; without one, invoke_decider
     # refuses to dispatch it at all (basicly-kjc5.16) - which every decider path
     # here assumes it got past. The unconfinable case has its own test.
@@ -465,7 +472,7 @@ def test_decider_records_a_derivable_answer_with_attribution(
     })
     _fake, item = _decider_setup(monkeypatch, tmp_path, verdict)
 
-    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert isinstance(outcome, decisions.DecisionItem)
     assert outcome.answer == "postgres"
@@ -504,7 +511,7 @@ def test_decider_dispatch_is_bounded_and_metered(
         phases.append(inputs.get("phase"))
 
     monkeypatch.setattr(decisions.runner, "record_dispatch", _record)
-    decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert seen["timeout"] == 3600.0  # the [runner] runner_timeout default
     assert seen["capture_usage"] is True
@@ -589,16 +596,16 @@ def test_a_delegated_decision_does_not_halt_the_grant(
     """
     fake, item = _decider_setup(monkeypatch, tmp_path, "", usage_format=runner.CLAUDE_JSON)
     _claude_like_decider(monkeypatch)
-    fake.comments.setdefault("epic", []).append("[harness-policy] grant level=L3 budget=8000000")
+    fake.comments.setdefault("b-epic", []).append("[harness-policy] grant level=L3 budget=8000000")
 
-    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert isinstance(outcome, decisions.DecisionItem)
     assert outcome.answer == "postgres"
-    meter = policy.session_spend(tmp_path, "epic")
+    meter = policy.session_spend(tmp_path, "b-epic")
     assert meter.unmetered_dispatches == 0
     assert meter.measured_tokens == 18  # the adapter's own numbers, not a chars/4 floor
-    status = policy.spend_status(tmp_path, "epic")
+    status = policy.spend_status(tmp_path, "b-epic")
     assert status.halted is False, status.detail
 
 
@@ -616,14 +623,14 @@ def test_a_decision_survives_a_line_the_cli_printed_before_its_envelope(
     _claude_like_decider(
         monkeypatch, noise="Warning: no stdin data received in 3s, proceeding without it.\n"
     )
-    fake.comments.setdefault("epic", []).append("[harness-policy] grant level=L3 budget=8000000")
+    fake.comments.setdefault("b-epic", []).append("[harness-policy] grant level=L3 budget=8000000")
 
-    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert isinstance(outcome, decisions.DecisionItem)
     assert outcome.answer == "postgres"
-    assert policy.session_spend(tmp_path, "epic").unmetered_dispatches == 0
-    assert policy.spend_status(tmp_path, "epic").halted is False
+    assert policy.session_spend(tmp_path, "b-epic").unmetered_dispatches == 0
+    assert policy.spend_status(tmp_path, "b-epic").halted is False
 
 
 def test_an_unmetered_decider_dispatch_is_what_halted_the_grant(
@@ -638,12 +645,12 @@ def test_an_unmetered_decider_dispatch_is_what_halted_the_grant(
     """
     fake, item = _decider_setup(monkeypatch, tmp_path, "", usage_format=runner.CLAUDE_JSON)
     _claude_like_decider(monkeypatch, honour_flag=False)
-    fake.comments.setdefault("epic", []).append("[harness-policy] grant level=L3 budget=8000000")
+    fake.comments.setdefault("b-epic", []).append("[harness-policy] grant level=L3 budget=8000000")
 
-    delegated = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    delegated = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
     assert isinstance(delegated, decisions.DecisionItem)
 
-    status = policy.spend_status(tmp_path, "epic")
+    status = policy.spend_status(tmp_path, "b-epic")
     assert status.halted is True
     assert status.unmetered_dispatches == 1
     assert "cannot be metered" in status.detail
@@ -683,7 +690,7 @@ def test_the_decider_verdict_survives_its_usage_envelope(
     _fake, item = _decider_setup(monkeypatch, tmp_path, stdout, usage_format=usage_format)
     monkeypatch.setattr(decisions.runner, "record_dispatch", lambda *_a, **_k: None)
 
-    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert isinstance(outcome, decisions.DecisionItem)
     assert outcome.answer == "postgres"
@@ -715,7 +722,7 @@ def test_decider_timeout_abstains(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     )
     monkeypatch.setattr(decisions.runner, "record_dispatch", lambda *_a, **_k: None)
 
-    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert isinstance(outcome, decisions.DeciderVerdict)
     assert outcome.abstain is True and "runner_timeout" in outcome.rationale
@@ -748,7 +755,7 @@ def test_decider_dispatches_a_confined_spec_not_the_selected_one(
     monkeypatch.setattr(decisions.runner, "run", capturing_run)
     monkeypatch.setattr(decisions.runner, "record_dispatch", lambda *_a, **_k: None)
 
-    decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert len(dispatched) == 1
     assert dispatched[0].deny_tools, "the decider was dispatched unconfined"
@@ -763,10 +770,10 @@ def test_decider_abstains_when_the_grant_budget_is_spent(
     ``loop decide`` and the supervisor's autonomous pass are bound by one rule.
     """
     fake, item = _decider_setup(monkeypatch, tmp_path, '{"decision": "postgres", "abstain": false}')
-    fake.comments.setdefault("epic", []).append("[harness-policy] grant level=L2 budget=100")
+    fake.comments.setdefault("b-epic", []).append("[harness-policy] grant level=L2 budget=100")
     run_record.record(
         tmp_path,
-        "epic",
+        "b-epic",
         run_record.build_record(
             agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=100
         ),
@@ -777,7 +784,7 @@ def test_decider_abstains_when_the_grant_budget_is_spent(
         lambda *_a, **_k: pytest.fail("must not delegate past the spend ceiling"),
     )
 
-    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert isinstance(outcome, decisions.DeciderVerdict)
     assert outcome.abstain is True
@@ -791,16 +798,16 @@ def test_decider_runs_while_the_grant_is_inside_its_budget(
 ) -> None:
     """A funded grant still delegates - the ceiling must not disable the decider."""
     fake, item = _decider_setup(monkeypatch, tmp_path, '{"decision": "postgres", "abstain": false}')
-    fake.comments.setdefault("epic", []).append("[harness-policy] grant level=L2 budget=100")
+    fake.comments.setdefault("b-epic", []).append("[harness-policy] grant level=L2 budget=100")
     run_record.record(
         tmp_path,
-        "epic",
+        "b-epic",
         run_record.build_record(
             agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=99
         ),
     )
 
-    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert isinstance(outcome, decisions.DecisionItem)
     assert outcome.answer == "postgres"
@@ -823,7 +830,7 @@ def test_decider_abstains_when_the_runner_cannot_be_confined(
         lambda *_a, **_k: pytest.fail("an unconfinable decider must never be dispatched"),
     )
 
-    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert isinstance(outcome, decisions.DeciderVerdict)
     assert outcome.abstain is True and "confinement" in outcome.rationale
@@ -843,7 +850,7 @@ def test_decider_abstention_leaves_the_item_with_the_human(
     })
     _fake, item = _decider_setup(monkeypatch, tmp_path, verdict)
 
-    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     assert isinstance(outcome, decisions.DeciderVerdict)
     assert outcome.abstain is True
@@ -864,7 +871,7 @@ def test_decider_cap_makes_remaining_decisions_human_only(
     _fake, item = _decider_setup(monkeypatch, tmp_path, verdict)
     config = PolicyConfig(required_gates=("verify",), max_rework=2, decider_max_decisions=0)
 
-    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "epic", config=config)
+    outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic", config=config)
 
     assert isinstance(outcome, decisions.DeciderVerdict)
     assert outcome.abstain is True
@@ -881,8 +888,8 @@ def test_answer_rejects_attribution_that_is_not_a_single_token(
     fake = _FakeBr()
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
-    item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
-    other = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which cache?")
+    item = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?")
+    other = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which cache?")
 
     for by in (f"evil id={other.decision_id}", "human\nextra", "two words", "a=b"):
         with pytest.raises(ValueError, match="attribution"):
@@ -901,16 +908,16 @@ def test_reenqueue_after_answer_reopens_a_new_generation(
     fake = _FakeBr()
     _install(monkeypatch, fake)
     notified = _no_notify(monkeypatch)
-    first = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
+    first = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?")
     decisions.answer(tmp_path, first.decision_id, "postgres", by="human")
 
-    reopened = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
+    reopened = decisions.enqueue(tmp_path, "b-epic.1", "needs-input", "which db?")
 
     assert reopened.decision_id != first.decision_id
     assert reopened.decision_id.endswith("-2")
     assert reopened.pending
     assert len(notified) == 2  # the re-opened item notifies again
-    pending_ids = [i.decision_id for i in decisions.pending(tmp_path, "epic.1")]
+    pending_ids = [i.decision_id for i in decisions.pending(tmp_path, "b-epic.1")]
     assert pending_ids == [reopened.decision_id]
 
 
@@ -926,12 +933,12 @@ def test_decider_answer_persists_the_audit_trail(
     })
     fake, item = _decider_setup(monkeypatch, tmp_path, verdict)
 
-    decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     # Not simply the last comment: recording an answer also closes the item's
     # wait interval (basicly-kjc5.51), which lands after it.
     answer_marker = next(
-        text for text in fake.comments["epic"] if f"id={item.decision_id} answered" in text
+        text for text in fake.comments["b-epic"] if f"id={item.decision_id} answered" in text
     )
     assert "corpus says so" in answer_marker
     assert "0.9" in answer_marker
@@ -1004,7 +1011,7 @@ def test_decider_counts_and_records_under_one_lock(
     module lock is held. Without it, N judges each pass a check taken before a
     dispatch that takes minutes, and the session overshoots the cap.
     """
-    fake = _FakeBr(records={"epic": {"status": "open", "description": "db is postgres"}})
+    fake = _FakeBr(records={"b-epic": {"status": "open", "description": "db is postgres"}})
     _install(monkeypatch, fake)
     _no_notify(monkeypatch)
     verdict = json.dumps({
@@ -1013,7 +1020,7 @@ def test_decider_counts_and_records_under_one_lock(
         "confidence": 0.9,
         "abstain": False,
     })
-    item = decisions.enqueue(tmp_path, "epic", "needs-input", "which db?")
+    item = decisions.enqueue(tmp_path, "b-epic", "needs-input", "which db?")
     # deny_style is what makes the fake confinable; without one, invoke_decider
     # refuses to dispatch it at all (basicly-kjc5.16) - which every decider path
     # here assumes it got past. The unconfinable case has its own test.
@@ -1063,10 +1070,10 @@ def test_decider_counts_and_records_under_one_lock(
         lambda *a, **k: (events.append("answer"), real_answer(*a, **k))[1],
     )
 
-    decisions.invoke_decider(tmp_path, item.decision_id, "epic")
+    decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
     # The pre-dispatch count is outside the lock (a cheap early exit); the
     # re-check and the write must sit inside one acquire/release pair.
     guarded = events[events.index("acquire") : events.index("release")]
     assert guarded == ["acquire", "count", "answer"], events
-    assert decisions.decider_answers_count(tmp_path, "epic") == 1
+    assert decisions.decider_answers_count(tmp_path, "b-epic") == 1

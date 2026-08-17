@@ -7,7 +7,7 @@ numbers it has to report. Three things can each make it fail open, and each is p
   ``test_a_directive_is_read_the_way_ruff_reads_it`` were run through ruff 0.14 itself on
   2026-08-08; every case that says "suppressed" was observed to suppress and every case that
   says "not a directive" was observed to warn. A substring count would inflate the debt with
-  comments that silence nothing, and `src/basicly/br.py:70` is one of those today.
+  comments that silence nothing, and `src/basicly/tracker.py:70` is one of those today.
 * **A marker in a string is a mention.** Comments come from :mod:`tokenize`, which is what
   lets this file and the gate spell the marker throughout without counting themselves —
   ``test_neither_the_gate_nor_this_test_declares_a_suppression`` is what proves it.

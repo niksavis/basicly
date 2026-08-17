@@ -22,18 +22,14 @@ engine under test.
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from basicly import br, loop, loop_state, merge, policy, runner, supervise, worktree
-
-needs_br = pytest.mark.skipif(
-    br.which() is None, reason="the beads tracker (br) is not installed on this machine"
-)
+from basicly import loop, loop_state, merge, policy, runner, supervise, tracker, worktree
+from tests import flipped_tracker
 
 # A verify check the test can make fail on demand, so a red landing is a real
 # subprocess verdict rather than a patched return value. Uses the running
@@ -76,9 +72,29 @@ def _git(cwd: Path, *args: str) -> str:
     return proc.stdout
 
 
-def _br(cwd: Path, *args: str) -> str:
-    """Run the real ``br``, failing loudly — the fixture has no tracker to fake."""
-    return br.run_br(cwd, list(args)).stdout
+# The fixture's root record. Every bead a test creates is a child of it, because a mint
+# with no parent needs a declared `[tracker] prefix` and the fixture's config is what the
+# test is *not* about (`owned_write.create`).
+_ROOT = "fx-1"
+
+
+def _seed_tracker(repo: Path) -> None:
+    """Give *repo* a ledger holding the root every created bead hangs off.
+
+    The kit is copied in rather than installed, because these tests run the loop and not
+    the installer; the root is opened through the kit for the same reason.
+    """
+    flipped_tracker.flipped_repo(repo)
+    flipped_tracker.seed(repo, _ROOT, title="the fixture root", issue_type="epic")
+
+
+def _tracker(cwd: Path, *args: str) -> None:
+    """One tracker write through the engine seam, failing loudly.
+
+    The fixture has no tracker to fake: these tests exercise the loop against a real
+    ledger, so a write that did not land has to stop the test rather than be absorbed.
+    """
+    tracker.write(cwd, list(args))
 
 
 def _commit(cwd: Path, path: str, body: str, message: str) -> None:
@@ -87,24 +103,31 @@ def _commit(cwd: Path, path: str, body: str, message: str) -> None:
     _git(cwd, "commit", "-m", message)
 
 
-def _create_bead(repo: Path, title: str, *, issue_type: str = "task") -> str:
-    """Create one bead carrying acceptance criteria, so the DoR gate passes."""
-    out = _br(
+def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: str = _ROOT) -> str:
+    """Create one bead carrying acceptance criteria, so the DoR gate passes.
+
+    *parent* is an argument rather than always the fixture root because the store mints a
+    child id *under its parent*: a test that then adds its own ``parent-child`` edge would
+    give the record two parents, and the fan-out reads the wrong one.
+    """
+    return tracker.create_record(
         repo,
-        "create",
-        title,
-        "-t",
-        issue_type,
-        "-d",
-        f"## Acceptance Criteria\n\n- Given the fixture when {title} then it lands\n",
-        "--json",
+        [
+            "create",
+            title,
+            "-t",
+            issue_type,
+            "-d",
+            f"## Acceptance Criteria\n\n- Given the fixture when {title} then it lands\n",
+            "--parent",
+            parent,
+            "--json",
+        ],
     )
-    return str(json.loads(out)["id"])
 
 
 def _show(repo: Path, issue_id: str) -> dict:
-    data = json.loads(_br(repo, "show", issue_id, "--json"))
-    return data[0] if isinstance(data, list) else data
+    return tracker.read_record(repo, issue_id) or {}
 
 
 def _seed_repo(tmp_path: Path, runner_config: str) -> Path:
@@ -120,8 +143,7 @@ def _seed_repo(tmp_path: Path, runner_config: str) -> Path:
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "chore: seed the fixture repo")
 
-    _br(repo, "init", "--prefix", "fx")
-    _br(repo, "sync", "--flush-only")
+    _seed_tracker(repo)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "chore: initialize the beads workspace")
     return repo
@@ -163,7 +185,6 @@ def _green(issue_id: str) -> supervise.LaneOutcome:
     )
 
 
-@needs_br
 def test_a_supervisor_pass_lands_two_lanes_in_dependency_order(harness_repo: Path) -> None:
     """Two green lanes land in ``br``'s dependency order, not in arrival order.
 
@@ -175,12 +196,10 @@ def test_a_supervisor_pass_lands_two_lanes_in_dependency_order(harness_repo: Pat
     """
     repo = harness_repo
     root = _create_bead(repo, "the session root", issue_type="epic")
-    first = _create_bead(repo, "the earlier lane")
-    second = _create_bead(repo, "the later lane")
-    for child in (first, second):
-        _br(repo, "dep", "add", child, root, "-t", "parent-child")
+    first = _create_bead(repo, "the earlier lane", parent=root)
+    second = _create_bead(repo, "the later lane", parent=root)
     # The later lane genuinely depends on the earlier one.
-    _br(repo, "dep", "add", second, first, "-t", "blocks")
+    _tracker(repo, "dep", "add", second, first, "-t", "blocks")
 
     trees = {}
     for name, child in (("first", first), ("second", second)):
@@ -212,7 +231,6 @@ def test_a_supervisor_pass_lands_two_lanes_in_dependency_order(harness_repo: Pat
         assert loop_state.read_node_state(repo, child).gates.required_passed == ("verify",)
 
 
-@needs_br
 def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo: Path) -> None:
     """Every landing rewrites ``.beads/**``; that must not read as a scope collision.
 
@@ -222,10 +240,8 @@ def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo
     """
     repo = harness_repo
     root = _create_bead(repo, "the coupling root", issue_type="epic")
-    first = _create_bead(repo, "lane alpha")
-    second = _create_bead(repo, "lane beta")
-    for child in (first, second):
-        _br(repo, "dep", "add", child, root, "-t", "parent-child")
+    first = _create_bead(repo, "lane alpha", parent=root)
+    second = _create_bead(repo, "lane beta", parent=root)
 
     for name, child in (("alpha", first), ("beta", second)):
         _to_build(repo, child)
@@ -255,7 +271,6 @@ def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo
         assert blocking == set(), f"{child} gained an invented coupling: {blocking}"
 
 
-@needs_br
 def test_a_pass_attributes_the_coupling_the_same_way_whichever_lane_bounced(
     harness_repo: Path,
 ) -> None:
@@ -269,11 +284,11 @@ def test_a_pass_attributes_the_coupling_the_same_way_whichever_lane_bounced(
     """
     repo = harness_repo
     root = _create_bead(repo, "the attribution root", issue_type="epic")
-    alpha = _create_bead(repo, "lane declaring the shared file")
-    beta = _create_bead(repo, "lane declaring the shared tree")
+    alpha = _create_bead(repo, "lane declaring the shared file", parent=root)
+    beta = _create_bead(repo, "lane declaring the shared tree", parent=root)
     for child, scope in ((alpha, "src/shared.py"), (beta, "src/*.py")):
-        _br(repo, "dep", "add", child, root, "-t", "parent-child")
-        _br(
+        _tracker(repo, "dep", "add", child, root, "-t", "parent-child")
+        _tracker(
             repo,
             "update",
             child,

@@ -42,59 +42,28 @@ rank1_floor = 0.85
 rank1_floor_high_water = 0.85
 
 [tracker]
-# Which step of the work-tracker cutover this repo is on (basicly-vkh0.19,
-# docs/requirements/work-tracker.md §5). Three values, and each is a rung:
+# Which store the engine reads and writes. There is one: the append-only event log
+# under `.basicly/ledger/`, committed and carried by git (basicly-vkh0.19,
+# docs/requirements/work-tracker.md).
 #
-#   external  br is the only store. The pre-cutover behaviour, and what a consumer
-#             who has never installed the kit's tracker gets.
-#   dual      Every write the engine makes through the br seam is recorded on the
-#             owned event log under `.basicly/ledger/` as well. br stays
-#             authoritative for every read. A write the ledger cannot record fails
-#             the command — the two stores are only worth running side by side
-#             while they hold the same facts.
-#   owned     The flip. `br.read_record` — the one record-read seam — answers out of
-#             the ledger; br is *still written*, because the other ten subcommands
-#             the engine spawns still read out of it.
+# **The ladder collapsed to its last rung** (basicly-vkh0.42.7). It ran `external` ->
+# `dual` -> `owned` while a second store existed: the import replayed that store's
+# export into the ledger, a shadow differential compared the two record by record until
+# it came back clean *and* conclusive over a non-empty scope (64 records, 18 adopted,
+# recorded on `basicly-vkh0.29`), the dual write kept both in step, and the flip made
+# the ledger authoritative. Then the second store was deleted, and with it the other
+# two values — a repository declaring one would be stating a behaviour no code performs.
 #
-# **Steps 1 to 3 have run, which is why the value below is `dual`**, and the rung
-# above it is not a config edit.
+# The key survives its ladder on purpose: a consumer's committed `mode = "owned"` must
+# not be refused as an unknown name. A value outside it is refused rather than
+# defaulted, for the reason the schema refuses an unrecognised *key*.
 #
-# Step 1 is the import, `basicly tracker import`: it replays the committed export
-# into `.basicly/ledger/`, every event carrying the export's digest, and `--dry-run`
-# reports how far behind the ledger is without writing anything. It is re-runnable
-# (basicly-vkh0.23) — before that it was a hand-run one-shot, so the ledger drifted
-# and no fresh consumer could build one at all.
-#
-# Step 2 is the shadow differential, `basicly tracker shadow` — it reads the owned
-# ledger against the **live** br, writes to neither, and answers `clean` and
-# `conclusive` as two separate verdicts. Live and not a re-import, because an import
-# cannot express a deletion and two derivatives of one lossy snapshot agree with each
-# other and prove nothing (§5.1). It is judged on records created after the cutover
-# began (basicly-c357); anything older is excused against the import's own watermark,
-# and any residual pre-cutover delta is **declared** once by
-# `shadow --declare-history`. A second declaration is refused, and the import refuses
-# a ledger already holding a post-cutover record — both because closing that gap after
-# the dual write starts would make the agreement prove nothing. Run the command for
-# today's verdict rather than reading a count here; the scope grows with every landing.
-#
-# Step 3 is `dual` itself: every accepted write also lands in the owned ledger through
-# `br._mirror_write`, which **raises** on any failure rather than logging, so a write
-# surface with no translator stops the work instead of silently diverging. A write made
-# by spawning `br` by hand never reaches that seam: route one through
-# `basicly tracker write` instead, and repair a bypass that has already happened with
-# `basicly tracker adopt` (basicly-vkh0.24). The repair is re-runnable and marks what it
-# adopted, so the differential judges those records without ever counting their agreement
-# as evidence that the dual write works.
-#
-# Step 4 ran on 2026-08-17. Its precondition was a differential clean *and* conclusive
-# over a non-empty scope: 64 records in scope, 18 adopted, clean and conclusive, recorded
-# on `basicly-vkh0.29`. The engine reads and writes from the ledger and spawns nothing on
-# a leaf's walk (`basicly-wpc8`, `basicly-wpc8.1`); the six remaining spawn sites are the
-# external halves of mode-branching seams and none fires here.
-#
-# The external store is still on disk and still committed. Deleting it is
-# `basicly-vkh0.42.7`, and until it lands `external` and `dual` stay honest rungs for a
-# consumer who has not installed the kit's tracker.
+# There is no import to run and no second copy to reconcile. `git status` says whether
+# this checkout is up to date with its branch, and
+# `uv run python .basicly/core/kit/tracker/fsck.py .basicly/ledger` says whether the log
+# is internally consistent. A hand-authored write goes through
+# `basicly tracker write --`, so the read-only guard, the argv classification and the
+# event translation all apply to it; appending to the log by hand bypasses every one.
 mode = "owned"
 
 # The id prefix a **root** record is minted under, `<prefix>-<root>`. A child inherits
@@ -350,13 +319,12 @@ name = "pytest"
 # under the core count — at concurrency 5 that is 4 workers on a 16-32 core box,
 # where `auto` would ask for 5x32.
 #
-# The previous justification here — a machine-global br write lock at
-# ~/.beads/.write.lock whose 30s timeout `auto` stampeded (basicly-9s59) — is
-# STALE and was removed rather than left to mislead. Measured 2026-08-01 on br
-# 0.2.16, 32 cores: `-n auto` ran 2119 passed in 17.5s with zero lock failures,
-# and again in 19.3s while 1297 concurrent external `br init` operations were
-# driven against the same machine. ~/.beads/ does not exist. See basicly-m4zv.14
-# for the full probe. Re-measure before trusting either number on another host.
+# The previous justification here — a machine-global tracker write lock whose 30s
+# timeout `auto` stampeded (basicly-9s59) — was STALE before that store was deleted
+# and is recorded as removed rather than left to mislead. Measured 2026-08-01 on 32
+# cores: `-n auto` ran 2119 passed in 17.5s with zero lock failures, and again in
+# 19.3s under 1297 concurrent writes against the same machine; the lock it named did
+# not exist. See basicly-m4zv.14. Re-measure before trusting either number elsewhere.
 command = ["pytest", "-q", "-n", "4"]
 modes = ["full"]
 
@@ -558,8 +526,8 @@ modes = ["fast", "full"]
 # (11 recorded correct firings), and `loop kill` still needs a human at every level because
 # it is the only verb that removes a requirement rather than routing work.
 autonomy = "L3"
-# Gate names (from [verify] / br gate report) that MUST pass to advance. Any
-# recorded gate not listed here is advisory (never blocks).
+# Gate names (from [verify], or recorded through the tracker write seam) that MUST pass
+# to advance. Any recorded gate not listed here is advisory (never blocks).
 required_gates = ["verify"]
 # Rework retries allowed before a node escalates to a human.
 max_rework = 2

@@ -122,7 +122,7 @@ def test_wrapper_flag_value_is_never_credited_as_the_tool(tmp_path: Path) -> Non
 
 
 def test_command_substitution_credits_the_command_not_its_subcommand(tmp_path: Path) -> None:
-    """`id=$(uv run br create ...)` credits br, not `run` or `create`.
+    """`id=$(uv run br create ...)` credits tracker, not `run` or `create`.
 
     A substitution glued to the assignment token left the wrapper subcommand as
     the segment head: `run` reached 64 counts that way (basicly-m0p1).

@@ -82,11 +82,9 @@ before it bites at commit time:
 basicly hooks-check
 ```
 
-Anyone using the harness loop additionally needs a redirect-capable
-[`br`](https://github.com/Dicklesworthstone/beads_rust) at **exactly 0.2.16**. That
-is a pin, not a floor: the harness warns on any other version in either direction,
-because a newer `br` has broken tracker calls here as surely as an older one. Install
-it by digest with `python .scripts/install_br.py --bin-dir <dir-on-PATH>`.
+The harness loop needs nothing further. The work tracker is an append-only event
+ledger the repository owns and commits, so there is no binary to install and no
+version to keep in step across a team.
 
 ## Uninstall
 
@@ -101,5 +99,5 @@ hooks. Your overlay, `basicly.toml`, and your own content survive.
 Add `--purge` to also remove the overlay, `basicly.toml`, and the scaffolded VS
 Code tasks and CI workflow — the last two only while still unedited.
 
-The tracker is not basicly's to delete: `.beads/` and your issue history stay
+The tracker is not basicly's to delete: `.basicly/ledger/` and your record history stay
 either way.

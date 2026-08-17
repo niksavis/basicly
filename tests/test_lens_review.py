@@ -19,7 +19,7 @@ def comments(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     """Capture what reaches the tracker; these tests run outside a `br` store."""
     written: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        lens_review.br, "add_comment", lambda _r, issue, body: written.append((issue, body))
+        lens_review.tracker, "add_comment", lambda _r, issue, body: written.append((issue, body))
     )
     return written
 
@@ -83,7 +83,7 @@ def test_a_second_review_of_one_lens_is_kept_beside_the_first(
 def recorded(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
     """The markers the tracker answers with; these tests run outside a `br` store."""
     rows: list[dict] = []
-    monkeypatch.setattr(lens_review.br, "try_read_comments", lambda _r, _i: list(rows))
+    monkeypatch.setattr(lens_review.tracker, "try_read_comments", lambda _r, _i: list(rows))
     return rows
 
 
@@ -164,7 +164,7 @@ def test_a_store_that_cannot_answer_costs_the_findings_and_never_a_verdict(
     `try_read_comments` is the soft seam and answers `[]` when the store is unusable;
     every lens then reports as unrecorded, which is what the brief says out loud.
     """
-    monkeypatch.setattr(lens_review.br, "try_read_comments", lambda _r, _i: [])
+    monkeypatch.setattr(lens_review.tracker, "try_read_comments", lambda _r, _i: [])
 
     read = lens_review.latest_per_lens(tmp_path, "i")
 

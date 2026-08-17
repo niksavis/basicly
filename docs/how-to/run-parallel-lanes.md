@@ -37,7 +37,7 @@ demonstration = "run `basicly loop status <issue>` as `docs/loop.md` documents i
 
 - `depends_on` names **sibling titles**, not issue ids — the plan is written
   before anything is created. Write `depends_on = ["Add an install note"]` and
-  that edge is recorded as a `blocks` dependency on the tracker, so `br dep tree`
+  that edge is recorded as a `blocks` dependency on the tracker, so `basicly tracker blocked`
   carries the ordering even between children whose scopes never overlap and
   nothing would otherwise serialize. `[]` is a declaration ("nothing blocks
   this"); omitting the key is not, and is refused.
@@ -105,7 +105,7 @@ Read three things off it:
   means the scopes collide and you are paying for isolation you do not get.
   The grouping reads **scopes only**, so it is an upper bound: a `depends_on`
   you declared also orders two lanes, and the group count does not show it —
-  read `br dep tree` after creating them for the ordering you will actually get.
+  read `basicly tracker blocked` after creating them for the ordering you will get.
 - **Sizing.** Each child is estimated from what its scope globs actually match.
   `scope 0` means the globs matched no file yet — greenfield, or a broken path.
 - **The band verdict.** Only `REFUSED - too large, split it` blocks a dispatch.
@@ -160,7 +160,7 @@ pass start.
 ## 4. Clear what the verdict named
 
 **Dirty base**: commit it. Every grant, checkpoint and answer writes a tracker
-marker that dirties `.beads/issues.jsonl`, so expect to commit between steps.
+marker that dirties the committed ledger, so expect to commit between steps.
 
 **The root's decompose checkpoint**: a covering grant does not serve this one.
 Approve it once, with the command preflight printed:

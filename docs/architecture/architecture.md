@@ -657,9 +657,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | chars | cap | headroom |
 | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 8896 | 9000 | 104 |
-| `AGENTS.md` (codex) | 14344 | 16000 | 1656 |
-| `.github/copilot-instructions.md` (copilot) | 8995 | 9000 | 5 |
+| `.claude/CLAUDE.md` (claude) | 8893 | 9000 | 107 |
+| `AGENTS.md` (codex) | 14341 | 16000 | 1659 |
+| `.github/copilot-instructions.md` (copilot) | 8992 | 9000 | 8 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -1341,7 +1341,9 @@ and overrides were cut from scope. The `basicly catalog verify` output covers th
 | `basicly loop improve [--dry-run]` | The second loop shape, taking no issue: run the repository's improvement controller, which measures one declared property, selects one target deterministically and files at most one lane |
 | `basicly commit <description>` | Assemble the conventional-commit envelope from engine state and commit the staged change. Only the description is authored; the commit-message hooks stay the gate |
 | `basicly runner list\|dry-run\|run` | Agent-agnostic headless runner adapters; the dry run prints the exact command an adapter would execute before any live invocation |
-| `basicly tracker import\|shadow\|write\|adopt` | The owned-tracker cutover surface: import folds the export into the event log; shadow compares the two stores record by record against the live binary; write puts one human tracker write through the engine seam so both stores move together; adopt reconciles a record that reached the external tracker outside that seam, marked so its own agreement is never counted as evidence |
+| `basicly tracker ready\|blocked\|stats\|show\|list` | The backlog, read out of the owned ledger: ready is the ranked set that can be worked now, blocked names what holds each record that is not ready, stats totals the graph by status, and show and list read one record and the set. The engine resolves the ledger's location, so a consumer never retypes it |
+| `basicly tracker write` | One human tracker write through the engine seam, so it lands on the store the engine reads rather than beside it |
+| `basicly tracker import\|shadow\|adopt` | The owned-tracker cutover surface: import folds an external export into the event log; shadow compares the two stores record by record; adopt reconciles a record that reached the external tracker outside the seam, marked so its own agreement is never counted as evidence |
 | `basicly board validate` | Read a board snapshot and say whether this consumer can render it. A major-version mismatch refuses; an unknown key is reported and admitted |
 | `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Bump the single-sourced version, regenerate version-stamped projections in a fresh interpreter, rewrite install pins on the consumer surfaces, fold the per-lane changelog fragments into a dated section, commit, and create the annotated tag. **Never pushes** |
 
@@ -3013,7 +3015,7 @@ history: the owned fold reports `missing=('verify',)` where `br` reports `passed
 on record after record, and the baseline excuses all of them. So the shadow's `clean: yes`
 today is a statement about the baseline's coverage and not about agreement on gate state.
 **A kind split cannot make that verdict worse, and it must not be read as making it better.**
-The mirror keeps translating `br comments add` into a `comment` event until the flip
+The translator keeps turning a `comments add` write into a `comment` event until the flip
 (`basicly-vkh0.27`, `basicly-vkh0.29`), so `br`'s word survives on the seam by design; the
 alias makes the owned side derive the same state from those events, which is precisely the
 condition for the verdict to stay unchanged. **The check that the split preserved the fold is
@@ -4453,7 +4455,7 @@ Use `lane`, or `unit` where the count is what matters.
 because a comment was the only extensible field that binary offered, and it came to carry both
 human prose and every machine marker the loop derives state from. Use `note` for the prose and
 the typed kind for the state. **The word remains correct in exactly two places**, and neither
-is a definition: the `br comments add` command the mirror translates, until the flip removes
+is a definition: the `comments add` write the translator turns into an event, until the flip removes
 it, and the `comment` events already on disk, which are permanent and which the reader's alias
 resolves. See [32.3](#323-the-event-vocabulary) and
 [D-34](#d-34--one-kind-for-prose-and-typed-kinds-for-machine-state).

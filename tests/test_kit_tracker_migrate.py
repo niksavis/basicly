@@ -36,12 +36,13 @@ from typing import Any
 
 import pytest
 
+from tests import tracker_corpus
+
 REPO_ROOT = Path(__file__).parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 MIGRATE_SOURCE = KIT_DIR / "migrate.py"
 EVENTS_SOURCE = KIT_DIR / "events.py"
 IDS_SOURCE = KIT_DIR / "ids.py"
-LIVE_EXPORT = REPO_ROOT / ".beads" / "issues.jsonl"
 
 
 def _load(path: Path, name: str) -> ModuleType:
@@ -60,7 +61,8 @@ migrate = _load(MIGRATE_SOURCE, "tracker_migrate")
 # against the wrong one passes for the wrong reason.
 events = migrate.events
 
-SOURCE = "beads/issues.jsonl"
+SOURCE = "the committed ledger"
+
 RECORD_A = "basicly-aa11"
 RECORD_B = "basicly-bb22"
 RECORD_C = "basicly-cc33.4"
@@ -120,15 +122,15 @@ def _kinds(minted: list[Any]) -> dict[str, int]:
 def test_the_live_trackers_records_and_edges_all_arrive_with_import_provenance(
     tmp_path: Path,
 ) -> None:
-    """The acceptance criterion, against the live export rather than a fixture.
+    """The acceptance criterion, against this tracker's real history rather than a fixture.
 
     Edges are asserted as a **set equality** against the source's own dependency list: a
     subset check would pass an importer that dropped a dependency type it did not
     recognise, and a count check would pass one that wrote the same edge twice.
     """
-    snapshot = migrate.read_snapshot(LIVE_EXPORT, name=SOURCE)
+    snapshot = migrate.parse_snapshot(tracker_corpus.snapshot_text(), name=SOURCE)
     assert snapshot.unreadable == ()
-    assert len(snapshot.records) > 500, "the live export should hold the whole tracker"
+    assert len(snapshot.records) > 500, "the corpus should hold the whole tracker"
 
     report = _import(tmp_path, snapshot)
 

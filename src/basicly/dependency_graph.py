@@ -1,24 +1,21 @@
-"""Which store answers *what does the blocking-dependency graph say* (basicly-wpc8).
+"""What the blocking-dependency graph says (basicly-wpc8).
 
-Two questions, both derived from the same edges: which records are held back by an
-unsatisfied blocker, and which records a blocking cycle runs through. The cutover rung
-decides where the edges come from — the owned ledger's fold, or a ``br blocked`` and
-``br dep cycles`` spawn.
+Two questions, both derived from the same edges in the owned ledger's fold: which records
+are held back by an unsatisfied blocker, and which records a blocking cycle runs through.
 
 The boundary is *the graph* against :mod:`basicly.gate_source`, which answers one
-record's gate rows, and against :mod:`basicly.br`, which answers one record and the
-ranked ready set. Each store answers in the engine's own shape, so the callers
+record's gate rows, and against :mod:`basicly.tracker`, which answers one record and the
+ranked ready set. The answers are in the engine's own shape, so the callers
 (`loop_state.blocked_ids`, `decompose._assert_no_new_cycles`) have one parser.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
-from basicly import br, owned_store
+from basicly import owned_store
 
 
 def _views(repo_root: Path) -> tuple[Any, Mapping[str, Any]]:
@@ -62,27 +59,9 @@ def owned_blocked(repo_root: Path) -> tuple[str, ...]:
     return tuple(blocked)
 
 
-def external_blocked(repo_root: Path) -> tuple[str, ...]:
-    """The ids ``br blocked --json`` reports.
-
-    Raises:
-        RuntimeError: br could not be run, or its reply was not usable JSON.
-    """
-    proc = br.run_br(repo_root, ["blocked", "--json"])
-    try:
-        issues = json.loads(proc.stdout)
-    except ValueError as exc:
-        raise RuntimeError(f"br blocked returned no usable JSON: {exc}") from exc
-    return tuple(
-        str(issue["id"]) for issue in issues or () if isinstance(issue, dict) and "id" in issue
-    )
-
-
 def blocked(repo_root: Path) -> tuple[str, ...]:
-    """The ids waiting on a dependency, from whichever store the declared rung names."""
-    if owned_store.tracker_mode(repo_root) == owned_store.MODE_OWNED:
-        return owned_blocked(repo_root)
-    return external_blocked(repo_root)
+    """The ids waiting on a dependency."""
+    return owned_blocked(repo_root)
 
 
 def _blocking_edges(kit_module: Any, views: Mapping[str, Any]) -> dict[str, frozenset[str]]:
@@ -174,31 +153,6 @@ def owned_cycles(repo_root: Path) -> tuple[tuple[str, ...], ...]:
     return tuple(strong_components(_blocking_edges(kit_module, views)))
 
 
-def external_cycles(repo_root: Path) -> tuple[tuple[str, ...], ...]:
-    """The record groups ``br dep cycles --blocking-only --json`` reports.
-
-    br spells a cycle either as a bare list of ids or as an object carrying ``issues``,
-    so both are read; a row in neither shape yields no members rather than raising, which
-    is the direction the caller's own refusal already handles.
-
-    Raises:
-        RuntimeError: br could not be run, or its reply was not usable JSON.
-    """
-    proc = br.run_br(repo_root, ["dep", "cycles", "--blocking-only", "--json"])
-    try:
-        report = json.loads(proc.stdout)
-    except ValueError as exc:
-        raise RuntimeError(f"br dep cycles returned no usable JSON: {exc}") from exc
-    cycles = report.get("cycles") if isinstance(report, dict) else None
-    found = []
-    for cycle in cycles if isinstance(cycles, list) else ():
-        members = cycle if isinstance(cycle, list) else cycle.get("issues", [])
-        found.append(tuple(sorted(str(member) for member in members or ())))
-    return tuple(found)
-
-
 def blocking_cycles(repo_root: Path) -> tuple[tuple[str, ...], ...]:
-    """Every blocking cycle's members, from whichever store the declared rung names."""
-    if owned_store.tracker_mode(repo_root) == owned_store.MODE_OWNED:
-        return owned_cycles(repo_root)
-    return external_cycles(repo_root)
+    """Every blocking cycle's members."""
+    return owned_cycles(repo_root)

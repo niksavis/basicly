@@ -11,8 +11,8 @@ description: Cut a release of this repository with `basicly release`, then do th
 Everything up to and including the annotated tag is one command:
 
 ```sh
-basicly release 0.6.0 --issue <beads-id> --dry-run   # pre-flight; writes nothing
-basicly release 0.6.0 --issue <beads-id>             # bump, pins, regen, changelog, commit, tag
+basicly release 0.6.0 --issue <record-id> --dry-run   # pre-flight; writes nothing
+basicly release 0.6.0 --issue <record-id>             # bump, pins, regen, changelog, commit, tag
 ```
 
 It bumps the single-sourced `__version__`, regenerates the version-stamped
@@ -49,7 +49,7 @@ Confirm it cleared with the dry run, which reports every blocking reason at once
 and writes nothing:
 
 ```sh
-uv run basicly release <next-version> --issue <beads-id> --dry-run
+uv run basicly release <next-version> --issue <record-id> --dry-run
 ```
 
 Do **not** clear a refusal by running the named tool by hand: that mints a witness
@@ -78,7 +78,7 @@ order they assemble:
 
 ```sh
 ls changelog.d/
-uv run basicly release <next-version> --issue <beads-id> --dry-run
+uv run basicly release <next-version> --issue <record-id> --dry-run
 ```
 
 A **hand-curated `[Unreleased]` body still publishes**, beside the fragments and

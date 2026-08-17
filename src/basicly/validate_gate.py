@@ -18,8 +18,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from . import integrity, policy
-from .br import read_comments as _read_comments
-from .br import write as _write
 from .config import VERIFY_GATE_PROVIDER
 from .dispatch_brief import VERDICT_PREFIX
 
@@ -27,6 +25,8 @@ from .dispatch_brief import VERDICT_PREFIX
 # and the name belongs to :mod:`basicly.integrity`, which decides the gate set a
 # level selects (basicly-7jb5).
 from .integrity import VALIDATE_GATE
+from .tracker import read_comments as _read_comments
+from .tracker import write as _write
 
 if TYPE_CHECKING:
     from pathlib import Path

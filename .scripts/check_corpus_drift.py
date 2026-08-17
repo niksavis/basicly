@@ -5,7 +5,7 @@ closed children already fixed is read as current by an agent that has no other a
 (basicly-b9ef). :mod:`basicly.corpus_drift` holds the rule and the measurement behind it —
 attribution is by *named child*, never by resemblance; this is the human-runnable half.
 
-Scope is the **committed export**, ``.beads/issues.jsonl``, so the gate runs in a fresh
+Scope is the **committed tracker**, the owned event log, so the gate runs in a fresh
 clone with no tracker binary and reports what a reviewer can see in the same diff as the
 correction. It reads open parents only: a closed bead's statement is history and nothing
 dispatches a decider on it.
@@ -37,7 +37,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from basicly import br, corpus_drift  # noqa: E402 - reachable only after the path insert
+from basicly import config, corpus_drift, tracker  # noqa: E402 - reachable after the path insert
 
 _LABEL = "corpus-drift"
 FROZEN_TABLE = "[tool.corpus_drift.frozen]"
@@ -85,7 +85,12 @@ def findings(repo_root: Path, wanted: tuple[str, ...] = ()) -> tuple[corpus_drif
 
     *wanted* narrows to named ids so an author can check one bead.
     """
-    records = br.export_records(repo_root)
+    # Importing `config` is what installs the tracker mode reader `owned_store` refuses
+    # to answer without, and naming it here is what keeps that import from reading as
+    # unused. A script reaching the engine outside the CLI is exactly the caller that
+    # used to file its work against the wrong store (`owned_store.set_mode_reader`).
+    config.load_tracker_mode(repo_root)
+    records = tracker.all_records(repo_root)
     children = corpus_drift.children_by_parent(records)
     found: list[corpus_drift.Finding] = []
     for record in records:

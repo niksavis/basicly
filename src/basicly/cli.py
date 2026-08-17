@@ -22,7 +22,6 @@ from . import (
     __version__,
     agents,
     board_schema,
-    br,
     catalog_lint,
     catalog_verify,
     claude_settings,
@@ -50,8 +49,9 @@ from . import (
     runner,
     state,
     supervise,
-    surface_report,
-    tracker_cutover,
+    tracker,
+    tracker_query,
+    tracker_write,
     ui,
     usage_report,
     validate_gate,
@@ -965,7 +965,7 @@ def _report_catalog_sync(report: _CatalogSyncReport, core_dst: Path, repo_root: 
             print(f"  {rel_path}", file=sys.stderr)
 
 
-def _beads_prefix(repo_root: Path) -> str:
+def _tracker_prefix(repo_root: Path) -> str:
     """Derive a beads issue-id prefix from the repo directory name.
 
     The commit-msg hook only accepts single-hyphen ``<prefix>-<code>`` ids with
@@ -978,37 +978,28 @@ def _beads_prefix(repo_root: Path) -> str:
     return prefix
 
 
-def _setup_beads(repo_root: Path) -> None:
-    """Initialize a beads (br) workspace when none exists (idempotent).
+def _setup_tracker(repo_root: Path) -> None:
+    """Create the owned tracker's ledger directory when none exists (idempotent).
 
-    Skipped when that store is not one this repo keeps; the owned ledger needs no init.
-    Otherwise a repo without ``br`` on PATH gets guidance, not a failed install — the
-    tracker is required for the harness loop, not for the projections.
+    The whole initialization: the ledger *is* the store, so there is nothing to install
+    and no process to run (basicly-vkh0.42.7). The directory is created rather than left
+    to the first write because its presence is what opts a repository in
+    (`tracker_usage.is_enabled`), and because a consumer needs somewhere to commit.
+
+    The id prefix is derived and reported rather than written: only a repository that
+    mints a *root* record needs one, and guessing it into a committed file would put a
+    namespace in `basicly.toml` that nothing had asked for (`owned_write.create`).
     """
-    if not owned_store.external_store_in_use(repo_root):
-        print("Tracker mode is owned; no beads init.")
+    ledger = repo_root / owned_store.LEDGER_DIR
+    if ledger.is_dir():
+        print("Tracker ledger exists; left unchanged.")
         return
-    beads_dir = repo_root / ".beads"
-    if (beads_dir / "config.yaml").exists() or (beads_dir / "issues.jsonl").exists():
-        print("Beads workspace exists; left unchanged.")
-        return
-
-    prefix = _beads_prefix(repo_root)
-    result = br.try_run_br(repo_root, ["init", "--prefix", prefix, "--quiet"])
-    if result is None:
-        print(
-            "br not on PATH; skipped beads init. Enable the harness tracker later "
-            "with `br init --prefix <prefix>` (see the tool-br skill)."
-        )
-        return
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip() or "unknown error"
-        print(
-            f"br init failed ({detail}); continuing without a beads workspace.",
-            file=sys.stderr,
-        )
-        return
-    print(f"Initialized beads workspace (issue prefix: {prefix}).")
+    ledger.mkdir(parents=True, exist_ok=True)
+    print(
+        f"Initialized the tracker ledger at {owned_store.LEDGER_DIR.as_posix()}. "
+        f'To mint root record ids, set [tracker] prefix = "{_tracker_prefix(repo_root)}" '
+        f"in basicly.toml."
+    )
 
 
 def _scaffold_overlay_stubs(repo_root: Path, paths: ProjectPaths) -> None:
@@ -1206,7 +1197,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     if not _record_install_technologies(repo_root, getattr(args, "technologies", None)):
         return 1
 
-    _setup_beads(repo_root)
+    _setup_tracker(repo_root)
     _scaffold_vscode_tasks(repo_root)
     _scaffold_ci_workflow(repo_root)
 
@@ -1496,10 +1487,11 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
         print(f"Activated git hooks for stages: {', '.join(stages)}.")
     else:
         print(f"Could not auto-activate git hooks: {message}", file=sys.stderr)
-    if not (repo_root / ".beads" / "issues.jsonl").exists():
+    if not any((repo_root / owned_store.LEDGER_DIR).glob("events-*.jsonl")):
         print(
-            "Note: no beads workspace found (.beads/issues.jsonl); the beads-commit-msg "
-            "hook will skip its issue-id check. Enable tracking with `br init`."
+            f"Note: no tracker found ({owned_store.LEDGER_DIR.as_posix()}/); the "
+            f"tracker-commit-msg hook will skip its issue-id check. Create a first "
+            f"record with `basicly tracker write -- create ...`."
         )
     return 0
 
@@ -1682,7 +1674,7 @@ def cmd_brief(args: argparse.Namespace) -> int:
     so a typo renders a complete, plausible brief pointing at nothing — the one
     failure a preview exists to stop a human reading past.
     """
-    if br.read_record(_repo_root(), args.issue_id) is None:
+    if tracker.read_record(_repo_root(), args.issue_id) is None:
         ui.fail(f"No tracked issue {args.issue_id}")
         return 1
     ui.say(dispatch_brief.dispatch_prompt(args.issue_id))
@@ -1690,10 +1682,9 @@ def cmd_brief(args: argparse.Namespace) -> int:
 
 
 def cmd_usage(args: argparse.Namespace) -> int:
-    """Dispatch the usage telemetry subcommands (report / tracker / forecast / tuning)."""
+    """Dispatch the usage telemetry subcommands (report / forecast / tuning)."""
     handlers = {
         "report": usage_report.cmd_report,
-        "tracker": surface_report.cmd_tracker,
         "forecast": usage_report.cmd_forecast,
         "tuning": usage_report.cmd_tuning,
         "lane-split": _cmd_usage_lane_split,
@@ -1719,13 +1710,8 @@ def cmd_board(args: argparse.Namespace) -> int:
 
 
 def cmd_tracker(args: argparse.Namespace) -> int:
-    """Dispatch the owned tracker's cutover subcommands (adopt, import, shadow, write)."""
-    handlers = {
-        "adopt": tracker_cutover.cmd_adopt,
-        "import": tracker_cutover.cmd_import,
-        "shadow": tracker_cutover.cmd_shadow,
-        "write": tracker_cutover.cmd_write,
-    }
+    """Dispatch the owned tracker's read verbs and its cutover subcommands."""
+    handlers = {"write": tracker_write.cmd_write, **tracker_query.HANDLERS}
     return _dispatch(args, "tracker_command", handlers, group="tracker")
 
 
@@ -2055,7 +2041,7 @@ def cmd_review(args: argparse.Namespace) -> int:
 
 def _issue_record(repo_root: Path, issue_id: str) -> dict[str, object] | None:
     """The br record for *issue_id*, or None when it cannot be read."""
-    return br.read_record(repo_root, issue_id)
+    return tracker.read_record(repo_root, issue_id)
 
 
 def _issue_work_type(repo_root: Path, issue_id: str) -> str | None:
@@ -2750,7 +2736,7 @@ def cmd_loop(args: argparse.Namespace) -> int:
 
 # The repo's improvement controller, relative to the repo root the command operates
 # on. Held as a path rather than imported: `.scripts/` is not a package (the same
-# constraint `br.PINNED_VERSION` records), and the controller is a repo-local script
+# constraint `tracker.PINNED_VERSION` records), and the controller is a repo-local script
 # like every `[[verify.checks]]` command rather than engine code.
 IMPROVEMENT_CONTROLLER = Path(".scripts") / "improvement_controller.py"
 
@@ -3106,7 +3092,7 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
     print("config:    recognised")
 
     # Not ``.strip()``: that eats the first line's leading status column, shifting its
-    # path by one so ``.beads/x`` reads as ``beads/x`` and misses the check below.
+    # path by one so ``.basicly/x`` reads as ``basicly/x`` and misses the check below.
     dirty = worktree.git(["status", "--porcelain"], cwd=repo_root, check=False).stdout
     # Foreign dirt refuses a landing (basicly-4psl), and the refusal arrives *after* the
     # lanes have already run, which is the expensive place to learn it. The engine's own
@@ -3972,7 +3958,7 @@ def _cmd_loop_kill(args: argparse.Namespace) -> int:
         )
         return 1
     binding = loop_state.parse_worktree_ref(
-        br.require_record(repo_root, args.issue).get("external_ref")
+        tracker.require_record(repo_root, args.issue).get("external_ref")
     )
     result = policy.authorize_kill(repo_root, args.issue, confirm=args.confirm)
     if result.status == "challenge":
@@ -4934,28 +4920,6 @@ def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
         "outcomes",
         help="Report how every recorded dispatch ended, and the share that failed",
     )
-    tracker_parser = usage_sub.add_parser(
-        "tracker", help="Report the measured br/bv surface Phase 6 freezes its scope from"
-    )
-    tracker_parser.add_argument(
-        "--promote",
-        action="store_true",
-        help="Fold the spool into the committed ledger before reporting",
-    )
-    tracker_parser.add_argument(
-        "--refresh-surface",
-        action="store_true",
-        help=(
-            "Re-probe br/bv --help and rewrite the committed surface inventory "
-            "(requires br on PATH)"
-        ),
-    )
-    tracker_parser.add_argument(
-        "--json",
-        action="store_true",
-        dest="as_json",
-        help="Emit the whole report as JSON, for the surface freeze",
-    )
 
 
 def _add_board_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -4974,34 +4938,12 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the `basicly tracker` command group — the owned tracker's cutover."""
     tracker_parser = subparsers.add_parser(
         "tracker",
-        help="The owned work tracker's cutover (docs/requirements/work-tracker.md §5)",
+        help="The owned work tracker: read the backlog, write to it, run its cutover",
     )
     tracker_sub = tracker_parser.add_subparsers(dest="tracker_command", required=True)
-    t_import = tracker_sub.add_parser(
-        "import",
-        help="Bring the owned ledger up to the committed export (§5 step 1)",
-    )
-    t_import.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Report how far the ledger is behind and what an import would add",
-    )
-    t_shadow = tracker_sub.add_parser(
-        "shadow",
-        help="Compare the owned ledger against the live br, read-only (§5 step 2)",
-    )
-    t_shadow.add_argument(
-        "--declare-history",
-        action="store_true",
-        help="Record today's pre-flip delta as the declared baseline and exit (run once)",
-    )
-    t_write = tracker_sub.add_parser(
-        "write", help="Make a tracker write through the engine seam, so both stores get it"
-    )
-    t_write.add_argument("argv", nargs=argparse.REMAINDER, help="The br subcommand, after `--`")
-    tracker_sub.add_parser(
-        "adopt", help="Reconcile the records a hand-run br created (basicly-vkh0.24)"
-    )
+    tracker_query.add_parsers(tracker_sub)
+    t_write = tracker_sub.add_parser("write", help="Make a tracker write through the engine seam")
+    t_write.add_argument("argv", nargs=argparse.REMAINDER, help="The subcommand, after `--`")
 
 
 def _tolerate_narrow_consoles() -> None:

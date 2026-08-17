@@ -91,7 +91,7 @@ def instruction_overhead(repo_root: Path) -> int:
 # Directory names that are never a lane's working set: the VCS store, a
 # virtualenv, a dependency tree, and byte/tool caches. Matched by *name* at any
 # depth rather than by a leading dot, because the dot-directories this project
-# authors — ``.basicly``, ``.claude``, ``.github``, ``.beads`` — are legitimate
+# authors — ``.basicly``, ``.claude``, ``.github`` — are legitimate
 # scope and excluding them would silently zero their read-cost, which is the
 # failure the ``./`` handling below already guards against.
 #

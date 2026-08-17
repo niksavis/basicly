@@ -31,10 +31,10 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, policy
+from . import policy, tracker
 
 # The marker family this module owns, a sibling of `[harness-policy]` and
-# `[harness-review]`, carried through the `br.add_comment` seam they share.
+# `[harness-review]`, carried through the `tracker.add_comment` seam they share.
 MARKER = "[harness-retro]"
 
 # The phase a retrospective dispatch resolves its role and records its cost under: it is
@@ -269,10 +269,10 @@ def claim(repo_root: Path, root_issue: str, signal: Signal) -> bool:
     marker = _fired_marker(signal)
     if any(
         _first_line(str(comment.get("text", ""))) == marker
-        for comment in br.try_read_comments(repo_root, root_issue)
+        for comment in tracker.try_read_comments(repo_root, root_issue)
     ):
         return False
-    return br.try_add_comment(repo_root, root_issue, f"{marker}\n{signal.detail}")
+    return tracker.try_add_comment(repo_root, root_issue, f"{marker}\n{signal.detail}")
 
 
 def _first_line(text: str) -> str:
@@ -363,5 +363,5 @@ def settle(repo_root: Path, root_issue: str, reply: str) -> str:
         if missing
         else f"{stated['tier']} tier: {stated['control']} covers {stated['defect-class']}"
     )
-    br.try_add_comment(repo_root, root_issue, f"{MARKER} outcome {detail}\n{reply.strip()}")
+    tracker.try_add_comment(repo_root, root_issue, f"{MARKER} outcome {detail}\n{reply.strip()}")
     return detail

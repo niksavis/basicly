@@ -55,7 +55,7 @@ events = gates.events
 
 @pytest.fixture(scope="module")
 def kit() -> Any:
-    """This repo's installed kit, as `basicly.mirror` and `basicly.br` reach it."""
+    """This repo's installed kit, as `basicly.mirror` and `basicly.tracker` reach it."""
     return owned_store.kit(REPO_ROOT)
 
 

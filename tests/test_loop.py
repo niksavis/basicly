@@ -16,7 +16,6 @@ from types import SimpleNamespace
 import pytest
 
 from basicly import (
-    br,
     classify,
     decisions,
     decompose,
@@ -40,6 +39,7 @@ from basicly.loop_state import NodeState, RankedNode, WorktreeBinding
 from basicly.policy import DoRResult, GateStatus
 from basicly.working_set import WorkingSetAdmission
 from basicly.worktree import Session
+from tests import fake_tracker
 
 CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 
@@ -224,12 +224,12 @@ def _ready_leaf(at, monkeypatch: pytest.MonkeyPatch) -> dict:
     # plan gate's ratchet admits. Stubbed because that gate fails closed on an unreadable
     # record, so leaving the read unstubbed refuses every granted dispatch below for a
     # reason none of these tests is about. At the spawn seam rather than at
-    # `br.read_record`, so a test that pins its own richer stand-in afterwards still wins.
+    # `tracker.read_record`, so a test that pins its own richer stand-in afterwards still wins.
     def _show(_repo_root: Path, args: list[str], **_k) -> SimpleNamespace:
         payload = json.dumps([{"id": "i", "title": "i", "description": "prose\n"}])
         return SimpleNamespace(stdout=payload if args[:1] == ["show"] else "{}", returncode=0)
 
-    monkeypatch.setattr(br, "try_run_br", _show)
+    fake_tracker.install(monkeypatch, _show)
     return created
 
 
@@ -436,7 +436,7 @@ class _CeilingBr:
     def _ok(stdout: str) -> SimpleNamespace:
         """A successful spawn, exit status included.
 
-        The status is not optional: `br.read_record` checks it before it parses, so a
+        The status is not optional: `tracker.read_record` checks it before it parses, so a
         stand-in without one raises AttributeError inside the seam rather than serving
         the record (basicly-tcmy.14).
         """
@@ -485,11 +485,10 @@ def _pin_ceiling(monkeypatch: pytest.MonkeyPatch, ceiling: float) -> _CeilingBr:
         ),
     )
     fake = _CeilingBr()
-    # Named `fake` rather than `br` so the module stays reachable here: every br seam
+    # Named `fake` rather than `fake` so the module stays reachable here: every fake seam
     # is stubbed, so a bead created off this path lands in `fake.created` instead of
     # reaching a real tracker or erroring out on the way there.
-    monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
     return fake
 
 
@@ -516,14 +515,14 @@ def test_a_single_track_dispatch_over_the_ceiling_observes_and_spins_nothing(
     """
     _ready_leaf(at, monkeypatch)
     _pin_runner(monkeypatch, "claude")
-    br = _pin_ceiling(monkeypatch, 0.01)  # 1000000-token window -> a 10000 threshold
+    fake = _pin_ceiling(monkeypatch, 0.01)  # 1000000-token window -> a 10000 threshold
     _occupying(monkeypatch, 12_000)
 
     result = _advance(tmp_path)
 
-    assert br.created == [], "no follow-up bead"
-    assert br.deps == [], "no gating edge"
-    written = [text for texts in br.comments.values() for text in texts]
+    assert fake.created == [], "no follow-up bead"
+    assert fake.deps == [], "no gating edge"
+    written = [text for texts in fake.comments.values() for text in texts]
     assert not any(text.startswith("[harness-overrun]") for text in written)
     # What the crossing does leave on the bead: the run marker, carrying the occupancy
     # and the window it was measured against, so the ledger still explains it.
@@ -540,12 +539,12 @@ def test_a_single_track_dispatch_under_the_ceiling_observes_nothing(
     """The control: a run inside the window says nothing about the ceiling."""
     _ready_leaf(at, monkeypatch)
     _pin_runner(monkeypatch, "claude")
-    br = _pin_ceiling(monkeypatch, 0.05)
+    fake = _pin_ceiling(monkeypatch, 0.05)
     _occupying(monkeypatch, 9_999)
 
     result = _advance(tmp_path)
 
-    assert br.created == []
+    assert fake.created == []
     assert result.blocked and "finished in worktree" in result.detail
     assert "ceiling" not in result.detail
 
@@ -1371,7 +1370,7 @@ def test_a_refused_verify_gate_blocks_instead_of_deriving_back_to_build(
     ``report_gate`` degrades gracefully by design, and both call sites used to
     discard its verdict. Since ``derive_phase`` keys off ``gates.can_advance``,
     an unrecorded gate silently derived the node back to ``build`` and the next
-    advance re-ran build->verify forever, with nothing naming the cause. br
+    advance re-ran build->verify forever, with nothing naming the cause. tracker
     0.2.19 made that reachable in the field: its ``gate report`` rejects the
     harness's call outright.
     """
@@ -2054,7 +2053,9 @@ def test_each_lens_records_its_own_findings_and_nothing_merges_them(
 
     monkeypatch.setattr(runner, "run", _run)
     comments: list[str] = []
-    monkeypatch.setattr(loop.lens_review.br, "add_comment", lambda _r, _i, b: comments.append(b))
+    monkeypatch.setattr(
+        loop.lens_review.tracker, "add_comment", lambda _r, _i, b: comments.append(b)
+    )
 
     loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
 
@@ -2156,7 +2157,7 @@ def _brief_after_rework(
     monkeypatch.setattr(policy, "record_rework", lambda *_a, **_k: 1)  # under the CONFIG cap
     monkeypatch.setattr(loop, "lane_rework_spent", lambda *_a, **_k: 1)
     monkeypatch.setattr(
-        loop.lens_review.br,
+        loop.lens_review.tracker,
         "try_read_comments",
         lambda *_a: [
             {"text": f"{loop.lens_review.MARKER} lens={lens}\n{text}"} for lens, text in reviews
@@ -2722,13 +2723,13 @@ def test_child_states_parses_parent_child_dependents(
             '{"id":"i.1","status":"open","dependency_type":"parent-child"},'
             '{"id":"x","status":"open","dependency_type":"blocks"}]}]'
         )
-        # `br.read_record` checks the exit status before it parses, so a stand-in for a
+        # `tracker.read_record` checks the exit status before it parses, so a stand-in for a
         # successful spawn has to carry one (basicly-tcmy.14).
         returncode = 0
 
-    # `br.try_run_br`, not loop's alias: the record read goes through `br.read_record`,
+    # `tracker.try_run_br`, not loop's alias: the record read goes through `tracker.read_record`,
     # the one reader every consumer in the package shares.
-    monkeypatch.setattr(br, "try_run_br", lambda *_a, **_k: _Proc())
+    fake_tracker.install(monkeypatch, lambda *_a, **_k: _Proc())
     ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
     assert loop._child_states(ctx) == [("i.1", "open")]
 
@@ -3240,7 +3241,7 @@ def test_the_evidence_marker_is_written_before_ship_commits_the_tracker(
 ) -> None:
     """Order pinned: a marker written after ship's tracker commit would never travel.
 
-    ``_on_ship`` runs ``br close`` and then commits ``.beads/``. A comment added
+    ``_on_ship`` closes the record and then commits the ledger. A comment added
     after that commit sits in the local db only, which is the failure the ship-time
     cost rollup is ordered around too.
     """
@@ -3543,7 +3544,9 @@ def test_a_lane_that_stayed_inside_its_scope_writes_nothing(
     """The common case costs one diff and no tracker write."""
     at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
     recorded = _pin_scope(
-        monkeypatch, scopes={"i": ("src/**",)}, changed=("src/a.py", "src/b.py", ".beads/x.jsonl")
+        monkeypatch,
+        scopes={"i": ("src/**",)},
+        changed=("src/a.py", "src/b.py", ".basicly/ledger/events-0001.jsonl"),
     )
     _pin_clean_landing(monkeypatch)
     result = loop.advance(tmp_path, "i", config=_scope_config())

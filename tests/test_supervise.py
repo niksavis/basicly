@@ -26,7 +26,6 @@ from pathlib import Path
 import pytest
 
 from basicly import (
-    br,
     decisions,
     decompose,
     loop,
@@ -37,10 +36,12 @@ from basicly import (
     run_record,
     runner,
     supervise,
+    tracker,
     working_set,
 )
 from basicly.config import PolicyConfig, RunnerConfig, SizingConfig
 from basicly.supervise import LOCK_FILE, STALE_AFTER_S, LockHeldError, LockLostError
+from tests import fake_tracker
 
 
 class _Proc:
@@ -517,28 +518,24 @@ class _FakeBr:
         raise AssertionError(f"unexpected br call: {args}")
 
 
-def _install_br(monkeypatch: pytest.MonkeyPatch, fake: object) -> None:
+def _install_br(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., object]) -> None:
     """Route every br seam build_bundle reads through to one fake.
 
     Nothing is installed on `supervise` itself: after basicly-wpc8 every store surface it
-    reaches is a seam every consumer in the package shares — ``br.read_record``,
-    ``br.read_comments``, ``br.add_comment``, ``br.try_write``, ``label_source.labelled``
-    — and each reaches the external store through one of these two funnels. Leaving one
-    out lets a read spawn a real br mid-test.
+    reaches is a seam every consumer in the package shares — the record read, the marker
+    pair, the soft write, and the label query — so leaving one out lets a read reach the
+    live ledger mid-test.
 
-    **Those funnels are the external rung's**, so a caller must hand a repo root whose
-    mode resolves to :data:`owned_store.MODE_EXTERNAL` — a bare ``tmp_path`` does, being
-    the default when no ``basicly.toml`` declares one. A root of ``Path()`` reads *this*
-    checkout's config, which has declared ``owned`` since basicly-vkh0.29: every seam
-    above then goes to the ledger instead, and the write half goes to the real one.
+    The label query is installed too, although only the selection tests reach it: a fake
+    that never serves ``list --label`` raises on it, which is the loud direction.
     """
-    monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
+    fake_tracker.install_graph(monkeypatch, fake)
 
 
 def test_parse_found_info_round_trips_the_marker(tmp_path: Path) -> None:
     """A marker comment written by record_found_info parses back identically."""
-    br = _FakeBr({})
+    fake = _FakeBr({})
     info = supervise.FoundInfo(
         kind="coupling",
         summary="config loader also reads runner windows",
@@ -546,7 +543,7 @@ def test_parse_found_info_round_trips_the_marker(tmp_path: Path) -> None:
         affects=("src/basicly/config.py", "epic.2"),
     )
     with pytest.MonkeyPatch.context() as mp:
-        _install_br(mp, br)
+        _install_br(mp, fake)
         supervise.record_found_info(tmp_path, "epic.1", info)
         records = supervise.found_info_records(tmp_path, ["epic.1"])
     assert records == (
@@ -737,7 +734,7 @@ def test_build_bundle_folds_records_by_id_and_scope_overlap(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Records naming the lane or overlapping its declared scope fold into the prompt."""
-    br = _FakeBr(
+    fake = _FakeBr(
         _bundle_issues(),
         comments={
             "epic": [_fold_marker("decision", "keep the loader split", ["epic.1"])],
@@ -747,7 +744,7 @@ def test_build_bundle_folds_records_by_id_and_scope_overlap(
             ],
         },
     )
-    _install_br(monkeypatch, br)
+    _install_br(monkeypatch, fake)
 
     bundle = supervise.build_bundle(tmp_path, "epic.1", known_ids=frozenset({"epic", "epic.2"}))
 
@@ -770,11 +767,11 @@ def test_build_bundle_treats_session_bead_ids_as_ids_not_globs(
     """
     issues = _bundle_issues()
     issues["epic.1"]["description"] = "Broad.\n\n## Scope\n\n- `**`\n"
-    br = _FakeBr(
+    fake = _FakeBr(
         issues,
         comments={"epic": [_fold_marker("fact", "for the other lane", ["epic.2"])]},
     )
-    _install_br(monkeypatch, br)
+    _install_br(monkeypatch, fake)
 
     bundle = supervise.build_bundle(tmp_path, "epic.1", known_ids=frozenset({"epic", "epic.2"}))
 
@@ -784,16 +781,16 @@ def test_build_bundle_treats_session_bead_ids_as_ids_not_globs(
 def test_build_bundle_sees_records_published_after_planning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Assembly reads br at call time (fresh at boundaries, never mid-flight — D6).
+    """Assembly reads fake at call time (fresh at boundaries, never mid-flight — D6).
 
     A record landing between dispatches folds into the later bundle.
     """
-    br = _FakeBr(_bundle_issues())
-    _install_br(monkeypatch, br)
+    fake = _FakeBr(_bundle_issues())
+    _install_br(monkeypatch, fake)
     known = frozenset({"epic", "epic.2"})
 
     before = supervise.build_bundle(tmp_path, "epic.1", known_ids=known)
-    br.comments["epic"] = [_fold_marker("constraint", "landed meanwhile", ["epic.1"])]
+    fake.comments["epic"] = [_fold_marker("constraint", "landed meanwhile", ["epic.1"])]
     after = supervise.build_bundle(tmp_path, "epic.1", known_ids=known)
 
     assert before.folded == ()
@@ -893,7 +890,7 @@ def _patch_readiness(
             )
             for rank, iid in ranked
         ),
-        schema="br.scheduler.v1",
+        schema="tracker.scheduler.v1",
         fallback_sort="priority ASC, created_at ASC, id ASC",
     )
     monkeypatch.setattr(supervise.loop_state, "ready_ranking", lambda _r, *_a: ranking)
@@ -1141,8 +1138,8 @@ def _lane_issues() -> dict[str, dict]:
 def _worker_fixture(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, stdout: str, returncode: int = 0
 ) -> tuple[_FakeBr, dict]:
-    br = _FakeBr(_lane_issues())
-    _install_br(monkeypatch, br)
+    fake = _FakeBr(_lane_issues())
+    _install_br(monkeypatch, fake)
     seen: dict = {}
 
     class _WtSession:
@@ -1167,15 +1164,15 @@ def _worker_fixture(
     monkeypatch.setattr(
         supervise.loop, "record_run", lambda *a, **_k: seen.setdefault("recorded", a[1])
     )
-    # The lane's sizing read reaches the real br binary (basicly-jr0l.34), and this
+    # The lane's sizing read reaches the real fake binary (basicly-jr0l.34), and this
     # fixture stands in for the whole dispatch environment. Left live, every
-    # supervise test would spawn a subprocess and contend on br's machine-global
+    # supervise test would spawn a subprocess and contend on fake's machine-global
     # lock — enough to perturb the stall-watchdog timing tests in this file. Stubbed
     # at the estimator rather than at the recorded keywords, because the band gate
     # now reads the same call (basicly-jr0l.16); the unreadable answer admits the
     # dispatch, records no sizing and queues nothing, exactly as before.
     monkeypatch.setattr(supervise.decompose, "resolve_dispatch_sizing", lambda *_a: _lookup(None))
-    return br, seen
+    return fake, seen
 
 
 def test_dispatch_lane_records_the_scheduler_evidence(
@@ -1198,7 +1195,7 @@ def test_dispatch_lane_records_the_scheduler_evidence(
             node=loop_state.RankedNode(
                 rank=1, score=45, issue_id="epic.1", title="", fallback_rank=3
             ),
-            policy="br.scheduler.v1",
+            policy="tracker.scheduler.v1",
         ),
     )
 
@@ -1206,7 +1203,7 @@ def test_dispatch_lane_records_the_scheduler_evidence(
     assert captured["scheduler_rank"] == 1
     assert captured["scheduler_fallback_rank"] == 3
     assert captured["scheduler_score"] == 45
-    assert captured["scheduler_policy"] == "br.scheduler.v1"
+    assert captured["scheduler_policy"] == "tracker.scheduler.v1"
 
 
 def test_dispatch_lane_runs_as_the_build_persona(
@@ -1268,14 +1265,16 @@ def test_dispatch_lane_records_the_order_when_br_never_ranked_the_lane(
         _lane("epic.1"),
         codex,
         _sizing(),
-        ordering=supervise.DispatchOrdering(dispatch_rank=1, node=None, policy="br.scheduler.v1"),
+        ordering=supervise.DispatchOrdering(
+            dispatch_rank=1, node=None, policy="tracker.scheduler.v1"
+        ),
     )
 
     assert captured["dispatch_rank"] == 1
     assert captured["scheduler_rank"] is None
     assert captured["scheduler_score"] is None
     # The policy is a property of the pass, so it is recorded either way.
-    assert captured["scheduler_policy"] == "br.scheduler.v1"
+    assert captured["scheduler_policy"] == "tracker.scheduler.v1"
 
 
 def test_dispatch_lanes_records_one_ranking_for_the_whole_pass(
@@ -1298,7 +1297,7 @@ def test_dispatch_lanes_records_one_ranking_for_the_whole_pass(
     first, second = seen["epic.1"], seen["epic.2"]
     assert first is not None and second is not None
     assert [first.dispatch_rank, second.dispatch_rank] == [1, 2]
-    assert {first.policy, second.policy} == {"br.scheduler.v1"}
+    assert {first.policy, second.policy} == {"tracker.scheduler.v1"}
     assert first.node is not None
     assert first.node.rank == 1
 
@@ -1308,7 +1307,7 @@ def test_dispatch_lane_green_path_meters_and_records(
 ) -> None:
     """A clean run records telemetry by bead, meters occupancy, and lands green."""
     codex = _codex()
-    br, seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    tracker, seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
 
     outcome = supervise._dispatch_lane(
         tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
@@ -1319,7 +1318,7 @@ def test_dispatch_lane_green_path_meters_and_records(
     assert outcome.occupancy == 50_000
     assert outcome.overrun is False
     assert outcome.detail == "finished; ready to land"
-    assert br.created == []
+    assert tracker.created == []
 
 
 def test_dispatch_lane_over_the_ceiling_lands_and_reports_both_numbers(
@@ -1332,7 +1331,7 @@ def test_dispatch_lane_over_the_ceiling_lands_and_reports_both_numbers(
     green one it would have had anyway, carrying the observation.
     """
     codex = _codex()
-    br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(250_000))
+    tracker, _seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(250_000))
 
     outcome = supervise._dispatch_lane(
         tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
@@ -1343,8 +1342,8 @@ def test_dispatch_lane_over_the_ceiling_lands_and_reports_both_numbers(
         "finished; ready to land; context occupancy 250000 tokens is over the "
         "240000-token ceiling (observed, not enforced)"
     )
-    assert br.created == [], "no follow-up bead"
-    assert br.comments == {}, "no [harness-overrun] marker either"
+    assert tracker.created == [], "no follow-up bead"
+    assert tracker.comments == {}, "no [harness-overrun] marker either"
 
 
 def test_dispatch_lane_surfaces_the_needs_input_sentinel(
@@ -1403,14 +1402,16 @@ def test_dispatch_lane_failed_run_over_the_ceiling_keeps_its_failure(
     The routing layer re-dispatches it on the exit code; the occupancy is an
     observation about the run it lost, not a second verdict on it.
     """
-    br, _seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(250_000), returncode=3)
+    tracker, _seen = _worker_fixture(
+        monkeypatch, tmp_path, stdout=_codex_events(250_000), returncode=3
+    )
 
     outcome = supervise._dispatch_lane(
         tmp_path, _session(_lane("epic.1")), _lane("epic.1"), _codex(), _sizing()
     )
 
     assert outcome.overrun is True  # the metered truth is still reported
-    assert br.created == []
+    assert tracker.created == []
     assert outcome.detail.startswith("runner exited 3; context occupancy 250000 tokens")
 
 
@@ -1520,10 +1521,10 @@ def test_a_dispatch_lost_to_tracker_storage_is_marked_transient(
     """
     _patch_readiness(monkeypatch)
     monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
-    contended = (
-        '{"error": {"code": "DATABASE_ERROR", "message": "Database error: WAL file is '
-        'corrupt: short read at frame 12: got 0, need 4120", "retryable": false}}'
-    )
+    # The ledger's own contention text, copied from `events.LedgerLock.__enter__`
+    # rather than composed: a fixture that invented the wording would keep passing
+    # while the recogniser stopped matching the store.
+    contended = "another writer holds /repo/.basicly/ledger/.events.lock after 5.0s"
 
     def dispatch(_repo, _session, lane, _spec, _sizing, **_kw) -> supervise.LaneOutcome:
         if lane.issue_id == "epic.1":
@@ -2108,7 +2109,7 @@ def _patch_collision_pass(
     """A pass where *collides* bounces on ``src/shared.py`` and the rest land.
 
     Declared scopes come from *scopes*, as ``## Scope`` on each bead would. Returns
-    the list the recorded coupling edges accumulate into, and the ``br`` stand-in
+    the list the recorded coupling edges accumulate into, and the ``fake`` stand-in
     holding the comments the bounce wrote — the bounce brief and the failure
     signature both land there.
     """
@@ -2156,7 +2157,7 @@ def _patch_collision_pass(
         # where replacing the attribute would drop whichever was installed first.
         return fake(_r, args)
 
-    monkeypatch.setattr(br, "try_run_br", try_run_br)
+    fake_tracker.install(monkeypatch, try_run_br)
     return couplings, fake
 
 
@@ -2572,7 +2573,7 @@ def test_route_holds_every_lane_a_siblings_declaration_invalidated_the_gate_for(
 ) -> None:
     """The measured defect: one lane's declaration charged both its siblings rework.
 
-    Every lane in a supervised pass shares one ``.beads`` through the redirect, so
+    Every lane in a supervised pass shares one ledger through the redirect, so
     the working-set ceiling asserted over basicly-tcmy.5's finishing record inside
     the landings of basicly-tcmy.6 and basicly-tcmy.22 too, and each was charged
     1/2 for a defect in neither diff (basicly-qorx). Both are green and committed,
@@ -2806,8 +2807,8 @@ def test_route_does_not_cancel_a_lane_over_engine_owned_paths(
     """Every landing rewrites the tracker; blaming it would cancel every lane."""
     seen = _patch_preempt_pass(
         monkeypatch,
-        conflicts={"epic.2": (".beads/issues.jsonl",)},
-        changed=(".beads/issues.jsonl",),
+        conflicts={"epic.2": (".basicly/ledger/events-0001.jsonl",)},
+        changed=(".basicly/ledger/events-0001.jsonl",),
     )
     outcomes = (_executed_outcome("epic.1"), _executed_outcome("epic.2"))
 
@@ -3181,14 +3182,13 @@ def _attach_br(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     """Route every module observe() reads br through to one fake.
 
     Only ``policy`` still owns an alias for a surface it reaches directly. Every other
-    read on this path is behind a seam — the record (``br.read_record``), the markers
-    (``br.read_comments``), the ranking (``br.read_ranking``) and the blocked set
+    read on this path is behind a seam — the record (``tracker.read_record``), the markers
+    (``tracker.read_comments``), the ranking (``tracker.read_ranking``) and the blocked set
     (``dependency_graph.blocked``) — so the fake goes on the two funnels those spawn
     through. Leaving one out lets a read reach a real br mid-test.
     """
     monkeypatch.setattr(policy, "_write", fake)
-    monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
 
 
 def _grant_comment(level: str, budget: int | None = None) -> str:
@@ -3201,7 +3201,7 @@ def test_observe_reports_the_holder_lanes_decisions_and_spend(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The attach surface: who supervises, what each lane last ran, queue, grant spend."""
-    br = _FakeBr(
+    fake = _FakeBr(
         {
             "epic": _issue("epic", children=(("epic.1", "in_progress"), ("epic.2", "closed"))),
             "epic.1": _issue(
@@ -3211,7 +3211,7 @@ def test_observe_reports_the_holder_lanes_decisions_and_spend(
         },
         comments={"epic": [_grant_comment("L2", 5000)]},
     )
-    _attach_br(monkeypatch, br)
+    _attach_br(monkeypatch, fake)
     _fake_sessions(monkeypatch, {"epic-1"})
     run_record.record(
         tmp_path,
@@ -3271,8 +3271,8 @@ def test_observe_an_unsupervised_root_is_a_valid_read(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """No lock, no grant, no lanes is a state to report — not an error to raise."""
-    br = _FakeBr({"task": _issue("task")})
-    _attach_br(monkeypatch, br)
+    fake = _FakeBr({"task": _issue("task")})
+    _attach_br(monkeypatch, fake)
     _fake_sessions(monkeypatch, set())
 
     view = supervise.observe(tmp_path, "task")
@@ -3288,8 +3288,8 @@ def test_observe_flags_a_stale_holder_as_not_supervising(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A crashed holder still shows up — the client must tell it apart from working."""
-    br = _FakeBr({"epic": _issue("epic")})
-    _attach_br(monkeypatch, br)
+    fake = _FakeBr({"epic": _issue("epic")})
+    _attach_br(monkeypatch, fake)
     _fake_sessions(monkeypatch, set())
     lock = supervise.acquire(tmp_path, "epic:crashed", "epic")
     _backdate(lock, STALE_AFTER_S + 1)
@@ -3305,8 +3305,8 @@ def test_observe_flags_a_holder_bound_to_another_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The lock is a repo singleton: a live holder may be supervising someone else."""
-    br = _FakeBr({"epic": _issue("epic")})
-    _attach_br(monkeypatch, br)
+    fake = _FakeBr({"epic": _issue("epic")})
+    _attach_br(monkeypatch, fake)
     _fake_sessions(monkeypatch, set())
     supervise.acquire(tmp_path, "other:live", "other-epic")
 
@@ -3319,8 +3319,8 @@ def test_observe_flags_a_holder_bound_to_another_root(
 
 def test_observe_never_touches_the_lock(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Attaching is a pure read: it must not beat, claim, or age the holder's lock."""
-    br = _FakeBr({"epic": _issue("epic")})
-    _attach_br(monkeypatch, br)
+    fake = _FakeBr({"epic": _issue("epic")})
+    _attach_br(monkeypatch, fake)
     _fake_sessions(monkeypatch, set())
     lock = supervise.acquire(tmp_path, "epic:live", "epic")
     before = (lock.read_text(encoding="utf-8"), lock.stat().st_mtime)
@@ -3432,7 +3432,7 @@ def test_dispatch_halt_is_one_idempotent_queue_item(
 ) -> None:
     """Every halted pass re-surfaces the same item, not a fresh notification each time."""
     fake = _FakeBr({"epic": _issue("epic")})
-    monkeypatch.setattr(br, "run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     admission = _granted("L2", 5000, 6000)
 
@@ -3453,7 +3453,7 @@ def test_an_unmeterable_halt_asks_its_own_question(
     also fold the two halts into one item and hide whichever arrived second.
     """
     fake = _FakeBr({"epic": _issue("epic")})
-    monkeypatch.setattr(br, "run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     spent = _granted("L2", 5000, 6000)
     unmetered = policy.SpendStatus(
@@ -3665,8 +3665,8 @@ def test_build_bundle_folds_the_lanes_answered_questions(
     re-blocks on the same fact, so both the human and the decider path deliver
     their answer to nobody.
     """
-    br = _FakeBr({"epic.1": _issue("epic.1")})
-    _install_br(monkeypatch, br)
+    fake = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     item = decisions.enqueue(tmp_path, "epic.1", "needs-input", "which db?")
     decisions.answer(tmp_path, item.decision_id, "postgres", by="human")
@@ -3685,8 +3685,8 @@ def test_build_bundle_omits_the_answers_section_when_there_are_none(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A lane that never blocked gets the plain dispatch prompt, unchanged."""
-    br = _FakeBr({"epic.1": _issue("epic.1")})
-    _install_br(monkeypatch, br)
+    fake = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, fake)
 
     bundle = supervise.build_bundle(tmp_path, "epic.1")
 
@@ -3727,15 +3727,15 @@ def test_flag_stalled_lane_queues_one_item_and_names_the_hard_kill(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A stall is queued once per lane, and says what happens if nobody intervenes."""
-    br = _FakeBr({"epic.1": _issue("epic.1"), "epic.2": _issue("epic.2")})
-    _install_br(monkeypatch, br)
+    fake = _FakeBr({"epic.1": _issue("epic.1"), "epic.2": _issue("epic.2")})
+    _install_br(monkeypatch, fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
 
     first = supervise.flag_stalled_lane(tmp_path, "epic.1", 900.0, 3600.0)
     again = supervise.flag_stalled_lane(tmp_path, "epic.1", 900.0, 3600.0)
 
     assert first.decision_id == again.decision_id
-    assert len(br.comments["epic.1"]) == 1
+    assert len(fake.comments["epic.1"]) == 1
     assert first.kind == "stall"
     assert "900s" in first.detail
     assert "3600s" in first.detail  # the run continues to the hard kill
@@ -3758,8 +3758,8 @@ def test_a_stall_flag_is_retired_once_its_dispatch_has_ended(
     Left pending, ``has_pending`` drops the lane from ``ready_lanes`` and from the
     carry, parking a lane that was merely slow on a question with no live subject.
     """
-    br = _FakeBr({"epic.1": _issue("epic.1")})
-    _install_br(monkeypatch, br)
+    fake = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     flagged = supervise.flag_stalled_lane(tmp_path, "epic.1", 900.0, 3600.0)
     assert flagged.pending
@@ -3783,8 +3783,8 @@ def test_retiring_a_stall_flag_is_idempotent_and_leaves_other_items_alone(
     The hard-kill item asks something a human still has to answer, so the engine must
     walk past it. Answering that would be the engine disposing of a real decision.
     """
-    br = _FakeBr({"epic.1": _issue("epic.1")})
-    _install_br(monkeypatch, br)
+    fake = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     supervise.flag_stalled_lane(tmp_path, "epic.1", 900.0, 3600.0)
     hard_kill = decisions.enqueue(
@@ -3802,8 +3802,8 @@ def test_an_engine_retired_stall_flag_is_not_charged_as_human_wait(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """No human waited on it, so counting the interval would overstate human wait (D11)."""
-    br = _FakeBr({"epic.1": _issue("epic.1")})
-    _install_br(monkeypatch, br)
+    fake = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     recorded: list = []
     monkeypatch.setattr(
@@ -3826,8 +3826,8 @@ def test_stalled_lane_is_flagged_while_the_dispatch_still_completes(
     A stall must never shorten a dispatch — ``runner_timeout`` stays the only
     terminal action, so a slow-but-working run is not killed early.
     """
-    br = _FakeBr({"epic.1": _issue("epic.1")})
-    _install_br(monkeypatch, br)
+    fake = _FakeBr({"epic.1": _issue("epic.1")})
+    _install_br(monkeypatch, fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     monkeypatch.setattr(
         supervise,
@@ -3846,8 +3846,8 @@ def test_stalled_lane_is_flagged_while_the_dispatch_still_completes(
     monkeypatch.setattr(supervise.worktree, "load_session", lambda *_a, **_k: _WtSession())
     monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **_k: None)
     # The band gate reads the estimator before the dispatch (basicly-jr0l.16), and
-    # `decompose` keeps its own br alias — left live this timing test would spawn a
-    # real br and contend on its machine-global lock. In-band, so the lane dispatches.
+    # `decompose` keeps its own fake alias — left live this timing test would spawn a
+    # real fake and contend on its machine-global lock. In-band, so the lane dispatches.
     monkeypatch.setattr(
         supervise.decompose,
         "resolve_dispatch_sizing",
@@ -4027,13 +4027,12 @@ def test_admit_working_set_never_checked_a_bead_that_declares_no_scope(
     not the stubbed lookup: the conflation lived in the estimator's answer, so only a
     real scopeless record proves it is gone.
     """
-    # `br.try_run_br`, not `decompose._run_br`: the record read goes through
-    # `br.read_record` now (basicly-tcmy.14), and stubbing the module alias would leave
+    # `tracker.try_run_br`, not `decompose._run_br`: the record read goes through
+    # `tracker.read_record` now (basicly-tcmy.14), and stubbing the module alias would leave
     # the seam spawning a real br — which returns nothing here and reads back as
     # SCOPE_UNREADABLE, the absence this test exists to tell SCOPE_UNDECLARED apart from.
-    monkeypatch.setattr(
-        br,
-        "try_run_br",
+    fake_tracker.install(
+        monkeypatch,
         lambda _r, args, **_k: _Proc(
             json.dumps([
                 {"id": args[1], "issue_type": "task", "description": "## Context\n\nhand-filed"}
@@ -4062,11 +4061,11 @@ def test_admit_working_set_stays_indeterminate_when_the_bead_cannot_be_read(
     will not change it, while a tracker failure says nothing at all about the lane's
     size — so it carries no notice and nothing to escalate.
 
-    Stubbed at ``br.read_record``, which is where the failure now arrives: the seam turns
+    Stubbed at ``tracker.read_record``, which is where the failure now arrives: the seam turns
     every way a read can come back without a record into one ``None`` (basicly-tcmy.14),
     so a raising spawn below it is no longer a distinguishable input.
     """
-    monkeypatch.setattr(br, "read_record", lambda *_a, **_k: None)
+    monkeypatch.setattr(tracker, "read_record", lambda *_a, **_k: None)
 
     admission = supervise.admit_working_set(tmp_path, "epic.1", _sizing())
 

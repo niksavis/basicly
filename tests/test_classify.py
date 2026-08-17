@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, classify
+from basicly import classify, tracker
 from basicly.config import WORK_TYPES
-from tests import flipped_tracker
+from tests import fake_tracker, flipped_tracker
 
 
 class _Proc:
@@ -20,7 +20,7 @@ class _Proc:
 
 
 class _FakeBr:
-    """Stand-in for br, routed by subcommand.
+    """Stand-in for tracker, routed by subcommand.
 
     Records the type written as ``update -t`` and answers the record read the
     Definition-of-Ready derives its verdict from, so classify (which delegates that
@@ -34,11 +34,11 @@ class _FakeBr:
         self.comments: list[str] = []
 
     def read_comments(self, _repo_root: Path, _issue_id: str) -> list[dict]:
-        """Stands in for ``br.read_comments`` — the classification marker's read side."""
+        """Stands in for ``tracker.read_comments`` — the classification marker's read side."""
         return [{"text": text} for text in self.comments]
 
     def add_comment(self, _repo_root: Path, _issue_id: str, body: str) -> None:
-        """Stands in for ``br.add_comment`` — the classification marker's write side."""
+        """Stands in for ``tracker.add_comment`` — the classification marker's write side."""
         self.comments.append(body)
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
@@ -53,9 +53,9 @@ class _FakeBr:
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     monkeypatch.setattr(classify, "_write", fake)
-    # The record read goes through `br.read_record`, the one seam every consumer shares
+    # The record read goes through `tracker.read_record`, the one seam every consumer shares
     # (basicly-tcmy.14), rather than each module's alias.
-    monkeypatch.setattr(br, "try_run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
     # The `[harness-classification]` marker reads and writes comments; both go
     # through classify's own aliases so the fake answers them the same way.
     monkeypatch.setattr(classify, "_read_comments", fake.read_comments)
@@ -170,11 +170,11 @@ def test_the_type_and_the_marker_land_in_the_owned_ledger_with_br_absent(
 
     result = classify.classify(repo, "seam-1", "task", ("src/basicly/policy.py",))
 
-    record = br.read_record(repo, "seam-1")
+    record = tracker.read_record(repo, "seam-1")
     assert record is not None
     assert record["issue_type"] == "task"
     assert result.dor.ready is True
-    marker = br.read_comments(repo, "seam-1")[0]["text"]
+    marker = tracker.read_comments(repo, "seam-1")[0]["text"]
     assert marker.startswith(f"{classify.CLASSIFICATION_MARKER} level=L2")
 
 

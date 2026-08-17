@@ -23,7 +23,7 @@ layers =
     cli
     supervise | usage_report
     loop | release
-    catalog_lint | contention | cost_rollup | curate | health | landing_gate | tracker_cutover
+    catalog_lint | contention | cost_rollup | curate | health | landing_gate | tracker_query | tracker_write
     commit | merge
     rebase | repair_brief | wip | working_set
     classify | decompose | loop_state | plan_entry | retrospective | rubrics
@@ -42,20 +42,19 @@ layers =
     runner_usage
     decider_contract
     corpus_drift | decision_marker
-    artifact_record | lens_review | run_record | skill_source | surface_report
+    artifact_record | lens_review | run_record | skill_source
     spend_calibration
     demonstration_proof
     dependency_graph | gate_source | label_source
-    br
+    tracker
     owned_write
-    comment_rows | edge_adoption | mirror
+    comment_rows | mirror
     owned_store
-    br_argv
+    tracker_argv
     dispatch_phase
     runner_envelope
     board_schema
-    catalog | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_surface | tracker_usage | tree_schema | ui | usage | verify_artifact
-    tracker_invocation
+    catalog | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_usage | tree_schema | ui | usage | verify_artifact
     tracker_paths
     stemmer
 # Two cycles survive as function-level imports carrying `# noqa: PLC0415`; the

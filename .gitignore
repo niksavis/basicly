@@ -44,7 +44,7 @@ htmlcov/
 # model and policy overrides, key-merged over basicly.toml. Ignored so a
 # developer's own settings never reach a commit — and because the harness
 # refuses to land a worktree while the base checkout carries dirt outside
-# .beads/, so an untracked one would block every landing (basicly-jr0l.7).
+# the tracker, so an untracked one would block every landing (basicly-jr0l.7).
 # Note .basicly-local/fragments/ is deliberately *tracked*: catalog overlay
 # prose is shared, only this config file is per-machine.
 basicly.local.toml
@@ -67,16 +67,16 @@ node_modules/
 .basicly/ledger/snapshot.jsonl
 .basicly/ledger/checkpoint-*.jsonl
 
-# br doctor per-run artifacts
-.doctor/
-
-# bv (beads viewer) local config and caches
-.bv/
+# The worktree redirect: one line naming the checkout that owns the tracker, written at
+# provisioning (`basicly.tracker_paths`). Machine-local by construction — it holds an
+# absolute path — and per-worktree, so committing it would point every clone at one
+# developer's checkout.
+.basicly/ledger/redirect
 
 # Session handover notes: a session's own claims about where it stopped, written
 # for whoever picks up next and deleted once acted on. Local on purpose — they are
 # unverified by construction, so committing them would put assertions in the repo
 # beside the code that is the actual authority. Ignored for the same reason
 # basicly.local.toml is: the harness refuses to land a worktree while the base
-# checkout carries dirt outside .beads/, so an untracked one blocks every landing.
+# checkout carries dirt outside the tracker, so an untracked one blocks every landing.
 HANDOVER.md

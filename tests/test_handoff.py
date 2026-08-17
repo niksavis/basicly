@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import artifact_record, br, handoff, plan_gate
+from basicly import artifact_record, handoff, plan_gate, tracker
 from basicly.decompose import CreatedChild, DecomposeResult
 from tests import plan_fixtures
 
@@ -38,9 +38,9 @@ class _FakeBr:
     which is what makes the round trip — record, then admit — a real round trip rather
     than two assertions about one dictionary.
 
-    Installed at ``br.add_comment``/``br.read_comments`` rather than at ``br.run_br``:
-    those two are the seam :mod:`basicly.artifact_record` calls on **either** rung,
-    while ``run_br`` is the external rung's spawn and is not reached at all since
+    Installed at the marker seam — ``add_comment``/``read_comments`` — rather than
+    below it: those two are what :mod:`basicly.artifact_record` calls, and the spawn
+    that used to sit under them is deleted since
     ``[tracker] mode`` became ``owned``.
     """
 
@@ -51,15 +51,15 @@ class _FakeBr:
         self.comments.setdefault(issue_id, []).append(body)
 
     def read(self, _repo_root: Path, issue_id: str) -> list[dict]:
-        return [{br.COMMENT_TEXT_KEY: text} for text in self.comments.get(issue_id, [])]
+        return [{tracker.COMMENT_TEXT_KEY: text} for text in self.comments.get(issue_id, [])]
 
 
 @pytest.fixture
 def fake_br(monkeypatch: pytest.MonkeyPatch) -> _FakeBr:
-    """Route the marker seam — ``br.add_comment``/``br.read_comments`` — at a stateful fake."""
+    """Route the marker seam — ``add_comment``/``read_comments`` — at a stateful fake."""
     fake = _FakeBr()
-    monkeypatch.setattr(br, "add_comment", fake.add)
-    monkeypatch.setattr(br, "read_comments", fake.read)
+    monkeypatch.setattr(tracker, "add_comment", fake.add)
+    monkeypatch.setattr(tracker, "read_comments", fake.read)
     return fake
 
 

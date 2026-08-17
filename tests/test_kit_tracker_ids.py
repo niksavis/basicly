@@ -9,7 +9,7 @@ for a reason rather than to restate the code:
   against the exact product ``1 - Π(1 - i/N)``. A row edited in either place without
   the other breaks here.
 - **The no-slug rule is tripped, not read.** The commit-message gate's own ``validate``
-  is loaded from ``.basicly/core/hooks/beads-commit-msg.py`` and called on minted ids,
+  is loaded from ``.basicly/core/hooks/tracker-commit-msg.py`` and called on minted ids,
   with the hyphenated id as the positive control — so "a hyphen breaks the gate" is a
   demonstrated mechanism and the pass on our own ids means something.
 - **The evidence id is held to the shipped implementations.** ``decision_id_for``,
@@ -39,7 +39,7 @@ from basicly.run_record import cost_marker_id, marker_id
 
 REPO_ROOT = Path(__file__).parent.parent
 KIT = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker" / "ids.py"
-GATE = REPO_ROOT / ".basicly" / "core" / "hooks" / "beads-commit-msg.py"
+GATE = REPO_ROOT / ".basicly" / "core" / "hooks" / "tracker-commit-msg.py"
 
 # The declared thresholds of the module docstring's table, retyped here on purpose:
 # this is the change detector the acceptance criterion asks for, so moving the target
@@ -60,7 +60,7 @@ def _load(path: Path, name: str) -> ModuleType:
 
 
 ids = _load(KIT, "tracker_ids")
-gate = _load(GATE, "beads_commit_msg_gate")
+gate = _load(GATE, "tracker_commit_msg_gate")
 
 
 class _ScriptedRandom(random.Random):

@@ -16,7 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from basicly import config, run_record, tuning
+from basicly import config, run_record, tracker, tuning
+from tests import flipped_tracker
 
 MARKER = run_record.MARKER
 
@@ -35,19 +36,19 @@ def _write_tracker(repo_root: Path, records: dict[str, list[dict]]) -> None:
     marker comments rather than injected further down so the report is exercised through
     the same reader a teammate's clone would use.
     """
-    beads = repo_root / ".beads"
-    beads.mkdir(parents=True, exist_ok=True)
-    lines = [
-        json.dumps({
-            "id": bead_id,
-            "comments": [
-                {"text": f"{MARKER} id={bead_id}#run-{index}\n{json.dumps(entry)}"}
-                for index, entry in enumerate(entries)
-            ],
-        })
-        for bead_id, entries in records.items()
-    ]
-    (beads / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    flipped_tracker.seed_records(
+        repo_root,
+        [
+            {
+                "id": bead_id,
+                "comments": [
+                    {"text": f"{MARKER} id={bead_id}#run-{index}\n{json.dumps(entry)}"}
+                    for index, entry in enumerate(entries)
+                ],
+            }
+            for bead_id, entries in records.items()
+        ],
+    )
 
 
 def _lane(stamp: str, **fields: object) -> dict:
@@ -420,8 +421,10 @@ def test_a_corrupt_corpus_reads_as_no_evidence(tmp_path: Path) -> None:
     usage_dir = tmp_path / run_record.USAGE_DIR
     usage_dir.mkdir(parents=True)
     (tmp_path / run_record.RUN_RECORDS_FILE).write_text("{not json", encoding="utf-8")
-    (tmp_path / ".beads").mkdir()
-    (tmp_path / ".beads" / "issues.jsonl").write_text("not json either\n", encoding="utf-8")
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    (tracker.ledger_dir(repo) / "events-0001.jsonl").write_text(
+        "not json either\n", encoding="utf-8"
+    )
 
     report = tuning.tuning_report(tmp_path)
 

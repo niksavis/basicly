@@ -70,7 +70,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Where the kit is installed, and where this repo keeps its ledger. Both are host layout
 # rather than kit contract — the kit takes its directory as an argument and names no path —
 # so they are literals here with `--repo`/`--ledger` to override. `tests/test_kit_deployment.py`
-# ties LEDGER_DIR to `tracker_surface.INVENTORY_FILE.parent`, which is the other artifact in
+# ties LEDGER_DIR to `basicly.tracker_paths.LEDGER_DIR_NAME`, the engine's own resolver for
 # the same directory, so the two cannot drift apart unnoticed.
 KIT_DIR = Path(".basicly") / "core" / "kit" / "tracker"
 LEDGER_DIR = Path(".basicly") / "ledger"

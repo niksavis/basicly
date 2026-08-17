@@ -12,7 +12,7 @@ import pytest
 from basicly import merge, policy, rebase, run_record, verify
 from basicly.config import PolicyConfig
 from basicly.worktree import Session
-from tests import flipped_tracker
+from tests import fake_tracker, flipped_tracker
 
 
 class _Proc:
@@ -241,7 +241,9 @@ def test_commit_tracker_state_commits_beads_only_dirt(
 ) -> None:
     """Tracker-only dirt is rolled into one chore commit referencing the bead."""
     fake = _FakeGit({
-        "status": _Proc(0, " M .beads/issues.jsonl\n?? .beads/metadata.json\n"),
+        "status": _Proc(
+            0, " M .basicly/ledger/events-0001.jsonl\n?? .basicly/ledger/events-0002.jsonl\n"
+        ),
         "add": _Proc(0),
         "commit": _Proc(0),
     })
@@ -250,7 +252,7 @@ def test_commit_tracker_state_commits_beads_only_dirt(
     flipped_tracker.refuse_spawn(monkeypatch)
 
     assert merge.commit_tracker_state(tmp_path, "basicly-x") is True
-    assert ["add", ".beads"] in fake.calls
+    assert ["add", ".basicly/ledger"] in fake.calls
     commit = next(call for call in fake.calls if call[0] == "commit")
     assert "(basicly-x)" in commit[-1] and commit[-1].startswith("chore(beads):")
 
@@ -259,7 +261,7 @@ def test_commit_tracker_state_refuses_mixed_dirt(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Non-beads dirt is someone's work — nothing is committed."""
-    fake = _FakeGit({"status": _Proc(0, " M src/app.py\n M .beads/issues.jsonl\n")})
+    fake = _FakeGit({"status": _Proc(0, " M src/app.py\n M .basicly/ledger/events-0001.jsonl\n")})
     _patch_git(monkeypatch, fake)
 
     assert merge.commit_tracker_state(tmp_path, "basicly-x") is False
@@ -297,7 +299,9 @@ def test_merge_worktree_rolls_up_tracker_dirt_before_landing(
     """Loop tracker state dirtying the base no longer blocks the landing."""
     status_results = iter([
         _Proc(0, ""),  # _worktree_land_readiness: worktree tree is clean (work committed)
-        _Proc(0, " M .beads/issues.jsonl\n"),  # commit_tracker_state sees the base dirt
+        _Proc(
+            0, " M .basicly/ledger/events-0001.jsonl\n"
+        ),  # commit_tracker_state sees the base dirt
         _Proc(0, ""),  # after the rollup commit, _assert_base_ready sees clean
     ])
     responses = {
@@ -307,7 +311,7 @@ def test_merge_worktree_rolls_up_tracker_dirt_before_landing(
         "merge": _Proc(0),
         "rev-parse": _Proc(0, "def456"),
         "ls-tree": _Proc(0, ""),  # identical trees either side of the replay
-        "add": _Proc(0),  # the rollup stages .beads...
+        "add": _Proc(0),  # the rollup stages the ledger...
         "commit": _Proc(0),  # ...and commits it
         "merge-base": _Proc(0),  # the merge proves itself
     }
@@ -327,7 +331,7 @@ def test_merge_worktree_rolls_up_tracker_dirt_before_landing(
         return responses[args[0]]
 
     _patch_git(monkeypatch, fake_git)
-    monkeypatch.setattr(merge.br, "try_run_br", lambda *_a, **_k: None)
+    fake_tracker.install(monkeypatch, lambda *_a, **_k: None)
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
 
     result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
@@ -935,7 +939,7 @@ def test_merge_queue_records_the_missed_coupling_as_a_dependency_edge(
         merge.decompose, "bead_class_and_scope", lambda _r, bead: ("task", scopes[bead])
     )
     calls: list[list[str]] = []
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
+    fake_tracker.install(monkeypatch, lambda _r, args: calls.append(args) or _Proc(0))
 
     results = merge.merge_queue(tmp_path, [("a", "ba"), ("b", "bb"), ("c", "bc")])
 
@@ -965,7 +969,7 @@ def test_merge_queue_attributes_a_bounce_against_a_later_landing(
         merge.decompose, "bead_class_and_scope", lambda _r, bead: ("task", scopes[bead])
     )
     calls: list[list[str]] = []
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
+    fake_tracker.install(monkeypatch, lambda _r, args: calls.append(args) or _Proc(0))
 
     results = merge.merge_queue(tmp_path, [("a", "ba"), ("b", "bb")])
 
@@ -992,7 +996,7 @@ def test_merge_queue_records_no_coupling_outside_the_conflicting_scope(
         merge.decompose, "bead_class_and_scope", lambda _r, bead: ("task", scopes[bead])
     )
     calls: list[list[str]] = []
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
+    fake_tracker.install(monkeypatch, lambda _r, args: calls.append(args) or _Proc(0))
 
     results = merge.merge_queue(tmp_path, [("a", "ba"), ("b", "bb")])
 
@@ -1018,7 +1022,7 @@ def test_merge_queue_records_no_coupling_when_the_scope_is_unreadable(
     monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
     monkeypatch.setattr(merge.decompose, "bead_class_and_scope", lambda _r, _bead: None)
     calls: list[list[str]] = []
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
+    fake_tracker.install(monkeypatch, lambda _r, args: calls.append(args) or _Proc(0))
 
     results = merge.merge_queue(tmp_path, [("a", "ba"), ("b", "bb")])
 
@@ -1037,7 +1041,7 @@ def test_merge_queue_bounce_records_no_coupling_without_paths(
     monkeypatch.setattr(merge, "merge_worktree", lambda _r, name, **_kwargs: outcomes[name])
     monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
     calls: list[list[str]] = []
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
+    fake_tracker.install(monkeypatch, lambda _r, args: calls.append(args) or _Proc(0))
 
     results = merge.merge_queue(tmp_path, [("a", "ba"), ("b", "bb")])
 
@@ -1059,7 +1063,7 @@ def test_merge_queue_bounce_never_resolves_the_conflict_itself(
     monkeypatch.setattr(policy, "record_rework", lambda *_a: 1)
     fake = _FakeGit({"rev-parse": _Proc(0, "sha")})
     _patch_git(monkeypatch, fake)
-    monkeypatch.setattr(merge.br, "try_run_br", lambda *_a, **_k: _Proc(0))
+    fake_tracker.install(monkeypatch, lambda *_a, **_k: _Proc(0))
 
     merge.merge_queue(tmp_path, [("a", "ba")])
 
@@ -1076,11 +1080,16 @@ def test_missed_couplings_attributes_only_the_lanes_that_touched_the_paths() -> 
 
 
 def test_missed_couplings_ignores_a_tracker_collision() -> None:
-    """Every landing rewrites .beads, so a tracker clash is not a scope coupling."""
-    landed = [("a", (".beads/issues.jsonl",)), ("b", (".beads/issues.jsonl", "src/x.py"))]
-    assert merge.missed_couplings((".beads/issues.jsonl",), landed) == ()
+    """Every landing rewrites the ledger, so a tracker clash is not a scope coupling."""
+    landed = [
+        ("a", (".basicly/ledger/events-0001.jsonl",)),
+        ("b", (".basicly/ledger/events-0001.jsonl", "src/x.py")),
+    ]
+    assert merge.missed_couplings((".basicly/ledger/events-0001.jsonl",), landed) == ()
     # A real path in the same conflict still attributes, and only to whoever landed it.
-    assert merge.missed_couplings((".beads/issues.jsonl", "src/x.py"), landed) == ("b",)
+    assert merge.missed_couplings((".basicly/ledger/events-0001.jsonl", "src/x.py"), landed) == (
+        "b",
+    )
 
 
 def test_coupled_lanes_reads_the_declared_scope_not_the_landed_diff() -> None:
@@ -1105,8 +1114,10 @@ def test_coupled_lanes_is_free_of_dict_order_and_never_self_blames() -> None:
 def test_coupled_lanes_ignores_a_tracker_collision() -> None:
     """The engine rewrites .beads on every landing, so it evidences no coupling."""
     scopes = {"a": (".beads/**",), "b": ("src/x.py",)}
-    assert merge.coupled_lanes((".beads/issues.jsonl",), scopes, bounced="me") == ()
-    assert merge.coupled_lanes((".beads/issues.jsonl", "src/x.py"), scopes, bounced="me") == ("b",)
+    assert merge.coupled_lanes((".basicly/ledger/events-0001.jsonl",), scopes, bounced="me") == ()
+    assert merge.coupled_lanes(
+        (".basicly/ledger/events-0001.jsonl", "src/x.py"), scopes, bounced="me"
+    ) == ("b",)
 
 
 def test_out_of_scope_paths_reports_only_what_no_declared_glob_covers() -> None:
@@ -1131,7 +1142,7 @@ def test_out_of_scope_paths_says_nothing_when_nothing_was_declared() -> None:
 
 def test_out_of_scope_paths_never_faults_a_lane_for_the_tracker() -> None:
     """The harness rewrites .beads on every landing, so no plan declares it."""
-    changed = (".beads/issues.jsonl", ".beads/metadata.json", "src/x.py")
+    changed = (".basicly/ledger/events-0001.jsonl", ".basicly/ledger/events-0002.jsonl", "src/x.py")
     assert merge.out_of_scope_paths(changed, ("docs/**",)) == ("src/x.py",)
 
 
@@ -1176,7 +1187,7 @@ def test_record_coupling_writes_the_pair_in_a_canonical_direction(
 ) -> None:
     """The edge must not encode which lane bounced (D9, basicly-kjc5.32)."""
     calls: list[list[str]] = []
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, args: calls.append(args) or _Proc(0))
+    fake_tracker.install(monkeypatch, lambda _r, args: calls.append(args) or _Proc(0))
 
     merge.record_coupling(tmp_path, "epic.2", "epic.1")
     merge.record_coupling(tmp_path, "epic.1", "epic.2")
@@ -1187,7 +1198,7 @@ def test_record_coupling_writes_the_pair_in_a_canonical_direction(
 def test_landing_order_lands_a_dependency_before_its_dependent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Dependency order comes from br, not from the caller's ordering (D5)."""
+    """Dependency order comes from tracker, not from the caller's ordering (D5)."""
     deps = {"b2": frozenset({"b1"}), "b1": frozenset(), "b3": frozenset({"b2"})}
     monkeypatch.setattr(merge, "blocking_dependencies", lambda _r, bead: deps[bead])
 
@@ -1238,7 +1249,7 @@ def test_blocking_dependencies_reads_the_br_show_payload_shape(
         '{"id":"b1","title":"lane","status":"open","dependency_type":"blocks"},'
         '{"id":"epic","title":"e","status":"open","dependency_type":"parent-child"}]}]'
     )
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _args: _Proc(0, payload))
+    fake_tracker.install(monkeypatch, lambda _r, _args: _Proc(0, payload))
     assert merge.blocking_dependencies(tmp_path, "b2") == frozenset({"b1"})
 
 
@@ -1251,7 +1262,7 @@ def test_blocking_dependencies_also_reads_the_echo_payload_shape(
         '{"issue_id":"b2","depends_on_id":"b1","type":"blocks"},'
         '{"issue_id":"b2","depends_on_id":"epic","type":"parent-child"}]}'
     )
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _args: _Proc(0, payload))
+    fake_tracker.install(monkeypatch, lambda _r, _args: _Proc(0, payload))
     assert merge.blocking_dependencies(tmp_path, "b2") == frozenset({"b1"})
 
 
@@ -1259,9 +1270,9 @@ def test_blocking_dependencies_degrades_when_br_is_unavailable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """No br on PATH (or junk output) means no ordering, never a crash."""
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _args: None)
+    fake_tracker.install(monkeypatch, lambda _r, _args: None)
     assert merge.blocking_dependencies(tmp_path, "b2") == frozenset()
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _args: _Proc(0, "not json"))
+    fake_tracker.install(monkeypatch, lambda _r, _args: _Proc(0, "not json"))
     assert merge.blocking_dependencies(tmp_path, "b2") == frozenset()
 
 
@@ -1282,9 +1293,9 @@ def test_merge_worktree_rejects_an_unknown_bead(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A bead id missing from the tracker fails before any git merge starts."""
-    beads = tmp_path / ".beads"
-    beads.mkdir()
-    (beads / "issues.jsonl").write_text('{"id":"proj-abc"}\n', encoding="utf-8")
+    ledger = tmp_path / ".basicly" / "ledger"
+    ledger.mkdir(parents=True)
+    (ledger / "events-0001.jsonl").write_text('{"record":"proj-abc"}\n', encoding="utf-8")
     fake = _FakeGit({"status": _Proc(0, "")})
     _patch_git(monkeypatch, fake)
 
@@ -1360,10 +1371,10 @@ def test_merge_worktree_still_reports_verify_failed_when_it_reproduces(
 def test_merge_worktree_forgives_a_reproduced_failure_that_is_a_dependency_defect(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A backwards clock step persists, so the re-run test alone cannot see it.
+    """A contended tracker lock persists, so the re-run test alone cannot see it.
 
-    Measured on basicly-m4zv.9: the landing re-ran, reproduced, and spent a rework
-    attempt on a `br` defect the work could not have caused (basicly-kjc5.56).
+    Measured on basicly-m4zv.14: the landing re-ran, reproduced, and spent a rework
+    attempt on a store defect the work could not have caused (basicly-kjc5.56).
     """
     reproduced = verify.VerifyReport(
         "full",
@@ -1373,8 +1384,8 @@ def test_merge_worktree_forgives_a_reproduced_failure_that_is_a_dependency_defec
                 "fail",
                 1,
                 output=(
-                    "E           RuntimeError: br update fx-d01 -t task failed: "
-                    "Error: Validation failed: updated_at: cannot be before created_at\n"
+                    "E           basicly_tracker_kit_events.LockUnavailableError: another "
+                    "writer holds /repo/.basicly/ledger/.events.lock after 5.0s\n"
                 ),
             ),
         ),
@@ -1390,7 +1401,7 @@ def test_merge_worktree_forgives_a_reproduced_failure_that_is_a_dependency_defec
     assert "known dependency defect" in result.detail
     # The reason travels with the verdict, so a reader is never left guessing which
     # dependency was forgiven or why forgiving it is safe.
-    assert "clock steps backwards" in result.detail
+    assert "one lock" in result.detail
 
 
 @pytest.mark.usefixtures("base_ready")
@@ -1475,11 +1486,11 @@ _TRACKER_WIDE = (
 
 
 def _tracker(tmp_path: Path, *bead_ids: str) -> None:
-    """Give *tmp_path* a `.beads/issues.jsonl` holding exactly *bead_ids*."""
-    beads = tmp_path / ".beads"
-    beads.mkdir(parents=True, exist_ok=True)
-    beads.joinpath("issues.jsonl").write_text(
-        "".join(json.dumps({"id": one}) + "\n" for one in bead_ids), encoding="utf-8"
+    """Give *tmp_path* an event log holding exactly *bead_ids*."""
+    ledger = tmp_path / ".basicly" / "ledger"
+    ledger.mkdir(parents=True, exist_ok=True)
+    ledger.joinpath("events-0001.jsonl").write_text(
+        "".join(json.dumps({"record": one}) + "\n" for one in bead_ids), encoding="utf-8"
     )
 
 
@@ -1493,7 +1504,7 @@ def test_merge_worktree_faults_the_lane_whose_record_failed_a_tracker_wide_gate(
 ) -> None:
     """The reported defect: tcmy.6's landing failed on tcmy.5's finishing record.
 
-    Every lane in a supervised pass shares one `.beads` through the redirect, so the
+    Every lane in a supervised pass shares one ledger through the redirect, so the
     working-set ceiling asserts over tcmy.5's record inside tcmy.6's own landing. It
     reproduces (the record is durable) and it is our gate, not a dependency's, so
     neither existing forgiveness sees it.
@@ -1624,7 +1635,9 @@ def test_foreign_dirt_names_only_the_paths_outside_beads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The loop's own tracker state is not foreign; anything else is."""
-    fake = _FakeGit({"status": _Proc(0, " M src/app.py\n M .beads/issues.jsonl\n?? .gitignore\n")})
+    fake = _FakeGit({
+        "status": _Proc(0, " M src/app.py\n M .basicly/ledger/events-0001.jsonl\n?? .gitignore\n")
+    })
     _patch_git(monkeypatch, fake)
 
     assert merge.foreign_dirt(tmp_path) == ("src/app.py", ".gitignore")
@@ -1634,7 +1647,9 @@ def test_foreign_dirt_is_empty_for_a_tracker_only_tree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A commit that would have succeeded has nothing foreign to report."""
-    _patch_git(monkeypatch, _FakeGit({"status": _Proc(0, " M .beads/issues.jsonl\n")}))
+    _patch_git(
+        monkeypatch, _FakeGit({"status": _Proc(0, " M .basicly/ledger/events-0001.jsonl\n")})
+    )
     assert merge.foreign_dirt(tmp_path) == ()
 
 

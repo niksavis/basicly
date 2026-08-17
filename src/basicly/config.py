@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import __version__, br, dropin, owned_store, permissions, session, tree_schema
+from . import __version__, dropin, owned_store, permissions, session, tracker, tree_schema
 from .context_window import (
     AGENT_WINDOW,
     DECLARED_WINDOW,
@@ -227,7 +227,7 @@ DEFAULT_MAX_DOWNSTREAM_WIP = 5
 #
 # A *required* gate counts only when its result carries one of these. ``br gate
 # report`` authenticates nothing and a dispatched lane agent shares the real
-# tracker through the worktree beads redirect, so without this filter one br
+# tracker through the worktree beads redirect, so without this filter one tracker
 # call from inside a dispatch satisfies a required gate — the constraint that no
 # model holds authority over a required gate would hold only by agent good
 # behaviour. Forging one of these provider strings is still possible; that is
@@ -303,7 +303,7 @@ ENGINE_GATE_PROVIDERS = frozenset({VERIFY_GATE_PROVIDER, RUBRIC_GATE_PROVIDER})
 # tcmy.5 widened its own scope mid-flight from the eight globs it was ADMITTED on
 # (66_780) to sixteen (130_780), completed the work, and its finishing record then
 # failed the separating gate. Because every lane in a supervised pass shares one
-# `.beads` through the redirect, that failure was not local — the gate asserts over
+# ledger through the redirect, that failure was not local — the gate asserts over
 # the whole tracker, so basicly-tcmy.6 and basicly-tcmy.22 failed verify on tcmy.5's
 # declaration and each was charged a rework attempt for a defect in neither diff.
 # That cross-lane blast radius is filed on basicly-qorx alongside the ratchet.
@@ -586,8 +586,8 @@ CONFIG_SCHEMA: dict[str, Table] = {
         tables={"context_windows": _OPEN_TABLE},
         arrays={"agents": _RUNNER_AGENT_TABLE},
     ),
-    # Which step of the work-tracker cutover this repo is on (basicly-vkh0.19).
-    # Read by :func:`load_tracker_mode` and acted on inside `basicly.br`.
+    # The owned tracker: which store, and the id prefix a root record is minted under.
+    # Read by :func:`load_tracker_mode` and :func:`load_tracker_prefix`.
     "tracker": Table(keys=frozenset({"mode", "prefix"})),
     # Read by .basicly/core/hooks/internal-info-scan.py, never by this module: the
     # denylist is machine-local by design, so the only file it can live in is the
@@ -808,41 +808,38 @@ def load_tracker_prefix(repo_root: Path) -> str | None:
 
 
 def load_tracker_mode(repo_root: Path) -> str:
-    """Which step of the work-tracker cutover ``[tracker] mode`` declares.
+    """Which store ``[tracker] mode`` declares, of the one there is.
 
-    The ladder is `docs/requirements/work-tracker.md` §5 and its values are
-    :data:`basicly.br.TRACKER_MODES`; the module that acts on the answer owns the
-    vocabulary, so there is one spelling of ``dual`` in the engine.
-
-    Absent means :data:`basicly.br.DEFAULT_TRACKER_MODE` — the pre-cutover behaviour,
-    which is what a consumer who has never heard of the owned tracker must get.
+    Absent means :data:`basicly.tracker.DEFAULT_TRACKER_MODE`, which is the owned ledger: the
+    ladder collapsed to its last rung with the store it migrated from
+    (basicly-vkh0.42.7). The key survives so a consumer's committed declaration is not
+    refused as an unknown name.
 
     An unrecognised value is refused rather than defaulted, for the reason
-    :data:`CONFIG_SCHEMA` refuses an unrecognised *name*: a mode the engine cannot
-    honour leaves the file stating one behaviour and the engine performing another,
-    and here the two behaviours differ in which store answers a read.
+    :data:`CONFIG_SCHEMA` refuses an unrecognised *name*: a mode the engine cannot honour
+    leaves the file stating a behaviour nothing performs.
 
     Raises:
-        ValueError: ``mode`` is set to something outside :data:`basicly.br.TRACKER_MODES`.
+        ValueError: ``mode`` is set to something outside :data:`basicly.tracker.TRACKER_MODES`.
     """
     mode = _harness_section(repo_root, "tracker").get("mode")
     if mode is None:
-        return br.DEFAULT_TRACKER_MODE
-    if mode not in br.TRACKER_MODES:
+        return tracker.DEFAULT_TRACKER_MODE
+    if mode not in tracker.TRACKER_MODES:
         raise ValueError(
-            f"[tracker] mode = {mode!r} is not one of {', '.join(br.TRACKER_MODES)}; "
-            f"the work-tracker cutover has no other step (docs/requirements/work-tracker.md §5)"
+            f"[tracker] mode = {mode!r} is not one of {', '.join(tracker.TRACKER_MODES)}; "
+            f"the owned ledger is the only store this engine has"
         )
     return mode
 
 
 # The engine's answer to "which store is authoritative" is installed into the seam
-# that acts on it, rather than imported by it. `basicly.br` cannot import this module:
+# that acts on it, rather than imported by it. `basicly.tracker` cannot import this module:
 # `config -> runner -> run_record -> br` already runs the other way, so the import
-# would close a cycle. :func:`basicly.br.set_mode_reader` documents the inversion; this
+# would close a cycle. :func:`basicly.tracker.set_mode_reader` documents the inversion; this
 # is the one line that performs it, and `tests/test_br_seam.py` asserts that importing
 # this module is what puts the seam in a repo's declared mode.
-br.set_mode_reader(load_tracker_mode)
+tracker.set_mode_reader(load_tracker_mode)
 owned_store.set_prefix_reader(load_tracker_prefix)
 
 

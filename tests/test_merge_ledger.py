@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from basicly import merge
+from tests import fake_tracker
 
 if TYPE_CHECKING:
     import pytest
@@ -39,14 +40,13 @@ def _fake_git(monkeypatch: pytest.MonkeyPatch, status: str) -> list[list[str]]:
 def test_the_owned_ledger_is_swept_into_the_tracker_commit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Under dual write a lane dirties the ledger before it lands, so the landing owns it.
+    """A lane dirties the ledger before it lands, so the landing owns it.
 
     The claim at provisioning, the gate reports and the comments all append there, which
     is why the first landing after the flip was refused and needed a human.
     """
-    calls = _fake_git(monkeypatch, f" M .beads/issues.jsonl\n M {LEDGER}\n")
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _args: _Proc())
-    monkeypatch.setattr(merge.br, "scrub_export", lambda _r: 0)
+    calls = _fake_git(monkeypatch, f" M {LEDGER}\n")
+    fake_tracker.install(monkeypatch, lambda _r, _args: _Proc())
 
     assert merge.commit_tracker_state(tmp_path, "basicly-x") is True
     assert ["add", *merge.ENGINE_TRACKER_PATHS] in calls
@@ -62,14 +62,13 @@ def test_a_file_beside_the_ledger_is_still_somebody_elses_work(
 
 
 def test_a_tree_with_no_dirt_is_not_staged(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A repo still on ``external`` has no ledger, and ``git add`` exits 128 on one.
+    """Only a tree git reported dirt in is staged: ``git add`` exits 128 on an absent one.
 
     Decided from what git reported, never from disk: reading the filesystem here made a
     git-level-faked path depend on it, and could stage nothing at all.
     """
-    calls = _fake_git(monkeypatch, " M .beads/issues.jsonl\n")
-    monkeypatch.setattr(merge.br, "try_run_br", lambda _r, _args: _Proc())
-    monkeypatch.setattr(merge.br, "scrub_export", lambda _r: 0)
+    calls = _fake_git(monkeypatch, f" M {LEDGER}\n")
+    fake_tracker.install(monkeypatch, lambda _r, _args: _Proc())
 
     assert merge.commit_tracker_state(tmp_path, "basicly-x") is True
-    assert ["add", ".beads"] in calls
+    assert ["add", ".basicly/ledger"] in calls

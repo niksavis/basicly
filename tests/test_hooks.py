@@ -93,7 +93,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "internal-info-scan",
         "kit-boundary",
         "commit-msg-script",
-        "beads-commit-msg-script",
+        "tracker-commit-msg-script",
         "pre-push-script",
         "protect-generated",
         "protect-generated-commit",
@@ -208,7 +208,7 @@ def test_sync_hooks_scaffolds_and_check_round_trips(tmp_path: Path) -> None:
 
     config = tmp_path / ".pre-commit-config.yaml"
     assert config.is_file()
-    for script in ("pre-commit.py", "commit-msg.py", "beads-commit-msg.py", "pre-push.py"):
+    for script in ("pre-commit.py", "commit-msg.py", "tracker-commit-msg.py", "pre-push.py"):
         assert (tmp_path / CORE_HOOKS_DIR / script).is_file()
 
     loaded = yaml.safe_load(config.read_text(encoding="utf-8"))

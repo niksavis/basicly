@@ -1,18 +1,18 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: quality-gates
 
-# Tracker-only pushes (.beads/**) skip CI: the harness loop necessarily commits
-# beads state separately from the work (basicly-flp), and the local commit-msg
-# hooks are the deterministic floor for those commits.
+# Tracker-only pushes skip CI: the harness loop necessarily commits tracker state
+# separately from the work (basicly-flp), and the local commit-msg hooks are the
+# deterministic floor for those commits.
 "on":
   push:
     branches: [main]
     paths-ignore:
-      - ".beads/**"
+      - ".basicly/ledger/**"
   pull_request:
     branches: [main]
     paths-ignore:
-      - ".beads/**"
+      - ".basicly/ledger/**"
   workflow_dispatch:
 
 permissions:
@@ -67,7 +67,7 @@ jobs:
               failed=1
             fi
 
-            if ! uv run python .basicly/core/hooks/beads-commit-msg.py "${msg_file}"; then
+            if ! uv run python .basicly/core/hooks/tracker-commit-msg.py "${msg_file}"; then
               echo "Missing/unknown beads issue id in ${commit_sha}: ${subject}" >&2
               failed=1
             fi

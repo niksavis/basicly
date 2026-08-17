@@ -29,7 +29,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, usage, worktree
+from . import tracker, tracker_paths, usage, worktree
 from .config import VERIFY_GATE_PROVIDER, VerifyCheck, VerifyConfig, load_verify_config
 from .verify_artifact import write_run_artifact
 
@@ -42,9 +42,9 @@ GATE_PROVIDER = VERIFY_GATE_PROVIDER
 def linked_worktree_guard(repo_root: Path) -> str | None:
     """Reason recording a gate from *repo_root* would lose it, or None when safe.
 
-    A linked worktree whose ``.beads`` redirects to the base checkout shares the one
-    real tracker (:func:`basicly.br.beads_dir` resolves it), so recording from it is
-    safe.
+    A linked worktree whose ledger redirects to the base checkout shares the one real
+    tracker (:func:`basicly.tracker_paths.tracker_root` resolves it), so recording from
+    it is safe.
 
     An **abort** gate, classified as :data:`basicly.policy.LINKED_WORKTREE_GATE`: it
     halts the record and preserves the verify verdict the caller already has. Not a
@@ -62,10 +62,11 @@ def linked_worktree_guard(repo_root: Path) -> str | None:
     root = Path(repo_root).resolve()
     if main == root:
         return None
-    if br.beads_dir(root).resolve() == main / ".beads":
+    if tracker_paths.tracker_root(root).resolve() == main:
         return None
+    redirect = (tracker_paths.LEDGER_DIR_NAME / tracker_paths.REDIRECT_NAME).as_posix()
     return (
-        f"this checkout is a linked worktree of {main} without a .beads/redirect "
+        f"this checkout is a linked worktree of {main} without a {redirect} "
         "to it; a gate recorded here lives in the worktree's throwaway tracker "
         "copy and is discarded at landing. The loop records the verify gate from "
         "the base checkout when it lands the worktree — run without --issue "
@@ -300,33 +301,22 @@ def rerun_failures(
 # to this repo can produce it — otherwise this launders a real failure, which is
 # worse than the flake it excuses. Keep it short and keep the reason with it.
 #
-# Matching is per-line and conjunctive because the defect phrase alone is not
-# enough. Requiring our own ``br.py`` wrapper text on the same line proves the
-# failure came out of a br subprocess rather than out of a test's own fixture.
-# It also spans both shapes br uses for one defect — "Validation failed: <field>:
-# <msg>" and "Validation errors: [ValidationError { field: .., message: .. }]" —
-# which a literal match on either prose form does not (learned the hard way: the
-# first version of this register held only the singular form and a landing
-# reproduced only the plural one).
+# Matching is per-line and conjunctive: requiring the store's own error class on the
+# same line proves the failure came out of the ledger, not out of a test's fixture.
 #
-# The lock entry is anchored on ``write lock at`` rather than on the whole timeout
-# sentence for the same reason: that phrase is common to every wording br uses when
-# it cannot take the lock, and the observed one ("Timed out after 400ms waiting for
-# write lock at <path>/.beads/.write.lock", reproduced 2026-08-05 by holding the
-# lock against br 0.2.16) is only the shape this repo has seen so far.
+# **The register lost an entry to the deletion, not to a fix** (basicly-vkh0.42.7): the
+# external tracker refused its own write on a backwards clock step, and there is no such
+# process left, so the entry would launder whatever else produced that text.
+#
+# The lock entry stays because the property did — one lock per append, lanes run
+# concurrently. Anchored on `events.LedgerLock.__enter__`'s own wording.
 DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[tuple[str, ...], str], ...] = (
     (
-        ("RuntimeError: br ", "failed:", "cannot be before created_at"),
-        "br rejects its own write when the host clock steps backwards between two "
-        "writes; nothing in this repo sets either timestamp (basicly-vkh0.6 carries "
-        "it as a requirement on the replacement)",
-    ),
-    (
-        ("RuntimeError: br ", "failed:", "write lock at"),
-        "br serialises every mutating command behind one .beads/.write.lock and "
-        "fails the command outright when it cannot take it before the timeout, so a "
-        "gate contends with whatever else drives the tracker at that moment; no diff "
-        "can make that contention its own fault (R8 in docs/requirements/work-tracker.md)",
+        ("LockUnavailableError", "another writer holds"),
+        "the ledger serialises every append behind one lock and fails the write "
+        "outright when it cannot take it before the timeout, so a gate contends with "
+        "whatever else drives the tracker at that moment; no diff can make that "
+        "contention its own fault (R8 in docs/requirements/work-tracker.md)",
     ),
 )
 
@@ -422,7 +412,7 @@ def report_gate(
         args += ["--actor", actor]
     args.append(issue_id)
     try:
-        br.write(repo_root, args)
+        tracker.write(repo_root, args)
     except RuntimeError as exc:
         return False, f"gate {gate} NOT recorded on {issue_id}: {exc}"
     return True, f"recorded gate {gate}={status} on {issue_id}"

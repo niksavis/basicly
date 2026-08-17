@@ -54,7 +54,7 @@ sys.path[:0] = [str(SCRIPTS_DIR), str(REPO_ROOT / "src")]
 
 import check_module_size as sensor  # noqa: E402 - the paths above come first
 
-from basicly import br, config, plan_record, policy, supervise, wip  # noqa: E402 - path above
+from basicly import config, plan_record, policy, supervise, tracker, wip  # noqa: E402 - path above
 from basicly.read_cost import SCOPE_FILE_READ_CAP  # noqa: E402 - path set above
 
 # The label every lane this loop files carries. It *is* the loop's flow-control
@@ -245,7 +245,7 @@ def dispatch(repo_root: Path, target: Candidate, dropped: int) -> str:
     The mode is printed because this entry point filed lanes on one store (`e2mz.23`).
     """
     print(f"tracker:   mode {config.load_tracker_mode(repo_root)}")
-    return br.create_record(
+    return tracker.create_record(
         repo_root,
         [
             "create",

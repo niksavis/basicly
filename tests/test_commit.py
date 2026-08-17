@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from basicly import commit, run_record
+from basicly import commit, run_record, tracker_paths
+from tests import flipped_tracker
 
 HOOK_PATH = Path(__file__).resolve().parent.parent / ".basicly" / "core" / "hooks" / "commit-msg.py"
 
@@ -69,12 +69,13 @@ def test_an_unstubbed_git_subcommand_fails_the_test_naming_itself() -> None:
 
 
 def _tracker(tmp_path: Path, *records: dict) -> Path:
-    """Write a beads JSONL the way br exports one, and return the repo root."""
-    beads = tmp_path / ".beads"
-    beads.mkdir(parents=True, exist_ok=True)
-    (beads / "issues.jsonl").write_text(
-        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
-    )
+    """Seed *tmp_path*'s ledger with *records*, and return the repo root.
+
+    Written through the kit rather than hand-authored as JSON lines: the fold is what
+    every reader sees, and a hand-written log that the fold rejects would be describing
+    a tracker that cannot exist.
+    """
+    flipped_tracker.seed_records(tmp_path, records)
     return tmp_path
 
 
@@ -228,7 +229,7 @@ def test_unknown_work_class_blocks_instead_of_guessing_a_type() -> None:
         ("site/index.html", "site"),
         ("site/assets/logo.svg", "site"),
         (".github/workflows/ci.yml", "ci"),
-        (".beads/issues.jsonl", "beads"),
+        (".basicly/ledger/events-0001.jsonl", "ledger"),
         ("pyproject.toml", None),
     ],
 )
@@ -308,12 +309,12 @@ def test_unknown_bead_is_refused_before_the_hook_sees_it(
 
 
 def test_tracker_read_follows_the_worktree_redirect(tmp_path: Path) -> None:
-    """A harness worktree shares the base tracker, exactly as the beads hook resolves it."""
+    """A harness worktree shares the base tracker, exactly as the commit-msg hook does."""
     base = _tracker(tmp_path / "base", BOUND_TASK)
-    worktree = tmp_path / "wt"
-    (worktree / ".beads").mkdir(parents=True)
-    (worktree / ".beads" / "issues.jsonl").write_text("", encoding="utf-8")
-    (worktree / ".beads" / "redirect").write_text(f"{base / '.beads'}\n", encoding="utf-8")
+    worktree = _tracker(tmp_path / "wt")
+    (worktree / tracker_paths.LEDGER_DIR_NAME / tracker_paths.REDIRECT_NAME).write_text(
+        f"{base}\n", encoding="utf-8"
+    )
 
     assert commit.bead_under_work(worktree, "harness/basicly-kjc5-42") == "basicly-kjc5.42"
 

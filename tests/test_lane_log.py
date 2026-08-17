@@ -221,7 +221,7 @@ def test_the_rotation_never_drops_the_session_it_is_making_room_for(tmp_path: Pa
 
 
 def test_the_narrative_redacts_a_secret_a_routed_detail_carried(tmp_path: Path) -> None:
-    """A routed outcome's detail is whatever br, git and the gates printed.
+    """A routed outcome's detail is whatever tracker, git and the gates printed.
 
     So the narrative is redacted on the way to disk for the same reason the lane
     transcript is: neither is a place a credential may come to rest.

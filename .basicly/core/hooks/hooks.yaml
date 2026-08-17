@@ -63,8 +63,8 @@ hooks:
     script: commit-msg.py
     stage: commit-msg
     pass_filenames: true
-  - id: beads-commit-msg-script
-    script: beads-commit-msg.py
+  - id: tracker-commit-msg-script
+    script: tracker-commit-msg.py
     stage: commit-msg
     pass_filenames: true
   - id: pre-push-script

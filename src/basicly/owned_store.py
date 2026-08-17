@@ -3,7 +3,7 @@
 One responsibility, and it is *resolution*: which rung of the cutover a repo
 declares, which directory its event log lives in, and which kit module can read
 it. Nothing here reads or writes an event — :mod:`basicly.mirror` says what a
-write becomes and :mod:`basicly.br` appends it — so asking where the store is
+write becomes and :mod:`basicly.tracker` appends it — so asking where the store is
 never loads it.
 
 Steps 3 and 4 of the cutover in `docs/requirements/work-tracker.md` §5. The kit under
@@ -12,13 +12,13 @@ writes to it and, once flipped, reads from it, sits above this module.
 
 **Why the flip is a change to a seam rather than to callers.**
 `basicly-tcmy.14` collapsed eleven hand-written unwraps of ``br show --json``
-into ``br.read_record``, and every br invocation already goes through
-``br.run_br``/``br.try_run_br``. Those two facts are the whole reason the flip is
+into ``tracker.read_record``, and every br invocation already goes through
+``tracker.run_br``/``tracker.try_run_br``. Those two facts are the whole reason the flip is
 an edit to one funnel rather than to eight modules: the engine's *write* surface
 is one function and its *record read* surface is another.
 
 Split out of ``br`` when the module-size ratchet caught that module growing. The
-boundary is *the owned store* against *the external one*: :mod:`basicly.br` is
+boundary is *the owned store* against *the external one*: :mod:`basicly.tracker` is
 the single seam that spawns the ``br`` CLI, and nothing here spawns anything —
 which is why the split leaves no import back into the module it came from.
 """
@@ -32,27 +32,25 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from basicly import tracker_usage
+from basicly import tracker_paths
 
-MODE_EXTERNAL = "external"
-MODE_DUAL = "dual"
 MODE_OWNED = "owned"
 
-# The cutover ladder, in the order §5 walks it. `external` is today's behaviour;
-# `dual` writes both stores with br still authoritative for reads; `owned` is the
-# flip — reads come from the ledger and br is *still written*, because the other ten
-# subcommands the engine spawns still answer out of it (see `br.read_record`).
-TRACKER_MODES = (MODE_EXTERNAL, MODE_DUAL, MODE_OWNED)
-DEFAULT_TRACKER_MODE = MODE_EXTERNAL
+# The cutover ladder collapsed to its last rung (basicly-vkh0.42.7). `external` and
+# `dual` are gone with the store they named: the engine reads and writes the owned
+# ledger and nothing else, so a repository declaring another mode would be stating a
+# behaviour no code performs. The key is kept, rather than deleted from the schema,
+# so a consumer's committed `mode = "owned"` is not refused as an unknown name.
+TRACKER_MODES = (MODE_OWNED,)
+DEFAULT_TRACKER_MODE = MODE_OWNED
 
 # The kit's work-tracker store, relative to the repo that installed it.
 KIT_TRACKER_DIR = Path(".basicly") / "core" / "kit" / "tracker"
 
-# The ledger directory, taken off the usage ledger's own path rather than spelled a
-# second time: both artifacts live in `.basicly/ledger/`, and
+# The ledger directory, taken off the one resolver rather than spelled a second time:
 # `.scripts/kit_deployment.py` gates that directory's ignore rules against the same
-# location. A literal here could drift from either without a gate noticing.
-LEDGER_DIR = tracker_usage.LEDGER_FILE.parent
+# location, and a literal here could drift from it without a gate noticing.
+LEDGER_DIR = tracker_paths.LEDGER_DIR_NAME
 
 # The prefix a kit module is loaded under. Fixed, and checked against `sys.modules`
 # before loading, for the reason `differential._load_migrate` gives: two loads of one
@@ -84,7 +82,7 @@ class TrackerDivergenceError(RuntimeError):
     the shadow differential — after however many more writes landed on top.
 
     A subclass of ``RuntimeError`` so a caller that already handles a br failure
-    handles this one, and so the message is what `br.run_br` callers already print.
+    handles this one, and so the message is what `tracker.run_br` callers already print.
     """
 
 
@@ -150,7 +148,7 @@ def set_mode_reader(reader: Callable[[Path], str] | None) -> None:
     With no reader installed the mode is **unknown and refused**, never
     :data:`DEFAULT_TRACKER_MODE`. The original contract defaulted, on the premise that
     ``basicly.cli`` is the only entry point; ``.scripts/improvement_controller.py``
-    reaches ``br.run_br`` without ``config`` and filed its lanes on br alone.
+    reaches ``tracker.run_br`` without ``config`` and filed its lanes on br alone.
 
     Passing ``None`` uninstalls, which is the state :func:`tracker_mode` refuses.
     """
@@ -175,28 +173,15 @@ def tracker_mode(repo_root: Path) -> str:
     return _mode_reader[0](Path(repo_root))
 
 
-def external_store_in_use(repo_root: Path) -> bool:
-    """Whether the external tracker is still a store *repo_root* keeps.
-
-    For the two engine paths that manage that store rather than the work graph — the
-    install-time workspace, the worktree redirect probe — so each is a no-op once nothing
-    reads or writes it. Named, not spelled as a mode comparison at those call sites: they
-    ask whether the thing they manage exists, not which rung the repo is on.
-    """
-    return tracker_mode(repo_root) != MODE_OWNED
-
-
 def ledger_dir(repo_root: Path) -> Path:
     """The owned ledger's directory for *repo_root*.
 
     **One ledger per repo, never one per worktree**, which is why this goes through
-    :func:`tracker_usage.ledger_root` rather than joining onto *repo_root*. A loop
-    worktree shares the base checkout's tracker through br's ``redirect`` file; a
-    ledger that did not follow the same rule would take a lane's writes into the
-    worktree's own copy and lose every one of them at teardown, which is exactly what
-    happened to the usage spool (basicly-vkh0.8).
+    :func:`basicly.tracker_paths.ledger_dir` rather than joining onto *repo_root*: a
+    ledger that did not follow the redirect would take a lane's writes into the
+    worktree's own copy and lose every one of them at teardown (basicly-vkh0.8).
     """
-    return tracker_usage.ledger_root(Path(repo_root)) / LEDGER_DIR
+    return tracker_paths.ledger_dir(Path(repo_root))
 
 
 def kit(repo_root: Path, module_name: str = DEFAULT_KIT_MODULE) -> Any:

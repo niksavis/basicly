@@ -174,7 +174,6 @@ BASELINE: frozenset[str] = frozenset({
     "command:runner run",
     "command:status",
     "command:usage forecast",
-    "command:usage tracker",
     # Record fields read only by their own module or by a test (29). Was 36 — the seven
     # `health` fields gained a reader in the supervisor pass line (basicly-zdtx). Was 41 —
     # the headline count had not been updated for the six the 2026-08-08 splits retired.
@@ -208,6 +207,9 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.decompose.CollapsingPath.groups_without",
     "record-field:basicly.decompose.CollapsingPath.neutralized",
     "record-field:basicly.decompose.CostEstimate.overhead_tokens",
+    # Read by `PlanVerdict.refused` and `.reason`, its own API. It was credited as wired
+    # until vkh0.42.7 by an unrelated `cycles` local in the seam the flip deleted.
+    "record-field:basicly.plan_gate.PlanVerdict.cycles",
     "record-field:basicly.loop_state.Ranking.nodes",
     "record-field:basicly.loop_state.Ranking.fallback_sort",
     "record-field:basicly.policy.Grant.unmetered_at_issue",

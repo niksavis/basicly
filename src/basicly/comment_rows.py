@@ -19,7 +19,6 @@ caught that module growing (`basicly-wpc8.1`).
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable
 from typing import Any
 
@@ -38,7 +37,7 @@ def from_ledger(kit_module: Any, found: Iterable[Any]) -> dict[str, list[dict]]:
     per-bead read as oldest-first, and `policy`'s wait clock takes the *first* stamp it
     sees for a request.
 
-    **A tombstoned record answers empty**, the rule ``br.owned_record`` states for the
+    **A tombstoned record answers empty**, the rule ``tracker.owned_record`` states for the
     same reason: the two stores spell a deletion differently, and a reader served a
     deleted bead's markers would count rework on work somebody removed.
     """
@@ -56,27 +55,3 @@ def from_ledger(kit_module: Any, found: Iterable[Any]) -> dict[str, list[dict]]:
             continue
         rows.setdefault(event.record, []).append({TEXT_KEY: text, STAMP_KEY: event.ts})
     return rows
-
-
-def from_br_reply(stdout: str, issue_id: str) -> list[dict]:
-    """``br comments list --json``'s reply as rows, raising when it is not usable.
-
-    Raises rather than answering empty, and the choice is made once for all three
-    callers: every marker family read through here is a *counter* or a *refusal* — rework
-    attempts against a cap, an unanswered needs-input, an open checkpoint — so an
-    unreadable tracker answering "no markers" reads as "nothing is blocking" and the loop
-    advances past the gate the marker existed to hold. ``br.try_read_comments`` is the
-    soft contract, for the evidence readers where an empty answer is honest.
-
-    Raises:
-        RuntimeError: the reply was not a JSON array of rows.
-    """
-    try:
-        payload = json.loads(stdout)
-    except ValueError as exc:
-        raise RuntimeError(f"br comments list {issue_id} returned no usable JSON: {exc}") from exc
-    if not isinstance(payload, list):
-        raise RuntimeError(
-            f"br comments list {issue_id} returned {type(payload).__name__}, not an array"
-        )
-    return [row for row in payload if isinstance(row, dict)]

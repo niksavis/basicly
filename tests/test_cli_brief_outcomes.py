@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import dispatch_brief, run_record, usage_report
+from basicly import dispatch_brief, run_record, tracker_paths, usage_report
 from tests.test_cli import run_basicly
 
 if TYPE_CHECKING:
@@ -24,12 +24,12 @@ if TYPE_CHECKING:
 
 
 def _a_tracked_id(root: Path) -> str:
-    """Any real issue id from the checkout's own tracker export."""
-    export = (root / ".beads" / "issues.jsonl").read_text(encoding="utf-8")
-    for line in export.splitlines():
-        if line.strip():
-            return str(json.loads(line)["id"])
-    raise AssertionError("the tracker export is empty, so no id can be briefed")
+    """Any real record id from the checkout's own committed ledger."""
+    for log in sorted((root / tracker_paths.LEDGER_DIR_NAME).glob("events-*.jsonl")):
+        for line in log.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                return str(json.loads(line)["record"])
+    raise AssertionError("the committed ledger is empty, so no id can be briefed")
 
 
 def test_brief_prints_the_assemblers_own_output(work_repo: Path) -> None:

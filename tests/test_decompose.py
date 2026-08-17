@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, decompose, merge, policy, read_cost, run_record
+from basicly import decompose, merge, policy, read_cost, run_record, tracker
 from basicly.config import (
     DEFAULT_BUILD_FACTOR,
     DEFAULT_BUILD_FACTOR_SEEDS,
@@ -20,6 +20,7 @@ from basicly.config import (
     load_sizing_config,
 )
 from basicly.decompose import ChildSpec
+from tests import fake_tracker, flipped_tracker
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -85,8 +86,7 @@ class _FakeBr:
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., _Proc]) -> None:
     # Nothing on `decompose`: every read and write it makes is behind a seam (basicly-wpc8).
-    monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
 
 
 # The three fields the plan gate requires of every child (basicly-u2hl.1). Spread into
@@ -964,11 +964,8 @@ def _record_run_tokens(  # noqa: PLR0913 — one parameter per seeded record fie
 
 
 def _export(repo: Path, *records: dict) -> None:
-    """Write the committed tracker export — what a fresh clone has and nothing more."""
-    beads = repo / ".beads"
-    beads.mkdir(parents=True, exist_ok=True)
-    lines = [json.dumps(record) for record in records]
-    (beads / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    """Seed the committed ledger — what a fresh clone has and nothing more."""
+    flipped_tracker.seed_records(repo, records)
 
 
 # --- The ceiling is answerable to the lanes that ran (basicly-3w44) ----------
@@ -996,7 +993,7 @@ def _exported_class_and_scope(repo_root: Path) -> dict[str, tuple[str, tuple[str
     drag the constant upward (basicly-efw2).
     """
     beads: dict[str, tuple[str, tuple[str, ...]]] = {}
-    for record in br.export_records(repo_root):
+    for record in tracker.all_records(repo_root):
         description = record.get("description")
         text = description if isinstance(description, str) else ""
         scope = decompose.parse_scope_section(text)
@@ -1289,25 +1286,25 @@ def test_the_ceiling_gate_refuses_to_admit_a_size_a_lane_died_at(tmp_path: Path)
     _export(
         tmp_path,
         {
-            "id": "ran",
+            "id": "b-ran",
             "issue_type": "task",
             "description": decompose._child_body(_child("s", "src/small.py")),
         },
         {
-            "id": "died",
+            "id": "b-died",
             "issue_type": "task",
             "description": decompose._child_body(_child("b", "src/big/*.py")),
         },
     )
-    _record_run_tokens(tmp_path, "ran", 1_000, scope_tokens=4_000)  # 4_000 x 3.0 = 12_000
-    _record_run_tokens(tmp_path, "died", 1_000, returncode=143)  # 40_000 x 3.0 = 120_000
+    _record_run_tokens(tmp_path, "b-ran", 1_000, scope_tokens=4_000)  # 4_000 x 3.0 = 12_000
+    _record_run_tokens(tmp_path, "b-died", 1_000, returncode=143)  # 40_000 x 3.0 = 120_000
 
     # A ceiling below the failure refuses it, which is the whole point of one.
     assert _ceiling_violations(tmp_path, 16_000) == []
 
     violations = _ceiling_violations(tmp_path, 120_000)
     assert len(violations) == 1
-    assert "died failed at an estimate of 120,000" in violations[0]
+    assert "b-died failed at an estimate of 120,000" in violations[0]
     assert "nothing above 12,000 has completed" in violations[0]
     assert "lower it to at most 112,000" in violations[0]  # rounded down to a floor-unit
 
@@ -1326,20 +1323,20 @@ def test_a_failure_below_a_proven_size_is_not_evidence_about_the_ceiling(tmp_pat
     _export(
         tmp_path,
         {
-            "id": "ran",
+            "id": "b-ran",
             "issue_type": "task",
             "description": decompose._child_body(_child("b", "src/big/*.py")),
         },
         {
-            "id": "died",
+            "id": "b-died",
             "issue_type": "task",
             "description": decompose._child_body(_child("s", "src/small.py")),
         },
     )
-    _record_run_tokens(tmp_path, "ran", 1_000)  # 40_000 x 3.0 = 120_000 completed
-    _record_run_tokens(tmp_path, "died", 1_000, returncode=143)  # 12_000, far below it
+    _record_run_tokens(tmp_path, "b-ran", 1_000)  # 40_000 x 3.0 = 120_000 completed
+    _record_run_tokens(tmp_path, "b-died", 1_000, returncode=143)  # 12_000, far below it
 
-    assert failed_lane_estimates(tmp_path) == {"died": 12_000}
+    assert failed_lane_estimates(tmp_path) == {"b-died": 12_000}
     assert _ceiling_violations(tmp_path, 120_000) == []
 
 
@@ -1357,15 +1354,15 @@ def test_a_recorded_scope_size_never_overrides_the_current_measure(tmp_path: Pat
     _export(
         tmp_path,
         {
-            "id": "died",
+            "id": "b-died",
             "issue_type": "task",
             "description": decompose._child_body(_child("b", "src/big.py")),
         },
     )
-    _record_run_tokens(tmp_path, "died", 1_000, returncode=143, scope_tokens=9_000)
+    _record_run_tokens(tmp_path, "b-died", 1_000, returncode=143, scope_tokens=9_000)
 
     # 4_000 x 3.0 from the tree, not 9_000 x 3.0 from the record.
-    assert failed_lane_estimates(tmp_path) == {"died": 12_000}
+    assert failed_lane_estimates(tmp_path) == {"b-died": 12_000}
 
 
 def test_a_handoff_lane_is_not_evidence_for_the_dispatch_ceiling(
@@ -1555,7 +1552,7 @@ def test_forecast_for_finds_the_freeze_by_content_in_the_export(
     spec = _child("a", "src/a.py")
     estimates = decompose.govern_working_set(tmp_path, (spec,), feature_id="feat")
     # The freeze is on the feature; the export is how it reaches everyone else.
-    _export(tmp_path, {"id": "feat", "comments": [{"text": fake.comments["feat"][0]}]})
+    _export(tmp_path, {"id": "b-feat", "comments": [{"text": fake.comments["feat"][0]}]})
 
     _install(monkeypatch, lambda *_a, **_k: pytest.fail("the forecast lookup must not need br"))
     assert decompose.forecast_for(tmp_path, "task", ("src/a.py",)) == estimates[0]
@@ -1670,7 +1667,7 @@ def test_dispatch_sizing_prefers_the_forecast_that_was_frozen(
     _install(monkeypatch, fake)
     _write(tmp_path, "src/a.py", 16_000)
     frozen = decompose.govern_working_set(tmp_path, (_child("a", "src/a.py"),), feature_id="feat")
-    _export(tmp_path, {"id": "feat", "comments": [{"text": fake.comments["feat"][0]}]})
+    _export(tmp_path, {"id": "b-feat", "comments": [{"text": fake.comments["feat"][0]}]})
 
     _install(monkeypatch, _scoped_bead("src/a.py"))
     sizing = decompose.dispatch_sizing(tmp_path, "b-1")
@@ -1731,7 +1728,7 @@ def test_resolve_dispatch_sizing_separates_an_undeclared_scope_from_an_unreadabl
     assert undeclared.absence == decompose.SCOPE_UNDECLARED
 
     def broken(*_a: object, **_k: object) -> _Proc:
-        raise RuntimeError("br show failed")
+        raise RuntimeError("the tracker could not answer")
 
     _install(monkeypatch, broken)
     unreadable = decompose.resolve_dispatch_sizing(tmp_path, "b-1")

@@ -115,7 +115,8 @@ scaffolded VS Code tasks/CI workflow (only when still unedited).
   whose config file is fixed at `.pre-commit-config.yaml`; the *tool* is named
   pre-commit, the file is not limited to that stage), Claude Code agent hooks,
   and Copilot agent hooks.
-- A beads issue-tracker workspace, VS Code tasks, and a CI gates workflow.
+- An owned work tracker — an append-only event ledger under `.basicly/ledger/`, read
+  and written by `basicly tracker` — plus VS Code tasks and a CI gates workflow.
 
 Customize via YAML fragments in `.basicly-local/fragments/user/` — install
 never touches them. Scope the catalog to your stack with
@@ -126,13 +127,10 @@ never touches them. Scope the catalog to your stack with
 The projected git hooks run `uv run python ...`, so **every committer** to a
 basicly-managed repo needs [uv](https://docs.astral.sh/uv/) on `PATH` and
 Python 3.14+ — not just the person who ran install. `basicly hooks-check`
-diagnoses a missing uv before it bites at commit time. Using the harness loop
-(`basicly loop`, shared worktree tracker) additionally needs a
-redirect-capable [beads (`br`)](https://github.com/Dicklesworthstone/beads_rust) CLI
-at **exactly 0.2.16**. That is a pin, not a floor: the harness warns on any other
-version in either direction, because upgrading past it has broken tracker calls
-here as surely as running below it. `.scripts/install_br.py` installs the pin by
-digest.
+diagnoses a missing uv before it bites at commit time. The harness loop
+(`basicly loop`) needs nothing further: the work tracker is an append-only event
+ledger this repository owns and commits, so there is no binary to install and no
+version to pin.
 
 ## How it works
 

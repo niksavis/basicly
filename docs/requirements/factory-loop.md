@@ -907,7 +907,7 @@ gate rather than with one audit.
 | Exception hygiene, perf, builtins shadowing | ruff `TRY`, `PERF`, `FURB`, `A`, `RET`, `TC`, `TID`, `DTZ` | **adopted** in `basicly-u2hl.11`. Measured 2026-08-08: `RET` 1, `TID` 1, `DTZ` 1, `A` 2, `FURB` 4, `PERF` 16, `TRY` less `TRY003` 26, `TC001/002/006` 16. **`TRY003` (442) and `TC003` (111) are deliberately ignored** with the reason recorded in `.ruff.toml` — style at scale, not a defect class |
 | Security lint over `src/` | ruff `S` | **adopted for `src/` only**, per-file-ignored elsewhere so bandit keeps the trees it already scans. 25 violations less `S101`. `S101` (6,931, every one an `assert` in `tests/`) mirrors the existing bandit `skips = ["B101"]` rather than inventing a second answer |
 | Type completeness | pyright `basic` → `standard` | **done** (`basicly-u2hl.10`). Exactly one error, and it was a lying annotation rather than a defect: `tracker_usage._Timer.__exit__` was `-> bool`, which declares a context manager that *may suppress*, so every name bound in the `with` read as possibly-unbound. `-> Literal[False]` fixes it; restructuring the consumer only relocates the error. **The "still open" half of this row closed with `basicly-u2hl.15` and the row did not say so** [M 2026-08-14]: `[tool.pyright] include` names `src`, `tests`, `.scripts` and `.basicly/core`, and `uv run pyright` analyses **306 files with 0 errors**. Nothing is unchecked at either mode |
-| Suppression-debt ratchet | count `# noqa` per code, fail on increase | **built** (`basicly-u2hl.12`): `.scripts/check_noqa_debt.py`, wired as the `noqa-debt` `[[verify.checks]]` fast entry, frozen per code in `[tool.noqa_debt]`. **The debt figure on this row was stale twice.** It read 30; re-measured 2026-08-08 it was 46 across 20 files; re-measured again once the gate could count it, after `basicly-u2hl.11` adopted `S`/`BLE`, it is **76 across 13 codes** — `PLR0913`×32, `S603`×15, `S607`×6, `PLC0415`×5, `E402`×4, `BLE001`×3, `A002`/`ARG001`/`PLR0911`/`S105`×2, `E731`/`S701`/`UP017`×1. Every one of those arrived through a green gate, which is the argument the row was making. **Seven carry no reason at all**, against a house form of `# noqa: CODE — reason`; `unreasoned_count` ratchets them in both directions. Counting is by `tokenize` comment and ruff's own directive grammar, not by substring: `src/basicly/br.py:70` reads as a suppression, suppresses nothing, and ruff warns about it invisibly on every run — **an open defect this gate deliberately does not fail on** |
+| Suppression-debt ratchet | count `# noqa` per code, fail on increase | **built** (`basicly-u2hl.12`): `.scripts/check_noqa_debt.py`, wired as the `noqa-debt` `[[verify.checks]]` fast entry, frozen per code in `[tool.noqa_debt]`. **The debt figure on this row was stale twice.** It read 30; re-measured 2026-08-08 it was 46 across 20 files; re-measured again once the gate could count it, after `basicly-u2hl.11` adopted `S`/`BLE`, it is **76 across 13 codes** — `PLR0913`×32, `S603`×15, `S607`×6, `PLC0415`×5, `E402`×4, `BLE001`×3, `A002`/`ARG001`/`PLR0911`/`S105`×2, `E731`/`S701`/`UP017`×1. Every one of those arrived through a green gate, which is the argument the row was making. **Seven carry no reason at all**, against a house form of `# noqa: CODE — reason`; `unreasoned_count` ratchets them in both directions. Counting is by `tokenize` comment and ruff's own directive grammar, not by substring: `src/basicly/tracker.py` carried one that read as a suppression, suppressed nothing, and made ruff warn invisibly on every run — **an open defect this gate deliberately does not fail on** |
 
 Already enforced — **do not re-propose**: line length, format, naming, Google docstrings,
 `PLR0911/12/13/15`, dead code, import layering, tri-platform pyright, commented-code ban, mutable
@@ -1361,9 +1361,9 @@ or YAML, tied; prose-shaped → not re-serialisable at all.
 repo's real ready-queue:
 
 ```text
-br ready --format text    10,489 chars    3,075 tok    2.0% of a p50 lane
-br ready --format json   223,961 chars   55,751 tok   36.9%
-br ready --format toon   225,768 chars   57,323 tok   37.9%   <- 2.8% WORSE than json
+the ready set, text       10,489 chars    3,075 tok    2.0% of a p50 lane
+the ready set, json      223,961 chars   55,751 tok   36.9%
+the ready set, toon      225,768 chars   57,323 tok   37.9%   <- 2.8% WORSE than json
 projected to 5 fields      9,613 chars    2,507 tok    1.7%   <- 22x
 ```
 
@@ -1374,7 +1374,7 @@ which nobody calls optimized, is 18x cheaper for one reason: it prints fewer fie
 
 A p50 lane occupies **151,099 tokens** (n=79 recorded dispatches). **basicly authors 3,812 of them
 — 2.52%.** Re-serialising every byte we control into the best measured format saves **1.01% of one
-lane**. Meanwhile `br ready --json`, which our own `tool-br` skill instructs every agent to run,
+lane**. Meanwhile the ready set as json, which the tracker skill instructed every agent to read,
 costs **36.9% of a lane**, and projecting it to the five fields a lane needs costs 1.7%.
 
 **Selection beats serialisation by roughly 500x here**, which is why D21 is stated as it is.

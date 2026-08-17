@@ -8,21 +8,21 @@ exactly as it was. Find your message below, apply the fix, re-run the same
 Never reach for `--no-verify`. The hook is the floor the whole harness rests on,
 and skipping it moves the failure to CI or to a reviewer.
 
-## `Commit message does not reference a beads issue id`
+## `Commit message does not reference a tracked issue id`
 
 ```text
-ERROR: Commit message does not reference a beads issue id.
+ERROR: Commit message does not reference a tracked issue id.
 ```
 
 Every commit names the tracked issue it belongs to, as a parenthetical after the
 description. File one if it does not exist yet, then re-commit:
 
 ```sh
-br create "Title" --type task --priority 2
+basicly tracker write -- create "Title" -t task -p 2 --parent <parent-id> --json
 git commit -m "fix(cli): stop the parser eating a trailing flag (myrepo-4f2)"
 ```
 
-The id must exist in `.beads/issues.jsonl` — the hook reads the tracker, so a
+The id must be one the tracker holds — the hook reads the ledger, so a
 plausible-looking id is not enough. This is also the first thing a fresh install
 hits, because the install output itself is a commit.
 

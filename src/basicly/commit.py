@@ -6,7 +6,7 @@ is the bead under work — and none of that needs judgment, so per design D10 it
 belongs in a command rather than in an agent's context. Only the description is
 free input.
 
-The ``commit-msg`` / ``beads-commit-msg`` hooks stay the gate: this module
+The ``commit-msg`` / ``tracker-commit-msg`` hooks stay the gate: this module
 removes the guesswork ahead of them (and refuses a description the charset rules
 would reject, naming the offending characters *before* a commit is attempted)
 rather than replacing them. The description charset here mirrors
@@ -27,7 +27,7 @@ import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, loop_state, run_record
+from . import loop_state, run_record, tracker
 from .worktree import git, main_checkout
 
 MIN_DESCRIPTION_LENGTH = 3
@@ -226,8 +226,8 @@ def scope_candidate(path: str) -> str | None:
             scope = "ci"
         case ["site", *_]:
             scope = "site"
-        case [".beads", *_]:
-            scope = "beads"
+        case [".basicly", "ledger", *_]:
+            scope = "ledger"
         case [".basicly", "core", kind, *_] | [".basicly-local", kind, *_]:
             scope = _kebab(kind)
         case ["docs", *_, name]:
@@ -300,7 +300,7 @@ def bead_under_work(repo_root: Path, branch: str) -> str:
     """
     matches = [
         record
-        for record in br.export_records(repo_root)
+        for record in tracker.all_records(repo_root)
         if (binding := loop_state.parse_worktree_ref(record.get("external_ref")))
         and binding.branch == branch
     ]
@@ -320,12 +320,12 @@ def bead_under_work(repo_root: Path, branch: str) -> str:
 
 def _record_for(repo_root: Path, bead: str) -> dict:
     """The tracker record for *bead*, or a ``ValueError`` the gate would also raise."""
-    for record in br.export_records(repo_root):
+    for record in tracker.all_records(repo_root):
         if record["id"] == bead:
             return record
     raise ValueError(
         f"unknown bead id {bead!r}: not in the tracker's issues.jsonl — the "
-        "beads-commit-msg hook reads that file and would reject the commit "
+        "tracker-commit-msg hook reads that file and would reject the commit "
         "(run 'br sync --flush-only' if the bead was only just created)"
     )
 
@@ -336,7 +336,7 @@ def _record_for(repo_root: Path, bead: str) -> dict:
 def _records_root(repo_root: Path) -> Path:
     """Which checkout's ``.basicly/usage/`` holds the run records for *repo_root*.
 
-    The same shape as :func:`_beads_dir`, for the same reason: a harness worktree
+    The same shape as the tracker's own redirect, for the same reason: a harness worktree
     has no telemetry of its own, because the engine that dispatched into it runs
     from the base checkout and records there. Reading the main checkout is what
     lets a commit made *inside* the worktree see the dispatch that produced it.

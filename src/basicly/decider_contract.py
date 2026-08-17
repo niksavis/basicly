@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import br, corpus_drift
+from . import corpus_drift, tracker
 
 if TYPE_CHECKING:
     from .decision_marker import DecisionItem
@@ -62,7 +62,7 @@ def intake_corpus(repo_root: Path, root_issue: str) -> str:
     derivable from these two engine-readable fields, which keeps the boundary
     checkable in decision review.
     """
-    record = br.read_record(repo_root, root_issue)
+    record = tracker.read_record(repo_root, root_issue)
     if record is None:
         return ""
     description = corpus_drift.annotate(

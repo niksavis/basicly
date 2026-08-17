@@ -68,7 +68,7 @@
 "core-rules.7" = { text = "Match existing style and naming conventions", anchors = [["existing style", "match.*convention", "naming convention", "surrounding code"]] }
 "core-rules.8" = { text = "Use deterministic tests; add regression tests for bug fixes", anchors = [["regression test", "deterministic test"]] }
 
-"harness-loop.1" = { text = "Drive non-trivial work through the basicly harness loop", anchors = [["harness loop", "harness-loop", "loop"], ["br ", "tracker", "single source of truth"]] }
+"harness-loop.1" = { text = "Drive non-trivial work through the basicly harness loop", anchors = [["harness loop", "harness-loop", "loop"], ["tracker", "ledger", "single source of truth"]] }
 
 "quality-gate.1" = { text = "Review the diff before finishing, then exercise the change", anchors = [["exercise", "really be used", "run it"]] }
 "quality-gate.2" = { text = "Run the repo's existing checks on anything touched", anchors = [["re-run", "rerun", "after the final edit", "existing check"]] }

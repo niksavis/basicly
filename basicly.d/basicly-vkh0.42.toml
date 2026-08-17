@@ -1,0 +1,50 @@
+# The external tracker's deletion (basicly-vkh0.42, .42.7).
+#
+# What the change was: the engine's second store, the subprocess that spoke to it, and
+# everything that existed to keep the two in step. Nine modules and eleven test modules
+# left the tree; `br.py` fell from 22,940 tokens to under 10,000.
+#
+# ## comment_density: two waivers
+#
+# Both are the shape `label_source` already carries — a module whose prose share is set by
+# its **member count** rather than by narration, because the deletion took the code and
+# left the contract:
+#
+# - `src/basicly/tracker_paths.py`: three one-line resolvers over ~130 tokens of code. The
+#   prose is the incident behind "one store per repo, never one per worktree" and the two
+#   ways a redirect resolves to nothing — neither readable from the code.
+# - `tests/test_br_adapter.py`: three tests over ~200 tokens. Two thirds of that module
+#   left with the subprocess it described; what remains is a tree guard whose whole value
+#   is the incident recorded above it.
+#
+# Every other module the deletion pushed over the cap was **cut rather than waived**, and
+# the cuts were real prose: `br.py` 68.4 -> 67.3, `capability_proof.py` 77.2 -> 75.4,
+# `tracker_usage.py` 63.4 -> 49.8, and four test modules besides.
+#
+# ## noqa_debt: S603 falls by four
+#
+# `S603` licenses a subprocess call whose argv is not a literal. Four of the seventeen
+# were the tracker spawn and its version probe; they are gone with it. Banked here rather
+# than left standing, because a debt that fell and was not recorded grows back for free.
+[ratchet.comment_density]
+count_delta = 2
+
+[ratchet.noqa_debt.frozen]
+S603 = -4
+
+# ## module_size: two rebaselines, both the cost of a longer name
+#
+# `src/basicly/br.py` became `src/basicly/tracker.py` and `br_argv.py` became
+# `tracker_argv.py`, so every one of the 376 attribute references grew by five
+# characters. `tests/test_loop.py` (+10 tokens) and `tests/test_rubrics.py` (+6) are the
+# two that were already at their frozen baseline and had nowhere to put it.
+#
+# Banked rather than absorbed by cutting a test: the growth is a *rename*, so cutting
+# prose to pay for it would trade real evidence for a naming change. Both modules are far
+# over the 4000 cap for reasons that predate this change and have their own tracks.
+[ratchet.module_size]
+rebaseline_reason = "the tracker seam's rename from `br` grew every reference by five characters; these two modules were already at their baseline"
+
+[ratchet.module_size.rebaselined]
+"tests/test_loop.py" = 10
+"tests/test_rubrics.py" = 6

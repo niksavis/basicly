@@ -19,8 +19,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import br, checkout, owned_store
-from .br import try_run_br
+from . import checkout, tracker_paths
 from .checkout import (
     current_branch,
     git,
@@ -130,51 +129,17 @@ def install_worktree_hooks(worktree: Path) -> str:
     return f"{prefix}: {', '.join(stages)} — {message}"
 
 
-def _probe_redirect(name: str, worktree: Path, base_beads: Path) -> None:
-    """Fail fast when the installed br does not honor ``.beads/redirect``.
-
-    A br without redirect support ignores the file, auto-imports the
-    worktree's checked-out ``issues.jsonl`` into a fresh local DB, and
-    silently runs a divergent tracker — lost gates and claims. A missing br
-    or a base that is not a br workspace skips the probe (both are supported
-    states); the probe rejects only a br that answers with the wrong dir.
-    """
-    proc = try_run_br(worktree, ["where", "--json"])
-    if proc is None or proc.returncode != 0:
-        return
-    try:
-        data = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return
-    if not isinstance(data, dict) or "path" not in data:
-        return
-    resolved = Path(str(data["path"]))
-    if resolved.resolve() != base_beads.resolve():
-        # Never `br upgrade`. The version is an exact pin in both directions
-        # (`br.PINNED_VERSION`): a br past it has a database schema with no supported
-        # migration forward, so the advice that reads as the obvious repair is the one
-        # that makes the tracker unopenable.
-        raise SystemExit(
-            f"the installed br ignored .beads/redirect and resolved {resolved} — "
-            "worktree tracker sharing needs a redirect-capable br, and this harness is "
-            f"pinned to exactly {br.PINNED_VERSION}. Install that version with "
-            "`uv run python .scripts/install_br.py`, then "
-            f"`basicly worktree cleanup {name} --force` and recreate the worktree."
-        )
-
-
 def create(name: str, base: str | None = None, repo_root: Path | str | None = None) -> Session:
     """Create and provision a sibling worktree for *name*.
 
     Adds ``<repo>.worktrees/<name>`` on a new ``harness/<name>`` branch off
     *base* (default: the current branch), provisions its own dependency trees
     and git hooks, and records a session in the git common dir. The worktree's
-    ``.beads`` is redirected at the base checkout's (br's git-ignored
-    ``redirect`` file), so every tracker read/write from the worktree — br
-    itself and the beads commit-msg hook alike — hits the one shared DB/JSONL:
-    no divergent copy, nothing to reconcile at landing. The checked-out
-    ``issues.jsonl`` is deliberately left untouched; overwriting it with the
-    base working-tree version would leave the worktree permanently dirty and
+    ledger is redirected at the base checkout's (a git-ignored ``redirect`` file), so
+    every tracker read and write from the worktree — the engine and the commit-msg hook
+    alike — reaches the one shared log: no divergent copy, nothing to reconcile at
+    landing. The checked-out event log is deliberately left untouched; overwriting it
+    with the base working-tree version would leave the worktree permanently dirty and
     block the landing rebase.
 
     *repo_root* names the repository to operate on, like every other engine
@@ -196,24 +161,21 @@ def create(name: str, base: str | None = None, repo_root: Path | str | None = No
     worktree.parent.mkdir(parents=True, exist_ok=True)
     git(["worktree", "add", str(worktree), "-b", branch, base], cwd=repo_root)
 
-    # Tracker sharing first (before the slow dep install), so a br that cannot
-    # follow the redirect fails the provisioning fast.
+    # Tracker sharing first (before the slow dep install), because a lane that wrote to
+    # its own checked-out ledger would lose every write at teardown (basicly-vkh0.8).
     notes: list[str] = []
     main = main_checkout(repo_root)
-    base_beads = main / ".beads"
-    if base_beads.is_dir():
-        target_beads = worktree / ".beads"
-        target_beads.mkdir(parents=True, exist_ok=True)
-        # Machine-local, git-ignored by br's own .beads/.gitignore — an
-        # absolute path here never reaches a commit.
-        (target_beads / "redirect").write_text(f"{base_beads}\n", encoding="utf-8")
-        notes.append(".beads/redirect: tracker shared with the base checkout")
-        # Probed only while that store is one this repo keeps: once the flip means
-        # nothing reads or writes it, failing provisioning over it would refuse a lane
-        # for a store the lane never touches. The file is still written, because a human
-        # running br by hand in the worktree still needs the base checkout's copy.
-        if owned_store.external_store_in_use(main):
-            _probe_redirect(name, worktree, base_beads)
+    if (main / tracker_paths.LEDGER_DIR_NAME).is_dir():
+        target_ledger = worktree / tracker_paths.LEDGER_DIR_NAME
+        target_ledger.mkdir(parents=True, exist_ok=True)
+        # Machine-local and git-ignored — an absolute path here never reaches a commit.
+        # It names the checkout rather than the directory, which is the one rule
+        # `tracker_paths` states.
+        (target_ledger / tracker_paths.REDIRECT_NAME).write_text(f"{main}\n", encoding="utf-8")
+        notes.append(
+            f"{(tracker_paths.LEDGER_DIR_NAME / tracker_paths.REDIRECT_NAME).as_posix()}: "
+            f"tracker shared with the base checkout"
+        )
 
     notes += provision_deps(worktree)
 
@@ -320,8 +282,10 @@ def classify_worktree_tree(returncode: int, stdout: str) -> RemovalVerdict:
     ``XY <path>``, so anything shorter carries a status this cannot read, and a
     status it cannot read may be the one that matters.
 
-    The provisioned dep dirs and the tracker export (which provisioning syncs from
-    base) are expected noise rather than work, and never hold a teardown.
+    The provisioned dep dirs and the tracker's worktree redirect are expected noise
+    rather than work, and never hold a teardown. The redirect is named here as well as
+    ignored, because a consumer's ``.gitignore`` is the consumer's file and a teardown
+    may not depend on it (basicly-vkh0.42.4).
     """
     if returncode != 0:
         return RemovalVerdict(
@@ -334,7 +298,10 @@ def classify_worktree_tree(returncode: int, stdout: str) -> RemovalVerdict:
             ),
             indeterminate=True,
         )
-    expected_noise = (*DEP_DIRS, ".beads")
+    expected_noise = (
+        *DEP_DIRS,
+        (tracker_paths.LEDGER_DIR_NAME / tracker_paths.REDIRECT_NAME).as_posix(),
+    )
     noise_prefixes = tuple(f"{d}/" for d in expected_noise)
     pending: list[str] = []
     unparsable: list[str] = []

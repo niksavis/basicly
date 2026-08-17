@@ -8,15 +8,21 @@ replay. There is no "resume" command because there is nothing to restart.
 ## Start every session with these three reads
 
 ```sh
-br ready
+basicly tracker ready
 ```
 
 ```text
-📋 Ready work (4 issues with no blockers):
-
-1. [● P2] [chore] myrepo-oxg: Adopt basicly in this repo
-2. [● P2] [feature] myrepo-9vf: Document the probe repo
+Ready (4, priority ASC, dependents DESC, id ASC)
+┏━━━━━━┳━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ rank ┃ score ┃ record     ┃ title                       ┃
+┡━━━━━━╇━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ 1    │ 3002  │ myrepo-oxg │ Adopt basicly in this repo  │
+│ 2    │ 3001  │ myrepo-9vf │ Document the probe repo     │
+└──────┴───────┴────────────┴─────────────────────────────┘
 ```
+
+The rank is priority first, then how many records depend on it. `basicly tracker blocked`
+answers the other half — what is *not* ready, and which open record holds each one.
 
 ```sh
 basicly loop status myrepo-9vf.1
@@ -88,39 +94,26 @@ the code.
 ## Before any tracker write on a checkout you did not just leave
 
 ```sh
-br sync --status
+uv run python .basicly/core/kit/tracker/fsck.py .basicly/ledger
 ```
 
-```text
-Sync Status:
-  Dirty issues: 0
-  Last export: 2026-08-07T17:21:54Z
-  Last import: 2026-08-07T17:18:13Z
-  JSONL exists: true
-  Status: In sync
-```
+The ledger is one append-only log, committed and carried by git, so a checkout is
+either up to date with its branch or it is not — there is no second copy to reconcile
+and no import to run first. `fsck` answers whether the log on disk is internally
+consistent; `git status` answers whether it is the branch's.
 
-If it reports `JSONL is newer (import recommended)`, run `br sync --import-only`
-**first**. A mutating `br` command on a checkout whose committed export is newer
-than the local database auto-flushes the *older database over the newer file* —
-measured once at 187 records deleted, 47 of them open, with `br create`
-reporting success and no gate firing.
-
-The status line is computed from timestamps, so it also says "JSONL is newer" on
-a perfectly healthy checkout where the import is a no-op. Do not learn to ignore
-it; the import costs nothing when there is nothing to do.
-
-Sanity-check the shape of any tracker diff before it is committed. A commit that
-files two beads is `+2` lines; large deletions in `.beads/issues.jsonl` mean the
-defect above is in progress.
+That is the whole of it, and it replaced a real hazard: the store this superseded kept a
+database beside its export and auto-flushed the *older database over the newer file* on
+any mutating command — measured once at 187 records deleted, 47 of them open, with the
+create reporting success and no gate firing.
 
 ## Do not commit tracker state yourself
 
 On loop-tracked work the engine makes the tracker commits, at three points: the
-claim before provisioning, the accumulated `.beads/**` dirt rolled up at
-landing, and the closing state at ship. So never `git add .beads` on a harness
+claim before provisioning, the accumulated ledger dirt rolled up at
+landing, and the closing state at ship. So never `git add .basicly/ledger` on a harness
 branch. One worktree shares the base checkout's tracker through a git-ignored
-`.beads/redirect`, so there is no worktree copy to diverge and nothing to
+the ledger `redirect`, so there is no worktree copy to diverge and nothing to
 reconcile.
 
 ## A worktree that outlived its track

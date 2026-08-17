@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br
+from . import tracker
 from .plan_gate import missing_fields
 from .plan_record import PLAN_HEADING, has_heading, parse_plan_section
 
@@ -83,7 +83,7 @@ def build_entry_verdict(repo_root: Path, issue_id: str) -> EntryVerdict:
     that declared a plan, and admitting one on a transient read failure is how a gate
     that exists stops binding.
     """
-    record = br.read_record(repo_root, issue_id)
+    record = tracker.read_record(repo_root, issue_id)
     if not isinstance(record, dict):
         return EntryVerdict(issue_id, unreadable=True)
     description = record.get("description")

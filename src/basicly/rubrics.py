@@ -30,7 +30,7 @@ from pathlib import Path
 
 import yaml
 
-from . import br, review, run_record, runner, verify
+from . import review, run_record, runner, tracker, verify
 from .catalog import bundled_catalog_root
 from .config import RUBRIC_GATE_PROVIDER, RunnerConfig, VerifyCheck, load_runner_config
 
@@ -533,7 +533,7 @@ def _report_one(
     args = ["gate", "report", "--gate", gate, "--provider", GATE_PROVIDER]
     args += ["--status", status, "--note", note, issue_id]
     try:
-        br.write(repo_root, args)
+        tracker.write(repo_root, args)
     except RuntimeError as exc:
         return False, f"{gate} gate not recorded: {exc}"
     return True, f"{gate}={status}"

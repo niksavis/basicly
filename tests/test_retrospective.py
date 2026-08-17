@@ -12,9 +12,10 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import br, policy, retrospective, roles
+from basicly import policy, retrospective, roles
 from basicly.config import LOOP_PHASES
 from basicly.loop_state import PHASES
+from tests import fake_tracker
 
 if TYPE_CHECKING:
     import pytest
@@ -59,8 +60,7 @@ class _FakeBr:
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     """Route the tracker seams every consumer shares at *fake* (as `test_policy` does)."""
     monkeypatch.setattr(policy, "_write", fake)
-    monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
 
 
 _CHART = retrospective.Chart(centre=0.3, sigma=0.55, upper=1.94, observations=10)
@@ -243,8 +243,8 @@ def test_a_store_that_cannot_write_refuses_the_claim(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Missing evidence suppresses, because an unrecorded claim re-dispatches forever."""
-    monkeypatch.setattr(retrospective.br, "try_read_comments", lambda *_a: [])
-    monkeypatch.setattr(retrospective.br, "try_add_comment", lambda *_a: False)
+    monkeypatch.setattr(retrospective.tracker, "try_read_comments", lambda *_a: [])
+    monkeypatch.setattr(retrospective.tracker, "try_add_comment", lambda *_a: False)
     signal = retrospective.Signal(True, _CHART, retrospective.RUN, "u9", "d")
 
     assert retrospective.claim(tmp_path, "root", signal) is False

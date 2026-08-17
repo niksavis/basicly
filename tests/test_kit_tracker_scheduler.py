@@ -333,7 +333,7 @@ def test_the_answer_names_the_policy_that_produced_it() -> None:
     """A rank without its policy is uninterpretable (basicly-vkh0.3), and now ambiguous too.
 
     Two scorers exist in recorded history after the flip, so the schema is what tells a
-    marker written under ``br.scheduler.v1`` from one written under this.
+    marker written under ``tracker.scheduler.v1`` from one written under this.
     """
     ranking = scheduler.rank(_population(_candidate("sched-aa")))
     assert ranking.schema == "basicly.scheduler.v1"

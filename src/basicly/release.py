@@ -189,7 +189,7 @@ def commit_message(plan: ReleasePlan, issue_id: str) -> str:
     """The release commit message: dotless subject, version in the body.
 
     The beads id goes on its own trailing line, which is where the
-    ``beads-commit-msg`` hook looks and, unlike the subject, cannot push a dot into
+    ``tracker-commit-msg`` hook looks and, unlike the subject, cannot push a dot into
     the description.
     """
     return (
@@ -492,11 +492,11 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
     known = merge.known_bead_ids(repo_root)
     if known is not None and issue_id not in known:
         # Exactly merge_worktree's stance: an unknown id is rejected by the
-        # beads-commit-msg gate, and finding that out at commit time strands
+        # tracker-commit-msg gate, and finding that out at commit time strands
         # everything already written.
         reasons.append(
-            f"unknown bead id {issue_id!r}: not in .beads/issues.jsonl — the "
-            "beads-commit-msg gate would reject the release commit"
+            f"unknown bead id {issue_id!r}: the committed ledger does not hold it — the "
+            "tracker-commit-msg gate would reject the release commit"
         )
     reasons.extend(_fragment_reasons(repo_root))
     reasons.extend(unexercised_capabilities(repo_root))

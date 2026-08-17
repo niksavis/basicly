@@ -32,7 +32,7 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING, Protocol
 
-from . import br, plan_record
+from . import plan_record, tracker
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -162,7 +162,7 @@ def unrun_reason(repo_root: Path, issue_id: str) -> str:
     Empty too when the record cannot be read, which is no hole — the close is the next
     thing the caller does through that same tracker, so it fails there instead.
     """
-    record = br.read_record(repo_root, issue_id)
+    record = tracker.read_record(repo_root, issue_id)
     description = record.get("description") if isinstance(record, dict) else None
     if not isinstance(description, str):
         return ""

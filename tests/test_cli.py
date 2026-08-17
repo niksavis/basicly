@@ -90,18 +90,22 @@ def test_the_work_repo_fixture_leaves_out_the_state_that_differed_per_machine(
 ) -> None:
     """A developer's local state must never reach a test CI runs without it.
 
-    Each name here was measured inside the old copy: ``node_modules``, a live
-    SQLite tracker database with its WAL, and — the ones that actually change
-    answers — the gitignored ``basicly.local.toml`` and any untracked
-    ``.basicly-local/`` content, which is this repo's documented per-machine
+    Each name here was measured inside the old copy: ``node_modules``, and — the ones
+    that actually change answers — the gitignored ``basicly.local.toml`` and any
+    untracked ``.basicly-local/`` content, which is this repo's documented per-machine
     runner/model/policy overlay. Asserted unconditionally, so this still holds on a
     machine that happens not to have them.
+
+    The tracker's own per-machine state is the ``redirect``: it names an absolute path
+    and is written per worktree, so a copy carrying one would read the developer's own
+    checkout instead of its own.
     """
-    for offender in ("node_modules", ".venv", "basicly.local.toml", ".doctor", ".bv"):
+    for offender in ("node_modules", ".venv", "basicly.local.toml"):
         assert not (work_repo / offender).exists(), offender
     assert list(work_repo.rglob("__pycache__")) == []
-    assert list(work_repo.glob(".beads/*.db*")) == []
-    assert (work_repo / ".beads" / "issues.jsonl").is_file()  # the tracked export survives
+    assert not (work_repo / cli.owned_store.LEDGER_DIR / "redirect").exists()
+    # The tracked event log survives: it is the tracker.
+    assert list((work_repo / cli.owned_store.LEDGER_DIR).glob("events-*.jsonl"))
 
 
 def test_cli_install_converges_fresh_consumer(tmp_path: Path) -> None:
@@ -160,7 +164,10 @@ def test_cli_install_honors_custom_core_paths(tmp_path: Path) -> None:
     result = run_basicly_consumer(consumer, "install")
     assert result.returncode == 0, result.stderr
     assert (consumer / "conf" / "basicly" / "core" / "targets" / "claude.yaml").is_file()
-    assert not (consumer / ".basicly").exists()
+    # The catalog honours `[paths]`; the tracker's ledger does not, and that is the
+    # boundary rather than an oversight — `[paths]` relocates *managed core*, and the
+    # ledger is the repository's own data (`tracker_paths.LEDGER_DIR_NAME`).
+    assert not (consumer / ".basicly" / "core").exists()
     assert (consumer / "AGENTS.md").is_file()
     config_text = (consumer / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     assert "conf/basicly/core/hooks/pre-commit.py" in config_text
@@ -248,58 +255,46 @@ def test_record_install_technologies_rejects_empty_selection(
     assert not (tmp_path / "basicly.toml").exists()
 
 
-def test_setup_beads_initializes_with_derived_prefix(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_setup_tracker_creates_the_ledger_and_reports_a_derived_prefix(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fresh repo gets `br init` with a prefix sanitized from its dir name."""
+    """A fresh repo gets a ledger directory and the prefix a root mint would need.
+
+    The directory is created rather than left to the first write: its presence is what
+    opts a repository in (`tracker_usage.is_enabled`), and a consumer needs something to
+    commit. The prefix is *reported*, never written — only a repository minting a root
+    record needs one, and guessing it into `basicly.toml` declares a namespace nobody
+    asked for.
+    """
     repo = tmp_path / "My-Terminal.2"
     repo.mkdir()
-    calls: list[tuple[list[str], Path]] = []
 
-    monkeypatch.setattr(
-        cli.br,
-        "try_run_br",
-        lambda root, args: (
-            calls.append((args, root)) or subprocess.CompletedProcess(args, 0, "", "")
-        ),
-    )
+    cli._setup_tracker(repo)
 
-    cli._setup_beads(repo)
-
-    assert calls == [(["init", "--prefix", "myterminal2", "--quiet"], repo)]
-    assert "issue prefix: myterminal2" in capsys.readouterr().out
+    assert (repo / cli.owned_store.LEDGER_DIR).is_dir()
+    out = capsys.readouterr().out
+    assert 'prefix = "myterminal2"' in out
+    assert not (repo / "basicly.toml").exists()
 
 
-def test_setup_beads_skips_existing_workspace(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_setup_tracker_leaves_an_existing_ledger_alone(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An existing .beads workspace is never re-initialized."""
-    (tmp_path / ".beads").mkdir()
-    (tmp_path / ".beads" / "config.yaml").write_text("issue_prefix: kept\n", encoding="utf-8")
-    monkeypatch.setattr(
-        cli.br, "try_run_br", lambda *_a, **_kw: pytest.fail("must not call br init")
-    )
+    """Idempotent, and it must never touch a log: the ledger is append-only."""
+    ledger = tmp_path / cli.owned_store.LEDGER_DIR
+    ledger.mkdir(parents=True)
+    (ledger / "events-0001.jsonl").write_text('{"record":"kept-1"}\n', encoding="utf-8")
 
-    cli._setup_beads(tmp_path)
+    cli._setup_tracker(tmp_path)
 
     assert "left unchanged" in capsys.readouterr().out
+    assert (ledger / "events-0001.jsonl").read_text(encoding="utf-8") == '{"record":"kept-1"}\n'
 
 
-def test_setup_beads_degrades_without_br(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """No br on PATH: actionable guidance, no failure, no subprocess call."""
-    monkeypatch.setattr(cli.br, "try_run_br", lambda *_a, **_kw: None)
-
-    cli._setup_beads(tmp_path)
-
-    assert "br init --prefix" in capsys.readouterr().out
-
-
-def test_beads_prefix_enforces_leading_letter(tmp_path: Path) -> None:
+def test_tracker_prefix_enforces_leading_letter(tmp_path: Path) -> None:
     """A digit-leading or empty name is padded to a letter-leading prefix."""
-    assert cli._beads_prefix(tmp_path / "42tools") == "repo42tools"
-    assert cli._beads_prefix(tmp_path / "---") == "repo"
+    assert cli._tracker_prefix(tmp_path / "42tools") == "repo42tools"
+    assert cli._tracker_prefix(tmp_path / "---") == "repo"
 
 
 def test_scaffold_vscode_tasks_never_overwrites(
@@ -421,7 +416,7 @@ def test_install_hints_stay_quiet_for_a_current_config(
 
 
 def test_ci_workflows_ignore_tracker_only_pushes() -> None:
-    """Tracker-only pushes must not trigger builds: .beads/** is paths-ignored.
+    """Tracker-only pushes must not trigger builds: the ledger path is ignored.
 
     The harness loop necessarily makes tracker-only commits (basicly-flp), so
     both the authoring workflows and the consumer scaffold skip CI for them.
@@ -435,7 +430,7 @@ def test_ci_workflows_ignore_tracker_only_pushes() -> None:
         data = yaml.safe_load(text)
         triggers = data.get("on", data.get(True))  # bare `on:` parses as YAML boolean
         for event in ("push", "pull_request"):
-            assert triggers[event]["paths-ignore"] == [".beads/**"], text[:200]
+            assert triggers[event]["paths-ignore"] == [".basicly/ledger/**"], text[:200]
 
 
 def test_purge_removes_only_pristine_ci_workflow(tmp_path: Path) -> None:
@@ -657,7 +652,7 @@ def test_cli_uninstall_removes_everything_managed(tmp_path: Path) -> None:
     result = run_basicly_consumer(consumer, "uninstall")
     assert result.returncode == 0, result.stderr
 
-    assert not (consumer / ".basicly").exists()
+    assert not (consumer / ".basicly" / "core").exists()
     assert not (consumer / "AGENTS.md").exists()
     assert not (consumer / ".claude" / "CLAUDE.md").exists()
     assert not (consumer / ".github" / "copilot-instructions.md").exists()
@@ -666,9 +661,12 @@ def test_cli_uninstall_removes_everything_managed(tmp_path: Path) -> None:
         assert not (list(base.rglob("SKILL.md")) if base.exists() else [])
     assert not (consumer / ".pre-commit-config.yaml").exists()
 
-    # User content survives.
+    # User content survives — including the tracker, which holds the work records this
+    # tool never authored. Deleting a repository's own backlog on uninstall is the one
+    # unrecoverable thing an uninstall could do (basicly-vkh0.42.7).
     assert (consumer / "basicly.toml").is_file()
     assert (consumer / ".basicly-local" / "fragments" / "user").is_dir()
+    assert (consumer / cli.owned_store.LEDGER_DIR).is_dir()
 
 
 def test_cli_uninstall_preserves_foreign_hooks(tmp_path: Path) -> None:
@@ -1707,211 +1705,3 @@ def test_a_registered_subcommand_with_no_handler_fails_loudly(
         "the parser but has no handler — this is a bug in basicly, not in your invocation"
     )
     assert out == ""
-
-
-# --- the shadow differential command (basicly-vkh0.18) ------------------------
-
-KIT_REPORT = cli.br.kit(REPO_ROOT)
-KIT_SCOPE = cli.br.kit(REPO_ROOT, cli.br.BASELINE_MODULE)
-
-
-def _shadow_report(**fields: object):
-    """A kit ``ScopedReport``, the real class rather than a stand-in.
-
-    The command's whole contract is how it reads ``clean`` and ``conclusive``, and both
-    are derived properties: a hand-rolled double would let the two drift apart from the
-    definitions the flip is licensed by, which is the one thing these tests exist to
-    pin. It is the *scoped* report because that is what the command reads since
-    basicly-c357 — the boundary's own rules are pinned in
-    ``tests/test_kit_tracker_baseline.py``.
-    """
-    fields.setdefault("in_scope", ("seam-0001",))
-    return KIT_SCOPE.ScopedReport(**fields)
-
-
-@pytest.mark.parametrize(
-    ("fields", "verdicts"),
-    [
-        ({}, ("yes", "yes", 0)),
-        (
-            {"inconclusive": ("gates: no gate rows",)},
-            ("yes", "no", 1),
-        ),
-        (
-            {
-                "disagreements": (
-                    KIT_REPORT.Disagreement("seam-0001", KIT_REPORT.QUERY_PHASE, "build", "verify"),
-                )
-            },
-            ("no", "yes", 1),
-        ),
-    ],
-    ids=["clean-and-conclusive", "clean-but-vacuous", "disagreement"],
-)
-def test_tracker_shadow_reports_clean_and_conclusive_as_two_answers(
-    fields: dict[str, object],
-    verdicts: tuple[str, str, int],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Two verdicts, two lines, and an exit code that needs both.
-
-    The middle case is the one the command exists for: the two stores agreed on every
-    record and the agreement discriminated nothing, so a single "clean" answer would
-    report the absence of evidence as evidence and license the next rung of the cutover
-    on it.
-    """
-    clean, conclusive, code = verdicts
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli.br, "scoped_differential", lambda *_a, **_kw: _shadow_report(**fields))
-
-    assert cli.main(["tracker", "shadow"]) == code
-
-    out = capsys.readouterr().out
-    assert f"clean:      {clean}" in out
-    assert f"conclusive: {conclusive}" in out
-
-
-def test_tracker_write_puts_a_hand_write_through_the_mirroring_seam(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The surface exists so a human's write reaches whichever store is authoritative.
-
-    Asserted against `br.write`, which is the seam (basicly-vkh0.24, basicly-wpc8): a
-    passthrough that spawned the binary itself would print the same output and mirror
-    nothing, which is the defect rather than the fix. Reported by echoing the argv rather
-    than the binary's stdout, because on the flipped rung no process runs to produce any.
-    """
-    monkeypatch.chdir(tmp_path)
-    seen: list[list[str]] = []
-    monkeypatch.setattr(cli.br, "write", lambda _root, argv: seen.append(argv))
-
-    assert cli.main(["tracker", "write", "--", "comments", "add", "b-1", "hello"]) == 0
-
-    assert seen == [["comments", "add", "b-1", "hello"]]
-    assert "recorded: comments add b-1 hello" in capsys.readouterr().out
-
-
-def test_tracker_write_routes_a_create_to_the_minting_seam_and_prints_the_id(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A create is the one write whose output the caller needs (basicly-vkh0.29).
-
-    Routed to ``create_record`` rather than ``write``, which returns nothing. Before the
-    flip a create through ``write`` reached br, whose JSON reply carried the minted id;
-    after it there is no reply, and the mirror failed with "replied with no JSON record" —
-    a message that sends the reader to the reply instead of to the call.
-    """
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli.br, "write", lambda *_a: pytest.fail("a create is not a plain write"))
-    monkeypatch.setattr(cli.br, "create_record", lambda _root, argv: f"b-new({len(argv)})")
-
-    assert cli.main(["tracker", "write", "--", "create", "a thing", "--parent", "b-1"]) == 0
-
-    assert "created: b-new(4)" in capsys.readouterr().out
-
-
-def test_the_write_seam_refuses_a_create_by_name_rather_than_failing_in_the_mirror(
-    tmp_path: Path,
-) -> None:
-    """The wrong path fails loudly at the call, not obscurely two modules down."""
-    with pytest.raises(RuntimeError, match="call create_record"):
-        cli.br.write(tmp_path, ["create", "a thing", "--parent", "b-1"])
-
-
-def test_tracker_write_honours_the_json_the_caller_asked_for(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Prose to a caller that passed ``--json`` is how a duplicate record got minted.
-
-    The id was piped through `jq`, vanished, and the create was re-run
-    (`basicly-vkh0.42.10` duplicates `.42.9`).
-    """
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli.br, "create_record", lambda _root, _argv: "b-minted")
-
-    assert cli.main(["tracker", "write", "--", "create", "a thing", "-p", "b-1", "--json"]) == 0
-
-    assert json.loads(capsys.readouterr().out.strip()) == {"id": "b-minted"}
-
-
-def test_a_hand_close_prints_what_the_record_asked_for(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Not a refusal — the closer seeing the list (basicly-agzx.4 was closed with one unmet).
-
-    A human may close a record for reasons its criteria never covered, so a gate guessing
-    which would be wrong more often than useful.
-    """
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli.br, "write", lambda *_a: None)
-    monkeypatch.setattr(
-        cli.br, "read_record", lambda _root, _id: {"acceptance_criteria": "Given a thing\nthen it"}
-    )
-
-    assert cli.main(["tracker", "write", "--", "close", "b-1", "--reason", "done"]) == 0
-
-    out = capsys.readouterr().out
-    assert "closing b-1, which asked for:" in out and "Given a thing" in out
-
-
-def test_tracker_write_with_no_subcommand_says_so_rather_than_spawning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The control: an empty argv is a usage error, never an empty tracker write."""
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli.br, "write", lambda *_a: pytest.fail("nothing should be recorded"))
-
-    assert cli.main(["tracker", "write"]) == 2
-
-
-def test_tracker_shadow_names_the_refusal_beside_the_agreement_it_voids(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A refused reference agrees with everything, so the reason has to be printed.
-
-    The report carries no disagreement here — that is what two derivatives of one lossy
-    snapshot look like — and the run still proves nothing. Reporting the agreement
-    without the refusal is precisely the outcome §5.1 says a differential must not be
-    able to produce.
-    """
-    monkeypatch.chdir(tmp_path)
-    refusal = KIT_REPORT.Refusal(KIT_REPORT.RULE_DERIVED_FROM_LEDGER, "the answers moved")
-    monkeypatch.setattr(
-        cli.br, "scoped_differential", lambda *_a, **_kw: _shadow_report(refusals=(refusal,))
-    )
-
-    assert cli.main(["tracker", "shadow"]) == 1
-
-    out = capsys.readouterr().out
-    assert KIT_REPORT.RULE_DERIVED_FROM_LEDGER in out
-    assert "clean:      no" in out
-
-
-def test_tracker_shadow_compares_on_the_engines_own_vocabulary(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The names the queries read are the engine's, not the kit's defaults.
-
-    The kit ships defaults that mirror these constants, so passing nothing would look
-    identical today and diverge silently the first time one of them moves — or the first
-    time a repo configures its own required gates, which is the case asserted here.
-    """
-    (tmp_path / CONFIG_FILE).write_text(
-        '[policy]\nrequired_gates = ["verify", "rubric"]\n', encoding="utf-8"
-    )
-    monkeypatch.chdir(tmp_path)
-    seen: dict[str, object] = {}
-
-    def capture(_root: Path, vocabulary: dict[str, object]):
-        seen.update(vocabulary)
-        return _shadow_report()
-
-    monkeypatch.setattr(cli.br, "scoped_differential", capture)
-
-    assert cli.main(["tracker", "shadow"]) == 0
-    assert seen["required_gates"] == ("verify", "rubric")
-    assert seen["marker"] == cli.policy.MARKER
-    assert seen["checkpoints"] == tuple(cli.CHECKPOINTS)
-    assert seen["worktree_ref_prefix"] == cli.loop_state.WORKTREE_REF_PREFIX

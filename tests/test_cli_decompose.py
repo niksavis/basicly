@@ -14,8 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, cli, decompose
+from basicly import cli, decompose
 from basicly.decompose import ChildSpec
+from tests import fake_tracker
 
 MANIFEST = "pyproject.toml"
 
@@ -57,7 +58,7 @@ def _no_tracker(monkeypatch: pytest.MonkeyPatch) -> None:
     not on PATH — a read that raises past the seam is a different fact and no longer this
     fixture's.
     """
-    monkeypatch.setattr(br, "try_run_br", lambda *_a, **_k: None)
+    fake_tracker.install(monkeypatch, lambda *_a, **_k: None)
 
 
 @pytest.mark.usefixtures("_no_tracker")

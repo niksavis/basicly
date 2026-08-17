@@ -4,7 +4,7 @@ The boundary is *what a reviewer said* against *what its dispatch cost*:
 :mod:`basicly.run_record` prices a dispatch, redacts its prompt and keeps no reply, so
 without this the VALIDATE fan-out would spend a dispatch per lens and drop every
 answer. Split from :mod:`basicly.roles`, which owns the vocabulary, because the layer
-stack puts ``roles`` below ``br`` and a recorder must reach the tracker.
+stack puts ``roles`` below the tracker seam and a recorder must reach it.
 
 **One comment per lens, and that is the contract.** factory-loop.md §6.4 closes with
 the rule that lens output is reported per lens and never merged into one ranked list,
@@ -14,7 +14,7 @@ and :func:`latest_per_lens` hands back one :class:`LensFindings` per lens in voc
 order — a shape a consumer has to render as sections, carrying no field to rank by.
 
 Transport is the ``[harness-review]`` marker family, a sibling of ``[harness-policy]``
-and ``[harness-artifact]``, through the :func:`basicly.br.add_comment` seam they share.
+and ``[harness-artifact]``, through the :func:`basicly.tracker.add_comment` seam they share.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, roles
+from . import roles, tracker
 
 # The marker family this module owns, and how the lens is carried ahead of the text.
 MARKER = "[harness-review]"
@@ -71,7 +71,7 @@ def record(repo_root: Path, issue_id: str, lens: str, findings: str) -> None:
     """
     if not findings.strip():
         return
-    br.add_comment(repo_root, issue_id, _marker_body(lens, findings))
+    tracker.add_comment(repo_root, issue_id, _marker_body(lens, findings))
 
 
 def _parse_marker(text: str) -> tuple[str, str] | None:
@@ -101,11 +101,11 @@ def latest_per_lens(repo_root: Path, issue_id: str) -> tuple[LensFindings, ...]:
     reviewed twice reviewed two different trees, and the earlier answer judged work a
     repair has already been through. Same reason the repair brief is consumed on read.
 
-    Soft (:func:`br.try_read_comments`): a review is advisory evidence, so a store that
+    Soft (:func:`tracker.try_read_comments`): a review is advisory evidence, so a store that
     cannot answer costs a repair its findings and can never cost a gate its verdict.
     """
     latest: dict[str, str] = {}
-    for comment in br.try_read_comments(repo_root, issue_id):
+    for comment in tracker.try_read_comments(repo_root, issue_id):
         parsed = _parse_marker(str(comment.get("text", "")))
         if parsed is not None:
             latest[parsed[0]] = parsed[1]

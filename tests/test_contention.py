@@ -14,7 +14,8 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import br, contention
+from basicly import contention
+from tests import fake_tracker
 
 if TYPE_CHECKING:
     import pytest
@@ -31,11 +32,11 @@ def _scope_reader(monkeypatch: pytest.MonkeyPatch, scopes: dict[str, tuple[str, 
     """Serve each lane's ``## Scope`` through the real parse chain, not a stubbed dict.
 
     The report reads scopes via ``merge.declared_scopes`` -> ``bead_class_and_scope``
-    -> ``br.read_record``, and the recorded body is where a declaration is easy to get
+    -> ``tracker.read_record``, and the recorded body is where a declaration is easy to get
     wrong, so the fake stops at ``br`` and everything above it stays live. It is
-    installed on ``br.try_run_br`` because the record read is the one seam every
+    installed on ``tracker.try_run_br`` because the record read is the one seam every
     consumer shares (basicly-tcmy.14); stubbing anything above it would leave the seam
-    spawning a real br, and every lane would then read as declaring no scope — which is
+    spawning a real tracker, and every lane would then read as declaring no scope — which is
     the *warn* branch, so the test would fail by warning about all three.
     """
 
@@ -44,7 +45,7 @@ def _scope_reader(monkeypatch: pytest.MonkeyPatch, scopes: dict[str, tuple[str, 
         body = "## Scope\n" + "\n".join(f"- `{glob}`" for glob in scopes.get(args[1], ()))
         return _Proc(json.dumps([{"id": args[1], "issue_type": "task", "description": body}]))
 
-    monkeypatch.setattr(br, "try_run_br", show)
+    fake_tracker.install(monkeypatch, show)
 
 
 def test_the_report_warns_when_every_lane_appends_to_a_path_none_declares(
@@ -114,7 +115,7 @@ def test_a_single_lane_pass_contends_with_nobody(
     def refuse(_repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         raise AssertionError(f"a one-lane pass must not read scopes: {args}")
 
-    monkeypatch.setattr(br, "try_run_br", refuse)
+    fake_tracker.install(monkeypatch, refuse)
 
     (line,) = contention.append_only_report(tmp_path, ("only",), ("CHANGELOG.md",))
 

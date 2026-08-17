@@ -74,18 +74,18 @@ CONSUMER_CI_WORKFLOW = """\
 # Scaffolded by `basicly install`; yours to edit — install never overwrites it.
 name: basicly-gates
 
-# Tracker-only pushes (.beads/**) skip CI: the harness loop necessarily commits
-# beads state separately from the work, and the local commit-msg hooks are the
-# deterministic floor for those commits.
+# Tracker-only pushes skip CI: the harness loop necessarily commits tracker state
+# separately from the work, and the local commit-msg hooks are the deterministic
+# floor for those commits. Both stores are named while both exist.
 "on":
   push:
     branches: [main]
     paths-ignore:
-      - ".beads/**"
+      - ".basicly/ledger/**"
   pull_request:
     branches: [main]
     paths-ignore:
-      - ".beads/**"
+      - ".basicly/ledger/**"
   workflow_dispatch:
 
 permissions:
@@ -121,7 +121,7 @@ jobs:
             msg_file="$(mktemp)"
             git log -1 --format='%B' "${sha}" > "${msg_file}"
             python3 .basicly/core/hooks/commit-msg.py "${msg_file}" || failed=1
-            python3 .basicly/core/hooks/beads-commit-msg.py "${msg_file}" || failed=1
+            python3 .basicly/core/hooks/tracker-commit-msg.py "${msg_file}" || failed=1
             rm -f "${msg_file}"
           done < <(git log --format='%H' "${range}")
           exit "${failed}"

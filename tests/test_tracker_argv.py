@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from basicly import br_argv
+from basicly import tracker_argv
 
-UPDATE = br_argv.VALUE_FLAGS["update"]
+UPDATE = tracker_argv.VALUE_FLAGS["update"]
 
 
 @pytest.mark.parametrize(
@@ -33,9 +33,9 @@ def test_a_value_taking_flag_does_not_leave_its_value_looking_positional(
     `br gate report` puts the issue id last, after five flag pairs, so "the last word"
     is right only by accident and "every non-flag word" collects `--note`'s free text.
     """
-    flags = br_argv.VALUE_FLAGS["close" if args[0] == "close" else "update"]
+    flags = tracker_argv.VALUE_FLAGS["close" if args[0] == "close" else "update"]
 
-    assert br_argv.positionals(args, flags) == expected
+    assert tracker_argv.positionals(args, flags) == expected
 
 
 def test_an_unknown_flags_value_stays_positional() -> None:
@@ -44,9 +44,9 @@ def test_an_unknown_flags_value_stays_positional() -> None:
     Absorbing it would make an untranslatable write look like an ordinary one, which is
     the silent-divergence direction. Refusing on a surprise id is the loud one.
     """
-    assert br_argv.positionals(["update", "--add-label", "phase", "b-1"], UPDATE) == [
+    assert tracker_argv.positionals(["update", "--estimate", "30", "b-1"], UPDATE) == [
         "update",
-        "phase",
+        "30",
         "b-1",
     ]
 
@@ -68,7 +68,7 @@ def test_both_flag_spellings_read_the_same_and_a_valueless_flag_is_kept(
 
     Dropping it would hand the translator a write it thinks it understood.
     """
-    assert br_argv.flag_pairs(args, UPDATE) == expected
+    assert tracker_argv.flag_pairs(args, UPDATE) == expected
 
 
 def test_the_value_flag_table_covers_every_translatable_update_flag() -> None:
@@ -77,7 +77,7 @@ def test_the_value_flag_table_covers_every_translatable_update_flag() -> None:
     A flag translatable but absent from `VALUE_FLAGS` would have its value read as an
     id, so the write would be refused for naming an issue that does not exist.
     """
-    translatable = set(br_argv.UPDATE_FIELD_FLAGS) | br_argv.UPDATE_STATUS_FLAGS
+    translatable = set(tracker_argv.UPDATE_FIELD_FLAGS) | tracker_argv.UPDATE_STATUS_FLAGS
 
     assert translatable <= UPDATE
-    assert set(br_argv.CREATE_FIELD_FLAGS) <= br_argv.VALUE_FLAGS["create"]
+    assert set(tracker_argv.CREATE_FIELD_FLAGS) <= tracker_argv.VALUE_FLAGS["create"]

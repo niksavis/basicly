@@ -23,7 +23,6 @@ use the [how-to guides](../how-to/) instead; the authoritative reference is
 | --- | --- | --- |
 | A git repo with at least one commit | The loop branches from a base commit | `git log --oneline` |
 | [uv](https://docs.astral.sh/uv/) on `PATH`, Python 3.14+ | The CLI and every projected git hook run through it | `uv --version` |
-| [`br`](https://github.com/Dicklesworthstone/beads_rust) at exactly 0.2.16 | The work graph the loop derives every phase from. A pin, not a floor — the harness warns on any other version, newer included | `br --version` |
 
 Do this on a throwaway repo the first time. The loop rewrites hooks, adds
 generated files, and makes commits; you want to see all of that somewhere you
@@ -116,11 +115,11 @@ existing one drops the rate and fails the commit.
 
 ## Step 3 — file the bead you are about to work on
 
-Nothing commits in this repo without a bead id — the `beads-commit-msg` hook
+Nothing commits in this repo without a bead id — the `tracker-commit-msg` hook
 refuses it, install output included:
 
 ```text
-ERROR: Commit message does not reference a beads issue id.
+ERROR: Commit message does not reference a tracked issue id.
 ```
 
 So file one before you commit anything. A bead has to pass the
@@ -146,7 +145,7 @@ glob alone on its line** — a bare path parses to nothing, and everything
 downstream (sizing, parallel grouping) reads it:
 
 ```sh
-br create "Add a getting started note" --type task --priority 2 -d '## Acceptance Criteria
+basicly tracker write -- create "Add a getting started note" -t task -p 2 -d '## Acceptance Criteria
 
 - Given a reader who opens the repo when they read NOTES.md then a one line getting started note is present
 
@@ -157,8 +156,13 @@ br create "Add a getting started note" --type task --priority 2 -d '## Acceptanc
 ```
 
 ```text
-✓ Created myrepo-etk: Add a getting started note
+created: myrepo-etk
 ```
+
+A record with no `--parent` is a *root*, and a root id needs a namespace: set
+`[tracker] prefix = "myrepo"` in `basicly.toml` first, or pass `--parent <id>` to hang it
+off one you already have. The command refuses rather than guessing, because a guessed
+prefix mints an id no later read finds again.
 
 Check the gate agrees:
 
@@ -171,7 +175,8 @@ DoR: READY (myrepo-etk)
 ```
 
 If it says `NOT READY` it names the missing heading and repeats the scaffold
-command; fill that section in with `br update myrepo-etk -d '...'`.
+command; fill that section in with
+`basicly tracker write -- update myrepo-etk -d '...'`.
 
 Now the install output has an id to reference, so commit it:
 
@@ -244,7 +249,7 @@ basicly loop run myrepo-etk --work-type task --runner manual --confirm 348a269b
 Created worktree 'myrepo-etk'
   path:   /path/to/myrepo.worktrees/myrepo-etk
   branch: harness/myrepo-etk  (base main @ 5d349d1)
-  .beads/redirect: tracker shared with the base checkout
+  .basicly/ledger/redirect: tracker shared with the base checkout
   hooks: pre-commit, commit-msg, pre-push
 [blocked] classify -> classify: worktree 'myrepo-etk' provisioned; awaiting the agent's work
 ```
@@ -253,8 +258,8 @@ Three things just happened that are worth understanding:
 
 - The work is isolated in a **sibling** worktree — `../myrepo.worktrees/…`,
   never inside the repo, so whole-tree gates and file watchers do not see it.
-- `.beads/redirect` points that worktree's tracker at the base checkout's. There
-  is one work graph; a `br` command from either side hits it.
+- `.basicly/ledger/redirect` points that worktree's tracker at the base checkout's.
+  There is one work graph; a read or a write from either side reaches it.
 - The engine committed the claim to git *before* creating the worktree, so the
   claim is in history from the moment work starts.
 
@@ -319,17 +324,17 @@ git log --oneline -6
 ```
 
 ```text
-4df2f2b chore(beads): close the shipped track (myrepo-etk)
+4df2f2b chore(ledger): close the shipped track (myrepo-etk)
 d605fb4 chore(worktree): merge a harness worktree back to its base
 1fccce5 docs: add a getting started note (myrepo-etk)
-c0a8fc1 chore(beads): sync tracker state for the harness loop (myrepo-etk)
-5d349d1 chore(beads): record the claim before provisioning (myrepo-etk)
+c0a8fc1 chore(ledger): sync tracker state for the harness loop (myrepo-etk)
+5d349d1 chore(ledger): record the claim before provisioning (myrepo-etk)
 6ee6f7f chore: install basicly (myrepo-etk)
 ```
 
 You wrote two of those six — the install commit and the change itself. The
-engine wrote the merge and the three `chore(beads)` commits, at the claim, the
-landing, and the close, which is why you never `git add .beads` yourself on
+engine wrote the merge and the three `chore(ledger)` commits, at the claim, the
+landing, and the close, which is why you never `git add .basicly/ledger` yourself on
 loop-tracked work.
 
 ```sh

@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import tracker_usage, usage
+from . import usage
 from .config import load_verify_config
 
 # The one kind of capability the repo declares today. Named so a second kind is an
@@ -52,23 +52,17 @@ def shipped_capabilities(repo_root: Path) -> tuple[tuple[str, str], ...]:
 
     Each pair is ``(label, witness)``: the label names the capability the way a refusal
     reports it, and the witness is the key :func:`recorded_executions` would carry it
-    under. A record with named fields would read better here and is deliberately not
-    used — its fields would be read only by this module, which is the shape
-    ``wired-or-deleted`` rejects, and there is no consumer outside this module to wire
-    one to. A pair carries the same two values without claiming to be a public type.
+    under. A pair rather than a record: named fields read only by this module are the
+    shape ``wired-or-deleted`` rejects.
 
     The witness is the check's ``name``, namespaced by ``usage.VERIFY_CHECK_PREFIX`` and
-    recorded by the one component that ever executes a declared check:
-    :func:`basicly.verify.run_check` records every check it watches pass. It used to be
-    the check's ``command[0]``, read off the ``tool-usage`` hook's counters, and that
-    measured *who typed a word* rather than whether the check ran — a witness that was
-    simultaneously unsatisfiable and unfalsifiable (basicly-3yi3). Unsatisfiable for a
-    check nothing invokes by hand: ``vulture`` exists only as a declaration, so its
-    counter was never created and no verify run could create it, and the gate blocked
-    v0.7.0 over a check that had just passed. Unfalsifiable for a check behind a wrapper:
-    ``wired-or-deleted`` runs as ``uv run python .scripts/...``, and ``uv``'s thousands
-    of executions would stay healthy if the check were deleted outright. A name is
-    unique per declaration and nothing but the engine running that declaration can earn
+    recorded by :func:`basicly.verify.run_check`, the one component that ever executes a
+    declared check. It used to be ``command[0]`` off the hook's counters, which measured
+    *who typed a word* — simultaneously unsatisfiable and unfalsifiable (basicly-3yi3):
+    ``vulture`` exists only as a declaration so no verify run could create its counter,
+    and ``wired-or-deleted`` runs behind ``uv``, whose thousands of executions would stay
+    healthy if the check were deleted. A name is unique per declaration and nothing but
+    the engine running that declaration can earn
     it, which closes both directions with one key.
 
     A tuple of pairs rather than a mapping, because two checks may legitimately share a
@@ -108,17 +102,11 @@ def recorded_executions(repo_root: Path) -> dict[str, int] | None:
       wrote it — ``ruff``, ``basicly``, and ``skill:<slug>`` for a skill invocation. A
       counter the hook created and never incremented is dropped: a zero is not an
       execution.
-    * the tracker ledger's measured surfaces (:func:`tracker_usage.surface_executions`),
-      which is the *committed* half and so answers on a machine whose counters are empty.
-
-    The last two witness no capability the inventory declares today, and that is the
-    correction basicly-3yi3 made rather than an oversight: what they record is that a
-    human or an agent ran a *tool*, which is not evidence that the check wrapping it ran
-    (``uv`` at 6091 executions would look identical with ``wired-or-deleted`` deleted).
-    They stay because this function answers "what executions does this checkout have on
-    record", the ledger set is what the ``None`` below is judged over, and a second kind
-    of capability — one genuinely witnessed by a typed tool — is then an inventory entry
-    rather than a change here.
+    The hook counters witness no capability the inventory declares (basicly-3yi3): what
+    they record is that somebody ran a *tool*, not that the check wrapping it ran. They
+    stay because this answers what executions are on record, and that set is what the
+    ``None`` below is judged over. A third source, the measured tracker surfaces, left
+    with the subprocess it measured (basicly-vkh0.42.7).
 
     ``None`` means no ledger exists at all, and the caller must keep it apart from a
     recorded zero: absence of a record is not evidence that a capability ran. All are
@@ -131,8 +119,7 @@ def recorded_executions(repo_root: Path) -> dict[str, int] | None:
     """
     counters = usage.load_usage(repo_root)
     check_runs = usage.load_verify_checks(repo_root)
-    surfaces = tracker_usage.surface_executions(repo_root)
-    if counters is None and check_runs is None and not surfaces:
+    if counters is None and check_runs is None:
         return None
     counts: dict[str, int] = {}
     for name, entry in (counters or {}).items():
@@ -141,8 +128,6 @@ def recorded_executions(repo_root: Path) -> dict[str, int] | None:
     for name, entry in (check_runs or {}).items():
         if executions := _counted(entry):
             counts[f"{usage.VERIFY_CHECK_PREFIX}{name}"] = executions
-    for key, calls in surfaces.items():
-        counts[key] = counts.get(key, 0) + calls
     return counts
 
 
@@ -174,8 +159,8 @@ def unexercised_capabilities(repo_root: Path) -> tuple[str, ...]:
     counts = recorded_executions(repo_root)
     if not counts:
         return (
-            f"no execution ledger at {usage.VERIFY_CHECKS_FILE.as_posix()}, "
-            f"{usage.USAGE_FILE.as_posix()} or {tracker_usage.LEDGER_FILE.as_posix()}, so "
+            f"no execution ledger at {usage.VERIFY_CHECKS_FILE.as_posix()} or "
+            f"{usage.USAGE_FILE.as_posix()}, so "
             f"every declared capability is unproven ({len(capabilities)} declared): "
             "exercise them on this machine and re-run (`basicly verify` records every "
             "check it runs; `basicly usage report` shows what is recorded)",

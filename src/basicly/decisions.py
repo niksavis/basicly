@@ -3,11 +3,9 @@
 Factory design component 4 (basicly-kjc5.4, sections 7.1/7.3): needs-input
 facts, rework escalations, checkpoint requests, and stall flags all become
 items in **one** queue instead of four ad-hoc surfaces. Items persist as
-``[harness-decision]`` comment markers on the affected bead — the same
-durable, attributable pattern as ``[harness-policy]`` and ``[harness-info]``
-— so the queue needs no side-state and ``loop decisions`` is a pure read over
-``br``. An answer is recorded in place with the answerer's attribution
-(human, or the decider agent).
+``[harness-decision]`` comment markers on the affected record — the same
+durable, attributable pattern as ``[harness-policy]`` — so the queue needs no
+side-state and ``loop decisions`` is a pure read over the tracker.
 
 Two consumers, per the design's session modes:
 
@@ -34,8 +32,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from . import br, policy, run_record, runner
-from .br import add_comment as _add_comment
+from . import policy, run_record, runner, tracker
 from .config import (
     PolicyConfig,
     load_policy_config,
@@ -58,6 +55,7 @@ from .decision_marker import (
     render_enqueue,
     split_decision_id,
 )
+from .tracker import add_comment as _add_comment
 
 # Enqueue and delegated-answer recording are read-then-write over br comments, so
 # the supervisor's concurrent lanes (basicly-kjc5.6) could double-enqueue the same
@@ -234,7 +232,7 @@ def closed_ids(repo_root: Path) -> frozenset[str]:
     """
     return frozenset(
         str(record["id"])
-        for record in br.export_records(repo_root)
+        for record in tracker.all_records(repo_root)
         if record.get("status") == "closed" and record.get("id")
     )
 

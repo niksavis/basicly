@@ -44,7 +44,6 @@ SELF = f"{SCRIPT_DIR.name}/{Path(__file__).name}"
 
 SRC_ROOT = "src/basicly"
 LOG_GLOB = ".basicly/ledger/events-*.jsonl"
-EXPORT = ".beads/issues.jsonl"
 COUNT_DOC = "docs/requirements/work-tracker.md"
 
 # A family is lowercase and hyphenated. The character class is what makes a malformed
@@ -188,38 +187,25 @@ def _log_bodies(repo: Path) -> Iterator[tuple[str, str]]:
                 yield store, str(payload.get("text") or "")
 
 
-def _export_bodies(repo: Path) -> Iterator[tuple[str, str]]:
-    """Every comment body in the committed tracker export, as (store, text)."""
-    path = repo / EXPORT
-    if not path.is_file():
-        return
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if not line.strip():
-            continue
-        for comment in json.loads(line).get("comments") or []:
-            text = comment.get("text") if isinstance(comment, dict) else comment
-            yield EXPORT, str(text or "")
-
-
 def logged_families(repo: Path) -> Census:
-    """The families written to this checkout's stores, counted at the head of a body.
+    """The families written to this checkout's store, counted at the head of a body.
 
     Raises:
-        FamilyError: no store was found, or the stores hold comment bodies and the probe
+        FamilyError: no store was found, or the log holds comment bodies and the probe
             matched none of them — an empty result there belongs to the probe, not to the
             tree, since this repository's log carries 2,297 such rows.
     """
     rows: dict[str, int] = {}
     stores: set[str] = set()
     comments = 0
-    for store, text in (*_log_bodies(repo), *_export_bodies(repo)):
+    for store, text in _log_bodies(repo):
         stores.add(store)
         comments += 1
         found = _LEADING.match(text)
         if found:
             rows[found.group(1)] = rows.get(found.group(1), 0) + 1
     if not stores:
-        raise FamilyError(f"no store to read: neither {LOG_GLOB} nor {EXPORT}")
+        raise FamilyError(f"no store to read at {LOG_GLOB}")
     if comments and not rows:
         raise FamilyError(f"read {comments} comment bodies and matched no family: bad probe")
     return Census(rows=dict(sorted(rows.items())), comments=comments, stores=tuple(sorted(stores)))

@@ -32,9 +32,9 @@ criterion is honest; one that omits it is not.
 
 **How this role goes soft, measured here rather than imagined.**
 
-You check the claim against the beads instead of against the code. It
+You check the claim against the tracker instead of against the code. It
 has happened twice on this repository — two release claims contradicted
-the tree, and both were closed beads. The ladder row is not the
+the tree, and both were closed records. The ladder row is not the
 evidence; the code is.
 
 The second one: a capability claim on a consumer surface — README, site,

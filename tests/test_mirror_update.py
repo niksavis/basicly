@@ -67,7 +67,7 @@ def test_a_filing_field_is_mirrored_under_the_key_brs_export_carries_it_under(
 ) -> None:
     """Each name is br's own export key, measured over the 892-record export 2026-08-16.
 
-    Not a spelling chosen here: `br.owned_record` renders the folded fields straight back
+    Not a spelling chosen here: `tracker.owned_record` renders the folded fields straight back
     as the record, and `policy._has_acceptance_criteria` reads `acceptance_criteria` off
     it. The value leads with a dash because a filing field holds arbitrary prose.
     """
@@ -81,7 +81,7 @@ def test_a_filing_field_is_mirrored_under_the_key_brs_export_carries_it_under(
 
 @pytest.mark.parametrize("spelling", ["3", "P3", "p3"])
 def test_a_priority_is_mirrored_as_the_int_the_export_holds(kit: Any, spelling: str) -> None:
-    """All three spellings reach br, which exports `3` for each (measured 2026-08-16).
+    """All three spellings reach tracker, which exports `3` for each (measured 2026-08-16).
 
     A stored `"P3"` would disagree with `create`, which has always written the int, and
     the differential compares status, readiness and gates only — so nothing would catch it.
@@ -97,16 +97,29 @@ def test_a_priority_that_is_neither_spelling_is_refused_as_a_divergence(kit: Any
         mirror.drafts(kit, ["update", "b-1", "-p", "urgent"], "")
 
 
-@pytest.mark.parametrize("flag", ["--add-label", "--remove-label", "--set-labels", "--labels"])
-def test_a_label_flag_is_still_refused_because_br_accumulates_it(kit: Any, flag: str) -> None:
-    """The ledger holds `labels`; what it cannot hold is a delta against the current set.
+@pytest.mark.parametrize("flag", ["--add-label", "--remove-label"])
+def test_an_accumulating_label_flag_is_refused_at_this_layer(kit: Any, flag: str) -> None:
+    """This translator cannot read the ledger, and a delta needs the current set.
 
-    Measured 2026-08-16: `--add-label c` appended to `['a','b']`, and even
-    `--set-labels a --set-labels b` left both. One field event per occurrence would
-    replace where br appended, so the refusal is the right answer rather than a gap.
+    The refusal is a layering rule rather than a gap: `owned_write._resolve_labels` reads
+    the record's own labels under the ledger lock and rewrites the flag into `--labels`
+    before calling here, so a flag reaching this function means the seam was bypassed.
     """
-    with pytest.raises(TrackerDivergenceError, match=flag):
+    with pytest.raises(TrackerDivergenceError, match="resolves it"):
         mirror.drafts(kit, ["update", "b-1", f"{flag}=x"], "")
+
+
+def test_a_resolved_label_set_is_stored_as_the_joined_form(kit: Any) -> None:
+    """`--labels` is the replacement the seam rewrites both accumulating flags into.
+
+    Joined rather than a list because `value` is one of `events.TRUNCATABLE_KEYS` and the
+    schema refuses a container under a capped key; `tracker_argv.labels_of` splits it back.
+    """
+    (field,) = mirror.drafts(kit, ["update", "b-1", "--labels", "a,b"], "")
+
+    payload = field.payload  # type: ignore[attr-defined]  — a kit Draft, typed as object
+    assert payload["name"] == "labels"
+    assert payload["value"] == "a,b"
 
 
 def test_an_update_flag_with_no_equivalent_is_refused_not_dropped(kit: Any) -> None:
@@ -117,8 +130,8 @@ def test_an_update_flag_with_no_equivalent_is_refused_not_dropped(kit: Any) -> N
     value looking like a positional and the id guard fires first. Both refuse — this is
     the one that names the repair.
     """
-    with pytest.raises(TrackerDivergenceError, match=r"br_argv\.UPDATE_FIELD_FLAGS"):
-        mirror.drafts(kit, ["update", "--add-label=phase", "b-1"], "")
+    with pytest.raises(TrackerDivergenceError, match=r"tracker_argv\.UPDATE_FIELD_FLAGS"):
+        mirror.drafts(kit, ["update", "--estimate=30", "b-1"], "")
 
 
 def test_an_update_naming_no_issue_is_refused(kit: Any) -> None:

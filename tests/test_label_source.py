@@ -1,25 +1,22 @@
-"""Which records carry a label, rung by rung (basicly-wpc8).
+"""Which records carry a label (basicly-wpc8).
 
-The query a supervised pass's lane set is assembled from. Three things need saying and the
-third is the awkward one:
+The query a supervised pass's lane set is assembled from. Two things need saying:
 
-- the flipped read answers from the folded ``labels`` field with nothing spawned;
-- the external read needs *two* spawns, because br's default query omits ``closed`` and a
-  finished cut read as an empty one reports itself blocked;
-- **the matching write has no owned equivalent**, and the seam refuses it rather than
-  mirroring a field it would drop. That refusal is pinned here, beside the read that
-  depends on it, because it is the bound on ``basicly loop supervise --label``.
+- the read answers from the folded ``labels`` field with nothing spawned, and a **closed**
+  record is in the answer — a finished cut read as an empty one reports itself blocked;
+- the matching write resolves an accumulation against the record's own set at the seam,
+  and it is pinned here beside the read, because together they are what makes
+  ``basicly loop supervise --label`` usable.
 """
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from basicly import br, label_source, owned_store, supervise
+from basicly import label_source, owned_store, supervise, tracker
 from tests.test_owned_write import no_br, owned_repo
 
 __all__ = ["no_br"]  # re-exported so the fixture resolves in this module
@@ -36,10 +33,9 @@ def _labelled(repo: Path, records: dict[str, tuple[str, object]]) -> None:
 
     A ``created`` payload, not a ``field`` event: ``events.TRUNCATABLE_KEYS`` holds
     ``value``, so a ``field`` event whose value is a list is refused by the ledger
-    (measured 2026-08-17). That is also why the engine has no label writer — `create` is
-    the one surface that can put a list there, which is what
-    :func:`test_adding_a_label_is_still_refused_so_this_read_has_no_engine_side_writer`
-    pins from the other side.
+    (measured 2026-08-17). That is the shape the import left behind, and the reason a
+    later label write stores the joined form instead — both are read by
+    ``tracker_argv.labels_of``.
     """
     kit = owned_store.kit(repo)
     drafts = []
@@ -50,11 +46,11 @@ def _labelled(repo: Path, records: dict[str, tuple[str, object]]) -> None:
     kit.events.append(owned_store.ledger_dir(repo), drafts)
 
 
-# --- the flipped read ---------------------------------------------------------
+# --- the read -----------------------------------------------------------------
 
 
 @pytest.mark.usefixtures("no_br")
-def test_the_flipped_read_selects_the_labelled_records_closed_ones_included(
+def test_the_read_selects_the_labelled_records_closed_ones_included(
     tmp_path: Path,
 ) -> None:
     """The set and its status, with an unlabelled record as the control.
@@ -78,7 +74,7 @@ def test_the_flipped_read_selects_the_labelled_records_closed_ones_included(
 
 @pytest.mark.usefixtures("no_br")
 def test_a_tombstoned_record_is_not_a_lane(tmp_path: Path) -> None:
-    """The absence rule `br.owned_record` states: a deleted bead must not be dispatched."""
+    """The absence rule `tracker.owned_record` states: a deleted bead must not be dispatched."""
     repo = owned_repo(tmp_path)
     _labelled(repo, {"wpc-1.1": ("open", [LABEL])})
     kit = owned_store.kit(repo)
@@ -94,8 +90,9 @@ def test_a_tombstoned_record_is_not_a_lane(tmp_path: Path) -> None:
 def test_a_labels_field_holding_a_bare_string_matches_the_whole_string(tmp_path: Path) -> None:
     """One label, not one per character.
 
-    The mirror types the field as a list precisely so this cannot arise; a reader that
-    iterated the string anyway would match ``p`` and ``h`` and hand a pass twelve lanes.
+    A reader that iterated the string would match ``p`` and ``h`` and hand a pass twelve
+    lanes. `tracker_argv.labels_of` splits on the separator instead, which is why a label with
+    no separator in it is one label.
     """
     repo = owned_repo(tmp_path)
     _labelled(repo, {"wpc-1.1": ("open", LABEL), "wpc-1.2": ("open", "p")})
@@ -104,63 +101,43 @@ def test_a_labels_field_holding_a_bare_string_matches_the_whole_string(tmp_path:
     assert label_source.labelled(repo, "p") == {"wpc-1.2": "open"}
 
 
-# --- the external read --------------------------------------------------------
+# --- the read ------------------------------------------------------------------
 
 
-def test_the_external_read_spawns_both_queries_and_unions_them(
+def test_the_read_answers_from_the_fold_with_nothing_spawned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One spawn would silently drop every closed bead in the cut."""
-    repo = owned_repo(tmp_path, owned_store.MODE_DUAL)
-    calls: list[list[str]] = []
+    """A spawn fails the test: an empty answer is what a mistyped label is refused on.
 
-    def spawn(_root: Path, args: list[str], **_kwargs: object):
-        calls.append(args)
-        closed = "--status" in args
-        record = {"id": "wpc-1.2", "status": "closed"} if closed else {"id": "wpc-1.1"}
-        return _proc(json.dumps({"issues": [record]}))
-
-    monkeypatch.setattr(br, "run_br", spawn)
-
-    assert label_source.labelled(repo, LABEL) == {"wpc-1.1": "", "wpc-1.2": "closed"}
-    assert [args[:4] for args in calls] == [
-        ["list", "--label", LABEL, "--json"],
-        ["list", "--label", LABEL, "--status"],
-    ]
-
-
-def test_the_flipped_read_answers_while_br_holds_the_other_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The comparison that makes the flip visible rather than merely consistent."""
+    "The store could not answer" must not read as "no bead carries this label", which
+    would report a whole cut as blocked for a reason unrelated to the cut.
+    """
     repo = owned_repo(tmp_path)
     _labelled(repo, {"wpc-1.1": ("open", [LABEL])})
     monkeypatch.setattr(
-        br, "run_br", lambda *_a, **_k: pytest.fail("the flipped read spawned a process")
+        subprocess, "run", lambda *_a, **_k: pytest.fail("the read spawned a process")
     )
 
     assert label_source.labelled(repo, LABEL) == {"wpc-1.1": "open"}
 
 
-# --- the bound: no owned label write ------------------------------------------
+# --- the writer this read now has ---------------------------------------------
 
 
 @pytest.mark.usefixtures("no_br")
-def test_adding_a_label_is_still_refused_so_this_read_has_no_engine_side_writer(
-    tmp_path: Path,
-) -> None:
-    """The stated bound, pinned rather than described (basicly-wpc8).
+def test_a_label_written_through_the_seam_is_found_by_this_read(tmp_path: Path) -> None:
+    """The bound this module used to pin, lifted (basicly-wpc8).
 
-    br *accumulates* labels while the ledger would record a replacement, so the seam
-    refuses the flag rather than diverging the two stores. Nothing in the engine can
-    therefore label a lane into a cut: a label this query finds was applied before the
-    dual write, or carried by a ``create``. A future writer that lands must delete this
-    test, which is the point of having it.
+    The refusal it replaces was real: nothing in the engine could label a lane into a cut,
+    so ``loop supervise --label`` had no way to be set up. The write now resolves the
+    accumulation against the record's own set at the seam, under the ledger lock.
     """
     repo = owned_repo(tmp_path)
+    _labelled(repo, {"wpc-1.1": ("open", [])})
 
-    with pytest.raises(owned_store.TrackerDivergenceError, match="--add-label"):
-        br.write(repo, ["update", "wpc-1.1", "--add-label", LABEL])
+    tracker.write(repo, ["update", "wpc-1.1", "--add-label", LABEL])
+
+    assert label_source.labelled(repo, LABEL) == {"wpc-1.1": "open"}
 
 
 @pytest.mark.usefixtures("no_br")

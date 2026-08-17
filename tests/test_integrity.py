@@ -45,7 +45,7 @@ PATH_LEVELS = (
     # Neither engine nor consumer surface nor prose.
     ("pyproject.toml", "L2", "unclassified"),
     (".github/workflows/ci.yml", "L2", "unclassified"),
-    (".basicly/core/skills/tool-br.yaml", "L2", "unclassified"),
+    (".basicly/core/skills/tool-tracker.yaml", "L2", "unclassified"),
 )
 
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from basicly import cli, worktree
+from basicly.tracker_paths import LEDGER_DIR_NAME as LEDGER_DIR
 
 # Bound at import to the real function, so it stays reachable past the autouse
 # stub below (which rebinds ``worktree.provision_deps`` for the other tests).
@@ -108,90 +108,70 @@ def test_create_copies_env_local_when_present(
     assert copied.read_text(encoding="utf-8") == "SECRET=1\n"
 
 
+def _seed_ledger(git_repo: Path, *lines: str) -> Path:
+    """Commit an event log in *git_repo* and return its ledger directory."""
+    ledger = git_repo / LEDGER_DIR
+    ledger.mkdir(parents=True)
+    (ledger / "events-0001.jsonl").write_text("".join(lines), encoding="utf-8")
+    _git(git_repo, "add", f"{LEDGER_DIR.as_posix()}/events-0001.jsonl")
+    _git(git_repo, "commit", "-m", "track the ledger")
+    return ledger
+
+
 def test_create_never_rewrites_the_checked_out_tracker(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Uncommitted base tracker state must NOT be copied over the worktree's file.
 
-    Fresh ids reach the worktree through the ``redirect`` (br and the beads
-    hook both follow it); overwriting the checked-out ``issues.jsonl`` with
-    the base working-tree version leaves the worktree permanently dirty and
-    blocks the landing rebase (basicly-h61t rework 1).
+    Fresh ids reach the worktree through the ``redirect``, which the engine and the
+    commit-msg hook both follow; overwriting the checked-out event log with the base
+    working-tree version leaves the worktree permanently dirty and blocks the landing
+    rebase (basicly-h61t rework 1).
     """
-    beads = git_repo / ".beads"
-    beads.mkdir()
-    (beads / "issues.jsonl").write_text('{"id":"x-1"}\n', encoding="utf-8")
-    _git(git_repo, "add", ".beads/issues.jsonl")
-    _git(git_repo, "commit", "-m", "track beads")
-    (beads / "issues.jsonl").write_text('{"id":"x-1"}\n{"id":"x-2"}\n', encoding="utf-8")
+    ledger = _seed_ledger(git_repo, '{"record":"x-1"}\n')
+    (ledger / "events-0001.jsonl").write_text(
+        '{"record":"x-1"}\n{"record":"x-2"}\n', encoding="utf-8"
+    )
 
     monkeypatch.chdir(git_repo)
     session = worktree.create("fresh-issue")
 
-    checked_out = session.path / ".beads" / "issues.jsonl"
-    assert checked_out.read_text(encoding="utf-8") == '{"id":"x-1"}\n'
-    assert (session.path / ".beads" / "redirect").read_text(encoding="utf-8").strip() == str(beads)
+    checked_out = session.path / LEDGER_DIR / "events-0001.jsonl"
+    assert checked_out.read_text(encoding="utf-8") == '{"record":"x-1"}\n'
+    redirect = session.path / LEDGER_DIR / worktree.tracker_paths.REDIRECT_NAME
+    assert redirect.read_text(encoding="utf-8").strip() == str(git_repo)
 
 
-class _Proc:
-    def __init__(self, returncode: int = 0, stdout: str = "") -> None:
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = ""
-
-
-def test_create_rejects_a_br_that_ignores_the_redirect(
+def test_create_redirects_the_ledger_at_the_base_checkout(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A br that resolves the worktree's own .beads fails provisioning fast.
+    """One store per repository: the worktree's ledger redirects at the base checkout's.
 
-    Such a br silently runs a divergent tracker (lost gates and claims); the
-    probe turns that into an explicit upgrade instruction (basicly-o0ph).
+    A lane that wrote into its own checked-out ledger would lose every write at
+    teardown, which is what happened to the usage spool (basicly-vkh0.8).
     """
-    (git_repo / ".beads").mkdir()
-    (git_repo / ".beads" / "issues.jsonl").write_text('{"id":"x-1"}\n', encoding="utf-8")
-
-    def _wrong_dir(worktree_path, _args):
-        return _Proc(0, json.dumps({"path": str(Path(worktree_path) / ".beads")}))
-
-    monkeypatch.setattr(worktree, "try_run_br", _wrong_dir)
-    monkeypatch.chdir(git_repo)
-    with pytest.raises(SystemExit, match="redirect-capable br"):
-        worktree.create("old-br")
-
-
-def test_create_probe_skips_absent_or_failing_br(
-    git_repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """No br on PATH, or a br error (non-workspace base), skips the probe."""
-    (git_repo / ".beads").mkdir()
-    (git_repo / ".beads" / "issues.jsonl").write_text('{"id":"x-1"}\n', encoding="utf-8")
-    monkeypatch.chdir(git_repo)
-
-    monkeypatch.setattr(worktree, "try_run_br", lambda *_a: None)
-    worktree.create("no-br")
-
-    monkeypatch.setattr(worktree, "try_run_br", lambda *_a: _Proc(1, "not a workspace"))
-    worktree.create("br-errors")
-
-
-def test_create_redirects_beads_to_base(git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The worktree's .beads redirects at the base checkout's, sharing one tracker.
-
-    br follows the git-ignored ``redirect`` file, so every tracker read/write
-    from the worktree hits the base DB/JSONL — no divergent copy (basicly-c9e5).
-    """
-    beads = git_repo / ".beads"
-    beads.mkdir()
-    (beads / "issues.jsonl").write_text('{"id":"x-1"}\n', encoding="utf-8")
-    _git(git_repo, "add", ".beads/issues.jsonl")
-    _git(git_repo, "commit", "-m", "track beads")
+    _seed_ledger(git_repo, '{"record":"x-1"}\n')
 
     monkeypatch.chdir(git_repo)
     session = worktree.create("shared-tracker")
 
-    redirect = session.path / ".beads" / "redirect"
-    assert redirect.read_text(encoding="utf-8").strip() == str(beads)
+    redirect = session.path / LEDGER_DIR / worktree.tracker_paths.REDIRECT_NAME
+    assert redirect.read_text(encoding="utf-8").strip() == str(git_repo)
+    assert worktree.tracker_paths.tracker_root(session.path) == git_repo
+
+
+def test_a_base_with_no_ledger_gets_no_redirect(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control on the two above: a repository with no tracker needs no redirect.
+
+    Writing one anyway creates an untracked `.basicly/` the teardown then reads as
+    uncommitted work, which held every cleanup in a repo that has no tracker at all.
+    """
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("no-tracker")
+
+    assert not (session.path / LEDGER_DIR).exists()
 
 
 def test_create_leaves_matching_tracker_untouched(
@@ -567,7 +547,7 @@ def test_real_pending_work_holds_the_worktree_and_is_not_called_indeterminate() 
 def test_a_clean_tree_and_expected_noise_may_be_removed() -> None:
     """The guard must not refuse the ordinary teardown it wraps."""
     assert worktree.classify_worktree_tree(0, "").may_remove is True
-    noise = "?? .venv/\n?? node_modules/\n M .beads/issues.jsonl\n"
+    noise = f"?? .venv/\n?? node_modules/\n?? {LEDGER_DIR.as_posix()}/redirect\n"
     verdict = worktree.classify_worktree_tree(0, noise)
     assert verdict.may_remove is True and verdict.holds == ""
 
@@ -623,17 +603,16 @@ def test_an_unanswerable_branch_check_keeps_the_session_record(
     assert worktree.load_session("orphanrisk", git_repo) is not None
 
 
-def test_cleanup_ignores_dep_dirs_and_tracker_export(
+def test_cleanup_ignores_dep_dirs_and_the_tracker_redirect(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Provisioned dep dirs and the tracker export never count as dirt."""
+    """Provisioned dep dirs and the tracker's own redirect never count as dirt."""
+    _seed_ledger(git_repo, '{"record":"x-1"}\n')
     monkeypatch.chdir(git_repo)
     session = worktree.create("depsonly")
     (session.path / ".venv").mkdir(exist_ok=True)
     (session.path / ".venv" / "marker.txt").write_text("x", encoding="utf-8")
-    beads = session.path / ".beads"
-    beads.mkdir(exist_ok=True)
-    (beads / "issues.jsonl").write_text("{}\n", encoding="utf-8")
+    assert (session.path / LEDGER_DIR / "redirect").is_file()
 
     worktree.cleanup("depsonly")
     assert not session.path.exists()

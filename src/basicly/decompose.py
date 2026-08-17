@@ -53,7 +53,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from . import br, dependency_graph, handoff, plan_gate, plan_record, policy, run_record, runner
+from . import dependency_graph, handoff, plan_gate, plan_record, policy, run_record, runner, tracker
 from .config import (
     DEFAULT_BUILD_FACTOR,
     SizingConfig,
@@ -800,7 +800,7 @@ def _read_bead(repo_root: Path, bead_id: str) -> tuple[BeadScope | None, str]:
     """*bead_id*'s declarations from the tracker, with the absence that explains it."""
     # The seam's None covers every absence this used to catch by exception type — br off
     # PATH, a non-zero exit, unparseable output, an empty payload (basicly-tcmy.14).
-    record = br.read_record(repo_root, bead_id)
+    record = tracker.read_record(repo_root, bead_id)
     if record is None:
         return None, SCOPE_UNREADABLE
     return _read_class_and_scope(record)
@@ -915,8 +915,8 @@ def frozen_estimates(repo_root: Path, feature_id: str) -> dict[str, CostEstimate
     caller recomputes.
     """
     frozen: dict[str, CostEstimate] = {}
-    for row in br.try_read_comments(repo_root, feature_id):
-        text = str(row.get(br.COMMENT_TEXT_KEY, ""))
+    for row in tracker.try_read_comments(repo_root, feature_id):
+        text = str(row.get(tracker.COMMENT_TEXT_KEY, ""))
         parsed = _parse_sizing_marker(text)
         if parsed is not None:
             frozen.setdefault(parsed[0], parsed[1])
@@ -938,8 +938,8 @@ def forecast_for(repo_root: Path, task_class: str, globs: tuple[str, ...]) -> Co
     First match in export order wins, mirroring :func:`frozen_estimates`' rule.
     """
     key = sizing_key_for(task_class, globs)
-    for record in br.export_records(repo_root):
-        for text in br.export_comment_texts(record):
+    for record in tracker.all_records(repo_root):
+        for text in tracker.export_comment_texts(record):
             parsed = _parse_sizing_marker(text)
             if parsed is not None and parsed[0] == key:
                 return parsed[1]
@@ -1743,7 +1743,7 @@ def freeze_estimate(
         sort_keys=True,
     )
     with contextlib.suppress(RuntimeError, OSError):
-        br.try_add_comment(repo_root, feature_id, f"{_SIZING_MARKER} key={key}\n{payload}")
+        tracker.try_add_comment(repo_root, feature_id, f"{_SIZING_MARKER} key={key}\n{payload}")
 
 
 @dataclass(frozen=True)
@@ -1932,7 +1932,7 @@ def feature_labels(repo_root: Path, feature_id: str) -> tuple[str, ...]:
     rather than raising: an unlabelled parent is an ordinary state, and refusing the
     decomposition over it would be the wrong direction to be wrong in.
     """
-    record = br.read_record(repo_root, feature_id) or {}
+    record = tracker.read_record(repo_root, feature_id) or {}
     raw = record.get("labels") or []
     return tuple(str(label) for label in raw if str(label).strip())
 
@@ -1951,7 +1951,7 @@ def _create_child(
     if labels:
         args += ["-l", ",".join(labels)]
     args += ["-d", _child_body(spec), "--json"]
-    return br.create_record(repo_root, args)
+    return tracker.create_record(repo_root, args)
 
 
 def _assert_no_new_cycles(repo_root: Path, created_ids: set[str]) -> None:
@@ -2015,7 +2015,7 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
             wanted.append(issue_ids[pred])
         depends_on = tuple(dict.fromkeys(wanted))
         for dep_id in depends_on:
-            br.write(repo_root, ["dep", "add", issue_ids[index], dep_id, "-t", "blocks"])
+            tracker.write(repo_root, ["dep", "add", issue_ids[index], dep_id, "-t", "blocks"])
         created.append(CreatedChild(issue_ids[index], spec, groups[index], depends_on))
 
     _assert_no_new_cycles(repo_root, set(issue_ids))

@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 import yaml
 
-from basicly import br, cli, dropin, policy, usage, verify
+from basicly import cli, dropin, policy, tracker, tracker_paths, usage, verify
 from basicly.config import VerifyCheck, VerifyConfig, load_verify_config
 from tests import flipped_tracker
 
@@ -310,17 +310,19 @@ def test_apply_fixes_scopes_to_staged_files_in_staged_mode(
     assert captured == ["ruff", "format", "a.py"]
 
 
-def test_report_gate_without_br(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """On a rung where br is the store, its absence degrades gracefully and says so.
+def test_report_gate_without_a_tracker(tmp_path: Path) -> None:
+    """A repository with no ledger degrades gracefully and says why.
 
-    Driven by taking br off PATH rather than by stubbing the seam, so the message a
-    consumer reads is the store's own rather than one this test composed.
+    Driven by handing it a directory that holds no tracker rather than by stubbing the
+    seam, so the message a consumer reads is the store's own rather than one this test
+    composed.
     """
-    monkeypatch.setattr(verify.br, "which", lambda: None)
     report = verify.VerifyReport(mode="full", results=())
+
     ok, message = verify.report_gate(tmp_path, "basicly-x", report)
+
     assert ok is False
-    assert "br is not on PATH" in message
+    assert "tracker kit is not installed" in message
 
 
 def test_report_gate_builds_expected_command(
@@ -332,7 +334,7 @@ def test_report_gate_builds_expected_command(
     def fake_write(_root, args):
         captured["cmd"] = args
 
-    monkeypatch.setattr(verify.br, "write", fake_write)
+    monkeypatch.setattr(verify.tracker, "write", fake_write)
     report = verify.VerifyReport(mode="full", results=(verify.CheckResult("ruff", "pass", 0),))
 
     ok, _message = verify.report_gate(tmp_path, "basicly-x", report, gate="verify")
@@ -352,7 +354,7 @@ def test_report_gate_stamps_the_runner_as_actor(
     def fake_write(_root, args):
         captured["cmd"] = args
 
-    monkeypatch.setattr(verify.br, "write", fake_write)
+    monkeypatch.setattr(verify.tracker, "write", fake_write)
     report = verify.VerifyReport(mode="full", results=(verify.CheckResult("ruff", "pass", 0),))
 
     verify.report_gate(tmp_path, "basicly-x", report, actor="claude")
@@ -370,7 +372,7 @@ def test_report_gate_omits_the_actor_without_a_runner(
     def fake_write(_root, args):
         captured["cmd"] = args
 
-    monkeypatch.setattr(verify.br, "write", fake_write)
+    monkeypatch.setattr(verify.tracker, "write", fake_write)
     report = verify.VerifyReport(mode="full", results=())
 
     verify.report_gate(tmp_path, "basicly-x", report)
@@ -391,7 +393,7 @@ def test_report_gate_records_the_gate_in_the_owned_ledger_with_br_absent(
 
     ok, message = verify.report_gate(repo, "seam-1", report, gate="verify")
 
-    kit = br.kit(repo)
+    kit = tracker.kit(repo)
     row = next(e for e in flipped_tracker.ledger_events(repo) if e.kind == kit.KIND_GATE)
     assert ok is True
     assert "recorded gate verify=pass" in message
@@ -410,7 +412,7 @@ def test_report_gate_carries_a_refusing_store_s_own_reason_out(
     a row that half-landed in one store.
     """
     (tmp_path / "basicly.toml").write_text(
-        f'[tracker]\nmode = "{br.MODE_OWNED}"\n', encoding="utf-8"
+        f'[tracker]\nmode = "{tracker.MODE_OWNED}"\n', encoding="utf-8"
     )
     flipped_tracker.refuse_spawn(monkeypatch)
 
@@ -462,7 +464,7 @@ def test_linked_worktree_guard_writes_nothing_to_the_tracker(
     which is exactly where a write would be invisible.
     """
     _, linked = linked_worktree
-    with br.read_only("the linked-worktree abort gate"):
+    with tracker.read_only("the linked-worktree abort gate"):
         assert verify.linked_worktree_guard(linked) is not None
 
 
@@ -482,16 +484,15 @@ def test_the_linked_worktree_gate_is_classified_as_the_check_that_trips(
 def test_linked_worktree_guard_allows_redirected_tracker(
     linked_worktree: tuple[Path, Path],
 ) -> None:
-    """A worktree whose .beads redirects to base shares the tracker — recording is safe."""
+    """A worktree whose ledger redirects to base shares the tracker — recording is safe."""
     repo, linked = linked_worktree
-    (repo / ".beads").mkdir()
-    beads = linked / ".beads"
-    beads.mkdir()
-    (beads / "redirect").write_text(f"{repo / '.beads'}\n", encoding="utf-8")
+    ledger = linked / tracker_paths.LEDGER_DIR_NAME
+    ledger.mkdir(parents=True)
+    (ledger / tracker_paths.REDIRECT_NAME).write_text(f"{repo}\n", encoding="utf-8")
     assert verify.linked_worktree_guard(linked) is None
 
     # A redirect elsewhere (or dangling) keeps the refusal.
-    (beads / "redirect").write_text(str(linked / "elsewhere"), encoding="utf-8")
+    (ledger / tracker_paths.REDIRECT_NAME).write_text(str(linked / "elsewhere"), encoding="utf-8")
     assert verify.linked_worktree_guard(linked) is not None
 
 
@@ -676,7 +677,7 @@ def test_a_streamed_run_captures_no_output_so_nothing_is_forgiven(
     ``dependency_defect`` has nothing to match and the original verdict stands
     (basicly-kjc5.56).
     """
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, _CLOCK_SINGULAR))
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, _LOCK_TIMEOUT))
     config = VerifyConfig((_check("pytest", ("full",)),))
 
     report = verify.run_verify(tmp_path, "full", config)
@@ -700,7 +701,7 @@ def test_dependency_defect_names_the_check_and_why_forgiving_is_safe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A forgiven failure must say which dependency and on what grounds."""
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, _CLOCK_SINGULAR))
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, _LOCK_TIMEOUT))
     config = VerifyConfig((_check("pytest", ("full",)),))
     report = verify.run_verify(tmp_path, "full", config)
     captured = verify.rerun_failures(report, tmp_path, "full", config, capture=True)
@@ -709,37 +710,23 @@ def test_dependency_defect_names_the_check_and_why_forgiving_is_safe(
 
     assert reason is not None
     assert reason.startswith("pytest: ")
-    assert "clock steps backwards" in reason
+    assert "one lock" in reason
 
 
 def test_dependency_defect_ignores_the_signature_on_a_passing_check() -> None:
     """Only a failure can be forgiven; matching a green check would be meaningless."""
     passing = verify.VerifyReport(
-        "full", (verify.CheckResult("pytest", "pass", 0, output=_CLOCK_SINGULAR),)
+        "full", (verify.CheckResult("pytest", "pass", 0, output=_LOCK_TIMEOUT),)
     )
 
     assert verify.dependency_defect(passing) is None
 
 
-def test_dependency_defect_matches_brs_other_message_shape() -> None:
-    """One defect, two message shapes, and a landing reproduced only the plural one.
-
-    The first version of the register held br's singular prose and missed this,
-    which is why matching is conjunctive per line rather than literal
-    (basicly-kjc5.56).
-    """
-    plural = verify.VerifyReport(
-        "full", (verify.CheckResult("pytest", "fail", 1, output=_CLOCK_PLURAL),)
-    )
-
-    assert verify.dependency_defect(plural) is not None
-
-
-def test_dependency_defect_needs_the_br_wrapper_on_the_same_line() -> None:
+def test_dependency_defect_needs_the_error_class_on_the_same_line() -> None:
     """The defect phrase alone is not proof a dependency produced it.
 
-    A test fixture quoting the phrase must not be able to forgive its own failure,
-    so the register also requires the br.py wrapper text on that line.
+    A test fixture quoting the phrase must not be able to forgive its own failure, so
+    the register also requires the store's own error class on that line.
     """
     bare = verify.VerifyReport(
         "full",
@@ -756,9 +743,9 @@ def test_dependency_defect_needs_the_br_wrapper_on_the_same_line() -> None:
 def test_dependency_defect_forgives_a_br_write_lock_timeout() -> None:
     """A contended tracker lock is not evidence against the lane's diff.
 
-    br fails a mutating command outright when it cannot take ``.beads/.write.lock``
-    before the timeout, and a landing that hits it spends a rework attempt against a
-    cap of 2 for a defect that does not exist (basicly-m4zv.14, R8).
+    The ledger fails a write outright when it cannot take the lock before the timeout,
+    and a landing that hits it spends a rework attempt against a cap of 2 for a defect
+    that does not exist (basicly-m4zv.14, R8).
     """
     contended = verify.VerifyReport(
         "full", (verify.CheckResult("pytest", "fail", 1, output=_LOCK_TIMEOUT),)
@@ -768,18 +755,18 @@ def test_dependency_defect_forgives_a_br_write_lock_timeout() -> None:
 
     assert reason is not None
     assert reason.startswith("pytest: ")
-    assert "one .beads/.write.lock" in reason
+    assert "one lock" in reason
 
 
-def test_dependency_defect_needs_the_br_wrapper_on_the_lock_line_too() -> None:
-    """The same laundering guard as the clock entry, on the entry added beside it.
-
-    A test asserting *about* the lock message must not be able to forgive its own
-    failure by quoting it.
-    """
+def test_dependency_defect_needs_the_error_class_on_the_lock_line_too() -> None:
+    """A test asserting *about* the lock message must not forgive its own failure."""
     bare = verify.VerifyReport(
         "full",
-        (verify.CheckResult("pytest", "fail", 1, output="E  assert 'write lock at' in message\n"),),
+        (
+            verify.CheckResult(
+                "pytest", "fail", 1, output="E  assert 'another writer holds' in message\n"
+            ),
+        ),
     )
 
     assert verify.dependency_defect(bare) is None
@@ -790,7 +777,7 @@ def test_dependency_defect_refuses_when_only_some_failures_are_explained() -> No
     mixed = verify.VerifyReport(
         "full",
         (
-            verify.CheckResult("pytest", "fail", 1, output=_CLOCK_SINGULAR),
+            verify.CheckResult("pytest", "fail", 1, output=_LOCK_TIMEOUT),
             verify.CheckResult("ruff", "fail", 1, output="E  F401 unused import\n"),
         ),
     )
@@ -798,25 +785,12 @@ def test_dependency_defect_refuses_when_only_some_failures_are_explained() -> No
     assert verify.dependency_defect(mixed) is None
 
 
-# Real br failures, copied from a landing that reproduced them (basicly-kjc5.56).
-_CLOCK_SINGULAR = (
-    "E           RuntimeError: br update fx-d01 -t task failed: "
-    "Error: Validation failed: updated_at: cannot be before created_at\n"
-)
-_CLOCK_PLURAL = (
-    "E           RuntimeError: br close fx-sj2.1 --reason lane sub-task verified failed: "
-    'Error: Validation errors: [ValidationError { field: "updated_at", '
-    'message: "cannot be before created_at" }]\n'
-)
-# br 0.2.16's answer to a held `.beads/.write.lock`, reproduced 2026-08-05 by taking
-# the lock and running a write against it, then wrapped as `br.run_br` wraps it
-# (basicly-m4zv.14). Observed rather than composed: an invented fixture is what made
-# the clock recogniser dead code through two "fixes" (basicly-aswc).
+# The ledger's own answer to a held lock, taken from `events.LedgerLock.__enter__`
+# rather than composed (basicly-m4zv.14, R8): an invented fixture is what made the
+# clock recogniser dead code through two "fixes" (basicly-aswc).
 _LOCK_TIMEOUT = (
-    "E           RuntimeError: br create probe -t task -p 2 failed: "
-    "Error: Configuration error: Timed out after 400ms waiting for write lock at "
-    "/tmp/probe/.beads/.write.lock. Another br process may be holding .write.lock; "
-    "retry after it exits or investigate a stuck process.\n"
+    "E           basicly_tracker_kit_events.LockUnavailableError: another writer holds "
+    "/repo/.basicly/ledger/.events.lock after 5.0s\n"
 )
 
 

@@ -6,20 +6,21 @@ Two claims, and the second is the one this bead exists for:
 - a ``create`` mints its record id **in the ledger** and returns it, which is the surface
   the mirror could never carry — its translation reads the id out of br's reply.
 
-Every test here runs with the binary genuinely off PATH and a spawn wired to fail the
-test, because "br was absent and the write silently went nowhere" would satisfy a weaker
-assertion and is exactly the failure mode this module could have.
+Every test here runs with a spawn wired to fail the test, because "the binary was absent
+and the write silently went nowhere" would satisfy a weaker assertion and is exactly the
+failure mode this module could have.
 """
 
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from basicly import br, config, owned_store, owned_write
+from basicly import config, label_source, owned_store, owned_write, tracker
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 KIT_SOURCE = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -58,13 +59,12 @@ def seed(repo: Path, *records: str) -> None:
 
 @pytest.fixture
 def no_br(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No br on PATH, and a spawn is a failure rather than a fallback."""
-    monkeypatch.setattr(br, "which", lambda: None)
+    """A spawn is a failure rather than a fallback."""
 
     def refuse(cmd: list[str], **_kwargs: object) -> None:
         pytest.fail(f"the engine spawned a process after the flip: {cmd}")
 
-    monkeypatch.setattr(br.subprocess, "run", refuse)
+    monkeypatch.setattr(subprocess, "run", refuse)
 
 
 def events_of(repo: Path, record: str) -> list[Any]:
@@ -127,9 +127,9 @@ def test_a_create_mints_a_child_id_and_records_the_whole_record(tmp_path: Path) 
     created, status, edge = events_of(repo, record)
     assert created.payload["title"] == "a child"
     assert created.payload["issue_type"] == "task"
-    # The typed pair: a flag's value arrives as one argv string, and a stored
-    # `"phase-6,ready"` iterates as twelve one-character labels at the reader.
-    assert created.payload["labels"] == ["phase-6", "ready"]
+    # Read through the seam, never off the payload: a stored `"phase-6,ready"` iterates as
+    # twelve one-character labels at a consumer that takes the raw field.
+    assert (tracker.read_record(repo, record) or {})["labels"] == ["phase-6", "ready"]
     assert status.payload["status"] == "open"
     assert edge.payload[kit.migrate.EDGE_TO] == PARENT
     assert edge.payload[kit.migrate.EDGE_TYPE] == kit.DEFAULT_VOCABULARY.parent_child_type
@@ -195,6 +195,93 @@ def test_a_child_of_a_child_nests_rather_than_flattening(tmp_path: Path) -> None
     assert grandchild == f"{PARENT}.1.1"
 
 
+# --- the label write ----------------------------------------------------------
+#
+# The write `label_source` had no counterpart for, so nothing could label a lane into a
+# cut and `loop supervise --label` was unusable (basicly-wpc8).
+
+
+def labels_of(repo: Path, record: str) -> list[str]:
+    """*record*'s labels as the read seam hands them out.
+
+    Through :func:`tracker.read_record` rather than off the fold, because the storage shape is
+    not the contract: the schema refuses a list under a capped ``value`` key, so the seam
+    is where the joined form becomes the list every consumer iterates.
+    """
+    return list((tracker.read_record(repo, record) or {}).get("labels") or [])
+
+
+@pytest.mark.usefixtures("no_br")
+def test_add_label_accumulates_against_the_set_the_record_already_holds(tmp_path: Path) -> None:
+    """The whole reason a label write cannot be a plain field replacement."""
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT)
+
+    owned_write.append(repo, ["update", PARENT, "--add-label", "cut-a"])
+    owned_write.append(repo, ["update", PARENT, "--add-label", "cut-b"])
+
+    assert labels_of(repo, PARENT) == ["cut-a", "cut-b"]
+
+
+@pytest.mark.usefixtures("no_br")
+def test_remove_label_drops_one_and_leaves_the_rest(tmp_path: Path) -> None:
+    """A removal is the same read-modify-write, so it is proven on the same path."""
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT)
+    owned_write.append(repo, ["update", PARENT, "--add-label", "cut-a,cut-b,cut-c"])
+
+    owned_write.append(repo, ["update", PARENT, "--remove-label", "cut-b"])
+
+    assert labels_of(repo, PARENT) == ["cut-a", "cut-c"]
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_repeated_add_does_not_duplicate_the_label(tmp_path: Path) -> None:
+    """A set, not a list: `label_source` matches by membership and a duplicate is noise."""
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT)
+
+    owned_write.append(repo, ["update", PARENT, "--add-label", "cut-a"])
+    owned_write.append(repo, ["update", PARENT, "--add-label", "cut-a"])
+
+    assert labels_of(repo, PARENT) == ["cut-a"]
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_label_write_carries_the_other_flags_of_the_same_update(tmp_path: Path) -> None:
+    """The rewrite drops the label flags and nothing else."""
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT)
+
+    owned_write.append(repo, ["update", PARENT, "--add-label", "cut-a", "-p", "1"])
+
+    record = tracker.read_record(repo, PARENT) or {}
+    assert record["labels"] == ["cut-a"]
+    assert record["priority"] == 1
+
+
+@pytest.mark.usefixtures("no_br")
+def test_the_labelled_query_finds_a_record_this_seam_labelled(tmp_path: Path) -> None:
+    """The read and the write meet, which is the criterion `supervise` needs."""
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT)
+
+    owned_write.append(repo, ["update", PARENT, "--add-label", "cut-a"])
+
+    assert label_source.labelled(repo, "cut-a") == {PARENT: "open"}
+    assert label_source.labelled(repo, "cut-b") == {}
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_label_write_naming_two_records_is_refused(tmp_path: Path) -> None:
+    """Accumulation is per record, so a plural form would apply one record's set to both."""
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT, "wpc-2")
+
+    with pytest.raises(owned_store.TrackerDivergenceError, match="one write per record"):
+        owned_write.append(repo, ["update", PARENT, "wpc-2", "--add-label", "cut-a"])
+
+
 # --- the seam above it --------------------------------------------------------
 
 
@@ -202,12 +289,12 @@ def test_a_child_of_a_child_nests_rather_than_flattening(tmp_path: Path) -> None
 def test_the_seam_refuses_a_create_inside_a_read_only_section(tmp_path: Path) -> None:
     """A gate that promised to write nothing must not create a bead either.
 
-    Refused at :func:`br.create_record` rather than below it, because on this rung there is
-    no spawn left to inherit the guard from — the same split `br.write` makes.
+    Refused at :func:`tracker.create_record` rather than below it, because on this rung there is
+    no spawn left to inherit the guard from — the same split `tracker.write` makes.
     """
     repo = owned_repo(tmp_path)
     seed(repo, PARENT)
 
-    with br.read_only("a pre-flight gate"), pytest.raises(br.TrackerWriteRefusedError):
-        br.create_record(repo, ["create", "c", "-t", "task", "--parent", PARENT, "--json"])
+    with tracker.read_only("a pre-flight gate"), pytest.raises(tracker.TrackerWriteRefusedError):
+        tracker.create_record(repo, ["create", "c", "-t", "task", "--parent", PARENT, "--json"])
     assert events_of(repo, f"{PARENT}.1") == []

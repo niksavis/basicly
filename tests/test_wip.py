@@ -236,7 +236,7 @@ def test_record_refusal_queues_only_when_the_pass_starts_nothing(
 
 def _ready(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make the session's lanes dispatchable without a tracker: the rest is not the test."""
-    ranking = loop_state.Ranking(nodes=(), schema="br.scheduler.v1", fallback_sort="id ASC")
+    ranking = loop_state.Ranking(nodes=(), schema="tracker.scheduler.v1", fallback_sort="id ASC")
     monkeypatch.setattr(supervise.loop_state, "blocked_ids", lambda _r: ())
     monkeypatch.setattr(supervise.loop_state, "ready_ranking", lambda _r, *_a: ranking)
     monkeypatch.setattr(supervise.loop_state, "ready_ranked", lambda _r: ())

@@ -5,12 +5,11 @@ commit-msg.py. Kept standalone (single responsibility: conventional format vs.
 issue-id presence) so either check can be added, removed, or reused
 independently by pre-commit, lefthook, or another hook manager.
 
-**The id set comes from the owned ledger first and the external export second.**
-This gate never spawned the external binary — it read that binary's export file —
-so it would have kept passing after the binary left and started failing every
-commit the moment the export was deleted (basicly-vkh0.42.1).
+**The id set comes from the owned ledger.** This gate never spawned a tracker
+binary — it read a store's file — which is why the store it reads could be
+changed under it without the gate noticing (basicly-vkh0.42.1).
 
-Usage: python .basicly/core/hooks/beads-commit-msg.py <commit-msg-file>
+Usage: python .basicly/core/hooks/tracker-commit-msg.py <commit-msg-file>
 """
 
 from __future__ import annotations
@@ -35,18 +34,15 @@ def _project_root() -> Path:
     return cwd
 
 
-# Beads issue ids look like <prefix>-<short-code>, e.g. "basicly-idr" or
-# "br-a1b2c3", with optional dotted child levels ("basicly-zrj.4.1"). br's own
-# commit scanner (``br orphans``) matches ids prefix-anchored by word boundary
-# anywhere in the message, so ordinary hyphenated words are never ids. We mirror
-# that shape below instead of a loose ``word-word`` regex, which mis-flagged
-# phrases like "fork-drove-the-loop" as unknown ids (basicly-jms0).
+# Record ids look like <prefix>-<short-code>, e.g. "basicly-idr", with optional
+# dotted child levels ("basicly-zrj.4.1"). Matched prefix-anchored by word
+# boundary, so ordinary hyphenated words are never ids: a loose ``word-word``
+# regex mis-flagged phrases like "fork-drove-the-loop" as unknown (basicly-jms0).
 def _candidate_ids(message: str, known_ids: set[str]) -> set[str]:
     """Return the issue-id tokens in *message*, restricted to known prefixes.
 
     The prefix set is derived from *known_ids* (no extra config), so detection
-    tracks whatever prefixes the workspace actually uses and matches br's own
-    prefix-anchored scanner.
+    tracks whatever prefixes the repository actually uses.
     """
     prefixes = {pid.split("-", 1)[0] for pid in known_ids if "-" in pid}
     if not prefixes:
@@ -75,13 +71,11 @@ That file is the id set this gate validates against. An id minted in another
 checkout reaches it only once that checkout's tracker state is committed.
 """
 
-BEADS_DIR = ".beads"
 REDIRECT_NAME = "redirect"
-EXPORT_NAME = "issues.jsonl"
 
 # The owned ledger, and the one place this hook spells it. The kit owns the glob
 # as ``events.LOG_GLOB`` and a hook may not reach into the kit, so the spelling
-# is duplicated here on purpose and ``test_beads_commit_msg`` pins the two
+# is duplicated here on purpose and ``test_tracker_commit_msg`` pins the two
 # together — a drifting glob would read every id as unknown and block every
 # commit (basicly-vkh0.42.1).
 LEDGER_DIR = Path(".basicly") / "ledger"
@@ -89,23 +83,23 @@ LEDGER_GLOB = "events-*.jsonl"
 
 
 def _tracker_root() -> Path:
-    """The checkout that owns the tracker: this one, or a redirect target's.
+    """The checkout that owns the tracker: this one, or a redirect target.
 
-    A harness worktree shares the base checkout's tracker via a one-line
-    ``.beads/redirect`` written at provisioning, and **the ledger follows the
-    same rule** — one store per repository, never one per worktree. The
-    redirect target is not required to be named ``.beads``: requiring it split
-    the ledger read from the tracker read (basicly-tcmy.19).
+    A harness worktree shares the base checkout's ledger via a one-line
+    ``redirect`` written at provisioning — one store per repository, never one
+    per worktree. Mirrors :func:`basicly.tracker_paths.tracker_root`, which a
+    hook may not import, and ``test_tracker_commit_msg`` pins the two together:
+    a pre-check owes its gate's answer, so both must resolve alike.
     """
     root = _project_root()
-    redirect = root / BEADS_DIR / REDIRECT_NAME
+    redirect = root / LEDGER_DIR / REDIRECT_NAME
     if redirect.is_file():
         try:
             target = Path(redirect.read_text(encoding="utf-8").strip())
         except OSError:
             return root
         if target.is_dir():
-            return target.parent
+            return target
     return root
 
 
@@ -129,13 +123,9 @@ def _ids_from_jsonl(path: Path, key: str) -> set[str]:
 def _known_ids_with_source() -> tuple[set[str], str] | None:
     """The known id set and the file it came from, or None when no tracker exists.
 
-    The owned ledger answers first and the external export is the fallback, so
-    this gate keeps working on a repository that has only one of them — a
-    consumer before the cutover has the export, and one after it has the
-    ledger. An **empty** result counts as no source rather than as "no ids":
-    reading an empty store as authoritative would report every id as unknown
-    and refuse every commit, which is the one failure mode a commit gate must
-    not have.
+    An **empty** result counts as no source rather than as "no ids": reading an
+    empty store as authoritative would report every id as unknown and refuse
+    every commit, which is the one failure mode a commit gate must not have.
     """
     ledger_dir = _tracker_root() / LEDGER_DIR
     ledger_ids: set[str] = set()
@@ -143,12 +133,6 @@ def _known_ids_with_source() -> tuple[set[str], str] | None:
         ledger_ids |= _ids_from_jsonl(log, "record")
     if ledger_ids:
         return ledger_ids, str(LEDGER_DIR / LEDGER_GLOB)
-
-    export = _tracker_root() / BEADS_DIR / EXPORT_NAME
-    if export.is_file():
-        export_ids = _ids_from_jsonl(export, "id")
-        if export_ids:
-            return export_ids, f"{BEADS_DIR}/{EXPORT_NAME}"
     return None
 
 
@@ -174,9 +158,8 @@ def validate(
         return True, ""
 
     if known_ids is None:
-        # No tracker in this repo — neither an owned ledger nor an external
-        # export — so there is nothing to validate against and the check skips
-        # entirely. A consumer with no tracker must be able to commit.
+        # No tracker in this repo, so there is nothing to validate against and the
+        # check skips entirely. A consumer with no tracker must be able to commit.
         return True, ""
 
     candidates = _candidate_ids(message, known_ids)
@@ -193,9 +176,9 @@ def validate(
 
 
 def main() -> int:
-    """Entry point for the beads commit-msg hook."""
+    """Entry point for the tracker commit-msg hook."""
     if len(sys.argv) < 2:
-        print("Usage: beads-commit-msg.py <commit-msg-file>", file=sys.stderr)
+        print("Usage: tracker-commit-msg.py <commit-msg-file>", file=sys.stderr)
         return 1
 
     commit_msg_file = Path(sys.argv[1])

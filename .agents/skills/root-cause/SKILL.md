@@ -28,7 +28,7 @@ event returns nothing — and nothing reads as "no prior", which is the answer t
 the analysis. Confirm the pipeline's first stage prints titles before believing a zero.
 
 One occurrence with no prior: record it and stop. Filing a bead off a single event is
-how twelve beads came to name one truncation while none asked why the trigger fired.
+how twelve records came to name one truncation while none asked why the trigger fired.
 
 ## The method
 

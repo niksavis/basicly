@@ -25,6 +25,7 @@ from basicly.run_record import (
     RUN_RECORDS_FILE,
     RunRecord,
 )
+from tests import fake_tracker, flipped_tracker
 
 
 def _records(repo_root: Path) -> dict:
@@ -397,7 +398,7 @@ def test_record_marker_writes_one_marker_carrying_the_dispatch_inputs(
             return SimpleNamespace(returncode=0, stdout="[]")
         return SimpleNamespace(returncode=0, stdout="")
 
-    monkeypatch.setattr(run_record.br, "try_run_br", _try_run_br)
+    fake_tracker.install(monkeypatch, _try_run_br)
     entry = _entry(
         model="claude-opus-5",
         adapter_version="2.1.4",
@@ -442,7 +443,7 @@ def test_record_marker_carries_the_dispatch_ordering(
         _try_run_br.added = args  # type: ignore[attr-defined]
         return SimpleNamespace(returncode=0, stdout="")
 
-    monkeypatch.setattr(run_record.br, "try_run_br", _try_run_br)
+    fake_tracker.install(monkeypatch, _try_run_br)
     entry = _entry(
         prompt_sha256="deadbeef",
         phase="lane",
@@ -450,7 +451,7 @@ def test_record_marker_carries_the_dispatch_ordering(
         scheduler_rank=1,
         scheduler_fallback_rank=3,
         scheduler_score=45,
-        scheduler_policy="br.scheduler.v1",
+        scheduler_policy="tracker.scheduler.v1",
     )
     run_record.record_marker(tmp_path, "basicly-x", entry)
 
@@ -459,7 +460,7 @@ def test_record_marker_carries_the_dispatch_ordering(
     assert body["scheduler_rank"] == 1
     assert body["scheduler_fallback_rank"] == 3
     assert body["scheduler_score"] == 45
-    assert body["scheduler_policy"] == "br.scheduler.v1"
+    assert body["scheduler_policy"] == "tracker.scheduler.v1"
 
 
 def test_build_record_defaults_the_ordering_to_unrecorded(tmp_path: Path) -> None:
@@ -486,7 +487,7 @@ def test_record_marker_is_idempotent_but_counts_a_real_rerun(
             recorded.append(args[3])
         return SimpleNamespace(returncode=0, stdout="")
 
-    monkeypatch.setattr(run_record.br, "try_run_br", _try_run_br)
+    fake_tracker.install(monkeypatch, _try_run_br)
     entry = _entry(prompt_sha256="cafe", phase="build")
     first = run_record.record_marker(tmp_path, "basicly-x", entry)
     second = run_record.record_marker(tmp_path, "basicly-x", entry)
@@ -500,15 +501,19 @@ def test_record_marker_skips_when_there_is_no_prompt_digest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Without a digest there is nothing to key on, so nothing is written."""
-    monkeypatch.setattr(run_record.br, "try_run_br", lambda *_a: pytest.fail("must not call br"))
+    fake_tracker.install(monkeypatch, lambda *_a: pytest.fail("must not reach the tracker"))
     assert run_record.record_marker(tmp_path, "basicly-x", _entry()) is None
 
 
-def test_record_marker_tolerates_br_being_unavailable(
+def test_record_marker_tolerates_a_store_that_cannot_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Evidence is best-effort: no br means no marker, never an exception."""
-    monkeypatch.setattr(run_record.br, "try_run_br", lambda *_a: None)
+    """Evidence is best-effort: an unwritable store means no marker, never an exception."""
+
+    def refuses(*_a: object) -> None:
+        raise RuntimeError("the ledger refused the write")
+
+    fake_tracker.install(monkeypatch, refuses)
     entry = _entry(prompt_sha256="cafe", phase="build")
     assert run_record.record_marker(tmp_path, "basicly-x", entry) is None
 
@@ -517,403 +522,8 @@ def test_record_marker_tolerates_br_being_unavailable(
 
 
 def _export(repo_root: Path, *records: dict) -> None:
-    """Write a committed tracker export — the artifact a fresh clone has."""
-    beads = repo_root / ".beads"
-    beads.mkdir(parents=True, exist_ok=True)
-    lines = [json.dumps(record) for record in records]
-    (beads / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _run_comment(**payload) -> dict:
-    ident = payload.pop("id", "basicly-x#run-1")
-    return {"text": f"{run_record.MARKER} id={ident} phase=build\n{json.dumps(payload)}"}
-
-
-def test_cost_rollup_sums_every_dispatch_including_the_failed_ones() -> None:
-    """The actual is the whole package: a cheap final attempt never hides an expensive one."""
-    history = [
-        {"outcome": FAILED, "tokens": 30_000, "cost": 0.60, "duration_s": 400.0},
-        {"outcome": EXECUTED, "tokens": 12_000, "cost": 0.24, "duration_s": 100.5},
-        {"outcome": HANDOFF},  # nothing executed: counted as a dispatch, meters nothing
-    ]
-    rolled = run_record.cost_rollup(history, rework=1)
-    assert rolled.dispatches == 3
-    assert rolled.tokens == 42_000
-    assert rolled.cost == pytest.approx(0.84)
-    assert rolled.wall_clock_s == pytest.approx(500.5)
-    assert rolled.rework == 1
-    assert rolled.estimated is False
-
-
-def test_cost_rollup_reports_none_for_what_was_never_metered() -> None:
-    """An unmetered package reads as null, never as a measured zero."""
-    rolled = run_record.cost_rollup([{"outcome": HANDOFF}, {"outcome": HANDOFF}])
-    assert rolled.dispatches == 2
-    assert rolled.tokens is None and rolled.cost is None and rolled.wall_clock_s is None
-    assert rolled.rework is None  # unreadable rework markers stay unclaimed
-
-
-def test_cost_rollup_flags_an_estimated_sample() -> None:
-    """A chars/4 transcript estimate in the sum is declared, so a consumer can down-weight it."""
-    history = [{"tokens": 10, "estimated": False}, {"tokens": 90, "estimated": True}]
-    assert run_record.cost_rollup(history).estimated is True
-
-
-def test_record_cost_marker_writes_the_forecast_beside_the_actual(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """One marker carries the pair, the counts, and the class the sample belongs to."""
-    calls: list[list[str]] = []
-
-    def _try_run_br(_repo, args):
-        calls.append(args)
-        if args[:2] == ["comments", "list"]:
-            return SimpleNamespace(returncode=0, stdout="[]")
-        return SimpleNamespace(returncode=0, stdout="")
-
-    monkeypatch.setattr(run_record.br, "try_run_br", _try_run_br)
-    ident = run_record.record_cost_marker(
-        tmp_path,
-        "basicly-x",
-        actual=run_record.cost_rollup(
-            [{"tokens": 12_000, "cost": 0.3, "duration_s": 60.0}], rework=2
-        ),
-        forecast=run_record.CostForecast(tokens=24_000),
-        task_class="task",
-        scope_tokens=8_000,
-    )
-
-    assert ident == "basicly-x#cost"
-    add = next(c for c in calls if c[:2] == ["comments", "add"])
-    header, payload = add[3].split("\n", 1)
-    assert header == f"{run_record.COST_MARKER} id=basicly-x#cost"
-    body = json.loads(payload)
-    assert body["task_class"] == "task" and body["scope_tokens"] == 8_000
-    assert body["forecast"]["tokens"] == 24_000
-    assert body["actual"] == {
-        "dispatches": 1,
-        "tokens": 12_000,
-        "cost": 0.3,
-        "wall_clock_s": 60.0,
-        "rework": 2,
-        "estimated": False,
-    }
-    # Money is never forecast, and wall-clock waits on the duration predictor
-    # (basicly-kjc5.48) — both keys are present and null, not absent.
-    assert body["forecast"]["cost"] is None and body["forecast"]["wall_clock_s"] is None
-
-
-def test_record_cost_marker_never_writes_a_second_rollup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """One package, one ledger entry: a re-record would double-count it."""
-    recorded: list[str] = []
-
-    def _try_run_br(_repo, args):
-        if args[:2] == ["comments", "list"]:
-            return SimpleNamespace(returncode=0, stdout=json.dumps([{"text": t} for t in recorded]))
-        if args[:2] == ["comments", "add"]:
-            recorded.append(args[3])
-        return SimpleNamespace(returncode=0, stdout="")
-
-    monkeypatch.setattr(run_record.br, "try_run_br", _try_run_br)
-    rollup = run_record.cost_rollup([{"tokens": 1}])
-    forecast = run_record.CostForecast()
-    first = run_record.record_cost_marker(tmp_path, "b-1", actual=rollup, forecast=forecast)
-    second = run_record.record_cost_marker(tmp_path, "b-1", actual=rollup, forecast=forecast)
-
-    assert first == "b-1#cost" and second is None
-    assert len(recorded) == 1
-
-
-def test_record_cost_marker_reports_nothing_written_when_br_refuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A failed write is not a recorded rollup — the caller must not claim one."""
-    monkeypatch.setattr(
-        run_record.br,
-        "try_run_br",
-        lambda *_a: SimpleNamespace(returncode=2, stdout=""),
-    )
-    written = run_record.record_cost_marker(
-        tmp_path,
-        "b-1",
-        actual=run_record.cost_rollup([]),
-        forecast=run_record.CostForecast(),
-    )
-    assert written is None
-
-
-def test_tracker_history_reads_the_dispatches_a_clone_would_see(tmp_path: Path) -> None:
-    """The export carries comments, so the ledger travels where .basicly/usage cannot."""
-    _export(
-        tmp_path,
-        {
-            "id": "b-1",
-            "comments": [
-                _run_comment(id="b-1#run-a", tokens=100, timestamp="2026-07-26T10:00:00+00:00"),
-                {"text": "[harness-info] not a dispatch"},
-            ],
-        },
-        {"id": "b-2", "comments": []},
-    )
-    history = run_record.tracker_history(tmp_path)
-    assert list(history) == ["b-1"]
-    assert history["b-1"][0]["tokens"] == 100
-
-
-def test_dispatch_history_unions_local_records_with_the_tracker_once(tmp_path: Path) -> None:
-    """A dispatch recorded in both places is one sample, not two."""
-    entry = _entry(tokens=100, prompt_sha256="cafe", phase="build")
-    run_record.record(tmp_path, "b-1", entry)
-    _export(
-        tmp_path,
-        {
-            "id": "b-1",
-            "comments": [_run_comment(tokens=100, timestamp=entry.timestamp)],
-        },
-        {
-            "id": "b-2",  # only the tracker knows this one: another machine ran it
-            "comments": [_run_comment(tokens=7, timestamp="2026-07-26T09:00:00+00:00")],
-        },
-    )
-    history = run_record.dispatch_history(tmp_path)
-    assert len(history["b-1"]) == 1
-    assert len(history["b-2"]) == 1
-
-
-def _cost_comment(bead: str, **actual) -> dict:
-    payload = {"bead": bead, "forecast": {"tokens": None}, "actual": actual}
-    return {"text": f"{run_record.COST_MARKER} id={bead}#cost\n{json.dumps(payload)}"}
-
-
-def test_landed_package_cost_is_computable_from_the_tracker_alone(tmp_path: Path) -> None:
-    """Cost per landed package needs the export only — no local usage file (basicly-7bur)."""
-    _export(
-        tmp_path,
-        {
-            "id": "b-1",
-            "comments": [_cost_comment("b-1", dispatches=2, tokens=30_000, cost=0.6)],
-        },
-        {
-            "id": "b-2",
-            "comments": [_cost_comment("b-2", dispatches=1, tokens=10_000, cost=0.2)],
-        },
-        {"id": "b-3", "comments": [{"text": "[harness-info] never shipped"}]},
-    )
-    assert not (tmp_path / run_record.USAGE_DIR).exists()
-
-    landed = run_record.landed_package_cost(tmp_path)
-    assert landed.packages == 2
-    assert landed.tokens == 40_000
-    assert landed.cost == pytest.approx(0.8)
-    assert landed.per_package("cost") == pytest.approx(0.4)
-    assert landed.per_package("tokens") == pytest.approx(20_000)
-    assert landed.per_package("wall_clock_s") is None  # never metered, never invented
-
-
-def test_landed_package_cost_without_an_export(tmp_path: Path) -> None:
-    """No tracker export means no landed packages, not a crash."""
-    landed = run_record.landed_package_cost(tmp_path)
-    assert landed.packages == 0 and landed.per_package("cost") is None
-
-
-# --- forecast error, per dispatch record (basicly-jr0l.34) -------------------
-
-
-def test_a_dispatch_record_carries_the_forecast_beside_the_actual(tmp_path: Path) -> None:
-    """The join this bead exists for: one record holds both halves and the class.
-
-    Before this, `forecast_tokens` was a declared field with no writer, so the two
-    numbers lived on disjoint records and no forecast error was ever computable.
-    """
-    entry = _entry(
-        tokens=9_430_203,
-        forecast_tokens=57_965,
-        scope_tokens=19_000,
-        task_class="task",
-        forecast_source="dispatch",
-    )
-    run_record.record(tmp_path, "b-1", entry)
-    stored = _records(tmp_path)["b-1"][0]
-    assert stored["forecast_tokens"] == 57_965
-    assert stored["tokens"] == 9_430_203
-    assert stored["task_class"] == "task"
-    assert stored["forecast_source"] == "dispatch"
-
-
-def test_a_dispatch_record_carries_the_forecast_in_the_unit_its_actual_is_metered_in(
-    tmp_path: Path,
-) -> None:
-    """Both forecasts land on the record, and the spend half travels to a clone.
-
-    ``forecast_tokens`` is a working set and ``tokens`` is whole-lane spend, so the pair
-    the calibration was reading compared two quantities: on basicly-gczc that ratio was
-    254x and read as a forecast wrong by two orders of magnitude (basicly-tcmy.34). The
-    spend forecast is the number ``supervise.admit_pass_spend`` already gated on, and this
-    is it reaching the record.
-    """
-    entry = _entry(
-        tokens=16_963_245,
-        forecast_tokens=66_780,
-        forecast_spend_tokens=22_331_232,
-        task_class="bug",
-        prompt_sha256="deadbeef",
-        phase="build",
-    )
-    run_record.record(tmp_path, "b-1", entry)
-
-    stored = _records(tmp_path)["b-1"][0]
-    assert stored["forecast_tokens"] == 66_780
-    assert stored["forecast_spend_tokens"] == 22_331_232
-    assert stored["tokens"] == 16_963_245
-
-
-def test_forecast_errors_pairs_a_complete_record(tmp_path: Path) -> None:
-    """A record with both halves yields a ratio and a signed miss."""
-    run_record.record(
-        tmp_path,
-        "b-1",
-        _entry(tokens=200_000, forecast_tokens=50_000, task_class="task", model="opus"),
-    )
-    report = run_record.forecast_errors(tmp_path)
-    assert report.paired == 1
-    error = report.errors[0]
-    assert error.bead == "b-1"
-    assert error.ratio == pytest.approx(4.0)
-    assert error.error_tokens == 150_000
-    assert error.task_class == "task" and error.model == "opus"
-
-
-def test_forecast_errors_refuses_a_record_missing_either_half(tmp_path: Path) -> None:
-    """Counting a missing half as zero would fabricate an error; it is reported unpaired.
-
-    The three shapes are real: a forecast with no actual is a handoff or a killed
-    run, an actual with no forecast is an un-sized helper dispatch (the rubric judge,
-    the decider), and neither is a handoff that was never sized.
-    """
-    run_record.record(tmp_path, "b-1", _entry(forecast_tokens=50_000))
-    run_record.record(tmp_path, "b-2", _entry(tokens=200_000))
-    run_record.record(tmp_path, "b-3", _entry())
-    report = run_record.forecast_errors(tmp_path)
-    assert report.paired == 0 and report.errors == ()
-    assert (report.forecast_only, report.actual_only, report.unmetered) == (1, 1, 1)
-
-
-def test_forecast_errors_refuses_a_zero_forecast_rather_than_dividing_by_it(
-    tmp_path: Path,
-) -> None:
-    """A zero forecast is a recording defect, not a prediction, and cannot be a divisor."""
-    run_record.record(tmp_path, "b-1", _entry(tokens=200_000, forecast_tokens=0))
-    report = run_record.forecast_errors(tmp_path)
-    assert report.paired == 0 and report.actual_only == 1
-
-
-def test_forecast_errors_reports_the_median_ratio_not_the_mean(tmp_path: Path) -> None:
-    """One 400x sample must not drag the summary somewhere no dispatch has been."""
-    for bead, tokens in (("b-1", 100_000), ("b-2", 200_000), ("b-3", 40_000_000)):
-        run_record.record(tmp_path, bead, _entry(tokens=tokens, forecast_tokens=100_000))
-    report = run_record.forecast_errors(tmp_path)
-    assert report.median_ratio == pytest.approx(2.0)
-
-
-def test_forecast_errors_has_no_median_without_a_pair(tmp_path: Path) -> None:
-    """None, never zero: nothing measured must not read as a perfect forecast."""
-    assert run_record.forecast_errors(tmp_path).median_ratio is None
-
-
-def test_forecast_errors_groups_by_task_class_and_drops_the_unclassed(
-    tmp_path: Path,
-) -> None:
-    """Calibration is per class, and a sample with no class recorded cannot join one."""
-    run_record.record(
-        tmp_path, "b-1", _entry(tokens=200_000, forecast_tokens=100_000, task_class="task")
-    )
-    run_record.record(
-        tmp_path, "b-2", _entry(tokens=300_000, forecast_tokens=100_000, task_class="bug")
-    )
-    run_record.record(tmp_path, "b-3", _entry(tokens=400_000, forecast_tokens=100_000))
-    grouped = run_record.forecast_errors(tmp_path).by_task_class()
-    assert sorted(grouped) == ["bug", "task"]
-    assert len(grouped["task"]) == 1
-
-
-def test_forecast_errors_sees_a_dispatch_only_the_tracker_carries(tmp_path: Path) -> None:
-    """A teammate's dispatch pairs too: the export travels where .basicly/usage does not."""
-    _export(
-        tmp_path,
-        {
-            "id": "b-9",
-            "comments": [
-                _run_comment(
-                    tokens=250_000,
-                    forecast_tokens=50_000,
-                    task_class="chore",
-                    timestamp="2026-07-26T09:00:00+00:00",
-                )
-            ],
-        },
-    )
-    report = run_record.forecast_errors(tmp_path)
-    assert report.paired == 1 and report.errors[0].bead == "b-9"
-    assert report.errors[0].ratio == pytest.approx(5.0)
-
-
-def test_forecast_errors_flags_an_estimated_actual(tmp_path: Path) -> None:
-    """A chars/4 actual is a weaker sample and must be identifiable as one (design 7.5)."""
-    run_record.record(
-        tmp_path, "b-1", _entry(tokens=200_000, forecast_tokens=100_000, estimated=True)
-    )
-    assert run_record.forecast_errors(tmp_path).errors[0].estimated is True
-
-
-# --- spend forecast calibration, per model (basicly-jr0l.21) -----------------
-
-
-def test_a_pair_carries_the_money_and_time_the_dispatch_spent(tmp_path: Path) -> None:
-    """The cost and duration ride on the pair, so a price is keyed to a model and class."""
-    run_record.record(
-        tmp_path,
-        "b-1",
-        _entry(
-            tokens=10_000_000,
-            forecast_tokens=50_000,
-            task_class="task",
-            model="claude-opus-5",
-            cost=8.0,
-        ),
-    )
-    error = run_record.forecast_errors(tmp_path).errors[0]
-    assert error.actual_cost == pytest.approx(8.0)
-    # _entry's dispatch ran 1.5s; the pair carries what was metered, not a re-derivation.
-    assert error.actual_wall_clock_s == pytest.approx(1.5)
-
-
-def test_a_pair_carries_the_phase_and_the_factors_provenance(tmp_path: Path) -> None:
-    """The two fields basicly-tcmy.5 adds travel from the record onto the pair.
-
-    The phase is what lets a calibration refuse a helper's sample, and the build-factor
-    source is what stops the forecast half of the pair from reading as a measurement.
-    Both are read off the persisted record rather than re-derived, because by the time a
-    calibration runs the config that produced the factor may have moved on.
-    """
-    run_record.record(
-        tmp_path,
-        "b-1",
-        _entry(
-            tokens=10_000_000,
-            forecast_tokens=50_000,
-            task_class="task",
-            model="claude-opus-5",
-            phase=run_record.LANE_PHASE,
-            build_factor_source="seed",
-        ),
-    )
-
-    stored = run_record.latest_record(tmp_path, "b-1")
-    assert stored is not None
-    assert stored.build_factor_source == "seed"
-    assert run_record.forecast_errors(tmp_path).errors[0].phase == run_record.LANE_PHASE
+    """Seed the committed ledger — the artifact a fresh clone has."""
+    flipped_tracker.seed_records(repo_root, records)
 
 
 def test_the_cache_split_survives_serialisation_to_disk(tmp_path: Path) -> None:

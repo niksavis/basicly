@@ -98,12 +98,12 @@ def test_a_table_renders_its_title_columns_and_every_row(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Left-justified title, then the header, then one line per row."""
-    ui.table("Measured surface (2)", ["binary", "calls"], [["br", "42"], ["bv", "7"]])
+    ui.table("Ready (2)", ["record", "score"], [["b-1", "4001"], ["b-2", "3002"]])
 
     out = capsys.readouterr().out
-    assert out.startswith("Measured surface (2)\n")
-    assert "binary" in out
-    for cell in ("br", "42", "bv", "7"):
+    assert out.startswith("Ready (2)\n")
+    assert "record" in out
+    for cell in ("b-1", "4001", "b-2", "3002"):
         assert cell in out
 
 

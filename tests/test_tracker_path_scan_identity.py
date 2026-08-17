@@ -63,7 +63,6 @@ def _event(actor: str = "", **payload: object) -> str:
 def test_the_ledger_is_in_scope_and_a_sibling_json_file_is_not() -> None:
     """The glob widened for this bead; without the ledger the leak was invisible."""
     assert scan._TRACKER_GLOB.match(LEDGER)
-    assert scan._TRACKER_GLOB.match(".beads/issues.jsonl")
     assert not scan._TRACKER_GLOB.match(".basicly/ledger/differential-baseline.json")
 
 

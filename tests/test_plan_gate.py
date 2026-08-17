@@ -17,8 +17,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from basicly import br, decompose, plan_entry, plan_gate, plan_record
+from basicly import decompose, plan_entry, plan_gate, plan_record
 from basicly.decompose import ChildSpec
+from tests import fake_tracker
 from tests.plan_fixtures import FakeBr, Proc
 from tests.plan_fixtures import child_payload as _child_payload
 from tests.plan_fixtures import install as _install
@@ -318,7 +319,7 @@ def test_build_entry_refuses_a_unit_whose_record_cannot_be_read(
     def unreadable(*_args: object, **_kwargs: object) -> Proc:
         return Proc("", returncode=1)
 
-    monkeypatch.setattr(br, "try_run_br", unreadable)
+    fake_tracker.install(monkeypatch, unreadable)
 
     verdict = plan_entry.build_entry_verdict(tmp_path, "feat.1")
 

@@ -31,7 +31,7 @@ from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import br, dispatch_phase, session, spend_calibration
+from . import dispatch_phase, session, spend_calibration, tracker
 
 USAGE_DIR = Path(".basicly/usage")
 RUN_RECORDS_FILE = USAGE_DIR / "run-records.json"
@@ -252,7 +252,7 @@ class RunRecord:
     # fallback. Recording both means a null reads as "br had no opinion" rather
     # than as "nobody recorded it".
     #
-    # `scheduler_policy` is br's schema version (`br.scheduler.v1`), without which
+    # `scheduler_policy` is br's schema version (`tracker.scheduler.v1`), without which
     # a score is an uninterpretable integer.
     dispatch_rank: int | None = None
     scheduler_rank: int | None = None
@@ -496,10 +496,10 @@ def _recorded_marker_ids(repo_root: Path, bead_id: str, marker: str = MARKER) ->
 
     Soft on purpose, and safely so: both callers use it to avoid writing a *second*
     copy of an idempotent record, so "no markers" and "no answer" both correctly mean
-    write one now. A counter reads :func:`basicly.br.read_comments` instead.
+    write one now. A counter reads :func:`basicly.tracker.read_comments` instead.
     """
     found: set[str] = set()
-    for comment in br.try_read_comments(repo_root, bead_id):
+    for comment in tracker.try_read_comments(repo_root, bead_id):
         text = str(comment.get("text", ""))
         for line in text.splitlines():
             if line.startswith(f"{marker} id="):
@@ -527,7 +527,7 @@ def record_marker(repo_root: Path, bead_id: str, run_record: RunRecord) -> str |
     ident = marker_id(bead_id, run_record.prompt_sha256, phase, attempt)
     payload = {k: v for k, v in asdict(run_record).items() if v not in (None, (), [])}
     body = f"{MARKER} id={ident} phase={phase}\n{json.dumps(payload, sort_keys=True)}"
-    if not br.try_add_comment(repo_root, bead_id, body):
+    if not tracker.try_add_comment(repo_root, bead_id, body):
         return None
     return ident
 
@@ -559,15 +559,15 @@ def tracker_history(repo_root: Path) -> dict[str, list[dict]]:
     The travelling twin of :func:`load_run_records`: ``.basicly/usage/`` is
     self-ignored and never leaves the machine that wrote it, while every dispatch
     also writes a ``[harness-run]`` marker and both stores commit their own
-    artifact. So this is the same telemetry as seen by a fresh clone — no br
+    artifact. So this is the same telemetry as seen by a fresh clone — no tracker
     invocation, no local usage file (D10/D11).
 
-    Which store answers is :func:`basicly.br.all_comment_texts`'s to decide. It has
+    Which store answers is :func:`basicly.tracker.all_comment_texts`'s to decide. It has
     to be the same one :func:`record_marker` writes to, or a dispatch would record
     into the ledger and be counted out of the export (basicly-s5li).
     """
     history: dict[str, list[dict]] = {}
-    for bead_id, texts in br.all_comment_texts(repo_root).items():
+    for bead_id, texts in tracker.all_comment_texts(repo_root).items():
         payloads = marker_payloads(texts)
         if payloads:
             history[bead_id] = payloads
@@ -719,7 +719,7 @@ def record_cost_marker(  # noqa: PLR0913
         "actual": asdict(actual),
     }
     body = f"{COST_MARKER} id={ident}\n{json.dumps(payload, sort_keys=True)}"
-    if not br.try_add_comment(repo_root, bead_id, body):
+    if not tracker.try_add_comment(repo_root, bead_id, body):
         return None
     return ident
 
@@ -751,7 +751,7 @@ def landed_package_cost(repo_root: Path) -> LandedCost:
     """
     packages = 0
     actuals: list[dict] = []
-    for texts in br.all_comment_texts(repo_root).values():
+    for texts in tracker.all_comment_texts(repo_root).values():
         rollups = marker_payloads(texts, COST_MARKER)
         if not rollups:
             continue

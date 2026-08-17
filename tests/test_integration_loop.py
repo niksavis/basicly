@@ -62,7 +62,6 @@ from pathlib import Path
 import pytest
 
 from basicly import (
-    br,
     decisions,
     loop,
     loop_state,
@@ -72,15 +71,12 @@ from basicly import (
     run_record,
     runner,
     supervise,
+    tracker,
     worktree,
 )
 from basicly.config import VERIFY_GATE_PROVIDER, load_policy_config
 from basicly.decompose import ChildSpec
-from tests import standin_agent
-
-needs_br = pytest.mark.skipif(
-    br.which() is None, reason="the beads tracker (br) is not installed on this machine"
-)
+from tests import flipped_tracker, standin_agent
 
 # The three fields the plan gate requires of every child (basicly-u2hl.1). These tests
 # are about the lane's run order, so each sub-task declares the minimum and no
@@ -168,9 +164,29 @@ def _is_merged(repo: Path, branch: str) -> bool:
     return probe.returncode == 0
 
 
-def _br(cwd: Path, *args: str) -> str:
-    """Run the real ``br``, failing loudly — the fixture has no tracker to fake."""
-    return br.run_br(cwd, list(args)).stdout
+# The fixture's root record. Every bead a test creates is a child of it, because a mint
+# with no parent needs a declared `[tracker] prefix` and the fixture's config is what the
+# test is *not* about (`owned_write.create`).
+_ROOT = "fx-1"
+
+
+def _seed_tracker(repo: Path) -> None:
+    """Give *repo* a ledger holding the root every created bead hangs off.
+
+    The kit is copied in rather than installed, because these tests run the loop and not
+    the installer; the root is opened through the kit for the same reason.
+    """
+    flipped_tracker.flipped_repo(repo)
+    flipped_tracker.seed(repo, _ROOT, title="the fixture root", issue_type="epic")
+
+
+def _tracker(cwd: Path, *args: str) -> None:
+    """One tracker write through the engine seam, failing loudly.
+
+    The fixture has no tracker to fake: these tests exercise the loop against a real
+    ledger, so a write that did not land has to stop the test rather than be absorbed.
+    """
+    tracker.write(cwd, list(args))
 
 
 def _commit(cwd: Path, path: str, body: str, message: str) -> None:
@@ -179,24 +195,31 @@ def _commit(cwd: Path, path: str, body: str, message: str) -> None:
     _git(cwd, "commit", "-m", message)
 
 
-def _create_bead(repo: Path, title: str, *, issue_type: str = "task") -> str:
-    """Create one bead carrying acceptance criteria, so the DoR gate passes."""
-    out = _br(
+def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: str = _ROOT) -> str:
+    """Create one bead carrying acceptance criteria, so the DoR gate passes.
+
+    *parent* is an argument rather than always the fixture root because the store mints a
+    child id *under its parent*: a test that then adds its own ``parent-child`` edge would
+    give the record two parents, and the fan-out reads the wrong one.
+    """
+    return tracker.create_record(
         repo,
-        "create",
-        title,
-        "-t",
-        issue_type,
-        "-d",
-        f"## Acceptance Criteria\n\n- Given the fixture when {title} then it lands\n",
-        "--json",
+        [
+            "create",
+            title,
+            "-t",
+            issue_type,
+            "-d",
+            f"## Acceptance Criteria\n\n- Given the fixture when {title} then it lands\n",
+            "--parent",
+            parent,
+            "--json",
+        ],
     )
-    return str(json.loads(out)["id"])
 
 
 def _show(repo: Path, issue_id: str) -> dict:
-    data = json.loads(_br(repo, "show", issue_id, "--json"))
-    return data[0] if isinstance(data, list) else data
+    return tracker.read_record(repo, issue_id) or {}
 
 
 def _status(repo: Path, issue_id: str) -> str:
@@ -230,8 +253,7 @@ def _seed_repo(tmp_path: Path, runner_config: str) -> Path:
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "chore: seed the fixture repo")
 
-    _br(repo, "init", "--prefix", "fx")
-    _br(repo, "sync", "--flush-only")
+    _seed_tracker(repo)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "chore: initialize the beads workspace")
     return repo
@@ -257,7 +279,6 @@ def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
 # --- A leaf: provision, commit, land, ship ----------------------------------
 
 
-@needs_br
 def test_a_leaf_lands_records_its_gate_and_closes(harness_repo: Path) -> None:
     """The whole leaf boundary against real git and real br: merge, gate, close."""
     repo = harness_repo
@@ -305,7 +326,6 @@ def test_a_leaf_lands_records_its_gate_and_closes(harness_repo: Path) -> None:
     assert _git(repo, "status", "--porcelain").strip() == ""
 
 
-@needs_br
 def test_ship_refuses_a_leaf_whose_branch_never_merged(harness_repo: Path) -> None:
     """Recording the verify gate out-of-band must not ship code stranded on a branch."""
     repo = harness_repo
@@ -325,7 +345,7 @@ def test_ship_refuses_a_leaf_whose_branch_never_merged(harness_repo: Path) -> No
     # after basicly-jr0l.51: a foreign provider no longer counts toward a required
     # gate, but `basicly verify --issue` run by hand from base records under
     # exactly this provider — which is the trap this guard exists to backstop.
-    _br(
+    _tracker(
         repo,
         "gate",
         "report",
@@ -349,7 +369,6 @@ def test_ship_refuses_a_leaf_whose_branch_never_merged(harness_repo: Path) -> No
     assert Path(session.worktree_path).is_dir()
 
 
-@needs_br
 def test_a_red_verify_check_keeps_the_branch_unmerged(harness_repo: Path) -> None:
     """A genuinely failing subprocess check blocks the landing and spends rework."""
     repo = harness_repo
@@ -374,7 +393,6 @@ def test_a_red_verify_check_keeps_the_branch_unmerged(harness_repo: Path) -> Non
     assert not _is_merged(repo, session.branch)
 
 
-@needs_br
 def test_landing_blocks_instead_of_reworking_an_uncommitted_worktree(harness_repo: Path) -> None:
     """An operator-fixable state must not burn a bounded rework attempt (basicly-4psl)."""
     repo = harness_repo
@@ -396,7 +414,6 @@ def test_landing_blocks_instead_of_reworking_an_uncommitted_worktree(harness_rep
 # --- A lane: sub-tasks in sequence, then integration ------------------------
 
 
-@needs_br
 def test_a_lane_runs_its_sub_tasks_in_sequence_then_integrates(harness_repo: Path) -> None:
     """The lane mini-loop end to end: two real sub-task beads, closed by real commits."""
     repo = harness_repo
@@ -455,7 +472,6 @@ def test_a_lane_runs_its_sub_tasks_in_sequence_then_integrates(harness_repo: Pat
     assert gates.can_advance
 
 
-@needs_br
 def test_a_sub_task_is_not_closed_by_a_sibling_whose_id_extends_it(harness_repo: Path) -> None:
     """``x.1`` must not be closed by a commit naming ``x.10`` (basicly-kjc5.9).
 
@@ -495,7 +511,6 @@ def test_a_sub_task_is_not_closed_by_a_sibling_whose_id_extends_it(harness_repo:
 # --- Tracker commits, made by the engine and by nobody else -----------------
 
 
-@needs_br
 def test_the_engine_commits_the_claim_before_provisioning(harness_repo: Path) -> None:
     """Tracker dirt is rolled into a chore commit at each of the three points."""
     repo = harness_repo
@@ -507,10 +522,9 @@ def test_the_engine_commits_the_claim_before_provisioning(harness_repo: Path) ->
         f"chore(beads): record the claim before provisioning ({issue})"
     )
     tracked = _git(repo, "show", "--name-only", "--format=", "HEAD").split()
-    assert tracked and all(path.startswith(".beads/") for path in tracked)
+    assert tracked and all(path.startswith(".basicly/ledger/") for path in tracked)
 
 
-@needs_br
 def test_a_non_tracker_dirty_base_is_left_alone(harness_repo: Path) -> None:
     """``commit_tracker_state`` refuses to sweep up somebody else's uncommitted work."""
     repo = harness_repo
@@ -560,7 +574,6 @@ def _merge_commits(repo: Path) -> list[str]:
     return [subject for subject in subjects if subject.startswith("chore(worktree):")]
 
 
-@needs_br
 def test_a_dispatched_agent_cli_commits_and_the_loop_lands_it(standin_repo: Path) -> None:
     """The whole seam: a real child process writes the commit, the merge queue lands it.
 
@@ -609,7 +622,6 @@ def test_a_dispatched_agent_cli_commits_and_the_loop_lands_it(standin_repo: Path
     assert _status(repo, issue) == "closed"
 
 
-@needs_br
 def test_a_dispatched_agent_that_exits_non_zero_blocks_and_lands_nothing(
     standin_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -646,7 +658,6 @@ def test_a_dispatched_agent_that_exits_non_zero_blocks_and_lands_nothing(
     assert records[0]["returncode"] == standin_agent.FAIL_CODE
 
 
-@needs_br
 def test_a_dispatched_agent_that_cannot_resolve_a_fact_surfaces_it(
     standin_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -679,7 +690,6 @@ def test_a_dispatched_agent_that_cannot_resolve_a_fact_surfaces_it(
     assert _merge_commits(repo) == []
 
 
-@needs_br
 def test_a_supervisor_pass_runs_two_agent_processes_and_lands_both(
     standin_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -693,10 +703,9 @@ def test_a_supervisor_pass_runs_two_agent_processes_and_lands_both(
     repo = standin_repo
     _set_modes(monkeypatch, default=standin_agent.IDLE)
     root = _create_bead(repo, "the concurrent root", issue_type="epic")
-    first = _create_bead(repo, "lane one")
-    second = _create_bead(repo, "lane two")
+    first = _create_bead(repo, "lane one", parent=root)
+    second = _create_bead(repo, "lane two", parent=root)
     for child in (first, second):
-        _br(repo, "dep", "add", child, root, "-t", "parent-child")
         provisioned = _to_build(repo, child)
         assert provisioned.blocked, provisioned.detail
 

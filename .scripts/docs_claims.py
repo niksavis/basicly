@@ -218,7 +218,7 @@ def _plan_current_state(root: Path) -> list[str]:
     this document from unrelated lanes for a figure the plan never reasons about.
     Only **structural** facts belong here — things that move when the code moves, so
     the block is stale exactly when the plan is. Tracker counts are deliberately
-    absent even though they are equally derivable: ``.beads/issues.jsonl`` changes
+    absent even though they are equally derivable: the committed ledger changes
     several times per session, so generating them would rewrite this document during
     unrelated lanes and dirty the base checkout a landing refuses on. ``br`` answers
     those on demand, which is why the plan now asks rather than asserts.

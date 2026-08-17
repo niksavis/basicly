@@ -62,7 +62,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import br, decompose, owned_store, policy, rebase, run_record, verify
+from . import decompose, owned_store, policy, rebase, run_record, tracker, tracker_paths, verify
 from .config import PolicyConfig, load_policy_config
 from .worktree import Session, current_branch, git, load_session
 
@@ -75,7 +75,7 @@ CONFLICT_STATUSES = ("rebase-conflicts", "merge-conflicts")
 # Path prefixes the harness rewrites on every landing (the tracker state it commits).
 # A collision here is engine bookkeeping, never evidence of a coupling the
 # decomposition missed.
-ENGINE_PATHS = (".beads/",)
+ENGINE_PATHS = (owned_store.LEDGER_DIR.as_posix() + "/",)
 
 # Dependency type for a missed coupling. Deliberately not `blocks`: the edge
 # teaches the next decomposition, and `br blocked` (so `supervise.ready_lanes`)
@@ -95,7 +95,7 @@ VERIFY_UNRELIABLE = "verify-unreliable"
 # same reason VERIFY_UNRELIABLE is, and from VERIFY_UNRELIABLE because the two are
 # cleared by opposite evidence: a flake stops reproducing, while a record in the
 # shared tracker is durable and reproduces forever. Every lane in a supervised pass
-# shares one `.beads` through the redirect, so one lane's declaration failed this
+# shares one ledger through the redirect, so one lane's declaration failed this
 # gate inside two siblings' landings and charged each of them a rework attempt for a
 # defect in neither diff (basicly-qorx). Nothing here faults the lane, so it spends
 # no rework; the culprits are carried on the result for the caller to attribute.
@@ -226,7 +226,7 @@ def _shared_tracker_failure(
     failure, so one unexplained check ends the forgiveness. Culprits and reasons are
     merged across the checks so a report faulting two lanes attributes to both.
 
-    Every culprit must be a bead ``.beads/issues.jsonl`` actually holds, and that
+    Every culprit must be a record the committed ledger actually holds, and that
     check is not ceremony: pytest elides the middle of a long assertion repr, so a
     truncated line can leave a *partial* id ("basicly-tcm") beside text the register
     matches. Attributing to that would forgive a real failure and blame nothing, so an
@@ -471,10 +471,12 @@ def _worktree_land_readiness(repo_root: Path, session: Session) -> MergeResult |
 
 
 # The trees the engine writes while a lane builds, so their dirt in base is the loop's
-# own state. The ledger joined `.beads` at dual write (basicly-vkh0.25): a lane's claim,
+# own state (basicly-vkh0.25): a lane's claim,
 # gate reports and comments append there, so it is dirty exactly when the merge runs.
 # Two named trees, never "commit whatever is dirty", or `foreign_dirt` protects nothing.
-ENGINE_TRACKER_PATHS = (".beads", owned_store.LEDGER_DIR.as_posix())
+ENGINE_TRACKER_PATHS = (owned_store.LEDGER_DIR.as_posix(),)
+
+EVENT_LOG_GLOB = "events-*.jsonl"
 
 
 def _under(path: str, tree: str) -> bool:
@@ -528,8 +530,8 @@ def commit_tracker_state(
 ) -> bool:
     """Commit the base checkout's dirt when it is tracker-only; False when it is not.
 
-    The loop mutates the tracker from claim through gate recording while the
-    agent builds (worktrees share it via br's ``redirect`` file), so dirt under
+    The loop mutates the tracker from claim through gate recording while the agent
+    builds (worktrees share it via the ``redirect`` file), so dirt under
     :data:`ENGINE_TRACKER_PATHS` is expected engine state, not the agent's business —
     roll it into one chore commit instead of blocking the advance on it. Anything
     else still blocks: that is someone's uncommitted work.
@@ -538,28 +540,20 @@ def commit_tracker_state(
     :func:`skipped_tracker_commit_warning`.
 
     **Nothing is flushed first, and that surface is deleted rather than replaced**
-    (basicly-wpc8.1): ``br sync --flush-only`` reconciled br's database with br's own
-    export, and the owned ledger *is* its artifact. Where br still holds records it
-    writes that export itself on every mutating command — the behaviour
-    ``br._refuse_export_shrink`` bounds — so the flush re-asked for a write br had made.
+    (basicly-wpc8.1): the owned ledger *is* its own artifact, so there is no second
+    store to reconcile it with before committing.
     """
     lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
     paths = [line[3:] for line in lines if line.strip()]
     if not paths or not all(is_engine_tracker_path(path) for path in paths):
         return False
-    # br stamps each flushed record with the producing workspace's absolute path;
-    # strip it before staging so the committed export never publishes a home
-    # directory layout (basicly-vkh0.5). This is the engine's only tracker-commit
-    # path, so scrubbing here covers every record br wrote since the last one.
-    # The tracker-path-scan hook is the gate for whatever this misses.
-    br.scrub_export(repo_root)
-    # The ledger is committed by the same commit and carries the same leak one field
-    # over — br writes `created_by` on every record and the import copies it (r166).
-    br.scrub_ledger(repo_root)
-    # Staged per tree that actually has dirt, not per tree that could: a repo on
-    # `external` has no ledger, and `git add` on an absent pathspec exits 128 rather
-    # than skipping it. Derived from *paths* rather than from disk so the decision stays
-    # a function of what git reported.
+    # The ledger is committed and cloned by every consumer, so a host path or a
+    # username in it is published (basicly-vkh0.5). This is the engine's only
+    # tracker-commit path; `tracker-path-scan` is the gate for whatever it misses.
+    tracker.scrub_ledger(repo_root)
+    # Staged per tree that actually has dirt, not per tree that could: `git add` on an
+    # absent pathspec exits 128 rather than skipping it. Derived from *paths* rather
+    # than from disk so the decision stays a function of what git reported.
     dirty = [tree for tree in ENGINE_TRACKER_PATHS if any(_under(path, tree) for path in paths)]
     git(["add", *dirty], cwd=repo_root)
     git(["commit", "-m", f"chore(beads): {action} ({bead})"], cwd=repo_root)
@@ -567,29 +561,30 @@ def commit_tracker_state(
 
 
 def known_bead_ids(repo_root: Path) -> set[str] | None:
-    """Ids from ``.beads/issues.jsonl``, or None when no workspace exists.
+    """Ids the owned ledger holds, or None when the repository has no tracker.
 
-    Public because every path that composes a commit message owes the same check:
-    the ``beads-commit-msg`` gate rejects an unknown id, and discovering that at
-    commit time strands whatever the caller already wrote (merge mid-landing,
-    release mid-bump), through :func:`basicly.br.beads_dir` so a redirect cannot
-    split it (basicly-tcmy.19).
+    Public because every path that composes a commit message owes the same check: the
+    ``tracker-commit-msg`` gate rejects an unknown id, and discovering that at commit time
+    strands whatever the caller already wrote (merge mid-landing, release mid-bump).
+
+    **The same store and the same redirect as that gate**, including reading an empty
+    ledger as no tracker rather than as no ids: a pre-check answering from a second file
+    answers a question the gate is not asking (basicly-tcmy.19).
     """
-    issues = br.beads_dir(repo_root) / "issues.jsonl"
-    if not issues.exists():
-        return None
+    ledger = tracker_paths.ledger_dir(repo_root)
     ids: set[str] = set()
-    for raw_line in issues.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(record, dict) and isinstance(record.get("id"), str):
-            ids.add(record["id"])
-    return ids
+    for log in sorted(ledger.glob(EVENT_LOG_GLOB)):
+        for raw_line in log.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict) and isinstance(event.get("record"), str):
+                ids.add(event["record"])
+    return ids or None
 
 
 def _merge_message(
@@ -732,7 +727,7 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     known = known_bead_ids(repo_root)
     if known is not None and bead not in known:
         raise SystemExit(
-            f"unknown bead id {bead!r}: not in .beads/issues.jsonl — the commit-msg "
+            f"unknown bead id {bead!r}: the committed ledger does not hold it — the commit-msg "
             "hook would reject the merge commit and strand the base mid-merge"
         )
 
@@ -820,7 +815,7 @@ class QueueResult:
 def blocking_dependencies(repo_root: Path, bead: str) -> frozenset[str]:
     """Ids *bead* is blocked by, per ``br``; empty when unreadable.
 
-    Both of br's dependency spellings are read, via :func:`basicly.br.dependency_edge`
+    Both of br's dependency spellings are read, via :func:`basicly.tracker.dependency_edge`
     — trusting only the echo's spelling silently returned no dependencies at all,
     which degraded every landing order to the caller's (basicly-kjc5.10, carried as
     requirement R2 on the replacement).
@@ -829,12 +824,12 @@ def blocking_dependencies(repo_root: Path, bead: str) -> frozenset[str]:
     serial landing, so an unreachable tracker degrades to the caller's order
     instead of refusing to land anything.
     """
-    record = br.read_record(repo_root, bead)
+    record = tracker.read_record(repo_root, bead)
     if record is None:
         return frozenset()
     blocking: set[str] = set()
     for dep in record.get("dependencies") or []:
-        edge = br.dependency_edge(dep)
+        edge = tracker.dependency_edge(dep)
         if edge is not None and edge[1] == "blocks":
             blocking.add(edge[0])
     return frozenset(blocking)
@@ -1034,7 +1029,7 @@ def _engine_owned(path: str) -> bool:
     """True for a path the harness itself rewrites on every landing.
 
     Only a literal ``./`` prefix is stripped: a bare ``lstrip("./")`` eats the
-    leading dot of a dot-directory and would never match ``.beads/`` again (the
+    leading dot of a dot-directory and would never match a dot-directory again (the
     same trap the scope estimator documents).
     """
     normalized = path.strip().replace("\\", "/")
@@ -1079,7 +1074,7 @@ def record_coupling(repo_root: Path, bead: str, coupled_to: str) -> None:
     ``blocks`` keeps that type.
     """
     first, second = sorted((bead, coupled_to))
-    br.try_write(repo_root, ["dep", "add", first, second, "-t", COUPLING_DEP_TYPE])
+    tracker.try_write(repo_root, ["dep", "add", first, second, "-t", COUPLING_DEP_TYPE])
 
 
 def merge_queue(

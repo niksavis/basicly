@@ -32,7 +32,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from . import br
+from . import tracker
 
 # The section a bead states its problem in. Matched case-insensitively against a
 # heading line, so a statement is looked for in one declared place rather than
@@ -121,7 +121,7 @@ def children_of_record(record: Mapping[str, object]) -> dict[str, str]:
     children: dict[str, str] = {}
     dependents = record.get("dependents")
     for dep in dependents if isinstance(dependents, list) else []:
-        edge = br.dependency_edge(dep)
+        edge = tracker.dependency_edge(dep)
         if edge is None or edge[1] != "parent-child":
             continue
         children[edge[0]] = str(dep.get("status") or "") if isinstance(dep, dict) else ""
@@ -132,7 +132,7 @@ def children_by_parent(records: Iterable[Mapping[str, object]]) -> dict[str, dic
     """Parent id to its children's statuses, inverted out of the exported records.
 
     The export spells the edge from the child's side only, so the gate has to invert
-    it; :func:`basicly.br.dependency_edge` is what reads both of br's spellings.
+    it; :func:`basicly.tracker.dependency_edge` is what reads both of br's spellings.
     """
     children: dict[str, dict[str, str]] = {}
     for record in records:
@@ -141,7 +141,7 @@ def children_by_parent(records: Iterable[Mapping[str, object]]) -> dict[str, dic
             continue
         dependencies = record.get("dependencies")
         for dep in dependencies if isinstance(dependencies, list) else []:
-            edge = br.dependency_edge(dep)
+            edge = tracker.dependency_edge(dep)
             if edge is None or edge[1] != "parent-child":
                 continue
             children.setdefault(edge[0], {})[child_id] = str(record.get("status") or "")

@@ -3,17 +3,17 @@
 The tracker export is committed and, for a distribution like this one, cloned by
 every consumer — so an absolute path or username in it is published, and it is a
 wrong answer on any machine but the one that wrote it. The harness repairs the
-export at its own tracker commits (``basicly.br.scrub_export``); this is the
-deterministic gate that catches whatever that misses: a path field br adds later,
-or a tracker file staged by hand before the repair ran.
+log at its own tracker commits (``basicly.br.scrub_ledger``); this is the
+deterministic gate that catches whatever that misses: a field a later write adds,
+or a log staged by hand before the repair ran.
 
 Design choices, deliberately narrow:
 
 - **Only tracker state.** Absolute paths are legitimate content almost
   everywhere else in a repo — docs, fixtures, this very docstring — so a
-  repo-wide path scan would be pure noise. Scoping to ``.beads/*.jsonl`` and the
-  owned ledger's ``events-*.jsonl`` is what makes a hit unambiguous. Both are
-  committed and both are machine-written, which is the property that matters.
+  repo-wide path scan would be pure noise. Scoping to the ledger's committed
+  ``events-*.jsonl`` is what makes a hit unambiguous: it is committed and it is
+  machine-written, which are the two properties that matter.
 - **Parsed records, not raw lines.** Scanning the JSON source text would mean
   writing every pattern twice, once per escaping level, and the two copies would
   drift. Parsing each record means one rule set, shared with
@@ -40,10 +40,11 @@ import re
 import subprocess  # nosec B404
 import sys
 
-# Tracker files worth scanning: the external export, and the owned ledger beside it.
-# The ledger was outside this glob until basicly-r166, which is why 3,775 of its
-# events published a username while the gate above them reported clean.
-_TRACKER_GLOB = re.compile(r"^(?:\.beads/.*|\.basicly/ledger/events-.*)\.jsonl$")
+# The committed event log. Its derived folds are deliberately out: they are rebuilt
+# from it and git-ignored, so a hit in one is a hit the log already carries. The log
+# was outside this glob until basicly-r166, which is why 3,775 of its events published
+# a username while the gate above them reported clean.
+_TRACKER_GLOB = re.compile(r"^\.basicly/ledger/events-.*\.jsonl$")
 
 # (rule name, pattern) — shapes that identify a location on one machine.
 # Matched against parsed strings, so one literal backslash is one backslash.
@@ -154,13 +155,13 @@ def main() -> int:
     if len(hits) > 20:
         print(f"  … and {len(hits) - 20} more", file=sys.stderr)
     print(
-        "Both files are committed and cloned by consumers, so an absolute path or "
-        "username in either is published.\n"
-        "Repair them with:  python -c "
+        "The log is committed and cloned by every consumer, so an absolute path or "
+        "username in it is published.\n"
+        "Repair it with:  uv run python -c "
         '"from pathlib import Path; import basicly.br as b; '
-        "print(b.scrub_export(Path('.')), b.scrub_ledger(Path('.')))\"\n"
-        "then re-stage .beads and .basicly/ledger. A harness loop advance repairs "
-        "both automatically.",
+        "print(b.scrub_ledger(Path('.')))\"\n"
+        "then re-stage .basicly/ledger. A harness loop advance repairs it "
+        "automatically.",
         file=sys.stderr,
     )
     return 1

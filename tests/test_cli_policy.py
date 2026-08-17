@@ -12,8 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, cli, decisions, policy
+from basicly import cli, decisions, policy
 from basicly.config import PolicyConfig
+from tests import fake_tracker
 
 
 class _Proc:
@@ -52,9 +53,9 @@ def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     fake = _FakeBr()
     monkeypatch.setattr(policy, "_write", fake)
-    # The marker traffic left policy's alias for `br.add_comment`/`br.read_comments`
-    # (basicly-s5li); both funnel through `br.run_br` on this rung.
-    monkeypatch.setattr(br, "run_br", fake)
+    # The marker traffic left policy's alias for `tracker.add_comment`/`tracker.read_comments`
+    # (basicly-s5li); both funnel through `tracker.run_br` on this rung.
+    fake_tracker.install(monkeypatch, fake)
 
 
 def _no_tty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,8 +150,8 @@ def test_ship_challenge_names_the_precondition_the_grant_declined_on(
     fake = _GrantedBr()
     monkeypatch.setattr(policy, "_write", fake)
     # Both seams, or the grant marker below lands on this fake's comment list while
-    # `br.read_comments` still answers out of the fixture's — one store per read.
-    monkeypatch.setattr(br, "run_br", fake)
+    # `tracker.read_comments` still answers out of the fixture's — one store per read.
+    fake_tracker.install(monkeypatch, fake)
     fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
 
     assert cli.main(["policy", "checkpoint", "basicly-x", "ship", "--approve"]) == 1
@@ -566,10 +567,10 @@ def test_dor_refusal_names_the_scaffold_command_for_the_issues_own_type(
     re-check twice in one run; the refusal now prints the command that emits them.
     """
     # One record, one reader: the verdict and the scaffold hint both come off the record
-    # `br.read_record` returns (basicly-tcmy.14), so a bug carrying only its acceptance
+    # `tracker.read_record` returns (basicly-tcmy.14), so a bug carrying only its acceptance
     # criteria is refused for the section its own work type requires.
-    bug = _Proc(json.dumps([{"issue_type": "bug", "description": "## Acceptance Criteria\n\nx"}]))
-    monkeypatch.setattr(cli.br, "try_run_br", lambda _root, _args: bug)
+    bug = {"issue_type": "bug", "description": "## Acceptance Criteria\n\nx"}
+    fake_tracker.install(monkeypatch, lambda _root, _args: _Proc(json.dumps([bug])))
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 1
     err = capsys.readouterr().err
@@ -587,13 +588,13 @@ def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_ver
     exit code, or it becomes the fail-closed refusal basicly-vz78 rejected.
     """
     # One record carrying both sections. The criteria read and the scope read are the
-    # same `br show` on the same bead, and since `br.read_record` became the one reader
+    # same `br show` on the same bead, and since `tracker.read_record` became the one reader
     # (basicly-tcmy.14) they resolve through one stub — so serving two different bodies
     # from two stubs would be describing a bead that cannot exist. The entry here is a
     # bare path, which is the defect: it parses to no globs.
     body = "## Acceptance Criteria\n\nx\n\n## Scope\n\n- src/a.py\n"
     record = _Proc(json.dumps([{"issue_type": "task", "description": body}]))
-    monkeypatch.setattr(br, "try_run_br", lambda _root, _args: record)
+    fake_tracker.install(monkeypatch, lambda _root, _args: record)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 0
     captured = capsys.readouterr()
@@ -609,7 +610,7 @@ def test_dor_stays_quiet_when_the_scope_parsed(
     # scope entry, which is the backticked form here, so nothing warns.
     body = f"## Acceptance Criteria\n\nx\n\n## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
     record = _Proc(json.dumps([{"issue_type": "task", "description": body}]))
-    monkeypatch.setattr(br, "try_run_br", lambda _root, _args: record)
+    fake_tracker.install(monkeypatch, lambda _root, _args: record)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 0
     assert "parsed to no globs" not in capsys.readouterr().err
@@ -619,7 +620,7 @@ def test_dor_refusal_still_offers_the_scaffold_when_the_type_is_unreadable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A tracker read that fails must not swallow the remedy — it degrades to a placeholder."""
-    monkeypatch.setattr(cli.br, "try_run_br", lambda _root, _args: None)
+    fake_tracker.install(monkeypatch, lambda _root, _args: _Proc(""))
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 1
     assert "basicly policy scaffold --type <work-type>" in capsys.readouterr().err

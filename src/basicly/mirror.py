@@ -1,25 +1,22 @@
-"""One accepted ``br`` write, as the events the owned ledger records the same fact with.
+"""One tracker write, as the events the owned ledger records the same fact with.
 
-The dual write's translator, and that is its whole responsibility: an argv the
-external tracker has already accepted, plus whatever it echoed, in — the owned
-store's event drafts out. Nothing here knows which rung the repo is on, where the
-ledger is, or whether the append succeeded; :mod:`basicly.owned_store` answers the
-first three questions and :mod:`basicly.br` performs the write.
+The write vocabulary's translator, and that is its whole responsibility: an argv in,
+event drafts out. Nothing here knows where the ledger is or whether the append
+succeeded; :mod:`basicly.owned_store` answers the first and :mod:`basicly.tracker`
+performs the second.
 
 Nothing is dropped: an untranslated write raises (:func:`drafts`) and so does an
 untranslated *flag* of a write that has one, because a ledger quietly short of the
-one field br just recorded is the divergence this mode exists to prevent.
+field a caller asked for is the divergence this layer exists to prevent.
 
-The kit module arrives as a parameter rather than being loaded here, which is what
-keeps the translation testable against a kit without a repo, and what keeps this
-module free of any import back into the seam that calls it. Every name it writes in
-— the event kinds, the edge and gate payload keys, the parent-child edge type — is
-read off that module rather than respelled, so a fact can never be recorded under a
-key the kit does not read.
+The kit module arrives as a parameter rather than being loaded here, which keeps the
+translation testable against a kit without a repo and keeps this module free of any
+import back into the seam that calls it. Every name it writes in — the event kinds,
+the edge and gate payload keys, the parent-child edge type — is read off that module
+rather than respelled, so a fact can never be recorded under a key the kit does not
+read.
 
-Split out of ``br`` when the module-size ratchet caught that module growing. The
-boundary is *translation* against *the spawn and the store*: nothing here runs a
-process or touches a file.
+The boundary is *translation* against *the store*: nothing here touches a file.
 """
 
 from __future__ import annotations
@@ -28,58 +25,50 @@ import json
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from basicly import br_argv, tracker_usage
-from basicly.br_argv import (
+from basicly import tracker_argv, tracker_usage
+from basicly.owned_store import TrackerDivergenceError
+from basicly.tracker_argv import (
     CREATE_FIELD_FLAGS,
     UPDATE_FIELD_FLAGS,
     UPDATE_STATUS_FLAGS,
     VALUE_FLAGS,
 )
-from basicly.owned_store import TrackerDivergenceError
 
-# How a mirrored fact says it got here (§9.6). Distinguishes an event the dual write
-# recorded from one `migrate.py` extracted out of the export, and it is one of
-# `migrate.RESERVED_KEYS`, so it is dropped again when a record is rendered back.
+# How a translated fact says it got here (§9.6). Distinguishes it from one `migrate.py`
+# extracted out of an import, and it is one of `migrate.RESERVED_KEYS`, so it is dropped
+# again when a record is rendered back. `owned_write` restamps it as the engine's own.
 MIRROR_PROVENANCE = "dual-write"
 
-# br's writes that carry no record fact, so there is nothing to mirror. Named rather
-# than defaulted to "skip", because the default for an unrecognised write is a
-# refusal — see :func:`drafts`.
-#
-# `sync` moves the whole store between its database and its export and `init` creates
-# the store; neither states anything about a record. The owned ledger needs no
-# equivalent of either: it *is* the export (git is its transport, §4) and
-# `events.append` creates its directory on first write.
+# Writes that carry no record fact, so there is nothing to translate. Named rather than
+# defaulted to "skip", because the default for an unrecognised write is a refusal — see
+# :func:`drafts`. The ledger needs no equivalent of either: it *is* the committed
+# artifact (git is its transport, §4) and `events.append` creates its directory.
 _UNMIRRORED_WRITES = frozenset({"init", "sync"})
 
 
 def _priority(value: str) -> int:
-    """``-p P3`` and ``-p 3`` name one priority; the export holds the int (measured 2026-08-16).
+    """``-p P3`` and ``-p 3`` name one priority; the ledger holds the int.
 
     Raises:
         TrackerDivergenceError: *value* is neither spelling, so no int can be recorded.
-            Raised rather than let through as a ``ValueError``, because this runs in
-            :func:`refuse_untranslatable` before br is spawned and every refusal that
+            Raised rather than let through as a ``ValueError``, so every refusal that
             reaches a caller from here is one type.
     """
     try:
         return int(value.removeprefix("P").removeprefix("p"))
     except ValueError as exc:
         raise TrackerDivergenceError(
-            f"br priority {value!r} is neither a number nor a P-form, so the int the "
-            f"export holds cannot be derived"
+            f"priority {value!r} is neither a number nor a P-form, so the int the "
+            f"ledger holds cannot be derived"
         ) from exc
 
 
 # The shape each field has to be stored in, because a flag's value arrives as one argv
-# string while `br show --json` returns it typed. Not cosmetic: `supervise` reads
-# ``record["labels"]`` as a list and a stored ``"phase-6,ready"`` iterates as characters,
-# so a lane's follow-up would inherit twelve one-letter labels after the flip. Anything
-# absent here is text on both sides.
-_FIELD_TYPES: dict[str, Callable[[str], object]] = {
-    "priority": _priority,
-    "labels": lambda value: [part for part in value.split(",") if part],
-}
+# string while a folded record returns it typed. Anything absent here is text on both
+# sides. `labels` is deliberately not here: a `field` event's `value` is one of
+# `events.TRUNCATABLE_KEYS`, so the schema refuses the list, and the joined form is what
+# `tracker_argv.labels_of` splits back at every reader.
+_FIELD_TYPES: dict[str, Callable[[str], object]] = {"priority": _priority}
 
 # `br gate report --status` spells a pass this way; anything else is a failure, which
 # is `policy.GateStatus`'s own reading of the same field.
@@ -104,11 +93,11 @@ def _update_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[o
     somebody just added a flag for.
     """
     events = kit_module.events
-    records = br_argv.positionals(args, VALUE_FLAGS["update"])[1:]
+    records = tracker_argv.positionals(args, VALUE_FLAGS["update"])[1:]
     if not records:
         raise TrackerDivergenceError(f"br update names no issue: {' '.join(args)}")
     drafts: list[object] = []
-    for flag, value in br_argv.flag_pairs(args, VALUE_FLAGS["update"]):
+    for flag, value in tracker_argv.flag_pairs(args, VALUE_FLAGS["update"]):
         if flag in UPDATE_STATUS_FLAGS:
             drafts += [
                 events.Draft(record, events.KIND_STATUS, _payload(kit_module, status=value))
@@ -124,12 +113,18 @@ def _update_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[o
                 )
                 for record in records
             ]
+        elif flag in tracker_argv.UPDATE_LABEL_FLAGS:
+            raise TrackerDivergenceError(
+                f"update {flag} accumulates against the labels the record already holds, "
+                f"and this translator cannot read the ledger; the write seam resolves it "
+                f"into --labels before translating (owned_write._resolve_labels)"
+            )
         else:
             raise TrackerDivergenceError(
-                f"br update {flag} has no owned-ledger equivalent, so mirroring it would "
-                f"drop the field br just wrote; add it to br_argv.UPDATE_FIELD_FLAGS if br "
-                f"stores the argv's own value under one export key — that table's note "
-                f"lists the flags measured not to, and why the mapping would diverge"
+                f"update {flag} has no owned-ledger equivalent, so translating it would "
+                f"drop the field the caller asked to write; add it to "
+                f"tracker_argv.UPDATE_FIELD_FLAGS if the argv's own value is what the ledger "
+                f"stores — that table's note lists the flags measured not to, and why"
             )
     return drafts
 
@@ -151,10 +146,10 @@ def _create_drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[ob
     record = reply.get("id") if isinstance(reply, dict) else None
     if not isinstance(record, str) or not record:
         raise TrackerDivergenceError("br create replied with no issue id to mirror")
-    positional = br_argv.positionals(args, VALUE_FLAGS["create"])
+    positional = tracker_argv.positionals(args, VALUE_FLAGS["create"])
     fields: dict[str, object] = {"title": positional[1]} if len(positional) > 1 else {}
     parent = ""
-    for flag, value in br_argv.flag_pairs(args, VALUE_FLAGS["create"]):
+    for flag, value in tracker_argv.flag_pairs(args, VALUE_FLAGS["create"]):
         name = CREATE_FIELD_FLAGS.get(flag)
         if name == "parent":
             parent = value
@@ -201,10 +196,10 @@ def _gate_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[obj
     reported ``inconclusive`` on every population. This is what fills it.
     """
     kind = kit_module.KIND_GATE
-    positional = br_argv.positionals(args, VALUE_FLAGS["gate report"])
+    positional = tracker_argv.positionals(args, VALUE_FLAGS["gate report"])
     if len(positional) != 3:
         raise TrackerDivergenceError(f"br gate report names no single issue: {' '.join(args)}")
-    values = dict(br_argv.flag_pairs(args, VALUE_FLAGS["gate report"]))
+    values = dict(tracker_argv.flag_pairs(args, VALUE_FLAGS["gate report"]))
     gate = values.get("--gate", "")
     provider = values.get("--provider", "")
     if not gate or not provider:
@@ -229,7 +224,7 @@ def _close_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[ob
     mirror rather than found by it.
     """
     events = kit_module.events
-    records = br_argv.positionals(args, VALUE_FLAGS["close"])[1:]
+    records = tracker_argv.positionals(args, VALUE_FLAGS["close"])[1:]
     if not records:
         raise TrackerDivergenceError(f"br close names no issue: {' '.join(args)}")
     return [
@@ -241,7 +236,7 @@ def _close_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[ob
 def _comment_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
     """Drafts for one ``br comments add`` — 45% of this repo's tracker traffic.
 
-    Read by position rather than through :func:`br_argv.positionals`, and that is the whole
+    Read by position rather than through :func:`tracker_argv.positionals`, and that is the whole
     point: the body is arbitrary free text, so a body beginning with ``-`` would be
     taken for a flag and silently dropped — losing exactly the checkpoint or rework
     marker the engine's whole policy layer is carried in.
@@ -257,10 +252,10 @@ def _comment_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[
 
 def _dep_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
     """Drafts for one ``br dep add``, recorded on the dependent."""
-    positional = br_argv.positionals(args, VALUE_FLAGS["dep add"])
+    positional = tracker_argv.positionals(args, VALUE_FLAGS["dep add"])
     if len(positional) != 4:
         raise TrackerDivergenceError(f"br dep add names no single edge: {' '.join(args)}")
-    values = dict(br_argv.flag_pairs(args, VALUE_FLAGS["dep add"]))
+    values = dict(tracker_argv.flag_pairs(args, VALUE_FLAGS["dep add"]))
     edge_type = values.get("-t") or values.get("--type") or ""
     if not edge_type:
         raise TrackerDivergenceError(f"br dep add names no edge type: {' '.join(args)}")
@@ -310,31 +305,3 @@ def drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[object]:
 # real translator before the real echo exists. Only `_create_drafts` reads the echo,
 # and only for the minted id, which no argv can carry.
 _ECHO_PLACEHOLDER = json.dumps({"id": "unminted", "status": _CREATED_STATUS})
-
-
-def refuse_untranslatable(kit_module: Any, args: Sequence[str]) -> None:
-    """Raise now what :func:`drafts` would raise after br has taken the write.
-
-    **The check is the translator itself, run against a placeholder echo, and that is
-    the point.** A second copy of "which argvs translate" is the defect class this
-    repository has paid for three times: two copies drift, and the one that drifts here
-    would either refuse a write br accepts or wave through one the mirror cannot record.
-    So the answer comes from the same function that will answer for real, and the drafts
-    it builds are discarded.
-
-    The one thing a placeholder cannot check is whether the echo will arrive at all, so
-    that is the single explicit rule below: a ``create`` without ``--json`` prints prose,
-    and the id br minted is then unrecoverable.
-
-    Raises:
-        TrackerDivergenceError: *args* is a write with no owned-ledger translation.
-    """
-    surface, _ = tracker_usage.split_invocation(list(args))
-    if surface == "create" and not any(
-        arg == "--json" or arg.startswith("--json=") for arg in args
-    ):
-        raise TrackerDivergenceError(
-            "br create without --json prints no record id, so the id it mints cannot be "
-            "mirrored; add --json"
-        )
-    drafts(kit_module, args, _ECHO_PLACEHOLDER)

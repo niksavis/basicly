@@ -35,10 +35,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import br, gate_source, run_record
-from .br import add_comment as _add_comment
-from .br import read_comments as _read_comments
-from .br import write as _write
+from . import gate_source, run_record, tracker
 from .config import (
     AUTONOMY_LEVELS,
     CHECKPOINTS,
@@ -50,6 +47,9 @@ from .config import (
 )
 from .integrity import VALIDATE_GATE
 from .plan_record import ACCEPTANCE_HEADING, has_heading
+from .tracker import add_comment as _add_comment
+from .tracker import read_comments as _read_comments
+from .tracker import write as _write
 
 # Prefix for the harness's own comment markers, so they are both machine-parseable
 # and obvious to a human reading the issue's comments.
@@ -132,7 +132,7 @@ def preflight_gate(gate: str) -> contextlib.AbstractContextManager[None]:
 
     A pre-flight gate reads the world, returns a verdict, and writes nothing. Any
     ``br`` write attempted inside the block raises
-    :class:`basicly.br.TrackerWriteRefusedError` — including one from a module this
+    :class:`basicly.tracker.TrackerWriteRefusedError` — including one from a module this
     engine calls, since the guard sits on br's own funnel rather than on a caller.
 
     Raises:
@@ -147,7 +147,7 @@ def preflight_gate(gate: str) -> contextlib.AbstractContextManager[None]:
             f"gate {gate!r} is typed {declared}, not {PREFLIGHT}; only a pre-flight "
             "gate is read-only (factory-loop.md §5.1)"
         )
-    return br.read_only(f"pre-flight gate {gate}")
+    return tracker.read_only(f"pre-flight gate {gate}")
 
 
 # --- Definition of Ready ----------------------------------------------------
@@ -194,7 +194,7 @@ def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
     enforced rather than merely documented.
     """
     with preflight_gate(DOR_GATE):
-        record = br.read_record(repo_root, issue_id) or {}
+        record = tracker.read_record(repo_root, issue_id) or {}
         body = record.get("description")
         missing = tuple(
             section
@@ -477,7 +477,7 @@ def _issue_is_closed(repo_root: Path, issue_id: str) -> bool:
     same test (basicly-i1s8) — sharing the reader is what keeps the two from
     drifting into two similar-looking special cases.
     """
-    record = br.read_record(repo_root, issue_id)
+    record = tracker.read_record(repo_root, issue_id)
     return record is not None and str(record.get("status", "")) == "closed"
 
 
@@ -982,7 +982,7 @@ def spend_convergence_refund(repo_root: Path, issue_id: str, gate: str) -> bool:
 # tracker rather than over the lane's own diff, each with the reason it does.
 #
 # Why the class needs a verdict of its own: every lane in a supervised pass shares
-# one `.beads` through the redirect, so a gate that reads the tracker reads *every*
+# one ledger through the redirect, so a gate that reads the tracker reads *every*
 # lane's finishing record. Measured 2026-08-03 — basicly-tcmy.5 widened its own
 # `## Scope` mid-flight and its finishing record then failed the working-set
 # ceiling, so basicly-tcmy.6 and basicly-tcmy.22 hit the identical assertion inside
@@ -1865,7 +1865,7 @@ def session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
     seen: dict[str, None] = {root_issue: None}  # insertion-ordered BFS
     queue = [root_issue]
     while queue:
-        record = br.read_record(repo_root, queue.pop(0))
+        record = tracker.read_record(repo_root, queue.pop(0))
         if record is None:
             continue
         for key, wanted in edges:

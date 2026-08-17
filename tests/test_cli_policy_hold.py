@@ -17,7 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, cli, decisions, policy
+from basicly import cli, decisions, policy
+from tests import fake_tracker
 from tests.test_cli_policy import _escalate, _FakeBr
 
 
@@ -26,7 +27,7 @@ def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     fake = _FakeBr()
     monkeypatch.setattr(policy, "_write", fake)
-    monkeypatch.setattr(br, "run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
 
 
 def _stall(bound: str = "spend") -> decisions.DecisionItem:

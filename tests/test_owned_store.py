@@ -2,12 +2,12 @@
 
 Moved out of `test_br_seam.py` when the §9.4 naming gate was made binding
 (basicly-u2hl.14), along the boundary the module itself draws — *resolution* against
-*the seam*. Nothing here spawns br, mirrors a write or reads an event: what the dual
-write and the flip then *do* with these answers stays with `br.run_br`, which is where
+*the seam*. Nothing here spawns tracker, mirrors a write or reads an event: what the dual
+write and the flip then *do* with these answers stays with `tracker.run_br`, which is where
 a stand-in br and a real ledger are needed to say anything.
 
 Asserted against :mod:`basicly.owned_store` and, where a caller spells it that way,
-against the `br` re-export as well — `br.tracker_mode` and `br.LEDGER_DIR` are how the
+against the `br` re-export as well — `tracker.tracker_mode` and `tracker.LEDGER_DIR` are how the
 engine reaches these, so a split that left a re-export behind would pass one and fail
 the other.
 """
@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, config, owned_store, tracker_usage
+from basicly import config, owned_store, tracker, tracker_paths
 from basicly.owned_store import TrackerDivergenceError, _mode_reader
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -30,19 +30,23 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 def test_importing_config_installs_the_mode_reader() -> None:
     """The seam is put in the repo's declared mode by an import, not by a caller.
 
-    `basicly.br` cannot import `basicly.config` — `config -> runner -> run_record -> br`
+    `basicly.tracker` cannot import `basicly.config` — `config -> runner -> run_record -> br`
     already runs the other way — so the reader is installed from above. That inversion
     is invisible at both ends, which is exactly why it is asserted here: without it the
-    seam silently answers ``external`` for a repo that declared ``owned``, and the first
-    symptom would be reads coming from the wrong store.
+    seam refuses every read and write, and the refusal reads nothing like a missing
+    import.
     """
     assert _mode_reader == [config.load_tracker_mode]
 
 
-def test_a_repo_that_declares_nothing_is_external(tmp_path: Path) -> None:
-    """The pre-cutover behaviour is what a consumer who never heard of this gets."""
+def test_a_repo_that_declares_nothing_gets_the_owned_ledger(tmp_path: Path) -> None:
+    """A consumer who never heard of this gets the only store there is.
+
+    The default was ``external`` while a second store existed; with that deleted it has
+    to be the one the engine can reach (basicly-vkh0.42.7).
+    """
     assert config.load_tracker_mode(tmp_path) == owned_store.DEFAULT_TRACKER_MODE
-    assert owned_store.tracker_mode(tmp_path) == owned_store.MODE_EXTERNAL
+    assert owned_store.tracker_mode(tmp_path) == owned_store.MODE_OWNED
 
 
 @pytest.mark.parametrize("mode", owned_store.TRACKER_MODES)
@@ -50,33 +54,28 @@ def test_each_declared_rung_reaches_the_seam(tmp_path: Path, mode: str) -> None:
     """Every value the ladder has is readable end to end, not just the default."""
     (tmp_path / "basicly.toml").write_text(f'[tracker]\nmode = "{mode}"\n', encoding="utf-8")
     assert owned_store.tracker_mode(tmp_path) == mode
-    assert br.tracker_mode(tmp_path) == mode
+    assert tracker.tracker_mode(tmp_path) == mode
 
 
 def test_a_mode_outside_the_ladder_is_refused(tmp_path: Path) -> None:
     """A value the engine cannot honour is an error, never a silent default.
 
-    The two behaviours differ in *which store answers a read*, so defaulting a
-    misspelled ``owned`` back to ``external`` would leave the file stating one thing
-    and the engine doing another — with no diff to review.
+    Defaulting a misspelled mode back to the only real one would leave the file stating
+    a behaviour nothing performs, with no diff to review.
     """
     (tmp_path / "basicly.toml").write_text('[tracker]\nmode = "flipped"\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="not one of external, dual, owned"):
+    with pytest.raises(ValueError, match="not one of owned"):
         config.load_tracker_mode(tmp_path)
 
 
-def test_the_ladder_is_ordered_and_starts_where_a_consumer_starts() -> None:
-    """§5 walks the rungs in this order, and `external` is rung zero.
+def test_the_ladder_has_collapsed_to_its_last_rung() -> None:
+    """One store, so one mode — and a value outside it states a behaviour nothing performs.
 
-    Reordering them would silently change what "the rung above" means to a reader of
-    `basicly.toml`, which is the only place the choice is recorded.
+    The key survives its ladder on purpose: a consumer's committed ``mode = "owned"``
+    must not be refused as an unknown name (basicly-vkh0.42.7).
     """
-    assert owned_store.TRACKER_MODES == (
-        owned_store.MODE_EXTERNAL,
-        owned_store.MODE_DUAL,
-        owned_store.MODE_OWNED,
-    )
-    assert owned_store.DEFAULT_TRACKER_MODE == owned_store.MODE_EXTERNAL
+    assert owned_store.TRACKER_MODES == (owned_store.MODE_OWNED,)
+    assert owned_store.DEFAULT_TRACKER_MODE == owned_store.MODE_OWNED
 
 
 def test_with_no_reader_installed_the_mode_is_refused_not_defaulted(tmp_path: Path) -> None:
@@ -109,10 +108,12 @@ def test_the_ledger_is_one_per_repo_not_one_per_worktree(tmp_path: Path) -> None
     did not follow the redirect would lose every write a lane made.
     """
     base = tmp_path / "base"
-    (base / ".beads").mkdir(parents=True)
+    (base / owned_store.LEDGER_DIR).mkdir(parents=True)
     worktree = tmp_path / "wt"
-    (worktree / ".beads").mkdir(parents=True)
-    (worktree / ".beads" / "redirect").write_text(str(base / ".beads"), encoding="utf-8")
+    (worktree / owned_store.LEDGER_DIR).mkdir(parents=True)
+    (worktree / owned_store.LEDGER_DIR / tracker_paths.REDIRECT_NAME).write_text(
+        str(base), encoding="utf-8"
+    )
 
     assert owned_store.ledger_dir(worktree) == base / owned_store.LEDGER_DIR
     assert owned_store.ledger_dir(base) == base / owned_store.LEDGER_DIR
@@ -126,9 +127,9 @@ def test_the_ledger_sits_beside_the_other_committed_ledger_artifacts() -> None:
     drift from either without anything noticing.
     """
     ledger = owned_store.LEDGER_DIR
-    assert ledger == tracker_usage.LEDGER_FILE.parent
+    assert ledger == tracker_paths.LEDGER_DIR_NAME
     assert ledger == Path(".basicly") / "ledger"
-    assert br.LEDGER_DIR is owned_store.LEDGER_DIR
+    assert tracker.LEDGER_DIR is owned_store.LEDGER_DIR
 
 
 # --- reaching the installed kit -----------------------------------------------
@@ -177,5 +178,5 @@ def test_a_kit_module_beside_the_differential_is_reached_by_name() -> None:
 
 
 def test_a_divergence_is_a_runtime_error_a_br_caller_already_handles() -> None:
-    """So the message is what `br.run_br` callers already print, not a new failure mode."""
+    """So the message is what `tracker.run_br` callers already print, not a new failure mode."""
     assert issubclass(TrackerDivergenceError, RuntimeError)

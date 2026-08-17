@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import artifact_record, br, decompose, handoff, loop, merge, verify, worktree
+from basicly import artifact_record, decompose, handoff, loop, merge, tracker, verify, worktree
 from basicly.config import PolicyConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import GateStatus
@@ -60,16 +60,18 @@ class _DecomposeBr(_FakeBr):
 def decompose_br(monkeypatch: pytest.MonkeyPatch) -> _DecomposeBr:
     """Route every store seam one decomposition touches at a stateful fake."""
     fake = _DecomposeBr()
-    monkeypatch.setattr(br, "add_comment", fake.add)
-    monkeypatch.setattr(br, "read_comments", fake.read)
-    monkeypatch.setattr(br, "try_add_comment", fake.add_soft)
-    monkeypatch.setattr(br, "try_read_comments", fake.read)
-    monkeypatch.setattr(br, "create_record", fake.create)
-    monkeypatch.setattr(br, "read_record", fake.record)
-    monkeypatch.setattr(br, "export_records", lambda _r: ())
+    monkeypatch.setattr(tracker, "add_comment", fake.add)
+    monkeypatch.setattr(tracker, "read_comments", fake.read)
+    monkeypatch.setattr(tracker, "try_add_comment", fake.add_soft)
+    monkeypatch.setattr(tracker, "try_read_comments", fake.read)
+    monkeypatch.setattr(tracker, "create_record", fake.create)
+    monkeypatch.setattr(tracker, "read_record", fake.record)
+    monkeypatch.setattr(tracker, "all_records", lambda _r: ())
     # These children declare no edge, so nothing may reach the generic write seam; a
     # refusal states that rather than absorbing a call the fake does not model.
-    monkeypatch.setattr(br, "write", lambda *_a, **_k: pytest.fail("wrote through br.write"))
+    monkeypatch.setattr(
+        tracker, "write", lambda *_a, **_k: pytest.fail("wrote through tracker.write")
+    )
     monkeypatch.setattr(decompose.dependency_graph, "blocking_cycles", lambda *_a, **_k: ())
     return fake
 

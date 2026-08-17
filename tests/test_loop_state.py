@@ -8,15 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, loop_state, policy
+from basicly import loop_state, policy, tracker
 from basicly.config import VERIFY_GATE_PROVIDER, PolicyConfig
 from basicly.loop_state import WorktreeBinding
 from basicly.policy import GateStatus
+from tests import fake_tracker
 
 CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 
 REPO_ROOT = Path(__file__).parent.parent
-KIT_SOURCE = REPO_ROOT / br.KIT_TRACKER_DIR
+KIT_SOURCE = REPO_ROOT / tracker.KIT_TRACKER_DIR
 
 # Injected rather than read, per this repo's platform-hermetic rule: the ledger's only
 # wall clock is this argument, and the ranking under test must not read it at all.
@@ -31,7 +32,7 @@ class _Proc:
 
 
 class _FakeBr:
-    """Stateful stand-in for br, routed by subcommand.
+    """Stateful stand-in for tracker, routed by subcommand.
 
     Serves one issue record plus its gate list and comments, so read_node_state
     (which delegates gate/checkpoint/rework reads to the policy engine) resolves
@@ -83,14 +84,11 @@ class _FakeBr:
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     monkeypatch.setattr(policy, "_write", fake)
-    # The record read goes through `br.read_record`, the one seam every consumer
-    # shares (basicly-tcmy.14), so the fake is installed on the spawn *it* uses
-    # rather than on each module's alias. `_Proc` already carries a returncode,
-    # which is what the seam checks before parsing.
-    monkeypatch.setattr(br, "try_run_br", fake)
-    # The ranking read is behind its own seam for the same reason (`br.read_ranking`,
-    # basicly-vkh0.20), and that one spawns through `run_br`.
-    monkeypatch.setattr(br, "run_br", fake)
+    # Installed on the seams every consumer shares (basicly-tcmy.14, basicly-vkh0.20)
+    # rather than on each module's alias, which is what the seams exist for. The graph
+    # half is separate because most fixtures never reach it.
+    fake_tracker.install(monkeypatch, fake)
+    fake_tracker.install_graph(monkeypatch, fake)
 
 
 def _gate_status(*, can_advance: bool) -> GateStatus:
@@ -316,14 +314,14 @@ def test_ready_ranking_captures_the_policy_envelope(
                 {"rank": 1, "fallback_rank": 3, "score": 49, "issue": {"id": "a", "title": "x"}},
             ],
             scheduler_envelope={
-                "schema": "br.scheduler.v1",
+                "schema": "tracker.scheduler.v1",
                 "fallback_policy": {"sort": "priority ASC, created_at ASC, id ASC"},
             },
         ),
     )
     ranking = loop_state.ready_ranking(tmp_path)
 
-    assert ranking.schema == "br.scheduler.v1"
+    assert ranking.schema == "tracker.scheduler.v1"
     assert ranking.fallback_sort == "priority ASC, created_at ASC, id ASC"
     # Evidence weighting moved this node from 3rd to 1st; recording only the final
     # rank would hide that the score is what did it.
@@ -356,12 +354,12 @@ def test_blocked_ids_parses_blocked_list(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 def _owned_repo(tmp_path: Path) -> Path:
     """A checkout with the tracker kit installed and ``[tracker] mode`` flipped to owned."""
-    kit_dir = tmp_path / br.KIT_TRACKER_DIR
+    kit_dir = tmp_path / tracker.KIT_TRACKER_DIR
     kit_dir.mkdir(parents=True)
     for source in sorted(KIT_SOURCE.glob("*.py")):
         shutil.copy2(source, kit_dir / source.name)
     (tmp_path / "basicly.toml").write_text(
-        f'[tracker]\nmode = "{br.MODE_OWNED}"\n', encoding="utf-8"
+        f'[tracker]\nmode = "{tracker.MODE_OWNED}"\n', encoding="utf-8"
     )
     return tmp_path
 
@@ -372,10 +370,10 @@ def _seed_ledger(repo: Path) -> None:
     Enough graph for both ranking terms to move — the blocked bead is refused, and the
     one it waits on leads on priority *and* on the dependent it releases.
     """
-    kit = br.kit(repo)
+    kit = tracker.kit(repo)
     events, edge = kit.events, kit.migrate
     kit.events.append(
-        br.ledger_dir(repo),
+        tracker.ledger_dir(repo),
         [
             events.Draft("rank-aa01", events.KIND_CREATED, {"title": "critical", "priority": 0}),
             events.Draft("rank-aa01", events.KIND_STATUS, {"status": "open"}),
@@ -401,7 +399,7 @@ def test_ready_ranking_reads_the_owned_scorer_after_the_flip(tmp_path: Path) -> 
     """
     repo = _owned_repo(tmp_path)
     _seed_ledger(repo)
-    scheduler = br.kit(repo, br.SCHEDULER_KIT_MODULE)
+    scheduler = tracker.kit(repo, tracker.SCHEDULER_KIT_MODULE)
 
     ranking = loop_state.ready_ranking(repo)
 
@@ -420,7 +418,7 @@ def test_a_ranking_from_the_owned_scorer_stays_explainable(tmp_path: Path) -> No
     """
     repo = _owned_repo(tmp_path)
     _seed_ledger(repo)
-    scheduler = br.kit(repo, br.SCHEDULER_KIT_MODULE)
+    scheduler = tracker.kit(repo, tracker.SCHEDULER_KIT_MODULE)
 
     leader = loop_state.ready_ranking(repo).nodes[0]
 
@@ -443,11 +441,11 @@ def test_a_flipped_repo_without_the_kit_stops_rather_than_reading_as_no_work(
 ) -> None:
     """An empty answer would read as "nothing is ready" and idle the loop silently.
 
-    The opposite call to `br.owned_record`'s, and deliberately so: an absent *record* is an
+    The opposite call to `tracker.owned_record`'s, and deliberately so: an absent *record* is an
     ordinary fact, while an absent *ranking* is indistinguishable from a quiet backlog.
     """
     (tmp_path / "basicly.toml").write_text(
-        f'[tracker]\nmode = "{br.MODE_OWNED}"\n', encoding="utf-8"
+        f'[tracker]\nmode = "{tracker.MODE_OWNED}"\n', encoding="utf-8"
     )
-    with pytest.raises(br.TrackerDivergenceError, match="not installed"):
+    with pytest.raises(tracker.TrackerDivergenceError, match="not installed"):
         loop_state.ready_ranking(tmp_path)

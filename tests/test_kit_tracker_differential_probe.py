@@ -8,7 +8,7 @@ shown to hold still, because a live source is read twice over a wall-clock windo
 anything else writing the tracker moves it in between.
 
 That is not hypothetical: on 2026-08-16 `basicly tracker shadow` refused
-`br.py:_live_reference` — a source whose `views` callable ignores the event set it is
+`tracker.py:_live_reference` — a source whose `views` callable ignores the event set it is
 handed and spawns `br` — as a derivative of the ledger it cannot read.
 
 Nothing here spawns a process or reads a clock: the reference is a callable answering from

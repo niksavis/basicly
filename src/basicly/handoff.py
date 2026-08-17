@@ -19,7 +19,7 @@ form*, the same cut ``plan_gate``/``plan_record`` is drawn on.
 ## Where an artifact is stored, and why not in the ledger directly
 
 D13 resolves storage as typed events in the owned ledger. :mod:`basicly.artifact_record`
-reaches that through ``br.add_comment``/``br.read_comments`` — the seam every other
+reaches that through ``tracker.add_comment``/``tracker.read_comments`` — the seam every other
 ``[harness-*]`` marker family already goes through — rather than by appending to
 ``.basicly/ledger/`` itself. Two measured reasons, and the second is decisive:
 
@@ -29,7 +29,7 @@ reaches that through ``br.add_comment``/``br.read_comments`` — the seam every 
   ``comment`` event the moment the mode flips — which is exactly what "a format we own,
   which migrates with us" was for.
 * **A direct ledger append would refuse the landing it precedes.** The loop's advance
-  commits base-checkout dirt only under ``.beads/`` (``merge.commit_tracker_state``);
+  commits base-checkout dirt only under the ledger (``merge.commit_tracker_state``);
   anything else is foreign dirt and blocks the merge (``merge.foreign_dirt``). An
   artifact written into the committed ``.basicly/ledger/`` on the way into BUILD would
   wedge the very landing it exists to gate.
@@ -40,9 +40,9 @@ So this track neither waits on ``basicly-vkh0.23`` nor writes past the seam: it 
 **The bound that choice carries, measured.** Below ``MODE_OWNED`` a marker body is one
 argv element of ``br comments add``, and Windows caps a command line at 32,767
 characters. This repo's largest real decomposition — ``basicly-u2hl``, 33 children —
-renders a **21,890-character** plan (measured 2026-08-08 against ``.beads/issues.jsonl``),
+renders a **21,890-character** plan (measured 2026-08-08 against the committed tracker),
 so a plan roughly half as large again would fail to spawn on Windows while succeeding on
-POSIX. It fails loudly when it does: ``br.add_comment`` raises and the decomposition
+POSIX. It fails loudly when it does: ``tracker.add_comment`` raises and the decomposition
 stops. The ceiling belongs to the transport, not to the artifact, and it disappears at
 ``MODE_OWNED``, where the fact is appended to the ledger with no process started.
 

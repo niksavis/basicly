@@ -12,7 +12,8 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import br, decider_contract, decision_marker
+from basicly import decider_contract, decision_marker
+from tests import fake_tracker
 
 if TYPE_CHECKING:
     import pytest
@@ -39,8 +40,7 @@ class _FakeBr:
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
-    monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
 
 
 def test_parse_verdict_fails_closed() -> None:

@@ -8,10 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, integrity, loop, loop_state, policy, validate_gate, wip
+from basicly import integrity, loop, loop_state, policy, validate_gate, wip
 from basicly.config import ENGINE_GATE_PROVIDERS, LOOP_PHASES, VERIFY_GATE_PROVIDER, PolicyConfig
 from basicly.loop_state import WorktreeBinding
 from basicly.policy import GateStatus
+from tests import fake_tracker
 
 CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 GATE = validate_gate.VALIDATE_GATE
@@ -60,8 +61,7 @@ class _FakeBr:
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     monkeypatch.setattr(policy, "_write", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
-    monkeypatch.setattr(br, "run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
 
 
 def _engine_gate(gate: str, passed: bool) -> dict:
@@ -316,7 +316,7 @@ def test_the_engine_records_the_verdict_under_its_own_provider(
     """A dispatched agent reaching the real tracker must not satisfy its own gate.
 
     `br gate report` authenticates nothing (basicly-jr0l.51), so the provider is what
-    separates an engine result from a self-certified one. It is also *required* by br
+    separates an engine result from a self-certified one. It is also *required* by tracker
     — a report without it errors and records nothing, which is why the agent is asked
     for a verdict line instead of a tracker write.
     """

@@ -13,13 +13,12 @@ rather than assumed.
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from basicly import br, dependency_graph, owned_store
+from basicly import dependency_graph, owned_store
 from tests.test_owned_write import no_br, owned_repo
 
 __all__ = ["no_br"]  # re-exported so the fixture resolves in this module
@@ -107,7 +106,7 @@ def test_a_parent_child_edge_is_not_a_blocker_and_a_closed_dependent_is_not_bloc
 
 @pytest.mark.usefixtures("no_br")
 def test_a_tombstoned_record_is_not_reported_as_blocked(tmp_path: Path) -> None:
-    """The absence rule `br.owned_record` states, at the set read.
+    """The absence rule `tracker.owned_record` states, at the set read.
 
     A deleted bead keeps its status in the fold, so without this clause it would still be
     reported — and the loop would explain a lane's hold by a bead nobody can open.
@@ -123,24 +122,14 @@ def test_a_tombstoned_record_is_not_reported_as_blocked(tmp_path: Path) -> None:
     assert dependency_graph.owned_blocked(repo) == ()
 
 
-def test_the_external_half_reads_brs_own_payload(tmp_path: Path) -> None:
-    """A bare list of records is br's shape; a row carrying no id is skipped, not raised."""
-    repo = owned_repo(tmp_path, owned_store.MODE_DUAL)
-    payload = json.dumps([{"id": "wpc-1.2"}, {"no": "id"}, "not an object"])
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(br, "run_br", lambda *_a, **_k: _proc(payload))
-        assert dependency_graph.blocked(repo) == ("wpc-1.2",)
-
-
-def test_the_flipped_read_answers_from_the_fold_while_br_holds_the_other_answer(
+def test_the_read_answers_from_the_fold_with_nothing_spawned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The comparison that makes the flip visible: the two stores are made to disagree."""
+    """A spawn fails the test: "the store could not answer" must not read as no blockers."""
     repo = owned_repo(tmp_path)
     _graph(repo, {"wpc-1.2": [("wpc-1.1", "blocks")]}, {"wpc-1.1": "open", "wpc-1.2": "open"})
     monkeypatch.setattr(
-        br, "run_br", lambda *_a, **_k: pytest.fail("the flipped read spawned a process")
+        subprocess, "run", lambda *_a, **_k: pytest.fail("the read spawned a process")
     )
 
     assert dependency_graph.blocked(repo) == ("wpc-1.2",)
@@ -212,13 +201,3 @@ def test_the_flipped_cycle_read_finds_a_cycle_the_ledgers_edges_close(tmp_path: 
     )
 
     assert dependency_graph.blocking_cycles(repo) == (("wpc-1.1", "wpc-1.2"),)
-
-
-def test_the_external_cycle_read_accepts_both_shapes_br_reports(tmp_path: Path) -> None:
-    """A cycle is spelled either as a bare list or as an object carrying ``issues``."""
-    repo = owned_repo(tmp_path, owned_store.MODE_DUAL)
-    payload = json.dumps({"cycles": [["b", "a"], {"issues": ["d", "c"]}]})
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(br, "run_br", lambda *_a, **_k: _proc(payload))
-        assert dependency_graph.blocking_cycles(repo) == (("a", "b"), ("c", "d"))

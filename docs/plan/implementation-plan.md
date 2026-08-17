@@ -25,7 +25,7 @@ documents are the arguments behind the decisions it records; this file is the or
    real inputs. A fail-open gate is indistinguishable from a passing one. Measured 2026-08-08:
    three separate claims in this file were false against the tree.
 4. **Ask the tracker for counts, never this file.** `br` is always right about status. Use
-   `.beads/issues.jsonl` for whole-tracker questions — `br list --json` caps its result and drops
+   the committed ledger for whole-tracker questions — a paged query caps its result and drops
    closed rows. Structural figures that *are* here come from a generated block (§3).
 5. **Measure before you dispatch.** Take the baseline in base, record it on the bead, diff against
    it at review. A lane that rewords a number instead of measuring it produces a regression under
@@ -72,8 +72,8 @@ hand-written copy of them was stale within days:
 
 | Measure | Value |
 | --- | --- |
-| Engine modules (`src/basicly/*.py`) | 104 |
-| Test files | 199 |
+| Engine modules (`src/basicly/*.py`) | 101 |
+| Test files | 193 |
 | `[[verify.checks]]` declared | 29 |
 | …of which run in `--mode fast` | 24 |
 | …of which run in `--mode full` | 28 |
@@ -162,7 +162,7 @@ this axis is **wiring, not authoring**.
 | Was written | Measured 2026-08-08 |
 | --- | --- |
 | "Step 1 has not been run… `.basicly/ledger/` holds no `events-*.jsonl`" | the import **ran** (`b97a653`): 3,775 events over 643 records |
-| `br` spawn sites 43 / 44 | **32**, across 12 modules [M 2026-08-14, `rg 'run_br\(' src/basicly/*.py` less `br.py`] — the 43/44 count included `from .br import` lines and docstrings, and 31/11 was this row's own reading one week stale |
+| External tracker spawn sites 43 / 44 | **0** [M 2026-08-17, `rg 'run_br\(' src/basicly` — the functions are deleted]. Was 32 across 12 modules on 2026-08-14; the 43/44 count had included import lines and docstrings |
 | 20 verify checks | **24** — and this row is why §3's figures moved into a generated block |
 | `basicly-tcmy.34` "the remaining P0" | **closed** 2026-08-05 |
 
@@ -599,6 +599,8 @@ exist.
 | `tutorial/first-loop.md` | **Consumer-facing** | Never deleted while `basicly install` ships. Re-executed against a fresh repo whenever a command or its output changes (`imnu.2`). |
 | `how-to/customize-the-catalog.md`, `how-to/wire-up-the-verify-gate.md`, `how-to/unblock-a-commit.md`, `how-to/upgrade-and-check-drift.md`, `how-to/run-parallel-lanes.md`, `how-to/resume-a-track.md` | **Consumer-facing** | One page per recurring operation; a page goes when its operation does. Rationale stays in architecture — a how-to that starts explaining *why* is drifting into the reference. |
 | `research/2026-07-26-sota-review.md` | **Dated evidence** | A review of the field on one date, plus Appendix A — the licence and provenance register the tracker work's clean-room boundary rests on. Delete when nothing cites it. |
+| `research/2026-08-17-deepseek-harness.md` | **Dated evidence** | What the DeepSeek harness is and how its concepts line up against ours, read from the paper and the cloned source on one date. Input to a critique and an architecture revision, neither of which it performs. Delete when nothing cites it. |
+| `research/2026-08-17-archify-visualization.md` | **Dated evidence** | Whether archify serves the interactive factory dashboard. Verdict: rejected for work state — its node schema is closed and carries no status field — with a narrow architecture-illustration case left open. Delete when nothing cites it. |
 
 **Deleting a document means removing its references from the code first.** Under the owner rule the
 code must read well enough not to need them, so a prose pointer at a design document is deleted
@@ -674,10 +676,10 @@ Phase membership is a tracker **label**, not a re-parenting, so a bead's parent 
 origin. Query it rather than reading a list here:
 
 ```sh
-br list --label phase-2          # membership
+basicly tracker list --status open   # the set
 basicly loop status <issue>      # where one bead actually is
-br scheduler                     # what to pick up next
-br dep tree <issue>              # what blocks it
+basicly tracker ready                # what to pick up next
+basicly tracker blocked              # what is held, and by what
 ```
 
 | Phase | Epic | Release |

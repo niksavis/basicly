@@ -19,8 +19,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import br, plan_record
+from basicly import plan_record
 from basicly.decompose import ChildSpec
+from tests import fake_tracker
 
 if TYPE_CHECKING:
     import pytest
@@ -80,8 +81,7 @@ class FakeBr:
 
 def install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., Proc]) -> None:
     """Route both funnels every decomposition seam reaches the external store through."""
-    monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
 
 
 def planned(title: str, *scope: str, **overrides: object) -> ChildSpec:

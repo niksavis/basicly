@@ -10,7 +10,7 @@ contract, and the loop states that produce and consume artifacts stay with
 `tmp_path` rather than `work_repo` throughout, for the same reason: this module reads and
 writes markers through the `br` seam and has no opinion about the repo it is handed, so a
 repo with the catalog schemas installed would only slow the tests down without changing an
-answer. The seam is faked at its own funnel — `br.run_br` — so a write is readable back
+answer. The seam is faked at its own funnel — `tracker.run_br` — so a write is readable back
 through the fake and a round trip is a real round trip.
 
 `_FakeBr` and the `fake_br` fixture live here rather than in `test_handoff.py` because the
@@ -25,7 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from basicly import artifact_record, br
+from basicly import artifact_record
+from tests import fake_tracker
 
 KIND = "implementation-plan"
 OTHER_KIND = "change-summary"
@@ -65,9 +66,9 @@ class _FakeBr:
 
 @pytest.fixture
 def fake_br(monkeypatch: pytest.MonkeyPatch) -> _FakeBr:
-    """Route the marker seam's own funnel — ``br.run_br`` — at a stateful fake."""
+    """Route the marker seam's own funnel — ``tracker.run_br`` — at a stateful fake."""
     fake = _FakeBr()
-    monkeypatch.setattr(br, "run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
     return fake
 
 

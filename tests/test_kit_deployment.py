@@ -47,7 +47,7 @@ from types import ModuleType
 
 import pytest
 
-from basicly import tracker_surface
+from basicly import tracker_paths
 
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".scripts" / "kit_deployment.py"
@@ -474,13 +474,13 @@ def test_the_gate_is_declared_as_a_verify_check() -> None:
 
 
 def test_the_default_ledger_is_the_directory_this_repo_actually_uses() -> None:
-    """The gate's one host-layout literal is tied to the committed artifact beside it.
+    """The gate's one host-layout literal is tied to the engine's own resolver.
 
     The kit names no path — it takes its directory as an argument — so ``LEDGER_DIR`` is a
-    fact about this repo, and ``tracker_surface.INVENTORY_FILE`` is the other file in the
-    same directory. Moving one without the other is what this catches.
+    fact about this repo, and ``tracker_paths`` is where the engine states the same fact.
+    Moving one without the other is what this catches.
     """
-    assert tracker_surface.INVENTORY_FILE.parent == gate.LEDGER_DIR
+    assert tracker_paths.LEDGER_DIR_NAME == gate.LEDGER_DIR
     assert gate.KIT_DIR == KIT_RELATIVE
 
 

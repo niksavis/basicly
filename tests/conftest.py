@@ -38,6 +38,9 @@ from basicly.checkout import COLOUR_ENV_FORCING, GIT_ENV_KEPT
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# This checkout's own tracker. No test may write to it; see the guard below.
+LIVE_LEDGER = REPO_ROOT / ".basicly" / "ledger"
+
 # The headless adapters `auto` detects. Kept here rather than imported from
 # basicly.runner on purpose: if a rename ever desynchronizes the two, the suite
 # should start seeing an ambient CLI and fail loudly, not silently stop pinning.
@@ -180,7 +183,7 @@ def _hide_ambient_agent_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make any agent CLI the host has on PATH unresolvable for the whole suite.
 
     Patches ``shutil.which`` itself, since both runner call sites default to it.
-    Every other binary — git, uv, pre-commit, br — still resolves normally, so
+    Every other binary — git, uv, pre-commit, tracker — still resolves normally, so
     this changes exactly three answers and nothing else.
     """
     real_which = shutil.which
@@ -213,6 +216,44 @@ def _reset_process_globals():
     yield
     runner.reset_process_budget()
     session.clear_overrides()
+
+
+@pytest.fixture(autouse=True)
+def _the_live_ledger_is_never_written(request: pytest.FixtureRequest):
+    """Fail a test that appended to this checkout's own tracker (basicly-e2mz.43).
+
+    **This has happened.** A fixture that failed to run left ``Path.cwd()`` pointing at
+    the real repository, and four events for a test's own fixture record landed in the
+    committed log — which is append-only, so the repair was an edit to a file that is
+    supposed to have none.
+
+    The guard is a byte comparison across the test rather than a patched write path: the
+    engine reaches its store through several seams and a kit loaded by path bypasses all
+    of them, so the only thing that catches every route is the artifact itself. Read once
+    per test, which costs one stat and one read of a file the suite is not otherwise
+    touching.
+
+    A test that legitimately writes here does not exist and should not: `flipped_tracker`
+    exists so a test that needs a real ledger gets its own.
+    """
+    logs = sorted(LIVE_LEDGER.glob("events-*.jsonl")) if LIVE_LEDGER.is_dir() else []
+    before = {path: path.read_bytes() for path in logs}
+    yield
+    for path, held in before.items():
+        if path.read_bytes() != held:
+            path.write_bytes(held)
+            pytest.fail(
+                f"{request.node.nodeid} wrote to this checkout's own ledger at {path}. "
+                f"The change has been undone. Use `tests.flipped_tracker.flipped_repo` "
+                f"for a real ledger of its own, and check that every fixture it needs "
+                f"actually runs — a fixture named but not requested is how this happens."
+            )
+    if LIVE_LEDGER.is_dir():
+        appeared = sorted(set(LIVE_LEDGER.glob("events-*.jsonl")) - set(before))
+        if appeared:
+            for path in appeared:
+                path.unlink()
+            pytest.fail(f"{request.node.nodeid} created a log in this checkout: {appeared}")
 
 
 @pytest.fixture(scope="session")

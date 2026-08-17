@@ -15,11 +15,10 @@ from collections.abc import Collection, Sequence
 # write silently missing half of what br recorded stays invisible until the differential
 # runs.
 #
-# Each name is br's own export key, measured 2026-08-16. Four families fail the test
-# above and stay out: the label flags accumulate rather than replace (`--set-labels a
-# --set-labels b` leaves both), `--claim` carries no value, `--due`/`--defer` are
-# re-based against the host clock into `due_at`/`defer_until`, and `--estimate` lands
-# under `estimated_minutes`, which no record in this repo's export holds.
+# Each name is the ledger's own field key, measured 2026-08-16. Three families fail the
+# test above and stay out: `--claim` carries no value, `--due`/`--defer` are re-based
+# against the host clock into `due_at`/`defer_until`, and `--estimate` lands under
+# `estimated_minutes`, which no record in this repo's ledger holds.
 UPDATE_FIELD_FLAGS = {
     "--title": "title",
     "-d": "description",
@@ -36,8 +35,37 @@ UPDATE_FIELD_FLAGS = {
     "--assignee": "assignee",
     "--owner": "owner",
     "--external-ref": "external_ref",
+    "--labels": "labels",
 }
 UPDATE_STATUS_FLAGS = frozenset({"-s", "--status"})
+
+# Whether each accumulating label flag adds its value. Out of `UPDATE_FIELD_FLAGS`
+# because that table is replacement-only: `owned_write._resolve_labels` resolves these
+# against the record's own set under the ledger lock and rewrites both into one
+# `--labels`, so nothing below the seam sees them (basicly-wpc8).
+UPDATE_LABEL_FLAGS = {"--add-label": True, "--remove-label": False}
+
+LABEL_SEPARATOR = ","
+LABELS_FIELD = "labels"
+
+
+def labels_of(value: object) -> tuple[str, ...]:
+    """A folded ``labels`` field as the labels it names, whichever shape holds it.
+
+    Two shapes are legitimate: a ``created`` event stores the list the import extracted,
+    and a ``field`` event cannot, because ``value`` is one of ``events.TRUNCATABLE_KEYS``
+    and the schema refuses a container under a capped key.
+
+    **Split, never iterated** — a bare string iterates as its characters, which is how a
+    lane inherits twelve one-letter labels. A label carrying a separator cannot arise:
+    a write splits its flag's value on the same one.
+    """
+    if isinstance(value, str):
+        return tuple(part for part in (raw.strip() for raw in value.split(LABEL_SEPARATOR)) if part)
+    if isinstance(value, list | tuple):
+        return tuple(str(item) for item in value)
+    return ()
+
 
 # `br create`'s flags, as the fields the created record carries.
 CREATE_FIELD_FLAGS = {
@@ -58,7 +86,7 @@ CREATE_FIELD_FLAGS = {
 # "every token that is not a flag" would collect `--note`'s free text as one.
 VALUE_FLAGS: dict[str, frozenset[str]] = {
     "create": frozenset(CREATE_FIELD_FLAGS) | {"-a", "--assignee"},
-    "update": frozenset(UPDATE_FIELD_FLAGS) | UPDATE_STATUS_FLAGS,
+    "update": frozenset(UPDATE_FIELD_FLAGS) | UPDATE_STATUS_FLAGS | frozenset(UPDATE_LABEL_FLAGS),
     "close": frozenset({"--reason"}),
     "dep add": frozenset({"-t", "--type"}),
     "gate report": frozenset({"--gate", "--provider", "--status", "--note", "--actor"}),

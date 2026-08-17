@@ -208,6 +208,9 @@ def test_the_ten_modules_this_gate_was_filed_for_are_covered_by_an_exact_name() 
 
     Exact rather than derived, because each of these had its tests sitting under the
     origin module's name and a derived match would have been satisfied by that.
+
+    ``surface_report`` left the list with the module: it enumerated the external tracker's
+    CLI surface, and there is none (basicly-vkh0.42.7).
     """
     stems = gate.test_stems(gate._tracked(REPO_ROOT, gate.TEST_ROOT))
 
@@ -220,7 +223,6 @@ def test_the_ten_modules_this_gate_was_filed_for_are_covered_by_an_exact_name() 
         "repair_brief",
         "skill_source",
         "spend_calibration",
-        "surface_report",
         "ui",
     } <= stems
 

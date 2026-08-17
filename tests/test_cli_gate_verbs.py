@@ -18,7 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, cli, decisions, loop_state, policy, worktree
+from basicly import cli, decisions, loop_state, policy, tracker, worktree
+from tests import fake_tracker
 
 _ISSUE = "basicly-x1"
 _WORKTREE = "basicly-x1-1"
@@ -71,11 +72,10 @@ def fake_br(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _FakeBr:
     monkeypatch.chdir(tmp_path)
     fake = _FakeBr()
     monkeypatch.setattr(policy, "_write", fake)
-    # Three seams, one stand-in: markers go through br.run_br (basicly-s5li),
-    # `br show` through try_run_br behind br.read_record, and policy keeps its own
+    # Three seams, one stand-in: markers go through tracker.run_br (basicly-s5li),
+    # `br show` through try_run_br behind tracker.read_record, and policy keeps its own
     # alias. Patching all three means no path can reach a real br.
-    monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(br, "try_run_br", fake)
+    fake_tracker.install(monkeypatch, fake)
     return fake
 
 
@@ -374,7 +374,7 @@ def test_kill_refuses_an_unknown_bead_before_it_mints_a_code_at_all(
     on the record. No challenge printed is the observable form of "nothing minted".
     """
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
-    monkeypatch.setattr(br, "read_record", lambda *_args: None)
+    fake_tracker.rebind(monkeypatch, tracker, "read_record", lambda *_args: None)
 
     rc = cli.main(["loop", "kill", "basicly-nope", "--reason", "typo"])
 

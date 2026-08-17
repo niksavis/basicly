@@ -1,7 +1,7 @@
 """One accepted `br` write, translated into the events the owned ledger records it with.
 
 Written when the §9.4 naming gate was made binding (basicly-u2hl.14). `test_br_seam.py`
-already drove the translation end-to-end — a stand-in br, a real ledger, and the record
+already drove the translation end-to-end — a stand-in tracker, a real ledger, and the record
 read back — and those tests stay there, because what they assert is that the *seam*
 writes both stores. What was missing is the translation on its own: which drafts one
 argv becomes, and which argv is refused.
@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from basicly import mirror, owned_store
+from basicly import mirror, owned_store, tracker_argv
 from basicly.owned_store import TrackerDivergenceError
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -108,12 +108,13 @@ def test_a_comment_with_the_wrong_argument_count_is_refused(kit: Any) -> None:
 # --- create --------------------------------------------------------------------
 
 
-def test_a_created_records_labels_are_stored_as_a_list(kit: Any) -> None:
+def test_a_created_records_labels_survive_a_read_as_two_labels(kit: Any) -> None:
     """A stored `"phase-6,ready"` iterates as characters, not as two labels.
 
-    `supervise` reads `record["labels"]` as a list, so after the flip a lane's follow-up
-    would inherit twelve one-letter labels. The priority alongside it is the other typed
-    field, and title comes off the positional.
+    `supervise` and `decompose` read `record["labels"]` as a list, so a lane's follow-up
+    would otherwise inherit twelve one-letter labels. The storage shape is the joined
+    form on both event kinds — the schema refuses a container under `value` — and
+    `tracker_argv.labels_of` at the read seam is what makes it a list again.
     """
     args = ["create", "a title", "-l", "phase-6,ready", "-p", "1", "-t", "task"]
 
@@ -121,7 +122,7 @@ def test_a_created_records_labels_are_stored_as_a_list(kit: Any) -> None:
 
     created = _by_kind(drafts, kit.events.KIND_CREATED)
     assert created.record == "b-9"
-    assert created.payload["labels"] == ["phase-6", "ready"]
+    assert tracker_argv.labels_of(created.payload["labels"]) == ("phase-6", "ready")
     assert created.payload["priority"] == 1
     assert created.payload["title"] == "a title"
 

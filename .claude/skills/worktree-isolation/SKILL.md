@@ -71,7 +71,7 @@ the shared common dir (`git rev-parse --git-path hooks` prints
 So never pass `-c core.hooksPath=...` from a worktree. A relative override such as
 `git -c core.hooksPath=.git/hooks commit` resolves against the worktree, where `.git` is
 a file and `.git/hooks` therefore does not exist — git finds no hooks, **skips every gate
-(pre-commit, commit-msg, the beads id check) and prints nothing**, so the commit looks
+(pre-commit, commit-msg, the record id check) and prints nothing**, so the commit looks
 clean because none of them ran. The bypass surfaces only later: in the recorded incident
 (`basicly-kjc5.9`) the next commit *without* the override was rejected for a subject the
 first one had carried straight through. To check where hooks resolve, read the path

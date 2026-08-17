@@ -83,9 +83,9 @@ repos:
     stages:
     - commit-msg
     pass_filenames: true
-  - id: beads-commit-msg-script
-    name: beads-commit-msg-script
-    entry: uv run python .basicly/core/hooks/beads-commit-msg.py
+  - id: tracker-commit-msg-script
+    name: tracker-commit-msg-script
+    entry: uv run python .basicly/core/hooks/tracker-commit-msg.py
     language: system
     stages:
     - commit-msg

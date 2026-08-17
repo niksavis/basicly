@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import capability_proof, release, tracker_usage, usage, verify
+from basicly import capability_proof, release, tracker_paths, usage, verify
 from basicly import commit as commit_mod
 from basicly import policy as policy_mod
 from basicly.capability_proof import CAPABILITY_VERIFY_CHECK
@@ -75,9 +75,10 @@ def repo(tmp_path: Path) -> Path:
         "p.write_text(p.read_text() + f'\\n## {tag} - {date}\\n')\n",
         encoding="utf-8",
     )
-    (root / ".beads").mkdir()
-    (root / ".beads" / "issues.jsonl").write_text(
-        '{"id": "fx-1", "title": "release track"}\n', encoding="utf-8"
+    ledger = root / tracker_paths.LEDGER_DIR_NAME
+    ledger.mkdir(parents=True)
+    (ledger / "events-0001.jsonl").write_text(
+        '{"record": "fx-1", "kind": "created"}\n', encoding="utf-8"
     )
     _git(root, "init", "-b", "main")
     _git(root, "config", "user.name", "Test")
@@ -628,27 +629,6 @@ def test_a_wrapper_executable_is_not_accepted_as_the_witness(repo: Path) -> None
     assert any(f"{CAPABILITY_VERIFY_CHECK} 'wired-or-deleted'" in r for r in result.refusals)
 
 
-def test_the_checks_own_binary_running_elsewhere_is_not_a_witness(repo: Path) -> None:
-    """Same rule with the strongest rival evidence: the committed tracker ledger.
-
-    `br gate report` recorded there is a real, subcommand-precise execution — of the
-    tool, by something that is not this check. Until basicly-3yi3 that passed the gate,
-    which is how a declared check could be witnessed by work it never did.
-    """
-    _declare_check(repo, "tracker-gate", ["br", "gate", "report"])
-    (repo / tracker_usage.LEDGER_FILE).parent.mkdir(parents=True, exist_ok=True)
-    (repo / tracker_usage.LEDGER_FILE).write_text(
-        '{"binary":"br","subcommand":"gate report","site":"engine","ok":true}\n', encoding="utf-8"
-    )
-    _commit_fixture(repo)
-    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
-
-    result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
-
-    assert result.refused
-    assert any(f"{CAPABILITY_VERIFY_CHECK} 'tracker-gate'" in r for r in result.refusals)
-
-
 @pytest.mark.usefixtures("no_regen")
 def test_a_declared_capability_with_no_ledger_at_all_is_refused(repo: Path) -> None:
     """Absence of a record is not evidence of an execution, so the gate fails closed."""
@@ -706,7 +686,7 @@ def test_a_release_refuses_before_writing_when_its_own_subject_would_be_rejected
 
 
 def test_an_unknown_bead_id_is_refused_before_writing(repo: Path) -> None:
-    """The beads gate rejects an unknown id.
+    """The commit-msg gate rejects an unknown id.
 
     Finding that out at commit time strands the bump, the regeneration and the
     changelog on disk.

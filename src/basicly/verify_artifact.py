@@ -33,7 +33,7 @@ from typing import Protocol, runtime_checkable
 
 # Written into the self-ignored ``.basicly/usage/`` directory for the reason
 # ``run_record`` puts its records there: the landing refuses to merge while the
-# checkout carries dirt outside ``.beads/``, so a file rewritten by every verify run
+# checkout carries dirt outside the tracker, so a file rewritten by every verify run
 # must not be tracked. The bead keeps the durable half — ``policy.record_evidence``
 # records the declared *path* on the issue.
 RUN_ARTIFACT = Path(".basicly/usage/verify-run.json")

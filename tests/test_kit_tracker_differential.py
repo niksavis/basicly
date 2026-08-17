@@ -37,9 +37,10 @@ from typing import Any
 
 import pytest
 
+from tests import tracker_corpus
+
 REPO_ROOT = Path(__file__).parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
-LIVE_EXPORT = REPO_ROOT / ".beads" / "issues.jsonl"
 
 
 def _load(path: Path, name: str) -> Any:
@@ -59,7 +60,8 @@ differential = _load(KIT_DIR / "differential.py", "tracker_differential")
 migrate = differential.migrate
 events = differential.events
 
-SOURCE = "beads/issues.jsonl"
+SOURCE = "the committed ledger"
+
 CLOCK = 1_000_000_000.0
 VOCAB = differential.DEFAULT_VOCABULARY
 
@@ -330,13 +332,13 @@ def test_each_query_reports_its_own_disagreement(
 def test_a_reimport_of_the_tracker_own_export_is_refused_across_the_whole_history() -> None:
     """AC: pointed at a re-import of its own export, the run fails with the reason recorded.
 
-    The subject is this repo's real tracker export, so "the whole history" is the whole
-    history rather than a fixture's worth of it, and the demonstration is exact: the
-    re-import agrees on every query, and the run is refused anyway.
+    The subject is this repo's real history, so "the whole history" is the whole history
+    rather than a fixture's worth of it, and the demonstration is exact: the re-import
+    agrees on every query, and the run is refused anyway.
     """
-    text = LIVE_EXPORT.read_text(encoding="utf-8")
+    text = tracker_corpus.snapshot_text()
     snapshot = migrate.parse_snapshot(text, name=SOURCE)
-    assert len(snapshot.records) > 100, "the live export is the subject; it must not be empty"
+    assert len(snapshot.records) > 100, "the real history is the subject; it must not be empty"
 
     with tempfile.TemporaryDirectory() as tmp:
         ledger = Path(tmp) / "ledger"

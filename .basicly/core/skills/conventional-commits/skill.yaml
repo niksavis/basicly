@@ -2,14 +2,14 @@
 schema_version: 1
 name: conventional-commits
 invocation: model
-description: Construct a valid Conventional Commits message for this repo before running `git commit`, covering type/scope, the "!" breaking-change marker, description rules, and the required trailing tracker record id. Use whenever writing or reviewing a commit message, or when a commit is rejected by the commit-msg/beads-commit-msg hooks.
+description: Construct a valid Conventional Commits message for this repo before running `git commit`, covering type/scope, the "!" breaking-change marker, description rules, and the required trailing tracker record id. Use whenever writing or reviewing a commit message, or when a commit is rejected by the commit-msg/tracker-commit-msg hooks.
 instructions: |
   # Conventional Commits
 
   ## Scope
 
   Owns constructing a single-line commit subject that passes this repo's `commit-msg` and
-  `beads-commit-msg` git hooks on the first attempt.
+  `tracker-commit-msg` git hooks on the first attempt.
 
   It is not for:
 
@@ -26,7 +26,7 @@ instructions: |
 
   ## Outputs
 
-  - A single commit subject line that passes `commit-msg.py` and `beads-commit-msg.py` on
+  - A single commit subject line that passes `commit-msg.py` and `tracker-commit-msg.py` on
     the first attempt, with no `--no-verify` needed.
 
   ## Format
@@ -48,7 +48,7 @@ instructions: |
     (the hooks validate only the subject line), or reword the subject ("the first
     release", "agents-md", "font awesome"). A rejected commit prints the offending
     character(s) — lowercase them or move them to the body.
-  - `(issue-id[, issue-id...])` — required by this repo's `beads-commit-msg` hook: one or
+  - `(issue-id[, issue-id...])` — required by this repo's `tracker-commit-msg` hook: one or
     more record ids the tracker holds, comma-separated in a single trailing parenthetical.
     An id is `<prefix>-<base>` with optional dotted hierarchy levels — e.g. `basicly-q49`,
     `basicly-zrj.8`, `basicly-zrj.4.1` — where `<prefix>` is your repo's configured tracker
@@ -111,7 +111,7 @@ instructions: |
   - This is a stricter-than-spec profile: it enforces the Conventional Commits v1.0.0
     header structure **plus** the house description rules above (lowercase, restricted
     charset, no trailing punctuation). Passing plain CC is necessary but not sufficient.
-  - The same `commit-msg.py` and `beads-commit-msg.py` run as your local git hook **and**
+  - The same `commit-msg.py` and `tracker-commit-msg.py` run as your local git hook **and**
     in CI, so a subject that passes locally passes CI — but only if the hooks are actually
     installed. Run `pre-commit install -t pre-commit -t commit-msg -t pre-push` once per
     clone/worktree; an uninstalled hook silently lets a bad message through to CI.
@@ -125,7 +125,7 @@ instructions: |
   This format is mechanically enforced by:
 
   - `.basicly/core/hooks/commit-msg.py` — type/scope/`!`/description rules.
-  - `.basicly/core/hooks/beads-commit-msg.py` — issue id presence and existence.
+  - `.basicly/core/hooks/tracker-commit-msg.py` — issue id presence and existence.
 
   This skill exists to get the message right on the first attempt; the hooks are the
   actual gate. `basicly commit` (`src/basicly/commit.py`) is the mechanical path to the

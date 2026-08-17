@@ -69,10 +69,10 @@ def test_the_ci_scaffold_parses_as_yaml_and_declares_its_triggers() -> None:
 
 
 def test_the_ci_scaffold_keeps_tracker_only_pushes_out_of_ci() -> None:
-    """The harness commits `.beads/**` separately from the work it describes.
+    """The harness commits the tracker separately from the work it describes.
 
     Without this path filter every tracker commit spends a CI run, which is the cost
     the comment above the constant claims it avoids — so it is worth binding.
     """
     parsed = yaml.safe_load(CONSUMER_CI_WORKFLOW)
-    assert ".beads/**" in parsed["on"]["push"]["paths-ignore"]
+    assert ".basicly/ledger/**" in parsed["on"]["push"]["paths-ignore"]

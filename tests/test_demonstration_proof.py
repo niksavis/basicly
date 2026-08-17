@@ -17,10 +17,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from basicly import br, decompose, demonstration_proof, loop, plan_record, worktree
+from basicly import decompose, demonstration_proof, loop, plan_record, worktree
 from basicly.config import PolicyConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import DoRResult, GateStatus
+from tests import fake_tracker
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -77,7 +78,7 @@ def _tracker(monkeypatch: pytest.MonkeyPatch, body: str | None) -> None:
             return _Proc("", returncode=1)
         return _Proc(json.dumps([{"id": args[1], "description": body}]))
 
-    monkeypatch.setattr(br, "try_run_br", _show)
+    fake_tracker.install(monkeypatch, _show)
 
 
 # --- The instrument ---------------------------------------------------------

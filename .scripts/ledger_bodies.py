@@ -10,7 +10,7 @@ of them bodyless (basicly-vkh0.41).
 **Why a check beside the differential rather than a fourth query.** ``differential.QUERIES``
 is ``(phase, ready, gates)``, and ``differential.RecordView`` omits a title and a
 description deliberately, so an incidental byte difference between the two stores cannot be
-reported as a disagreement about a verdict. That difference is real: ``br.scrub_export``
+reported as a disagreement about a verdict. That difference is real: ``tracker.scrub_ledger``
 redacts the committed export's text and the live tracker's is unredacted, so comparing body
 *content* across the two stores would manufacture disagreements. This defect is
 **presence** — answerable from the owned ledger alone, with no redaction false positive to
@@ -113,7 +113,7 @@ def report(bodies: Bodies, ledger: Path) -> None:
     The remedy names a mechanism rather than a command because no command reaches these
     records: ``basicly tracker adopt`` selects ``live ids - ledger record ids``, which
     subtracts a record the ledger holds events for however empty its body is (verified
-    2026-08-17 against `br.adopt_hand_writes`).
+    2026-08-17).
     """
     for record in bodies.bodyless:
         print(

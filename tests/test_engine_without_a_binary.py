@@ -23,7 +23,6 @@ from pathlib import Path
 import pytest
 
 from basicly import (
-    br,
     classify,
     decompose,
     dependency_graph,
@@ -34,6 +33,7 @@ from basicly import (
     owned_store,
     policy,
     supervise,
+    tracker,
     validate_gate,
 )
 from basicly.config import VERIFY_GATE_PROVIDER, PolicyConfig
@@ -55,12 +55,6 @@ def flipped(work_repo: Path) -> Path:
     synthetic directory would exercise the estimator's absence paths instead of the walk.
     The kit ships in the same tracked set, so the ledger it writes is the real one.
     """
-    (work_repo / "basicly.toml").write_text(
-        (work_repo / "basicly.toml")
-        .read_text(encoding="utf-8")
-        .replace(f'mode = "{owned_store.MODE_DUAL}"', f'mode = "{owned_store.MODE_OWNED}"'),
-        encoding="utf-8",
-    )
     assert owned_store.tracker_mode(work_repo) == owned_store.MODE_OWNED
     # The committed event log is tracked, so it arrives with the copy. Cleared, because
     # every query below is over the whole population: this repository's own 800-odd
@@ -176,8 +170,8 @@ def test_a_cycle_the_engine_would_have_created_is_refused_from_the_ledger_alone(
     what this asserts is the *post-record* check reading the owned graph.
     """
     result = decompose.decompose(flipped, ROOT, _children())
-    br.write(flipped, ["dep", "add", f"{ROOT}.1", f"{ROOT}.2", "-t", "blocks"])
-    br.write(flipped, ["dep", "add", f"{ROOT}.2", f"{ROOT}.1", "-t", "blocks"])
+    tracker.write(flipped, ["dep", "add", f"{ROOT}.1", f"{ROOT}.2", "-t", "blocks"])
+    tracker.write(flipped, ["dep", "add", f"{ROOT}.2", f"{ROOT}.1", "-t", "blocks"])
 
     assert dependency_graph.blocking_cycles(flipped) == ((f"{ROOT}.1", f"{ROOT}.2"),)
     with pytest.raises(RuntimeError, match="introduced a dependency cycle"):
@@ -194,9 +188,9 @@ def test_typing_gating_and_closing_a_bead_all_land_in_the_ledger(flipped: Path) 
     """
     classify.classify(flipped, ROOT, "feature", scope=("src/basicly/**",))
     validate_gate.record_verdict(flipped, ROOT, passed=True)
-    br.write(flipped, ["close", ROOT, "--reason", "shipped by the harness loop"])
+    tracker.write(flipped, ["close", ROOT, "--reason", "shipped by the harness loop"])
 
-    record = br.read_record(flipped, ROOT)
+    record = tracker.read_record(flipped, ROOT)
     assert record is not None
     assert record["issue_type"] == "feature"
     assert record["status"] == "closed"

@@ -49,7 +49,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import (
-    br,
     classify,
     commit,
     cost_rollup,
@@ -72,12 +71,12 @@ from . import (
     rubrics,
     run_record,
     runner,
+    tracker,
     validate_gate,
     verify,
     working_set,
     worktree,
 )
-from .br import write as _write
 from .config import (
     WORK_TYPES,
     PolicyConfig,
@@ -87,6 +86,7 @@ from .config import (
     load_worktree_config,
 )
 from .dispatch_brief import child_plan_prompt, dispatch_prompt, work_type_prompt
+from .tracker import write as _write
 
 if TYPE_CHECKING:
     from .decompose import ChildSpec
@@ -2502,7 +2502,7 @@ def _child_states(ctx: _Ctx) -> list[tuple[str, str]]:
     # `require_record` rather than the raw unwrap this used to do: the old form guarded
     # the payload shape not at all, so a non-object payload reached `record.get` and
     # raised AttributeError — the one site of eleven with no guard (basicly-tcmy.14).
-    record = br.require_record(ctx.repo_root, ctx.issue_id)
+    record = tracker.require_record(ctx.repo_root, ctx.issue_id)
     dependents = record.get("dependents") or []
     return [
         (str(dep["id"]), str(dep.get("status", "")))

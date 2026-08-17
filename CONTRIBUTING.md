@@ -12,8 +12,8 @@ accordingly:
 - **Bug reports and ideas**: open a GitHub issue — this is the most useful
   contribution and needs no setup.
 - **Pull requests**: possible, but every commit must pass the repo's mechanical
-  gates (see below), including a reference to a tracker issue that exists in
-  `.beads/issues.jsonl`. For anything larger than a typo fix, open an issue
+  gates (see below), including a reference to a record the tracker holds. For
+  anything larger than a typo fix, open an issue
   first so the work can be triaged into the tracker before you invest time.
 - There is no guaranteed review SLA; small, focused changes have the best odds.
 
@@ -33,9 +33,8 @@ on `PATH` (on WSL, a Windows Node install will not work for hooks).
 
 Committer requirements: the projected git hooks run `uv run python ...`, so
 every committer needs uv on `PATH` and Python 3.14+ — `basicly hooks-check`
-warns when uv is missing. Driving the harness loop also needs a
-redirect-capable `br` (0.2.16 is the known-good floor; worktree provisioning
-verifies it).
+warns when uv is missing. Driving the harness loop needs nothing further: the work
+tracker is an append-only event ledger this repository owns and commits.
 
 ## Everyday contributor commands
 
@@ -79,18 +78,21 @@ Two `commit-msg` hooks gate every commit:
 
 1. **Conventional Commits**: `type(scope): description` — description all
    lowercase, letters/digits/spaces/hyphens only, no ending punctuation.
-2. **Tracker reference**: the message must reference a beads issue id that
-   exists in `.beads/issues.jsonl`, as a parenthetical after the description,
-   for example:
+2. **Tracker reference**: the message must reference a record id the tracker
+   holds, as a parenthetical after the description, for example:
 
    ```text
    feat(projection): add fragment loader (basicly-idr)
    ```
 
-Create the issue first with `br create "Title" --type task` (the
-[beads (`br`)](https://github.com/Dicklesworthstone/beads_rust) CLI — install it
-yourself; it is not a project dependency) and use the id it prints — ids cannot
-be invented.
+Create the record first and use the id it prints — ids cannot be invented:
+
+```sh
+uv run basicly tracker write -- create "Title" -t task --parent <parent-id> --json
+```
+
+`basicly tracker ready` lists what is open and unblocked, if you are looking for a
+parent or for something to pick up.
 
 ## Catalog authoring
 

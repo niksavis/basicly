@@ -26,7 +26,7 @@ it exactly. Four ways it can disagree, each its own finding:
 `# NOQA:`, `#noqa:F841`, `# noqa : F841` and a directive trailing another comment
 (`# type: ignore  # noqa: F841`) all suppress; `# noqa/nosec pair:` does **not** — ruff calls
 it an invalid directive and warns. Counting by substring would therefore have counted a
-comment that suppresses nothing, and `src/basicly/br.py:70` is exactly that comment, sitting
+comment that suppresses nothing, and `src/basicly/tracker.py:70` is exactly that comment, sitting
 in this tree today. Two consequences:
 
 * Comments come from :mod:`tokenize`, so a marker inside a string or a docstring is a

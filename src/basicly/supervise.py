@@ -64,7 +64,6 @@ from pathlib import Path
 from typing import Any
 
 from . import (
-    br,
     commit,
     decisions,
     decompose,
@@ -80,6 +79,7 @@ from . import (
     roles,
     run_record,
     runner,
+    tracker,
     wip,
     worktree,
 )
@@ -510,8 +510,8 @@ def lane_selection(
     Which store answers is :mod:`basicly.label_source`'s business, including that closed
     beads are in the set — a selection whose every bead has closed is a *finished*
     session, and reading it as an empty one would report a completed cut as blocked.
-    **The matching write has no owned equivalent**, so a label this reads is one the
-    external tracker already held or a ``create`` carried; that module states the bound.
+    The matching write is ``tracker write -- update <id> --add-label``, resolved against
+    the record's current set at the write seam; that module states where.
 
     *exclude* drops ids that are not lanes of this pass — the root itself, which is
     the pass's anchor rather than work it runs. Sorted by id so a pass is ordered by
@@ -528,7 +528,8 @@ def lane_selection(
     if not selected:
         raise LaneSelectionError(
             f"no bead outside the pass root carries label {label!r}; "
-            f"label the lanes first (br update <id> --add-label {label})"
+            f"label the lanes first "
+            f"(basicly tracker write -- update <id> --add-label {label})"
         )
     return tuple(sorted(selected.items()))
 
@@ -558,7 +559,7 @@ def derive_session(
     on the next tick picks up a bead labelled into the cut since and drops one
     labelled out of it.
     """
-    record = br.require_record(repo_root, root_issue)
+    record = tracker.require_record(repo_root, root_issue)
 
     if lane_label is not None:
         children = lane_selection(repo_root, lane_label, exclude=(root_issue,))
@@ -602,7 +603,7 @@ def derive_session(
 
 def _show_issue(repo_root: Path, issue_id: str) -> dict | None:
     """The issue's ``br show`` record, or None when there is no usable one."""
-    return br.read_record(repo_root, issue_id)
+    return tracker.read_record(repo_root, issue_id)
 
 
 def _binding_of(
@@ -807,7 +808,7 @@ def record_found_info(repo_root: Path, issue_id: str, info: FoundInfo) -> None:
         },
         sort_keys=True,
     )
-    br.add_comment(repo_root, issue_id, f"{INFO_MARKER} {payload}")
+    tracker.add_comment(repo_root, issue_id, f"{INFO_MARKER} {payload}")
 
 
 def parse_found_info(text: str, source: str) -> FoundInfo | None:
@@ -851,8 +852,8 @@ def found_info_records(repo_root: Path, issue_ids: Iterable[str]) -> tuple[Found
     """All found-info records published on *issue_ids*, in comment order."""
     records: list[FoundInfo] = []
     for issue_id in issue_ids:
-        for row in br.read_comments(repo_root, issue_id):
-            info = parse_found_info(str(row.get(br.COMMENT_TEXT_KEY, "")), source=issue_id)
+        for row in tracker.read_comments(repo_root, issue_id):
+            info = parse_found_info(str(row.get(tracker.COMMENT_TEXT_KEY, "")), source=issue_id)
             if info is not None:
                 records.append(info)
     return tuple(records)
@@ -1040,7 +1041,7 @@ def propose_coupling_edges(
             else:
                 # Best-effort like every other coupling write: a cycle br refuses
                 # must not end the pass.
-                br.try_write(repo_root, ["dep", "add", bead, info.source, "-t", "blocks"])
+                tracker.try_write(repo_root, ["dep", "add", bead, info.source, "-t", "blocks"])
                 recorded.append((bead, info.source, "blocks"))
     return tuple(recorded)
 
@@ -1592,7 +1593,7 @@ def ready_lanes(
     Readiness is re-checked at pass time, because a dependency edge added since
     provisioning (e.g. a found-info coupling) must gate the lane *now*. The gate
     is blocked-ness plus an empty decision queue for the lane, not ready-list
-    membership: a provisioned lane is claimed (in_progress), and ``br
+    membership: a provisioned lane is claimed (in_progress), and ``tracker
     scheduler`` recommends only unclaimed work — so the scheduler's rank orders
     the lanes it does know, and the rest follow in adoption order.
 
@@ -2059,7 +2060,7 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
                 spec.name,
                 f"lane dispatch failed: {exc}",
                 Unstarted.TRANSIENT
-                if br.is_transient_storage_error(str(exc))
+                if tracker.is_transient_storage_error(str(exc))
                 else Unstarted.STOPPED,
             )
 
@@ -2575,7 +2576,7 @@ class DispatchOrdering:
     """Why one lane went when it did, recorded on its run marker (basicly-vkh0.3).
 
     *node* is br's scheduler evidence and is None whenever br did not rank the
-    lane — the ordinary case, since a provisioned lane is claimed and ``br
+    lane — the ordinary case, since a provisioned lane is claimed and ``tracker
     scheduler`` recommends only unclaimed work. *dispatch_rank* is always known,
     so the pass ordering stays reconstructible either way.
     """
@@ -3627,7 +3628,7 @@ def _route_blocked_landing(
     if attempt is not None and attempt.foreign:
         # A tracker-wide gate failed on another lane's finishing record, which is
         # what makes this a supervisor's problem rather than a lane's: every lane in
-        # the pass shares one `.beads` through the redirect, so the identical
+        # the pass shares one ledger through the redirect, so the identical
         # assertion fails inside every sibling's landing. This lane is green and
         # committed and no evidence faults it, so it takes the ``held`` shape — carry
         # it forward to land first next pass, charge it nothing, and do not re-dispatch
