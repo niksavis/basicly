@@ -59,7 +59,7 @@ def test_a_decompose_run_writes_an_implementation_plan_that_validates(
     """The acceptance criterion's first half, through ``decompose`` itself."""
     fake = _DecomposeBr()
     monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(decompose, "_run_br", fake)
+    monkeypatch.setattr(br, "try_run_br", fake)
     result = decompose.decompose(work_repo, "feat", (spec("a"), spec("b")))
     assert handoff.entry_verdict(work_repo, "feat", handoff.IMPLEMENTATION_PLAN).admitted
     recorded = artifact_record.read(work_repo, "feat", handoff.IMPLEMENTATION_PLAN)

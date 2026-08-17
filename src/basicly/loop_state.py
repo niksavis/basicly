@@ -12,21 +12,18 @@ Phase derivation is a reconstruction from what ``br`` records, not a transition
 engine — the state machine (onb.6.3) owns advancement. Gate/checkpoint/rework
 reads are delegated to the policy engine (onb.3) so the block-vs-advise rules
 live in exactly one place. The ready and blocked sets come from the tracker
-rather than being recomputed here — the blocked set straight from ``br blocked``,
-and the ranked ready set through ``br.read_ranking``, the seam that answers out of
-``br scheduler`` or out of the owned scorer depending on how far the cutover has
-reached (basicly-vkh0.20). §12.3's rule survives the flip in the form that
-mattered: ranking is the tracker's job and this module only reads the answer.
+rather than being recomputed here, each through its own seam — ``br.read_ranking``
+(basicly-vkh0.20) and :mod:`basicly.dependency_graph` (basicly-wpc8) — so §12.3's
+rule survives the cutover in the form that mattered: both are the tracker's job
+and this module only reads the answer.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import br, policy, validate_gate
-from .br import run_br as _run_br
+from . import br, dependency_graph, policy, validate_gate
 from .config import CHECKPOINTS, PolicyConfig, load_policy_config
 
 # The loop phases, ordered from earliest to latest (architecture §23.3). "done"
@@ -126,11 +123,6 @@ class NodeState:
     title: str = ""
 
 
-def _show(repo_root: Path, issue_id: str) -> dict:
-    """Return the raw ``br show --json`` record for *issue_id*."""
-    return br.require_record(repo_root, issue_id)
-
-
 def _has_children(record: dict) -> bool:
     """True when the issue has a parent-child dependent (it has been decomposed)."""
     dependents = record.get("dependents") or []
@@ -146,13 +138,10 @@ def derive_phase(
     gates: policy.GateStatus,
     has_children: bool,
 ) -> str:
-    """Reconstruct the furthest loop phase evidenced by an issue's ``br`` state.
+    """Reconstruct the furthest loop phase evidenced by an issue's tracker state.
 
-    Reads the strongest recorded signal downward: a closed issue is done; an
-    approved ship checkpoint on a *landed* node means shipping; green required
-    gates on a bound worktree mean verify passed; a bound worktree means
-    building; a decompose checkpoint (or existing children) means decomposed; a
-    classify checkpoint means classified. Everything else is still intake.
+    The ``ladder`` below is the answer, read strongest-first: the first rung whose
+    evidence holds wins, and nothing under it is consulted.
 
     The ship rung requires the node to have landed, not just the checkpoint to
     be approved: a bound worktree whose verify gate is not green has not merged,
@@ -203,7 +192,7 @@ def read_node_state(
     config = config or load_policy_config(repo_root)
     # What this unit owes, so gate read, derived phase and rework tally share one set.
     config = validate_gate.required_config(repo_root, issue_id, config)
-    record = _show(repo_root, issue_id)
+    record = br.require_record(repo_root, issue_id)
 
     worktree = parse_worktree_ref(record.get("external_ref"))
     gates = policy.gate_status(repo_root, issue_id, config)
@@ -313,7 +302,5 @@ def ready_ranked(repo_root: Path, limit: int | None = None) -> tuple[RankedNode,
 
 
 def blocked_ids(repo_root: Path) -> tuple[str, ...]:
-    """Return the ids of issues that are blocked (waiting on a dependency)."""
-    proc = _run_br(repo_root, ["blocked", "--json"])
-    issues = json.loads(proc.stdout)
-    return tuple(str(issue["id"]) for issue in issues if isinstance(issue, dict) and "id" in issue)
+    """The ids waiting on a dependency; :mod:`basicly.dependency_graph` picks the store."""
+    return dependency_graph.blocked(repo_root)

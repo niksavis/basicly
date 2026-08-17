@@ -268,19 +268,24 @@ def test_an_unusable_reply_from_br_is_a_stop(
 # --- the confinement ----------------------------------------------------------
 
 
-def test_the_cutover_branch_lives_only_in_the_two_seam_modules() -> None:
+def test_the_cutover_branch_lives_only_in_the_stores_own_seam_modules() -> None:
     """Where the mode may be branched on, in either spelling of the store's names.
 
     `test_br_seam.test_no_module_outside_the_seam_reads_the_owned_store` guards the
-    ``br.``-prefixed spelling against every module but `br` itself. This module reaches the
-    same functions through :mod:`basicly.owned_store` directly, so it needs the second
-    spelling probed and itself named — an exemption a reviewer sees, rather than one the
-    first guard's literal strings happen not to catch.
+    ``br.``-prefixed spelling against every module but `br` itself. The seam modules below
+    reach the same functions through :mod:`basicly.owned_store` directly, so they need the
+    second spelling probed and themselves named — an exemption a reviewer sees, rather
+    than one the first guard's literal strings happen not to catch.
 
-    The expected list is `gate_source` itself rather than empty, which is what makes the
-    zero on every other module evidence: a probe matching nothing at all would report the
-    same empty list. `br` is left out because it *is* the seam and reaches these names
-    unqualified anyway.
+    The expected list is the seam modules themselves rather than empty, which is what
+    makes the zero on every other module evidence: a probe matching nothing at all would
+    report the same empty list. `br` is left out because it *is* the seam and reaches
+    these names unqualified anyway.
+
+    ``cli`` and ``worktree`` are deliberately *not* on this list although each skips a
+    step once the flip lands: they ask :func:`owned_store.external_store_in_use`, which is
+    a question about the store rather than a branch on the rung, so the probe below does
+    not — and should not — match them.
     """
     root = REPO_ROOT / "src" / "basicly"
     reaching = [
@@ -295,4 +300,9 @@ def test_the_cutover_branch_lives_only_in_the_two_seam_modules() -> None:
         if any(name in path.read_text(encoding="utf-8") for name in reaching)
     )
 
-    assert branching == ["gate_source.py"]
+    assert branching == [
+        "dependency_graph.py",
+        "gate_source.py",
+        "label_source.py",
+        "owned_write.py",
+    ]

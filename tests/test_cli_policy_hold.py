@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from basicly import br, cli, decisions, policy
-from tests.test_cli_policy import _escalate, _FakeBr, _install_decisions_fake
+from tests.test_cli_policy import _escalate, _FakeBr
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +58,6 @@ def test_answering_a_stall_with_park_actually_parks_the_lane(
     Observed on `basicly-ca42#155136fefc` — it printed `answered <id> by human` and had
     no other effect, so the bead stayed dispatchable and the next pass would re-run it.
     """
-    _install_decisions_fake(monkeypatch)
     item = _stall()
     held = _spy_hold(monkeypatch)
 
@@ -92,7 +91,6 @@ def test_the_carrier_accepts_park_from_every_question_that_offers_it(
     for question in offered:
         assert "or park?" in question.lower(), question
 
-    _install_decisions_fake(monkeypatch)
     held = _spy_hold(monkeypatch)
     escalation = _escalate()
 
@@ -111,7 +109,6 @@ def test_a_question_that_offers_no_routes_is_left_alone(
     and holds nothing — without this, binding on the question would be no narrower than
     binding on nothing at all.
     """
-    _install_decisions_fake(monkeypatch)
     held = _spy_hold(monkeypatch)
     item = decisions.enqueue(Path(), "basicly-x", "needs-input", "which db?")
 
@@ -130,7 +127,6 @@ def test_a_delegated_answer_cannot_park_a_stall(
     could drop a requirement and let the package close over the hole — the authority D15
     keeps human for Kill.
     """
-    _install_decisions_fake(monkeypatch)
     item = _stall()
     held = _spy_hold(monkeypatch)
     delegated = f"{decisions.DECIDER_BY_PREFIX}claude"

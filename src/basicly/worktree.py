@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import br, checkout
+from . import br, checkout, owned_store
 from .br import try_run_br
 from .checkout import (
     current_branch,
@@ -208,7 +208,12 @@ def create(name: str, base: str | None = None, repo_root: Path | str | None = No
         # absolute path here never reaches a commit.
         (target_beads / "redirect").write_text(f"{base_beads}\n", encoding="utf-8")
         notes.append(".beads/redirect: tracker shared with the base checkout")
-        _probe_redirect(name, worktree, base_beads)
+        # Probed only while that store is one this repo keeps: once the flip means
+        # nothing reads or writes it, failing provisioning over it would refuse a lane
+        # for a store the lane never touches. The file is still written, because a human
+        # running br by hand in the worktree still needs the base checkout's copy.
+        if owned_store.external_store_in_use(main):
+            _probe_redirect(name, worktree, base_beads)
 
     notes += provision_deps(worktree)
 

@@ -69,6 +69,7 @@ from . import (
     decisions,
     decompose,
     health,
+    label_source,
     lane_log,
     loop,
     loop_state,
@@ -82,8 +83,6 @@ from . import (
     wip,
     worktree,
 )
-from .br import run_br as _run_br
-from .br import try_run_br as _try_run_br
 from .config import (
     AUTONOMY_LEVELS,
     SizingConfig,
@@ -495,18 +494,6 @@ class LaneSelectionError(RuntimeError):
     """A lane selector named a set the pass cannot run: no bead carries it."""
 
 
-def _labelled_issues(repo_root: Path, args: list[str]) -> dict[str, str]:
-    """``{issue_id: status}`` for one ``br list`` query, whatever payload shape it uses."""
-    proc = _run_br(repo_root, args)
-    payload = json.loads(proc.stdout)
-    issues = payload.get("issues") if isinstance(payload, dict) else payload
-    return {
-        str(record["id"]): str(record.get("status", ""))
-        for record in issues or []
-        if isinstance(record, dict) and "id" in record
-    }
-
-
 def lane_selection(
     repo_root: Path, label: str, *, exclude: Iterable[str] = ()
 ) -> tuple[tuple[str, str], ...]:
@@ -520,26 +507,22 @@ def lane_selection(
     what a bead's parent *is* are independent questions, and the ``parent-child``
     edge was being made to answer both.
 
-    Two ``br list`` calls, because neither alone is the whole set. The default query
-    omits ``closed``, which the fan-in needs — a selection whose every bead has
-    closed is a *finished* session, and reading it as an empty one would report a
-    completed cut as blocked. Enumerating the status vocabulary instead would be
-    worse: :func:`loop_state.is_dispatchable` deliberately admits statuses a project
-    defined for itself, and a ``--status`` allowlist would silently drop them.
+    Which store answers is :mod:`basicly.label_source`'s business, including that closed
+    beads are in the set — a selection whose every bead has closed is a *finished*
+    session, and reading it as an empty one would report a completed cut as blocked.
+    **The matching write has no owned equivalent**, so a label this reads is one the
+    external tracker already held or a ``create`` carried; that module states the bound.
 
     *exclude* drops ids that are not lanes of this pass — the root itself, which is
     the pass's anchor rather than work it runs. Sorted by id so a pass is ordered by
-    the selection rather than by what order ``br`` happened to return; the scheduler
+    the selection rather than by what order the store happened to return; the scheduler
     rank then orders the lanes that actually dispatch (``ready_lanes``).
 
     Raises :class:`LaneSelectionError` when nothing is selected. A mistyped label
     otherwise derives an empty session that reports itself blocked for a reason
     unrelated to the typo.
     """
-    selected = _labelled_issues(repo_root, ["list", "--label", label, "--json"])
-    selected |= _labelled_issues(
-        repo_root, ["list", "--label", label, "--status", "closed", "--json"]
-    )
+    selected = label_source.labelled(repo_root, label)
     for issue_id in exclude:
         selected.pop(issue_id, None)
     if not selected:
@@ -824,7 +807,7 @@ def record_found_info(repo_root: Path, issue_id: str, info: FoundInfo) -> None:
         },
         sort_keys=True,
     )
-    _run_br(repo_root, ["comments", "add", issue_id, f"{INFO_MARKER} {payload}"])
+    br.add_comment(repo_root, issue_id, f"{INFO_MARKER} {payload}")
 
 
 def parse_found_info(text: str, source: str) -> FoundInfo | None:
@@ -868,17 +851,8 @@ def found_info_records(repo_root: Path, issue_ids: Iterable[str]) -> tuple[Found
     """All found-info records published on *issue_ids*, in comment order."""
     records: list[FoundInfo] = []
     for issue_id in issue_ids:
-        proc = _run_br(repo_root, ["comments", "list", issue_id, "--json"])
-        try:
-            comments = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(comments, list):
-            continue
-        for comment in comments:
-            if not isinstance(comment, dict):
-                continue
-            info = parse_found_info(str(comment.get("text", "")), source=issue_id)
+        for row in br.read_comments(repo_root, issue_id):
+            info = parse_found_info(str(row.get(br.COMMENT_TEXT_KEY, "")), source=issue_id)
             if info is not None:
                 records.append(info)
     return tuple(records)
@@ -1066,7 +1040,7 @@ def propose_coupling_edges(
             else:
                 # Best-effort like every other coupling write: a cycle br refuses
                 # must not end the pass.
-                _try_run_br(repo_root, ["dep", "add", bead, info.source, "-t", "blocks"])
+                br.try_write(repo_root, ["dep", "add", bead, info.source, "-t", "blocks"])
                 recorded.append((bead, info.source, "blocks"))
     return tuple(recorded)
 

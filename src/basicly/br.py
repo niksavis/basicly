@@ -30,7 +30,15 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from basicly import comment_rows, edge_adoption, mirror, owned_store, redact, tracker_usage
+from basicly import (
+    comment_rows,
+    edge_adoption,
+    mirror,
+    owned_store,
+    owned_write,
+    redact,
+    tracker_usage,
+)
 from basicly.tracker_paths import beads_dir
 
 # The oldest br this harness is exercised against (see `br --version`).
@@ -615,16 +623,7 @@ def owned_record(repo_root: Path, issue_id: str) -> dict | None:
 # carries stop reaching the external tracker, so a `br comments list` run by hand
 # no longer shows them and the shadow differential's comment query diverges by
 # construction. That is the point of no return §5 step 4 names, and it is why the
-# differential (step 2) is run on `dual`, before this. The two surfaces still
-# spawning `comments` at their own call site — `decompose`'s sizing markers and
-# `supervise`'s found-info records — are each internally consistent, writing and
-# reading the same store; retiring them is basicly-wpc8's.
-
-# How a marker the engine wrote itself says it got here. Distinguishes a native
-# write from one the dual write mirrored (:data:`mirror.MIRROR_PROVENANCE`) and one
-# `migrate.py` extracted out of the export, and it is one of
-# `migrate.RESERVED_KEYS`, so it is dropped again when a record is rendered back.
-OWNED_PROVENANCE = "engine"
+# differential (step 2) is run on `dual`, before this.
 
 # The kit module holding the flip boundary. Named rather than reached through the
 # differential because it sits beside it, the way the scheduler does (:func:`kit`).
@@ -652,45 +651,6 @@ def _comments_add_argv(issue_id: str, body: str) -> list[str]:
     return ["comments", "add", issue_id, body]
 
 
-def _append_owned_write(repo_root: Path, args: Sequence[str]) -> None:
-    """Record on the owned ledger the fact *args* states, spawning nothing.
-
-    The owned half of :func:`write`, translated by the same function the dual write
-    mirrors through: one answer to "what does this argv mean", so the flip cannot
-    change what a write records. The echo it passes is empty because no process ran —
-    which is why ``create``, whose translation reads br's reply for the id it minted,
-    has no owned equivalent and raises here.
-
-    Every failure becomes a :class:`TrackerDivergenceError` — a ``RuntimeError``, so a
-    caller that already handles a br failure handles this one unchanged, which is what
-    makes the flip invisible at the call site. The read-only refusal is the caller's;
-    see :func:`write`.
-
-    Raises:
-        TrackerDivergenceError: the kit is not installed, the write has no owned-ledger
-            translation, or the append failed.
-    """
-    kit_module = kit(repo_root)
-    try:
-        drafts: list[Any] = mirror.drafts(kit_module, args, "")
-        # `mirror` stamps the provenance of the write it exists for — the dual write's.
-        # Nothing was mirrored here, so each draft is restamped as the engine's own
-        # before it lands; `replace` rather than a fresh Draft so a field the translator
-        # sets and this line does not know about is not dropped on the way through.
-        stamped = [
-            replace(
-                draft,
-                payload={**draft.payload, kit_module.migrate.PROVENANCE_KEY: OWNED_PROVENANCE},
-            )
-            for draft in drafts
-        ]
-        kit_module.events.append(ledger_dir(repo_root), stamped, redact=redact.redact_committed)
-    except (kit_module.events.LedgerError, OSError, ValueError) as exc:
-        raise TrackerDivergenceError(
-            f"br {' '.join(args)} did not reach the owned ledger: {exc}"
-        ) from exc
-
-
 def write(repo_root: Path, args: list[str]) -> None:
     """Record one engine write in whichever store is authoritative.
 
@@ -713,9 +673,31 @@ def write(repo_root: Path, args: list[str]) -> None:
     """
     _refuse_write_in_read_only(args)
     if tracker_mode(repo_root) == MODE_OWNED:
-        _append_owned_write(repo_root, args)
+        owned_write.append(repo_root, args)
         return
     run_br(repo_root, args)
+
+
+def create_record(repo_root: Path, args: list[str]) -> str:
+    """Record one ``br create`` and return the id the store minted for it.
+
+    The one write whose *result* the caller needs, so it cannot go through :func:`write`:
+    the id is minted by the store rather than stated by the caller.
+    :func:`owned_write.create` mints it in the ledger and spawns nothing; below
+    :data:`MODE_OWNED` br mints it and the mirror records the same events.
+
+    Raises:
+        TrackerWriteRefusedError: a :func:`read_only` section is active.
+        RuntimeError: the write did not land, or the store's reply carried no id.
+    """
+    _refuse_write_in_read_only(args)
+    if tracker_mode(repo_root) == MODE_OWNED:
+        return owned_write.create(repo_root, args)
+    proc = run_br(repo_root, args)
+    try:
+        return str(json.loads(proc.stdout)["id"])
+    except (ValueError, KeyError, TypeError) as exc:
+        raise RuntimeError(f"br {' '.join(args)} replied with no issue id: {exc}") from exc
 
 
 def try_write(repo_root: Path, args: list[str]) -> bool:
@@ -732,7 +714,7 @@ def try_write(repo_root: Path, args: list[str]) -> bool:
         proc = try_run_br(repo_root, args)
         return proc is not None and proc.returncode == 0
     try:
-        _append_owned_write(repo_root, args)
+        owned_write.append(repo_root, args)
     except TrackerDivergenceError:
         return False
     return True
@@ -998,16 +980,13 @@ def read_record(repo_root: Path, issue_id: str) -> dict | None:
     choice of what "not found" means was already made once, here, is the whole reason
     the flip is not eleven decisions.
 
-    What is deliberately *not* flipped: the other subcommands the engine spawns.
-    `blocked`, `list`, `lint` and `dep cycles` are each read at their own call site with
-    their own payload shape — they are not behind a seam, so flipping them
-    would mean rewriting callers, which is the thing this bead is required not to do.
-    That is why the external tracker is still written in :data:`MODE_OWNED` rather than
-    merely tolerated. `scheduler` was on that list until basicly-vkh0.20 gave it a seam of
-    its own (:func:`read_ranking`), `comments` until basicly-s5li gave it
-    :func:`read_comments`/:func:`add_comment`, and `gate list` until basicly-vkh0.27
-    gave it :mod:`basicly.gate_source` — which is the shape the rest would each need.
-    The two `comments list` spawns that stayed at their own call site are named above.
+    The engine's other reads each took the same shape rather than staying at their call
+    site: `scheduler` at basicly-vkh0.20 (:func:`read_ranking`), `comments` at
+    basicly-s5li (:func:`read_comments`), `gate list` at basicly-vkh0.27
+    (:mod:`basicly.gate_source`), and `blocked`, `dep cycles` and `list --label` at
+    basicly-wpc8 (:mod:`basicly.dependency_graph`, :mod:`basicly.label_source`). `lint`
+    was not ported at all — basicly-wpc8.1 owned the Definition-of-Ready rule in
+    `policy.required_sections` instead.
     """
     if tracker_mode(repo_root) == MODE_OWNED:
         return owned_record(repo_root, issue_id)

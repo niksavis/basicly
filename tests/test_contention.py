@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import br, contention, decompose
+from basicly import br, contention
 
 if TYPE_CHECKING:
     import pytest
@@ -34,9 +34,9 @@ def _scope_reader(monkeypatch: pytest.MonkeyPatch, scopes: dict[str, tuple[str, 
     -> ``br.read_record``, and the recorded body is where a declaration is easy to get
     wrong, so the fake stops at ``br`` and everything above it stays live. It is
     installed on ``br.try_run_br`` because the record read is the one seam every
-    consumer shares (basicly-tcmy.14); stubbing ``decompose``'s alias would leave the
-    seam spawning a real br, and every lane would then read as declaring no scope —
-    which is the *warn* branch, so the test would fail by warning about all three.
+    consumer shares (basicly-tcmy.14); stubbing anything above it would leave the seam
+    spawning a real br, and every lane would then read as declaring no scope — which is
+    the *warn* branch, so the test would fail by warning about all three.
     """
 
     def show(_repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
@@ -114,7 +114,7 @@ def test_a_single_lane_pass_contends_with_nobody(
     def refuse(_repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         raise AssertionError(f"a one-lane pass must not read scopes: {args}")
 
-    monkeypatch.setattr(decompose, "_run_br", refuse)
+    monkeypatch.setattr(br, "try_run_br", refuse)
 
     (line,) = contention.append_only_report(tmp_path, ("only",), ("CHANGELOG.md",))
 

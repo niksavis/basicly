@@ -19,7 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import br, decompose, plan_record
+from basicly import br, plan_record
 from basicly.decompose import ChildSpec
 
 if TYPE_CHECKING:
@@ -79,8 +79,8 @@ class FakeBr:
 
 
 def install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., Proc]) -> None:
-    """Route both br seams — the decomposer's and the record reader's — at *fake*."""
-    monkeypatch.setattr(decompose, "_run_br", fake)
+    """Route both funnels every decomposition seam reaches the external store through."""
+    monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
 
 

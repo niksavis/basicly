@@ -1079,7 +1079,7 @@ def record_coupling(repo_root: Path, bead: str, coupled_to: str) -> None:
     ``blocks`` keeps that type.
     """
     first, second = sorted((bead, coupled_to))
-    br.try_run_br(repo_root, ["dep", "add", first, second, "-t", COUPLING_DEP_TYPE])
+    br.try_write(repo_root, ["dep", "add", first, second, "-t", COUPLING_DEP_TYPE])
 
 
 def merge_queue(

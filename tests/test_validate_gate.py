@@ -59,7 +59,6 @@ class _FakeBr:
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
-    monkeypatch.setattr(loop_state, "_run_br", fake)
     monkeypatch.setattr(policy, "_write", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
     monkeypatch.setattr(br, "run_br", fake)
@@ -322,7 +321,7 @@ def test_the_engine_records_the_verdict_under_its_own_provider(
     for a verdict line instead of a tracker write.
     """
     calls: list[list[str]] = []
-    monkeypatch.setattr(validate_gate, "_run_br", lambda _r, args: calls.append(args))
+    monkeypatch.setattr(validate_gate, "_write", lambda _r, args: calls.append(args))
 
     validate_gate.record_verdict(tmp_path, "i", passed=True)
 

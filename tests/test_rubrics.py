@@ -329,7 +329,7 @@ def test_the_gate_record_carries_the_severity(monkeypatch: pytest.MonkeyPatch) -
     """A note reading only 'j=no' cannot tell a MINOR from a BLOCKER."""
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        rubrics.br, "try_run_br", lambda _r, args: (calls.append(args), _proc("", 0))[1]
+        rubrics.br, "run_br", lambda _r, args: (calls.append(args), _proc("", 0))[1]
     )
 
     rubrics.report_gate(
@@ -506,7 +506,7 @@ def test_evaluate_judged_handoff_is_unknown(
 
 
 def _proc(output: str = "", returncode: int = 0) -> SimpleNamespace:
-    """Minimal stand-in for the CompletedProcess ``br.try_run_br`` returns."""
+    """Minimal stand-in for the CompletedProcess ``br.run_br`` returns."""
     return SimpleNamespace(stdout=output, stderr=output, returncode=returncode)
 
 
@@ -547,7 +547,7 @@ def test_report_gate_records_both_halves_separately(monkeypatch: pytest.MonkeyPa
         calls.append(args)
         return _proc("", 0)
 
-    monkeypatch.setattr(rubrics.br, "try_run_br", fake)
+    monkeypatch.setattr(rubrics.br, "run_br", fake)
 
     ok, message = rubrics.report_gate(
         Path(),
@@ -576,7 +576,7 @@ def test_report_gate_records_both_halves_even_when_one_has_no_checks(
     """
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        rubrics.br, "try_run_br", lambda _r, args: (calls.append(args), _proc("", 0))[1]
+        rubrics.br, "run_br", lambda _r, args: (calls.append(args), _proc("", 0))[1]
     )
 
     rubrics.report_gate(Path(), "i", [rubrics.CheckVerdict("d", DETERMINISTIC, YES)])
@@ -591,15 +591,12 @@ def test_report_gate_reports_failure_when_either_half_fails_to_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A partial record is worse than a clear failure: it reads as authoritative."""
-    monkeypatch.setattr(
-        rubrics.br,
-        "try_run_br",
-        lambda _r, args: (
-            _proc("", 0)
-            if args[args.index("--gate") + 1] == rubrics.RUBRIC_GATE
-            else _proc("boom", 1)
-        ),
-    )
+
+    def refuse(_r: Path, args: list[str]) -> None:
+        if args[args.index("--gate") + 1] != rubrics.RUBRIC_GATE:
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(rubrics.br, "write", refuse)
 
     ok, message = rubrics.report_gate(
         Path(), "i", [rubrics.CheckVerdict("j", JUDGED, NO, severity=rubrics.MINOR)]

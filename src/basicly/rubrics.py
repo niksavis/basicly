@@ -525,27 +525,17 @@ def judged_failures(verdicts: list[CheckVerdict]) -> list[CheckVerdict]:
 def _report_one(
     repo_root: Path, issue_id: str, gate: str, status: str, note: str
 ) -> tuple[bool, str]:
-    """Record one gate via ``br gate report``; degrades gracefully when br is absent."""
-    proc = br.try_run_br(
-        repo_root,
-        [
-            "gate",
-            "report",
-            "--gate",
-            gate,
-            "--provider",
-            GATE_PROVIDER,
-            "--status",
-            status,
-            "--note",
-            note,
-            issue_id,
-        ],
-    )
-    if proc is None:
-        return False, f"br not on PATH; {gate} gate not recorded"
-    if proc.returncode != 0:
-        return False, f"br gate report failed for {gate}: {(proc.stderr or proc.stdout).strip()}"
+    """Record one gate through the write seam; a refusal carries its own reason out.
+
+    Not swallowed into a bare False: a cause-less "gate not recorded" strands whoever has
+    to explain the gap in the gate list.
+    """
+    args = ["gate", "report", "--gate", gate, "--provider", GATE_PROVIDER]
+    args += ["--status", status, "--note", note, issue_id]
+    try:
+        br.write(repo_root, args)
+    except RuntimeError as exc:
+        return False, f"{gate} gate not recorded: {exc}"
     return True, f"{gate}={status}"
 
 

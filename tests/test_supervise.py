@@ -520,14 +520,12 @@ class _FakeBr:
 def _install_br(monkeypatch: pytest.MonkeyPatch, fake: object) -> None:
     """Route every br seam build_bundle reads through to one fake.
 
-    ``build_bundle`` scans found-info via supervise's own alias — still a direct
-    ``comments list`` spawn (basicly-wpc8's) — and the lane's answered decisions
-    through ``br.read_comments``. The record read goes through ``br.read_record``.
-    Both of the latter are seams every consumer in the package shares
-    (basicly-tcmy.14, basicly-s5li), so the fake is installed on the spawns *they*
-    use as well — leaving one out lets a read spawn a real br mid-test.
+    Nothing is installed on `supervise` itself: after basicly-wpc8 every store surface it
+    reaches is a seam every consumer in the package shares — ``br.read_record``,
+    ``br.read_comments``, ``br.add_comment``, ``br.try_write``, ``label_source.labelled``
+    — and each reaches the external store through one of these two funnels. Leaving one
+    out lets a read spawn a real br mid-test.
     """
-    monkeypatch.setattr(supervise, "_run_br", fake)
     monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
 
@@ -608,9 +606,6 @@ def _propose(
 ) -> tuple[tuple[str, str, str], ...]:
     """Run the proposal with every br seam this path uses pointed at *fake*."""
     _install_br(monkeypatch, fake)
-    monkeypatch.setattr(supervise, "_try_run_br", fake)
-    monkeypatch.setattr(supervise.decompose, "_run_br", fake)
-    monkeypatch.setattr(supervise.merge.br, "try_run_br", fake)
     return supervise.propose_coupling_edges(Path(), session)
 
 
@@ -2138,22 +2133,19 @@ def _patch_collision_pass(
     # so its alias is a seam too.
     fake = _FakeBr({bead: {"id": bead, "description": ""} for bead in scopes})
     _install_br(monkeypatch, fake)
-    monkeypatch.setattr(supervise, "_try_run_br", fake)
     monkeypatch.setattr(policy, "_write", fake)
 
     def try_run_br(_r, args):
-        # The edge exactly as `br` receives it, so its *direction* is asserted too.
+        # The edge exactly as the store receives it, so its *direction* is asserted too.
         if args[:2] == ["dep", "add"]:
             couplings.append((args[2], args[3]))
             return None
-        # Everything else delegates. `merge.br.try_run_br` used to be a seam distinct
-        # from supervise's alias, and it cannot be any more: the coupling edge and the
-        # record read both reach br through `br.try_run_br` now that `br.read_record` is
-        # the one reader (basicly-tcmy.14). Recording and delegating keeps both, where
-        # replacing the attribute silently dropped whichever was installed first.
+        # Everything else delegates. One funnel now carries the coupling edge, the record
+        # read and the marker read alike, so recording *and* delegating keeps all three
+        # where replacing the attribute would drop whichever was installed first.
         return fake(_r, args)
 
-    monkeypatch.setattr(supervise.merge.br, "try_run_br", try_run_br)
+    monkeypatch.setattr(br, "try_run_br", try_run_br)
     return couplings, fake
 
 
@@ -2407,7 +2399,6 @@ def _bounce_twice(
         lambda _r, issue, gate: allowances.append((issue, gate)) or 0,
     )
     _install_br(monkeypatch, fake)
-    monkeypatch.setattr(supervise, "_try_run_br", fake)
     monkeypatch.setattr(policy, "_write", fake)
 
     routes: list[supervise.RoutedOutcome] = []
@@ -2477,7 +2468,6 @@ def test_the_bounce_signature_is_stored_by_the_shared_finding_set_mechanism(
         lambda _r, issue_id, **_k: _blocked_landing(issue_id, "merge-conflicts", ("src/a.py",)),
     )
     _install_br(monkeypatch, fake)
-    monkeypatch.setattr(supervise, "_try_run_br", fake)
     monkeypatch.setattr(policy, "_write", fake)
 
     supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),))
@@ -3177,16 +3167,12 @@ def test_heartbeat_thread_keeps_the_lock_fresh_and_captures_loss(tmp_path: Path)
 def _attach_br(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     """Route every module observe() reads br through to one fake.
 
-    Each module owns its own alias for the surfaces it reaches directly, so those are
-    installed per module — ``_run_br`` where the module still spawns, ``_write`` where its
-    writes go through the seam (basicly-wpc8.1). Two reads are no longer among them: the
-    **record** read goes through ``br.read_record`` and the **marker** read through
-    ``br.read_comments`` (basicly-tcmy.14, basicly-s5li), so the fake is installed on the
-    spawns those use too. ``decisions`` has no alias left — every call it makes is a
-    marker.
+    Only ``policy`` still owns an alias for a surface it reaches directly. Every other
+    read on this path is behind a seam — the record (``br.read_record``), the markers
+    (``br.read_comments``), the ranking (``br.read_ranking``) and the blocked set
+    (``dependency_graph.blocked``) — so the fake goes on the two funnels those spawn
+    through. Leaving one out lets a read reach a real br mid-test.
     """
-    for module in (supervise, loop_state):
-        monkeypatch.setattr(module, "_run_br", fake)
     monkeypatch.setattr(policy, "_write", fake)
     monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
@@ -3434,7 +3420,6 @@ def test_dispatch_halt_is_one_idempotent_queue_item(
     """Every halted pass re-surfaces the same item, not a fresh notification each time."""
     fake = _FakeBr({"epic": _issue("epic")})
     monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(loop_state, "_run_br", fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     admission = _granted("L2", 5000, 6000)
 
@@ -3456,7 +3441,6 @@ def test_an_unmeterable_halt_asks_its_own_question(
     """
     fake = _FakeBr({"epic": _issue("epic")})
     monkeypatch.setattr(br, "run_br", fake)
-    monkeypatch.setattr(loop_state, "_run_br", fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
     spent = _granted("L2", 5000, 6000)
     unmetered = policy.SpendStatus(
@@ -4064,12 +4048,12 @@ def test_admit_working_set_stays_indeterminate_when_the_bead_cannot_be_read(
     The distinction the fix rests on: an undeclared scope is structural and re-reading
     will not change it, while a tracker failure says nothing at all about the lane's
     size — so it carries no notice and nothing to escalate.
+
+    Stubbed at ``br.read_record``, which is where the failure now arrives: the seam turns
+    every way a read can come back without a record into one ``None`` (basicly-tcmy.14),
+    so a raising spawn below it is no longer a distinguishable input.
     """
-
-    def broken(*_a: object, **_k: object) -> _Proc:
-        raise RuntimeError("br show failed")
-
-    monkeypatch.setattr(decompose, "_run_br", broken)
+    monkeypatch.setattr(br, "read_record", lambda *_a, **_k: None)
 
     admission = supervise.admit_working_set(tmp_path, "epic.1", _sizing())
 

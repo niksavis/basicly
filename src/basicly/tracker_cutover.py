@@ -127,19 +127,18 @@ def cmd_import(args: argparse.Namespace) -> int:
 
 
 def cmd_write(args: argparse.Namespace) -> int:
-    """Run one br write through the engine seam, so the owned ledger gets it too.
+    """Run one hand-authored tracker write through ``br.write``.
 
-    Spawning ``br`` directly never enters ``br._mirror_write``, so a hand-run write
-    moves one store and not the other. Three records arrived that way and are the whole
-    of what still fails the differential (basicly-vkh0.24).
+    Spawning ``br`` directly never enters the seam, so a hand-run write moves one store and
+    not the other: three records arrived that way and are the whole of what still fails the
+    differential (basicly-vkh0.24).
     """
     argv = [arg for arg in (args.argv or []) if arg != "--"]
     if not argv:
         ui.say("tracker write: name a br subcommand, e.g. `-- close b-1`")
         return 2
-    proc = br.run_br(Path.cwd(), argv)
-    if proc.stdout:
-        ui.say(proc.stdout.rstrip())
+    br.write(Path.cwd(), argv)
+    ui.say(f"recorded: {' '.join(argv)}")
     return 0
 
 

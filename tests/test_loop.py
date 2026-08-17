@@ -31,7 +31,6 @@ from basicly import (
     roles,
     run_record,
     runner,
-    supervise,
     verify,
     working_set,
     worktree,
@@ -486,10 +485,10 @@ def _pin_ceiling(monkeypatch: pytest.MonkeyPatch, ceiling: float) -> _CeilingBr:
         ),
     )
     fake = _CeilingBr()
-    monkeypatch.setattr(supervise, "_run_br", fake)
     # Named `fake` rather than `br` so the module stays reachable here: every br seam
     # is stubbed, so a bead created off this path lands in `fake.created` instead of
     # reaching a real tracker or erroring out on the way there.
+    monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
     return fake
 

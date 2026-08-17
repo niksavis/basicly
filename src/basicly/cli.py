@@ -38,6 +38,7 @@ from . import (
     loop,
     loop_state,
     merge,
+    owned_store,
     permissions,
     policy,
     projection,
@@ -980,10 +981,13 @@ def _beads_prefix(repo_root: Path) -> str:
 def _setup_beads(repo_root: Path) -> None:
     """Initialize a beads (br) workspace when none exists (idempotent).
 
-    Degrades gracefully: a repo without ``br`` on PATH gets actionable guidance
-    instead of a failed install — the tracker is required for the harness loop
-    but not for the projections themselves.
+    Skipped when that store is not one this repo keeps; the owned ledger needs no init.
+    Otherwise a repo without ``br`` on PATH gets guidance, not a failed install — the
+    tracker is required for the harness loop, not for the projections.
     """
+    if not owned_store.external_store_in_use(repo_root):
+        print("Tracker mode is owned; no beads init.")
+        return
     beads_dir = repo_root / ".beads"
     if (beads_dir / "config.yaml").exists() or (beads_dir / "issues.jsonl").exists():
         print("Beads workspace exists; left unchanged.")

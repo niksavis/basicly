@@ -1,0 +1,5 @@
+# The comment-density waiver on `src/basicly/label_source.py`, which the module states its
+# reason for at column 0. Same shape as `basicly.d/basicly-vkh0.27.toml` recorded for
+# `gate_source.py`: a small seam module whose share is set by its member count.
+[ratchet.comment_density]
+count_delta = 1

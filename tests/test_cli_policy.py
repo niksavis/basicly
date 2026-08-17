@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, cli, decisions, loop_state, policy
+from basicly import br, cli, decisions, policy
 from basicly.config import PolicyConfig
 
 
@@ -353,18 +353,8 @@ def test_grant_issue_refused_at_default_ceiling(
 # --- basicly loop decisions / answer (basicly-kjc5.4) ---------------------------
 
 
-def _install_decisions_fake(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Reuse the fixture-installed checkpoint fake: it serves comments and show.
-    # `decisions` has no alias of its own — every call it makes is a marker, so the
-    # fixture's `br.run_br` stub already covers it (basicly-s5li).
-    monkeypatch.setattr(loop_state, "_run_br", policy._write)
-
-
-def test_loop_decisions_and_answer_round_trip(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_loop_decisions_and_answer_round_trip(capsys: pytest.CaptureFixture[str]) -> None:
     """An enqueued item is listed, answerable with attribution, then gone."""
-    _install_decisions_fake(monkeypatch)
     item = decisions.enqueue(Path(), "basicly-x", "needs-input", "which db?")
 
     assert cli.main(["loop", "decisions", "basicly-x"]) == 1
@@ -377,11 +367,8 @@ def test_loop_decisions_and_answer_round_trip(
     assert "none pending" in capsys.readouterr().out
 
 
-def test_loop_answer_refuses_unknown_id(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_loop_answer_refuses_unknown_id(capsys: pytest.CaptureFixture[str]) -> None:
     """Answering a decision that was never asked is an error, not a silent write."""
-    _install_decisions_fake(monkeypatch)
     assert cli.main(["loop", "answer", "basicly-x#abcdef", "yes"]) == 1
     assert "refused" in capsys.readouterr().err
 
@@ -405,10 +392,9 @@ def _escalate(gate: str = "merge") -> decisions.DecisionItem:
 
 
 def test_answering_a_rework_escalation_with_retry_permits_one_more_attempt(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The reported defect: the answer was recorded and the lane still could not move."""
-    _install_decisions_fake(monkeypatch)
     item = _escalate()
     assert policy.rework_allowances(Path(), "basicly-x", "merge") == 0
 
@@ -417,27 +403,21 @@ def test_answering_a_rework_escalation_with_retry_permits_one_more_attempt(
     assert policy.rework_allowances(Path(), "basicly-x", "merge") == 1
 
 
-def test_a_retry_answer_may_carry_a_rationale(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_retry_answer_may_carry_a_rationale(capsys: pytest.CaptureFixture[str]) -> None:
     """Operators explain themselves; the leading token is what decides."""
-    _install_decisions_fake(monkeypatch)
     item = _escalate()
     answer = "retry - the gate failed on the br clock defect, not on this lane"
     assert cli.main(["loop", "answer", item.decision_id, answer, "--by", "niksa"]) == 0
     assert "granted one further attempt" in capsys.readouterr().out
 
 
-def test_answering_with_park_grants_nothing(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_answering_with_park_grants_nothing(capsys: pytest.CaptureFixture[str]) -> None:
     """Only one of the three offered choices extends the budget.
 
     ``park`` does now carry out a route of its own — it defers the lane
     (``tests/test_cli_gate_verbs.py``) — but it is still not the one that buys
     another attempt, which is what this asserts.
     """
-    _install_decisions_fake(monkeypatch)
     item = _escalate()
     assert cli.main(["loop", "answer", item.decision_id, "park", "--by", "niksa"]) == 0
     assert "granted" not in capsys.readouterr().out
@@ -445,20 +425,18 @@ def test_answering_with_park_grants_nothing(
 
 
 def test_answering_with_re_dispatch_is_not_read_as_retry(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`re-dispatch` shares a prefix with nothing, but the guard must be explicit."""
-    _install_decisions_fake(monkeypatch)
     item = _escalate()
     assert cli.main(["loop", "answer", item.decision_id, "re-dispatch", "--by", "niksa"]) == 0
     assert "granted" not in capsys.readouterr().out
 
 
 def test_a_decider_answer_does_not_extend_its_own_rework_budget(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """An autonomy grant may dispose of the question; the engine still holds the budget."""
-    _install_decisions_fake(monkeypatch)
     item = _escalate()
     by = f"{decisions.DECIDER_BY_PREFIX}claude"
     assert cli.main(["loop", "answer", item.decision_id, "retry", "--by", by]) == 0
@@ -467,20 +445,18 @@ def test_a_decider_answer_does_not_extend_its_own_rework_budget(
 
 
 def test_a_retry_on_a_non_rework_decision_grants_nothing(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Only a rework escalation carries a gate to forgive."""
-    _install_decisions_fake(monkeypatch)
     item = decisions.enqueue(Path(), "basicly-x", "needs-input", "retry which db?")
     assert cli.main(["loop", "answer", item.decision_id, "retry", "--by", "niksa"]) == 0
     assert "granted" not in capsys.readouterr().out
 
 
 def test_policy_rework_allow_retry_is_the_operators_direct_lever(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The escalation is answerable out of band too, without touching max_rework."""
-    _install_decisions_fake(monkeypatch)
     _escalate("verify")
     assert cli.main(["policy", "rework", "basicly-x", "--gate", "verify", "--allow-retry"]) == 0
     out = capsys.readouterr().out
@@ -503,25 +479,21 @@ def _escalate_unreliable(gate: str = "merge") -> decisions.DecisionItem:
 
 
 def test_answering_land_anyway_says_what_the_next_landing_will_do(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The reported defect: answering printed the same line as an answer that did nothing.
 
     The override itself is spent by the landing (``landing_gate.gate_override``), so
     this is the confirmation that the engine will act on the answer at all.
     """
-    _install_decisions_fake(monkeypatch)
     item = _escalate_unreliable()
 
     assert cli.main(["loop", "answer", item.decision_id, "land anyway", "--by", "niksa"]) == 0
     assert "will skip gate 'merge', once" in capsys.readouterr().out
 
 
-def test_answering_fix_the_flake_promises_no_override(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_answering_fix_the_flake_promises_no_override(capsys: pytest.CaptureFixture[str]) -> None:
     """Two remedies are offered and only one of them waives the gate."""
-    _install_decisions_fake(monkeypatch)
     item = _escalate_unreliable()
 
     assert cli.main(["loop", "answer", item.decision_id, "fix the flake", "--by", "niksa"]) == 0
@@ -529,10 +501,9 @@ def test_answering_fix_the_flake_promises_no_override(
 
 
 def test_a_delegated_land_anyway_is_told_it_authorises_nothing(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Skipping a landing gate is not a call a model makes for itself."""
-    _install_decisions_fake(monkeypatch)
     item = _escalate_unreliable()
     by = f"{decisions.DECIDER_BY_PREFIX}claude"
 
@@ -543,14 +514,13 @@ def test_a_delegated_land_anyway_is_told_it_authorises_nothing(
 
 
 def test_land_anyway_on_the_rework_escalation_promises_nothing(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Both escalations share one decision kind, so the question must decide.
 
     `land anyway` is not one of the rework question's three choices; reading it as an
     override there would waive a gate nobody was asked about.
     """
-    _install_decisions_fake(monkeypatch)
     item = _escalate()
 
     assert cli.main(["loop", "answer", item.decision_id, "land anyway", "--by", "niksa"]) == 0
@@ -560,10 +530,9 @@ def test_land_anyway_on_the_rework_escalation_promises_nothing(
 
 
 def test_policy_rework_refuses_record_and_allow_retry_together(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Charging and forgiving in one call is a contradiction, not a no-op."""
-    _install_decisions_fake(monkeypatch)
     assert cli.main(["policy", "rework", "basicly-x", "--record", "--allow-retry"]) == 1
     assert "opposites" in capsys.readouterr().err
 

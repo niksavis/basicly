@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import cli, decompose
+from basicly import br, cli, decompose
 from basicly.decompose import ChildSpec
 
 MANIFEST = "pyproject.toml"
@@ -51,12 +51,13 @@ def _plan(tmp_path: Path, *, shared: bool) -> Path:
 
 @pytest.fixture
 def _no_tracker(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every ``br`` read fails, which each caller degrades to "nothing frozen"."""
+    """No tracker to read, which each caller degrades to "nothing frozen".
 
-    def refuse(*_args: object, **_kwargs: object) -> None:
-        raise RuntimeError("no tracker in this test")
-
-    monkeypatch.setattr(decompose, "_run_br", refuse)
+    ``None`` rather than a raiser, because that is the seam's own answer for a br that is
+    not on PATH — a read that raises past the seam is a different fact and no longer this
+    fixture's.
+    """
+    monkeypatch.setattr(br, "try_run_br", lambda *_a, **_k: None)
 
 
 @pytest.mark.usefixtures("_no_tracker")

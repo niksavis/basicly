@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from . import integrity, policy
 from .br import read_comments as _read_comments
-from .br import run_br as _run_br
+from .br import write as _write
 from .config import VERIFY_GATE_PROVIDER
 from .dispatch_brief import VERDICT_PREFIX
 
@@ -133,7 +133,7 @@ def record_verdict(repo_root: Path, issue_id: str, *, passed: bool) -> None:
     required gate is self-certification (basicly-jr0l.51). Reported under the engine's
     provider for the same reason `gate_status` counts only that one.
     """
-    _run_br(
+    _write(
         repo_root,
         [
             "gate",

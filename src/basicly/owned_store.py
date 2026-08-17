@@ -148,6 +148,17 @@ def tracker_mode(repo_root: Path) -> str:
     return _mode_reader[0](Path(repo_root))
 
 
+def external_store_in_use(repo_root: Path) -> bool:
+    """Whether the external tracker is still a store *repo_root* keeps.
+
+    For the two engine paths that manage that store rather than the work graph — the
+    install-time workspace, the worktree redirect probe — so each is a no-op once nothing
+    reads or writes it. Named, not spelled as a mode comparison at those call sites: they
+    ask whether the thing they manage exists, not which rung the repo is on.
+    """
+    return tracker_mode(repo_root) != MODE_OWNED
+
+
 def ledger_dir(repo_root: Path) -> Path:
     """The owned ledger's directory for *repo_root*.
 

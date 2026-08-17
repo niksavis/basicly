@@ -53,8 +53,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from . import br, handoff, plan_gate, plan_record, policy, run_record, runner
-from .br import run_br as _run_br
+from . import br, dependency_graph, handoff, plan_gate, plan_record, policy, run_record, runner
 from .config import (
     DEFAULT_BUILD_FACTOR,
     SizingConfig,
@@ -916,14 +915,8 @@ def frozen_estimates(repo_root: Path, feature_id: str) -> dict[str, CostEstimate
     caller recomputes.
     """
     frozen: dict[str, CostEstimate] = {}
-    try:
-        proc = _run_br(repo_root, ["comments", "list", feature_id, "--json"])
-        comments = json.loads(proc.stdout)
-    except RuntimeError, ValueError, OSError:
-        return frozen
-    if not isinstance(comments, list):
-        return frozen
-    for text in (str(c.get("text", "")) for c in comments if isinstance(c, dict)):
+    for row in br.try_read_comments(repo_root, feature_id):
+        text = str(row.get(br.COMMENT_TEXT_KEY, ""))
         parsed = _parse_sizing_marker(text)
         if parsed is not None:
             frozen.setdefault(parsed[0], parsed[1])
@@ -1750,10 +1743,7 @@ def freeze_estimate(
         sort_keys=True,
     )
     with contextlib.suppress(RuntimeError, OSError):
-        _run_br(
-            repo_root,
-            ["comments", "add", feature_id, f"{_SIZING_MARKER} key={key}\n{payload}"],
-        )
+        br.try_add_comment(repo_root, feature_id, f"{_SIZING_MARKER} key={key}\n{payload}")
 
 
 @dataclass(frozen=True)
@@ -1937,16 +1927,13 @@ def feature_labels(repo_root: Path, feature_id: str) -> tuple[str, ...]:
     Read once per decomposition rather than once per child: an external ``br``
     invocation is ~175x an in-process read, and the answer cannot change
     mid-decomposition.
+
+    Through the record seam, so a store that holds no such record yields no labels
+    rather than raising: an unlabelled parent is an ordinary state, and refusing the
+    decomposition over it would be the wrong direction to be wrong in.
     """
-    proc = _run_br(repo_root, ["show", feature_id, "--json"])
-    payload = json.loads(proc.stdout)
-    # ``br show --json`` returns a *list* of records, not a single object —
-    # verified against the installed binary. A dict is tolerated too so this does
-    # not become the only reader that breaks if that ever changes.
-    record = payload
-    if isinstance(payload, list):
-        record = payload[0] if payload else {}
-    raw = record.get("labels") or [] if isinstance(record, dict) else []
+    record = br.read_record(repo_root, feature_id) or {}
+    raw = record.get("labels") or []
     return tuple(str(label) for label in raw if str(label).strip())
 
 
@@ -1964,15 +1951,17 @@ def _create_child(
     if labels:
         args += ["-l", ",".join(labels)]
     args += ["-d", _child_body(spec), "--json"]
-    proc = _run_br(repo_root, args)
-    return str(json.loads(proc.stdout)["id"])
+    return br.create_record(repo_root, args)
 
 
 def _assert_no_new_cycles(repo_root: Path, created_ids: set[str]) -> None:
-    proc = _run_br(repo_root, ["dep", "cycles", "--blocking-only", "--json"])
-    report = json.loads(proc.stdout)
-    for cycle in report.get("cycles", []):
-        members = set(cycle if isinstance(cycle, list) else cycle.get("issues", []))
+    """Refuse a decomposition whose edges put one of *created_ids* on a blocking cycle.
+
+    A cycle that predates this run is left alone: it is somebody else's defect and
+    refusing over it would wedge every decomposition in the repository.
+    """
+    for cycle in dependency_graph.blocking_cycles(repo_root):
+        members = set(cycle)
         if members & created_ids:
             raise RuntimeError(f"decomposition introduced a dependency cycle: {sorted(members)}")
 
@@ -2026,7 +2015,7 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
             wanted.append(issue_ids[pred])
         depends_on = tuple(dict.fromkeys(wanted))
         for dep_id in depends_on:
-            _run_br(repo_root, ["dep", "add", issue_ids[index], dep_id, "-t", "blocks"])
+            br.write(repo_root, ["dep", "add", issue_ids[index], dep_id, "-t", "blocks"])
         created.append(CreatedChild(issue_ids[index], spec, groups[index], depends_on))
 
     _assert_no_new_cycles(repo_root, set(issue_ids))
