@@ -16,8 +16,9 @@ sorts its findings by what fixes them:
   quietly becomes an editor and the log stops being the truth. Exit :data:`EXIT_BROKEN`.
 - :data:`DERIVED` — a snapshot or checkpoint that **disagrees with the log it claims to
   summarise**. `rebuild` fixes it by replacement. Exit :data:`EXIT_DERIVED`.
-- :data:`WARNING` — an event kind this version's fold applies no state for. Never a
-  failure (§4.5): an old reader hitting a newer ledger must not report false corruption.
+- :data:`WARNING` — an event kind **nothing** folds. Never a failure (§4.5): an old reader
+  hitting a newer ledger must not report false corruption. A kind a sibling folds is a census
+  line instead — it fired on 1,015 of 5,611 events until basicly-vkh0.38.
 
 ## Which derived state is worth checking, which is not, and why they differ
 
@@ -163,9 +164,8 @@ CARRIED_TOTALS = "carried-totals"
 DERIVED_UNREADABLE = "derived-unreadable"
 # A derived file whose header claims to be current and whose body is not what the log folds to.
 DERIVED_DISAGREES = "derived-disagrees"
-# A kind the fold applies no state for: a newer writer's, or one whose state a sibling module
-# derives from the events directly (`edge` and `gate`, read by `differential.py`). A warning
-# either way — this reader cannot tell them apart, and neither is corruption.
+# A kind no module folds: a newer writer's, or a malformed one. A warning and not a failure,
+# because neither is corruption — but a finding, which a delegated kind is not.
 UNFOLDED_KIND = "unfolded-kind"
 
 # How many carrying event ids one finding prints. Measured rather than guessed: the first run
@@ -222,12 +222,16 @@ class Report:
             ledger print identically.
         events: Events the fold consumed, malformed ones excluded.
         records: Records in the fold.
+        delegated_kinds: ``(kind, count, the sibling fold that owns it)`` per kind the record
+            fold leaves to a sibling. A census, not a finding, so the population reads as
+            counted rather than as gone.
     """
 
     directory: Path
     findings: tuple[Finding, ...] = ()
     events: int = 0
     records: int = 0
+    delegated_kinds: tuple[tuple[str, int, str], ...] = ()
 
     def of_severity(self, severity: str) -> tuple[Finding, ...]:
         """Every finding at *severity*."""
@@ -259,6 +263,10 @@ class Report:
             "derived": len(self.of_severity(DERIVED)),
             "warnings": len(self.of_severity(WARNING)),
             "findings": [found.as_dict() for found in self.findings],
+            "delegated_kinds": {
+                kind: {"events": count, "folded_by": owner}
+                for kind, count, owner in self.delegated_kinds
+            },
         }
 
 
@@ -521,7 +529,11 @@ def _totals_findings(folded: Any, ordered: Sequence[Any], voided: Iterable[str])
 
 
 def _unfolded_kind_findings(folded: Any, ordered: Sequence[Any]) -> list[Finding]:
-    """One warning per kind the fold applies no state for, never a failure (§4.5)."""
+    """One warning per kind **no** module folds, never a failure (§4.5).
+
+    A delegated kind is absent on purpose: counting it here is what made the old text offer
+    two readings, neither actionable.
+    """
     carriers: dict[str, list[str]] = {}
     for event in ordered:
         if event.kind in folded.unknown_kinds:
@@ -532,15 +544,26 @@ def _unfolded_kind_findings(folded: Any, ordered: Sequence[Any]) -> list[Finding
             severity=WARNING,
             subject=kind,
             detail=(
-                f"the fold applies no state for this kind, carried on {count} of this ledger's "
-                f"lines: either a newer writer's, or one a sibling module derives from the "
-                f"events directly. Preserved verbatim and warned about, because an old reader "
-                f"hitting a newer ledger must not report false corruption"
+                f"no module in this kit folds this kind, carried on {count} of this ledger's "
+                f"lines: a newer writer's, or a malformed one. Preserved verbatim and warned "
+                f"about, because an old reader hitting a newer ledger must not report false "
+                f"corruption"
             ),
             event_ids=tuple(sorted(carriers.get(kind, ()))),
         )
         for kind, count in sorted(folded.unknown_kinds.items())
     ]
+
+
+def _delegated_census(folded: Any) -> tuple[tuple[str, int, str], ...]:
+    """Each delegated kind, its count, and the sibling fold `events.py` names for it.
+
+    On :data:`EDGE_KINDS`' grounds: a seam spelled twice reports the checker's own copy.
+    """
+    return tuple(
+        (kind, count, events.DELEGATED_KINDS[kind])
+        for kind, count in sorted(folded.delegated_kinds.items())
+    )
 
 
 def _disagreement(present: Any, expected: Any) -> str:
@@ -657,6 +680,7 @@ def check(directory: Path | str) -> Report:
         findings=tuple(findings),
         events=len(ordered),
         records=len(folded.records),
+        delegated_kinds=_delegated_census(folded),
     )
 
 

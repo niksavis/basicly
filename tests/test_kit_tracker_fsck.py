@@ -405,7 +405,39 @@ def test_a_kind_the_fold_applies_no_state_for_warns_and_does_not_fail(tmp_path: 
     assert found[0].subject == "reviewed"
     assert found[0].event_ids == (newer.id,)
     assert found[0].severity == fsck.WARNING
+    assert report.delegated_kinds == ()
     assert report.clean is True
+    assert report.exit_code == fsck.EXIT_CLEAN
+
+
+def test_a_kind_a_sibling_folds_is_a_census_line_and_not_a_warning(tmp_path: Path) -> None:
+    """The warning has to fire on an unreadable event and stay silent on a delegated one.
+
+    Both classes in one ledger, because a checker that had simply stopped warning about
+    unfolded kinds would satisfy the first half on its own — and that is the failure mode
+    here, a signal whose 1,015 false entries made it unusable as D-34's safety net.
+    """
+    ledger = _seed(tmp_path / "ledger")
+    _append(
+        ledger,
+        [
+            events.Draft(RECORD_A, events.KIND_EDGE, {"target": RECORD_B, "edge_type": "blocks"}),
+            events.Draft(RECORD_A, events.KIND_GATE, {"gate": "verify", "passed": True}),
+            events.Draft(RECORD_B, "reviewed", {"by": "a newer writer"}),
+        ],
+    )
+
+    report = fsck.check(ledger)
+
+    assert [found.subject for found in _of_kind(report, fsck.UNFOLDED_KIND)] == ["reviewed"]
+    assert report.delegated_kinds == (
+        (events.KIND_EDGE, 1, "provenance.fold_edges"),
+        (events.KIND_GATE, 1, "gates.fold_gates"),
+    )
+    assert report.as_dict()["delegated_kinds"] == {
+        events.KIND_EDGE: {"events": 1, "folded_by": "provenance.fold_edges"},
+        events.KIND_GATE: {"events": 1, "folded_by": "gates.fold_gates"},
+    }
     assert report.exit_code == fsck.EXIT_CLEAN
 
 

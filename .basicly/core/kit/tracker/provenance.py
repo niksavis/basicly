@@ -73,7 +73,7 @@ one bad line from a foreign writer does not wedge every edge read in the ledger.
 
 ## The seam with the record fold, stated because a reader will meet it
 
-`events.fold` does not know :data:`KIND_EDGE` and reports it under ``unknown_kinds``. That
+`events.fold` delegates :data:`KIND_EDGE` here, under ``delegated_kinds``. That
 is correct rather than a defect: an edge is not a record field, there is no record state
 for it to fold into, and its totals are counted like any other event's. `events.fold` is
 simply an older reader with respect to this kind, which is exactly the case §4.5's

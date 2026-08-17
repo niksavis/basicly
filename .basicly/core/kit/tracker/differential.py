@@ -578,7 +578,7 @@ def views_from_events(ledger_events: Iterable[Any]) -> dict[str, RecordView]:
 
     The fold is the authority for status, fields and comments. Edges and gate rows are read
     from their own events directly because `events.py` has a handler for neither kind — it
-    counts them in :attr:`FoldResult.unknown_kinds` and folds no state, which is §4.5's
+    counts them in :attr:`FoldResult.delegated_kinds` and folds no state, which is
     tolerant direction working as specified rather than a gap to route around.
 
     A gate row keyed ``(gate, provider)`` keeps only its latest event, because that is what

@@ -1197,6 +1197,7 @@ def test_the_module_imports_nothing_outside_the_standard_library() -> None:
         "re",
         "sys",
         "time",
+        "types",
     }
     assert "sys.path.insert" not in source
 
@@ -1204,8 +1205,8 @@ def test_the_module_imports_nothing_outside_the_standard_library() -> None:
 # --- the closed set of kinds --------------------------------------------------
 
 # The kit modules that still spell a kind literal rather than aliasing `events.KIND_*`, and why
-# each is not drift: `baseline.py` loads no sibling at all, and `provenance.py`'s alias is the
-# one line outside basicly-vkh0.36's scope. An entry is only ever removed, with the literal.
+# that is not drift: `baseline.py` loads no sibling at all, so it has nothing to alias from. An
+# entry is only ever removed, with the literal.
 SPELLS_ITS_OWN_KIND = frozenset({"baseline.py"})
 _KIND_CONSTANT = re.compile(r"^KIND_[A-Z0-9_]+$")
 
@@ -1215,14 +1216,19 @@ def test_the_live_ledger_holds_no_kind_outside_the_closed_set() -> None:
 
     The event floor is the positive control: the log held 5,485 events on 2026-08-17 and is
     append-only, so a lower count means this read missed the ledger and its empty kind set
-    would pass.
+    would pass. The delegated floor is the same argument for the same log: 1,015 of its 5,611
+    events were `edge` or `gate` that day, every one of which the fold called unknown until
+    basicly-vkh0.38, and the count can only rise.
     """
     parsed, quarantined = events.read_events(REPO_ROOT / ".basicly" / "ledger")
     kinds = {event.kind for event in parsed}
+    folded = events.fold(parsed)
 
     assert len(parsed) >= 5000, f"parsed {len(parsed)} events, so the read is the finding"
     assert not quarantined, quarantined[:3]
     assert kinds <= events.KNOWN_KINDS, sorted(kinds - events.KNOWN_KINDS)
+    assert folded.unknown_kinds == {}, folded.unknown_kinds
+    assert sum(folded.delegated_kinds.values()) >= 1015, folded.delegated_kinds
 
 
 def test_no_kit_module_spells_a_kind_the_closed_set_does_not_hold() -> None:
@@ -1255,3 +1261,85 @@ def test_no_kit_module_spells_a_kind_the_closed_set_does_not_hold() -> None:
     for module, name, taken_from in aliased:
         assert taken_from == f"events.{name}", f"{module} takes {name} from {taken_from}"
         assert name in declared, f"{module} aliases {name}, which events.py does not declare"
+
+
+# --- delegated, applied, unknown ----------------------------------------------
+
+
+def test_a_kind_a_sibling_folds_is_reported_as_delegated_and_not_as_unknown(
+    tmp_path: Path,
+) -> None:
+    """Asserted through a real append, because the defect was in what the fold *reported*.
+
+    The unknown kind in the same ledger is the positive control: a fold that had simply
+    stopped counting the second class would satisfy the first assertion on its own.
+    """
+    _build(tmp_path)
+    events.append(
+        tmp_path,
+        [
+            events.Draft(RECORD_A, "edge", {"target": RECORD_B, "edge_type": "blocks"}),
+            events.Draft(RECORD_A, "gate", {"gate": "verify", "passed": True}),
+            events.Draft(RECORD_A, "seismograph_reading", {"magnitude": 4}),
+        ],
+        clock=lambda: CLOCK_EARLY,
+    )
+
+    result = events.fold(events.read_events(tmp_path)[0])
+
+    assert result.delegated_kinds == {"edge": 1, "gate": 1}
+    assert result.unknown_kinds == {"seismograph_reading": 1}
+    assert result.mismatched_totals == []
+    assert result.records[RECORD_A].totals.events == 10
+    assert result.records[RECORD_A].fields == {"title": "the first"}
+
+
+def test_the_closed_set_is_partitioned_by_who_folds_each_kind() -> None:
+    """A kind cannot join the vocabulary with nobody named to fold it.
+
+    This is what the `comment` split (basicly-vkh0.30) rests on: it adds five kinds, and one
+    added to `KNOWN_KINDS` with no handler and no delegate has to fail here rather than fold
+    to nothing quietly. Both directions of the partition, because the union alone would hold
+    while a kind was in both halves.
+    """
+    applied = events.APPLIED_KINDS
+    delegated = frozenset(events.DELEGATED_KINDS)
+
+    assert applied | delegated == events.KNOWN_KINDS, sorted(
+        (applied | delegated) ^ events.KNOWN_KINDS
+    )
+    assert not applied & delegated, sorted(applied & delegated)
+    assert {events.classify_kind(kind) for kind in events.KNOWN_KINDS} == {
+        events.APPLIED,
+        events.DELEGATED,
+    }
+    assert events.classify_kind("seismograph_reading") == events.UNKNOWN
+
+
+def test_every_delegated_kind_names_a_sibling_that_reads_that_kind() -> None:
+    """The delegation is a claim about another module, so it is checked against that module.
+
+    Statically, for the reason the closed-set test above gives. The bind is one hop deep on
+    purpose: `provenance.fold_edges` reaches its kind through `is_edge_event` and
+    `gates.fold_gates` through `is_gate_event`, so requiring the constant in the fold's own
+    body would fail on code that does delegate.
+    """
+    assert events.DELEGATED_KINDS, "nothing is declared delegated, so this test proves nothing"
+    for kind, owner in events.DELEGATED_KINDS.items():
+        module, _, fold_name = owner.partition(".")
+        constant = next(
+            name
+            for name in vars(events)
+            if _KIND_CONSTANT.match(name) and getattr(events, name) == kind
+        )
+        functions = {
+            node.name: ast.dump(node)
+            for node in ast.parse((KIT_DIR / f"{module}.py").read_text(encoding="utf-8")).body
+            if isinstance(node, ast.FunctionDef)
+        }
+        readers = {name for name, dumped in functions.items() if f"'{constant}'" in dumped}
+
+        assert fold_name in functions, f"{owner} is not a module-level function"
+        assert fold_name in readers or any(
+            f"'{name}'" in functions[fold_name] for name in readers
+        ), f"{owner} never reaches {constant}, so it does not fold {kind!r}"

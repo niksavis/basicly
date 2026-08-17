@@ -1,0 +1,38 @@
+# A delegated kind is no longer reported as an unknown one (basicly-vkh0.38, backlog B8.2,
+# architecture §32.8). `events.fold` reported `{'edge': 1005, 'gate': 10}` — 1,015 of the
+# ledger's 5,611 events, 18.1% [measured 2026-08-17 at fb19039+2] — under
+# `FoldResult.unknown_kinds`, and `fsck` warned about every one of them, so the signal D-34's
+# migration is watched by was 18% false. Four modules, none with more than 4 tokens of
+# headroom, measured before the first edit.
+#
+# `events.py` +422: three case names, `DELEGATED_KINDS`, `APPLIED_KINDS`, `classify_kind`, one
+# field on `FoldResult` and the branch that fills it. Two claims the change falsified were cut
+# rather than kept — `KNOWN_KINDS`' prose about where `edge` and `gate` fold, which is now the
+# `DELEGATED_KINDS` table, and `_HANDLERS`' separate note about `dispatch`, folded into the
+# comment that also names `APPLIED_KINDS`. The other ratchet is the proof that none of these
+# tokens came out of the comment budget: the module's prose share is **57.1 before and 57.1
+# after**, held at its frozen figure rather than climbing.
+#
+# `fsck.py` +242: `_delegated_census`, the `Report.delegated_kinds` field and its JSON form.
+# Prose share **51.3 before and 51.3 after**, and it paid for the new docstrings out of the
+# `UNFOLDED_KIND` comment and warning text — three lines and a sentence that existed only to
+# offer the reader two readings of one warning, which is the ambiguity this change removes.
+#
+# `tests/test_kit_tracker_events.py` +979 and `tests/test_kit_tracker_fsck.py` +347: the four
+# tests the acceptance criteria name. One folds a ledger holding a delegated kind and an
+# unknown one together, because a fold that had simply stopped counting the second class would
+# pass on the delegated half alone; one asserts the closed set is partitioned by who folds each
+# kind, which is what refuses basicly-vkh0.30's five new kinds if one arrives with nobody named
+# to fold it; one reads the delegate's own source so the declaration cannot name a module that
+# does not fold the kind; and one holds `fsck` to warning on the unknown kind in the same
+# ledger it stays silent about the delegated ones in. Each was written against a mutation that
+# had to fail first — the delegation removed, a ninth kind added to the closed set, and a
+# delegate pointed at a function that never reaches the kind.
+[ratchet.module_size]
+rebaseline_reason = "the three-way kind classification and the four tests that bind it, in four modules with 0 to 4 tokens of headroom"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/events.py" = 422
+".basicly/core/kit/tracker/fsck.py" = 242
+"tests/test_kit_tracker_events.py" = 979
+"tests/test_kit_tracker_fsck.py" = 347

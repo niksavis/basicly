@@ -652,12 +652,12 @@ def test_the_structural_edge_fields_are_outside_the_size_cap(tmp_path: Path) -> 
 def test_an_edge_event_counts_in_the_records_totals_and_changes_no_record_state(
     tmp_path: Path,
 ) -> None:
-    """`events.fold` is an older reader with respect to this kind, and that is correct.
+    """`events.fold` delegates this kind rather than applying it, and that is correct.
 
     An edge is not a record field, so there is no record state for it to fold into — it
-    is counted in the totals like every other event and reported under ``unknown_kinds``,
-    which is exactly the tolerance §4.5 asks of a reader meeting a kind it does not know.
-    Pinned here so the seam is visible rather than discovered by whoever writes `fsck`.
+    is counted in the totals and reported under ``delegated_kinds``, naming the sibling
+    that folds it. It was ``unknown_kinds`` until vkh0.38, which made a delegation
+    indistinguishable from corruption.
     """
     events.append(
         tmp_path,
@@ -669,7 +669,7 @@ def test_an_edge_event_counts_in_the_records_totals_and_changes_no_record_state(
     stored, _ = events.read_events(tmp_path)
     result = events.fold(stored)
 
-    assert result.unknown_kinds == {provenance.KIND_EDGE: 3}
+    assert result.delegated_kinds == {provenance.KIND_EDGE: 3}
     assert result.mismatched_totals == []
     assert result.records[RECORD_A].totals.events == 4
     assert result.records[RECORD_A].fields == {"title": "the lane"}

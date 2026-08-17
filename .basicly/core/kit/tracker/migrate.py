@@ -65,7 +65,7 @@ record needs creating.
 ## What the fold makes of it today
 
 ``edge`` is a kind `events.py` has no handler for, so a fold counts it in
-:attr:`FoldResult.unknown_kinds` and folds no edge state. That is §4.5's tolerant direction
+:attr:`FoldResult.delegated_kinds` and folds no edge state. That is the delegation
 working as specified — this module is the newer writer — and basicly-vkh0.13 adds the
 handler. The totals count an edge event either way, so an old reader reports no false
 disagreement.

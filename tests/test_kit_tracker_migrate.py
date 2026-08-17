@@ -324,8 +324,8 @@ def test_an_imported_edge_is_a_kind_the_current_fold_carries_without_folding(
 ) -> None:
     """§4.5's tolerant direction, asserted rather than assumed.
 
-    `events.py` has no ``edge`` handler until basicly-vkh0.13 adds one, so the fold counts
-    the kind as unknown and folds no edge state — a warning, never an error. The event is
+    `events.py` applies no ``edge`` state and delegates the kind, so the fold counts it
+    as delegated and folds no edge state (vkh0.38). The event is
     still counted in the record's totals, which is what stops an older reader reporting
     every later event as a false disagreement.
     """
@@ -340,7 +340,7 @@ def test_an_imported_edge_is_a_kind_the_current_fold_carries_without_folding(
     _import(tmp_path, snapshot)
 
     folded = _fold(tmp_path)
-    assert folded.unknown_kinds == {migrate.KIND_EDGE: 1}
+    assert folded.delegated_kinds == {migrate.KIND_EDGE: 1}
     assert folded.mismatched_totals == []
     assert folded.records[RECORD_B].totals.events == 3
 

@@ -112,6 +112,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from types import MappingProxyType
 
 # --- errors -------------------------------------------------------------------
 
@@ -211,8 +212,7 @@ KIND_EDGE = "edge"
 KIND_GATE = "gate"
 
 # The closed set (§4.5), declared once so a sibling aliases these names rather than respelling
-# a literal (basicly-vkh0.36). `edge` and `gate` fold in `provenance.py` and `gates.py`, not
-# below, so a member with no handler here is normal and a non-member is read, never refused.
+# a literal (basicly-vkh0.36). A non-member is read, never refused.
 KNOWN_KINDS = frozenset({
     KIND_CREATED,
     KIND_FIELD,
@@ -222,6 +222,22 @@ KNOWN_KINDS = frozenset({
     KIND_TOMBSTONE,
     KIND_EDGE,
     KIND_GATE,
+})
+
+# What the fold does with a kind: applies its state, leaves it to a sibling, or does not know
+# it. Delegation and ignorance shared one field until basicly-vkh0.38, which made `edge` and
+# `gate` 1,015 of this ledger's 5,611 events reported as unknown [measured 2026-08-17] — 18%
+# false in the one signal D-34's migration is watched by.
+APPLIED = "applied"
+DELEGATED = "delegated"
+UNKNOWN = "unknown"
+
+# Kind to the sibling fold that owns its state, as a name because importing a sibling that
+# imports this module is a cycle. `tests/test_kit_tracker_events.py` reads the named module's
+# source, so a delegate that stops folding the kind fails the suite.
+DELEGATED_KINDS = MappingProxyType({
+    KIND_EDGE: "provenance.fold_edges",
+    KIND_GATE: "gates.fold_gates",
 })
 
 # A kind is a permanent vocabulary entry, so it is restricted to a shape that can be read
@@ -527,9 +543,11 @@ class FoldResult:
 
     Attributes:
         records: Item id to state.
-        unknown_kinds: Kind to count, for a kind this version does not know. A warning,
-            never an error — an old reader hitting a newer ledger must not report false
-            corruption (§4.5).
+        delegated_kinds: Kind to count, for a kind :data:`DELEGATED_KINDS` gives a sibling
+            fold for. Not a finding: another module owns that state.
+        unknown_kinds: Kind to count, for a kind **nothing** folds. A warning, never an
+            error — an old reader hitting a newer ledger must not report false corruption
+            (§4.5).
         duplicate_ids: Ids that appeared more than once, folded once.
         forked: Items where two distinct events share a sequence number. §4.6's rule is
             that a forked item's **carried** totals are void until a fold restates them;
@@ -539,6 +557,7 @@ class FoldResult:
     """
 
     records: dict[str, RecordState] = field(default_factory=dict)
+    delegated_kinds: dict[str, int] = field(default_factory=dict)
     unknown_kinds: dict[str, int] = field(default_factory=dict)
     duplicate_ids: list[str] = field(default_factory=list)
     forked: list[str] = field(default_factory=list)
@@ -576,9 +595,9 @@ def _apply_tombstone(state: RecordState, payload: Mapping[str, object]) -> None:
     state.tombstoned = True
 
 
-# `dispatch` is known and changes no state — it is counted by the accumulator, which is
-# the point of `attempts`. Mapping it to a no-op function instead would read as an
-# oversight the next time somebody looked for its handler.
+# `dispatch` has no handler on purpose — its state is the accumulator's `attempts`, and a no-op
+# function here would read as an oversight — so it is named beside them below rather than in
+# them. Both together are where state is applied, which is what :func:`classify_kind` reads.
 _HANDLERS: dict[str, Callable[[RecordState, Mapping[str, object]], None]] = {
     KIND_CREATED: _apply_created,
     KIND_FIELD: _apply_field,
@@ -586,6 +605,21 @@ _HANDLERS: dict[str, Callable[[RecordState, Mapping[str, object]], None]] = {
     KIND_COMMENT: _apply_comment,
     KIND_TOMBSTONE: _apply_tombstone,
 }
+
+APPLIED_KINDS = frozenset(_HANDLERS) | {KIND_DISPATCH}
+
+
+def classify_kind(kind: str) -> str:
+    """:data:`APPLIED`, :data:`DELEGATED` or :data:`UNKNOWN` for *kind*.
+
+    :data:`KNOWN_KINDS` is not consulted: a member nothing folds comes back unknown and warns,
+    and the suite holds the two sets to a partition of it so nothing reaches that quietly.
+    """
+    if kind in APPLIED_KINDS:
+        return APPLIED
+    if kind in DELEGATED_KINDS:
+        return DELEGATED
+    return UNKNOWN
 
 
 def _resumed(state: RecordState) -> RecordState:
@@ -606,8 +640,8 @@ def fold(events: Iterable[Event], *, seed: Mapping[str, RecordState] | None = No
 
     The sort is the contract: the result is a function of the event **set**, so a shuffled
     log, a reversed log and a log a union merge concatenated in an arbitrary side-order all
-    fold to the same state. An unknown kind is counted and reported, never folded and never
-    an error.
+    fold to the same state. A kind no handler here applies state for is counted and reported —
+    as delegated when a sibling folds it, as unknown when nothing does — never an error.
 
     *seed* resumes the fold from state somebody already folded — the rotation checkpoint
     (`snapshot.py`, basicly-vkh0.14), so steady state folds a checkpoint plus the current
@@ -649,7 +683,11 @@ def fold(events: Iterable[Event], *, seed: Mapping[str, RecordState] | None = No
         handler = _HANDLERS.get(event.kind)
         if handler is not None:
             handler(state, event.payload)
-        elif event.kind != KIND_DISPATCH:
+            continue
+        classified = classify_kind(event.kind)
+        if classified == DELEGATED:
+            result.delegated_kinds[event.kind] = result.delegated_kinds.get(event.kind, 0) + 1
+        elif classified == UNKNOWN:
             result.unknown_kinds[event.kind] = result.unknown_kinds.get(event.kind, 0) + 1
     return result
 
