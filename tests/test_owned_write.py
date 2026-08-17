@@ -99,8 +99,13 @@ def test_a_write_with_no_translation_stops_the_work(tmp_path: Path) -> None:
     repo = owned_repo(tmp_path)
     seed(repo, PARENT)
 
-    with pytest.raises(owned_store.TrackerDivergenceError, match="no owned-ledger translation"):
+    with pytest.raises(owned_store.TrackerDivergenceError) as refusal:
         owned_write.append(repo, ["reopen", PARENT])
+
+    # The refused verb and the accepted set both, so the message tells a caller what to
+    # run instead rather than only that it stopped.
+    assert "'reopen'" in str(refusal.value)
+    assert "comments add" in str(refusal.value)
 
 
 # --- the create ---------------------------------------------------------------

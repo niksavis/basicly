@@ -35,11 +35,11 @@ MAC_HOME = "/Users" + "/someuser/Development/basicly"
 WINDOWS_DRIVE = "C:" + "\\" + "Development" + "\\" + "basicly"
 WINDOWS_UNC = "\\" * 2 + "?" + "\\" + WINDOWS_DRIVE
 
-EXPORT = ".beads/issues.jsonl"
+LEDGER = ".basicly/ledger/events-0001.jsonl"
 
 
 def _record(**extra: object) -> str:
-    """A tracker record serialized the way br writes the export."""
+    """One tracker record, serialized the way the scanner meets it in a ledger line."""
     base: dict[str, object] = {"id": "basicly-test", "title": "t", "status": "open"}
     base.update(extra)
     return json.dumps(base, separators=(",", ":"), ensure_ascii=False)
@@ -47,7 +47,7 @@ def _record(**extra: object) -> str:
 
 def _rules(content: str) -> list[str]:
     """The rule names the gate trips on *content*, in order."""
-    return [rule for _, _, rule in scan.findings(EXPORT, content)]
+    return [rule for _, _, rule in scan.findings(LEDGER, content)]
 
 
 # --- the mirror between the hook and the package ----------------------------
@@ -110,13 +110,13 @@ def test_the_line_number_reported_is_one_based() -> None:
         _record(id="basicly-a"),
         _record(id="basicly-b", source_repo_path=MAC_HOME),
     ])
-    assert [lineno for _, lineno, _ in scan.findings(EXPORT, content)] == [2]
+    assert [lineno for _, lineno, _ in scan.findings(LEDGER, content)] == [2]
 
 
 def test_one_finding_per_record_even_when_several_rules_match() -> None:
     """Noise control: a record carrying both shapes reports once, not twice."""
     line = _record(source_repo_path=POSIX_HOME, description=WINDOWS_DRIVE)
-    assert len(scan.findings(EXPORT, line)) == 1
+    assert len(scan.findings(LEDGER, line)) == 1
 
 
 def test_an_unparseable_line_is_scanned_as_raw_text() -> None:

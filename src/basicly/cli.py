@@ -4523,7 +4523,7 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
         "policy", help="Loop gate/checkpoint policy checks (DoR, gates, rework, checkpoints)"
     )
     policy_sub = policy_parser.add_subparsers(dest="policy_command", required=True)
-    p_dor = policy_sub.add_parser("dor", help="Check Definition-of-Ready via br lint")
+    p_dor = policy_sub.add_parser("dor", help="Check a record against Definition-of-Ready")
     p_dor.add_argument("issue")
     p_scaffold = policy_sub.add_parser(
         "scaffold", help="Print a bead body with every section the DoR requires for a work type"

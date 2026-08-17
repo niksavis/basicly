@@ -134,7 +134,11 @@ def test_a_write_with_no_translation_stops_rather_than_landing_half(
     """A surface nobody translated is a dependency somebody took without deciding to."""
     assert cli.main(["tracker", "write", "--", "reopen", ROOT]) != 0
 
-    assert "no owned-ledger translation" in capsys.readouterr().err
+    # The refused verb and the accepted set both, so the message tells a caller what to
+    # run instead rather than only that it stopped.
+    refusal = capsys.readouterr().err
+    assert "'reopen'" in refusal
+    assert "comments add" in refusal
 
 
 def test_the_read_only_guard_binds_this_surface_too(

@@ -294,9 +294,10 @@ def drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[object]:
     translate = _MIRRORED_WRITES.get(surface)
     if translate is None:
         raise TrackerDivergenceError(
-            f"br {surface} has no owned-ledger translation, so the dual write cannot keep "
-            f"the two stores in step; add one to mirror._MIRRORED_WRITES, or list it in "
-            f"mirror._UNMIRRORED_WRITES if it states nothing about a record"
+            f"{surface!r} is not a write this tracker knows how to record; the verbs that "
+            f"are: {', '.join(sorted(_MIRRORED_WRITES))}. Add a translation to "
+            f"mirror._MIRRORED_WRITES, or list it in mirror._UNMIRRORED_WRITES if it "
+            f"states nothing about a record"
         )
     return translate(kit_module, args, stdout)
 

@@ -324,9 +324,8 @@ def _record_for(repo_root: Path, bead: str) -> dict:
         if record["id"] == bead:
             return record
     raise ValueError(
-        f"unknown bead id {bead!r}: not in the tracker's issues.jsonl — the "
-        "tracker-commit-msg hook reads that file and would reject the commit "
-        "(run 'br sync --flush-only' if the bead was only just created)"
+        f"unknown bead id {bead!r}: no event in the committed ledger names it — the "
+        "tracker-commit-msg hook folds the same log and would reject the commit"
     )
 
 

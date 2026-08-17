@@ -2,12 +2,12 @@
 
 Deterministic-first, semantic-second: a failed (or missing) *required* gate
 blocks advancement, while any other recorded gate is advisory and never blocks.
-Definition-of-Ready is enforced via ``br lint`` before the decompose checkpoint.
-Rework is bounded (``max_rework`` retries) and then escalates to a human. The
-three human checkpoints (classify / decompose / ship) are recorded as ``br``
-comment markers.
+Definition-of-Ready is enforced in-process before the decompose checkpoint
+(:func:`definition_of_ready`, basicly-wpc8.1). Rework is bounded (``max_rework``
+retries) and then escalates to a human. The three human checkpoints (classify /
+decompose / ship) are recorded as tracker comment markers.
 
-``br`` is the single source of truth — this engine keeps no side-state. Gate
+The tracker is the single source of truth — this engine keeps no side-state. Gate
 results overwrite in ``br`` (no history), so rework attempts and checkpoint
 approvals are recorded as inspectable comment markers rather than derived from
 gate history. The block-vs-advise policy lives here; ``br`` only stores verdicts.
