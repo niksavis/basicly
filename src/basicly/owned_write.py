@@ -72,9 +72,9 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
     **The mint and the append are one critical section**, over the ledger's own lock, the
     rule the kit's ``cli.create_record`` states: minting reads every id the ledger ever held
     and `supervise` runs its lanes concurrently, so a writer appending in between could be
-    handed the same id. Only the ``--parent`` form has an owned equivalent — a root mint
-    needs a prefix that lives in the external tracker's config — and every create the engine
-    makes names one (`decompose._create_child`).
+    handed the same id. A child inherits its prefix from its parent; a root takes it from
+    ``[tracker] prefix``, because the prefix used to live in the external tracker's own
+    config and the flip deletes that (basicly-vkh0.42.7).
 
     Raises:
         TrackerDivergenceError: the create names no parent, the kit is not installed, or
@@ -83,11 +83,13 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
     kit_module = owned_store.kit(repo_root)
     events = kit_module.events
     parent = dict(br_argv.flag_pairs(args, br_argv.VALUE_FLAGS["create"])).get("--parent", "")
-    if not parent:
+    prefix = owned_store.tracker_prefix(repo_root) if not parent else None
+    if not parent and not prefix:
         raise TrackerDivergenceError(
-            f"br create with no --parent has no owned equivalent: the id prefix a root "
-            f"mint needs is the external tracker's own, so {' '.join(args)} would have to "
-            f"guess it; name a parent"
+            f"br create with no --parent needs an id prefix and this repository declares "
+            f"none: set [tracker] prefix in basicly.toml, or name a parent. "
+            f"{' '.join(args)} would otherwise have to guess a namespace no read would "
+            f"find again"
         )
     ledger = owned_store.ledger_dir(repo_root)
     try:
@@ -95,7 +97,11 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
             # Every id the ledger ever held, tombstones included: `ids.minted_ever`'s rule
             # is that a deleted record's id is never handed out again.
             minted = set(events.fold(events.read_events(ledger)[0]).records)
-            record = events.ids.next_child_id(parent, minted)
+            record = (
+                events.ids.next_child_id(parent, minted)
+                if parent
+                else events.ids.mint_root_id(events.ids.validate_prefix(prefix or ""), minted)
+            )
             drafts = mirror.drafts(kit_module, args, json.dumps({"id": record}))
             events.append(
                 ledger,

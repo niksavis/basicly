@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import __version__, br, dropin, permissions, session, tree_schema
+from . import __version__, br, dropin, owned_store, permissions, session, tree_schema
 from .context_window import (
     AGENT_WINDOW,
     DECLARED_WINDOW,
@@ -588,7 +588,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
     ),
     # Which step of the work-tracker cutover this repo is on (basicly-vkh0.19).
     # Read by :func:`load_tracker_mode` and acted on inside `basicly.br`.
-    "tracker": Table(keys=frozenset({"mode"})),
+    "tracker": Table(keys=frozenset({"mode", "prefix"})),
     # Read by .basicly/core/hooks/internal-info-scan.py, never by this module: the
     # denylist is machine-local by design, so the only file it can live in is the
     # gitignored overlay this schema also governs.
@@ -790,6 +790,23 @@ def _harness_section(repo_root: Path, name: str) -> dict:
     return merged
 
 
+def load_tracker_prefix(repo_root: Path) -> str | None:
+    """The id prefix ``[tracker] prefix`` declares, or None when it declares none.
+
+    A root record's id is ``<prefix>-<root>``, and until the cutover the prefix lived in
+    the external tracker's own config — which the flip deletes. So a repository that
+    mints a root from the owned ledger has to declare it, and one that never mints a root
+    need not: every id the engine creates names a parent and inherits the prefix from it
+    (`decompose._create_child`).
+
+    Unvalidated here on purpose. The shape rule is the kit's (``ids.PREFIX_PATTERN``) and
+    the minter refuses a prefix it cannot use, so validating a second time here would put
+    two spellings of one rule in two modules.
+    """
+    prefix = _harness_section(repo_root, "tracker").get("prefix")
+    return str(prefix) if prefix else None
+
+
 def load_tracker_mode(repo_root: Path) -> str:
     """Which step of the work-tracker cutover ``[tracker] mode`` declares.
 
@@ -826,6 +843,7 @@ def load_tracker_mode(repo_root: Path) -> str:
 # is the one line that performs it, and `tests/test_br_seam.py` asserts that importing
 # this module is what puts the seam in a repo's declared mode.
 br.set_mode_reader(load_tracker_mode)
+owned_store.set_prefix_reader(load_tracker_prefix)
 
 
 @dataclass(frozen=True)

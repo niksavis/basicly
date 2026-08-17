@@ -107,6 +107,33 @@ _mode_reader: list[Callable[[Path], str]] = []
 _kit_modules: dict[tuple[str, str], ModuleType] = {}
 
 
+_prefix_reader: list[Callable[[Path], str | None]] = []
+
+
+def set_prefix_reader(reader: Callable[[Path], str | None] | None) -> None:
+    """Install the reader of ``[tracker] prefix``, the same inversion the mode uses.
+
+    A root record's id needs a prefix, which lived in the external tracker's config until
+    the flip deleted it (basicly-vkh0.42.7). This module cannot import `basicly.config`
+    for it — that import closes the cycle :func:`set_mode_reader` documents.
+    """
+    _prefix_reader.clear()
+    if reader is not None:
+        _prefix_reader.append(reader)
+
+
+def tracker_prefix(repo_root: Path) -> str | None:
+    """The declared root-id prefix, or None when none is declared or no reader is installed.
+
+    None rather than a raise, unlike :func:`tracker_mode`: a repository that mints no root
+    needs no prefix, so an absent one is a fact about the repository and not a
+    misconfiguration. The caller that needs one refuses on its own behalf.
+    """
+    if not _prefix_reader:
+        return None
+    return _prefix_reader[0](Path(repo_root))
+
+
 def set_mode_reader(reader: Callable[[Path], str] | None) -> None:
     """Install the function that answers which tracker mode a repo declares.
 

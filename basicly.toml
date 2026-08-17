@@ -91,6 +91,16 @@ rank1_floor_high_water = 0.85
 # forward by dispatching anything.
 mode = "dual"
 
+# The id prefix a **root** record is minted under, `<prefix>-<root>`. A child inherits
+# its parent's, so this is read only when something mints a root — the improvement
+# controller is the one caller that does (basicly-vkh0.42.7).
+#
+# Declared here because it used to live in the external tracker's own config, as
+# `issue_prefix`, and the flip deletes that file. A repository that mints no root may
+# leave it unset; the minter refuses an unusable value rather than guessing a namespace
+# no later read would find again.
+prefix = "basicly"
+
 # Sibling git-worktree isolation for harness tracks.
 [worktree]
 # Branch new harness/<name> worktrees fork from. Empty = the current branch.

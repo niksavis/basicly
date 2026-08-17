@@ -149,20 +149,38 @@ def test_two_creates_under_one_parent_get_distinct_ids(tmp_path: Path) -> None:
 
 
 @pytest.mark.usefixtures("no_br")
-def test_a_create_naming_no_parent_is_refused_rather_than_given_a_guessed_prefix(
+def test_a_create_naming_no_parent_is_refused_when_no_prefix_is_declared(
     tmp_path: Path,
 ) -> None:
-    """A root mint needs an id prefix the owned store does not declare.
+    """A root mint needs an id prefix, and a repository need not declare one.
 
     Refused rather than defaulted, because a guessed prefix mints an id in a namespace
-    nothing else in the repository uses, and no read would find the record again. Every
-    create the engine makes names a parent (`decompose._create_child`).
+    nothing else in the repository uses, and no read would find the record again.
     """
     repo = owned_repo(tmp_path)
 
-    with pytest.raises(owned_store.TrackerDivergenceError, match="no --parent has no owned"):
+    with pytest.raises(owned_store.TrackerDivergenceError, match=r"declares\s+none"):
         owned_write.create(repo, ["create", "a root", "-t", "epic", "--json"])
     assert owned_store.kit(repo).read_ledger(owned_store.ledger_dir(repo)) == []
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_declared_prefix_mints_a_root(tmp_path: Path) -> None:
+    """The prefix used to live in the external tracker's config, which the flip deletes.
+
+    So a root mint reads it from ``[tracker] prefix`` instead (basicly-vkh0.42.7). The
+    assertion is the id's shape rather than its value: the root half is random by design.
+    """
+    repo = owned_repo(tmp_path)
+    (repo / "basicly.toml").write_text('[tracker]\nmode = "owned"\nprefix = "wpc"\n', "utf-8")
+
+    record = owned_write.create(repo, ["create", "a root", "-t", "epic", "--json"])
+
+    assert record.startswith("wpc-") and "." not in record
+    kit = owned_store.kit(repo)
+    events = kit.read_ledger(owned_store.ledger_dir(repo))
+    assert {event.record for event in events} == {record}
+    assert kit.events.KIND_CREATED in {event.kind for event in events}
 
 
 @pytest.mark.usefixtures("no_br")
