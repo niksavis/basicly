@@ -44,7 +44,6 @@ Run on a schedule::
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,8 +73,8 @@ LANE_TYPE = "task"
 LANE_INTEGRITY = "L2"
 LANE_BUDGET_TOKENS = 70000
 
-# The status a landed lane carries. Everything else `br list --label` returns is
-# work in progress, whatever phase it derived to.
+# The status a landed lane carries. Everything else the label query returns is work
+# in progress, whatever phase it derived to.
 LANDED_STATUS = "closed"
 
 _LABEL = "improve"
@@ -93,7 +92,7 @@ class Candidate:
     def issue_id(self) -> str:
         """What a refusal names this candidate by, satisfying :class:`wip.Unit`.
 
-        The bound counts units carrying a ``br`` id and a candidate has none until
+        The bound counts units carrying a tracker id and a candidate has none until
         the actuator files one, so the target path stands in for it.
         """
         return self.path
@@ -237,16 +236,16 @@ def lane_body(repo_root: Path, target: Candidate, dropped: int) -> str:
 
 
 def dispatch(repo_root: Path, target: Candidate, dropped: int) -> str:
-    """File one lane for *target* and return its ``br`` id.
+    """File one lane for *target* and return its id.
 
     The actuator writes to the tracker and nowhere else: the lane it files is picked
     up by the dispatcher the delivery loop already has, so this loop never spawns an
     agent itself and inherits every bound that path already carries.
 
-    The mode is printed because this entry point filed lanes on br alone (`e2mz.23`).
+    The mode is printed because this entry point filed lanes on one store (`e2mz.23`).
     """
     print(f"tracker:   mode {config.load_tracker_mode(repo_root)}")
-    proc = br.run_br(
+    return br.create_record(
         repo_root,
         [
             "create",
@@ -260,7 +259,6 @@ def dispatch(repo_root: Path, target: Candidate, dropped: int) -> str:
             "--json",
         ],
     )
-    return str(json.loads(proc.stdout)["id"])
 
 
 def _sensor_lines(modules: list[sensor.Module], ranked: tuple[Candidate, ...]) -> list[str]:

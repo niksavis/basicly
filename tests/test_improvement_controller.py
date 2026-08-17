@@ -23,11 +23,10 @@ tree end to end.
 from __future__ import annotations
 
 import importlib.util
-import json
 import subprocess
 import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 from basicly import supervise, wip
@@ -224,12 +223,19 @@ def test_every_rendered_glob_names_something_or_names_what_the_lane_will_create(
     assert dead == []
 
 
-def _fake_br(recorded: list[list[str]]) -> object:
-    def run_br(_root: Path, args: list[str]) -> object:
-        recorded.append(args)
-        return SimpleNamespace(stdout=json.dumps({"id": "basicly-new1"}))
+def _fake_create(recorded: list[list[str]]) -> object:
+    """Stand in for the write seam: record the argv, answer with a minted id.
 
-    return run_br
+    Patched at :func:`br.create_record` rather than at the spawn below it, because that
+    is the seam the actuator calls (basicly-vkh0.42.5) — a stub one layer lower would
+    keep passing after the store that mints the id stops being a process.
+    """
+
+    def create_record(_root: Path, args: list[str]) -> str:
+        recorded.append(args)
+        return "basicly-new1"
+
+    return create_record
 
 
 def test_dispatch_files_one_lane_carrying_the_loops_label(
@@ -237,7 +243,7 @@ def test_dispatch_files_one_lane_carrying_the_loops_label(
 ) -> None:
     """The label is the loop's flow-control state: an unlabelled lane is invisible."""
     recorded: list[list[str]] = []
-    monkeypatch.setattr(ctl.br, "run_br", _fake_br(recorded))
+    monkeypatch.setattr(ctl.br, "create_record", _fake_create(recorded))
 
     issue_id = ctl.dispatch(REPO_ROOT, ctl.Candidate("src/a.py", CAP + 1, 1), dropped=0)
 
@@ -261,7 +267,7 @@ def _run_main(
         lambda _root: [_module("src/a.py", CAP + 10), _module("src/b.py", CAP + 900)],
     )
     monkeypatch.setattr(ctl.supervise, "lane_selection", lambda _root, _label: open_lanes)
-    monkeypatch.setattr(ctl.br, "run_br", _fake_br(recorded))
+    monkeypatch.setattr(ctl.br, "create_record", _fake_create(recorded))
     return ctl.main([]), recorded
 
 

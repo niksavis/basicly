@@ -133,9 +133,9 @@ def split_pipeline_segments(command: str) -> list[str]:
     quoted-string contents inside a single segment.
 
     A command substitution opener (``$(``, a backtick) is also a boundary: it runs
-    a real command, and gluing it to the token before it — ``id=$(br create ...)``
-    — made the *subcommand* the head, which is how ``create`` and ``run`` (64
-    counts) entered the table instead of ``br`` (basicly-m0p1).
+    a real command, and gluing it to the token before it — ``id=$(tool create ...)``
+    — made the *subcommand* the head, so ``create`` and ``run`` (64 counts) entered
+    the table instead of the tool (basicly-m0p1).
     """
     segments: list[str] = []
     buf: list[str] = []

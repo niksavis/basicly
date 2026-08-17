@@ -99,11 +99,10 @@ jobs:
         run: uv sync
       - name: Install Node dependencies
         run: npm install --no-fund --no-audit
-      # Without br on PATH the real-git/real-tracker integration suite skips, so
-      # the one test that catches what a stub would agree with runs nowhere but a
-      # developer machine. Pinned by version and content hash (basicly-jr0l.6).
-      - name: Install the beads tracker (br)
-        run: uv run python .scripts/install_br.py --bin-dir "${{ runner.temp }}/br-bin"
+      # No external tracker is installed (basicly-vkh0.42.2). The cost is stated rather
+      # than hidden: the real-git/real-tracker integration suites are `skipif`-gated on
+      # the binary being on PATH, so they skip here and run only on a developer machine
+      # until the harness reads its own store (basicly-vkh0.29).
       - name: Lint markdown
         run: npx --no-install markdownlint-cli2
       - name: Lint catalog sources
