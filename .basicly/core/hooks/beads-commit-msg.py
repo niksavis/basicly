@@ -1,9 +1,14 @@
-"""Validate that a commit message references a known beads (br) issue id.
+"""Validate that a commit message references an issue id the tracker holds.
 
 Installed as a second commit-msg hook via pre-commit, run alongside
 commit-msg.py. Kept standalone (single responsibility: conventional format vs.
-beads-id presence) so either check can be added, removed, or reused
+issue-id presence) so either check can be added, removed, or reused
 independently by pre-commit, lefthook, or another hook manager.
+
+**The id set comes from the owned ledger first and the external export second.**
+This gate never spawned the external binary — it read that binary's export file —
+so it would have kept passing after the binary left and started failing every
+commit the moment the export was deleted (basicly-vkh0.42.1).
 
 Usage: python .basicly/core/hooks/beads-commit-msg.py <commit-msg-file>
 """
@@ -51,55 +56,63 @@ def _candidate_ids(message: str, known_ids: set[str]) -> set[str]:
     return set(pattern.findall(message))
 
 
-NO_ID_MESSAGE = """ERROR: Commit message does not reference a beads issue id.
+NO_ID_MESSAGE = """ERROR: Commit message does not reference a tracked issue id.
 
-This repo requires every commit to reference a tracked beads (br) issue.
+This repo requires every commit to reference an issue the tracker holds.
 
 Reference an id as a parenthetical after the description, e.g.:
   feat(basicly): add fragment loader (basicly-idr)
 
-Create an issue first if one doesn't exist yet:
-  br create "Title" --type task --priority 2
-  br q "Quick capture title"
+File the issue first if one does not exist yet. The `conventional-commits`
+skill covers the message format this gate expects.
 """
 
-UNKNOWN_ID_MESSAGE_TEMPLATE = """ERROR: Commit message references an unknown beads issue id: {ids}
+UNKNOWN_ID_MESSAGE_TEMPLATE = """ERROR: Commit message references an unknown issue id: {ids}
 
-None of the referenced id(s) were found in .beads/issues.jsonl.
+None of the referenced id(s) were found in {source}.
 
-Check valid ids with:
-  br list --json
-  br show <id>
+That file is the id set this gate validates against. An id minted in another
+checkout reaches it only once that checkout's tracker state is committed.
 """
 
+BEADS_DIR = ".beads"
+REDIRECT_NAME = "redirect"
+EXPORT_NAME = "issues.jsonl"
 
-def _beads_dir() -> Path:
-    """The active beads dir, following br's git-ignored ``redirect`` file.
+# The owned ledger, and the one place this hook spells it. The kit owns the glob
+# as ``events.LOG_GLOB`` and a hook may not reach into the kit, so the spelling
+# is duplicated here on purpose and ``test_beads_commit_msg`` pins the two
+# together — a drifting glob would read every id as unknown and block every
+# commit (basicly-vkh0.42.1).
+LEDGER_DIR = Path(".basicly") / "ledger"
+LEDGER_GLOB = "events-*.jsonl"
+
+
+def _tracker_root() -> Path:
+    """The checkout that owns the tracker: this one, or a redirect target's.
 
     A harness worktree shares the base checkout's tracker via a one-line
-    ``.beads/redirect`` (written at provisioning); a fresh id then only exists
-    in the redirected JSONL, so the hook must read the same dir ``br`` does.
+    ``.beads/redirect`` written at provisioning, and **the ledger follows the
+    same rule** — one store per repository, never one per worktree. The
+    redirect target is not required to be named ``.beads``: requiring it split
+    the ledger read from the tracker read (basicly-tcmy.19).
     """
-    beads = _project_root() / ".beads"
-    redirect = beads / "redirect"
+    root = _project_root()
+    redirect = root / BEADS_DIR / REDIRECT_NAME
     if redirect.is_file():
         try:
             target = Path(redirect.read_text(encoding="utf-8").strip())
         except OSError:
-            return beads
+            return root
         if target.is_dir():
-            return target
-    return beads
+            return target.parent
+    return root
 
 
-def _load_known_issue_ids() -> set[str] | None:
-    """Return the set of known issue ids, or None if no beads workspace exists."""
-    issues_jsonl = _beads_dir() / "issues.jsonl"
-    if not issues_jsonl.exists():
-        return None
-
+def _ids_from_jsonl(path: Path, key: str) -> set[str]:
+    """Every string *key* value in the JSONL at *path*; a bad line is skipped."""
     known_ids: set[str] = set()
-    for raw_line in issues_jsonl.read_text(encoding="utf-8").splitlines():
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line:
             continue
@@ -107,23 +120,63 @@ def _load_known_issue_ids() -> set[str] | None:
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
-        issue_id = record.get("id")
-        if isinstance(issue_id, str):
-            known_ids.add(issue_id)
+        value = record.get(key)
+        if isinstance(value, str):
+            known_ids.add(value)
     return known_ids
 
 
-def validate(message: str, known_ids: set[str] | None) -> tuple[bool, str]:
-    """Return (is_valid, error_message) for the given commit message."""
+def _known_ids_with_source() -> tuple[set[str], str] | None:
+    """The known id set and the file it came from, or None when no tracker exists.
+
+    The owned ledger answers first and the external export is the fallback, so
+    this gate keeps working on a repository that has only one of them — a
+    consumer before the cutover has the export, and one after it has the
+    ledger. An **empty** result counts as no source rather than as "no ids":
+    reading an empty store as authoritative would report every id as unknown
+    and refuse every commit, which is the one failure mode a commit gate must
+    not have.
+    """
+    ledger_dir = _tracker_root() / LEDGER_DIR
+    ledger_ids: set[str] = set()
+    for log in sorted(ledger_dir.glob(LEDGER_GLOB)):
+        ledger_ids |= _ids_from_jsonl(log, "record")
+    if ledger_ids:
+        return ledger_ids, str(LEDGER_DIR / LEDGER_GLOB)
+
+    export = _tracker_root() / BEADS_DIR / EXPORT_NAME
+    if export.is_file():
+        export_ids = _ids_from_jsonl(export, "id")
+        if export_ids:
+            return export_ids, f"{BEADS_DIR}/{EXPORT_NAME}"
+    return None
+
+
+def _load_known_issue_ids() -> set[str] | None:
+    """The known id set alone, for a caller that does not report the source."""
+    found = _known_ids_with_source()
+    return None if found is None else found[0]
+
+
+def validate(
+    message: str, known_ids: set[str] | None, source: str = "the tracker"
+) -> tuple[bool, str]:
+    """Return (is_valid, error_message) for the given commit message.
+
+    *source* names the file the ids were read from, so an unknown-id refusal
+    says which store it checked. It defaults rather than being required because
+    the id set and the place it came from are separable, and every caller that
+    only has a set should still get the same verdict.
+    """
     first_line = message.splitlines()[0] if message else ""
     # Ignore merge commits and revert commits with long auto-generated bodies.
     if first_line.startswith(("Merge ", 'Revert "')):
         return True, ""
 
     if known_ids is None:
-        # No beads workspace in this repo (no .beads/issues.jsonl) — nothing to
-        # validate against, so skip entirely; a beads-less consumer must be able
-        # to commit without an issue id. Enable tracking with `br init`.
+        # No tracker in this repo — neither an owned ledger nor an external
+        # export — so there is nothing to validate against and the check skips
+        # entirely. A consumer with no tracker must be able to commit.
         return True, ""
 
     candidates = _candidate_ids(message, known_ids)
@@ -132,7 +185,9 @@ def validate(message: str, known_ids: set[str] | None) -> tuple[bool, str]:
 
     matched_ids = candidates & known_ids
     if not matched_ids:
-        return False, UNKNOWN_ID_MESSAGE_TEMPLATE.format(ids=", ".join(sorted(candidates)))
+        return False, UNKNOWN_ID_MESSAGE_TEMPLATE.format(
+            ids=", ".join(sorted(candidates)), source=source
+        )
 
     return True, ""
 
@@ -146,11 +201,12 @@ def main() -> int:
     commit_msg_file = Path(sys.argv[1])
     message = commit_msg_file.read_text(encoding="utf-8").strip()
 
-    known_ids = _load_known_issue_ids()
-    is_valid, error_message = validate(message, known_ids)
+    found = _known_ids_with_source()
+    known_ids, source = (None, "") if found is None else found
+    is_valid, error_message = validate(message, known_ids, source or "the tracker")
 
     if is_valid:
-        print("Beads issue id reference is valid.")
+        print("Issue id reference is valid.")
         return 0
 
     print(error_message, file=sys.stderr)

@@ -1,7 +1,38 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
+
+
+def _load_kit_events():
+    """The tracker kit's ``events`` module, loaded from its source path.
+
+    The hook may not reach into the kit, so it carries its own spelling of the
+    log glob. This is what pins the two together.
+    """
+    source = (
+        Path(__file__).resolve().parents[2] / ".basicly" / "core" / "kit" / "tracker" / "events.py"
+    )
+    name = "tracker_events_for_hook_test"
+    spec = importlib.util.spec_from_file_location(name, source)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    # Registered before execution: a dataclass resolves its own annotations
+    # through ``sys.modules[cls.__module__]``, so an unregistered module raises
+    # on the first ``@dataclass`` in the file rather than on use.
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _write_ledger(root: Path, *records: str) -> None:
+    """Seed *root*'s owned ledger with one event per record id."""
+    module = _load_beads_commit_msg_module()
+    ledger = root / module.LEDGER_DIR
+    ledger.mkdir(parents=True)
+    lines = "".join(f'{{"record":"{record}","kind":"created"}}\n' for record in records)
+    (ledger / module.LEDGER_GLOB.replace("*", "0001")).write_text(lines, encoding="utf-8")
 
 
 def _load_beads_commit_msg_module():
@@ -30,7 +61,7 @@ def test_validate_rejects_missing_issue_id() -> None:
     module = _load_beads_commit_msg_module()
     is_valid, error = module.validate("feat(basicly): add hook", {"basicly-idr"})
     assert not is_valid
-    assert "does not reference a beads issue id" in error
+    assert "does not reference a tracked issue id" in error
 
 
 def test_validate_rejects_unknown_issue_id() -> None:
@@ -38,7 +69,7 @@ def test_validate_rejects_unknown_issue_id() -> None:
     module = _load_beads_commit_msg_module()
     is_valid, error = module.validate("feat(basicly): add hook (basicly-zzz)", {"basicly-idr"})
     assert not is_valid
-    assert "unknown beads issue id" in error
+    assert "unknown issue id" in error
 
 
 def test_validate_ignores_hyphenated_words_when_a_valid_id_is_present() -> None:
@@ -59,7 +90,7 @@ def test_validate_missing_id_error_does_not_name_hyphenated_words() -> None:
     module = _load_beads_commit_msg_module()
     is_valid, error = module.validate("docs: the fork-drove-the-loop incident", {"basicly-idr"})
     assert not is_valid
-    assert "does not reference a beads issue id" in error
+    assert "does not reference a tracked issue id" in error
     assert "fork-drove" not in error
 
 
@@ -170,3 +201,88 @@ def test_load_known_issue_ids_ignores_dangling_redirect(tmp_path: Path, monkeypa
     (beads / "redirect").write_text(str(tmp_path / "gone" / ".beads"), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     assert module._load_known_issue_ids() == {"proj-local"}
+
+
+def test_ledger_glob_matches_the_kit_contract() -> None:
+    """The hook's own spelling of the log glob is the kit's (basicly-vkh0.42.1).
+
+    A drift here does not fail loudly: the glob would match nothing, the ledger
+    would look empty, and the gate would fall through to a store that is about
+    to be deleted — or refuse every commit once it is gone.
+    """
+    module = _load_beads_commit_msg_module()
+    assert module.LEDGER_GLOB == _load_kit_events().LOG_GLOB
+
+
+def test_known_ids_come_from_the_ledger_with_no_external_store(tmp_path: Path, monkeypatch) -> None:
+    """The shape after the deletion: a ledger, no export, and the gate still binds."""
+    module = _load_beads_commit_msg_module()
+    (tmp_path / ".git").mkdir()
+    _write_ledger(tmp_path, "proj-owned")
+    monkeypatch.chdir(tmp_path)
+
+    assert module._load_known_issue_ids() == {"proj-owned"}
+    assert module.validate("feat(x): a thing (proj-owned)", *_found(module))[0]
+
+
+def test_the_ledger_wins_when_both_stores_exist(tmp_path: Path, monkeypatch) -> None:
+    """Under a dual write the owned ledger answers, and the refusal says so."""
+    module = _load_beads_commit_msg_module()
+    (tmp_path / ".git").mkdir()
+    _write_ledger(tmp_path, "proj-owned")
+    beads = tmp_path / ".beads"
+    beads.mkdir()
+    (beads / "issues.jsonl").write_text('{"id":"proj-external"}\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    known, source = module._known_ids_with_source()
+    assert known == {"proj-owned"}
+    assert source == str(module.LEDGER_DIR / module.LEDGER_GLOB)
+
+    is_valid, error = module.validate("feat(x): a thing (proj-external)", known, source)
+    assert not is_valid
+    assert source in error
+
+
+def test_an_empty_ledger_falls_back_rather_than_refusing(tmp_path: Path, monkeypatch) -> None:
+    """An empty store is not an empty id set (basicly-vkh0.42.1).
+
+    Reading it as authoritative would report every id as unknown and refuse
+    every commit, which is the one failure mode a commit gate must not have.
+    """
+    module = _load_beads_commit_msg_module()
+    (tmp_path / ".git").mkdir()
+    _write_ledger(tmp_path)
+    beads = tmp_path / ".beads"
+    beads.mkdir()
+    (beads / "issues.jsonl").write_text('{"id":"proj-external"}\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    known, source = module._known_ids_with_source()
+    assert known == {"proj-external"}
+    assert source.endswith("issues.jsonl")
+
+
+def test_the_ledger_follows_the_redirect_out_of_a_worktree(tmp_path: Path, monkeypatch) -> None:
+    """One store per repository, never one per worktree — the ledger too."""
+    module = _load_beads_commit_msg_module()
+    base = tmp_path / "base"
+    base_beads = base / ".beads"
+    base_beads.mkdir(parents=True)
+    _write_ledger(base, "proj-fresh")
+
+    worktree = tmp_path / "wt"
+    (worktree / ".git").mkdir(parents=True)
+    (worktree / ".beads").mkdir()
+    (worktree / ".beads" / "redirect").write_text(f"{base_beads}\n", encoding="utf-8")
+    _write_ledger(worktree, "proj-stale")
+    monkeypatch.chdir(worktree)
+
+    assert module._load_known_issue_ids() == {"proj-fresh"}
+
+
+def _found(module) -> tuple[set[str], str]:
+    """The hook's own id lookup, unpacked for a caller that passes both on."""
+    found = module._known_ids_with_source()
+    assert found is not None
+    return found

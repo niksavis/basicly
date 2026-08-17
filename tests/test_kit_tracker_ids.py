@@ -483,7 +483,7 @@ def test_a_hyphenated_id_really_is_refused_by_the_gate() -> None:
     slug_id = "basicly-my-slug"
     is_valid, error = gate.validate(f"fix(tracker): work ({slug_id})", {slug_id})
     assert not is_valid
-    assert "unknown beads issue id" in error
+    assert "unknown issue id" in error
     assert "basicly-my" in error
     assert not ids.is_record_id(slug_id)
 
