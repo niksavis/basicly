@@ -86,10 +86,16 @@ rank1_floor_high_water = 0.85
 # adopted, so the differential judges those records without ever counting their agreement
 # as evidence that the dual write works.
 #
-# Step 4 (`owned`) waits on a differential that is clean *and* conclusive over a
-# non-empty scope, which needs post-cutover work to exist and cannot be brought
-# forward by dispatching anything.
-mode = "dual"
+# Step 4 ran on 2026-08-17. Its precondition was a differential clean *and* conclusive
+# over a non-empty scope: 64 records in scope, 18 adopted, clean and conclusive, recorded
+# on `basicly-vkh0.29`. The engine reads and writes from the ledger and spawns nothing on
+# a leaf's walk (`basicly-wpc8`, `basicly-wpc8.1`); the six remaining spawn sites are the
+# external halves of mode-branching seams and none fires here.
+#
+# The external store is still on disk and still committed. Deleting it is
+# `basicly-vkh0.42.7`, and until it lands `external` and `dual` stay honest rungs for a
+# consumer who has not installed the kit's tracker.
+mode = "owned"
 
 # The id prefix a **root** record is minted under, `<prefix>-<root>`. A child inherits
 # its parent's, so this is read only when something mints a root — the improvement
