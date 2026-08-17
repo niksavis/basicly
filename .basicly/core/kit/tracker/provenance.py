@@ -178,9 +178,8 @@ _DISPOSITIONS = {
     AMBIGUOUS: DISPOSITION_DECIDE,
 }
 
-# The event kind an edge assertion is recorded under. Permanent vocabulary: never reused,
-# never redefined, only added to (§4.5).
-KIND_EDGE = "edge"
+# The kind an edge assertion is recorded under, from the one definition (§4.5).
+KIND_EDGE = events.KIND_EDGE
 
 # The payload's structural fields. `detail` is the only free-text one, and the only one
 # `events.TRUNCATABLE_KEYS` may cut — see the module docstring for why that split is not

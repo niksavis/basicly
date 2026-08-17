@@ -1206,7 +1206,7 @@ def test_the_module_imports_nothing_outside_the_standard_library() -> None:
 # The kit modules that still spell a kind literal rather than aliasing `events.KIND_*`, and why
 # each is not drift: `baseline.py` loads no sibling at all, and `provenance.py`'s alias is the
 # one line outside basicly-vkh0.36's scope. An entry is only ever removed, with the literal.
-SPELLS_ITS_OWN_KIND = frozenset({"baseline.py", "provenance.py"})
+SPELLS_ITS_OWN_KIND = frozenset({"baseline.py"})
 _KIND_CONSTANT = re.compile(r"^KIND_[A-Z0-9_]+$")
 
 
