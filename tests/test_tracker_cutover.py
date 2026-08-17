@@ -50,6 +50,44 @@ def _record(issue_id: str, **fields: object) -> dict:
     return {"id": issue_id, "title": issue_id, "status": "open", "issue_type": "task", **fields}
 
 
+class _CleanReport:
+    """A ``ScopedReport`` stand-in: clean, conclusive, and silent about a record's body."""
+
+    clean = True
+    conclusive = True
+
+    def summary(self) -> str:
+        """What a scoped run with nothing to report prints."""
+        return "1 record(s) in scope, 0 of them adopted; 0 imported, 0 declared"
+
+
+def test_a_clean_shadow_run_says_which_fields_it_never_compared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``clean: yes`` may not be read as "the owned ledger can reproduce a record".
+
+    The regression for `basicly-vkh0.41`: nine records held a status, comments, edges and
+    gate rows and **no** ``created`` event, so all three queries agreed about every one of
+    them and the run reported clean while the owned store could not say what the work was.
+    The verdict was right; the sentence a reader took from it was not.
+
+    Asserted on a clean run specifically, because that is the one nobody re-reads — and
+    against the constant rather than a copy of its text, so rewording the line cannot leave
+    this passing over a sentence that no longer says it.
+    """
+    repo = _repo(tmp_path, [_record("basicly-a")])
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(
+        tracker_cutover.br, "scoped_differential", lambda _root, _vocabulary: _CleanReport()
+    )
+
+    assert cli.main(["tracker", "shadow"]) == 0
+
+    out = capsys.readouterr().out
+    assert "clean:      yes" in out
+    assert tracker_cutover.NOT_COMPARED in out
+
+
 def test_the_import_is_reachable_from_the_cli_at_all() -> None:
     """The whole defect in one assertion: `basicly tracker --help` listed `shadow` only.
 

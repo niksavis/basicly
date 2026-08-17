@@ -19,6 +19,15 @@ from .config import CHECKPOINTS, ENGINE_GATE_PROVIDERS, load_policy_config
 if TYPE_CHECKING:
     import argparse
 
+# Printed beside the two verdicts: `clean` is narrower than the sentence a reader takes from
+# it (basicly-vkh0.41) — nine records reached the ledger with a status, comments, edges and
+# gate rows, no `created` event, and `clean: yes` over all nine.
+NOT_COMPARED = (
+    "not compared: a record's title, description, type, priority or acceptance criteria — "
+    "the three queries read its status, comments, edges and gate rows only, so a clean "
+    "verdict does not say the owned ledger can reproduce a record"
+)
+
 
 def _differential_vocabulary(repo_root: Path) -> dict[str, Any]:
     """The engine's own names for the things the differential's three queries read.
@@ -57,7 +66,7 @@ def cmd_shadow(args: argparse.Namespace) -> int:
 
     A refused reference is reported in the same breath as the agreement it voids —
     ``summary()`` carries the refusal — so a run that proves nothing cannot read as a
-    run that proved something.
+    run that proved something, and :data:`NOT_COMPARED` says what a clean one skipped.
 
     The run is judged on records created after the flip (basicly-c357). ``--declare-history``
     records today's delta as that boundary and writes nothing else; it is a one-time
@@ -74,6 +83,7 @@ def cmd_shadow(args: argparse.Namespace) -> int:
     ui.say(report.summary())
     ui.say(f"clean:      {'yes' if report.clean else 'no'}")
     ui.say(f"conclusive: {'yes' if report.conclusive else 'no'}")
+    ui.say(NOT_COMPARED)
     if report.clean and report.conclusive:
         ui.say(
             "The owned ledger agrees with the live tracker, and the agreement means something.",
