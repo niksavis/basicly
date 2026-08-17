@@ -1,27 +1,40 @@
 # Work Tracker — Owning the Harness's Core Dependency
 
-Status: **partially built against an unfrozen design.** Opened 2026-07-25; updated 2026-07-26 from
-the state-of-the-art review
+Status: **mostly built, against a design that is now specified in architecture.** Opened
+2026-07-25; updated 2026-07-26 from the state-of-the-art review
 ([`research/2026-07-26-sota-review.md`](../research/2026-07-26-sota-review.md) §2.10); updated
-2026-07-28 with the cross-repo topology decision in §8.1; **status corrected 2026-08-14.**
+2026-07-28 with the cross-repo topology decision in §8.1; status corrected 2026-08-14;
+**reconciled against the tree 2026-08-17 (`basicly-pip9`).**
 
 **This header said "initialization — no implementation starts from this document" for three weeks
-after implementation started, and that is the finding, not a typo** [M 2026-08-14]:
+after implementation started, and that is the finding, not a typo** [M 2026-08-14]. It then said
+"eight kit modules" for three days after there were eleven, which is the same finding one size
+smaller — a status line in prose goes stale on the schedule of the tree, not of the reader. So this
+block gives the commands:
 
-```text
-.basicly/core/kit/tracker/    events 50k · snapshot 42k · differential 44k · fsck 34k
-                              migrate 30k · provenance 29k · ids 18k · scheduler 17k
-src/basicly/owned_store.py    TRACKER_MODES = (external, dual, owned)
-landed                        the import ran (b97a653) · ranking owned (vkh0.20)
-                              harness markers native (s5li)
+```sh
+ls .basicly/core/kit/tracker/*.py                 # the built surface, 11 modules
+rg -n '^mode' basicly.toml                        # which cutover rung this repo is on
+uv run basicly tracker shadow                     # the step-2 verdict, as two lines
 ```
 
-So the document's job has changed under it. **Still true**: no schema is frozen, the surface list is
-not declared, and the cache decision is unmade — which is why §7's gate on those three has not
-lifted. **No longer true**: that nothing has been built. Code was written to this document's
-reasoning without the document being promoted to the design §7 requires, which means the built half
-is specified only by its own tests. Reconciling the two is `basicly-vkh0`'s work and it is named in
-§7.
+**Two gates read this document, so it is a gate input and not only explanation.**
+`.scripts/check_marker_families.py` reads §3's family roster and its two counts as one of the
+populations it refuses a disagreement with, and
+`tests/test_tracker_requirements.py::test_every_requirement_in_the_design_register_has_a_test_here`
+reads §2.1 for `R1` to `R9` and fails when the register is empty. **Deleting this document, or
+either of those two passages, breaks a gate**, so the register entry in
+[`plan/implementation-plan.md`](../plan/implementation-plan.md) §9 has a precondition it does not
+name: repoint both gates first. That is `basicly-pip9`'s finding and not a licence to keep the
+document.
+
+**Still true**: no schema is *frozen* as a versioned surface, the kit's own surface list is not
+declared, and the cache decision is unmade — which is why §7's gate on those three has not lifted.
+**No longer true**: that nothing has been built, and that the schema is undeclared. Architecture
+§32 now specifies the event record, the fold, the write path, the lock, rotation, redaction and the
+kind vocabulary, and `events.KNOWN_KINDS` is the closed kind set with consumers
+(`basicly-vkh0.36`). What is left is a semver freeze, which is plan §7's work and not this
+document's.
 
 **Read §7 first if you are about to start work.** It carries a licence correction — `beads_rust`
 is *not* MIT, and a clean-room boundary now applies to this component. The 2026-07-26 additions
@@ -30,20 +43,27 @@ on graph edges), and §16 (why we decline the versioned-database alternative ups
 2026-07-28 change is §8: the shared exchange is replaced by a per-repo mesh, with the reasoning
 and the reversal condition recorded in §8.1.
 
+**Where this document and architecture disagree, architecture wins** (`conventions.md` §3). Every
+passage below that architecture now carries states which section, so a reader can stop here.
+
 ## 1. Why this is not optional
 
-Why the tracker is the harness's state, and why the external binary's exact pin has a ceiling
-in both directions, are in architecture — *The work tracker* and *The external binary pin*.
+**Absorbed. Architecture §32 is why the tracker is the harness's state, §37.1 is why adopting
+the binary expired as a reason and why ownership rather than speed is the argument, §37.5 is the
+two-directional pin, and §8's non-goals carry the refusal of a general-purpose tracker.** Read
+those; this section is kept only for the one clause a reader arriving from an older revision will
+look for.
 
-The argument that survives only here is the ownership one. `beads_rust` and `bv` are
-MIT-licensed and excellent today. Licences change, maintainers move on, release cadences
-diverge, and a breaking change upstream lands in *our* critical path. That is the shape of a
-dependency that will eventually cost more than it saves.
+**The clause is the licence, and this section used to have it backwards.** It read "`beads_rust`
+and `bv` are MIT-licensed and excellent today" and then argued from the possibility that a licence
+*might* change. The licence had already changed: it carries a rider that grants no rights to a
+named class of users. §7 records the correction and architecture §37.1 carries it as the first of
+the three expired reasons. The hypothetical became an observation, which is a stronger argument
+than the one written here, and it is the reason a clean-room boundary applies to this work.
 
-Owning it is therefore a strategic requirement, not a preference. The counter-argument —
-"don't rebuild a working tool" — is answered by scope: we do not need a general-purpose issue
-tracker. We need the subset the harness actually calls, which §3 shows is small and already
-known.
+The counter-argument — "don't rebuild a working tool" — is answered by scope, and the answer is
+measured rather than asserted: §3 shows the surface the harness actually calls is narrow and
+enumerable.
 
 ## 2. Requirements
 
@@ -54,7 +74,7 @@ Stated by the owner, plus what the harness's own use has demonstrated:
 | **Lives in the repo** | State is committed, diffable, and travels with a clone; no server, no daemon, no external DB |
 | **Cross-repo** | One writer per repo ledger and no shared artifact; foreign work is *offered* by a self-write in the announcer's ledger and taken by a self-write in the target's, with read-only access across the boundary (§8) |
 | **Fast** | The loop makes many reads per advance, so per-read cost multiplies. Measured baseline and targets in §10 — a single-record in-process read is ~15× cheaper than the median external CLI call, and a full fold ~1.9×. Modest, not decisive: speed is a benefit here, never the argument (§10) |
-| **Upgradable** | Every event carries a schema version; unknown fields are preserved on read-modify-write, never dropped. A newer writer's events stay readable by an older reader |
+| **Upgradable** | Unknown kinds and unknown fields are preserved verbatim on read-modify-write, never dropped, so a newer writer's events stay readable by an older reader. **Corrected 2026-08-17**: this row said "every event carries a schema version", which is neither what the tree does nor what §4.5 designs. The preservation half holds — an `Event` carries an `extra` mapping for exactly this. The version half is **one ledger-scoped `format_version` event** (§4.5) and is unbuilt: `events.py` says so at its own top and gives the reason, that a ledger-scoped event has no item to carry a per-item sequence. A *derived* snapshot does carry a version and refuses a newer one |
 | **Maintainable** | Owned by the same toolchain as the rest of `basicly`; no second language, no separate release train |
 | **Auditable** | Every state change attributable and reconstructible from the ledger *itself*, not only from git history — a squash or shallow clone must not destroy the trail |
 | **Visualizes work** | Dependency graph, ready set, and progress viewable without a bespoke TUI to maintain |
@@ -72,6 +92,24 @@ tests assert the *harness's* defence against the defective input — never that 
 misbehaves, which would pin us to a bug and break on the version that fixes it. When the
 replacement lands, the module runs against it unchanged.
 
+**The nine *properties* are now specification, in architecture §32.9, with where each one
+stands** (`basicly-pip9`, 2026-08-17). What stays here is what architecture is not the place
+for: the defect that bought each property and what it cost. A property with no incident behind
+it reads as a preference, and this table is the receipt.
+
+**Do not delete this table without repointing a gate.**
+`test_every_requirement_in_the_design_register_has_a_test_here` reads this document for `**R1.`
+through `**R9.`, asserts the set is non-empty, and then asserts each id has a test named for it.
+Removing the rows makes the assertion pass over an empty set — which is the fail-open shape the
+register exists to prevent — except that the non-empty assertion catches it. That guard is the
+only thing standing between "absorbed" and "silently unheld".
+
+**Seven of the nine are held today, and two are open**: R3 (validation rules as configuration)
+and the derived-snapshot half of R9. R6 is held only for the running committer, which architecture
+§32.7.1 measures. The per-requirement verdicts are in architecture §32.9 rather than repeated
+here, because a status column in prose is what the header block of this document went stale on
+twice.
+
 | Id | Defect | What it cost | Requirement on the replacement |
 | --- | --- | --- | --- |
 | **R1.** Clock | `br` validates `updated_at >= created_at` and refuses its own write when the host clock steps backwards | Flaky landings, and a rework attempt spent on `basicly-m4zv.9`; invisible to the re-run test because a clock step persists and so reproduces | **A timestamp is evidence, never a constraint.** Nothing branches on wall-clock order; total order comes from the single writer's sequence numbers (§9.5) |
@@ -82,7 +120,6 @@ replacement lands, the module runs against it unchanged.
 | **R6.** Path leak | The export wrote `source_repo_path` on 328 of 332 records | Published two users' home-directory layouts into a committed, distributed file (`basicly-vkh0.5`) | **No committed artifact carries a host path**, username or hostname; portability is a property of the format, not of a scrubbing pass |
 | **R7.** Concurrency | Under the engine's own five-lane fan-out the storage layer tore its WAL: four of five lane dispatches died in the pre-flight read, each on a bead it had not been assigned, and `br` marked the failure `retryable: false` | Three lanes recovered on the dispatch rework; `basicly-tcmy.11` reached the rework cap without an agent ever starting and was parked, and the session's L3 grant halted with 43.4M of 60M tokens unspent (`basicly-vkh0.10`) | **N concurrent readers and one writer never corrupt shared state**, and a contention failure that *is* reported is marked retryable so the caller backs off (§9.3) |
 | **R8.** Lock scope | Every mutating command serialises behind one `.beads/.write.lock`, and *fails the command* when it cannot take it before the timeout rather than queueing behind it. The engine's lanes share one `.beads` through `redirect`, so every lane's gate contends with every other lane's writes and with whatever else drives the tracker at that moment | Two transient gate failures in one session, 2026-07-30 — a landing's `pytest` gate and a `pre-push` hook, each passing unchanged on the next attempt. A landing flake is not free: it spends a rework attempt against a cap of 2, so a second unlucky landing escalates to a human for a defect that does not exist (`basicly-m4zv.14`) | **Contention waits; a wait that gives up says so.** One writer per ledger, with the lock scoped to the ledger it protects and never to the machine or the home directory (§9.3), and a lock-acquisition failure reported as retryable so the caller backs off instead of the gate failing |
-
 | **R9.** Destructive flush | A mutating command auto-flushed a **426-record database over a 612-record committed export**, deleting 187 records — 47 of them open — and reported success. `br sync --status` on that same checkout already said `JSONL is newer (import recommended)`: the condition was detected and the write allowed anyway. Measured refinement, 2026-08-06: that status is computed from **timestamps** and fires on a healthy checkout where the content is byte-identical, so it cannot be the guard | Recovered only because the export is committed — the database was the corrupt side. Nothing in the tracker layer noticed; three positive-control tests asserting a gate is not measuring an empty set were the only detection (`basicly-b2n2`) | **A publish never shrinks the artifact silently.** A write that would emit fewer records than the file it overwrites reports the shrink and requires explicit intent, and the comparison is on **content, not timestamps**. With the log authoritative and every other file derived (§4), the disagreeing-stores state cannot arise at all — but the derived snapshot still needs the shrink guard |
 
 **R6 argued itself again on 2026-08-09, and the measurement is the argument.** `br`
@@ -94,40 +131,61 @@ not the leak. That is precisely the distinction R6's requirement column draws �
 portability as a property of the format rather than of a scrubbing pass — and the cost of
 not having it is now a measured per-session figure rather than an argument.
 
-**R6's other half — the username — was open until 2026-08-15 and it was wider than the
-bead that named it** (`basicly-r166`, closed). The owned ledger carried the OS username on
-every event, and the committed export carried it on **813 of 876 records**, because br
-writes `created_by` on every record it mints and `migrate._plan_record` copies every
-non-structural field into the payload verbatim. Inside the ledger it sat on `asserted_by`
-(3,176), `created_by` (736), `assignee` (56) and 4 free-text values, not only on `actor`.
+**R6's other half is the identity, and the mechanism is absorbed: architecture §32.7 is the three
+rule sets and the load-bearing composition order.** Paths run first, identity second, because the
+path placeholder holds characters the path rules' tail class excludes — the reverse order would
+leave the directory layout published. Identity is deliberately not a path rule, because a username
+is not a shape and only the running machine knows the string.
 
-Three parts, and the middle one is the exception this design otherwise forbids:
+**The one-off rewrite is the part that stays here, because it is the exception this design
+otherwise forbids.** `br.scrub_ledger` rewrote 4,812 of 5,081 events and `scrub_export` 811
+records, on 2026-08-15. That is the one place the design **edits a line rather than appending
+one** (§4.4), because an append cannot un-publish a string, and §4.2 reserves that for an explicit
+owner decision. An event id covers kind plus payload, and the generation folded into it is not
+written on the line, so it was derived as the occurrence count of an identical
+`(record, kind, payload)` — a derivation that reproduced **all 5,081** stored ids before it was
+used to write one, and the function refuses the whole rewrite if any id fails to re-mint.
 
-- **Stop writing it.** `redact.redact_committed` is paths **then** identity, on the four
-  ledger and export write sites. The order is load-bearing: the placeholder holds
-  characters the path rules' tail class excludes, so identity first would leave the
-  directory layout published. Identity is deliberately not a `MACHINE_PATH_RULES` entry —
-  a username is not a shape, only the running machine knows the string.
-- **Scrub what was already published.** `br.scrub_ledger` rewrote **4,812 of 5,081** events
-  and `scrub_export` **811** records. This is the one place the design **edits a line rather
-  than appending one** (§4.4), because an append cannot un-publish a string; §4.2 reserves
-  that for an explicit owner decision and this was one. An event id covers kind plus payload
-  and the generation folded into it is not written on the line, so it is derived as the
-  occurrence count of an identical `(record, kind, payload)` — a derivation that reproduced
-  **all 5,081** stored ids before it was used to write one, and the function refuses the
-  whole rewrite if any id fails to re-mint.
-- **Gate it.** `tracker-path-scan` now covers `.basicly/ledger/events-*.jsonl` beside
-  `.beads/*.jsonl` and reports a `machine-username` rule built per run from
-  `getpass.getuser()`. Positive control against the kept pre-scrub ledger: **4,812 findings
-  before, 0 after**. Its limit is stated rather than implied — it cannot see a *teammate's*
-  username already in the file, which is `[[privacy.denied]]`'s job.
+**Corrected 2026-08-17: this passage used to end "the OS username is out of both committed
+stores", and that is false.** It was true of the committer who ran the scrub and of nobody else,
+which is a narrower claim than the one it was written as. Both stores carry a second person's
+username today, and one of them carries an e-mail address that no username rule would match:
+
+```sh
+python3 -c "
+import collections, json, pathlib
+rows = [json.loads(l) for l in pathlib.Path('.beads/issues.jsonl').open() if l.strip()]
+print(collections.Counter(r.get('created_by') for r in rows).most_common())
+print(collections.Counter(r.get('assignee') for r in rows if r.get('assignee')).most_common())"
+```
+
+Architecture §32.7.1 carries the measurement, the counts on both stores and the positive control.
+Three things about it belong here rather than there, because they are about how the wrong claim got
+written:
+
+- **The gate is green over both files and is not wrong to be.** It builds its rule from
+  `getpass.getuser()`, so the identity it cannot see is precisely the one nobody running it has.
+  A green gate over a population it cannot address is the fail-open shape this document keeps
+  finding, one level up: not a gate that fails to bind, a gate that binds to the wrong domain.
+- **The scrub's positive control was sound and still misled.** "4,812 findings before, 0 after"
+  is a true statement about the rule that ran. It reads as a statement about identity in the
+  store, and it is not one. **A positive control proves the instrument fired; it does not widen
+  the instrument's domain.**
+- **The remaining leak is entirely inherited, which is the useful part.** Every identity-carrying
+  event in the log carries the import's own marker — 263 of 5,616 lines, and 263 of 263 imported,
+  against a positive control of zero live writes [measured 2026-08-17]. The engine's own write path
+  adds nothing, because the kit takes the actor as an argument. So this is a one-time backfill
+  question on inherited fields, not a leak that grows.
 
 What survives deliberately is the git handle: the rule is word-bounded, and that handle is
 the `git+https://github.com/...` install URL the distribution ships.
 
-R1, R5, R6, R7, R8 and R9 are already settled in the design (§9.5, §9.4, §12, §9.3, §9.3, §4). R2, R3 and
-R4 are constraints on the command layer that has not been written yet, and this table is where they
-are recorded so it cannot be written without them.
+**Where each requirement is settled, and by what.** R1, R5, R7, R8 and the external half of R9 are
+settled in the design *and* in the tree, and architecture §32.9 states each as specification. R2 is
+settled on the owned side and unsettled on the binary's. R6 is settled for one identity and
+measured open for another (§32.7.1). R3 and the derived-snapshot half of R9 are the two that are
+neither built nor specified anywhere but here, which is why this table cannot be deleted before
+they are.
 
 R8 is the one entry whose defect **did not reproduce** when it was probed. `~/.beads/` does not
 exist on the machine that filed it, and on br 0.2.16 the suite passed 2119 tests under `-n auto`
@@ -140,18 +198,21 @@ entry in `verify.DEPENDENCY_DEFECT_SIGNATURES`, which routes a lock-acquisition 
 `merge.VERIFY_UNRELIABLE` — bounded by `policy.MAX_UNRELIABLE_GATE_EVENTS` and charged to no
 lane's rework budget.
 
-R7 is the one whose gate could not be pointed at `br`. The other six are properties of a *response*,
-so the harness's defence against the bad input is directly assertable; this one is a property of a
-*store under concurrent load*, and `br` fails it by construction. So the gate
-(`test_r7_concurrent_readers_never_observe_a_torn_write_of_the_shared_export`) is aimed at the store
-this repo already owns — the committed JSONL export, rewritten by `br.scrub_export` on the commit
-path while every lane reads it through `.beads/redirect`. Writing it found our own instance of the
-same defect: the scrub truncated the file before rewriting it, and `br.export_records` skips a line
-it cannot parse rather than raising, so a reader caught in that window got a **partial issue set
-with no error at all** — a silent wrong answer where `br` at least raised. Both halves are now
-fixed, the write is atomic, and the gate runs four real reader processes against a live writer with
-no retry anywhere in the path, so it cannot pass by giving a reader a second chance. When the
-replacement lands it inherits the gate unchanged: that is the property, not an implementation note.
+**R7 is the one whose gate could not be pointed at `br`, and the reason generalises — architecture
+§32.9 carries it.** Two of the nine are properties of a *store under load* rather than of a
+*response*: R7 and R8. **"The other six" stood here until 2026-08-17, from a revision when there
+were seven requirements**, and it is the same class of arithmetic the header block went stale on.
+Seven of the nine are answered by a reply, so a defence against a bad reply is directly assertable.
+
+The R7 gate is therefore aimed at the store this repo already owns — the committed JSONL export,
+rewritten by `br.scrub_export` on the commit path while every lane reads it through
+`.beads/redirect`. Writing it found our own instance of the same defect: the scrub truncated the
+file before rewriting it, and `br.export_records` skips a line it cannot parse rather than raising,
+so a reader caught in that window got a **partial issue set with no error at all** — a silent wrong
+answer where `br` at least raised. Both halves are fixed and the write is atomic. The gate runs four
+real reader *processes* against a live writer with **no retry anywhere in the path**, which is what
+stops it passing by giving a reader a second chance, and a same-process test would have been free to
+share a lock the real readers cannot. When the replacement lands it inherits the gate unchanged.
 
 ## 3. What our own usage already tells us
 
@@ -186,13 +247,33 @@ Three consequences for the design:
 2. **Reads dominate 3.4:1**, which supports §10's derived-snapshot direction — but note the ratio is
    flattered by `comments list` alone (714 calls, 45% of everything). §10's cache decision should be
    driven by that one surface, not by the aggregate.
-3. **The engine/interactive split is real and lopsided.** `create`, `ready`, `list`, `dep list` and
-   `dep remove` are **interactive-only** — a human at a prompt, never a harness phase. By §6 those
-   may be served later or never, which moves five more surfaces out of the hard requirement.
+3. **The engine/interactive split is real and lopsided.** Six surfaces are **interactive-only** in
+   this sample — a human at a prompt, never a harness phase. By §6 those may be served later or
+   never, which is a further scope reduction. Derive the set rather than reading a list, because
+   this one has already been wrong once:
 
-**One honest limit on the sample**: it covers many sessions on **one machine**, so an
-interactive-only classification reflects how *this* operator works. It does not affect the `bv`
-result, which is the load-bearing one.
+   ```sh
+   python3 -c "
+   import collections, json, pathlib
+   d = collections.defaultdict(collections.Counter)
+   for line in pathlib.Path('.basicly/ledger/tracker-usage.jsonl').open():
+       row = json.loads(line)
+       d[row['subcommand']][row['site']] += 1
+   print(sorted(k for k, v in d.items() if set(v) == {'interactive'}))"
+   ```
+
+**Corrected 2026-08-17: this item named five surfaces and the sample says six.** It omitted `dep
+add`, which the same file records as interactive-only on 18 calls. An enumeration typed beside a
+derivation is a second source of truth, which is why the command above replaces the list.
+
+**Two honest limits on the sample, and the second is the one that bites.** It covers many sessions
+on **one machine**, so an interactive-only classification reflects how *this* operator works; that
+does not touch the `bv` result, which is the load-bearing one. And the sample is frozen at
+2026-07-30 while the tree moved: `decompose` now spawns `create`, `dep add` and `dep cycles`
+through the seam, so **two of the six are engine surfaces today** and the classification for them
+is falsified rather than stale. An interactive-only verdict is a claim about the engine's call
+graph, and the call graph is the thing that changes — so the classification has to be re-derived
+from a refreshed sample before anything is frozen on it, which is §6's job and not this table's.
 
 **And one correction, because the first version of this section named the wrong cause.** It said
 `where --json` — a genuine engine surface, called by `worktree.py` `_probe_redirect` on every
@@ -271,7 +352,15 @@ Friction we have already hit — each one is a requirement in disguise:
 - `--acceptance-criteria` takes a single line only.
 - Ephemeral records are not linted, so they cannot be used to probe validation.
 - Deleting probe records leaves tombstones that the loop then commits.
-- No validation or vocabulary for `assignee`; unset on every record (`kjc5.38`).
+- No validation or vocabulary for `assignee` (`kjc5.38`). **This item read "unset on every record"
+  until 2026-08-17, and it was false in the same revision that §3.1 measured it set on 76 of 604** —
+  two claims in one document, contradicting each other, neither re-derived. It is set on 82 of 924
+  records today, holding two distinct values, one of them an e-mail address. That is the R6 leak
+  above, so an unvalidated field is not a curiosity here: **a field with no vocabulary is a field
+  with no redaction rule either.**
+- No vocabulary on the work type either, and the tell is cheap: the export holds both `feature` and
+  `feat` as type values, 75 records against 1. Read the census rather than a list —
+  `python3 -c "import collections, json, pathlib; print(collections.Counter(json.loads(l)['issue_type'] for l in pathlib.Path('.beads/issues.jsonl').open() if l.strip()))"`.
 
 ## 3.1 What other projects tell us — and which half of it is verified
 
@@ -320,8 +409,12 @@ reproduced by us, and none of it may be cited as settled until it is.
   relying on.
 - **Field and nesting telemetry.** No published study isolates used from unused tracker
   fields, and no telemetry on JQL ad-hoc versus saved-filter usage was found. Our own
-  measurements (`assignee` on 76/604, `notes` once, eight distinct type values) are the only
-  hard numbers we have, and they are ours alone.
+  measurements are the only hard numbers we have, they are ours alone, and they are re-derived
+  rather than quoted: `assignee` on 82 of 924 records, `notes` on 1, and eight distinct type
+  values, of which two are spellings of one concept [measured 2026-08-17, the census in §3's
+  friction list]. The figures this line carried — 76 of 604 — were the same properties at a
+  smaller ledger, and the ratio moved: the fraction is what a design decision would read, so a
+  frozen numerator over a frozen denominator is the wrong shape for it.
 - **Vendor sufficiency claims are marketing.** Linear's "covers 90% of needs" is docs-adjacent
   advertising, not a measurement.
 
@@ -353,14 +446,24 @@ binary.
 Three reasons this is a requirement rather than a nicety, and the first is the load-bearing one:
 
 1. **It turns `1.0.0`'s consumer criterion into a test instead of a claim.** "No external binary in
-   the critical path" (`basicly-ctdz`) is provable by driving the kit under `env -i` with `-S -I`,
-   which is how the tier kit is checked — *not by asserting it*. A tracker that merely lives in our
-   package can only be argued about.
-2. **It de-risks the migration.** The engine reaches `br` through 76 `run_br` references across 14
-   files and **17 distinct subcommands**, with no single read choke point — `show --json` is parsed
-   at 12 sites under four different absence contracts (`basicly-tcmy.14`). A kit can be built and
-   tested standalone and then swapped behind that one seam, rather than as 18 simultaneous parser
-   rewrites.
+   the critical path" (`basicly-ctdz`) is *shown*, not asserted. **The mechanism this line predicted
+   is not the one that shipped, and the one that shipped is stronger.** It proposed driving the kit
+   under `env -i` with `-S -I`, which is how the tier kit is checked. `tests/test_kit_tracker_cli.py`
+   instead copies the kit into a bare directory and runs its entry point under a **meta-path finder
+   that turns any `import basicly` into a failure**, so "did not import the engine" is enforced by
+   the interpreter rather than asserted about an import list — and it carries **two positive
+   controls**, one proving the engine *is* importable in that environment and one proving a seeded
+   engine import turns the blocker red. A blocker that silently matched nothing is the fail-open
+   shape a stripped environment can hide.
+2. **It de-risks the migration, and the seam has since paid that off.** This line read "76 `run_br`
+   references across 14 files and **17 distinct subcommands**, with no single read choke point —
+   `show --json` parsed at 12 sites under four different absence contracts" (`basicly-tcmy.14`).
+   Every figure in it is now much smaller, because the seam did its job: `br.read_record` is the one
+   record-read, and the write surfaces a leaf walk spawns were ported in `basicly-wpc8.1`.
+   Architecture §37.2 owns the count and gives the probe that covers every spelling; **read that
+   rather than a number here**, because a naive search for the wrapper's name undercounts. What the
+   argument needed was never the magnitude — it was that a kit can be built and tested standalone
+   and then swapped behind one seam, rather than as N simultaneous parser rewrites.
 3. **The data outlives the tool.** A work ledger is the longest-lived artifact the harness owns. If
    `basicly` is ever abandoned the ledger and its scripts must stay usable, which is a property no
    in-package-only design has.
@@ -470,27 +573,17 @@ pass** (secret patterns, absolute paths rewritten repo-relative) and a **per-eve
 cap does double duty — §4.4 needs it as the interleave bound. Comments are already 45% of tracker
 traffic, so agent verbosity is the growth driver and the cap is the only thing bounding it.
 
-**The cap truncates; it never refuses, and it never conceals that it truncated.** Those are the two
-wrong answers. Refusing an oversized write loses the event — the fact that a gate ran, along with its
-output — and quietly clipping the payload makes a cut comment indistinguishable from a short one, so
-a reader cannot tell whether it is looking at the evidence or at a fragment. So an oversized payload
-is stored cut to the cap, carrying `truncated: true` and `original_length` beside it. The reader
-learns both that evidence was dropped **and how much**, which is the growth bound §9.1 leaves open.
-Four rules make it safe:
+**Absorbed: the cap and its four rules are architecture §32.10**, built in `events.py` and asserted
+there. The rules are that only free-text payload keys truncate, that redaction runs before the cut
+and the recorded length is of the *redacted* text, that the cut is on a character boundary with the
+unit named in the field, and that truncation is a write-time property nothing revisits. Two
+refinements the code added and this design had not stated are also there: a truncatable key holding a
+container is refused by the **schema** rather than by the cap, and the cap is a mitigation on
+interleaving rather than the concurrency guarantee, which is the lock.
 
-- **Only free-text payloads truncate.** Never a field the fold reads — ids, `seq`, `kind`, status,
-  provenance, or §4.6's totals. Truncating one of those would make a derived value depend on the cap,
-  which breaks the fold determinism §14 asserts.
-- **Redact, then truncate, then measure.** Redaction can *lengthen* text (a matched pattern becomes a
-  placeholder), and a cut through the middle of a secret can defeat the pattern that would have
-  caught it. `original_length` is therefore the length of the redacted payload, not of what the agent
-  pasted — which is the honest number anyway, since the raw bytes were never ours to keep.
-- **Cut on a character boundary, and name the unit.** A byte-sliced UTF-8 payload stops being
-  decodable and takes the whole line down with it. `original_length` is in **bytes** and the field
-  says so; a length whose unit a reader has to guess is worse than no length.
-- **Truncation is a write-time property of the event, not a later rewrite.** It happens once, before
-  the event is authoritative, and nothing revisits it. That is the whole difference between this and
-  the compaction §9.1 declines.
+**What survives here is the trust-boundary framing above**, because it is the argument for the cap
+rather than the cap's contract: a leak into an append-only committed log is permanent, and the cap is
+the only bound on a single pasted payload.
 
 ### 4.3 The ten requirements, and the weakest link in each
 
@@ -688,10 +781,18 @@ working the whole time.
    declare the residual baseline, then move to `dual`. Importing after the dual write has begun
    would let the owned side track the external one instead of being compared against it.
 
-   The entry point is the CLI rather than a kit `main()`, on a measurement rather than a
-   preference — `migrate.py` has three tokens of size headroom and none on density. So §4's
-   promise that the kit is consumable with **zero basicly imports and nothing on PATH** still has
-   no entry point of its own, and that is a named gap rather than a closed one.
+   The *import's* entry point is the engine CLI rather than a kit `main()`, on a measurement rather
+   than a preference — `migrate.py` had no size headroom to take one. **The gap that followed from
+   that is closed, and this paragraph named it as open until 2026-08-17.**
+   `.basicly/core/kit/tracker/cli.py` is the kit's own entry point (`basicly-vkh0.28`): `create`,
+   `show` and `list`, no engine import, redaction taken as an injected argument because the kit may
+   not import it. Its docstring cites this section as the gap it closes, so the two were in step in
+   the code and out of step in the prose — which is the direction this document goes stale in.
+
+   **What is still absent is narrower than "an entry point", and worth stating precisely.** The kit
+   CLI covers a record; it deliberately does not cover the graph — children, edges and ranking stay
+   with the engine. So a copied kit can create, read and query a work item, which is §32.1's
+   acceptance condition, and cannot yet build a dependency graph.
 2. **Shadow mode**: the new tracker reads the same ledger and answers the same queries
    read-only; a differential test asserts identical verdicts for phase derivation, ready set,
    and gate status.
@@ -730,9 +831,12 @@ working the whole time.
 3. **Dual-write** for one release, with the old tracker still authoritative. **Active since
    2026-08-15**: every accepted write also lands in the owned ledger through `br._mirror_write`,
    which **raises** on any failure rather than logging, so a write surface with no translator
-   stops the work instead of silently diverging. Two defects in it are open and both were found
-   by using it — `basicly-e2mz.23`, the mirror failing **open** when the tracker-mode reader is
-   unregistered, and `basicly-e2mz.24`, a translator that refuses *after* br has taken the write.
+   stops the work instead of silently diverging. **Two defects were found by using it and both are
+   now closed** (this line said "are open" until 2026-08-17): `basicly-e2mz.23`, the mirror failing
+   **open** when the tracker-mode reader is unregistered, and `basicly-e2mz.24`, a translator that
+   refuses *after* br has taken the write. Architecture §37.3 carries what they became — **decide,
+   then spawn, then mirror** — and the point worth keeping is that they were one mistake wearing two
+   faces: **a guard placed after the write cannot refuse it.**
 4. **Flip** the source of truth once the differential test is clean and the telemetry (§6) shows
    no unimplemented surface in use. Not dispatchable: it needs post-cutover records to exist and
    the remaining bypass routes closed, and neither can be brought forward by dispatching
@@ -741,15 +845,21 @@ working the whole time.
    the engine rather than merely making it non-authoritative. Landed 2026-08-07
    (`basicly-s5li`) on the measurement that `comments` was then 45% of all recorded tracker
    traffic (§3.0) and the large majority of the live tracker's comments were `[harness-*]`
-   markers using a beads comment purely as transport. `rg -c '_run_br\(' src/basicly/` counts
-   the engine's remaining spawn sites; a figure written here goes stale on the next
-   retirement. In `owned` those families are written and read as `comment` events through
-   `br.add_comment` / `br.read_comments` / `br.all_comment_texts`, and no `br` is spawned for
-   them at all. Human comments are deliberately untouched: a human writing prose runs `br`
-   directly and the engine never spawns that, so removing the engine's dependency does not
-   require removing theirs (§15). Two `comments list` spawns remain at their own call site — `decompose`'s
-   sizing markers and `supervise`'s found-info records — each internally consistent, and
-   retiring them is `basicly-wpc8`'s.
+   markers using a beads comment purely as transport. **Use architecture §37.2's probe for the
+   remaining spawn count, not a bare search for the wrapper's name** — most call sites import it
+   under an alias and a second wrapper exists for tolerated failures, so the naive search this line
+   used to give undercounts. A figure written here goes stale on the next retirement.
+
+   In `owned` those families are written and read as `comment` events through `br.add_comment` /
+   `br.read_comments` / `br.all_comment_texts`, and no `br` is spawned for them at all. Human
+   comments are deliberately untouched: a human writing prose runs `br` directly and the engine
+   never spawns that, so removing the engine's dependency does not require removing theirs (§15).
+
+   **Three comment spawns remain, not two.** `decompose`'s sizing read and `supervise`'s
+   found-info read are the two `comments list` calls this line named; `supervise` also *writes* a
+   found-info record through a `comments add` spawn at the same call site, which it did not. Each is
+   internally consistent, and retiring all three is `basicly-wpc8`'s (open; `basicly-wpc8.1` closed
+   the six write surfaces a leaf walk spawns).
 
    **This is the point of no return for the comment query.** After it, the marker families no
    longer reach the external tracker, so `br comments list` run by hand does not show them and
@@ -814,25 +924,33 @@ improves the *current* tracker's use — recording the scheduler score (`basicly
 the path leak (`basicly-vkh0.5`) — is not blocked by this and lands against the existing tracker.
 
 **The trigger fired and the upgrade did not happen** [M 2026-08-14]. `basicly-kjc5.22` is
-**closed**, so the condition above was met — and instead of the promotion it gates, eight kit
-modules landed against the reasoning in §§4–4.6 with no frozen surface, no declared schema and no
-cache decision. The paragraph above is left standing because the wrong outcome is the more useful
+**closed**, so the condition above was met — and instead of the promotion it gates, kit modules
+landed against the reasoning in §§4–4.6 with no frozen surface, no declared schema and no cache
+decision. The paragraph above is left standing because the wrong outcome is the more useful
 record: **a gate written as prose is not a gate.** Nothing read `kjc5.22`'s status, nothing refused
 a commit under `kit/tracker/`, and the condition was discharged by a bead closing somewhere else
 entirely. Compare the gates that did bind over the same period — `tracker-path-scan`, the module-size
 ratchet, `kit-boundary.py` — each of which is a script wired to a hook.
 
-**What the promotion still owes, and the order it runs in.** The three deliverables above are
-unchanged, and they are now *reverse-engineering* work over eight built modules rather than design
-ahead of code: enumerate the surface the kit already exposes, declare the event schema `events.py`
-already writes, and decide the cache question §10 defers on the fold cost `snapshot.py` already
-pays. It sequences with the cutover — `basicly-c357` (scope the shadow differential),
-`basicly-vkh0.23` (give the import an entry point), `basicly-u4xu` (flip to dual) — because the
-differential in §5 step 2 is what would falsify a schema declared from a read.
+**A count of the modules stood here and went stale in three days**, from eight to eleven. Run
+`ls .basicly/core/kit/tracker/*.py`; the header block gives the same command for the same reason.
 
-**Until it runs, `kit/tracker/` is outside the scope of any architectural audit of this repo.** Not
-because it is exempt, but because an audit needs a specification to judge against, and this section
-is the record that one does not exist yet.
+**Two of the three deliverables are now discharged, and the third is not** [2026-08-17]. This
+passage read as though all three were still owed.
+
+| Deliverable | Where it stands |
+| --- | --- |
+| declare the event schema | **done, in architecture §32.2** — the event record's fields, the id's exclusion of the timestamp, the per-record sequence, the totals cache and the fold's canonical order. `events.KNOWN_KINDS` is the closed kind set with consumers (`basicly-vkh0.36`), which is the piece that made the declaration checkable rather than descriptive |
+| enumerate the kit's own surface | **open.** Architecture §32.1 carries it as a target and says the tree exempts the kit today |
+| decide the cache question | **open.** §10 defers the index and states the trigger; nothing has measured a fold against the loop's per-advance budget |
+
+**The exemption sentence that stood here is withdrawn, and architecture refuted it in writing.** It
+read "until it runs, `kit/tracker/` is outside the scope of any architectural audit of this repo",
+on the argument that an audit needs a specification to judge against. Architecture §32.1 answers it
+directly: **audit scheduling and specification coverage are different things, and a specification
+may not exempt part of the system from being specified.** The sentence was also self-executing in
+the wrong direction — it was prose, nothing read it, and a bead closing elsewhere discharged it,
+which is the very failure the paragraph above it names. It is deleted rather than corrected.
 
 **Correction, 2026-07-26: the licence claim that stood here was wrong.** This section previously
 read "Reading beads_rust and bv sources for reference is explicitly sanctioned while they are
@@ -979,11 +1097,28 @@ Researched against the live tracker 2026-07-25 rather than reasoned from memory.
 
 ### 9.1 Compaction — decline it
 
-**Evidence:** every one of our 330 records carries `compaction_level: 0` and
-`original_size: 0` — beads' compaction has never run here. The ledger is 761 KB raw, while
-git packs *the entire history of the repo* to 543 KB. Git's delta plus zlib already compresses
-a ledger of near-identical JSON records better than any record-shrinking scheme, and it does so
-losslessly.
+**Evidence: every record carries `compaction_level: 0` and `original_size: 0`** — the upstream
+compaction feature has never run here. The property is what carries the argument, so it gets the
+probe rather than the count it stood as (330 records, 761 KB, when this was written; both have
+since multiplied and the property has not moved):
+
+```sh
+python3 -c "
+import collections, json, pathlib
+rows = [json.loads(l) for l in pathlib.Path('.beads/issues.jsonl').open() if l.strip()]
+print(len(rows), collections.Counter((r.get('compaction_level'), r.get('original_size')) for r in rows))"
+```
+
+Git's delta plus zlib already compresses a ledger of near-identical JSON records better than any
+record-shrinking scheme, and it does so **losslessly**, which is the half compaction cannot match.
+
+**One supporting figure has since inverted, and saying so is cheaper than letting a reader find
+it.** This section argued from "git packs the entire history of the repo to 543 KB, against a
+761 KB raw ledger". The pack is now several times the raw export
+[measured 2026-08-17, `git count-objects -vH` against `du -h .beads/issues.jsonl`], because the
+repository's own source history grew faster than the ledger. That comparison was never the
+argument — losslessness is — and it was the wrong instrument anyway: a whole-repository pack size
+says nothing about how well git stores *this file's* revisions. Do not restore it.
 
 So compaction solves a problem we do not have, at a cost that is fatal to D11: it discards
 evidence. **Our tracker will not implement lossy compaction.** Growth is bounded four ways
@@ -1006,10 +1141,13 @@ reader that the rest exists elsewhere — in the run's own output, in the branch
 than nowhere. "We summarised this" tells them neither.
 
 The early warning to watch is **maximum line length**, not total size: each issue is one line, so
-appending a comment rewrites that whole line. Our largest record is already 45 KB against a
-median far below that — the `basicly-kjc5` epic, thick with comments. Per-dispatch markers land
-on leaf beads rather than the epic, which keeps the distribution flat, but the metric is worth
-a check in the surface report.
+appending a comment rewrites that whole line. §10 carries the skew and its command.
+
+**The record holding the maximum changes, which is why naming one is the wrong shape.** This line
+named the `basicly-kjc5` epic at 45 KB. The maximum is now roughly twice that and sits on a
+different record entirely [measured 2026-08-17, §10's command]. The reason the distribution stays
+workable is structural rather than lucky — per-dispatch markers land on leaf records rather than on
+an epic — and the metric is still worth a check in the surface report.
 
 ### 9.2 Ranking — record it now, own it purely later
 
@@ -1033,22 +1171,20 @@ Two consequences:
   `dispatch_rank`, the lane's position in the order the pass actually dispatched. That is the
   field that satisfies "reconstructible" in the ordinary case; the `scheduler_*` fields are null
   when br had no opinion, which is deliberately distinguishable from unrecorded.
-- **When we own it**: the ranking function must be **pure**, and it must drop `created_at`.
-  Age-based ordering makes dispatch order clock-dependent for an unchanged graph, which D9
-  forbids for anything outliving the pass. Our ordering: unblocked only, then priority, then
-  **descending dependent count** (unblock the most work first — the critical path), then id as
-  the final deterministic tie-break. Every term is a pure function of the graph.
+- **When we own it**: **absorbed and shipped.** Architecture §32.4 is the specification — a pure
+  function of the graph, unblocked items only, then priority, then the descending count of
+  still-live blocking dependents, then the id, and it deliberately drops creation time because an
+  age-based order makes dispatch order clock-dependent for an unchanged graph. Landed 2026-08-07
+  (`basicly-vkh0.20`) as `kit/tracker/scheduler.py` behind `br.read_ranking`, the ranking's own
+  seam.
 
-  **Landed 2026-08-07 (`basicly-vkh0.20`)**, as `kit/tracker/scheduler.py` behind
-  `br.read_ranking` — the ranking's own seam, the shape `read_record` has for a record. It
-  emits `schema: basicly.scheduler.v1` and the sort above, so a marker recorded under the
-  owned scorer is distinguishable from one recorded under `br.scheduler.v1`. Two decisions the
-  ordering above did not settle, both made in the module and testable there: the dependent
-  count is over **blocking edges to still-live dependents** only, since a `related` dependent
-  was never waiting and a closed one is work already done; and the score packs both terms into
-  one integer that `explain()` decodes, so a recorded score stays readable without the graph
-  that produced it. Age-freedom is structural rather than disciplinary — the ranking's input
-  type carries no timestamp, though the ledger it is folded from does.
+  Two decisions the ordering did not settle stay recorded here, because they are the kind of thing
+  a reader re-litigates: the dependent count is over **blocking edges to still-live dependents**
+  only, since a `related` dependent was never waiting and a closed one is work already done; and the
+  score packs both terms into one integer that `explain()` decodes, so a recorded score stays
+  readable without the graph that produced it. **Age-freedom is structural rather than
+  disciplinary** — the ranking's input type carries no timestamp at all, though the ledger it is
+  folded from does. That is the difference between a rule and a rule nobody can break.
 
 ### 9.3 Concurrency — single writer per ledger
 
@@ -1216,7 +1352,17 @@ Held to one comparison at a time: a full fold is **~1.9× cheaper** than the med
 (14.2 vs 7.4 ms), and a single-record read is ~15× cheaper (14.2 vs 0.94 ms). A fold is
 O(events) while a spawn is roughly constant, so the fold ratio *narrows* as the ledger grows
 unless §4.6's carried aggregate keeps the common query off the fold — which is exactly what it
-is for.
+is for. Architecture §37.1 carries both corrected ratios as specification.
+
+**The retraction never reached the code, and that is an open item rather than a footnote**
+[measured 2026-08-17, `git grep -n '175x' -- src tests`]. Three sites still assert the withdrawn
+figure as a reason for a design choice: a comment in `decompose.py` justifying a read-once
+optimisation, a comment in `tracker_usage.py` framing the read/write ratio, and a **test
+docstring** in `test_decompose.py` restating it as the rationale for the assertion below it. The
+third is the one that matters most: a docstring saying *why* an assertion holds is a claim held to
+the same standard as the assertion, and this one is false. Correcting a document and leaving the
+number in the tree is how a retraction gets re-adopted from the code — which is the authority order
+running backwards.
 
 **The performance argument is therefore real but modest, and it is not why this is being
 built.** The arguments that carry the release are untouched and sufficient on their own:
@@ -1238,11 +1384,22 @@ answer. With one, the common query never folds at all — it reads the item's la
 cost above is the cost of the *checkable* path and of cross-item reports, not of ordinary reads. The
 trigger for building an index narrows accordingly: a **cross-item** query the tail cannot serve.
 
-**Line-length skew is the other scaling axis.** Median record is 1,942 B, p95 is 4,285 B, and the
-maximum is **45,296 B** — the `basicly-kjc5` epic, 23× the median, thick with comments. Under a
-line-per-record snapshot every append rewrites the whole line, so the skew is a write-amplification
-and merge-conflict hotspot, not just a size curiosity. The event log makes this a non-issue by
-construction: an event's size is bounded by the change, not by the record's accumulated history.
+**Line-length skew is the other scaling axis, and the shape of it is the finding rather than the
+numbers.** Under a line-per-record snapshot every append rewrites the whole line, so a heavy record
+is a write-amplification and merge-conflict hotspot, not just a size curiosity. The event log makes
+that a non-issue by construction: an event's size is bounded by the change, not by the record's
+accumulated history.
+
+The skew has widened on every axis since it was first measured — the maximum was 45,296 B at 23×
+the median and is now near twice that, and the p95 has more than doubled — so read it rather than a
+frozen triple [measured 2026-08-17]:
+
+```sh
+python3 -c "
+import pathlib, statistics
+b = sorted(len(l.encode()) for l in pathlib.Path('.beads/issues.jsonl').open() if l.strip())
+print(len(b), 'records', int(statistics.median(b)), 'median', b[int(.95*len(b))], 'p95', b[-1], 'max')"
+```
 
 ## 11. Security and trust boundaries
 

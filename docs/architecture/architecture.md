@@ -2719,21 +2719,32 @@ its feature changes; its rows stay on disk for the life of the log, because the 
 rewritten. So the alias table is a **frozen literal covering every family that has ever been
 written**, and adding a family to it is append-only in exactly the way the log is.
 
-**The family list is unbound today, and it has drifted three times.**
-[The work-tracker requirements](../requirements/work-tracker.md) record two earlier
-corrections — a count that read eight while four families had shipped, then a correction to
-ten that was itself wrong — and the list standing at twelve is wrong in both directions. It
-names `[harness-side]`, which is not a marker family at all but a phrase from a sentence in
+**The family list is bound to a gate, after drifting four times while it was prose.** The
+frozen literal is `.scripts/check_marker_families.py`, and it refuses a disagreement with
+either population it measures: what `src/basicly/` declares, read out of the AST, and what
+the two stores hold. It reports **eleven declared and one retired, twelve frozen**
+[measured 2026-08-17, `uv run python .scripts/check_marker_families.py`, which also prints
+the row count across both stores].
+
+**The drift history is the argument for the gate, and each correction was wrong in a
+different way.** A count read eight while four families had shipped. A correction to ten came
+from reading two recent landings rather than the tree. A correction to twelve was wrong in
+*both* directions at once: it counted `harness-side`, an unbracketed phrase from a sentence in
 `src/basicly/commit.py` reading "the rescue is harness-side because it has to be", and it
-omits `[harness-retro]`, which `src/basicly/retrospective.py` declares. The count from the
-declarations is **eleven**
-[measured 2026-08-17, `git grep -ohn '"\[harness-[a-z-]*\]"' -- 'src/basicly/*.py' | sort -u`].
+omitted the family `src/basicly/retrospective.py` declares.
 
 **This is a prose-read-as-a-declaration defect, and the same class has already cost this
 repository once**, in a dead-code gate that counted English in a schema as a field reference
-and then advised deleting the baseline entry. A list of wire formats counted by eye is the
-instrument fault; a gate that counts the declarations and refuses a disagreement is the fix,
-and [`backlog.md`](backlog.md) carries it.
+and then advised deleting the baseline entry. **Counting with a command was not enough**: the
+command has to discriminate a declaration from prose, which is why the gate reads string
+constants out of the AST rather than grepping for the shape.
+
+`[TARGET]` **The gate's own domain is a paragraph in a requirements document, and that is a
+dependency this specification has to name.** `check_marker_families.py` reads the roster and
+the two counts out of [the work-tracker requirements](../requirements/work-tracker.md) §3 and
+fails on a disagreement, so that document is a **gate input** rather than explanation. The
+document register schedules it for deletion once the binary leaves the runtime path, and the
+deletion has to repoint this check first or the roster loses its only home.
 
 ### 32.4 Derived views: phase, the ready set, gate status
 
@@ -2809,8 +2820,10 @@ disposition, because the tolerant direction for a gate is the restrictive one.
 
 ### 32.7 Redaction
 
-**No committed artifact carries a machine-specific path, username or hostname.** Three
-rule sets enforce it.
+`[TARGET]` **No committed artifact carries a machine-specific path, username or hostname.**
+Three rule sets enforce it. The identity half does not hold today, and
+[32.7.1](#3271-the-identity-rule-covers-one-person-and-two-stores-carry-another) is the
+measurement.
 
 | Rule set | How it is built |
 | --- | --- |
@@ -2840,6 +2853,56 @@ sets. The mirror is real duplication.
 | the secret rules | **convention only** |
 
 That asymmetry is a gap, not a design.
+
+#### 32.7.1 The identity rule covers one person, and two stores carry another
+
+**The identity rule is built from the running process's own username, so it can only ever
+redact the committer who is running.** That is deliberate and it is the right default: a
+username is not a shape, and only the running machine knows the string. It is also the
+whole extent of the coverage, and the absolute claim above is false while a second person's
+identity sits in a store this repository commits.
+
+| Store | Lines | A second username | An address |
+| --- | --- | --- | --- |
+| the owned log, `.basicly/ledger/events-0001.jsonl` | 5,616 | 211 | 56 |
+| the external export, `.beads/issues.jsonl` | 924 | 83 | 56 |
+
+The counts move with every write, so this document gives the probe rather than trusting
+them [measured 2026-08-17; the positive control is the 4,953 log lines that *do* carry the
+placeholder, which is what says the redaction path ran and the probe reads the right files]:
+
+```sh
+python3 -c "
+import collections, json, pathlib
+rows = [json.loads(l) for l in pathlib.Path('.beads/issues.jsonl').open() if l.strip()]
+print(collections.Counter(r.get('created_by') for r in rows).most_common())
+print(collections.Counter(r.get('assignee') for r in rows if r.get('assignee')).most_common())"
+```
+
+**Two carriers, and neither is free text.** `created_by` is written on every record the
+external binary mints. `assignee` carries an e-mail address on part of the set, which no
+username rule would match even if it knew the name.
+
+**The pre-commit floor is green over both files**, and correctly so: it builds its rule from
+`getpass.getuser()`, and the identity in the file is not this machine's. **A gate that
+cannot see a population is not a gate that says the population is absent.** The mechanism
+the floor points at for the rest is the configurable deny list in
+[20. Configuration](#20-configuration), and this repository declares no entries in it, so
+the hook that would read them is inert.
+
+**The requirement this fails is a property of the format, not of a scrubbing pass.** An
+identity field the store mints unasked is the leak; scrubbing it afterwards is the mopping.
+
+**The owned store's live write path is already clean, and that narrows the work to one
+cause.** Every identity-carrying event in the log came from the import: 263 of 5,616 lines
+carry one, and **all 263 carry the import's own marker** across the `created`, `edge` and
+`comment` kinds [measured 2026-08-17, counting `imported_from` in the payload of every line
+matching either identity, against a positive control of zero lines without it]. The kit takes
+the actor as an argument rather than reading it from the host, so nothing the engine writes
+adds to the set. What is left is the field set
+[32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) says nothing may rewrite —
+so the remedy is a corrective append or a declared exception, never an edit, and the log's
+one prior exception was taken by an explicit owner decision.
 
 ### 32.8 How a kind rename lands on a log nothing may rewrite
 
@@ -2948,6 +3011,100 @@ alias makes the owned side derive the same state from those events, which is pre
 condition for the verdict to stay unchanged. **The check that the split preserved the fold is
 a differential against a snapshot taken before it**, not the `clean` line, which the baseline
 can hold green through a regression.
+
+### 32.9 The nine properties bought with the external binary's defects
+
+**Nine properties of this component were paid for in sessions spent diagnosing the binary it
+replaces, and each is a requirement rather than a lesson learned.** A dependency's defect is
+requirements input for our own store, and the proof becomes a committed gate here rather than
+a patch applied upstream. The register of what each one cost is
+[the work-tracker requirements](../requirements/work-tracker.md) §2.1, which is where the
+incidents live; this table is the specification they became.
+
+**Each is pinned by a test named for its number**, in `tests/test_tracker_requirements.py`,
+and each test asserts *this* system's defence against the defective input. None asserts that
+the binary still misbehaves — a test of a foreign bug breaks on the version that fixes it,
+which is the wrong failure. When the flip lands the module runs against the owned store
+unchanged, so it is the executable half of the scope contract.
+
+| # | The property | Where it stands |
+| --- | --- | --- |
+| 1 | **A timestamp is evidence, never a constraint.** No write is refused on a clock comparison, no derived value is a function of a wall clock, and total order comes from the writer's own sequence numbers | held. [32.2](#322-the-event-log-and-the-fold) keeps the timestamp out of the event id, [32.4](#324-derived-views-phase-the-ready-set-gate-status) drops creation time from ranking, and [32.5](#325-the-write-path-the-lock-and-rotation) keeps every wall-clock branch out of the write path |
+| 2 | **Exactly one spelling per field, in every surface that emits it.** The failure this prevents is silent: a reader that guesses between two spellings returns an *empty* graph rather than an error, and an empty graph degrades every landing order without failing anything | held on the owned side. A dependency event names its two endpoints, its type and its provenance under **one** spelling each, with no alias for any of them; the import adds attribution keys beside them and renames nothing |
+| 3 | **Validation rules are configuration, not code**, and apply per work type without a rebuild | **open.** The required-section set is a module-level literal pinned to the binary's own template, and owning the validation rules is one of the five unported operations in [37.2](#372-what-still-depends-on-it) |
+| 4 | **A text field accepts newlines**, and every field settable after creation is settable at creation | held. A multi-line value occupies one physical line and round-trips byte-identically through the log and the fold, and the kit's create surface sets an arbitrary named field |
+| 5 | **A record id is opaque and is never re-parsed.** A short root plus a dotted child counter, with no separator any consumer has to interpret | held for a newly minted id, and stronger than "collision-checked": the root length is sized from a **declared collision budget** by the birthday bound, and only new ids get longer, because an existing id never changes. The ids inherited from the import predate the budget and sit far outside it, which the kit states rather than implies |
+| 6 | **No committed artifact carries a machine-specific path, a username or a hostname**, and portability is a property of the format rather than of a scrubbing pass | **partially held.** [32.7](#327-redaction) is the mechanism and [32.7.1](#3271-the-identity-rule-covers-one-person-and-two-stores-carry-another) is the measured gap |
+| 7 | **N concurrent readers and one writer never corrupt shared state**, and a contention failure that is reported is reported as **retryable**, so the caller backs off | held. Publishing is a rename, the temp name is per-writer, and the give-up error carries retryability as a class attribute rather than as prose |
+| 8 | **Contention waits, and a wait that gives up says so.** The lock is scoped to the ledger it protects, never to the machine or a home directory | held. Scope decides who contends: a lock one level too wide makes every unrelated process on the host a competitor for a record it will never touch, and the failure that produces is a *gate* failing rather than a write waiting |
+| 9 | **A publish never shrinks the artifact silently.** A write emitting fewer records than the file it overwrites reports the shrink and requires explicit intent | held on the external seam, **open on the derived snapshot.** The comparison is on **content, never on timestamps** — a timestamp comparison fires on a healthy checkout whose content is byte-identical, so it cannot be the guard |
+
+**Two of the nine are properties of a store under load rather than of a response, and that
+changes what can be asserted.** The other seven are answered by a reply, so the defence
+against a bad reply is directly testable. Concurrency and lock scope are answered by a store,
+and the binary fails both by construction — so their gates are aimed at the store this project
+already owns, and one of them found our own instance of the same defect. A scrub truncated the
+shared export before rewriting it, and the reader skipped a line it could not parse rather
+than raising, so a reader caught in that window received a **partial record set with no error
+at all**. That is a silent wrong answer where the binary at least raised. Both halves are
+fixed, the write is atomic, and the gate runs real reader processes against a live writer with
+no retry anywhere in the path, so it cannot pass by giving a reader a second chance.
+
+**Requirement 8's originating incident did not reproduce when it was probed, and it is carried
+anyway.** The machine-global lock the incidents were attributed to is not what the binary
+does: the whole suite passed under parallel execution while more than a thousand concurrent
+external initialisations were driven against the same host [measured 2026-08-01 against the
+pinned version; not re-derivable, because it was a one-off adversarial run against a host state
+that no longer exists]. The requirement stays
+because it is a property wanted from the owned store, not a bug report about a dependency, and
+because the containment if the contention returns already exists — a lock-acquisition failure
+matches a dependency-defect signature, routes to the unreliable-verify verdict, and is charged
+to no lane's rework budget. **A requirement whose incident stopped reproducing is not a
+requirement that stopped being wanted.**
+
+### 32.10 The per-event size cap, and honest truncation
+
+**Growth is bounded four ways, and the per-event cap is the one the other three leave out.**
+Git compression, the ship-time rollup and a write bounded by the size of the change all assume
+bounded events. None of them bounds a single pasted payload, so an agent that pastes a
+multi-megabyte log puts it in every clone — compressed, and not removable, because true
+removal from an append-only log is the history rewrite
+[32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) forbids.
+
+**The cap truncates. It never refuses, and it never conceals that it truncated.** Those are
+the two wrong answers, and each loses something different. Refusing an oversized write loses
+the *event* — the fact that a gate ran, along with its output. Clipping quietly makes a cut
+payload indistinguishable from a short one, so a reader cannot tell evidence from a fragment.
+An oversized payload is therefore stored cut to the cap, carrying a truncation flag and the
+original length beside it, and the reader learns both that evidence was dropped and how much.
+
+Four rules make it safe, and the first is what keeps the cap out of the fold.
+
+- **Only free-text payload keys truncate.** Never a field the fold reads — an id, a sequence
+  number, a kind, a status, a provenance label or a carried total. Truncating one of those
+  would make a derived value depend on the cap, which breaks the determinism
+  [32.2](#322-the-event-log-and-the-fold) asserts.
+- **Redact, then truncate, then measure.** Redaction can *lengthen* text, because a matched
+  pattern becomes a placeholder, and a cut through the middle of a secret defeats the pattern
+  that would have caught it. The recorded length is therefore the length of the **redacted**
+  payload, which is the honest number anyway: the raw bytes were never ours to keep.
+- **Cut on a character boundary, and name the unit.** A byte-sliced UTF-8 payload stops being
+  decodable and takes the whole line down with it. The length is in **bytes** and the field
+  name says so; a length whose unit a reader has to guess is worse than no length.
+- **A truncatable key must hold a string.** A container under one is refused by the *schema*
+  rather than by the cap: the two markers say how much was cut from **one** field, and there
+  is nowhere honest to put them for a list of ten.
+
+**Truncation is a write-time property of the event and nothing revisits it.** That is the whole
+difference between this and the lossy compaction [8. Non-goals](#8-non-goals) refuses.
+Compaction discards evidence *after* the fact and leaves the record looking whole. Truncation
+drops it at the boundary and says on the record that it did, and by how much. "We kept the
+first N bytes of a large payload" is a checkable statement that tells a reader the rest exists
+somewhere else. "We summarised this" tells them neither.
+
+**The cap is not the concurrency guarantee, and the code says so.** It bounds how far a
+buffered writer's chunking can be interleaved, which is a mitigation. The guarantee is the
+lock in [32.5](#325-the-write-path-the-lock-and-rotation).
 
 ## 33. Handoff artifacts and their contracts
 
