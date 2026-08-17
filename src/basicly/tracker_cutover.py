@@ -137,6 +137,10 @@ def cmd_write(args: argparse.Namespace) -> int:
     if not argv:
         ui.say("tracker write: name a br subcommand, e.g. `-- close b-1`")
         return 2
+    # The one write whose output the caller needs: the id the store minted (vkh0.29).
+    if argv[0] == "create":
+        ui.say(f"created: {br.create_record(Path.cwd(), argv)}")
+        return 0
     br.write(Path.cwd(), argv)
     ui.say(f"recorded: {' '.join(argv)}")
     return 0

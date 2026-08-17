@@ -1793,6 +1793,33 @@ def test_tracker_write_puts_a_hand_write_through_the_mirroring_seam(
     assert "recorded: comments add b-1 hello" in capsys.readouterr().out
 
 
+def test_tracker_write_routes_a_create_to_the_minting_seam_and_prints_the_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A create is the one write whose output the caller needs (basicly-vkh0.29).
+
+    Routed to ``create_record`` rather than ``write``, which returns nothing. Before the
+    flip a create through ``write`` reached br, whose JSON reply carried the minted id;
+    after it there is no reply, and the mirror failed with "replied with no JSON record" —
+    a message that sends the reader to the reply instead of to the call.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli.br, "write", lambda *_a: pytest.fail("a create is not a plain write"))
+    monkeypatch.setattr(cli.br, "create_record", lambda _root, argv: f"b-new({len(argv)})")
+
+    assert cli.main(["tracker", "write", "--", "create", "a thing", "--parent", "b-1"]) == 0
+
+    assert "created: b-new(4)" in capsys.readouterr().out
+
+
+def test_the_write_seam_refuses_a_create_by_name_rather_than_failing_in_the_mirror(
+    tmp_path: Path,
+) -> None:
+    """The wrong path fails loudly at the call, not obscurely two modules down."""
+    with pytest.raises(RuntimeError, match="call create_record"):
+        cli.br.write(tmp_path, ["create", "a thing", "--parent", "b-1"])
+
+
 def test_tracker_write_with_no_subcommand_says_so_rather_than_spawning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

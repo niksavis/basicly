@@ -672,6 +672,12 @@ def write(repo_root: Path, args: list[str]) -> None:
             what the callers already catch.
     """
     _refuse_write_in_read_only(args)
+    # A create has an id to hand back and this returns nothing, so it belongs to
+    # :func:`create_record`. Refused by name rather than attempted: on the owned rung the
+    # mirror has no minted id to translate and fails with "replied with no JSON record",
+    # which sends the reader to the reply instead of to the call (basicly-vkh0.29).
+    if args and args[0] == "create":
+        raise RuntimeError(f"a create names an id the store mints; call create_record: {args}")
     if tracker_mode(repo_root) == MODE_OWNED:
         owned_write.append(repo_root, args)
         return
