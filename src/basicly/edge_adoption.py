@@ -5,7 +5,7 @@ between them (basicly-vkh0.32). A hand-run ``br dep add`` on a record both store
 hold never reaches `basicly.br._mirror_write`, and br refuses the same edge a second time,
 so no seam-routed write can put it in the ledger.
 
-The boundary is *which edges are missing* against :mod:`basicly.br`, which spawns the
+The boundary is *what the ledger is short of* against :mod:`basicly.br`, which spawns the
 reads and appends what comes back. The kit modules arrive as parameters, as in
 :mod:`basicly.mirror`: nothing here loads a kit, reads a file or runs a process.
 """
@@ -34,6 +34,22 @@ class EdgeShortfall:
     drafts: tuple[Any, ...] = ()
     adopted: tuple[tuple[str, str, str], ...] = ()
     unexported: tuple[str, ...] = ()
+
+
+def bodyless(kit_module: Any, ledger_events: Iterable[Any]) -> set[str]:
+    """Ledger records with no ``created`` event, so it holds no body for them.
+
+    Both of the adoption's other sets miss them: in its record set, so subtracted out
+    of ``undeclared``; no ``created`` event, so absent from ``held`` (basicly-vkh0.41).
+    """
+    events = kit_module.events
+    seen: set[str] = set()
+    bodied: set[str] = set()
+    for event in ledger_events:
+        seen.add(str(event.record))
+        if event.kind == events.KIND_CREATED:
+            bodied.add(str(event.record))
+    return seen - bodied
 
 
 def shortfall(

@@ -25,7 +25,7 @@ from typing import Any
 
 import pytest
 
-from basicly import br
+from basicly import br, edge_adoption
 from basicly.config import load_tracker_mode
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -132,6 +132,51 @@ def hand_written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path,
         ],
     )
     return repo, reference
+
+
+def test_a_record_the_ledger_holds_no_body_for_is_backfilled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A record with events but no ``created`` event reaches neither existing set.
+
+    It **is** in the ledger's record set, so it is subtracted out of ``undeclared``;
+    it carries no ``created`` event, so ``adopted_records`` leaves it out of ``held``.
+    Nine live records sat in that gap (basicly-vkh0.41), and the ledger held none of
+    their titles, descriptions, types, priorities or criteria — so deleting the
+    external store would have destroyed the only copy.
+
+    Asserted as a transition rather than as an end state: the record has to be
+    bodyless *before* and bodied *after*, or a fixture that never produced the gap
+    would read as a repair.
+    """
+    records = {name: _record(name) for name in ("seam-imported", "seam-bodyless")}
+    reference = _ReferenceBr(records)
+    monkeypatch.setattr(br, "which", lambda: "/usr/bin/br")
+    monkeypatch.setattr(br, "_probed_paths", {"/usr/bin/br"})
+    monkeypatch.setattr(br.subprocess, "run", reference)
+
+    repo = _repo(tmp_path, {"seam-imported": records["seam-imported"]})
+    br.import_export(repo)
+    _write_export(repo, records)
+    kit = br.kit(repo)
+    # The shape a dual write leaves behind when the mirror covered the status
+    # surface before it covered create: state, and nothing that says what the work is.
+    kit.events.append(
+        br.ledger_dir(repo),
+        [
+            kit.events.Draft(
+                "seam-bodyless",
+                kit.events.KIND_STATUS,
+                {"provenance": "dual-write", "status": "open"},
+            )
+        ],
+    )
+    assert edge_adoption.bodyless(kit, kit.read_ledger(br.ledger_dir(repo))) == {"seam-bodyless"}
+
+    report = br.adopt_hand_writes(repo)
+
+    assert "seam-bodyless" in report.adopted
+    assert edge_adoption.bodyless(kit, kit.read_ledger(br.ledger_dir(repo))) == set()
 
 
 def test_a_hand_write_is_a_finding_no_existing_route_can_repair(

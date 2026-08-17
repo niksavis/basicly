@@ -1471,7 +1471,7 @@ def adopt_hand_writes(repo_root: Path) -> AdoptionReport:
         - boundary.read_baseline(directory).records
     )
     snapshot = _export_snapshot(repo_root)
-    wanted = undeclared | held
+    wanted = undeclared | held | edge_adoption.bodyless(kit_module, ledger_events)
     records = tuple(record for record in snapshot.records if str(record.get("id")) in wanted)
     report = kit_module.migrate.import_snapshot(
         directory,
@@ -1488,7 +1488,9 @@ def adopt_hand_writes(repo_root: Path) -> AdoptionReport:
         _edges_by_record(snapshot.records),
     )
     kit_module.events.append(directory, short.drafts, redact=redact.redact_committed)
-    missed = undeclared - {str(record.get("id")) for record in records}
+    missed = (undeclared | edge_adoption.bodyless(kit_module, ledger_events)) - {
+        str(record.get("id")) for record in records
+    }
     return AdoptionReport(
         adopted=tuple(sorted(report.imported)),
         edges=short.adopted,
