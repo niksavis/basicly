@@ -1,0 +1,21 @@
+# The marker family list, bound (basicly-vkh0.37, backlog B8.3, architecture §32.3.2). The
+# reader's alias table is keyed on the family, so the list is a wire-format inventory — and
+# it drifted three times while every gate stayed green, because nothing read it. The last
+# standing list was wrong in both directions at once: it counted an unbracketed phrase from
+# a `commit.py` sentence as a family and omitted the one `retrospective.py` declares.
+#
+# The literal is frozen in the script rather than derived, and `[harness-overrun]` is why: 12
+# rows in the log, no producer left in `src/`. A list derived from the live constants loses
+# them. So the gate measures two populations against the frozen one instead — what the engine
+# declares, and what the stores hold — and a family with rows and no producer is marked
+# retired rather than deleted.
+#
+# `uv run python`, not a bare `python`, per the note above `basicly.toml`'s `docs-claims`
+# entry: a bare `python` dies on Windows.
+#
+# No `fix_command`. Both mechanical repairs — appending to the literal, or editing the
+# document's count — are the judgement the gate exists to force a human through.
+[[verify.checks]]
+name = "marker-families"
+command = ["uv", "run", "python", ".scripts/check_marker_families.py"]
+modes = ["fast", "full"]

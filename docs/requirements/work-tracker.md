@@ -220,24 +220,32 @@ reason, that no `bv` call site exists to contradict it.
 Semantics we depend on, which any replacement must preserve:
 
 1. **Content-derived ids** and idempotent re-writes (the decision-queue pattern).
-2. **Comment markers as durable, attributable evidence** — **twelve** families, counted from
-   `src/basicly/` on 2026-08-14: `[harness-artifact]`, `[harness-classification]`,
-   `[harness-cost]`, `[harness-decision]`, `[harness-info]`, `[harness-overrun]`,
-   `[harness-policy]`, `[harness-review]`, `[harness-run]`, `[harness-side]`,
-   `[harness-sizing]`, `[harness-wait]`. Comments are exported, so they are the shared ledger
-   (D11) — and the only carrier of cost history, since run-records live in the self-ignored
-   `.basicly/usage/` (`basicly-kjc5.50`).
+2. **Comment markers as durable, attributable evidence** — **eleven** declared families and
+   **one** retired: `[harness-artifact]`, `[harness-classification]`, `[harness-cost]`,
+   `[harness-decision]`, `[harness-info]`, `[harness-policy]`, `[harness-retro]`,
+   `[harness-review]`, `[harness-run]`, `[harness-sizing]`, `[harness-wait]`, plus the retired
+   `[harness-overrun]`, which has no producer in `src/` and 12 rows in the log. Comments are
+   exported, so they are the shared ledger (D11) — and the only carrier of cost history, since
+   run-records live in the self-ignored `.basicly/usage/` (`basicly-kjc5.50`).
+
+   **The list is no longer counted by eye.** `.scripts/check_marker_families.py` owns it as a
+   frozen literal and refuses a disagreement with either population it measures — what
+   `src/basicly/` declares, and what the stores hold — including the two counts and the roster
+   on this line (`basicly-vkh0.37`). A retired family stays in the literal marked retired,
+   because its rows stay on disk for the life of the log.
 
    **This line read eight until 2026-08-14, and four families had already shipped.** Nothing
-   binds the list. That matters more here than a stale number usually would: a family is a wire
+   bound the list. That matters more here than a stale number usually would: a family is a wire
    format the replacement must read, so a list that undercounts them under-specifies the
    migration, which is this document's whole job.
 
-   **The correction undercounted too, and that is the useful part.** The first attempt at this
-   line said ten, from reading two recent landings rather than counting the tree. A search then
-   returned every family in `src/basicly/` and the answer was twelve. Two probes before it had
-   returned ripgrep's own help text, because `-oh` parses as `-o -h`. Count this list with a
-   command, never from what you remember shipping.
+   **It then drifted twice more, and that is the useful part.** The first correction said ten,
+   from reading two recent landings rather than counting the tree; the second said twelve, and
+   was wrong in both directions — it counted `harness-side`, an unbracketed phrase from a
+   `commit.py` sentence, as a family, and it omitted the one `retrospective.py` declares. Two
+   probes before that had returned ripgrep's own help text, because `-oh` parses as `-o -h`.
+   Counting with a command was not enough: the command has to discriminate a declaration from
+   prose, which is why the gate reads string constants out of the AST.
 3. **A creation timestamp on every comment.** The wait meter (`basicly-kjc5.51`) derives how long
    a track sat blocked on a human from the interval between two markers, so a replacement that
    drops (or rewrites) `created_at` silently destroys that measurement rather than failing.
