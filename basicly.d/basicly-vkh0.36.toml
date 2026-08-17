@@ -1,0 +1,29 @@
+# The closed event-kind set got one definition (basicly-vkh0.36, backlog B8.1, architecture
+# §32.8). Two `KIND_*` constants and the eight-member `KNOWN_KINDS` moved into the vocabulary
+# block of `events.py`, and `migrate.py`, `gates.py` and `differential.py` now alias those names
+# instead of respelling a literal. `differential.py` paid for its own alias out of the comment
+# that justified declaring the kind there — a claim the change made false — and came out 14
+# tokens under its baseline; `migrate.py` landed on its baseline exactly. These two could not.
+#
+# `events.py` +110: the two constants, the explicit eight-member set and three lines of comment,
+# against 2 tokens of headroom on a module frozen at 12290. There is no cut here that is not the
+# gaming shape `python-guidelines` names: its prose is the fold's ordering argument and the
+# clock-injection rationale, and the one claim this change falsified (edge events being wholly
+# basicly-vkh0.13's) was corrected in place rather than deleted. The other ratchet is the proof
+# that nothing was paid for out of the comment budget — the module's prose share is 57.1 before
+# and 57.1 after, held at its frozen figure rather than climbing.
+#
+# `tests/test_kit_tracker_events.py` +765: the two tests the acceptance criteria name, on a
+# module frozen at exactly its own size. One folds this repo's live ledger and asserts every
+# kind it holds is a member — 5,485 events, six kinds, measured 2026-08-17 — and one walks every
+# kit sibling's AST so a kind spelled in one module only fails the suite. Both were written
+# against five mutations that each had to fail first. The split that would have avoided this
+# number is the one `test_tracker_path_scan_identity.py` took, and it cannot be taken here: the
+# bead's demonstration is `pytest tests/test_kit_tracker_events.py -q`, so moving the tests out
+# of that file moves them out of the demonstration that judges them.
+[ratchet.module_size]
+rebaseline_reason = "one definition of the kind vocabulary, plus the two tests that bind it, in two modules with 2 and 0 tokens of headroom"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/events.py" = 110
+"tests/test_kit_tracker_events.py" = 765

@@ -1199,3 +1199,59 @@ def test_the_module_imports_nothing_outside_the_standard_library() -> None:
         "time",
     }
     assert "sys.path.insert" not in source
+
+
+# --- the closed set of kinds --------------------------------------------------
+
+# The kit modules that still spell a kind literal rather than aliasing `events.KIND_*`, and why
+# each is not drift: `baseline.py` loads no sibling at all, and `provenance.py`'s alias is the
+# one line outside basicly-vkh0.36's scope. An entry is only ever removed, with the literal.
+SPELLS_ITS_OWN_KIND = frozenset({"baseline.py", "provenance.py"})
+_KIND_CONSTANT = re.compile(r"^KIND_[A-Z0-9_]+$")
+
+
+def test_the_live_ledger_holds_no_kind_outside_the_closed_set() -> None:
+    """Read off this repo's own log, because a list restated here would agree by construction.
+
+    The event floor is the positive control: the log held 5,485 events on 2026-08-17 and is
+    append-only, so a lower count means this read missed the ledger and its empty kind set
+    would pass.
+    """
+    parsed, quarantined = events.read_events(REPO_ROOT / ".basicly" / "ledger")
+    kinds = {event.kind for event in parsed}
+
+    assert len(parsed) >= 5000, f"parsed {len(parsed)} events, so the read is the finding"
+    assert not quarantined, quarantined[:3]
+    assert kinds <= events.KNOWN_KINDS, sorted(kinds - events.KNOWN_KINDS)
+
+
+def test_no_kit_module_spells_a_kind_the_closed_set_does_not_hold() -> None:
+    """One module answers *which kinds exist*, read off every sibling's source.
+
+    Static, because loading a sibling here would mint a second `events` module and every
+    ``except events.LedgerError`` in the suite would stop matching one of them.
+    """
+    spelled: list[tuple[str, str, str]] = []  # module, constant, its literal
+    aliased: list[tuple[str, str, str]] = []  # module, constant, the name it is taken from
+    for source in sorted(KIT_DIR.glob("*.py")):
+        for node in ast.parse(source.read_text(encoding="utf-8")).body:
+            if not isinstance(node, ast.Assign):
+                continue
+            value = node.value
+            for target in node.targets:
+                if not (isinstance(target, ast.Name) and _KIND_CONSTANT.match(target.id)):
+                    continue
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    spelled.append((source.name, target.id, value.value))
+                elif isinstance(value, ast.Attribute):
+                    aliased.append((source.name, target.id, ast.unparse(value)))
+
+    declared = {name: kind for module, name, kind in spelled if module == "events.py"}
+    assert declared and len(spelled) + len(aliased) >= 3, (spelled, aliased)
+    assert set(declared.values()) == events.KNOWN_KINDS
+    assert {module for module, _, _ in spelled} - {"events.py"} == SPELLS_ITS_OWN_KIND
+    for module, name, kind in spelled:
+        assert kind in events.KNOWN_KINDS, f"{module} spells {name} as {kind!r}, no closed member"
+    for module, name, taken_from in aliased:
+        assert taken_from == f"events.{name}", f"{module} takes {name} from {taken_from}"
+        assert name in declared, f"{module} aliases {name}, which events.py does not declare"

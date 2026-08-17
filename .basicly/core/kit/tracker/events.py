@@ -83,8 +83,8 @@ silently wrong, and nothing here can detect that.
 Two things §4.5 asks for are deliberately **not** here. The ledger-scoped
 ``format_version`` event has no item to carry a per-item sequence, so it needs a
 ledger-record shape this module does not define, and the reader-refuses-to-write behaviour
-it gates belongs with `fsck`. Edge events and their provenance labels are
-basicly-vkh0.13's; adding a kind is additive by construction.
+it gates belongs with `fsck`. Edge events fold in `provenance.py` and their provenance labels
+are basicly-vkh0.13's; only their vocabulary entry is here.
 
 ## What this module may not do
 
@@ -207,6 +207,22 @@ KIND_STATUS = "status"
 KIND_COMMENT = "comment"
 KIND_DISPATCH = "dispatch"
 KIND_TOMBSTONE = "tombstone"
+KIND_EDGE = "edge"
+KIND_GATE = "gate"
+
+# The closed set (§4.5), declared once so a sibling aliases these names rather than respelling
+# a literal (basicly-vkh0.36). `edge` and `gate` fold in `provenance.py` and `gates.py`, not
+# below, so a member with no handler here is normal and a non-member is read, never refused.
+KNOWN_KINDS = frozenset({
+    KIND_CREATED,
+    KIND_FIELD,
+    KIND_STATUS,
+    KIND_COMMENT,
+    KIND_DISPATCH,
+    KIND_TOMBSTONE,
+    KIND_EDGE,
+    KIND_GATE,
+})
 
 # A kind is a permanent vocabulary entry, so it is restricted to a shape that can be read
 # back from any surface. Free text would let a writer mint `status ` or `Status` beside
@@ -214,7 +230,7 @@ KIND_TOMBSTONE = "tombstone"
 KIND_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
 # The visible label on an event id. Uniform rather than the event's kind, because a kind
-# is vocabulary this module does not control and `ids.FAMILY_PATTERN` would reject one
+# is vocabulary a newer writer may extend and `ids.FAMILY_PATTERN` would reject one
 # carrying an underscore — an id that sometimes has a family and sometimes does not is
 # worse than one that always looks the same.
 EVENT_FAMILY = "ev"
@@ -570,7 +586,6 @@ _HANDLERS: dict[str, Callable[[RecordState, Mapping[str, object]], None]] = {
     KIND_COMMENT: _apply_comment,
     KIND_TOMBSTONE: _apply_tombstone,
 }
-KNOWN_KINDS = frozenset(_HANDLERS) | {KIND_DISPATCH}
 
 
 def _resumed(state: RecordState) -> RecordState:

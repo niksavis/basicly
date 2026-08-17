@@ -147,9 +147,9 @@ DIGEST_KEY = "import_digest"
 # than imported: it would overwrite the provenance of the very event recording it.
 RESERVED_KEYS = frozenset({PROVENANCE_KEY, SOURCE_KEY, DIGEST_KEY})
 
-# A dependency edge. Unknown to `events.py`'s fold until basicly-vkh0.13 adds the handler,
+# A dependency edge, spelled once in `events.py`. No fold handler until basicly-vkh0.13's,
 # which is additive by construction — see the module docstring.
-KIND_EDGE = "edge"
+KIND_EDGE = events.KIND_EDGE
 
 EDGE_FROM = "from"
 EDGE_TO = "to"

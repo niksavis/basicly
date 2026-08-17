@@ -155,13 +155,13 @@ QUERIES = (QUERY_PHASE, QUERY_READY, QUERY_GATES)
 
 # The event kind that carries a gate result on the owned ledger, and its payload's names.
 #
-# Defined here because this module is the kind's first **reader** and the differential cannot
-# answer §5's third query without one. The export has no gate field at all (see
-# :data:`EXPORT_CANNOT_EXPRESS`), so `migrate.py` has nothing to import and the writer is the
-# dual write (basicly-vkh0.19) — which is the whole reason the third query is the one the
-# import step could never have covered. Adding a kind is additive by construction (§4.5): the
-# fold counts it in the totals, folds no state for it, and preserves it verbatim.
-KIND_GATE = "gate"
+# The kind is `events.py`'s (basicly-vkh0.36); the payload names are spelled here because this
+# module is the kind's first **reader** and the differential cannot answer §5's third query
+# without them. The export has no gate field at all (see :data:`EXPORT_CANNOT_EXPRESS`), so
+# `migrate.py` has nothing to import and the writer is the dual write (basicly-vkh0.19) —
+# which is the whole reason the third query is the one the import step could never have
+# covered.
+KIND_GATE = events.KIND_GATE
 GATE_NAME_KEY = "gate"
 GATE_PROVIDER_KEY = "provider"
 GATE_PASSED_KEY = "passed"

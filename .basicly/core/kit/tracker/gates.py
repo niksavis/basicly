@@ -15,9 +15,9 @@ gate-family kind that is not :data:`KIND_GATE` — a later ``gate_waived`` — i
 *no waiver* from *a waiver I cannot read*; `events.fold` counts it in the record's totals,
 which stops an old reader reporting every later event as a disagreement.
 
-**The one duplication.** `differential.py` defined :data:`KIND_GATE` and the payload keys as
-the kind's first reader and `basicly.mirror` writes through that copy; the spellings are
-asserted equal in `tests/test_kit_tracker_gates.py`, and basicly-vkh0.27 leaves one.
+**The payload keys are still duplicated.** `differential.py` spells them as the kind's first
+reader and `basicly.mirror` writes through that copy; the spellings are asserted equal in
+`tests/test_kit_tracker_gates.py`. The kind itself is no longer among them (basicly-vkh0.36).
 
 Kit rules bind here in full — no basicly, no syntax newer than 3.9, one exception class per
 handler (`.basicly/core/kit/README.md`).
@@ -76,8 +76,9 @@ class InvalidGateError(events.InvalidEventError):
 
 # --- the vocabulary -----------------------------------------------------------
 
-# Permanent vocabulary: never reused, never redefined, only added to (§4.5).
-KIND_GATE = "gate"
+# Permanent vocabulary: never reused, never redefined, only added to (§4.5). Spelled once, in
+# `events.KNOWN_KINDS`; this is that name rather than a second one (basicly-vkh0.36).
+KIND_GATE = events.KIND_GATE
 
 # One spelling per field (R2), and these three are `br gate report`'s own.
 GATE_NAME_KEY = "gate"
