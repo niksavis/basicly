@@ -36,8 +36,13 @@ S603 = -4
 #
 # `src/basicly/br.py` became `src/basicly/tracker.py` and `br_argv.py` became
 # `tracker_argv.py`, so every one of the 376 attribute references grew by five
-# characters. `tests/test_loop.py` (+10 tokens) and `tests/test_rubrics.py` (+6) are the
+# characters. `tests/test_loop.py` (+13 tokens) and `tests/test_rubrics.py` (+6) are the
 # two that were already at their frozen baseline and had nowhere to put it.
+#
+# 3 of test_loop's 13 are the same cost paid a second time, on the *command* rather than
+# the module: the dispatch brief told a lane agent to run `br show <id>`, a binary that no
+# longer exists, and the canary that proves the task survives the preamble asserts the
+# brief's own words. `basicly tracker show i` is 5 characters longer than `br show i`.
 #
 # Banked rather than absorbed by cutting a test: the growth is a *rename*, so cutting
 # prose to pay for it would trade real evidence for a naming change. Both modules are far
@@ -46,5 +51,5 @@ S603 = -4
 rebaseline_reason = "the tracker seam's rename from `br` grew every reference by five characters; these two modules were already at their baseline"
 
 [ratchet.module_size.rebaselined]
-"tests/test_loop.py" = 10
+"tests/test_loop.py" = 13
 "tests/test_rubrics.py" = 6

@@ -95,7 +95,7 @@ def _update_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[o
     events = kit_module.events
     records = tracker_argv.positionals(args, VALUE_FLAGS["update"])[1:]
     if not records:
-        raise TrackerDivergenceError(f"br update names no issue: {' '.join(args)}")
+        raise TrackerDivergenceError(f"update names no record: {' '.join(args)}")
     drafts: list[object] = []
     for flag, value in tracker_argv.flag_pairs(args, VALUE_FLAGS["update"]):
         if flag in UPDATE_STATUS_FLAGS:

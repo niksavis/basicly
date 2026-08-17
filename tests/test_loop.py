@@ -1878,7 +1878,7 @@ def test_skill_canary_reaches_the_dispatched_prompt(
     assert "CANARY-EY58-DISPATCH" in seen["prompt"]
     # The task survives the preamble; a brief that replaced the work would also pass
     # the canary assertion above.
-    assert "br show i" in seen["prompt"]
+    assert "basicly tracker show i" in seen["prompt"]
 
 
 # --- validate (basicly-u2hl.54.2) -------------------------------------------

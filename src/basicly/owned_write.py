@@ -162,7 +162,7 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
     prefix = owned_store.tracker_prefix(repo_root) if not parent else None
     if not parent and not prefix:
         raise TrackerDivergenceError(
-            f"br create with no --parent needs an id prefix and this repository declares "
+            f"a create with no --parent needs an id prefix and this repository declares "
             f"none: set [tracker] prefix in basicly.toml, or name a parent. "
             f"{' '.join(args)} would otherwise have to guess a namespace no read would "
             f"find again"

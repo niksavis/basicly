@@ -138,10 +138,11 @@ def test_an_update_naming_no_issue_is_refused(kit: Any) -> None:
     """A write about nothing is still refused, now that a write about many is not.
 
     This asserted that *two* ids are a refusal until `basicly-e2mz.24`, and that was the
-    defect rather than the guard: `br update` takes many, so the mirror refused a write
-    br had already made. Widening it to many must not widen it to none.
+    defect rather than the guard: the update surface takes many ids, so the mirror
+    refused a write the seam had already made. Widening it to many must not widen it
+    to none.
     """
-    with pytest.raises(TrackerDivergenceError, match="names no issue"):
+    with pytest.raises(TrackerDivergenceError, match="names no record"):
         mirror.drafts(kit, ["update", "-s", "open"], "")
 
 

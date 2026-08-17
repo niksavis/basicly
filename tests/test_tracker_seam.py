@@ -90,7 +90,7 @@ def test_a_bead_no_store_holds_reads_as_none(tmp_path: Path) -> None:
 def test_require_record_raises_one_message_naming_the_bead(tmp_path: Path) -> None:
     """The hard half of the contract: one message for every way a record is absent."""
     repo = _repo(tmp_path)
-    with pytest.raises(RuntimeError, match="br show seam-9999 returned no issue record"):
+    with pytest.raises(RuntimeError, match="the tracker holds no usable record for seam-9999"):
         tracker.require_record(repo, "seam-9999")
 
 

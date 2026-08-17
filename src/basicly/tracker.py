@@ -565,7 +565,7 @@ def require_record(repo_root: Path, issue_id: str) -> dict:
     """
     record = read_record(repo_root, issue_id)
     if record is None:
-        raise RuntimeError(f"br show {issue_id} returned no issue record")
+        raise RuntimeError(f"the tracker holds no usable record for {issue_id}")
     return record
 
 

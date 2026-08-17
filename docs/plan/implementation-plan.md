@@ -343,7 +343,7 @@ decide  24         31,991    0.23       14     5/29  = 17.2%
 ```
 
 `decide` is a dispatch **handed its corpus**; `lane` is a dispatch **told to go and read**. Same
-model, same repo: **254x the tokens and 27x the cost**. `dispatch_brief.dispatch_prompt` (`dispatch_brief.py:114`) is
+model, same repo: **254x the tokens and 27x the cost**. `dispatch_brief.dispatch_prompt` (`dispatch_brief.py:116`) is
 about ninety words and passes only the issue id — no requirement, no scope, no plan, no prior
 finding — so the floor every lane pays before its first edit is bought by the prompt, not by the
 work.
