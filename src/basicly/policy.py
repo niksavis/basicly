@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import br, run_record
+from . import br, gate_source, run_record
 from .br import add_comment as _add_comment
 from .br import read_comments as _read_comments
 from .br import run_br as _run_br
@@ -425,11 +425,12 @@ def gate_status(repo_root: Path, issue_id: str, config: PolicyConfig) -> GateSta
     the only result recorded the gate reads missing while the tracker plainly shows
     a pass — an operator needs to be told which result is being ignored and why.
     Advisory gates still accept any provider.
+
+    Which store answers is `gate_source.read_gates`', not this module's (basicly-vkh0.27).
     """
-    proc = _run_br(repo_root, ["gate", "list", issue_id, "--robot"])
     rows = [
         GateVerdict(r["gate"], r.get("provider", ""), bool(r["passed"]))
-        for r in json.loads(proc.stdout).get("results", [])
+        for r in gate_source.read_gates(repo_root, issue_id)
     ]
     required = config.required_gates
     # br keeps one result per (gate, provider), not one per gate — measured, not

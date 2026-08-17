@@ -1015,15 +1015,15 @@ def read_record(repo_root: Path, issue_id: str) -> dict | None:
     the flip is not eleven decisions.
 
     What is deliberately *not* flipped: the other subcommands the engine spawns.
-    `gate list`, `blocked`, `list`, `lint` and `dep cycles` are each read at their own
-    call site with their own payload shape — they are not behind a seam, so flipping them
+    `blocked`, `list`, `lint` and `dep cycles` are each read at their own call site with
+    their own payload shape — they are not behind a seam, so flipping them
     would mean rewriting callers, which is the thing this bead is required not to do.
     That is why the external tracker is still written in :data:`MODE_OWNED` rather than
     merely tolerated. `scheduler` was on that list until basicly-vkh0.20 gave it a seam of
-    its own (:func:`read_ranking`), and `comments` until basicly-s5li gave it
-    :func:`read_comments`/:func:`add_comment` — which is the shape the rest would each
-    need. Two `comments list` spawns remain outside that seam (`decompose`'s sizing
-    markers, `supervise`'s found-info records) and are basicly-wpc8's.
+    its own (:func:`read_ranking`), `comments` until basicly-s5li gave it
+    :func:`read_comments`/:func:`add_comment`, and `gate list` until basicly-vkh0.27
+    gave it :mod:`basicly.gate_source` — which is the shape the rest would each need.
+    The two `comments list` spawns that stayed at their own call site are named above.
     """
     if tracker_mode(repo_root) == MODE_OWNED:
         return owned_record(repo_root, issue_id)
