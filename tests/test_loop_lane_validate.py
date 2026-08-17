@@ -139,7 +139,7 @@ def _pin_lane(
             calls["closed"].append(args[1])
         return SimpleNamespace(stdout="{}")
 
-    monkeypatch.setattr(loop, "_run_br", _br)
+    monkeypatch.setattr(loop, "_write", _br)
 
     def _run_verify(_root, mode, *_a, **_k):
         calls["verify"].append(mode)

@@ -1,0 +1,17 @@
+# What retiring the leaf walk's six br write surfaces moved about the comment-density
+# ratchet.
+#
+# One waiver: `src/basicly/comment_rows.py`, which came out of `br` to make room for the
+# write seam and states its reason at column 0.
+#
+# Two rebaselines, and both are the case `basicly.d/README.md` names: deleting a br call
+# path takes code out of a module that is already prose-heavy, so the recorded share rises
+# while both halves fall. Measured with `.scripts/check_comment_density.py`'s own
+# functions against `HEAD`.
+[ratchet.comment_density]
+count_delta = 1
+rebaseline_reason = "code deletion shrank the denominator: the two `br sync` call sites left merge.py (prose 9261 -> 9181, code 6155 -> 5940) and the three-branch br result check left verify.py (prose flat, 2656 -> 2658, code 2037 -> 2015)"
+
+[ratchet.comment_density.rebaselined]
+"src/basicly/merge.py" = 0.6
+"src/basicly/verify.py" = 0.3

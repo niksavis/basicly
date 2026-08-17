@@ -155,7 +155,7 @@ def test_r3_acceptance_criteria_are_required_for_a_work_type_lint_never_asks_abo
             ]),
         )
 
-    monkeypatch.setattr(policy, "_run_br", fake_br)
+    monkeypatch.setattr(policy, "_write", fake_br)
     result = policy.definition_of_ready(Path(), "basicly-x")
 
     assert result.ready is False
@@ -195,7 +195,7 @@ def test_r4_multi_line_acceptance_criteria_satisfy_the_gate_from_the_body(
             ]),
         )
 
-    monkeypatch.setattr(policy, "_run_br", fake_br)
+    monkeypatch.setattr(policy, "_write", fake_br)
     # The criteria read goes through `br.read_record`, the one reader every consumer in
     # the package shares (basicly-tcmy.14), so the fake is installed there too — the
     # module alias still serves `lint`.

@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from basicly import br, classify, policy
+from basicly import br, classify
 from basicly.config import WORK_TYPES
+from tests import flipped_tracker
 
 
 class _Proc:
@@ -21,15 +22,12 @@ class _Proc:
 class _FakeBr:
     """Stand-in for br, routed by subcommand.
 
-    Records the type written by ``br update -t`` and answers ``br lint`` from a
-    configurable missing-sections list, so classify (which delegates the DoR
+    Records the type written as ``update -t`` and answers the record read the
+    Definition-of-Ready derives its verdict from, so classify (which delegates that
     read to the policy engine) resolves entirely against this fake.
     """
 
-    def __init__(
-        self, *, lint_missing: list[str] | None = None, acceptance_criteria: str | None = None
-    ) -> None:
-        self.lint_missing = lint_missing or []
+    def __init__(self, *, acceptance_criteria: str | None = None) -> None:
         self.acceptance_criteria = acceptance_criteria
         self.recorded_type: str | None = None
         self.calls: list[list[str]] = []
@@ -48,16 +46,13 @@ class _FakeBr:
         if args[:1] == ["update"]:
             self.recorded_type = args[args.index("-t") + 1]
             return _Proc("")
-        if args[:1] == ["lint"]:
-            return _Proc(json.dumps({"results": [{"missing": self.lint_missing}]}))
         if args[:1] == ["show"]:
             return _Proc(json.dumps([{"acceptance_criteria": self.acceptance_criteria}]))
         raise AssertionError(f"unexpected br call: {args}")
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
-    monkeypatch.setattr(classify, "_run_br", fake)
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(classify, "_write", fake)
     # The record read goes through `br.read_record`, the one seam every consumer shares
     # (basicly-tcmy.14), rather than each module's alias.
     monkeypatch.setattr(br, "try_run_br", fake)
@@ -71,7 +66,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
 def test_classify_records_each_valid_type(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, work_type: str
 ) -> None:
-    """Every fixed work class is accepted and written with br update -t."""
+    """Every fixed work class is accepted and written as ``update -t``."""
     fake = _FakeBr()
     _install(monkeypatch, fake)
     result = classify.classify(tmp_path, "i", work_type)
@@ -95,10 +90,9 @@ def test_classify_reports_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     """A ready issue can leave classify (DoR satisfied).
 
     The criteria are set explicitly because DoR requires them on every bead
-    whatever its work type, so a silent lint alone no longer makes an issue ready
-    (basicly-kjc5.36).
+    whatever its work type (basicly-kjc5.36).
     """
-    _install(monkeypatch, _FakeBr(lint_missing=[], acceptance_criteria="given x then y"))
+    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y"))
     result = classify.classify(tmp_path, "i", "feature")
     assert result.dor.ready is True
     assert result.can_leave_classify is True
@@ -106,7 +100,7 @@ def test_classify_reports_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
 def test_classify_reports_not_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A not-ready issue records the type but cannot yet advance to decompose."""
-    _install(monkeypatch, _FakeBr(lint_missing=["## Acceptance Criteria"]))
+    _install(monkeypatch, _FakeBr())
     result = classify.classify(tmp_path, "i", "feature")
     assert result.work_type == "feature"  # type is still recorded
     assert result.can_leave_classify is False
@@ -155,3 +149,50 @@ def test_classify_without_a_scope_still_assigns_a_level(
     result = classify.classify(tmp_path, "i", "task")
     assert result.level == "L2"
     assert "reason=no scope declared" in fake.comments[0]
+
+
+# --- the flip: one advance with br absent (basicly-wpc8.1) --------------------
+#
+# Classify is the first advance of a leaf's walk and it used to spawn br three times:
+# `update -t`, the marker pair, and the Definition-of-Ready's `lint`. All three are
+# asserted here through the functions the loop calls, against a checkout with br off
+# PATH — and a spawn fails the test rather than degrading quietly, because "the type
+# was recorded nowhere" satisfies a weaker assertion than the criterion.
+
+
+def test_the_type_and_the_marker_land_in_the_owned_ledger_with_br_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One classify advance, no spawn, and both of its writes readable afterwards."""
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(repo, "seam-1", description="## Acceptance Criteria\n\n- given x\n")
+    flipped_tracker.refuse_spawn(monkeypatch)
+
+    result = classify.classify(repo, "seam-1", "task", ("src/basicly/policy.py",))
+
+    record = br.read_record(repo, "seam-1")
+    assert record is not None
+    assert record["issue_type"] == "task"
+    assert result.dor.ready is True
+    marker = br.read_comments(repo, "seam-1")[0]["text"]
+    assert marker.startswith(f"{classify.CLASSIFICATION_MARKER} level=L2")
+
+
+def test_the_dor_verdict_comes_out_of_the_owned_record_with_br_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ready record and a not-ready one, judged by rules the engine owns.
+
+    The two beads carry the *same* body and differ only in the work type classify
+    records, so a verdict that ignored the type — which is what ``br lint`` derived its
+    required set from — would pass one of these and fail the other.
+    """
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    for bead in ("ready-1", "bug-1"):
+        flipped_tracker.seed(repo, bead, description="## Acceptance Criteria\n\n- given x\n")
+    flipped_tracker.refuse_spawn(monkeypatch)
+
+    assert classify.classify(repo, "ready-1", "task").dor.ready is True
+    verdict = classify.classify(repo, "bug-1", "bug").dor
+    assert verdict.ready is False
+    assert verdict.missing == ("## Steps to Reproduce",)

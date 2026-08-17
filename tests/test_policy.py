@@ -46,7 +46,7 @@ class _FakeBr:
     def __init__(  # noqa: PLR0913 — one knob per br surface the fake serves
         self,
         *,
-        lint_missing: list[str] | None = None,
+        issue_type: str = "",
         gates: list[dict] | None = None,
         acceptance_criteria: str | None = None,
         description: str | None = None,
@@ -55,7 +55,7 @@ class _FakeBr:
         records: dict[str, dict] | None = None,
         gates_by_issue: dict[str, list[dict]] | None = None,
     ):
-        self.lint_missing = lint_missing or []
+        self.issue_type = issue_type
         self.gates = gates or []
         self.acceptance_criteria = acceptance_criteria
         self.description = description
@@ -81,8 +81,6 @@ class _FakeBr:
         self.owners: dict[int, str] = {}
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
-        if args[:1] == ["lint"]:
-            return _Proc(json.dumps({"results": [{"missing": self.lint_missing}]}))
         if args[:1] == ["show"]:
             if args[1] in self.records:
                 return _Proc(json.dumps([self.records[args[1]]]))
@@ -90,6 +88,7 @@ class _FakeBr:
                 "acceptance_criteria": self.acceptance_criteria,
                 "description": self.description,
                 "dependents": self.dependents,
+                "issue_type": self.issue_type,
                 "status": self.status,
             }
             return _Proc(json.dumps([record]))
@@ -126,7 +125,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     collapse `br.read_record` made and the reason the two funnels below are the whole
     installation.
     """
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
     # The record read goes through `br.read_record` and the marker read and write through
     # `br.read_comments`/`br.add_comment` — the seams every consumer shares
     # (basicly-tcmy.14, basicly-s5li), so the fake is installed on the spawns *those* use
@@ -137,26 +136,26 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
 
 
 def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """DoR is ready when lint reports nothing missing and criteria are recorded."""
-    _install(monkeypatch, _FakeBr(lint_missing=[], acceptance_criteria="given x then y"))
+    """DoR is ready when the record carries every section its work type requires."""
+    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y"))
     assert policy.definition_of_ready(tmp_path, "i").ready is True
 
-    _install(monkeypatch, _FakeBr(lint_missing=["## Acceptance Criteria"]))
+    _install(monkeypatch, _FakeBr())
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
     assert result.missing == ("## Acceptance Criteria",)
 
 
-def test_dor_requires_acceptance_criteria_even_when_lint_never_asks(
+def test_dor_requires_acceptance_criteria_whatever_the_work_type(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A silent lint is not evidence the criteria exist (basicly-kjc5.36).
+    """The requirement no per-type template carries (basicly-kjc5.36).
 
-    ``br lint`` derives required sections from the per-type template, and a chore
-    is never asked for acceptance criteria — so a chore carrying none used to pass
-    DoR vacuously and then meet a required validate gate with nothing to judge.
+    ``br lint`` derived its required set from the per-type template, and a chore is
+    never asked for acceptance criteria — so a chore carrying none used to pass DoR
+    vacuously and then meet a required validate gate with nothing to judge.
     """
-    _install(monkeypatch, _FakeBr(lint_missing=[], acceptance_criteria=None))
+    _install(monkeypatch, _FakeBr(issue_type="chore", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
     assert result.missing == ("## Acceptance Criteria",)
@@ -169,7 +168,6 @@ def test_dor_accepts_criteria_from_the_description_body(
     _install(
         monkeypatch,
         _FakeBr(
-            lint_missing=[],
             acceptance_criteria=None,
             description="## Acceptance Criteria\n\n- given x then y\n",
         ),
@@ -177,21 +175,11 @@ def test_dor_accepts_criteria_from_the_description_body(
     assert policy.definition_of_ready(tmp_path, "i").ready is True
 
 
-def test_dor_added_requirement_does_not_duplicate_the_section(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """When lint already reports AC missing, the rule must not list it twice."""
-    _install(
-        monkeypatch, _FakeBr(lint_missing=["## Acceptance Criteria"], acceptance_criteria=None)
-    )
-    assert policy.definition_of_ready(tmp_path, "i").missing == ("## Acceptance Criteria",)
-
-
 def test_dor_keeps_other_missing_sections_when_adding_the_requirement(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Adding the AC requirement never drops a section lint did report."""
-    _install(monkeypatch, _FakeBr(lint_missing=["## Steps to Reproduce"], acceptance_criteria=None))
+    """A work type's own template section blocks alongside the AC requirement."""
+    _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.missing == ("## Steps to Reproduce", "## Acceptance Criteria")
 
@@ -202,7 +190,7 @@ def test_dor_structured_acceptance_field_satisfies_the_section(
     """A non-empty structured acceptance_criteria field clears the AC section (basicly-58iu)."""
     _install(
         monkeypatch,
-        _FakeBr(lint_missing=["## Acceptance Criteria"], acceptance_criteria="the field is set"),
+        _FakeBr(acceptance_criteria="the field is set"),
     )
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is True
@@ -215,10 +203,7 @@ def test_dor_structured_field_does_not_mask_other_missing_sections(
     """The field clears only AC; other template sections still block (basicly-58iu)."""
     _install(
         monkeypatch,
-        _FakeBr(
-            lint_missing=["## Steps to Reproduce", "## Acceptance Criteria"],
-            acceptance_criteria="fixed when x",
-        ),
+        _FakeBr(issue_type="bug", acceptance_criteria="fixed when x"),
     )
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
@@ -229,13 +214,9 @@ def test_dor_empty_or_absent_acceptance_field_still_requires_the_section(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A blank or absent field does not satisfy the AC section (basicly-58iu)."""
-    _install(
-        monkeypatch, _FakeBr(lint_missing=["## Acceptance Criteria"], acceptance_criteria="  ")
-    )
+    _install(monkeypatch, _FakeBr(acceptance_criteria="  "))
     assert policy.definition_of_ready(tmp_path, "i").ready is False
-    _install(
-        monkeypatch, _FakeBr(lint_missing=["## Acceptance Criteria"], acceptance_criteria=None)
-    )
+    _install(monkeypatch, _FakeBr(acceptance_criteria=None))
     assert policy.definition_of_ready(tmp_path, "i").ready is False
 
 
@@ -2390,7 +2371,7 @@ def test_a_grant_with_no_prior_spend_records_no_baseline(
     monkeypatch.setattr(policy, "session_spend", lambda *_a, **_k: policy.SpendMeter(0, 0, 0))
     policy.issue_grant_guarded(tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True)
 
-    assert "baseline=" not in policy._run_br.comments[-1]  # type: ignore[attr-defined]
+    assert "baseline=" not in policy._write.comments[-1]  # type: ignore[attr-defined]
 
 
 def test_nothing_in_the_spend_gate_reads_a_clock() -> None:
@@ -3354,7 +3335,7 @@ def test_definition_of_ready_runs_under_the_write_ban(
 ) -> None:
     """The rule binds a real pre-flight gate, not just an available context manager.
 
-    The fake tracker attempts a comment while answering the gate's own lint read,
+    The fake tracker attempts a comment while answering the gate's own record read,
     which is what a check that recorded state instead of blocking entry looks like
     from the inside. It goes through ``br.add_comment`` — the marker seam — because
     that is where a real gate's write would go after basicly-s5li, and because the
@@ -3363,12 +3344,12 @@ def test_definition_of_ready_runs_under_the_write_ban(
 
     class _WritingFake(_FakeBr):
         def __call__(self, repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
-            if args[:1] == ["lint"]:
+            if args[:1] == ["show"]:
                 br.add_comment(repo_root, "i", "recorded from a pre-flight gate")
             return super().__call__(repo_root, args, _check=_check)
 
     monkeypatch.setattr(br, "which", lambda: None)
-    _install(monkeypatch, _WritingFake(lint_missing=[], acceptance_criteria="given x then y"))
+    _install(monkeypatch, _WritingFake(acceptance_criteria="given x then y"))
 
     with pytest.raises(br.TrackerWriteRefusedError) as excinfo:
         policy.definition_of_ready(tmp_path, "i")
@@ -3386,5 +3367,5 @@ def test_definition_of_ready_still_answers_under_the_ban(
     Without this, a ban that refused everything would pass the test above while
     making the Definition-of-Ready unanswerable.
     """
-    _install(monkeypatch, _FakeBr(lint_missing=[], acceptance_criteria="given x then y"))
+    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y"))
     assert policy.definition_of_ready(tmp_path, "i").ready is True

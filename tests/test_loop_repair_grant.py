@@ -48,7 +48,7 @@ def at(monkeypatch: pytest.MonkeyPatch):
 def _no_tracker_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     """These tests run outside a git repo and must never reach the real tracker."""
     monkeypatch.setattr(loop.merge, "commit_tracker_state", lambda *_a, **_k: True)
-    monkeypatch.setattr(loop, "_run_br", lambda *_a, **_k: SimpleNamespace(stdout="{}"))
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: SimpleNamespace(stdout="{}"))
     monkeypatch.setattr(loop.rubrics, "load_rubrics", lambda *_a, **_k: [])
 
 

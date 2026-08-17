@@ -30,7 +30,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from basicly import edge_adoption, mirror, owned_store, redact, tracker_usage
+from basicly import comment_rows, edge_adoption, mirror, owned_store, redact, tracker_usage
 from basicly.tracker_paths import beads_dir
 
 # The oldest br this harness is exercised against (see `br --version`).
@@ -636,12 +636,10 @@ BASELINE_MODULE = "baseline"
 EXPORT_NAME = "issues.jsonl"
 IMPORT_SOURCE = "beads-export"
 
-# The two keys a comment row carries, in br's spelling. The owned ledger holds the
-# body under the same ``text`` key (`events.KIND_COMMENT`) and the stamp as the
-# event's ``ts``, so the rendering below is a rename of one field rather than a
-# second shape for a caller to learn.
-COMMENT_TEXT_KEY = "text"
-COMMENT_STAMP_KEY = "created_at"
+# The key a comment row carries its body under, re-bound so ``br.COMMENT_TEXT_KEY``
+# keeps naming it for the readers outside this module. :mod:`basicly.comment_rows` owns
+# the row shape, both stores' side of it, and why they can share one.
+COMMENT_TEXT_KEY = comment_rows.TEXT_KEY
 
 
 def _comments_add_argv(issue_id: str, body: str) -> list[str]:
@@ -654,140 +652,126 @@ def _comments_add_argv(issue_id: str, body: str) -> list[str]:
     return ["comments", "add", issue_id, body]
 
 
-def _append_owned_comment(repo_root: Path, issue_id: str, body: str) -> None:
-    """Record *body* on *issue_id* as a ledger ``comment`` event, and nothing else.
+def _append_owned_write(repo_root: Path, args: Sequence[str]) -> None:
+    """Record on the owned ledger the fact *args* states, spawning nothing.
 
-    The owned half of :func:`add_comment`. Every failure becomes a
-    :class:`TrackerDivergenceError` — a ``RuntimeError``, so a caller that already
-    handles a br failure handles this one unchanged, which is what makes the flip
-    invisible at the call site. The read-only refusal is the caller's; see
-    :func:`add_comment`.
+    The owned half of :func:`write`, translated by the same function the dual write
+    mirrors through: one answer to "what does this argv mean", so the flip cannot
+    change what a write records. The echo it passes is empty because no process ran —
+    which is why ``create``, whose translation reads br's reply for the id it minted,
+    has no owned equivalent and raises here.
+
+    Every failure becomes a :class:`TrackerDivergenceError` — a ``RuntimeError``, so a
+    caller that already handles a br failure handles this one unchanged, which is what
+    makes the flip invisible at the call site. The read-only refusal is the caller's;
+    see :func:`write`.
 
     Raises:
-        TrackerDivergenceError: the kit is not installed, or the append failed.
+        TrackerDivergenceError: the kit is not installed, the write has no owned-ledger
+            translation, or the append failed.
     """
     kit_module = kit(repo_root)
-    payload = {
-        kit_module.migrate.PROVENANCE_KEY: OWNED_PROVENANCE,
-        COMMENT_TEXT_KEY: body,
-    }
-    draft = kit_module.events.Draft(issue_id, kit_module.events.KIND_COMMENT, payload)
     try:
-        kit_module.events.append(ledger_dir(repo_root), [draft], redact=redact.redact_committed)
+        drafts: list[Any] = mirror.drafts(kit_module, args, "")
+        # `mirror` stamps the provenance of the write it exists for — the dual write's.
+        # Nothing was mirrored here, so each draft is restamped as the engine's own
+        # before it lands; `replace` rather than a fresh Draft so a field the translator
+        # sets and this line does not know about is not dropped on the way through.
+        stamped = [
+            replace(
+                draft,
+                payload={**draft.payload, kit_module.migrate.PROVENANCE_KEY: OWNED_PROVENANCE},
+            )
+            for draft in drafts
+        ]
+        kit_module.events.append(ledger_dir(repo_root), stamped, redact=redact.redact_committed)
     except (kit_module.events.LedgerError, OSError, ValueError) as exc:
         raise TrackerDivergenceError(
-            f"the marker on {issue_id} did not reach the owned ledger: {exc}"
+            f"br {' '.join(args)} did not reach the owned ledger: {exc}"
         ) from exc
 
 
-def _owned_comment_rows(repo_root: Path) -> dict[str, list[dict]]:
-    """Every record's comments, keyed by record, each row in ``br comments list``'s shape.
+def write(repo_root: Path, args: list[str]) -> None:
+    """Record one engine write in whichever store is authoritative.
 
-    Canonical order — ``(record, seq, id)`` — rather than file order, so the rows come
-    back oldest-first however the log was concatenated. Both readers depend on that:
-    `decisions` documents its per-bead read as oldest-first, and `policy`'s wait clock
-    takes the *first* stamp it sees for a request.
-
-    **A tombstoned record answers empty**, the same rule and for the same reason as
-    :func:`owned_record`: the two stores spell a deletion differently, and a reader that
-    served a deleted bead's markers would count rework on work somebody removed.
-    """
-    kit_module = kit(repo_root)
-    found = kit_module.read_ledger(ledger_dir(repo_root))
-    ledger_fold = kit_module.events.fold(found)
-    rows: dict[str, list[dict]] = {}
-    for event in kit_module.events.canonical_order(found):
-        if event.kind != kit_module.events.KIND_COMMENT:
-            continue
-        state = ledger_fold.records.get(event.record)
-        if state is not None and state.tombstoned:
-            continue
-        text = event.payload.get(COMMENT_TEXT_KEY)
-        if not isinstance(text, str):
-            continue
-        rows.setdefault(event.record, []).append({
-            COMMENT_TEXT_KEY: text,
-            COMMENT_STAMP_KEY: event.ts,
-        })
-    return rows
-
-
-def _br_comment_rows(stdout: str, issue_id: str) -> list[dict]:
-    """``br comments list --json``'s reply as rows, raising when it is not usable.
-
-    Raises rather than answering empty, which is the opposite of what two of the three
-    callers used to do on their own. It is the safe direction here and the choice is
-    made once: every marker family this reads is a *counter* or a *refusal* — rework
-    attempts against a cap, an unanswered needs-input, an open checkpoint — so an
-    unreadable tracker that answers "no markers" reads as "nothing is blocking" and the
-    loop advances past exactly the gate the marker existed to hold. :func:`try_read_comments`
-    is the soft contract, for the evidence readers where an empty answer is honest.
-
-    Raises:
-        RuntimeError: the reply was not a JSON array of rows.
-    """
-    try:
-        payload = json.loads(stdout)
-    except ValueError as exc:
-        raise RuntimeError(f"br comments list {issue_id} returned no usable JSON: {exc}") from exc
-    if not isinstance(payload, list):
-        raise RuntimeError(
-            f"br comments list {issue_id} returned {type(payload).__name__}, not an array"
-        )
-    return [row for row in payload if isinstance(row, dict)]
-
-
-def add_comment(repo_root: Path, issue_id: str, body: str) -> None:
-    """Record one harness marker on *issue_id*, in whichever store is authoritative.
-
-    The marker write seam. In :data:`MODE_OWNED` the fact lands in the ledger and br is
-    **not spawned**; on the rungs below it goes to br, and :func:`_mirror_write` keeps
-    the ledger in step exactly as before.
+    In :data:`MODE_OWNED` the fact lands in the ledger and br is **not spawned**; on the
+    rungs below it goes to br and :func:`_mirror_write` keeps the ledger in step. The
+    caller states br's argv either way — that argv is what
+    :func:`_refuse_write_in_read_only` classifies and what the mirror translates, so a
+    call site says the same thing on every rung.
 
     Raises:
         TrackerWriteRefusedError: a :func:`read_only` section is active. Refused **here**,
-            at the seam, rather than only inside :func:`run_br`: a recorded comment cannot
-            be deleted from either store, and on the owned path there is no br call to
-            inherit the guard from. Checking it once at the entry point means the refusal
-            is a property of the fact being recorded rather than of which store is
-            authoritative this week — which is also what keeps it enforced on a rung where
-            the funnel below is stubbed out. Re-checked by :func:`run_br` on the external
-            path, and a second identical refusal costs nothing.
-        RuntimeError: the write did not land. :class:`TrackerDivergenceError` on the owned
-            path, br's own failure below it; both are ``RuntimeError``, which is what the
-            callers already catch.
+            at the seam, rather than only inside :func:`run_br`: a recorded fact cannot be
+            deleted from either store, and on the owned path there is no br call to
+            inherit the guard from. Re-checked by :func:`run_br` on the external path, and
+            a second identical refusal costs nothing.
+        RuntimeError: the write did not land. On the owned path that includes a surface
+            with **no owned equivalent**, which stops the work rather than letting the
+            fact land in one store; br's own failure below it is the same type, which is
+            what the callers already catch.
     """
-    _refuse_write_in_read_only(_comments_add_argv(issue_id, body))
+    _refuse_write_in_read_only(args)
     if tracker_mode(repo_root) == MODE_OWNED:
-        _append_owned_comment(repo_root, issue_id, body)
+        _append_owned_write(repo_root, args)
         return
-    run_br(repo_root, _comments_add_argv(issue_id, body))
+    run_br(repo_root, args)
 
 
-def try_add_comment(repo_root: Path, issue_id: str, body: str) -> bool:
-    """:func:`add_comment` for a caller that tolerates the write not landing.
+def try_write(repo_root: Path, args: list[str]) -> bool:
+    """:func:`write` for a caller that tolerates the write not landing; False when it did not.
 
-    False when nothing was recorded. Soft here means "tolerates a store that cannot
+    The soft half of the seam, over the soft funnel: "tolerates a store that cannot
     answer", never "tolerates writing when a gate promised not to" — the read-only
     refusal is raised before either store is reached and is deliberately outside the
-    caught set, which is the same split :func:`try_run_br` makes.
+    caught set, which is the split :func:`try_run_br` makes one layer down. A caller that
+    needs the *reason* the write did not land uses :func:`write` and catches it.
     """
-    _refuse_write_in_read_only(_comments_add_argv(issue_id, body))
+    _refuse_write_in_read_only(args)
     if tracker_mode(repo_root) != MODE_OWNED:
-        proc = try_run_br(repo_root, _comments_add_argv(issue_id, body))
+        proc = try_run_br(repo_root, args)
         return proc is not None and proc.returncode == 0
     try:
-        _append_owned_comment(repo_root, issue_id, body)
+        _append_owned_write(repo_root, args)
     except TrackerDivergenceError:
         return False
     return True
+
+
+def _owned_comment_rows(repo_root: Path) -> dict[str, list[dict]]:
+    """Every record's comments out of the ledger, keyed by record, oldest-first.
+
+    The store access; :func:`basicly.comment_rows.from_ledger` is the rendering and
+    states the two rules that answer depends on.
+    """
+    kit_module = kit(repo_root)
+    return comment_rows.from_ledger(kit_module, kit_module.read_ledger(ledger_dir(repo_root)))
+
+
+def add_comment(repo_root: Path, issue_id: str, body: str) -> None:
+    """Record one harness marker on *issue_id*, through :func:`write`.
+
+    Named rather than left to the callers: 26 of them record a marker, and the argv is
+    the one thing they must not each spell (:func:`_comments_add_argv`).
+
+    Raises:
+        TrackerWriteRefusedError: a :func:`read_only` section is active.
+        RuntimeError: the write did not land.
+    """
+    write(repo_root, _comments_add_argv(issue_id, body))
+
+
+def try_add_comment(repo_root: Path, issue_id: str, body: str) -> bool:
+    """:func:`add_comment` for a caller that tolerates the write not landing."""
+    return try_write(repo_root, _comments_add_argv(issue_id, body))
 
 
 def read_comments(repo_root: Path, issue_id: str) -> list[dict]:
     """*issue_id*'s comments, oldest-first, each row carrying ``text`` and ``created_at``.
 
     The marker read seam, and the hard half of its contract: a store that cannot answer
-    raises rather than reporting an empty history. See :func:`_br_comment_rows` for why
+    raises rather than reporting an empty history. See :func:`comment_rows.from_br_reply`
+    for why
     that direction rather than the other.
 
     One shape from both stores, for the reason :func:`owned_record` renders into
@@ -803,7 +787,7 @@ def read_comments(repo_root: Path, issue_id: str) -> list[dict]:
     if tracker_mode(repo_root) == MODE_OWNED:
         return _owned_comment_rows(repo_root).get(issue_id, [])
     proc = run_br(repo_root, ["comments", "list", issue_id, "--json"])
-    return _br_comment_rows(proc.stdout, issue_id)
+    return comment_rows.from_br_reply(proc.stdout, issue_id)
 
 
 def try_read_comments(repo_root: Path, issue_id: str) -> list[dict]:
@@ -819,7 +803,7 @@ def try_read_comments(repo_root: Path, issue_id: str) -> list[dict]:
         if proc is None or proc.returncode != 0:
             return []
         try:
-            return _br_comment_rows(proc.stdout, issue_id)
+            return comment_rows.from_br_reply(proc.stdout, issue_id)
         except RuntimeError:
             return []
     try:

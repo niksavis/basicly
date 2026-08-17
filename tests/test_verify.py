@@ -15,6 +15,7 @@ import yaml
 
 from basicly import br, cli, dropin, policy, usage, verify
 from basicly.config import VerifyCheck, VerifyConfig, load_verify_config
+from tests import flipped_tracker
 
 
 class _Proc:
@@ -310,12 +311,16 @@ def test_apply_fixes_scopes_to_staged_files_in_staged_mode(
 
 
 def test_report_gate_without_br(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When br is absent, reporting degrades gracefully instead of raising."""
-    monkeypatch.setattr(verify.br, "try_run_br", lambda *_a, **_kw: None)
+    """On a rung where br is the store, its absence degrades gracefully and says so.
+
+    Driven by taking br off PATH rather than by stubbing the seam, so the message a
+    consumer reads is the store's own rather than one this test composed.
+    """
+    monkeypatch.setattr(verify.br, "which", lambda: None)
     report = verify.VerifyReport(mode="full", results=())
     ok, message = verify.report_gate(tmp_path, "basicly-x", report)
     assert ok is False
-    assert "br not on PATH" in message
+    assert "br is not on PATH" in message
 
 
 def test_report_gate_builds_expected_command(
@@ -324,11 +329,10 @@ def test_report_gate_builds_expected_command(
     """A passing report records a pass gate with the aggregate note."""
     captured: dict[str, list[str]] = {}
 
-    def fake_run(_root, args):
+    def fake_write(_root, args):
         captured["cmd"] = args
-        return _Proc(0)
 
-    monkeypatch.setattr(verify.br, "try_run_br", fake_run)
+    monkeypatch.setattr(verify.br, "write", fake_write)
     report = verify.VerifyReport(mode="full", results=(verify.CheckResult("ruff", "pass", 0),))
 
     ok, _message = verify.report_gate(tmp_path, "basicly-x", report, gate="verify")
@@ -345,11 +349,10 @@ def test_report_gate_stamps_the_runner_as_actor(
     """A known runner is recorded as the gate's audit-trail actor."""
     captured: dict[str, list[str]] = {}
 
-    def fake_run(_root, args):
+    def fake_write(_root, args):
         captured["cmd"] = args
-        return _Proc(0)
 
-    monkeypatch.setattr(verify.br, "try_run_br", fake_run)
+    monkeypatch.setattr(verify.br, "write", fake_write)
     report = verify.VerifyReport(mode="full", results=(verify.CheckResult("ruff", "pass", 0),))
 
     verify.report_gate(tmp_path, "basicly-x", report, actor="claude")
@@ -364,15 +367,57 @@ def test_report_gate_omits_the_actor_without_a_runner(
     """No runner known: no --actor flag is added."""
     captured: dict[str, list[str]] = {}
 
-    def fake_run(_root, args):
+    def fake_write(_root, args):
         captured["cmd"] = args
-        return _Proc(0)
 
-    monkeypatch.setattr(verify.br, "try_run_br", fake_run)
+    monkeypatch.setattr(verify.br, "write", fake_write)
     report = verify.VerifyReport(mode="full", results=())
 
     verify.report_gate(tmp_path, "basicly-x", report)
     assert "--actor" not in captured["cmd"]
+
+
+# --- the flip: the gate a leaf's walk records (basicly-wpc8.1) ----------------
+
+
+def test_report_gate_records_the_gate_in_the_owned_ledger_with_br_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate surface of the criterion: br off PATH, a spawn fatal, the row readable."""
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(repo, "seam-1")
+    flipped_tracker.refuse_spawn(monkeypatch)
+    report = verify.VerifyReport(mode="full", results=(verify.CheckResult("ruff", "pass", 0),))
+
+    ok, message = verify.report_gate(repo, "seam-1", report, gate="verify")
+
+    kit = br.kit(repo)
+    row = next(e for e in flipped_tracker.ledger_events(repo) if e.kind == kit.KIND_GATE)
+    assert ok is True
+    assert "recorded gate verify=pass" in message
+    assert row.payload[kit.GATE_NAME_KEY] == "verify"
+    assert row.payload[kit.GATE_PASSED_KEY] is True
+
+
+def test_report_gate_carries_a_refusing_store_s_own_reason_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A store that cannot take the write reports NOT recorded, with the cause.
+
+    The flipped rung with no kit installed: there is nowhere for the row to land and no
+    br to fall back to, which is the state a write surface with no owned equivalent
+    reaches. It must read as a gate that was not recorded — never as a pass, and never as
+    a row that half-landed in one store.
+    """
+    (tmp_path / "basicly.toml").write_text(
+        f'[tracker]\nmode = "{br.MODE_OWNED}"\n', encoding="utf-8"
+    )
+    flipped_tracker.refuse_spawn(monkeypatch)
+
+    ok, message = verify.report_gate(tmp_path, "seam-1", verify.VerifyReport("full", ()))
+
+    assert ok is False
+    assert "NOT recorded" in message
 
 
 def _git(cwd: Path, *args: str) -> None:

@@ -58,7 +58,7 @@ class _FakeBr:
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     """Route the tracker seams every consumer shares at *fake* (as `test_policy` does)."""
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
     monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
 

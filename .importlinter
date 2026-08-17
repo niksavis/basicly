@@ -47,7 +47,7 @@ layers =
     demonstration_proof
     gate_source
     br
-    edge_adoption | mirror
+    comment_rows | edge_adoption | mirror
     owned_store
     br_argv
     dispatch_phase

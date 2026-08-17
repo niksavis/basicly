@@ -51,7 +51,7 @@ class _FakeBr:
 def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     fake = _FakeBr()
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
     # The marker traffic left policy's alias for `br.add_comment`/`br.read_comments`
     # (basicly-s5li); both funnel through `br.run_br` on this rung.
     monkeypatch.setattr(br, "run_br", fake)
@@ -147,7 +147,7 @@ def test_ship_challenge_names_the_precondition_the_grant_declined_on(
     _no_tty(monkeypatch)
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
     fake = _GrantedBr()
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
     # Both seams, or the grant marker below lands on this fake's comment list while
     # `br.read_comments` still answers out of the fixture's — one store per read.
     monkeypatch.setattr(br, "run_br", fake)
@@ -357,7 +357,7 @@ def _install_decisions_fake(monkeypatch: pytest.MonkeyPatch) -> None:
     # Reuse the fixture-installed checkpoint fake: it serves comments and show.
     # `decisions` has no alias of its own — every call it makes is a marker, so the
     # fixture's `br.run_br` stub already covers it (basicly-s5li).
-    monkeypatch.setattr(loop_state, "_run_br", policy._run_br)
+    monkeypatch.setattr(loop_state, "_run_br", policy._write)
 
 
 def test_loop_decisions_and_answer_round_trip(
@@ -596,16 +596,10 @@ def test_dor_refusal_names_the_scaffold_command_for_the_issues_own_type(
     Learning the required sections by being refused cost a read, an edit and a
     re-check twice in one run; the refusal now prints the command that emits them.
     """
-    monkeypatch.setattr(
-        policy,
-        "_run_br",
-        lambda _root, args, **_kw: _Proc(
-            json.dumps({"results": [{"missing": ["## Steps to Reproduce"]}]})
-            if args[:1] == ["lint"]
-            else json.dumps([{"description": "## Acceptance Criteria\n\nx"}])
-        ),
-    )
-    bug = _Proc(json.dumps([{"type": "bug"}]))
+    # One record, one reader: the verdict and the scaffold hint both come off the record
+    # `br.read_record` returns (basicly-tcmy.14), so a bug carrying only its acceptance
+    # criteria is refused for the section its own work type requires.
+    bug = _Proc(json.dumps([{"issue_type": "bug", "description": "## Acceptance Criteria\n\nx"}]))
     monkeypatch.setattr(cli.br, "try_run_br", lambda _root, _args: bug)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 1
@@ -623,18 +617,13 @@ def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_ver
     on the path they already run. It is advisory: it cannot flip the verdict or the
     exit code, or it becomes the fail-closed refusal basicly-vz78 rejected.
     """
-    monkeypatch.setattr(
-        policy,
-        "_run_br",
-        lambda _root, _args, **_kw: _Proc(json.dumps({"results": [{"missing": []}]})),
-    )
     # One record carrying both sections. The criteria read and the scope read are the
     # same `br show` on the same bead, and since `br.read_record` became the one reader
     # (basicly-tcmy.14) they resolve through one stub — so serving two different bodies
     # from two stubs would be describing a bead that cannot exist. The entry here is a
     # bare path, which is the defect: it parses to no globs.
     body = "## Acceptance Criteria\n\nx\n\n## Scope\n\n- src/a.py\n"
-    record = _Proc(json.dumps([{"type": "task", "description": body}]))
+    record = _Proc(json.dumps([{"issue_type": "task", "description": body}]))
     monkeypatch.setattr(br, "try_run_br", lambda _root, _args: record)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 0
@@ -647,15 +636,10 @@ def test_dor_stays_quiet_when_the_scope_parsed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The control: a bead whose entries are backticked globs earns no warning."""
-    monkeypatch.setattr(
-        policy,
-        "_run_br",
-        lambda _root, _args, **_kw: _Proc(json.dumps({"results": [{"missing": []}]})),
-    )
     # One record, both sections — see the sibling above. The only difference is the
     # scope entry, which is the backticked form here, so nothing warns.
     body = f"## Acceptance Criteria\n\nx\n\n## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
-    record = _Proc(json.dumps([{"type": "task", "description": body}]))
+    record = _Proc(json.dumps([{"issue_type": "task", "description": body}]))
     monkeypatch.setattr(br, "try_run_br", lambda _root, _args: record)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 0
@@ -666,13 +650,6 @@ def test_dor_refusal_still_offers_the_scaffold_when_the_type_is_unreadable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A tracker read that fails must not swallow the remedy — it degrades to a placeholder."""
-    monkeypatch.setattr(
-        policy,
-        "_run_br",
-        lambda _root, args, **_kw: _Proc(
-            json.dumps({"results": [{"missing": []}]}) if args[:1] == ["lint"] else json.dumps([{}])
-        ),
-    )
     monkeypatch.setattr(cli.br, "try_run_br", lambda _root, _args: None)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 1

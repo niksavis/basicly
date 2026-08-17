@@ -51,8 +51,8 @@ one lane's state must not hold the others hostage:
   scope collision, that is a signal about the base itself, and stacking more
   landings on top of it only compounds the damage.
 
-Tracker state (``.beads/issues.jsonl``) is reconciled with ``br sync --merge``,
-never by hand-editing conflict markers.
+Tracker state is committed, never hand-edited: the owned ledger is append-only and
+br's export is written by br itself, so a landing publishes what it finds.
 """
 
 from __future__ import annotations
@@ -72,9 +72,9 @@ MERGE_GATE = "merge"
 # These bounce back to the owning lane (D5); everything else keeps its old stance.
 CONFLICT_STATUSES = ("rebase-conflicts", "merge-conflicts")
 
-# Path prefixes the harness rewrites on every landing (the tracker it reconciles
-# with `br sync --merge`). A collision here is engine bookkeeping, never evidence
-# of a coupling the decomposition missed.
+# Path prefixes the harness rewrites on every landing (the tracker state it commits).
+# A collision here is engine bookkeeping, never evidence of a coupling the
+# decomposition missed.
 ENGINE_PATHS = (".beads/",)
 
 # Dependency type for a missed coupling. Deliberately not `blocks`: the edge
@@ -470,22 +470,6 @@ def _worktree_land_readiness(repo_root: Path, session: Session) -> MergeResult |
     )
 
 
-def reconcile_beads(repo_root: Path) -> str:
-    """Reconcile ``.beads/issues.jsonl`` via ``br sync --merge`` (no hand-editing).
-
-    Returns br's refusal, or empty on success. A warning rather than a raise because
-    the git merge has already landed by the time this runs, and unwinding it over an
-    unreconciled tracker would cost more than the operator re-running the sync.
-    """
-    proc = br.try_run_br(repo_root, ["sync", "--merge"])
-    if proc is None or proc.returncode == 0:
-        return ""
-    return (
-        f"WARNING tracker NOT reconciled — br sync --merge exited {proc.returncode}: "
-        f"{(proc.stderr or proc.stdout or '').strip()}"
-    )
-
-
 # The trees the engine writes while a lane builds, so their dirt in base is the loop's
 # own state. The ledger joined `.beads` at dual write (basicly-vkh0.25): a lane's claim,
 # gate reports and comments append there, so it is dirty exactly when the merge runs.
@@ -553,25 +537,16 @@ def commit_tracker_state(
     A caller that gets ``False`` owes the operator an explanation — see
     :func:`skipped_tracker_commit_warning`.
 
-    Raises:
-        RuntimeError: br declined the flush, so the export on disk is not the state
-            br holds and nothing is committed.
+    **Nothing is flushed first, and that surface is deleted rather than replaced**
+    (basicly-wpc8.1): ``br sync --flush-only`` reconciled br's database with br's own
+    export, and the owned ledger *is* its artifact. Where br still holds records it
+    writes that export itself on every mutating command — the behaviour
+    ``br._refuse_export_shrink`` bounds — so the flush re-asked for a write br had made.
     """
     lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
     paths = [line[3:] for line in lines if line.strip()]
     if not paths or not all(is_engine_tracker_path(path) for path in paths):
         return False
-    proc = br.try_run_br(repo_root, ["sync", "--flush-only"])
-    if proc is not None and proc.returncode != 0:
-        # br's sync guards refuse rather than write (a conflict-marked export exits 7,
-        # measured through this call against the pinned 0.2.16); the three lines below
-        # would commit the export br declined to produce, as a chore(beads) landing
-        # indistinguishable from a real one (basicly-ho3t).
-        raise RuntimeError(
-            f"br sync --flush-only exited {proc.returncode}; tracker state NOT committed "
-            f"— the export on disk is not what br would write: "
-            f"{(proc.stderr or proc.stdout or '').strip()}"
-        )
     # br stamps each flushed record with the producing workspace's absolute path;
     # strip it before staging so the committed export never publishes a home
     # directory layout (basicly-vkh0.5). This is the engine's only tracker-commit
@@ -713,10 +688,8 @@ def _merge_and_prove(
             f"git merge of {branch} reported success but {where} is not reachable from "
             f"{base}: the work is not landed — inspect base before landing anything else",
         )
-    unreconciled = reconcile_beads(repo_root)
     head = git(["rev-parse", "--short", "HEAD"], cwd=repo_root).stdout.strip()
-    detail = f"merged {branch} into {base} @ {head}"
-    return MergeResult(name, "merged", f"{detail}; {unreconciled}" if unreconciled else detail)
+    return MergeResult(name, "merged", f"merged {branch} into {base} @ {head}")
 
 
 def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing input

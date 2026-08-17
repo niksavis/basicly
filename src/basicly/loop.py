@@ -77,7 +77,7 @@ from . import (
     working_set,
     worktree,
 )
-from .br import run_br as _run_br
+from .br import write as _write
 from .config import (
     WORK_TYPES,
     PolicyConfig,
@@ -424,7 +424,7 @@ def stale_binding_verdict(repo_root: Path, binding: loop_state.WorktreeBinding) 
 
 def clear_worktree_binding(repo_root: Path, issue_id: str) -> None:
     """Drop *issue_id*'s ``worktree:`` external_ref, so it stops deriving ``build``."""
-    _run_br(repo_root, ["update", issue_id, "--external-ref", ""])
+    _write(repo_root, ["update", issue_id, "--external-ref", ""])
 
 
 def _on_verify(ctx: _Ctx) -> AdvanceResult:
@@ -640,7 +640,7 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
     # of it is to travel with the clone (basicly-kjc5.50).
     rolled = cost_rollup.record(ctx.repo_root, ctx.issue_id)
     curated = _dispatch_curation(ctx)
-    _run_br(ctx.repo_root, ["close", ctx.issue_id, "--reason", "shipped by the harness loop"])
+    _write(ctx.repo_root, ["close", ctx.issue_id, "--reason", "shipped by the harness loop"])
     committed = merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="close the shipped track"
     )
@@ -1843,7 +1843,7 @@ def _run_subtask(
             findings=report.failures,
             evidence=repair_brief.verify_evidence(report, cwd, _SUBTASK_VERIFY_MODE),
         )
-    _run_br(
+    _write(
         ctx.repo_root,
         ["close", subtask_id, "--reason", f"lane sub-task verified in {ctx.issue_id}"],
     )
@@ -2494,7 +2494,7 @@ def ensure_lane_worktrees(
 def _bind_worktree(ctx: _Ctx, name: str, branch: str, *, issue_id: str | None = None) -> None:
     """Stash the worktree/branch binding on the issue's external_ref."""
     ref = loop_state.format_worktree_ref(name, branch)
-    _run_br(ctx.repo_root, ["update", issue_id or ctx.issue_id, "--external-ref", ref])
+    _write(ctx.repo_root, ["update", issue_id or ctx.issue_id, "--external-ref", ref])
 
 
 def _child_states(ctx: _Ctx) -> list[tuple[str, str]]:

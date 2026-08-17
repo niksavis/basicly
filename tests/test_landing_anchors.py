@@ -113,7 +113,6 @@ def three_lanes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, 
         )
     monkeypatch.setattr(merge, "load_session", lambda name, _root: sessions[name])
     monkeypatch.setattr(merge, "current_branch", lambda _root: "main")
-    monkeypatch.setattr(merge, "reconcile_beads", lambda _root: None)
     return repo, sessions
 
 

@@ -38,7 +38,7 @@ from pathlib import Path
 from . import br, gate_source, run_record
 from .br import add_comment as _add_comment
 from .br import read_comments as _read_comments
-from .br import run_br as _run_br
+from .br import write as _write
 from .config import (
     AUTONOMY_LEVELS,
     CHECKPOINTS,
@@ -152,25 +152,21 @@ def preflight_gate(gate: str) -> contextlib.AbstractContextManager[None]:
 
 # --- Definition of Ready ----------------------------------------------------
 
-# The ``br lint`` template section satisfied by ``br``'s structured
-# ``acceptance_criteria`` field (basicly-58iu). ``br lint`` only inspects the
-# description body for this heading and ignores the field, so the harness credits
-# the field itself — other template sections (e.g. a bug's Steps to Reproduce)
-# stay body-checked. ``br lint`` has no config to teach it the field, so the fix
-# lives here rather than upstream in beads_rust.
+# The section every bead needs whatever its work type, and the only one a *field* can
+# satisfy as well as a body heading (basicly-58iu).
 _ACCEPTANCE_CRITERIA_SECTION = ACCEPTANCE_HEADING
 
 
 @dataclass(frozen=True)
 class DoRResult:
-    """Whether an issue satisfies the Definition-of-Ready (via ``br lint``)."""
+    """Whether an issue satisfies the Definition-of-Ready."""
 
     ready: bool
     missing: tuple[str, ...]
 
 
 def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
-    """Return the DoR verdict for *issue_id* from ``br lint`` missing sections.
+    """The DoR verdict for *issue_id*: the required body sections it does not carry.
 
     Acceptance criteria are required on **every** bead, whatever its work type.
     They are the only thing validate can judge against: D4 makes the ``rubric``
@@ -178,55 +174,47 @@ def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
     criteria recorded on the bead — so a bead carrying none cannot be
     meaningfully validated, and its gate reads green having proved nothing.
 
-    ``br lint`` cannot express that on its own. It derives required sections from
-    the per-type template, and a ``chore`` is never asked for acceptance criteria,
-    so lint staying silent does not mean the criteria exist — it can mean the
-    template never asked. It also only inspects the description *body*, ignoring
-    ``br``'s structured ``acceptance_criteria`` field. Both directions are
-    reconciled here, in the harness's own gate, which keeps the rule independent
-    of the work type, of ``br``'s template config, and of the ``br`` version a
-    consumer happens to have installed.
+    The rule is owned in-process rather than read off ``br lint`` (basicly-wpc8.1), and
+    that is a deletion rather than a port: lint could never express the requirement on
+    its own — it derives its set from the per-type template compiled into the binary, so
+    a ``chore`` was never asked for acceptance criteria and a silent lint could not be
+    read as "the criteria exist", and it inspects the description *body* only, ignoring
+    ``br``'s structured ``acceptance_criteria`` field. Both halves were already
+    reconciled here, so what is left is :func:`required_sections` against the record,
+    with :data:`_TYPE_SECTIONS` still pinned to the installed ``br`` by a real-tracker
+    test.
 
-    Either carrier satisfies the requirement — the structured field or the body
-    section (basicly-58iu) — but never their absence. Every other missing
-    template section (e.g. a bug's Steps to Reproduce) stays body-checked and
-    still blocks.
+    Either carrier satisfies the acceptance criteria — the structured field or the body
+    section — but never their absence, and every other required section stays
+    body-checked. A record the tracker cannot answer for reads as not-ready, which is the
+    fail-closed direction for a verdict that releases work.
 
-    Runs under :func:`preflight_gate`, so the two reads below are all it *can* do:
-    this gate blocks the classify->decompose advance and creates nothing, and §2's
-    rule is enforced rather than merely documented.
+    Runs under :func:`preflight_gate`, so the single read below is all it *can* do: this
+    gate blocks the classify->decompose advance and creates nothing, and §2's rule is
+    enforced rather than merely documented.
     """
     with preflight_gate(DOR_GATE):
-        proc = _run_br(repo_root, ["lint", issue_id, "--json"])
-        results = json.loads(proc.stdout).get("results", [])
-        missing = tuple(results[0].get("missing", [])) if results else ()
-        if _has_acceptance_criteria(repo_root, issue_id):
+        record = br.read_record(repo_root, issue_id) or {}
+        body = record.get("description")
+        missing = tuple(
+            section
+            for section in required_sections(str(record.get("issue_type") or ""))
+            if not has_heading(body if isinstance(body, str) else "", section)
+        )
+        if _has_acceptance_criteria(record):
             missing = tuple(m for m in missing if m != _ACCEPTANCE_CRITERIA_SECTION)
-        elif _ACCEPTANCE_CRITERIA_SECTION not in missing:
-            # lint did not ask for them (a chore) and they are absent — require them.
-            missing = (*missing, _ACCEPTANCE_CRITERIA_SECTION)
     return DoRResult(ready=not missing, missing=missing)
 
 
-def _has_acceptance_criteria(repo_root: Path, issue_id: str) -> bool:
-    """True when the issue records acceptance criteria in either carrier.
+def _has_acceptance_criteria(record: Mapping[str, object]) -> bool:
+    """True when *record* carries acceptance criteria in ``br``'s structured field.
 
-    Checks ``br``'s structured ``acceptance_criteria`` field first, then the
-    ``## Acceptance Criteria`` heading in the description body — the body is what
-    ``br lint`` inspects, and the harness must reach the same verdict for a work
-    type whose template never asks for the section.
-
-    Best-effort: a br failure or an unexpected payload shape returns False, so a
-    lookup error blocks the track rather than relaxing the gate.
+    The second carrier only. The body heading is checked with every other required
+    section, so a blank or absent field here is not a verdict — it leaves the section
+    to be found in the body or reported missing.
     """
-    issue = br.read_record(repo_root, issue_id)
-    if issue is None:
-        return False
-    value = issue.get("acceptance_criteria")
-    if isinstance(value, str) and value.strip():
-        return True
-    body = issue.get("description")
-    return isinstance(body, str) and has_heading(body, _ACCEPTANCE_CRITERIA_SECTION)
+    value = record.get("acceptance_criteria")
+    return isinstance(value, str) and bool(value.strip())
 
 
 # --- Body scaffolding (basicly-kjc5.44) -------------------------------------
@@ -741,7 +729,7 @@ def hold_lane(repo_root: Path, issue_id: str, reason: str, gate: str | None = No
     """
     named = f"gate={gate} " if gate else ""
     _add_comment(repo_root, issue_id, f"{_HOLD_MARKER} {named}{reason}".rstrip())
-    _run_br(repo_root, ["update", issue_id, "--status", HELD_STATUS])
+    _write(repo_root, ["update", issue_id, "--status", HELD_STATUS])
 
 
 # Kill's own half of this section is :func:`authorize_kill` / :func:`kill_lane`,
@@ -1448,7 +1436,7 @@ def kill_lane(repo_root: Path, issue_id: str, reason: str) -> None:
     not the gate.
     """
     _add_comment(repo_root, issue_id, f"{_KILL_MARKER} {reason}")
-    _run_br(repo_root, ["close", issue_id, "--reason", f"killed: {reason}"])
+    _write(repo_root, ["close", issue_id, "--reason", f"killed: {reason}"])
 
 
 # --- Autonomy grants: session-scoped ledger (basicly-kjc5.3, design D3) ------

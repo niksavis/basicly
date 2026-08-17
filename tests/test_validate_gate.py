@@ -60,7 +60,7 @@ class _FakeBr:
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     monkeypatch.setattr(loop_state, "_run_br", fake)
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
     monkeypatch.setattr(br, "run_br", fake)
 

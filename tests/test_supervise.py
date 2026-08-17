@@ -2139,7 +2139,7 @@ def _patch_collision_pass(
     fake = _FakeBr({bead: {"id": bead, "description": ""} for bead in scopes})
     _install_br(monkeypatch, fake)
     monkeypatch.setattr(supervise, "_try_run_br", fake)
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
 
     def try_run_br(_r, args):
         # The edge exactly as `br` receives it, so its *direction* is asserted too.
@@ -2408,7 +2408,7 @@ def _bounce_twice(
     )
     _install_br(monkeypatch, fake)
     monkeypatch.setattr(supervise, "_try_run_br", fake)
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
 
     routes: list[supervise.RoutedOutcome] = []
     for conflicts in (("src/shared.py",), second):
@@ -2478,7 +2478,7 @@ def test_the_bounce_signature_is_stored_by_the_shared_finding_set_mechanism(
     )
     _install_br(monkeypatch, fake)
     monkeypatch.setattr(supervise, "_try_run_br", fake)
-    monkeypatch.setattr(policy, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
 
     supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),))
 
@@ -3177,15 +3177,17 @@ def test_heartbeat_thread_keeps_the_lock_fresh_and_captures_loss(tmp_path: Path)
 def _attach_br(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     """Route every module observe() reads br through to one fake.
 
-    Each module owns its own ``_run_br`` alias for the subcommands it spawns directly,
-    so those are installed per module. Two reads are no longer among them: the **record**
-    read goes through ``br.read_record`` and the **marker** read through
+    Each module owns its own alias for the surfaces it reaches directly, so those are
+    installed per module — ``_run_br`` where the module still spawns, ``_write`` where its
+    writes go through the seam (basicly-wpc8.1). Two reads are no longer among them: the
+    **record** read goes through ``br.read_record`` and the **marker** read through
     ``br.read_comments`` (basicly-tcmy.14, basicly-s5li), so the fake is installed on the
     spawns those use too. ``decisions`` has no alias left — every call it makes is a
     marker.
     """
-    for module in (supervise, policy, loop_state):
+    for module in (supervise, loop_state):
         monkeypatch.setattr(module, "_run_br", fake)
+    monkeypatch.setattr(policy, "_write", fake)
     monkeypatch.setattr(br, "run_br", fake)
     monkeypatch.setattr(br, "try_run_br", fake)
 
