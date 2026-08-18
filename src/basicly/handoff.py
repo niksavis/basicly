@@ -62,7 +62,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
-from . import artifact_record, catalog_source, plan_gate
+from . import artifact_record, catalog_source, comment_rows, plan_gate, tracker
 
 if TYPE_CHECKING:
     from jsonschema import Draft202012Validator
@@ -176,12 +176,40 @@ def record(repo_root: Path, issue_id: str, kind: str, payload: dict) -> None:
     artifact_record.write(repo_root, issue_id, kind, payload)
 
 
+def _cut_violation(repo_root: Path, issue_id: str, kind: str, payload: object) -> str | None:
+    """Why *payload* is unusable when the event cap cut it, or None when it was stored whole.
+
+    The stored row is found by content rather than by re-selecting the last marker, so
+    this cannot come to disagree with :func:`artifact_record.read` about which row it
+    describes; reaching it only after a refusal is what makes a second fold of the ledger
+    affordable. Both sizes go in the reason because the pair is what separates a body the
+    transport destroyed from one a producer malformed.
+    """
+    for row in tracker.read_comments(repo_root, issue_id):
+        if comment_rows.TRUNCATED_KEY not in row:
+            continue
+        stored = str(row.get(tracker.COMMENT_TEXT_KEY, ""))
+        if artifact_record.recorded_payload(stored.strip(), kind) != payload:
+            continue
+        # Unstripped: the cap measured the whole stored field, so the pair of sizes is
+        # only comparable against the same bytes it counted.
+        return (
+            "the recorded body was truncated by the event text cap to "
+            f"{len(stored.encode('utf-8'))} bytes of {row[comment_rows.ORIGINAL_LENGTH_KEY]} "
+            "and cannot be recovered from the append-only log; re-record the artifact "
+            "from the producing state"
+        )
+    return None
+
+
 def entry_verdict(repo_root: Path, issue_id: str, kind: str) -> ArtifactVerdict:
     """Whether the next state may accept *issue_id*'s *kind* artifact (a read).
 
     Admits a unit carrying no artifact of that kind — the ratchet the module docstring
     states — and otherwise reports every schema violation at once, so an operator fixing
-    one field per round trip does not pay an advance for each.
+    one field per round trip does not pay an advance for each. A body the transport cut
+    reports the cut instead: every field after it is missing, so the schema's answer
+    would be a list of consequences of one cause.
 
     The schema is resolved before the tracker is read, so a repo that has not installed
     the contract costs this predicate no tracker round trip at all, and the two ends
@@ -193,7 +221,11 @@ def entry_verdict(repo_root: Path, issue_id: str, kind: str) -> ArtifactVerdict:
     payload = artifact_record.read(repo_root, issue_id, kind)
     if payload is None:
         return ArtifactVerdict(issue_id, kind)
-    return ArtifactVerdict(issue_id, kind, _violations(validator, payload))
+    violations = _violations(validator, payload)
+    if not violations:
+        return ArtifactVerdict(issue_id, kind)
+    cut = _cut_violation(repo_root, issue_id, kind, payload)
+    return ArtifactVerdict(issue_id, kind, (cut,) if cut else violations)
 
 
 # --- Composing the two payloads ----------------------------------------------

@@ -72,3 +72,45 @@ def test_a_tombstoned_record_answers_empty(tmp_path: Path) -> None:
     rows = _rows(repo)
     assert "seam-1" not in rows
     assert [row[comment_rows.TEXT_KEY] for row in rows["seam-2"]] == ["kept"]
+
+
+def _cut_comment(repo: Path, record: str) -> tuple[str, int]:
+    """Append one comment the cap must cut; return its marker prefix and its whole size."""
+    kit = tracker.kit(repo)
+    body = "[harness-artifact] kind=implementation-plan " + "y" * kit.events.MAX_TEXT_BYTES
+    _comment(repo, record, body)
+    return body, len(body.encode("utf-8"))
+
+
+def test_a_row_whose_body_the_cap_cut_carries_both_of_the_cap_s_markers(tmp_path: Path) -> None:
+    """The evidence a refusing reader needs, which lived only on the event until now.
+
+    Measured 2026-08-18 over the committed ledger: 23 of the 47 artifact record/kind
+    pairs are stored cut, and every one of them carries the original length here. A row
+    that dropped it left the consumer quoting a JSON fragment as if it were malformed.
+    """
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    _, whole = _cut_comment(repo, "seam-1")
+
+    row = _rows(repo)["seam-1"][0]
+    assert row[comment_rows.TRUNCATED_KEY] is True
+    assert row[comment_rows.ORIGINAL_LENGTH_KEY] == whole
+    assert len(row[comment_rows.TEXT_KEY].encode("utf-8")) < whole
+
+
+def test_a_flag_with_no_length_beside_it_does_not_mark_the_row(tmp_path: Path) -> None:
+    """Both markers or neither: a cut named without its size is a reason nobody can act on."""
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    kit = tracker.kit(repo)
+    kit.events.append(
+        tracker.ledger_dir(repo),
+        [
+            kit.events.Draft(
+                "seam-1",
+                kit.events.KIND_COMMENT,
+                {comment_rows.TEXT_KEY: "short", comment_rows.TRUNCATED_KEY: True},
+            )
+        ],
+    )
+
+    assert comment_rows.TRUNCATED_KEY not in _rows(repo)["seam-1"][0]

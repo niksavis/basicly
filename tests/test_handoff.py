@@ -28,7 +28,7 @@ import pytest
 
 from basicly import artifact_record, handoff, plan_gate, tracker
 from basicly.decompose import CreatedChild, DecomposeResult
-from tests import plan_fixtures
+from tests import flipped_tracker, plan_fixtures
 
 
 class _FakeBr:
@@ -275,3 +275,80 @@ def test_a_hand_corrupted_change_summary_is_refused_naming_the_failing_field(
     fake_br.comments["proj-i"] = [artifact_record.marker_body(handoff.CHANGE_SUMMARY, payload)]
     verdict = handoff.entry_verdict(work_repo, "proj-i", handoff.CHANGE_SUMMARY)
     assert not verdict.admitted and "passed" in verdict.reason
+
+
+# --- a body the transport cut, which no fake can produce ---------------------
+
+
+def _stored_on_a_real_ledger(repo: Path, record: str, body: str) -> None:
+    """Seed *record* and append *body* as one comment, through the cap that may cut it.
+
+    No ``fake_br`` here on purpose: the truncation markers are written by the event cap
+    and rendered by ``comment_rows``, so a fake row would be asserting the shape this
+    pair of tests exists to check rather than observing it.
+    """
+    kit = tracker.kit(repo)
+    flipped_tracker.seed(repo, record, title="a recorded feature")
+    kit.events.append(
+        tracker.ledger_dir(repo),
+        [kit.events.Draft(record, kit.events.KIND_COMMENT, {tracker.COMMENT_TEXT_KEY: body})],
+    )
+
+
+def _stored_text(repo: Path, record: str) -> str:
+    """The body as the store actually kept it, which is what the cap measured."""
+    return str(tracker.read_comments(repo, record)[-1][tracker.COMMENT_TEXT_KEY])
+
+
+def test_a_plan_the_cap_cut_is_refused_naming_the_truncation_and_both_byte_counts(
+    work_repo: Path,
+) -> None:
+    """The defect: 23 stored pairs read as malformed when the transport destroyed them.
+
+    The reason has to carry both sizes because they are what tells a cut body apart from
+    a corrupted one, and the remedy because the log is append-only — the bodies of these
+    23 are gone, so the only move left is to record the artifact again.
+    """
+    payload = handoff.plan_payload(decomposition())
+    payload["tasks"][0]["acceptance"] = ["y" * 6000]
+    body = artifact_record.marker_body(handoff.IMPLEMENTATION_PLAN, payload)
+    _stored_on_a_real_ledger(work_repo, "proj-cut", body)
+
+    verdict = handoff.entry_verdict(work_repo, "proj-cut", handoff.IMPLEMENTATION_PLAN)
+    stored = len(_stored_text(work_repo, "proj-cut").encode("utf-8"))
+    assert not verdict.admitted
+    assert "truncated" in verdict.reason
+    assert str(stored) in verdict.reason
+    assert str(len(body.encode("utf-8"))) in verdict.reason
+    assert "re-record" in verdict.reason
+    assert "is not of type" not in verdict.reason
+
+
+def test_a_malformed_plan_the_cap_left_whole_keeps_the_reason_it_already_had(
+    work_repo: Path,
+) -> None:
+    """The control, one variable from the pair above: same store, same route, small body.
+
+    A real schema failure must not be swallowed into the truncation message — that would
+    trade one misleading reason for another, on the population the gate exists for.
+    """
+    payload = handoff.plan_payload(decomposition())
+    payload["tasks"][0]["integrity"] = "L9"
+    body = artifact_record.marker_body(handoff.IMPLEMENTATION_PLAN, payload)
+    _stored_on_a_real_ledger(work_repo, "proj-whole", body)
+
+    verdict = handoff.entry_verdict(work_repo, "proj-whole", handoff.IMPLEMENTATION_PLAN)
+    assert _stored_text(work_repo, "proj-whole") == body
+    assert not verdict.admitted
+    assert "L9" in verdict.reason
+    assert "truncated" not in verdict.reason
+
+
+def test_a_sound_plan_on_a_real_ledger_is_still_admitted(work_repo: Path) -> None:
+    """The positive control the pair needs: an uncut artifact reaches the same yes."""
+    body = artifact_record.marker_body(
+        handoff.IMPLEMENTATION_PLAN, handoff.plan_payload(decomposition())
+    )
+    _stored_on_a_real_ledger(work_repo, "proj-sound", body)
+
+    assert handoff.entry_verdict(work_repo, "proj-sound", handoff.IMPLEMENTATION_PLAN).admitted

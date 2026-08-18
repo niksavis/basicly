@@ -1,0 +1,57 @@
+# A truncated artifact is reported as truncation, not as a schema violation
+# (basicly-wug2o2). 23 of the 47 artifact record/kind pairs in the committed ledger are
+# stored cut at the 4096-byte per-event text cap. Each was refused by its own entry
+# predicate with `$: '<300 characters of cut JSON>' is not of type 'object'` — a reason
+# naming neither truncation nor the original size, so a transport failure read as a
+# malformed artifact. The evidence was already on the event (`text_truncated`,
+# `text_original_length_bytes`) and was being discarded one seam below the reader:
+# `comment_rows.from_ledger` projected each comment event down to `{text, created_at}`.
+# Confirmed on the real write-and-read path before any edit, with the event side as the
+# positive control — the flag is written, and was not carried.
+#
+# `handoff.py` +430, and it is the module that had to take them: the ruling owns the
+# reason text, and a pair of byte counts only means anything to the predicate that
+# refuses. The tokens are `_cut_violation` — the row lookup, matched on content so it
+# cannot come to disagree with `artifact_record.read` about which marker it describes,
+# and the message carrying both counts and the re-record remedy an append-only log
+# leaves. Reached only after a refusal, so an admitted handoff still costs one read.
+#
+# Two cheaper routes were tried and measured before this one.
+#
+# Cutting code rather than comments returned 89 tokens and is exhausted: 4188 -> 4132 by
+# deleting the 23-of-47 measurement where it was written twice, keeping it beside the
+# carry decision in `comment_rows._cut_markers` rather than beside the reader, and
+# 4132 -> 4099 by the deletion test on the two new helpers — each had exactly one call
+# site, and `_cut_row` returning a row for `_cut_violation` to format was an indirection
+# with no second caller. The remaining 99 cannot come out without deleting real content.
+#
+# Extraction is viable and was measured: moving `_cut_violation` to a sibling leaves
+# `handoff.py` at 3753 tokens and 68.7% prose, under both bounds. It was not taken for
+# two reasons. `check_test_naming.py` requires a test file named after every source unit,
+# so a 346-token single-function module costs a second new tracked file whose tests
+# duplicate `test_handoff.py`'s; and the seam is the wrong one. This module's own
+# responsibility sentence needs an "and" — *compose a state's facts into a payload*
+# against *rule on the artifact a unit carries* — and the file already carries the
+# `# --- Composing the two payloads ---` marker where it would split. Reading the
+# transport's markers off a stored row is in any case `artifact_record`'s stated
+# responsibility, the recorded form, and that module is in `basicly-pp7q4i`'s scope,
+# which is where this function should land when the transport itself is fixed.
+#
+# So: a rebaseline rather than a waiver, pinning 4099 exactly so any further growth
+# fails. A waiver would exempt the module outright for a change that put it 99 over.
+#
+# The other ratchet is the proof that none of these tokens came out of the comment
+# budget: `handoff.py`'s prose share is **69.2 before and 66.7 after**, falling against a
+# frozen 69.2 that may only fall. No pre-existing comment was touched.
+#
+# `comment_rows.py` +26: the two marker constants, derived from `TEXT_KEY` so the two
+# spellings cannot drift from `events._prepare_entry`, and `_cut_markers`, which carries
+# them **both or neither**. Neither is the untouched case — a row with no cut keeps
+# exactly the two keys three readers parse, which that module's existing whole-row
+# equality test already pins. `tests/test_handoff.py` +78 and
+# `tests/test_comment_rows.py` +42 stay under the cap at 3996 and 1103.
+[ratchet.module_size]
+rebaseline_reason = "the cut-aware refusal reason in the module that owns the ruling; extraction measured at 3753 but costs a second tracked file under check_test_naming and cuts a seam that belongs to artifact_record"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/handoff.py" = 4099
