@@ -3094,6 +3094,20 @@ Four rules make it safe, and the first is what keeps the cap out of the fold.
   number, a kind, a status, a provenance label or a carried total. Truncating one of those
   would make a derived value depend on the cap, which breaks the determinism
   [32.2](#322-the-event-log-and-the-fold) asserts.
+  **The allow-list is a closed set of key *names*, and it does not implement that rule
+  today.** `value` is on it, and the fold reads `value`: it is the payload key a `field`
+  event carries its new value under, and `_apply_field` writes it straight into the folded
+  record. One record has already paid — `basicly-wpc8`'s description is stored cut to the
+  cap, and the log holds one `value_truncated` flag against 47 `text_truncated` ones
+  [measured 2026-08-18, §32.3's census command widened to count keys ending `_truncated`].
+  The rule is right and the mechanism is not; `basicly-vbl35a` closes the gap.
+  **The converse costs more.** A key *outside* the set is not capped at all, so the bound a
+  new kind gets is decided by the word its author picks for the payload key rather than by
+  a decision. The same field proves it twice over: a description arrives uncapped on a
+  `created` event, where it sits under `description`, and capped on a `field` event, where
+  it sits under `value` — 31 stored whole above 4096 bytes, the largest at 7043, against
+  the one that was cut. [D-36](#d-36--a-handoff-artifact-is-a-typed-ledger-event-bounded-by-derivability-rather-than-by-a-byte-cap)
+  turns that accident into a decision before the `artifact` kind ships.
 - **Redact, then truncate, then measure.** Redaction can *lengthen* text, because a matched
   pattern becomes a placeholder, and a cut through the middle of a secret defeats the pattern
   that would have caught it. The recorded length is therefore the length of the **redacted**
@@ -3167,9 +3181,24 @@ will type it, and the output it will print.
 1. **The schemas are catalog sources.** A repository that has not installed them runs
    *neither* end of the contract. The producer and the consumer both resolve the schema
    first. That is what keeps a skipped write from becoming a refusal downstream.
-2. **The artifacts travel as comment markers on the issue.** They are never an append to the
-   committed ledger. The argument is
-   [D-28](#d-28--a-handoff-artifact-travels-as-a-comment-marker-never-as-a-ledger-append).
+2. **The artifacts travel as `artifact` events in the owned ledger**, typed by artifact
+   kind and never truncated. The argument is
+   [D-36](#d-36--a-handoff-artifact-is-a-typed-ledger-event-bounded-by-derivability-rather-than-by-a-byte-cap).
+   `[TARGET]` **The transport below is what runs today, and it is losing artifacts.**
+
+**Until D-36 lands, the marker seam carries them, and it cuts 57% of them.** An artifact is
+one `[harness-artifact]` comment marker, so its body is a `text` payload key, so the
+per-event cap in [32.10](#3210-the-per-event-size-cap-and-honest-truncation) applies to it.
+A JSON body cut at 4096 bytes stops being JSON. Measured 2026-08-18 over this repository's
+ledger: **31 of the 54 artifacts ever written are cut, and 337,353 bytes are gone.** The
+producer validates the payload it composed and the consumer reads the payload that was
+stored, and those are not the same bytes, so **all 23 truncated record-and-kind pairs are
+refused by their own entry predicate** — against a control of four intact ones that are
+admitted. One of the 23 sits on an open item that cannot leave DECOMPOSE because of it. The
+bodies are unrecoverable: the external store is deleted, and
+[32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) forbids rewriting the log.
+`basicly-pp7q4i` is the fix, and `basicly-wug2o2` makes the refusal say truncation instead
+of reporting a schema violation on a fragment.
 
 Marker storage is idempotent on the whole body, and a read takes the last matching marker.
 
@@ -3887,19 +3916,20 @@ decision keeps its record and gains a `superseded by` line.
 | D-20 | Spend caps compose | accepted | §31.1 |
 | D-21 | Context control is field selection, not encoding | accepted | §8 |
 | D-22 | The tracker vocabulary is this project's own | accepted | §32.3 |
-| D-23 | The seam is the only place where both stores move together | accepted, **expires at the flip** | §37.2 |
+| D-23 | The seam is the only place where both stores move together | **re-taken at the flip**, on a new argument | §32.5 |
 | D-24 | A skill keeps its path glob | accepted | §14 |
 | D-25 | A comment that contradicts the code is a defect | accepted | §36.6 |
 | D-26 | `docs/` carries four kinds of document and no more | accepted | a path gate |
 | D-27 | Everything is a plain, git-tracked file | accepted | §21 |
-| D-28 | A handoff artifact travels as a comment marker, never as a ledger append | accepted | §33 |
+| D-28 | A handoff artifact travels as a comment marker, never as a ledger append | **superseded by D-36** | §33 |
 | D-29 | Codex inlines a scoped fragment, and Copilot gets no scoped twin | accepted | §12.1 |
 | D-30 | The status view is generated from one source | **proposed** | §2 |
 | D-31 | The two ladders are named, not lettered | accepted | §9 |
 | D-32 | Pre-commit rather than a compiled hook runner | accepted, with four reopen triggers | §16 |
 | D-33 | An unknown configuration key is refused unconditionally | accepted | §20 |
 | D-34 | One kind for prose, and typed kinds for machine state | **proposed** | §32.3 |
-| D-35 | The external tracker binary is transitional, not a component | accepted | §37 |
+| D-35 | The external tracker binary is transitional, not a component | **discharged** at the flip | §37 |
+| D-36 | A handoff artifact is a typed ledger event, bounded by derivability rather than by a byte cap | accepted, supersedes D-28 | §33 |
 
 ### D-01 · Authority is asymmetric
 
@@ -4157,13 +4187,32 @@ A field list that names our own keys survives the flip, and only the adapter cha
 
 **Decision.** Every tracker write routes through the one seam module, never around it.
 
-**Because.** A directly spawned binary never enters the mirror. It moves one store and not
-the other, and the differential then reports a divergence it cannot tell from a mirror
-failure.
+**Re-taken 2026-08-18, at the flip. The rule survives; the argument under it does not.**
+
+**The original Because, now spent.** A directly spawned binary never enters the mirror. It
+moves one store and not the other, and the differential then reports a divergence it cannot
+tell from a mirror failure. That argument needed two stores, and `db5619d` left one: the
+binary is deleted, and there is no second copy to diverge from.
+
+**Because, re-taken.** Three refusals live at the seam and nowhere else, and each of them
+is defeated by a write that goes around it. The read-only guard refuses a write while a
+read-only section is active, and it has to refuse *there*, because an append-only log
+cannot un-record a fact a later gate would have to delete. The argv classification refuses
+a surface nobody has classified, on the rule that unknown is not a read — the failure it
+exists to stop is a write reclassified as a read, which disables the guard above it by its
+own hand. And the translation refuses an argument vector with no owned equivalent, so a
+half-stated fact stops the work instead of landing. A direct append to the log meets none
+of the three.
 
 **Consequence.** A human's tracker write has its own command, `basicly tracker write`, so it
-meets the same two refusals the engine's own writes meet: an unknown mode, and an
-untranslatable argument vector.
+meets the same refusals the engine's own writes meet. Appending to the log by hand bypasses
+every one of them.
+
+**The title is left as it stands.** It names two stores and there is one. An id here is
+never renumbered and a record's anchor is a cited surface, so retitling would break the
+link this record is reached by from
+[37.2](#372-what-still-depends-on-it) — a section `basicly-vkh0.42.6` removes wholesale. The
+rename belongs to that change, not to this one.
 
 ### D-24 · A skill keeps its path glob
 
@@ -4226,6 +4275,28 @@ produced the failure above.
 
 **Consequence.** The marker becomes a ledger comment event at the tracker flip, not before.
 Marker storage is idempotent on the whole body, and a read takes the last matching marker.
+
+**Superseded by
+[D-36](#d-36--a-handoff-artifact-is-a-typed-ledger-event-bounded-by-derivability-rather-than-by-a-byte-cap),
+2026-08-18. The Because above was already false on the day this record was written.** The
+landing advance began sweeping the owned ledger on 2026-08-15 at `b20a0b5a`, whose subject
+says why — *sweep the owned ledger so a landing under dual write needs no human*. This
+record was authored the next day, on 2026-08-16, in `e0b38e7f`. The sentence is not a
+mistake of reasoning; it was carried forward verbatim from the requirements document that
+first made the argument on 2026-08-08, where it correctly named the **external** store's
+directory. The rewrite updated the noun to *the committed ledger* and kept the conclusion,
+and nothing re-ran the measurement.
+
+**What the code does instead.** `merge_worktree` calls `commit_tracker_state` *before*
+`_assert_base_ready`, so ledger dirt in the base checkout is rolled into a chore commit and
+the clean-tree assert that follows never sees it. `ENGINE_TRACKER_PATHS` has one member and
+it is the ledger directory; a lane's writes reach it through the worktree redirect, so they
+land in base rather than on the branch. A ledger append during a lane cannot wedge the
+landing.
+
+**The general defect, which is worth more than this record.** A decision absorbed from an
+older document inherits its measurement along with its conclusion, and the measurement is
+the half that expires. An absorbed Because is re-run or it is not absorbed.
 
 ### D-29 · Codex inlines a scoped fragment, and Copilot gets no scoped twin
 
@@ -4393,6 +4464,14 @@ holds the evidence.
 
 ### D-35 · The external tracker binary is transitional, not a component
 
+**Discharged 2026-08-18 at `db5619d`.** The removal this record decided on has happened:
+the binary is deleted, `[tracker] mode` has one value and it is `owned`, and the engine
+spawns nothing to read or write a work item. The record is kept, because it is the argument
+for a removal that is now a fact rather than a plan, and read in the past tense. §37 is its
+account and leaves with it under `basicly-vkh0.42.6`; **that section still describes the
+binary in the present tense and is stale until then.** Nothing here re-states §37, so this
+discharge does not front-run that change.
+
 **Decision.** The external tracker binary is not part of this architecture. It is a
 dependency being removed. It appears in exactly one section of this document
 ([37. The external tracker binary, and its removal](#37-the-external-tracker-binary-and-its-removal)),
@@ -4415,6 +4494,79 @@ recovery path for a corrupted store erases the ledger the phase derivation reads
 **Consequence.** Sections that describe behaviour the binary currently provides are marked
 `[TARGET]` and specify the owned form. A reader who needs to know what runs today reads
 §37. Nothing else in this document owes them that.
+
+### D-36 · A handoff artifact is a typed ledger event, bounded by derivability rather than by a byte cap
+
+**Supersedes [D-28](#d-28--a-handoff-artifact-travels-as-a-comment-marker-never-as-a-ledger-append).**
+`[TARGET]` **This decision is not implemented.** `basicly-pp7q4i` writes the typed event,
+and `basicly-vbl35a` is its prerequisite.
+
+**Decision.** A handoff artifact is one `artifact` event in the owned ledger, carrying its
+kind as a typed field and its body under a payload key the per-event cap does not name. It
+is never truncated. Its size is bounded by taking out of the payload whatever the ledger can
+already derive, and where nothing is derivable the body is stored whole.
+
+**Because.** The cap dispatches on the payload key's *name* and never sees the event's kind
+— `append` hands `prepare_payload` the draft's payload and not its kind — so it cuts a
+schema'd JSON body mid-token, and a JSON body cut mid-token is not JSON. The producer
+validates the payload it composed; the consumer reads the payload that was stored; those
+are different bytes. Measured 2026-08-18 over this repository's own ledger: 31 of 54
+artifacts cut, 337,353 bytes gone, and **all 23 surviving truncated record-and-kind pairs
+refused by their own entry predicate**, against a control of intact artifacts that are
+admitted. [33. Handoff artifacts and their contracts](#33-handoff-artifacts-and-their-contracts)
+carries the measurement.
+
+**Rejected — D32, a file on the work's own harness branch, deleted at teardown.** Taken by
+the owner on 2026-08-09, never implemented, withdrawn here. Its premise was that git is the
+only transport this design has, so an artifact that must survive a machine hop has to be
+committed. That described a world where the store was an external binary with an exported
+file, and the flip ended it: the ledger is git-tracked and committed, and hops machines
+exactly as well as a branch does. What D32 uniquely bought was that `main` never carries the
+body, and that is a real advantage this decision gives up. It is outweighed by what teardown
+deletion does to the audit trail. D32 keeps the kind, a digest and a gate verdict, and
+deletes the bytes the digest was taken over; a digest whose preimage is gone proves that
+some bytes existed and nothing whatever about what they said. It cannot be checked, it
+cannot answer *why did this land*, and it cannot be re-validated when the schema moves.
+Against [D-27](#d-27--everything-is-a-plain-git-tracked-file) — `git diff` and `git blame`
+are the whole audit trail — that is a straight regression. D32's other consequence, that the
+harness branch move to INTAKE, is withdrawn with it, which leaves the two skills
+`basicly-u2hl.42` tracks correct as written rather than pending a rewrite.
+
+**Rejected — refuse an oversized artifact instead of storing it.** The intuition is that an
+oversized schema'd artifact is a producer defect where an oversized prose paste is a human
+pasting a log. It was attacked before it was adopted, and it did not survive, on three
+grounds and any one is enough. **It is not a producer defect.** Every `change-summary` field
+is engine-derived, and the field that grows is the changed-path list; the artifact is large
+because the *diff* is large, which [D-18](#d-18--diff-size-is-a-plan-time-signal-not-a-review-time-discovery)
+already rules may legitimately be so — a mechanical rename is the example it gives. **The
+refusal arrives too late to be a refusal.** The `change-summary` is composed after the merge
+has landed, so refusing it blocks an advance rather than stopping a producer. **And it is
+the normal size, not an outlier.** Every `release-record` ever written exceeds the cap, at a
+median near thirteen kilobytes, so refusal means SHIP records nothing, ever — for an
+artifact [33](#33-handoff-artifacts-and-their-contracts) already notes has no consumer that
+could refuse it.
+
+**Why derivability, and not a bigger number.** A cap set anywhere is a guess about a
+population, and the three wired kinds have three different shapes. A `change-summary` is
+bounded *by construction* once the changed-path list comes out of it, because the commit it
+already carries determines that list — `basicly-gvlpxm` makes that cut. An
+`implementation-plan` is bounded by its child count and fits a generous per-kind cap that
+refuses **at the producer**, where DECOMPOSE can re-slice and nothing has merged. A
+`release-record` is agent-authored claims and evidence, with no smaller true form, and is
+stored whole. Size is the symptom; derivability is the property that tells the three apart.
+
+**Consequence, and it is the one that costs.** The log is append-only and
+[32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) forbids rewriting it, so
+every artifact body ever written sits in every clone forever. Measured 2026-08-18: 478,311
+bytes of artifact against a 5.7 MB log, about **8%**. That is the price of the audit
+property, and it is accepted rather than argued away.
+
+**Consequence.** The cap's exemption has to be made deliberate before the `artifact` kind
+ships. A body placed under an unnamed key is exempt today by accident of spelling, which is
+not a decision; [32.10](#3210-the-per-event-size-cap-and-honest-truncation) records the
+accident and `basicly-vbl35a` closes it. **This is the ordering constraint, not a
+preference:** shipping the writer first buys an unbounded body with no owner, which is the
+growth failure the cap exists to prevent.
 
 ---
 
