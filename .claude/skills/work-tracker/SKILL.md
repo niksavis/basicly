@@ -109,16 +109,16 @@ and "the filter names the wrong key", and the second is the common case here.
 
 ## What the tracker refuses
 
-- **There is no owned label write.** `update --add-label` (and every other label flag)
-  raises at the seam — `--add-label has no owned-ledger equivalent` — because the label
-  flags accumulate rather than replace, so no single event records what they did. Any
-  instruction to label a record, a lane or a cut is therefore false: select work by id.
-- **An untranslatable argv is refused before anything is written.** The check is the
-  translator itself, run against a placeholder, so a write the ledger cannot record
-  never reaches the store half-done. `dep add <a> <b>` with no `-t` is refused for the
-  same reason — the edge type is part of the fact, not a default.
-- **`create` without `--json` is refused**, because the reply is where the minted id
-  comes from and prose output loses it.
+- **A label write names exactly one record.** `--add-label`/`--remove-label` are
+  resolved against the named record's own set before translation, so an `update`
+  carrying a label flag and two ids is refused — *a label write accumulates against one
+  record's own set ... names 2; issue one write per record*. Every other `update` flag
+  still applies to as many ids as the argv names.
+- **An untranslatable argv is refused before anything is written.** The translator runs
+  to completion before the append, so a write the ledger cannot record never reaches the
+  store half-done: `update --estimate 5` is refused with *--estimate has no owned-ledger
+  equivalent*, and `dep add <a> <b>` with no `-t` for the same reason — the edge type is
+  part of the fact, not a default.
 
 ## Safe Defaults
 
@@ -175,8 +175,10 @@ and "the filter names the wrong key", and the second is the common case here.
 - Statuses are `open`, `in_progress`, `blocked`, `deferred`, `closed` — there is **no**
   `rework` status. A rework cycle stays `in_progress` and is tracked by a failing gate
   result plus a comment, not by a status change.
-- The ready set is the records that are open, unblocked and not deferred, ranked by the
-  scheduler; `basicly loop status <id>` prints it alongside the blocked set.
+- The ready set is every record that is neither closed nor deferred, has no unclosed
+  blocking dependency and has no children, ranked by the scheduler — **`in_progress` is
+  in it**, because a claimed record is still the work (`differential.is_ready`).
+  `basicly loop status <id>` prints it alongside the blocked set.
 - Record ids follow `<project-prefix>-<short-code>`; this repo's prefix is `basicly`.
 - A folded record carries `record`, `status`, `fields`, `comments`, `max_seq` and
   `totals`. `totals` is the running roll-up (events, attempts, spend) as of the last
