@@ -182,6 +182,18 @@ def test_dor_keeps_other_missing_sections_when_adding_the_requirement(
     assert result.missing == ("## Steps to Reproduce", "## Acceptance Criteria")
 
 
+def test_dor_reads_the_required_sections_from_configuration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Changing what a work type owes is a config edit, never a code change (R3)."""
+    (tmp_path / "basicly.toml").write_text(
+        '[policy.type_sections]\nbug = ["## Repro"]\n', encoding="utf-8"
+    )
+    _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
+    result = policy.definition_of_ready(tmp_path, "i")
+    assert result.missing == ("## Repro", "## Acceptance Criteria")
+
+
 def test_dor_structured_acceptance_field_satisfies_the_section(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

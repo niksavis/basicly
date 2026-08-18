@@ -39,11 +39,13 @@ from . import gate_source, run_record, tracker
 from .config import (
     AUTONOMY_LEVELS,
     CHECKPOINTS,
+    DEFAULT_TYPE_SECTIONS,
     ENGINE_GATE_PROVIDERS,
     LOOP_PHASES,
     PolicyConfig,
     SizingConfig,
     load_policy_config,
+    load_type_sections,
 )
 from .integrity import VALIDATE_GATE
 from .plan_record import ACCEPTANCE_HEADING, has_heading
@@ -83,9 +85,8 @@ LINKED_WORKTREE_GATE = "linked-worktree"  # basicly.verify.linked_worktree_guard
 # sibling and :mod:`basicly.rubrics` its senior, so ``verify``
 # (:data:`~basicly.verify.DEFAULT_GATE`) and the rubric halves
 # (:data:`~basicly.rubrics.RUBRIC_GATE` / :data:`~RUBRIC_JUDGED_GATE`) cannot be
-# imported here. A test pins the keys to those constants, which is how the other
-# set this module cannot import (``_TYPE_SECTIONS``) is kept in step. The fourth
-# is imported: :mod:`basicly.integrity` is junior.
+# imported here. A test pins the keys to those constants. The fourth is imported:
+# :mod:`basicly.integrity` is junior.
 #
 # Bounded to the gates the engine gives a *name*. The rest of §1.1's mapping — the
 # commit-msg and secret-scan hooks, the projection checks, the ship preconditions,
@@ -181,8 +182,7 @@ def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
     read as "the criteria exist", and it inspects the description *body* only, ignoring
     ``br``'s structured ``acceptance_criteria`` field. Both halves were already
     reconciled here, so what is left is :func:`required_sections` against the record,
-    with :data:`_TYPE_SECTIONS` still pinned to the installed ``br`` by a real-tracker
-    test.
+    with the per-type half read from *repo_root*'s own ``[policy.type_sections]``.
 
     Either carrier satisfies the acceptance criteria — the structured field or the body
     section — but never their absence, and every other required section stays
@@ -198,7 +198,7 @@ def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
         body = record.get("description")
         missing = tuple(
             section
-            for section in required_sections(str(record.get("issue_type") or ""))
+            for section in required_sections(str(record.get("issue_type") or ""), repo_root)
             if not has_heading(body if isinstance(body, str) else "", section)
         )
         if _has_acceptance_criteria(record):
@@ -218,17 +218,6 @@ def _has_acceptance_criteria(record: Mapping[str, object]) -> bool:
 
 
 # --- Body scaffolding (basicly-kjc5.44) -------------------------------------
-
-# Every template section ``br lint`` requires *beyond* the acceptance criteria
-# every bead needs, per work type. ``br``'s templates are built into the binary
-# and no read-only command reports them, so the set is stated here and pinned to
-# the installed ``br`` by a real-tracker integration test — a template change
-# upstream fails that test rather than silently under-scaffolding a body. A work
-# type absent from the map (chore, task, feature) has no extra section.
-_TYPE_SECTIONS: dict[str, tuple[str, ...]] = {
-    "bug": ("## Steps to Reproduce",),
-    "epic": ("## Success Criteria",),
-}
 
 # The placeholder a scaffolded section carries when the caller supplies no
 # content. It has to read as unfinished: an empty heading passes both ``br lint``
@@ -268,16 +257,22 @@ _SECTION_HINTS: dict[str, str] = {
 }
 
 
-def required_sections(work_type: str) -> tuple[str, ...]:
+def required_sections(work_type: str, repo_root: Path | None = None) -> tuple[str, ...]:
     """Every body section the Definition-of-Ready requires for *work_type*.
 
     The set is fully derivable from the work type, so an agent never has to learn
-    it by having the classify gate refuse: it is ``br lint``'s per-type template
-    sections plus the acceptance criteria :func:`definition_of_ready` requires of
-    every bead whatever its type. Ordered as ``br lint`` reports them, so a
-    scaffolded body reads in the same order as the refusal it prevents.
+    it by having the classify gate refuse: it is *repo_root*'s declared per-type
+    sections (:func:`config.load_type_sections`) plus the acceptance criteria
+    :func:`definition_of_ready` requires of every bead whatever its type. The
+    per-type half is that repository's configuration, so a section set changes
+    without a code change; the acceptance criteria are this engine's and do not.
+
+    *repo_root* omitted asks for :data:`~basicly.config.DEFAULT_TYPE_SECTIONS`
+    instead — the answer for a caller holding no tree, which is what the scaffold
+    printer (``basicly policy scaffold``) still is.
     """
-    return (*_TYPE_SECTIONS.get(work_type, ()), _ACCEPTANCE_CRITERIA_SECTION)
+    declared = DEFAULT_TYPE_SECTIONS if repo_root is None else load_type_sections(repo_root)
+    return (*declared.get(work_type, ()), _ACCEPTANCE_CRITERIA_SECTION)
 
 
 def scaffold_body(work_type: str) -> str:

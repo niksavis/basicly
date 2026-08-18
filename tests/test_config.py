@@ -17,6 +17,7 @@ from basicly.config import (
     DEFAULT_MAX_AGENT_PROCESSES,
     DEFAULT_QUIET_AFTER,
     DEFAULT_STALL_AFTER,
+    DEFAULT_TYPE_SECTIONS,
     DEFAULT_WORKING_SET_MAX,
     DEFAULT_WORKING_SET_MIN,
     DEFAULT_WORKTREE_CONCURRENCY,
@@ -28,6 +29,7 @@ from basicly.config import (
     load_runner_config,
     load_sizing_config,
     load_technology_selection,
+    load_type_sections,
     load_verify_config,
     load_worktree_config,
     record_technology_selection,
@@ -349,6 +351,43 @@ def test_policy_config_custom_values(tmp_path: Path) -> None:
 
     (tmp_path / CONFIG_FILE).write_text("[policy]\nmax_rework = -1\n", encoding="utf-8")
     assert load_policy_config(tmp_path).max_rework == 2
+
+
+def test_type_sections_come_from_configuration(tmp_path: Path) -> None:
+    """[policy.type_sections] owns the per-work-type Definition-of-Ready set (R3)."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[policy.type_sections]\nbug = ["## Repro"]\nchore = []\n', encoding="utf-8"
+    )
+    assert load_type_sections(tmp_path) == {"bug": ("## Repro",), "chore": ()}
+
+
+def test_type_sections_refuses_an_unknown_work_type(tmp_path: Path) -> None:
+    """A set filed under a misspelled type applies to nothing while reading as applied."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[policy.type_sections]\ndefect = ["## Repro"]\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="defect"):
+        load_type_sections(tmp_path)
+
+
+def test_type_sections_refuses_a_value_that_is_not_a_heading_list(tmp_path: Path) -> None:
+    """A heading written as a bare string is a declaration the engine cannot honour."""
+    (tmp_path / CONFIG_FILE).write_text(
+        '[policy.type_sections]\nbug = "## Repro"\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="list of section headings"):
+        load_type_sections(tmp_path)
+
+
+def test_type_sections_absent_falls_back_to_the_builtin_set_and_says_so_once(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An undeclared table keeps the built-in rules, but never silently."""
+    config._say_type_sections_fallback.cache_clear()
+    assert load_type_sections(tmp_path) == DEFAULT_TYPE_SECTIONS
+    assert "[policy.type_sections]" in capsys.readouterr().err
+    assert load_type_sections(tmp_path) == DEFAULT_TYPE_SECTIONS
+    assert capsys.readouterr().err == ""
 
 
 def _builtins_with_copilot_deny_stripped(config) -> tuple:

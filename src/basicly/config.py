@@ -5,9 +5,10 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from functools import cache
 from pathlib import Path
 
-from . import __version__, dropin, owned_store, permissions, session, tracker, tree_schema
+from . import __version__, dropin, owned_store, permissions, session, tracker, tree_schema, ui
 from .context_window import (
     AGENT_WINDOW,
     DECLARED_WINDOW,
@@ -141,6 +142,15 @@ max_rework = 2
 # lanes run at once, this bounds how much finished-but-unreviewed output piles
 # up. Lower it when review, not machine capacity, is what runs out.
 max_downstream_wip = 5
+
+# The body sections each work type owes beyond the acceptance criteria every bead
+# owes whatever its type. This is the Definition-of-Ready rule itself, so changing
+# what a bug must carry is an edit here rather than a basicly release. A type left
+# out of the table owes nothing extra; delete the table and the built-in set below
+# applies, with a warning saying so.
+[policy.type_sections]
+bug = ["## Steps to Reproduce"]
+epic = ["## Success Criteria"]
 
 # Working-set sizing governor for decompose (factory D8). A child's context
 # cost is estimated deterministically (instruction overhead + scope read-cost
@@ -418,6 +428,15 @@ DEFAULT_SCOPE_COLLISION = "block"
 # bug/chore are leaf tracks; task/feature/epic nest fractally.
 WORK_TYPES = ("bug", "chore", "task", "feature", "epic")
 
+# What `[policy.type_sections]` means when a repository declares nothing: the sections
+# each work type owes *beyond* the acceptance criteria every bead owes whatever its type.
+# A fallback rather than the rule — :func:`load_type_sections` prefers the declaration,
+# so the set a Definition-of-Ready enforces is that repository's to change (R3).
+DEFAULT_TYPE_SECTIONS: dict[str, tuple[str, ...]] = {
+    "bug": ("## Steps to Reproduce",),
+    "epic": ("## Success Criteria",),
+}
+
 
 @dataclass(frozen=True)
 class ProjectPaths:
@@ -569,7 +588,14 @@ CONFIG_SCHEMA: dict[str, Table] = {
             "max_downstream_wip",
             "scope_collision",
         }),
-        tables={"evidence": _OPEN_TABLE, "sizing": _SIZING_TABLE},
+        # `type_sections` is open for the same reason `evidence` is: its keys are a
+        # vocabulary (:data:`WORK_TYPES`) this walker has no business duplicating, and
+        # :func:`load_type_sections` names the offender itself.
+        tables={
+            "evidence": _OPEN_TABLE,
+            "sizing": _SIZING_TABLE,
+            "type_sections": _OPEN_TABLE,
+        },
     ),
     "runner": Table(
         keys=frozenset({
@@ -1188,6 +1214,66 @@ def load_policy_config(repo_root: Path) -> PolicyConfig:
         max_downstream_wip=_positive_int(
             section.get("max_downstream_wip"), DEFAULT_MAX_DOWNSTREAM_WIP
         ),
+    )
+
+
+def load_type_sections(repo_root: Path) -> dict[str, tuple[str, ...]]:
+    """The body sections `[policy.type_sections]` makes each work type owe (R3).
+
+    The Definition-of-Ready's per-type rule as configuration rather than code: a
+    repository changes what a ``bug`` must carry by editing its own basicly.toml, with
+    no engine change and nothing rebuilt. The set here is the *extra* one —
+    :func:`policy.required_sections` adds the acceptance criteria every bead owes
+    whatever its type, which no declaration can remove.
+
+    A type the table omits owes nothing extra, so an empty table is a real answer and
+    not an absent one. An absent table falls back to :data:`DEFAULT_TYPE_SECTIONS` and
+    says so (:func:`_say_type_sections_fallback`), because a default nobody was told
+    about is indistinguishable from a declaration the engine failed to read.
+
+    Raises:
+        ValueError: The table names a work type outside :data:`WORK_TYPES`, or gives one
+            a value that is not a list of headings. Refused rather than ignored, for the
+            reason the whole strict-config stance rests on: a section set filed under a
+            misspelled type applies to nothing while reading as applied.
+    """
+    declared = _harness_section(repo_root, "policy").get("type_sections")
+    if not isinstance(declared, dict):
+        _say_type_sections_fallback()
+        return dict(DEFAULT_TYPE_SECTIONS)
+    if unknown := sorted(name for name in declared if name not in WORK_TYPES):
+        raise ValueError(
+            f"[policy.type_sections] names unknown work type(s) {', '.join(unknown)}; "
+            f"allowed: {list(WORK_TYPES)}"
+        )
+    return {name: _type_section_headings(name, value) for name, value in declared.items()}
+
+
+def _type_section_headings(work_type: str, value: object) -> tuple[str, ...]:
+    """One work type's declared headings, refusing anything that is not a list of them."""
+    if not isinstance(value, list) or not all(
+        isinstance(heading, str) and heading.strip() for heading in value
+    ):
+        raise ValueError(
+            f"[policy.type_sections] {work_type!r} must be a list of section headings, "
+            f"not {value!r}"
+        )
+    return tuple(heading.strip() for heading in value)
+
+
+@cache
+def _say_type_sections_fallback() -> None:
+    """Say once per process that the built-in per-type sections are in force.
+
+    Cached rather than flag-guarded so "once" is a property of the call, not of a
+    global a caller could forget to set: this runs inside every Definition-of-Ready
+    verdict, and a line per issue in a fan-out is noise a reader learns to skip.
+    """
+    ui.warn(
+        f"[policy.type_sections] is undeclared, so basicly {__version__}'s built-in "
+        "per-work-type sections apply: "
+        + "; ".join(f"{name} {list(sections)}" for name, sections in DEFAULT_TYPE_SECTIONS.items())
+        + ". Declare the table in basicly.toml to own the rule."
     )
 
 

@@ -1,0 +1,20 @@
+# Four tests for `[policy.type_sections]` in `tests/test_config.py` (basicly-vkh0.45).
+#
+# The module is 4.5x the 4,000-token cap, so its recorded obligation is only not to grow
+# — and these tests grow it. They are not padding: one per behaviour the loader now owes
+# (a declared set is honoured, an unknown work type is refused by name, a value that is
+# not a heading list is refused, an absent table falls back and says so once), and the
+# Definition-of-Ready rule is what they cover, so deleting one to fit would leave a
+# refusal path with no test.
+#
+# The alternative was splitting them into `tests/test_config_type_sections.py`. Rejected
+# here rather than dismissed: a new test file re-derives the lane-size ceiling in
+# `tests/test_decompose.py`, which is a shared file this lane's scope fence excludes and
+# two other lanes are live in. A rebaseline is countable on the gate's own pass line; a
+# collision on a shared test module is not. The split remains the right move whenever
+# `tests/test_config.py` is decomposed on its own track.
+[ratchet.module_size]
+rebaseline_reason = "four [policy.type_sections] loader tests added to a module already 4.5x the cap; the split that would avoid them belongs to a decomposition track, not to this change"
+
+[ratchet.module_size.rebaselined]
+"tests/test_config.py" = 267

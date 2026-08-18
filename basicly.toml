@@ -544,6 +544,16 @@ max_rework = 2
 # slots or tokens, the constraint that binds.
 max_downstream_wip = 5
 
+# The body sections each work type owes beyond the acceptance criteria every bead owes
+# whatever its type (`policy.required_sections`). The Definition-of-Ready rule as
+# configuration rather than code (requirements R3): what a bug must carry changes by an
+# edit here, with no engine release in between. These two are the set the engine falls
+# back to when the table is absent, declared explicitly so this repo owns its own rule
+# and so the fallback warning has nothing to say.
+[policy.type_sections]
+bug = ["## Steps to Reproduce"]
+epic = ["## Success Criteria"]
+
 # Agent-agnostic runner: how the harness invokes a coding agent headless to do a
 # node's work in its worktree. "auto" detects claude -> codex -> copilot on PATH,
 # else falls back to the "manual" handoff (no command is guessed for an unknown
