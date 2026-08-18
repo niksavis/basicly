@@ -1739,9 +1739,8 @@ def _edit_prose(tree: Path, word: str) -> None:
     _git_here(tree, "commit", "-am", f"{word} edits the prose")
 
 
-@pytest.fixture
-def diverged_lane(tmp_path: Path) -> tuple[Path, Session]:
-    """A base and a lane that each added a different source and rebuilt one manifest."""
+def _seed_repo(tmp_path: Path) -> Path:
+    """A repo holding source `a`, both rebuild scripts, and both paths declared generated."""
     repo = tmp_path / "repo"
     (repo / "sources").mkdir(parents=True)
     _git_here(tmp_path, "init", "-q", "-b", "main", str(repo))
@@ -1757,14 +1756,15 @@ def diverged_lane(tmp_path: Path) -> tuple[Path, Session]:
         encoding="utf-8",
     )
     _add_source(repo, "a")
-    base_head = _git_here(repo, "rev-parse", "HEAD")
+    return repo
 
+
+def _lane_worktree(tmp_path: Path, repo: Path) -> Session:
+    """A `harness/feat` worktree off main, as the session the landing reads."""
     lane = tmp_path / "feat"
+    base_head = _git_here(repo, "rev-parse", "main")
     _git_here(repo, "worktree", "add", "-q", "-b", "harness/feat", str(lane), "main")
-    _add_source(lane, "c")
-    _add_source(repo, "b")
-
-    return repo, Session(
+    return Session(
         name="feat",
         branch="harness/feat",
         base="main",
@@ -1772,6 +1772,47 @@ def diverged_lane(tmp_path: Path) -> tuple[Path, Session]:
         worktree_path=str(lane),
         created_at="2026-08-06T00:00:00Z",
     )
+
+
+def _fail_verify(monkeypatch: pytest.MonkeyPatch, output: str) -> None:
+    """A gate that fails and reproduces, the re-run capturing *output*.
+
+    Both runs are stubbed because only the second carries text: `run_verify` streams, and
+    `_verify_for_landing` reads its attribution off the captured re-run.
+    """
+    failed = verify.VerifyReport("full", (verify.CheckResult("docs-claims", "fail", 1),))
+    reran = verify.VerifyReport(
+        "full", (verify.CheckResult("docs-claims", "fail", 1, output=output),)
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: failed)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: reran)
+
+
+@pytest.fixture
+def diverged_lane(tmp_path: Path) -> tuple[Path, Session]:
+    """A base and a lane that each added a different source and rebuilt one manifest."""
+    repo = _seed_repo(tmp_path)
+    session = _lane_worktree(tmp_path, repo)
+    _add_source(Path(session.path), "c")
+    _add_source(repo, "b")
+    return repo, session
+
+
+@pytest.fixture
+def adding_lane(tmp_path: Path) -> tuple[Path, Session]:
+    """A lane that only adds a source, base unmoved: nothing conflicts and both artifacts go stale.
+
+    The shape of basicly-e2mz.35 — the lane rebuilds nothing because both generated paths
+    are outside its declared scope, which is why it cannot repair what its own addition
+    invalidated.
+    """
+    repo = _seed_repo(tmp_path)
+    session = _lane_worktree(tmp_path, repo)
+    lane = Path(session.path)
+    (lane / "sources" / "d.txt").write_text("d\n", encoding="utf-8")
+    _git_here(lane, "add", "-A")
+    _git_here(lane, "commit", "-m", "add d")
+    return repo, session
 
 
 def test_two_lanes_that_rebuild_one_manifest_land_without_bouncing(
@@ -1855,3 +1896,57 @@ def test_the_same_pass_still_bounces_when_a_source_really_conflicts(
     assert "sources/shared.txt" in result.conflicts
     assert _git_here(repo, "status", "--porcelain") == ""  # base untouched
     assert _git_here(lane, "status", "--porcelain") == ""  # the rebase was aborted cleanly
+
+
+def test_a_lane_that_only_adds_a_file_lands_with_its_stale_artifacts_rebuilt(
+    monkeypatch: pytest.MonkeyPatch, adding_lane: tuple[Path, Session]
+) -> None:
+    """The demonstration for basicly-e2mz.35, against real git: staleness with no conflict.
+
+    The lane's diff adds one file and touches neither generated path, so git merges it
+    without a murmur and both artifacts describe a tree that no longer exists. Landing it
+    is the whole acceptance: the gate used to refuse the lane for a file it may not repair.
+    """
+    repo, session = adding_lane
+    monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    monkeypatch.setattr(
+        merge.policy, "record_rework", lambda *_a: pytest.fail("the landing spent rework")
+    )
+
+    result = merge.merge_worktree(repo, "feat", bead="basicly-e2mz.35")
+
+    assert result.status == "merged", result.detail
+    assert json.loads((repo / "manifest.json").read_text(encoding="utf-8")) == ["a.txt", "d.txt"]
+    assert "sources: a, d" in (repo / "plan.md").read_text(encoding="utf-8")
+    assert "manifest.json" in result.detail and "plan.md" in result.detail
+
+
+def test_a_generated_path_the_rebuild_did_not_fix_is_reported_with_its_command(
+    monkeypatch: pytest.MonkeyPatch, adding_lane: tuple[Path, Session]
+) -> None:
+    """A bare `verify full failed: docs-claims` sends an operator to rediscover both."""
+    repo, session = adding_lane
+    monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
+    _fail_verify(monkeypatch, "plan.md [plan-current-state]: generated block is stale\n")
+
+    result = merge.merge_worktree(repo, "feat", bead="basicly-e2mz.35")
+
+    assert result.status == "verify-failed"
+    assert "`plan.md` <- " in result.detail and "rebuild_plan.py" in result.detail
+    # The control: the other declared path is absent, so this is attribution and not the
+    # whole regenerate table printed at every failure.
+    assert "manifest.json" not in result.detail
+
+
+def test_a_verify_failure_naming_no_generated_path_is_reported_unchanged(
+    monkeypatch: pytest.MonkeyPatch, adding_lane: tuple[Path, Session]
+) -> None:
+    """The negative control: an ordinary failure must not acquire a rebuild command."""
+    repo, session = adding_lane
+    monkeypatch.setattr(merge, "load_session", lambda _n, _r: session)
+    _fail_verify(monkeypatch, "tests/test_thing.py::test_one FAILED\n")
+
+    result = merge.merge_worktree(repo, "feat", bead="basicly-e2mz.35")
+
+    assert result.detail == "verify full failed: docs-claims"

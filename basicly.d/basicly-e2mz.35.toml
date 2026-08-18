@@ -1,0 +1,38 @@
+# The landing names the generated file a lane may not repair (basicly-e2mz.35). A lane
+# whose diff only *adds* a file leaves `plan-current-state` counting a tree that no longer
+# exists, and `docs/plan/implementation-plan.md` is outside every lane's scope, so the lane
+# is refused for a defect it is fenced out of and spends its whole rework budget finding
+# out. `rebase.refresh_generated` (8cf8b1e0) already rebuilds it before the gate; what was
+# missing is the other half of the criteria — when the rebuild does *not* make the file
+# current, the operator got `verify full failed: docs-claims` and had to rediscover both
+# the file and the command.
+#
+# `src/basicly/merge.py` needs no rebaseline, but only just: +456 tokens against 458 of
+# headroom (14943 -> 15399 against the frozen 15401, so 2 tokens are left), and its prose
+# share is 60.3 before and after against a 60.7 baseline (60.1 frozen plus the 0.6 of
+# basicly-wpc8.1). No existing comment was cut to hold either number; the 26 tokens that
+# came out to reach it were a restatement inside this change's own new docstring.
+#
+# `tests/test_merge.py` +972 over its frozen 19737, the module having sat 118 under it. The
+# added lines cost 1164 tokens and the removed 74. Nothing here is a second unit test on a
+# predicate: the acceptance is that a lane adding a file *lands*, so all three drive
+# `merge_worktree` against real git, over a real worktree whose branch adds a source and
+# rebuilds neither declared artifact.
+#
+#   +433  the `adding_lane` fixture and the `_seed_repo` / `_lane_worktree` split that lets
+#         it and `diverged_lane` share one seeded repo — the shape this record is about
+#         (base unmoved, nothing conflicts, both artifacts stale) could not be reached from
+#         the existing fixture, which has both sides rebuild and so always conflicts.
+#   +307  the demonstration: the lane lands and the *base* holds a manifest and a plan block
+#         naming a and d, which neither parent's copy said.
+#   +209  the report: a `docs-claims` failure naming `plan.md` comes back carrying
+#         `plan.md` and its rebuild command, with `manifest.json` — the other declared path
+#         — asserted absent, so the message is attribution and not the whole table.
+#   +168  `_fail_verify`, which stubs both verify runs because only the captured re-run
+#         carries text and the attribution is read off it.
+#   +138  the negative control: an ordinary pytest failure is reported unchanged.
+[ratchet.module_size]
+rebaseline_reason = "the end-to-end landing demonstration for a lane that only adds a file, plus its attribution and negative controls, in a fixture the existing one could not produce"
+
+[ratchet.module_size.rebaselined]
+"tests/test_merge.py" = 972

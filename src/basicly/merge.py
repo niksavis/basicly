@@ -63,7 +63,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import decompose, owned_store, policy, rebase, run_record, tracker, tracker_paths, verify
-from .config import PolicyConfig, load_policy_config
+from .config import PolicyConfig, load_policy_config, load_worktree_config
 from .worktree import Session, current_branch, git, load_session
 
 MERGE_GATE = "merge"
@@ -251,6 +251,29 @@ def _shared_tracker_failure(
     return policy.SharedGateFailure(tuple(culprits), "; ".join(reasons))
 
 
+def _unrebuilt_generated(repo_root: Path, report: verify.VerifyReport) -> tuple[str, ...]:
+    """Declared generated paths a failed verify still names, each with its rebuild command.
+
+    :func:`basicly.rebase.refresh_generated` ran every rebuild against the rebased tree
+    before this gate, so a path still named here is one regeneration did not make current
+    — and the lane's remedy for it is a file outside its scope. Named, not forgiven: the
+    landing is refused either way, and what this closes is the operator being handed a
+    check name and left to rediscover the file and the command (basicly-e2mz.35).
+
+    Read off the captured re-run rather than off a second rebuild, which would dirty the
+    lane's worktree on the way to refusing it. Two bounds follow: a streamed report has no
+    text and names nothing, leaving the plain failure standing; and the match is the path
+    appearing in the output, so a check that merely mentions one is named too — a wordier
+    refusal on a landing already refused, never a merge.
+    """
+    output = "".join(r.output for r in report.results if r.status == "fail")
+    return tuple(
+        f"`{path}` <- `{' '.join(argv)}`"
+        for path, argv in sorted(load_worktree_config(repo_root).regenerate_commands.items())
+        if path in output
+    )
+
+
 def _verify_for_landing(
     repo_root: Path, name: str, worktree_path: Path, verify_mode: str, bead: str
 ) -> MergeResult | None:
@@ -275,6 +298,9 @@ def _verify_for_landing(
     (:func:`_shared_tracker_failure`). That is not the lane's work failing either,
     and it is why *bead* is required here — the lane's own id is what separates "your
     declaration broke this" from "a sibling's did" (basicly-qorx).
+
+    A failure that is none of the three is the lane's, and is still named against the file
+    when a declared generated path is what failed (:func:`_unrebuilt_generated`).
     """
     report = verify.run_verify(worktree_path, verify_mode)
     if report.passed:
@@ -301,6 +327,13 @@ def _verify_for_landing(
             f"tracker by {', '.join(shared.culprits)}, not by this lane's diff: "
             f"{shared.reason}",
             culprits=shared.culprits,
+        )
+    if unrebuilt := _unrebuilt_generated(repo_root, rerun):
+        return MergeResult(
+            name,
+            "verify-failed",
+            f"verify {verify_mode} failed on {failures}: the rebuild this landing ran before "
+            f"the gate did not make a declared generated path current — {'; '.join(unrebuilt)}",
         )
     return MergeResult(name, "verify-failed", f"verify {verify_mode} failed: {failures}")
 
