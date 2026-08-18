@@ -1,10 +1,12 @@
 """Fail when a harness marker family is written that the frozen list here does not carry.
 
 The reader's alias table (architecture §32.3.2) is keyed on the marker family, so the
-family list is a wire-format inventory. It has drifted three times, and the standing list
-in `docs/requirements/work-tracker.md` was wrong in both directions at once: it named
-`harness-side`, a phrase from a `commit.py` sentence rather than a marker, and omitted the
-family `retrospective.py` declares.
+family list is a wire-format inventory. It has drifted three times, and one standing list
+was wrong in both directions at once: it named `harness-side`, a phrase from a `commit.py`
+sentence rather than a marker, and omitted the family `retrospective.py` declares. The
+roster the gate reads lives in architecture §32.3.2 beside that alias table; it lived in a
+requirements document until 2026-08-18, and moved because that document is scheduled for
+deletion and a gate cannot depend on a source that goes away.
 
 **The list is frozen here rather than derived, and one family is why.** `[harness-overrun]`
 carries 12 rows in this repository's log and has no producer anywhere in `src/`; the string
@@ -44,14 +46,17 @@ SELF = f"{SCRIPT_DIR.name}/{Path(__file__).name}"
 
 SRC_ROOT = "src/basicly"
 LOG_GLOB = ".basicly/ledger/events-*.jsonl"
-COUNT_DOC = "docs/requirements/work-tracker.md"
+# The roster's home is the section that specifies the alias table it feeds, and it is
+# deliberately not a requirements document: the two the register schedules for deletion each
+# carried a gate input, and a gate whose only source can be deleted fails on the deletion.
+ROSTER_DOC = "docs/architecture/architecture.md"
 
 # A family is lowercase and hyphenated. The character class is what makes a malformed
 # marker fail to match rather than enter the census as a thirteenth family.
 _MARKER = re.compile(r"\[harness-[a-z][a-z-]*\]")
 _LEADING = re.compile(r"^\s*(\[harness-[a-z][a-z-]*\])")
 
-# The two claims the requirements document states about this list, bound so a reword fails
+# The two claims the roster paragraph states about this list, bound so a reword fails
 # loudly instead of drifting a fourth time.
 _DECLARED_CLAIM = re.compile(r"\*\*([a-z]+)\*\* declared families")
 _RETIRED_CLAIM = re.compile(r"\*\*([a-z]+)\*\* retired")
@@ -252,26 +257,26 @@ def _claim_findings(claim: re.Pattern[str], text: str, count: int, what: str) ->
     expected = _spelled(count)
     if len(stated) != 1:
         yield Finding(
-            key=f"{COUNT_DOC}:{what}",
+            key=f"{ROSTER_DOC}:{what}",
             detail=f"{len(stated)} statements match {claim.pattern!r}, expected exactly one",
             remedy=f'restore the sentence, or re-anchor it: "**{expected}** {what}"',
         )
     elif stated[0] != expected:
         yield Finding(
-            key=f"{COUNT_DOC}:{what}",
+            key=f"{ROSTER_DOC}:{what}",
             detail=f"states {stated[0]!r} {what} and the tree has {expected}",
             remedy=f"correct it to **{expected}**",
         )
 
 
 def document_findings(repo: Path, declared: int, retired: int) -> Iterator[Finding]:
-    """Each family claim in the requirements document that the derived sets refute."""
-    path = repo / COUNT_DOC
+    """Each family claim in the roster document that the derived sets refute."""
+    path = repo / ROSTER_DOC
     if not path.is_file():
         yield Finding(
-            key=COUNT_DOC,
+            key=ROSTER_DOC,
             detail="missing, so its family claims cannot be checked",
-            remedy=f"restore {COUNT_DOC} or move the claim and re-point COUNT_DOC",
+            remedy=f"restore {ROSTER_DOC} or move the claim and re-point ROSTER_DOC",
         )
         return
     text = path.read_text(encoding="utf-8")
@@ -281,13 +286,13 @@ def document_findings(repo: Path, declared: int, retired: int) -> Iterator[Findi
     frozen = {family.marker for family in FROZEN}
     for marker in sorted(named - frozen):
         yield Finding(
-            key=f"{COUNT_DOC}:{marker}",
+            key=f"{ROSTER_DOC}:{marker}",
             detail="named as a family and not in the frozen list",
             remedy="drop it, or freeze it here if it was really written",
         )
     for marker in sorted(frozen - named):
         yield Finding(
-            key=f"{COUNT_DOC}:{marker}",
+            key=f"{ROSTER_DOC}:{marker}",
             detail="frozen here and named nowhere in the document",
             remedy="add it to the document's roster",
         )

@@ -24,7 +24,7 @@ from tests import fake_tracker
 _ISSUE = "basicly-x1"
 _WORKTREE = "basicly-x1-1"
 _BRANCH = f"harness/{_WORKTREE}"
-_REQUIREMENTS_MD = Path(__file__).resolve().parents[1] / "docs" / "requirements" / "factory-loop.md"
+_ARCHITECTURE_MD = Path(__file__).resolve().parents[1] / "docs" / "architecture" / "architecture.md"
 
 
 class _Proc:
@@ -398,16 +398,18 @@ def test_kill_refuses_a_blank_reason_before_it_costs_a_code_relay(
     assert "--reason must say why" in capsys.readouterr().err
 
 
-# --- The requirements document's own claim (AC4) -------------------------------
+# --- The specification's own claim (AC4) ---------------------------------------
 
 
-def test_the_requirements_document_no_longer_claims_hold_re_admits_the_lane() -> None:
-    """§5 blamed the status vocabulary; ``deferred`` was already excluded.
+def test_the_architecture_does_not_blame_the_status_vocabulary_for_the_missing_hold() -> None:
+    """The requirements document blamed it; ``deferred`` was already excluded.
 
-    A design document is the input to its own decomposition, so a false [M] in it
-    buys the wrong work. The corrected claim has to name where the gap really was.
+    A false diagnosis in a specification buys the wrong work, aimed a layer below the gap:
+    Hold was a missing *write*, not a wrong *status*. Read from architecture §25 since
+    2026-08-18, because the requirements document holding the correction is scheduled for
+    deletion and a tripwire on it would expire with it (basicly-vkh0.42.8).
     """
-    text = _REQUIREMENTS_MD.read_text(encoding="utf-8")
+    text = _ARCHITECTURE_MD.read_text(encoding="utf-8")
 
     assert "re-admits the lane" not in text
-    assert "DISPATCHABLE_STATUSES" in text
+    assert "words an escalation offered that no answer carried out" in text

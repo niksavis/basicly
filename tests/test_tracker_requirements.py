@@ -8,8 +8,9 @@ outside this repo.
 
 This module is that gate. One test per requirement, each exercising the harness's
 *own* defence against the **defective input**, so it fails if the defence is
-removed. The register in prose, with what each defect cost, is
-`work-tracker.md` §2.1 (R1-R9); the ids here match it.
+removed. The register this module is checked against is architecture §32.9 (R1-R9);
+the ids here match its table. It was `work-tracker.md` §2.1 until 2026-08-18, and
+moved because that document is scheduled for deletion (basicly-vkh0.42.8).
 
 Two things this module deliberately is not:
 
@@ -27,6 +28,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import time
 from pathlib import Path
 
@@ -37,6 +39,10 @@ from tests import flipped_tracker
 
 REPO_ROOT = Path(__file__).parent.parent
 COMMIT_MSG_HOOK = REPO_ROOT / ".basicly" / "core" / "hooks" / "tracker-commit-msg.py"
+ARCHITECTURE_MD = REPO_ROOT / "docs" / "architecture" / "architecture.md"
+
+_REGISTER_HEADING = "### 32.9 "
+_REGISTER_ROW = re.compile(r"^\| (R\d+) \|", re.MULTILINE)
 
 
 def _load_hook(path: Path, name: str):
@@ -46,6 +52,20 @@ def _load_hook(path: Path, name: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _register_ids(text: str) -> set[str]:
+    """The ids listed in the architecture register's table, empty when the section is gone.
+
+    Read from the section body rather than the whole document, so an ``R<n>`` written in
+    ordinary prose elsewhere cannot substitute for a row of the table under test.
+    """
+    start = text.find(_REGISTER_HEADING)
+    if start < 0:
+        return set()
+    end = text.find("\n### ", start + 1)
+    body = text[start:] if end < 0 else text[start:end]
+    return set(_REGISTER_ROW.findall(body))
 
 
 # --- R1: a timestamp is evidence, never a constraint --------------------------
@@ -419,14 +439,26 @@ def test_r9_a_publish_that_would_shrink_the_export_is_refused_not_silent(
 def test_every_requirement_in_the_design_register_has_a_test_here() -> None:
     """A prose register nobody tests is a wish list.
 
-    The design doc numbers the requirements R1-R9; this asserts each id appears in
-    a test name in this module, so adding a ninth defect to the register without
+    Architecture §32.9 numbers the properties R1-R9; this asserts each id appears in
+    a test name in this module, so adding a tenth defect to the register without
     a gate fails here rather than being noticed years later.
     """
-    design = (REPO_ROOT / "docs" / "requirements" / "work-tracker.md").read_text(encoding="utf-8")
-    declared = {f"R{n}" for n in range(1, 10) if f"**{f'R{n}'}." in design}
-    assert declared, "no R<n> requirements found in the design register"
+    declared = _register_ids(ARCHITECTURE_MD.read_text(encoding="utf-8"))
+    assert declared, f"no R<n> rows found under {_REGISTER_HEADING.strip()}"
 
     source = Path(__file__).read_text(encoding="utf-8")
     covered = {rid for rid in declared if f"def test_{rid.lower()}_" in source}
     assert covered == declared, f"requirements with no test: {sorted(declared - covered)}"
+
+
+def test_the_register_read_returns_nothing_when_its_section_is_not_there() -> None:
+    """The non-empty assert above is the fail-open guard, so its zero case is exercised.
+
+    A reader that answers "no requirements" for a missing or renumbered section turns the
+    gate above into a no-op reporting green, which is the shape the move off a
+    deletion-scheduled document could have introduced. Scoping to the section is asserted
+    too: an ``R<n>`` row written elsewhere in the document must not stand in for one.
+    """
+    assert _register_ids("") == set()
+    assert _register_ids("## 1. Elsewhere\n\n| R1 | a row outside the register |\n") == set()
+    assert _register_ids(f"{_REGISTER_HEADING}The register\n\n| R1 | a row |\n") == {"R1"}

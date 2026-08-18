@@ -47,7 +47,7 @@ def _doc(
     retired: str = "one",
     roster: tuple[str, ...] | None = None,
 ) -> str:
-    """The requirements document's family claim, in the shape the gate anchors on."""
+    """The roster document's family claim, in the shape the gate anchors on."""
     named = ", ".join(f"`{marker}`" for marker in (roster or tuple(f.marker for f in gate.FROZEN)))
     return f"2. **{declared}** declared families and **{retired}** retired: {named}.\n"
 
@@ -71,7 +71,7 @@ def _repo(
         "".join(json.dumps({"kind": "comment", "payload": {"text": text}}) + "\n" for text in rows),
         encoding="utf-8",
     )
-    document = tmp_path / gate.COUNT_DOC
+    document = tmp_path / gate.ROSTER_DOC
     document.parent.mkdir(parents=True, exist_ok=True)
     document.write_text(doc if doc is not None else _doc(), encoding="utf-8")
     return tmp_path
@@ -233,6 +233,24 @@ def test_a_document_omitting_a_frozen_family_is_refused(
 
     assert code == 1
     assert "[harness-retro]: frozen here and named nowhere in the document" in err
+
+
+def test_an_absent_roster_document_fails_rather_than_agreeing_with_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A deletable home for the roster is the hazard this gate has to survive.
+
+    Every other document finding is a set difference, so an absent file disagrees with
+    nothing and would pass. The roster moved off a document scheduled for deletion for
+    exactly that reason (basicly-vkh0.42.8), and the same is true of its new home.
+    """
+    repo = _repo(tmp_path)
+    (repo / gate.ROSTER_DOC).unlink()
+
+    code, _, err = _run(repo, capsys)
+
+    assert code == 1
+    assert f"{gate.ROSTER_DOC}: missing" in err
 
 
 def test_the_retired_family_has_rows_and_no_producer_in_this_repository() -> None:

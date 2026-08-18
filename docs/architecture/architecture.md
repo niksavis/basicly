@@ -2724,9 +2724,14 @@ written**, and adding a family to it is append-only in exactly the way the log i
 **The family list is bound to a gate, after drifting four times while it was prose.** The
 frozen literal is `.scripts/check_marker_families.py`, and it refuses a disagreement with
 either population it measures: what `src/basicly/` declares, read out of the AST, and what
-the two stores hold. It reports **eleven declared and one retired, twelve frozen**
-[measured 2026-08-17, `uv run python .scripts/check_marker_families.py`, which also prints
-the row count across both stores].
+the two stores hold. The roster is **eleven** declared families and **one** retired, twelve
+frozen [measured 2026-08-18, `uv run python .scripts/check_marker_families.py`, which also
+prints the row count across both stores]:
+
+`[harness-artifact]`, `[harness-classification]`, `[harness-cost]`, `[harness-decision]`,
+`[harness-info]`, `[harness-policy]`, `[harness-retro]`, `[harness-review]`,
+`[harness-run]`, `[harness-sizing]` and `[harness-wait]`, plus the retired
+`[harness-overrun]`, which has no producer in `src/` and 12 rows in the log.
 
 **The drift history is the argument for the gate, and each correction was wrong in a
 different way.** A count read eight while four families had shipped. A correction to ten came
@@ -2741,12 +2746,13 @@ and then advised deleting the baseline entry. **Counting with a command was not 
 command has to discriminate a declaration from prose, which is why the gate reads string
 constants out of the AST rather than grepping for the shape.
 
-`[TARGET]` **The gate's own domain is a paragraph in a requirements document, and that is a
-dependency this specification has to name.** `check_marker_families.py` reads the roster and
-the two counts out of [the work-tracker requirements](../requirements/work-tracker.md) §3 and
-fails on a disagreement, so that document is a **gate input** rather than explanation. The
-document register schedules it for deletion once the binary leaves the runtime path, and the
-deletion has to repoint this check first or the roster loses its only home.
+**The roster above is a gate input rather than explanation, and this document has to say
+so.** `check_marker_families.py` reads that paragraph — the two counts and the twelve
+family strings — and fails on a disagreement in either direction. It read a requirements
+paragraph until 2026-08-18; the document register schedules that document for deletion once
+the binary leaves the runtime path, so the roster moved to the section that specifies the
+alias table it feeds. A gate whose only input is a document scheduled for deletion is a gate
+with an expiry date.
 
 ### 32.4 Derived views: phase, the ready set, gate status
 
@@ -3031,23 +3037,26 @@ a patch applied upstream. The register of what each one cost is
 [the work-tracker requirements](../requirements/work-tracker.md) §2.1, which is where the
 incidents live; this table is the specification they became.
 
-**Each is pinned by a test named for its number**, in `tests/test_tracker_requirements.py`,
-and each test asserts *this* system's defence against the defective input. None asserts that
+**Each is pinned by a test named for its id**, in `tests/test_tracker_requirements.py`, and
+each test asserts *this* system's defence against the defective input. **The table below is
+that module's gate input, not explanation:** it reads the ids out of this section and fails
+when one of them has no `test_r<n>_` named for it, so a tenth property added here without a
+gate fails at once. Adding a row means adding a test. None asserts that
 the binary still misbehaves — a test of a foreign bug breaks on the version that fixes it,
 which is the wrong failure. When the flip lands the module runs against the owned store
 unchanged, so it is the executable half of the scope contract.
 
-| # | The property | Where it stands |
+| Id | The property | Where it stands |
 | --- | --- | --- |
-| 1 | **A timestamp is evidence, never a constraint.** No write is refused on a clock comparison, no derived value is a function of a wall clock, and total order comes from the writer's own sequence numbers | held. [32.2](#322-the-event-log-and-the-fold) keeps the timestamp out of the event id, [32.4](#324-derived-views-phase-the-ready-set-gate-status) drops creation time from ranking, and [32.5](#325-the-write-path-the-lock-and-rotation) keeps every wall-clock branch out of the write path |
-| 2 | **Exactly one spelling per field, in every surface that emits it.** The failure this prevents is silent: a reader that guesses between two spellings returns an *empty* graph rather than an error, and an empty graph degrades every landing order without failing anything | held on the owned side. A dependency event names its two endpoints, its type and its provenance under **one** spelling each, with no alias for any of them; the import adds attribution keys beside them and renames nothing |
-| 3 | **Validation rules are configuration, not code**, and apply per work type without a rebuild | held for the rule that **judges** a record. `[policy.type_sections]` declares the required-section set per work type, the loader refuses an unknown work type and names it, and an absent table falls back to the built-in set and says so once per process rather than silently. Changing a section set is a configuration edit with no rebuild, demonstrated through `basicly policy dor`. **Open for the rule that writes one:** the scaffold holds no repository root, so a configured heading is judged but never emitted, and the scaffold's own output then fails the gate it exists to satisfy |
-| 4 | **A text field accepts newlines**, and every field settable after creation is settable at creation | held. A multi-line value occupies one physical line and round-trips byte-identically through the log and the fold, and the kit's create surface sets an arbitrary named field |
-| 5 | **A record id is opaque and is never re-parsed.** A short root plus a dotted child counter, with no separator any consumer has to interpret | held for a newly minted id, and stronger than "collision-checked": the root length is sized from a **declared collision budget** by the birthday bound, and only new ids get longer, because an existing id never changes. The ids inherited from the import predate the budget and sit far outside it, which the kit states rather than implies |
-| 6 | **No committed artifact carries a machine-specific path, a username or a hostname**, and portability is a property of the format rather than of a scrubbing pass | **partially held.** [32.7](#327-redaction) is the mechanism and [32.7.1](#3271-the-identity-rule-covers-one-person-and-two-stores-carry-another) is the measured gap |
-| 7 | **N concurrent readers and one writer never corrupt shared state**, and a contention failure that is reported is reported as **retryable**, so the caller backs off | held. Publishing is a rename, the temp name is per-writer, and the give-up error carries retryability as a class attribute rather than as prose |
-| 8 | **Contention waits, and a wait that gives up says so.** The lock is scoped to the ledger it protects, never to the machine or a home directory | held. Scope decides who contends: a lock one level too wide makes every unrelated process on the host a competitor for a record it will never touch, and the failure that produces is a *gate* failing rather than a write waiting |
-| 9 | **A publish never shrinks the artifact silently.** A write emitting fewer records than the file it overwrites reports the shrink and requires explicit intent | held on the derived snapshot, which is the only store left. `write_snapshot` is the single refusal point every publish path already goes through, it names both counts in the message, and `allow_shrink` is how a caller declares the loss intended. The comparison is on **content, never on timestamps** — a timestamp comparison fires on a healthy checkout whose content is byte-identical, so it cannot be the guard. **One path is exempt by construction:** `fsck.rebuild` unlinks the target before writing, so the guard always meets an absent file and the rebuild that loses records is the one it cannot see |
+| R1 | **A timestamp is evidence, never a constraint.** No write is refused on a clock comparison, no derived value is a function of a wall clock, and total order comes from the writer's own sequence numbers | held. [32.2](#322-the-event-log-and-the-fold) keeps the timestamp out of the event id, [32.4](#324-derived-views-phase-the-ready-set-gate-status) drops creation time from ranking, and [32.5](#325-the-write-path-the-lock-and-rotation) keeps every wall-clock branch out of the write path |
+| R2 | **Exactly one spelling per field, in every surface that emits it.** The failure this prevents is silent: a reader that guesses between two spellings returns an *empty* graph rather than an error, and an empty graph degrades every landing order without failing anything | held on the owned side. A dependency event names its two endpoints, its type and its provenance under **one** spelling each, with no alias for any of them; the import adds attribution keys beside them and renames nothing |
+| R3 | **Validation rules are configuration, not code**, and apply per work type without a rebuild | held for the rule that **judges** a record. `[policy.type_sections]` declares the required-section set per work type, the loader refuses an unknown work type and names it, and an absent table falls back to the built-in set and says so once per process rather than silently. Changing a section set is a configuration edit with no rebuild, demonstrated through `basicly policy dor`. **Open for the rule that writes one:** the scaffold holds no repository root, so a configured heading is judged but never emitted, and the scaffold's own output then fails the gate it exists to satisfy |
+| R4 | **A text field accepts newlines**, and every field settable after creation is settable at creation | held. A multi-line value occupies one physical line and round-trips byte-identically through the log and the fold, and the kit's create surface sets an arbitrary named field |
+| R5 | **A record id is opaque and is never re-parsed.** A short root plus a dotted child counter, with no separator any consumer has to interpret | held for a newly minted id, and stronger than "collision-checked": the root length is sized from a **declared collision budget** by the birthday bound, and only new ids get longer, because an existing id never changes. The ids inherited from the import predate the budget and sit far outside it, which the kit states rather than implies |
+| R6 | **No committed artifact carries a machine-specific path, a username or a hostname**, and portability is a property of the format rather than of a scrubbing pass | **partially held.** [32.7](#327-redaction) is the mechanism and [32.7.1](#3271-the-identity-rule-covers-one-person-and-two-stores-carry-another) is the measured gap |
+| R7 | **N concurrent readers and one writer never corrupt shared state**, and a contention failure that is reported is reported as **retryable**, so the caller backs off | held. Publishing is a rename, the temp name is per-writer, and the give-up error carries retryability as a class attribute rather than as prose |
+| R8 | **Contention waits, and a wait that gives up says so.** The lock is scoped to the ledger it protects, never to the machine or a home directory | held. Scope decides who contends: a lock one level too wide makes every unrelated process on the host a competitor for a record it will never touch, and the failure that produces is a *gate* failing rather than a write waiting |
+| R9 | **A publish never shrinks the artifact silently.** A write emitting fewer records than the file it overwrites reports the shrink and requires explicit intent | held on the derived snapshot, which is the only store left. `write_snapshot` is the single refusal point every publish path already goes through, it names both counts in the message, and `allow_shrink` is how a caller declares the loss intended. The comparison is on **content, never on timestamps** — a timestamp comparison fires on a healthy checkout whose content is byte-identical, so it cannot be the guard. **One path is exempt by construction:** `fsck.rebuild` unlinks the target before writing, so the guard always meets an absent file and the rebuild that loses records is the one it cannot see |
 
 **Two of the nine are properties of a store under load rather than of a response, and that
 changes what can be asserted.** The other seven are answered by a reply, so the defence
@@ -3060,7 +3069,7 @@ at all**. That is a silent wrong answer where the binary at least raised. Both h
 fixed, the write is atomic, and the gate runs real reader processes against a live writer with
 no retry anywhere in the path, so it cannot pass by giving a reader a second chance.
 
-**Requirement 8's originating incident did not reproduce when it was probed, and it is carried
+**R8's originating incident did not reproduce when it was probed, and it is carried
 anyway.** The machine-global lock the incidents were attributed to is not what the binary
 does: the whole suite passed under parallel execution while more than a thousand concurrent
 external initialisations were driven against the same host [measured 2026-08-01 against the
