@@ -1,0 +1,30 @@
+# The redactor learns the shape that leaked on 2026-08-16 (basicly-vkh0.33). Backticks in
+# a comment body ran `env` as command substitution under zsh and 152 NAME=value assignments
+# — 40,325 characters, one of them a live 32-character session token — went through the
+# write seam into the committed store. Redaction was then run explicitly and moved nothing:
+# the value carries no vendor prefix, is not a path and is not the username, so all three
+# existing rule sets are blind to it. What identifies it is the name beside the `=`.
+#
+# `redact.py` +615 tokens: two rules — a run of eight or more assignments collapsed whole,
+# and the value of any `NAME=` whose name ends in TOKEN, SECRET, KEY or PASSWORD — plus
+# `redact_secrets` joining `redact_committed`, which had run only on surfaced runner output
+# and so left the append-only ledger the one surface keeping a hand-written credential
+# verbatim. Both thresholds were measured, not chosen: eight, because zero runs that long
+# exist across docs, src, tests and .basicly/core while the incident held 152; and the
+# space-free shell form only, because accepting `NAME = value` matches 38 ordinary module
+# constants (`TEXT_KEY = "text"`) and ledger payloads quote this repo's own code.
+#
+# The prose share rises 55.3 -> 56.5 against a frozen 55.6, and this fragment is the
+# declared route for that 0.9. The module is a rule table: every entry's payload is why the
+# rule exists — which incident, which measurement — and this section adds three such facts
+# (the dump's provenance, the eight-run count, the 38-constant count). One pass of cutting
+# already went in before this was written and took the section from 58.8 to 56.5, all of it
+# restatement in the new code: a docstring that respelled the composition below it, a
+# threshold sentence saying twice what it said once, and a paragraph in `redact_committed`
+# narrating its own call chain. No pre-existing comment was touched, and module-size did not
+# move against its cap (2,501 of 4,000 tokens, unfrozen).
+[ratchet.comment_density]
+rebaseline_reason = "three measured facts behind two new redaction rules, in a module whose payload is why each rule exists"
+
+[ratchet.comment_density.rebaselined]
+"src/basicly/redact.py" = 0.9

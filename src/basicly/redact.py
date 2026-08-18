@@ -158,10 +158,61 @@ def redact_machine_identity(text: str) -> str:
     return re.sub(rf"\b{re.escape(name)}\b", _placeholder(IDENTITY_RULE), text)
 
 
-def redact_committed(text: str) -> str:
-    """Paths and then identity — what a value passes through to reach a commit.
+# --- Environment dumps (basicly-vkh0.33) ------------------------------------
 
-    The order is load-bearing: this placeholder holds characters the path rules' tail
-    class excludes, so identity first would strand the directory layout unredacted.
+# A shell assignment. On 2026-08-16 backticks in a comment body ran `env` as command
+# substitution and 152 of these — 40,325 characters, one a live 32-character session
+# token — reached the committed store. No rule above can see such a value: no vendor
+# prefix, not a path, not the username. Only the name beside the `=` identifies it.
+_ENV_ASSIGNMENT = r"[A-Z][A-Z0-9_]*=\S*"
+
+# A run this long is a dump, not a sentence quoting a variable. Eight: zero runs that
+# long across docs, src, tests and .basicly/core (2026-08-18); the incident held 152.
+_DUMP_RUN = 8
+
+# Space-free shell form only: `NAME = value` also hits 38 module constants on this tree
+# (`TEXT_KEY = "text"`) and ledger payloads quote this repo's code. That spelling is
+# _GENERIC_RULE's, which redact_committed now runs too.
+_CREDENTIAL_NAME = r"[A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|PASSWD)"
+
+# Four characters up: below that there is nothing to protect, and an environment's many
+# empty values would collect placeholders.
+_CREDENTIAL_VALUE = r"""(?:'[^']{4,}'|"[^"]{4,}"|\S{4,})"""
+
+ENVIRONMENT_DUMP_RULE = "environment-dump"
+ENV_CREDENTIAL_RULE = "env-credential-assignment"
+
+_DUMP_PATTERN = re.compile(rf"(?:{_ENV_ASSIGNMENT}\s+){{{_DUMP_RUN - 1},}}{_ENV_ASSIGNMENT}")
+_CREDENTIAL_PATTERN = re.compile(rf"(?<![A-Za-z0-9_])({_CREDENTIAL_NAME}=)({_CREDENTIAL_VALUE})")
+
+
+def _credential_assignment(match: re.Match[str]) -> str:
+    """The assignment with its value masked, keeping the name that made it a hit."""
+    if _PLACEHOLDER.search(match.group(2)):
+        return match.group(0)
+    return f"{match.group(1)}{_placeholder(ENV_CREDENTIAL_RULE)}"
+
+
+def redact_environment(text: str) -> str:
+    """Return *text* with environment-variable leaks masked.
+
+    Dump before assignment, so a pasted environment collapses to one placeholder rather
+    than a mosaic still publishing 150 names and every value the narrower rule cannot.
     """
-    return redact_machine_identity(redact_machine_paths(text))
+    if not text:
+        return text
+    text = _DUMP_PATTERN.sub(_placeholder(ENVIRONMENT_DUMP_RULE), text)
+    return _CREDENTIAL_PATTERN.sub(_credential_assignment, text)
+
+
+def redact_committed(text: str) -> str:
+    """Environment, secrets, paths, then identity — what a value passes to reach a commit.
+
+    The last two are ordered: the path placeholder holds characters the path rules' tail
+    class excludes, so identity first would strand the directory layout unredacted.
+
+    :func:`redact_secrets` joined for basicly-vkh0.33: it ran only on surfaced runner
+    output, leaving the append-only ledger the one surface keeping a hand-written
+    credential verbatim. It matches nothing across docs, src, tests and .basicly/core.
+    """
+    return redact_machine_identity(redact_machine_paths(redact_secrets(redact_environment(text))))
