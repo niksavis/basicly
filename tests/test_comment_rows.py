@@ -115,6 +115,7 @@ def test_a_flag_with_no_length_beside_it_does_not_mark_the_row(tmp_path: Path) -
 
     assert comment_rows.TRUNCATED_KEY not in _rows(repo)["seam-1"][0]
 
+
 def test_both_prose_spellings_render_as_rows_in_one_history(tmp_path: Path) -> None:
     """A reader keying on `note` alone would drop the markers on every older event.
 
