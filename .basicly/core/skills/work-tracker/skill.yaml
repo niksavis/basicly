@@ -180,9 +180,12 @@ instructions: |
     in it**, because a claimed record is still the work (`differential.is_ready`).
     `basicly loop status <id>` prints it alongside the blocked set.
   - Record ids follow `<project-prefix>-<short-code>`; this repo's prefix is `basicly`.
-  - A folded record carries `record`, `status`, `fields`, `comments`, `max_seq` and
-    `totals`. `totals` is the running roll-up (events, attempts, spend) as of the last
-    event, not a separate store.
+  - A folded record carries `record`, `status`, `fields`, `comments`, `max_seq`,
+    `tombstoned`, `totals`, `dependencies` and `dependents`. `totals` is the running
+    roll-up (events, attempts, spend) as of the last event, not a separate store. The two
+    edge keys carry **both** directions — what this record depends on, and what depends on
+    it — each edge naming its type and the other record's status. Both are always present,
+    so an empty list means no edge rather than a surface that does not render them.
 
   ## Repo Conventions
 
