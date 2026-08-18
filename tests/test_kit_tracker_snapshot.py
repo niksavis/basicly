@@ -762,6 +762,102 @@ def test_a_seeded_fold_copies_the_checkpoint_it_resumes_from(tmp_path: Path) -> 
     assert first.records[RECORD_B] is not base.records[RECORD_B]
 
 
+# --- R9: no store shrinks silently, the derived one included -------------------
+
+
+def _fewer(published: Any, keep: int) -> Any:
+    """*published* with only *keep* of its records — the shape the 187-record loss took."""
+    return snapshot.Snapshot(
+        header=published.header, records=dict(sorted(published.records.items())[:keep])
+    )
+
+
+def test_a_shrinking_publish_is_refused_and_reports_both_counts(tmp_path: Path) -> None:
+    """The defect that bought R9 deleted 187 records, 47 of them open, and reported success."""
+    _build(tmp_path)
+    published = snapshot.rebuild(tmp_path)
+    path = snapshot.snapshot_path(tmp_path)
+    before = path.read_bytes()
+
+    with pytest.raises(snapshot.SnapshotError) as raised:
+        snapshot.write_snapshot(path, _fewer(published, 1))
+
+    assert "1 records" in str(raised.value) and "holding 3" in str(raised.value)
+    loss = snapshot.shrinkage(path, _fewer(published, 1))
+    assert (loss.refused, loss.existing, loss.proposed) == (True, 3, 1)
+    assert path.read_bytes() == before
+
+
+def test_a_shrink_the_caller_declares_intentional_is_published(tmp_path: Path) -> None:
+    """An intended loss is a decision, not a corruption; the flag is the whole difference."""
+    _build(tmp_path)
+    published = snapshot.rebuild(tmp_path)
+    path = snapshot.snapshot_path(tmp_path)
+
+    snapshot.write_snapshot(path, _fewer(published, 1), allow_shrink=True)
+
+    assert len(_lines(path)) == 2
+
+
+@pytest.mark.parametrize("mtime", [0.0, CLOCK * 2])
+def test_the_shrink_comparison_reads_records_and_never_a_timestamp(
+    tmp_path: Path, mtime: float
+) -> None:
+    """Injected as test data rather than raced: an ancient file and a future one answer alike.
+
+    The header is made to disagree with the record lines too, so a check taking the cheap
+    count — the one the fold being questioned wrote about itself — cannot pass here.
+    """
+    _build(tmp_path)
+    published = snapshot.rebuild(tmp_path)
+    path = snapshot.snapshot_path(tmp_path)
+    lines = _lines(path)
+    path.write_text(
+        "\n".join([json.dumps({**json.loads(lines[0]), "event_count": 0}), *lines[1:]]) + "\n",
+        encoding="utf-8",
+    )
+    os.utime(path, (mtime, mtime))
+
+    loss = snapshot.shrinkage(path, _fewer(published, 2))
+
+    assert (loss.refused, loss.existing, loss.proposed) == (True, 3, 2)
+    assert snapshot.shrinkage(path, published).refused is False
+
+
+def test_a_shrink_check_with_no_usable_file_publishes_and_says_which(tmp_path: Path) -> None:
+    """Absent and unparseable are both "nothing to compare against", and are named apart."""
+    _build(tmp_path)
+    smaller = _fewer(snapshot.rebuild(tmp_path), 1)
+    path = snapshot.snapshot_path(tmp_path)
+
+    path.unlink()
+    absent = snapshot.shrinkage(path, smaller)
+    snapshot.write_snapshot(path, smaller)
+    path.write_text("this is not a snapshot\n", encoding="utf-8")
+    unparseable = snapshot.shrinkage(path, smaller)
+
+    assert (absent.refused, absent.existing) == (False, None)
+    assert "no file was there" in str(absent.reason)
+    assert (unparseable.refused, unparseable.existing) == (False, None)
+    assert "unparseable" in str(unparseable.reason)
+    assert len(snapshot.write_snapshot(path, smaller).records) == 1
+
+
+def test_a_rebuild_whose_log_vanished_shrinks_and_is_refused_rather_than_reported_clean(
+    tmp_path: Path,
+) -> None:
+    """The incident's own shape, through the surface a caller uses rather than the writer."""
+    _build(tmp_path)
+    snapshot.rebuild(tmp_path)
+    for log in events.log_paths(tmp_path):
+        log.unlink()
+
+    with pytest.raises(snapshot.SnapshotError):
+        snapshot.rebuild(tmp_path)
+
+    assert len(_lines(snapshot.snapshot_path(tmp_path))) == 4
+
+
 # --- the kit boundary ---------------------------------------------------------
 
 

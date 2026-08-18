@@ -400,7 +400,54 @@ def read_snapshot(path: Path | str) -> Snapshot | None:
     return Snapshot(header=header, records=records)
 
 
-def write_snapshot(path: Path | str, snapshot: Snapshot) -> Snapshot:
+# --- the shrink guard ---------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Shrinkage:
+    """What comparing a publish against the file it replaces found.
+
+    Attributes:
+        refused: True when the publish must not go ahead undeclared.
+        reason: How the counts differed, or which uncomparable case applied. ``None`` when
+            the comparison found no loss.
+        existing: Records in the file replaced, ``None`` when none was compared.
+        proposed: Records in the snapshot offered.
+    """
+
+    refused: bool
+    reason: str | None
+    existing: int | None
+    proposed: int
+
+
+def shrinkage(path: Path | str, snapshot: Snapshot) -> Shrinkage:
+    """Whether publishing *snapshot* at *path* would hold fewer records than it replaces.
+
+    R9's "no store shrinks silently", which the derived store had no answer to: the defect
+    that bought it deleted 187 records, 47 of them open, and reported success. Both counts are
+    of the **records each side holds** — never a header, which the fold being questioned wrote
+    itself, and never a timestamp, which dates a file rather than saying what survived.
+
+    An absent or unparseable file is nothing to compare against, so it publishes and names
+    which of the two it was.
+    """
+    proposed = len(snapshot.records)
+    try:
+        current = read_snapshot(path)
+    except SnapshotError as exc:
+        reason = f"the file being replaced is unparseable, so nothing was compared: {exc}"
+        return Shrinkage(False, reason, None, proposed)
+    if current is None:
+        return Shrinkage(False, "no file was there to compare against", None, proposed)
+    existing = len(current.records)
+    if proposed < existing:
+        reason = f"this would publish {proposed} records over a file holding {existing}"
+        return Shrinkage(True, reason, existing, proposed)
+    return Shrinkage(False, None, existing, proposed)
+
+
+def write_snapshot(path: Path | str, snapshot: Snapshot, *, allow_shrink: bool = False) -> Snapshot:
     """Publish *snapshot* at *path* by writing a temporary file and renaming it over.
 
     Atomic publication (§4.4), so a reader never sees a half-written derivative and a crash
@@ -415,8 +462,17 @@ def write_snapshot(path: Path | str, snapshot: Snapshot) -> Snapshot:
 
     Returns:
         The snapshot, so a caller can write and use it in one expression.
+
+    Raises:
+        SnapshotError: this would hold fewer records than the file it replaces and
+            *allow_shrink* does not declare that intended (:func:`shrinkage`, which the flag
+            skips along with the refusal). Both counts are in the message; nothing is written.
     """
     file_path = Path(path)
+    if not allow_shrink:
+        loss = shrinkage(file_path, snapshot)
+        if loss.refused:
+            raise SnapshotError(f"{file_path.name}: {loss.reason}")
     file_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = file_path.with_name(f"{file_path.name}.{os.getpid()}.tmp")
     try:

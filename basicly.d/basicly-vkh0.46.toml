@@ -1,0 +1,36 @@
+# The derived snapshot gets the shrink guard the external seam already had
+# (basicly-vkh0.46, R9). `br._refuse_export_shrink` went with the external tracker's removal
+# and nothing replaced it on the owned side: a search for `shrink` across the kit returned
+# only two unrelated hits in `baseline.py`, against a positive control of five `atomic`-or-
+# `rename` hits in `snapshot.py`. The gap was reproduced against `HEAD:snapshot.py` rather
+# than argued: a ledger whose log files vanish makes `rebuild` publish a 0-record snapshot
+# over a 3-record one and return normally. That is the incident's own shape — 187 records
+# deleted, 47 of them open, reported as success. Both modules were measured before the first
+# edit, at 2 and 0 tokens of headroom.
+#
+# `snapshot.py` +602: the `Shrinkage` dataclass, `shrinkage()`, and the `allow_shrink`
+# parameter that turns `write_snapshot` into the refusal point every publish path already
+# goes through — `rebuild`, `refresh` and rotation's checkpoint, so no call site needed a
+# second guard. The other ratchet is the proof that none of those tokens came out of the
+# comment budget: the module's prose share is **56.2 before and 56.2 after**, held at its
+# frozen figure rather than climbing. The narration that came out to hold it was restatement
+# in the new code only — `Shrinkage`'s summary line repeated `shrinkage`'s, an `Args:` block
+# respelled `path` and `snapshot`, and a paragraph in `write_snapshot` said what its own
+# `Raises:` entry says. No pre-existing comment was touched.
+#
+# `tests/test_kit_tracker_snapshot.py` +931: the five tests the acceptance criteria name, six
+# cases. One refuses a shrinking publish and reads both counts back off the message and off
+# `Shrinkage`, asserting the file's bytes are unchanged. One publishes the same shrink with
+# the intent declared, so the flag is the whole difference. One is parametrised over the
+# existing file's mtime — epoch and far future, injected as test data rather than raced —
+# and also makes the stored header disagree with the record lines, so a check that took the
+# cheap count the questioned fold wrote about itself cannot pass. One separates absent from
+# unparseable and holds each to naming which it was. The last one drives the incident through
+# `rebuild` rather than through the writer, and is the one that was red before the change
+# rather than merely absent.
+[ratchet.module_size]
+rebaseline_reason = "the derived store's shrink guard and the five tests that bind it, in two modules with 2 and 0 tokens of headroom"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/snapshot.py" = 602
+"tests/test_kit_tracker_snapshot.py" = 931
