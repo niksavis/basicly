@@ -1,0 +1,33 @@
+# The overloaded `comment` kind splits: `note` carries prose, `checkpoint` and `artifact` are
+# typed machine state the fold reads by name (basicly-vkh0.30, backlog B8, architecture §32.3).
+# `comment` stays a permanent alias of `note` — 2,667 of this ledger's 5,752 events are
+# `comment` [measured 2026-08-18 at 756cce66, the census in §32.3] and the log is never
+# rewritten, so a reader that retired the spelling would drop the prose history, the checkpoint
+# markers and the gate markers of every item older than this change. Four modules, none with
+# more than 38 tokens of headroom, measured before the first edit.
+#
+# `events.py` +731: two kinds, `PROSE_KINDS`, the two handlers with their payload validation,
+# two `RecordState` fields with their documented rules, and the seeded copy of both. Its prose
+# share is the proof that none of it came out of the comment budget: **57.0 before and 57.0
+# after**, against a frozen 57.1.
+#
+# `snapshot.py` +272: the two typed fields in `record_to_dict` and their validation on the way
+# back in. They are in the derived file because the resumed fold reads a checkpoint rather than
+# the archive (§4.6): a checkpoint that dropped `checkpoints` would read an approved item as
+# never approved. Prose share **56.2 before and 55.8 after**.
+#
+# `tests/test_kit_tracker_events.py` +1549 and `tests/test_kit_tracker_snapshot.py` +716: eight
+# tests, each written against a mutation that had to fail first — the `comment` entry removed
+# from the handler table, an approval that does not replace an earlier one, `body` added to
+# `TRUNCATABLE_KEYS`, and `checkpoints` dropped from the emitted record. The alias is asserted
+# as **state equality** between a log written in each spelling rather than as a membership
+# check, because the skip path is what would silently derive an empty work log. Both files'
+# prose share fell (30.4 to 30.0, 25.6 to 25.7), so the growth is test code.
+[ratchet.module_size]
+rebaseline_reason = "the prose kind, two typed machine kinds and the eight tests that bind them, in four modules with 0 to 38 tokens of headroom"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/events.py" = 731
+".basicly/core/kit/tracker/snapshot.py" = 272
+"tests/test_kit_tracker_events.py" = 1549
+"tests/test_kit_tracker_snapshot.py" = 716

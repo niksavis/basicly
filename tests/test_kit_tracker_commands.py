@@ -214,13 +214,28 @@ def test_a_blocker_the_ledger_does_not_hold_reads_as_unknown_not_as_satisfied(
 
 
 def test_a_comment_is_appended_in_order(ledger: Path) -> None:
-    """The work log: 45% of this repository's own tracker traffic is comments."""
+    """The work log: 46% of this repository's own tracker traffic is prose."""
     record = root_of(ledger)
 
     commands.comment(ledger, record, "first")
     commands.comment(ledger, record, "second")
 
     assert queries.folded(ledger)[record].comments == ["first", "second"]
+
+
+def test_prose_is_written_as_a_note_and_never_as_a_comment(ledger: Path) -> None:
+    """The writer half of the split (basicly-vkh0.30), asserted on the kind on disk.
+
+    The folded work log reads the same either way — that is what makes `comment` an alias —
+    so the state alone would pass while the writer still spelled the external tracker's word.
+    """
+    record = root_of(ledger)
+
+    commands.comment(ledger, record, "written today")
+
+    written = [event for event in events.read_events(ledger)[0] if event.payload.get("text")]
+    assert [event.kind for event in written] == [events.KIND_NOTE]
+    assert queries.folded(ledger)[record].comments == ["written today"]
 
 
 def test_an_empty_comment_is_refused(ledger: Path) -> None:

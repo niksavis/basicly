@@ -70,10 +70,12 @@ NEXT_PERIOD = "2027"
 
 
 def _lifecycle() -> list[Any]:
-    """Drafts touching every folded field: fields, status, comments, totals, a tombstone."""
+    """Drafts touching every folded field: fields, status, prose, typed state, a tombstone."""
     return [
         events.Draft(RECORD_A, "created", {"title": "a parent"}),
         events.Draft(RECORD_A, "status", {"status": "open"}),
+        events.Draft(RECORD_A, "checkpoint", {"checkpoint": "classify", "approved_by": "owner"}),
+        events.Draft(RECORD_A, "artifact", {"artifact": "plan", "body": {"units": 2}}),
         events.Draft(RECORD_B, "created", {"title": "a sibling"}),
         events.Draft(RECORD_B, "dispatch", {"spend_micros": 1250}),
         events.Draft(RECORD_B, "comment", {"text": "a note"}),
@@ -323,6 +325,8 @@ def test_every_folded_field_survives_the_snapshot_round_trip(tmp_path: Path) -> 
     assert loaded.records[RECORD_C].tombstoned is True
     assert loaded.records[RECORD_B].totals.spend_micros == 1250
     assert loaded.records[RECORD_B].max_seq == 3
+    assert loaded.records[RECORD_A].checkpoints == {"classify": "owner"}
+    assert loaded.records[RECORD_A].artifacts == {"plan": {"units": 2}}
 
 
 def test_a_torn_trailing_line_never_makes_the_snapshot_permanently_stale(tmp_path: Path) -> None:
@@ -760,6 +764,65 @@ def test_a_seeded_fold_copies_the_checkpoint_it_resumes_from(tmp_path: Path) -> 
     assert base.records[RECORD_B].totals.events == 3
     assert first.records == second.records
     assert first.records[RECORD_B] is not base.records[RECORD_B]
+
+
+def test_a_resumed_fold_carries_the_typed_machine_state_across_the_boundary(
+    tmp_path: Path,
+) -> None:
+    """A checkpoint that dropped `checkpoints` would read an approved item as never approved.
+
+    The item is idle after the boundary, which is the case §4.6 bounds the steady state on:
+    its approval is only in the checkpoint, so a resumed fold that did not carry it would
+    disagree with the full-history fold that `fsck` runs (basicly-vkh0.30).
+    """
+    _build(tmp_path)
+    rotation = snapshot.rotate(tmp_path, NEXT_PERIOD)
+    _build(tmp_path, [events.Draft(RECORD_B, "note", {"text": "after the boundary"})])
+    assert rotation.checkpoint is not None
+
+    resumed = snapshot.fold_resumed(tmp_path)
+
+    assert resumed.resumed_from == rotation.checkpoint
+    assert resumed.result.records[RECORD_A].checkpoints == {"classify": "owner"}
+    assert resumed.result.records[RECORD_A].artifacts == {"plan": {"units": 2}}
+    assert resumed.result.records == snapshot.fold_all(tmp_path).result.records
+
+
+def test_a_snapshot_written_before_the_typed_kinds_reads_back_with_neither() -> None:
+    """Empty is the state such a file holds, not a default standing in for one.
+
+    No event of either kind could have been folded when it was written, so reading it back
+    empty is exact — and refusing it instead would make every consumer rebuild on the first
+    read after this change rather than on a staleness answer.
+    """
+    older = {
+        "record": RECORD_A,
+        "status": "open",
+        "fields": {"title": "a parent"},
+        "comments": ["a note"],
+        "tombstoned": False,
+        "totals": {"events": 2, "attempts": 0, "spend_micros": 0, "status": "open"},
+        "max_seq": 2,
+    }
+
+    state = snapshot.record_from_dict(older)
+
+    assert (state.checkpoints, state.artifacts) == ({}, {})
+    assert state.comments == ["a note"]
+
+
+def test_a_folded_records_typed_state_is_refused_when_it_cannot_be_read(tmp_path: Path) -> None:
+    """The file is regenerable, so a shape a consumer would have to guess at is refused."""
+    _build(tmp_path)
+    snapshot.rebuild(tmp_path)
+    line = _lines(snapshot.snapshot_path(tmp_path))[1]
+    broken = json.loads(line)
+    broken["checkpoints"] = {"classify": True}
+
+    with pytest.raises(snapshot.SnapshotError, match="name to an approver"):
+        snapshot.record_from_dict(broken)
+    with pytest.raises(snapshot.SnapshotError, match="artifacts must be an object"):
+        snapshot.record_from_dict({**json.loads(line), "artifacts": ["plan"]})
 
 
 # --- R9: no store shrinks silently, the derived one included -------------------

@@ -203,11 +203,14 @@ MAX_LOCK_STEALS = 8
 KIND_CREATED = "created"
 KIND_FIELD = "field"
 KIND_STATUS = "status"
+KIND_NOTE = "note"
 KIND_COMMENT = "comment"
 KIND_DISPATCH = "dispatch"
 KIND_TOMBSTONE = "tombstone"
 KIND_EDGE = "edge"
 KIND_GATE = "gate"
+KIND_CHECKPOINT = "checkpoint"
+KIND_ARTIFACT = "artifact"
 
 # The closed set (§4.5), declared once so a sibling aliases these names rather than respelling
 # a literal (basicly-vkh0.36). A non-member is read, never refused.
@@ -215,12 +218,22 @@ KNOWN_KINDS = frozenset({
     KIND_CREATED,
     KIND_FIELD,
     KIND_STATUS,
+    KIND_NOTE,
     KIND_COMMENT,
     KIND_DISPATCH,
     KIND_TOMBSTONE,
     KIND_EDGE,
     KIND_GATE,
+    KIND_CHECKPOINT,
+    KIND_ARTIFACT,
 })
+
+# The one kind that carries prose, and the external tracker's word for the same event. A
+# `comment` is **aliased, never retired**: 2,667 of this ledger's 5,752 events are `comment`
+# [measured 2026-08-18 at 756cce66, the census in §32.3], the log is never rewritten, and a
+# reader that skipped them would drop the prose history of every item older than this change
+# (§32.3.2, basicly-vkh0.30). A new writer records `note`.
+PROSE_KINDS = frozenset({KIND_NOTE, KIND_COMMENT})
 
 # What the fold does with a kind: applies its state, leaves it to a sibling, or does not know
 # it. Delegation and ignorance shared one field until basicly-vkh0.38, which made `edge` and
@@ -517,7 +530,13 @@ class RecordState:
         record: The item's id.
         status: Its status, or ``None`` if no ``status`` event has landed.
         fields: Values set by ``created`` and ``field`` events.
-        comments: ``comment`` texts in canonical order.
+        comments: Prose in canonical order, from a ``note`` and from its alias ``comment``.
+        checkpoints: Approved checkpoint name to the approver the event named, ``""`` when it
+            named none. A second approval of one checkpoint replaces the first; the log holds
+            no withdrawal, so absence is the only "not approved".
+        artifacts: Handoff artifact kind to the last body recorded under it. Last wins, the
+            rule `basicly.artifact_record` already reads its markers by: a unit re-decomposed
+            under a changed plan hands on the plan its current children came from.
         tombstoned: A ``tombstone`` event has landed. The record stays in the fold: a
             delete leaves a tombstone rather than removing anything, or a later mint hands
             its id to a new record and the history reads as one record changing its mind.
@@ -530,6 +549,8 @@ class RecordState:
     status: str | None = None
     fields: dict[str, object] = field(default_factory=dict)
     comments: list[str] = field(default_factory=list)
+    checkpoints: dict[str, str] = field(default_factory=dict)
+    artifacts: dict[str, object] = field(default_factory=dict)
     tombstoned: bool = False
     totals: Totals = field(default_factory=Totals)
     max_seq: int = 0
@@ -580,12 +601,42 @@ def _apply_status(state: RecordState, payload: Mapping[str, object]) -> None:
     state.status = payload["status"]  # type: ignore[assignment]
 
 
-def _apply_comment(state: RecordState, payload: Mapping[str, object]) -> None:
-    """A comment is appended. Comments are 45% of this repo's tracker traffic."""
+def _apply_note(state: RecordState, payload: Mapping[str, object]) -> None:
+    """Prose is appended, under whichever of :data:`PROSE_KINDS` carried it."""
     text = payload.get("text", "")
     if not isinstance(text, str):
-        raise InvalidEventError(f"a {KIND_COMMENT} event needs string text, got {text!r}")
+        raise InvalidEventError(f"a {KIND_NOTE} event needs string text, got {text!r}")
     state.comments.append(text)
+
+
+def _apply_checkpoint(state: RecordState, payload: Mapping[str, object]) -> None:
+    """One approval, read by name.
+
+    The approver is a payload field and not the event's ``actor``: the engine records an
+    owner's approval under its own name, so the recorder is not the approver.
+    """
+    name = payload.get("checkpoint")
+    if not isinstance(name, str) or not name:
+        raise InvalidEventError(f"a {KIND_CHECKPOINT} event needs a checkpoint name, got {name!r}")
+    approver = payload.get("approved_by", "")
+    if not isinstance(approver, str):
+        raise InvalidEventError(
+            f"a {KIND_CHECKPOINT} event needs a string approved_by, got {approver!r}"
+        )
+    state.checkpoints[name] = approver
+
+
+def _apply_artifact(state: RecordState, payload: Mapping[str, object]) -> None:
+    """One handoff artifact, keyed by the artifact kind it declares.
+
+    ``body`` sits outside :data:`TRUNCATABLE_KEYS` on purpose, which is the nesting
+    :func:`_prepare_entry` names for structured evidence: an artifact its consumer refuses
+    on must not arrive as a fragment that reads like a short one (basicly-pp7q4i).
+    """
+    kind = payload.get("artifact")
+    if not isinstance(kind, str) or not kind:
+        raise InvalidEventError(f"an {KIND_ARTIFACT} event needs an artifact kind, got {kind!r}")
+    state.artifacts[kind] = payload.get("body")
 
 
 def _apply_tombstone(state: RecordState, payload: Mapping[str, object]) -> None:  # noqa: ARG001
@@ -596,12 +647,18 @@ def _apply_tombstone(state: RecordState, payload: Mapping[str, object]) -> None:
 # `dispatch` has no handler on purpose — its state is the accumulator's `attempts`, and a no-op
 # function here would read as an oversight — so it is named beside them below rather than in
 # them. Both together are where state is applied, which is what :func:`classify_kind` reads.
+# A dispatch's telemetry rides in that same event's payload and `accumulate` sums it by name
+# (`spend_micros`); a reading is not a kind of its own, and a second `dispatch` for one
+# dispatch would count a second attempt (§32.3).
 _HANDLERS: dict[str, Callable[[RecordState, Mapping[str, object]], None]] = {
     KIND_CREATED: _apply_created,
     KIND_FIELD: _apply_field,
     KIND_STATUS: _apply_status,
-    KIND_COMMENT: _apply_comment,
+    KIND_NOTE: _apply_note,
+    KIND_COMMENT: _apply_note,
     KIND_TOMBSTONE: _apply_tombstone,
+    KIND_CHECKPOINT: _apply_checkpoint,
+    KIND_ARTIFACT: _apply_artifact,
 }
 
 APPLIED_KINDS = frozenset(_HANDLERS) | {KIND_DISPATCH}
@@ -627,6 +684,8 @@ def _resumed(state: RecordState) -> RecordState:
         status=state.status,
         fields=dict(state.fields),
         comments=list(state.comments),
+        checkpoints=dict(state.checkpoints),
+        artifacts=dict(state.artifacts),
         tombstoned=state.tombstoned,
         totals=state.totals,
         max_seq=state.max_seq,
