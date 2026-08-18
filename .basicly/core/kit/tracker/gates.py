@@ -4,7 +4,7 @@ The boundary is *what a gate result means* against `events.py`, which stores the
 folds no state for it (§4.5) — the split `provenance.py` takes for the ``edge`` kind. The
 loop asks *is this gate green* at every advance (basicly-vkh0.26).
 
-The writer is the dual write, `basicly.mirror`, translating an accepted ``br gate report``;
+The writer is the dual write, `basicly.mirror`, translating an accepted gate report;
 no export holds a gate field, so `migrate.py` had nothing to import and this kind arrives
 only from a live write (`differential.EXPORT_CANNOT_EXPRESS`).
 
@@ -80,7 +80,7 @@ class InvalidGateError(events.InvalidEventError):
 # `events.KNOWN_KINDS`; this is that name rather than a second one (basicly-vkh0.36).
 KIND_GATE = events.KIND_GATE
 
-# One spelling per field (R2), and these three are `br gate report`'s own.
+# One spelling per field (R2), and these three are it.
 GATE_NAME_KEY = "gate"
 GATE_PROVIDER_KEY = "provider"
 GATE_PASSED_KEY = "passed"
@@ -125,8 +125,8 @@ class GateResult:
     """One recorded gate result: the issue, the gate, the verdict, who claimed it, when.
 
     Attributes:
-        provider: ``br gate report`` authenticates nothing, so whose claim counts is the
-            caller's vocabulary (:meth:`GateView.green`).
+        provider: Unauthenticated, so whose claim counts is the caller's vocabulary
+            (:meth:`GateView.green`).
         ts: When the ledger recorded it. Evidence, never an ordering key (§9.5).
         event_id: What a reader follows the claim back to.
     """
@@ -153,8 +153,8 @@ class GateView:
     """One issue's gate results, and the questions the loop asks of them.
 
     Attributes:
-        results: Its latest result per ``(gate, provider)`` pair — what `br` holds, rather
-            than one row per gate — in the ledger's own order.
+        results: Its latest result per ``(gate, provider)`` pair, rather than one row per
+            gate, in the ledger's own order.
         unreadable: Gate-family kinds on this issue this version does not model.
     """
 

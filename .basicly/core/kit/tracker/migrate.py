@@ -1,15 +1,15 @@
-r"""Import the existing tracker into the event log, with deletion as a statement.
+r"""Import a foreign tracker's export into the event log, with deletion as a statement.
 
-Step 1 of the four-step cutover (`work-tracker.md` §5, basicly-vkh0.17): read
-the beads JSONL export the current tracker already writes and append it to the event log as
-events. Steps 2-4 — the shadow differential (basicly-vkh0.18), the dual write and the flip
-(basicly-vkh0.19) — read what this produces and are not this module's business.
+**This module's live input contract is the beads JSONL export format**, conventionally
+`.beads/issues.jsonl`: one JSON record per line. That format is the only thing this module
+reads, so every mention of it below is the contract rather than a citation — the kit itself
+neither writes nor requires it (`work-tracker.md` §5, basicly-vkh0.17).
 
 ## The three §5.1 risks, and what each one is here
 
-Upstream demoted `.beads/issues.jsonl` to an export when it moved to Dolt, so the format
-this reads is a second-class citizen owned by somebody else. That gives the import three
-properties it would otherwise be tempting to discover at the flip:
+The format's owner demoted it to an export, so it is a second-class citizen that will drift
+under this reader. That gives the import three properties it would otherwise be tempting to
+discover late:
 
 1. **The format will drift, so one bad record is a finding rather than a failed import.**
    An unparseable line, an id the commit gate would refuse, an edge pointing at something

@@ -60,7 +60,7 @@ of them is discarded.
 
 ## No slugs, and the mechanism
 
-``br create --slug`` mints ids like ``basicly-my-slug``, and the commit-message gate
+An id like ``basicly-my-slug`` defeats the commit-message gate, which
 derives its known prefixes by splitting an id at the *first* hyphen: it then reads that
 id as prefix ``basicly`` plus root ``my``, finds ``basicly-my`` in no ledger, and
 rejects the commit as referencing an unknown issue (basicly-jms0). A hyphen inside an

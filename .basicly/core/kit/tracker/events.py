@@ -27,8 +27,8 @@ beats a state you cannot explain.
 
 ## 2. Nothing branches on a wall clock
 
-A timestamp is **evidence, never a constraint** (§9.5). `br` validates
-``updated_at >= created_at`` and hard-errors when the host clock steps backwards, which an
+A timestamp is **evidence, never a constraint** (§9.5). A tracker validating
+``updated_at >= created_at`` hard-errors when the host clock steps backwards, which an
 unconverged NTP resync does routinely — that turns a host's clock into a source of tracker
 failures mid-landing (R1). Here the clock is an injected argument, ``ts`` is recorded and
 read by nobody, and it is **excluded from the event id digest** — so appending the same
@@ -51,9 +51,7 @@ from becoming a second source of truth:
   never a repair in place**.
 - **One accumulator, called from both sides.** :func:`accumulate` is called by the writer
   and by the fold; there is no hand-written increment anywhere. Two copies that disagree is
-  the defect this repo keeps paying for — `session_issue_ids` disagreed by 14 beads
-  (`basicly-tcmy.30`), the context ceiling disagreed about a bead's whole fate
-  (`basicly-7kxq`).
+  the defect this rule exists for.
 - **Only pure functions of the events qualify.** Counts, integer sums, and the last status.
   Spend is summed in **integer micro-units** rather than floats: a float sum is exact only
   for the order it was taken in, and a cached total that depends on summation order is not a
@@ -130,8 +128,8 @@ class LockUnavailableError(LedgerError):
 
     ``retryable`` is a class attribute rather than prose because R7/R8 make it the
     contract: contention waits, and a wait that gives up **says so**, so the caller backs
-    off instead of the gate failing. `br` marked this class of failure
-    ``retryable: false`` and cost three lanes their rework budget (basicly-vkh0.10).
+    off instead of the gate failing. Marking this class of failure
+    ``retryable: false`` cost three lanes their rework budget (basicly-vkh0.10).
     """
 
     retryable = True

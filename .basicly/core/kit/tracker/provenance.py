@@ -185,9 +185,9 @@ KIND_EDGE = events.KIND_EDGE
 # `events.TRUNCATABLE_KEYS` may cut — see the module docstring for why that split is not
 # a style choice.
 #
-# One spelling per field, and these names are it (R2). `br` spells one dependency edge
-# `id`/`dependency_type` from one command and `depends_on_id`/`type` from another, and a
-# reader of the wrong spelling gets an empty graph rather than an error (basicly-kjc5.10).
+# One spelling per field, and these names are it (R2). A store spelling one dependency edge
+# `id`/`dependency_type` from one command and `depends_on_id`/`type` from another leaves a
+# reader of the wrong spelling with an empty graph rather than an error (basicly-kjc5.10).
 KEY_TARGET = "target"
 KEY_TYPE = "edge_type"
 KEY_LABEL = "provenance"

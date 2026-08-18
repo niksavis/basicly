@@ -26,8 +26,8 @@ Three findings, each catching a different route to a self-agreeing comparison:
     verification rather than a caller's assertion about itself.
 ``export-backed-reference``
     The reference read *an* export — any export. Still refused, and on measured grounds
-    rather than on principle: a `br gate report` row is visible to `br gate list` and is
-    **absent from `.beads/issues.jsonl`** (probed 2026-08-06 on a throwaway tracker: the
+    rather than on principle: a gate-report row is visible to a live gate query and is
+    **absent from the JSONL export** (probed 2026-08-06 on a throwaway tracker: the
     exported record carried no gate field at all, while a checkpoint comment marker written
     beside it survived). An export therefore cannot answer one of the three queries, so a
     snapshot-backed reference is silent exactly where the live tracker is the only witness.
@@ -53,7 +53,7 @@ self-agreeing comparison; it cannot make one impossible. What closes the remaini
 The hazard this design keeps paying for is a gate that passes because it never fired. A
 comparison over a population where every record gives the **same** answer to a query has
 discriminated nothing, and gate status is the live case rather than a hypothetical one: on
-this repo's own tracker every bead currently reports zero gate rows, so the gate query is
+the tracker this was built against every record reported zero gate rows, so that query is
 constant and a differential that only reported ``clean`` would be reporting the absence of
 evidence as agreement. :attr:`DifferentialReport.inconclusive` names every query whose
 answers were constant across both sides, and :attr:`clean` and :attr:`conclusive` are
@@ -79,11 +79,11 @@ engine constant it mirrors so drift is visible rather than silent.
 
 Kit rules (§4): **no basicly**, standard library only, no network, no subprocess. It reads
 the ledger and takes the reference side as an injected callable — which is also the only
-shape available, because reading the live tracker means spawning `br` and the kit may not.
-The engine's side of that seam is `basicly.loop_state` and `basicly.policy`: one
-``br show <every id> --json`` answers status, ``external_ref``, dependencies and comments for
-the whole population in a single spawn (measured: 639 records in 0.91s), and ``br gate list``
-answers the query the export cannot.
+shape available, because reading a live tracker means spawning a process and the kit may not.
+The engine's side of that seam is `basicly.loop_state` and `basicly.policy`: one bulk
+record query answers status, ``external_ref``, dependencies and comments for the whole
+population in a single spawn (measured: 639 records in 0.91s), and a gate query answers
+what the export cannot.
 
 It must stay parseable by an interpreter older than this repo's 3.14 floor: no syntax newer
 than 3.9, and one exception class per handler (`.basicly/core/kit/README.md`).
@@ -181,7 +181,7 @@ LOSSY_SNAPSHOT_REASON = (
 # The measured asymmetry behind RULE_EXPORT_BACKED. Recorded here rather than in prose only,
 # because it is the fact that makes the refusal evidence instead of caution.
 EXPORT_CANNOT_EXPRESS = (
-    "a br gate report row is visible to br gate list and absent from the JSONL export, so an "
+    "a gate-report row is visible to a live gate query and absent from the JSONL export, so an "
     "export-backed reference cannot answer the gate-status query at all"
 )
 
@@ -204,7 +204,7 @@ class Vocabulary:
             (`basicly.config.DEFAULT_REQUIRED_GATES`).
         engine_gate_providers: Providers whose result counts on a *required* gate
             (`basicly.config.ENGINE_GATE_PROVIDERS`). A foreign result on a required gate is
-            disregarded, because ``br gate report`` authenticates nothing.
+            disregarded, because a gate report authenticates nothing.
         worktree_ref_prefix: How an in-flight worktree binding is spelled on
             ``external_ref`` (`basicly.loop_state.WORKTREE_REF_PREFIX`).
         known_statuses: The tracker's own status vocabulary
@@ -253,7 +253,7 @@ DEFAULT_VOCABULARY = Vocabulary()
 
 @dataclass(frozen=True)
 class GateRow:
-    """One recorded gate result, as ``br gate list`` reports it."""
+    """One recorded gate result, as a live gate query reports it."""
 
     gate: str
     provider: str
@@ -265,11 +265,11 @@ class Edge:
     """One outgoing dependency edge: this record depends on *target*, of type *type*.
 
     Held on the **dependent**, which is where both stores put it — `migrate.py` records an
-    edge event on the dependent record, and `br` lists it under that record's
+    edge event on the dependent record, and a live tracker lists it under that record's
     ``dependencies``. Dependents are therefore never supplied: they are inverted from the
     population by :func:`children_of`, so the two sides cannot disagree merely because one
     of them was asked for a field the other does not carry (the export has no
-    ``dependents`` key; ``br show --json`` does).
+    ``dependents`` key; a live record query does).
     """
 
     target: str
@@ -281,11 +281,10 @@ class RecordView:
     """One record as one tracker reports it — exactly the inputs the queries read.
 
     Deliberately narrow. Everything a store holds that no query reads — titles,
-    descriptions, timestamps, br's ``source_repo_path`` — is left out, so an incidental
+    descriptions, timestamps, a store's ``source_repo_path`` — is left out, so an incidental
     difference between the two stores cannot be reported as a disagreement about a verdict.
-    The export's comment text is redacted on publish while the live tracker's is not
-    (`basicly.br.scrub_export`), which is exactly such a difference: it changes the bytes
-    and it cannot change a marker.
+    The export's comment text may be redacted on publish while the live tracker's is not,
+    which is exactly such a difference: it changes the bytes and it cannot change a marker.
 
     Attributes:
         record: The record's id.
@@ -407,12 +406,12 @@ def worktree_bound(view: RecordView, vocabulary: Vocabulary) -> bool:
 def gate_verdict(view: RecordView, vocabulary: Vocabulary) -> GateVerdict:
     """Classify *view*'s gate rows against the required set.
 
-    `br` keeps one result per ``(gate, provider)`` rather than one per gate, so the engine's
-    own result is selected independently instead of by collapsing every row for a gate and
-    taking the last — a foreign row landing last would otherwise become authoritative
+    A live tracker keeps one result per ``(gate, provider)`` rather than one per gate, so
+    the engine's own result is selected independently instead of by collapsing every row for
+    a gate and taking the last — a foreign row landing last would otherwise become authoritative
     (basicly-jr0l.51).
 
-    The row tuples are **sorted**, and that is not cosmetic: `br gate list` guarantees no row
+    The row tuples are **sorted**, and that is not cosmetic: a gate query guarantees no row
     order and the ledger's order is the write order, so an unsorted verdict would compare
     unequal between two stores holding the same rows and report a disagreement that is only
     an ordering.
@@ -450,7 +449,7 @@ def derive_phase(  # noqa: PLR0913 — one argument per derived input; see the d
     Mirrors `basicly.loop_state.derive_phase`, ladder and all, including the part that rule
     exists for: the ship rung requires the node to have **landed**, not merely to carry an
     approved ship checkpoint, because a ship approval recorded out of order on a node that
-    never built otherwise derived ``ship`` and closed a bead with no work done
+    never built otherwise derived ``ship`` and closed a record with no work done
     (basicly-k35r, basicly-jr0l.49). Takes the derived inputs rather than a
     :class:`RecordView` so it is the same shape as the engine's function and can be diffed
     against it by eye.
@@ -582,8 +581,9 @@ def views_from_events(ledger_events: Iterable[Any]) -> dict[str, RecordView]:
     tolerant direction working as specified rather than a gap to route around.
 
     A gate row keyed ``(gate, provider)`` keeps only its latest event, because that is what
-    `br` holds: one result per pair rather than one per gate. Collapsing to one row per gate
-    here would make a foreign provider's result outvote the engine's, which is the defect
+    a live tracker holds: one result per pair rather than one per gate. Collapsing to one
+    row per gate here would make a foreign provider's result outvote the engine's, which is
+    the defect
     :func:`gate_verdict` exists to avoid (basicly-jr0l.51).
     """
     collected = list(ledger_events)
@@ -745,7 +745,7 @@ def audit_reference(
 
     *baseline* is the reference's answers about the unperturbed ledger, passed in rather than
     fetched here: an unmoved reference then costs **one** extra call, and only one that moved
-    pays for the control read. Reading the live tracker is a `br` spawn on the engine's side
+    pays for the control read. Reading the live tracker is a process spawn on the engine's side
     of the seam, and a probe that tripled its cost every run would argue for switching it off.
     """
     refusals: list[Refusal] = []
@@ -883,8 +883,8 @@ def _constant_queries(
 ) -> list[Inconclusive]:
     """Queries whose answers never varied across the compared population.
 
-    The vacuity check, and it is not hypothetical: on this repo's live tracker every bead
-    reports zero gate rows, so the gate query is constant and a report that only said
+    The vacuity check, and it is not hypothetical: on the tracker this was built against
+    every record reported zero gate rows, so the gate query is constant and a report saying
     ``clean`` would be reporting the absence of evidence as agreement.
     """
     found: list[Inconclusive] = []

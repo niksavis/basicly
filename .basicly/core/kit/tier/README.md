@@ -232,6 +232,6 @@ The standalone design note (`docs/design/tier-kit.md`) was deleted 2026-08-08 on
 shipped: this README is now the whole record, and the traps above are the part that was worth
 keeping. The hybrid rationale — why injection is preferred over static emission, and why copilot
 cannot take it — is in the section above.
-The beads carry the measurements: `basicly-wbsz.1` the resolver, `wbsz.2` the hook
+The work records carry the measurements: `basicly-wbsz.1` the resolver, `wbsz.2` the hook
 and the alias finding, `wbsz.3` the installer and the live end-to-end proof,
 `basicly-dukb` the portable project-scope command.

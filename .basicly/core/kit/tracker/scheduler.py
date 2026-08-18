@@ -1,8 +1,7 @@
 r"""The owned ranking: a pure score over the graph, with no age term (basicly-vkh0.20).
 
-`work-tracker.md` §9.2 settled what replaces `br scheduler`, and the sharp half of
-it is a *subtraction*: **the ranking must drop `created_at`**. br's documented fallback
-policy is ``priority ASC, created_at ASC, id ASC``, and an age term makes dispatch order
+`work-tracker.md` §9.2 settled this ranking, and the sharp half of it is a
+*subtraction*: **the ranking must drop `created_at`**. An age term makes dispatch order
 clock-dependent for a graph nobody changed — which D9 forbids for anything outliving the
 pass. Two ledgers holding the same work, stamped by two clocks, must rank identically, and
 the way that is won here is by **structure rather than by discipline**: :class:`Candidate`
@@ -22,8 +21,8 @@ reach. Taking the view instead is what keeps it out.
 1. **Unblocked only.** `differential.is_ready` decides it, unchanged and not re-spelled
    here: dispatchable status, every blocking dependency closed, no parent-child children,
    never a tombstone. One definition of ready in the kit, which is the point of calling it.
-2. **Priority**, ascending — 0 is critical, 4 is backlog (`br schema issue`), and 2 is what
-   a record with no usable priority is read as, matching the default br applies.
+2. **Priority**, ascending — 0 is critical, 4 is backlog, and 2 is what a record with no
+   usable priority is read as.
 3. **Dependent count**, descending: unblock the most work first, which is the critical
    path. Counted over :attr:`Vocabulary.blocking_types` edges only, and only from
    dependents that are still live — a closed or tombstoned dependent is work already done,
@@ -42,7 +41,7 @@ the ranking is **by score, then id** rather than by a tuple the score merely acc
 
     score = (BOTTOM_PRIORITY - priority) * PRIORITY_WEIGHT + min(dependents, DEPENDENT_CEILING)
 
-Higher is better, matching br's direction. Because :data:`PRIORITY_WEIGHT` is one more than
+Higher is better. Because :data:`PRIORITY_WEIGHT` is one more than
 :data:`DEPENDENT_CEILING`, priority strictly dominates — no number of dependents lifts a P2
 over a P1 — and the two terms stay separable: ``divmod(score, PRIORITY_WEIGHT)`` returns
 them both, which is what :func:`explain` does. A recorded score plus :data:`SCHEMA` is
@@ -52,17 +51,14 @@ The ceiling is what buys the domination, and it is a real (if distant) bound: at
 :data:`DEPENDENT_CEILING` dependents the critical-path term saturates and two such records
 tie, falling to id. Measured against this repo's live export — 643 records — the largest
 blocking-dependent count is 5, so the ceiling is some two hundred times the observed
-maximum. A priority *outside* br's 0-4 is not clamped: it scores negative or above the
+maximum. A priority *outside* the 0-4 band is not clamped: it scores negative or above the
 band and still orders correctly, because clamping is the one treatment that would make two
 different priorities tie.
 
-## What this deliberately does not reproduce
+## Every ready record is ranked
 
-`br scheduler` recommends only **unclaimed** work, so for most dispatched lanes it has no
-rank at all and the supervisor orders them by adoption (§9.2). This ranks every ready
-record, ``in_progress`` included, because `is_ready` admits it and a second, narrower
-notion of ready living here is the drift the kit exists to avoid. The consequence is
-concrete and wanted: the owned ranking has an opinion where br had none.
+``in_progress`` included, because `is_ready` admits it and a second, narrower notion of
+ready living here is the drift the kit exists to avoid (§9.2).
 
 Nothing here reads a clock, spawns a process, or imports the engine (§4).
 """
@@ -125,10 +121,9 @@ events = differential.events
 
 # --- the policy, versioned so a recorded score stays readable -----------------
 
-# The envelope a recorded rank is interpretable against (basicly-vkh0.3). Versioned for the
-# same reason br's is: a bare integer means nothing without the policy that produced it, and
-# `br.scheduler.v1` is what a marker written before the flip carries, so the two must be
-# distinguishable on sight.
+# The envelope a recorded rank is interpretable against (basicly-vkh0.3). Versioned because
+# a bare integer means nothing without the policy that produced it, so a marker written
+# under an older policy stays distinguishable on sight.
 SCHEMA = "basicly.scheduler.v1"
 
 # The ordering, in full, as the answer carries it. Not "the fallback sort": there is no
@@ -137,12 +132,12 @@ SCHEMA = "basicly.scheduler.v1"
 SORT = "priority ASC, dependents DESC, id ASC"
 
 # Where the two ranking terms are read from on the fold, and the display field carried with
-# them. `br create` and `migrate.py` both put all three on the ``created`` event.
+# them. Both `cli.py`'s ``create`` and `migrate.py` write them onto the ``created`` event.
 PRIORITY_FIELD = "priority"
 TITLE_FIELD = "title"
 
-# br's own priority band and default: 0 is critical, 4 is backlog, an omitted priority is 2
-# (`br schema issue`). A record whose priority is absent or not an integer reads as the
+# The priority band and its default: 0 is critical, 4 is backlog, an omitted priority is 2.
+# A record whose priority is absent or not an integer reads as the
 # default rather than being refused — the ledger holds whatever was imported, and a ranking
 # that raised on one malformed field would take the whole ready set down with it.
 BOTTOM_PRIORITY = 4
@@ -169,7 +164,7 @@ class Candidate:
     Attributes:
         view: The record's `differential.RecordView` — status, edges and tombstone, which
             is everything :func:`differential.is_ready` needs and no timestamp.
-        priority: br's 0-4 band, :data:`DEFAULT_PRIORITY` when the ledger has no usable one.
+        priority: The 0-4 band, :data:`DEFAULT_PRIORITY` when the ledger has no usable one.
         title: The record's title, for display only.
     """
 
@@ -244,7 +239,7 @@ def score(priority: int, dependents: int) -> int:
     """The record's score: priority dominant, dependents beneath it, higher is better.
 
     Args:
-        priority: br's 0-4 band. Outside it the score leaves the band rather than clamping,
+        priority: The 0-4 band. Outside it the score leaves the band rather than clamping,
             which keeps two different priorities from tying.
         dependents: Live blocking dependents, saturating at :data:`DEPENDENT_CEILING`.
     """

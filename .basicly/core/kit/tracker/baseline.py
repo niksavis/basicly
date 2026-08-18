@@ -1,14 +1,14 @@
 """The flip boundary: which records the shadow differential may be judged on.
 
 Step 2 of the cutover (`work-tracker.md` §5) proves **the dual write agrees**, not that
-history agrees. `basicly-c357` records why both open beads about the same gap were right —
+history agrees. `basicly-c357` records why both open records about the same gap were right —
 a consumer needs a re-runnable import (`vkh0.23`), and closing this repo's historical gap
 by re-importing would leave the owned side tracking the external one (`u4xu`).
 
 A record the **ledger** holds is classified by the marker its own producer wrote, so no
 flip point has to be kept in step with the tree: ``migrate.py`` stamps every extracted
-event with :data:`IMPORT_MARKER`, and the repair for a record created by running `br` **by
-hand** (`basicly-vkh0.24`) stamps :data:`ADOPTION_SOURCE` — in scope and judged, but
+event with :data:`IMPORT_MARKER`, and the repair for a record created **by hand**
+(`basicly-vkh0.24`) stamps :data:`ADOPTION_SOURCE` — in scope and judged, but
 evidence for nothing, because the dual write never touched it. A record the **reference**
 holds and the ledger does not has no ledger event to classify, so it needs the declared
 baseline below. That set can only shrink — a dual write puts every new record on both
