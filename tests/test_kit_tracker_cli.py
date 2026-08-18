@@ -315,3 +315,42 @@ def test_an_unusable_prefix_is_refused_by_the_id_rules(
     """`ids.IdError` subclasses ValueError, so one handler covers it — assert it is caught."""
     assert cli.main(["create", str(tmp_path / "l"), "--prefix", "ac-me"]) == cli.EXIT_REFUSED
     assert "prefix" in json.loads(capsys.readouterr().out)["refused"]
+
+
+# --- the dependency graph (basicly-ztik9a) -----------------------------------
+
+
+def test_show_carries_both_directions_of_the_dependency_graph(tmp_path: Path) -> None:
+    """The fold holds an edge on the dependent, so a parent's children are in neither half.
+
+    A consumer that copied only the kit had no command answering what a record blocks or
+    what its children are, which is the whole graph the scheduler already ranks by.
+    """
+    ledger = tmp_path / "l"
+    root = cli.create_record(ledger, {"title": "ship it"}, prefix="acme")[0].record
+    child = cli.commands.create_child(ledger, root, {"title": "parse"})[0].record
+
+    parent = cli.read_record(ledger, root)
+    assert parent is not None
+    assert parent["dependencies"] == []
+    assert parent["dependents"] == [
+        {"id": child, "dependency_type": "parent-child", "status": "open", "title": "parse"}
+    ]
+
+    held = cli.read_record(ledger, child)
+    assert held is not None
+    assert held["dependencies"] == [
+        {"id": root, "dependency_type": "parent-child", "status": "open"}
+    ]
+    assert held["dependents"] == []
+
+
+def test_a_record_with_no_edges_renders_both_keys_empty(tmp_path: Path) -> None:
+    """Absence has to be distinguishable from a surface that never renders the keys."""
+    ledger = tmp_path / "l"
+    record = cli.create_record(ledger, {}, prefix="acme")[0].record
+
+    shown = cli.read_record(ledger, record)
+
+    assert shown is not None
+    assert (shown["dependencies"], shown["dependents"]) == ([], [])

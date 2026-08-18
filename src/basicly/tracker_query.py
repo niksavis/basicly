@@ -20,7 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from basicly import owned_store, ui
+from basicly import owned_store, tracker, ui
 
 # The kit module answering every verb here. Named rather than reached through the
 # differential, for the reason `owned_store.SCHEDULER_KIT_MODULE` gives: it sits beside
@@ -105,16 +105,21 @@ def cmd_stats(args: argparse.Namespace) -> int:
 
 
 def cmd_show(args: argparse.Namespace) -> int:
-    """Print one record's folded state.
+    """Print one record's folded state, with both directions of its dependency graph.
 
     Returns 1 for a record the ledger does not hold, and says so: ``found: false`` reads
     exactly like a record with no body when a caller keys on a field instead.
+
+    The edges come from the seam rather than from the kit's fold: they are the one thing
+    a record's own events do not carry — an edge is stored on the dependent — so the
+    inverse direction has to be inverted from the whole population (basicly-ztik9a).
     """
     repo_root = Path.cwd()
     found = _queries(repo_root).read_record(owned_store.ledger_dir(repo_root), args.record)
     if found is None:
         _report({"record": args.record, "found": False})
         return 1
+    found.update(tracker.record_edges(repo_root, args.record))
     _report(found)
     return 0
 

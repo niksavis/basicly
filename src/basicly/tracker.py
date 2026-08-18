@@ -215,26 +215,70 @@ def _rendered(
             tracker_argv.labels_of(record[tracker_argv.LABELS_FIELD])
         )
     record["comments"] = [{"text": text} for text in state.comments]
-    view = views.get(issue_id)
-    record["dependencies"] = [
-        {"id": edge.target, "dependency_type": edge.type}
-        for edge in (view.dependencies if view is not None else ())
-    ]
-    record["dependents"] = [
-        {
-            "id": other,
-            "dependency_type": edge.type,
-            "status": held.status or "",
-            # The title travels with the edge because a caller listing a parent's children
-            # has no second read to reach for: `loop`'s sub-task report names them, and
-            # falling back to the id there prints an id twice.
-            "title": str(states[other].fields.get("title", "")) if other in states else "",
-        }
-        for other, held in sorted(views.items())
-        for edge in held.dependencies
-        if edge.target == issue_id and not held.tombstoned
-    ]
+    record.update(_edges(issue_id, views, states))
     return record
+
+
+def _edges(issue_id: str, views: Mapping[str, Any], states: Mapping[str, Any]) -> dict[str, list]:
+    """*issue_id*'s outgoing and incoming edges, each naming the other record's status.
+
+    A target the ledger does not hold reads ``unknown`` rather than ``""``, the spelling
+    `queries._open_blockers` uses: an empty status is a record that is held and never
+    opened, and a dangling edge must never read as one.
+
+    The kit renders the same two lists in its own ``cli.read_record`` and may not import
+    this module; `test_tracker_query` holds the two producers to one shape.
+    """
+    view = views.get(issue_id)
+    return {
+        "dependencies": [
+            {
+                "id": edge.target,
+                "dependency_type": edge.type,
+                "status": _edge_status(views, edge.target),
+            }
+            for edge in (view.dependencies if view is not None else ())
+        ],
+        "dependents": [
+            {
+                "id": other,
+                "dependency_type": edge.type,
+                "status": held.status or "",
+                # The title travels with the edge because a caller listing a parent's
+                # children has no second read to reach for: `loop`'s sub-task report names
+                # them, and falling back to the id there prints an id twice.
+                "title": str(states[other].fields.get("title", "")) if other in states else "",
+            }
+            for other, held in sorted(views.items())
+            for edge in held.dependencies
+            if edge.target == issue_id and not held.tombstoned
+        ],
+    }
+
+
+def _edge_status(views: Mapping[str, Any], issue_id: str) -> str:
+    """*issue_id*'s status as the population reports it, or ``unknown`` when it holds none."""
+    view = views.get(issue_id)
+    return "unknown" if view is None else view.status or ""
+
+
+def record_edges(repo_root: Path, issue_id: str) -> dict[str, list]:
+    """Both directions of *issue_id*'s dependency graph, in :func:`owned_record`'s shape.
+
+    Split from :func:`owned_record` for the read that needs the graph over a record it
+    already has — `tracker_query.cmd_show` prints the kit's fold shape, which nests its
+    fields and carries no edge at all. Empty lists for a record the ledger does not hold,
+    so a caller merges both keys unconditionally: a *missing* key is what reads as a
+    surface that renders no edges (basicly-ztik9a).
+    """
+    try:
+        kit_module = kit(repo_root)
+        found = kit_module.read_ledger(ledger_dir(repo_root))
+        states = kit_module.events.fold(found).records
+        views = kit_module.views_from_events(found)
+    except TrackerDivergenceError, OSError, ValueError:
+        return {"dependencies": [], "dependents": []}
+    return _edges(issue_id, views, states)
 
 
 # --- Harness markers, carried natively (basicly-s5li) ------------------------

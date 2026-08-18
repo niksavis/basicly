@@ -194,3 +194,100 @@ def test_every_declared_verb_has_a_handler() -> None:
     declared = _subcommands_of(cli._build_parser(), "tracker")
 
     assert set(tracker_query.HANDLERS) <= declared
+
+
+# --- the dependency graph the fold already holds (basicly-ztik9a) ------------
+
+
+@pytest.mark.usefixtures("backlog")
+def test_show_carries_both_directions_of_the_dependency_graph(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """No command answered what a record blocks, holds, or is held by.
+
+    An edge is stored on the dependent, so a record's children exist only in the
+    population — the inverse read `supervise.derive_session` already needs and the
+    command line rendered nowhere.
+    """
+    assert cli.main(["tracker", "show", ROOT]) == 0
+
+    shown = _json_out(capsys)
+
+    assert shown["dependencies"] == []
+    assert shown["dependents"] == [
+        {
+            "id": f"{ROOT}.1",
+            "dependency_type": "parent-child",
+            "status": "open",
+            "title": "parse it",
+        },
+        {
+            "id": f"{ROOT}.2",
+            "dependency_type": "parent-child",
+            "status": "open",
+            "title": "render it",
+        },
+    ]
+
+    assert cli.main(["tracker", "show", f"{ROOT}.2"]) == 0
+
+    held = _json_out(capsys)
+
+    assert held["dependents"] == []
+    assert {(row["id"], row["dependency_type"], row["status"]) for row in held["dependencies"]} == {
+        (ROOT, "parent-child", "open"),
+        (f"{ROOT}.1", "blocks", "open"),
+    }
+
+
+def test_a_record_with_no_edges_prints_both_keys_empty(
+    backlog: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Absence has to be distinguishable from a surface that never renders the keys."""
+    flipped_tracker.seed(backlog, "tq-2", title="alone")
+
+    assert cli.main(["tracker", "show", "tq-2"]) == 0
+
+    shown = _json_out(capsys)
+
+    assert (shown["dependencies"], shown["dependents"]) == ([], [])
+
+
+def test_the_kit_and_the_engine_render_one_edge_shape(backlog: Path) -> None:
+    """Two producers, one shape, because the kit may not import the engine.
+
+    `queries` answers a consumer that copied the kit alone and `tracker._rendered`
+    answers every engine caller in the flat shape they parse, so the edge lists are
+    rendered twice. This is what holds the second to the first.
+    """
+    ledger = tracker.ledger_dir(backlog)
+    kit = tracker.kit(backlog)
+    # An edge into a record the ledger never held. Appended as an event because
+    # `commands.add_dependency` refuses one, and a status of "" would read as a record
+    # that is held and has no status.
+    kit.events.append(
+        ledger,
+        [
+            kit.events.Draft(
+                f"{ROOT}.1",
+                kit.migrate.KIND_EDGE,
+                {
+                    kit.migrate.EDGE_FROM: f"{ROOT}.1",
+                    kit.migrate.EDGE_TO: "tq-ghost",
+                    kit.migrate.EDGE_TYPE: "blocks",
+                },
+            )
+        ],
+    )
+    kit_cli = tracker.kit(backlog, "cli")
+
+    for record in (ROOT, f"{ROOT}.1", f"{ROOT}.2"):
+        kit_shown = kit_cli.read_record(ledger, record)
+        engine = tracker.owned_record(backlog, record)
+        assert engine is not None
+        assert kit_shown["dependencies"] == engine["dependencies"], record
+        assert kit_shown["dependents"] == engine["dependents"], record
+        if record == f"{ROOT}.1":
+            assert {"id": "tq-ghost", "dependency_type": "blocks", "status": "unknown"} in engine[
+                "dependencies"
+            ]

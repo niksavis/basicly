@@ -116,10 +116,66 @@ def _fields(title: str, pairs: Sequence[str]) -> dict[str, object]:
 # The record operations, kept under their original names because this module is the
 # kit's public entry point and `owned_write`, the engine and the kit's own tests reach
 # them here. The bodies moved to the two modules whose boundary they belong to, which is
-# the split this module's docstring already claimed.
+# the split this module's docstring already claimed; the read below composes two of
+# those answers rather than folding a third.
 create_record = commands.create_root
-read_record = queries.read_record
 query_records = queries.query_records
+
+
+def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
+    """One record's folded state with both directions of its dependency graph, or None.
+
+    An edge is stored on the dependent, so a record's *dependents* are in no half of the
+    fold and are inverted from the population; without them no kit command answered what
+    a record holds up (basicly-ztik9a). Both keys are always present, because an absent
+    one reads as a record with no edges. The engine renders the same two lists in
+    `basicly.tracker._edges`, which the kit may not import — `test_tracker_query` holds
+    the two producers to one shape.
+    """
+    states = queries.folded(directory)
+    state = states.get(record)
+    if state is None:
+        return None
+    views, _ = queries.views_and_children(directory)
+    shown = snapshot.record_to_dict(state)
+    shown.update(_edges(record, views, states))
+    return shown
+
+
+def _edges(record: str, views: Mapping[str, Any], states: Mapping[str, Any]) -> dict[str, object]:
+    """*record*'s outgoing and incoming edges, each naming the other record's status.
+
+    A target the fold does not hold is ``unknown``, the spelling `queries._open_blockers`
+    uses: ``""`` is what a record that is held and never opened reads as.
+    """
+    view = views.get(record)
+    return {
+        "dependencies": [
+            {
+                "id": edge.target,
+                "dependency_type": edge.type,
+                "status": _status(views, edge.target),
+            }
+            for edge in (view.dependencies if view is not None else ())
+        ],
+        "dependents": [
+            {
+                "id": other,
+                "dependency_type": edge.type,
+                "status": held.status or "",
+                "title": str(states[other].fields.get("title", "")) if other in states else "",
+            }
+            for other, held in sorted(views.items())
+            for edge in held.dependencies
+            if edge.target == record and not held.tombstoned
+        ],
+    }
+
+
+def _status(views: Mapping[str, Any], record: str) -> str:
+    """*record*'s status as the population reports it, or ``unknown`` when it holds none."""
+    view = views.get(record)
+    return "unknown" if view is None else view.status or ""
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -142,7 +198,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     create.add_argument("--status", default=DEFAULT_STATUS, help="the status to open it at")
 
-    show = sub.add_parser("show", help="read one record's folded state")
+    show = sub.add_parser("show", help="read one record's folded state and both edge directions")
     show.add_argument("directory", help="the ledger directory")
     show.add_argument("record", help="the record id")
 
