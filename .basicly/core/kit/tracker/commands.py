@@ -212,11 +212,15 @@ def comment(
     *,
     redact: Callable[[str], str] | None = None,
 ) -> list:
-    """Append one comment to *record*.
+    """Append one prose entry to *record*'s work log.
+
+    Written as :data:`events.KIND_NOTE`, the kind that carries prose (basicly-vkh0.30). The
+    **command** keeps the external tracker's word because its name is a consumer surface and
+    moves under its own deprecation window; the kind is not, so it moves now.
 
     Raises:
         TrackerCommandError: the ledger holds no such record, or the body is empty. An
-            empty comment records nothing and is indistinguishable from a lost one.
+            empty entry records nothing and is indistinguishable from a lost one.
     """
     ledger = _ledger(directory)
     if not text:
@@ -224,7 +228,7 @@ def comment(
     with events.LedgerLock(ledger) as lock:
         _require(ledger, record)
         return _append(
-            ledger, [events.Draft(record, events.KIND_COMMENT, {"text": text})], redact, lock
+            ledger, [events.Draft(record, events.KIND_NOTE, {"text": text})], redact, lock
         )
 
 

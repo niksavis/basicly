@@ -2542,7 +2542,7 @@ number, a kind, an actor, a timestamp, a payload, and a carried totals cache.
 this project's own, never a foreign tool's payload shape. See
 [D-22](#d-22--the-tracker-vocabulary-is-this-projects-own).
 
-`[TARGET]` **The vocabulary below is the specification. The tree does not have it yet.**
+`[TARGET]` **The vocabulary below is the specification, and the tree holds ten of its eighteen kinds.** `note`, `checkpoint` and `artifact` landed with `basicly-vkh0.30`, which also made `comment` a permanent alias of `note`; `decision`, `scope`, `binding`, `wait`, `grant`, `rework`, `sizing` and `classification` are unbuilt, and the marker-body alias of [32.3.2](#3232-the-readers-alias-table-and-the-marker-family-it-must-not-derive) is a reader change nothing has made.
 
 **One kind per consumer that selects on it.** That is the rule which closes the set, and it
 is the rule that decides every argument about whether two markers are one kind. Two markers

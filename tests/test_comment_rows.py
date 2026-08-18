@@ -14,12 +14,12 @@ from basicly import comment_rows, tracker
 from tests import flipped_tracker
 
 
-def _comment(repo: Path, record: str, text: str) -> None:
-    """Append one ``comment`` event, through the kit the renderer will be handed."""
+def _comment(repo: Path, record: str, text: str, kind: str = "") -> None:
+    """Append one prose event, through the kit the renderer will be handed."""
     kit = tracker.kit(repo)
     kit.events.append(
         tracker.ledger_dir(repo),
-        [kit.events.Draft(record, kit.events.KIND_COMMENT, {comment_rows.TEXT_KEY: text})],
+        [kit.events.Draft(record, kind or kit.events.KIND_COMMENT, {comment_rows.TEXT_KEY: text})],
     )
 
 
@@ -114,3 +114,19 @@ def test_a_flag_with_no_length_beside_it_does_not_mark_the_row(tmp_path: Path) -
     )
 
     assert comment_rows.TRUNCATED_KEY not in _rows(repo)["seam-1"][0]
+
+def test_both_prose_spellings_render_as_rows_in_one_history(tmp_path: Path) -> None:
+    """A reader keying on `note` alone would drop the markers on every older event.
+
+    2,667 of this repository's own ledger events are `comment` and the log is never
+    rewritten, so the alias is what `decision_marker` and `artifact_record` read their
+    markers through (basicly-vkh0.30).
+    """
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    kit = tracker.kit(repo)
+    _comment(repo, "seam-1", "written before", kind=kit.events.KIND_COMMENT)
+    _comment(repo, "seam-1", "written after", kind=kit.events.KIND_NOTE)
+
+    rows = _rows(repo)["seam-1"]
+
+    assert [row[comment_rows.TEXT_KEY] for row in rows] == ["written before", "written after"]

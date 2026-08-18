@@ -1343,3 +1343,147 @@ def test_every_delegated_kind_names_a_sibling_that_reads_that_kind() -> None:
         assert fold_name in readers or any(
             f"'{name}'" in functions[fold_name] for name in readers
         ), f"{owner} never reaches {constant}, so it does not fold {kind!r}"
+
+
+# --- prose, and the typed machine kinds ---------------------------------------
+
+
+def test_prose_folds_to_one_work_log_whichever_of_the_two_spellings_carried_it(
+    tmp_path: Path,
+) -> None:
+    """The alias, asserted as state equality rather than as a membership check.
+
+    A log written before basicly-vkh0.30 holds only `comment`, and this repository's holds
+    2,667 of them, so the property that matters is that folding them derives *the same
+    state* as folding the same prose written as `note` — the skip path would derive an empty
+    work log and a warning instead. The unknown kind in the same ledger is the positive
+    control: a fold that had stopped classifying anything would satisfy the first half alone.
+    """
+    old_spelling = tmp_path / "before"
+    new_spelling = tmp_path / "after"
+    for directory, kind in ((old_spelling, "comment"), (new_spelling, "note")):
+        events.append(
+            directory,
+            [
+                events.Draft(RECORD_A, "created", {"title": "the first"}),
+                events.Draft(RECORD_A, kind, {"text": "what happened"}),
+                events.Draft(RECORD_A, kind, {"text": "and then this"}),
+                events.Draft(RECORD_A, "seismograph_reading", {"magnitude": 4}),
+            ],
+            actor="lane:one",
+            clock=lambda: CLOCK_EARLY,
+        )
+
+    before = events.fold(events.read_events(old_spelling)[0])
+    after = events.fold(events.read_events(new_spelling)[0])
+
+    assert _state(before) == _state(after)
+    assert before.records[RECORD_A].comments == ["what happened", "and then this"]
+    assert before.unknown_kinds == {"seismograph_reading": 1}
+    assert after.unknown_kinds == {"seismograph_reading": 1}
+    assert {"note", "comment"} == events.PROSE_KINDS
+    assert {events.classify_kind(kind) for kind in events.PROSE_KINDS} == {events.APPLIED}
+
+
+def test_a_checkpoint_is_folded_from_its_kind_and_never_from_a_marker_in_prose(
+    tmp_path: Path,
+) -> None:
+    """The prose carrying the same words is the discriminator.
+
+    A fold that still recognised `[harness-policy] checkpoint=ship approved` in a body would
+    report three approvals here rather than two, which is what a reader keying on the kind
+    buys: an approval is a claim the fold can refuse, not a substring.
+    """
+    _build(tmp_path)
+    events.append(
+        tmp_path,
+        [
+            events.Draft(
+                RECORD_A, "checkpoint", {"checkpoint": "classify", "approved_by": "owner"}
+            ),
+            events.Draft(RECORD_A, "checkpoint", {"checkpoint": "decompose"}),
+            events.Draft(RECORD_A, "note", {"text": "[harness-policy] checkpoint=ship approved"}),
+            events.Draft(
+                RECORD_A, "checkpoint", {"checkpoint": "classify", "approved_by": "grant:L3"}
+            ),
+        ],
+        clock=lambda: CLOCK_EARLY,
+    )
+
+    state = events.fold(events.read_events(tmp_path)[0]).records[RECORD_A]
+
+    assert state.checkpoints == {"classify": "grant:L3", "decompose": ""}
+    assert state.comments == ["[harness-policy] checkpoint=ship approved"]
+
+
+def test_an_artifact_is_keyed_by_its_kind_and_its_body_is_not_capped(tmp_path: Path) -> None:
+    """Last body wins per kind, and a body larger than the free-text cap arrives whole.
+
+    ``body`` is outside :data:`events.TRUNCATABLE_KEYS`, which is what `_prepare_entry` tells
+    a caller with structured evidence to do: a handoff artifact a consumer refuses on must not
+    reach it as a fragment (basicly-pp7q4i).
+    """
+    long_reason = "x" * (events.MAX_TEXT_BYTES + 1)
+    events.append(
+        tmp_path,
+        [
+            events.Draft(RECORD_A, "created", {"title": "the first"}),
+            events.Draft(RECORD_A, "artifact", {"artifact": "plan", "body": {"units": 1}}),
+            events.Draft(RECORD_A, "artifact", {"artifact": "review", "body": long_reason}),
+            events.Draft(RECORD_A, "artifact", {"artifact": "plan", "body": {"units": 2}}),
+        ],
+        clock=lambda: CLOCK_EARLY,
+    )
+
+    state = events.fold(events.read_events(tmp_path)[0]).records[RECORD_A]
+
+    assert state.artifacts == {"plan": {"units": 2}, "review": long_reason}
+
+
+def test_a_dispatchs_telemetry_reading_rides_on_the_kind_it_belongs_to(tmp_path: Path) -> None:
+    """A reading is not a kind of its own: `accumulate` reads it off the `dispatch` payload.
+
+    The fields beside ``spend_micros`` are asserted because the fold neither sums nor parses
+    them — they are read back by name from the event, which is the whole difference from a
+    reader grepping `[harness-cost]` out of a body.
+    """
+    reading = {"spend_micros": 2_500_000, "input_tokens": 41_000, "model": "claude-sonnet-4-5"}
+    events.append(
+        tmp_path,
+        [
+            events.Draft(RECORD_A, "created", {"title": "the first"}),
+            events.Draft(RECORD_A, "dispatch", reading),
+        ],
+        clock=lambda: CLOCK_EARLY,
+    )
+
+    stored, _ = events.read_events(tmp_path)
+    totals = events.fold(stored).records[RECORD_A].totals
+
+    assert (totals.attempts, totals.spend_micros) == (1, 2_500_000)
+    assert stored[-1].payload == reading
+    assert "telemetry" not in events.KNOWN_KINDS
+
+
+def test_a_typed_machine_event_missing_its_own_key_is_refused(tmp_path: Path) -> None:
+    """Tolerance is for kinds we do not know: a `checkpoint` with no name names no approval."""
+    with pytest.raises(events.InvalidEventError, match="checkpoint name"):
+        events.append(
+            tmp_path,
+            [events.Draft(RECORD_A, "checkpoint", {"approved_by": "owner"})],
+            clock=lambda: CLOCK_EARLY,
+        )
+    with pytest.raises(events.InvalidEventError, match="string approved_by"):
+        events.append(
+            tmp_path,
+            [events.Draft(RECORD_A, "checkpoint", {"checkpoint": "classify", "approved_by": 7})],
+            clock=lambda: CLOCK_EARLY,
+        )
+    with pytest.raises(events.InvalidEventError, match="artifact kind"):
+        events.append(
+            tmp_path,
+            [events.Draft(RECORD_A, "artifact", {"body": {"units": 1}})],
+            clock=lambda: CLOCK_EARLY,
+        )
+
+    assert not list(tmp_path.glob("events-*.jsonl"))

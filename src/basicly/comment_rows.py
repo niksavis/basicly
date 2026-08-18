@@ -1,7 +1,7 @@
 """One comment history, as the rows every marker reader parses.
 
 Either store's answer in ``br comments list --json``'s shape: br's own reply on one
-side, a fold of the owned ledger's ``comment`` events on the other. One shape, so a
+side, a fold of the owned ledger's prose events on the other. One shape, so a
 caller parses one thing and the flip is a change of source rather than of contract.
 
 The boundary is *the rows* against *the store*: nothing here decides which store is
@@ -11,12 +11,13 @@ back into the seam that calls it. Split out of ``br`` when the module-size ratch
 caught that module growing (`basicly-wpc8.1`).
 """
 
-# comment-density-waiver: 66.6% of a 1043-token module, and what is left after a cutting
-# pass is the four rules a reader would otherwise re-derive wrongly: canonical order
-# (two readers depend on oldest-first), tombstone-as-absent (the stores spell a deletion
-# differently), and raise-rather-than-empty (an unreadable tracker must not read as
-# "nothing is blocking"), and both-or-neither on the cap's markers. Each was carried out
-# of `br` with the reason it exists, except the last, which arrived with `basicly-wug2o2`.
+# comment-density-waiver: 67.3% of a 1063-token module [re-measured 2026-08-18 after two
+# lanes merged here], and what is left after a cutting pass is the four rules a reader would
+# otherwise re-derive wrongly: canonical order (two readers depend on oldest-first),
+# tombstone-as-absent (the stores spell a deletion differently), raise-rather-than-empty (an
+# unreadable tracker must not read as "nothing is blocking"), and both-or-neither on the cap's
+# markers. Each was carried out of `br` with the reason it exists, except the last, which
+# arrived with `basicly-wug2o2`.
 
 from __future__ import annotations
 
@@ -24,8 +25,8 @@ from collections.abc import Iterable
 from typing import Any
 
 # The two keys a row carries, in br's spelling. The ledger holds the body under the same
-# ``text`` key (`events.KIND_COMMENT`) and the stamp as the event's ``ts``, so rendering
-# is a rename of one field rather than a second shape for a caller to learn.
+# ``text`` key and the stamp as the event's ``ts``, so rendering is a rename of one field
+# rather than a second shape for a caller to learn.
 TEXT_KEY = "text"
 STAMP_KEY = "created_at"
 
@@ -69,7 +70,9 @@ def from_ledger(kit_module: Any, found: Iterable[Any]) -> dict[str, list[dict]]:
     ledger_fold = kit_module.events.fold(events)
     rows: dict[str, list[dict]] = {}
     for event in kit_module.events.canonical_order(events):
-        if event.kind != kit_module.events.KIND_COMMENT:
+        # Both spellings: keying on `note` alone would drop the markers on 2,667 `comment`
+        # events this ledger already holds (basicly-vkh0.30).
+        if event.kind not in kit_module.events.PROSE_KINDS:
             continue
         state = ledger_fold.records.get(event.record)
         if state is not None and state.tombstoned:

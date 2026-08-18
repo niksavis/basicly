@@ -279,13 +279,17 @@ def record_to_dict(state: Any) -> dict[str, object]:
 
     Every field of ``events.RecordState`` is written, ``max_seq`` included: a reader
     resuming from a checkpoint needs the item's sequence high-water mark, and a snapshot
-    that dropped it would resume folding an item as if it had no history.
+    that dropped it would resume folding an item as if it had no history. The same rule is
+    why the typed machine state is here: a resumed fold that dropped `checkpoints` would
+    read an approved item as never approved (basicly-vkh0.30).
     """
     return {
         "record": state.record,
         "status": state.status,
         "fields": dict(state.fields),
         "comments": list(state.comments),
+        "checkpoints": dict(state.checkpoints),
+        "artifacts": dict(state.artifacts),
         "tombstoned": state.tombstoned,
         "totals": state.totals.as_dict(),
         "max_seq": state.max_seq,
@@ -294,6 +298,10 @@ def record_to_dict(state: Any) -> dict[str, object]:
 
 def record_from_dict(raw: Mapping[str, object]) -> Any:
     """One folded record, read back as an ``events.RecordState``.
+
+    A file written before the typed machine kinds landed carries no ``checkpoints`` and no
+    ``artifacts``, and reads back empty rather than refused: no event of either kind existed
+    to fold then, so empty is the state it holds, not a default standing in for one.
 
     Raises:
         SnapshotError: any field is missing or of the wrong type. Refused rather than
@@ -313,6 +321,16 @@ def record_from_dict(raw: Mapping[str, object]) -> Any:
     comments = raw.get("comments", [])
     if not isinstance(comments, list) or not all(isinstance(item, str) for item in comments):
         raise SnapshotError(f"{record}: comments must be a list of strings, got {comments!r}")
+    checkpoints = raw.get("checkpoints", {})
+    if not isinstance(checkpoints, dict) or not all(
+        isinstance(approver, str) for approver in checkpoints.values()
+    ):
+        raise SnapshotError(f"{record}: checkpoints map a name to an approver, got {checkpoints!r}")
+    artifacts = raw.get("artifacts", {})
+    if not isinstance(artifacts, dict):
+        raise SnapshotError(
+            f"{record}: artifacts must be an object, got {type(artifacts).__name__}"
+        )
     tombstoned = raw.get("tombstoned", False)
     if not isinstance(tombstoned, bool):
         raise SnapshotError(f"{record}: tombstoned must be a boolean, got {tombstoned!r}")
@@ -331,6 +349,8 @@ def record_from_dict(raw: Mapping[str, object]) -> Any:
         status=status,
         fields=dict(fields),
         comments=list(comments),
+        checkpoints=dict(checkpoints),
+        artifacts=dict(artifacts),
         tombstoned=tombstoned,
         totals=parsed,
         max_seq=int(max_seq),  # type: ignore[arg-type]
