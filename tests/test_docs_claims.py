@@ -319,6 +319,27 @@ def test_check_fails_when_the_skill_states_a_type_the_engine_rejects(
     assert expected in err
 
 
+def test_the_claim_follows_a_renamed_skill_source_instead_of_a_path(work_repo: Path) -> None:
+    """The gate keys on the claim's own words, so a rename cannot turn it red.
+
+    The source moved once already — `tool-br` to `work-tracker` (basicly-vkh0.42.3) —
+    and the path literal here named a file the rename had deleted, so the rename could
+    not land without editing the script (basicly-vkh0.42.9). The second half is what
+    stops the repair being "stop checking": renamed *and* drifted still fails.
+    """
+    skills = work_repo / ".basicly/core/skills"
+    (skills / "work-tracker").rename(skills / "work-ledger")
+    assert claims._skill_work_types(work_repo) == []
+
+    source = skills / "work-ledger" / "skill.yaml"
+    stated = source.read_text(encoding="utf-8")
+    source.write_text(
+        stated.replace("`feature`, `task`;", "`feature`, `docs`;", 1), encoding="utf-8"
+    )
+
+    assert claims._skill_work_types(work_repo) != []
+
+
 def test_prose_reworded_past_the_anchor_fails_loudly_rather_than_asserting_nothing(
     work_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

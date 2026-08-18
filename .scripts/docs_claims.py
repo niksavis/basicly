@@ -77,8 +77,6 @@ SKILLS_DIR = ".basicly/core/skills"
 HOOKS_DIR = ".basicly/core/hooks"
 SRC_DIR = "src/basicly"
 
-WORK_TRACKER_SKILL = f"{SKILLS_DIR}/work-tracker/skill.yaml"
-
 # `uv run python`, not a bare `python`: on Windows the bare form resolves to a system
 # interpreter that cannot import this script's dependencies (basicly-tcmy.32), so the
 # printed repair has to be the one a contributor on any platform can paste.
@@ -379,30 +377,29 @@ def _types_after(text: str, anchor: str) -> tuple[str, ...]:
 
 
 def _skill_work_types(root: Path) -> list[str]:
-    """The ``work-tracker`` skill's two type lists must be the engine's, not a copy.
+    """The work-type lists a skill states must be the engine's, not a copy.
 
     The skill advertised ``docs`` and ``question`` as valid types for months
     (``basicly-tcmy.9``). Both are rejected by :func:`basicly.classify`, so filing a
     docs bead produced one the loop could never advance — and ``br`` itself validates
     nothing, storing whatever ``--type`` is handed, so no tool caught it.
     """
-    skill = load_yaml(root / WORK_TRACKER_SKILL)
-    instructions = skill.get("instructions")
-    if not isinstance(instructions, str):
-        raise ClaimError(f"{WORK_TRACKER_SKILL}: 'instructions' must be a string")
-    # The source is a wrapped YAML block scalar, so a sentence spans lines.
-    text = " ".join(instructions.split())
+    # Found by the claim, never by a path: the stating source moved once (`tool-br` to
+    # `work-tracker`) and the literal path made that rename fail this gate (vkh0.42.9).
+    # A block scalar wraps a sentence, so the catalog is read as one flattened line.
+    paths = sorted((root / SKILLS_DIR).glob("*/skill.yaml"))
+    catalog = " ".join(" ".join(read_text(path) for path in paths).split())
 
     problems: list[str] = []
-    for anchor, expected, source in (
+    for anchor, expected, origin in (
         ("harness work types are ", config.WORK_TYPES, "config.WORK_TYPES"),
         ("leaf types ", loop._LEAF_TYPES, "loop._LEAF_TYPES"),
     ):
-        stated = _types_after(text, anchor)
+        stated = _types_after(catalog, anchor)
         if stated != tuple(sorted(expected)):
             problems.append(
                 f"after {anchor.strip()!r} the skill states {list(stated)}; "
-                f"{source} is {sorted(expected)}"
+                f"{origin} is {sorted(expected)}"
             )
     return problems
 
@@ -438,7 +435,7 @@ BLOCKS: tuple[Block, ...] = (
 ASSERTIONS: tuple[Assertion, ...] = (
     Assertion("cli-commands", ARCHITECTURE_MD, _cli_commands_covered),
     Assertion("cli-subcommands", ARCHITECTURE_MD, _cli_subcommands_covered),
-    Assertion("skill-work-types", WORK_TRACKER_SKILL, _skill_work_types),
+    Assertion("skill-work-types", SKILLS_DIR, _skill_work_types),
     *(
         Assertion(
             "consumer-commands",
