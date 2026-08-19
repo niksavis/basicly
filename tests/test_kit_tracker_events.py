@@ -833,6 +833,184 @@ def test_a_structural_field_is_never_truncated(tmp_path: Path) -> None:
     assert "status_truncated" not in minted[0].payload
 
 
+# --- the bound is the kind's, not the key's spelling (basicly-vbl35a) ---------
+
+# The size `basicly-wpc8`'s description was cut from, on a `field` event, because `value` was on
+# the allow-list while `_apply_field` folds it into the record's fields. Every case below is sized
+# from the record that paid rather than from a round number.
+_WPC8_DESCRIPTION_BYTES = 4461
+_LONG_BODY = "d" * _WPC8_DESCRIPTION_BYTES
+
+
+@pytest.mark.parametrize(
+    ("kind", "payload", "key", "folded"),
+    [
+        (
+            "field",
+            {"name": "description", "value": _LONG_BODY},
+            "value",
+            lambda state: state.fields["description"],
+        ),
+        (
+            "created",
+            {"description": _LONG_BODY},
+            "description",
+            lambda state: state.fields["description"],
+        ),
+        (
+            "artifact",
+            {"artifact": "change-summary", "body": _LONG_BODY},
+            "body",
+            lambda state: state.artifacts["change-summary"],
+        ),
+        (
+            "checkpoint",
+            {"checkpoint": "ship", "approved_by": _LONG_BODY},
+            "approved_by",
+            lambda state: state.checkpoints["ship"],
+        ),
+    ],
+    ids=("field-value", "created-description", "artifact-body", "checkpoint-approved-by"),
+)
+def test_the_cap_never_cuts_a_payload_key_the_fold_reads(
+    tmp_path: Path, kind: str, payload: dict[str, Any], key: str, folded: Any
+) -> None:
+    """Cutting one of these would make a derived value depend on the cap (§4.2's first rule).
+
+    Both routes to the fold are here because they are exempt for different reasons: `value`, `body`
+    and `approved_by` are named in ``events.FOLD_READ_KEYS``, and `description` is exempt because
+    `created` declares no bound at all — `_apply_created` folds **every** key it carries into the
+    record's fields. The stored payload and the folded state are both asserted, because an
+    exemption that only reached the payload would still leave the fold reading a fragment.
+    """
+    minted = events.append(
+        tmp_path, [events.Draft(RECORD_A, kind, payload)], clock=lambda: CLOCK_EARLY
+    )
+
+    stored = minted[0].payload
+    assert stored[key] == _LONG_BODY
+    assert f"{key}_truncated" not in stored
+    assert f"{key}_original_length_bytes" not in stored
+    state = events.fold(events.read_events(tmp_path)[0]).records[RECORD_A]
+    assert folded(state) == _LONG_BODY
+
+
+def test_a_payload_key_outside_the_allow_list_takes_the_bound_its_kind_declares(
+    tmp_path: Path,
+) -> None:
+    """``summary`` was stored unbounded before this, and by nobody's decision.
+
+    Membership of ``events.TRUNCATABLE_KEYS`` used to be the whole test of whether a key was cut,
+    so a key it did not name was exempt by the spelling its author picked. The kind's declaration
+    is what cuts it now, and the injected ceiling still tightens that — the bound applied is the
+    tighter of the two, so a caller with a smaller budget is not overridden by the table.
+    """
+    summary = "s" * (events.MAX_TEXT_BYTES * 2)
+    draft = events.Draft(RECORD_A, "note", {"summary": summary})
+
+    minted = events.append(tmp_path, [draft], clock=lambda: CLOCK_EARLY)
+    tighter = events.append(
+        tmp_path / "tighter", [draft], clock=lambda: CLOCK_EARLY, max_text_bytes=64
+    )
+
+    assert "summary" not in events.TRUNCATABLE_KEYS
+    assert events.KIND_TEXT_BYTES["note"] == events.MAX_TEXT_BYTES
+    stored = minted[0].payload
+    assert stored["summary"] == "s" * events.MAX_TEXT_BYTES
+    assert stored["summary_truncated"] is True
+    assert stored["summary_original_length_bytes"] == len(summary.encode("utf-8"))
+    assert tighter[0].payload["summary"] == "s" * 64
+
+
+def test_a_kind_that_declares_no_bound_is_refused_rather_than_stored_unbounded(
+    tmp_path: Path,
+) -> None:
+    """A kind nobody chose a bound for may not put an unbounded body in every clone forever.
+
+    Three assertions, and the control is the point of the second: the same undeclared kind carrying
+    a small payload is still written, because `fold` reads a kind this version does not know (§4.5)
+    and a writer that refused every one of them would be narrower than its own reader. The nested
+    case is there because a handoff artifact's body is an object rather than a string, so a refusal
+    that stopped at the top level would let exactly the payload D-36 describes through.
+    """
+    oversized = "m" * (events.MAX_TEXT_BYTES + 1)
+    assert "seismograph_reading" not in events.KIND_TEXT_BYTES
+
+    for payload in ({"reading": oversized}, {"reading": {"trace": oversized}}):
+        with pytest.raises(events.InvalidEventError, match="declares no free-text bound"):
+            events.append(
+                tmp_path,
+                [events.Draft(RECORD_A, "seismograph_reading", payload)],
+                clock=lambda: CLOCK_EARLY,
+            )
+    assert not (tmp_path / events.INITIAL_LOG_NAME).exists()
+
+    minted = events.append(
+        tmp_path,
+        [events.Draft(RECORD_A, "seismograph_reading", {"magnitude": 4})],
+        clock=lambda: CLOCK_EARLY,
+    )
+
+    assert [event.kind for event in minted] == ["seismograph_reading"]
+
+
+def _stored_line(seq: int, kind: str, payload: dict[str, Any]) -> str:
+    """One log line as the ledger already holds it — a fixture the writer can no longer produce."""
+    return json.dumps(
+        {
+            "id": f"{RECORD_A}#ev-{seq:010d}",
+            "record": RECORD_A,
+            "seq": seq,
+            "kind": kind,
+            "actor": "",
+            "ts": "2026-08-17T12:01:54.313239Z",
+            "payload": payload,
+            "totals": {"events": seq, "attempts": 0, "spend_micros": 0, "status": None},
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def test_an_event_already_carrying_a_truncation_flag_folds_as_it_always_did(tmp_path: Path) -> None:
+    """The log is never rewritten, so a cut that already happened is permanent (§4.2).
+
+    The fixture is `basicly-wpc8`'s own stored shape — a `field` event whose `value` was cut to the
+    cap from 4461 bytes, with both markers beside it — and one of the 48 `text_truncated` comments.
+    The fold has to derive the cut text: not the whole text, which is gone, and not a repair. The
+    markers stay out of the record's fields, which is what a fold that tried to interpret them
+    rather than carry them would break.
+    """
+    cut = "d" * events.MAX_TEXT_BYTES
+    lines = [
+        _stored_line(
+            1,
+            "field",
+            {
+                "name": "description",
+                "provenance": "dual-write",
+                "value": cut,
+                "value_original_length_bytes": _WPC8_DESCRIPTION_BYTES,
+                "value_truncated": True,
+            },
+        ),
+        _stored_line(
+            2,
+            "comment",
+            {"text": cut, "text_original_length_bytes": 9000, "text_truncated": True},
+        ),
+    ]
+    (tmp_path / events.INITIAL_LOG_NAME).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    parsed, quarantined = events.read_events(tmp_path)
+    state = events.fold(parsed).records[RECORD_A]
+
+    assert quarantined == []
+    assert state.fields == {"description": cut}
+    assert state.comments == [cut]
+    assert parsed[0].payload["value_original_length_bytes"] == _WPC8_DESCRIPTION_BYTES
+
+
 # --- the writer's lock --------------------------------------------------------
 
 

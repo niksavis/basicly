@@ -1,0 +1,39 @@
+# The per-event size cap now dispatches on the event's kind rather than on the payload key's name
+# (basicly-vbl35a, architecture §32.10 and D-36). `TRUNCATABLE_KEYS` was a closed set of key
+# *names*, and `_prepare_entry` never saw the kind, so a fold-read field was cut on one side of the
+# rule §32.10 states — `basicly-wpc8`'s description is stored cut to 4096 of 4461 bytes in the store
+# of record — while a key the set did not name was cut on neither. Two modules, and `events.py` had
+# **zero** tokens of headroom, measured before the first edit.
+#
+# `events.py` +1327: `FOLD_READ_KEYS`, the `KIND_TEXT_BYTES` declaration table, `_text_bound`,
+# `_refuse_unbounded` and `_text_size`, plus the `kind` keyword `append` now passes through
+# `prepare_payload`. The declaration is the deliverable: a bound is now a property of the kind,
+# `created` and `artifact` declare their payload stored whole for stated reasons, and a kind that
+# declares nothing is refused rather than stored unbounded. Two claims the change falsified were
+# corrected rather than kept — `_prepare_entry`'s "the cap never refuses", which is now true only
+# where a bound exists, and `_apply_artifact`'s "`body` sits outside `TRUNCATABLE_KEYS` on purpose",
+# where the exemption was the spelling of the key and is now `FOLD_READ_KEYS`. The other ratchet is
+# the proof that none of these tokens came out of the comment budget: the module's prose share is
+# **57.0 before and 57.1 after**, at its frozen figure and not above it, after one canonical home
+# per claim — §32.10's census is cited where it was being copied, and the three restatements of the
+# defect were cut to one.
+#
+# `tests/test_kit_tracker_events.py` +1843: the four tests the acceptance criteria name. One holds
+# the cap off every payload key the fold reads, parametrised over both routes a key reaches the fold
+# by — named in `FOLD_READ_KEYS`, or splatted into the record's fields by `_apply_created` — and
+# asserts the folded state as well as the stored payload, because an exemption reaching only the
+# payload would still leave the fold reading a fragment. One puts a key the old allow-list never
+# named under a declared kind and holds it to that kind's bound, and to the caller's tighter
+# ceiling. One refuses an undeclared kind carrying an oversized body, nested as well as flat, with
+# the same kind carrying a small payload as the control that keeps the writer as wide as its reader.
+# One folds `basicly-wpc8`'s own stored shape and the 48 flagged comments beside it, so a reader
+# that tried to reinterpret a permanent cut fails. Each was written against a mutation that had to
+# fail first: `value` removed from the exemption, `created` declaring a byte bound, the cut
+# restricted to the old allow-list, an undeclared kind falling back to the default bound, the size
+# measure stopping at a container, and the fold skipping a flagged value.
+[ratchet.module_size]
+rebaseline_reason = "the kind-aware per-event cap and the four tests that bind it, in a module with 0 tokens of headroom"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/events.py" = 1327
+"tests/test_kit_tracker_events.py" = 1843
