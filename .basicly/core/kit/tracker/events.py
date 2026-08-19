@@ -175,11 +175,42 @@ INITIAL_LOG_NAME = "events-0001.jsonl"
 
 LOCK_NAME = ".events.lock"
 
-# Free-text payload keys the size cap may cut. Structural fields are absent on purpose
-# (§4.2): truncating an id, a sequence, a kind, a status, a provenance label or a total
-# would make a derived value depend on the cap. A caller with another free-text key adds
-# it here rather than inventing a second cap.
+# Free-text keys the cap's **schema** rule names: one of these must hold a string, because the two
+# markers say how much was cut from **one** field and a list of ten has nowhere to put them (§4.2).
+# It no longer decides what is *cut* — :data:`KIND_TEXT_BYTES` does — so `value` is named here and
+# never cut: a list under it is refused, and the string under it is a folded field (basicly-vbl35a).
 TRUNCATABLE_KEYS = frozenset({"text", "value", "output", "detail"})
+
+# Keys the fold and its delegates read **by name**, which the cap may never cut (§4.2's first
+# rule): a cut would make a derived value depend on the cap. `value` becomes the folded field the
+# scheduler, the label source and the differential read back; the rest is what the status fold,
+# `_apply_artifact`, `provenance.fold_edges`, `gates.fold_gates` and `migrate` read off a payload by
+# name. `text` is deliberately absent — it accumulates into `comments`, where its flag records that
+# evidence was dropped, and exempting it would leave the cap nothing to bound.
+FOLD_READ_KEYS = frozenset({
+    "approved_by",
+    "artifact",
+    "asserted_at",
+    "asserted_by",
+    "body",
+    "checkpoint",
+    "edge_type",
+    "from",
+    "gate",
+    "import_digest",
+    "imported_from",
+    "name",
+    "passed",
+    "provenance",
+    "provider",
+    "source_id",
+    "spend_micros",
+    "status",
+    "target",
+    "to",
+    "type",
+    "value",
+})
 
 # Per free-text field, in bytes. Sized from §4.4's interleave exposure: Python's buffered
 # writer flushes in ~8 KiB chunks, so a logical line larger than that becomes several
@@ -226,6 +257,30 @@ KNOWN_KINDS = frozenset({
     KIND_GATE,
     KIND_CHECKPOINT,
     KIND_ARTIFACT,
+})
+
+# What each kind declares about its free text: the bound, in bytes, that every payload key outside
+# :data:`FOLD_READ_KEYS` is cut at, or ``None`` for a payload stored whole. `created` is whole
+# because `_apply_created` folds **every** key into the record's fields, so the rule above exempts
+# them all; `artifact` is whole by D-36, which bounds a handoff body by taking out what the ledger
+# can already derive rather than by a byte count (basicly-pp7q4i writes it).
+#
+# **A kind absent from here declares nothing, and an oversized body under one is refused rather than
+# stored** (basicly-vbl35a): the bound used to come from the payload key's *spelling*, so it cut
+# `basicly-wpc8`'s description under `value` and left the same text whole under `description`.
+# §32.10 carries the census.
+KIND_TEXT_BYTES = MappingProxyType({
+    KIND_CREATED: None,
+    KIND_ARTIFACT: None,
+    KIND_FIELD: MAX_TEXT_BYTES,
+    KIND_STATUS: MAX_TEXT_BYTES,
+    KIND_NOTE: MAX_TEXT_BYTES,
+    KIND_COMMENT: MAX_TEXT_BYTES,
+    KIND_DISPATCH: MAX_TEXT_BYTES,
+    KIND_TOMBSTONE: MAX_TEXT_BYTES,
+    KIND_EDGE: MAX_TEXT_BYTES,
+    KIND_GATE: MAX_TEXT_BYTES,
+    KIND_CHECKPOINT: MAX_TEXT_BYTES,
 })
 
 # The one kind that carries prose, and the external tracker's word for the same event. A
@@ -369,8 +424,8 @@ class Draft:
     Attributes:
         record: The record this event is about.
         kind: The vocabulary entry, matching :data:`KIND_PATTERN`.
-        payload: The fact. String values are redacted; those under
-            :data:`TRUNCATABLE_KEYS` are also capped.
+        payload: The fact. String values are redacted; free text is capped at the bound
+            *kind* declares.
         actor: An opaque lease holder — a lane, a session, a human. Not
             assignee-as-person modelling (§4.5). Falls back to :func:`append`'s *actor*.
         generation: ``>1`` names a genuine re-recording of an identical fact, which needs
@@ -629,9 +684,9 @@ def _apply_checkpoint(state: RecordState, payload: Mapping[str, object]) -> None
 def _apply_artifact(state: RecordState, payload: Mapping[str, object]) -> None:
     """One handoff artifact, keyed by the artifact kind it declares.
 
-    ``body`` sits outside :data:`TRUNCATABLE_KEYS` on purpose, which is the nesting
-    :func:`_prepare_entry` names for structured evidence: an artifact its consumer refuses
-    on must not arrive as a fragment that reads like a short one (basicly-pp7q4i).
+    ``body`` is one of :data:`FOLD_READ_KEYS` — read here by name — so the cap never cuts it: an
+    artifact its consumer refuses on cannot arrive as a fragment that reads like a short one, and
+    JSON cut mid-token is not JSON (basicly-pp7q4i).
     """
     kind = payload.get("artifact")
     if not isinstance(kind, str) or not kind:
@@ -1048,8 +1103,63 @@ def _redacted(value: object, redact: Callable[[str], str] | None) -> object:
     return value
 
 
+def _text_bound(kind: str | None, max_text_bytes: int) -> tuple[int | None, int | None]:
+    """What *kind* declares: the bound its free text is cut at, and the one it is refused over.
+
+    At most one is a number. A kind :data:`KIND_TEXT_BYTES` names is cut at the tighter of what it
+    declares and what the caller injected, or stored whole where it declares ``None``. A kind that
+    declares nothing is cut at nothing — a bound nobody chose is the accident basicly-vbl35a
+    replaces — and refused above *max_text_bytes*. ``None`` is `migrate`, which has no kind: it
+    renders a `created` payload to compare against what the ledger stored, whole on both sides.
+    """
+    if kind is None:
+        return None, None
+    if kind not in KIND_TEXT_BYTES:
+        return None, max_text_bytes
+    declared = KIND_TEXT_BYTES[kind]
+    return (None if declared is None else min(declared, max_text_bytes)), None
+
+
+def _text_size(value: object) -> int:
+    """The bytes of text under *value*, at any nesting depth.
+
+    Recursive because a body is often a container. The *cut* stops at one — the two markers have
+    nowhere to go inside a list of ten — but a refusal has no such problem, and growth does not
+    care which level of the object its bytes sit at (§4.2).
+    """
+    if isinstance(value, str):
+        return len(value.encode("utf-8"))
+    if isinstance(value, dict):
+        return sum(_text_size(key) + _text_size(item) for key, item in value.items())
+    if isinstance(value, list):
+        return sum(_text_size(item) for item in value)
+    return 0
+
+
+def _refuse_unbounded(kind: str, payload: Mapping[str, object], refuse_over: int) -> None:
+    """Refuse *payload* when a kind that declared no bound carries a body larger than one.
+
+    Measured on the **redacted** payload, like the cut, so the number is the stored one. A small
+    payload under an undeclared kind is still written: `fold` reads a kind this version does not
+    know (§4.5), and a writer refusing every one could not record what its own reader accepts. What
+    it may not do is put an unbounded body in every clone forever (§4.2).
+
+    Raises:
+        InvalidEventError: a key outside :data:`FOLD_READ_KEYS` holds more than *refuse_over* bytes.
+    """
+    for key, value in payload.items():
+        if key in FOLD_READ_KEYS:
+            continue
+        size = _text_size(value)
+        if size > refuse_over:
+            raise InvalidEventError(
+                f"kind {kind!r} declares no free-text bound, so {key!r} at {size} bytes would be "
+                f"stored unbounded: declare {kind!r} in KIND_TEXT_BYTES"
+            )
+
+
 def _prepare_entry(
-    key: str, value: object, redact: Callable[[str], str] | None, max_text_bytes: int
+    key: str, value: object, redact: Callable[[str], str] | None, cut_at: int | None
 ) -> dict[str, object]:
     """One payload entry, redacted and capped, as the field(s) it becomes.
 
@@ -1059,16 +1169,14 @@ def _prepare_entry(
     ``original_length_bytes`` is therefore the length of the **redacted** text, which is
     the honest number anyway: the raw bytes were never ours to keep.
 
-    The cap **truncates; it never refuses, and it never conceals that it truncated.**
-    Refusing loses the event — the fact that a gate ran, along with its output — and
-    quietly clipping makes a cut comment indistinguishable from a short one, so a reader
-    cannot tell evidence from a fragment.
+    Where there is a bound the cap **cuts; it never refuses, and it never conceals that it cut.**
+    Refusing loses the event — the fact that a gate ran, along with its output — and quietly
+    clipping makes a cut comment indistinguishable from a short one, so a reader cannot tell
+    evidence from a fragment. The one refusal is :func:`_refuse_unbounded`'s.
 
-    A key the cap names therefore has to hold a string. A list or an object under one is
-    refused, and that is the *schema* refusing a shape rather than the cap refusing a size:
-    the markers say how much was cut from **one** field, so there is nowhere honest to put
-    them for a list of ten. A caller with structured evidence nests it under another key,
-    which is outside the cap — which is why §4.4's guarantee is the lock and not the cap.
+    *cut_at* is the kind's bound and a key in :data:`FOLD_READ_KEYS` is outside it whatever the kind
+    declares. Every other string is in it, so a new key is bounded by default rather than by whether
+    somebody remembered to name it.
 
     Raises:
         InvalidEventError: a truncatable key holds a container.
@@ -1079,9 +1187,9 @@ def _prepare_entry(
             f"got {type(value).__name__}"
         )
     prepared = _redacted(value, redact)
-    if key not in TRUNCATABLE_KEYS or not isinstance(prepared, str):
+    if cut_at is None or key in FOLD_READ_KEYS or not isinstance(prepared, str):
         return {key: prepared}
-    cut, original = _truncate(prepared, max_text_bytes)
+    cut, original = _truncate(prepared, cut_at)
     if cut == prepared:
         return {key: prepared}
     return {
@@ -1094,6 +1202,7 @@ def _prepare_entry(
 def prepare_payload(
     payload: Mapping[str, object],
     *,
+    kind: str | None = None,
     redact: Callable[[str], str] | None = None,
     max_text_bytes: int = MAX_TEXT_BYTES,
 ) -> dict[str, object]:
@@ -1106,10 +1215,20 @@ def prepare_payload(
     *redact* is injected because the pattern set is not the kit's to own — secret shapes
     and this repo's rule against committed machine paths live in the engine. What is owned
     here is the **ordering**, which is the part that goes wrong silently.
+
+    *kind* decides the bound (:func:`_text_bound`); `append` always passes it, so the ledger's own
+    writes are never kind-blind.
+
+    Raises:
+        InvalidEventError: a truncatable key holds a container, or a kind that declares no
+            bound carries free text over *max_text_bytes*.
     """
+    cut_at, refuse_over = _text_bound(kind, max_text_bytes)
     prepared: dict[str, object] = {}
     for key, value in payload.items():
-        prepared.update(_prepare_entry(key, value, redact, max_text_bytes))
+        prepared.update(_prepare_entry(key, value, redact, cut_at))
+    if kind is not None and refuse_over is not None:
+        _refuse_unbounded(kind, prepared, refuse_over)
     return prepared
 
 
@@ -1168,7 +1287,8 @@ def append(  # noqa: PLR0913 — every keyword is an injected dependency the kit
         clock: Wall clock, epoch seconds, recorded as ``ts`` and read by nothing.
             Defaults to :func:`time.time`. **The only wall-clock read in this module.**
         redact: Applied to every string value before the cap (§4.2).
-        max_text_bytes: The per-field cap.
+        max_text_bytes: The ceiling on the per-field cap; the draft's kind may declare a
+            tighter one (:data:`KIND_TEXT_BYTES`).
         held_lock: An already-held :class:`LedgerLock`, for a caller whose critical
             section is wider than one append. When ``None`` a lock is taken and released.
         lock_timeout_s: How long to wait for the lock when taking one here.
@@ -1197,7 +1317,9 @@ def append(  # noqa: PLR0913 — every keyword is an injected dependency the kit
         seen = {event.id for event in existing}
         minted: list[Event] = []
         for draft in pending:
-            payload = prepare_payload(draft.payload, redact=redact, max_text_bytes=max_text_bytes)
+            payload = prepare_payload(
+                draft.payload, kind=draft.kind, redact=redact, max_text_bytes=max_text_bytes
+            )
             event_id = event_id_for(draft.record, draft.kind, payload, generation=draft.generation)
             if event_id in seen:
                 continue
