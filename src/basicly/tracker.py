@@ -107,20 +107,31 @@ def _refuse_write_in_read_only(args: Sequence[str]) -> None:
     classify ``comments add`` as a read is how a guard gets disabled by its own
     error text.
     """
-    reason = _read_only.get()
-    if reason is None:
+    if _read_only.get() is None:
         return
     surface, _ = tracker_usage.split_invocation(list(args))
     access = tracker_usage.classify_access(surface)
     if access == "read":
         return
     named = surface or " ".join(args)
-    fault = (
+    _refuse_in_read_only(
         f"{named} is not classified, and unknown is not read: classify it in "
         "tracker_usage if it only reads"
         if access == "unclassified"
         else f"{named} writes"
     )
+
+
+def _refuse_in_read_only(fault: str) -> None:
+    """Raise when a read-only section is active, quoting the gate that promised not to write.
+
+    The one place the refusal is worded, because a write that states itself as something
+    other than an argv is refused by the same rule: :func:`add_artifact` names the fact it
+    is about to record where :func:`_refuse_write_in_read_only` names a surface.
+    """
+    reason = _read_only.get()
+    if reason is None:
+        return
     raise TrackerWriteRefusedError(f"{reason} must write nothing, but {fault}")
 
 
@@ -458,6 +469,81 @@ def all_comment_texts(repo_root: Path) -> dict[str, list[str]]:
     except TrackerDivergenceError, OSError, ValueError:
         return {}
     return {record: [str(row[COMMENT_TEXT_KEY]) for row in found] for record, found in rows.items()}
+
+
+# --- Handoff artifacts, as the typed event that carries them (D-36) ---------
+#
+# The one family that is *not* a marker. A marker is free text under a `text` key, and the
+# per-event cap cuts free text at 4096 bytes: measured 2026-08-18 over this repository's own
+# ledger, that cut 31 of the 54 artifacts ever written and 337,353 bytes with them, and a
+# JSON body cut mid-token is not JSON. So an artifact is its own event kind, with the body
+# under a key `events.FOLD_READ_KEYS` names and the cap therefore never reaches.
+
+
+# The two payload keys an `artifact` event carries. Spelled here because `events._apply_artifact`
+# reads them as literals and exports no constant to alias; `test_artifact_record` binds the pair
+# by folding a real ledger, so a kit that renamed either fails there rather than storing a body
+# nothing reads.
+ARTIFACT_KIND_KEY = "artifact"
+ARTIFACT_BODY_KEY = "body"
+
+
+def add_artifact(repo_root: Path, issue_id: str, kind: str, body: object) -> None:
+    """Record *body* on *issue_id* as its *kind* handoff artifact.
+
+    **Not stated as an argv, unlike every other write here**, and the body is the reason. The
+    argv vocabulary exists because a write used to be a subprocess, so it can carry only
+    strings — and a JSON body flattened into one is exactly the free text the cap cuts. This
+    hands the ledger the object, under :data:`ARTIFACT_BODY_KEY`, and it is stored whole.
+
+    Idempotent with no read first: ``events.append`` skips a draft whose content-derived id the
+    ledger already holds, so a state re-entered on every advance until its checkpoint clears
+    records one event rather than a copy per attempt.
+
+    Raises:
+        TrackerWriteRefusedError: a :func:`read_only` section is active.
+        RuntimeError: the event did not reach the ledger.
+    """
+    _refuse_in_read_only(f"recording {issue_id}'s {kind} artifact writes")
+    kit_module = kit(repo_root)
+    events = kit_module.events
+    draft = events.Draft(
+        issue_id,
+        events.KIND_ARTIFACT,
+        {
+            kit_module.migrate.PROVENANCE_KEY: owned_write.OWNED_PROVENANCE,
+            ARTIFACT_KIND_KEY: kind,
+            ARTIFACT_BODY_KEY: body,
+        },
+    )
+    try:
+        events.append(ledger_dir(repo_root), [draft], redact=redact.redact_committed)
+    except (events.LedgerError, OSError, ValueError) as exc:
+        raise TrackerDivergenceError(
+            f"the {kind} artifact for {issue_id} did not reach the owned ledger: {exc}"
+        ) from exc
+
+
+def read_artifacts(repo_root: Path, issue_id: str) -> dict[str, object]:
+    """Every handoff artifact *issue_id* carries, keyed by artifact kind.
+
+    The last event of a kind wins — the fold's own rule, and the one a unit re-decomposed
+    under a changed plan depends on. **A tombstoned record answers empty**, for the reason
+    :func:`owned_record` states: a reader served a deleted bead's artifacts would gate work
+    somebody removed.
+
+    The hard half of the seam, like :func:`read_comments`: a store that cannot answer raises
+    rather than reporting no artifact, because this answer feeds a refusal.
+
+    Raises:
+        RuntimeError: the kit will not load, or the ledger could not be read.
+    """
+    kit_module = kit(repo_root)
+    ledger_fold = kit_module.events.fold(kit_module.read_ledger(ledger_dir(repo_root)))
+    state = ledger_fold.records.get(issue_id)
+    if state is None or state.tombstoned:
+        return {}
+    return dict(state.artifacts)
 
 
 # --- Export scrubbing (basicly-vkh0.5) --------------------------------------

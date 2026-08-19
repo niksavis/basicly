@@ -1,0 +1,57 @@
+# A handoff artifact is a typed ledger event, so the transport stops cutting the body
+# (basicly-pp7q4i, architecture D-36). An artifact travelled as a `[harness-artifact]`
+# comment marker, whose body is a `text` payload key, which the per-event cap cuts at 4096
+# bytes — and JSON cut mid-token is not JSON. Measured 2026-08-18 over the committed
+# ledger: 31 of the 54 artifacts ever written are stored cut, 337,353 bytes gone, and all
+# 23 surviving truncated record-and-kind pairs are refused by their own entry predicate,
+# against a control of intact ones that are admitted. `basicly-vbl35a` had already declared
+# the `artifact` kind stored whole; this record is the writer and the reader for it.
+#
+# `tracker.py` +987 against 13,270 tokens of headroom: `add_artifact`, `read_artifacts`,
+# the two payload-key constants, and `_refuse_in_read_only` extracted so the read-only
+# refusal is worded in one place — the artifact write states itself as a fact rather than
+# as an argv, and an argv could only have carried the body as the free text that gets cut.
+# Prose share 66.4 before and 66.4 after, against a frozen 67.5.
+#
+# `artifact_record.py` -84: the marker writer and its read-before-write are gone, the read
+# resolves the typed event first and falls back to the retired marker, and `marker_body`
+# went with the writer — nothing in `src/` renders one now, so `wired_or_deleted` would
+# have called it dead. Its prose share rose 68.8 -> 69.0 under a frozen 69.2 because ~90
+# tokens of *code* left the module, not because prose was added; the docstring was cut
+# twice to keep it under the frozen figure.
+#
+# `handoff.py` -283 and it graduates: the storage section asserted `[tracker] mode =
+# "external"` as a live fact and argued from it for the marker seam, and the argv-length
+# bound below it described a `br comments add` this repo no longer spawns. Both are the
+# comment-divergence defect the record's "also fixes" names. Frozen at 4099 by
+# `basicly-wug2o2` a day earlier, now 3816, so the entry is deleted with a -4099 delta
+# rather than left licensing regrowth. Prose share 66.7 -> 64.3.
+#
+# `tests/test_handoff.py` 3986 -> 4134, rebaselined. The suite had 14 tokens of headroom
+# before this record and the acceptance criteria name a demonstration that has to live in
+# it: a 20,000-byte plan, five times the cap that cut the population, admitted by the entry
+# predicate. Two cheaper routes were measured and rejected. Deleting an existing assertion
+# to fit — the other-kind read, now also covered from the recorded-form side — removes
+# coverage to pass a size gate, which is the gaming shape the gate exists to catch. And the
+# extraction that is available is a *seam* move rather than a file split:
+# `basicly-wug2o2`'s own fragment records that `_cut_violation` should land in
+# `artifact_record` "when the transport itself is fixed", which would carry its three tests
+# out of this suite and leave it near 3,630. That is a design decision no acceptance
+# criterion here names, and taking it inside this record would land it unreviewed. It is
+# named as the work this rebaseline defers. Prose share 31.7 -> 33.2, well under the 50%
+# cap, and the growth is assertions: the file is 148 tokens larger and carries one more
+# test plus two shared probes.
+#
+# `tests/test_artifact_record.py` 2159 -> 2649 under the cap: the suite moved off a fake
+# comment store onto a real ledger, because a fake that returns whatever it was handed
+# cannot show that a store does not cut, and it gained the byte-identity assertion at
+# 20,000 bytes, the two payload keys bound against the kit's own fold, the marker
+# fallback, the event-wins-over-marker order, and the read-only refusal on the new write.
+[ratchet.module_size]
+rebaseline_reason = "the demonstration the acceptance criteria name is a 20,000-byte artifact admitted by the entry predicate, in a suite that had 14 tokens of headroom; the available extraction is the _cut_violation seam move basicly-wug2o2 deferred to a record that owns it"
+
+[ratchet.module_size.rebaselined]
+"tests/test_handoff.py" = 4134
+
+[ratchet.module_size.frozen]
+"src/basicly/handoff.py" = -4099

@@ -16,44 +16,24 @@ different field sets — and nothing here writes or parses a marker, which is
 :mod:`basicly.artifact_record`'s. The boundary is *the ruling* against *the recorded
 form*, the same cut ``plan_gate``/``plan_record`` is drawn on.
 
-## Where an artifact is stored, and why not in the ledger directly
+## Where an artifact is stored
 
-D13 resolves storage as typed events in the owned ledger. :mod:`basicly.artifact_record`
-reaches that through ``tracker.add_comment``/``tracker.read_comments`` — the seam every other
-``[harness-*]`` marker family already goes through — rather than by appending to
-``.basicly/ledger/`` itself. Two measured reasons, and the second is decisive:
-
-* **A new event kind would have no writer on this rung.** The repo runs
-  ``[tracker] mode = "external"``, so a kind only ``MODE_OWNED`` produces is code nothing
-  exercises. The marker seam writes on every rung and *becomes* a ledger
-  ``comment`` event the moment the mode flips — which is exactly what "a format we own,
-  which migrates with us" was for.
-* **A direct ledger append would refuse the landing it precedes.** The loop's advance
-  commits base-checkout dirt only under the ledger (``merge.commit_tracker_state``);
-  anything else is foreign dirt and blocks the merge (``merge.foreign_dirt``). An
-  artifact written into the committed ``.basicly/ledger/`` on the way into BUILD would
-  wedge the very landing it exists to gate.
-
-So this track neither waits on ``basicly-vkh0.23`` nor writes past the seam: it writes
-*through* it, and the cutover carries the artifacts with everything else.
-
-**The bound that choice carries, measured.** Below ``MODE_OWNED`` a marker body is one
-argv element of ``br comments add``, and Windows caps a command line at 32,767
-characters. This repo's largest real decomposition — ``basicly-u2hl``, 33 children —
-renders a **21,890-character** plan (measured 2026-08-08 against the committed tracker),
-so a plan roughly half as large again would fail to spawn on Windows while succeeding on
-POSIX. It fails loudly when it does: ``tracker.add_comment`` raises and the decomposition
-stops. The ceiling belongs to the transport, not to the artifact, and it disappears at
-``MODE_OWNED``, where the fact is appended to the ledger with no process started.
+One ``artifact`` event in the owned ledger, its kind a typed field and its body under a
+payload key the per-event cap does not name (D-36). :mod:`basicly.artifact_record` owns that
+form and ``tracker.add_artifact`` the append. Until `basicly-pp7q4i` the pair travelled as a
+``[harness-artifact]`` comment marker, whose body is free text and so was cut at 4096 bytes:
+31 of the first 54 artifacts are stored cut, and :func:`_cut_violation` is what those refuse
+through. Nothing bounds the new body by size — D-36 bounds an artifact by taking out what the
+ledger can already derive, which is `basicly-gvlpxm`'s cut to the changed-path list.
 
 ## The ratchet, and the population it discriminates
 
-:func:`entry_verdict` admits a unit that carries **no** artifact marker. Absence is
-ambiguous — a feature decomposed before this existed has none, and refusing those would
-stop the harness rather than gate the work that follows it — so the gate binds on the
-marker its own producer writes. A marker that is present and does not validate is a
-defect and is refused naming the failing field, which is the whole point: a corrupted
-plan is caught at BUILD entry, before the tokens.
+:func:`entry_verdict` admits a unit that carries **no** artifact. Absence is ambiguous — a
+feature decomposed before this existed has none, and refusing those would stop the harness
+rather than gate the work that follows it — so the gate binds on what its own producer
+records. An artifact that is present and does not validate is a defect and is refused naming
+the failing field, which is the whole point: a corrupted plan is caught at BUILD entry,
+before the tokens.
 """
 
 from __future__ import annotations
@@ -165,7 +145,7 @@ def record(repo_root: Path, issue_id: str, kind: str, payload: dict) -> None:
 
     Raises:
         ArtifactError: *payload* does not validate against the *kind* schema.
-        RuntimeError: the marker did not reach the authoritative store.
+        RuntimeError: the artifact did not reach the authoritative store.
     """
     validator = _validator(repo_root, kind)
     if validator is None:
@@ -177,9 +157,11 @@ def record(repo_root: Path, issue_id: str, kind: str, payload: dict) -> None:
 
 
 def _cut_violation(repo_root: Path, issue_id: str, kind: str, payload: object) -> str | None:
-    """Why *payload* is unusable when the event cap cut it, or None when it was stored whole.
+    """Why *payload* is unusable when the marker cap cut it, or None when it was stored whole.
 
-    The stored row is found by content rather than by re-selecting the last marker, so
+    Only the retired transport can produce one: an ``artifact`` event's body is never cut, so
+    this answers None for everything recorded since `basicly-pp7q4i`, and 31 stored markers
+    are why it still runs. The row is found by content rather than by re-selecting the last, so
     this cannot come to disagree with :func:`artifact_record.read` about which row it
     describes; reaching it only after a refusal is what makes a second fold of the ledger
     affordable. Both sizes go in the reason because the pair is what separates a body the
@@ -207,9 +189,9 @@ def entry_verdict(repo_root: Path, issue_id: str, kind: str) -> ArtifactVerdict:
 
     Admits a unit carrying no artifact of that kind — the ratchet the module docstring
     states — and otherwise reports every schema violation at once, so an operator fixing
-    one field per round trip does not pay an advance for each. A body the transport cut
-    reports the cut instead: every field after it is missing, so the schema's answer
-    would be a list of consequences of one cause.
+    one field per round trip does not pay an advance for each. A body the retired marker
+    transport cut reports the cut instead: every field after it is missing, so the schema's
+    answer would be a list of consequences of one cause.
 
     The schema is resolved before the tracker is read, so a repo that has not installed
     the contract costs this predicate no tracker round trip at all, and the two ends

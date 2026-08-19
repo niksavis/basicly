@@ -2,10 +2,12 @@
 
 Every gate assertion here is a control pair — the same unit with a sound artifact and
 with a corrupted one — because a predicate that only ever sees good input cannot be
-shown to bind. The corruption is always applied to the *recorded marker*, not to the
-payload on its way in: the producer validates before it writes, so a defect the
-consumer can actually meet has to arrive the way a hand-edit or an older producer
-would leave it.
+shown to bind. The corruption is always applied to the *recorded* artifact, never to the
+payload on its way in: the producer validates before it writes, so a defect the consumer
+can actually meet has to arrive the way a hand-edit or an older producer would leave it.
+Two populations answer that, and both are seeded here: an ``artifact`` event recorded
+straight through :func:`artifact_record.write`, and a retired ``[harness-artifact]``
+marker, which is the only one the 4096-byte cap can still have cut.
 
 ``work_repo`` rather than ``tmp_path`` throughout, because the schemas are catalog
 sources: a repo that has not installed them runs neither end of the contract, and a
@@ -22,6 +24,7 @@ and nothing there re-asserts the schema.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -29,19 +32,16 @@ import pytest
 from basicly import artifact_record, handoff, plan_gate, tracker
 from basicly.decompose import CreatedChild, DecomposeResult
 from tests import flipped_tracker, plan_fixtures
+from tests.test_artifact_record import artifact_events, legacy_marker, record_marker
 
 
 class _FakeBr:
-    """Stand-in for the marker store, taught only the comment surface this seam uses.
+    """Stand-in for the comment surface, kept for the markers a loop state still writes.
 
-    Comments are kept per issue so a write is readable back through the same fake,
-    which is what makes the round trip — record, then admit — a real round trip rather
-    than two assertions about one dictionary.
-
-    Installed at the marker seam — ``add_comment``/``read_comments`` — rather than
-    below it: those two are what :mod:`basicly.artifact_record` calls, and the spawn
-    that used to sit under them is deleted since
-    ``[tracker] mode`` became ``owned``.
+    No artifact travels here any more — that is an ``artifact`` event since
+    `basicly-pp7q4i`, and every test below records one through the real ledger
+    ``work_repo`` carries. What still needs a stand-in is the ``[harness-*]`` traffic
+    around it, which is why `test_handoff_states` imports this and the fixture from here.
     """
 
     def __init__(self) -> None:
@@ -105,41 +105,60 @@ def test_plan_payload_carries_every_gated_field_and_the_graph(work_repo: Path) -
     assert handoff.adopted(work_repo, handoff.IMPLEMENTATION_PLAN)
 
 
-def test_a_sound_plan_records_and_reads_back_admitted(work_repo: Path, fake_br: _FakeBr) -> None:
+def _artifact_bodies(repo: Path, record: str) -> list[object]:
+    """Every ``artifact`` event body recorded on *record*, in file order."""
+    return [event.payload.get(tracker.ARTIFACT_BODY_KEY) for event in artifact_events(repo, record)]
+
+
+def test_a_sound_plan_records_and_reads_back_admitted(work_repo: Path) -> None:
     """The round trip: DECOMPOSE writes the artifact and BUILD's entry accepts it."""
-    handoff.record(
-        work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, handoff.plan_payload(decomposition())
-    )
-    assert fake_br.comments["proj-feat"][0].startswith(
-        f"{artifact_record.MARKER} kind=implementation-plan "
-    )
+    payload = handoff.plan_payload(decomposition())
+    handoff.record(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
+
+    assert _artifact_bodies(work_repo, "proj-feat") == [payload]
     verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
     assert verdict.admitted and verdict.reason == ""
 
 
-def test_a_plan_missing_a_gated_field_is_refused_before_it_is_written(
-    work_repo: Path, fake_br: _FakeBr
+def test_a_plan_far_over_the_marker_cap_is_admitted_by_the_entry_predicate(
+    work_repo: Path,
 ) -> None:
+    """The demonstration, and it is red before the typed event: 20,000 bytes is 5x the cap.
+
+    A 33-child decomposition renders about 21,890 characters (measured 2026-08-08), so this
+    is the real shape rather than a stress case — and under the marker transport it came
+    back as JSON cut mid-token, which is what refused 23 stored record-and-kind pairs.
+    """
+    payload = handoff.plan_payload(decomposition())
+    payload["tasks"][0]["acceptance"] = [
+        f"given case {index} then it holds" for index in range(640)
+    ]
+    assert len(json.dumps(payload).encode("utf-8")) > 20_000
+
+    handoff.record(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
+
+    assert artifact_record.read(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN) == payload
+    assert handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN).admitted
+
+
+def test_a_plan_missing_a_gated_field_is_refused_before_it_is_written(work_repo: Path) -> None:
     """A payload the consumer would refuse never becomes an artifact in the first place."""
     payload = handoff.plan_payload(decomposition())
     del payload["tasks"][0]["budget_tokens"]
     with pytest.raises(handoff.ArtifactError) as caught:
         handoff.record(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
     assert "budget_tokens" in caught.value.verdict.reason
-    assert fake_br.comments == {}
+    assert _artifact_bodies(work_repo, "proj-feat") == []
 
 
-def test_recording_the_same_artifact_twice_writes_one_marker(
-    work_repo: Path, fake_br: _FakeBr
-) -> None:
+def test_recording_the_same_artifact_twice_writes_one_event(work_repo: Path) -> None:
     """A state re-entered on every advance must not bury its artifact under copies."""
     payload = handoff.plan_payload(decomposition())
     handoff.record(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
     handoff.record(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
-    assert len(fake_br.comments["proj-feat"]) == 1
+    assert len(_artifact_bodies(work_repo, "proj-feat")) == 1
 
 
-@pytest.mark.usefixtures("fake_br")
 def test_the_last_recorded_plan_is_the_one_read_back(work_repo: Path) -> None:
     """Re-decomposed under a changed plan, BUILD is held to the plan that made the children."""
     handoff.record(
@@ -156,19 +175,17 @@ def test_the_last_recorded_plan_is_the_one_read_back(work_repo: Path) -> None:
 # --- the ratchet, and the population it discriminates ------------------------
 
 
-@pytest.mark.usefixtures("fake_br")
 def test_a_unit_with_no_artifact_is_admitted(work_repo: Path) -> None:
     """Absence predates the rule: a feature decomposed before this existed still builds."""
     assert handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN).admitted
 
 
-def test_an_unrelated_marker_family_is_not_an_artifact(work_repo: Path, fake_br: _FakeBr) -> None:
+def test_an_unrelated_marker_family_is_not_an_artifact(work_repo: Path) -> None:
     """Only this family's markers are read: a policy or run marker is not a handoff."""
-    fake_br.comments["proj-feat"] = ["[harness-policy] checkpoint=decompose approved"]
+    record_marker(work_repo, "proj-feat", "[harness-policy] checkpoint=decompose approved")
     assert artifact_record.read(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN) is None
 
 
-@pytest.mark.usefixtures("fake_br")
 def test_the_other_kind_of_artifact_is_not_read_as_this_one(work_repo: Path) -> None:
     """The kind is a field, so one family carries both without either answering for the other."""
     handoff.record(work_repo, "proj-i", handoff.CHANGE_SUMMARY, summary())
@@ -176,35 +193,36 @@ def test_the_other_kind_of_artifact_is_not_read_as_this_one(work_repo: Path) -> 
     assert artifact_record.read(work_repo, "proj-i", handoff.CHANGE_SUMMARY) is not None
 
 
-def test_a_repo_without_the_schema_runs_neither_end(tmp_path: Path, fake_br: _FakeBr) -> None:
-    """The contract is a catalog source: uninstalled, it writes nothing and refuses nothing."""
+def test_a_repo_without_the_schema_runs_neither_end(tmp_path: Path) -> None:
+    """The contract is a catalog source: uninstalled, it writes nothing and refuses nothing.
+
+    ``tmp_path`` carries no ledger either, so *both* ends would raise if they reached the
+    store — which makes this the assertion that neither reached it, not only that neither
+    complained.
+    """
     assert not handoff.adopted(tmp_path, handoff.IMPLEMENTATION_PLAN)
     handoff.record(
         tmp_path, "proj-feat", handoff.IMPLEMENTATION_PLAN, handoff.plan_payload(decomposition())
     )
-    assert fake_br.comments == {}
+    assert not (tmp_path / tracker.LEDGER_DIR).exists()
     assert handoff.entry_verdict(tmp_path, "proj-feat", handoff.IMPLEMENTATION_PLAN).admitted
 
 
 # --- a corrupted artifact, which is the population that binds ----------------
 
 
-def test_a_hand_corrupted_plan_is_refused_naming_the_failing_field(
-    work_repo: Path, fake_br: _FakeBr
-) -> None:
+def test_a_hand_corrupted_plan_is_refused_naming_the_failing_field(work_repo: Path) -> None:
     """The acceptance criterion: an artifact edited out of shape names the field it broke."""
     payload = handoff.plan_payload(decomposition())
     payload["tasks"][0]["integrity"] = "L9"
-    fake_br.comments["proj-feat"] = [
-        artifact_record.marker_body(handoff.IMPLEMENTATION_PLAN, payload)
-    ]
+    artifact_record.write(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
     verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
     assert not verdict.admitted
     assert "integrity" in verdict.reason and "L9" in verdict.reason
 
 
 def test_a_task_naming_no_demonstration_is_refused_though_a_recorded_bead_is_not(
-    work_repo: Path, fake_br: _FakeBr
+    work_repo: Path,
 ) -> None:
     """D18 binds on the artifact and not on ``PLAN_FIELDS``, and the two populations differ.
 
@@ -214,33 +232,25 @@ def test_a_task_naming_no_demonstration_is_refused_though_a_recorded_bead_is_not
     """
     payload = handoff.plan_payload(decomposition())
     del payload["tasks"][0]["demonstration"]
-    fake_br.comments["proj-feat"] = [
-        artifact_record.marker_body(handoff.IMPLEMENTATION_PLAN, payload)
-    ]
+    artifact_record.write(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
     verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
     assert not verdict.admitted
     assert plan_gate.DEMONSTRATION_FIELD in verdict.reason
 
 
-def test_a_plan_whose_payload_is_not_json_is_refused_not_ignored(
-    work_repo: Path, fake_br: _FakeBr
-) -> None:
+def test_a_plan_whose_payload_is_not_json_is_refused_not_ignored(work_repo: Path) -> None:
     """A truncated marker is a corrupted artifact, never a unit that carries none."""
-    fake_br.comments["proj-feat"] = [
-        f"{artifact_record.MARKER} kind=implementation-plan {{not json"
-    ]
+    record_marker(work_repo, "proj-feat", f"{artifact_record.MARKER} kind=implementation-plan {{n")
     verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
     assert not verdict.admitted and "is not of type 'object'" in verdict.reason
 
 
-def test_every_violation_is_reported_at_once(work_repo: Path, fake_br: _FakeBr) -> None:
+def test_every_violation_is_reported_at_once(work_repo: Path) -> None:
     """One advance per fixed field is the round-trip cost this gate exists to avoid."""
     payload = handoff.plan_payload(decomposition())
     payload["tasks"][0]["acceptance"] = []
     payload["tasks"][1]["budget_tokens"] = 0
-    fake_br.comments["proj-feat"] = [
-        artifact_record.marker_body(handoff.IMPLEMENTATION_PLAN, payload)
-    ]
+    artifact_record.write(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
     verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
     assert len(verdict.violations) == 2
 
@@ -248,14 +258,12 @@ def test_every_violation_is_reported_at_once(work_repo: Path, fake_br: _FakeBr) 
 # --- the change-summary -----------------------------------------------------
 
 
-@pytest.mark.usefixtures("fake_br")
 def test_a_derived_change_summary_records_and_reads_back_admitted(work_repo: Path) -> None:
     """BUILD's handoff is composed from facts the engine holds, and VERIFY accepts it."""
     handoff.record(work_repo, "proj-i", handoff.CHANGE_SUMMARY, summary())
     assert handoff.entry_verdict(work_repo, "proj-i", handoff.CHANGE_SUMMARY).admitted
 
 
-@pytest.mark.usefixtures("fake_br")
 def test_a_build_that_changed_nothing_has_no_summary_to_hand_on(work_repo: Path) -> None:
     """An empty changed set is refused at composition: VERIFY would have nothing to check."""
     payload = handoff.summary_payload(
@@ -267,12 +275,12 @@ def test_a_build_that_changed_nothing_has_no_summary_to_hand_on(work_repo: Path)
 
 
 def test_a_hand_corrupted_change_summary_is_refused_naming_the_failing_field(
-    work_repo: Path, fake_br: _FakeBr
+    work_repo: Path,
 ) -> None:
     """The BUILD->VERIFY half of the same control pair."""
     payload = summary()
     payload["self_check"]["passed"] = "yes"
-    fake_br.comments["proj-i"] = [artifact_record.marker_body(handoff.CHANGE_SUMMARY, payload)]
+    artifact_record.write(work_repo, "proj-i", handoff.CHANGE_SUMMARY, payload)
     verdict = handoff.entry_verdict(work_repo, "proj-i", handoff.CHANGE_SUMMARY)
     assert not verdict.admitted and "passed" in verdict.reason
 
@@ -281,18 +289,9 @@ def test_a_hand_corrupted_change_summary_is_refused_naming_the_failing_field(
 
 
 def _stored_on_a_real_ledger(repo: Path, record: str, body: str) -> None:
-    """Seed *record* and append *body* as one comment, through the cap that may cut it.
-
-    No ``fake_br`` here on purpose: the truncation markers are written by the event cap
-    and rendered by ``comment_rows``, so a fake row would be asserting the shape this
-    pair of tests exists to check rather than observing it.
-    """
-    kit = tracker.kit(repo)
+    """Seed *record* and put *body* on it as one comment, through the cap that may cut it."""
     flipped_tracker.seed(repo, record, title="a recorded feature")
-    kit.events.append(
-        tracker.ledger_dir(repo),
-        [kit.events.Draft(record, kit.events.KIND_COMMENT, {tracker.COMMENT_TEXT_KEY: body})],
-    )
+    record_marker(repo, record, body)
 
 
 def _stored_text(repo: Path, record: str) -> str:
@@ -311,7 +310,7 @@ def test_a_plan_the_cap_cut_is_refused_naming_the_truncation_and_both_byte_count
     """
     payload = handoff.plan_payload(decomposition())
     payload["tasks"][0]["acceptance"] = ["y" * 6000]
-    body = artifact_record.marker_body(handoff.IMPLEMENTATION_PLAN, payload)
+    body = legacy_marker(handoff.IMPLEMENTATION_PLAN, payload)
     _stored_on_a_real_ledger(work_repo, "proj-cut", body)
 
     verdict = handoff.entry_verdict(work_repo, "proj-cut", handoff.IMPLEMENTATION_PLAN)
@@ -334,7 +333,7 @@ def test_a_malformed_plan_the_cap_left_whole_keeps_the_reason_it_already_had(
     """
     payload = handoff.plan_payload(decomposition())
     payload["tasks"][0]["integrity"] = "L9"
-    body = artifact_record.marker_body(handoff.IMPLEMENTATION_PLAN, payload)
+    body = legacy_marker(handoff.IMPLEMENTATION_PLAN, payload)
     _stored_on_a_real_ledger(work_repo, "proj-whole", body)
 
     verdict = handoff.entry_verdict(work_repo, "proj-whole", handoff.IMPLEMENTATION_PLAN)
@@ -346,9 +345,7 @@ def test_a_malformed_plan_the_cap_left_whole_keeps_the_reason_it_already_had(
 
 def test_a_sound_plan_on_a_real_ledger_is_still_admitted(work_repo: Path) -> None:
     """The positive control the pair needs: an uncut artifact reaches the same yes."""
-    body = artifact_record.marker_body(
-        handoff.IMPLEMENTATION_PLAN, handoff.plan_payload(decomposition())
-    )
+    body = legacy_marker(handoff.IMPLEMENTATION_PLAN, handoff.plan_payload(decomposition()))
     _stored_on_a_real_ledger(work_repo, "proj-sound", body)
 
     assert handoff.entry_verdict(work_repo, "proj-sound", handoff.IMPLEMENTATION_PLAN).admitted
