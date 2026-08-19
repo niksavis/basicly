@@ -60,6 +60,52 @@ then fetch the specific page and ask a **narrow** question — exact flag names,
 field names, whether a machine-readable output mode exists — rather than "tell me
 about X". Use browser tools only when a page needs JavaScript to render.
 
+## Machine-readable routes, reached only after the binary
+
+**Run the installed binary first.** This table makes rung 3 cheap, and cheap is how it
+goes wrong. Recorded incident, 2026-08-19 on this repo's own toolchain before it was
+updated: `uv` was installed at 0.11.28 while 0.12.5 was released, and uv's changelog
+gives 0.12.0 "Define build systems by default with `uv init`" — so the current
+documentation described a `uv init` the installed binary did not have. `uv init --help`
+on 0.11.28 already listed both `--package` and `--no-package`, so even a flag probe
+missed it and only running the command found the default. A route below answers "what
+does this release document", never "what will this command do".
+
+Every row was fetched, not recalled, on 2026-08-19. Follow redirects, and read an
+unexpected hop or a 404 as route rot rather than as absence of the fact:
+`docs.claude.com/llms.txt` 301s to `platform.claude.com/llms.txt`, and
+`developers.openai.com/codex/llms.txt` 308s to `learn.chatgpt.com/docs/llms.txt`
+while the OpenAI index still advertises the old path. Probe the row before you quote it.
+
+| dependency | route, fetched 2026-08-19 |
+| --- | --- |
+| uv | `docs.astral.sh/uv/llms.txt`; per page `docs.astral.sh/uv/<page>/index.md` |
+| ruff | `docs.astral.sh/ruff/llms.txt`; per page `docs.astral.sh/ruff/<page>/index.md` |
+| Claude Code | `code.claude.com/docs/llms.txt`; per page `code.claude.com/docs/en/<slug>.md` |
+| Anthropic API | `platform.claude.com/llms.txt`; per page `platform.claude.com/docs/en/<path>.md`. `llms-full.txt` exists and is 32 MB — never fetch it whole |
+| Codex | `developers.openai.com/codex/llms.txt` → `learn.chatgpt.com/docs/llms.txt`; per page `learn.chatgpt.com/docs/<slug>.md` |
+| GitHub Docs, and so Copilot CLI and Actions | `docs.github.com/llms.txt`; any page as markdown by appending `.md` (`text/markdown`); or the APIs below |
+| Python | no `llms.txt` (404); Sphinx `docs.python.org/3/_sources/<path>.rst.txt` and `docs.python.org/3/objects.inv` |
+| pytest | no `llms.txt` (404); `docs.pytest.org/en/stable/_sources/<path>.rst.txt` and `docs.pytest.org/en/stable/objects.inv` |
+| git | none served (404) — rung 2, `git <cmd> --help` on the installed binary |
+| pre-commit | none served (404) — rung 2, `pre-commit <cmd> --help` on the installed binary |
+| any other dependency the repo declares (in basicly: jinja2, jsonschema, pyyaml, rich, ruamel.yaml, pyright, bandit, vulture, import-linter, pip-audit, djlint) | probe `<docs-host>/llms.txt`, then the Sphinx pair `objects.inv` + `_sources/<path>.rst.txt` (both answered 200 for jinja2 and rich), else rung 2 |
+
+GitHub Docs names its Article, Article Body, Page List and Search APIs the preferred
+route for automated tools, and **the Search API requires an undocumented `client_name`
+parameter**: the example GitHub prints in its own `llms.txt`,
+`/api/search/v1?query=actions&language=en&version=free-pro-team@latest`, answers 400
+`Missing required parameter 'client_name' for external requests`, and the same URL with
+`&client_name=<something naming us>` answers 200. `/api/article` and
+`/api/article/body` answered 200 without it — send it anyway rather than depending on
+that asymmetry holding.
+
+Three refusals go with the table. Never cache or commit fetched documentation: a cache
+lands in a consumer tree and the upstream licence is not ours to redistribute. Never
+cite an aggregator, mirror or docs-summarising site as the source of an interface fact
+— only the vendor's own host counts. Never record a fact a route gave you without the
+version it describes and the date you fetched it.
+
 ## Distinguish "the capability exists" from "we can reach it"
 
 Separate questions; conflating them produces a confident wrong answer in either
