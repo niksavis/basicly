@@ -1563,8 +1563,8 @@ def _record_change_summary(
 
     BUILD's handoff artifact (§8), written at the one point where the build is finished
     and the branch facts still exist. Every field is derived — the bead's title, the head
-    :func:`_branch_facts` read before the merge, the paths it changed, and the landing's
-    own verdict — so nothing here depends on an agent having composed a report.
+    :func:`_branch_facts` read before the merge, its paths as a count and digest, and the
+    landing's own verdict — so nothing depends on an agent having composed a report.
 
     Held rather than raised: a payload the schema refuses is a fact about this landing an
     operator can fix, and blocking names the field. A landing whose branch facts could not

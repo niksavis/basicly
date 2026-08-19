@@ -1,0 +1,38 @@
+# The change-summary carries a count and a digest of the changed paths instead of the list
+# (basicly-gvlpxm, architecture D-36). The list was the only field that grew with the diff —
+# 4096 of the biggest recorded summary's 18555 bytes were sorted paths and nothing else — and
+# it is the only field a reader can recover from the `commit` the same payload carries, so
+# taking it out bounds the artifact by derivability rather than by refusing a large change.
+#
+# `src/basicly/handoff.py` +175 to 3991 against a 4000-token cap it graduated to under
+# `basicly-pp7q4i`: `_changed_facts` plus the two payload keys, and the added prose was cut
+# twice to stay under the cap rather than re-freezing a module that had just come under it.
+# The measurement above lives in the schema's own field descriptions, which no ratchet counts.
+# `src/basicly/loop.py` +1 token, prose share 52.4 -> 52.4 against a frozen 52.4: the
+# producer's own docstring named "the paths it changed" as a recorded field, which is now a
+# count and a digest, and the replacement sentence is one character shorter than the claim it
+# corrects. `.basicly/core/schemas/change-summary.schema.json` accepts both forms through an
+# `if`/`then`/`else` on `changed`: 38 summaries are already stored carrying the list, an
+# append-only log cannot re-derive one, and jsonschema reports the missing member of the new
+# pair by name under `else` where an `anyOf` would only have said "not valid under any".
+#
+# `tests/test_handoff.py` 4134 -> 5124, rebaselined. The four acceptance criteria name four
+# demonstrations and each is a test: the payload carries the pair and not the list (87
+# tokens), a reader derives the paths from the commit and hashes them to the recorded digest
+# (307, plus a 192-token real-git helper — the claim is that two *different* git reads answer
+# with one path set, which no fake can show), a pre-cut summary is still admitted (147), and a
+# 400-file lane stores a body under a kilobyte (251, measured as the store serializes it).
+# Two cheaper routes were rejected. Moving these tests into `test_handoff_states.py`, which
+# has 1867 tokens of headroom, would put schema assertions in the file whose docstring says it
+# re-asserts nothing about the schema — passing a size gate by misfiling coverage. And the
+# extraction the gate's own remedy points at is the one `basicly-pp7q4i` already named and
+# deferred: carrying `_cut_violation` into `artifact_record` takes three tests out of this
+# suite and lands it near 3630, but `artifact_record.py` and `test_artifact_record.py` are
+# outside this record's declared scope and pp7q4i assigned that move to a record that owns it.
+# Prose share 33.2 -> 31.7 under the 50% cap: the growth is assertions and a git fixture,
+# and it is code-heavier than the suite it joins.
+[ratchet.module_size]
+rebaseline_reason = "the four acceptance criteria name four demonstrations and the suite had 0 tokens of headroom; the only extraction available is the _cut_violation seam move into artifact_record, which basicly-pp7q4i deferred to a record that owns it and which this record's scope does not include"
+
+[ratchet.module_size.rebaselined]
+"tests/test_handoff.py" = 990

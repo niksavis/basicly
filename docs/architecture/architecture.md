@@ -3184,7 +3184,7 @@ item tracks are named in its note.
 | Kind | Producer | Consumer that can refuse | Required fields |
 | --- | --- | --- | --- |
 | implementation-plan | DECOMPOSE | the BUILD fan-out | schema version, feature, tasks, groups |
-| change-summary | the BUILD landing, every field engine-derived | entry to VERIFY | schema version, issue, why, commit, changed, self-check |
+| change-summary | the BUILD landing, every field engine-derived | entry to VERIFY | schema version, issue, why, commit, changed count + digest, self-check |
 | release-record | SHIP, by the curator | none. SHIP has already merged, so there is nothing left to refuse | schema version, issue, claims, unsupported, post-ship action |
 | classification | none. CLASSIFY writes a different, unvalidated marker | none | schema version, issue, level, depth, rule, reason, selects |
 | change-shape | none | none | schema version, issue, call tree, file tree, new public functions |

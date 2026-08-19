@@ -41,18 +41,30 @@ def test_every_named_kind_has_a_schema_file_named_for_it(kind: str) -> None:
     assert (SCHEMA_DIR / f"{kind}.schema.json").is_file()
 
 
+def _demanded(schema: dict) -> set[str]:
+    """Every property the schema demands somewhere: at the top level or in a branch.
+
+    `change-summary` requires one of two field sets depending on whether the payload
+    predates `basicly-gvlpxm` (`if`/`else` on `changed`), so a single `required` list can
+    no longer name every property. What must still hold is that no property is optional
+    *and* unmentioned, which is the fail-open shape the assertion below is about.
+    """
+    branches = (schema, schema.get("if", {}), schema.get("else", {}))
+    return {name for branch in branches for name in branch.get("required", ())}
+
+
 @pytest.mark.parametrize("kind", HANDOFF_KINDS)
 def test_every_schema_is_strict_about_what_it_admits(kind: str) -> None:
     """A permissive schema is the failure this bead exists to avoid.
 
-    `additionalProperties: false` at the top level and a `required` naming every
-    declared property are what make a malformed handoff a refusal rather than a
-    silently thin artifact the next state reasons from.
+    `additionalProperties: false` at the top level, and every declared property demanded
+    by `required` or by a conditional branch, are what make a malformed handoff a refusal
+    rather than a silently thin artifact the next state reasons from.
     """
     schema = _schema(kind)
     Draft202012Validator.check_schema(schema)
     assert schema["additionalProperties"] is False
-    assert set(schema["required"]) == set(schema["properties"])
+    assert _demanded(schema) == set(schema["properties"])
     assert schema["properties"]["schema_version"]["const"] == 1
 
 

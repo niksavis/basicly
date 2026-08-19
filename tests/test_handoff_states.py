@@ -14,6 +14,7 @@ prevent reaching (``_build_children``, ``verify.run_verify``) is replaced with a
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -189,6 +190,7 @@ def test_a_landing_writes_the_change_summary_it_hands_verify(
         "issue": "proj-i",
         "why": "carry the plan into build",
         "commit": "deadbee",
-        "changed": ["src/basicly/loop.py"],
+        "changed_count": 1,
+        "changed_digest": hashlib.sha256(b"src/basicly/loop.py").hexdigest(),
         "self_check": {"status": "merged", "passed": True, "detail": "landed"},
     }
