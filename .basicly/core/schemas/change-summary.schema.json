@@ -10,9 +10,22 @@
     "issue",
     "why",
     "commit",
-    "changed",
     "self_check"
   ],
+  "if": {
+    "required": [
+      "changed"
+    ]
+  },
+  "then": {
+    "description": "A summary recorded before basicly-gvlpxm carries the path list itself and no digest; it is still accepted, because a stored artifact cannot be re-derived after the fact and refusing it would refuse the population this contract already has."
+  },
+  "else": {
+    "required": [
+      "changed_count",
+      "changed_digest"
+    ]
+  },
   "properties": {
     "schema_version": {
       "const": 1,
@@ -31,12 +44,22 @@
     "commit": {
       "type": "string",
       "minLength": 1,
-      "description": "The head of the branch the build committed on, read before the landing merges it."
+      "description": "The head of the branch the build committed on, read before the landing merges it. This is also where the changed paths come from now that the list is not stored: `git show --name-only <commit>` for a build that committed once, `git log --name-only <base>..<commit>` otherwise, checked against `changed_digest`."
+    },
+    "changed_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How many distinct paths the branch changed against its base. At least one: a build that changed nothing has nothing for VERIFY to check."
+    },
+    "changed_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "sha256 of those paths, sorted and newline-joined (`handoff._changed_facts`). What a reader derives from `commit` is complete when it hashes to this and incomplete when it does not, which is the whole reason a count alone was not enough."
     },
     "changed": {
       "type": "array",
       "minItems": 1,
-      "description": "Paths the branch changed against its base. At least one: a build that changed nothing has nothing for VERIFY to check.",
+      "description": "The retired form: the path list itself, written until basicly-gvlpxm and read from stored artifacts only. It is what made this the largest artifact population - 4096 of the biggest recorded summary's 18555 bytes were sorted paths and nothing else - and it grew with the diff, which no bound on diff size may punish.",
       "items": {
         "type": "string",
         "minLength": 1

@@ -24,12 +24,15 @@ and nothing there re-asserts the schema.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
 
-from basicly import artifact_record, handoff, plan_gate, tracker
+from basicly import artifact_record, handoff, merge, plan_gate, tracker
+from basicly.checkout import git
 from basicly.decompose import CreatedChild, DecomposeResult
 from tests import flipped_tracker, plan_fixtures
 from tests.test_artifact_record import artifact_events, legacy_marker, record_marker
@@ -283,6 +286,87 @@ def test_a_hand_corrupted_change_summary_is_refused_naming_the_failing_field(
     artifact_record.write(work_repo, "proj-i", handoff.CHANGE_SUMMARY, payload)
     verdict = handoff.entry_verdict(work_repo, "proj-i", handoff.CHANGE_SUMMARY)
     assert not verdict.admitted and "passed" in verdict.reason
+
+
+def test_the_changed_paths_are_carried_as_a_count_and_a_digest_not_as_the_list() -> None:
+    """`basicly-gvlpxm`: the one field that grew with the diff is gone from the payload."""
+    payload = summary()
+    assert "changed" not in payload
+    assert payload["changed_count"] == 1
+    assert re.fullmatch("[0-9a-f]{64}", payload["changed_digest"])
+
+
+def _lane_commit(repo: Path, paths: tuple[str, ...]) -> str:
+    """Commit *paths* on a lane branch off ``main`` in *repo*; return the branch head."""
+    git(["init", "-q", "-b", "main"], cwd=repo)
+    git(["config", "user.email", "tester@example.invalid"], cwd=repo)
+    git(["config", "user.name", "tester"], cwd=repo)
+    git(["commit", "-q", "--allow-empty", "-m", "base"], cwd=repo)
+    git(["checkout", "-q", "-b", "harness/proj-i"], cwd=repo)
+    for path in paths:
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text("the lane's work\n", encoding="utf-8")
+    git(["add", *paths], cwd=repo)
+    git(["commit", "-q", "-m", "the lane's work"], cwd=repo)
+    return git(["rev-parse", "HEAD"], cwd=repo).stdout.strip()
+
+
+def test_a_reader_derives_the_changed_paths_from_the_commit_the_summary_carries(
+    work_repo: Path,
+) -> None:
+    """The other half of the cut: what was dropped is recoverable, and checkably so.
+
+    A real repo, because the claim is that two *different* git reads answer with one path
+    set — the producer's ``diff --name-only <base>...<branch>`` and a reader's ``show
+    --name-only <commit>`` — which a fake handing both one canned answer cannot show.
+    """
+    head = _lane_commit(work_repo, ("lane/a.py", "lane/b.py"))
+    changed = merge.branch_changed_paths(work_repo, "main", "harness/proj-i")
+    payload = handoff.summary_payload(
+        "proj-i", "why", (head, changed), handoff.SelfCheck("merged", "landed", passed=True)
+    )
+    handoff.record(work_repo, "proj-i", handoff.CHANGE_SUMMARY, payload)
+
+    derived = git(["show", "--name-only", "--format=", head], cwd=work_repo).stdout.split()
+    digest = hashlib.sha256("\n".join(sorted(derived)).encode("utf-8")).hexdigest()
+    stored = _artifact_bodies(work_repo, "proj-i")[-1]
+    assert sorted(derived) == ["lane/a.py", "lane/b.py"]
+    assert stored == payload
+    assert (payload["changed_count"], payload["changed_digest"]) == (len(derived), digest)
+
+
+def test_a_summary_written_before_the_list_was_dropped_is_still_accepted(
+    work_repo: Path,
+) -> None:
+    """The population argument: 38 summaries are already stored carrying the list.
+
+    An append-only log cannot re-derive one, so refusing the old form refuses those units.
+    """
+    payload = summary()
+    payload["changed"] = ["src/basicly/handoff.py"]
+    del payload["changed_count"], payload["changed_digest"]
+    artifact_record.write(work_repo, "proj-i", handoff.CHANGE_SUMMARY, payload)
+    assert handoff.entry_verdict(work_repo, "proj-i", handoff.CHANGE_SUMMARY).admitted
+
+
+def test_a_four_hundred_file_lane_is_stored_in_under_a_kilobyte(work_repo: Path) -> None:
+    """The bound the cut buys: constant in the diff, so a big correct change stays storable.
+
+    The largest summary stored under the old form was 18555 bytes, 4096 of them paths. The
+    body is measured as the store writes it (``kit/tracker/events.py``: sorted keys, no
+    separator whitespace, unescaped non-ascii), not as a second opinion about that.
+    """
+    payload = handoff.summary_payload(
+        "proj-i",
+        "touch four hundred files",
+        ("abc1234", tuple(f"src/basicly/generated_{index}.py" for index in range(400))),
+        handoff.SelfCheck("merged", "landed", passed=True),
+    )
+    handoff.record(work_repo, "proj-i", handoff.CHANGE_SUMMARY, payload)
+    body = _artifact_bodies(work_repo, "proj-i")[-1]
+    assert payload["changed_count"] == 400
+    stored = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    assert len(stored.encode("utf-8")) < 1000
 
 
 # --- a body the transport cut, which no fake can produce ---------------------

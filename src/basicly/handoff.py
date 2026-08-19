@@ -24,7 +24,7 @@ form and ``tracker.add_artifact`` the append. Until `basicly-pp7q4i` the pair tr
 ``[harness-artifact]`` comment marker, whose body is free text and so was cut at 4096 bytes:
 31 of the first 54 artifacts are stored cut, and :func:`_cut_violation` is what those refuse
 through. Nothing bounds the new body by size — D-36 bounds an artifact by taking out what the
-ledger can already derive, which is `basicly-gvlpxm`'s cut to the changed-path list.
+ledger can already derive, which `basicly-gvlpxm` applied to the changed-path list.
 
 ## The ratchet, and the population it discriminates
 
@@ -38,6 +38,7 @@ before the tokens.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
@@ -317,6 +318,15 @@ class SelfCheck:
     passed: bool
 
 
+def _changed_facts(changed: tuple[str, ...]) -> tuple[int, str]:
+    """How many distinct paths *changed* holds, and the sha256 of them sorted (pure).
+
+    Sorted: a reader deriving the paths from the commit reads them in git's order.
+    """
+    paths = sorted(set(changed))
+    return len(paths), hashlib.sha256("\n".join(paths).encode("utf-8")).hexdigest()
+
+
 def summary_payload(
     issue_id: str, why: str, built: tuple[str, tuple[str, ...]], self_check: SelfCheck
 ) -> dict:
@@ -326,14 +336,20 @@ def summary_payload(
     the bead's title, the branch head and changed paths read before the merge, and the
     landing's own verdict. None of it is composed by the agent, which is why this
     artifact needs no output contract for a model to satisfy.
+
+    The paths go in as a count and a digest, not as the list (`basicly-gvlpxm`, D-36): the
+    list is the only part that grows with the diff, and the only part a reader recovers
+    from the ``commit`` beside it — the digest tells it the recovery was complete.
     """
     commit, changed = built
+    count, digest = _changed_facts(changed)
     return {
         "schema_version": SCHEMA_VERSION,
         "issue": issue_id,
         "why": why,
         "commit": commit,
-        "changed": list(changed),
+        "changed_count": count,
+        "changed_digest": digest,
         "self_check": {
             "status": self_check.status,
             "passed": self_check.passed,
