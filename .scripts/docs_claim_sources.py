@@ -21,6 +21,12 @@ from typing import Any
 
 import yaml
 
+# Paths more than one claim module reads, spelled once so a rename is one edit. The
+# architecture document is both a gated surface and the source of the component-state
+# vocabulary, and the skills directory is read by two claims.
+ARCHITECTURE_MD = "docs/architecture/architecture.md"
+SKILLS_DIR = ".basicly/core/skills"
+
 
 class ClaimError(Exception):
     """A claim cannot be evaluated at all — a missing marker, file, or source field.

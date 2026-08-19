@@ -290,7 +290,7 @@ def test_fix_cannot_repair_a_missing_subcommand_and_says_so(work_repo: Path) -> 
 
 def test_the_work_tracker_skill_states_the_engines_own_work_types() -> None:
     """The positive control: both lists in the shipped skill match the engine."""
-    assert claims._skill_work_types(REPO) == []
+    assert claims.work_types.skill_work_types(REPO) == []
 
 
 @pytest.mark.parametrize(
@@ -329,7 +329,7 @@ def test_the_claim_follows_a_renamed_skill_source_instead_of_a_path(work_repo: P
     """
     skills = work_repo / ".basicly/core/skills"
     (skills / "work-tracker").rename(skills / "work-ledger")
-    assert claims._skill_work_types(work_repo) == []
+    assert claims.work_types.skill_work_types(work_repo) == []
 
     source = skills / "work-ledger" / "skill.yaml"
     stated = source.read_text(encoding="utf-8")
@@ -337,7 +337,7 @@ def test_the_claim_follows_a_renamed_skill_source_instead_of_a_path(work_repo: P
         stated.replace("`feature`, `task`;", "`feature`, `docs`;", 1), encoding="utf-8"
     )
 
-    assert claims._skill_work_types(work_repo) != []
+    assert claims.work_types.skill_work_types(work_repo) != []
 
 
 def test_prose_reworded_past_the_anchor_fails_loudly_rather_than_asserting_nothing(

@@ -94,16 +94,18 @@ session. It does not know this repository's rules.
 
 Four failures follow. Each needs a different remedy. No remedy substitutes for another.
 
-| Failure | Why it happens | Remedy | Status |
-| --- | --- | --- | --- |
-| The agent does not know the local rules | Every repository has conventions a model cannot infer. Each agent family reads a different file | Write the rule once. Project it into every file an agent reads | shipped |
-| The agent ignores a rule it read | Guidance is a suggestion | A gate. A script that runs whether or not anyone asked, and refuses | shipped |
-| A session ends and work is redone | A crash, a compaction, a rate limit or a change of agent family loses the thread | Derive the current position from durable state. Resuming is a read | shipped |
-| Nobody knows whether any of it works | A rule the model ignores and a skill that never fires both cost context and return nothing | Measure it | researching |
+| Failure | Why it happens | Remedy |
+| --- | --- | --- |
+| The agent does not know the local rules | Every repository has conventions a model cannot infer. Each agent family reads a different file | Write the rule once. Project it into every file an agent reads |
+| The agent ignores a rule it read | Guidance is a suggestion | A gate. A script that runs whether or not anyone asked, and refuses |
+| A session ends and work is redone | A crash, a compaction, a rate limit or a change of agent family loses the thread | Derive the current position from durable state. Resuming is a read |
+| Nobody knows whether any of it works | A rule the model ignores and a skill that never fires both cost context and return nothing | Measure it |
 
 Guidance and gating are the classic bargain. Most tools of this kind stop there. Rows
 three and four are the difference. This project owns the process and the state, and
 enforces both in code.
+
+How far each remedy has got is a status, so it is in [`status.md`](status.md) and not here.
 
 ### 1.2 The two planes, in three sentences
 
@@ -115,8 +117,8 @@ over a tracked graph of state. They meet at exactly two points, and
 ## 2. Component states
 
 Every part of this system is in one of six states. **The set is closed.** Nothing in
-this document, in `status.md`, in the README or on the landing page may use a seventh
-word. Each word names the evidence required to claim it. Optimism cannot promote a part.
+this document, in [`status.yaml`](status.yaml), in the README or on the landing page may use
+a seventh word. Each word names the evidence required to claim it. Optimism cannot promote a part.
 
 | State | Means | Evidence required to claim it |
 | --- | --- | --- |
@@ -138,6 +140,13 @@ not yet have. Everywhere else, read the text as a report on what exists.
 **The current state of every capability is deliberately not here.** It changes on every
 landing, and a specification must not go stale on a schedule it does not control. It
 lives in [`status.md`](status.md).
+
+**Nothing here grades a capability, and a gate holds that rule.** `docs-claims` refuses a
+component state in any table column in this document except the one above, which defines
+them; the one place a capability is graded is [`status.yaml`](status.yaml), rendered into
+`status.md`. What stays here is a **dated measurement** — evidence for an invariant rather
+than a grade, and a measurement that carries its date does not become false when the code
+moves.
 
 The diagrams below carry three of the six states, plus one class for a counterparty this
 project does not own. Every node carries exactly one.
@@ -2801,12 +2810,11 @@ writes the base checkout's store. [35. Runtime topology](#35-runtime-topology) d
 
 ### 32.6 Consistency and edge provenance
 
-Two kit modules hold contracts worth stating even though nothing calls them yet. Both are
-`partial`: built, with tests, and reached by no engine caller. A positive control verified
-that finding — it found the callers of the kit modules that *are* loaded. Consumer
-surfaces advertise both as shipped capability. **This is the
-closed-blocker-is-not-a-working-gate case in its purest form. The code exists, and nothing
-binds it.**
+Two kit modules hold contracts worth stating even though nothing calls them yet: built,
+with tests, and reached by no engine caller [re-measured 2026-08-17 and recorded in
+[`status.md`](status.md), against a positive control that found the callers of the kit
+modules that *are* loaded]. **This is the closed-blocker-is-not-a-working-gate case in its
+purest form. The code exists, and nothing binds it.**
 
 **The consistency checker repairs only by an append** of a corrective event. It reports a
 broken log, and never rewrites one in place. A derived file that disagrees with the log it
@@ -3169,22 +3177,24 @@ lock in [32.5](#325-the-write-path-the-lock-and-rotation).
 Eight artifact kinds carry a name. Each one is a schema at a state boundary. A state's exit
 criterion is a verifiable condition on a work product, so every work product needs a schema.
 
-**How far each kind actually binds** [measured 2026-08-16].
+**How far each kind actually binds** [measured 2026-08-16]. This is the measurement, not the
+grade: the grade each row carries is in [`status.md`](status.md), and the four kinds no work
+item tracks are named in its note.
 
-| Kind | Producer | Consumer that can refuse | Status | Required fields |
-| --- | --- | --- | --- | --- |
-| implementation-plan | DECOMPOSE | the BUILD fan-out | shipped | schema version, feature, tasks, groups |
-| change-summary | the BUILD landing, every field engine-derived | entry to VERIFY | shipped | schema version, issue, why, commit, changed, self-check |
-| release-record | SHIP, by the curator | none. SHIP has already merged, so there is nothing left to refuse | partial | schema version, issue, claims, unsupported, post-ship action |
-| classification | none. CLASSIFY writes a different, unvalidated marker | none | partial · no bead | schema version, issue, level, depth, rule, reason, selects |
-| change-shape | none | none | partial · no bead | schema version, issue, call tree, file tree, new public functions |
-| verification-evidence | none | none | partial · no bead | schema version, issue, passed, gates, criteria |
-| validation-transcript | none. The validator's reply is read as a verdict line | none | partial · no bead | schema version, issue, requirement, environment, steps, verdict |
-| solution-design | none | none | designed | six machine-checked markdown sections, not JSON |
+| Kind | Producer | Consumer that can refuse | Required fields |
+| --- | --- | --- | --- |
+| implementation-plan | DECOMPOSE | the BUILD fan-out | schema version, feature, tasks, groups |
+| change-summary | the BUILD landing, every field engine-derived | entry to VERIFY | schema version, issue, why, commit, changed, self-check |
+| release-record | SHIP, by the curator | none. SHIP has already merged, so there is nothing left to refuse | schema version, issue, claims, unsupported, post-ship action |
+| classification | none. CLASSIFY writes a different, unvalidated marker | none | schema version, issue, level, depth, rule, reason, selects |
+| change-shape | none | none | schema version, issue, call tree, file tree, new public functions |
+| verification-evidence | none | none | schema version, issue, passed, gates, criteria |
+| validation-transcript | none. The validator's reply is read as a verdict line | none | schema version, issue, requirement, environment, steps, verdict |
+| solution-design | none | none | six machine-checked markdown sections, not JSON |
 
-The three `shipped` rows carry a producer and a schema on disk. This document has not traced
-the producer and consumer call paths for `release-record`; that row's `partial` grade rests
-on the absence of a consumer, which follows from SHIP having already merged.
+Three rows carry both a producer and a schema on disk. This document has not traced the
+producer and consumer call paths for `release-record`: it has a producer and no consumer,
+which follows from SHIP having already merged.
 
 **`verification-evidence` is not the verify run artifact.** The evidence gate stats that file
 and never opens it. The two are different things with adjacent names.
@@ -4014,7 +4024,7 @@ decision keeps its record and gains a `superseded by` line.
 | D-27 | Everything is a plain, git-tracked file | accepted | §21 |
 | D-28 | A handoff artifact travels as a comment marker, never as a ledger append | **superseded by D-36** | §33 |
 | D-29 | Codex inlines a scoped fragment, and Copilot gets no scoped twin | accepted | §12.1 |
-| D-30 | The status view is generated from one source | **proposed** | §2 |
+| D-30 | The status view is generated from one source | accepted, one of three surfaces built | §2 |
 | D-31 | The two ladders are named, not lettered | accepted | §9 |
 | D-32 | Pre-commit rather than a compiled hook runner | accepted, with four reopen triggers | §16 |
 | D-33 | An unknown configuration key is refused unconditionally | accepted | §20 |
@@ -4407,22 +4417,33 @@ and the cloud agent keep only the root instructions file.
 
 ### D-30 · The status view is generated from one source
 
-**Status: proposed.** `[TARGET]` **This decision is not implemented.**
+**Status: accepted** 2026-08-17. Landed for one of the three surfaces; the other two are
+`[TARGET]`.
 
 **Decision.** The capability status view has exactly one source, and a generated block
-renders it into every surface that shows it.
+renders it into every surface that shows it. No other document grades a capability.
 
-**Because.** Three hand-maintained copies exist today: [`status.md`](status.md), the README
-roadmap and the landing page. The rule that keeps them in step is written as prose, and
-**nothing gates it**. That is two implementations of one concept, three times over, in a
-repository that already owns the mechanism that fixes it.
+**Because.** Three hand-maintained copies existed: [`status.md`](status.md), the README
+roadmap and the landing page — and this document was a fourth, which had already diverged.
+Three gradings of the tool-call boundary were live at once, one of them `designed` for four
+hooks another row called `shipped`. The rule that kept the copies in step was written as
+prose, and **nothing gated it**. That is two implementations of one concept, four times
+over, in a repository that already owns the mechanism that fixes it.
 
-**How.** `.scripts/docs_claims.py` already renders four generated blocks from the tree. A
-fifth, `status-view`, would render the same rows into all three surfaces from one source.
+**How.** [`status.yaml`](status.yaml) is the source. `.scripts/docs_claim_status.py` renders
+it into the `status-view` block in `status.md` and refuses a component state anywhere in
+this document, and `docs-claims` runs both on every commit. The renderer reads the state
+vocabulary out of [2. Component states](#2-component-states) rather than copying it, so the
+closed set cannot be extended in one file alone, and it refuses a capability graded by two
+rows — the shape of the divergence that forced this decision.
 
-**Consequence until it lands.** A stale status row is possible on any of the three
-surfaces, and the functional sections of this document stay the place where a `shipped`
-claim has to be true.
+**What is not built.** The README roadmap and the landing page are still hand-maintained, in
+a different shape from the view: both group capabilities by pillar and abbreviate every row.
+Rendering those two from `status.yaml` is the rest of this decision.
+
+**Consequence until it lands.** A stale status row is possible on those two surfaces and on
+neither of the other two. `status.md` cannot disagree with its source, and this document
+cannot carry a grade at all.
 
 ### D-31 · The two ladders are named, not lettered
 

@@ -52,10 +52,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
-# `loop._LEAF_TYPES` is private and has no public alias; this script is repo-local
-# tooling reading its own tree, and the whole point is to bind to the definition the
-# engine actually uses rather than to a second copy of it.
-from basicly import cli, config, loop
+from basicly import cli, config
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # `.scripts` is deliberately not a package, so the sibling below is importable only
@@ -64,16 +61,23 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # by file path through `spec_from_file_location` and so starts with neither entry.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import docs_claim_status as status_view  # noqa: E402 - sibling; needs the insert above
 import docs_claim_surfaces as surfaces  # noqa: E402 - sibling; needs the insert above
-from docs_claim_sources import ClaimError, load_yaml, read_text, subparsers  # noqa: E402
+import docs_claim_work_types as work_types  # noqa: E402 - sibling; needs the insert above
+from docs_claim_sources import (  # noqa: E402
+    ARCHITECTURE_MD,
+    SKILLS_DIR,
+    ClaimError,
+    load_yaml,
+    read_text,
+    subparsers,
+)
 
-ARCHITECTURE_MD = "docs/architecture/architecture.md"
 IMPLEMENTATION_PLAN = "docs/plan/implementation-plan.md"
 SKILLS_README = ".basicly/core/skills/README.md"
 HOOKS_README = ".basicly/core/hooks/README.md"
 
 TARGETS_DIR = ".basicly/core/targets"
-SKILLS_DIR = ".basicly/core/skills"
 HOOKS_DIR = ".basicly/core/hooks"
 SRC_DIR = "src/basicly"
 
@@ -361,49 +365,6 @@ def _cli_subcommands_covered(root: Path) -> list[str]:
     return problems
 
 
-def _types_after(text: str, anchor: str) -> tuple[str, ...]:
-    """Backticked names between *anchor* and the end of its sentence.
-
-    A missing anchor is a :class:`ClaimError`, not an empty list: prose reworded past
-    the anchor must fail loudly rather than silently assert nothing.
-    """
-    at = text.find(anchor)
-    if at == -1:
-        raise ClaimError(f"anchor {anchor.strip()!r} not found; the prose was reworded past it")
-    span = text[at + len(anchor) :]
-    if ";" in span:
-        span = span[: span.index(";")]
-    return tuple(sorted(re.findall(r"`([a-z]+)`", span)))
-
-
-def _skill_work_types(root: Path) -> list[str]:
-    """The work-type lists a skill states must be the engine's, not a copy.
-
-    The skill advertised ``docs`` and ``question`` as valid types for months
-    (``basicly-tcmy.9``). Both are rejected by :func:`basicly.classify`, so filing a
-    docs bead produced one the loop could never advance — and ``br`` itself validates
-    nothing, storing whatever ``--type`` is handed, so no tool caught it.
-    """
-    # Found by the claim, never by a path: the stating source moved once (`tool-br` to
-    # `work-tracker`) and the literal path made that rename fail this gate (vkh0.42.9).
-    # A block scalar wraps a sentence, so the catalog is read as one flattened line.
-    paths = sorted((root / SKILLS_DIR).glob("*/skill.yaml"))
-    catalog = " ".join(" ".join(read_text(path) for path in paths).split())
-
-    problems: list[str] = []
-    for anchor, expected, origin in (
-        ("harness work types are ", config.WORK_TYPES, "config.WORK_TYPES"),
-        ("leaf types ", loop._LEAF_TYPES, "loop._LEAF_TYPES"),
-    ):
-        stated = _types_after(catalog, anchor)
-        if stated != tuple(sorted(expected)):
-            problems.append(
-                f"after {anchor.strip()!r} the skill states {list(stated)}; "
-                f"{origin} is {sorted(expected)}"
-            )
-    return problems
-
-
 # ----------------------------------------------------------------------- claims
 
 
@@ -430,12 +391,16 @@ BLOCKS: tuple[Block, ...] = (
     Block("catalog-skills", SKILLS_README, _catalog_skills),
     Block("catalog-hooks", HOOKS_README, _catalog_hooks),
     Block("plan-current-state", IMPLEMENTATION_PLAN, _plan_current_state),
+    Block("status-view", status_view.STATUS_MD, status_view.render_status_view),
 )
 
 ASSERTIONS: tuple[Assertion, ...] = (
     Assertion("cli-commands", ARCHITECTURE_MD, _cli_commands_covered),
     Assertion("cli-subcommands", ARCHITECTURE_MD, _cli_subcommands_covered),
-    Assertion("skill-work-types", SKILLS_DIR, _skill_work_types),
+    Assertion("skill-work-types", SKILLS_DIR, work_types.skill_work_types),
+    Assertion(
+        "architecture-grading", ARCHITECTURE_MD, status_view.architecture_grades_no_capability
+    ),
     *(
         Assertion(
             "consumer-commands",
