@@ -121,12 +121,12 @@ def _advance(repo_root: Path, state: NodeState, monkeypatch: pytest.MonkeyPatch)
 
 @pytest.mark.usefixtures("landing")
 def test_build_entry_refuses_a_corrupted_plan_naming_the_failing_field(
-    work_repo: Path, fake_br: _FakeBr, monkeypatch: pytest.MonkeyPatch
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The acceptance criterion's second half: the fan-out never starts on a broken plan."""
     payload = handoff.plan_payload(decomposition())
     payload["tasks"][0]["scope"] = []
-    fake_br.comments["proj-i"] = [artifact_record.marker_body(handoff.IMPLEMENTATION_PLAN, payload)]
+    artifact_record.write(work_repo, "proj-i", handoff.IMPLEMENTATION_PLAN, payload)
     monkeypatch.setattr(loop, "_build_children", lambda _ctx: pytest.fail("fanned out anyway"))
     result = _advance(work_repo, _state("decompose", has_children=True), monkeypatch)
     assert result.blocked and result.needs_input == "artifact"
@@ -146,12 +146,12 @@ def test_build_entry_admits_a_sound_plan(work_repo: Path, monkeypatch: pytest.Mo
 
 @pytest.mark.usefixtures("landing")
 def test_verify_entry_refuses_a_corrupted_change_summary(
-    work_repo: Path, fake_br: _FakeBr, monkeypatch: pytest.MonkeyPatch
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """VERIFY holds before it spends a check run on a build whose summary is broken."""
     payload = summary()
     del payload["commit"]
-    fake_br.comments["proj-i"] = [artifact_record.marker_body(handoff.CHANGE_SUMMARY, payload)]
+    artifact_record.write(work_repo, "proj-i", handoff.CHANGE_SUMMARY, payload)
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: pytest.fail("verify ran anyway"))
     monkeypatch.setattr(loop, "_child_states", lambda _ctx: [("proj-i.1", "closed")])
     monkeypatch.setattr(loop, "_ensure_child_worktrees", lambda *_a: None)
