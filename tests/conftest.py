@@ -35,10 +35,19 @@ import pytest
 
 from basicly import runner, session
 from basicly.checkout import COLOUR_ENV_FORCING, GIT_ENV_KEPT
+from tests import ledger_guard
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # This checkout's own tracker. No test may write to it; see the guard below.
+#
+# Deliberately not `tracker_paths.ledger_dir(REPO_ROOT)`, which follows the `redirect` a
+# linked worktree carries. A lane worktree holds *both*: the git-tracked event log,
+# checked out and stale, and the redirect naming the base checkout every write actually
+# lands in. Watching what is here means a lane's suite watches a directory nothing writes,
+# which is the honest bound — the store the base checkout serves is written by every other
+# lane at once, so pointing this at the redirect target would report a change per test and
+# say nothing. The hazard this guard covers is a suite run in the base checkout.
 LIVE_LEDGER = REPO_ROOT / ".basicly" / "ledger"
 
 # The headless adapters `auto` detects. Kept here rather than imported from
@@ -219,41 +228,24 @@ def _reset_process_globals():
 
 
 @pytest.fixture(autouse=True)
-def _the_live_ledger_is_never_written(request: pytest.FixtureRequest):
-    """Fail a test that appended to this checkout's own tracker (basicly-e2mz.43).
+def _the_live_ledger_is_never_written(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Fail a test that wrote to this checkout's own tracker (basicly-e2mz.43).
 
     **This has happened.** A fixture that failed to run left ``Path.cwd()`` pointing at
     the real repository, and four events for a test's own fixture record landed in the
     committed log — which is append-only, so the repair was an edit to a file that is
     supposed to have none.
 
-    The guard is a byte comparison across the test rather than a patched write path: the
-    engine reaches its store through several seams and a kit loaded by path bypasses all
-    of them, so the only thing that catches every route is the artifact itself. Read once
-    per test, which costs one stat and one read of a file the suite is not otherwise
-    touching.
-
     A test that legitimately writes here does not exist and should not: `flipped_tracker`
     exists so a test that needs a real ledger gets its own.
+
+    :mod:`tests.ledger_guard` holds how a write is attributed, why the guard reports a
+    change it cannot attribute instead of blaming the test in flight, and why it never
+    puts the old bytes back (basicly-vkh0.51). This fixture owns only the *when*.
     """
-    logs = sorted(LIVE_LEDGER.glob("events-*.jsonl")) if LIVE_LEDGER.is_dir() else []
-    before = {path: path.read_bytes() for path in logs}
-    yield
-    for path, held in before.items():
-        if path.read_bytes() != held:
-            path.write_bytes(held)
-            pytest.fail(
-                f"{request.node.nodeid} wrote to this checkout's own ledger at {path}. "
-                f"The change has been undone. Use `tests.flipped_tracker.flipped_repo` "
-                f"for a real ledger of its own, and check that every fixture it needs "
-                f"actually runs — a fixture named but not requested is how this happens."
-            )
-    if LIVE_LEDGER.is_dir():
-        appeared = sorted(set(LIVE_LEDGER.glob("events-*.jsonl")) - set(before))
-        if appeared:
-            for path in appeared:
-                path.unlink()
-            pytest.fail(f"{request.node.nodeid} created a log in this checkout: {appeared}")
+    with ledger_guard.watching(LIVE_LEDGER, request.node.nodeid) as watch:
+        yield
+    ledger_guard.report(watch)
 
 
 @pytest.fixture(scope="session")
