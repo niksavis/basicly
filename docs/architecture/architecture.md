@@ -3090,7 +3090,18 @@ multi-megabyte log puts it in every clone — compressed, and not removable, bec
 removal from an append-only log is the history rewrite
 [32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) forbids.
 
-**The cap truncates. It never refuses, and it never conceals that it truncated.** Those are
+`[TARGET]` **One payload is now outside all four.** The first rule below forbids the cap from
+cutting a field the fold reads, so once the bound became a property of the kind, `field`.`value`
+and every `created` payload key became stored **whole and bounded by nothing** — `value` was cut
+at 4096 bytes before, wrongly, and is cut at nothing now. That is exactly the growth this
+paragraph opens with, reachable through a description an agent pastes. The cap cannot be the
+answer, because cutting a folded field is what the first rule forbids, so the bound has to move
+to the **producer** — [D-36](#d-36--a-handoff-artifact-is-a-typed-ledger-event-bounded-by-derivability-rather-than-by-a-byte-cap)'s
+derivability argument applied to a field rather than to an artifact. `basicly-u2hl.60` is the
+open work. Nothing in the tree refuses such a write today.
+
+**Where a kind declares a bound the cap truncates. It never refuses, and it never conceals that
+it truncated.** Those are
 the two wrong answers, and each loses something different. Refusing an oversized write loses
 the *event* — the fact that a gate ran, along with its output. Clipping quietly makes a cut
 payload indistinguishable from a short one, so a reader cannot tell evidence from a fragment.
@@ -3103,20 +3114,32 @@ Four rules make it safe, and the first is what keeps the cap out of the fold.
   number, a kind, a status, a provenance label or a carried total. Truncating one of those
   would make a derived value depend on the cap, which breaks the determinism
   [32.2](#322-the-event-log-and-the-fold) asserts.
-  **The allow-list is a closed set of key *names*, and it does not implement that rule
-  today.** `value` is on it, and the fold reads `value`: it is the payload key a `field`
-  event carries its new value under, and `_apply_field` writes it straight into the folded
-  record. One record has already paid — `basicly-wpc8`'s description is stored cut to the
-  cap, and the log holds one `value_truncated` flag against 47 `text_truncated` ones
-  [measured 2026-08-18, §32.3's census command widened to count keys ending `_truncated`].
-  The rule is right and the mechanism is not; `basicly-vbl35a` closes the gap.
-  **The converse costs more.** A key *outside* the set is not capped at all, so the bound a
-  new kind gets is decided by the word its author picks for the payload key rather than by
-  a decision. The same field proves it twice over: a description arrives uncapped on a
-  `created` event, where it sits under `description`, and capped on a `field` event, where
-  it sits under `value` — 31 stored whole above 4096 bytes, the largest at 7043, against
-  the one that was cut. [D-36](#d-36--a-handoff-artifact-is-a-typed-ledger-event-bounded-by-derivability-rather-than-by-a-byte-cap)
-  turns that accident into a decision before the `artifact` kind ships.
+  **The bound is a property of the kind, and the rule it implements is the inverse of the
+  key-name allow-list it replaced** (`basicly-vbl35a`, landed 2026-08-19 at `6435977d`).
+  `FOLD_READ_KEYS` names the 22 payload keys the fold and its delegates read *by name*, which
+  the cap may never cut. `KIND_TEXT_BYTES` declares the bound per kind: eleven kinds are
+  declared, nine of them at 4096 bytes, and `created` and `artifact` store their payload whole
+  for reasons stated at the declaration. Everything outside the fold-read set is therefore
+  **cut by default**, so a new payload key is bounded without anyone remembering to name it,
+  and **a kind that declares no bound is refused rather than stored unbounded** — the single
+  refusal in a cap whose point is that it does not refuse. That refusal reaches a nested body,
+  because an artifact's body is an object.
+  **What the key-name allow-list cost while it stood.** The bound came from the payload key's
+  *spelling*. `value` was on the list and the fold reads `value`, so `basicly-wpc8`'s
+  description is stored cut to 4096 of 4461 bytes in the store of record, and the log carries
+  1 `value_truncated` flag against 50 `text_truncated` ones [re-measured 2026-08-19 at
+  `4e7dfa3a`, §32.3's census command widened to count keys ending `_truncated`; the flags were
+  1 and 47 on 2026-08-18, and the second number grows with the log].
+  **The converse cost more, and its 31 records are still on disk.** A key *outside* the list
+  was not capped at all, so the bound a new kind got was decided by the word its author picked
+  for the payload key rather than by a decision. The same field proved it twice over: a
+  description arrived uncapped on a `created` event, under `description`, and cut on a `field`
+  event, under `value` — **31 stored whole above 4096 bytes, the largest at 7043**, every one
+  of them `created`.`description` [re-measured 2026-08-19 at `4e7dfa3a`; unchanged from the
+  2026-08-18 figure, so this one was not stale]. Those 31 are now whole *by decision* rather
+  than by accident of spelling, because `created` declares no bound and `_apply_created` folds
+  every one of its keys — which is the same exemption `basicly-u2hl.60` above has to bound
+  from the producer side.
 - **Redact, then truncate, then measure.** Redaction can *lengthen* text, because a matched
   pattern becomes a placeholder, and a cut through the middle of a secret defeats the pattern
   that would have caught it. The recorded length is therefore the length of the **redacted**
@@ -3124,9 +3147,12 @@ Four rules make it safe, and the first is what keeps the cap out of the fold.
 - **Cut on a character boundary, and name the unit.** A byte-sliced UTF-8 payload stops being
   decodable and takes the whole line down with it. The length is in **bytes** and the field
   name says so; a length whose unit a reader has to guess is worse than no length.
-- **A truncatable key must hold a string.** A container under one is refused by the *schema*
-  rather than by the cap: the two markers say how much was cut from **one** field, and there
-  is nowhere honest to put them for a list of ten.
+- **A truncatable key must hold a string.** `TRUNCATABLE_KEYS` survives the change above with
+  this role and no other: it no longer decides what is *cut*, it decides what shape a key may
+  *hold*. A container under one is refused by the *schema* rather than by the cap: the two
+  markers say how much was cut from **one** field, and there is nowhere honest to put them for
+  a list of ten. This is why `value` stays on the list while never being cut — a string under
+  it is a folded field, and a list under it is refused.
 
 **Truncation is a write-time property of the event and nothing revisits it.** That is the whole
 difference between this and the lossy compaction [8. Non-goals](#8-non-goals) refuses.
@@ -3195,16 +3221,29 @@ will type it, and the output it will print.
    [D-36](#d-36--a-handoff-artifact-is-a-typed-ledger-event-bounded-by-derivability-rather-than-by-a-byte-cap).
    `[TARGET]` **The transport below is what runs today, and it is losing artifacts.**
 
-**Until D-36 lands, the marker seam carries them, and it cuts 57% of them.** An artifact is
+**Until D-36 lands, the marker seam carries them, and it cuts 58% of them.** An artifact is
 one `[harness-artifact]` comment marker, so its body is a `text` payload key, so the
 per-event cap in [32.10](#3210-the-per-event-size-cap-and-honest-truncation) applies to it.
-A JSON body cut at 4096 bytes stops being JSON. Measured 2026-08-18 over this repository's
-ledger: **31 of the 54 artifacts ever written are cut, and 337,353 bytes are gone.** The
-producer validates the payload it composed and the consumer reads the payload that was
-stored, and those are not the same bytes, so **all 23 truncated record-and-kind pairs are
-refused by their own entry predicate** — against a control of four intact ones that are
-admitted. One of the 23 sits on an open item that cannot leave DECOMPOSE because of it. The
-bodies are unrecoverable: the external store is deleted, and
+A JSON body cut at 4096 bytes stops being JSON.
+
+**`basicly-vbl35a` did not stop this, and the distinction is the whole point.** That change
+made the `artifact` *kind* declare that it stores its payload whole, so a typed artifact event
+would not be cut. **There is no typed artifact event.** Re-measured 2026-08-19 at `4e7dfa3a`
+over this repository's committed ledger: **59 `[harness-artifact]` comment markers, and zero
+`"kind":"artifact"` events** — against a positive control of 2,704 `"kind":"comment"` events,
+so the zero belongs to the population and not to the probe. Artifacts still travel as capped
+comment markers, and they are still being lost.
+
+**The loss to date**, re-measured 2026-08-19 at `4e7dfa3a`: **34 of the 59 artifacts ever
+written are cut, and 369,018 bytes are gone.** The producer validates the payload it composed
+and the consumer reads the payload that was stored, and those are not the same bytes, so of
+the 50 distinct record-and-kind pairs the consumer's last-marker-wins rule resolves to, **all
+25 truncated pairs are refused by their own entry predicate** — against a control of the 25
+intact pairs, every one of them admitted. Two of the 25 are `implementation-plan`s, and one of
+those, `basicly-ejdm`, is an open item that cannot leave DECOMPOSE because of it. **The figure
+grows with the log, which is why it is pinned to a commit rather than stated flat:** it was 31
+of 54 and 337,353 bytes on 2026-08-18, and 24 of 48 pairs earlier on 2026-08-19 at
+`a2ce9b42`. The bodies are unrecoverable: the external store is deleted, and
 [32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) forbids rewriting the log.
 `basicly-pp7q4i` is the fix, and `basicly-wug2o2` makes the refusal say truncation instead
 of reporting a schema violation on a fragment.
@@ -4507,23 +4546,26 @@ recovery path for a corrupted store erases the ledger the phase derivation reads
 ### D-36 · A handoff artifact is a typed ledger event, bounded by derivability rather than by a byte cap
 
 **Supersedes [D-28](#d-28--a-handoff-artifact-travels-as-a-comment-marker-never-as-a-ledger-append).**
-`[TARGET]` **This decision is not implemented.** `basicly-pp7q4i` writes the typed event,
-and `basicly-vbl35a` is its prerequisite.
+`[TARGET]` **This decision is not implemented.** `basicly-pp7q4i` writes the typed event, and
+it is now the only open prerequisite: `basicly-vbl35a` discharged the cap's half on 2026-08-19
+at `6435977d`, and the `artifact` kind declares there that it stores its payload whole.
 
 **Decision.** A handoff artifact is one `artifact` event in the owned ledger, carrying its
 kind as a typed field and its body under a payload key the per-event cap does not name. It
 is never truncated. Its size is bounded by taking out of the payload whatever the ledger can
 already derive, and where nothing is derivable the body is stored whole.
 
-**Because.** The cap dispatches on the payload key's *name* and never sees the event's kind
-— `append` hands `prepare_payload` the draft's payload and not its kind — so it cuts a
-schema'd JSON body mid-token, and a JSON body cut mid-token is not JSON. The producer
-validates the payload it composed; the consumer reads the payload that was stored; those
-are different bytes. Measured 2026-08-18 over this repository's own ledger: 31 of 54
-artifacts cut, 337,353 bytes gone, and **all 23 surviving truncated record-and-kind pairs
-refused by their own entry predicate**, against a control of intact artifacts that are
-admitted. [33. Handoff artifacts and their contracts](#33-handoff-artifacts-and-their-contracts)
-carries the measurement.
+**Because.** Until 2026-08-19 the cap dispatched on the payload key's *name* and never saw the
+event's kind — `append` handed `prepare_payload` the draft's payload and not its kind — so it
+cut a schema'd JSON body mid-token, and a JSON body cut mid-token is not JSON. `basicly-vbl35a`
+fixed the dispatch, and it did not recover a byte: the log is append-only, and the transport is
+still the marker seam because the typed writer is unwritten. The producer validates the payload
+it composed; the consumer reads the payload that was stored; those are different bytes.
+Re-measured 2026-08-19 at `4e7dfa3a` over this repository's own ledger: 34 of 59 artifacts cut,
+369,018 bytes gone, and **all 25 truncated record-and-kind pairs refused by their own entry
+predicate**, against a control of 25 intact pairs that are admitted.
+[33. Handoff artifacts and their contracts](#33-handoff-artifacts-and-their-contracts)
+carries the measurement and the dated earlier figures.
 
 **Rejected — D32, a file on the work's own harness branch, deleted at teardown.** Taken by
 the owner on 2026-08-09, never implemented, withdrawn here. Its premise was that git is the
@@ -4566,16 +4608,22 @@ stored whole. Size is the symptom; derivability is the property that tells the t
 
 **Consequence, and it is the one that costs.** The log is append-only and
 [32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) forbids rewriting it, so
-every artifact body ever written sits in every clone forever. Measured 2026-08-18: 478,311
-bytes of artifact against a 5.7 MB log, about **8%**. That is the price of the audit
+every artifact body ever written sits in every clone forever. Re-measured 2026-08-19 at
+`4e7dfa3a`, taking each artifact at its whole length rather than its stored one, because that
+is what this decision would store: 523,619 bytes of artifact against a 5.8 MB log, about
+**9%** — it was 478,311 bytes and about 8% on 2026-08-18. That is the price of the audit
 property, and it is accepted rather than argued away.
 
-**Consequence.** The cap's exemption has to be made deliberate before the `artifact` kind
-ships. A body placed under an unnamed key is exempt today by accident of spelling, which is
-not a decision; [32.10](#3210-the-per-event-size-cap-and-honest-truncation) records the
-accident and `basicly-vbl35a` closes it. **This is the ordering constraint, not a
-preference:** shipping the writer first buys an unbounded body with no owner, which is the
-growth failure the cap exists to prevent.
+**Consequence, discharged 2026-08-19 at `6435977d`.** The cap's exemption had to be made
+deliberate before the `artifact` kind shipped, because a body placed under an unnamed key was
+exempt by accident of spelling, which is not a decision. `basicly-vbl35a` replaced that with a
+bound each kind declares, and `artifact` declares it stores its payload whole on the argument
+above; [32.10](#3210-the-per-event-size-cap-and-honest-truncation) carries the mechanism.
+**The ordering constraint held rather than being waived:** shipping the writer first would have
+bought an unbounded body with no owner, which is the growth failure the cap exists to prevent.
+**It was not free.** Exempting every key the fold reads is what left `field`.`value` bounded by
+nothing, which [32.10](#3210-the-per-event-size-cap-and-honest-truncation) states and
+`basicly-u2hl.60` owns — the same derivability argument, owed now to a field.
 
 ---
 
