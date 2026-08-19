@@ -645,7 +645,7 @@ worse is expressed or implied. `basicly` evidence is from
 
 Ordered by how much they would change a decision.
 
-1. **Does the revertible-effect guarantee survive contact with a filesystem?** The paper confines
+1. **SETTLED 2026-08-19 — see [§11.1](#111-q1--the-guarantee-stops-before-the-filesystem-and-the-harness-does-not-claim-otherwise). The guarantee stops before the filesystem, and the harness does not claim otherwise.** **Does the revertible-effect guarantee survive contact with a filesystem?** The paper confines
    it to locations the system can modify exclusively and restore (§6.1, p.67), and a coding agent's
    principal effects — files in a user's repo, spawned processes, network calls — are on the
    *outside* of that boundary by the paper's own test. What fraction of `dsh`'s effects are
@@ -664,7 +664,7 @@ Ordered by how much they would change a decision.
    p.67). **How to settle:** `BENCHMARK.md` exists at the repo root and I did not read it; start
    there, then measure a turn under Code Mode versus minimal.
 
-4. **Would the paradigm survive translation to Python?** Paper §6.4 (p.70) says the runtime needs
+4. **SETTLED 2026-08-19 — see [§11.2](#112-q4--half-the-paradigm-ports-and-the-half-that-carries-the-guarantee-does-not). Both of the paper's two claims are refuted.** **Would the paradigm survive translation to Python?** Paper §6.4 (p.70) says the runtime needs
    transparent access interposition and names Python's descriptor protocol (`__get__`) as the
    analogue of JavaScript's `Proxy`, and needs a module registry supporting eviction. Both claims
    need testing against CPython's real import machinery before any adoption argument.
@@ -683,7 +683,7 @@ Ordered by how much they would change a decision.
    **How to settle:** read `.agents/notes/README.md` (its archiving policy) and
    `scripts/archived-agent-notes.ts`.
 
-7. **What is the actual retrieval cost of this documentation discipline?** The gated
+7. **SETTLED 2026-08-19 — see [§11.3](#113-what-we-adopt-what-we-refuse-and-the-invariant-each-would-move). It is author-facing only and costs zero model tokens.** **What is the actual retrieval cost of this documentation discipline?** The gated
    `Model Experience` sections are a strong idea, but 226 packages × mandatory sections is a large
    corpus. Is any of it projected into agent context, or is it human-facing only?
 
@@ -751,8 +751,180 @@ documentation is unrestricted. The paper carries no licence statement I located;
 only in short excerpts for identification and criticism, and every finding drawn from it is stated
 as a fact about what the paper claims rather than as reproduced expression.
 
+**Second pass, 2026-08-19.** Sections 8.1, 8.4 and 8.7 were settled against the **same** clone pin
+(`99f6f02f`, still depth-1, so no finding can be dated against the harness's own history) plus two
+Python spikes run locally on 3.14.6. The spike sources are working files and are deliberately not
+committed: they establish a fact about CPython, not about this repository, and §11.2 records the
+observed output that the fact rests on. `basicly-e2mz.45` carries the record.
+
 **Method note.** Every zero reported in this document was run against a positive control on the
 same corpus and probe, per the repository's External Facts rule. Two probes failed their control
 and are recorded as failures rather than findings: the case-insensitive `DAG` probe (§5.2), which
 matched inside `grandchildAgent`, and a `rg -r` invocation whose `-r` is a replace flag, not a
 recursion flag, and which silently rewrote its own output.
+
+## 11. Q1 and Q4, settled 2026-08-19
+
+Section 8 listed eight open questions. Two of them decide whether adoption is possible at all, and
+both are now answered against the same pinned clone (§10), re-verified rather than recalled. Q7 is
+answered as a byproduct. The other five stay open.
+
+`basicly-e2mz.45` is the record. The proposals are §11.3.
+
+### 11.1 Q1 — the guarantee stops before the filesystem, and the harness does not claim otherwise
+
+`ctx.effect` is the right symbol: `vendor/cordis/src/fiber.ts:403-418` declares
+`effect(execute, label?)` and `Context` re-exports it at `fiber.ts:10`.
+
+**Five call sites exist across the three packages the question named** [measured 2026-08-19,
+`rg -n '\.effect\(' --glob '!**/tests/**' --glob '!**/*.test.ts' packages/fs packages/shell
+packages/subprocess`].
+
+| Site | Inverse performs | Class |
+| --- | --- | --- |
+| `packages/subprocess/subprocess-local/src/index.ts:49` | kills whole process trees, then removes the host exit listener | compensate |
+| `packages/shell/tool-bash-persistent/src/index.ts:201` | aborts creation, kills each live shell | compensate |
+| `packages/shell/tool-bash-persistent/src/index.ts:230` | deletes two owner-keyed map entries | restore |
+| `packages/shell/shell-env/src/index.ts:111` | deletes exactly the contributor name and its owned keys | restore |
+| `packages/fs/fs-observation-policy/src/index.ts:109` | clears a `WeakMap` the plugin created | restore |
+
+**Restore 3 · compensate 2 · no-op 0.** Positive controls run first, on the same corpus and probe:
+`subagent` 2,383 occurrences over 216 files; `.effect(` 203 sites tree-wide; `rollback` 126 against
+`revertible` **0**.
+
+**Zero of the five is on a filesystem mutation path.** `packages/fs` holds exactly one site, and it
+tracks *observation* state rather than file bytes. Nine mutation call sites in `fs-local` register no
+inverse at all, of which three publish the final rename or replace
+(`src/fsio.ts:586`, `:591`, `:594`). 91 raw filesystem syscall occurrences appear in `packages/fs`
+outside tests, none inside an effect.
+
+**One line decides it.** `ReplaceFileW`'s third parameter is a backup path. `packages/fs/fs-local/src/win32.ts:20`
+types it `backup: null`, and `:54` binds the foreign-function signature to match. Overwriting is
+unrecoverable **by construction**, on the one platform whose own interface offers the backup.
+
+**The near-refutation, recorded so a later reader does not mistake it for one.** `dsh` does capture
+prior file content — `FsWriteOutcome.before` at `packages/fs/fs/src/types.ts:134-144` — and hands it
+to the diff renderer, not to the runtime. Its four consumers are all presentation
+(`tool-fs/src/write.ts:96-98`, `:126`; `tool-fs/src/edit.ts:108`, `:144`). It is lossy three ways
+and so could not serve as an inverse even if it were wired to one: `null` above a 10 MiB basis
+limit, `null` for a non-UTF-8 body, and line-ending normalised, so a CRLF file is not byte-faithful.
+
+**The transferable rule is not the disposer.** Site 4 is the only place the guarantee is total, and
+the mechanism is why: the forward operation *refuses* a duplicate name or key before registering,
+with six explicit refusals at `shell-env/src/index.ts:118-135`. Because no overwrite is reachable, a
+delete **is** a restore. So: **an inverse is a restore only where the forward operation refuses to
+overwrite.** Everywhere else it is a compensation wearing the same word.
+
+### 11.2 Q4 — half the paradigm ports, and the half that carries the guarantee does not
+
+Two spikes, run on Python 3.14.6. Paper §6.4 (p.70) is quoted here as §8 recorded it; the PDF was
+not re-fetched, so both claims below are **sourced**, and both verdicts are **measured**.
+
+| Paper claim | Verdict |
+| --- | --- |
+| The descriptor protocol (`__get__`) is the `Proxy` analogue | **refuted** |
+| Python has a module registry supporting eviction | **refuted as stated** |
+
+**Eviction is advisory, and the obvious probe for it does not discriminate.** Deleting from
+`sys.modules` and collecting the module object does not evict the code. A reference obtained before
+retraction survives it, keeps executing the evicted module's body, and keeps mutating its
+module-level state — because a function's `__globals__` is the module's `__dict__`, not the module.
+A weakref on the *module object* reported success in exactly the run where the code was still
+running; only a weakref on a **namespace sentinel** separated the two arms of the control. Re-import
+then yields a second live class with the identical qualified name, so `isinstance` against the
+replacement fails for pre-retraction instances: a silent split-brain, not a refusal.
+
+**Interposition fails on five shapes.** A descriptor is refused outright by `__slots__`
+(`ValueError: 'x' in __slots__ conflicts with class variable`); cannot be installed on a C-level
+type (`TypeError: cannot set 'tracked' attribute of immutable type 'dict'`); observes an attribute
+*binding* and never a mutation of the bound object, so `h.items.append(...)` logged two reads and no
+write; is bypassed by a direct `__dict__` write, which a data descriptor silently discards and a
+non-data descriptor shadows permanently; and must exist per name at class-definition time, so an
+undeclared key is invisible. `__getattribute__`/`__setattr__` is the closer analogue and has two
+holes reachable from plain Python — `object.__setattr__` and a `__dict__` write — neither blockable.
+
+Cordis does not have this problem, and the reason is structural: a consumer holds a proxy whose trap
+consults live fiber state and refuses after unload, so the held reference is neutralised **at the
+reference**. Python hands out the object itself. There is no seam to neutralise. [sourced from §3.2's
+reading of paper §5.1.4; not re-verified]
+
+### 11.3 What we adopt, what we refuse, and the invariant each would move
+
+Read against `docs/architecture/architecture.md` §5, §6, §10.2, §27.2, §32, §33, §34, §36.7.
+
+| # | Proposal | Disposition |
+| --- | --- | --- |
+| P1 | An effect-inverse or undo layer over git or the filesystem | **refuse** |
+| P2 | A Cordis-style dynamic component runtime in Python | **refuse** |
+| P3 | A `before`-content field on the change-summary artifact | **refuse** |
+| P4 | "No privileged core", every row replaceable from configuration | **refuse** |
+| P5 | A declared token cost on a catalog source, and a validated exemption table | **adopt** |
+
+**P1 refuses on measurement, not on taste.** The industrial application of the paradigm has zero
+effect-tracked filesystem mutations across 91 mutation sites, and types away the one backup slot its
+platform offers. We would be building what the reference implementation declined to build. §6 and
+§27.2 are **confirmed rather than changed**: an append-only log already gives us what a LIFO inverse
+gives Cordis, and §27.2's bounce-on-conflict already implements the paper's *sound* remedy for an
+irreversible emission, which is to withhold it. Adopting rollback would trade that refusal for a
+compensation.
+
+**P2's cost is an invariant, and the spike is only the corroboration.** A Cordis plugin is code
+mounted from configuration, so adopting it abandons §5's rule that `.basicly/` never holds engine
+code, and breaks §34's layering contract, which is *exhaustive* — a module joins a tier because a
+maintainer placed it there. Dynamic mount and retract is definitionally not exhaustive. The trade is
+a statically checkable contract for a dynamically unenforceable one. One instrument is worth keeping
+regardless: **if plugin loading is ever proposed, the eviction probe is a namespace-sentinel
+weakref**, because the two cheaper probes report success while the code runs.
+
+**P3 is refused by our own document.** §33 already names the failure mode: five of eight artifact
+kinds carry a contract nobody can exercise. A field with no consumer that can refuse is the
+anti-pattern that section exists to flag.
+
+**P4 rests on a vendor's self-description.** Its only source is the harness's own
+`docs/architecture.md:13`, and §8's open question 5 — whether any row is in fact swappable — is
+still unrun. Trading an unverified claim against §6's "the engine disposes, agents propose" and
+D-01 is not a trade. **The narrow adoptable half is a different thing**: `dsh --dump-config` prints
+the tree a machine actually boots, and a basicly command printing the composed catalog selection
+with each item's origin would be genuinely useful. Whether one already exists was not established.
+
+**P5 is the one to build, and the sharper half is not the documentation section.** Two scripts are
+wired into the harness gate runner at `scripts/run-gates.ts:618` and `:633`, requiring
+`## Model Experience` with `What the model sees`, `Token effect` and `KV Cache effect` per package.
+The cost objection dies on measurement: the corpus is **never projected into model context** —
+`Model Experience` occurs 0 times in `packages/**/*.ts` against a control of `systemPrompt` at 492.
+It costs zero model tokens and forces an author to state a cost they would otherwise not compute.
+That answers §8's Q7 as well: the discipline is author-facing only.
+
+The sharper import is `verify-package-readme-limitations.ts`, which **validates its own exemption
+table against the scanned population**: an entry naming a package that no longer exists fails, an
+entry with a blank justification fails, and `isLimitationsLike()` rejects variant spellings rather
+than only checking presence. §32.1 records the matching defect on our side, measured and in our own
+words — *a gate written as prose is not a gate*. So the rule to take is **every exemption list in
+basicly is machine-validated against the population it exempts from.**
+
+The carrier is refused even where the content is adopted: a per-package Markdown section would
+violate §10.2, every catalog source is YAML. The requirement lands in YAML and
+`basicly catalog lint` enforces it. §36.7 gains a fifth gate kind, a catalog-source assertion on
+declared token cost.
+
+**The branch not taken.** Making the always-on character cap the control instead. That ratchet
+already exists, and it refuses the last straw rather than the author who never computed the cost, so
+it cannot attribute. The declaration branch was taken for that reason.
+
+### 11.4 What these two answers did not establish
+
+- Whether the harness's effect inverses **run** correctly. Source was read; no TypeScript, no
+  install, no test and no gate was executed. §9's limit still stands.
+- Whether filesystem inverses exist **outside** the three named packages. `packages/e2b` was out of
+  scope and stays unread.
+- Whether the paper says exactly what §6.4 is quoted as saying. The PDF was not re-fetched.
+- Whether a C-extension or `ctypes` route could close the `__dict__` bypass, and whether a metaclass
+  sweep could reach undeclared keys. Neither was attempted; the other four shapes would still hold,
+  so neither can rescue the claim.
+- Whether basicly already prints a composed catalog selection with per-item origin. §11 and §22 of
+  the architecture were not read.
+- Any dating of a harness finding against the repository's own history. The clone is depth-1.
+
+**One caution for a later editor of this file.** §6.1's row saying `ctx.effect` is the sole
+context-mutation primitive is true of **context** mutation, and reads easily as covering effects on
+the world. §11.1 shows the filesystem mutation path never enters it.
