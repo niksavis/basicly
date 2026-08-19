@@ -601,6 +601,7 @@ exist.
 | `research/2026-07-26-sota-review.md` | **Dated evidence** | A review of the field on one date, plus Appendix A — the licence and provenance register the tracker work's clean-room boundary rests on. Delete when nothing cites it. |
 | `research/2026-08-17-deepseek-harness.md` | **Dated evidence** | What the DeepSeek harness is and how its concepts line up against ours, read from the paper and the cloned source on one date. Input to a critique and an architecture revision, neither of which it performs. Delete when nothing cites it. |
 | `research/2026-08-17-archify-visualization.md` | **Dated evidence** | Whether archify serves the interactive factory dashboard. Verdict: rejected for work state — its node schema is closed and carries no status field — with a narrow architecture-illustration case left open. Delete when nothing cites it. |
+| `research/2026-08-19-documentation-routes.md` | **Dated evidence** | The probe behind `interface-facts`' route table: what `llms.txt`, Sphinx `_sources` and the GitHub Docs APIs answered for each declared dependency on one date, the absence controls, and the undocumented `client_name` the Search API requires. Delete when the skill's table stops resting on it. |
 
 **Deleting a document means removing its references from the code first.** Under the owner rule the
 code must read well enough not to need them, so a prose pointer at a design document is deleted
