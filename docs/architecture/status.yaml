@@ -1,0 +1,272 @@
+# The one source for the capability status view (architecture D-30).
+#
+# `docs/architecture/status.md` renders this file into its `status-view` generated block,
+# and `.scripts/docs_claims.py` gates that rendering on every commit. Edit a row here and
+# run `uv run python .scripts/docs_claims.py --fix`; editing the rendered table instead
+# fails the gate.
+#
+# A row changes state in the change that lands the behaviour, never in a later cleanup
+# pass. `status` must be one of the six words the architecture document's own component-state
+# table defines: the renderer reads that table rather than holding a second copy of it, so a
+# seventh word is refused here rather than reviewed.
+#
+# `note` carries the evidence the state requires, flattened to one line when rendered, so a
+# long note may wrap freely.
+sections:
+- name: Guidance
+  capabilities:
+  - name: 'One catalog projected to three agent families: instructions, skills, subagents,
+      permissions'
+    status: shipped
+    note: ''
+  - name: Projection drift gate run by CI
+    status: shipped
+    note: ''
+  - name: Path-scoped rules tier
+    status: shipped
+    note: Engine built; four fragments and one skill glob use it. Cost falls for two families
+      and rises for the one that inlines
+  - name: Invocation axis per entry
+    status: shipped
+    note: Declared on skill sources; not yet on fragments
+  - name: Deterministic lexical routing evals with a ratcheting rank-1 floor
+    status: shipped
+    note: ''
+  - name: Both skill roots written by every skills command
+    status: partial
+    note: '`basicly install` writes both. A bare `skills-build` or `skills-check` writes one,
+      and needs `--all-default-roots` for the second. Architecture §14 marks the fix as a
+      target'
+  - name: An eval case file per catalog entry, enforced as a structural failure
+    status: building
+    note: Model-invoked skills carry one by convention; fragments carry none
+  - name: Relieve the always-on baseline by scoping what is conditional
+    status: building
+    note: Authoring work, not engine work
+  - name: Tutorial and how-to layer
+    status: shipped
+    note: The tutorial was executed end to end on a fresh repository before it was written
+  - name: Whether an individual entry changes behaviour, and which baseline rules bind while
+      an agent works
+    status: researching
+    note: Recall is measured; adherence is open. **The largest gap in the system**
+  - name: Behavioural efficacy evals with control arms, hidden checks and a safety tier
+    status: designed
+    note: No arms, no hidden checks, no safety tier exist in code
+  - name: Cursor as a target; a native Codex scoped-rules renderer
+    status: deferred
+    note: For Codex there is currently no mechanism to project *to*
+- name: Gates
+  capabilities:
+  - name: Git hook floor across three stages
+    status: shipped
+    note: ''
+  - name: Agent hooks for two families
+    status: shipped
+    note: 'Four hooks: three on claude spanning two event types, one on copilot'
+  - name: Verify pipeline with three modes
+    status: shipped
+    note: ''
+  - name: 'Ratchets: module size, comment density, suppression debt, corpus drift, stale citations'
+    status: shipped
+    note: Tree growth reports rather than blocks, because it has no firing history
+  - name: Severity required on judged output, and a lint refusing a pre-judging reviewer bundle
+    status: shipped
+    note: ''
+  - name: Rework convergence detection from the open-finding set rather than the count
+    status: shipped
+    note: ''
+  - name: A release gate refusing to ship a declared capability nothing has exercised
+    status: shipped
+    note: Derives the inventory from the configured checks, and fails closed with no ledger
+      at all
+  - name: A gate that runs the demonstration a unit declared
+    status: shipped
+    note: '`demonstration_proof` runs it: advisory at the decompose advance, **blocking at
+      the ship advance**. It rebuilds a pytest argv from an allowlist; a non-pytest demonstration
+      is still admitted'
+  - name: The plan gate running the demonstration it admits
+    status: deferred
+    note: 'Not `designed`: this is a deliberate separation, not sequenced work. The plan gate
+      judges the field''s form and `demonstration_proof` runs the command, at the decompose
+      advance and at the ship advance. Architecture §36.4 holds the reason. No open work item
+      proposes moving the run into the gate [measured 2026-08-16, a `plan[_ ]gate` search
+      over every tracker record: 12 open matches, none of them proposing it, against a positive
+      control of 11 closed matches]'
+  - name: Every gate classified by type
+    status: building
+    note: The gates the engine names by constant are typed; the rest are classified in prose
+      because they have nothing to key on
+  - name: Enforcement at the tool-call boundary, not only at the commit boundary
+    status: designed
+    note: 'Engine work before it is catalog work: the host event vocabulary is barely mapped'
+  - name: '`basicly install` reporting the capability tier it actually delivered'
+    status: building
+    note: On a host with no plugin tier the projection degrades to advice, and we say so nowhere
+  - name: A check that code citations of `architecture §N` resolve
+    status: designed
+    note: The citation ratchet runs document to code. Nothing runs code to document, which
+      is why a stale `§` citation sits in the tree with every gate green. Architecture §3
+      carries the probe that counts them
+  - name: 'A typed event vocabulary: `note` for prose, first-class kinds for machine state'
+    status: partial
+    note: '**Ten of the eighteen kinds exist and no consumer reads the two new ones.** `note`
+      carries prose and the kit''s own writer records it; `checkpoint` and `artifact` fold
+      into named state that only `snapshot.record_to_dict` reads [measured 2026-08-18, a `.checkpoints`/`.artifacts`
+      search over `src/`, `.basicly/core/` and `.scripts/` finds the kit''s own serialization
+      and nothing else, against a positive control of four modules reading the folded `comments`].
+      `comment` is a permanent alias of `note` — 2,667 of 5,752 events — and the `br` mirror
+      seam still writes it, so a marker body is still parsed as prose rather than selected
+      by kind. The target set is **eighteen** kinds, sized by partitioning the measured population
+      rather than by proposal — routing 2,540 `comment` rows through the thirteen first drafted
+      left 585 of them, 23%, with nowhere to go. Architecture §32.3 carries the vocabulary,
+      §32.3.1 the measured partition and its command, §32.3.2 the reader''s alias, §32.8 the
+      migration, and D-34 the decision including why `record` is unavailable'
+  - name: A single definition of the closed event-kind set
+    status: shipped
+    note: '`events.KNOWN_KINDS` is an explicit eight-member frozenset and every sibling takes
+      its kind from it. It was **six** partial definitions, not the four first recorded —
+      `baseline.py` and `provenance.py` were missed. `baseline.py` keeps its own spelling
+      deliberately, with the reason at the declaration. Two tests bind it, one over this repository''s
+      own log and one over every sibling''s AST, both proven against five mutations. Architecture
+      §32.8'
+  - name: A `unknown_kinds` signal that separates delegation from corruption
+    status: shipped
+    note: '`classify_kind` answers applied, delegated or unknown, `DELEGATED_KINDS` names
+      the folding function per kind, and `fsck` warns only on the third case — moving 1,015
+      events, 18.09% of the log, out of the false-unknown population. The closed set is checked
+      to be exactly applied plus delegated, and disjoint. Architecture §32.8'
+  - name: The owned tracker as the only store
+    status: building
+    note: Architecture §32 specifies it; §37 is the account of the external binary still carrying
+      part of it
+  - name: A mermaid parse check on every committed block
+    status: designed
+    note: See [`backlog.md`](backlog.md)
+- name: The loop
+  capabilities:
+  - name: Single-track loop driven identically by any supported agent
+    status: shipped
+    note: ''
+  - name: Worktree isolation per unit of work
+    status: shipped
+    note: ''
+  - name: 'Parallel lanes: supervisor, lane mini-loop, serial landing'
+    status: shipped
+    note: ''
+  - name: Autonomy grants with a spend ceiling, decision queue, confined decider
+    status: shipped
+    note: 'Two of the five decision kinds are delegable: `needs-input` and `escalation`'
+  - name: Release automation up to the annotated tag
+    status: shipped
+    note: ''
+  - name: Scope sized by the material a lane actually reads
+    status: shipped
+    note: ''
+  - name: Measured context occupancy recorded beside the forecast on every dispatch
+    status: shipped
+    note: ''
+  - name: VALIDATE as a rung with its own gate, a validator plus a reviewer per lens
+    status: shipped
+    note: ''
+  - name: Hold and Kill as writes an operator's answer actually carries out
+    status: shipped
+    note: ''
+  - name: A named role per judgment step
+    status: shipped
+    note: All seven reachable; **the declared tier is inert at spawn**, and no supervised
+      pass has yet recorded a role on an argv
+  - name: RETROSPECTIVE on a computed special cause
+    status: shipped
+    note: ''
+  - name: An improvement controller driving a codebase property to a set point
+    status: shipped
+    note: Has run live and filed one issue; manual-dispatch caller only, by decision
+  - name: A schema-validated handoff artifact at each state boundary
+    status: building
+    note: Three of eight kinds have a producer, two of those a consumer. The rest refuse
+      nothing, and four of those - `classification`, `change-shape`, `verification-evidence`
+      and `validation-transcript` - are tracked by no work item. Architecture §33 carries the
+      per-kind measurement
+  - name: Tier injection, so a declared tier reaches the spawn
+    status: building
+    note: The tier is declared on every agent source and validated by lint, and it reaches
+      no spawn. The hook that would rewrite a spawn is `.basicly/core/kit/tier/install_hook.py`
+      and is not installed. On claude the installer declines with a nonzero exit, and across
+      repeated probes no tool-boundary hook fired for an agent spawn there — that host's documented
+      hook contract is approve-or-deny, not rewrite, which is the requirement architecture
+      §17 sets
+  - name: Per-model spend and wall-clock forecast enforced at pass admission
+    status: building
+    note: The current forecast models working set, not turn count, and that is now measured
+      rather than suspected
+  - name: A supervised multi-lane run with zero human interventions caused by an engine defect
+    status: building
+    note: ''
+  - name: 'The judged-output contract: a reviewer structurally incapable of seeing the producer''s
+      conclusion, a review base recorded before dispatch, re-review scoped to the fix range,
+      late rounds escalating a tier'
+    status: designed
+    note: '**Deterministic engine code, not a persona**, which is why it survived the routing
+      landing'
+  - name: Cost per landed unit
+    status: researching
+    note: The instrument the tier claims rest on
+- name: The work graph
+  capabilities:
+  - name: Issues, dependencies, gate results, checkpoints and evidence in a tracked graph
+    status: shipped
+    note: ''
+  - name: Phase derived from tracker state, so resume is a read rather than a replay
+    status: shipped
+    note: ''
+  - name: Atomic publish of the shared export, and a store error charged to the store rather
+      than to the lane's rework budget
+    status: shipped
+    note: ''
+  - name: The scheduler score and rank recorded behind each dispatch
+    status: shipped
+    note: ''
+  - name: A pure, age-free ranking function owned in-process
+    status: shipped
+    note: ''
+  - name: Harness comment markers native to the owned store
+    status: shipped
+    note: Landed ahead of the steps before it, which is why the differential must run on dual
+  - name: A repeatable ledger import a fresh consumer can run
+    status: shipped
+    note: Refuses a post-flip ledger
+  - name: A seam-routed surface for a human tracker write, so both stores move together
+    status: shipped
+    note: Closes the last bypass route the differential can see
+  - name: No committed artifact carries a host path, username or hostname
+    status: partial
+    note: 'The path half is shipped. **The identity half covers the running committer only,
+      and both stores carry a second person''s** [measured 2026-08-17: the export holds one
+      on 83 of 924 records and an address on 56; the owned log holds one on 211 of 5,616 lines
+      and an address on 56, and all 263 identity-carrying events carry the import''s own marker
+      against a positive control of zero live writes]. The pre-commit floor is green over
+      both, correctly, because it builds its rule from the running user. Architecture §32.7.1.
+      The secret-rule mirror is kept in step by convention only'
+  - name: The owned append-only event log as the source of truth
+    status: building
+    note: Steps 1 to 3 of the cutover have run; the flip waits on the remaining bypasses and
+      on five unported operations. Architecture §37.3
+  - name: A consistency check and rebuild, so "the log is the truth" is checkable
+    status: partial
+    note: '**Built with tests and reached by nothing** [re-measured 2026-08-17: no engine
+      module and no `[[verify.checks]]` entry reaches the kit''s `fsck` or `rebuild`, against
+      a positive control of five engine modules reaching the kit''s `events`]. The over-advertising
+      half of this note was **false and is withdrawn**: `README.md` and `site/index.html`
+      both mark it `◐ partial` against a legend matching this table'
+  - name: 'Provenance on every edge: extracted, inferred, ambiguous'
+    status: partial
+    note: '**It has a caller and the earlier "no caller" note was false** [measured 2026-08-17
+      over the ledger: 962 of 962 edge events carry a `provenance` label — 924 `EXTRACTED`
+      from the import and 38 `dual-write` written live by the mirror, which `edge_adoption`
+      promotes to `EXTRACTED`]. What makes it partial is the vocabulary, not the wiring: `INFERRED`
+      and `AMBIGUOUS` have never been written, and `dual-write` is a fourth label absent from
+      `provenance.LABELS`, so by design it ranks below every known label and can never gate'
+  - name: Cross-repo work offers as self-writes in each repository's own ledger
+    status: deferred
+    note: ''

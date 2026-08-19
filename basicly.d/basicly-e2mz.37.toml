@@ -1,0 +1,14 @@
+# Two suppressions, both the one `basicly-a4q3.4` and `basicly-5p49` already document:
+# `.scripts` is not a package, so a sibling module is reachable only after `sys.path` names
+# its directory, and the import cannot precede the statement that makes it resolvable.
+#
+# The alternative rejected was keeping either claim inside `docs_claims.py`. `module-size`
+# refuses that: the file is over the cap at a frozen 5567 tokens, so it may only shrink, and
+# registering the status view alone costs it about 35. `docs_claim_status.py` carries the new
+# claim and `docs_claim_work_types.py` carries the one moved out to pay for it — the
+# work-type lists, one whole claim with its own evidence and judgement, on the boundary the
+# two existing siblings already set. Measured: `docs_claims.py` 5559 -> 5043 tokens.
+#
+# Both suppressions carry their reason inline, so `unreasoned_count` does not move.
+[ratchet.noqa_debt.frozen]
+E402 = 2
