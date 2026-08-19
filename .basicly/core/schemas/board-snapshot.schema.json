@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basicly.dev/schemas/board-snapshot.schema.json",
   "title": "harness-board/v1 snapshot",
-  "description": "NOTE: prose here is indexed by wired_or_deleted as field references (basicly-r343); avoid dataclass field names in descriptions until that is fixed. What a harness emits so a board can render what it is doing. Unlike the handoff artifacts beside it this schema is deliberately NOT strict: no object sets additionalProperties false, because the versioning rule is the one work-tracker.md:525-532 already fixes for the ledger - never change a key's meaning, never reuse a key name, only add keys and optional sections - and a consumer meeting an undeclared key counts and reports it rather than erroring or dropping it. Three keys are required and every section is optional, so a foreign harness adopts the contract with a four-line file and adds sections as it can populate them. An absent section is a supported state that renders as absent, never as zero. Field-selected, never record-shaped: the whole tracker export is 3336549 B against 33745 B for the active rows at six selected fields, 98.9x from field selection alone (measured 2026-08-14), so no property here admits a bead description, its acceptance criteria, or a raw comment body, and every free-text property is length-bounded to keep it that way. The snapshot is derived and disposable; the ledger remains the truth.",
+  "description": "NOTE: prose here is indexed by wired_or_deleted as field references (basicly-r343); avoid dataclass field names in descriptions until that is fixed. What a harness emits so a board can render what it is doing. Unlike the handoff artifacts beside it this schema is deliberately NOT strict: no object sets additionalProperties false, because the versioning rule is the one work-tracker.md:525-532 already fixes for the ledger - never change a key's meaning, never reuse a key name, only add keys and optional sections - and a consumer meeting an undeclared key counts and reports it rather than erroring or dropping it. Three keys are required and every section is optional, so a foreign harness adopts the contract with a four-line file and adds sections as it can populate them. An absent section is a supported state that renders as absent, never as zero. Field-selected, never record-shaped: the whole tracker export is 3336549 B against 33745 B for the active rows at six selected fields, 98.9x from field selection alone (measured 2026-08-14), so no property here admits a bead description, its acceptance criteria, or a raw comment body, and every free-text property is length-bounded to keep it that way. The snapshot is derived and disposable; the ledger remains the truth. Sections are ruled on one at a time: only the three required keys can refuse the document, and a violation inside an optional section withholds that one section while the rest still draws - so a length bound costs a panel, never the screen. COMPATIBILITY RULE, and it is not the ledger's: keys may be added within a major, permitted values may never be widened within a major. An undeclared key is counted and reported, so adding one is compatible; a value outside a closed set is refused, so widening a set, loosening a pattern or raising a length bound produces documents that an already shipped consumer of the same major refuses. The ledger's additive-only rule does not transfer whole, because every ledger reader is ours and a board's readers are not. The sets here were widened once, before any release carried this file (it landed 2026-08-16, after the v0.9.0 tag of 2026-08-14); from the first release that carries it, a new permitted value takes a new major.",
   "type": "object",
   "required": [
     "schema",
@@ -16,9 +16,8 @@
       "description": "The contract this document claims to be, as harness-board/vN. A pattern rather than a const on purpose: a consumer has to be able to read the declared major off a document it will refuse, so that it can name both versions instead of reporting a generic type error. N changes only on a break."
     },
     "generated_at": {
-      "type": "string",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$",
-      "description": "When the producer folded this snapshot, RFC3339 in UTC with a literal Z. Required so that no value can be displayed without its age; that requirement is what keeps a rebuilt-on-write board from being described as real time."
+      "$ref": "#/$defs/instant",
+      "description": "When the producer folded this snapshot. Required so that no value can be displayed without its age; that requirement is what keeps a rebuilt-on-write board from being described as real time. A consumer parses it to an instant and never compares two of these as strings, because two spellings of the same moment are both valid."
     },
     "freshness": {
       "type": "object",
@@ -34,9 +33,10 @@
           "enum": [
             "supervisor-tick",
             "self-refresh",
+            "state-change",
             "one-shot"
           ],
-          "description": "What re-writes the document: a running supervisor's tick, a viewer that rebuilds on a timer, or a single on-demand build that will never change again. Closed because a consumer that cannot classify the refresh has to choose between claiming liveness it has not got and refusing to render."
+          "description": "What re-writes the document: a running supervisor's tick, a viewer that rebuilds on a timer, a producer that writes when its own state changes and therefore has no cadence, or a single on-demand build that will never change again. Closed because a consumer that cannot classify the refresh has to choose between claiming liveness it has not got and refusing to render. state-change was added before any release carried this file; under the compatibility rule above a fifth member now takes a new major."
         },
         "cadence_s": {
           "type": [
@@ -210,8 +210,7 @@
             "description": "Whether the lane was still running when the snapshot was folded, as against last known to have been."
           },
           "started_at": {
-            "type": "string",
-            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$"
+            "$ref": "#/$defs/instant"
           },
           "elapsed_s": {
             "type": "number",
@@ -290,8 +289,7 @@
             "maxLength": 200
           },
           "requested_at": {
-            "type": "string",
-            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$",
+            "$ref": "#/$defs/instant",
             "description": "When the harness asked. Required: an ask without an age cannot be sorted by how long a person has been keeping it waiting, which is the one ordering this panel needs."
           },
           "waiting_s": {
@@ -305,14 +303,29 @@
           },
           "actions": {
             "type": "array",
-            "description": "What a viewer may offer to do about this ask, named from a closed table. Closed because a consumer has no mechanism to execute an action it does not already implement, so a producer inventing one would either be ignored or, worse, guessed at.",
+            "description": "What a viewer may offer to do about this ask. One entry per offer: the producer's own wording for it, and - where the producer knows which basicly verb sits behind it - that verb under a key named for basicly. Open on the wording and closed on the verb, because the wording is the producer's to choose while a consumer can execute only verbs it implements. An offer this consumer cannot execute is ignored, drawn without a button rather than refused: the closed table this replaced turned one unfamiliar offer into a refusal of the producer's whole document.",
             "items": {
-              "type": "string",
-              "enum": [
-                "loop-answer",
-                "checkpoint-approve",
-                "lane-kill"
-              ]
+              "type": "object",
+              "required": [
+                "offer"
+              ],
+              "properties": {
+                "offer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60,
+                  "description": "What the offer is called, in the producer's words, bounded so that it stays a caption on a control rather than becoming the question again."
+                },
+                "basicly": {
+                  "type": "string",
+                  "enum": [
+                    "loop-answer",
+                    "checkpoint-approve",
+                    "lane-kill"
+                  ],
+                  "description": "The basicly verb this offer maps to, where the producer knows one. Namespaced under a key named for basicly rather than mixed into the wording above, so a producer inventing an offer can never collide with a verb. Closed because a consumer has no mechanism to execute a verb it does not implement, and would either ignore it or guess at it."
+                }
+              }
             }
           }
         }
@@ -331,8 +344,7 @@
           "description": "Which set of checks ran, so a viewer is not shown a fast pass as though it were the full one."
         },
         "recorded_at": {
-          "type": "string",
-          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$"
+          "$ref": "#/$defs/instant"
         },
         "passed": {
           "type": "boolean"
@@ -578,8 +590,7 @@
         ],
         "properties": {
           "at": {
-            "type": "string",
-            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$"
+            "$ref": "#/$defs/instant"
           },
           "issue": {
             "type": "string",
@@ -597,6 +608,13 @@
           }
         }
       }
+    }
+  },
+  "$defs": {
+    "instant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "One RFC3339 point in time: a literal Z or an explicit numeric offset, fractional seconds optional. The offset form is admitted because Python's own datetime.now(UTC).isoformat() emits it, and a producer whose first honest attempt is refused writes nothing instead. Single-sourced under $defs because five properties carry this rule and a pattern copied five times drifts in four."
     }
   }
 }

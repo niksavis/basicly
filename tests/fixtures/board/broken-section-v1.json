@@ -1,0 +1,13 @@
+{
+  "schema": "harness-board/v1",
+  "generated_at": "2026-08-19T09:14:03+00:00",
+  "freshness": {
+    "source": "state-change",
+    "cadence_s": null,
+    "stale_after_s": 60
+  },
+  "backlog": { "total": 3, "ready": 1, "by_priority": { "P1": 3 } },
+  "units": [
+    { "id": "foreign-1", "title": "a title long enough to break the two hundred character bound this section keeps, xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+  ]
+}
