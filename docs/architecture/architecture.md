@@ -200,9 +200,9 @@ probe above returns has to move in the same change that moves a heading number.
 This system talks to eight counterparties. It owns none of them.
 
 **One further dependency is deliberately absent from this view.** The work tracker is this
-project's own code ([32. The work tracker](#32-the-work-tracker)). An external binary still
-carries part of it today, and that binary is a transitional dependency rather than a
-counterparty of this design.
+project's own code ([32. The work tracker](#32-the-work-tracker)). An external binary carried
+part of it until 2026-08-18, as a transitional dependency rather than a counterparty of this
+design, and nothing reaches it now.
 [37. The external tracker binary, and its removal](#37-the-external-tracker-binary-and-its-removal)
 is the whole account of it.
 
@@ -249,7 +249,7 @@ cannot be reviewed.
 | GitHub Actions | five workflows on three platforms | the workflow files in this repository | CI failing does not block a local landing; the loop's verify step runs the same checks |
 | `uv` and CPython | the runtime every projected hook shells out to | `requires-python` in `pyproject.toml` | a consumer without the runtime on `PATH` reaches the bootstrap shim |
 | `pre-commit` | the runner that installs and invokes the git-hook floor at three stages | a pinned revision per hook repository in the committed config | a hook the runner cannot resolve fails the commit loudly rather than passing it |
-| the external tracker binary | the loop's state today, while the cutover runs | an exact pinned version, warned about in both directions | §37 is the account of it, and of its removal |
+| ~~the external tracker binary~~ | **none. It was removed 2026-08-18 and no code path spawns it** | — | §37 is the closing account of it |
 
 **The projected guidance is the one contract every agent family does standardize.** That
 is why the handoff runner in [29.2](#292-detection-model-resolution-and-the-handoff-fallback)
@@ -1343,7 +1343,6 @@ and overrides were cut from scope. The `basicly catalog verify` output covers th
 | `basicly runner list\|dry-run\|run` | Agent-agnostic headless runner adapters; the dry run prints the exact command an adapter would execute before any live invocation |
 | `basicly tracker ready\|blocked\|stats\|show\|list` | The backlog, read out of the owned ledger: ready is the ranked set that can be worked now, blocked names what holds each record that is not ready, stats totals the graph by status, and show and list read one record and the set. The engine resolves the ledger's location, so a consumer never retypes it |
 | `basicly tracker write` | One human tracker write through the engine seam, so it lands on the store the engine reads rather than beside it |
-| `basicly tracker import\|shadow\|adopt` | The owned-tracker cutover surface: import folds an external export into the event log; shadow compares the two stores record by record; adopt reconciles a record that reached the external tracker outside the seam, marked so its own agreement is never counted as evidence |
 | `basicly board validate` | Read a board snapshot and say whether this consumer can render it. A major-version mismatch refuses; an unknown key is reported and admitted |
 | `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Bump the single-sourced version, regenerate version-stamped projections in a fresh interpreter, rewrite install pins on the consumer surfaces, fold the per-lane changelog fragments into a dated section, commit, and create the annotated tag. **Never pushes** |
 
@@ -1726,9 +1725,9 @@ hook follows the same route.
 
 **Provisioning probes the new worktree rather than trusting it.** It aborts with guidance
 when the answer is not the base store. A checkout that silently ran its own store would
-diverge the loop's state from the branch it is landing onto. The concrete mechanism today
-is a redirect file the external binary reads, and
-[37.2](#372-what-still-depends-on-it) names it once; that file disappears at the flip.
+diverge the loop's state from the branch it is landing onto. The mechanism used to be a
+redirect file the external binary read; that file went with the binary, and
+[37.2](#372-what-still-depends-on-it) records it once.
 
 **The engine owns the tracker commits at three points.**
 
@@ -2468,11 +2467,11 @@ tracker.** It reads the in-progress items, their bindings, their recorded gate r
 the ready set, and reconciles them against the live worktrees. That is what makes the loop
 cross-agent. A unit starts on one family and resumes on another.
 
-`[TARGET]` **Most of this section specifies rather than reports.** The kit exists, with
-tests. The engine still reaches most of this state through an external binary, and
+**This section reports rather than specifies.** The kit exists, with tests, and the engine
+reaches this state through no external process:
 [37. The external tracker binary, and its removal](#37-the-external-tracker-binary-and-its-removal)
-is the whole account of what that binary still carries and how it goes. Nothing else in
-this document treats the external binary as part of the design.
+is the closing account of the binary that used to carry it. Nothing else in this document
+treats the external binary as part of the design.
 
 ### 32.1 The kit is standalone
 
@@ -3313,14 +3312,13 @@ Two facts in this section are the two most frequently re-learned facts in this r
 every whole-tree gate.** Both are topology facts, and neither is recoverable from a prose
 search.
 
-`[TARGET]` **The store drawn below is the owned event log, and it is not the whole store
-today.** A second store sits beside it: the external tracker binary's, which is
-authoritative for a work item's fields and for the gate ledger while the tracker mode is
-`dual`. Every engine write reaches both.
+**The store drawn below is the owned event log, and it is the whole store.** A second store
+sat beside it until 2026-08-18 — the external tracker binary's, authoritative for a work item's
+fields and for the gate ledger while the tracker mode was `dual` — and `basicly-vkh0.42.7`
+deleted it.
 [37. The external tracker binary, and its removal](#37-the-external-tracker-binary-and-its-removal)
-is the whole account of it, and it is the only section that names it. A reader debugging a
-live run needs both stores, and the process and file placement below is the same for
-either one.
+is the closing account, and it is the only section that names it. A reader debugging a live run
+needs one store.
 
 ```mermaid
 flowchart TB
@@ -3657,13 +3655,27 @@ that case.
 
 ## 37. The external tracker binary, and its removal
 
-**This section is the whole account of the external tracker binary.** It appears nowhere
-else in this document, because it is not part of this architecture. It is a transitional
-dependency on its way out, and this section says what it still carries, what it costs, and
-what has to happen before it goes. See
+**This section is the whole account of the external tracker binary, and the dependency is
+gone.** It appears nowhere else in this document, because it never was part of this
+architecture. It was a transitional dependency, it left, and this section is now the closing
+account: why it was taken, what it cost, and the evidence that nothing reaches it. See
 [D-35](#d-35--the-external-tracker-binary-is-transitional-not-a-component).
 
-The binary is `br`, an external command-line tool. This is the only section that names it.
+The binary was `br`, an external command-line tool. This is the only section that names it.
+
+**Re-derived 2026-08-19: nothing in this repository spawns it.** The probe in
+[37.2](#372-what-still-depends-on-it) returns no sites, the seam module that held the spawn
+does not exist, and `[tracker] mode` has one legal value. The tenses below are past on
+purpose.
+
+`[TARGET]` **This section is kept at its number rather than deleted.** [3. Section numbers
+are a cited surface](#3-section-numbers-are-a-cited-surface) makes a number stable for as
+long as its subject exists, and retiring §37 leaves a gap rather than renumbering §38 to §40
+— which is the right end state. What blocks it is not this document: `status.md`,
+`backlog.md`, `docs/plan/implementation-plan.md` and four modules under `src/` cite §37 or
+the removed requirements document by name, and the sweep that clears them is
+`basicly-vkh0.42.6`'s remainder. Removing the section before them would leave a set of
+citations resolving to nothing.
 
 ### 37.1 Why it was adopted, and why that reason expired
 
@@ -3692,54 +3704,73 @@ reintroduces exactly the unowned-binary upgrade surface being removed. See
 
 ### 37.2 What still depends on it
 
-**One module spawns the binary. Everything else calls through that module.** That is what
-makes the replacement a change in one place, and it is the invariant that must not slip.
-See [D-23](#d-23--the-seam-is-the-only-place-where-both-stores-move-together).
+**Nothing. Zero spawn sites, re-derived 2026-08-19.** One module used to spawn the binary and
+everything else called through it — the invariant that made the replacement a change in one
+place, and it held to the end. See
+[D-23](#d-23--the-seam-is-the-only-place-where-both-stores-move-together).
 
-**In front of the seam** [measured 2026-08-16]: 29 spawn sites across **13** engine
-modules, concentrated in decompose (6), the supervisor (4), policy (4), the loop (4) and
-merge (3), which is 21 of the 29. One further site sits in the improvement controller
-script, so the whole-tree total is 30. Re-derive the count rather than trust it. It is a
-moving target, and a naive search for the wrapper's name undercounts, because most call
-sites import the wrapper under an alias and a second wrapper exists for tolerated
-failures. The probe that produced the figures above covers every spelling:
+The probe below is the one that produced the historical figures, and it covers every
+spelling: most call sites imported the wrapper under an alias, and a second wrapper existed
+for tolerated failures, so a naive search for the wrapper's name undercounted.
 
 ```sh
 rg -c '\b(_run_br|_try_run_br|br\.run_br|br\.try_run_br|run_br|try_run_br)\s*\(' src/basicly -g '!br.py'
 ```
 
-**Behind the seam already:** the engine owns ranking in-process, and it writes and reads
-the loop's own marker families as ledger events, with no external process spawned at all.
+**It now exits non-zero with no output.** The seam module it excludes, `src/basicly/br.py`,
+does not exist either, and the string `"br"` appears in no argv construction under `src/`,
+`.basicly/core/` or `.scripts/`. The positive control for that zero is that the same tool
+over the same tree returns matches for an ordinary pattern — an empty probe is otherwise
+ambiguous between *absent* and *wrong probe*. It was 29 sites across 13 engine modules plus
+one in the improvement controller script [measured 2026-08-16], and that figure is now
+terminal history.
 
-**Five operations have no owned equivalent at all**, and each is a design question rather
-than a port.
+**The guard is a test rather than this paragraph.** `tests/test_engine_without_a_binary.py`
+drives the engine's own entry points with the binary absent from `PATH`, and **a spawn fails
+the test** — not merely an un-install, because "the binary was absent and the engine
+silently degraded to doing nothing" satisfies a weaker assertion and is exactly this
+section's failure mode.
 
-1. The definition-of-ready lint, which means owning the validation rules.
-2. Dependency-cycle detection.
-3. A label query.
-4. Id minting.
-5. The gate listing.
+**All five operations that had no owned equivalent now have one**, so the design questions
+were answered rather than deferred.
 
-**One concrete path still names the binary's own layout.** A lane worktree shares the base
-checkout's store through a git-ignored `.beads/redirect` file that provisioning writes, and
-a redirect-capable binary is a hard requirement: provisioning **probes** the new worktree
-and aborts with upgrade guidance when the answer is not the base store. A binary that
-ignored the redirect file would run a divergent store in silence. **That filename is the
-binary's, not ours, and it changes at the flip.** It is named once, here, and
-[35. Runtime topology](#35-runtime-topology) draws the relationship without it.
+| Operation | The owned equivalent |
+| --- | --- |
+| the definition-of-ready lint | `policy.definition_of_ready`, with the required-section set per work type as configuration; surfaced as `basicly policy dor` |
+| dependency-cycle detection | `dependency_graph`, folded from the same edges as the blocking graph |
+| a label query | `label_source`, answering a label's members as `{issue_id: status}` |
+| id minting | `kit.tracker.ids.mint_root_id`, called by the kit's own CLI and by `owned_write` |
+| the gate listing | `gate_source`, folded out of the owned ledger |
+
+**The one path that named the binary's own layout is gone with it.** A lane worktree used to
+share the base checkout's store through a git-ignored `.beads/redirect` file that
+provisioning wrote, and provisioning probed the new worktree rather than trusting it. That
+directory was deleted by `basicly-vkh0.42.7`, and [35. Runtime topology](#35-runtime-topology)
+draws the relationship without it.
 
 ### 37.3 The cutover, and where it stands
 
+**All five steps ran, and the ladder collapsed to its last rung.** `[tracker] mode` had three
+values while a second store existed; `TRACKER_MODES` is now `('owned',)`, because a repository
+declaring `external` or `dual` would be naming a behaviour no code performs. The key survives
+its ladder on purpose: a consumer's committed `mode = "owned"` must not be refused as an
+unknown name, and a value outside the set is refused rather than defaulted.
+
 | Step | State | Note |
 | --- | --- | --- |
-| 1 · import the existing export into the event log | ran, and is re-runnable | refuses a ledger that already holds a post-flip record |
-| 2 · the shadow differential | ran, on dual | the declared baseline is empty |
-| 3 · dual write | live | every accepted write also lands in the owned ledger |
-| 4 · flip the source of truth | not dispatchable | waits on the remaining bypasses, and on the five unported operations above |
-| 5 · owned-store-native markers | landed, ahead of steps 2 to 4 | this is why the differential must run on dual |
+| 1 · import the existing export into the event log | ran | refused a ledger already holding a post-flip record |
+| 2 · the shadow differential | ran, on dual, and came back clean **and** conclusive over a non-empty scope | 64 records, 18 adopted, recorded on `basicly-vkh0.29` |
+| 3 · dual write | ran | every accepted write also landed in the owned ledger |
+| 4 · flip the source of truth | ran | the ledger became authoritative |
+| 5 · owned-store-native markers | landed, ahead of steps 2 to 4 | this is why the differential had to run on dual |
 
-**One write under dual mode, drawn in order.** The order is the design. Two real defects,
-which were one mistake, produced it.
+**The machinery is gone with the dependency.** `basicly tracker` carries six read and write
+subcommands and no `import`, `shadow` or mirror surface; `basicly-vkh0.42.7` deleted the
+external store directory. Nothing below is re-runnable, and it is kept because the ordering
+lesson outlives the code that taught it.
+
+**One write under dual mode, drawn in order — the historical design.** The order was the
+design. Two real defects, which were one mistake, produced it.
 
 ```mermaid
 sequenceDiagram
@@ -3810,10 +3841,9 @@ dual write started would absorb a genuine failure into history, so a widening is
 repair. The import refuses a ledger that already holds a post-flip record, for the same
 reason.
 
-**What the run says today** [measured 2026-08-16, `uv run basicly tracker shadow`]: not
-clean, and conclusive. Re-run it rather than trusting a count here; the population moves
-with every tracker write. It reports **two kinds of failure**, and they need different
-answers.
+**What the run said while it could still be run** [measured 2026-08-16,
+`uv run basicly tracker shadow`, a command that no longer exists]: not clean, and conclusive.
+It reported **two kinds of failure**, which needed different answers.
 
 1. **Records the external store holds and the ledger does not.** Each is a hand-write that
    bypassed the seam, not a mirror defect. This is the class the closed bypass route
@@ -3829,14 +3859,19 @@ answers.
 An earlier reading of hundreds of gate disagreements is stale. Those records carry the
 import marker, and the run now excuses them as history.
 
-**The flip therefore no longer waits on a one-shot gate dump.** It waits on a closed bypass
-route, on the `ready` disagreement above, and on the five unported operations in
-[37.2](#372-what-still-depends-on-it).
+**The flip waited on a closed bypass route, on the `ready` disagreement above, and on the
+five unported operations in [37.2](#372-what-still-depends-on-it). All three were settled, and
+the flip ran.** The `ready` disagreement was never attributed to one of its two candidates
+from the evidence recorded here, and the reference that would have discriminated them is
+deleted, so it is closed as unexplained rather than as diagnosed.
 
 ### 37.4 Two defects that make the removal urgent
 
-Both were found on 2026-08-16. The second is the severe one, and it is fully reproducible
-on this checkout.
+Both were found on 2026-08-16, and they are why the removal was urgent rather than scheduled.
+The second is the severe one. **Neither probe below can be run now**: `basicly-vkh0.42.7`
+deleted `.beads/`, so both commands meet an absent file. They are kept as written because the
+mechanism each reads off the vendor's own documentation is checkable without them, and because
+a probe rewritten to pass is not evidence.
 
 **Defect 1 — the liveness check and the integrity check answer different questions, and
 only one of them was read.** The binary's cheap health subcommand reported `db=ok` while
@@ -3877,10 +3912,11 @@ print(db.execute('select count(*) from gate_results').fetchone()[0], len(r), \
 sorted(x for x in k if 'gate' in x), len(k))"
 ```
 
-It prints the database count, the export's record count, every export key whose name
-contains "gate", and the number of distinct keys. The third value is empty and the fourth
-is the positive control that says the parse read something. The recovered image the earlier
-measurement also read is gone, so this count now has one derivation path and not two.
+It printed the database count, the export's record count, every export key whose name
+contains "gate", and the number of distinct keys. The third value was empty and the fourth was
+the positive control that said the parse read something. Both stores it reads are now deleted,
+so the figure has **no** live derivation path — one when this was written, after the recovered
+image went, and none now. **The zero is terminal history, not a claim to re-check.**
 
 **So the documented recovery path for a corrupted store silently erases every gate verdict
 in it.** That is not a peripheral loss. A green required gate is the discriminator the
@@ -3899,30 +3935,37 @@ the removal is the fix rather than a workaround.
 
 ### 37.5 The pin, until the flip
 
-The binary is an external CLI, not a package dependency. The engine declares a **floor** on
-major and minor, and an **exact pinned version**. It warns in **both** directions from that
-pin. Sources: `br.MIN_VERSION`, `br.PINNED_VERSION`.
+**The pin left with the binary, and this subsection is the record that it did.** While it
+stood, the binary was an external CLI rather than a package dependency: the engine declared a
+**floor** on major and minor, and an **exact pinned version**, and warned in **both**
+directions from it. Its sources were `br.MIN_VERSION` and `br.PINNED_VERSION` — constants in a
+module that no longer exists, so **neither name resolves today**, and no version constraint on
+any external tracker is declared anywhere in this repository.
 
 **The exact pin has a ceiling for a reason.** A floor alone once let a silent upgrade break
 a gate command on one machine while CI stayed green. An upgrade past the pin is not a fix
 either. The upstream trunk targets a newer database schema, and its migration accepts only a
 narrow range, so a newer binary has no supported forward path from the schema in use here.
 
-**About ten places carry the pin string by hand**: user-facing messages, comments and
-consumer documentation. No gate keeps them in step. The single authoritative statement is
-the constant in the seam module. The installer imports that constant rather than a copy of
-it, and that is the one duplicate which cannot drift.
+**About ten places carried the pin string by hand**: user-facing messages, comments and
+consumer documentation, with no gate keeping them in step. The single authoritative statement
+was the constant in the seam module, and the installer imported it rather than a copy, which
+was the one duplicate that could not drift. **The hand-carried copies are what outlive a
+removed constant**, and clearing the last of them is the sweep this section's own removal
+waits on.
 
-**The consumer-facing surfaces state the pin correctly** [verified 2026-08-16,
-`rg -i 'not a floor' README.md docs/`]. The README, both how-to pages and the tutorial each
-say "a pin, not a floor" and name the two-directional warning. The landing page carries no
-floor wording at all. `[TARGET]` **One file still disagrees**: `CONTRIBUTING.md` calls the
-pinned version "the known-good floor". It should say pin. An earlier revision of this
-document recorded the contradiction as spanning "the consumer-facing documents", plural, and
-directed a reader at five files of which four were already correct.
+**The consumer-facing surfaces no longer discuss a pin at all, and the contradiction this
+subsection carried is discharged.** It read `[TARGET]` against `CONTRIBUTING.md` for calling
+the pinned version "the known-good floor". Re-measured 2026-08-19: `rg -c 'known-good floor'
+CONTRIBUTING.md` returns nothing, and so does `rg -c '0\.2\.16' CONTRIBUTING.md` — **the
+control is void as well as the target**, which says the surrounding passage was removed rather
+than the wording corrected. That is the stronger outcome and a weaker measurement, and it is
+recorded as the second thing rather than the first. `rg -i 'not a floor' README.md docs/`
+returns only this document's own siblings describing the old state.
 
-**Every one of these paragraphs disappears at the flip.** That is the point of confining
-them to one section.
+**Every one of these paragraphs was to disappear at the flip.** They are held one release
+longer because the citations into this section outlive it, which is the point of confining
+them to one section: the sweep has one place to look.
 
 ---
 
@@ -4649,7 +4692,7 @@ appear in a definition, a table header or a schema field.
 | **event kind** | one entry in the closed vocabulary of [32.3](#323-the-event-vocabulary). Eighteen of them | never `event type`, and never `record`, which names the work item |
 | **note** | the one event kind carrying prose a human or an agent wrote | never `comment`, which is the external binary's word. See the retirement below |
 | **work log** | the rendered chronology that interleaves `note` with every typed event on one item | it is a **view**, never a kind. Never `history`, which names git's |
-| **the seam** | the one module that spawns the external tracker binary | — |
+| **the seam** | the one module every tracker write goes through. It spawned the external tracker binary until 2026-08-18 and now spawns nothing | — |
 | **the kit** | the portable, dependency-free modules deployed into a consumer under `.basicly/core/kit/` | — |
 | **target** | one agent family's projection destination: claude, codex, copilot | never `vendor`, which names a model provider |
 | **surface** | either a frozen consumer surface, or a model-access surface. **The two senses are distinct and both are load-bearing.** A sentence must make which one it means unambiguous | — |
