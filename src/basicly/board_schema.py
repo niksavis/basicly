@@ -13,6 +13,13 @@ undeclared key is counted and named and the document still passes. Both directio
 the versioning rule the ledger already fixes - only add keys and optional sections - read
 from the two ends of it.
 
+The ruling is per section rather than per document, and that is the whole reason the
+inventory lives here. A foreign producer's first honest attempt carries one over-long
+string, and a verdict that refused the document for it would blank the screen and leave a
+producer that emitted nothing better off than one that tried. So only the three required
+keys can refuse: a violation inside an optional section withholds that section and names
+its violations, and the sections that conform still draw.
+
 Absence of the schema is *not* inert here, and that is the one place this departs from
 ``handoff`` on purpose. A gate inside the loop that cannot find its contract has to admit
 the unit or stop the harness; a caller that has explicitly asked whether a file conforms
@@ -45,6 +52,7 @@ VERSION = f"{CONTRACT}/v{MAJOR}"
 _DECLARED = re.compile(rf"^{re.escape(CONTRACT)}/v([1-9][0-9]*)$")
 
 OK = "ok"
+PARTIAL = "partly-renderable"
 WRONG_MAJOR = "wrong-major"
 INVALID = "invalid"
 UNREADABLE = "unreadable"
@@ -53,6 +61,28 @@ NOT_INSTALLED = "not-installed"
 # Reserved for the one refusal that is the contract speaking rather than a defect in the
 # file or in this install: the document is well formed and belongs to another major.
 REFUSED = 2
+
+# A document whose required part is sound and one of whose optional sections is not. Its own
+# code because a caller has to be able to tell "some panels drew" from "nothing drew", and
+# both from another major; a shell that treats every non-zero alike still sees a failure.
+PARTLY_RENDERABLE = 3
+
+
+@dataclass(frozen=True)
+class SectionVerdict:
+    """One present optional section's own verdict, which is the unit a board draws.
+
+    Carries its violations rather than only a flag: a panel reporting that it is not
+    conformant without saying why sends the producer back to the whole document.
+    """
+
+    name: str
+    violations: tuple[str, ...] = ()
+
+    @property
+    def conformant(self) -> bool:
+        """True when this section may be drawn."""
+        return not self.violations
 
 
 @dataclass(frozen=True)
@@ -65,19 +95,39 @@ class SnapshotVerdict:
     absent: tuple[str, ...] = ()
     unknown: tuple[str, ...] = ()
     violations: tuple[str, ...] = ()
+    sections: tuple[SectionVerdict, ...] = ()
     detail: str = ""
 
     @property
     def readable(self) -> bool:
-        """True when a board may render this document."""
-        return self.outcome == OK
+        """True when a board may draw this document: all of it, or the sections that conform."""
+        return self.outcome in {OK, PARTIAL}
+
+    @property
+    def renderable(self) -> tuple[str, ...]:
+        """The sections a board may draw, and none at all where the document itself is refused.
+
+        Empty rather than "the conformant ones" for a refused document, because a caller that
+        reached for this list instead of :attr:`readable` would otherwise draw panels over a
+        document with no valid age on it.
+        """
+        if not self.readable:
+            return ()
+        return tuple(section.name for section in self.sections if section.conformant)
+
+    @property
+    def withheld(self) -> tuple[str, ...]:
+        """The present sections that are not conformant, which a board draws as such."""
+        return tuple(section.name for section in self.sections if not section.conformant)
 
     @property
     def exit_code(self) -> int:
-        """0 readable, :data:`REFUSED` for another major, 1 for everything else."""
+        """0 conformant, 3 partly renderable, :data:`REFUSED` for another major, else 1."""
         if self.outcome == OK:
             return 0
-        return REFUSED if self.outcome == WRONG_MAJOR else 1
+        if self.outcome == WRONG_MAJOR:
+            return REFUSED
+        return PARTLY_RENDERABLE if self.outcome == PARTIAL else 1
 
     @property
     def summary(self) -> str:
@@ -88,6 +138,9 @@ class SnapshotVerdict:
         wording them differently is how one refusal comes to read as two.
         """
         return "\n".join(_summary_lines(self))
+
+
+_HEADLINE = {OK: "ok", PARTIAL: "partly renderable"}
 
 
 def _summary_lines(verdict: SnapshotVerdict) -> Iterator[str]:
@@ -102,11 +155,17 @@ def _summary_lines(verdict: SnapshotVerdict) -> Iterator[str]:
     if verdict.outcome in {UNREADABLE, NOT_INSTALLED}:
         yield f"{verdict.outcome}: {verdict.detail}"
         return
-    yield f"{VERSION}, ok" if verdict.readable else f"{VERSION}, does not validate"
+    yield f"{VERSION}, {_HEADLINE.get(verdict.outcome, 'does not validate')}"
     yield f"present   {', '.join(verdict.present) or 'nothing beyond the required keys'}"
     yield f"absent    {', '.join(verdict.absent) or 'nothing'}"
     if verdict.unknown:
         yield f"unknown   {len(verdict.unknown)} key(s): {', '.join(verdict.unknown)}"
+    if verdict.outcome == PARTIAL:
+        yield f"renders   {', '.join(verdict.renderable) or 'nothing beyond the required keys'}"
+        yield f"withheld  {', '.join(verdict.withheld)}"
+        yield "A withheld section renders as not conformant; the rest of the board draws."
+    elif verdict.outcome == INVALID:
+        yield "The required part does not validate, so no section renders."
     for violation in verdict.violations:
         yield f"invalid   {violation}"
 
@@ -137,11 +196,24 @@ def declared_major(document: object) -> int | None:
     return int(found.group(1)) if found else None
 
 
-def _violations(validator: Draft202012Validator, document: object) -> tuple[str, ...]:
-    """*document*'s violations as ``<json path>: <message>`` lines."""
+def _attributed(
+    validator: Draft202012Validator, document: object, sections: tuple[str, ...]
+) -> list[tuple[str | None, str]]:
+    """*document*'s violations as ``(owning section or None, <json path>: <message>)`` pairs.
+
+    The owner is read off the error's path rather than off its message, for the reason
+    ``_unknown_keys`` states. None means the violation is the document's own - the root, or
+    one of the three required keys - and those are the only ones that can refuse it.
+    """
     instance = cast("Any", document)
     errors = sorted(validator.iter_errors(instance), key=lambda err: list(err.path))
-    return tuple(f"{err.json_path}: {err.message}" for err in errors)
+    owned = set(sections)
+    pairs = []
+    for err in errors:
+        head = next(iter(err.path), None)
+        owner = head if isinstance(head, str) and head in owned else None
+        pairs.append((owner, f"{err.json_path}: {err.message}"))
+    return pairs
 
 
 def _child(node: dict, key: str) -> dict | None:
@@ -184,6 +256,13 @@ def _sections(schema: dict) -> tuple[str, ...]:
     return tuple(name for name in properties if name not in required)
 
 
+def _outcome(pairs: list[tuple[str | None, str]], ruled: tuple[SectionVerdict, ...]) -> str:
+    """``OK``, ``PARTIAL`` where only sections broke, ``INVALID`` where the document itself did."""
+    if any(owner is None for owner, _ in pairs):
+        return INVALID
+    return PARTIAL if any(not section.conformant for section in ruled) else OK
+
+
 def verdict(repo_root: Path, document: object) -> SnapshotVerdict:
     """Rule on an already-decoded *document* against the contract installed in *repo_root*.
 
@@ -206,14 +285,20 @@ def verdict(repo_root: Path, document: object) -> SnapshotVerdict:
     schema = cast("dict[str, Any]", validator.schema)
     sections = _sections(schema)
     held = set(document) if isinstance(document, dict) else set()
-    violations = _violations(validator, document)
+    present = tuple(name for name in sections if name in held)
+    pairs = _attributed(validator, document, sections)
+    ruled = tuple(
+        SectionVerdict(name, tuple(line for owner, line in pairs if owner == name))
+        for name in present
+    )
     return SnapshotVerdict(
-        OK if not violations else INVALID,
+        _outcome(pairs, ruled),
         declared=declared if isinstance(declared, str) else None,
-        present=tuple(name for name in sections if name in held),
+        present=present,
         absent=tuple(name for name in sections if name not in held),
         unknown=tuple(_unknown_keys(schema, document, "$")),
-        violations=violations,
+        violations=tuple(line for _, line in pairs),
+        sections=ruled,
     )
 
 

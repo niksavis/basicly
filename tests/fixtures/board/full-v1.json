@@ -49,7 +49,7 @@
       "requested_at": "2026-08-14T16:38:41Z",
       "waiting_s": 251,
       "question": "approve the plan?",
-      "actions": ["checkpoint-approve"]
+      "actions": [{ "offer": "approve the plan", "basicly": "checkpoint-approve" }]
     }
   ],
   "gates": {

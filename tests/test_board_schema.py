@@ -41,6 +41,11 @@ def _minimal() -> dict[str, Any]:
     return json.loads((FIXTURES / "minimal-v1.json").read_text(encoding="utf-8"))
 
 
+_OFFSET = "2026-08-19T09:14:03+00:00"
+_ASK = {"wait_id": "w", "kind": "checkpoint", "requested_at": _OFFSET}
+_FRESH = _minimal()["freshness"]
+
+
 def _subschemas(node: object) -> list[dict[str, Any]]:
     """Every subschema in the tree, so an assertion holds at depth and not only at the top."""
     if not isinstance(node, dict):
@@ -100,11 +105,12 @@ def test_freshness_requires_all_three_of_its_fields() -> None:
     }
 
 
-def test_no_object_in_the_schema_closes_itself_to_unknown_keys() -> None:
-    """`additionalProperties: false` anywhere would turn an added key into a refusal."""
+def test_a_key_may_be_added_and_a_permitted_value_may_not() -> None:
+    """Both halves of one rule: no keyword closes an object, and no keyword closes a value set."""
     closed = [node for node in _subschemas(_schema()) if node.get("additionalProperties") is False]
 
     assert closed == []
+    assert "permitted values may never be widened within a major" in _schema()["description"]
 
 
 def test_no_property_admits_a_description_a_criterion_or_a_comment_body() -> None:
@@ -219,36 +225,35 @@ def test_a_priority_map_key_is_not_an_unknown_key() -> None:
 
 
 @pytest.mark.parametrize(
-    ("mutation", "expected"),
+    ("withheld", "mutation", "expected"),
     [
-        ({"generated_at": "14 Aug 2026"}, "$.generated_at"),
-        ({"freshness": {"source": "one-shot", "cadence_s": None}}, "$.freshness"),
-        ({"freshness": {"source": "push", "cadence_s": None, "stale_after_s": 60}}, "$.freshness"),
-        ({"asks": [{"wait_id": "w", "kind": "checkpoint"}]}, "$.asks[0]"),
-        ({"spend": {"lifetime_usd": 1.0}}, "$.spend"),
-        ({"lanes": [{"id": "x", "phase": "build", "context_used": 5}]}, "$.lanes[0]"),
-        ({"gates": {"checks": [{"name": "ruff", "status": "green"}]}}, "$.gates"),
+        ((), {"generated_at": "14 Aug 2026"}, "$.generated_at"),
+        ((), {"freshness": {"source": "one-shot", "cadence_s": None}}, "$.freshness"),
+        ((), {"freshness": _FRESH | {"source": "push"}}, "$.freshness.source"),
+        (("asks",), {"asks": [{"wait_id": "w", "kind": "checkpoint"}]}, "$.asks[0]"),
+        (("spend",), {"spend": {"lifetime_usd": 1.0}}, "$.spend"),
+        (("spend",), {"spend": {"scope": "team-wide"}}, "$.spend.scope"),
+        (("lanes",), {"lanes": [{"id": "x", "phase": "build", "context_used": 5}]}, "$.lanes[0]"),
+        (("gates",), {"gates": {"checks": [{"name": "ruff", "status": "green"}]}}, "$.gates"),
         (
-            {
-                "asks": [
-                    {
-                        "wait_id": "w",
-                        "kind": "c",
-                        "requested_at": _minimal()["generated_at"],
-                        "actions": ["rm-rf"],
-                    }
-                ]
-            },
-            "$.asks[0].actions[0]",
+            ("asks",),
+            {"asks": [_ASK | {"actions": [{"offer": "wipe it", "basicly": "rm-rf"}]}]},
+            "$.asks[0].actions[0].basicly",
         ),
     ],
 )
-def test_the_schema_refuses_a_malformed_section(mutation: dict[str, Any], expected: str) -> None:
-    """Each case is a rule the prose states; a schema that accepted them would state nothing."""
-    result = board_schema.verdict(REPO_ROOT, _minimal() | mutation)
+def test_only_a_broken_required_key_refuses_the_document(
+    withheld: tuple[str, ...], mutation: dict[str, Any], expected: str
+) -> None:
+    """An empty withheld column is a blank screen; a named one costs that one panel."""
+    refused = not withheld
 
-    assert result.outcome == board_schema.INVALID
-    assert result.exit_code == 1
+    result = board_schema.verdict(REPO_ROOT, _minimal() | {"backlog": {"total": 1}} | mutation)
+
+    assert result.withheld == withheld
+    assert result.outcome == (board_schema.INVALID if refused else board_schema.PARTIAL)
+    assert result.exit_code == (1 if refused else board_schema.PARTLY_RENDERABLE)
+    assert result.renderable == (() if refused else ("backlog",))
     assert any(line.startswith(expected) for line in result.violations), result.violations
 
 
@@ -297,6 +302,46 @@ def test_the_declared_major_is_read_off_the_document(declared: str, major: int |
     assert board_schema.declared_major({"schema": declared}) == major
 
 
+def test_a_broken_section_is_withheld_while_a_sound_one_renders() -> None:
+    """The bead's own case, through the file the command reads: one over-long name, one panel."""
+    result = board_schema.validate_file(REPO_ROOT, FIXTURES / "broken-section-v1.json")
+
+    assert result.renderable == ("backlog",)
+    assert result.withheld == ("units",)
+    assert result.exit_code not in {0, 1, board_schema.REFUSED}
+    units = next(section for section in result.sections if section.name == "units")
+    assert any("title" in line for line in units.violations), units.violations
+    assert "withheld  units" in result.summary
+
+
+# One offset row per property reading `$defs/instant`: re-inlining the pattern at any of the
+# five sites fails here, which counting `$ref`s would not.
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"generated_at": "2026-08-19T09:14:03+00:00"},
+        {"generated_at": "2026-08-19T11:14:03+02:00"},
+        {"lanes": [{"id": "x", "phase": "build", "started_at": _OFFSET}]},
+        {"asks": [{"wait_id": "w", "kind": "review", "requested_at": _OFFSET}]},
+        {"gates": {"recorded_at": _OFFSET}},
+        {"events": [{"at": _OFFSET, "kind": "dispatched"}]},
+        {"freshness": {"source": "state-change", "cadence_s": None, "stale_after_s": 30}},
+        {"asks": [_ASK | {"actions": [{"offer": "merge the pull request"}]}]},
+    ],
+)
+def test_a_value_the_contract_used_to_refuse_now_validates(mutation: dict[str, Any]) -> None:
+    """Each row is what a foreign producer's first honest attempt carried and lost the board for.
+
+    The last two are the extensible half: a state-change producer, and an offer naming no verb
+    this consumer implements - ignored, neither an unknown key nor fatal.
+    """
+    result = board_schema.verdict(REPO_ROOT, _minimal() | mutation)
+
+    assert result.exit_code == 0
+    assert result.violations == ()
+    assert result.unknown == ()
+
+
 # --- the closed enums are bound to the engine, not merely written down ----------
 #
 # An enum is closed exactly where a consumer *acts* on the value, which makes each one
@@ -313,7 +358,9 @@ def test_every_offered_action_names_a_command_the_cli_implements() -> None:
     agree with itself and prove nothing.
     """
     offered = set(
-        _schema()["properties"]["asks"]["items"]["properties"]["actions"]["items"]["enum"]
+        _schema()["properties"]["asks"]["items"]["properties"]["actions"]["items"]["properties"][
+            "basicly"
+        ]["enum"]
     )
     implemented = {
         "loop-answer": ("loop", "answer"),
