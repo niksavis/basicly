@@ -2011,7 +2011,7 @@ def _hold_for_validate_decision(ctx: _Ctx, disputed: list[rubrics.CheckVerdict])
     decisions.enqueue(
         ctx.repo_root,
         ctx.issue_id,
-        "validate",
+        validate_gate.VALIDATE_DECISION_KIND,
         f"acceptance criteria unmet per the validator ({criteria}): accept, rework, or amend?",
         evidence,
     )
