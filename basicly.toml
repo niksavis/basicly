@@ -81,7 +81,11 @@ prefix = "basicly"
 # Branch new harness/<name> worktrees fork from. Empty = the current branch.
 base_branch = ""
 # Cap on how many worktrees may exist at once.
-concurrency = 5
+#
+# Raised 5 -> 10 on 2026-08-20 by owner decision: lanes scale by isolation, not by
+# permission, and at 5 the cap was the only thing bounding fan-out. See the pytest
+# check's `concurrency x workers` note below, which this raise deliberately breaks.
+concurrency = 10
 # Paths this repo's own conventions have every lane append its own entry to, and
 # which therefore appear in no bead's `## Scope` (basicly-o8p0). Declaring one here
 # makes `decompose` serialize the children that would collide on it and makes
@@ -315,9 +319,19 @@ name = "pytest"
 # pytest-xdist parallelizes the subprocess-heavy CLI tests; this is the bulk of
 # the gate's wall time. Capped rather than `-n auto`, and the reason is lane
 # concurrency, not a lock: this gate runs *inside every lane*, so a supervised
-# pass multiplies it by `[loop] concurrency`. Keep `concurrency x workers` at or
-# under the core count — at concurrency 5 that is 4 workers on a 16-32 core box,
-# where `auto` would ask for 5x32.
+# pass multiplies it by the worktree concurrency cap, where `auto` would ask for
+# that many times 32.
+#
+# **The `concurrency x workers <= cores` rule this comment used to state no longer
+# holds, and that is a decision rather than an oversight.** At the raise to
+# concurrency 10 (2026-08-20) the worst case is 10 x 4 = 40 workers on 32 cores.
+# Workers were kept at 4 rather than cut to 3, because the rule's arithmetic treats
+# a worker as CPU-bound and these are not: this gate's bulk is the subprocess-heavy
+# CLI tests, so a worker spends much of its life waiting on a child. The worst case
+# also needs all ten lanes verifying in the same instant. **Re-measure before
+# raising either number again** — and note the comment previously named
+# `[loop] concurrency`, a setting that does not exist in this file; the lane cap is
+# `[worktree] concurrency`.
 #
 # The previous justification here — a machine-global tracker write lock whose 30s
 # timeout `auto` stampeded (basicly-9s59) — was STALE before that store was deleted
@@ -535,13 +549,17 @@ max_rework = 2
 # downstream of build unlanded — merged and parked in verify, or verified and
 # waiting on a ship checkpoint — before a further dispatch is refused.
 #
-# Five, which is `[worktree] concurrency`, and the two agreeing is a coincidence
-# worth stating rather than a derivation: concurrency bounds how many lanes run
-# at once, this bounds how much finished-but-unreviewed output exists, and a
-# pass can exhaust the second while well inside the first. At these values one
-# full-width pass is admitted and a second cohort waits until the first lands,
-# which is the behaviour this repo already had — lower it to make review, not
-# slots or tokens, the constraint that binds.
+# Five. It used to equal `[worktree] concurrency` and no longer does: that cap was
+# raised to 10 on 2026-08-20 and this was deliberately left at 5. The two bound
+# different quantities — concurrency bounds how many lanes run at once, this bounds
+# how much finished-but-unreviewed output exists, and a pass can exhaust the second
+# while well inside the first.
+#
+# **So review is now the constraint that binds a supervised pass, not slots.** Ten
+# lanes may run, and the sixth to finish waits for one of the first five to land.
+# That is the stated intent of this setting rather than a side effect of the raise:
+# make review, not slots or tokens, the thing that limits throughput. Raise it only
+# with a reason to believe unreviewed output is safe to accumulate.
 max_downstream_wip = 5
 
 # The body sections each work type owes beyond the acceptance criteria every bead owes
