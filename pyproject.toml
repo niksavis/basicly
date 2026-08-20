@@ -402,6 +402,23 @@ waiver_count = 2
 # the log is ever rebuilt from a source that still has the event.
 [tool.ledger_fsck.frozen]
 "basicly-vkh0.30/sequence-gap" = 1
+# Citations nothing can check, per document (basicly-v5c8ob). The rule above only runs when the
+# citing sentence names a top-level symbol of the module it cites; 32 of the 44 citations in
+# `docs/` name none, so they were counted, reported as a coverage share, and passed. A gate that
+# exits zero over a claim it did not read is the fail-open shape, and it was probed: a sentence
+# citing a real module at line 1 with a false claim about what is there was one of the 32.
+#
+# So the 32 are debt and a new one is refused. The repair is to name the symbol the sentence is
+# actually talking about, which is the same repair the frozen table above asks for and the
+# reason that table is now empty. The list is closed and each count may only fall, banked in
+# the same diff, for the reason [tool.module_size.frozen] states: leaving the higher number
+# licenses regrowth back to it for free.
+[tool.docs_citations.unverifiable]
+"docs/plan/implementation-plan.md" = 6
+"docs/requirements/factory-loop.md" = 12
+"docs/requirements/harness-board.md" = 9
+"docs/research/2026-07-26-sota-review.md" = 3
+"docs/research/2026-08-17-archify-visualization.md" = 2
 
 [tool.code_citations]
 binding_count = 3

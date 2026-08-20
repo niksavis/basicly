@@ -17,14 +17,19 @@ also names a top-level `def`, `class` or assignment of the cited module — in b
 bare inside a fenced block — the two have to agree. That pins the citation to something
 stable under editing, rather than to a line number that every insertion above it moves.
 
-A citation whose sentence names no symbol of the cited file is **not** checked and not
-counted as a pass; the summary reports the checkable share so the coverage is never
-mistaken for the population.
+**A citation nothing can check is a finding, not a pass** (basicly-v5c8ob). When the citing
+sentence names no symbol of the cited file, the rule above cannot run — and reporting the
+checkable share while exiting zero is the fail-open shape this gate exists to refuse. Probed
+on real input, a sentence citing a real module at line 1 with a false claim about what is
+there was counted, unchecked, exit 0; 32 of 44 citations were in that state. Each is now
+reported and ratcheted, so the 32 are debt and a new one is refused.
 
-**A ratchet, not a hard gate.** Eight citations were already stale when this landed, in
-documents no one lane should rewrite, so the go-live debt is recorded per document in
-``[tool.docs_citations.frozen]`` and may only fall. A document absent from that list may
-not carry a single stale citation.
+**Two ratchets, not a hard gate.** Debt is recorded per document and may only fall: stale
+citations in ``[tool.docs_citations.frozen]``, unverifiable ones in
+``[tool.docs_citations.unverifiable]``. A document absent from a list may not carry a single
+citation of that kind. The repair for an unverifiable citation is to name, in the citing
+sentence, a top-level symbol of the module it cites — which is what makes the claim checkable
+at all, and what the second rule then holds it to.
 
 Run over every document, or over named ones::
 
@@ -46,12 +51,24 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 _LABEL = "docs-citations"
 FROZEN_TABLE = "[tool.docs_citations.frozen]"
+UNVERIFIABLE_TABLE = "[tool.docs_citations.unverifiable]"
 DOC_GLOB = "docs/**/*.md"
 # Directories a cited basename must never resolve into: vendored or generated trees hold
 # copies of `src/` modules, and a citation matching two files is reported, not guessed.
 _SKIP_DIRS = frozenset({".git", ".venv", "node_modules", "site", "__pycache__"})
 
-_CITATION = re.compile(r"(?<![\w/])([\w./-]+\.py):(\d+)")
+# The `?` is the closing backtick of a backticked path, which a citation writes on the
+# outside of the tick when it writes the line number outside too (basicly-v5c8ob). Without
+# it, `` `loop.py`:120 `` matched nothing at all — not counted, not checked, not reported,
+# which is the one outcome a presence-based gate cannot tell from a document with no
+# citations. Loosening it is safe because the path and the line number are both still
+# required: measured over all 304 tracked `.md`/`.yaml` files, the old pattern and this one
+# both find 53 citations, so the tick admits no prose.
+_CITATION = re.compile(r"(?<![\w/])([\w./-]+\.py)`?:(\d+)")
+# What a citation nothing can check is reported as. Before basicly-v5c8ob this branch was a
+# bare `continue`: 32 of the 44 citations in `docs/` were counted, not verified, and the gate
+# exited zero over a sentence citing a real module at line 1 with a false claim about it.
+_UNVERIFIABLE = "names no symbol of the cited module, so nothing verifies the claim"
 _BACKTICKED = re.compile(r"`([^`]*)`")
 _DOTTED = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
 _FENCE = "```"
@@ -71,23 +88,27 @@ class Finding:
     detail: str
 
 
-def load_frozen(repo: Path) -> dict[str, int]:
-    """The recorded per-document debt from ``pyproject.toml``.
+def load_frozen(repo: Path, key: str = "frozen") -> dict[str, int]:
+    """The recorded per-document debt named by *key* in ``pyproject.toml``.
+
+    Two tables, one shape: ``frozen`` records citations that are wrong and
+    ``unverifiable`` records citations nothing checks.
 
     Raises:
         RatchetError: The table is absent or malformed — an empty default would fail
             every recorded document at once and a permissive one would pass everything.
     """
+    named = f"[tool.docs_citations.{key}]"
     try:
         data = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise RatchetError(f"could not read pyproject.toml: {exc}") from exc
     table = data.get("tool", {}).get("docs_citations")
-    if not isinstance(table, dict) or not isinstance(table.get("frozen"), dict):
-        raise RatchetError(f"no {FROZEN_TABLE} in pyproject.toml")
-    frozen = table["frozen"]
+    if not isinstance(table, dict) or not isinstance(table.get(key), dict):
+        raise RatchetError(f"no {named} in pyproject.toml")
+    frozen = table[key]
     if not all(isinstance(value, int) for value in frozen.values()):
-        raise RatchetError(f"{FROZEN_TABLE} must map each document path to its go-live count")
+        raise RatchetError(f"{named} must map each document path to its go-live count")
     return frozen
 
 
@@ -143,10 +164,13 @@ def named_symbols(line: str, spans: dict[str, list[tuple[int, int]]], stem: str)
     }
 
 
-def _checked(repo_root: Path, doc: str, doc_line: int, line: str) -> tuple[int, list[Finding]]:
-    """Every citation on one line of prose, as (checkable count, findings)."""
+def _checked(
+    repo_root: Path, doc: str, doc_line: int, line: str
+) -> tuple[int, list[Finding], list[Finding]]:
+    """Every citation on one line of prose, as (checkable count, stale, unverifiable)."""
     checkable = 0
     found: list[Finding] = []
+    unchecked: list[Finding] = []
     for cited, number in _CITATION.findall(line):
         target = resolve(repo_root, cited)
         citation = f"{cited}:{number}"
@@ -162,20 +186,24 @@ def _checked(repo_root: Path, doc: str, doc_line: int, line: str) -> tuple[int, 
         spans = top_level_spans(source)
         wanted = named_symbols(line, spans, target.stem)
         if not wanted:
+            unchecked.append(Finding(doc, doc_line, citation, _UNVERIFIABLE))
             continue
         checkable += 1
         if any(start <= at <= end for name in wanted for start, end in spans[name]):
             continue
         moved = ", ".join(f"`{name}` is at :{spans[name][0][0]}" for name in sorted(wanted))
         found.append(Finding(doc, doc_line, citation, f"outside the symbol named here — {moved}"))
-    return checkable, found
+    return checkable, found, unchecked
 
 
-def scan(repo_root: Path, docs: tuple[Path, ...]) -> tuple[int, int, tuple[Finding, ...]]:
-    """Scan *docs*, returning (citations seen, checkable against a symbol, findings)."""
+def scan(
+    repo_root: Path, docs: tuple[Path, ...]
+) -> tuple[int, int, tuple[Finding, ...], tuple[Finding, ...]]:
+    """Scan *docs* as (seen, checkable, stale, unverifiable)."""
     seen = 0
     checkable = 0
     found: list[Finding] = []
+    unchecked: list[Finding] = []
     for doc in docs:
         relative = doc.relative_to(repo_root).as_posix()
         in_fence = False
@@ -187,14 +215,25 @@ def scan(repo_root: Path, docs: tuple[Path, ...]) -> tuple[int, int, tuple[Findi
             # A fenced line has no backticks to mark a symbol, so the whole line is the
             # chunk; `_FENCE` prefixed onto it is how `named_symbols` is told which.
             probe = f"{_FENCE}{line}" if in_fence else line
-            one, hits = _checked(repo_root, relative, number, probe)
+            one, hits, blind = _checked(repo_root, relative, number, probe)
             checkable += one
             found.extend(hits)
-    return seen, checkable, tuple(found)
+            unchecked.extend(blind)
+    return seen, checkable, tuple(found), tuple(unchecked)
 
 
-def verdicts(found: tuple[Finding, ...], frozen: dict[str, int]) -> list[str]:
-    """The ratchet's reading of *found*: what grew, what appeared, and what graduated."""
+def verdicts(
+    found: tuple[Finding, ...],
+    frozen: dict[str, int],
+    noun: str = "stale",
+    table: str = FROZEN_TABLE,
+) -> list[str]:
+    """The ratchet's reading of *found*: what grew, what appeared, and what graduated.
+
+    One reading for both populations. *noun* and *table* say which is being ratcheted,
+    because a stale citation and an unverifiable one need the same three verdicts and
+    differ only in the repair a reader is being sent to make.
+    """
     counts = dict.fromkeys(frozen, 0)
     for finding in found:
         counts[finding.doc] = counts.get(finding.doc, 0) + 1
@@ -202,21 +241,21 @@ def verdicts(found: tuple[Finding, ...], frozen: dict[str, int]) -> list[str]:
     for doc, count in sorted(counts.items()):
         baseline = frozen.get(doc)
         if baseline is None:
-            lines.append(f"{doc}: {count} stale citation(s); this document has no recorded debt")
+            lines.append(f"{doc}: {count} {noun} citation(s); this document has no recorded debt")
         elif count > baseline:
             lines.append(
-                f"{doc}: {count} stale citation(s), up from the frozen {baseline} — "
-                f"{FROZEN_TABLE} may only fall"
+                f"{doc}: {count} {noun} citation(s), up from the frozen {baseline} — "
+                f"{table} may only fall"
             )
         elif count < baseline:
             lines.append(
-                f'{doc}: {count} stale citation(s), down from {baseline}; bank it: set "{doc}" '
-                f"= {count} in {FROZEN_TABLE}, or delete the entry at zero"
+                f'{doc}: {count} {noun} citation(s), down from {baseline}; bank it: set "{doc}" '
+                f"= {count} in {table}, or delete the entry at zero"
             )
     return lines
 
 
-def report(found: tuple[Finding, ...], failing: list[str]) -> str:
+def report(found: tuple[Finding, ...], failing: list[str], noun: str = "stale") -> str:
     """The failing documents, each with the citations behind its count."""
     named = {line.split(":", 1)[0] for line in failing}
     lines: list[str] = []
@@ -229,7 +268,7 @@ def report(found: tuple[Finding, ...], failing: list[str]) -> str:
         ]
     orphans = [finding for finding in found if finding.doc not in named]
     if orphans:
-        lines.append(f"({len(orphans)} stale citation(s) within a recorded baseline)")
+        lines.append(f"({len(orphans)} {noun} citation(s) within a recorded baseline)")
     return "\n".join(lines)
 
 
@@ -240,8 +279,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Ignore the recorded baseline: fail on every stale citation, go-live debt "
-        "included. What an author runs to see what a reader is still being told.",
+        help="Ignore both recorded baselines: fail on every stale and every unverifiable "
+        "citation, go-live debt included. What an author runs to see what a reader is "
+        "still being told.",
     )
     args = parser.parse_args(argv)
     docs = (
@@ -251,23 +291,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     try:
         frozen = {} if args.strict else load_frozen(REPO_ROOT)
+        blind_frozen = {} if args.strict else load_frozen(REPO_ROOT, "unverifiable")
     except RatchetError as exc:
         print(f"[{_LABEL}] {exc}", file=sys.stderr)
         return 2
     if args.doc:
         wanted = {doc.relative_to(REPO_ROOT).as_posix() for doc in docs}
         frozen = {doc: count for doc, count in frozen.items() if doc in wanted}
-    seen, checkable, found = scan(REPO_ROOT, docs)
+        blind_frozen = {doc: count for doc, count in blind_frozen.items() if doc in wanted}
+    seen, checkable, found, unchecked = scan(REPO_ROOT, docs)
     failing = verdicts(found, frozen)
+    blind = verdicts(unchecked, blind_frozen, "unverifiable", UNVERIFIABLE_TABLE)
     summary = (
         f"{seen} citation(s) in {len(docs)} document(s), {checkable} checkable against a "
-        f"named symbol, {len(found)} stale"
+        f"named symbol, {len(found)} stale, {len(unchecked)} unverifiable"
     )
-    if not failing:
-        print(f"[{_LABEL}] {summary}; no document is above its {FROZEN_TABLE} baseline")
+    if not failing and not blind:
+        print(f"[{_LABEL}] {summary}; no document is above either baseline")
         return 0
-    print(f"[{_LABEL}] {summary}; {len(failing)} document(s) off their recorded debt")
-    print(report(found, failing))
+    off = len({line.split(":", 1)[0] for line in (*failing, *blind)})
+    print(f"[{_LABEL}] {summary}; {off} document(s) off their recorded debt")
+    for stream, entries, noun in ((found, failing, "stale"), (unchecked, blind, "unverifiable")):
+        if entries:
+            print(report(stream, entries, noun))
     return 1
 
 
