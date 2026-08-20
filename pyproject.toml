@@ -508,6 +508,193 @@ binding_count = 3
 "tests/test_spend_calibration.py" = 1
 "tests/test_tracker_requirements.py" = 3
 "tests/test_ui.py" = 1
+# Release-note debt, as a per-record ratchet (basicly-7phc). The gate is
+# `.scripts/check_release_notes.py`, wired as the `release-notes` [[verify.checks]] entry and
+# folded into `release.blocking_reasons`. `changelog.d` refuses a fragment that is empty or
+# misnamed, so every check it had bound on a fragment that *exists*; nothing bound on a closed
+# record that produced none, and 19 of the 54 records closed for v0.9.0 were in that state —
+# including the seven specialist agents and five loop skills `basicly install` vendors. The
+# release workflow reads CHANGELOG.md from the tagged commit, so the note is unrecoverable
+# once the tag exists.
+#
+# `declared_count` is how many records are declared invisible to a consumer below. It is here
+# for the same reason [tool.module_size]'s `waiver_count` is: the frozen list is closed and
+# only ever shrinks, so a declaration is the one way this gate's exemption surface can grow,
+# and it may not grow in a diff that does not say so.
+[tool.release_notes]
+declared_count = 0
+
+# Records whose change no consumer can see, each with the reason. The declaration exists so
+# the gate does not train people to write empty fragments, and it is validated against the
+# population it exempts from: an entry naming a record the tracker does not hold, or one that
+# is not closed, or one that owes no note anyway, or one that already has a note, fails as
+# stale. An empty reason fails as an empty fragment does. Adding one is two edits — the entry
+# here and `count_delta = +1` under [ratchet.release_notes] in the lane's own basicly.d
+# fragment — for the reason every ratchet number is a delta.
+[tool.release_notes.invisible]
+
+# The 145 closed records that declared a scope reaching a shipped surface and produced no
+# release note when the gate landed (2026-08-20). Measured over the whole tracker: 984
+# records, 244 open, 740 closed; of the closed, 435 declare no backticked `## Scope` and are
+# not judged at all, 42 declare machinery only, 118 already have a note and these 145 do not.
+# Every one of them closed through a green gate, which is why this is a ratchet and not a cap.
+#
+# Each entry is 1 because a record owes at most one note, and `may_only = "track"` — the
+# record must *equal* the tree, exactly as [tool.noqa_debt.frozen] does. So an entry whose
+# record gained a note, or that was reopened, fails rather than sitting stale; banking it is
+# `"<record-id>" = -1` under [ratchet.release_notes.frozen] in the lane's own basicly.d
+# fragment. That is also what closes the reopen hole: the exemption cannot survive rework,
+# because both repairs remove it and the re-close is then refused.
+#
+# The list is closed — an entry is only ever removed. A released record keeps its entry: it
+# can never gain a note (assembly deleted the fragment), so nothing about it will change
+# again, and the entry is the record of what shipped unannounced.
+[tool.release_notes.frozen]
+"basicly-0122.1" = 1
+"basicly-0122.2" = 1
+"basicly-05g0" = 1
+"basicly-1th1" = 1
+"basicly-2365" = 1
+"basicly-3w44" = 1
+"basicly-4f5g" = 1
+"basicly-5vu4" = 1
+"basicly-7jb5" = 1
+"basicly-967c" = 1
+"basicly-9rv0" = 1
+"basicly-ajq.1" = 1
+"basicly-ajq.2" = 1
+"basicly-ajq.3" = 1
+"basicly-dbbh" = 1
+"basicly-e2mz.13" = 1
+"basicly-e2mz.16" = 1
+"basicly-e2mz.20" = 1
+"basicly-e2mz.24" = 1
+"basicly-e2mz.26" = 1
+"basicly-e2mz.4" = 1
+"basicly-e2mz.44" = 1
+"basicly-e2mz.8" = 1
+"basicly-ejdm.1" = 1
+"basicly-ejdm.2" = 1
+"basicly-ey58" = 1
+"basicly-grrb" = 1
+"basicly-ho3t" = 1
+"basicly-hxnf.1" = 1
+"basicly-hxnf.2" = 1
+"basicly-hxnf.3" = 1
+"basicly-i4gg" = 1
+"basicly-ipx2" = 1
+"basicly-izpi" = 1
+"basicly-jk3l" = 1
+"basicly-jr0l.18" = 1
+"basicly-jr0l.19" = 1
+"basicly-jr0l.2" = 1
+"basicly-jr0l.20" = 1
+"basicly-jr0l.23" = 1
+"basicly-jr0l.24" = 1
+"basicly-jr0l.27" = 1
+"basicly-jr0l.32" = 1
+"basicly-jr0l.33" = 1
+"basicly-jr0l.4" = 1
+"basicly-kjc5.17" = 1
+"basicly-kjc5.18" = 1
+"basicly-kjc5.20" = 1
+"basicly-kjc5.24" = 1
+"basicly-kjc5.26" = 1
+"basicly-kjc5.27" = 1
+"basicly-kjc5.28" = 1
+"basicly-kjc5.29" = 1
+"basicly-kjc5.30" = 1
+"basicly-kjc5.31" = 1
+"basicly-kjc5.35" = 1
+"basicly-kjc5.39" = 1
+"basicly-kjc5.40" = 1
+"basicly-kjc5.41" = 1
+"basicly-kjc5.44" = 1
+"basicly-kjc5.53" = 1
+"basicly-kjc5.55" = 1
+"basicly-kjc5.56" = 1
+"basicly-m2g3" = 1
+"basicly-m4zv.14" = 1
+"basicly-m4zv.7" = 1
+"basicly-m4zv.8" = 1
+"basicly-m4zv.9" = 1
+"basicly-n6uu" = 1
+"basicly-o486" = 1
+"basicly-onb.6.1" = 1
+"basicly-onb.6.2" = 1
+"basicly-onb.6.3" = 1
+"basicly-onb.6.4" = 1
+"basicly-prnm" = 1
+"basicly-r4jm" = 1
+"basicly-rn0o.11" = 1
+"basicly-rrah" = 1
+"basicly-scvb" = 1
+"basicly-tcmy.1" = 1
+"basicly-tcmy.10" = 1
+"basicly-tcmy.11" = 1
+"basicly-tcmy.22" = 1
+"basicly-tcmy.27" = 1
+"basicly-tcmy.28" = 1
+"basicly-tcmy.29" = 1
+"basicly-tcmy.3" = 1
+"basicly-tcmy.30" = 1
+"basicly-tcmy.31" = 1
+"basicly-tcmy.33" = 1
+"basicly-tcmy.35" = 1
+"basicly-tcmy.37" = 1
+"basicly-tcmy.38" = 1
+"basicly-tcmy.39" = 1
+"basicly-tcmy.4" = 1
+"basicly-tcmy.5" = 1
+"basicly-tcmy.6" = 1
+"basicly-tcmy.7" = 1
+"basicly-tcmy.9" = 1
+"basicly-tuy6" = 1
+"basicly-u0zg.1" = 1
+"basicly-u0zg.2" = 1
+"basicly-u2hl.10" = 1
+"basicly-u2hl.28" = 1
+"basicly-u2hl.30" = 1
+"basicly-u2hl.31" = 1
+"basicly-u2hl.54" = 1
+"basicly-u2hl.54.1" = 1
+"basicly-u2hl.54.2" = 1
+"basicly-u2hl.54.3" = 1
+"basicly-u2hl.55" = 1
+"basicly-u2hl.56" = 1
+"basicly-u2hl.7" = 1
+"basicly-u2hl.8" = 1
+"basicly-vaal" = 1
+"basicly-vaal.1" = 1
+"basicly-vaal.2" = 1
+"basicly-vkh0.13" = 1
+"basicly-vkh0.23" = 1
+"basicly-vkh0.25" = 1
+"basicly-vkh0.26" = 1
+"basicly-vkh0.27" = 1
+"basicly-vkh0.28" = 1
+"basicly-vkh0.29" = 1
+"basicly-vkh0.32" = 1
+"basicly-vkh0.35" = 1
+"basicly-vkh0.41" = 1
+"basicly-vkh0.42.1" = 1
+"basicly-vkh0.42.10" = 1
+"basicly-vkh0.42.11" = 1
+"basicly-vkh0.42.3" = 1
+"basicly-vkh0.42.4" = 1
+"basicly-vkh0.42.9" = 1
+"basicly-vkh0.43" = 1
+"basicly-vkh0.45" = 1
+"basicly-vkh0.46" = 1
+"basicly-vkjt" = 1
+"basicly-w88t" = 1
+"basicly-wpc8" = 1
+"basicly-wpc8.1" = 1
+"basicly-xmhc" = 1
+"basicly-ym39" = 1
+"basicly-yzyd.1" = 1
+"basicly-z2wi" = 1
+"basicly-z6dh.1" = 1
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/basicly"]
