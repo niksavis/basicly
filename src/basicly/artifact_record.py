@@ -12,8 +12,12 @@ artifacts written under it: a marker body is free text, free text is cut at 4096
 JSON cut mid-token is not JSON.
 
 **The marker stays a reader.** Its 44 rows are on disk, the log is never rewritten, and the
-cut bodies cannot be recovered, so a unit carrying only a marker still resolves to one —
-:func:`handoff.entry_verdict` reports a truncated body rather than silence.
+cut bodies cannot be recovered, so a unit carrying only a marker still resolves to one, and
+:func:`cut_violation` is what the 31 refuse through — :func:`handoff.entry_verdict` reports a
+truncated body rather than silence.
+
+Nothing bounds the new body by size. D-36 bounds an artifact by taking out what the ledger
+can already derive instead, which `basicly-gvlpxm` applied to the changed-path list.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import tracker
+from . import comment_rows, tracker
 
 # The retired family this module still reads. Declared here because
 # `.scripts/check_marker_families.py` reconciles what `src/basicly/` declares against what
@@ -68,6 +72,36 @@ def _marker_payload(repo_root: Path, issue_id: str, kind: str) -> object | None:
         if payload is not None:
             found = payload
     return found
+
+
+def cut_violation(repo_root: Path, issue_id: str, kind: str, payload: object) -> str | None:
+    """Why *payload* is unusable when the marker cap cut it, or None when it was stored whole.
+
+    Public because the reason is a fact about the recorded form and the refusal is not: only
+    this module knows a body was cut. Only the retired transport can produce one — an
+    ``artifact`` event's body is never cut, so this answers None for everything recorded since
+    `basicly-pp7q4i`, and 31 stored markers are why it still runs. The row is found by content
+    rather than by re-selecting the last, so this cannot come to disagree with :func:`read`
+    about which row it describes; :func:`handoff.entry_verdict` reaches it only after a
+    refusal, which is what makes a second fold of the ledger affordable. Both sizes go in the
+    reason because the pair is what separates a body the transport destroyed from one a
+    producer malformed.
+    """
+    for row in tracker.read_comments(repo_root, issue_id):
+        if comment_rows.TRUNCATED_KEY not in row:
+            continue
+        stored = str(row.get(tracker.COMMENT_TEXT_KEY, ""))
+        if recorded_payload(stored.strip(), kind) != payload:
+            continue
+        # Unstripped: the cap measured the whole stored field, so the pair of sizes is
+        # only comparable against the same bytes it counted.
+        return (
+            "the recorded body was truncated by the event text cap to "
+            f"{len(stored.encode('utf-8'))} bytes of {row[comment_rows.ORIGINAL_LENGTH_KEY]} "
+            "and cannot be recovered from the append-only log; re-record the artifact "
+            "from the producing state"
+        )
+    return None
 
 
 def read(repo_root: Path, issue_id: str, kind: str) -> object | None:
