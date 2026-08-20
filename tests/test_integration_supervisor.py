@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from basicly import loop, loop_state, merge, policy, runner, supervise, tracker, worktree
+from basicly.config import load_policy_config
 from tests import flipped_tracker
 
 # A verify check the test can make fail on demand, so a red landing is a real
@@ -314,3 +315,59 @@ def test_a_pass_attributes_the_coupling_the_same_way_whichever_lane_bounced(
             if str(dep["id"]) in (alpha, beta)
         }
         assert coupled == expected
+
+
+# --- Seeding a decomposed root under a covering grant (basicly-kjc5.62) --------
+
+
+@pytest.mark.parametrize("granted", [True, False], ids=["covered", "uncovered"])
+def test_a_decomposed_root_seeds_a_lane_only_under_a_covering_grant(
+    harness_repo: Path, granted: bool
+) -> None:
+    """Supervise seeded nothing from a root whose children already existed.
+
+    A root with children derives ``decompose`` (``loop_state.derive_phase``), and its
+    decompose checkpoint is what gates the fan-out — so ``loop supervise <epic>``
+    answered ``seed-blocked ... decompose checkpoint awaiting human approval`` and
+    exited non-zero, under a live L3 grant that ``policy.GRANT_COVERAGE`` says
+    delegates exactly that checkpoint. The operator then hand-drove ``loop run`` once
+    per child, on the same root and the same grant, and every one delegated.
+
+    Granted at **L1** rather than at the L3 of the incident, deliberately: L1 is the
+    lowest level ``GRANT_COVERAGE`` gives ``decompose``, so a fix that read the level
+    rather than the coverage table would pass at L3 and fail here.
+
+    The uncovered leg is the control, and it is what keeps the fix from being a
+    widening: with no grant on the root, nothing may be seeded, and the refusal has
+    to name the checkpoint and the level that would cover it rather than asking for a
+    human in the abstract.
+    """
+    epic = _create_bead(harness_repo, "the decomposed epic", issue_type="epic")
+    child = _create_bead(harness_repo, "the ready child", parent=epic)
+    if granted:
+        issued = policy.issue_grant_guarded(
+            harness_repo,
+            epic,
+            "L1",
+            100_000_000,
+            load_policy_config(harness_repo),
+            interactive=True,
+        )
+        assert issued.status == "approved", issued.detail
+    assert loop_state.read_node_state(harness_repo, epic).phase == "decompose"
+    assert not policy.checkpoint_approved(harness_repo, epic, "decompose")
+
+    routed = supervise.seed_lanes(harness_repo, supervise.derive_session(harness_repo, epic))
+
+    if not granted:
+        assert [r.route for r in routed] == ["seed-blocked"], [r.detail for r in routed]
+        assert "decompose" in routed[0].detail
+        assert "L1" in routed[0].detail, "the refusal must name the level that would cover it"
+        assert not worktree.list_sessions(harness_repo)
+        return
+    assert [r.route for r in routed] == ["seeded"], [r.detail for r in routed]
+    assert supervise.should_continue(routed)
+    assert loop_state.read_node_state(harness_repo, child).phase == "build"
+    assert [session.name for session in worktree.list_sessions(harness_repo)] == [
+        child.replace(".", "-")
+    ]

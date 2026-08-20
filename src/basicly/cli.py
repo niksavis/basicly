@@ -2874,9 +2874,11 @@ def _provisioning_blockers(
 
 # The checkpoint the root's *own* advance must clear before any lane exists, keyed on
 # the phase the root is parked at — the guards in ``loop._on_intake`` and
-# ``loop._on_decompose``. Seeding drives the root through ``loop.run_until_blocked``,
-# which stops dead at a checkpoint and never reaches ``approve_checkpoint_guarded``, so
-# these need a human however high the grant is (basicly-cdhq).
+# ``loop._on_decompose``. It blocks provisioning only when no grant delegates it:
+# seeding drives the root through ``loop.run_ceremony``, which does reach
+# ``approve_checkpoint_guarded`` (basicly-kjc5.62). Before that it drove
+# ``run_until_blocked``, which stopped dead at the checkpoint however high the grant
+# was, and this report is where an operator first met that (basicly-cdhq).
 _SEEDING_CHECKPOINT = {"intake": "classify", "decompose": "decompose"}
 
 
@@ -2943,11 +2945,12 @@ def _print_preflight_checkpoints(
     was the one precondition the report omitted, and ``loop status`` reconstructs it
     already, so the cost is one read.
 
-    Only the checkpoint that blocks *provisioning* is a blocker. Every unapproved one
-    would be noise, and the distinction is the useful part: a grant that delegates
-    ``ship`` really does resolve a landed lane's approval without a human, while the
-    same grant cannot serve the root's own ``decompose`` — nothing on the seeding path
-    consults it.
+    Only the checkpoint that blocks *provisioning*, and only when nothing delegates it,
+    is a blocker. Every unapproved one would be noise, and a grant that covers the
+    seeding checkpoint is no longer a blocker at all: seeding resolves it through the
+    same guarded predicate the rest of the loop uses (basicly-kjc5.62), so calling it
+    one would refuse a pass that runs. Without such a grant it still refuses, which is
+    the half of basicly-cdhq that was never wrong.
 
     *seeds_from_root* is False for a pass whose lanes were selected by label: the root's
     advance is then not the provisioning path (``supervise._seed_selected_lanes``), so
@@ -2956,10 +2959,11 @@ def _print_preflight_checkpoints(
     """
     node = loop_state.read_node_state(repo_root, root_issue)
     blocking = _SEEDING_CHECKPOINT.get(node.phase) if seeds_from_root else None
-    # What the grant delegates, named once: it is the difference between the two lines
-    # below, and the surprising half of the report is that a grant covering `decompose`
-    # still cannot serve the root's own.
+    # What the grant delegates, named once: it decides both which line each pending
+    # checkpoint gets and whether the seeding one refuses the pass at all.
     delegated = policy.GRANT_COVERAGE.get(grant.level, ()) if grant is not None else ()
+    if blocking in delegated:
+        blocking = None
     delegates = f"the live {grant.level} grant" if grant is not None else ""
     blockers: list[str] = []
     pending = [name for name in CHECKPOINTS if name not in node.checkpoints]
@@ -2971,11 +2975,14 @@ def _print_preflight_checkpoints(
             served = f"{delegates} delegates it" if name in delegated else ""
             print(f"checkpts:  {name} pending - {served or 'a human, when the pass reaches it'}")
             continue
-        why = "the root's own advance provisions the lanes and resolves no checkpoint itself"
-        if name in delegated:
-            why += f", so {delegates} cannot serve it"
+        why = "the root's own advance provisions the lanes, and no grant delegates this"
+        covers = next(
+            (level for level, names in policy.GRANT_COVERAGE.items() if name in names), ""
+        )
         print(f"checkpts:  {name} UNAPPROVED - blocks provisioning: {why}")
         print(f"           approve: basicly policy checkpoint {root_issue} {name} --approve")
+        if covers:
+            print(f"           or delegate it: basicly policy grant {root_issue} --level {covers}")
         blockers.append(f"the root's {name} checkpoint blocks provisioning")
     return blockers
 

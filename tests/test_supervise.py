@@ -4839,6 +4839,7 @@ def _seed_fixture(
     *,
     steps: tuple[loop.AdvanceResult, ...],
     derived: supervise.SessionState | None = None,
+    stop: loop.CeremonyResult | None = None,
 ) -> list[str]:
     """A pass with no dispatchable lanes whose root advance yields *steps*.
 
@@ -4852,11 +4853,22 @@ def _seed_fixture(
     advanced: list[str] = []
     after = derived if derived is not None else _cold_session()
 
-    def fake_run_until_blocked(_repo: Path, issue_id: str) -> tuple[loop.AdvanceResult, ...]:
-        advanced.append(issue_id)
-        return steps
+    def fake_run_ceremony(
+        _repo: Path, issue_id: str, *, grant_root: str | None = None, **kwargs: object
+    ) -> loop.CeremonyResult:
+        # `grant_root` recorded, not ignored: seeding must name the session it approves
+        # a checkpoint under, and a drive that named none is the whole of
+        # basicly-kjc5.62. The two guards are the other half of that fix: the grant is
+        # the only authority seeding may use, so a background pass must not reach the
+        # ceremony's TTY or relayed-code routes.
+        assert not kwargs.get("interactive"), "a supervised pass has no human at a TTY"
+        assert not kwargs.get("confirms"), "seeding relays no one-time code"
+        advanced.append(f"{issue_id}@{grant_root}")
+        return (
+            loop.CeremonyResult(steps) if stop is None else dataclasses.replace(stop, events=steps)
+        )
 
-    monkeypatch.setattr(supervise.loop, "run_until_blocked", fake_run_until_blocked)
+    monkeypatch.setattr(supervise.loop, "run_ceremony", fake_run_ceremony)
     monkeypatch.setattr(supervise, "derive_session", lambda *_a, **_k: after)
     return advanced
 
@@ -4884,7 +4896,7 @@ def test_a_cold_root_provisions_its_lanes_instead_of_reporting_nothing_to_land(
 
     routed = supervise.seed_lanes(tmp_path, _cold_session())
 
-    assert advanced == ["epic"], "the root itself must be advanced to fan out its children"
+    assert advanced == ["epic@epic"], "the root is advanced, under its own session's grant"
     assert [(r.issue_id, r.route) for r in routed] == [("epic", "seeded")]
     assert supervise.should_continue(routed), "the seeded lanes must be dispatched next pass"
 
@@ -4990,7 +5002,7 @@ def test_a_blocked_root_that_provisioned_lanes_routes_seeded(
 
     routed = supervise.seed_lanes(tmp_path, _cold_session())
 
-    assert advanced == ["epic"]
+    assert advanced == ["epic@epic"]
     assert [(r.issue_id, r.route) for r in routed] == [("epic", "seeded")]
     assert supervise.should_continue(routed), "the pass must go on to dispatch what it built"
     assert "provisioned 2 dispatchable lane(s)" in routed[0].detail
@@ -5019,6 +5031,83 @@ def test_provisioned_lanes_that_cannot_dispatch_say_so_instead_of_claiming_none_
     assert "epic.1" in routed[0].detail
 
 
+def test_a_seeding_refusal_names_the_level_that_would_delegate_the_checkpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A bare "awaiting human approval" says nothing about which grant to issue.
+
+    The ungranted case: no grant was consulted, so the refusal has to name the lowest
+    level ``policy.GRANT_COVERAGE`` delegates the checkpoint to, and the command that
+    issues one (basicly-kjc5.62).
+    """
+    _seed_fixture(
+        monkeypatch,
+        steps=(_step("blocked", to_phase="decompose"),),
+        stop=loop.CeremonyResult(challenge=("decompose", "A1B2C3")),
+    )
+
+    routed = supervise.seed_lanes(tmp_path, _cold_session())
+
+    assert [r.route for r in routed] == ["seed-blocked"]
+    assert "no grant covers the decompose checkpoint" in routed[0].detail
+    assert "an L1 grant delegates it" in routed[0].detail
+    assert "basicly policy grant epic --level L1" in routed[0].detail
+    assert "A1B2C3" not in routed[0].detail, "a one-time code is not routing detail"
+
+
+def test_a_grant_that_declined_the_checkpoint_says_so_rather_than_asking_for_a_human(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A covering grant that refused is a different fact from having no grant.
+
+    The acceptance criterion the incident turned on: an operator holding a live grant
+    read "awaiting human approval" and could not tell whether it had been consulted.
+    ``policy._grant_approval`` already composes the reason; this only has to carry it.
+    """
+    _seed_fixture(
+        monkeypatch,
+        steps=(_step("blocked", to_phase="decompose"),),
+        stop=loop.CeremonyResult(
+            challenge=("decompose", "A1B2C3"),
+            challenge_reason="the active L1 grant on epic does not cover epic.9",
+        ),
+    )
+
+    routed = supervise.seed_lanes(tmp_path, _cold_session())
+
+    assert [r.route for r in routed] == ["seed-blocked"]
+    assert "the decompose checkpoint was not delegated: the active L1 grant" in routed[0].detail
+    assert "no grant covers" not in routed[0].detail
+
+
+def test_a_refused_checkpoint_is_reported_as_a_refusal_not_as_an_absent_lane(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A rejected code is the third outcome, and it must not read like the other two."""
+    _seed_fixture(
+        monkeypatch,
+        steps=(_step("blocked", to_phase="decompose"),),
+        stop=loop.CeremonyResult(refused=("decompose", "invalid or expired confirm code")),
+    )
+
+    routed = supervise.seed_lanes(tmp_path, _cold_session())
+
+    assert [r.route for r in routed] == ["seed-blocked"]
+    assert "the decompose checkpoint refused: invalid or expired" in routed[0].detail
+
+
+def test_a_seeded_pass_carries_no_authorization_footnote(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Nothing stopped the drive, so there is no grant story to tell."""
+    _seed_fixture(monkeypatch, steps=(_step("decomposed"),))
+
+    routed = supervise.seed_lanes(tmp_path, _cold_session())
+
+    assert [r.route for r in routed] == ["seeded"]
+    assert "grant" not in routed[0].detail
+
+
 def test_seeding_is_skipped_while_a_lane_is_already_dispatchable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -5026,8 +5115,8 @@ def test_seeding_is_skipped_while_a_lane_is_already_dispatchable(
     _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
     monkeypatch.setattr(
         supervise.loop,
-        "run_until_blocked",
-        lambda *_a: pytest.fail("a pass with work to dispatch must not re-seed"),
+        "run_ceremony",
+        lambda *_a, **_k: pytest.fail("a pass with work to dispatch must not re-seed"),
     )
 
     assert supervise.seed_lanes(tmp_path, _session(_lane("epic.1"))) == ()
@@ -5040,8 +5129,8 @@ def test_seeding_is_skipped_when_the_root_has_no_open_children(
     _patch_readiness(monkeypatch)
     monkeypatch.setattr(
         supervise.loop,
-        "run_until_blocked",
-        lambda *_a: pytest.fail("there is no child to fan out"),
+        "run_ceremony",
+        lambda *_a, **_k: pytest.fail("there is no child to fan out"),
     )
 
     empty = supervise.SessionState("epic", "open", children=(), adopted=())
