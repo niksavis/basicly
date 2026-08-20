@@ -1,12 +1,15 @@
 """The handoff artifacts a loop state hands the next one, and what refuses a bad one.
 
-Two of the six §8 names an artifact for, and deliberately only two: `implementation-plan`
-(DECOMPOSE → BUILD) and `change-summary` (BUILD → VERIFY). D4 was taken against a
+Three of the eight §8 names an artifact for, and deliberately three: `implementation-plan`
+(DECOMPOSE → BUILD), `change-summary` (BUILD → VERIFY) and `release-record` (SHIP, which
+has already merged, so nothing downstream is left to refuse it). D4 was taken against a
 recommendation to prove one schema first, and §2.1's accepted mitigation is to sequence
-this pair first and let the other four be built to a shape that has survived contact.
-`implementation-plan` is the cheapest of the six to start from because the plan gate
-already refuses a child that declares none of its plan fields, so the schema formalises a
-live contract rather than inventing one.
+these first and let the rest be built to a shape that has survived contact.
+`implementation-plan` was the cheapest to start from because the plan gate already refuses
+a child that declares none of its plan fields, so the schema formalises a live contract
+rather than inventing one. Which of the eight run is :data:`PRODUCERS`, and a kind nothing
+records is inert here even where its schema is installed — seven schemas on disk read as
+seven live contracts (`basicly-u2hl.59`).
 
 One responsibility, and it is the ruling: compose a state's own facts into a payload, and
 say whether the artifact a unit carries may be accepted by the state after it. Nothing
@@ -49,11 +52,33 @@ if TYPE_CHECKING:
     from jsonschema import Draft202012Validator
 
 # The wired artifact kinds, spelled as their schema files are named so a kind cannot name
-# a schema that does not exist. Five further schemas ship with no producer and no
-# consumer; a kind belongs here when both ends of its contract run.
+# a schema that does not exist. A constant exists here only for a kind a producer records,
+# so :data:`PRODUCERS` is where all eight are enumerated and the four unwired schemas —
+# plus `solution-design`, which has none — are strings no caller can reach by name.
 IMPLEMENTATION_PLAN = "implementation-plan"
 CHANGE_SUMMARY = "change-summary"
 RELEASE_RECORD = "release-record"
+
+# Every kind §8 names, against the symbol that records it: ``module:function`` inside this
+# package, or None for a kind nothing records. **Declared, never derived from absence.** A
+# probe for a kind's own name reads the English word as a producer — measured 2026-08-20,
+# six files for `classification` and five of them prose — so a missing *reference* is
+# ambiguous between unwired and probed wrongly, while a missing *declaration* is not.
+# Wired or not, and no third state: *why* an unwired kind has no producer, scheduled or
+# planned by nobody, is a backlog fact nothing here branches on, and a second copy of it
+# would go stale unnoticed the day a record lands. ``test_handoff`` holds the other half —
+# that each declared symbol is defined, names this kind's constant, and is called — so a
+# renamed producer is a defect rather than a quiet demotion to unwired.
+PRODUCERS: dict[str, str | None] = {
+    IMPLEMENTATION_PLAN: "decompose:decompose",
+    CHANGE_SUMMARY: "loop:_record_change_summary",
+    RELEASE_RECORD: "curate:record",
+    "classification": None,
+    "change-shape": None,
+    "validation-transcript": None,
+    "verification-evidence": None,
+    "solution-design": None,
+}
 
 # The artifact-format version every payload declares. Bumped only when a consumer's
 # contract changes; the schemas pin it with `const`, so a payload from a newer producer
@@ -94,16 +119,26 @@ class ArtifactVerdict:
         )
 
 
-def _validator(repo_root: Path, kind: str) -> Draft202012Validator | None:
-    """The *kind* schema as installed in *repo_root*, or None when it is not.
+def wired(kind: str) -> bool:
+    """True when a producer records *kind*, so its schema is a contract and not a file."""
+    return PRODUCERS.get(kind) is not None
 
-    None is not a failure and is not silence: an artifact schema is a **catalog source**,
-    so a repo that has not installed one has not adopted the contract, and this pair of
-    handoffs is inert there for the same reason a repo with no ``[[verify.checks]]`` runs
-    no checks. Both sides read this before anything else, which is what keeps the two
-    ends of one contract from disagreeing — a producer that skipped the write can never
-    leave a consumer refusing what it did not get.
+
+def _validator(repo_root: Path, kind: str) -> Draft202012Validator | None:
+    """The *kind* schema as installed in *repo_root*, or None when it is not wired there.
+
+    None is not a failure and is not silence, and two conditions reach it. A kind **no
+    producer records** is inert wherever it is asked about, however many schemas sit on
+    disk: four such schemas ship, and letting them resolve here is what let a file read as
+    a live contract. Past that an artifact schema is a **catalog source**, so a repo that
+    has not installed one has not adopted the contract, and these handoffs are inert there
+    for the same reason a repo with no ``[[verify.checks]]`` runs no checks. Both sides
+    read this before anything else, which is what keeps the two ends of one contract from
+    disagreeing — a producer that skipped the write can never leave a consumer refusing
+    what it did not get.
     """
+    if not wired(kind):
+        return None
     try:
         return catalog_source.schema_validator(repo_root, f"{kind}.schema.json")
     except OSError:
