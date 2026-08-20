@@ -1,0 +1,80 @@
+# `fsck` in the verify set, and the finding class that says what this ledger's one defect is
+# (basicly-t10ipy).
+#
+# ## The diagnosis, because the record asked which of the fold and the checker was wrong
+#
+# Neither's arithmetic. The *classification* was. `fsck` reported one `broken` finding —
+# `carried-totals` on a comment event of `basicly-vkh0.30` — and the cause is that **no event
+# claims sequence 9 on that record**: it holds 1-8 and 10-34, 33 events under a highest
+# sequence of 34. The fold is right (33 events are here). The carried total of 10 on the event
+# at sequence 10 is a faithful record of a writer that read a max of 9, so it was wrong the
+# moment it was written and no fold can agree with it. §4.1 has the writer assign max+1 and
+# `_append_lines` has exactly one caller, so the chain is contiguous by construction: a hole
+# means a line that was written is gone.
+#
+# Ruled out before that conclusion, and recorded so the next reader does not retry it: a
+# batch-dedup ordering defect in `events.append`. If the `if event_id in seen: continue` had
+# ever sat *after* `item.max_seq += 1`, a swallowed replay would consume a sequence number
+# without writing a line and produce exactly this signature. It never did — `git log -S` over
+# `events.py` shows the guard before both increments in every version back to the module's
+# first commit. Also ruled out: the line being deleted from a committed state. `git log -S`
+# across all history finds no commit that ever contained a sequence 9 line for that record,
+# with sequences 8 and 10 as the positive control (both found, in `47ad63ea`, together). The
+# line was written and lost before it was ever committed; which process dropped it is not
+# recoverable from the log, and this is deliberately not claimed.
+#
+# So the defect is real and unrepairable, and the checker's report pointed at the consequence.
+# §4.6 already voids a *forked* item's carried totals so one root defect does not print as a
+# page of findings; a gap voids them for the identical reason and was not handled. Measured on
+# a seeded three-event ledger: the old checker printed **two** `carried-totals` findings for
+# **one** missing event and never named the gap. It now prints one `sequence-gap`.
+#
+# ## Why the gate carries an allowance
+#
+# `ledger-bodies` was wired only after its backfill landed, on the rule that a gate refusing
+# the repository's own state fails every commit and is worth nothing. That repair does not
+# exist here — an append-only log has no undelete — so the finding is recorded in
+# `[tool.ledger_fsck.frozen]`, keyed `<record>/<kind>` so it cannot absorb a different defect
+# on the same record, and the gate binds on everything else. Proved to discriminate in both
+# directions: exit 0 on the ledger as it stands, exit 1 on a ledger carrying an unrecorded gap.
+#
+# Cost measured before deciding, since "too slow" was the stated alternative: **0.18s** over
+# 6,157 events and 1,005 records, three runs, 0.18/0.19/0.18. It goes in both modes.
+#
+# ## The ratchets
+#
+# Measured before the first edit: `fsck.py` had **0** tokens of module-size headroom and
+# **0.0** points of comment-density headroom, and its test file had **0** tokens.
+#
+# `fsck.py` +643: `SEQUENCE_GAP`, `sequence_gaps` (public — the check script and the tests read
+# it), `_gap_findings`, and the two lines in `check` that report the gap and add it to `voided`.
+# The density entry is +0.2 and is the honest number rather than a trim: the block states an
+# invariant the code cannot express — that §4.1's max+1 writer makes the chain contiguous, so a
+# hole is a *lost line* and not a numbering style — and one redundant restatement of it was
+# already removed, which took the rise from +0.4 to +0.2. Nothing further can go without
+# deleting a claim.
+#
+# `tests/test_kit_tracker_fsck.py` +923: `_drop_seq`, which is the only way to seed the defect
+# because no sequence of `append` calls can produce a gap, plus two tests. One names the
+# missing number and asserts `event_ids` is empty — the events either side are sound and
+# pointing a reader at them is the wrong report. The other asserts the report is exactly
+# `{sequence-gap}` with **three** events after the hole, so a fix that suppressed only the
+# first consequence still fails, and it holds `fold.mismatched_totals == 2` as the positive
+# control that the cache really is broken under the suppression.
+[[verify.checks]]
+name = "ledger-fsck"
+command = ["uv", "run", "python", ".scripts/check_ledger_fsck.py"]
+modes = ["fast", "full"]
+
+[ratchet.module_size]
+rebaseline_reason = "the sequence-gap finding class and its regression tests, in a kit module and a test module with 0 tokens of headroom each"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/fsck.py" = 643
+"tests/test_kit_tracker_fsck.py" = 923
+
+[ratchet.comment_density]
+rebaseline_reason = "the gap finding states the §4.1 max+1 invariant that makes a hole a lost line rather than a numbering style, which the code cannot express; one redundant restatement was cut first, taking the rise from 0.4 to 0.2"
+
+[ratchet.comment_density.rebaselined]
+".basicly/core/kit/tracker/fsck.py" = 0.2

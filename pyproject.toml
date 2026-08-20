@@ -390,6 +390,19 @@ waiver_count = 2
 # regrowth back to it for free.
 [tool.docs_citations.frozen]
 
+# `fsck` findings in .basicly/ledger that are known and cannot be repaired, keyed
+# <record>/<finding kind> so an allowance for one defect cannot absorb a different defect
+# landing on the same record. `.scripts/check_ledger_fsck.py` binds on everything else.
+#
+# The one entry is a lost event: basicly-vkh0.30 claims sequences 1-8 and 10-34, and no
+# commit in this repository's history ever contained a line at sequence 9 (probed with
+# sequences 8 and 10 as the positive control). §4.1's writer assigns max+1, so the line was
+# written and lost before it was committed. An append-only log has no undelete, so unlike
+# [tool.docs_citations.frozen] this entry can never fall to zero by repair — it falls only if
+# the log is ever rebuilt from a source that still has the event.
+[tool.ledger_fsck.frozen]
+"basicly-vkh0.30/sequence-gap" = 1
+
 [tool.code_citations]
 binding_count = 3
 

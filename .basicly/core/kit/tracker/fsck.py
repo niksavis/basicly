@@ -150,6 +150,10 @@ UNPARSEABLE = "unparseable"
 MALFORMED = "malformed"
 # Two distinct events claiming one item's sequence number — §4.1's visible fork.
 FORKED_SEQUENCE = "forked-sequence"
+# A sequence number **no** event claims, below the item's highest — the fork's other half, and
+# unreported until basicly-t10ipy, where this ledger's only symptom was the CARRIED_TOTALS
+# consequence on every later event. :func:`_gap_findings` states what a hole means.
+SEQUENCE_GAP = "sequence-gap"
 # One content-derived id on lines that disagree about their content, so the id no longer
 # identifies what it names and the fold's dedup silently picks one.
 DUPLICATE_ID = "duplicate-id"
@@ -415,6 +419,50 @@ def _fork_findings(ordered: Sequence[Any]) -> list[Finding]:
     ]
 
 
+def sequence_gaps(ordered: Sequence[Any]) -> dict[str, tuple[int, ...]]:
+    """Record to the sequence numbers below its highest that no event claims.
+
+    Separate from :func:`_gap_findings` because the answer is needed twice: once to report the
+    gap, and once to void the carried totals of every event after it. A record is missing an
+    event, so every total downstream of the hole is off by the same amount — reporting each of
+    those beside the hole is the eleven-findings shape §4.6 already avoids for a fork.
+    """
+    seen: dict[str, set[int]] = {}
+    for event in ordered:
+        seen.setdefault(event.record, set()).add(event.seq)
+    gaps = {}
+    for record, claimed in seen.items():
+        missing = tuple(sorted(set(range(1, max(claimed) + 1)) - claimed))
+        if missing:
+            gaps[record] = missing
+    return gaps
+
+
+def _gap_findings(gaps: Mapping[str, tuple[int, ...]]) -> list[Finding]:
+    """One finding per record whose sequence chain has a hole in it.
+
+    No ``event_ids``: the defect is precisely that the events are *not* here, and naming the
+    survivors either side would point a reader at two sound lines. The missing numbers are the
+    evidence, and nothing can restore what they named — an append-only log has no undelete, so
+    this is reported to be *known* rather than to be repaired.
+    """
+    return [
+        Finding(
+            kind=SEQUENCE_GAP,
+            severity=BROKEN,
+            subject=record,
+            detail=(
+                f"no event claims sequence {', '.join(str(seq) for seq in missing)} on this "
+                f"record, and §4.1's writer assigns max+1, so a line that was written is gone; "
+                f"the carried totals of every later event on it are void until a fold restates "
+                f"them"
+            ),
+            event_ids=(),
+        )
+        for record, missing in sorted(gaps.items())
+    ]
+
+
 def _duplicate_id_findings(collected: Sequence[Any]) -> list[Finding]:
     """One finding per id whose lines disagree about what that id names.
 
@@ -662,11 +710,16 @@ def check(directory: Path | str) -> Report:
         sound = [event for position, event in enumerate(found) if position not in refused]
         folded = events.fold(sound)
     ordered = events.canonical_order(sound)
-    voided = set(folded.forked) | {event.record for _, event, _ in malformed}
+    gaps = sequence_gaps(ordered)
+    # A hole in the chain voids the same cache a fork does, and for the same reason: the fold
+    # counts the events that are here and the carried totals counted one that is not, so the
+    # disagreement downstream of the hole is its consequence rather than a second defect.
+    voided = set(folded.forked) | {event.record for _, event, _ in malformed} | set(gaps)
 
     findings = _unparseable_findings(quarantined)
     findings += _malformed_findings(malformed)
     findings += _fork_findings(ordered)
+    findings += _gap_findings(gaps)
     findings += _duplicate_id_findings(sound)
     findings += _reference_findings(ordered)
     findings += _totals_findings(folded, ordered, voided)

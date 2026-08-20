@@ -74,9 +74,9 @@ hand-written copy of them was stale within days:
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 104 |
 | Test files | 202 |
-| `[[verify.checks]]` declared | 31 |
-| …of which run in `--mode fast` | 26 |
-| …of which run in `--mode full` | 30 |
+| `[[verify.checks]]` declared | 32 |
+| …of which run in `--mode fast` | 27 |
+| …of which run in `--mode full` | 31 |
 | …of which run in `--mode staged` | 3 |
 
 <!-- docs-claims:end plan-current-state -->
