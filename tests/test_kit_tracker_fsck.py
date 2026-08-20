@@ -362,6 +362,87 @@ def test_a_fork_reports_itself_and_not_the_totals_findings_it_causes(tmp_path: P
     assert _kinds(report) == {fsck.FORKED_SEQUENCE}
 
 
+def _drop_seq(ledger: Path, record: str, seq: int) -> dict[str, Any]:
+    """Delete one event's line, leaving a hole in *record*'s sequence chain.
+
+    This is how the real defect looks and the only way to seed it: `events.append` assigns
+    max+1 and `_append_lines` has one caller, so no sequence of writes produces a gap. The
+    line removed is returned so a test can name what is no longer there.
+    """
+    lines = _lines(_log(ledger))
+    kept, dropped = [], None
+    for line in lines:
+        event = json.loads(line)
+        if event["record"] == record and event["seq"] == seq:
+            dropped = event
+        else:
+            kept.append(line)
+    assert dropped is not None, f"no event at {record} seq {seq} to drop"
+    _write(_log(ledger), kept)
+    return dropped
+
+
+def test_a_missing_sequence_number_is_named_where_only_its_carried_totals_showed(
+    tmp_path: Path,
+) -> None:
+    """work-tracker.md §4.1's other broken chain: not two events on one number, but none on it.
+
+    The writer reads the item's max and writes max+1, so a hole means a line that was written
+    is gone — and nothing can restore it, which is why this is reported to be known rather
+    than to be repaired. Found on this repo's own ledger, where the single symptom was a
+    ``carried-totals`` finding on the *next* event and the missing number went unreported
+    (basicly-t10ipy).
+
+    ``event_ids`` is asserted empty on purpose: the defect is that the event is not here, and
+    naming the sound survivors either side would send a reader to inspect two good lines.
+    """
+    ledger = _seed(tmp_path / "ledger")
+    _append(ledger, [events.Draft(RECORD_A, "comment", {"text": "before the hole"})])
+    _append(ledger, [events.Draft(RECORD_A, "comment", {"text": "after the hole"})])
+    dropped = _drop_seq(ledger, RECORD_A, 4)
+
+    report = fsck.check(ledger)
+
+    found = _of_kind(report, fsck.SEQUENCE_GAP)
+    assert len(found) == 1
+    assert found[0].subject == RECORD_A
+    assert found[0].event_ids == ()
+    assert "4" in found[0].detail
+    assert dropped["id"] not in report.as_dict()["findings"][0]["detail"]
+    assert report.exit_code == fsck.EXIT_BROKEN
+    assert fsck.sequence_gaps(events.canonical_order(events.read_events(ledger)[0])) == {
+        RECORD_A: (4,)
+    }
+
+
+def test_a_sequence_gap_reports_itself_and_not_the_carried_totals_it_causes(
+    tmp_path: Path,
+) -> None:
+    """The hole voids the same cache a fork does, and for the same reason.
+
+    Every event after the hole carries totals that counted the event that is gone, so each of
+    them disagrees with the fold — one root defect printing as a finding per later event is
+    the page-of-findings shape work-tracker.md §4.6 already avoids for a fork. Two events are
+    appended after the hole rather than one, so a fix that suppressed only the first still fails.
+    """
+    ledger = _seed(tmp_path / "ledger")
+    _append(ledger, [events.Draft(RECORD_A, "comment", {"text": "before the hole"})])
+    _append(ledger, [events.Draft(RECORD_A, "comment", {"text": "after the hole"})])
+    _append(ledger, [events.Draft(RECORD_A, "comment", {"text": "later still"})])
+    _drop_seq(ledger, RECORD_A, 4)
+    snapshot.rebuild(ledger)
+
+    report = fsck.check(ledger)
+
+    assert _kinds(report) == {fsck.SEQUENCE_GAP}
+    assert _of_kind(report, fsck.CARRIED_TOTALS) == []
+    # The positive control that the cache really is broken underneath the suppression: the
+    # fold names both later events, so this is a report that declines to repeat a cause and
+    # not a checker that stopped measuring.
+    folded = events.fold(events.read_events(ledger)[0])
+    assert len(folded.mismatched_totals) == 2
+
+
 def test_one_id_on_lines_that_disagree_about_their_content_fails(tmp_path: Path) -> None:
     """The id covers the record, kind and payload — not the sequence the dedup then picks."""
     ledger = _seed(tmp_path / "ledger")

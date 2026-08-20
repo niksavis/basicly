@@ -185,13 +185,37 @@ KIND_EDGE = events.KIND_EDGE
 # `events.TRUNCATABLE_KEYS` may cut — see the module docstring for why that split is not
 # a style choice.
 #
-# One spelling per field, and these names are it (R2). A store spelling one dependency edge
-# `id`/`dependency_type` from one command and `depends_on_id`/`type` from another leaves a
-# reader of the wrong spelling with an empty graph rather than an error (basicly-kjc5.10).
+# One spelling per field on the **write** side, and these names are it (R2). A store spelling
+# one dependency edge `id`/`dependency_type` from one command and `depends_on_id`/`type` from
+# another leaves a reader of the wrong spelling with an empty graph rather than an error
+# (basicly-kjc5.10) — which is what this module then did to itself, per the block below.
 KEY_TARGET = "target"
 KEY_TYPE = "edge_type"
 KEY_LABEL = "provenance"
 KEY_DETAIL = "detail"
+
+# The **read** side takes a second dialect, because the log already holds one. `migrate.py`
+# writes `to`/`type` and `differential.py` reads it, so all 1,083 edge events committed here
+# are in that spelling and none is in the pair above [measured 2026-08-20]; the split is
+# recorded in `fsck.py`. This fold therefore read *zero* of them and `gating_edges` answered
+# for the whole population by seeing nothing — a fail-open, and the reason the second name of
+# each pair is accepted on read and never written (basicly-svct4w). The equality with
+# `migrate.py`'s own constants is pinned by a test, so a rename there fails loudly instead of
+# silently reopening the blindness.
+ALT_KEY_TARGET = "to"
+ALT_KEY_TYPE = "type"
+
+# What :attr:`EdgeFold.dialects` counts under. The fold **says which spelling it read**: an
+# empty edge set is otherwise the same answer for a ledger with no edges and a ledger whose
+# every edge the reader could not parse, and those are opposite facts.
+DIALECT_DECLARED = f"{KEY_TARGET}/{KEY_TYPE}"
+DIALECT_ENGINE = f"{ALT_KEY_TARGET}/{ALT_KEY_TYPE}"
+
+# Dialect to the two structural keys that spell it.
+_DIALECT_KEYS = {
+    DIALECT_DECLARED: (KEY_TARGET, KEY_TYPE),
+    DIALECT_ENGINE: (ALT_KEY_TARGET, ALT_KEY_TYPE),
+}
 
 # The edge type is caller vocabulary — `blocks`, `parent-child`, `discovered-from` — but
 # it is still a permanent token, so it is restricted to a shape every surface can round
@@ -405,11 +429,15 @@ class EdgeFold:
         malformed: Edge events that could not be read at all. Skipped, never guessed at,
             and never silently — see the module docstring for why this reports where
             `events.fold` raises.
+        dialects: Dialect name to the number of events read in it — counted on the events
+            that folded, so a caller comparing this against `differential.py`'s count can
+            see *which* spelling the agreement rests on rather than only that it holds.
     """
 
     edges: dict[EdgeKey, EdgeState] = field(default_factory=dict)
     unknown_labels: dict[str, int] = field(default_factory=dict)
     malformed: list[MalformedEdge] = field(default_factory=list)
+    dialects: dict[str, int] = field(default_factory=dict)
 
 
 # --- writing an assertion -----------------------------------------------------
@@ -534,6 +562,33 @@ def _required_text(payload: Any, key: str) -> str:
     return value
 
 
+def _has_text(payload: Any, key: str) -> bool:
+    """Whether *key* clears the bar :func:`_required_text` sets, without raising."""
+    value = payload.get(key)
+    return isinstance(value, str) and bool(value)
+
+
+def edge_dialect(payload: Any) -> str:
+    """Which spelling *payload* carries both structural fields in.
+
+    :data:`DIALECT_ENGINE` only when that pair is complete **and** this module's own is
+    not, so a payload carrying both is read as the declared one and a payload carrying
+    neither still reads as declared — which is what keeps the refusal in
+    :func:`read_assertion` naming the documented spelling rather than guessing which of
+    two writers meant to produce an unreadable line.
+
+    Args:
+        payload: The event's payload.
+
+    Returns:
+        :data:`DIALECT_DECLARED` or :data:`DIALECT_ENGINE`. Never empty: an unreadable
+        payload is a refusal from the caller, not a third dialect.
+    """
+    declared = _has_text(payload, KEY_TARGET) and _has_text(payload, KEY_TYPE)
+    engine = _has_text(payload, ALT_KEY_TARGET) and _has_text(payload, ALT_KEY_TYPE)
+    return DIALECT_ENGINE if engine and not declared else DIALECT_DECLARED
+
+
 def read_assertion(event: Any) -> EdgeAssertion:
     """The assertion one edge event carries.
 
@@ -554,10 +609,11 @@ def read_assertion(event: Any) -> EdgeAssertion:
     if not is_edge_event(event):
         raise InvalidEdgeError(f"event {event.id} is kind {event.kind!r}, not {KIND_EDGE!r}")
     payload = event.payload
+    target_key, type_key = _DIALECT_KEYS[edge_dialect(payload)]
     key = EdgeKey(
         source=event.record,
-        edge_type=_required_text(payload, KEY_TYPE),
-        target=_required_text(payload, KEY_TARGET),
+        edge_type=_required_text(payload, type_key),
+        target=_required_text(payload, target_key),
     )
     detail = payload.get(KEY_DETAIL, "")
     if not isinstance(detail, str):
@@ -585,17 +641,20 @@ def fold_edges(collected: Iterable[Any]) -> EdgeFold:
         collected: Any events. Duplicates by id are folded once.
 
     Returns:
-        The fold, including the labels and the events it could not read.
+        The fold, including the labels, the dialects it read them in, and the events it
+        could not read.
     """
     result = EdgeFold()
     for event in events.canonical_order(collected):
         if not is_edge_event(event):
             continue
+        dialect = edge_dialect(event.payload)
         try:
             assertion = read_assertion(event)
         except InvalidEdgeError as exc:
             result.malformed.append(MalformedEdge(event.id, event.record, str(exc)))
             continue
+        result.dialects[dialect] = result.dialects.get(dialect, 0) + 1
         if assertion.label not in LABELS:
             count = result.unknown_labels.get(assertion.label, 0)
             result.unknown_labels[assertion.label] = count + 1
