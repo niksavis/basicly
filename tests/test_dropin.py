@@ -15,8 +15,18 @@ baseline is landing-order independent, and a regression that made composition or
 would still pass every other assertion here.
 """
 
+# module-size-waiver: one module's contract in one place, and the six cases basicly-nwx4ku
+# adds are six distinct verdicts on one guard - refused, absent, ancestor, unresolvable,
+# malformed, other-gate - none of which the others imply. Splitting them out is the gate's
+# first remedy and was rejected on two counts: the record's demonstration is
+# `pytest tests/test_dropin.py -k stale_measurement`, which a move silently turns into a
+# zero-selected pass, and the fixture the four real-git cases share would then be duplicated
+# or imported across suites where every other suite in this tree spells its own. Nothing
+# here restates code: 4813 tokens at 31.5% prose against the 50% cap.
+
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -31,6 +41,42 @@ def _fragment(repo: Path, name: str, body: str) -> Path:
     path = directory / f"{name}.toml"
     path.write_text(body, encoding="utf-8")
     return path
+
+
+def _git(repo: Path, *args: str) -> str:
+    """One git command in *repo*, failing the test rather than the composition."""
+    proc = subprocess.run(  # nosec B603 B607
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+    )
+    return proc.stdout.strip()
+
+
+def _repo_with_two_branches(root: Path) -> tuple[Path, str]:
+    """A real repository whose HEAD does not contain the returned commit.
+
+    Two branches off one root commit, checked out on the first: the commit handed back is
+    the tip of the *other* one, so it is a real object this repository holds and is still
+    not in HEAD's history. That distinction is the whole check — a fabricated sha would
+    exercise git's "cannot resolve" path instead, which has to answer the opposite way.
+    """
+    repo = root / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "harness@example.invalid")
+    _git(repo, "config", "user.name", "Harness Test")
+    _git(repo, "config", "commit.gpgsign", "false")
+    (repo / "seed.txt").write_text("root\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "root")
+
+    _git(repo, "checkout", "-q", "-b", "sibling")
+    (repo / "seed.txt").write_text("sibling\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "sibling")
+    divergent = _git(repo, "rev-parse", "HEAD")
+
+    _git(repo, "checkout", "-q", "main")
+    return repo, divergent
 
 
 def test_no_fragment_directory_composes_to_the_recorded_baseline(tmp_path: Path) -> None:
@@ -280,3 +326,115 @@ def test_a_tracking_gate_takes_a_rising_delta(tmp_path: Path) -> None:
     )
 
     assert composed.frozen == {"S603": 5}
+
+
+# ---------------------------------------------------------------------------
+# basicly-nwx4ku: a delta composes in any order, the headroom it was sized
+# against does not.
+# ---------------------------------------------------------------------------
+
+
+def test_a_stale_measurement_is_refused_naming_the_base_it_was_taken_at(tmp_path: Path) -> None:
+    """The two-lane case, reduced: the tree the number was measured on is not this one.
+
+    `basicly-gvlpxm` and `basicly-kjc5.63` both measured `merge.py` at exactly 2 tokens of
+    headroom, both spent that same 2, and the composed tree failed a gate neither branch
+    failed. A recorded base turns that into a mechanical refusal.
+    """
+    repo, divergent = _repo_with_two_branches(tmp_path)
+    _fragment(
+        repo,
+        "basicly-x",
+        f'[ratchet]\nbase_commit = "{divergent}"\n\n'
+        '[ratchet.module_size]\nfrozen = {"old.py" = -500}\n',
+    )
+
+    with pytest.raises(dropin.FragmentError) as excinfo:
+        dropin.compose(repo, "module_size", frozen={"old.py": 9000}, count=0)
+
+    message = str(excinfo.value)
+    assert divergent in message
+    assert "basicly.d/basicly-x.toml" in message
+    assert "Re-measure" in message
+
+
+def test_a_fragment_that_records_no_base_applies_unchanged(tmp_path: Path) -> None:
+    """Every fragment written before this field exists records none, and must still land.
+
+    The field is hand-written, so absence is the common case and cannot be a violation —
+    refusing it would stop every lane in flight rather than catching a stale measurement.
+    Asserted in a real repository, so the fragment is composed on a tree that *could* have
+    answered the ancestry question and was simply never asked.
+    """
+    repo, _ = _repo_with_two_branches(tmp_path)
+    _fragment(repo, "basicly-x", '[ratchet.module_size]\nfrozen = {"old.py" = -500}\n')
+
+    composed = dropin.compose(repo, "module_size", frozen={"old.py": 9000}, count=0)
+
+    assert composed == dropin.Baseline({"old.py": 8500}, 0)
+
+
+def test_a_base_the_head_contains_applies_unchanged(tmp_path: Path) -> None:
+    """Ancestry, not equality: work landing on top of a measurement does not stale it.
+
+    The discriminator for the refusal above — same fragment shape, same repository, and the
+    verdict turns only on whether HEAD contains the recorded commit.
+    """
+    repo, _ = _repo_with_two_branches(tmp_path)
+    ancestor = _git(repo, "rev-parse", "HEAD")
+    (repo / "seed.txt").write_text("later\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "later")
+    _fragment(
+        repo,
+        "basicly-x",
+        f'[ratchet]\nbase_commit = "{ancestor}"\n\n'
+        '[ratchet.module_size]\nfrozen = {"old.py" = -500}\n',
+    )
+
+    composed = dropin.compose(repo, "module_size", frozen={"old.py": 9000}, count=0)
+
+    assert composed == dropin.Baseline({"old.py": 8500}, 0)
+
+
+def test_a_base_no_repository_can_resolve_is_not_a_refusal(tmp_path: Path) -> None:
+    """Git answering "cannot tell" is not the same as answering "no".
+
+    A tree copied without its `.git` is what the suite's own `work_repo` fixture hands the
+    gates, and a shallow clone is the same shape in CI. Refusing there would fail on the
+    absence of a repository rather than on a stale measurement.
+    """
+    _fragment(
+        tmp_path,
+        "basicly-x",
+        '[ratchet]\nbase_commit = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"\n\n'
+        '[ratchet.module_size]\nfrozen = {"old.py" = -500}\n',
+    )
+
+    composed = dropin.compose(tmp_path, "module_size", frozen={"old.py": 9000}, count=0)
+
+    assert composed == dropin.Baseline({"old.py": 8500}, 0)
+
+
+def test_a_base_that_is_not_a_commit_ish_string_is_refused(tmp_path: Path) -> None:
+    """A number or an empty string is not a commit, and reading one as absent would hide it."""
+    _fragment(tmp_path, "basicly-x", "[ratchet]\nbase_commit = 7\n\n[ratchet.module_size]\n")
+
+    with pytest.raises(dropin.FragmentError, match="base_commit must be the commit"):
+        dropin.compose(tmp_path, "module_size", frozen={}, count=0)
+
+
+def test_a_stale_measurement_for_another_gate_does_not_refuse_this_one(tmp_path: Path) -> None:
+    """A fragment is only checked against the gates it actually moves.
+
+    Otherwise one lane's stale fragment would stop every ratchet gate in the tree, including
+    the ones its deltas never touch.
+    """
+    repo, divergent = _repo_with_two_branches(tmp_path)
+    _fragment(
+        repo,
+        "basicly-x",
+        f'[ratchet]\nbase_commit = "{divergent}"\n\n[ratchet.comment_density]\ncount_delta = 1\n',
+    )
+
+    assert dropin.compose(repo, "module_size", frozen={}, count=3) == dropin.Baseline({}, 3)

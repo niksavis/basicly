@@ -1,0 +1,83 @@
+# A ratchet fragment can now record the commit its measurements were taken at, and is
+# refused when HEAD does not contain it (basicly-nwx4ku). This file is the first to carry
+# the field, which is the change's own smoke test: `base_commit` below is the commit every
+# number in this file was measured on, and `dropin._refuse_stale_measurement` reads it on
+# every gate that composes a fragment.
+#
+# WHY IT IS RECORDED BY HAND. Nothing in this tree writes a `basicly.d` fragment - all 43
+# are hand-authored, and `config.py` names the path only inside a scope glob - so there is
+# no write-time hook to derive it at, and inventing a scaffold command to own one is a
+# different record's work. That makes absence the common case, so absence is not a
+# violation: a fragment that records no base composes exactly as before, which is what
+# keeps the 42 fragments already in this directory landing. The field is a lane's
+# volunteered precision, not a requirement, and the follow-up worth filing is the scaffold
+# that would fill it by construction.
+#
+# EVERY FIGURE BELOW WAS RE-DERIVED AGAINST THIS COMMIT'S TREE, and two of them had to be:
+# the first pass measured before the waiver comments themselves were written, so it recorded
+# dropin.py at 50.8% and test_dropin.py at 4640 - the shares and counts at the moment each
+# file crossed, not the shares and counts of the file that landed. That is this record's own
+# failure mode arriving in its own drop-in, and the general form is wider than a rebase: a
+# measurement is only valid against the tree AND the file it was actually taken from. The
+# same session produced a second instance, where a measuring script written to a shared
+# temporary directory was overwritten by a concurrent lane and printed that lane's modules
+# under this one's command. `base_commit` catches the divergent-tree case mechanically; it
+# does not catch either of these, and re-deriving before writing the number is what did.
+#
+# `src/basicly/dropin.py` 2332 -> 3417 tokens against the 4000-token cap, so module size
+# needs no entry. Prose share 48.0 -> 53.0 over the 50.0% cap (it crossed at 50.8 before
+# the waiver comment was itself counted), waived with a column-0 marker and counted here.
+# The share is set by the rules this module holds rather than by narration - the same
+# argument `.scripts/ratchet.py` beside it already carries - and reaching 50% from 1839
+# prose tokens against 1633 of code means cutting the paragraph stating that a missing base
+# is not a violation, which is the one sentence standing between the next reader and a
+# guard that would stop every lane in flight.
+#
+# `tests/test_dropin.py` 3090 -> 4813 tokens (4640 when it crossed), over the 4000-token
+# cap, waived and counted.
+# The addition is six verdicts on one guard - stale refused, absent applied, ancestor
+# applied, unresolvable applied, malformed refused, another gate untouched - plus the
+# two-branch git fixture the four real-git cases share. A fabricated sha cannot stand in
+# for the divergent one: it exercises git's exit 128, which has to answer the opposite way,
+# so the fixture builds a real sibling branch and hands back a commit this repository holds
+# and HEAD does not.
+#
+# The gate's first remedy, splitting along a nameable responsibility, was rejected on two
+# counts. The record's demonstration is `pytest tests/test_dropin.py -k stale_measurement`,
+# and moving the case out turns that command into a zero-selected pass rather than a
+# failure - a demonstration that cannot fail. And the git fixture would then be duplicated
+# or imported across suites, where every other suite in this tree that needs git spells its
+# own `_git` (test_landing_anchors, test_commit, test_release, test_verify and five more) -
+# there is no shared fixture to reuse, which was checked before writing one.
+#
+# Dropping two of the six cases was the other way to fit, and it is the same move as cutting
+# narration: the unresolvable-base case is what stops a later tightening from failing on the
+# absence of a repository, which is what `work_repo` and a shallow CI clone both hand these
+# gates.
+# Declared under [ratchet] and not at the document root: the schema accepts it there, and
+# `dropin` reads it off the same section the gate tables live in.
+[ratchet]
+# **Re-recorded on the rebase, and the guard is why.** The first value was this lane's own first
+# commit; `basicly worktree merge` rebases before merging, so that sha was rewritten and stopped
+# being reachable, and this fragment's own gate refused it on all three ratchets. That refusal was
+# correct in substance - main had moved through three landings, so the headroom really was sized
+# against another tree - and the deltas below are re-measured here.
+#
+# **It also exposes a flaw this record did not see, now filed separately.** The guard fires when the
+# recorded base is a *rewritten* commit and stays silent when it is the *branch point*, because a
+# branch point survives a rebase as an ancestor. Which of the two an author records is arbitrary,
+# and the branch point is the case the record was filed for.
+base_commit = "1b06dd7f72c7cf9f5981d73cc45055847266b7b6"
+
+[ratchet.module_size]
+count_delta = 1
+
+[ratchet.comment_density]
+count_delta = 1
+
+# One added `# noqa: S603` on the `git merge-base --is-ancestor` read. `src/` has flake8-
+# bandit adopted, and the alternative to the suppression is validating an argv this module
+# builds itself. `shutil.which` resolves the binary, so S607 needs no entry - an unfindable
+# git is one of the answers this read has to give anyway.
+[ratchet.noqa_debt.frozen]
+S603 = 1

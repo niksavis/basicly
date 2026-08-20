@@ -570,12 +570,24 @@ CONFIG_SCHEMA: dict[str, Table] = {
     # gates under `.scripts/`, never by this module — the same reason [[privacy.denied]] is
     # here. A gate whose baseline this schema refused to carry would have to parse the
     # fragments itself, which is how two readers of one convention start disagreeing.
+    # One entry per gate that calls `ratchet.compose_ratchet`, and the list has to be
+    # complete: a gate this schema omits cannot be rebaselined at all, which is the one
+    # route its own remedy text prescribes. `code_citations` and `release_notes` both
+    # shipped green and absent, and the first fragment to use one failed 166 tests
+    # (basicly-nlouqg). `test_ratchet_sections_register_every_gate_that_composes_one`
+    # derives this list from the callers, so a new gate cannot land without a line here.
+    # `base_commit` is the commit a fragment's measurements were taken at
+    # (:data:`basicly.dropin.BASE_COMMIT`), spelled as a literal here because
+    # `tree_schema._evaluate` reads this schema statically and cannot follow an attribute.
     "ratchet": Table(
+        keys=frozenset({"base_commit"}),
         tables={
+            "code_citations": _RATCHET_TABLE,
             "comment_density": _RATCHET_TABLE,
             "module_size": _RATCHET_TABLE,
             "noqa_debt": _RATCHET_TABLE,
-        }
+            "release_notes": _RATCHET_TABLE,
+        },
     ),
     "policy": Table(
         keys=frozenset({

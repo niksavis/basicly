@@ -1,0 +1,40 @@
+# `[ratchet]` now names every gate that composes one, and a derived test keeps it that way
+# (basicly-nlouqg). `code_citations` and `release_notes` both called
+# `ratchet.compose_ratchet` under a section this schema refused, so each gate's own
+# rebaseline remedy pointed a lane at a file that would then fail every command that reads
+# the config. Measured 2026-08-20 on this tree: a `basicly.d` fragment declaring
+# `[ratchet.code_citations]` was refused before the change and is accepted after, while
+# `[ratchet.not_a_gate]` is still refused — the schema stayed strict.
+#
+# `src/basicly/config.py` needs no entry: 23765 -> 23918 tokens against a frozen 24203, and
+# the prose share moved 48.3 -> 48.5 under the 50% cap, so the two table lines and the
+# comment stating why the list has to be complete both fit.
+#
+# `tests/test_config.py` 18221 -> 19129, rebaselined by 908 against a baseline it sat
+# exactly on. The addition is the coverage gate itself: it parses every `.py` under
+# `.scripts/` and `src/basicly/` for `compose_ratchet` calls, resolves each call's gate
+# argument through the module-level constant the gate spells it as, and names the file that
+# asked for a section the schema omits. `tests/` is excluded from that walk on purpose, so
+# `test_ratchet.py`'s fixture gate is not demanded of the schema.
+#
+# Three cheaper routes were rejected. Deriving `CONFIG_SCHEMA["ratchet"].tables` from a
+# `frozenset` constant instead of a literal would need no test at all, and it breaks
+# `tree_schema._evaluate`, which reads this schema statically and models only literals,
+# `frozenset(...)` and `Table(...)` — an unreadable `CONFIG_SCHEMA` falls back to the
+# running engine's and prints the ordering rule (basicly-69az), which is a live regression
+# for a lane landing a schema change. Putting the walk in a new test module would keep this
+# suite at its baseline and split `CONFIG_SCHEMA`'s declaration gates across two files, one
+# of which no reader looking at the schema would find. Trimming the narration to fit is the
+# one route the ratchets exist to refuse; the only dead weight found was an unused
+# `_COMPOSE_RATCHET` constant and the two nested conditionals ruff's SIM102 named, which
+# together paid back 53 of the 961 tokens the first draft needed. The 908 is the measured
+# figure and not a round one: an over-declared rebaseline licenses the growth it overshoots
+# by, which is the silent loosening this table exists to make countable.
+#
+# Prose share 28.1 -> 28.5 against the 50% cap, so the growth is code-heavier than the
+# suite it joins.
+[ratchet.module_size]
+rebaseline_reason = "tests/test_config.py had 0 tokens of headroom and the regression test is a source walk over every compose_ratchet caller plus the assertion that names the missing gate and its file; the only alternatives were a frozenset-derived schema that tree_schema cannot read statically, or filing CONFIG_SCHEMA's declaration gates in a second module away from the other three"
+
+[ratchet.module_size.rebaselined]
+"tests/test_config.py" = 908
