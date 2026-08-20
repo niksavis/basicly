@@ -1,0 +1,46 @@
+# A handoff kind is wired by declaration, so a schema with no producer stops reading as a
+# contract (basicly-u2hl.59, architecture §33). Eight kinds are named and seven have a
+# schema; three run. The other four schemas resolved through `handoff._validator` exactly
+# as the wired three do, so `adopted` answered yes for a kind nothing records and nothing
+# reads — measured 2026-08-20 against a control of the three wired constants, the only
+# `handoff.<CONST>` symbols any producer names.
+#
+# Bound on what the producer declares, never on absence. `PRODUCERS` maps each of the
+# eight to the `module:function` that records it, or to None, and `wired` is the predicate
+# `_validator` consults before it resolves a schema file. The rejected alternative was
+# deriving wiredness by searching for a caller: a search for a kind's own name returns the
+# English word — six files for `classification`, five of them prose — so an empty result is
+# ambiguous between unwired and probed wrongly, which is the shape this tree has paid for
+# before. Two states and no third: *why* an unwired kind has no producer, scheduled or
+# planned by nobody, is a backlog fact no consumer here branches on, and a second copy of
+# it would go stale unnoticed the day a record lands.
+#
+# `src/basicly/handoff.py` 3991 -> 4504, rebaselined by 4504 against a cap it had 9 tokens
+# of headroom under. The declaration is eight entries plus the predicate; the rest is the
+# comment stating why a declaration and not a search, and the second condition
+# `_validator` now returns None for. Prose share 64.1 -> 65.4 against a frozen 69.2, so
+# the growth is code-heavier than the module it joins. Cutting 504 tokens to stay under
+# the cap was available only by deleting narration, the one route the ratchets exist to
+# refuse, and the one extraction this module still has — carrying `_cut_violation` into
+# `artifact_record` — is the move `basicly-pp7q4i` and `basicly-wug2o2` each deferred to a
+# record that owns it, whose files are outside this record's scope.
+#
+# `tests/test_handoff.py` 5124 -> 6302, rebaselined by 1178 against 0 tokens of headroom.
+# Three tests and three helpers: the five unwired kinds are reported unwired and unadopted
+# in a repo that has installed four of their schemas, which is the control that makes the
+# assertion discriminate; an unwired kind's write is a no-op under a deliberately malformed
+# payload, so a schema that still resolved would raise instead of return; and every
+# declared producer is read out of the package's own source and shown to define the
+# function, name the kind's constant and be called. That last one parses rather than
+# imports, because `handoff` sits below every producer in the layering contract and an
+# import would invert the tier the declaration exists to keep honest. Prose share 31.7 ->
+# 33.4 under the 50% cap. `tests/test_handoff_schemas.py` has 2744 tokens of headroom and
+# is where the declaration check would otherwise sit, but it is outside this record's
+# declared scope — and its `HANDOFF_KINDS` tuple is now a second list of the kinds
+# `PRODUCERS` enumerates, reported rather than merged for the same reason.
+[ratchet.module_size]
+rebaseline_reason = "handoff.py: the declaration of which kinds have a producer belongs in the module whose predicate reads it, and the module had 9 tokens of headroom; the only extraction left is the _cut_violation move into artifact_record, which two earlier records deferred to a record that owns it and whose files are outside this scope. test_handoff.py: the acceptance criterion's demonstration is a test in this file and the suite had 0 tokens of headroom; test_handoff_schemas.py has the room but is outside this record's declared scope"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/handoff.py" = 4504
+"tests/test_handoff.py" = 1178

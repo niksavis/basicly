@@ -24,6 +24,7 @@ and nothing there re-asserts the schema.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -31,7 +32,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import artifact_record, handoff, merge, plan_gate, tracker
+from basicly import artifact_record, catalog_source, handoff, merge, plan_gate, tracker
 from basicly.checkout import git
 from basicly.decompose import CreatedChild, DecomposeResult
 from tests import flipped_tracker, plan_fixtures
@@ -209,6 +210,112 @@ def test_a_repo_without_the_schema_runs_neither_end(tmp_path: Path) -> None:
     )
     assert not (tmp_path / tracker.LEDGER_DIR).exists()
     assert handoff.entry_verdict(tmp_path, "proj-feat", handoff.IMPLEMENTATION_PLAN).admitted
+
+
+# --- which of the named kinds are wired at all -------------------------------
+
+UNWIRED = tuple(kind for kind, producer in handoff.PRODUCERS.items() if producer is None)
+
+
+def test_a_kind_no_producer_records_is_reported_unwired_and_not_counted_as_a_contract(
+    work_repo: Path,
+) -> None:
+    """Five of the eight named kinds, in a repo that has installed every schema there is.
+
+    ``work_repo`` is what makes this discriminate: four of the five have a schema file on
+    disk here and would resolve, which is the whole defect — seven schemas were reading as
+    seven live contracts. The wired three are the second control, because an assertion that
+    nothing is adopted would pass just as well on a repo where nothing is installed at all.
+    """
+    installed = [
+        kind
+        for kind in UNWIRED
+        if (work_repo / catalog_source.SCHEMAS_DIR / f"{kind}.schema.json").is_file()
+    ]
+    assert len(UNWIRED) == 5
+    assert len(installed) == 4
+    assert [kind for kind in UNWIRED if handoff.wired(kind)] == []
+    assert [kind for kind in handoff.PRODUCERS if not handoff.adopted(work_repo, kind)] == list(
+        UNWIRED
+    )
+
+
+def test_an_unwired_kind_writes_nothing_and_refuses_nothing(work_repo: Path) -> None:
+    """Inert at both ends, through the one seam each of them resolves a schema at.
+
+    The payload is malformed on purpose: a kind whose schema still resolved would raise
+    ``ArtifactError`` here rather than return, so a no-op write is what this asserts and
+    not the accident of a payload that happened to validate.
+    """
+    handoff.record(work_repo, "proj-u", "change-shape", {"not": "a change shape"})
+
+    assert _artifact_bodies(work_repo, "proj-u") == []
+    assert handoff.entry_verdict(work_repo, "proj-u", "change-shape").admitted
+
+
+def _package_modules() -> dict[str, ast.Module]:
+    """Every module of the shipped package, parsed rather than imported.
+
+    Parsed because ``handoff`` sits below every producer in the layering contract (§34):
+    importing ``loop`` here to see what it calls would invert the tier the declaration
+    exists to keep honest, while reading its source carries no dependency at all.
+    """
+    package = Path(handoff.__file__).parent
+    return {path.stem: ast.parse(path.read_text(encoding="utf-8")) for path in package.glob("*.py")}
+
+
+def _called(modules: dict[str, ast.Module]) -> set[str]:
+    """Every name called anywhere in the package, bare or through an attribute."""
+    funcs = (
+        node.func
+        for tree in modules.values()
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+    )
+    return {
+        func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "") for func in funcs
+    }
+
+
+def _defined(tree: ast.Module, name: str) -> ast.FunctionDef | None:
+    """The top-level function *name* in *tree*, or None when it defines no such function."""
+    return next((n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name), None)
+
+
+def test_a_declared_producer_that_stopped_recording_its_kind_is_a_defect_not_unwired() -> None:
+    """Three claims per declaration, because one that can over-claim binds nothing.
+
+    The symbol resolves to a function, that function names the kind's own constant, and
+    something calls it. Each has to fail *here* rather than demote the kind inside
+    :func:`handoff.wired`, which would hand the fail-open answer back to the absence it was
+    taken away from: a renamed producer would then read as a kind nobody had ever wired.
+
+    The two assertions before the loop are the positive control — a probe that parsed
+    nothing, or collected no call at all, would report every declaration sound.
+    """
+    modules = _package_modules()
+    called = _called(modules)
+    assert len(modules) > 50, len(modules)
+    assert "entry_verdict" in called
+
+    defects = []
+    for kind, producer in handoff.PRODUCERS.items():
+        if producer is None:
+            continue
+        module, _, function = producer.partition(":")
+        tree = modules.get(module)
+        node = _defined(tree, function) if tree is not None else None
+        constant = kind.replace("-", "_").upper()
+        if node is None:
+            defects.append(f"{kind}: {producer} defines no such function")
+        elif getattr(handoff, constant, None) != kind:
+            defects.append(f"{kind}: no constant named {constant} spells it")
+        elif constant not in {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}:
+            defects.append(f"{kind}: {producer} never names {constant}")
+        elif function not in called:
+            defects.append(f"{kind}: {producer} is never called")
+
+    assert defects == []
 
 
 # --- a corrupted artifact, which is the population that binds ----------------
