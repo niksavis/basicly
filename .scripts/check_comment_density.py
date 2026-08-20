@@ -91,10 +91,18 @@ def prose_tokens(text: str) -> int:
     """*text*'s comment and docstring tokens, excluding pragmas.
 
     Args:
-        text: The module's source.
+        text: A whole module's source, not a slice of one.
 
     Returns:
-        The token count, or 0 if the source does not parse.
+        The token count.
+
+    Raises:
+        RatchetError: *text* does not parse, so it has no share to state. Returning 0 was
+            the most dangerous available answer: the two size ratchets pull opposite ways,
+            an extraction is safe only when the extracted unit is prose-*heavier* than the
+            module it leaves, and a fragment lifted out of its class reads as pure code.
+            Measured 2026-08-20, a lane derived 66% by a second path against this 0
+            (basicly-e7rtjn).
     """
     try:
         comments = [
@@ -103,8 +111,11 @@ def prose_tokens(text: str) -> int:
             if token.type == tokenize.COMMENT and not _PRAGMA.search(token.string)
         ]
         tree = ast.parse(text)
-    except SyntaxError, tokenize.TokenError, ValueError:
-        return 0
+    except (SyntaxError, tokenize.TokenError, ValueError) as err:
+        raise RatchetError(
+            "cannot state a prose share for source that does not parse; measure an "
+            "extracted unit as the module it will become, not as a raw slice"
+        ) from err
     docstrings = [
         doc
         for node in ast.walk(tree)
@@ -134,7 +145,13 @@ def tracked_modules(repo: Path) -> list[Module]:
     """
     modules = []
     for name, text in tracked_sources(repo):
-        share, tokens = measure(text)
+        try:
+            share, tokens = measure(text)
+        except RatchetError:
+            # A tracked module that does not parse is ruff's finding to report, not a
+            # reason this gate cannot run. The refusal is for the other caller: a lane
+            # measuring a fragment, which has no ruff run standing behind it.
+            share, tokens = 0.0, _text_tokens(text)
         if tokens >= _MIN_TOKENS:
             modules.append(
                 Module(

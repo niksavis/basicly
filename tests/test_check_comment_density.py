@@ -7,9 +7,10 @@ pragma that is counted (which would price a `# noqa` like an essay), and a froze
 that never expires (which licenses regrowth to its go-live share).
 
 Logic tests drive :func:`collect` with synthetic modules; a `git ls-files` fixture per
-case would test git. One subprocess run covers the real tree, and the `basicly.d` delta
-route (basicly-05g0) is exercised in a scratch repository, because a fragment only means
-anything once `git ls-files`, the TOML read and the composer run together.
+case would test git. One subprocess run covers the real tree. The `basicly.d` delta route
+(basicly-05g0) is the sibling :mod:`test_check_comment_density_fragments`, which the size
+cap forced out of here: the boundary is measurement and ratchet decisions against the
+fragment route.
 
 Every waiver marker below is indented inside a string literal, so this file does not waive
 itself — ``test_neither_the_gate_nor_this_test_carries_a_waiver`` proves it.
@@ -18,7 +19,6 @@ itself — ``test_neither_the_gate_nor_this_test_carries_a_waiver`` proves it.
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import subprocess
 import sys
 import tomllib
@@ -26,8 +26,6 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-
-from basicly import dropin
 
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".scripts" / "check_comment_density.py"
@@ -84,9 +82,20 @@ def test_an_ordinary_comment_is_prose() -> None:
     assert gate.prose_tokens("# this restates the assignment below it\nx = 1\n") > 0
 
 
-def test_unparseable_source_scores_zero_rather_than_crashing() -> None:
-    """A syntax error is ruff's finding to report, not a reason this gate cannot run."""
-    assert gate.prose_tokens("def (:\n") == 0
+def test_unparseable_source_is_refused_rather_than_scored_zero() -> None:
+    """0 said the opposite of the truth: a raw slice read as pure code (basicly-e7rtjn)."""
+    with pytest.raises(gate.RatchetError, match="does not parse"):
+        gate.prose_tokens("def (:\n")
+
+
+def test_a_tracked_module_that_does_not_parse_still_lets_the_gate_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ruff owns a syntax error; the refusal above is for a lane measuring a fragment."""
+    broken = "def (:\n" + "# pad past the token floor.\n" * 40
+    monkeypatch.setattr(gate, "tracked_sources", lambda _repo: [("src/broken.py", broken)])
+    (module,) = gate.tracked_modules(Path())
+    assert module.share == 0.0
 
 
 def test_a_module_over_the_cap_and_not_frozen_fails() -> None:
@@ -164,134 +173,6 @@ def test_a_missing_ratchet_table_raises_rather_than_defaulting_to_empty(tmp_path
         gate.load_ratchet(tmp_path)
 
 
-def _prose_module(marker: str = "") -> str:
-    """A module over the cap and over the token floor, whose payload is narration.
-
-    Written rather than borrowed from the tree so the share it measures is a property of
-    this test, not of whatever the module it borrowed from looks like this week.
-    """
-    functions = "\n\n".join(
-        f'def f{index}() -> int:\n    """Say nothing the signature does not, at some'
-        f' length, for the {word} time."""\n    # And restate the return below.\n'
-        f"    return {index}\n"
-        for index, word in enumerate(("first", "second", "third", "fourth", "fifth"))
-    )
-    return f'"""A module whose whole payload is narration."""\n{marker}\n\n{functions}'
-
-
-def _scratch_repo(tmp_path: Path, module: str, *, frozen: str = "", waiver_count: int = 0) -> Path:
-    """A tiny git repo holding the gate, the two modules it reads through, and *module*.
-
-    The gate resolves its root from its own location, so a copy of it in a tmp tree
-    exercises `git ls-files`, the tokenizer, the TOML read and the fragments together
-    without putting a deliberate defect in this working tree.
-
-    Only the measured modules are added to the index. `src` and `.scripts` are both in the
-    gate's scope roots, so tracking the modules the copy has to import would measure them
-    too — `read_cost.py` is 82% prose against a record that freezes nothing, and every case
-    here would report it. Importing does not need git; measuring does.
-    """
-    scripts = tmp_path / ".scripts"
-    scripts.mkdir()
-    for script in (SCRIPT, RATCHET):
-        shutil.copy(script, scripts / script.name)
-    package = tmp_path / "src" / "basicly"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text("", encoding="utf-8")
-    for name in ("dropin.py", "read_cost.py"):
-        shutil.copy(REPO_ROOT / "src" / "basicly" / name, package / name)
-    (tmp_path / "pyproject.toml").write_text(
-        f"[tool.comment_density]\nwaiver_count = {waiver_count}\n\n"
-        f"[tool.comment_density.frozen]\n{frozen}",
-        encoding="utf-8",
-    )
-    (tmp_path / "src" / "mod.py").write_text(module, encoding="utf-8")
-    (tmp_path / dropin.FRAGMENT_DIR).mkdir()
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    subprocess.run(["git", "-C", str(tmp_path), "add", "-f", "src/mod.py"], check=True)
-    return tmp_path
-
-
-def _fragment(repo: Path, name: str, body: str) -> None:
-    """Drop one lane's fragment into the scratch repo's ``basicly.d``."""
-    (repo / dropin.FRAGMENT_DIR / f"{name}.toml").write_text(body, encoding="utf-8")
-
-
-def _second_waived_module(repo: Path) -> None:
-    """A second module carrying a waiver, tracked, so two waivers are outstanding."""
-    (repo / "src" / "other.py").write_text(
-        _prose_module("# comment-density-waiver: also provenance"), encoding="utf-8"
-    )
-    subprocess.run(["git", "-C", str(repo), "add", "-f", "src/other.py"], check=True)
-
-
-def _run_gate(repo: Path) -> subprocess.CompletedProcess[str]:
-    """Run the copied gate the way a commit runs it."""
-    return subprocess.run(  # nosec B603
-        [sys.executable, str(repo / ".scripts" / SCRIPT.name)],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=repo,
-    )
-
-
-def test_a_fragment_delta_reaches_the_gate_end_to_end(tmp_path: Path) -> None:
-    """The delta route the other two ratchets already have (basicly-05g0).
-
-    The module is recorded at exactly the share it measures, so it passes; the fragment
-    then lowers that record by 1.4 and the same unchanged module is over its baseline. A
-    gate reading `pyproject.toml` raw reports nothing at all here.
-    """
-    module = _prose_module()
-    share, _ = gate.measure(module)
-    repo = _scratch_repo(tmp_path, module, frozen=f'"src/mod.py" = {share}\n')
-    assert _run_gate(repo).returncode == 0, "the recorded share must pass before the fragment"
-
-    _fragment(repo, "basicly-one", '[ratchet.comment_density.frozen]\n"src/mod.py" = -1.4\n')
-    completed = _run_gate(repo)
-
-    assert completed.returncode == 1
-    assert f"{share}% prose, up from the frozen {round(share - 1.4, 1)}%" in completed.stderr
-
-
-def test_two_fragments_each_carrying_a_waiver_compose_to_two_new_waivers(tmp_path: Path) -> None:
-    """The shape `basicly-kr7t` could not record: a waiver taken without editing the anchor."""
-    repo = _scratch_repo(tmp_path, _prose_module("# comment-density-waiver: provenance"))
-    _second_waived_module(repo)
-    for name in ("basicly-one", "basicly-two"):
-        _fragment(repo, name, "[ratchet.comment_density]\ncount_delta = 1\n")
-
-    completed = _run_gate(repo)
-
-    assert completed.returncode == 0, completed.stderr
-    assert "2 waived" in completed.stdout
-
-
-def test_the_waiver_ratchet_still_binds_when_a_fragment_is_missing(tmp_path: Path) -> None:
-    """The mutation: one fragment for two waivers is still a waiver nothing declared."""
-    repo = _scratch_repo(tmp_path, _prose_module("# comment-density-waiver: provenance"))
-    _second_waived_module(repo)
-    _fragment(repo, "basicly-one", "[ratchet.comment_density]\ncount_delta = 1\n")
-
-    completed = _run_gate(repo)
-
-    assert completed.returncode == 1
-    assert "waiver was added without saying so" in completed.stderr
-    assert "under [ratchet.comment_density] in basicly.d/<bead-id>.toml" in completed.stderr
-
-
-def test_a_fragment_that_is_not_a_delta_stops_the_gate(tmp_path: Path) -> None:
-    """Fails closed: a fragment it cannot read must not compose to the recorded baseline."""
-    repo = _scratch_repo(tmp_path, _prose_module())
-    _fragment(repo, "basicly-one", '[ratchet.comment_density.frozen]\n"src/mod.py" = "58.6"\n')
-
-    completed = _run_gate(repo)
-
-    assert completed.returncode == 1
-    assert "must be a numeric delta" in completed.stderr
-
-
 def test_a_composed_share_is_reported_on_the_grid_it_is_measured_on() -> None:
     """A sum of one-decimal floats is not one: 51.3 - 0.1 is 51.199999999999996.
 
@@ -300,24 +181,6 @@ def test_a_composed_share_is_reported_on_the_grid_it_is_measured_on() -> None:
     """
     assert 51.3 - 0.1 != 51.2
     assert round(51.3 - 0.1, 1) == 51.2
-
-
-def test_the_gate_composes_the_fragments_the_other_ratchets_do(tmp_path: Path) -> None:
-    """One composer for three gates, so a fragment means the same thing at each of them."""
-    (tmp_path / "pyproject.toml").write_text(
-        "[tool.comment_density]\nwaiver_count = 1\n\n"
-        '[tool.comment_density.frozen]\n"a.py" = 60.0\n',
-        encoding="utf-8",
-    )
-    (tmp_path / dropin.FRAGMENT_DIR).mkdir()
-    (tmp_path / dropin.FRAGMENT_DIR / "basicly-one.toml").write_text(
-        '[ratchet.comment_density]\ncount_delta = 1\nfrozen = {"a.py" = -1.4}\n', encoding="utf-8"
-    )
-
-    ratchet = gate.load_ratchet(tmp_path)
-
-    assert ratchet.frozen == {"a.py": 58.6}
-    assert ratchet.count == 2
 
 
 def test_a_small_module_is_out_of_scope() -> None:
