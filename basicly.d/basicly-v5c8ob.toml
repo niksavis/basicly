@@ -9,3 +9,19 @@
 # 2900. The suppression names its reason, so `unreasoned_count` does not move.
 [ratchet.noqa_debt.frozen]
 E402 = 1
+
+# Two live code citations repaired by finding their target (basicly-fsuhg3), in two modules
+# that were frozen at exactly their own size. `tests/test_policy.py` cited a document deleted
+# on 2026-08-08 and now cites the section that absorbed it; the shipped kit's `events.py`
+# named `work-tracker.md` in its header and then wrote three architecture section numbers, so
+# each citing line now names the document its number belongs to. Naming the document is the
+# repair the gate asks for and the only one that keeps the pointer: the alternative, a
+# full-path binding, would have re-attributed every one of `events.py`'s bare marks to the
+# architecture when most of them really do mean `work-tracker.md`. Both frozen entries
+# graduated at zero in the same diff. 18 tokens and 35 tokens of document names, measured.
+[ratchet.module_size]
+rebaseline_reason = "four document names on citing lines in two modules frozen at exactly their own size, repairing two live stale citations"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/events.py" = 18
+"tests/test_policy.py" = 35

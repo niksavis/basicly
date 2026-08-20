@@ -453,8 +453,11 @@ binding_count = 3
 # `.scripts/check_code_citations.py`, wired as the `code-citations` [[verify.checks]] entry. A
 # section mark in a comment or a docstring is a pointer into a requirements document, and
 # `docs-citations` only ever ran the other direction: 220 of the 370 marks measured on
-# 2026-08-20 reach no heading, including two citing `gates-and-rework-design.md`, which was
-# absorbed and deleted 2026-08-08.
+# 2026-08-20 reach no heading. Two of those were the live findings the gate landed with, and
+# basicly-fsuhg3 repaired both by finding the target rather than deleting the reference:
+# `tests/test_policy.py` cited `gates-and-rework-design.md`, absorbed and deleted 2026-08-08
+# into `factory-loop.md`, and the shipped tracker kit's `events.py` cited three architecture
+# sections while naming its own source document. Both entries graduated at zero.
 #
 # The list is closed - a module absent from it may carry no unresolved mark. A count that
 # falls has to be banked in the same diff and an entry that reaches zero is deleted, for the
@@ -462,7 +465,6 @@ binding_count = 3
 # to it for free.
 
 [tool.code_citations.frozen]
-".basicly/core/kit/tracker/events.py" = 4
 ".scripts/check_marker_families.py" = 2
 ".scripts/check_test_naming.py" = 5
 ".scripts/docs_claim_status.py" = 6
@@ -526,7 +528,6 @@ binding_count = 3
 "tests/test_loop_lane.py" = 1
 "tests/test_mirror.py" = 2
 "tests/test_owned_store.py" = 1
-"tests/test_policy.py" = 5
 "tests/test_repair_brief.py" = 3
 "tests/test_retrospective.py" = 5
 "tests/test_review.py" = 3
