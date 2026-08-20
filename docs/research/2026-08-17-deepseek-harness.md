@@ -11,7 +11,9 @@ The critique and any architecture revision are separate steps.
 ## 1. Verdict
 
 The **DeepSeek Harness (`dsh`)** is an open-source, MIT-licensed agent harness from DeepSeek-AI
-in developer preview at `0.1.0-rc.7`, built as a 226-package TypeScript monorepo in which
+in developer preview at `0.1.0-rc.8` (**§12**; reviewed at rc.7), built as a TypeScript
+monorepo of 226 `package.json` files and **219 pnpm workspace members** at rc.7 (233 / 226 at
+rc.8) in which
 *every* part of the product — the model adapter, the tool registry, the session log, and the
 agent loop itself — is a hot-swappable plugin mounted from configuration, with no privileged
 core to patch. Its single most important idea is **revertible effects**: every mutation a
@@ -24,9 +26,15 @@ framework `dsh` vendors, and the paper's own case study is a chatbot framework, 
 Two framing corrections follow immediately, because both change how everything below reads.
 
 **The harness is a runtime, not a work-orchestration factory.** It manages sessions, turns,
-tools, subagents and context. It has no work graph, no decomposition, no dependency-ordered
-landing, and essentially no git integration (§5.6). Anyone reading "harness" as a synonym for
-`basicly`'s loop will mis-map the whole system.
+tools, subagents and context. It has **no decomposition, no dependency-ordered landing, and
+essentially no git integration** (§5.6). Anyone reading "harness" as a synonym for `basicly`'s
+loop will mis-map the whole system.
+
+> **AMENDED at rc.8 — this paragraph said "no work graph" and that clause is refuted.** A
+> dependency-ordered task graph now exists, in `packages/experimental/agent-team`, with
+> `blockedBy` edges, cycle rejection and readiness gating. It is `private: true`, excluded
+> from the release family, and mounted in no shipped preset. The other three clauses hold
+> unchanged, and `decompos` is still 0 against a working control. **[§12.2](#122-the-work-graph-the-one-framing-clause-that-is-refuted)**
 
 **`dsh` and Cordis are two artifacts with two evidence bases.** The paper formalises Cordis
 and validates it on Koishi. `dsh` vendors Cordis and is named in the paper only as *future*
@@ -244,7 +252,9 @@ effect so disposal unwinds in the intended sequence" [`cordis-primer.md:44`].
 
 ### 4.1 Shape
 
-226 packages under `packages/`, plus `apps/cli`, `apps/web`, a Python SDK under `python/`, and a
+226 `package.json` files under `packages/`, of which **219 are pnpm workspace members** — the
+remaining 7 sit deeper than the `packages/*/*` glob. The review's "226 packages" is the file
+count, not the member count [re-measured §12.1]. Plus `apps/cli`, `apps/web`, a Python SDK under `python/`, and a
 `native/landlock-run` sandbox helper. 7 466 tracked files: 2 376 Markdown, 2 330 TypeScript, 1 096
 YAML. Cordis is **vendored**, not depended on: `vendor/cordis` at version **4.0.1**, rescoped to
 `@deepseek-ai/cordis` by `scripts/rescope-vendor.ts`. **1 087 TypeScript/TSX files import
@@ -371,6 +381,10 @@ not read or write plan state" [`packages/plan/plan-mode/README.md:5`]. Exit runs
 `exit_plan_mode`, which "leaves it only after an exact user approval through `ctx.userQuestions`".
 
 ### 5.2 Decomposition — absent
+
+> **Pinned at `99f6f02f` (rc.7). Two numbers below moved at rc.8** — `blocked_by` 0 → 7 and
+> `blockedBy` 0 → 36, from `packages/experimental/agent-team`. **`decompos` is still 0**, so the
+> heading stands and the table's own conclusion does not. [§12.2](#122-the-work-graph-the-one-framing-clause-that-is-refuted)
 
 There is no work-graph decomposition in the harness. Probes over `packages/**/*.ts`, with
 `subagent` as the positive control at **3 385 hits across 226 files**:
@@ -509,7 +523,9 @@ So every package must state, under gate, what the model sees, what it costs in t
 to the KV cache, and what it does not do. Both gates cite the Agent Note that introduced them
 [`2026-07-10-readme-known-limitations-gate.md`, `2026-07-12-package-model-experience-contract.md`].
 
-**Agent Notes.** `.agents/notes/` holds **1 390** Markdown notes: **1 030 implemented**, **285
+**Agent Notes.** `.agents/notes/` holds **1 387 Markdown files** — not notes. Each note is an
+English/Chinese pair, so this is **≈693 distinct notes** [re-measured §12.5; the file counts below
+reproduce exactly, only the unit label was wrong]. **1 030 implemented**, **285
 archived**, **50 proposed**, **22 rejected**, classified by type (`feature`, `architecture`,
 `process`, `testing`, `bug-fix`, `simplification`). `scripts/verify-agent-note-format.ts` enforces a
 status-line grammar per lifecycle folder (`Status: proposed`, `Status: implemented`,
@@ -621,7 +637,7 @@ worse is expressed or implied. `basicly` evidence is from
 | **Determinism of composition** | quiescent state is a function of the final configuration alone, order-independent [paper §5.2.1 pp.62–63] | sort is total; "two builds on identical sources produce byte-identical output" [arch §11, L558-560] |
 | **Unit of work** | one **goal** per session: `{ objective, phase, maxGoalRounds }`, at most one current [`goal/src/types.ts:59-68`; `index.ts:256`] | one **tracker issue**, typed as a **work class** (epic/feature/task/bug/chore), each class selecting a nesting **track** [arch §23.1, L1387-1400] |
 | **Work states** | `active` / `paused` / `blocked` / `complete`; one `blocked` phase absorbs every stall cause, discriminated by a `code` [`types.ts:44-48`; `goal/README.md:15`] | phase **derived**, not stored: INTAKE → CLASSIFY → DECOMPOSE → BUILD → VERIFY → (VALIDATE) → SHIP → DONE [arch §§23.2, 24, L1398-1546] |
-| **Decomposition** | none: `decompos` 0 hits, `depends_on` 0, `blocked_by` 0 in `packages/**/*.ts` (control `subagent` 3 385) | a decomposed leaf is a child issue on a dependency edge; DECOMPOSE is a phase behind a plan gate [arch §23.1-23.2, L1394-1425] |
+| **Decomposition** | none: `decompos` **0 at both pins**, `depends_on` 0. `blocked_by` 0 → **7** and `blockedBy` 0 → **36** at rc.8, from one private release-excluded package (§12.2). Controls: `subagent` 2 267 → 2 414 | a decomposed leaf is a child issue on a dependency edge; DECOMPOSE is a phase behind a plan gate [arch §23.1-23.2, L1394-1425] |
 | **Dependency graph** | over **services** (`inject` → provider fiber) and over **gates** (`needs:` in `run-gates.ts:694`); none over work | over **work items**, in the tracker; readiness and a definition-of-ready lint are tracker primitives [arch §23, L1376-1379; §32, L2461-2466] |
 | **Durable state** | append-only **session log**; `deriveMessages()` projects model history; folds per subsystem (`goal/src/fold.ts`, `foldPlanMode`) [`docs/architecture.md:94`] | append-only **event log**, `.basicly/ledger/events-NNNN.jsonl`; a record's state is a fold; canonical sort is a function of the event set, not append order [arch §32.2, L2520-2540] |
 | **Rule tying state to visibility** | "**Model-visible means logged**… a runtime invariant asserts it" [`docs/architecture.md:96`] | the tracker "**is** the loop's state"; a resume re-reads it, which is what makes the loop cross-agent [arch §32, L2456-2470] |
@@ -634,7 +650,7 @@ worse is expressed or implied. `basicly` evidence is from
 | **Pre-artifact refusal** | approval policy + `ctx.sandbox.confine()` returning argv to spawn instead of yours, throwing when no backend is usable [`sandbox/README.md:9`] | layer 1 (tool-call boundary) is "the only one that can refuse an edit before there is anything to judge" [arch §36.1, L3308-3310] |
 | **Runtime assertions** | 219 non-test `invariant*.ts` modules; `ctx.invariants` registry with regex allow/blocklist; goal's is an **independent fold** [`runtime-diagnostics/invariants/README.md`; `goal/README.md`] | evidence markers and gate results recorded on the tracker; VALIDATE phase with its own gate [arch §26, L1592] |
 | **Documentation as a gated artifact** | `## Known Limitations and Deferred Work` and `## Model Experience` (`What the model sees` / `Token effect` / `KV Cache effect`) required verbatim per package, with audited exemption tables | `docs-claims` gate; the repo's own rule notes it "catches only an invented command" [`.claude/CLAUDE.md`, Quality Gate] |
-| **Design-record system** | 1 390 **Agent Notes** in git, lifecycle folders (proposed/implemented/rejected/archived), required sections gated by `verify-agent-note-format.ts`; archived notes frozen | **decision records** in the architecture document (§38, L3854), plus tracker records |
+| **Design-record system** | 1 387 Agent Note **files** = ≈693 notes (English/Chinese pairs, §12.5) in git, lifecycle folders (proposed/implemented/rejected/archived), required sections gated by `verify-agent-note-format.ts`; archived notes frozen | **decision records** in the architecture document (§38, L3854), plus tracker records |
 | **Landing / merge** | none: `worktree` 5 hits, `rebase` 5, `git commit` 3 (control `session` 30 624) | exactly one advance merges — build→verify; neither the ship checkpoint nor teardown touches git history [arch §23.2, L1430-1435] |
 | **Human checkpoints** | `exit_plan_mode` requires "an exact user approval through `ctx.userQuestions`"; approval policy governs tool execution [`plan-mode/README.md:11`] | GATE (engine-computed verdict) vs **checkpoint** (a human or a covering autonomy grant; nothing is computed) [arch §23.2, L1401-1406] |
 | **Cost metering** | `maxGoalRounds` counts rounds only — "does not meter tokens, currency, wall time, or provider quotas"; workflow has "no token-budget vocabulary" | cost, grants and metering are a first-class section [arch §31, L2239] |
@@ -653,13 +669,13 @@ Ordered by how much they would change a decision.
    `ctx.effect` call sites in `packages/fs`, `packages/shell`, `packages/subprocess`, and classify
    each inverse as restore / compensate / no-op.
 
-2. **Is HMR of a live agent actually exercised, or only available?** This is the capability the
+2. **SETTLED 2026-08-20 — see [§12.6](#126-q2--one-test-now-swaps-an-agent-plane-plugin-under-a-live-child). One test now covers it; the runtime half stays unestablished.** **Is HMR of a live agent actually exercised, or only available?** This is the capability the
    whole thesis turns on for a self-evolving harness, and the paper lists it as future work.
    **How to settle:** run `dsh`, edit a loaded plugin, confirm the swap occurs mid-session with
    state preserved; and check whether any test in `packages/**/tests` covers HMR of an agent-plane
    plugin, as opposed to the loader in isolation.
 
-3. **What does the paradigm cost?** Every access is `Proxy`-mediated (paper §5.1.4, p.61) and every
+3. **SETTLED 2026-08-20 as far as this source can settle it — see [§12.4](#124-q3--the-cost-is-still-unmeasured-and-benchmarkmd-is-not-a-benchmark). `BENCHMARK.md` states no number; overhead is unmeasured in both artifacts.** **What does the paradigm cost?** Every access is `Proxy`-mediated (paper §5.1.4, p.61) and every
    mutation allocates a tracked inverse. The paper explicitly leaves overhead unmeasured (§5.3,
    p.67). **How to settle:** `BENCHMARK.md` exists at the repo root and I did not read it; start
    there, then measure a turn under Code Mode versus minimal.
@@ -671,13 +687,13 @@ Ordered by how much they would change a decision.
    **How to settle:** a spike — can a Python component be introduced and *retracted* such that its
    registrations and its module both go away?
 
-5. **Is the "no privileged core" claim true under measurement?** [`docs/architecture.md:13`]
+5. **SETTLED 2026-08-20 — see [§12.3](#123-q5--no-privileged-core-is-false-as-an-absolute-at-three-rows). False as an absolute at three rows; true of the configuration tree.** **Is the "no privileged core" claim true under measurement?** [`docs/architecture.md:13`]
    **How to settle:** take the `--dump-config` output for the `web` profile and test whether each
    row can in fact be replaced by a patch, or whether some rows are load-bearing in a way the
    loader does not permit overriding. A positive control is needed: at least one row that
    demonstrably *can* be swapped.
 
-6. **How is the 1 390-note corpus kept from becoming sediment?** 1 030 implemented and 285 archived,
+6. **SETTLED 2026-08-20 — see [§12.5](#125-q6--the-archival-trigger-is-a-judgement-and-there-is-deliberately-no-index). The trigger is qualitative by decision, there is no index by decision, and the freeze is a real gate.** **How is the corpus kept from becoming sediment?** 1 030 implemented and 285 archived **files** (≈693 notes),
    with archived notes frozen and a `dsh-archive-agent-notes` skill. What triggers archival, and
    what does an agent load at read time out of 2 376 Markdown files?
    **How to settle:** read `.agents/notes/README.md` (its archiving policy) and
@@ -687,7 +703,7 @@ Ordered by how much they would change a decision.
    `Model Experience` sections are a strong idea, but 226 packages × mandatory sections is a large
    corpus. Is any of it projected into agent context, or is it human-facing only?
 
-8. **Does the goal/round model have anything to teach our cost model?** `maxGoalRounds` is a
+8. **SETTLED 2026-08-20 — see [§12.7](#127-q8--the-round-choice-was-about-attribution-and-the-token-half-has-no-consumer). The choice was about attribution, not units, and it teaches one adopt-shaped and one refuse-shaped lesson.** **Does the goal/round model have anything to teach our cost model?** `maxGoalRounds` is a
    round-count budget with no token accounting, and both `goal` and `workflow` declare that gap. If
    DeepSeek chose rounds over tokens deliberately, the reasoning is likely in an Agent Note.
    **How to settle:** `.agents/notes/implemented/feature/2026-07-19-persisted-same-session-goal-domain.md`,
@@ -714,7 +730,9 @@ Explicitly listed. None of the following is filled in from recall.
   run the test suite, and did not run `run-gates.ts`. Every statement about the harness is from
   reading source, config and committed documentation. Gate *existence* is established; gate
   *outcome* is not.
-- **Benchmarks.** `BENCHMARK.md` exists at the repo root; I did not open it. No performance claim in
+- **Benchmarks.** `BENCHMARK.md` **has now been read** [§12.4]: 3 lines, 231 bytes, and it states
+  **no number at all** — it is a procedure for running agent-capability task batches, not a
+  performance report. So the gap below is not closable from this source. No performance claim in
   this document comes from measurement.
 - **The Python SDK's scope.** `python/sdk` and `python/sdk-runtime` exist (19 `.py` files tracked
   repo-wide); I did not read them, so I cannot say whether the Cordis model is reproduced there or
@@ -746,13 +764,18 @@ Explicitly listed. None of the following is filled in from recall.
 | Product page | `www.deepseek.com/harness/en/` | 2026-08-17 | OK; marketing surface, used only for claims cross-checked against code in §6.2 |
 | `basicly` architecture | `/home/niksa/development/basicly/docs/architecture/architecture.md`, 4 485 lines, at working-tree state on branch `main`, commit `ee7d263` | 2026-08-17 | OK |
 
-**Licence note.** The harness repository is MIT [`LICENSE`], so quoting its source and
+**Licence note.** The harness repository is MIT [`LICENSE`] **except `native/landlock-run/` and
+its two platform sub-packages, which are BSD 3-Clause** [`native/landlock-run/LICENSE`,
+`native/landlock-run/packages/linux-{arm64,x64}/LICENSE`; measured 2026-08-20, and true at rc.7
+too]. Both licences are permissive so no finding here is affected, but a per-directory licence is
+exactly the trap `.claude/rules/external-review.md` names. Quoting its source and
 documentation is unrestricted. The paper carries no licence statement I located; it is quoted here
 only in short excerpts for identification and criticism, and every finding drawn from it is stated
 as a fact about what the paper claims rather than as reproduced expression.
 
 **Second pass, 2026-08-19.** Sections 8.1, 8.4 and 8.7 were settled against the **same** clone pin
-(`99f6f02f`, still depth-1, so no finding can be dated against the harness's own history) plus two
+(`99f6f02f`, **depth-1 at the time**, so no finding in §11 could be dated against the harness's own
+history — **that limit is now lifted, see §12**) plus two
 Python spikes run locally on 3.14.6. The spike sources are working files and are deliberately not
 committed: they establish a fact about CPython, not about this repository, and §11.2 records the
 observed output that the fact rests on. `basicly-e2mz.45` carries the record.
@@ -882,7 +905,10 @@ anti-pattern that section exists to flag.
 
 **P4 rests on a vendor's self-description.** Its only source is the harness's own
 `docs/architecture.md:13`, and §8's open question 5 — whether any row is in fact swappable — is
-still unrun. Trading an unverified claim against §6's "the engine disposes, agents propose" and
+**now run — see [§12.3](#123-q5--no-privileged-core-is-false-as-an-absolute-at-three-rows), which
+measures the claim false as an absolute at three bootstrap rows. The refusal is unchanged; its
+basis moves from "unverified vendor claim" to "measured false".** Trading an unverified claim
+against §6's "the engine disposes, agents propose" and
 D-01 is not a trade. **The narrow adoptable half is a different thing**: `dsh --dump-config` prints
 the tree a machine actually boots, and a basicly command printing the composed catalog selection
 with each item's origin would be genuinely useful. Whether one already exists was not established.
@@ -923,8 +949,276 @@ it cannot attribute. The declaration branch was taken for that reason.
   so neither can rescue the claim.
 - Whether basicly already prints a composed catalog selection with per-item origin. §11 and §22 of
   the architecture were not read.
-- Any dating of a harness finding against the repository's own history. The clone is depth-1.
+- ~~Any dating of a harness finding against the repository's own history. The clone is depth-1.~~
+  **Lifted 2026-08-20.** `git fetch --unshallow` succeeded, `.git/shallow` is absent, and 12 940
+  commits are available. Every finding in §12 is dated against a two-pin diff.
 
 **One caution for a later editor of this file.** §6.1's row saying `ctx.effect` is the sole
 context-mutation primitive is true of **context** mutation, and reads easily as covering effects on
 the world. §11.1 shows the filesystem mutation path never enters it.
+
+## 12. Re-established at rc.8, and the five remaining questions settled — 2026-08-20
+
+The clone was re-pulled and **unshallowed**, so for the first time every finding here is dated
+against the harness's own history. `basicly-e2mz.45` carried §11; this section is its second pass.
+
+**Read §12.2 first.** It refutes a clause of §1, and §1 governs how §11.3 reads.
+
+### 12.1 The new pins, and what moved
+
+| Source | Pin | Retrieved | Reachability |
+| --- | --- | --- | --- |
+| `deepseek-ai/deepseek-harness` | commit `141eb6fef83422698aef7a981029e843e8161534`, committed 2026-08-19T23:11:50+08:00, "Merge pull request #2783 from deepseek-harness/release/dsh-0.1.0-rc.8"; tag `dsh-v0.1.0-rc.8`; `package.json` `0.1.0-rc.8`; 7 807 tracked files; default branch **`master`**, verified by `git ls-remote --symref origin HEAD` | 2026-08-20 | OK. `git fetch --unshallow` succeeded; `.git/shallow` absent; **12 940 commits** available |
+| Vendored Cordis | `@deepseek-ai/cordis` **`4.0.1`, unchanged**; `vendor/cordis/src/fiber.ts` blob `38a3197e` **identical at both pins** | 2026-08-20 | OK (in-tree) |
+| Vendored Cordis HMR plugin | `@deepseek-ai/cordis-plugin-hmr` `1.0.16` | 2026-08-20 | OK (in-tree); not previously pinned |
+| `BENCHMARK.md` | 3 lines, 231 bytes, blob identical at both pins, **no numeric measurement** | 2026-08-20 | OK (in-tree) |
+| `.agents/notes/archived/manifest.json` | `version: 1`, **429** sealed sha256 entries (426 at rc.7) | 2026-08-20 | OK |
+| Licences | `LICENSE` MIT · `vendor/{cordis,cosmokit,group,hmr}/LICENSE` MIT · **`native/landlock-run/` + both `linux-{arm64,x64}` sub-packages BSD 3-Clause** | 2026-08-20 | OK. No `NOTICE`; `THIRD_PARTY_NOTICES.md` is generated |
+
+**536 commits over about two days.** The repository holds exactly two tags, rc.7 and rc.8.
+
+| Measure | rc.7 | rc.8 | Probe |
+| --- | --- | --- | --- |
+| Tracked files | 7 466 (control: reproduces the review) | 7 807 | `git ls-tree -r --name-only <pin> \| wc -l` |
+| `package.json` under `packages/` | 226 (reproduces) | 233 | `... -- packages \| grep -c '/package\.json$'` |
+| pnpm workspace members | 219 | 226 | same, `awk -F/ 'NF==4'` |
+| Top-level `packages/` families | 54 | 55 | `cut -d/ -f2 \| sort -u` |
+
+One family added, `experimental`; none removed. Nine workspace members added, two removed
+(`client/schema-form`, `client/web-react`).
+
+### 12.2 The work graph: the one framing clause that is refuted
+
+`packages/experimental/agent-team` provides `ctx.agentTeams` — a Lead/teammate roster, a durable
+peer mailbox, and **a shared task graph in the Lead session log**.
+
+`task-graph.ts` is 69 lines of real dependency validation: `assertTaskGraphCandidate()` rejects
+`missing`, `duplicate` and `cycle` violations, self-blocking included, with a DFS over `blockedBy`.
+`task-board.ts` (297 lines) holds the board, with compare-and-set revisions
+(`TEAM_TASK_STALE_REVISION`), tombstoned deletes and Lead-only cross-assignment. *A pending task
+is ready only after every blocker completes.* The model-facing surface exposes it:
+`tool-agent-team/src/index.ts` registers `team_task_create` with `blocked_by: array<string>`.
+
+**Our prior zero was correct at its pin, not a probe error.** This is the falsification run
+against our own finding, `*.ts` under `packages/`:
+
+| Probe | rc.7 | rc.8 |
+| --- | --- | --- |
+| `subagent` (**positive control**) | 2 267 | 2 414 |
+| `decompos` | 0 | **0** |
+| `depends_on` | 0 | 0 |
+| `blocked_by` | 0 | **7** |
+| `blockedBy` | 0 | **36** |
+
+**Three qualifications, and they are why no disposition moves.**
+
+1. **Mounted in no shipped preset.** Config rows for it exist only in
+   `examples/headless-agent/team.cordis.snapshot.yml:31-34`. Control on the same probe:
+   `tool-todo` appears in three `apps/cli/config/agent-presets/*/agent.cordis.yml`.
+2. **Declared out of the product.** `packages/experimental/AGENTS.md`: every package here
+   "sets `private: true`, and omits `publishConfig`; the workspace constraints gate enforces
+   these declarations and the dsh release family excludes this directory."
+3. **Still no decomposition and still no landing.** The model creates every task by hand. The
+   package's own limitations say it "provides no worktree, remote member, merge, or filesystem
+   lock", and that write scopes are **advisory** — "Bash, formatters, code generators, and direct
+   external writers can bypass filesystem version checks."
+
+So the correct reading is that they built the **graph** and neither the **decomposition** above it
+nor the **landing** below it. §7's comparison rows stand; only the absolute in §1 does not.
+
+Landing and git integration are unchanged, and one line is worth keeping:
+`workflow-worker-thread/src/runtime.ts:41` holds
+`DEFERRED_AGENT_OPTIONS = new Set(['effort', 'isolation', 'agentType'])`, so a script passing
+`isolation: 'worktree'` is refused loudly. That line predates rc.7. Worktree isolation is a
+**named, deliberately refused option**, not an absence.
+
+### 12.3 Q5 — "no privileged core" is false as an absolute, at three rows
+
+`docs/architecture.md:13` claims "There is no privileged core to patch." `boot()` at
+`packages/boot/app-boot/src/index.ts:757-786` mounts three things **before configuration is read**:
+
+```ts
+const ctx = new Context()                    // 1. the Cordis root context, not a plugin
+ctx.provide('dshHomePath', dshHomePath)      // 2. a service provided in code, pre-config
+await ctx.plugin(Loader)                     // 3. the Loader, mounted in code, pre-config
+await mountRootInclude(ctx, absoluteConfigPath, ...)   // config first read here
+```
+
+Verified non-overridable, with controls: `id: loader` over every `*.yml`/`*.yaml` returns **0 hits,
+exit 1**, while the same probe shape finds `id: hmr` 3 times and `id: tools` 5+ times.
+`dshHomePath` is provided only at `:770`; config rows *consume* it
+(`bundle/base/cordis.patch.yml:101`) and cannot replace it. `ctx.plugin(` across
+`apps/cli/src/` and `packages/boot/app-boot/src/` returns exactly one hit. The privilege is a
+**bootstrap, not an allowlist**.
+
+**The positive control the question demanded, and it passes.**
+`packages/bundle/headless/cordis.patch.yml` replaces a row's config by id, sets
+`- id: hmr / disabled: true` — switching off **the HMR engine itself** — and inserts new rows. The
+swappable population is 78 rows in `bundle/base` and 84 in `bundle/web-app`.
+
+A dependent finding: `app-boot/tests/user-patches.spec.ts:374` shows `watchUserPatches` rejecting
+with `'requires the Cordis HMR service'`. Because `headless` disables `hmr`, that path degrades to
+a documented watch-only fallback. **A swappable row can still be load-bearing for a feature, just
+not for boot.**
+
+The accurate claim is *"every row in the composed configuration tree is replaceable from
+configuration"*, which is well supported. The absolute is not, and the sentence was not weakened
+at rc.8.
+
+### 12.4 Q3 — the cost is still unmeasured, and `BENCHMARK.md` is not a benchmark
+
+The file in full is 3 lines and 231 bytes, identical at both pins: it tells the reader to follow
+the Python SDK guide and run the `jsonrpc-agent` minimal variant, using separate workspaces per
+task. **It measures agent task capability, not runtime overhead, and states no number, baseline or
+comparison.**
+
+Repo-wide, with controls: markdown files matching `benchmark` = **3**, against `session` = 472, so
+the probe works. `ops/sec`, `ns/op` and `p99` over markdown = **0 files each**. `overhead` matches
+3 files, all about token *estimation* heuristics in `token-meter` and `compaction-basic`.
+
+So the paper's §5.3 admission stands unchallenged by the product: **overhead is future work in both
+artifacts.** Only the second half of §8's stated method survives — measure a turn under Code Mode
+versus minimal — and that requires running `dsh`.
+
+One incidental datum that explains a design choice: the two-tool `minimal` preset exists partly
+*as* a benchmark harness, which is why mounting a tool in the global registry layer meant "a
+two-tool benchmark preset really presented three".
+
+### 12.5 Q6 — the archival trigger is a judgement, and there is deliberately no index
+
+The trigger is **explicitly not mechanical**. `.agents/notes/README.md`, "Archiving and deletion":
+archive when the shipped decision is complete and its rationale is unlikely to guide future work;
+keep it while its "alternatives, ownership boundary, negative guarantee, durable or wire semantics,
+security rule, or reintroduction condition" remains useful; never archive a *proposed* note, reject
+it. And: use the calibrated workflow "rather than **word count, age, or a target quota**."
+
+**What an agent loads at read time: no index, by decision.** "The active lifecycle tree is the
+working inventory… **Do not add a centralized `INDEX.md`**", with a note owning the rationale.
+Retrieval rests on three mechanical properties instead: the path *is* the metadata
+(`{lifecycle}/{class}/yyyy-mm-dd-topic-title.md`, closed class set); cross-references are relative
+markdown links so they are "mechanically checkable and survive moves"; and archived notes leave the
+retrieval surface — "Documentation gates skip archived sources, including their outbound links."
+
+**The freeze is a real gate.** `scripts/archived-agent-notes.ts` computes `sha256:` content hashes
+and rejects any sealed entry whose hash changed or that is missing; 429 files are sealed. Wired at
+`lefthook.yml:15`, `:50` and `run-gates.ts:672`.
+
+**The count, corrected.** Our review's figures are **file** counts over English/Chinese pairs, and
+they reproduce exactly at rc.7 — so the probe was right and the unit label was wrong.
+
+| | rc.7 files | rc.8 files | rc.7 notes | rc.8 notes |
+| --- | --- | --- | --- | --- |
+| `implemented/` | 1 030 ✓ | 1 090 | 515 | 545 |
+| `archived/` | 285 ✓ | 287 | 142 | 143 |
+| `proposed/` | 50 ✓ | 50 | 25 | 25 |
+| `rejected/` | 22 ✓ | 22 | 11 | 11 |
+
+Archival velocity is very low: **+30 implemented, +1 archived** over 536 commits. §5.5's finding
+that the "every non-trivial change MUST add or update a note" rule is **not gated** still holds, on
+a bounded search over `scripts/*.ts`, `lefthook.yml` and `run-gates.ts`.
+
+### 12.6 Q2 — one test now swaps an agent-plane plugin under a live child
+
+`packages/experimental/tool-agent-team/tests/tool-team.spec.ts:331`, titled *"removes and reinstalls
+every scoped registration across plugin HMR without stopping the child"*, spawns a live continuable
+teammate, disposes the plugin fiber, asserts the tools are gone from both scopes, asserts
+`ctx.agents.get(childId)` is **the same live object**, then remounts and asserts the tools return in
+both scopes.
+
+**Dated, and the dating is the point.** HMR-titled test cases across both pins: **65 → 67**, four
+added and two removed. This test's title is one of the four added, so it is genuinely new at rc.8
+rather than something §8 missed.
+
+**The qualification that keeps this from settling the thesis: 67 HMR-titled cases are
+overwhelmingly the *revert* half.** The dominant shape is "unregisters everything on fiber disposal"
+/ "drops the key when the fiber unloads". At rc.7 the only remount-shaped cases were on the client
+and diagnostics planes. **None was an agent-plane plugin with a live session across the swap.**
+`apps/web/tests/hmr-live.e2e.ts` is a genuine live-HMR end-to-end test, but it is the browser plane
+and it predates rc.7.
+
+**Unestablished:** the runtime half. No `dsh` was run, no install, no test executed. *A test that
+exists and a test that passes are different claims.*
+
+### 12.7 Q8 — the round choice was about attribution, and the token half has no consumer
+
+`maxGoalRounds` did **not** choose rounds over tokens as a budgeting philosophy. It chose which
+events may consume a budget. From
+`.agents/notes/implemented/feature/2026-07-19-persisted-same-session-goal-domain.md`:
+
+- The motive is mis-attribution, not cost: "Treating every session turn as progress also charges
+  unrelated human messages against an automatic-work budget" [`:9`].
+- The rejected alternative is an attribution alternative: counting all session turns as goal rounds
+  was rejected "because one session can contain human clarification, inspection, and unrelated
+  work; only goal-attributed continuation turns consume this budget" [`:46`].
+- The counter is **derived by validated replay, not incremented by the spender**: rounds advance
+  only from "positive sequential admitted `user/message` source numbers for the current active
+  revision", and "a malformed current-format record fails replay rather than being ignored or
+  repaired" [`:23`].
+- The unit conversion is delegated: "policy consumers map round, token, currency, time, and
+  provider limits to blocked reasons" [`:55`]. `defaultMaxGoalRounds` is a validated setting
+  defaulting to **256** [`:15`].
+
+**The falsification that matters to us: the token half is dark code.** Non-test `ctx.goals.block()`
+call sites yield exactly four codes — `round-limit`, `queue-failed`, `prompt-rejected`,
+`model-reported` — and **none is a token, currency, wall-time or provider-quota mapping**.
+`ctx.goals|dsh-goal` over `packages/llm`, `packages/compaction`, `packages/spill` non-test returns
+**0, exit 1**, against a positive control of 6 non-test files holding `ctx.goals`. The harness *can*
+recognise an exhausted quota — `QUOTA_EXCEEDED_CODE` at `llm/src/error.ts:94`, consumed by two
+adapters — and nothing routes it to a goal block.
+
+**Two separable lessons, and only one is adopt-shaped.**
+
+- **Adopt.** A budget counter should advance only on units attributable to the automatic work, and
+  should be **derived from the durable log by validated replay** — sequentiality checked, a
+  malformed record failing rather than being repaired — rather than incremented by whoever spends.
+  That is a second derivation over the same data, and it is the direct analogue of §32's
+  independent-fold invariant.
+- **Refuse.** "Policy consumers map … token … limits" is a contract with **no consumer that can
+  refuse**. This is the anti-pattern §33 names and the ground §11.3 refused P3 on. It does not tell
+  us to meter in rounds; it tells us that *declaring* a deferral is not *building* the mapping.
+
+**It does not touch our forecast defect.** `dsh` does not forecast cost at all — it caps a count.
+Nothing here would have caught a 3-to-11x under-forecast, because nothing here predicts.
+
+### 12.8 Disposition deltas — none moves
+
+| # | Proposal | rc.8 verdict | Why |
+| --- | --- | --- | --- |
+| P1 | Effect-inverse or undo layer over git or the filesystem | **confirmed, strengthened** | The whole evidence base is byte-identical: `fsio.ts`, `win32.ts`, `fs-local/src/index.ts` same blob hashes; **`fs-local` holds 0 `.effect(` sites including tests**; `win32.ts:20` still `backup: null`; the 91 mutation-syscall occurrences reproduce exactly, 91 → 91. Across 536 commits and 7 new packages, **not one filesystem inverse was added** |
+| P2 | Cordis-style dynamic component runtime in Python | **confirmed** | `vendor/` had **0 commits** in range against a control of 418 for `packages/`. §12.3 adds support: even the industrial application needs three privileged bootstrap rows outside the dynamic tree |
+| P3 | A `before`-content field on the change-summary artifact | **confirmed, corroborated** | `fs/src/types.ts` byte-identical, so `FsWriteOutcome.before` stays presentation-only. §12.7 supplies a second instance of the same anti-pattern **inside `dsh`** — which raises confidence that the refusal is about contract shape, not about our tooling |
+| P4 | "No privileged core", every row replaceable from configuration | **confirmed, premise now measured** | §11.3 refused it partly because the premise was unrun. It is now run and **false as an absolute** (§12.3). The narrow adoptable half survives and is better supported: `--dump-config` still exists at `apps/cli/src/args.ts:32/102`, now beside a `--dump-default-config` |
+| P5 | A declared token cost on a catalog source, and a validated exemption table | **confirmed, adopt** | Both gates still wired (`run-gates.ts:668`, `:683`). `verify-package-readme-limitations.ts` is **byte-identical**, still failing an exemption entry naming no scanned package or carrying a blank justification. Re-measured: `Model Experience` occurs **0** times in `packages/**/*.{ts,tsx}` against `systemPrompt` at **503**. Still author-facing, still zero model tokens |
+
+Effect sites across the three named packages went **5 → 7**, and both additions are
+`tool-pwsh-persistent` mirroring `tool-bash-persistent` line for line. **Restore 4, compensate 3,
+no-op 0, and still zero on a filesystem mutation path.** Tree-wide `.effect(` non-test reproduces
+the review's 203 at rc.7 and reads 210 at rc.8.
+
+### 12.9 What this pass did not establish
+
+- **Any runtime behaviour.** No `dsh` executed, no install, no test, no gate run. Everything above
+  is git objects, source, configuration and committed documentation. Existence is established;
+  outcome is not. §9's limit stands, now for the second pass in a row.
+- **Whether the rc.8 suite passes**, and whether the 429-entry archive manifest is enforced in CI
+  as opposed to declared in `run-gates.ts` and `lefthook.yml`.
+- **Whether `experimental/agent-team` is used by anyone.** Private, release-excluded, mounted in one
+  examples snapshot. Internal use is not observable from the repository.
+- **`packages/e2b`.** Still unread. `fs-e2b` exists and the effect-site probe was **not** re-run over
+  it, so "filesystem inverses outside the three named packages" stays open — the same hole §11.4
+  recorded.
+- **Whether a per-PR Agent-Note-presence check exists** outside `scripts/*.ts`, `lefthook.yml` and
+  `run-gates.ts`. A check inside an inline GitHub Action, a bot or branch protection would not be
+  caught. **Not found, not absent.**
+- **What the other 418 `packages/` commits did.** The diff was driven by a fixed question list; the
+  seven new packages outside `experimental/` were identified by name only.
+- **The paper.** Not re-fetched, for the second pass. Nothing above depends on it except by citation
+  of §3.
+- **The Chinese-language corpus.** English side only, again.
+
+**Two probes failed their control and are recorded as failures, not findings.** `rg -ril 'hmr'`
+parses as `-r il` and silently rewrote its own output — the identical trap §10's method note already
+records, hit a second time, which is itself evidence the note belongs in a gate rather than a
+document. And a "files holding both `fiber.dispose()` and `ctx.plugin(`" probe returned 258 files at
+rc.8 against about 250 at rc.7; it cannot separate co-occurrence in one test body from
+co-occurrence in a file, so it was discarded.
