@@ -686,10 +686,8 @@ def test_a_ledger_in_both_dialects_folds_both_and_says_which_it_read(
     Three edges in the declared dialect and one in the engine's, with both sides named: a
     reader that had simply *switched* spellings passes a test counting only the engine's.
 
-    The asymmetry is stated rather than asserted away. `differential.views_from_events`
-    reads the engine dialect only, so it sees **1 of these 4** — the mirror of the defect
-    this closes, latent because nothing writes the declared dialect today, and belonging
-    to that module rather than this one.
+    **The asymmetry this recorded is closed.** It asserted `views_from_events` saw 1 of these
+    4; `basicly-oii83r` fixed that fold, so the equality below is a control, not a caveat.
     """
     _build(tmp_path)
     events.append(tmp_path, [_engine_dialect_draft(ENGINE_EDGE)], clock=lambda: CLOCK)
@@ -704,7 +702,8 @@ def test_a_ledger_in_both_dialects_folds_both_and_says_which_it_read(
     }
     assert {HUMAN_EDGE, AGENT_EDGE, BOUNCE_EDGE, ENGINE_EDGE} == set(edge_fold.edges)
     views = differential.views_from_events(stored)
-    assert sum(len(view.dependencies) for view in views.values()) == 1
+    assert sum(len(view.dependencies) for view in views.values()) == len(edge_fold.edges)
+    assert differential.edge_dialects(stored) == tuple(sorted(edge_fold.dialects))
 
 
 def test_the_second_dialect_is_the_engine_writers_own_spelling_and_not_a_third() -> None:

@@ -1,0 +1,27 @@
+# Split `differential.py` so the fold this record fixes can be written (basicly-oii83r).
+# 11,110 tokens at exactly its frozen baseline, so not one line could be added to it.
+#
+#   differential.py  11110 -> 7612   headroom 0 -> 3498   the owned fold, the audit, the compare
+#   derivation.py       new 3597     headroom      403    the phase/ready/gates derivation
+#   views.py            new 1236     headroom     2764    what each side reports, and the error
+#
+# One-way seams, checked rather than assumed: a cross-reference scan showed the derivation half
+# takes **nothing** from the half it left, and `views` takes nothing from `derivation`. Two
+# by-path sibling loaders were added following `_load_migrate`, with the published-name cache
+# that keeps one `RecordView` class in the process - two loads give two, and an `isinstance`
+# against the wrong one is false for the right reason. Every name a consumer already reads is
+# re-exported by alias, so `except DifferentialError` and `kit.is_ready` are unchanged.
+#
+# The error class and the closed query set sit in `views` rather than `derivation` because
+# `Verdict.answer` is their consumer; putting them a level up would have made `views` import
+# back, and a seam that imports back is not a seam.
+#
+# **Two density waivers, and the same mechanism as basicly-y754k2 in the same pass.** Splitting
+# raises the prose share of both halves: the code divides, the contract docstring does not.
+# `views.py` is 73.4% because it *is* five frozen records - the field contracts are the payload,
+# and two sides may only be compared while they report the same fields. `derivation.py` is
+# 52.7% for the same reason one level up. Merging them back is not available: 3597 + 1236
+# crosses the 4000 cap. That this is the second occurrence with an identical mechanism is filed
+# rather than absorbed.
+[ratchet.comment_density]
+count_delta = 2

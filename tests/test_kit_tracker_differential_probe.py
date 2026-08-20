@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 REPO_ROOT = Path(__file__).parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 
@@ -153,3 +155,96 @@ def test_a_run_against_a_moving_tracker_is_inconclusive_rather_than_refused(
     assert report.refusals == []
     assert not report.conclusive
     assert differential.RULE_DERIVED_FROM_LEDGER in [item.subject for item in report.inconclusive]
+
+
+# --- the edge dialect the fold reads (basicly-oii83r) -------------------------
+
+provenance = _load(KIT_DIR / "provenance.py", "tracker_provenance")
+
+DIALECT_PAIRS = {
+    differential.provenance.DIALECT_DECLARED: (provenance.KEY_TARGET, provenance.KEY_TYPE),
+    differential.provenance.DIALECT_ENGINE: (provenance.ALT_KEY_TARGET, provenance.ALT_KEY_TYPE),
+}
+EDGES = (("r-2", "blocks"), ("r-3", "blocks"), ("r-4", "parent-child"), ("r-5", "discovered-from"))
+
+
+def _edge_events(dialect: str) -> list[Any]:
+    """A created record and four edges off it, written in *dialect*'s spelling.
+
+    Authored rather than imported, because `migrate.import_snapshot` writes only the engine
+    pair - which is exactly why the declared one went unread for so long: no fixture this
+    repo could produce held it.
+    """
+    events = differential.events
+    target_key, type_key = DIALECT_PAIRS[dialect]
+    created = events.Event(
+        id="r-1#ev-0",
+        record="r-1",
+        seq=0,
+        kind=events.KIND_CREATED,
+        ts="2026-01-01T00:00:00Z",
+        actor="",
+        payload={"title": "t"},
+        totals={},
+    )
+    return [
+        created,
+        *(
+            events.Event(
+                id=f"r-1#ev-{index}",
+                record="r-1",
+                seq=index,
+                kind=events.KIND_EDGE,
+                ts=f"2026-01-0{index}T00:00:00Z",
+                actor="",
+                payload={target_key: target, type_key: edge_type},
+                totals={},
+            )
+            for index, (target, edge_type) in enumerate(EDGES, start=1)
+        ),
+    ]
+
+
+@pytest.mark.parametrize("dialect", sorted(DIALECT_PAIRS))
+def test_the_fold_counts_every_edge_in_either_dialect(dialect: str) -> None:
+    """It read **zero** of four in the declared spelling, against four in the engine's.
+
+    The record predicted one; zero is what a reader matching neither key returns, and it is
+    the same total blindness `provenance.fold_edges` had from the other side before
+    `basicly-svct4w` fixed it there (basicly-oii83r).
+    """
+    events = _edge_events(dialect)
+    views = differential.views_from_events(events)
+    assert len(views["r-1"].dependencies) == len(EDGES)
+
+
+@pytest.mark.parametrize("dialect", sorted(DIALECT_PAIRS))
+def test_the_fold_reports_which_dialect_it_read(dialect: str) -> None:
+    """An empty edge set is the same answer for no edges and for none it could parse."""
+    assert differential.edge_dialects(_edge_events(dialect)) == (dialect,)
+
+
+def test_a_payload_in_neither_dialect_is_dropped_rather_than_invented() -> None:
+    """The second acceptance criterion: unreadable is refused, never guessed into an edge."""
+    events = differential.events
+    created = events.Event(
+        id="r-1#ev-0",
+        record="r-1",
+        seq=0,
+        kind=events.KIND_CREATED,
+        ts="2026-01-01T00:00:00Z",
+        actor="",
+        payload={"title": "t"},
+        totals={},
+    )
+    stray = events.Event(
+        id="r-1#ev-1",
+        record="r-1",
+        seq=1,
+        kind=events.KIND_EDGE,
+        ts="2026-01-02T00:00:00Z",
+        actor="",
+        payload={"nonsense": "x"},
+        totals={},
+    )
+    assert differential.views_from_events([created, stray])["r-1"].dependencies == ()

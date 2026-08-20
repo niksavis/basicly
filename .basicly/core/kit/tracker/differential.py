@@ -100,13 +100,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-# --- errors -------------------------------------------------------------------
-
-
-class DifferentialError(Exception):
-    """Anything this module refuses outright, as opposed to reports as a finding."""
-
-
 # --- the sibling importer, and the event log under it -------------------------
 
 _HERE = Path(__file__).resolve().parent
@@ -144,14 +137,92 @@ def _load_migrate() -> ModuleType:
 migrate = _load_migrate()
 events = migrate.events
 
-# --- the three queries --------------------------------------------------------
+_DERIVATION_MODULE_NAME = "basicly_tracker_kit_derivation"
 
-# §5's list, and deliberately closed: these are the queries the loop advances on, so a
-# fourth is a decision rather than an addition.
-QUERY_PHASE = "phase"
-QUERY_READY = "ready"
-QUERY_GATES = "gates"
-QUERIES = (QUERY_PHASE, QUERY_READY, QUERY_GATES)
+
+def _load_derivation() -> ModuleType:
+    """Load ``derivation.py`` from beside this file, :func:`_load_migrate`'s way.
+
+    A separate loader rather than a reach through ``migrate``: the derivation imports nothing
+    from the kit, so routing it through the importer would invent a dependency the module does
+    not have. Cached on the published name for the same reason as every sibling here - two
+    loads of one file give two ``RecordView`` classes, and an ``isinstance`` against the wrong
+    one is false for the right reason.
+    """
+    cached = sys.modules.get(_DERIVATION_MODULE_NAME)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(_DERIVATION_MODULE_NAME, _HERE / "derivation.py")
+    if spec is None or spec.loader is None:
+        raise RuntimeError("the tracker kit's derivation.py is missing from beside differential.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_DERIVATION_MODULE_NAME] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+derivation = _load_derivation()
+
+_PROVENANCE_MODULE_NAME = "basicly_tracker_kit_provenance"
+
+
+def _load_provenance() -> ModuleType:
+    """Load ``provenance.py`` from beside this file, :func:`_load_migrate`'s way.
+
+    For its **edge dialect** alone. The log holds two spellings of an edge's structural
+    fields and `provenance` is where that pair is declared, so reading it from there is what
+    stops the two folds disagreeing about one input - which is the defect basicly-oii83r
+    records, and the mirror of the one `basicly-svct4w` fixed from the other side.
+    """
+    cached = sys.modules.get(_PROVENANCE_MODULE_NAME)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(_PROVENANCE_MODULE_NAME, _HERE / "provenance.py")
+    if spec is None or spec.loader is None:
+        raise DifferentialError("the tracker kit's provenance.py is missing from beside this file")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_PROVENANCE_MODULE_NAME] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+provenance = _load_provenance()
+
+# Dialect to the pair of structural keys that spells it, taken from `provenance` rather than
+# respelled: a second copy of this table is exactly how the two folds came to read different
+# populations of one log (basicly-oii83r).
+_EDGE_KEYS = {
+    provenance.DIALECT_DECLARED: (provenance.KEY_TARGET, provenance.KEY_TYPE),
+    provenance.DIALECT_ENGINE: (provenance.ALT_KEY_TARGET, provenance.ALT_KEY_TYPE),
+}
+
+
+# The derivation's surface, re-exported under the names every consumer already reads. Aliases
+# rather than a `from` import because the kit is not a package: one object per name, so an
+# `except DifferentialError` and an `isinstance(x, RecordView)` behave exactly as before.
+DifferentialError = derivation.DifferentialError
+Vocabulary = derivation.Vocabulary
+DEFAULT_VOCABULARY = derivation.DEFAULT_VOCABULARY
+GateRow = derivation.GateRow
+Edge = derivation.Edge
+RecordView = derivation.RecordView
+GateVerdict = derivation.GateVerdict
+Verdict = derivation.Verdict
+QUERY_PHASE = derivation.QUERY_PHASE
+QUERY_READY = derivation.QUERY_READY
+QUERY_GATES = derivation.QUERY_GATES
+QUERIES = derivation.QUERIES
+marker_matches = derivation.marker_matches
+checkpoint_marker = derivation.checkpoint_marker
+approved_checkpoints = derivation.approved_checkpoints
+worktree_bound = derivation.worktree_bound
+gate_verdict = derivation.gate_verdict
+derive_phase = derivation.derive_phase
+is_dispatchable = derivation.is_dispatchable
+children_of = derivation.children_of
+is_ready = derivation.is_ready
+verdicts = derivation.verdicts
+
 
 # The event kind that carries a gate result on the owned ledger, and its payload's names.
 #
@@ -186,389 +257,6 @@ EXPORT_CANNOT_EXPRESS = (
 )
 
 
-# --- the derivation's vocabulary ----------------------------------------------
-
-
-@dataclass(frozen=True)
-class Vocabulary:
-    """The engine's names for the things the three queries read.
-
-    Every default mirrors a constant in the engine and names it, so a consumer gets a
-    working derivation and this repo can pass its own configuration instead. Nothing here is
-    read from a config file — the kit takes it as an argument (§4).
-
-    Attributes:
-        marker: The comment-marker prefix (`basicly.policy.MARKER`).
-        checkpoints: The human checkpoint names (`basicly.config.CHECKPOINTS`).
-        required_gates: Gates that must pass to advance
-            (`basicly.config.DEFAULT_REQUIRED_GATES`).
-        engine_gate_providers: Providers whose result counts on a *required* gate
-            (`basicly.config.ENGINE_GATE_PROVIDERS`). A foreign result on a required gate is
-            disregarded, because a gate report authenticates nothing.
-        worktree_ref_prefix: How an in-flight worktree binding is spelled on
-            ``external_ref`` (`basicly.loop_state.WORKTREE_REF_PREFIX`).
-        known_statuses: The tracker's own status vocabulary
-            (`basicly.loop_state.KNOWN_STATUSES`).
-        dispatchable_statuses: Statuses under which work may be dispatched
-            (`basicly.loop_state.DISPATCHABLE_STATUSES`).
-        closed_statuses: Statuses that satisfy a blocking edge — terminal ones.
-        blocking_types: Edge types that hold a record back until the target is closed
-            (`basicly.merge.blocking_dependencies` reads exactly ``blocks``).
-        parent_child_type: The edge type that makes a record somebody's child, and so makes
-            its target a decomposed parent (`basicly.loop_state._has_children`).
-    """
-
-    marker: str = "[harness-policy]"
-    checkpoints: tuple[str, ...] = ("classify", "decompose", "ship")
-    required_gates: tuple[str, ...] = ("verify",)
-    engine_gate_providers: frozenset[str] = frozenset({"basicly-verify", "basicly-rubric"})
-    worktree_ref_prefix: str = "worktree:"
-    known_statuses: frozenset[str] = frozenset({
-        "open",
-        "in_progress",
-        "blocked",
-        "deferred",
-        "draft",
-        "closed",
-        "tombstone",
-        "pinned",
-    })
-    dispatchable_statuses: frozenset[str] = frozenset({
-        "open",
-        "in_progress",
-        "blocked",
-        "draft",
-        "pinned",
-    })
-    closed_statuses: frozenset[str] = frozenset({"closed", "tombstone"})
-    blocking_types: frozenset[str] = frozenset({"blocks"})
-    parent_child_type: str = "parent-child"
-
-
-DEFAULT_VOCABULARY = Vocabulary()
-
-
-# --- what each side reports about one record ----------------------------------
-
-
-@dataclass(frozen=True)
-class GateRow:
-    """One recorded gate result, as a live gate query reports it."""
-
-    gate: str
-    provider: str
-    passed: bool
-
-
-@dataclass(frozen=True)
-class Edge:
-    """One outgoing dependency edge: this record depends on *target*, of type *type*.
-
-    Held on the **dependent**, which is where both stores put it — `migrate.py` records an
-    edge event on the dependent record, and a live tracker lists it under that record's
-    ``dependencies``. Dependents are therefore never supplied: they are inverted from the
-    population by :func:`children_of`, so the two sides cannot disagree merely because one
-    of them was asked for a field the other does not carry (the export has no
-    ``dependents`` key; a live record query does).
-    """
-
-    target: str
-    type: str
-
-
-@dataclass(frozen=True)
-class RecordView:
-    """One record as one tracker reports it — exactly the inputs the queries read.
-
-    Deliberately narrow. Everything a store holds that no query reads — titles,
-    descriptions, timestamps, a store's ``source_repo_path`` — is left out, so an incidental
-    difference between the two stores cannot be reported as a disagreement about a verdict.
-    The export's comment text may be redacted on publish while the live tracker's is not,
-    which is exactly such a difference: it changes the bytes and it cannot change a marker.
-
-    Attributes:
-        record: The record's id.
-        status: Its status.
-        external_ref: The worktree binding, or empty.
-        comments: Comment texts in order — the carrier for checkpoint markers.
-        dependencies: Outgoing dependency edges.
-        gates: Recorded gate results. Empty from any snapshot-backed source; see
-            :data:`EXPORT_CANNOT_EXPRESS`.
-        tombstoned: The store says this record is deleted.
-    """
-
-    record: str
-    status: str = ""
-    external_ref: str = ""
-    comments: tuple[str, ...] = ()
-    dependencies: tuple[Edge, ...] = ()
-    gates: tuple[GateRow, ...] = ()
-    tombstoned: bool = False
-
-
-# --- the verdicts -------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class GateVerdict:
-    """The advance decision derived from one record's gate rows.
-
-    Mirrors `basicly.policy.GateStatus`, including the part that is easy to get wrong: a
-    **required** gate counts only a result from :attr:`Vocabulary.engine_gate_providers`, and
-    a foreign result on a required gate is reported as *disregarded* rather than dropped, so
-    a gate reading missing while the tracker plainly shows a pass is explicable
-    (basicly-jr0l.51).
-
-    Attributes:
-        passed: Required gates with a passing engine result.
-        failed: Required gates with a failing engine result.
-        missing: Required gates with no engine result.
-        advisory: Gates recorded that are not required, any provider.
-        disregarded: Results on a required gate from a provider that does not count.
-        can_advance: No required gate failed and none is missing.
-    """
-
-    passed: tuple[str, ...] = ()
-    failed: tuple[str, ...] = ()
-    missing: tuple[str, ...] = ()
-    advisory: tuple[GateRow, ...] = ()
-    disregarded: tuple[GateRow, ...] = ()
-    can_advance: bool = False
-
-
-@dataclass(frozen=True)
-class Verdict:
-    """One store's answers to the three queries, about one record."""
-
-    phase: str
-    ready: bool
-    gates: GateVerdict
-
-    def answer(self, query: str) -> Any:
-        """This verdict's answer to *query*.
-
-        Raises:
-            DifferentialError: *query* is not one of :data:`QUERIES`. Refused rather than
-                returning ``None``, which would compare equal on both sides and report a
-                query nobody answered as agreement.
-        """
-        if query == QUERY_PHASE:
-            return self.phase
-        if query == QUERY_READY:
-            return self.ready
-        if query == QUERY_GATES:
-            return self.gates
-        raise DifferentialError(f"unknown query {query!r}; expected one of {', '.join(QUERIES)}")
-
-
-# --- the derivation, run identically over both sides --------------------------
-
-
-def marker_matches(text: str, marker: str) -> bool:
-    """Token-exact marker match on a comment's first line.
-
-    Mirrors `basicly.policy._marker_matches`. A bare prefix match would cross-count names
-    that extend each other (``verify`` against ``verify-full``), so the marker must be the
-    whole first line or be followed by a space.
-    """
-    stripped = text.strip()
-    first_line = stripped.splitlines()[0] if stripped else ""
-    return first_line == marker or first_line.startswith(marker + " ")
-
-
-def checkpoint_marker(name: str, vocabulary: Vocabulary) -> str:
-    """The comment a human approval of the *name* checkpoint is recorded as."""
-    return f"{vocabulary.marker} checkpoint={name} approved"
-
-
-def approved_checkpoints(view: RecordView, vocabulary: Vocabulary) -> tuple[str, ...]:
-    """The checkpoints approved on *view*, in :attr:`Vocabulary.checkpoints` order."""
-    return tuple(
-        name
-        for name in vocabulary.checkpoints
-        if any(marker_matches(text, checkpoint_marker(name, vocabulary)) for text in view.comments)
-    )
-
-
-def worktree_bound(view: RecordView, vocabulary: Vocabulary) -> bool:
-    """Whether *view* carries an in-flight worktree binding.
-
-    Mirrors `basicly.loop_state.parse_worktree_ref`'s truthiness: the prefix alone is not a
-    binding, both halves have to be there, and a foreign ``external_ref`` reads as unbound.
-    """
-    prefix = vocabulary.worktree_ref_prefix
-    if not view.external_ref.startswith(prefix):
-        return False
-    name, sep, branch = view.external_ref[len(prefix) :].partition(":")
-    return bool(sep and name and branch)
-
-
-def gate_verdict(view: RecordView, vocabulary: Vocabulary) -> GateVerdict:
-    """Classify *view*'s gate rows against the required set.
-
-    A live tracker keeps one result per ``(gate, provider)`` rather than one per gate, so
-    the engine's own result is selected independently instead of by collapsing every row for
-    a gate and taking the last — a foreign row landing last would otherwise become authoritative
-    (basicly-jr0l.51).
-
-    The row tuples are **sorted**, and that is not cosmetic: a gate query guarantees no row
-    order and the ledger's order is the write order, so an unsorted verdict would compare
-    unequal between two stores holding the same rows and report a disagreement that is only
-    an ordering.
-    """
-    required = vocabulary.required_gates
-    rows = sorted(view.gates, key=lambda row: (row.gate, row.provider))
-    engine = {row.gate: row for row in rows if row.provider in vocabulary.engine_gate_providers}
-    latest = {row.gate: row for row in rows}
-    failed = tuple(gate for gate in required if gate in engine and not engine[gate].passed)
-    missing = tuple(gate for gate in required if gate not in engine)
-    return GateVerdict(
-        passed=tuple(gate for gate in required if gate in engine and engine[gate].passed),
-        failed=failed,
-        missing=missing,
-        advisory=tuple(row for gate, row in latest.items() if gate not in required),
-        disregarded=tuple(
-            row
-            for row in rows
-            if row.gate in required and row.provider not in vocabulary.engine_gate_providers
-        ),
-        can_advance=not failed and not missing,
-    )
-
-
-def derive_phase(  # noqa: PLR0913 — one argument per derived input; see the docstring
-    status: str,
-    checkpoints: tuple[str, ...],
-    bound: bool,
-    gates: GateVerdict,
-    has_children: bool,
-    vocabulary: Vocabulary,
-) -> str:
-    """The furthest loop phase the record's own state evidences.
-
-    Mirrors `basicly.loop_state.derive_phase`, ladder and all, including the part that rule
-    exists for: the ship rung requires the node to have **landed**, not merely to carry an
-    approved ship checkpoint, because a ship approval recorded out of order on a node that
-    never built otherwise derived ``ship`` and closed a record with no work done
-    (basicly-k35r, basicly-jr0l.49). Takes the derived inputs rather than a
-    :class:`RecordView` so it is the same shape as the engine's function and can be diffed
-    against it by eye.
-    """
-    if status in vocabulary.closed_statuses:
-        return "done"
-    verified = gates.can_advance and (bound or has_children)
-    landed = gates.can_advance and (not bound or verified)
-    ladder = (
-        ("ship", "ship" in checkpoints and landed),
-        ("verify", verified),
-        ("build", bound),
-        ("decompose", "decompose" in checkpoints or has_children),
-        ("classify", "classify" in checkpoints),
-    )
-    for phase, reached in ladder:
-        if reached:
-            return phase
-    return "intake"
-
-
-def is_dispatchable(status: str, vocabulary: Vocabulary) -> bool:
-    """Whether work may be dispatched on a record in *status*.
-
-    Mirrors `basicly.loop_state.is_dispatchable`: a status outside the known vocabulary is
-    **admitted**, because a project may define its own and refusing an unknown one would
-    both defund real work and let its parent fan in over it.
-    """
-    return status in vocabulary.dispatchable_statuses or status not in vocabulary.known_statuses
-
-
-def children_of(views: Mapping[str, RecordView], vocabulary: Vocabulary) -> dict[str, list[str]]:
-    """Parent id to child ids, inverted from the population's outgoing edges.
-
-    Both stores record the parent-child edge on the child, so the parent's side of it is
-    derived here rather than asked for — see :class:`Edge`.
-    """
-    children: dict[str, list[str]] = {}
-    for record in sorted(views):
-        for edge in views[record].dependencies:
-            if edge.type == vocabulary.parent_child_type:
-                children.setdefault(edge.target, []).append(record)
-    return children
-
-
-def is_ready(
-    view: RecordView,
-    views: Mapping[str, RecordView],
-    children: Mapping[str, Sequence[str]],
-    vocabulary: Vocabulary,
-) -> bool:
-    """Whether *view* is in the ready set: actionable now, on its own.
-
-    Three clauses, each mirroring one the engine already applies in
-    `basicly.supervise.ready_lanes` and `basicly.merge.blocking_dependencies`:
-
-    1. the status admits dispatch (`loop_state.is_dispatchable`);
-    2. every blocking dependency is closed — an edge into a record the population does not
-       hold is **not** treated as satisfied, because an unknown blocker is unknown rather
-       than absent;
-    3. it has no parent-child children — a decomposed parent is not itself the work.
-
-    What is deliberately not here is the rest of `ready_lanes`' filter: a pending decision,
-    a live lane, and the ``phase == "build"`` rung are engine session state, not facts either
-    store holds, so including them would make the ready set depend on something the
-    comparison cannot read from either side.
-
-    A tombstoned record is refused before any of it. The live tracker expresses a deletion by
-    not returning the record at all, so it has no ready set to disagree with; the owned ledger
-    expresses it as an event and keeps the record in the fold (`events.py`'s ``tombstoned``),
-    which leaves the *status* untouched — ``_apply_tombstone`` writes the flag and nothing
-    else. Without this clause a deleted record whose last status was ``open`` reads as
-    dispatchable, so after the flip (basicly-vkh0.19) the scheduler would hand out work on a
-    record somebody deleted.
-    """
-    if view.tombstoned:
-        return False
-    if not is_dispatchable(view.status, vocabulary):
-        return False
-    if children.get(view.record):
-        return False
-    for edge in view.dependencies:
-        if edge.type not in vocabulary.blocking_types:
-            continue
-        blocker = views.get(edge.target)
-        if blocker is None or blocker.status not in vocabulary.closed_statuses:
-            return False
-    return True
-
-
-def verdicts(
-    views: Mapping[str, RecordView], vocabulary: Vocabulary = DEFAULT_VOCABULARY
-) -> dict[str, Verdict]:
-    """Every record's answers to the three queries, derived from *views* alone.
-
-    The single derivation both sides go through. Called once per store, so a disagreement is
-    about a fact one of them holds and the other does not — never about two copies of a
-    rule.
-    """
-    children = children_of(views, vocabulary)
-    answers: dict[str, Verdict] = {}
-    for record in sorted(views):
-        view = views[record]
-        gates = gate_verdict(view, vocabulary)
-        answers[record] = Verdict(
-            phase=derive_phase(
-                view.status,
-                approved_checkpoints(view, vocabulary),
-                worktree_bound(view, vocabulary),
-                gates,
-                bool(children.get(record)),
-                vocabulary,
-            ),
-            ready=is_ready(view, views, children, vocabulary),
-            gates=gates,
-        )
-    return answers
-
-
 # --- the owned side: views folded out of the event log ------------------------
 
 
@@ -601,8 +289,7 @@ def views_from_events(ledger_events: Iterable[Any]) -> dict[str, RecordView]:
     gates: dict[str, dict[tuple[str, str], GateRow]] = {}
     for event in events.canonical_order(collected):
         if event.kind in (migrate.KIND_EDGE, events.KIND_EDGE_RETRACTED):
-            target = event.payload.get(migrate.EDGE_TO)
-            edge_type = event.payload.get(migrate.EDGE_TYPE)
+            target, edge_type = _edge_fields(event.payload)
             if isinstance(target, str) and isinstance(edge_type, str):
                 held = edges.setdefault(event.record, {})
                 held[Edge(target=target, type=edge_type)] = event.kind == migrate.KIND_EDGE
@@ -625,6 +312,34 @@ def views_from_events(ledger_events: Iterable[Any]) -> dict[str, RecordView]:
             tombstoned=state.tombstoned,
         )
     return views
+
+
+def _edge_fields(payload: Any) -> tuple[object, object]:
+    """One edge payload's target and type, in whichever of the two spellings it carries.
+
+    Reading only `migrate.py`'s pair made this fold blind to the declared one: measured on a
+    four-edge fixture in the declared spelling it read **zero**, against four for the same
+    fixture in the engine's (basicly-oii83r). The record predicted one; zero is what a reader
+    matching neither key returns, and it is the same total blindness `provenance.fold_edges`
+    had from the other side before `basicly-svct4w`.
+    """
+    keys = _EDGE_KEYS[provenance.edge_dialect(payload)]
+    return payload.get(keys[0]), payload.get(keys[1])
+
+
+def edge_dialects(ledger_events: Iterable[Any]) -> tuple[str, ...]:
+    """Which edge spellings *ledger_events* actually holds, sorted, with none as empty.
+
+    The fold reports the dialect rather than only counting, for `provenance.EdgeFold`'s
+    reason: an empty edge set is otherwise the same answer for a log with no edges and a log
+    whose every edge the reader could not parse, and those are opposite facts.
+    """
+    seen = {
+        provenance.edge_dialect(event.payload)
+        for event in ledger_events
+        if getattr(event, "kind", "") in (migrate.KIND_EDGE, events.KIND_EDGE_RETRACTED)
+    }
+    return tuple(sorted(seen))
 
 
 def read_ledger(directory: Path | str) -> list[Any]:
