@@ -80,6 +80,7 @@ from . import (
 from .config import (
     WORK_TYPES,
     PolicyConfig,
+    lane_scope,
     load_policy_config,
     load_runner_config,
     load_sizing_config,
@@ -1343,7 +1344,9 @@ def _scope_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None:
         # check has nothing to compute and must not pre-empt it with a worse one.
         return None
     changed = merge.branch_changed_paths(ctx.repo_root, session.base, session.branch)
-    outside = merge.out_of_scope_paths(changed, declared[1])
+    # The refusal prints the declaration as authored; the diff is held to more than it.
+    held = declared[1] + lane_scope(ctx.issue_id)
+    outside = merge.out_of_scope_paths(changed, held)
     if not outside:
         return None
     colliding = merge.coupled_lanes(outside, _live_lane_scopes(ctx), bounced=ctx.issue_id)

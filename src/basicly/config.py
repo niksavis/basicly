@@ -934,6 +934,33 @@ def load_worktree_config(repo_root: Path) -> WorktreeConfig:
     )
 
 
+# The changelog drop-in directory, as `release.FRAGMENT_DIR` spells it. Respelled rather
+# than imported: `release` sits near the top of the engine tier stack and this module near
+# the bottom, so the import would run upward (`.importlinter`). `test_merge_scope` asserts
+# the two are equal, so they cannot drift apart silently.
+CHANGELOG_FRAGMENT_DIR = "changelog.d"
+
+
+def lane_scope(record: str) -> tuple[str, ...]:
+    """The globs *record*'s own lane holds by construction, needing no declaration.
+
+    The third variety of the class the two lists above describe, and the one that needs
+    neither of their remedies. Every lane writes `basicly.d/<id>.toml` and
+    `changelog.d/<id>.<category>.md`, so like `CHANGELOG.md` before them these appear in no
+    bead's ``## Scope`` and the landing's scope check faulted every lane that followed the
+    convention (basicly-kjc5.64) — but unlike it they need no serialization at all, because
+    the id in the filename is unique to the lane and two lanes can never write one file.
+
+    So the answer is implicit scope, derived from the id rather than declared. Derived and
+    not a directory whitelist, which is the whole discrimination: one lane writing
+    *another* lane's drop-in is a real collision, and this is the only gate that sees it.
+    """
+    return (
+        f"{dropin.FRAGMENT_DIR}/{record}.toml",
+        f"{CHANGELOG_FRAGMENT_DIR}/{record}.*.md",
+    )
+
+
 # Glob metacharacters a ``[worktree]`` path declaration may not contain (the set
 # ``decompose.globs_overlap`` acts on).
 _PATH_LIST_WILDCARDS = "*?["

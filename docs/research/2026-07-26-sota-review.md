@@ -631,7 +631,7 @@ Gastown never believes its own merge: after merging and pushing it re-resolves t
 the submitted commit is an ancestor of the target, and it refuses to land at all if the lane branch
 moved since it was queued (`engineer.go:1478-1499`, `:1538-1560`, `internal/git/git.go:2091-2144`).
 About twenty lines of `rev-parse` plus `merge-base --is-ancestor`, no dependency. We have the
-ancestry check but only at the *ship* gate (`loop.py:299-304`) — and this repo has twice recorded the
+ancestry check but only at the *ship* gate (`loop.py:300-305`) — and this repo has twice recorded the
 incident it guards: a bead closed with its code stranded unmerged. The lesson is to assert inside the
 merge function, so a `MergeResult(status="merged")` can never be returned without proof.
 
