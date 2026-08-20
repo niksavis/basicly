@@ -391,6 +391,110 @@ waiver_count = 2
 # regrowth back to it for free.
 [tool.docs_citations.frozen]
 
+[tool.code_citations]
+binding_count = 1
+
+[tool.code_citations.bindings]
+# Which document a *bare* section mark in a directory means (basicly-e2mz.49). The shipped
+# tracker kit is the case that forced this: each module names `work-tracker.md` in its header
+# once and then writes bare marks, so 113 of them could be attributed to no document by any
+# reader who opened one module in isolation - or by any gate. One line here makes all 113
+# checkable. Longest matching prefix wins; a key that is a full path binds one module.
+#
+# `binding_count` ratchets this table in both directions, because a binding added quietly is
+# the one edit that could make a whole directory's marks resolve against a document nobody
+# chose - the fail-open shape, arriving through a green gate.
+".basicly/core/kit/tracker/" = "docs/requirements/work-tracker.md"
+
+# Unresolved code-to-document citation debt (basicly-e2mz.49). The gate is
+# `.scripts/check_code_citations.py`, wired as the `code-citations` [[verify.checks]] entry. A
+# section mark in a comment or a docstring is a pointer into a requirements document, and
+# `docs-citations` only ever ran the other direction: 220 of the 370 marks measured on
+# 2026-08-20 reach no heading, including two citing `gates-and-rework-design.md`, which was
+# absorbed and deleted 2026-08-08.
+#
+# The list is closed - a module absent from it may carry no unresolved mark. A count that
+# falls has to be banked in the same diff and an entry that reaches zero is deleted, for the
+# reason [tool.module_size.frozen] states: leaving the higher number licenses regrowth back
+# to it for free.
+[tool.code_citations.frozen]
+".basicly/core/kit/tracker/events.py" = 4
+".scripts/check_marker_families.py" = 2
+".scripts/check_test_naming.py" = 5
+".scripts/docs_claim_status.py" = 6
+".scripts/docs_claims.py" = 1
+".scripts/recall_eval.py" = 1
+".scripts/wired_or_deleted.py" = 1
+"src/basicly/agents.py" = 1
+"src/basicly/catalog_lint.py" = 6
+"src/basicly/catalog_routing.py" = 1
+"src/basicly/catalog_verify.py" = 2
+"src/basicly/classify.py" = 3
+"src/basicly/cli.py" = 8
+"src/basicly/config.py" = 7
+"src/basicly/handoff.py" = 2
+"src/basicly/hooks.py" = 1
+"src/basicly/integrity.py" = 2
+"src/basicly/lens_review.py" = 3
+"src/basicly/loop.py" = 9
+"src/basicly/loop_state.py" = 3
+"src/basicly/mirror.py" = 2
+"src/basicly/policy.py" = 8
+"src/basicly/read_cost.py" = 1
+"src/basicly/repair_brief.py" = 4
+"src/basicly/retrospective.py" = 6
+"src/basicly/review.py" = 5
+"src/basicly/roles.py" = 5
+"src/basicly/rubrics.py" = 9
+"src/basicly/runner.py" = 1
+"src/basicly/schema.py" = 1
+"src/basicly/skill_source.py" = 2
+"src/basicly/skills.py" = 2
+"src/basicly/supervise.py" = 2
+"src/basicly/tracker.py" = 2
+"tests/test_artifact_record.py" = 1
+"tests/test_capability_proof.py" = 1
+"tests/test_catalog_source.py" = 1
+"tests/test_check_test_naming.py" = 4
+"tests/test_cli.py" = 1
+"tests/test_cli_gate_verbs.py" = 1
+"tests/test_config.py" = 1
+"tests/test_copilot_tools.py" = 1
+"tests/test_dispatch_brief.py" = 2
+"tests/test_dispatch_phase.py" = 1
+"tests/test_docs_claim_status.py" = 5
+"tests/test_handoff_schemas.py" = 1
+"tests/test_integrity.py" = 2
+"tests/test_kit_boundary.py" = 1
+"tests/test_kit_tracker_baseline.py" = 1
+"tests/test_kit_tracker_cli.py" = 1
+"tests/test_kit_tracker_differential.py" = 2
+"tests/test_kit_tracker_differential_probe.py" = 1
+"tests/test_kit_tracker_events.py" = 10
+"tests/test_kit_tracker_fsck.py" = 9
+"tests/test_kit_tracker_gates.py" = 1
+"tests/test_kit_tracker_ids.py" = 1
+"tests/test_kit_tracker_migrate.py" = 6
+"tests/test_kit_tracker_provenance.py" = 1
+"tests/test_kit_tracker_scheduler.py" = 1
+"tests/test_kit_tracker_snapshot.py" = 4
+"tests/test_lens_review.py" = 1
+"tests/test_loop.py" = 5
+"tests/test_loop_lane.py" = 1
+"tests/test_mirror.py" = 2
+"tests/test_owned_store.py" = 1
+"tests/test_policy.py" = 5
+"tests/test_repair_brief.py" = 3
+"tests/test_retrospective.py" = 5
+"tests/test_review.py" = 3
+"tests/test_roles.py" = 4
+"tests/test_routing_evals.py" = 1
+"tests/test_rubrics.py" = 3
+"tests/test_skill_source.py" = 2
+"tests/test_spend_calibration.py" = 1
+"tests/test_tracker_requirements.py" = 3
+"tests/test_ui.py" = 1
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/basicly"]
 exclude = ["**/__pycache__", "**/*.pyc"]

@@ -1,0 +1,35 @@
+# `docs-citations` runs one direction only: a `file.py:line` written in a document. A section
+# mark written in code, pointing at a document, was checked by nothing, so it went stale in
+# silence and a mark resolving to the wrong section read as correct (basicly-e2mz.49). Two
+# document absorptions are blocked on this check because it is the control they need: deleting
+# a document today orphans its citations with every gate green.
+#
+# A repo-local script rather than a CLI subcommand pair, on the same grounds as
+# `docs-citations` and `module-size`: the debt is basicly's own, and a consumer's document set
+# would be its own decision with its own frozen list and its own bindings. `uv run python`,
+# not a bare `python`, per the note above `basicly.toml`'s `docs-claims` entry.
+#
+# No `fix_command`, and the omission is the same one `docs-citations` makes for the same
+# reason. The gate prints the number and the document, so a mechanical renumber looks trivial
+# - but a mark whose section was absorbed into another document has no derivable target, and
+# repointing a number whose surrounding sentence also went stale repairs the pointer while
+# leaving the false claim. Reading the sentence is the repair.
+[[verify.checks]]
+name = "code-citations"
+command = ["uv", "run", "python", ".scripts/check_code_citations.py"]
+modes = ["fast", "full"]
+
+# One suppression, the one `basicly-e2mz.37`, `basicly-a4q3.4` and `basicly-5p49` already
+# document: `.scripts` is not a package, so `ratchet` is reachable only after `sys.path` names
+# its directory, and the import cannot precede the statement that makes it resolvable.
+#
+# The alternative rejected was extending `check_docs_citations.py` instead of adding a script,
+# which would have reused its already-suppressed import. `module-size` refuses it: that file
+# measures 2804 tokens against the 4000 cap, and the reverse direction needs a heading scan, a
+# binding table and a per-module ratchet - 3829 tokens as its own script, which is 633 over the
+# headroom. The two gates also share almost nothing: one parses Python with `ast`, the other
+# parses markdown headings.
+#
+# The suppression carries its reason inline, so `unreasoned_count` does not move.
+[ratchet.noqa_debt.frozen]
+E402 = 1
