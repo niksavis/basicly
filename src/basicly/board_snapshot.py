@@ -8,10 +8,8 @@ design; what follows is only what a reader of *this* module has to know.
 **Why this exists rather than ``supervise.observe()``, measured.** One ``observe()`` folds the
 whole event log **93 times** and parses 554,280 events to answer one question, at 6.1 s. That
 is an uncached repeated read, not a subprocess problem, so the whole advantage here is that
-:func:`_read_and_fold` folds **once** and every section takes that result rather than
-reaching back for a tracker read of its own. ``tests/test_board_snapshot.py`` spies on the kit's own
-``fold`` and on ``subprocess.Popen`` and pins both counts, because "reads only files" is a
-claim one convenience import can quietly break.
+:func:`_read_and_fold` folds **once** and every section takes that result. Both counts are
+pinned by spies in ``tests/test_board_snapshot.py``.
 
 **The live-lock facts are an argument, and a cycle is why.** Reading the supervisor lock here
 would mean calling ``supervise.read_holder``, and the supervisor emits a snapshot itself, so
@@ -19,29 +17,22 @@ the import would close ``supervise -> board_snapshot -> supervise``. Every calle
 above ``supervise`` or *is* it, so every caller already holds the facts: they arrive as
 :class:`SessionFacts`, and with none supplied the ``session`` section is **omitted**.
 
-**Omit, never estimate.** The schema has no field marking a value as estimated, so an
-estimate would render indistinguishably from a billed number. A section whose source is absent
-is therefore absent from the document - never zero - and the page renders "not emitted by this
-producer". `.basicly/usage/` is git-ignored and worktree-local, so in a lane worktree all
-three usage sources really are missing and the tracker half still draws.
-
-**Lanes are the second thing a caller supplies, and for the same reason.**
-``lanes[].phase`` is required by the schema and its authority is
-``loop_state.read_node_state``, which calls ``validate_gate.required_config`` for the set of
-gates the unit owes - a fourth source, outside the three files opened here. A phase folded out
-of ledger evidence alone diverges from the engine's for any unit owing validation, so the
-facts arrive as :class:`basicly.board_fields.LaneFacts` and with none supplied the ``lanes``
-section is **omitted**.
-
-``backlog`` carries no ``ready`` or ``blocked``, and ``units`` carries no ``ready`` or
-``phase``: each is the tracker's own derivation over a status vocabulary and a full edge
-population, and a second spelling of one in a display producer is how the two come to
-disagree.
+``backlog`` carries no ``ready`` or ``blocked``: each is the tracker's own derivation over a
+status vocabulary and a full edge population, and a second spelling of one in a display
+producer is how the two come to disagree. The sections whose source is ``.basicly/usage/`` are
+:mod:`basicly.board_usage`; the row reducers are :mod:`basicly.board_sections`.
 """
+
+# comment-density-waiver: 51.5% after basicly-y754k2 moved the usage sections and the row
+# reducers out. The module lost 630 tokens of code and 505 of prose, so the share rose while
+# the file got smaller - the two ratchets pulling opposite ways, measured. Every paragraph
+# left is a measurement or a refuted alternative: the 93-fold 6.1 s cost of `observe()`, the
+# `supervise -> board_snapshot -> supervise` cycle that makes the lock facts an argument, and
+# why `backlog` refuses to respell the tracker's own derivations. The `Args:` block on
+# `build_document` is mandated by ruff `D` and is a third of the remaining prose.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -51,39 +42,49 @@ from . import (
     __version__,
     board_fields,
     board_schema,
-    health,
+    board_sections,
+    board_usage,
     owned_store,
     run_record,
     tracker_paths,
-    verify_artifact,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
 
 SCHEMA = board_schema.VERSION
 
 # `generator.tool`: which producer wrote the document, since it is one of several.
 TOOL = "basicly"
 
-# `freshness.source`, from the schema's closed set. One call to `build_document` is a one-shot by
-# definition; a caller on a tick says so itself.
-ONE_SHOT = "one-shot"
-
 # How stale a document may get before a viewer says so. Carried so the consumer never guesses.
 DEFAULT_STALE_AFTER_S = 60.0
+
+# `freshness.source`, from the schema's closed set. One call to `build_document` is a
+# one-shot by definition; a caller on a tick says so itself.
+ONE_SHOT = "one-shot"
+
+
+@dataclass(frozen=True)
+class Freshness:
+    """How the document comes to be rewritten, so a viewer can tell live from frozen."""
+
+    source: str = ONE_SHOT
+    cadence_s: float | None = None
+    stale_after_s: float = DEFAULT_STALE_AFTER_S
+
 
 # The event strip is a strip, not a log: six rows is what the wall has height for.
 EVENT_LIMIT = 6
 
 # `spend.scope`. An honesty flag rather than a detail: `.basicly/usage/.gitignore` is a bare
 # `*`, so these numbers are one operator's machine and never a team's.
-MACHINE_LOCAL = "machine-local"
+board_usage.MACHINE_LOCAL = "machine-local"
 
 # The verify runner's check vocabulary is pass/fail/skip and the schema's is
 # pass/fail/not_run. Mapped rather than passed through, because a value outside a closed set
 # is refused outright by an already-shipped consumer of this major.
-CHECK_STATUS = {"pass": "pass", "fail": "fail", "skip": "not_run", "not_run": "not_run"}
+board_usage.CHECK_STATUS = {"pass": "pass", "fail": "fail", "skip": "not_run", "not_run": "not_run"}
 
 _ACTIVE_STATUS = "in_progress"
 _CLOSED_STATUS = "closed"
@@ -109,15 +110,6 @@ class SessionFacts:
 
 
 @dataclass(frozen=True)
-class Freshness:
-    """How the document comes to be rewritten, so a viewer can tell live from frozen."""
-
-    source: str = ONE_SHOT
-    cadence_s: float | None = None
-    stale_after_s: float = DEFAULT_STALE_AFTER_S
-
-
-@dataclass(frozen=True)
 class Facts:
     """Everything the caller knows that this producer may not derive.
 
@@ -130,7 +122,7 @@ class Facts:
     """
 
     session: SessionFacts | None = None
-    lanes: Sequence[board_fields.LaneFacts] | None = None
+    lanes: Sequence[board_sections.LaneFacts] | None = None
 
 
 def _read_and_fold(repo_root: Path) -> tuple[Mapping[str, Any], list[Any], list[tuple]] | None:
@@ -153,7 +145,7 @@ def _read_and_fold(repo_root: Path) -> tuple[Mapping[str, Any], list[Any], list[
     return (
         kit.events.fold(events).records,
         board_fields.read_markers(events),
-        board_fields.edge_triples(kit, events),
+        board_sections.edge_triples(kit, events),
     )
 
 
@@ -204,106 +196,6 @@ def _session(facts: SessionFacts, records: Mapping[str, Any]) -> dict[str, objec
     if holder:
         section["holder"] = holder
     return section
-
-
-def _gates(repo_root: Path) -> dict[str, object] | None:
-    """The last recorded verify run, or None when no artifact is on disk or it is unusable."""
-    artifact = repo_root / verify_artifact.RUN_ARTIFACT
-    try:
-        payload = json.loads(artifact.read_text(encoding="utf-8"))
-    except OSError, json.JSONDecodeError:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    recorded = board_fields.instant(str(payload.get("recorded_at", "")))
-    if recorded is None:
-        return None
-    rows = payload.get("checks")
-    section: dict[str, object] = {
-        "recorded_at": board_fields.stamp(recorded),
-        "checks": [
-            {
-                "name": board_fields.text(check.get("name", ""), board_fields.NAME_MAX),
-                "status": CHECK_STATUS[str(check.get("status"))],
-            }
-            for check in (rows if isinstance(rows, list) else ())
-            if isinstance(check, dict) and str(check.get("status")) in CHECK_STATUS
-        ],
-    }
-    if isinstance(payload.get("mode"), str):
-        section["mode"] = board_fields.text(payload["mode"], board_fields.KIND_MAX)
-    if isinstance(payload.get("passed"), bool):
-        section["passed"] = payload["passed"]
-    return section
-
-
-def _billed(records: Mapping[str, list]) -> list[Mapping[str, object]]:
-    """The dispatch entries carrying billed usage, an estimate dropped.
-
-    A transcript estimate would render identically to an adapter-reported figure and the
-    schema has no field to tell them apart. 0 of 398 dispatch records are copilot today, so
-    this drops nothing here and is the declared limit for the cell where it would drop
-    everything - at which point ``spend`` is omitted rather than guessed.
-    """
-    return [
-        entry
-        for history in records.values()
-        if isinstance(history, list)
-        for entry in history
-        if isinstance(entry, dict) and not entry.get("estimated")
-    ]
-
-
-def _sum(entries: Iterable[Mapping[str, object]], key: str) -> float:
-    """The numeric values recorded under *key*, summed; anything else contributes nothing."""
-    return sum(
-        float(value)
-        for entry in entries
-        if isinstance(value := entry.get(key), int | float) and not isinstance(value, bool)
-    )
-
-
-def _spend(records: Mapping[str, list]) -> dict[str, object] | None:
-    """What this machine has been billed, or None when nothing billed is recorded.
-
-    The cache pair sits beside the billed pair and is never summed into it: one is tokens
-    paid for and the other is tokens moved.
-    """
-    billed = _billed(records)
-    if not billed:
-        return None
-    costs = [_sum([entry], "cost") for entry in billed]
-    return {
-        "scope": MACHINE_LOCAL,
-        "lifetime_usd": sum(costs),
-        "largest_dispatch_usd": max(costs, default=0.0),
-        "input_tokens": int(_sum(billed, "input_tokens")),
-        "output_tokens": int(_sum(billed, "output_tokens")),
-        "cache_read_tokens": int(_sum(billed, "cache_read_tokens")),
-        "cache_write_tokens": int(_sum(billed, "cache_write_tokens")),
-    }
-
-
-def _health(records: dict[str, list]) -> list[dict[str, object]]:
-    """Per-agent health, scored by :mod:`basicly.health` and not by a second scorer.
-
-    Both scorers are pure functions of the record map, so they take the map this snapshot
-    already read: one file read, one scorer, and no way for the board to disagree with
-    ``basicly health`` about the same number.
-    """
-    drift = {entry.agent: entry.delta for entry in health.agent_drift(records)}
-    rows = []
-    for scored in health.agent_health(records):
-        row: dict[str, object] = {
-            "agent": board_fields.text(scored.agent, board_fields.AGENT_MAX),
-            "runs": scored.runs,
-            "score": scored.health_score,
-            "failure_rate": min(1.0, max(0.0, scored.failure_rate)),
-        }
-        if scored.agent in drift:
-            row["drift"] = drift[scored.agent]
-        rows.append(row)
-    return rows
 
 
 def build_document(
@@ -358,23 +250,23 @@ def build_document(
         active = [state for state in live if state.status != _CLOSED_STATUS]
         drawn = {state.record for state in active}
         document["backlog"] = _backlog(live)
-        document["units"] = board_fields.units(active)
-        document["graph"] = board_fields.graph(
+        document["units"] = board_sections.units(active)
+        document["graph"] = board_sections.graph(
             edge for edge in edges if edge[0] in drawn or edge[2] in drawn
         )
-        document["asks"] = board_fields.asks(markers)
-        document["events"] = board_fields.events(markers, event_limit)
+        document["asks"] = board_sections.asks(markers)
+        document["events"] = board_sections.events(markers, event_limit)
         if known.session is not None:
             document["session"] = _session(known.session, records)
     if known.lanes is not None:
-        document["lanes"] = board_fields.lanes(known.lanes)
-    gates = _gates(repo_root)
+        document["lanes"] = board_sections.lanes(known.lanes)
+    gates = board_usage.gates(repo_root)
     if gates is not None:
         document["gates"] = gates
     runs = run_record.load_run_records(repo_root)
     if runs:
-        spend = _spend(runs)
+        spend = board_usage.spend(runs)
         if spend is not None:
             document["spend"] = spend
-        document["health"] = _health(runs)
+        document["health"] = board_usage.health_rows(runs)
     return document

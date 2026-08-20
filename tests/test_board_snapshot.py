@@ -6,6 +6,8 @@ that goes red on the next landing - it is git-tracked and grew from 980 records 
 two sessions - so the live tree is used only where the assertion is a *bound* rather than a
 count: the build-time cap, and the schema verdict.
 
+The `.basicly/usage/` sections moved to `test_board_usage` with `board_usage`.
+
 The two claims that need an instrument rather than an assertion are the fold count and the
 subprocess count. Both are spied, because "reads only files" and "folds once" are exactly the
 properties one convenience import restores to false while every other test stays green.
@@ -24,12 +26,11 @@ from typing import Any, cast
 import pytest
 
 from basicly import (
-    board_fields,
     board_schema,
+    board_sections,
     board_snapshot,
     owned_store,
     run_record,
-    verify_artifact,
 )
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -192,7 +193,7 @@ def test_the_lanes_section_is_omitted_until_the_caller_supplies_the_lane_facts(
     assert empty["lanes"] == []
     assert board_schema.verdict(board_repo, empty).exit_code == 0
 
-    supplied = board_fields.LaneFacts(id="fx-root.1", phase="verify")
+    supplied = board_sections.LaneFacts(id="fx-root.1", phase="verify")
     document = _built(board_repo, facts=board_snapshot.Facts(lanes=[supplied]), now=NOW)
     assert document["lanes"] == [{"id": "fx-root.1", "phase": "verify"}]
     assert board_schema.verdict(board_repo, document).exit_code == 0
@@ -204,71 +205,6 @@ def test_a_holder_the_caller_could_not_read_leaves_the_triple_out(board_repo: Pa
     section = _built(board_repo, facts=board_snapshot.Facts(session=facts), now=NOW)["session"]
     assert "holder" not in section
     assert section["supervised"] is False
-
-
-def test_spend_and_health_are_omitted_while_no_run_records_exist(board_repo: Path) -> None:
-    """AC 7: in a lane worktree `.basicly/usage/` does not exist, and the rest still builds."""
-    document = _built(board_repo, now=NOW)
-    assert "spend" not in document
-    assert "health" not in document
-    assert document["backlog"]["closed"] == FIXTURE_CLOSED
-
-
-def test_spend_and_health_arrive_with_the_run_records(board_repo: Path) -> None:
-    """The other half of AC 7, so the omission above is a state and not a dead branch."""
-    _run_records(board_repo, {"fx-root.1": [_dispatch(), _dispatch(cost=5.0)]})
-    document = _built(board_repo, now=NOW)
-    assert document["spend"] == {
-        "scope": board_snapshot.MACHINE_LOCAL,
-        "lifetime_usd": 7.0,
-        "largest_dispatch_usd": 5.0,
-        "input_tokens": 20,
-        "output_tokens": 40,
-        "cache_read_tokens": 60,
-        "cache_write_tokens": 80,
-    }
-    assert [row["agent"] for row in document["health"]] == ["claude"]
-    assert document["health"][0]["runs"] == 2
-
-
-def test_an_estimated_dispatch_is_left_out_of_spend(board_repo: Path) -> None:
-    """AC 10: the schema cannot mark a value as estimated, so an estimate is not emitted."""
-    _run_records(board_repo, {"fx-root.1": [_dispatch(), _dispatch(cost=99.0, estimated=True)]})
-    assert _built(board_repo, now=NOW)["spend"]["lifetime_usd"] == 2.0
-
-
-def test_spend_is_omitted_where_every_dispatch_is_an_estimate(board_repo: Path) -> None:
-    """The declared limit for the copilot cells, where dropping estimates drops everything."""
-    _run_records(board_repo, {"fx-root.1": [_dispatch(estimated=True)]})
-    document = _built(board_repo, now=NOW)
-    assert "spend" not in document
-    assert "health" in document
-
-
-def test_the_gates_section_comes_from_the_verify_artifact(board_repo: Path) -> None:
-    """And a `skip` becomes `not_run`, because a value outside a closed set is refused."""
-    artifact = board_repo / verify_artifact.RUN_ARTIFACT
-    artifact.parent.mkdir(parents=True, exist_ok=True)
-    artifact.write_text(
-        json.dumps({
-            "mode": "fast",
-            "recorded_at": "2026-01-01T00:00:00+00:00",
-            "passed": True,
-            "checks": [
-                {"name": "ruff", "status": "pass"},
-                {"name": "docs", "status": "skip"},
-                {"name": "invented", "status": "wat"},
-            ],
-        }),
-        encoding="utf-8",
-    )
-    section = _built(board_repo, now=NOW)["gates"]
-    assert section["mode"] == "fast"
-    assert section["passed"] is True
-    assert section["checks"] == [
-        {"name": "ruff", "status": "pass"},
-        {"name": "docs", "status": "not_run"},
-    ]
 
 
 def test_the_backlog_and_the_ask_pin_the_frozen_corpus(board_repo: Path) -> None:

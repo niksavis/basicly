@@ -24,6 +24,7 @@ layers =
     supervise | usage_report
     loop | release
     board_snapshot
+    board_usage
     catalog_lint | contention | cost_rollup | curate | health | landing_gate | tracker_query | tracker_write
     commit | merge
     rebase | repair_brief | wip | working_set
@@ -55,6 +56,7 @@ layers =
     tracker_argv
     dispatch_phase
     runner_envelope
+    board_sections
     board_fields | board_schema
     base_lock | catalog | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_usage | tree_schema | ui | usage | verify_artifact
     tracker_paths

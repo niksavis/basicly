@@ -1,0 +1,31 @@
+# Split the board producer's field-selection boundary and its document assembly, so a further
+# board unit fits (basicly-y754k2). Two modules became four:
+#
+#   board_fields    1809 -> 1607   headroom 18 -> 2393   bounds and markers
+#   board_sections     new 2846    headroom      1154    the six row reducers
+#   board_snapshot  2280 -> 2845   headroom 23 -> 1155   the ledger half and the assembly
+#   board_usage        new 1324    headroom      2676    the `.basicly/usage/` sections
+#
+# The size half of this record's second acceptance criterion is met with over 1000 tokens
+# everywhere. **The density half is refuted, and this is the measurement that refutes it.**
+# That criterion asked for no new density waiver; it was written before the split existed, so
+# before the ratio could be measured. Splitting a module raises the prose share of both halves
+# by construction: the code divides and the contract docstring does not. `board_snapshot` lost
+# 630 tokens of code and 505 of prose, so it got smaller and denser at the same time - 3980 to
+# 2845 tokens, and 47.x% to 51.5%.
+#
+# Everything cheaper was done first and measured at each step. Prose describing moved code went
+# with it: the omit-never-estimate rule to `board_usage`, the lane-phase paragraph to
+# `board_sections`. Two stale claims the split created were fixed rather than kept: a
+# `LaneFacts` cross-reference to `_session`, now in another module, and an `edge_triples`
+# citation of `test_board_snapshot` for an assertion that moved to `test_board_sections`. Two
+# restatements of what a test asserts were dropped. That took 55.7% to 51.5% and 55.1% to
+# 51.5%. The remaining 1.5 points are measurements - the 93-fold 6.1 s `observe()` cost, the
+# `supervise -> board_snapshot -> supervise` cycle, the 140/203/1 ask pairing - and a
+# ruff `D`-mandated `Args:` block that is a third of what is left in `board_snapshot`.
+#
+# No rebalancing satisfies both ratchets, measured rather than asserted: folding `board_usage`
+# back into `board_snapshot` gives 4169 tokens against the 4000 cap, and extracting the three
+# caller-supplied facts records instead gives a module that is 89% prose.
+[ratchet.comment_density]
+count_delta = 2
