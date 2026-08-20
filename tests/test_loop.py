@@ -92,6 +92,20 @@ def tracker_commits(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | No
     return calls
 
 
+@pytest.fixture
+def queued(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    """Record what the loop enqueues instead of writing it — these tests carry no ledger.
+
+    Every hold that asks a human goes through one seam, so one fixture covers the
+    escalation at the rework cap and the validate hold that queues an unreadable verdict.
+    """
+    items: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        loop.decisions, "enqueue", lambda _r, issue, kind, *_a, **_k: items.append((issue, kind))
+    )
+    return items
+
+
 def _session(name: str = "i") -> Session:
     return Session(
         name=name,
@@ -1915,7 +1929,7 @@ def test_a_failed_validation_spends_one_bounded_rework_attempt(
 
 
 def test_a_failed_validation_escalates_at_the_rework_cap(
-    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, queued: list[tuple[str, str]]
 ) -> None:
     """At max_rework the loop stops dispatching and asks a human instead.
 
@@ -1923,12 +1937,6 @@ def test_a_failed_validation_escalates_at_the_rework_cap(
     """
     seen, _ = _validate_repair(at, monkeypatch, tmp_path, brief=False)
     monkeypatch.setattr(policy, "record_rework", lambda *_a, **_k: 2)  # the CONFIG cap
-    queued: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        loop.decisions,
-        "enqueue",
-        lambda _r, issue, kind, *_a, **_k: queued.append((issue, kind)),
-    )
 
     result = _advance(tmp_path)
 
@@ -1958,6 +1966,7 @@ def test_a_missing_validation_spends_no_rework(
     assert charged == []
 
 
+@pytest.mark.usefixtures("queued")
 def test_validator_argv_carries_the_role_and_a_non_write_phase(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1995,6 +2004,7 @@ def test_validator_argv_carries_the_role_and_a_non_write_phase(
     assert run_record.VALIDATE_PHASE not in run_record.WRITE_PHASES
 
 
+@pytest.mark.usefixtures("queued")
 def test_validate_dispatches_one_reviewer_per_lens_each_carrying_its_own_lens(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -2029,6 +2039,7 @@ def test_validate_dispatches_one_reviewer_per_lens_each_carrying_its_own_lens(
     assert recorded == [run_record.VALIDATE_PHASE] * (1 + len(roles.REVIEW_LENSES))
 
 
+@pytest.mark.usefixtures("queued")
 def test_each_lens_records_its_own_findings_and_nothing_merges_them(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -2083,10 +2094,11 @@ def test_an_l1_or_l2_unit_never_reaches_the_phase_that_pays_for_a_review() -> No
     assert roles.lens_dispatches(phase) == ()
 
 
+@pytest.mark.usefixtures("queued")
 def test_a_validate_dispatch_that_records_nothing_leaves_the_unit_in_validate(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Re-read the gate; having run is not evidence of a verdict."""
+    """Having run is not evidence of a verdict: an unreadable reply holds the unit."""
     at(_state("validate", gates=_validate_gates()))
     _pin_runner(monkeypatch, "claude")
     monkeypatch.setattr(
@@ -2283,6 +2295,7 @@ def _validate_repair(
     return seen, roots
 
 
+@pytest.mark.usefixtures("queued")
 def test_a_failed_validation_repairs_against_the_brief_then_re_lands_the_commit(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

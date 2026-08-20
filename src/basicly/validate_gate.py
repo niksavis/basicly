@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from . import integrity, policy
+from . import decisions, integrity, policy
 from .config import VERIFY_GATE_PROVIDER
 from .dispatch_brief import VERDICT_PREFIX
 
@@ -34,6 +34,10 @@ if TYPE_CHECKING:
     from .config import PolicyConfig
 
 _LEVEL_FIELD = "level="
+
+# The kind :data:`basicly.decision_marker.KINDS` reserves for a validation a human has
+# to dispose of, which is what a reply carrying no verdict leaves behind.
+VALIDATE_DECISION_KIND = "validate"
 
 
 def recorded_level(repo_root: Path, issue_id: str) -> str | None:
@@ -102,6 +106,35 @@ def refusal_reason(gates: policy.GateStatus) -> str:
         f"{VALIDATE_GATE} is required at the recorded integrity level and has no engine "
         "result: exercise the change as a consumer would (the validate-as-consumer "
         "skill), then record the gate"
+    )
+
+
+def queue_unreadable_verdict(repo_root: Path, issue_id: str, reply: str) -> str:
+    """Queue a validator reply carrying no verdict for a human, and say why we hold.
+
+    The fail-silent this closes (basicly-xd79u3): a validator that executed, was
+    charged for and ended with no ``VALIDATION:`` line recorded no gate event, queued
+    nothing and spent no rework, so the only surface that showed the run at all was
+    the spend. An unreadable verdict is a fact an operator can dispose of; silence is
+    not, and the disposition has to be in the question because nothing else holds the
+    fact — the reply is not stored anywhere and the run record carries usage, not text.
+
+    So *reply* rides on the item as the only copy of what the validator said. The
+    caller clips it, because clipping is :mod:`basicly.repair_brief`'s and this module
+    sits below it.
+    """
+    decisions.enqueue(
+        repo_root,
+        issue_id,
+        VALIDATE_DECISION_KIND,
+        f"the validator for {issue_id} ran and its reply carries no "
+        f"`{VERDICT_PREFIX} PASS`/`{VERDICT_PREFIX} FAIL` line, so {VALIDATE_GATE} has "
+        "no result: re-run the validation, record the gate by hand, or rework?",
+        reply or "the validator's reply was empty",
+    )
+    return (
+        f"the validator recorded no {VALIDATE_GATE} result; the unit stays in validate "
+        "— queued as a decision (dispose of it with `basicly loop answer`)"
     )
 
 

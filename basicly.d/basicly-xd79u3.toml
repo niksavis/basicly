@@ -1,0 +1,30 @@
+# One fixture for the queue seam a held validation now writes through (basicly-xd79u3).
+#
+# `tests/test_loop.py` was standing at exactly its effective baseline of 39069 tokens — a
+# module over the 4000-token cap may only shrink, so it admitted nothing — and the fix adds
+# a write to a seam five of its validate tests reach. `decisions.enqueue` needs a real
+# ledger and these tests carry a fake tracker, so each one raised
+# `TrackerDivergenceError` from a temp path.
+#
+# +146 tokens, measured (39069 -> 39215): one `queued` fixture recording what the loop
+# enqueues, plus `@pytest.mark.usefixtures("queued")` on the four tests that only need the
+# seam. It is net of a saving — the escalation-at-the-rework-cap test had its own inline
+# stub of the same seam and now takes the fixture, so the two holds that ask a human are
+# stubbed once instead of twice. Prose share 23.5% against the 50% cap and no frozen share
+# of its own, so the comment ratchet had nothing to say: the growth is fixture code.
+#
+# Two cheaper routes were rejected. Moving the fixture into `tests/conftest.py` (458 tokens
+# of headroom) would put a fixture only this module needs in the suite-wide namespace to
+# make a number move, which is the misfiling `basicly-gvlpxm` refused for the same reason.
+# Giving those four validators a readable verdict so they never reach the hold only moves
+# the write to `validate_gate.record_verdict`, which needs the same ledger — and one of them
+# asserts on a validator that replies with nothing, which is the case under test.
+#
+# The general defect behind this is `basicly-agzx.4`'s, unchanged: a test module frozen at
+# exactly its own size admits no further test, and that is a decomposition track of its own
+# rather than this fix's obligation.
+[ratchet.module_size]
+rebaseline_reason = "test_loop.py stood at exactly its own baseline and five of its validate tests reach the queue seam the fix writes through; the fixture that stubs it is net of the inline stub it replaces, and the two cheaper placements either misfile a module-local fixture into the suite conftest or move the same write to another seam needing the same ledger"
+
+[ratchet.module_size.rebaselined]
+"tests/test_loop.py" = 146
