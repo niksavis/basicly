@@ -392,7 +392,7 @@ waiver_count = 2
 [tool.docs_citations.frozen]
 
 [tool.code_citations]
-binding_count = 1
+binding_count = 3
 
 [tool.code_citations.bindings]
 # Which document a *bare* section mark in a directory means (basicly-e2mz.49). The shipped
@@ -405,6 +405,20 @@ binding_count = 1
 # the one edit that could make a whole directory's marks resolve against a document nobody
 # chose - the fail-open shape, arriving through a green gate.
 ".basicly/core/kit/tracker/" = "docs/requirements/work-tracker.md"
+#
+# Two more, both added 2026-08-20 when this gate first ran on a rebase and caught citations
+# `basicly-u2hl.59` had just landed. **`handoff.py`'s bare §8 does NOT mean the architecture
+# document** - a reader resolving it there lands on `## 8. Non-goals`. It means
+# `factory-loop.md` §8, `Handoff artifact schemas [D4]`, the only document in the tree naming
+# `validation-transcript`, and its §2.1 `Risk accepted on D4` is the "accepted mitigation".
+# Bound rather than named inline because `handoff.py` has 9 tokens of module-size headroom and
+# spelling the path on three citing lines costs about 24.
+#
+# These point at a document scheduled for deletion (`basicly-1hp91f` absorbs `factory-loop.md`).
+# That is correct: cite what defines the section today, and let this gate refuse the absorption
+# until the citations are repointed. It is why `1hp91f` blocks on this record.
+"src/basicly/handoff.py" = "docs/requirements/factory-loop.md"
+"tests/test_handoff.py" = "docs/architecture/architecture.md"
 
 # Unresolved code-to-document citation debt (basicly-e2mz.49). The gate is
 # `.scripts/check_code_citations.py`, wired as the `code-citations` [[verify.checks]] entry. A
@@ -417,6 +431,7 @@ binding_count = 1
 # falls has to be banked in the same diff and an entry that reaches zero is deleted, for the
 # reason [tool.module_size.frozen] states: leaving the higher number licenses regrowth back
 # to it for free.
+
 [tool.code_citations.frozen]
 ".basicly/core/kit/tracker/events.py" = 4
 ".scripts/check_marker_families.py" = 2
@@ -432,7 +447,6 @@ binding_count = 1
 "src/basicly/classify.py" = 3
 "src/basicly/cli.py" = 8
 "src/basicly/config.py" = 7
-"src/basicly/handoff.py" = 2
 "src/basicly/hooks.py" = 1
 "src/basicly/integrity.py" = 2
 "src/basicly/lens_review.py" = 3

@@ -33,3 +33,23 @@ modes = ["fast", "full"]
 # The suppression carries its reason inline, so `unreasoned_count` does not move.
 [ratchet.noqa_debt.frozen]
 E402 = 1
+
+# Two bindings and one banked count, all four caused by lanes that landed while this gate was
+# being built (`basicly-u2hl.59` above all). The gate caught them on its own first rebase,
+# which is the point of it, and the repair is the one its own remedy names: find the target.
+#
+# **`handoff.py`'s bare §8 does NOT mean the architecture document, and that is the whole
+# finding.** A reader resolving it there lands on `## 8. Non-goals`. It means
+# `docs/requirements/factory-loop.md` §8, `Handoff artifact schemas [D4]` - the only document
+# in the tree that names `validation-transcript` - and its §2.1 is `Risk accepted on D4`,
+# which is what "§2.1's accepted mitigation" refers to. I guessed the architecture first and
+# was wrong; the heading scan is what corrected me.
+#
+# Bound rather than named inline because `handoff.py` has **9 tokens** of module-size headroom
+# against the baseline `basicly-u2hl.59` just gave it, and spelling the path on three citing
+# lines costs about 24. A binding costs the cited module nothing, and the gate's remedy offers
+# it for exactly this case.
+#
+# **These two bindings point at a document scheduled for deletion** (`basicly-1hp91f` absorbs
+# and deletes `factory-loop.md`). That is correct rather than awkward: cite the document that
+# defines the section today, and let this gate refuse the absorption until the citations are
