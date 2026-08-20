@@ -126,6 +126,43 @@ def test_a_pipeline_whose_status_is_never_read_is_left_alone(module, command: st
     assert module.unread_pipe_filters(command) == ()
 
 
+# Refused verbatim on 2026-08-20 while the fix for this record was being written, so
+# these are observed rather than reconstructed - the distinction the module docstring
+# above draws about the earlier session's two commands.
+AN_UNRELATED_STATUS_READ = (
+    "ls .basicly/ledger/; grep -rn snapshot .scripts/x.py | head -5; "
+    'uv run python .scripts/check_ledger_fsck.py > out.txt 2>&1; echo "exit=$?"; cat out.txt'
+)
+A_FILTER_THEN_ANOTHER_COMMANDS_STATUS = (
+    "sed -n '1,5p' FILE | head -20; npx markdownlint x.md; echo $?"
+)
+
+
+@pytest.mark.parametrize(
+    "command", [AN_UNRELATED_STATUS_READ, A_FILTER_THEN_ANOTHER_COMMANDS_STATUS]
+)
+def test_an_unrelated_status_read_later_in_the_block_leaves_the_filter_alone(
+    module, command: str
+) -> None:
+    """`$?` is the previous command's status, so a command in between claims it.
+
+    Both of these ran a redirected gate after the filter and read *that* status. The
+    first is the shape `_ADVICE` itself recommends, which is why refusing it trains the
+    bypass rather than the habit.
+    """
+    assert module.unread_pipe_filters(command) == ()
+
+
+def test_a_redirect_between_the_filter_and_the_operator_still_refuses(module) -> None:
+    """The true positive from the same session: `&&` branches on `sort`'s status.
+
+    A failing `jq` upstream leaves `sort` exiting 0, so the chain proceeds on a lie. The
+    redirect sits between the filter and the operator and must not hide it.
+    """
+    command = "jq -r .x open.json | sed s/a/b/ | sort > all.tsv && echo done"
+    assert module.unread_pipe_filters(command) == ("sort",)
+
+
 def test_a_heredoc_body_is_not_read_as_a_pipeline(module) -> None:
     """Text written into a file is data; counting it would refuse writing a test."""
     assert module.unread_pipe_filters("cat <<'EOF' > f\nx | tail -1; echo $?\nEOF") == ()

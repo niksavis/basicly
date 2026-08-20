@@ -183,9 +183,24 @@ def unread_pipe_filters(command: str, *, background: bool = False) -> tuple[str,
     return tuple(dict.fromkeys(found))
 
 
+def _next_command(parts: list[tuple[str, str]], index: int) -> str | None:
+    """The first segment after *index* that runs something; a blank or ``#`` line does not."""
+    for segment, _ in parts[index + 1 :]:
+        stripped = segment.strip()
+        if stripped and not stripped.startswith("#"):
+            return segment
+    return None
+
+
 def _reads_status(parts: list[tuple[str, str]], index: int) -> bool:
-    """True when ``$?`` follows this pipeline, or the pipeline is a condition."""
-    if any("$?" in segment for segment, _ in parts[index + 1 :]):
+    """True when ``$?`` reads *this* pipeline's status, or the pipeline is a condition.
+
+    ``$?`` holds the status of the command immediately before it, so a command in between
+    claims it; scanning the whole invocation refused the block `_ADVICE` recommends
+    (basicly-g8jxj3).
+    """
+    following = _next_command(parts, index)
+    if following is not None and "$?" in following:
         return True
     start = index
     while start > 0 and parts[start - 1][1] == "|":
