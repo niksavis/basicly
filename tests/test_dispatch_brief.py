@@ -24,6 +24,19 @@ def test_the_dispatch_prompt_documents_the_needs_input_protocol() -> None:
     assert "not guess" in prompt.lower()
 
 
+def test_the_dispatch_prompt_names_a_per_lane_scratch_isolation_directory() -> None:
+    """A session-keyed scratchpad is shared, so the brief must name a worktree-relative one.
+
+    The path must be relative for the isolation to hold: it resolves against the lane's
+    own worktree, so two lanes given the identical brief still write two directories
+    (basicly-z9xvwa).
+    """
+    prompt = dispatch_brief.dispatch_prompt("i")
+    assert not dispatch_brief.LANE_SCRATCH_DIR.is_absolute()
+    assert dispatch_brief.LANE_SCRATCH_DIR.as_posix() in prompt
+    assert "never in a session-wide" in prompt
+
+
 def test_the_dispatch_prompt_withholds_the_landing_verbs() -> None:
     """The loop lands and ships; an agent that merged would bypass every gate after build."""
     prompt = dispatch_brief.dispatch_prompt("i")

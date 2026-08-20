@@ -14,6 +14,7 @@ tracker content and an agent must not read it as instructions.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import needs_input, review, skill_coverage, skills
@@ -21,7 +22,6 @@ from .config import WORK_TYPES
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from .config import SizingConfig
 
@@ -31,6 +31,11 @@ if TYPE_CHECKING:
 # :data:`basicly.integrity.VALIDATE_GATE`; this module held a second copy with no
 # consumer, which vulture could not see because the name matched a live one elsewhere.
 VERDICT_PREFIX = "VALIDATION:"
+
+# Relative, so it resolves inside the lane's own worktree the way
+# :data:`basicly.needs_input.SENTINEL_FILE` does; a session scratchpad is keyed by
+# session and not by lane, which is the substitution basicly-z9xvwa measured.
+LANE_SCRATCH_DIR = Path(".basicly/usage/scratch")
 
 
 def validate_prompt(issue_id: str) -> str:
@@ -132,6 +137,11 @@ def dispatch_prompt(issue_id: str) -> str:
         "is a result to report rather than a detour. Its requirement still binds. "
         "Before you run the demonstration, write down what you expect it to print; "
         "compare, and say so when the two differ. "
+        f"Put every working file - a script, a measurement, a note - under "
+        f"{LANE_SCRATCH_DIR.as_posix()} in this worktree, and never in a session-wide "
+        "scratchpad: a sibling lane shares that directory, overwrites your file between "
+        "the write and the run, and your command then prints the sibling's numbers under "
+        "your own name with no error. "
         "If you exhaust your ability to resolve a required fact, do NOT guess: "
         f"write {needs_input.SENTINEL_FILE.as_posix()} as "
         '{"fact": "<the missing fact>", "detail": "<what you tried>"} and stop '
