@@ -112,7 +112,7 @@ class Ratchet[Number: (int, float)]:
     count: int
     # Subject -> the fragment that deliberately raised its baseline, so the gate can say
     # how many there are. Empty for a gate whose entries track a measurement.
-    rebaselined: Mapping[str, str] = types.MappingProxyType({})
+    rebaselined: Mapping[str, tuple[str, ...]] = types.MappingProxyType({})
 
 
 @dataclass(frozen=True)
@@ -144,8 +144,19 @@ def rebaseline_clause(ratchet: Ratchet) -> str:
     On the pass line and not only on a failure, because the whole reason a rebaseline is a
     separate table is that it is countable: an unreported one is indistinguishable from the
     silent `frozen` raise this route replaced (basicly-e2mz.20).
+
+    **N is declarations, not entries**, and the two are named apart when they differ. Counting
+    entries reported four loosenings of one file as one, which is the number that mattered:
+    the point of counting is to see debt accumulate on a file, and per-entry counting is
+    exactly blind to accumulation (basicly-wpqdag).
     """
-    return f", {len(ratchet.rebaselined)} rebaselined" if ratchet.rebaselined else ""
+    declared = sum(len(names) for names in ratchet.rebaselined.values())
+    entries = len(ratchet.rebaselined)
+    if not entries:
+        return ""
+    if declared == entries:
+        return f", {entries} rebaselined"
+    return f", {declared} rebaselined across {entries} entr{'y' if entries == 1 else 'ies'}"
 
 
 def count_delta_remedy(gate: str, moved: int) -> str:

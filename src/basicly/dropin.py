@@ -75,10 +75,13 @@ class Baseline[Number: (int, float)]:
 
     frozen: dict[str, Number]
     count: int
-    # Entries whose baseline a fragment deliberately raised, and the fragment that did it.
-    # Surfaced so the gate can print the count: an unreported rebaseline is the defect
-    # basicly-e2mz.20 records, where a disclosed loosening and a silent one looked the same.
-    rebaselined: dict[str, str] = dataclasses.field(default_factory=dict)
+    # Entries whose baseline a fragment deliberately raised, and **every** fragment that
+    # raised it. Surfaced so the gate can print the count: an unreported rebaseline is the
+    # defect basicly-e2mz.20 records, where a disclosed loosening and a silent one looked the
+    # same. Keyed by entry to the *last* declarer, this reported four declarations on
+    # `tests/test_loop.py` as one, so the count an operator reads to judge a file's debt was
+    # the count of files rather than of loosenings (basicly-wpqdag).
+    rebaselined: dict[str, tuple[str, ...]] = dataclasses.field(default_factory=dict)
 
 
 def fragment_paths(repo_root: Path) -> tuple[Path, ...]:
@@ -136,7 +139,7 @@ def compose[Number: (int, float)](  # noqa: PLR0913 - reason in basicly.d/basicl
     """
     composed: dict[str, Number] = dict(frozen)
     total = count
-    rebaselined: dict[str, str] = {}
+    rebaselined: dict[str, tuple[str, ...]] = {}
     for name, table in _ratchet_tables(repo_root, gate):
         total += _delta(name, gate, table.get(COUNT_DELTA, 0), COUNT_DELTA, fractional=False)
         for entry, value in _entry_table(name, gate, table, REBASELINED).items():
@@ -144,7 +147,7 @@ def compose[Number: (int, float)](  # noqa: PLR0913 - reason in basicly.d/basicl
             composed[entry] = composed.get(entry, 0) + _delta(
                 name, gate, value, entry, fractional=fractional
             )
-            rebaselined[entry] = name
+            rebaselined[entry] = (*rebaselined.get(entry, ()), name)
         for entry, value in _entry_table(name, gate, table, "frozen").items():
             moved = _delta(name, gate, value, entry, fractional=fractional)
             if may_only == MAY_ONLY_FALL:

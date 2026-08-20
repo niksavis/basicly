@@ -83,8 +83,17 @@ rebaseline_reason = "code deletion shrank the denominator: prose fell 503 tokens
 ```
 
 Its own table rather than a flag on `frozen` because the point is that it is countable —
-`(74 frozen, 3 waived, 1 rebaselined)` — so a rebaseline cannot accumulate the way a
-`frozen` delta silently did. A missing `rebaseline_reason` is refused.
+`(68 frozen, 3 waived, 41 rebaselined across 19 entries)`. A missing `rebaseline_reason` is
+refused.
+
+**What the count prevents, precisely.** It makes each loosening visible; it does not stop one
+file taking several. The count reports *declarations*, and names the entries apart when the
+two differ, because they did: keyed by entry it read `19 rebaselined` while 41 deltas had been
+declared, so four separate loosenings of `tests/test_loop.py` — 311, 146, 13 and 109 — read as
+one, and three of `merge.py` read as one. Every entry still binds individually, so nothing was
+wrongly admitted; what was wrong was the number an operator reads to judge how much debt a
+file has taken (`basicly-wpqdag`). A file appearing in several fragments is a signal to split
+it, and the count is what shows you.
 
 ## `base_commit`, for the measurement a delta was sized against
 

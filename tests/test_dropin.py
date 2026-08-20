@@ -26,12 +26,22 @@ would still pass every other assertion here.
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from basicly import dropin
+
+# `.scripts/` is no package, so the gate helper is loaded by path the way its own tests do.
+_RATCHET = Path(__file__).parent.parent / ".scripts" / "ratchet.py"
+_spec = importlib.util.spec_from_file_location("ratchet_for_dropin", _RATCHET)
+assert _spec and _spec.loader
+ratchet = importlib.util.module_from_spec(_spec)
+sys.modules["ratchet_for_dropin"] = ratchet
+_spec.loader.exec_module(ratchet)
 
 
 def _fragment(repo: Path, name: str, body: str) -> Path:
@@ -302,7 +312,63 @@ def test_a_rebaseline_is_allowed_named_and_counted(tmp_path: Path) -> None:
     )
 
     assert composed.frozen == {"a.py": 56.6}
-    assert composed.rebaselined == {"a.py": "basicly.d/basicly-x.toml"}
+    assert composed.rebaselined == {"a.py": ("basicly.d/basicly-x.toml",)}
+
+
+def test_an_accumulated_rebaseline_names_every_fragment_that_loosened_it(
+    tmp_path: Path,
+) -> None:
+    """Keyed by entry, four loosenings of one file read as one (basicly-wpqdag).
+
+    Measured on this repo when the defect was found: `tests/test_loop.py` carried four
+    declarations - 311, 146, 13 and 109 - and `merge.py` three, and the summary line said
+    `19 rebaselined` against 41 declared. Every entry bound individually, so nothing was
+    wrongly admitted; the number an operator reads to judge a file's debt was the count of
+    files. The composed baseline is still the sum, which is the control that accumulating the
+    *names* did not change the arithmetic.
+    """
+    for name, delta in (("basicly-a", 0.7), ("basicly-b", 0.3), ("basicly-c", 0.1)):
+        _fragment(
+            tmp_path,
+            name,
+            f'[ratchet.comment_density]\nrebaseline_reason = "{name} shrank it"\n'
+            f'rebaselined = {{"a.py" = {delta}}}\n',
+        )
+
+    composed = dropin.compose(
+        tmp_path, "comment_density", frozen={"a.py": 50.0}, count=0, fractional=True
+    )
+
+    assert composed.rebaselined == {
+        "a.py": (
+            "basicly.d/basicly-a.toml",
+            "basicly.d/basicly-b.toml",
+            "basicly.d/basicly-c.toml",
+        )
+    }
+    assert composed.frozen == {"a.py": 51.1}
+
+
+def test_the_reported_count_is_declarations_and_names_the_entries_apart(
+    tmp_path: Path,
+) -> None:
+    """The clause an operator reads. Entries alone is the number that hid the accumulation."""
+    for name in ("basicly-a", "basicly-b"):
+        _fragment(
+            tmp_path,
+            name,
+            f'[ratchet.comment_density]\nrebaseline_reason = "{name}"\n'
+            'rebaselined = {"a.py" = 0.1}\n',
+        )
+    composed = dropin.compose(
+        tmp_path, "comment_density", frozen={"a.py": 50.0}, count=0, fractional=True
+    )
+
+    clause = ratchet.rebaseline_clause(
+        ratchet.Ratchet(frozen=composed.frozen, count=0, rebaselined=composed.rebaselined)
+    )
+
+    assert clause == ", 2 rebaselined across 1 entry"
 
 
 def test_a_rebaseline_without_a_reason_is_refused(tmp_path: Path) -> None:
