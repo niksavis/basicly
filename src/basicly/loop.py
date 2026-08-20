@@ -529,21 +529,29 @@ def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
     held = _runner_block(ctx, dispatch, issue_id=ctx.issue_id, target="the merged checkout")
     if held is not None:
         return held
-    verdict = validate_gate.verdict_from_reply(
-        runner.result_text(dispatch.spec, dispatch.result.stdout)
-    )
+    reply = runner.result_text(dispatch.spec, dispatch.result.stdout)
+    verdict = validate_gate.verdict_from_reply(reply)
     if verdict is not None:
         validate_gate.record_verdict(ctx.repo_root, ctx.issue_id, passed=verdict)
     # After the verdict is recorded, never before: a review that could not reach the
     # tracker would otherwise throw away the validator's own answer along with its cost.
     _dispatch_reviews(ctx)
-    # Re-read rather than assume: a dispatch that recorded nothing must leave the unit
-    # resting here, not advance on the strength of having run.
+    if verdict is None:
+        return _blocked(
+            ctx,
+            validate_gate.queue_unreadable_verdict(
+                ctx.repo_root, ctx.issue_id, repair_brief.clip_output(reply)
+            ),
+            action="decision",
+            needs_input="validation",
+        )
+    # Re-read rather than trust the parse: green means the store took the verdict, and a
+    # recorded FAIL is a finding the next advance repairs, not a phase move.
     if gate in policy.gate_status(ctx.repo_root, ctx.issue_id, ctx.config).required_passed:
         return _moved(ctx, "verify", "validated", f"{gate} recorded green by the validator")
     return _blocked(
         ctx,
-        f"the validator recorded no {gate} result; the unit stays in validate",
+        f"the validator recorded {gate} failed; the unit stays in validate",
         needs_input="validation",
     )
 
