@@ -373,6 +373,101 @@ def test_cleanup_keeps_unmerged_branch_without_force(
     assert "harness/wip" not in _branches(git_repo)
 
 
+def _land_by_replay(git_repo: Path, branch: str) -> None:
+    """Land *branch*'s content on main the way the queue does when a sibling goes first.
+
+    The landing replays the lane onto the base it finds, so a lane that queued behind
+    another lands on a moved base and its commits arrive under new shas. Measured on
+    git 2.x on 2026-08-20: base then holds every line while the original ref is *not* an
+    ancestor, and ``git branch -d`` answers ``the branch '<branch>' is not fully
+    merged``. That string is observed here, not composed — a fixture built to match a
+    suspected message produces a fix for a failure that never happens.
+    """
+    (git_repo / "sibling.txt").write_text("sibling\n", encoding="utf-8")
+    _git(git_repo, "add", "sibling.txt")
+    _git(git_repo, "commit", "-m", "feat: a sibling lane lands first")
+    _git(git_repo, "cherry-pick", branch)
+
+
+def _commit_in(worktree_path: Path, name: str) -> None:
+    """Commit one new file on the branch checked out in *worktree_path*."""
+    (worktree_path / name).write_text(f"{name}\n", encoding="utf-8")
+    _git(worktree_path, "add", name)
+    _git(worktree_path, "commit", "-m", f"feat: {name}")
+
+
+def test_cleanup_reclaims_a_rebase_merged_branch_whose_content_base_holds(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A correctly landed lane is reclaimed without ``--force``.
+
+    ``git branch -d`` tests ancestry, and ancestry is not what makes a branch safe to
+    discard: this lane's content is in base at every path it touched, and the ref is
+    still refused as "not fully merged". Relaying that as *unmerged — re-run with force
+    to reclaim* made the check wrong on every correct landing, and a check that is wrong
+    every time teaches an operator to pass ``--force`` without reading it — which is the
+    one flag that deletes work (basicly-8g719r).
+    """
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("landed")
+    _commit_in(session.path, "extra.txt")
+    _land_by_replay(git_repo, "harness/landed")
+
+    worktree.cleanup("landed")
+
+    assert "harness/landed" not in _branches(git_repo)
+    assert worktree.load_session("landed", git_repo) is None
+
+
+def test_cleanup_refuses_a_rebase_merged_branch_whose_content_base_lacks(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The signal that saved a commit has to survive the fix that stops the false alarm.
+
+    On 2026-08-20 ``git diff <branch> main`` was non-empty on a tracked path, and that
+    diff is the only reason a real commit was not discarded. So the content test must
+    still refuse, and must name the path instead of offering a blanket ``--force``. The
+    shape here is the one a resumed agent produces: one commit landed, a second made
+    after the tip had been read and never landed at all.
+
+    This is the test a permissive fix breaks. Making :func:`worktree.unlanded_paths`
+    return ``()`` unconditionally leaves the reclaim test above green and fails only
+    this one (basicly-8g719r).
+    """
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("partly")
+    _commit_in(session.path, "landed.txt")
+    _land_by_replay(git_repo, "harness/partly")
+    _commit_in(session.path, "stranded.txt")
+
+    worktree.cleanup("partly")
+
+    assert "harness/partly" in _branches(git_repo)
+    assert worktree.load_session("partly", git_repo) is not None
+    printed = capsys.readouterr().out
+    assert "does not hold 1 path(s) it changed" in printed
+    assert "stranded.txt" in printed
+
+
+def test_unlanded_paths_ignores_what_a_sibling_lane_landed_after_the_fork(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the paths the branch touched are compared, and git's silence fails closed.
+
+    Diffing the whole tree would name every path a sibling lane has landed since the
+    fork, which is the same wrong-every-time answer pointing at "refuse" instead of at
+    "reclaim" — and being wrong toward refuse is what trains the bypass.
+    """
+    monkeypatch.chdir(git_repo)
+    session = worktree.create("scoped")
+    _commit_in(session.path, "mine.txt")
+    _land_by_replay(git_repo, "harness/scoped")
+
+    # sibling.txt is in base and not on the branch, so it must not be reported.
+    assert worktree.unlanded_paths(git_repo, "main", "harness/scoped") == ()
+    assert worktree.unlanded_paths(git_repo, "main", "harness/nope") is None
+
+
 def test_provision_deps_selects_commands_by_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

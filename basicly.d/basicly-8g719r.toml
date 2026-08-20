@@ -34,9 +34,57 @@
 # landing-level fixture can reach. The available extraction here is the coupling
 # attribution block (test_merge.py:1074-1197) — declined for the same reason as (3), and
 # it belongs with the module split rather than ahead of it.
+#
+# --- basicly-8g719r, measured after the aim1qi commit landed -------------------------
+#
+# `src/basicly/worktree.py` +196 and `tests/test_worktree.py` +882, measured on this tree
+# with merge.py already at its new 15880 baseline (0 headroom — the aim1qi rebaseline
+# spent exactly what it declared, so nothing here may lean on merge.py).
+#
+# The +196 is `unlanded_paths` plus the `_kept_for_content` / `_reclaim_branch` pair that
+# replaced the ancestry test. Almost none of it is new branching: the old block already
+# had the `show-ref` fail-closed path, and what grew is the four *distinct* reasons a
+# branch is now kept — base lacks paths, the comparison could not be made, no session
+# names the base, git refused the delete outright — each of which has to be a different
+# sentence to the operator, because the single sentence they replaced said `--force` to
+# all four and one of those four is the case where `--force` deletes the work.
+#
+# Its prose share fell 46.1 -> 49.7 against the hard 50.0 cap, so it is *inside* the cap
+# with 0.3 points to spare and takes no comment-density entry. That 0.3 is the reason the
+# narration of what was *rejected* lives in this fragment instead of in the module.
+#
+# Alternatives rejected, measured in this order:
+#   1. A new `branch_reclaim.py` on the `base_lock.py` pattern. This is the one that
+#      looked right and does not survive measurement: the extracted block is ~1065
+#      tokens of which the majority is the fail-closed narration, so a module holding it
+#      alone lands *over* the 50 percent density cap, and buying a new over-cap module to
+#      keep an existing under-cap one is moving a number, not extracting a
+#      responsibility. worktree.py is also where the responsibility already lives —
+#      `classify_worktree_tree` next door is the same fail-closed shape for the tree.
+#   2. `-D` whenever `-d` refuses. That is the permissive fix, and the mutation test
+#      pins it: making `unlanded_paths` return `()` unconditionally leaves the reclaim
+#      test green and fails only the refusal test, which is the commit yesterday's
+#      `git diff` saved.
+#   3. Whole-tree `git diff <branch> <base>` as the content test. Wrong every time in the
+#      other direction: it names every path a sibling lane landed since the fork. The
+#      third test pins that — `sibling.txt` is in base, absent from the branch, and must
+#      not be reported.
+#   4. Cutting prose from worktree.py to pay for the code. It is 49.7 percent prose
+#      because each fail-closed branch states which way it fails and why, and those are
+#      the claims a reader cannot recover from a `returncode == 1`.
+#
+# `tests/test_worktree.py` +882 for three tests and two fixture helpers. `_land_by_replay`
+# is the expensive half and is the point: the record asserts the landing's *rebase* leaves
+# the ref a non-ancestor, and that is **false** as stated — measured on this tree, a plain
+# rebase-then-`--no-ff` merge leaves the branch an ancestor and `git branch -d` succeeds.
+# The real trigger is a lane that queued behind another and was replayed onto a moved
+# base, where git answers `the branch '<branch>' is not fully merged`. The helper builds
+# that state and carries the observed string, rather than a composed one.
 [ratchet.module_size]
-rebaseline_reason = "merge.py: the landing must name the tip and the commit count it took, and the only cheaper site for the count is after the merge, where it is 0 for every branch. tests/test_merge.py: the record names a demonstration in this module and it had 0 tokens of headroom; the one extraction available is the coupling-attribution block, which belongs with the merge-queue module split this record's scope does not include"
+rebaseline_reason = "merge.py: the landing must name the tip and the commit count it took, and the only cheaper site for the count is after the merge, where it is 0 for every branch. tests/test_merge.py: the record names a demonstration in this module and it had 0 tokens of headroom; the one extraction available is the coupling-attribution block, which belongs with the merge-queue module split this record's scope does not include. worktree.py: the content test replaces an ancestry test that was wrong on every correct landing, and it is fail-closed in four directions that each need naming; a new module for it would have crossed the 50 percent density cap that worktree.py itself is 0.3 points under. tests/test_worktree.py: two of the three tests are the record's own demonstration and the third is the sibling-lane case that keeps the refusal honest"
 
 [ratchet.module_size.rebaselined]
 "src/basicly/merge.py" = 208
 "tests/test_merge.py" = 538
+"src/basicly/worktree.py" = 196
+"tests/test_worktree.py" = 882

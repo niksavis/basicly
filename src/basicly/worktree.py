@@ -248,6 +248,104 @@ def stale_sessions(cwd: Path | str | None = None) -> list[Session]:
     return [s for s in list_sessions(cwd) if not s.path.exists()]
 
 
+def unlanded_paths(main: Path, base: str, branch: str) -> tuple[str, ...] | None:
+    """Paths *branch* changed whose content *base* does not hold, or None when unknown.
+
+    ``git branch -d`` answers ancestry, and ancestry is not what makes a branch safe to
+    discard. Two things separate them. A landing that squashed, cherry-picked or rewrote
+    history above the fork point puts every line into base while leaving the ref
+    unreachable. And ``git branch -d`` fails non-zero for reasons that are not about
+    merging at all — measured 2026-08-20, a branch still checked out in a worktree gives
+    ``cannot delete branch ... used by worktree``, and ``-D`` refuses it too, so the
+    ``re-run with force`` the caller used to offer for *every* failure cannot even
+    succeed there (basicly-8g719r).
+
+    Only the paths the branch touched are compared. The whole-tree diff would name every
+    path a sibling lane has landed since the fork, which is the same wrong-every-time
+    answer pointing the other way — and being wrong toward "refuse" is what trains an
+    operator to stop reading and pass ``--force``.
+
+    Returns:
+        The differing paths, sorted; ``()`` when base holds all of them; ``None`` when
+        git could not answer. The caller fails closed on ``None``: a question nobody
+        answered must not authorise deleting a branch.
+    """
+    fork = git(["merge-base", base, branch], cwd=main, check=False)
+    if fork.returncode != 0 or not fork.stdout.strip():
+        return None
+    touched = git(["diff", "--name-only", fork.stdout.strip(), branch], cwd=main, check=False)
+    against = git(["diff", "--name-only", branch, base], cwd=main, check=False)
+    if touched.returncode != 0 or against.returncode != 0:
+        return None
+    changed = {line for line in touched.stdout.splitlines() if line.strip()}
+    differs = {line for line in against.stdout.splitlines() if line.strip()}
+    return tuple(sorted(changed & differs))
+
+
+def _kept_for_content(main: Path, branch: str, base: str | None, detail: str) -> str:
+    """Why a branch git refused to delete is kept, or ``""`` once content cleared it.
+
+    Reached only after ``git branch -d`` has already said no, and it asks the question
+    that one does not: does *base* hold what this branch changed. When it does, the ref is
+    redundant rather than unmerged, and ``-D`` is the only flag that deletes a ref git
+    calls unmerged — so the reclaim happens here rather than being handed to an operator
+    as ``--force``, which is also what would have deleted the work in the case below.
+
+    *detail* is git's own refusal, carried through so a kept branch says both what git
+    said and what the content comparison found. Fails closed on every answer that is not
+    "base holds all of it".
+    """
+    if base is None:
+        return f"no session record names its base, so its content cannot be compared: {detail}"
+    missing = unlanded_paths(main, base, branch)
+    if missing is None:
+        return f"its content could not be compared with {base}: {detail}"
+    if missing:
+        return (
+            f"{base} does not hold {len(missing)} path(s) it changed, so this work is not "
+            f"landed and force would discard it: {', '.join(missing)}"
+        )
+    purged = git(["branch", "-D", branch], cwd=main, check=False)
+    if purged.returncode == 0:
+        return ""
+    return (
+        f"{base} holds every path it changed, but git refused to delete it: "
+        f"{(purged.stderr or purged.stdout).strip()}"
+    )
+
+
+def _reclaim_branch(main: Path, branch: str, base: str | None, *, force: bool) -> str:
+    """Delete *branch*; return ``""`` once it is gone, else why it is being kept.
+
+    Deciding on content rather than on ancestry, because a check that is wrong on the
+    correct case trains its own bypass, and the bypass here is what deletes work. Every
+    non-empty return names *what stands in the way*; the message this replaced named the
+    remedy — ``--force`` — for whatever git had said, which on 2026-08-20 came within one
+    command of discarding a commit base genuinely did not hold.
+
+    The plain ``git branch -d`` stays as the fast path, so the ordinary merged branch
+    costs exactly one git call and :func:`_kept_for_content` is only reached once git has
+    already refused. ``force`` keeps its old meaning: ``-D`` up front, delete regardless,
+    no content question asked.
+    """
+    deleted = git(["branch", "-D" if force else "-d", branch], cwd=main, check=False)
+    if deleted.returncode == 0:
+        return ""
+    # A branch that is already gone (e.g. deleted by hand during a manual recovery) is
+    # effectively removed — treat it so, or its session record is stranded and keeps
+    # counting toward the concurrency cap. Only exit 1 means "the ref is absent": any
+    # other failure means the question was not answered, and treating that as absent
+    # drops the session record while the branch survives — an orphaned branch nothing
+    # points at, which is the same fail-open class as the tree check (basicly-jr0l.47).
+    absent = git(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=main, check=False)
+    if absent.returncode == 1:
+        return ""
+    detail = (deleted.stderr or deleted.stdout).strip()
+    if force:
+        return f"git refused to delete it: {detail}"
+    return _kept_for_content(main, branch, base, detail)
+
+
 @dataclass(frozen=True)
 class RemovalVerdict:
     """Whether a worktree's tree may be discarded, and what stands in the way.
@@ -411,39 +509,19 @@ def cleanup(
     if (main / PRECOMMIT_CONFIG).exists():
         print(f"  {install_worktree_hooks(main)}")
 
-    branch_removed = True
-    if branch:
-        delete_flag = "-D" if force else "-d"
-        deleted = git(["branch", delete_flag, branch], cwd=main, check=False)
-        branch_removed = deleted.returncode == 0
-        if not branch_removed:
-            # A branch that is already gone (e.g. deleted by hand during a manual
-            # recovery) is effectively removed — treat it so, or its session
-            # record is stranded and keeps counting toward the concurrency cap.
-            exists = git(
-                ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
-                cwd=main,
-                check=False,
-            )
-            # Only exit 1 means "the ref is absent". Any other failure means the
-            # question was not answered, and treating that as absent drops the
-            # session record while the branch survives — an orphaned branch nothing
-            # points at, which is the same fail-open class as the tree check above
-            # (basicly-jr0l.47).
-            branch_removed = exists.returncode == 1
-        if not branch_removed:
-            detail = (deleted.stderr or deleted.stdout).strip()
-            print(f"  note: branch {branch} not deleted ({detail})")
+    # Resolve the record against the primary checkout, not *repo_root*: the worktree dir
+    # is gone by now, so a cwd pointing into it cannot answer.
+    record = load_session(name, main)
+    kept = (
+        _reclaim_branch(main, branch, record.base if record else None, force=force)
+        if branch
+        else ""
+    )
 
-    # Keep the record when an unmerged branch survives, so `cleanup --force`
-    # can still find and reclaim it once the worktree dir is already gone.
-    if branch_removed:
-        # Resolve the record against the primary checkout, not *repo_root*: the
-        # worktree dir is gone by now, so a cwd pointing into it cannot answer.
+    # Keep the record when the branch survives, so `cleanup --force` can still find and
+    # reclaim it once the worktree dir is already gone.
+    if not kept:
         session_file(name, main).unlink(missing_ok=True)
         print(f"Cleaned up worktree {name!r} (worktree + branch + metadata).")
     else:
-        print(
-            f"Removed worktree {name!r}; kept branch {branch} and its record "
-            "(unmerged — re-run with force to reclaim)."
-        )
+        print(f"Removed worktree {name!r}; kept branch {branch} and its record ({kept}).")
