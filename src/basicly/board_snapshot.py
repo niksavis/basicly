@@ -25,12 +25,17 @@ is therefore absent from the document - never zero - and the page renders "not e
 producer". `.basicly/usage/` is git-ignored and worktree-local, so in a lane worktree all
 three usage sources really are missing and the tracker half still draws.
 
-Three sections the schema declares are **not** emitted here, and each is named rather than
-forgotten: ``lanes``, because ``lanes[].phase`` is required and its authority is
-``loop_state.read_node_state``, which needs the policy config's required-gate set - a source
-outside this producer's; and ``units`` and ``graph``, whose row shape belongs to the page that
-draws them. ``backlog`` likewise carries no ``ready`` or ``blocked``: both are the tracker's
-own derivation, and a second spelling of either in a display producer is how the two come to
+**Lanes are the second thing a caller supplies, and for the same reason.**
+``lanes[].phase`` is required by the schema and its authority is
+``loop_state.read_node_state``, which calls ``validate_gate.required_config`` for the set of
+gates the unit owes - a fourth source, outside the three files opened here. A phase folded out
+of ledger evidence alone diverges from the engine's for any unit owing validation, so the
+facts arrive as :class:`basicly.board_fields.LaneFacts` and with none supplied the ``lanes``
+section is **omitted**.
+
+``backlog`` carries no ``ready`` or ``blocked``, and ``units`` carries no ``ready`` or
+``phase``: each is the tracker's own derivation over a status vocabulary and a full edge
+population, and a second spelling of one in a display producer is how the two come to
 disagree.
 """
 
@@ -112,8 +117,29 @@ class Freshness:
     stale_after_s: float = DEFAULT_STALE_AFTER_S
 
 
-def _read_and_fold(repo_root: Path) -> tuple[list[Any], Mapping[str, Any]] | None:
-    """*repo_root*'s ledger events and **the** fold over them, or None if unreadable.
+@dataclass(frozen=True)
+class Facts:
+    """Everything the caller knows that this producer may not derive.
+
+    One record rather than one argument each, because the two are one rule - OQ-D's *the
+    layer above supplies the fact the layer below cannot honestly derive*. :attr:`session`
+    needs the supervisor lock, which reading here would close the cycle
+    ``supervise -> board_snapshot -> supervise`` (C11); :attr:`lanes` needs the loop's
+    required-gate set. Whichever is None has its section **omitted**, and unit F's supervisor
+    caller adds its facts here rather than to a signature.
+    """
+
+    session: SessionFacts | None = None
+    lanes: Sequence[board_fields.LaneFacts] | None = None
+
+
+def _read_and_fold(repo_root: Path) -> tuple[Mapping[str, Any], list[Any], list[tuple]] | None:
+    """*repo_root*'s folded records, its marker rows and its asserted edges, or None.
+
+    **One read of the log and one fold over it, and everything the document says about the
+    tracker comes out of these three.** The markers and the edges are further passes over the
+    same in-memory list rather than reads of their own, which is the whole distance between
+    this producer and `observe()`'s 93 folds.
 
     The ledger is resolved through the redirect, so a worktree reads the base checkout's one
     store rather than a copy of it. Best-effort in the direction the whole document is: an
@@ -124,7 +150,11 @@ def _read_and_fold(repo_root: Path) -> tuple[list[Any], Mapping[str, Any]] | Non
         events = kit.read_ledger(owned_store.ledger_dir(repo_root))
     except owned_store.TrackerDivergenceError, OSError, ValueError:
         return None
-    return events, kit.events.fold(events).records
+    return (
+        kit.events.fold(events).records,
+        board_fields.read_markers(events),
+        board_fields.edge_triples(kit, events),
+    )
 
 
 def _live(records: Mapping[str, Any]) -> list[Any]:
@@ -279,7 +309,7 @@ def _health(records: dict[str, list]) -> list[dict[str, object]]:
 def build_document(
     repo_root: Path,
     *,
-    session: SessionFacts | None = None,
+    facts: Facts | None = None,
     freshness: Freshness | None = None,
     now: datetime | None = None,
     event_limit: int = EVENT_LIMIT,
@@ -292,8 +322,10 @@ def build_document(
 
     Args:
         repo_root: The checkout to read.
-        session: The live-lock facts, from a caller above ``supervise``. None omits the
-            ``session`` section rather than guessing a root.
+        facts: What the caller knows and this module may not derive - the live-lock facts
+            and the in-flight lanes. Each one absent omits its section rather than guessing
+            a root or a phase. An empty ``lanes`` sequence still emits ``[]``, which is the
+            different claim that the caller can see lanes and there are none.
         freshness: What will rewrite this document. Defaults to a one-shot build.
         now: The instant to stamp. Injected so a test is a function of its fixture rather
             than of the clock.
@@ -301,6 +333,7 @@ def build_document(
     """
     moment = now or datetime.now(UTC)
     chosen = freshness or Freshness()
+    known = facts or Facts()
     document: dict[str, object] = {
         "schema": SCHEMA,
         "generated_at": board_fields.stamp(moment),
@@ -318,13 +351,23 @@ def build_document(
     }
     read = _read_and_fold(repo_root)
     if read is not None:
-        events, records = read
-        markers = board_fields.read_markers(events)
-        document["backlog"] = _backlog(_live(records))
+        records, markers, edges = read
+        live = _live(records)
+        # The active population, not every record: `units` and `graph` are what a board draws
+        # rather than what the log holds, and C6 priced the payload on exactly this cut.
+        active = [state for state in live if state.status != _CLOSED_STATUS]
+        drawn = {state.record for state in active}
+        document["backlog"] = _backlog(live)
+        document["units"] = board_fields.units(active)
+        document["graph"] = board_fields.graph(
+            edge for edge in edges if edge[0] in drawn or edge[2] in drawn
+        )
         document["asks"] = board_fields.asks(markers)
         document["events"] = board_fields.events(markers, event_limit)
-        if session is not None:
-            document["session"] = _session(session, records)
+        if known.session is not None:
+            document["session"] = _session(known.session, records)
+    if known.lanes is not None:
+        document["lanes"] = board_fields.lanes(known.lanes)
     gates = _gates(repo_root)
     if gates is not None:
         document["gates"] = gates
