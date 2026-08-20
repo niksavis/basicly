@@ -81,7 +81,7 @@ step that merges a worktree back, and it runs verify against the rebased tree
 and reports the gate itself:
 
 ```text
-[merged] build -> verify: merged harness/myrepo-etk into main @ d605fb4
+[merged] build -> verify: merged harness/myrepo-etk @ 3f9c1ab07e42 (2 commit(s)) into main @ d605fb4
 ```
 
 Recording the gate out of band during build (`basicly verify --issue …`) makes

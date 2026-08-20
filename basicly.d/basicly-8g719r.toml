@@ -1,0 +1,42 @@
+# Measured on this tree at 6f62b520, per file, before the first edit — a figure from a
+# record is only valid against the tree it was taken on, and two lanes each spending
+# `merge.py`'s last 2 tokens is what turned a green branch red on the merge for
+# basicly-kjc5.63. Both files this lane pins had **0** tokens of module-size headroom:
+# merge.py 15672/15672, tests/test_merge.py 20709/20709.
+#
+# `src/basicly/merge.py` +208, all of it for the landing's statement of what it took
+# (basicly-aim1qi): `carried_commits` (a `rev-list --count` read plus the three-line
+# reason it must be read before the merge and must answer None rather than 0), the one
+# call, and the merged detail that now names the tip and the count. Its prose share went
+# 60.4 -> 60.2 against a frozen 60.7, because what landed is code plus a paragraph
+# shorter than the code it explains — nothing was cut to pay for it.
+#
+# Four alternatives rejected, in the order they were measured:
+#   1. Read the count *after* the merge instead. That is 0 for every branch once base
+#      holds the commits, i.e. the exact false report the record closes.
+#   2. Put the mechanism in a new module, the `base_lock.py` pattern that paid for
+#      kjc5.63. A three-line ref read is not a responsibility, and reaching it from
+#      merge.py costs about what holding it costs.
+#   3. Extract the merge queue and its coupling attribution (merge.py's second half,
+#      ~6000 tokens) into its own module. This is the real, nameable split merge.py
+#      wants, and it is a separate record's work: it rewrites the import surface of
+#      cli.py, loop.py, supervise.py and four test modules while nine sibling lanes are
+#      live on this base.
+#   4. Cut prose from merge.py to pay for the code. That is the comment purge the
+#      density ratchet exists to refuse, and merge.py reads 60.2% prose precisely
+#      because its narration is what a reader cannot recover from the code.
+#
+# `tests/test_merge.py` +538 for two tests the record's demonstration names. The larger
+# one is the landing report, whose fixture makes the branch tip and the merge commit two
+# different shas on purpose: reporting the merge commit is what the defect already did,
+# so a fixture where they are equal cannot tell the fix from the bug, and that is what
+# the docstring spends its lines on. The second pins the uncounted case, which no
+# landing-level fixture can reach. The available extraction here is the coupling
+# attribution block (test_merge.py:1074-1197) — declined for the same reason as (3), and
+# it belongs with the module split rather than ahead of it.
+[ratchet.module_size]
+rebaseline_reason = "merge.py: the landing must name the tip and the commit count it took, and the only cheaper site for the count is after the merge, where it is 0 for every branch. tests/test_merge.py: the record names a demonstration in this module and it had 0 tokens of headroom; the one extraction available is the coupling-attribution block, which belongs with the merge-queue module split this record's scope does not include"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/merge.py" = 208
+"tests/test_merge.py" = 538

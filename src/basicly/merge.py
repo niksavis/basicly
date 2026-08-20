@@ -401,6 +401,18 @@ def branch_head(repo_root: Path, branch: str) -> str | None:
     return head if proc.returncode == 0 and head else None
 
 
+def carried_commits(repo_root: Path, base: str, branch: str) -> int | None:
+    """How many commits *branch* holds that *base* does not, or None when unreadable.
+
+    Must be read before the merge: afterwards the answer is 0 for every branch. And None
+    rather than 0 when git cannot answer, because this number exists so a landing can
+    state what it took, and a count nothing measured is the false report it closes.
+    """
+    proc = git(["rev-list", "--count", f"{base}..{branch}"], cwd=repo_root, check=False)
+    count = proc.stdout.strip()
+    return int(count) if proc.returncode == 0 and count.isdigit() else None
+
+
 def is_ancestor(repo_root: Path, commit: str, target: str) -> bool:
     """True when *commit* is reachable from *target* — the proof a merge landed.
 
@@ -725,6 +737,7 @@ def _merge_and_prove(
     # A failure (e.g. a commit-msg hook rejection) must not strand MERGE_HEAD.
     # Attribute the dispatched runner (basicly-140a) from the run-record, best-effort.
     record = run_record.latest_record(repo_root, bead)
+    carried = carried_commits(repo_root, base, branch)
     proc = git(
         ["merge", "--no-ff", branch, "-m", _merge_message(name, branch, base, bead, record)],
         cwd=repo_root,
@@ -747,8 +760,12 @@ def _merge_and_prove(
             f"{base}: the work is not landed — inspect base before landing anything else",
         )
     head = git(["rev-parse", "--short", "HEAD"], cwd=repo_root).stdout.strip()
+    took = f"{carried} commit(s)" if carried is not None else "an uncounted number of commits"
     return MergeResult(
-        name, "merged", f"merged {branch} into {base} @ {head}", landed_head=landed_head
+        name,
+        "merged",
+        f"merged {branch} @ {landed_head[:12]} ({took}) into {base} @ {head}",
+        landed_head=landed_head,
     )
 
 
