@@ -31,8 +31,24 @@
 # outside this record's declared scope and pp7q4i assigned that move to a record that owns it.
 # Prose share 33.2 -> 31.7 under the 50% cap: the growth is assertions and a git fixture,
 # and it is code-heavier than the suite it joins.
+# `src/basicly/merge.py` 15399 -> 15480, rebaselined by 79 against a 15401 baseline that
+# had 2 tokens of headroom. The recorded head was read before the merge, which rebases the
+# branch and can commit a regeneration on top of it: the artifact named `d3422f81` while
+# the branch stood at `634c125a`, two commits later. `MergeResult` gains the head the merge
+# took (`landed_head`, 6 tokens) plus the three-line comment stating why it may only be
+# read there and why re-resolving the ref afterwards is not the same value, and the success
+# return grows two lines under `ruff format`. Prose share 60.3 -> 60.4 against a 60.7
+# ceiling, so the growth is code-heavier than the module it joins.
+#
+# The alternative was a second `merge.branch_head` read in `loop.py` after the landing
+# returns, which needs no token in `merge.py` — and answers about whatever moved the ref
+# since, which is the class of bug being fixed. Shrinking `merge.py` by 79 tokens instead
+# was available only by cutting narration, the one route the ratchets exist to refuse.
+# `src/basicly/loop.py` needs no entry: 31356 -> 31304, and the prose share holds at 52.4
+# because the head's reason moved to the field that carries it.
 [ratchet.module_size]
-rebaseline_reason = "the four acceptance criteria name four demonstrations and the suite had 0 tokens of headroom; the only extraction available is the _cut_violation seam move into artifact_record, which basicly-pp7q4i deferred to a record that owns it and which this record's scope does not include"
+rebaseline_reason = "test_handoff.py: the four acceptance criteria name four demonstrations and the suite had 0 tokens of headroom; the only extraction available is the _cut_violation seam move into artifact_record, which basicly-pp7q4i deferred to a record that owns it and which this record's scope does not include. merge.py: the landing must report the head it took, and the only cheaper site for that value is a second ref read after the merge, which reintroduces the staleness it fixes"
 
 [ratchet.module_size.rebaselined]
 "tests/test_handoff.py" = 990
+"src/basicly/merge.py" = 79

@@ -173,6 +173,10 @@ class MergeResult:
     # attribution against them, and must not have to parse it back out of the
     # message (basicly-qorx).
     culprits: tuple[str, ...] = ()
+    # The branch head this landing took, empty unless it landed. The rebase and the
+    # regeneration each rewrite it, so a head read before the merge is stale; carried as
+    # data because re-resolving the ref after answers about whatever moved it since.
+    landed_head: str = ""
 
     @property
     def merged(self) -> bool:
@@ -717,7 +721,9 @@ def _merge_and_prove(
             f"{base}: the work is not landed — inspect base before landing anything else",
         )
     head = git(["rev-parse", "--short", "HEAD"], cwd=repo_root).stdout.strip()
-    return MergeResult(name, "merged", f"merged {branch} into {base} @ {head}")
+    return MergeResult(
+        name, "merged", f"merged {branch} into {base} @ {head}", landed_head=landed_head
+    )
 
 
 def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing input
