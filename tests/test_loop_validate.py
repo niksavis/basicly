@@ -19,6 +19,7 @@ records nothing. Without the third a fail-silent becomes a fail-open, which is w
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -193,3 +194,18 @@ def test_the_engine_and_not_the_agent_is_the_provider_of_record(
     loop.advance(repo, RECORD, config=CONFIG, inputs=loop.Inputs())
 
     assert gate_events(repo)[0].payload["provider"] in policy.ENGINE_GATE_PROVIDERS
+
+
+def test_the_two_queue_sites_give_the_decision_kind_one_spelling() -> None:
+    """Both sites that queue a validate decision name the symbol, never the string.
+
+    `decision_marker.KINDS` reserves the kind, so a queue site and the reserved list
+    only stay interchangeable while they agree - and a second spelling is the one a
+    later reader copies. Read off the source text because the literal and the symbol
+    evaluate to the same string, so nothing a call can observe discriminates them.
+    """
+    for site in (loop._hold_for_validate_decision, validate_gate.queue_unreadable_verdict):
+        source = inspect.getsource(site)
+        assert "decisions.enqueue" in source, "the probe must be reading a queueing site"
+        assert "VALIDATE_DECISION_KIND" in source
+        assert f'"{validate_gate.VALIDATE_DECISION_KIND}"' not in source
