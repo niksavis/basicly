@@ -15,7 +15,8 @@ import importlib.util
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -28,6 +29,9 @@ FIXTURE_LEDGER = REPO_ROOT / "tests" / "fixtures" / "board" / "ledger"
 # What the frozen corpus holds, and the three numbers are the point. 140 request markers is
 # what a tally reports; 1 is what a pairing reports; 203 distinct answered ids is the control
 # that fails a parser which silently matched nothing.
+# The edges the frozen corpus still asserts: eight written, one of them retracted.
+FIXTURE_EDGES = 7
+
 NAIVE_REQUESTS = 140
 ANSWERED_IDS = 203
 PENDING_ASKS = 1
@@ -46,6 +50,19 @@ def _load(path: Path, name: str) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(scope="module")
+def fixture_events() -> tuple[Any, list[Any]]:
+    """The kit and the frozen corpus's events, read once for every reader that needs both.
+
+    Reached through `owned_store.kit` for the reason :func:`markers` states, and shared so
+    the edge assertions below read the log once rather than once each.
+    """
+    kit = owned_store.kit(REPO_ROOT)
+    found, quarantined = kit.events.read_events(FIXTURE_LEDGER)
+    assert not quarantined, "the frozen corpus must parse cleanly or it is not a baseline"
+    return kit, found
 
 
 @pytest.fixture(scope="module")
@@ -259,3 +276,96 @@ def test_a_lane_branch_and_an_unparsable_start_are_handled_at_the_producer() -> 
     ])
     assert "/home/someone" not in str(rows)
     assert "started_at" not in rows[0]
+
+
+def test_a_unit_row_carries_the_bounded_title_and_no_other_prose() -> None:
+    """basicly-vhixrn: fields, never records - and `title` is the only prose admitted.
+
+    The refusal half is the assertion that matters. A folded record carries its description,
+    its acceptance criteria and every comment body; a row shaped like one would put the whole
+    log on the wire, which is the 132.5x this module exists for.
+    """
+    state = SimpleNamespace(
+        record="fx-root.1",
+        status="in_progress",
+        fields={
+            "title": "a lane in flight",
+            "priority": 1,
+            "issue_type": "task",
+            "description": "a body no board may carry",
+            "acceptance_criteria": "nor these",
+        },
+    )
+    rows = board_fields.units([state])
+    assert rows == [
+        {
+            "id": "fx-root.1",
+            "title": "a lane in flight",
+            "status": "in_progress",
+            "priority": "P1",
+            "type": "task",
+        }
+    ]
+    assert "body no board" not in str(rows)
+    assert "acceptance_criteria" not in str(rows)
+
+
+def test_a_unit_row_bounds_a_title_and_omits_what_the_record_lacks() -> None:
+    """An over-long title is truncated rather than withholding the whole section.
+
+    A length violation inside an optional section costs that section, so bounding here is
+    what keeps a long title from blanking the panel it belongs to.
+    """
+    long = SimpleNamespace(record="fx-1", status="", fields={"title": "t" * 400, "priority": True})
+    rows = board_fields.units([long])
+    assert rows[0]["title"] == "t" * board_fields.TEXT_MAX
+    assert set(rows[0]) == {"id", "title"}
+
+
+def test_the_graph_section_is_triples_and_the_edge_kind_passes_through() -> None:
+    """The kind is not mapped: the schema leaves it open so a foreign vocabulary survives."""
+    section = board_fields.graph([("fx-a", "invented-by-someone-else", "fx-b")])
+    assert section == {
+        "edges": [{"from": "fx-a", "to": "fx-b", "kind": "invented-by-someone-else"}]
+    }
+
+
+def test_the_edge_reader_agrees_with_the_kits_own_on_the_frozen_corpus(
+    fixture_events: tuple[Any, list[Any]],
+) -> None:
+    """Two producers of one answer, held to one shape.
+
+    `board_fields.edge_triples` reads the edge events directly because
+    `views_from_events` folds the log a second time to answer this, and folding once is the
+    producer's whole advantage. That makes this parity assertion the thing standing between
+    the two readers and a silent dialect drift - the same job `test_tracker_query` does for
+    `tracker._edges` against the kit's own `read_record`.
+    """
+    kit, events = fixture_events
+    mine = sorted(board_fields.edge_triples(kit, events))
+    views = kit.views_from_events(events)
+    theirs = sorted(
+        (record, edge.type, edge.target)
+        for record, view in views.items()
+        for edge in view.dependencies
+    )
+    assert mine == theirs
+    assert len(mine) == FIXTURE_EDGES
+
+
+def test_a_retracted_edge_is_absent_while_both_of_its_events_remain(
+    fixture_events: tuple[Any, list[Any]],
+) -> None:
+    """The control on the parity test above: the corpus holds an edge and its retraction.
+
+    Without this the two readers could agree by both ignoring retraction, and the assertion
+    would pass over the one case it exists for. The positive control is that the *asserted*
+    `blocks` edge in the same corpus is present.
+    """
+    kit, events = fixture_events
+    triples = set(board_fields.edge_triples(kit, events))
+    kinds = {event.kind for event in events}
+
+    assert kit.events.KIND_EDGE_RETRACTED in kinds
+    assert ("fx-root.1", "blocks", "fx-root.5") not in triples
+    assert ("fx-root.4", "blocks", "fx-root.3") in triples

@@ -33,9 +33,10 @@ of ledger evidence alone diverges from the engine's for any unit owing validatio
 facts arrive as :class:`basicly.board_fields.LaneFacts` and with none supplied the ``lanes``
 section is **omitted**.
 
-``backlog`` carries no ``ready`` or ``blocked``, and ``units`` carries no ``ready``: each is
-the tracker's own derivation over a vocabulary and a full edge population, and a second
-spelling of one in a display producer is how the two come to disagree.
+``backlog`` carries no ``ready`` or ``blocked``, and ``units`` carries no ``ready`` or
+``phase``: each is the tracker's own derivation over a status vocabulary and a full edge
+population, and a second spelling of one in a display producer is how the two come to
+disagree.
 """
 
 from __future__ import annotations
@@ -132,8 +133,13 @@ class Facts:
     lanes: Sequence[board_fields.LaneFacts] | None = None
 
 
-def _read_and_fold(repo_root: Path) -> tuple[list[Any], Mapping[str, Any]] | None:
-    """*repo_root*'s ledger events and **the** fold over them, or None if unreadable.
+def _read_and_fold(repo_root: Path) -> tuple[Mapping[str, Any], list[Any], list[tuple]] | None:
+    """*repo_root*'s folded records, its marker rows and its asserted edges, or None.
+
+    **One read of the log and one fold over it, and everything the document says about the
+    tracker comes out of these three.** The markers and the edges are further passes over the
+    same in-memory list rather than reads of their own, which is the whole distance between
+    this producer and `observe()`'s 93 folds.
 
     The ledger is resolved through the redirect, so a worktree reads the base checkout's one
     store rather than a copy of it. Best-effort in the direction the whole document is: an
@@ -144,7 +150,11 @@ def _read_and_fold(repo_root: Path) -> tuple[list[Any], Mapping[str, Any]] | Non
         events = kit.read_ledger(owned_store.ledger_dir(repo_root))
     except owned_store.TrackerDivergenceError, OSError, ValueError:
         return None
-    return events, kit.events.fold(events).records
+    return (
+        kit.events.fold(events).records,
+        board_fields.read_markers(events),
+        board_fields.edge_triples(kit, events),
+    )
 
 
 def _live(records: Mapping[str, Any]) -> list[Any]:
@@ -341,9 +351,17 @@ def build_document(
     }
     read = _read_and_fold(repo_root)
     if read is not None:
-        events, records = read
-        markers = board_fields.read_markers(events)
-        document["backlog"] = _backlog(_live(records))
+        records, markers, edges = read
+        live = _live(records)
+        # The active population, not every record: `units` and `graph` are what a board draws
+        # rather than what the log holds, and C6 priced the payload on exactly this cut.
+        active = [state for state in live if state.status != _CLOSED_STATUS]
+        drawn = {state.record for state in active}
+        document["backlog"] = _backlog(live)
+        document["units"] = board_fields.units(active)
+        document["graph"] = board_fields.graph(
+            edge for edge in edges if edge[0] in drawn or edge[2] in drawn
+        )
         document["asks"] = board_fields.asks(markers)
         document["events"] = board_fields.events(markers, event_limit)
         if known.session is not None:

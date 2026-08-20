@@ -13,8 +13,8 @@ The marker roster below is the other half, and :data:`FAMILY_NAMES` carries its 
 anything, because no file this producer opens holds it.
 """
 
-# comment-density-waiver: 1260 tokens of code - a 12-member roster, three one-line value
-# helpers, four small reducers and one facts record - so the share is set by the member count
+# comment-density-waiver: 1665 tokens of code - a 12-member roster, three one-line value
+# helpers, six small reducers and one facts record - so the share is set by the member count
 # and not by narration, the same shape as `tracker_paths` and `.scripts/ratchet.py`. Every
 # block states a measurement or a rule a reader cannot recover from the code: the 132.5x
 # field-selection figure, the two roster shortcuts that are refuted (11 derived, 15 grepped),
@@ -85,6 +85,7 @@ TEXT_MAX = 200
 KIND_MAX = 40
 NAME_MAX = 80
 AGENT_MAX = 60
+PRIORITY_MAX = 16
 
 # The family, then the rest of its first line. The character class is the roster gate's own, so
 # a malformed marker fails to match and is skipped rather than raising - the best-effort
@@ -258,6 +259,79 @@ def lanes(facts: Iterable[LaneFacts]) -> list[dict[str, object]]:
             row["branch"] = text(lane.branch, TEXT_MAX)
         rows.append(row)
     return rows
+
+
+def units(states: Iterable[Any]) -> list[dict[str, object]]:
+    """One bounded row per folded record in *states*, at the five fields a board draws.
+
+    **This is the rule at its sharpest: fields, never records.** A folded record carries its
+    description, its acceptance criteria and every comment body, and a row shaped like one
+    would put 1,472,207 tokens on the wire against 11,113 for the selection - the 132.5x this
+    module exists for. `title` is the only prose admitted and it is bounded, so a description
+    cannot arrive by being called a title.
+
+    Two properties the schema offers are deliberately not filled. `phase` has the same
+    authority problem :class:`LaneFacts` documents, and `ready` is the tracker's own
+    derivation over a status vocabulary and the whole edge population - the same reason
+    `backlog` carries no `ready` or `blocked`. A second spelling of either here is how two
+    derivations come to disagree, so both stay absent until a caller supplies them.
+    """
+    rows = []
+    for state in states:
+        row: dict[str, object] = {"id": text(state.record, ID_MAX)}
+        if title := state.fields.get("title"):
+            row["title"] = text(title, TEXT_MAX)
+        if state.status:
+            row["status"] = text(state.status, KIND_MAX)
+        priority = state.fields.get("priority")
+        if isinstance(priority, int) and not isinstance(priority, bool):
+            row["priority"] = text(f"P{priority}", PRIORITY_MAX)
+        if kind := state.fields.get("issue_type"):
+            row["type"] = text(kind, KIND_MAX)
+        rows.append(row)
+    return rows
+
+
+def edge_triples(kit: Any, collected: Iterable[Any]) -> list[tuple[str, str, str]]:
+    """Every edge the log still asserts, as ``(source, kind, target)``, last statement wins.
+
+    **Read off the events rather than through the kit's own `views_from_events`, and the
+    reason is the one guarantee this producer sells.** That function folds the log a second
+    time to answer this, and a second fold is exactly what makes `observe()` cost 6.1 s over
+    93 of them. So the caller's already-read event list is walked once more here, which is a
+    pass and not a fold.
+
+    Nothing about the dialect is respelled: the kinds, the payload keys and the ordering are
+    all *kit* values reached through the sanctioned attribute chain, and
+    `tests/test_board_snapshot.py` binds the result to `views_from_events`'s own edge set on
+    a corpus holding a retraction - the shape `test_tracker_query` already holds two
+    producers of one answer to. A retracted edge is therefore absent here while both of its
+    events stay in the log, which is what makes a retraction a retraction and not a deletion.
+    """
+    held: dict[tuple[str, str, str], bool] = {}
+    for event in kit.events.canonical_order(collected):
+        if event.kind not in (kit.events.KIND_EDGE, kit.events.KIND_EDGE_RETRACTED):
+            continue
+        target = event.payload.get(kit.migrate.EDGE_TO)
+        kind = event.payload.get(kit.migrate.EDGE_TYPE)
+        if isinstance(target, str) and isinstance(kind, str):
+            held[(event.record, kind, target)] = event.kind == kit.events.KIND_EDGE
+    return [edge for edge, asserted in held.items() if asserted]
+
+
+def graph(triples: Iterable[tuple[str, str, str]]) -> dict[str, object]:
+    """*triples* as the `graph` section: `from`, `to` and the edge kind, each bounded.
+
+    Separate from :func:`units` because edges answer the one question a count of blocked
+    items raises and cannot settle. The kind is passed through rather than mapped: the schema
+    leaves it an open string, so a foreign harness's own vocabulary crosses unaltered.
+    """
+    return {
+        "edges": [
+            {"from": text(source, ID_MAX), "to": text(target, ID_MAX), "kind": text(kind, KIND_MAX)}
+            for source, kind, target in triples
+        ]
+    }
 
 
 def events(markers: Sequence[Marker], limit: int) -> list[dict[str, object]]:

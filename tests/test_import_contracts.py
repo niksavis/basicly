@@ -10,10 +10,17 @@ These tests are the control pair the old contract could never have passed: the s
 staged copy of the package is checked unchanged (kept) and again with one upward
 import injected (broken, naming both modules). A contract that cannot fail fails
 these, so the gate's own gate is a gate.
+
+The last test is the other half of the same worry, one level down: a contract holds a
+*tier*, and a tier can be renumbered by someone who never reads the reason it was drawn
+there. So the one edge C11 forbids by name - the board producer importing `supervise`,
+which unit F would close into a cycle - is asserted against the module text as well, and
+carries its reason with it.
 """
 
 from __future__ import annotations
 
+import ast
 import os
 import shutil
 import subprocess
@@ -124,3 +131,29 @@ def test_contracts_break_on_a_real_violation(
     assert result.returncode != 0, output
     for fragment in expected:
         assert fragment in output, output
+
+
+@pytest.mark.parametrize("module", ["board_snapshot", "board_fields"])
+def test_the_board_producer_does_not_import_supervise(module: str) -> None:
+    """C11's one named edge, read off the source rather than off the tier stack.
+
+    Unit F has `supervise` import the producer, so the reverse edge closes
+    `supervise -> board_snapshot -> supervise`. That cycle is why the live-lock facts and
+    the lane facts are arguments the caller supplies rather than reads this module makes.
+
+    The first assertion is the positive control: it fails if no import was read at all, so a
+    green result is the absence of the edge and not the absence of a probe.
+    """
+    source = REPO_ROOT / "src" / "basicly" / f"{module}.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported.update(alias.name for alias in node.names)
+            imported.add(node.module or "")
+
+    assert imported, "no imports were read, so this probe proves nothing"
+    assert "supervise" not in imported
+    assert not any(name.endswith(".supervise") for name in imported)
