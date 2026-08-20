@@ -22,10 +22,16 @@ from typing import Any
 
 import pytest
 
-from basicly import mirror, owned_store, tracker_argv
+from basicly import mirror, owned_store, owned_write, tracker_argv
 from basicly.owned_store import TrackerDivergenceError
+from tests.test_owned_write import PARENT, events_of, no_br, owned_repo, seed
+
+__all__ = ["no_br"]  # re-exported so the fixture resolves in this module
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# A record id no `seed` opens, so a write naming it has nothing in the ledger to land on.
+ABSENT = "wpc-nope"
 
 
 @pytest.fixture(scope="module")
@@ -335,3 +341,59 @@ def test_a_close_naming_no_id_is_still_refused(kit: Any) -> None:
     """Widening to many ids must not widen to none — the control on the close above."""
     with pytest.raises(TrackerDivergenceError, match="names no issue"):
         mirror.drafts(kit, ["close", "--reason", "done"], "")
+
+
+# --- the record a write names -------------------------------------------------
+#
+# Against a real ledger rather than the bare kit above: what a write is checked against is
+# the record set the append lands on, so the guard sits under `append`'s own lock.
+
+
+@pytest.mark.usefixtures("no_br")
+def test_an_update_absent_from_the_ledger_is_refused_and_names_the_id(
+    kit: Any, tmp_path: Path
+) -> None:
+    """An error, not a no-op — `recorded:` over a typo is a false confirmation.
+
+    The empty event list is the half the report under-stated: an accepted write does not
+    vanish, it folds the mistyped id into existence as a record no ``create`` minted. The
+    same update against a record the ledger *does* hold closes the test, because that is
+    what makes the refusal discriminate rather than merely fail.
+    """
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT)
+
+    with pytest.raises(TrackerDivergenceError) as refusal:
+        owned_write.append(repo, ["update", ABSENT, "-t", "bug"])
+
+    assert ABSENT in str(refusal.value)
+    assert events_of(repo, ABSENT) == []
+
+    owned_write.append(repo, ["update", PARENT, "-t", "bug"])
+
+    fields = [e for e in events_of(repo, PARENT) if e.kind == kit.events.KIND_FIELD]
+    assert [e.payload["value"] for e in fields] == ["bug"]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["close", ABSENT],
+        ["comments", "add", ABSENT, "a marker"],
+        ["dep", "add", ABSENT, PARENT, "-t", "blocks"],
+        ["gate", "report", ABSENT, "--gate", "build", "--provider", "cli", "--status", "pass"],
+    ],
+    ids=["close", "comments add", "dep add", "gate report"],
+)
+@pytest.mark.usefixtures("no_br")
+def test_every_write_verb_refuses_a_record_the_ledger_does_not_hold(
+    tmp_path: Path, args: list[str]
+) -> None:
+    """Measured 2026-08-20: each of these accepted an absent id and appended one for it."""
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT)
+
+    with pytest.raises(TrackerDivergenceError, match=ABSENT):
+        owned_write.append(repo, args)
+
+    assert events_of(repo, ABSENT) == []

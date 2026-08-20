@@ -1,0 +1,20 @@
+# A tracker write naming a record the ledger does not hold is refused (basicly-6oypkd). The
+# false `recorded:` was the reported half; the measured half is worse — with any field flag
+# present the write *lands*, folding the mistyped id into existence as a record no `create`
+# ever minted. All five verbs that reach `owned_write.append` did that, measured 2026-08-20 on
+# a seeded ledger; only `dep remove` refused, and only because `basicly-he6200` had already
+# made it check its edge.
+#
+# `tests/test_mirror.py` +567, crossing the cap at 4048 from 3481. Neither placement that would
+# avoid the crossing is available. The tests are ledger-backed and structurally belong beside
+# `dep remove`'s own refusal in `tests/test_owned_write.py`, which measured **290 tokens of
+# headroom** — short of the 567 as well — and the record's acceptance check names this file
+# (`pytest tests/test_mirror.py -k update_absent`), so a third file would leave the check
+# selecting nothing and exiting 5. Splitting `test_mirror.py`'s unnamed `close` section out is
+# a decomposition of tests this defect does not touch. The prose share **fell, 40.8 to 40.3**,
+# which is the control that none of these tokens came out of the comment budget.
+[ratchet.module_size]
+rebaseline_reason = "the absent-record refusal's two tests, in the file the record's acceptance check names; test_owned_write.py is the structural home and measured 290 tokens of headroom, also short of the 567"
+
+[ratchet.module_size.rebaselined]
+"tests/test_mirror.py" = 4048

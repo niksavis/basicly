@@ -32,12 +32,25 @@ ENGINE_PROVIDER = "basicly-verify"
 
 
 def _repo(tmp_path: Path) -> Path:
-    """A checkout with the kit installed and its ledger declared."""
+    """A checkout with the kit installed, its ledger declared, and :data:`ISSUE` open.
+
+    The record is opened rather than left implicit, and by hand rather than through the
+    seam: the write seam refuses a write naming a record the ledger does not hold
+    (`owned_write._refuse_a_write_to_an_absent_record`), so a gate report against an id
+    nothing ever created is a refusal now instead of the fixture shortcut it was. Only
+    the *record* is hand-built — the gate rows still go through the seam, for the reason
+    the module docstring gives.
+    """
     (tmp_path / tracker.KIT_TRACKER_DIR).mkdir(parents=True, exist_ok=True)
     for source in sorted(KIT_SOURCE.glob("*.py")):
         shutil.copy2(source, tmp_path / tracker.KIT_TRACKER_DIR / source.name)
     (tmp_path / tracker.LEDGER_DIR).mkdir(parents=True, exist_ok=True)
     (tmp_path / "basicly.toml").write_text('[tracker]\nmode = "owned"\n', encoding="utf-8")
+    kit = tracker.kit(tmp_path)
+    kit.events.append(
+        tracker.ledger_dir(tmp_path),
+        [kit.events.Draft(ISSUE, kit.events.KIND_STATUS, {"status": "open"})],
+    )
     return tmp_path
 
 

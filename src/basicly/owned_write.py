@@ -106,6 +106,48 @@ def _without_label_flags(args: Sequence[str]) -> list[str]:
     return kept
 
 
+def _refuse_a_write_to_an_absent_record(
+    kit_module: Any, ledger: Path, args: Sequence[str], drafts: Sequence[Any]
+) -> None:
+    """Refuse a write naming a record the ledger does not hold.
+
+    :func:`_refuse_a_retraction_of_an_absent_edge`'s reason, one level out: a typo in an id
+    otherwise reads as a successful write. The cost is worse here than a no-op, and that is
+    what makes it an error — a tolerant write **folds the mistyped id into existence** as a
+    record no ``create`` ever minted, carrying whichever half-fact the argv stated. Measured
+    2026-08-20 on a seeded ledger: all five verbs that come through :func:`append` accepted
+    an absent id and appended one event for it.
+
+    Idempotence survives because a record's existence only ever moves one way: a delete
+    leaves a tombstone and the record stays in the fold (``events.RecordState.tombstoned``),
+    so no engine path that re-enters a state on every advance can meet this refusal on a
+    later pass having got past it on the first. Unlike a retraction, this refuses nothing
+    that once succeeded.
+
+    Read under the caller's lock, for `_resolve_labels`' reason — the record set a write is
+    checked against has to be the set the append lands on. ``create`` is the one write with
+    no record to find, and it is exempt by construction: it mints its id in :func:`create`
+    and never comes through here.
+
+    An edge's *target* is not checked. A dangling target is a different claim from a write
+    to nothing, and `merge` and `supervise` both add edges best-effort.
+
+    Raises:
+        TrackerDivergenceError: a write names a record the ledger does not hold.
+    """
+    if not drafts:
+        return
+    events = kit_module.events
+    held = events.fold(events.read_events(ledger)[0]).records if ledger.is_dir() else {}
+    missing = [record for record in dict.fromkeys(d.record for d in drafts) if record not in held]
+    if missing:
+        raise TrackerDivergenceError(
+            f"{' '.join(args)} names a record the ledger does not hold: {', '.join(missing)}. "
+            f"Accepting it would fold that id into existence rather than write to anything, "
+            f"so check it against `basicly tracker show {missing[0]}`"
+        )
+
+
 def _refuse_a_retraction_of_an_absent_edge(
     kit_module: Any, ledger: Path, drafts: Sequence[Any]
 ) -> None:
@@ -158,7 +200,8 @@ def append(repo_root: Path, args: Sequence[str]) -> None:
 
     Raises:
         TrackerDivergenceError: the kit is not installed, the write has no owned-ledger
-            translation, a retraction names an edge nothing holds, or the append failed.
+            translation, the write names a record the ledger does not hold, a retraction
+            names an edge nothing holds, or the append failed.
     """
     kit_module = owned_store.kit(repo_root)
     events = kit_module.events
@@ -166,6 +209,7 @@ def append(repo_root: Path, args: Sequence[str]) -> None:
     try:
         with events.LedgerLock(ledger) as lock:
             drafts = mirror.drafts(kit_module, _resolve_labels(kit_module, ledger, args), "")
+            _refuse_a_write_to_an_absent_record(kit_module, ledger, args, drafts)
             _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
             events.append(
                 ledger,
