@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -9,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import basicly
-from basicly import config, permissions, run_record, runner
+from basicly import config, dropin, permissions, run_record, runner
 from basicly.config import (
     CONFIG_FILE,
     CONFIG_SCHEMA,
@@ -1484,6 +1485,84 @@ def test_every_config_key_a_loader_reads_is_in_the_schema() -> None:
     read |= set(re.findall(r'_harness_section\(repo_root,\s*"([a-z_]+)"\)', source))
 
     assert read - _schema_names() == set()
+
+
+# Where a ratchet gate can live: the gate scripts, and the package they import from.
+# `tests/` is excluded deliberately — `test_ratchet.py` composes under the fixture
+# name "gate", which is not a shipped section and must not be demanded of the schema.
+_RATCHET_GATE_ROOTS = (Path(".scripts"), Path("src") / "basicly")
+
+
+def _module_string_constants(module: ast.Module) -> dict[str, str]:
+    """Every module-level ``NAME = "value"``, which is how a gate spells its `_GATE`."""
+    bound: dict[str, str] = {}
+    for statement in module.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1:
+            continue
+        match statement.targets[0], statement.value:
+            case ast.Name(id=name), ast.Constant(value=str() as text):
+                bound[name] = text
+    return bound
+
+
+def _gate_argument(call: ast.Call, bound: dict[str, str]) -> str | None:
+    """The gate a ``compose_ratchet(repo, <gate>, ...)`` call names, if it names one statically."""
+    match call.args[1] if len(call.args) > 1 else None:
+        case ast.Constant(value=str() as gate):
+            return gate
+        case ast.Name(id=name):
+            return bound.get(name)
+        case _:
+            return None
+
+
+def _composed_ratchet_gates() -> dict[str, str]:
+    """Each gate name handed to ``compose_ratchet``, mapped to the file that hands it.
+
+    Read out of the callers' source rather than by importing them: a gate script does
+    ``sys.path`` surgery at module scope, and the answer here is a string literal.
+    """
+    found: dict[str, str] = {}
+    for root in _RATCHET_GATE_ROOTS:
+        for path in sorted((_REPO_ROOT / root).glob("*.py")):
+            module = ast.parse(path.read_text(encoding="utf-8"))
+            bound = _module_string_constants(module)
+            for node in ast.walk(module):
+                if not isinstance(node, ast.Call):
+                    continue
+                match node.func:
+                    case ast.Name(id="compose_ratchet") | ast.Attribute(attr="compose_ratchet"):
+                        gate = _gate_argument(node, bound)
+                    case _:
+                        continue
+                if gate is not None:
+                    found.setdefault(gate, (root / path.name).as_posix())
+    return found
+
+
+def test_ratchet_sections_register_every_gate_that_composes_one() -> None:
+    """A gate absent from `[ratchet]` cannot be rebaselined at all (basicly-nlouqg).
+
+    `compose_ratchet` reads `[ratchet.<gate>]` out of a `basicly.d` fragment, and this
+    schema refuses a section it does not name. So a gate the schema omits ships green
+    and fails every command the moment a lane writes the fragment its own remedy text
+    told it to write — `code_citations` did, and took 166 tests with it. Review missed
+    it twice, which is why the coverage is derived from the callers here.
+    """
+    composed = _composed_ratchet_gates()
+    # Positive control before the difference: a probe that found nothing would satisfy
+    # the assertion below for free, so the three gates that predate this test must be
+    # found by it first.
+    assert {"comment_density", "module_size", "noqa_debt"} <= set(composed), composed
+
+    accepted = set(CONFIG_SCHEMA[dropin.RATCHET_SECTION].tables)
+    missing = {gate: where for gate, where in sorted(composed.items()) if gate not in accepted}
+
+    assert not missing, "\n".join(
+        f"{where} composes [{dropin.RATCHET_SECTION}.{gate}], so src/basicly/config.py must "
+        f"declare {gate!r} in CONFIG_SCHEMA[{dropin.RATCHET_SECTION!r}].tables"
+        for gate, where in missing.items()
+    )
 
 
 # ---------------------------------------------------------------------------
