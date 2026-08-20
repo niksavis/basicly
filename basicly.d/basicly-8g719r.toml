@@ -80,11 +80,56 @@
 # The real trigger is a lane that queued behind another and was replayed onto a moved
 # base, where git answers `the branch '<branch>' is not fully merged`. The helper builds
 # that state and carries the observed string, rather than a composed one.
+#
+# --- basicly-gtoqu9, measured after the 8g719r commit landed --------------------------
+#
+# `src/basicly/worktree.py` 196 -> 627 and `tests/test_worktree.py` 882 -> 1532, plus a new
+# `tests/test_loop.py` +109. **`cli.py` and `loop.py` take no entry because both got
+# smaller**: routing them at `cap_refusal` deleted the two hand-written cap messages, so
+# cli.py returned 45 tokens (347 -> 392 of headroom) and loop.py returned 47 (207 -> 254).
+# That is the whole reason this record touches two files outside its declared scope — the
+# alternative was a `cap_refusal` no production code calls, and this tree is already paying
+# down that exact debt (`basicly-tcmy.21` lists `worktree.stale_sessions` as dead with its
+# body open-coded at a caller). A change that hands headroom *back* to two shared modules
+# cannot be the change that costs a sibling lane its merge.
+#
+# **The binding constraint here was comment density, not module size.** worktree.py is not
+# frozen for density, so it answers to the hard 50.0 cap, and the first draft of
+# `cap_refusal` put it at **50.3 — over**. What paid for it was moving the dated
+# measurement (`cap reached (5/5)` against three checkouts on disk) out of the docstring
+# and into the changelog entry and this fragment. That is a relocation and not a purge:
+# every distinct claim is still in the module — counts checkouts not records, the two
+# routes that leave a record behind, why the message lives here rather than at its two
+# callers, and why a refusal names the stale records — and the figure now sits on the
+# surface a consumer actually reads. Re-measured after: **49.6, inside the cap by 0.4**.
+#
+# Alternatives rejected:
+#   1. Rebaseline worktree.py's density above the cap. That buys a *new* over-cap module,
+#      and `rebaselined` exists for the opposite case (a code deletion shrinking the
+#      denominator). Wrong instrument, and it would have been the cheapest thing to do.
+#   2. A `comment-density-waiver` on worktree.py. A waiver claims a module is
+#      deliberately narration-heavy; 49.6 percent is not that claim.
+#   3. A new module for the cap. It needs `Session` and `list_sessions`, so worktree.py
+#      would import it and it would import worktree.py — a cycle. The pure-message
+#      variant that avoids the cycle leaves the counting (the actual fix) in worktree.py
+#      anyway, buying a file for an f-string.
+#   4. Deleting comments to pay for the code. Named because it is measured at 11-36
+#      percent of a module on this tree, i.e. always available, and it is the one move
+#      that leaves both gates green over a defect they exist to catch.
+#
+# `tests/test_loop.py` +109 is not a new test. `test_classify_leaf_blocks_at_the_
+# concurrency_cap` stubbed two sessions at `/tmp/a` and `/tmp/b`, paths that never
+# existed — fictional in precisely the dimension this record makes load-bearing, so under
+# the fix both read as stale and the cap stopped binding. The sessions now get real
+# directories via the file's own `_session_at` helper. The delta is that plus the four
+# lines saying why, because the next reader's instinct on a red cap test will be to
+# loosen the assertion.
 [ratchet.module_size]
-rebaseline_reason = "merge.py: the landing must name the tip and the commit count it took, and the only cheaper site for the count is after the merge, where it is 0 for every branch. tests/test_merge.py: the record names a demonstration in this module and it had 0 tokens of headroom; the one extraction available is the coupling-attribution block, which belongs with the merge-queue module split this record's scope does not include. worktree.py: the content test replaces an ancestry test that was wrong on every correct landing, and it is fail-closed in four directions that each need naming; a new module for it would have crossed the 50 percent density cap that worktree.py itself is 0.3 points under. tests/test_worktree.py: two of the three tests are the record's own demonstration and the third is the sibling-lane case that keeps the refusal honest"
+rebaseline_reason = "merge.py: the landing must name the tip and the commit count it took, and the only cheaper site for the count is after the merge, where it is 0 for every branch. tests/test_merge.py: the record names a demonstration in this module and it had 0 tokens of headroom; the one extraction available is the coupling-attribution block, which belongs with the merge-queue module split this record's scope does not include. worktree.py: the content test replaces an ancestry test that was wrong on every correct landing, and it is fail-closed in four directions that each need naming; a new module for it would have crossed the 50 percent density cap that worktree.py itself is 0.3 points under. tests/test_worktree.py: two of the three tests are the record's own demonstration and the third is the sibling-lane case that keeps the refusal honest. worktree.py again and tests/test_worktree.py again for basicly-gtoqu9: the cap now counts checkouts rather than records and composes the refusal both callers had hand-written, which made cli.py and loop.py smaller rather than larger; the density cap and not the size ratchet was the binding constraint and it was paid by relocating a dated figure to the changelog, not by cutting a claim. tests/test_loop.py: the existing cap test stubbed sessions at paths that never existed, fictional in the one dimension this record makes load-bearing, so its fixture now uses real directories"
 
 [ratchet.module_size.rebaselined]
 "src/basicly/merge.py" = 208
 "tests/test_merge.py" = 538
-"src/basicly/worktree.py" = 196
-"tests/test_worktree.py" = 882
+"src/basicly/worktree.py" = 627
+"tests/test_worktree.py" = 1532
+"tests/test_loop.py" = 109

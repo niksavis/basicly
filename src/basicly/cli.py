@@ -4179,13 +4179,9 @@ def _cmd_worktree_create(args: argparse.Namespace) -> int:
     """Create + provision a worktree, honoring the configured base and cap."""
     repo_root = _repo_root()
     config = load_worktree_config(repo_root)
-    active = len(worktree.list_sessions(repo_root))
-    if active >= config.concurrency:
-        print(
-            f"Error: worktree concurrency cap reached ({active}/{config.concurrency}). "
-            "Clean up a worktree or raise [worktree].concurrency in basicly.toml.",
-            file=sys.stderr,
-        )
+    refusal = worktree.cap_refusal(config.concurrency, repo_root)
+    if refusal:
+        print(f"Error: {refusal}", file=sys.stderr)
         return 1
     worktree.create(args.name, base=args.base or config.base_branch, repo_root=repo_root)
     return 0

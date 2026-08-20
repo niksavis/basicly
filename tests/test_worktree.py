@@ -468,6 +468,73 @@ def test_unlanded_paths_ignores_what_a_sibling_lane_landed_after_the_fork(
     assert worktree.unlanded_paths(git_repo, "main", "harness/nope") is None
 
 
+def _ghost(name: str) -> None:
+    """Create a worktree and remove its checkout the way raw git does: silently."""
+    shutil.rmtree(worktree.create(name).path)
+
+
+def test_a_stale_slot_does_not_count_toward_the_concurrency_cap(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A record whose checkout is gone occupies nothing, so it may not hold a slot.
+
+    The cap counted recorded sessions, and both routes to a record outliving its
+    checkout were hit on 2026-08-20: ``cleanup`` without ``--force`` keeps the record
+    when the branch survives, and ``git worktree remove`` tells the engine nothing. The
+    result was a refusal reading ``cap reached (5/5)`` with three worktrees on disk
+    (basicly-gtoqu9).
+    """
+    monkeypatch.chdir(git_repo)
+    worktree.create("live")
+    _ghost("ghost")
+
+    # Two records, one checkout: at a cap of two the old count refused here.
+    assert worktree.cap_refusal(2, git_repo) == ""
+    # And the slot the ghost is not holding is really free, not merely uncounted.
+    assert worktree.cap_refusal(1, git_repo).startswith(
+        "worktree concurrency cap reached (1/1 live)"
+    )
+
+
+def test_a_full_cap_still_refuses_when_no_stale_slot_is_there_to_discount(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Discounting stale records must not discount the cap itself.
+
+    The cap is the only thing bounding concurrent lanes, so the fix has to keep refusing
+    when the checkouts are genuinely there. A ``cap_refusal`` that returned ``""``
+    unconditionally would satisfy the test above and fail this one.
+    """
+    monkeypatch.chdir(git_repo)
+    worktree.create("a")
+    worktree.create("b")
+
+    assert worktree.cap_refusal(2, git_repo).startswith(
+        "worktree concurrency cap reached (2/2 live)"
+    )
+    assert worktree.cap_refusal(3, git_repo) == ""
+
+
+def test_a_refusal_names_the_stale_slot_records_and_the_command_that_reclaims_them(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal that names only the cap makes raising the cap the cheapest reading.
+
+    Which is what happened: an operator raised ``[worktree].concurrency`` instead of
+    reclaiming a slot, because nothing in the message said there was one to reclaim.
+    """
+    monkeypatch.chdir(git_repo)
+    worktree.create("live")
+    _ghost("ghost-a")
+    _ghost("ghost-b")
+
+    refusal = worktree.cap_refusal(1, git_repo)
+
+    assert "worktree concurrency cap reached (1/1 live)" in refusal
+    assert "ghost-a, ghost-b" in refusal
+    assert "basicly worktree cleanup <name> --force" in refusal
+
+
 def test_provision_deps_selects_commands_by_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

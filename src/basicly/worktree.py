@@ -65,6 +65,15 @@ class Session:
         """Return the worktree location as a :class:`~pathlib.Path`."""
         return Path(self.worktree_path)
 
+    @property
+    def stale(self) -> bool:
+        """True when the checkout this record names is gone from disk.
+
+        A record is not a worktree, and a stale one holds no concurrency slot: nothing
+        occupies a checkout and nothing contends for a gate (basicly-gtoqu9).
+        """
+        return not self.path.exists()
+
 
 def sessions_dir(cwd: Path | str | None = None) -> Path:
     """Return (creating if needed) the common-dir directory of session records."""
@@ -245,7 +254,7 @@ def stale_sessions(cwd: Path | str | None = None) -> list[Session]:
     A stale record is left when a worktree is removed out-of-band; ``cleanup``
     still reclaims its branch and metadata.
     """
-    return [s for s in list_sessions(cwd) if not s.path.exists()]
+    return [session for session in list_sessions(cwd) if session.stale]
 
 
 def unlanded_paths(main: Path, base: str, branch: str) -> tuple[str, ...] | None:
@@ -344,6 +353,37 @@ def _reclaim_branch(main: Path, branch: str, base: str | None, *, force: bool) -
     if force:
         return f"git refused to delete it: {detail}"
     return _kept_for_content(main, branch, base, detail)
+
+
+def cap_refusal(concurrency: int, cwd: Path | str | None = None) -> str:
+    """Why no further worktree may be provisioned, or ``""`` when a slot is free.
+
+    Counts **checkouts, not records.** ``cleanup`` without ``--force`` keeps the record
+    when the branch survives, and a plain ``git worktree remove`` tells the engine
+    nothing, so either leaves a record whose checkout is gone holding a slot for good.
+
+    Lives here rather than at its two callers because both had hand-written their own,
+    and the wrong one's shape is the point: name only the cap and raising the cap is the
+    cheapest reading, so a refusal names the stale records and what clears them
+    (basicly-gtoqu9).
+    """
+    sessions = list_sessions(cwd)
+    stale = [session for session in sessions if session.stale]
+    live = len(sessions) - len(stale)
+    if live < concurrency:
+        return ""
+    refusal = (
+        f"worktree concurrency cap reached ({live}/{concurrency} live); clean up a "
+        "worktree or raise [worktree].concurrency in basicly.toml"
+    )
+    if not stale:
+        return refusal
+    names = ", ".join(sorted(session.name for session in stale))
+    return (
+        f"{refusal}. {len(stale)} record(s) whose checkout is already gone hold no slot "
+        f"but are still listed — reclaim them with `basicly worktree cleanup <name> "
+        f"--force`: {names}"
+    )
 
 
 @dataclass(frozen=True)
