@@ -15,9 +15,22 @@ composed baseline does not depend on landing order.
 Stdlib only: the ratchet gates under ``.scripts/`` read this on every commit.
 """
 
+# comment-density-waiver: this module's payload is the convention three ratchet gates
+# enforce, and every refusal in it is a rule a lane will read in a failure message rather
+# than in the code - why a number here is a delta and never a total, why `fractional` is a
+# parameter rather than inferred, why a raised baseline needs its own counted table, and
+# (basicly-nwx4ku) why a recorded measurement base refuses on ancestry while its absence
+# and git's own "cannot tell" do not. The same shape as `.scripts/ratchet.py` beside it,
+# whose waiver says the payload is the rationale the gates enforce. Measured at 53.0%,
+# 1839 prose tokens against 1633 of code: reaching 50% means cutting the
+# absence-is-not-a-violation rationale, which is the one paragraph standing between the
+# next reader and a guard that stops every lane in flight.
+
 from __future__ import annotations
 
 import dataclasses
+import shutil
+import subprocess
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -32,6 +45,11 @@ FRAGMENT_DIR = "basicly.d"
 # tree-wide total; `[ratchet.<gate>.frozen]` holds one delta per recorded entry.
 RATCHET_SECTION = "ratchet"
 COUNT_DELTA = "count_delta"
+
+# The commit a fragment's measurements were taken at. Once per fragment, not once per
+# gate: a lane measures the tree at one head, and a second copy of one sha is a second
+# thing to keep true.
+BASE_COMMIT = "base_commit"
 
 # The one case `frozen` may not carry: a baseline that has to rise (basicly-e2mz.20). Its own
 # table because the point is that it is countable — the gate prints how many came through.
@@ -112,8 +130,9 @@ def compose[Number: (int, float)](  # noqa: PLR0913 - reason in basicly.d/basicl
     :data:`REBASELINED` with a reason instead, and that is counted.
 
     Raises:
-        FragmentError: A fragment declares a delta of the wrong kind, or one that loosens a
-            baseline outside the declared-and-counted route.
+        FragmentError: A fragment declares a delta of the wrong kind, one that loosens a
+            baseline outside the declared-and-counted route, or a :data:`BASE_COMMIT` this
+            head does not contain.
     """
     composed: dict[str, Number] = dict(frozen)
     total = count
@@ -136,14 +155,82 @@ def compose[Number: (int, float)](  # noqa: PLR0913 - reason in basicly.d/basicl
 
 
 def _ratchet_tables(repo_root: Path, gate: str) -> list[tuple[str, dict]]:
-    """Each fragment's ``[ratchet.<gate>]`` table, with the fragment it came from."""
+    """Each fragment's ``[ratchet.<gate>]`` table, with the fragment it came from.
+
+    Every contributing fragment's :data:`BASE_COMMIT` is checked here, so a stale
+    measurement stops only the gates that fragment actually moves.
+    """
     found: list[tuple[str, dict]] = []
     for name, data in documents(repo_root).items():
         section = data.get(RATCHET_SECTION)
         table = section.get(gate) if isinstance(section, dict) else None
-        if isinstance(table, dict):
+        if isinstance(section, dict) and isinstance(table, dict):
+            _refuse_stale_measurement(repo_root, name, gate, section.get(BASE_COMMIT))
             found.append((name, table))
     return found
+
+
+def _refuse_stale_measurement(repo_root: Path, name: str, gate: str, base: object) -> None:
+    """Refuse a fragment whose recorded measurement base is not an ancestor of the head.
+
+    A delta composes in any order, which is what this directory is for; the *headroom* the
+    lane measured before choosing that delta does not. Two lanes branched from one commit
+    each measured ``merge.py`` at exactly 2 tokens of headroom, each spent that same 2, and
+    the composed tree failed a gate neither branch failed (basicly-nwx4ku). Ancestry rather
+    than equality: work landing on top of a measurement does not stale it, only a base this
+    head does not contain.
+
+    Absence is not a violation — the field is hand-written, every fragment that predates it
+    records none, and refusing those would stop every lane in flight. Nor is git's third
+    answer: it cannot resolve a history that is not there, which is a fixture composing over
+    a tree copied without its ``.git`` or a shallow clone, and failing there would be
+    failing on the absence of a repository.
+
+    Raises:
+        FragmentError: *base* is present but not a commit-ish string, or is one ``HEAD``
+            does not contain.
+    """
+    if base is None:
+        return
+    if not isinstance(base, str) or not base.strip():
+        raise FragmentError(
+            f"{name}: [{RATCHET_SECTION}] {BASE_COMMIT} must be the commit this fragment's "
+            f"measurements were taken at, got {base!r}"
+        )
+    recorded = base.strip()
+    if _is_ancestor(repo_root, recorded) is not False:
+        return
+    raise FragmentError(
+        f"{name}: [{RATCHET_SECTION}.{gate}] was measured at {recorded}, which HEAD does not "
+        f"contain, so the headroom those deltas were sized against is not this tree's. "
+        f"Re-measure on this head and record the {BASE_COMMIT} you measured at"
+    )
+
+
+def _is_ancestor(repo_root: Path, commit: str) -> bool | None:
+    """Whether *commit* is an ancestor of ``HEAD``, or None where git could not answer.
+
+    ``git merge-base --is-ancestor`` exits 0 for yes and 1 for no. Anything else — 128 for a
+    revision or a repository it cannot resolve, no git to ask — is the third answer, and it
+    is returned as itself rather than folded into either verdict.
+
+    ``which`` rather than the bare name: an unfindable git is one of the cases that has to
+    answer None anyway, so resolving it here removes a second failure mode rather than
+    adding one.
+    """
+    git = shutil.which("git")
+    if git is None:
+        return None
+    try:
+        completed = subprocess.run(  # noqa: S603 — resolved binary, literal argv, no shell
+            [git, "-C", str(repo_root), "merge-base", "--is-ancestor", commit, "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    return {0: True, 1: False}.get(completed.returncode)
 
 
 def _entry_table(name: str, gate: str, table: dict, key: str) -> dict:

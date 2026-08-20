@@ -86,6 +86,33 @@ Its own table rather than a flag on `frozen` because the point is that it is cou
 `(74 frozen, 3 waived, 1 rebaselined)` — so a rebaseline cannot accumulate the way a
 `frozen` delta silently did. A missing `rebaseline_reason` is refused.
 
+## `base_commit`, for the measurement a delta was sized against
+
+A delta composes in any order. The **headroom** you measured before choosing that
+delta does not. Two lanes branched from one commit each measured `merge.py` at
+exactly 2 tokens of headroom, each spent that same 2, and the composed tree failed a
+gate neither branch failed (`basicly-nwx4ku`).
+
+Record the commit you measured on, once per fragment, and a gate refuses the fragment
+when `HEAD` does not contain it:
+
+```toml
+[ratchet]
+base_commit = "be56ce2d0927d66c8b9168f69ab41457147b7641"
+```
+
+**Ancestry, not equality.** Work landing on top of your measurement does not stale it;
+only a base this head does not contain does, which is a measurement taken on a tree
+that is not this one.
+
+**It is optional, and hand-written.** Nothing writes a fragment for you, so there is
+no write-time hook to derive it at, and a fragment that records no base composes
+exactly as it did before — absence is not a violation, or every fragment already in
+this directory would stop landing. Recording it is a lane volunteering precision
+about its own numbers. Git's third answer is not a violation either: where the
+history is not there to read — a tree copied without its `.git`, a shallow clone —
+the check has nothing to say and says nothing.
+
 ## The two ratchets do not share a denominator
 
 `module_size` counts `module_tokens`, which **excludes top-level imports**;
