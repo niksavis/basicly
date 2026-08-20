@@ -272,7 +272,7 @@ KNOWN_KINDS = frozenset({
 # **A kind absent from here declares nothing, and an oversized body under one is refused rather than
 # stored** (basicly-vbl35a): the bound used to come from the payload key's *spelling*, so it cut
 # `basicly-wpc8`'s description under `value` and left the same text whole under `description`.
-# §32.10 carries the census.
+# `architecture.md` §32.10 carries the census.
 KIND_TEXT_BYTES = MappingProxyType({
     KIND_CREATED: None,
     KIND_ARTIFACT: None,
@@ -290,9 +290,9 @@ KIND_TEXT_BYTES = MappingProxyType({
 
 # The one kind that carries prose, and the external tracker's word for the same event. A
 # `comment` is **aliased, never retired**: 2,667 of this ledger's 5,752 events are `comment`
-# [measured 2026-08-18 at 756cce66, the census in §32.3], the log is never rewritten, and a
-# reader that skipped them would drop the prose history of every item older than this change
-# (§32.3.2, basicly-vkh0.30). A new writer records `note`.
+# [measured 2026-08-18 at 756cce66, the census in `architecture.md` §32.3], the log is never
+# rewritten, and a reader that skipped them would drop the prose history of every item older
+# than this change (`architecture.md` §32.3.2, basicly-vkh0.30). A new writer records `note`.
 PROSE_KINDS = frozenset({KIND_NOTE, KIND_COMMENT})
 
 # What the fold does with a kind: applies its state, leaves it to a sibling, or does not know
@@ -710,7 +710,7 @@ def _apply_tombstone(state: RecordState, payload: Mapping[str, object]) -> None:
 # them. Both together are where state is applied, which is what :func:`classify_kind` reads.
 # A dispatch's telemetry rides in that same event's payload and `accumulate` sums it by name
 # (`spend_micros`); a reading is not a kind of its own, and a second `dispatch` for one
-# dispatch would count a second attempt (§32.3).
+# dispatch would count a second attempt (`architecture.md` §32.3).
 _HANDLERS: dict[str, Callable[[RecordState, Mapping[str, object]], None]] = {
     KIND_CREATED: _apply_created,
     KIND_FIELD: _apply_field,

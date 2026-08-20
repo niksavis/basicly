@@ -402,6 +402,23 @@ waiver_count = 2
 # the log is ever rebuilt from a source that still has the event.
 [tool.ledger_fsck.frozen]
 "basicly-vkh0.30/sequence-gap" = 1
+# Citations nothing can check, per document (basicly-v5c8ob). The rule above only runs when the
+# citing sentence names a top-level symbol of the module it cites; 32 of the 44 citations in
+# `docs/` name none, so they were counted, reported as a coverage share, and passed. A gate that
+# exits zero over a claim it did not read is the fail-open shape, and it was probed: a sentence
+# citing a real module at line 1 with a false claim about what is there was one of the 32.
+#
+# So the 32 are debt and a new one is refused. The repair is to name the symbol the sentence is
+# actually talking about, which is the same repair the frozen table above asks for and the
+# reason that table is now empty. The list is closed and each count may only fall, banked in
+# the same diff, for the reason [tool.module_size.frozen] states: leaving the higher number
+# licenses regrowth back to it for free.
+[tool.docs_citations.unverifiable]
+"docs/plan/implementation-plan.md" = 6
+"docs/requirements/factory-loop.md" = 12
+"docs/requirements/harness-board.md" = 9
+"docs/research/2026-07-26-sota-review.md" = 3
+"docs/research/2026-08-17-archify-visualization.md" = 2
 
 [tool.code_citations]
 binding_count = 3
@@ -436,8 +453,11 @@ binding_count = 3
 # `.scripts/check_code_citations.py`, wired as the `code-citations` [[verify.checks]] entry. A
 # section mark in a comment or a docstring is a pointer into a requirements document, and
 # `docs-citations` only ever ran the other direction: 220 of the 370 marks measured on
-# 2026-08-20 reach no heading, including two citing `gates-and-rework-design.md`, which was
-# absorbed and deleted 2026-08-08.
+# 2026-08-20 reach no heading. Two of those were the live findings the gate landed with, and
+# basicly-fsuhg3 repaired both by finding the target rather than deleting the reference:
+# `tests/test_policy.py` cited `gates-and-rework-design.md`, absorbed and deleted 2026-08-08
+# into `factory-loop.md`, and the shipped tracker kit's `events.py` cited three architecture
+# sections while naming its own source document. Both entries graduated at zero.
 #
 # The list is closed - a module absent from it may carry no unresolved mark. A count that
 # falls has to be banked in the same diff and an entry that reaches zero is deleted, for the
@@ -445,7 +465,6 @@ binding_count = 3
 # to it for free.
 
 [tool.code_citations.frozen]
-".basicly/core/kit/tracker/events.py" = 4
 ".scripts/check_marker_families.py" = 2
 ".scripts/check_test_naming.py" = 5
 ".scripts/docs_claim_status.py" = 6
@@ -509,7 +528,6 @@ binding_count = 3
 "tests/test_loop_lane.py" = 1
 "tests/test_mirror.py" = 2
 "tests/test_owned_store.py" = 1
-"tests/test_policy.py" = 5
 "tests/test_repair_brief.py" = 3
 "tests/test_retrospective.py" = 5
 "tests/test_review.py" = 3

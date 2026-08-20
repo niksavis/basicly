@@ -61,6 +61,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # by file path through `spec_from_file_location` and so starts with neither entry.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import docs_claim_layers as layers  # noqa: E402 - sibling; needs the insert above
 import docs_claim_status as status_view  # noqa: E402 - sibling; needs the insert above
 import docs_claim_surfaces as surfaces  # noqa: E402 - sibling; needs the insert above
 import docs_claim_work_types as work_types  # noqa: E402 - sibling; needs the insert above
@@ -392,6 +393,7 @@ BLOCKS: tuple[Block, ...] = (
     Block("catalog-hooks", HOOKS_README, _catalog_hooks),
     Block("plan-current-state", IMPLEMENTATION_PLAN, _plan_current_state),
     Block("status-view", status_view.STATUS_MD, status_view.render_status_view),
+    Block("layering-contract", ARCHITECTURE_MD, layers.render_layering_contract),
 )
 
 ASSERTIONS: tuple[Assertion, ...] = (
