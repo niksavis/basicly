@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import dependency_graph, owned_store
+from basicly import dependency_graph, owned_store, tracker
 from tests.test_owned_write import no_br, owned_repo
 
 __all__ = ["no_br"]  # re-exported so the fixture resolves in this module
@@ -201,3 +201,27 @@ def test_the_flipped_cycle_read_finds_a_cycle_the_ledgers_edges_close(tmp_path: 
     )
 
     assert dependency_graph.blocking_cycles(repo) == (("wpc-1.1", "wpc-1.2"),)
+
+
+# --- inverting an edge --------------------------------------------------------
+
+
+@pytest.mark.usefixtures("no_br")
+def test_an_edge_inversion_moves_the_blocked_record_and_closes_no_cycle(tmp_path: Path) -> None:
+    """The whole point of a retraction, through the seam a human actually reaches.
+
+    An owner decision that reverses which of two records goes first has no safe enactment
+    while an edge can only be added: the reverse edge on its own closes a two-record cycle,
+    and this tracker's own cycle report was order-dependent. So all three answers are held
+    at once — the new direction blocks, the old one no longer does, and the component finder
+    reports nothing.
+    """
+    repo = owned_repo(tmp_path)
+    _graph(repo, {"wpc-1.4": [("wpc-1.3", "blocks")]}, {"wpc-1.3": "open", "wpc-1.4": "open"})
+    assert dependency_graph.blocked(repo) == ("wpc-1.4",)
+
+    tracker.write(repo, ["dep", "remove", "wpc-1.4", "wpc-1.3", "-t", "blocks"])
+    tracker.write(repo, ["dep", "add", "wpc-1.3", "wpc-1.4", "-t", "blocks"])
+
+    assert dependency_graph.blocked(repo) == ("wpc-1.3",)
+    assert dependency_graph.blocking_cycles(repo) == ()

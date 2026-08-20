@@ -106,6 +106,44 @@ def _without_label_flags(args: Sequence[str]) -> list[str]:
     return kept
 
 
+def _refuse_a_retraction_of_an_absent_edge(
+    kit_module: Any, ledger: Path, drafts: Sequence[Any]
+) -> None:
+    """Refuse a ``dep remove`` whose edge the ledger does not hold.
+
+    **An error rather than a no-op, and a typo is why.** A retraction names two record ids
+    and an edge type; get one wrong and a tolerant write records a withdrawal of nothing,
+    while the operator reads "recorded" and believes the edge is gone. The edge that has to
+    be gone is usually the one about to be re-added in the other direction, so the silent
+    version leaves a cycle behind. The cost is stated rather than hidden: a retraction is
+    **not idempotent**, so a caller that replays one meets this refusal on the second pass.
+
+    Read under the caller's lock, for `_resolve_labels`' reason — the edge set a retraction
+    is checked against has to be the set the append lands on.
+
+    Raises:
+        TrackerDivergenceError: a retraction names an edge no record holds.
+    """
+    retractions = [draft for draft in drafts if draft.kind == kit_module.events.KIND_EDGE_RETRACTED]
+    if not retractions:
+        return
+    migrate = kit_module.migrate
+    views = kit_module.views_from_events(kit_module.read_ledger(ledger)) if ledger.is_dir() else {}
+    for draft in retractions:
+        target = draft.payload[migrate.EDGE_TO]
+        edge_type = draft.payload[migrate.EDGE_TYPE]
+        held = views.get(draft.record)
+        if held is not None and any(
+            edge.target == target and edge.type == edge_type for edge in held.dependencies
+        ):
+            continue
+        raise TrackerDivergenceError(
+            f"{draft.record} holds no {edge_type!r} edge to {target}, so there is nothing "
+            f"to retract; the edge is recorded on the dependent, so check both ids against "
+            f"`basicly tracker show {draft.record}`"
+        )
+
+
 def append(repo_root: Path, args: Sequence[str]) -> None:
     """Record on the owned ledger the fact *args* states.
 
@@ -120,7 +158,7 @@ def append(repo_root: Path, args: Sequence[str]) -> None:
 
     Raises:
         TrackerDivergenceError: the kit is not installed, the write has no owned-ledger
-            translation, or the append failed.
+            translation, a retraction names an edge nothing holds, or the append failed.
     """
     kit_module = owned_store.kit(repo_root)
     events = kit_module.events
@@ -128,6 +166,7 @@ def append(repo_root: Path, args: Sequence[str]) -> None:
     try:
         with events.LedgerLock(ledger) as lock:
             drafts = mirror.drafts(kit_module, _resolve_labels(kit_module, ledger, args), "")
+            _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
             events.append(
                 ledger,
                 _stamped(kit_module, drafts),

@@ -89,6 +89,7 @@ VALUE_FLAGS: dict[str, frozenset[str]] = {
     "update": frozenset(UPDATE_FIELD_FLAGS) | UPDATE_STATUS_FLAGS | frozenset(UPDATE_LABEL_FLAGS),
     "close": frozenset({"--reason"}),
     "dep add": frozenset({"-t", "--type"}),
+    "dep remove": frozenset({"-t", "--type"}),
     "gate report": frozenset({"--gate", "--provider", "--status", "--note", "--actor"}),
 }
 

@@ -177,14 +177,22 @@ def _create_drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[ob
     return drafts
 
 
-def _edge_draft(kit_module: Any, record: str, target: str, edge_type: str) -> object:
-    """One dependency edge, recorded on the dependent — where both stores hold it."""
+def _edge_draft(
+    kit_module: Any, record: str, target: str, edge_type: str, *, retracted: bool = False
+) -> object:
+    """One dependency edge, recorded on the dependent — where both stores hold it.
+
+    *retracted* withdraws it instead. The kind is the only difference, so a retraction can
+    never name a different edge from the one a ``dep add`` wrote.
+    """
     migrate = kit_module.migrate
+    events = kit_module.events
     payload = _payload(kit_module)
     payload[migrate.EDGE_FROM] = record
     payload[migrate.EDGE_TO] = target
     payload[migrate.EDGE_TYPE] = edge_type
-    return kit_module.events.Draft(record, migrate.KIND_EDGE, payload)
+    kind = events.KIND_EDGE_RETRACTED if retracted else migrate.KIND_EDGE
+    return events.Draft(record, kind, payload)
 
 
 def _gate_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
@@ -250,16 +258,50 @@ def _comment_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[
     return [events.Draft(args[2], events.KIND_COMMENT, payload)]
 
 
-def _dep_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
-    """Drafts for one ``br dep add``, recorded on the dependent."""
-    positional = tracker_argv.positionals(args, VALUE_FLAGS["dep add"])
+def _named_edge(surface: str, args: Sequence[str]) -> tuple[str, str, str]:
+    """The ``(record, target, type)`` one ``dep`` argv names.
+
+    Read the same way for both dep verbs: an edge is identified by all three, so an
+    assertion and a withdrawal that read the argv differently could not be paired.
+
+    Raises:
+        TrackerDivergenceError: *args* names no single edge, or no edge type.
+    """
+    positional = tracker_argv.positionals(args, VALUE_FLAGS[surface])
     if len(positional) != 4:
-        raise TrackerDivergenceError(f"br dep add names no single edge: {' '.join(args)}")
-    values = dict(tracker_argv.flag_pairs(args, VALUE_FLAGS["dep add"]))
+        raise TrackerDivergenceError(f"br {surface} names no single edge: {' '.join(args)}")
+    values = dict(tracker_argv.flag_pairs(args, VALUE_FLAGS[surface]))
     edge_type = values.get("-t") or values.get("--type") or ""
     if not edge_type:
-        raise TrackerDivergenceError(f"br dep add names no edge type: {' '.join(args)}")
-    return [_edge_draft(kit_module, positional[2], positional[3], edge_type)]
+        raise TrackerDivergenceError(f"br {surface} names no edge type: {' '.join(args)}")
+    return positional[2], positional[3], edge_type
+
+
+def _dep_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
+    """Drafts for one ``br dep add``, recorded on the dependent."""
+    return [_edge_draft(kit_module, *_named_edge("dep add", args))]
+
+
+def _dep_remove_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[object]:
+    """Drafts for one ``br dep remove``: the retraction of the edge it names.
+
+    **A retraction, not a deletion**, because the log is append-only — the fold drops the
+    edge and the history keeps both statements. That is what makes an *inverted* edge
+    enactable: the reverse edge alone closes a cycle.
+
+    Raises:
+        TrackerDivergenceError: as :func:`_named_edge`, or the edge is ``parent-child`` —
+            refused rather than translated, for the reason the refusal states.
+    """
+    record, target, edge_type = _named_edge("dep remove", args)
+    parent_child = kit_module.DEFAULT_VOCABULARY.parent_child_type
+    if edge_type == parent_child:
+        raise TrackerDivergenceError(
+            f"a {parent_child!r} edge is not retractable: removing it re-parents {record}, "
+            f"changing what `basicly loop supervise` fans out over while the record's own "
+            f"id still spells its parent. Re-parenting needs its own verb"
+        )
+    return [_edge_draft(kit_module, record, target, edge_type, retracted=True)]
 
 
 # The record-write surface, as the translation each one takes. A dispatch table rather
@@ -271,6 +313,7 @@ _MIRRORED_WRITES: dict[str, Callable[[Any, Sequence[str], str], list[object]]] =
     "comments add": _comment_drafts,
     "create": _create_drafts,
     "dep add": _dep_drafts,
+    "dep remove": _dep_remove_drafts,
     "gate report": _gate_drafts,
     "update": _update_drafts,
 }
