@@ -299,6 +299,10 @@ def test_a_foreign_validation_result_does_not_satisfy_the_gate(
         ("I ran the tests and they passed", None),
         ("", None),
         ("VALIDATION: probably fine", None),
+        # Neither decoration nor a bare answer word is a verdict: a parse that reads one
+        # out of anything turns the queued-decision path (basicly-xd79u3) into a fail-open.
+        ("**I exercised the cli and it worked**", None),
+        ("- PASS: the cli printed the table", None),
     ],
 )
 def test_the_verdict_is_read_from_the_reply(reply: str, expected: bool | None) -> None:
@@ -308,6 +312,26 @@ def test_the_verdict_is_read_from_the_reply(reply: str, expected: bool | None) -
     answers a different question than the one the gate asks.
     """
     assert validate_gate.verdict_from_reply(reply) is expected
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        # Which of these forms are observed and which extrapolated: `validate_gate._MARKUP`.
+        "**VALIDATION: PASS**",
+        "**VALIDATION:** PASS",
+        "**VALIDATION**: PASS",
+        "VALIDATION: **PASS**",
+        "## VALIDATION: PASS",
+        "- **VALIDATION:** PASS",
+        "*VALIDATION: PASS*",
+        "__VALIDATION: PASS__",
+        "**`VALIDATION: PASS`**",
+    ],
+)
+def test_a_verdict_wrapped_in_markdown_emphasis_is_read(reply: str) -> None:
+    """A parse that cannot read the markdown an agent writes throws the dispatch away."""
+    assert validate_gate.verdict_from_reply(reply) is True
 
 
 def test_the_engine_records_the_verdict_under_its_own_provider(

@@ -14,6 +14,7 @@ required set; *which* set a unit owes is a question about the unit.
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -38,6 +39,13 @@ _LEVEL_FIELD = "level="
 # The kind :data:`basicly.decision_marker.KINDS` reserves for a validation a human has
 # to dispose of, which is what a reply carrying no verdict leaves behind.
 VALIDATE_DECISION_KIND = "validate"
+
+# Markdown a verdict line arrives dressed in, dropped anywhere on the line and not only at
+# its ends: the ``**VALIDATION:** PASS`` shape puts the runs *between* prefix and answer.
+# Emphasis, headings and list markers around a ``label: value`` line are all in this tree's
+# own agent-written ledger; single ``*`` and ``__`` runs around one are extrapolated.
+_MARKUP = re.compile(r"[*_`]+")
+_MARKER = re.compile(r"^[#>\-+\s]+")
 
 
 def recorded_level(repo_root: Path, issue_id: str) -> str | None:
@@ -147,7 +155,7 @@ def verdict_from_reply(text: str) -> bool | None:
     unit in VALIDATE instead of guessing at what it meant.
     """
     for line in reversed(text.splitlines()):
-        stripped = line.strip().strip("`").strip()
+        stripped = _MARKER.sub("", _MARKUP.sub("", line)).strip()
         if not stripped.upper().startswith(VERDICT_PREFIX):
             continue
         answer = stripped[len(VERDICT_PREFIX) :].strip().upper()
