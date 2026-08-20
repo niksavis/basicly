@@ -162,11 +162,17 @@ def test_verify_entry_refuses_a_corrupted_change_summary(
     assert "commit" in result.detail
 
 
-@pytest.mark.usefixtures("fake_br", "landing")
-def test_a_landing_writes_the_change_summary_it_hands_verify(
-    work_repo: Path, monkeypatch: pytest.MonkeyPatch
+def _pin_landing(
+    monkeypatch: pytest.MonkeyPatch, work_repo: Path, *, landed_head: str = "deadbee"
 ) -> None:
-    """A finished build records what changed, why, the commit and the self-check verdict."""
+    """Pin the branch facts one landing reads, and let the merge succeed.
+
+    *landed_head* is what the merge reports having taken, which is not what the branch
+    stood at when the landing began: the rebase replays the work under new shas and the
+    regeneration commits on top of it. ``merge.branch_head`` answers with that earlier
+    value, so a landing that reads the head before the merge again records the sha the
+    merge rewrote and says so here rather than passing.
+    """
     session = worktree.Session(
         name="proj-i",
         branch="harness/proj-i",
@@ -176,12 +182,22 @@ def test_a_landing_writes_the_change_summary_it_hands_verify(
         created_at="2026-08-08T00:00:00Z",
     )
     monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: session)
-    monkeypatch.setattr(merge, "branch_head", lambda *_a, **_k: "deadbee")
+    monkeypatch.setattr(merge, "branch_head", lambda *_a, **_k: "d3422f8")
     monkeypatch.setattr(merge, "branch_changed_paths", lambda *_a, **_k: ("src/basicly/loop.py",))
     monkeypatch.setattr(
-        merge, "merge_worktree", lambda *_a, **_k: merge.MergeResult("proj-i", "merged", "landed")
+        merge,
+        "merge_worktree",
+        lambda *_a, **_k: merge.MergeResult("proj-i", "merged", "landed", landed_head=landed_head),
     )
     monkeypatch.setattr(loop, "_scope_block", lambda *_a, **_k: None)
+
+
+@pytest.mark.usefixtures("fake_br", "landing")
+def test_a_landing_writes_the_change_summary_it_hands_verify(
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A finished build records what changed, why, the commit and the self-check verdict."""
+    _pin_landing(monkeypatch, work_repo)
     state = _state("build", worktree=WorktreeBinding("proj-i", "harness/proj-i"))
     result = _advance(work_repo, state, monkeypatch)
     assert result.to_phase == "verify"
@@ -194,3 +210,22 @@ def test_a_landing_writes_the_change_summary_it_hands_verify(
         "changed_digest": hashlib.sha256(b"src/basicly/loop.py").hexdigest(),
         "self_check": {"status": "merged", "passed": True, "detail": "landed"},
     }
+
+
+@pytest.mark.usefixtures("fake_br", "landing")
+def test_a_landing_records_the_head_the_merge_took_not_the_one_it_started_from(
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The recorded ``commit`` must resolve in base, so it is the post-merge head.
+
+    `basicly-gvlpxm`'s own summary recorded `d3422f81` while its branch stood two commits
+    later: the rebase had rewritten that commit and the regeneration added one on top.
+    Both rewrite the head, and neither touches the changed-path set, which is why only
+    half of the branch facts may be read before the merge.
+    """
+    _pin_landing(monkeypatch, work_repo, landed_head="634c125")
+    state = _state("build", worktree=WorktreeBinding("proj-i", "harness/proj-i"))
+    assert _advance(work_repo, state, monkeypatch).to_phase == "verify"
+    recorded = artifact_record.read(work_repo, "proj-i", handoff.CHANGE_SUMMARY)
+    assert isinstance(recorded, dict)
+    assert recorded["commit"] == "634c125"

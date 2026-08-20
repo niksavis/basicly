@@ -1494,7 +1494,7 @@ def _verify_and_land(
             return held
     mode = verify_mode or ctx.inputs.verify_mode
     override = landing_gate.gate_override(ctx.repo_root, ctx.issue_id)
-    built = _branch_facts(ctx, worktree_name)
+    changed = _changed_paths(ctx, worktree_name)
     result = merge.merge_worktree(
         ctx.repo_root,
         worktree_name,
@@ -1529,42 +1529,37 @@ def _verify_and_land(
             findings=_landing_findings(result),
             evidence=_landing_evidence(result, mode),
         )
-    held = _record_change_summary(ctx, built, result)
+    held = _record_change_summary(ctx, changed, result)
     return held if held is not None else _record_verify(ctx, result.detail, verify_mode=mode)
 
 
-def _branch_facts(ctx: _Ctx, worktree_name: str) -> tuple[str, tuple[str, ...]] | None:
-    """What the build committed — its branch head and changed paths — or None.
+def _changed_paths(ctx: _Ctx, worktree_name: str) -> tuple[str, ...] | None:
+    """The paths the build's branch changed since its base, or None when none may be read.
 
-    Read **before** the merge, which is the only moment both are still the build's own:
-    afterwards the head is base's and the changed set is whatever else landed alongside.
-    None when the worktree has no session record or its branch has no ref, which the
-    landing itself refuses with a better message than this could.
+    Read **before** the merge, the only moment they are still the build's own: afterwards
+    the changed set is whatever else landed alongside. The paths only — the merge rewrites
+    the head and reports it back as ``merge.MergeResult.landed_head``. None when the
+    worktree has no session record, which the landing refuses with a better message.
 
-    Nothing is read at all in a repo that has not adopted the artifact contract: the
-    facts would have nowhere to go, and this is the landing's only git read that no
-    other precondition already pays for.
+    Nothing is read at all in a repo that has not adopted the artifact contract: the paths
+    would have nowhere to go and reading them costs a git call all the same.
     """
     if not handoff.adopted(ctx.repo_root, handoff.CHANGE_SUMMARY):
         return None
     session = worktree.load_session(worktree_name, ctx.repo_root)
     if session is None:
         return None
-    head = merge.branch_head(ctx.repo_root, session.branch)
-    if head is None:
-        return None
-    return head, merge.branch_changed_paths(ctx.repo_root, session.base, session.branch)
+    return merge.branch_changed_paths(ctx.repo_root, session.base, session.branch)
 
 
 def _record_change_summary(
-    ctx: _Ctx, built: tuple[str, tuple[str, ...]] | None, result: merge.MergeResult
+    ctx: _Ctx, changed: tuple[str, ...] | None, result: merge.MergeResult
 ) -> AdvanceResult | None:
     """Hand VERIFY the ``change-summary`` for this landing, or hold when it will not validate.
 
-    BUILD's handoff artifact (§8), written at the one point where the build is finished
-    and the branch facts still exist. Every field is derived — the bead's title, the head
-    :func:`_branch_facts` read before the merge, its paths as a count and digest, and the
-    landing's own verdict — so nothing depends on an agent having composed a report.
+    BUILD's handoff artifact (§8): every field is derived — the bead's title, the head the
+    merge took, the paths :func:`_changed_paths` read before it as a count and digest, and
+    the landing's own verdict — so nothing depends on an agent having composed a report.
 
     Held rather than raised: a payload the schema refuses is a fact about this landing an
     operator can fix, and blocking names the field. A landing whose branch facts could not
@@ -1572,12 +1567,12 @@ def _record_change_summary(
     :mod:`basicly.handoff` states — the alternative is refusing every already-landed
     forward recovery, whose worktree is gone by construction.
     """
-    if built is None:
+    if changed is None or not result.landed_head:
         return None
     payload = handoff.summary_payload(
         ctx.issue_id,
         ctx.state.title,
-        built,
+        (result.landed_head, changed),
         handoff.SelfCheck(result.status, result.detail, passed=result.merged),
     )
     try:
