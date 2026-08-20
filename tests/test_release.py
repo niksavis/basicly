@@ -75,6 +75,10 @@ def repo(tmp_path: Path) -> Path:
         "p.write_text(p.read_text() + f'\\n## {tag} - {date}\\n')\n",
         encoding="utf-8",
     )
+    # A stand-in release-note gate, on the same grounds as the generator above: the real
+    # one reads this repo's tracker and has its own suite, and what matters here is that
+    # `blocking_reasons` runs it and quotes whatever it says.
+    (root / release.RELEASE_NOTES_SCRIPT).write_text("", encoding="utf-8")
     ledger = root / tracker_paths.LEDGER_DIR_NAME
     ledger.mkdir(parents=True)
     (ledger / "events-0001.jsonl").write_text(
@@ -656,6 +660,54 @@ def test_a_repo_that_declares_no_capability_is_not_refused(repo: Path) -> None:
 # accept, and 18 green tests said it was fine: the fixture repo installs no hooks,
 # so the one string the whole feature must get right was never judged by the thing
 # that judges it. Assert against the real validators, not a fixture's opinion.
+
+
+@pytest.mark.usefixtures("no_regen")
+def test_a_record_with_no_release_note_refuses_the_release(repo: Path) -> None:
+    """A closed record that produced no note may not reach a tag it can never be added to.
+
+    The gate's own words, not a re-wording: `blocking_reasons` is where an operator reads
+    them, and two accounts of one refusal is the divergence `.scripts/ratchet.py` ended.
+    """
+    (repo / release.RELEASE_NOTES_SCRIPT).write_text(
+        "import sys\nprint('release-notes: fx-1: no release note', file=sys.stderr)\nsys.exit(1)\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "chore: plant a failing release-note gate")
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    result = release.run_release(repo, plan, issue_id="fx-1")
+
+    assert result.refused
+    assert "release-notes: fx-1: no release note" in result.refusals
+    assert "v0.6.0" not in _git(repo, "tag", "--list")
+
+
+def test_a_missing_release_note_gate_is_itself_a_refusal(repo: Path) -> None:
+    """A missing gate is a reason: not-installed must not read as nothing-to-report."""
+    (repo / release.RELEASE_NOTES_SCRIPT).unlink()
+
+    reasons = release.blocking_reasons(
+        repo, release.plan_release(repo, "0.6.0", date="2026-07-26"), issue_id="fx-1"
+    )
+
+    assert any(release.RELEASE_NOTES_SCRIPT.as_posix() in reason for reason in reasons)
+
+
+def test_a_release_note_is_credited_by_a_citation_and_not_by_a_mention(repo: Path) -> None:
+    """What counts as accounted for: a parenthetical id, never an id loose in prose."""
+    (repo / release.FRAGMENT_DIR).mkdir()
+    (repo / release.FRAGMENT_DIR / "fx-1.added.md").write_text(
+        "- did two things (fx-1, fx-2)\n", encoding="utf-8"
+    )
+    (repo / release.CHANGELOG_FILE).write_text(
+        "## v0.5.0\n\n- supersedes fx-3 (see the pre-commit hook)\n", encoding="utf-8"
+    )
+
+    accounted = release.accounted_records(repo, ["fx-1", "fx-2", "fx-3"])
+
+    assert accounted == {"fx-1", "fx-2"}
 
 
 def test_the_release_commit_subject_passes_the_commit_msg_gate() -> None:

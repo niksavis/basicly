@@ -1,0 +1,10 @@
+# Two `# noqa: E402` for the release-note gate (basicly-7phc).
+#
+# `.scripts/check_release_notes.py` inserts `src` and `.scripts` on `sys.path` before it
+# can import `ratchet` and `basicly`, so both import blocks sit below executable code.
+# Every one of the other four gate scripts carries the same pair for the same reason —
+# they are standalone scripts run as `uv run python .scripts/<gate>.py`, not modules on an
+# installed path — and the alternative is a `conftest`-style shim the pre-commit hook
+# would have to import before the gate, which is a second file to keep in step.
+[ratchet.noqa_debt.frozen]
+E402 = 2

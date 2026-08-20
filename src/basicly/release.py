@@ -29,6 +29,11 @@ the ledgers already on disk, and one that has none refuses the release naming it
 :mod:`basicly.capability_proof` answers that question; :func:`blocking_reasons`
 collects its reasons beside every other refusal.
 
+**A tag may not publish a closed record that produced no release note** (basicly-7phc).
+The workflow extracts ``CHANGELOG.md`` from the tagged commit, so the note is
+unrecoverable once the tag exists. `.scripts/check_release_notes.py` ratchets it and
+:func:`blocking_reasons` folds its findings in.
+
 One precondition is deliberately *not* re-run here: the deterministic verify suite.
 The `release-process` skill opens with "confirm required checks pass", and they are
 — by the `pre-commit` hooks on this run's own commit and by `pre-push` on the push
@@ -43,6 +48,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -90,6 +96,19 @@ PIN_RE_TEMPLATE = r"(?<![\w.])v{version}(?!\w|\.\d)"
 
 CHANGELOG_SCRIPT = Path(".scripts") / "generate_release_changelog.py"
 CHANGELOG_FILE = Path("CHANGELOG.md")
+
+# The ratchet that refuses a closed record which produced no release note
+# (basicly-7phc). Invoked rather than imported, for the reason `.scripts/` exists:
+# the debt being ratcheted is this repo's own, and a consumer's frozen table would be
+# its own decision. :func:`blocking_reasons` folds its findings in, so an omission
+# refuses the tag instead of only printing in a report nobody reads at cut time.
+RELEASE_NOTES_SCRIPT = Path(".scripts") / "check_release_notes.py"
+
+# A record id cited in prose rather than declared in a section, and only inside
+# parentheses — the form `changelog.d/README.md` and the commit convention both prescribe,
+# so a note that merely names another record in a sentence cannot credit it.
+CITATION = re.compile(r"\(([^()]*)\)")
+_ID_SUFFIX = r"-[a-z0-9]+(?:\.[0-9]+)*\b"
 
 # One file per lane, assembled here (basicly-4746). A lane records its user-facing
 # change as `changelog.d/<bead-id>.<category>.md` instead of editing CHANGELOG.md.
@@ -268,6 +287,41 @@ def scan_fragments(repo_root: Path) -> tuple[tuple[ChangelogFragment, ...], tupl
     return tuple(fragments), tuple(misnamed)
 
 
+def id_pattern(known_ids: Iterable[str]) -> re.Pattern[str]:
+    """An id matcher restricted to the prefixes *known_ids* actually uses.
+
+    Derived, the way ``tracker-commit-msg`` derives its own: a loose ``word-word``
+    pattern read "fork-drove-the-loop" as an id (basicly-jms0), and would read "(see the
+    pre-commit hook)" as a citation here.
+    """
+    prefixes = sorted({found.split("-", 1)[0] for found in known_ids if "-" in found})
+    alternation = "|".join(re.escape(prefix) for prefix in prefixes) or r"(?!)"
+    return re.compile(rf"\b(?:{alternation}){_ID_SUFFIX}")
+
+
+def cited_records(text: str, pattern: re.Pattern[str]) -> set[str]:
+    """Every record id *text* cites parenthetically."""
+    return {found for group in CITATION.findall(text) for found in pattern.findall(group)}
+
+
+def accounted_records(repo_root: Path, known_ids: Iterable[str]) -> set[str]:
+    """Every record some release note in *repo_root* speaks for.
+
+    Three sources and none is redundant: a fragment's filename names the record it was
+    written for, its body cites the records it also covers, and ``CHANGELOG.md`` holds
+    both once assembly has deleted the files. Reading the directory alone would forget
+    every record the moment its note shipped.
+    """
+    pattern = id_pattern(known_ids)
+    fragments, _misnamed = scan_fragments(repo_root)
+    bodies = [(repo_root / item.path).read_text(encoding="utf-8") for item in fragments]
+    changelog = repo_root / CHANGELOG_FILE
+    if changelog.exists():
+        bodies.append(changelog.read_text(encoding="utf-8"))
+    named = {item.path.stem.rpartition(".")[0] for item in fragments}
+    return named | {found for body in bodies for found in cited_records(body, pattern)}
+
+
 def plan_release(repo_root: Path, version: str, *, date: str | None = None) -> ReleasePlan:
     """Compute the release plan for *version* without touching the tree.
 
@@ -439,6 +493,31 @@ def _fragment_reasons(repo_root: Path) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+def _release_note_reasons(repo_root: Path) -> tuple[str, ...]:
+    """Why the release-note ratchet refuses this cut, one reason per line it printed.
+
+    A subprocess, not an import: the gate lives under ``.scripts/`` because the debt is
+    this repo's own and `src/basicly` may not reach up into it, and through the shared
+    ``worktree.run`` for the reason :func:`_git` states. Its findings are the reason text
+    verbatim — re-wording them would give the release and the commit hook two accounts of
+    one refusal, the divergence `ratchet.py` exists to end.
+
+    A missing script is itself a reason: it is the only thing between a closed record and
+    a tag the note can never be added to, so "not installed" must not read as "nothing to
+    report".
+    """
+    script = repo_root / RELEASE_NOTES_SCRIPT
+    if not script.exists():
+        return (f"release-note gate missing: {RELEASE_NOTES_SCRIPT.as_posix()}",)
+    completed = worktree.run([sys.executable, str(script)], cwd=repo_root, check=False)
+    if completed.returncode == 0:
+        return ()
+    printed = (completed.stderr or completed.stdout).strip().splitlines()
+    return tuple(line.strip() for line in printed if line.strip()) or (
+        f"{RELEASE_NOTES_SCRIPT.as_posix()} refused the cut and said nothing",
+    )
+
+
 def _changelog_lines(repo_root: Path) -> list[str]:
     """The changelog's lines, or none at all when the file does not exist yet."""
     path = repo_root / CHANGELOG_FILE
@@ -499,6 +578,7 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
             "tracker-commit-msg gate would reject the release commit"
         )
     reasons.extend(_fragment_reasons(repo_root))
+    reasons.extend(_release_note_reasons(repo_root))
     reasons.extend(unexercised_capabilities(repo_root))
     return tuple(reasons)
 

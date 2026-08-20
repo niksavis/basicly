@@ -477,6 +477,33 @@ name = "noqa-debt"
 command = ["uv", "run", "python", ".scripts/check_noqa_debt.py"]
 modes = ["fast", "full"]
 
+# Release-note debt, as a per-record ratchet (basicly-7phc). `changelog.d` refuses a
+# fragment that is empty or misnamed, so every check it had bound on a fragment that
+# *exists*; nothing bound on a closed record that produced none, and absence is the one
+# shape a presence check cannot see. 19 of the 54 records closed for v0.9.0 shipped with
+# no note, including the seven specialist agents and five loop skills `basicly install`
+# vendors to every consumer. Eight fragments were written by hand at cut time.
+#
+# It is unrecoverable rather than untidy: `.github/workflows/release.yml` reads
+# CHANGELOG.md from the **tagged** commit, so a note written afterwards can never reach
+# the published release. `release.blocking_reasons` runs the same script, so the omission
+# refuses the cut and not only a report — but this entry is what makes it fire at the
+# commit that closes the record, which is the moment the note is still cheap to write.
+#
+# A repo-local script rather than a CLI subcommand, on the same grounds as `module-size`
+# and `noqa-debt`: the debt is basicly's own and a consumer's frozen table would be its
+# own decision. `uv run python`, not a bare `python`, per the note above this file's
+# `docs-claims` entry.
+#
+# No `fix_command`. The only mechanical repair is writing the exemption, and a gate that
+# writes its own exemptions is the fail-open shape this repo keeps paying for. In `fast`
+# as well as `full`: it reads the committed ledger, `changelog.d` and CHANGELOG.md, all
+# of which are already on disk.
+[[verify.checks]]
+name = "release-notes"
+command = ["uv", "run", "python", ".scripts/check_release_notes.py"]
+modes = ["fast", "full"]
+
 # One test file per source module, enforced by name (basicly-u2hl.14,
 # `docs/requirements/factory-loop.md` §9.4). The convention was *emergent* when the
 # requirements doc measured it — 48 modules, 84 test files, every module covered — and
