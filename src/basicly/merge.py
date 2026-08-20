@@ -62,7 +62,17 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import decompose, owned_store, policy, rebase, run_record, tracker, tracker_paths, verify
+from . import (
+    base_lock,
+    decompose,
+    owned_store,
+    policy,
+    rebase,
+    run_record,
+    tracker,
+    tracker_paths,
+    verify,
+)
 from .config import PolicyConfig, load_policy_config, load_worktree_config
 from .worktree import Session, current_branch, git, load_session
 
@@ -563,7 +573,11 @@ def skipped_tracker_commit_warning(repo_root: Path) -> str:
 
 
 def commit_tracker_state(
-    repo_root: Path, bead: str, *, action: str = "sync tracker state for the harness loop"
+    repo_root: Path,
+    bead: str,
+    *,
+    action: str = "sync tracker state for the harness loop",
+    wait_s: float = base_lock.WAIT_S,
 ) -> bool:
     """Commit the base checkout's dirt when it is tracker-only; False when it is not.
 
@@ -579,7 +593,19 @@ def commit_tracker_state(
     **Nothing is flushed first, and that surface is deleted rather than replaced**
     (basicly-wpc8.1): the owned ledger *is* its own artifact, so there is no second
     store to reconcile it with before committing.
+
+    **The base checkout's single writer, now serialised as one** (basicly-kjc5.63): four
+    concurrent dispatches reached here, one committed and three died on git's own exit
+    codes. :func:`base_lock.hold` queues them, for *wait_s* before it says so. Reading
+    the status *inside* that lock is what keeps a loser idempotent — whichever peer
+    committed first published its claim too, so it finds a clean tree and declines.
     """
+    with base_lock.hold(repo_root, wait_s=wait_s):
+        return _commit_tracker_state(repo_root, bead, action=action)
+
+
+def _commit_tracker_state(repo_root: Path, bead: str, *, action: str) -> bool:
+    """:func:`commit_tracker_state`'s body, with the base checkout already held."""
     lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
     paths = [line[3:] for line in lines if line.strip()]
     if not paths or not all(is_engine_tracker_path(path) for path in paths):

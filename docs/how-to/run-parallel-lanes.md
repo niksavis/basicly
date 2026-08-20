@@ -137,8 +137,9 @@ worktrees: 0 live
 runner:    claude (headless), timeout 3600s
 grant:     NONE - every checkpoint is human
 budget:    MISSING - the 'claude' runner meters spend and no budget covers it
-checkpts:  decompose UNAPPROVED - blocks provisioning: the root's own advance provisions the lanes and resolves no checkpoint itself
+checkpts:  decompose UNAPPROVED - blocks provisioning: the root's own advance provisions the lanes, and no grant delegates this
            approve: basicly policy checkpoint myrepo-9vf decompose --approve
+           or delegate it: basicly policy grant myrepo-9vf --level L1
 lanes:     0 dispatchable now, 2 open child(ren)
 per-lane:  4000000 tokens assumed for an unsizeable lane (seed)
 forecast:  ~8000000 tokens if all 2 lanes start (per-lane x min(cap 5, 2 open))
@@ -162,11 +163,20 @@ pass start.
 **Dirty base**: commit it. Every grant, checkpoint and answer writes a tracker
 marker that dirties the committed ledger, so expect to commit between steps.
 
-**The root's decompose checkpoint**: a covering grant does not serve this one.
-Approve it once, with the command preflight printed:
+**The root's decompose checkpoint**: preflight names it only when no grant
+delegates it, so there are two remedies and either clears the verdict. Approve it
+once by hand:
 
 ```sh
 basicly policy checkpoint myrepo-9vf decompose --approve
+```
+
+Or issue a grant that delegates it — `assisted` (`L1`) is the lowest level that
+does, and seeding then resolves the checkpoint itself, the same way `basicly loop
+run` resolves one:
+
+```sh
+basicly policy grant myrepo-9vf --level L1 --token-budget 30000000
 ```
 
 **Budget**: a metered runner needs a grant carrying a token ceiling.

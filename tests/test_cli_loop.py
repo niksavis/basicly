@@ -939,16 +939,51 @@ def test_preflight_says_an_unresolved_model_can_key_no_sample_at_all(
 # --- Preflight: a verdict of "ready" has to mean a lane can start (basicly-cdhq) ---
 
 
-def test_preflight_refuses_a_root_whose_decompose_checkpoint_is_unapproved(
+def test_preflight_refuses_a_seeding_checkpoint_the_live_grant_does_not_delegate(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AC: an epic with open children behind an unapproved decompose is not ready.
+    """AC: an epic behind a decompose no grant covers is not ready, and says both remedies.
 
-    Measured 2026-08-04: preflight printed `VERDICT: ready` on a clean base with a live
-    L3 grant, and the supervise pass it green-lit dispatched nothing —
-    `seed-blocked ... decompose checkpoint awaiting human approval`. The checkpoint
-    state was the one precondition preflight never looked at, and it is the one that
-    cost the pass.
+    Measured 2026-08-04: preflight printed `VERDICT: ready` on a clean base, and the
+    supervise pass it green-lit dispatched nothing — `seed-blocked ... decompose
+    checkpoint awaiting human approval`. Checkpoint state was the one precondition
+    preflight never looked at (basicly-cdhq).
+
+    The grant is L0 rather than absent, so the *level* is the only variable between this
+    test and the one below: L0 delegates nothing, and the pass really cannot start.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L0", token_budget=100_000),
+            phase="decompose",
+            checkpoints=("classify",),
+        ),
+    )
+
+    code = cli._cmd_loop_preflight(_preflight_args())
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "checkpts:  decompose UNAPPROVED" in out
+    # The exact commands, not a description of one: preflight exists so the remedy does
+    # not have to be recalled (basicly-p8ck). Both of them, because delegating it is now
+    # as real a remedy as approving it (basicly-kjc5.62).
+    assert "basicly policy checkpoint epic decompose --approve" in out
+    assert "basicly policy grant epic --level L1" in out
+    assert "VERDICT:   not ready" in out
+
+
+def test_preflight_reports_a_grant_delegated_seeding_checkpoint_as_no_blocker(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AC: the same L3 grant delegates both, so neither refuses the pass.
+
+    The fixture above with one field changed. Preflight used to call the root's own
+    ``decompose`` unservable however high the grant was, and it was right while seeding
+    drove ``run_until_blocked``. Seeding now drives ``run_ceremony``, which resolves it
+    through ``approve_checkpoint_guarded`` (basicly-kjc5.62) — so refusing here would
+    refuse a pass that runs, which is the same defect basicly-cdhq reported inverted.
     """
     _preflight_fixture(
         monkeypatch,
@@ -962,39 +997,11 @@ def test_preflight_refuses_a_root_whose_decompose_checkpoint_is_unapproved(
     code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
-    assert code == 1
-    assert "checkpts:  decompose UNAPPROVED" in out
-    # The exact command, not a description of one: preflight exists so the remedy does
-    # not have to be recalled (basicly-p8ck).
-    assert "basicly policy checkpoint epic decompose --approve" in out
-    assert "VERDICT:   not ready" in out
-
-
-def test_preflight_separates_a_grant_delegated_checkpoint_from_one_it_cannot_serve(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """AC: the same L3 grant delegates both, and only one of them still needs a human.
-
-    Reporting every unapproved checkpoint as a blocker would make the verdict noise.
-    ``ship`` is genuinely delegated — supervise puts a landed lane's ship approval
-    through ``approve_checkpoint_guarded``. The root's own ``decompose`` is not: seeding
-    drives the root with ``loop.run_until_blocked``, which stops dead at a checkpoint and
-    never consults a grant at all, so an operator reading "I hold L3" reads it wrong.
-    """
-    _preflight_fixture(
-        monkeypatch,
-        _Preflight(
-            grant=Grant(level="L3", token_budget=100_000),
-            phase="decompose",
-            checkpoints=("classify",),
-        ),
-    )
-
-    cli._cmd_loop_preflight(_preflight_args())
-
-    out = capsys.readouterr().out
-    assert "so the live L3 grant cannot serve it" in out
+    assert code == 0
+    assert "checkpts:  decompose pending - the live L3 grant delegates it" in out
     assert "checkpts:  ship pending - the live L3 grant delegates it" in out
+    assert "UNAPPROVED" not in out
+    assert "VERDICT:   ready" in out
 
 
 def test_preflight_over_a_labelled_cut_reports_it_and_keeps_the_roots_checkpoint(

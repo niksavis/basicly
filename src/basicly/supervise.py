@@ -3282,9 +3282,16 @@ def seed_lanes(
     dependency-unblocked children sat at ``intake``, and three handovers documented a
     command that dispatched nothing (basicly-t73d).
 
-    Delegated to ``loop.run_until_blocked`` on the root rather than reimplemented, so the
+    Delegated to ``loop.run_ceremony`` on the root rather than reimplemented, so the
     decompose checkpoint, the worktree cap and the ready-set filter keep their single
-    definition — and an L1 grant covers that checkpoint precisely so this needs no human.
+    definition. The *ceremony* rather than ``run_until_blocked``, because that driver
+    stops dead at a checkpoint and never reaches ``policy.approve_checkpoint_guarded``
+    (basicly-kjc5.62): a root whose children already existed answered ``seed-blocked -
+    decompose checkpoint awaiting human approval`` under a live L3 grant that
+    :data:`policy.GRANT_COVERAGE` delegates that very checkpoint to, and the operator
+    hand-drove ``loop run`` per child on the same root and the same grant. Nothing is
+    widened by the swap — the ceremony's only route to an approval is that same guarded
+    predicate, so a checkpoint no grant covers still stops the pass and says so.
 
     Runs only when there is genuinely nothing to dispatch: with lanes already in flight,
     re-advancing the root would provision past what the cap intends. Termination is why
@@ -3307,13 +3314,13 @@ def seed_lanes(
     if session.lane_label is not None:
         return _seed_selected_lanes(repo_root, session, skip=skip)
     try:
-        steps = loop.run_until_blocked(repo_root, session.root_issue)
+        ceremony = loop.run_ceremony(repo_root, session.root_issue, grant_root=session.root_issue)
     except (RuntimeError, OSError, ValueError) as exc:
         return (RoutedOutcome(session.root_issue, "error", f"seeding the root failed: {exc}"),)
-    final = steps[-1] if steps else None
-    if final is None:
+    steps = list(ceremony.steps)
+    if not steps:
         return ()
-    return _seeding_outcome(repo_root, session, steps, final, skip=skip)
+    return _seeding_outcome(repo_root, session, steps, skip=skip, ceremony=ceremony)
 
 
 def _seed_selected_lanes(
@@ -3379,9 +3386,9 @@ def _seeding_outcome(
     repo_root: Path,
     session: SessionState,
     steps: list[loop.AdvanceResult],
-    final: loop.AdvanceResult,
     *,
     skip: frozenset[str],
+    ceremony: loop.CeremonyResult | None = None,
 ) -> tuple[RoutedOutcome, ...]:
     """Route a completed seeding attempt on what it *provisioned* (basicly-jr0l.57).
 
@@ -3402,7 +3409,14 @@ def _seeding_outcome(
 
     A lane set that exists but is wholly undispatchable still terminates — nothing
     another pass could change — but it says so rather than claiming nothing was built.
+
+    *ceremony* is what the root's drive did about its own checkpoints, and it is on the
+    terminal refusal for the reason basicly-kjc5.62 was hard to read: "awaiting human
+    approval" names neither the level that would delegate the checkpoint nor the fact
+    that a grant was consulted and declined, so an operator holding a covering grant
+    could not tell which of those had happened.
     """
+    final = steps[-1]
     live_before = frozenset(lane.issue_id for lane in session.adopted if lane.live)
     derived = derive_session(repo_root, session.root_issue, lane_label=session.lane_label)
     dispatchable = ready_lanes(repo_root, derived, skip=skip)
@@ -3421,13 +3435,42 @@ def _seeding_outcome(
                 f"({', '.join(sorted(gained))}) - {final.detail}",
             ),
         )
+    unauthorized = _unauthorized_detail(ceremony, session.root_issue)
     return (
         RoutedOutcome(
             session.root_issue,
             "seed-blocked",
             f"no lane could be provisioned from {len(session.open_children)} open "
-            f"child(ren) - {final.detail}",
+            f"child(ren) - {final.detail}{unauthorized}",
         ),
+    )
+
+
+def _unauthorized_detail(ceremony: loop.CeremonyResult | None, root_issue: str) -> str:
+    """`; <why the checkpoint was not resolved>`, or empty when none stopped the drive.
+
+    Three outcomes, and the whole point is that they read differently. A grant that was
+    consulted and declined says so in its own words (``challenge_reason``, which
+    ``policy._grant_approval`` composes). A refusal names itself. An unchallenged
+    checkpoint means no grant was in play at all, so this names the lowest level
+    :data:`policy.GRANT_COVERAGE` delegates it to and the command that issues one.
+    """
+    if ceremony is None:
+        return ""
+    if ceremony.refused is not None:
+        name, why = ceremony.refused
+        return f"; the {name} checkpoint refused: {why}"
+    if ceremony.challenge is None:
+        return ""
+    name, _code = ceremony.challenge
+    if ceremony.challenge_reason:
+        return f"; the {name} checkpoint was not delegated: {ceremony.challenge_reason}"
+    covering = next((level for level, names in policy.GRANT_COVERAGE.items() if name in names), "")
+    if not covering:
+        return f"; no autonomy level delegates the {name} checkpoint, so it needs a human"
+    return (
+        f"; no grant covers the {name} checkpoint - an {covering} grant delegates it: "
+        f"basicly policy grant {root_issue} --level {covering}"
     )
 
 

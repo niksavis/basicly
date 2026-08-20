@@ -2012,6 +2012,7 @@ def test_every_engine_dispatch_site_declares_a_class() -> None:
 # mtime. Each is one `_now()` indirection, which is also the tests' clock seam.
 
 WALL_CLOCK_EXEMPT = {
+    "base_lock.py": "lock staleness subtracts a filesystem mtime, not a reading of ours",
     "supervise.py": "lock staleness subtracts a filesystem mtime, not a reading of ours",
     "policy.py": "the confirm-code TTL is persisted to disk and read back by another process",
 }
