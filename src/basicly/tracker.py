@@ -502,7 +502,8 @@ def add_artifact(repo_root: Path, issue_id: str, kind: str, body: object) -> Non
 
     Raises:
         TrackerWriteRefusedError: a :func:`read_only` section is active.
-        RuntimeError: the event did not reach the ledger.
+        TrackerDivergenceError: the ledger holds no such record, so the artifact would be
+            evidence attached to nothing; or the event did not reach the ledger.
     """
     _refuse_in_read_only(f"recording {issue_id}'s {kind} artifact writes")
     kit_module = kit(repo_root)
@@ -516,8 +517,15 @@ def add_artifact(repo_root: Path, issue_id: str, kind: str, body: object) -> Non
             ARTIFACT_BODY_KEY: body,
         },
     )
+    ledger = ledger_dir(repo_root)
     try:
-        events.append(ledger_dir(repo_root), [draft], redact=redact.redact_committed)
+        # The lock spans the check and the append for `owned_write.append`'s reason: the
+        # record set a write is refused against has to be the set the append lands on.
+        with events.LedgerLock(ledger) as lock:
+            owned_write.refuse_a_write_to_an_absent_record(
+                kit_module, ledger, f"the {kind} artifact for {issue_id}", [draft]
+            )
+            events.append(ledger, [draft], redact=redact.redact_committed, held_lock=lock)
     except (events.LedgerError, OSError, ValueError) as exc:
         raise TrackerDivergenceError(
             f"the {kind} artifact for {issue_id} did not reach the owned ledger: {exc}"

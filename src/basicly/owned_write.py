@@ -106,10 +106,15 @@ def _without_label_flags(args: Sequence[str]) -> list[str]:
     return kept
 
 
-def _refuse_a_write_to_an_absent_record(
-    kit_module: Any, ledger: Path, args: Sequence[str], drafts: Sequence[Any]
+def refuse_a_write_to_an_absent_record(
+    kit_module: Any, ledger: Path, subject: str, drafts: Sequence[Any]
 ) -> None:
     """Refuse a write naming a record the ledger does not hold.
+
+    Public because :func:`append` is not the only write path: ``tracker.add_artifact``
+    hands the ledger an object rather than an argv, so it cannot come through here, and it
+    was the seventh write path and the one this guard did not cover (basicly-kmqno2). It
+    takes *subject* rather than an argv so a non-argv caller can name itself.
 
     :func:`_refuse_a_retraction_of_an_absent_edge`'s reason, one level out: a typo in an id
     otherwise reads as a successful write. The cost is worse here than a no-op, and that is
@@ -142,7 +147,7 @@ def _refuse_a_write_to_an_absent_record(
     missing = [record for record in dict.fromkeys(d.record for d in drafts) if record not in held]
     if missing:
         raise TrackerDivergenceError(
-            f"{' '.join(args)} names a record the ledger does not hold: {', '.join(missing)}. "
+            f"{subject} names a record the ledger does not hold: {', '.join(missing)}. "
             f"Accepting it would fold that id into existence rather than write to anything, "
             f"so check it against `basicly tracker show {missing[0]}`"
         )
@@ -209,7 +214,7 @@ def append(repo_root: Path, args: Sequence[str]) -> None:
     try:
         with events.LedgerLock(ledger) as lock:
             drafts = mirror.drafts(kit_module, _resolve_labels(kit_module, ledger, args), "")
-            _refuse_a_write_to_an_absent_record(kit_module, ledger, args, drafts)
+            refuse_a_write_to_an_absent_record(kit_module, ledger, " ".join(args), drafts)
             _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
             events.append(
                 ledger,

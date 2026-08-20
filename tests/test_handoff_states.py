@@ -19,10 +19,21 @@ from pathlib import Path
 
 import pytest
 
-from basicly import artifact_record, decompose, handoff, loop, merge, tracker, verify, worktree
+from basicly import (
+    artifact_record,
+    decompose,
+    handoff,
+    loop,
+    merge,
+    plan_gate,
+    tracker,
+    verify,
+    worktree,
+)
 from basicly.config import PolicyConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import GateStatus
+from tests.test_artifact_record import record_marker
 from tests.test_handoff import _FakeBr, decomposition, fake_br, spec, summary
 
 __all__ = ["fake_br"]  # re-exported so the fixture resolves in this module
@@ -75,6 +86,22 @@ def decompose_br(monkeypatch: pytest.MonkeyPatch) -> _DecomposeBr:
     )
     monkeypatch.setattr(decompose.dependency_graph, "blocking_cycles", lambda *_a, **_k: ())
     return fake
+
+
+@pytest.fixture(autouse=True)
+def _open_the_synthetic_records(request: pytest.FixtureRequest) -> None:
+    """`test_handoff`'s fixture, for its reason: the artifact write refuses an absent id."""
+    if "work_repo" not in request.fixturenames:
+        return
+    repo = request.getfixturevalue("work_repo")
+    kit = tracker.kit(repo)
+    kit.events.append(
+        tracker.ledger_dir(repo),
+        [
+            kit.events.Draft(record, kit.events.KIND_STATUS, {"status": "open"})
+            for record in ("proj-feat", "proj-i")
+        ],
+    )
 
 
 @pytest.mark.usefixtures("decompose_br")
@@ -229,3 +256,63 @@ def test_a_landing_records_the_head_the_merge_took_not_the_one_it_started_from(
     recorded = artifact_record.read(work_repo, "proj-i", handoff.CHANGE_SUMMARY)
     assert isinstance(recorded, dict)
     assert recorded["commit"] == "634c125"
+
+
+# --- a corrupted artifact refused at the entry, moved here from `test_handoff`
+# because that module reached its size baseline for the fourth time and this is the
+# responsibility its siblings already live under (basicly-kmqno2, basicly-8ro0nx).
+
+
+def test_a_hand_corrupted_plan_is_refused_naming_the_failing_field(work_repo: Path) -> None:
+    """The acceptance criterion: an artifact edited out of shape names the field it broke."""
+    payload = handoff.plan_payload(decomposition())
+    payload["tasks"][0]["integrity"] = "L9"
+    artifact_record.write(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
+    verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
+    assert not verdict.admitted
+    assert "integrity" in verdict.reason and "L9" in verdict.reason
+
+
+def test_a_task_naming_no_demonstration_is_refused_though_a_recorded_bead_is_not(
+    work_repo: Path,
+) -> None:
+    """D18 binds on the artifact and not on ``PLAN_FIELDS``, and the two populations differ.
+
+    A bead recorded before the field existed is admitted by ``plan_entry`` because its
+    silence is ambiguous. This artifact has no such population — its only producer is a
+    plan ``plan_gate.require_plan`` passed — so here the same silence is a defect.
+    """
+    payload = handoff.plan_payload(decomposition())
+    del payload["tasks"][0]["demonstration"]
+    artifact_record.write(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
+    verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
+    assert not verdict.admitted
+    assert plan_gate.DEMONSTRATION_FIELD in verdict.reason
+
+
+def test_a_plan_whose_payload_is_not_json_is_refused_not_ignored(work_repo: Path) -> None:
+    """A truncated marker is a corrupted artifact, never a unit that carries none."""
+    record_marker(work_repo, "proj-feat", f"{artifact_record.MARKER} kind=implementation-plan {{n")
+    verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
+    assert not verdict.admitted and "is not of type 'object'" in verdict.reason
+
+
+def test_every_violation_is_reported_at_once(work_repo: Path) -> None:
+    """One advance per fixed field is the round-trip cost this gate exists to avoid."""
+    payload = handoff.plan_payload(decomposition())
+    payload["tasks"][0]["acceptance"] = []
+    payload["tasks"][1]["budget_tokens"] = 0
+    artifact_record.write(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
+    verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
+    assert len(verdict.violations) == 2
+
+
+def test_a_hand_corrupted_change_summary_is_refused_naming_the_failing_field(
+    work_repo: Path,
+) -> None:
+    """The BUILD->VERIFY half of the same control pair."""
+    payload = summary()
+    payload["self_check"]["passed"] = "yes"
+    artifact_record.write(work_repo, "proj-i", handoff.CHANGE_SUMMARY, payload)
+    verdict = handoff.entry_verdict(work_repo, "proj-i", handoff.CHANGE_SUMMARY)
+    assert not verdict.admitted and "passed" in verdict.reason

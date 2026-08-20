@@ -44,8 +44,20 @@ def legacy_marker(kind: str, payload: dict) -> str:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A checkout with the kit installed and an empty ledger — the store that owns the cap."""
-    return flipped_tracker.flipped_repo(tmp_path)
+    """A checkout with the kit installed and :data:`RECORD` open — the store that owns the cap.
+
+    The record is opened rather than left implicit, the way `test_gate_source._repo` does
+    and for the same reason: the artifact write refuses an id the ledger does not hold
+    (`owned_write.refuse_a_write_to_an_absent_record`), so writing against one nothing
+    created is a refusal now rather than the fixture shortcut it was.
+    """
+    root = flipped_tracker.flipped_repo(tmp_path)
+    kit = tracker.kit(root)
+    kit.events.append(
+        tracker.ledger_dir(root),
+        [kit.events.Draft(RECORD, kit.events.KIND_STATUS, {"status": "open"})],
+    )
+    return root
 
 
 def artifact_events(repo: Path, record: str) -> list[Any]:
@@ -104,6 +116,18 @@ def test_a_payload_that_is_not_json_decodes_to_the_raw_string() -> None:
 
 
 # --- writing: one typed event, and the body is not the cap's business -------
+
+
+def test_artifact_absent_record_write_is_refused_naming_the_id(repo: Path) -> None:
+    """The seventh write path: `add_artifact` bypasses `owned_write` and was unguarded.
+
+    An artifact is how one loop state hands the next its evidence, so one filed against a
+    mistyped id is evidence attached to nothing while the state that needed it reads as
+    carrying none (basicly-kmqno2).
+    """
+    with pytest.raises(tracker.TrackerDivergenceError, match="proj-taepo"):
+        artifact_record.write(repo, "proj-taepo", KIND, {"feature": "proj-taepo"})
+    assert artifact_events(repo, "proj-taepo") == []
 
 
 def test_a_write_is_readable_back_as_the_payload(repo: Path) -> None:

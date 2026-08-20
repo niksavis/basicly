@@ -36,7 +36,7 @@ def _repo(tmp_path: Path) -> Path:
 
     The record is opened rather than left implicit, and by hand rather than through the
     seam: the write seam refuses a write naming a record the ledger does not hold
-    (`owned_write._refuse_a_write_to_an_absent_record`), so a gate report against an id
+    (`owned_write.refuse_a_write_to_an_absent_record`), so a gate report against an id
     nothing ever created is a refusal now instead of the fixture shortcut it was. Only
     the *record* is hand-built — the gate rows still go through the seam, for the reason
     the module docstring gives.
