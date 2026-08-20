@@ -809,7 +809,14 @@ def test_classify_leaf_blocks_at_the_concurrency_cap(
         "load_worktree_config",
         lambda *_a: WorktreeConfig(base_branch=None, concurrency=2),
     )
-    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [_session("a"), _session("b")])
+    # Real directories, because the cap counts checkouts and not records: two sessions
+    # pointing at paths that never existed are two *stale* records, which hold no slot
+    # and must not block a provision (basicly-gtoqu9). The fixture was fictional in the
+    # one dimension this assertion now rests on.
+    live = [_session_at(tmp_path / name, name) for name in ("a", "b")]
+    for session in live:
+        session.path.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: live)
     result = _advance(tmp_path)
     assert result.blocked and "concurrency cap" in result.detail
     assert "n" not in created

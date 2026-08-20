@@ -715,13 +715,9 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
     agent committed.
     """
     wt_config = load_worktree_config(ctx.repo_root)
-    active = len(worktree.list_sessions(ctx.repo_root))
-    if active >= wt_config.concurrency:
-        return _blocked(
-            ctx,
-            f"worktree concurrency cap reached ({active}/{wt_config.concurrency}); "
-            "clean up a worktree or raise [worktree].concurrency in basicly.toml",
-        )
+    refusal = worktree.cap_refusal(wt_config.concurrency, ctx.repo_root)
+    if refusal:
+        return _blocked(ctx, refusal)
     # Publish the claim: roll the pending tracker-only dirt (status, work type,
     # classify approval) into a chore commit now, so a teammate pulling the
     # repo sees the claim from the moment work starts, not at landing.
@@ -941,9 +937,8 @@ def _with_role_skills(
     specialism. Injecting the bodies costs about 0.03% of a lane and reaches every
     family, where the vendor's own mechanism reaches one.
 
-    The unit's own work type and phase are passed too, so a skill declaring ``covers:``
-    reaches the dispatch it covers rather than waiting on an author to recall it
-    (basicly-jcl4rm). No role is still a dispatch: the unit route stands alone.
+    The unit's work type and phase go too; :func:`dispatch_brief.brief_skills` owns why,
+    and no role is still a dispatch.
     """
     names = dispatch_brief.brief_skills(ctx.repo_root, spec.name, role, ctx.state.issue_type, phase)
     if not names:

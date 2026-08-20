@@ -741,6 +741,55 @@ def test_a_merge_whose_branch_ref_will_not_resolve_is_not_proved(
 
 
 @pytest.mark.usefixtures("base_ready")
+def test_a_landing_names_the_tip_it_took_and_the_commits_it_carried(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The landing is the irreversible step, so its report has to say what it took.
+
+    The defect it closes (basicly-aim1qi): a resumed agent committed again after its
+    tip had been read, the landing took the moved tip, and the report named only the
+    resulting merge commit — so there was nothing in the output to check an
+    expectation against, and only a hand-run `git diff` caught the loss.
+
+    The tip and the merge commit are deliberately two different shas here. Reporting
+    the merge commit is what the defect already did, so a fixture where they are equal
+    cannot tell the fix from the bug.
+    """
+    _patch_git(
+        monkeypatch,
+        _landing_git(**{
+            _AHEAD_OF_BASE: _Proc(0, "3"),
+            "rev-parse --verify refs/heads/harness/feat": _Proc(0, "1a2b3c4d5e6f7890\n"),
+        }),
+    )
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.merged is True
+    assert "harness/feat @ 1a2b3c4d5e6f" in result.detail
+    assert "(3 commit(s))" in result.detail
+    assert "into main @ def456" in result.detail
+
+
+def test_a_count_git_cannot_answer_is_reported_as_uncounted_not_as_zero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A number nothing measured is the false report this record closes.
+
+    ``rev-list --count`` failing has to read as "unknown", never as "took nothing":
+    zero commits is a claim, and a landing that makes it without evidence is exactly
+    the silent report that cost a commit.
+    """
+    _patch_git(monkeypatch, _FakeGit({"rev-list": _Proc(0, "4")}))
+    assert merge.carried_commits(tmp_path, "main", "harness/feat") == 4
+
+    for proc in (_Proc(128, ""), _Proc(0, "not-a-number"), _Proc(1, "4")):
+        _patch_git(monkeypatch, _FakeGit({"rev-list": proc}))
+        assert merge.carried_commits(tmp_path, "main", "harness/feat") is None
+
+
+@pytest.mark.usefixtures("base_ready")
 def test_a_lane_whose_branch_moved_after_queueing_is_refused_before_base_is_touched(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

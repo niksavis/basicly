@@ -287,7 +287,7 @@ basicly loop run myrepo-etk --runner manual
 ```
 
 ```text
-[merged] build -> verify: merged harness/myrepo-etk into main @ d605fb4
+[merged] build -> verify: merged harness/myrepo-etk @ 3f9c1ab07e42 (2 commit(s)) into main @ d605fb4
 [blocked] verify -> verify: ship checkpoint awaiting human approval
 checkpoint ship: CONFIRMATION REQUIRED (myrepo-etk)
   The merge to the base branch has ALREADY happened, at the build->verify landing.

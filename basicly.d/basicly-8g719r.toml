@@ -1,0 +1,135 @@
+# Measured on this tree at 6f62b520, per file, before the first edit — a figure from a
+# record is only valid against the tree it was taken on, and two lanes each spending
+# `merge.py`'s last 2 tokens is what turned a green branch red on the merge for
+# basicly-kjc5.63. Both files this lane pins had **0** tokens of module-size headroom:
+# merge.py 15672/15672, tests/test_merge.py 20709/20709.
+#
+# `src/basicly/merge.py` +208, all of it for the landing's statement of what it took
+# (basicly-aim1qi): `carried_commits` (a `rev-list --count` read plus the three-line
+# reason it must be read before the merge and must answer None rather than 0), the one
+# call, and the merged detail that now names the tip and the count. Its prose share went
+# 60.4 -> 60.2 against a frozen 60.7, because what landed is code plus a paragraph
+# shorter than the code it explains — nothing was cut to pay for it.
+#
+# Four alternatives rejected, in the order they were measured:
+#   1. Read the count *after* the merge instead. That is 0 for every branch once base
+#      holds the commits, i.e. the exact false report the record closes.
+#   2. Put the mechanism in a new module, the `base_lock.py` pattern that paid for
+#      kjc5.63. A three-line ref read is not a responsibility, and reaching it from
+#      merge.py costs about what holding it costs.
+#   3. Extract the merge queue and its coupling attribution (merge.py's second half,
+#      ~6000 tokens) into its own module. This is the real, nameable split merge.py
+#      wants, and it is a separate record's work: it rewrites the import surface of
+#      cli.py, loop.py, supervise.py and four test modules while nine sibling lanes are
+#      live on this base.
+#   4. Cut prose from merge.py to pay for the code. That is the comment purge the
+#      density ratchet exists to refuse, and merge.py reads 60.2% prose precisely
+#      because its narration is what a reader cannot recover from the code.
+#
+# `tests/test_merge.py` +538 for two tests the record's demonstration names. The larger
+# one is the landing report, whose fixture makes the branch tip and the merge commit two
+# different shas on purpose: reporting the merge commit is what the defect already did,
+# so a fixture where they are equal cannot tell the fix from the bug, and that is what
+# the docstring spends its lines on. The second pins the uncounted case, which no
+# landing-level fixture can reach. The available extraction here is the coupling
+# attribution block (test_merge.py:1074-1197) — declined for the same reason as (3), and
+# it belongs with the module split rather than ahead of it.
+#
+# --- basicly-8g719r, measured after the aim1qi commit landed -------------------------
+#
+# `src/basicly/worktree.py` +196 and `tests/test_worktree.py` +882, measured on this tree
+# with merge.py already at its new 15880 baseline (0 headroom — the aim1qi rebaseline
+# spent exactly what it declared, so nothing here may lean on merge.py).
+#
+# The +196 is `unlanded_paths` plus the `_kept_for_content` / `_reclaim_branch` pair that
+# replaced the ancestry test. Almost none of it is new branching: the old block already
+# had the `show-ref` fail-closed path, and what grew is the four *distinct* reasons a
+# branch is now kept — base lacks paths, the comparison could not be made, no session
+# names the base, git refused the delete outright — each of which has to be a different
+# sentence to the operator, because the single sentence they replaced said `--force` to
+# all four and one of those four is the case where `--force` deletes the work.
+#
+# Its prose share fell 46.1 -> 49.7 against the hard 50.0 cap, so it is *inside* the cap
+# with 0.3 points to spare and takes no comment-density entry. That 0.3 is the reason the
+# narration of what was *rejected* lives in this fragment instead of in the module.
+#
+# Alternatives rejected, measured in this order:
+#   1. A new `branch_reclaim.py` on the `base_lock.py` pattern. This is the one that
+#      looked right and does not survive measurement: the extracted block is ~1065
+#      tokens of which the majority is the fail-closed narration, so a module holding it
+#      alone lands *over* the 50 percent density cap, and buying a new over-cap module to
+#      keep an existing under-cap one is moving a number, not extracting a
+#      responsibility. worktree.py is also where the responsibility already lives —
+#      `classify_worktree_tree` next door is the same fail-closed shape for the tree.
+#   2. `-D` whenever `-d` refuses. That is the permissive fix, and the mutation test
+#      pins it: making `unlanded_paths` return `()` unconditionally leaves the reclaim
+#      test green and fails only the refusal test, which is the commit yesterday's
+#      `git diff` saved.
+#   3. Whole-tree `git diff <branch> <base>` as the content test. Wrong every time in the
+#      other direction: it names every path a sibling lane landed since the fork. The
+#      third test pins that — `sibling.txt` is in base, absent from the branch, and must
+#      not be reported.
+#   4. Cutting prose from worktree.py to pay for the code. It is 49.7 percent prose
+#      because each fail-closed branch states which way it fails and why, and those are
+#      the claims a reader cannot recover from a `returncode == 1`.
+#
+# `tests/test_worktree.py` +882 for three tests and two fixture helpers. `_land_by_replay`
+# is the expensive half and is the point: the record asserts the landing's *rebase* leaves
+# the ref a non-ancestor, and that is **false** as stated — measured on this tree, a plain
+# rebase-then-`--no-ff` merge leaves the branch an ancestor and `git branch -d` succeeds.
+# The real trigger is a lane that queued behind another and was replayed onto a moved
+# base, where git answers `the branch '<branch>' is not fully merged`. The helper builds
+# that state and carries the observed string, rather than a composed one.
+#
+# --- basicly-gtoqu9, measured after the 8g719r commit landed --------------------------
+#
+# `src/basicly/worktree.py` 196 -> 627 and `tests/test_worktree.py` 882 -> 1532, plus a new
+# `tests/test_loop.py` +109. **`cli.py` and `loop.py` take no entry because both got
+# smaller**: routing them at `cap_refusal` deleted the two hand-written cap messages, so
+# cli.py returned 45 tokens (347 -> 392 of headroom) and loop.py returned 47 (207 -> 254).
+# That is the whole reason this record touches two files outside its declared scope — the
+# alternative was a `cap_refusal` no production code calls, and this tree is already paying
+# down that exact debt (`basicly-tcmy.21` lists `worktree.stale_sessions` as dead with its
+# body open-coded at a caller). A change that hands headroom *back* to two shared modules
+# cannot be the change that costs a sibling lane its merge.
+#
+# **The binding constraint here was comment density, not module size.** worktree.py is not
+# frozen for density, so it answers to the hard 50.0 cap, and the first draft of
+# `cap_refusal` put it at **50.3 — over**. What paid for it was moving the dated
+# measurement (`cap reached (5/5)` against three checkouts on disk) out of the docstring
+# and into the changelog entry and this fragment. That is a relocation and not a purge:
+# every distinct claim is still in the module — counts checkouts not records, the two
+# routes that leave a record behind, why the message lives here rather than at its two
+# callers, and why a refusal names the stale records — and the figure now sits on the
+# surface a consumer actually reads. Re-measured after: **49.6, inside the cap by 0.4**.
+#
+# Alternatives rejected:
+#   1. Rebaseline worktree.py's density above the cap. That buys a *new* over-cap module,
+#      and `rebaselined` exists for the opposite case (a code deletion shrinking the
+#      denominator). Wrong instrument, and it would have been the cheapest thing to do.
+#   2. A `comment-density-waiver` on worktree.py. A waiver claims a module is
+#      deliberately narration-heavy; 49.6 percent is not that claim.
+#   3. A new module for the cap. It needs `Session` and `list_sessions`, so worktree.py
+#      would import it and it would import worktree.py — a cycle. The pure-message
+#      variant that avoids the cycle leaves the counting (the actual fix) in worktree.py
+#      anyway, buying a file for an f-string.
+#   4. Deleting comments to pay for the code. Named because it is measured at 11-36
+#      percent of a module on this tree, i.e. always available, and it is the one move
+#      that leaves both gates green over a defect they exist to catch.
+#
+# `tests/test_loop.py` +109 is not a new test. `test_classify_leaf_blocks_at_the_
+# concurrency_cap` stubbed two sessions at `/tmp/a` and `/tmp/b`, paths that never
+# existed — fictional in precisely the dimension this record makes load-bearing, so under
+# the fix both read as stale and the cap stopped binding. The sessions now get real
+# directories via the file's own `_session_at` helper. The delta is that plus the four
+# lines saying why, because the next reader's instinct on a red cap test will be to
+# loosen the assertion.
+[ratchet.module_size]
+rebaseline_reason = "merge.py: the landing must name the tip and the commit count it took, and the only cheaper site for the count is after the merge, where it is 0 for every branch. tests/test_merge.py: the record names a demonstration in this module and it had 0 tokens of headroom; the one extraction available is the coupling-attribution block, which belongs with the merge-queue module split this record's scope does not include. worktree.py: the content test replaces an ancestry test that was wrong on every correct landing, and it is fail-closed in four directions that each need naming; a new module for it would have crossed the 50 percent density cap that worktree.py itself is 0.3 points under. tests/test_worktree.py: two of the three tests are the record's own demonstration and the third is the sibling-lane case that keeps the refusal honest. worktree.py again and tests/test_worktree.py again for basicly-gtoqu9: the cap now counts checkouts rather than records and composes the refusal both callers had hand-written, which made cli.py and loop.py smaller rather than larger; the density cap and not the size ratchet was the binding constraint and it was paid by relocating a dated figure to the changelog, not by cutting a claim. tests/test_loop.py: the existing cap test stubbed sessions at paths that never existed, fictional in the one dimension this record makes load-bearing, so its fixture now uses real directories"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/merge.py" = 208
+"tests/test_merge.py" = 538
+"src/basicly/worktree.py" = 627
+"tests/test_worktree.py" = 1532
+"tests/test_loop.py" = 109
