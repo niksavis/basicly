@@ -200,6 +200,70 @@ def test_a_child_of_a_child_nests_rather_than_flattening(tmp_path: Path) -> None
     assert grandchild == f"{PARENT}.1.1"
 
 
+# --- the edge retraction ------------------------------------------------------
+
+
+def edges_of(repo: Path, record: str) -> list[tuple[str, str]]:
+    """The ``(target, type)`` edges the fold holds for *record*."""
+    kit = owned_store.kit(repo)
+    views = kit.views_from_events(kit.read_ledger(owned_store.ledger_dir(repo)))
+    view = views.get(record)
+    return [(edge.target, edge.type) for edge in (view.dependencies if view else ())]
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_dep_remove_folds_the_edge_away_and_leaves_both_events_in_the_log(
+    tmp_path: Path,
+) -> None:
+    """A retraction that folds, not a deletion — the append-only log keeps the whole story.
+
+    Both halves are asserted because either alone is satisfied by the wrong thing: an edge
+    set without the edge is what a rewritten log gives too, and two events in the log is
+    what a retraction nothing folds gives.
+    """
+    repo = owned_repo(tmp_path)
+    seed(repo, "wpc-1.1", "wpc-1.2")
+    owned_write.append(repo, ["dep", "add", "wpc-1.2", "wpc-1.1", "-t", "blocks"])
+    assert edges_of(repo, "wpc-1.2") == [("wpc-1.1", "blocks")]
+
+    owned_write.append(repo, ["dep", "remove", "wpc-1.2", "wpc-1.1", "-t", "blocks"])
+
+    assert edges_of(repo, "wpc-1.2") == []
+    kit = owned_store.kit(repo)
+    kinds = [event.kind for event in events_of(repo, "wpc-1.2")]
+    assert kinds.count(kit.migrate.KIND_EDGE) == 1
+    assert kinds.count(kit.events.KIND_EDGE_RETRACTED) == 1
+
+
+@pytest.mark.parametrize(
+    ("target", "edge_type"),
+    [("wpc-1.3", "blocks"), ("wpc-1.1", "related")],
+    ids=["a target nothing points at", "the right pair under the wrong type"],
+)
+@pytest.mark.usefixtures("no_br")
+def test_a_dep_remove_absent_from_the_ledger_is_refused_and_records_nothing(
+    tmp_path: Path, target: str, edge_type: str
+) -> None:
+    """An error, not a no-op, because a typo here otherwise reads as a successful removal.
+
+    The wrong-type case is the one that makes the type part of the identity rather than a
+    hint: the pair exists, and the edge named does not.
+    """
+    repo = owned_repo(tmp_path)
+    seed(repo, "wpc-1.1", "wpc-1.2")
+    owned_write.append(repo, ["dep", "add", "wpc-1.2", "wpc-1.1", "-t", "blocks"])
+    before = len(events_of(repo, "wpc-1.2"))
+
+    with pytest.raises(owned_store.TrackerDivergenceError) as refusal:
+        owned_write.append(repo, ["dep", "remove", "wpc-1.2", target, "-t", edge_type])
+
+    assert "nothing to retract" in str(refusal.value)
+    assert target in str(refusal.value)
+    assert "wpc-1.2" in str(refusal.value)
+    assert len(events_of(repo, "wpc-1.2")) == before
+    assert edges_of(repo, "wpc-1.2") == [("wpc-1.1", "blocks")]
+
+
 # --- the label write ----------------------------------------------------------
 #
 # The write `label_source` had no counterpart for, so nothing could label a lane into a

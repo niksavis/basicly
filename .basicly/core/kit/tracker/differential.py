@@ -585,17 +585,27 @@ def views_from_events(ledger_events: Iterable[Any]) -> dict[str, RecordView]:
     row per gate here would make a foreign provider's result outvote the engine's, which is
     the defect
     :func:`gate_verdict` exists to avoid (basicly-jr0l.51).
+
+    An edge is held **last statement wins** per identity, which is what makes
+    `events.KIND_EDGE_RETRACTED` a retraction and not a deletion: the withdrawn edge is
+    absent here while both events stay in the log, and an edge withdrawn and re-asserted
+    the other way round reads as present in the new direction with no cycle through the
+    old one. `_apply_tombstone`'s shape for a record, one level down.
+
+    It folds here and not in `provenance.py` because the two write the edge payload in
+    different dialects (`fsck.EDGE_KINDS`); this reads the engine writer's.
     """
     collected = list(ledger_events)
     folded = events.fold(collected)
-    edges: dict[str, list[Edge]] = {}
+    edges: dict[str, dict[Edge, bool]] = {}
     gates: dict[str, dict[tuple[str, str], GateRow]] = {}
     for event in events.canonical_order(collected):
-        if event.kind == migrate.KIND_EDGE:
+        if event.kind in (migrate.KIND_EDGE, events.KIND_EDGE_RETRACTED):
             target = event.payload.get(migrate.EDGE_TO)
             edge_type = event.payload.get(migrate.EDGE_TYPE)
             if isinstance(target, str) and isinstance(edge_type, str):
-                edges.setdefault(event.record, []).append(Edge(target=target, type=edge_type))
+                held = edges.setdefault(event.record, {})
+                held[Edge(target=target, type=edge_type)] = event.kind == migrate.KIND_EDGE
         elif event.kind == KIND_GATE:
             gate = event.payload.get(GATE_NAME_KEY)
             provider = event.payload.get(GATE_PROVIDER_KEY)
@@ -610,7 +620,7 @@ def views_from_events(ledger_events: Iterable[Any]) -> dict[str, RecordView]:
             status=state.status or "",
             external_ref=external_ref if isinstance(external_ref, str) else "",
             comments=tuple(state.comments),
-            dependencies=tuple(edges.get(record, ())),
+            dependencies=tuple(edge for edge, held in edges.get(record, {}).items() if held),
             gates=tuple(gates.get(record, {}).values()),
             tombstoned=state.tombstoned,
         )

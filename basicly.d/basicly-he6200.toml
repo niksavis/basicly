@@ -1,0 +1,33 @@
+# A dependency edge can now be retracted (basicly-he6200). The owned tracker could add an edge
+# and never remove one, so an owner decision that *inverts* one had no safe enactment: adding
+# the reverse without withdrawing the original closes a two-record cycle, and this tracker's
+# cycle report is recorded as order-dependent. The gap was inherited rather than chosen — the
+# mirrored write surface was frozen by measuring the retired external tracker's traffic, and its
+# removal verb was never used. Two kit modules carry the ledger half, and both were at their
+# ratchet: measured before the first edit, `events.py` had **0** tokens of module-size headroom
+# and `differential.py` had **17**.
+#
+# `events.py` +80: `KIND_EDGE_RETRACTED` with its two-line reason, and its three table entries —
+# `KNOWN_KINDS`, `KIND_TEXT_BYTES` and `DELEGATED_KINDS`, which is what keeps the closed set
+# partitioned by who folds each kind rather than admitting a kind nothing folds. A kind and not a
+# payload flag on `edge`, because an older reader counts an unknown *kind* (§4.5) where it would
+# read an unknown flag as a fresh assertion. The other ratchet is the proof that none of these
+# tokens came out of the comment budget: the module's prose share **fell, 57.1 to 57.0**, with no
+# claim deleted — the addition simply carries less narration per token than the module's average.
+#
+# `differential.py` +160: the retraction branch in `views_from_events` and the edge accumulator
+# it needed. Per-record edges were an append-only list and are now a last-statement-wins map
+# keyed on the edge's identity, which is the whole mechanism: the withdrawn edge is absent from
+# `RecordView.dependencies` while both events stay in the log, so the fold answers with the edge
+# gone and the history still reads as asserted-then-withdrawn. That is `_apply_tombstone`'s shape
+# for a record, one level down, and this module is where it has to land because it is the fold
+# every engine reader reaches (`dependency_graph`, `tracker.owned_record`, the ready query).
+# `provenance.fold_edges` is deliberately untouched: it writes the edge payload in the other of
+# the two dialects `fsck.EDGE_KINDS` records, and nothing in the engine reaches it. Its prose
+# share **fell, 59.6 to 59.5**, on the same measure.
+[ratchet.module_size]
+rebaseline_reason = "the edge-retraction kind and the fold that honours it, in two kit modules with 0 and 17 tokens of headroom"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/events.py" = 80
+".basicly/core/kit/tracker/differential.py" = 160

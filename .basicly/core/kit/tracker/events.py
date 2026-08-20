@@ -239,6 +239,9 @@ KIND_COMMENT = "comment"
 KIND_DISPATCH = "dispatch"
 KIND_TOMBSTONE = "tombstone"
 KIND_EDGE = "edge"
+# One `edge` withdrawn. A kind, not a payload flag: a reader that does not know a retraction
+# counts it (§4.5) rather than reading it as a fresh assertion.
+KIND_EDGE_RETRACTED = "edge_retracted"
 KIND_GATE = "gate"
 KIND_CHECKPOINT = "checkpoint"
 KIND_ARTIFACT = "artifact"
@@ -254,6 +257,7 @@ KNOWN_KINDS = frozenset({
     KIND_DISPATCH,
     KIND_TOMBSTONE,
     KIND_EDGE,
+    KIND_EDGE_RETRACTED,
     KIND_GATE,
     KIND_CHECKPOINT,
     KIND_ARTIFACT,
@@ -279,6 +283,7 @@ KIND_TEXT_BYTES = MappingProxyType({
     KIND_DISPATCH: MAX_TEXT_BYTES,
     KIND_TOMBSTONE: MAX_TEXT_BYTES,
     KIND_EDGE: MAX_TEXT_BYTES,
+    KIND_EDGE_RETRACTED: MAX_TEXT_BYTES,
     KIND_GATE: MAX_TEXT_BYTES,
     KIND_CHECKPOINT: MAX_TEXT_BYTES,
 })
@@ -303,6 +308,7 @@ UNKNOWN = "unknown"
 # source, so a delegate that stops folding the kind fails the suite.
 DELEGATED_KINDS = MappingProxyType({
     KIND_EDGE: "provenance.fold_edges",
+    KIND_EDGE_RETRACTED: "differential.views_from_events",
     KIND_GATE: "gates.fold_gates",
 })
 

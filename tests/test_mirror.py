@@ -234,6 +234,53 @@ def test_an_edge_with_no_type_is_refused(kit: Any) -> None:
         mirror.drafts(kit, ["dep", "add", "b-2", "b-1"], "")
 
 
+# --- dep remove ----------------------------------------------------------------
+
+
+def test_a_dep_remove_retracts_exactly_the_edge_a_dep_add_would_have_written(kit: Any) -> None:
+    """The same three payload keys under the retraction kind, so the fold can pair them.
+
+    Asserted against the assertion itself rather than against three literals: a withdrawal
+    that spelled one key differently would describe an edge nothing ever asserted, and the
+    fold would keep holding the real one while reporting the write as recorded.
+    """
+    added = _one(mirror.drafts(kit, ["dep", "add", "b-2", "b-1", "-t", "blocks"], ""))
+
+    removed = _one(mirror.drafts(kit, ["dep", "remove", "b-2", "b-1", "-t", "blocks"], ""))
+
+    assert added.kind == kit.migrate.KIND_EDGE
+    assert removed.kind == kit.events.KIND_EDGE_RETRACTED
+    assert removed.record == added.record == "b-2"
+    assert removed.payload == added.payload
+
+
+def test_a_dep_remove_with_no_type_is_refused(kit: Any) -> None:
+    """An edge is identified by its type, so an untyped retraction names every edge."""
+    with pytest.raises(TrackerDivergenceError, match="no edge type"):
+        mirror.drafts(kit, ["dep", "remove", "b-2", "b-1"], "")
+
+
+def test_a_dep_remove_of_a_parent_child_edge_is_refused_and_says_what_it_would_change(
+    kit: Any,
+) -> None:
+    """Decided rather than translated: retracting one re-parents a record.
+
+    `basicly loop supervise` fans out over `parent-child` dependents, so a retraction would
+    silently change which records a supervised run touches, and the child's own id would
+    still spell the parent it no longer points at. The message has to name the fan-out,
+    because a refusal that only says no sends the reader looking for a bug.
+    """
+    parent_child = kit.DEFAULT_VOCABULARY.parent_child_type
+
+    with pytest.raises(TrackerDivergenceError, match="not retractable") as excinfo:
+        mirror.drafts(kit, ["dep", "remove", "b-2", "b-1", "-t", parent_child], "")
+
+    assert "supervise" in str(excinfo.value)
+    # The control: the same argv with a blocking type is translated, so the refusal is the
+    # edge type and not the verb.
+    assert mirror.drafts(kit, ["dep", "remove", "b-2", "b-1", "-t", "blocks"], "")
+
+
 # --- provenance ----------------------------------------------------------------
 
 
