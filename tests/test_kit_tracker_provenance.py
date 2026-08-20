@@ -51,6 +51,7 @@ KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 PROVENANCE_SOURCE = KIT_DIR / "provenance.py"
 EVENTS_SOURCE = KIT_DIR / "events.py"
 IDS_SOURCE = KIT_DIR / "ids.py"
+DIFFERENTIAL_SOURCE = KIT_DIR / "differential.py"
 
 
 def _load(path: Path, name: str) -> ModuleType:
@@ -68,6 +69,12 @@ provenance = _load(PROVENANCE_SOURCE, "tracker_provenance")
 # would mint two `InvalidEventError` classes and every `except` clause here would stop
 # matching one of them. The module names the module name for exactly this reason.
 events = provenance.events
+
+# The other fold over the same edge events, loaded for the dialect control below. It reaches
+# `events.py` through `migrate.py` under the published module name, so this is still the one
+# copy — asserted where the single-load contract is asserted.
+differential = _load(DIFFERENTIAL_SOURCE, "tracker_differential")
+migrate = differential.migrate
 
 RECORD_A = "basicly-aa11"
 RECORD_B = "basicly-bb22"
@@ -613,6 +620,145 @@ def test_the_write_path_refuses_what_it_cannot_mean(key: Any, label: str, match:
 
     assert issubclass(provenance.InvalidEdgeError, events.InvalidEventError)
     assert issubclass(provenance.InvalidEdgeError, events.LedgerError)
+
+
+# --- the two edge dialects ----------------------------------------------------
+
+# The fold read `target`/`edge_type` while `migrate.py` writes `to`/`type`, so it read **0 of
+# the 1,083** edge events in this repo's log and `gating_edges` answered for the whole
+# population by seeing nothing (basicly-svct4w). Zero is why a count alone cannot be the
+# test: an empty edge set is the same answer for a ledger with no edges and a ledger the
+# reader could not parse. Every test here is therefore held against a second measurement —
+# `differential.views_from_events` over the *same* events, `migrate.py`'s own constants, or
+# the `dialects` report — rather than against a number this file also chose.
+#
+# One edge in the dialect the engine actually writes. Built from `migrate.py`'s constants: a
+# literal would keep passing after a rename that reopened the split.
+ENGINE_EDGE = provenance.EdgeKey(RECORD_B, "parent-child", RECORD_C)
+
+
+def _engine_dialect_draft(key: Any, label: str = provenance.EXTRACTED) -> Any:
+    """One edge event spelled `from`/`to`/`type`, the way `migrate.py` records one."""
+    return events.Draft(
+        key.source,
+        provenance.KIND_EDGE,
+        {
+            migrate.EDGE_FROM: key.source,
+            migrate.EDGE_TO: key.target,
+            migrate.EDGE_TYPE: key.edge_type,
+            provenance.KEY_LABEL: label,
+        },
+        actor="engine:owned-write",
+    )
+
+
+def test_the_engine_dialect_folds_to_the_edge_count_the_differential_reads(
+    tmp_path: Path,
+) -> None:
+    """The equality between the two folds on one input, which is the whole control.
+
+    ``malformed`` is asserted empty in the same breath, because that is where all 1,083 of
+    this log's edges used to land: a fold can satisfy a count by refusing the population
+    into a list nobody reads.
+    """
+    edges = (ENGINE_EDGE, provenance.EdgeKey(RECORD_A, "blocks", RECORD_D))
+    events.append(tmp_path, [_engine_dialect_draft(key) for key in edges], clock=lambda: CLOCK)
+    stored, quarantined = events.read_events(tmp_path)
+    assert quarantined == []
+
+    edge_fold = provenance.fold_edges(stored)
+    views = differential.views_from_events(stored)
+    reference = sum(len(view.dependencies) for view in views.values())
+
+    assert reference == len(edges)
+    assert len(edge_fold.edges) == reference
+    assert edge_fold.malformed == []
+    assert set(edge_fold.edges) == set(edges)
+    assert edge_fold.dialects == {provenance.DIALECT_ENGINE: len(edges)}
+    assert _keys(provenance.gating_edges(edge_fold)) == sorted(edges)
+
+
+def test_a_ledger_in_both_dialects_folds_both_and_says_which_it_read(
+    tmp_path: Path,
+) -> None:
+    """Accepting the engine's spelling must not trade one blindness for the other.
+
+    Three edges in the declared dialect and one in the engine's, with both sides named: a
+    reader that had simply *switched* spellings passes a test counting only the engine's.
+
+    The asymmetry is stated rather than asserted away. `differential.views_from_events`
+    reads the engine dialect only, so it sees **1 of these 4** — the mirror of the defect
+    this closes, latent because nothing writes the declared dialect today, and belonging
+    to that module rather than this one.
+    """
+    _build(tmp_path)
+    events.append(tmp_path, [_engine_dialect_draft(ENGINE_EDGE)], clock=lambda: CLOCK)
+    stored, _ = events.read_events(tmp_path)
+
+    edge_fold = provenance.fold_edges(stored)
+
+    assert edge_fold.malformed == []
+    assert edge_fold.dialects == {
+        provenance.DIALECT_DECLARED: 3,
+        provenance.DIALECT_ENGINE: 1,
+    }
+    assert {HUMAN_EDGE, AGENT_EDGE, BOUNCE_EDGE, ENGINE_EDGE} == set(edge_fold.edges)
+    views = differential.views_from_events(stored)
+    assert sum(len(view.dependencies) for view in views.values()) == 1
+
+
+def test_the_second_dialect_is_the_engine_writers_own_spelling_and_not_a_third() -> None:
+    """Read off `migrate.py`, so a rename there fails here instead of reopening the split.
+
+    The inequalities are what keep it from being a tautology: the two pairs are still
+    *different* names, so a later edit that quietly unified them fails here — that is a
+    change to what the kit writes into consumers' logs, not a detail.
+    """
+    assert provenance.ALT_KEY_TARGET == migrate.EDGE_TO
+    assert provenance.ALT_KEY_TYPE == migrate.EDGE_TYPE
+    assert provenance.KEY_TARGET != migrate.EDGE_TO
+    assert provenance.KEY_TYPE != migrate.EDGE_TYPE
+    assert provenance.DIALECT_DECLARED != provenance.DIALECT_ENGINE
+
+    minted = provenance.edge_draft(HUMAN_EDGE, provenance.EXTRACTED)
+
+    assert set(minted.payload) == {
+        provenance.KEY_TARGET,
+        provenance.KEY_TYPE,
+        provenance.KEY_LABEL,
+        provenance.KEY_DETAIL,
+    }
+
+
+def test_a_dialect_neither_writer_uses_is_refused_by_name(tmp_path: Path) -> None:
+    """A third spelling is malformed, not a silently absent edge.
+
+    The `to`-without-`type` payload is the discriminating case: a reader that keyed the
+    dialect off one field alone would take it for the engine's and then refuse it naming
+    the wrong spelling, which sends a reader of the report to the wrong writer.
+    """
+    _build(tmp_path)
+    events.append(
+        tmp_path,
+        [
+            events.Draft(
+                RECORD_A,
+                provenance.KIND_EDGE,
+                {migrate.EDGE_TO: RECORD_C, provenance.KEY_LABEL: provenance.EXTRACTED},
+                actor="lane:third",
+            )
+        ],
+        clock=lambda: CLOCK,
+    )
+
+    stored, _ = events.read_events(tmp_path)
+    edge_fold = provenance.fold_edges(stored)
+
+    assert [item.record for item in edge_fold.malformed] == [RECORD_A]
+    assert provenance.KEY_TYPE in edge_fold.malformed[0].reason
+    assert edge_fold.dialects == {provenance.DIALECT_DECLARED: 3}
+    assert len(edge_fold.edges) == 3
+    assert provenance.edge_dialect(stored[-1].payload) == provenance.DIALECT_DECLARED
 
 
 # --- the size cap, and which fields it may reach ------------------------------

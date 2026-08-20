@@ -1,0 +1,36 @@
+# `provenance.fold_edges` now reads the dialect the engine writes (basicly-svct4w). The fold
+# required `target`/`edge_type` while `migrate.py` writes `from`/`to`/`type` and
+# `differential.py` reads that, so on this repo's own log it read **0 of 1,083** edge events
+# and put every one of them in `EdgeFold.malformed`, where nothing looks. `gating_edges`
+# therefore returned an empty tuple for the whole population — the fail-open shape, because
+# empty is also the right answer for a ledger with no edges.
+#
+# Measured before the first edit: `provenance.py` had **13** tokens of module-size headroom
+# and **0.1** points of comment-density headroom, and its test file had **16** tokens.
+#
+# `provenance.py` +753: the second dialect accepted on read and never written
+# (`ALT_KEY_TARGET`/`ALT_KEY_TYPE`, read off the pair `migrate.py` declares), `edge_dialect`
+# choosing between the two, and `EdgeFold.dialects` counting what it read. The engine pair is
+# taken only when it is complete and the declared pair is not, which is what keeps a payload
+# in neither dialect refused under the documented spelling instead of under a guess. The
+# direction is deliberate: unifying on the written spelling would have moved
+# `provenance.KEY_TARGET`, and that constant is read by `fsck.EDGE_RECORD_KEYS` and asserted
+# by two test modules outside this record's scope, so it is a reader change here and a writer
+# change nowhere. The other ratchet is the proof that none of these tokens came out of the
+# comment budget: the module's prose share **fell, 71.7 to 71.4**, with no claim deleted — the
+# R2 "one spelling per field" comment is corrected to say the write side rather than removed.
+#
+# `tests/test_kit_tracker_provenance.py` +1571: four tests under `-k dialect`. The load-bearing
+# one holds `len(fold_edges(...).edges)` against `differential.views_from_events` over the same
+# events, because a count alone cannot discriminate a blind fold from an edgeless ledger — it
+# failed `assert 0 == 2` before the change. The others pin `ALT_KEY_*` against `migrate.py`'s
+# own constants so a rename there fails loudly, prove the declared dialect still folds beside
+# the engine's (a switch of spellings would pass a one-sided test), and prove a third spelling
+# is refused by name rather than silently absent. The file's prose share rose 34.1 to 35.4,
+# well inside the 50% cap it is measured against rather than a frozen share.
+[ratchet.module_size]
+rebaseline_reason = "the second edge dialect accepted on read, and the two-fold equality control, in a kit module with 13 tokens of headroom and a test module with 16"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/provenance.py" = 753
+"tests/test_kit_tracker_provenance.py" = 1571
