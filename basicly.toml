@@ -461,6 +461,28 @@ name = "comment-density"
 command = ["uv", "run", "python", ".scripts/check_comment_density.py"]
 modes = ["fast", "full"]
 
+# `except` clause form, as PEP 758 states it. `python-guidelines` settles the house form —
+# paren-free `except A, B:`, parentheses only where the clause binds — and that was the whole
+# enforcement: a parenthesised clause reached `.basicly/core/hooks/pre-push.py` in `0a0d669e`
+# and this entry's `ruff-format` neighbour rewrote it silently through its `fix_command`, so
+# the author learned nothing. `ruff check` has no rule in either direction.
+#
+# `ast` cannot see the shape: 3.14 gives both forms the same `ExceptHandler` with an
+# `ast.Tuple`, and an AST probe reported 54 offenders here, all conforming. The gate reads
+# tokens, and `tests/test_check_except_form.py` holds the two-directional control.
+#
+# A repo-local script rather than a CLI subcommand, on the same grounds as `module-size`: the
+# form is basicly's own house style and a consumer's would be its own decision. Not a ratchet
+# — the tree measures zero offenders, so there is nothing to freeze.
+#
+# No `fix_command`. Deleting the parens is mechanical, but `ruff format` doing it silently is
+# why the rule never landed with anyone; the report is the point. In `fast` as well as `full`:
+# one `git ls-files` and a tokenize pass over 412 modules.
+[[verify.checks]]
+name = "except-form"
+command = ["uv", "run", "python", ".scripts/check_except_form.py"]
+modes = ["fast", "full"]
+
 # Suppression debt, as a per-code ratchet (basicly-u2hl.12). ruff cannot police its own
 # suppressions — a `# noqa` is the one edit that makes the linter agree with you — so the
 # count lives outside the code, in `[tool.noqa_debt]` in pyproject.toml. §9.1 recorded 46;

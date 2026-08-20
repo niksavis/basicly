@@ -99,6 +99,12 @@ class RepairBrief:
     findings: tuple[str, ...] = ()
     evidence: tuple[GateEvidence, ...] = ()
     reviews: tuple[lens_review.LensFindings, ...] = ()
+    # The branch head this brief was written against. What makes it possible to tell a brief
+    # that still describes the tree from one whose defect somebody already fixed by another
+    # route: the head is the only fact that moves when work lands, and it needs no clock
+    # (basicly-59fkfu). Empty in a brief written before this field existed, which
+    # :func:`stale_against` reads as *cannot tell* and dispatches.
+    branch_head: str = ""
 
     def as_dict(self) -> dict[str, object]:
         """The JSON shape written to the worktree."""
@@ -111,6 +117,7 @@ class RepairBrief:
                 {"check": e.check, "command": e.command, "output": e.output} for e in self.evidence
             ],
             "reviews": [{"lens": r.lens, "findings": r.findings} for r in self.reviews],
+            "branch_head": self.branch_head,
         }
 
 
@@ -154,6 +161,7 @@ def _parse_repair_brief(data: object) -> RepairBrief | None:
         findings=findings,
         evidence=evidence,
         reviews=_parse_reviews(data.get("reviews")),
+        branch_head=head.strip() if isinstance(head := data.get("branch_head"), str) else "",
     )
 
 
@@ -212,6 +220,36 @@ def take_repair_brief(cwd: Path) -> RepairBrief | None:
     except ValueError:
         return None
     return _parse_repair_brief(data)
+
+
+def stale_against(brief: RepairBrief, head: str | None) -> str:
+    """Why *brief* is stale against the branch's current *head*, or "" when it is not.
+
+    A brief names a defect in one state of a branch, so a moved head means that work landed by
+    another route - observed on `basicly-gvlpxm`, whose brief asked for a change that had
+    merged hours earlier. Cannot-tell dispatches: a brief predating this field, or a head that
+    would not resolve, is not evidence of staleness.
+    """
+    if not brief.branch_head or not head or brief.branch_head == head:
+        return ""
+    return (
+        f"the repair brief for gate {brief.gate!r} was written against {brief.branch_head} and "
+        f"the branch is now at {head}, so its defect may already be fixed; re-run the gate to "
+        f"raise a brief against what is there now"
+    )
+
+
+def no_commit_reason(brief: RepairBrief, where: str) -> str:
+    """Why a repair that left the branch where it found it cannot be charged as a round.
+
+    The other half of :func:`stale_against`. A repair that commits nothing leaves the branch
+    carrying nothing base does not hold, so the next advance takes the same brief again - the
+    wedge, rather than the waste.
+    """
+    return (
+        f"the repair for gate {brief.gate!r} committed nothing in {where}; re-running it would "
+        f"brief the same round again"
+    )
 
 
 def clip_output(text: str) -> str:

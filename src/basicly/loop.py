@@ -1678,9 +1678,11 @@ def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceR
         return None
     cwd = Path(session.worktree_path)
     brief = repair_brief.take_repair_brief(cwd)
-    if brief is None:
-        return None
     where = f"worktree {binding.name!r}"
+    before = merge.branch_head(ctx.repo_root, session.branch)
+    stale = repair_brief.stale_against(brief, before) if brief is not None else ""
+    if brief is None or stale:
+        return _blocked(ctx, f"{stale} ({where})", needs_input="validation") if stale else None
     # The fourth site D3's halt predicate has to bind at, and the one basicly-1th1 left:
     # a repair is a full metered dispatch, and a landing that just failed a gate is
     # exactly when a grant is most likely to be spent (basicly-dbbh).
@@ -1701,17 +1703,25 @@ def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceR
         ),
         brief,
         where,
+        branch=session.branch,
     )
 
 
 def _repair_outcome(
-    ctx: _Ctx, dispatch: _Dispatch, brief: repair_brief.RepairBrief, where: str
+    ctx: _Ctx,
+    dispatch: _Dispatch,
+    brief: repair_brief.RepairBrief,
+    where: str,
+    branch: str = "",
 ) -> AdvanceResult:
     """What a finished repair dispatch leaves the loop blocked on.
 
     Split out of :func:`_repair_in_place` so admitting the spend gate there did not push
-    it past its return budget: the metric is the shape, not the score (basicly-dbbh).
+    it past its return budget: the metric is the shape, not the score (basicly-dbbh). The
+    committed-nothing check joined it for the same reason (basicly-59fkfu).
     """
+    if branch and merge.branch_head(ctx.repo_root, branch) == brief.branch_head:
+        return _blocked(ctx, repair_brief.no_commit_reason(brief, where), needs_input="validation")
     if dispatch.result.handoff:
         return _blocked(
             ctx,
@@ -2352,6 +2362,7 @@ def _brief_repair(  # noqa: PLR0913 — one parameter per recorded fact
         findings=tuple(findings),
         evidence=tuple(evidence)[: repair_brief.MAX_REPAIR_EVIDENCE],
         reviews=_recorded_reviews(ctx, target, gate),
+        branch_head=merge.branch_head(ctx.repo_root, session.branch) or "",
     )
     if not repair_brief.write_repair_brief(Path(session.worktree_path), brief):
         return ""

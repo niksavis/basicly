@@ -1,0 +1,35 @@
+# Refuse a repair brief the branch has moved past, and refuse to charge for a repair that
+# committed nothing (basicly-59fkfu).
+#
+# `src/basicly/loop.py` 31620 -> 31664, rebaselined by 44. **First rebaseline this file has
+# ever taken** - `load_ratchet(...).rebaselined` reports no prior entry for it, so this is not
+# the accumulation `basicly-wpqdag` made visible. It is the second behavioural fix landed into
+# this module today: `basicly-3katht` added the change-summary recording at the repair merge
+# site, and this adds the staleness refusal and the committed-nothing block.
+#
+# Everything cheaper was taken first and measured at each step, from 31693 down to 31664:
+#   - both refusal messages moved into `repair_brief.py` beside their predicate, where there
+#     were 264 tokens, so the strings live with the code that owns them rather than at the
+#     call site
+#   - a `landed=(branch, head)` tuple collapsed to `branch=` once it was clear the brief
+#     already records the head it was written against, so the comparand was already in hand
+#   - the staleness refusal WIDENS the existing early-out instead of adding a branch, because
+#     `_repair_in_place` sits at exactly the 6-return budget `ruff` PLR0911 allows - the same
+#     budget that forced `_repair_outcome` out of it under `basicly-dbbh`, and the reason the
+#     committed-nothing check went into that function rather than beside its sibling
+#
+# The prose share FELL, 52.4 to 52.3 against a frozen 52.4, which is the control that none of
+# these 44 tokens came out of the comment budget: the additions are code.
+[ratchet.module_size]
+rebaseline_reason = "second behavioural fix into loop.py today and its first rebaseline ever; the messages moved to repair_brief.py where there was room, the plumbing collapsed once the brief was found to already record its own head, and the refusal widened an existing early-out because the function is at ruff's 6-return budget. Prose share fell 52.4 to 52.3, so the tokens are code"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/loop.py" = 44
+
+# The `except-form` gate added under the retrospective's first ranked control costs one E402
+# suppression, 22 -> 23. It is the `sys.path.insert` that lets a `.scripts/` gate import
+# `ratchet.py` beside it, copied verbatim from `check_comment_density.py` - `.scripts/` is not a
+# package, so the alternative is a second spelling of the ratchet helpers in every gate. Every
+# other gate in that directory carries the same line for the same reason.
+[ratchet.noqa_debt.frozen]
+E402 = 1

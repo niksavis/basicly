@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from basicly import lens_review, repair_brief, rubrics, validate_gate, verify
 
 # A check that always fails and prints something recognisable, so the brief's command
@@ -123,6 +125,75 @@ def test_a_brief_survives_the_worktree_and_is_consumed_on_read(tmp_path: Path) -
     assert repair_brief.write_repair_brief(cwd, brief)
     assert repair_brief.take_repair_brief(cwd) == brief
     assert repair_brief.take_repair_brief(cwd) is None
+
+
+# --- a brief the branch has moved past (basicly-59fkfu) -----------------------
+
+
+def test_a_stale_brief_is_refused_against_a_head_that_moved() -> None:
+    """The acceptance criterion, and it was observed rather than imagined.
+
+    On `basicly-gvlpxm` the brief asked for a change that had merged hours earlier, so a
+    full metered repair would have found nothing to do.
+    """
+    reason = repair_brief.stale_against(_brief(branch_head="aaa1111"), "bbb2222")
+
+    assert "aaa1111" in reason
+    assert "bbb2222" in reason
+    assert "may already be fixed" in reason
+
+
+def test_a_brief_against_the_current_head_is_dispatched_unchanged() -> None:
+    """The third criterion: a defect still open is briefed exactly as before."""
+    assert repair_brief.stale_against(_brief(branch_head="aaa1111"), "aaa1111") == ""
+
+
+@pytest.mark.parametrize(("recorded", "head"), [("", "bbb2222"), ("aaa1111", None), ("", None)])
+def test_a_brief_that_cannot_be_judged_stale_is_dispatched(recorded: str, head: str | None) -> None:
+    """Cannot-tell dispatches, and each of the two ways it arises is one case here.
+
+    A brief written before the field existed carries no head, and a branch whose ref will not
+    resolve answers None. Refusing on the reader's own uncertainty would strand work a red
+    gate really does owe, which is the opposite failure and the more expensive one.
+    """
+    assert repair_brief.stale_against(_brief(branch_head=recorded), head) == ""
+
+
+def test_the_head_a_brief_was_written_against_survives_the_round_trip(tmp_path: Path) -> None:
+    """The field is only useful if it comes back, so the JSON shape carries it."""
+    cwd = _worktree(tmp_path)
+    brief = _brief(branch_head="aaa1111")
+
+    assert repair_brief.write_repair_brief(cwd, brief)
+    assert repair_brief.take_repair_brief(cwd) == brief
+
+
+def test_a_brief_written_before_the_field_existed_reads_as_cannot_tell(tmp_path: Path) -> None:
+    """The tolerant read the sentinel takes: an older brief is dispatched, not refused."""
+    cwd = _worktree(tmp_path)
+    (cwd / repair_brief.REPAIR_BRIEF_FILE).parent.mkdir(parents=True, exist_ok=True)
+    (cwd / repair_brief.REPAIR_BRIEF_FILE).write_text(
+        json.dumps({"issue_id": "i", "gate": verify.DEFAULT_GATE, "reason": "old"}),
+        encoding="utf-8",
+    )
+    taken = repair_brief.take_repair_brief(cwd)
+
+    assert taken is not None
+    assert taken.branch_head == ""
+    assert repair_brief.stale_against(taken, "bbb2222") == ""
+
+
+def test_a_repair_that_committed_nothing_is_named_rather_than_charged() -> None:
+    """The second criterion: a repair that commits nothing is named, not charged.
+
+    It leaves the branch where it found it, so the next advance takes the same brief again -
+    the wedge rather than the waste.
+    """
+    reason = repair_brief.no_commit_reason(_brief(), "worktree 'w'")
+
+    assert "committed nothing" in reason
+    assert "worktree 'w'" in reason
+    assert "same round again" in reason
 
 
 def test_a_brief_is_never_written_into_a_tree_that_is_gone(tmp_path: Path) -> None:

@@ -143,10 +143,23 @@ Test quality is out of scope — `test-discipline` owns it.
 ## Choosing a 3.14 idiom
 
 - **Paren-free `except A, B:` is the house form** (PEP 758). The floor is
-  `requires-python = ">=3.14"`, so there is no compatibility argument, and no
-  linter enforces either direction — this settles it. Parentheses stay required
-  only when the clause binds: `except (ValueError, OSError) as err:`. Never add
-  parentheses to an existing paren-free clause; that is a no-op diff.
+  `requires-python = ">=3.14"`, so there is no compatibility argument.
+  Parentheses stay required only when the clause binds:
+  `except (ValueError, OSError) as err:`. Never add parentheses to an existing
+  paren-free clause; that is a no-op diff.
+- **This is enforced, and the correction matters.** This bullet used to say no
+  linter enforces either direction. `ruff format` does: measured 2026-08-20
+  under this repo's config, it rewrites `except (ValueError, OSError):` to the
+  paren-free form, and `except* (A, B):` likewise. `ruff check` has no rule
+  either way. Because the `ruff-format` verify entry declares a `fix_command`,
+  the hook rewrites the clause **silently** — which is why a parenthesised
+  clause reached a commit in `pre-push.py` and left no trace, and why the rule
+  read as unenforced. Two consequences. A single-line clause needs no vigilance.
+  A **multi-line** one is the opposite: the formatter rewrites a
+  backslash-continued paren-free clause *into* the paren-wrapped form, so there
+  the parens are correct and the `except-form` gate exempts them. That gate
+  binds where the formatter does not — under `--target-version py313` the parens
+  are kept, so a target-version change would otherwise un-enforce this silently.
 - Otherwise, adopt a new-version idiom when it removes a construct that is in
   the tree today, and name that construct in the commit message. PEP 750
   t-strings, for example, exist for injection boundaries and this repo has none
