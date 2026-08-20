@@ -1,0 +1,27 @@
+# Split `mirror.py` so the two write-seam refusals fit (basicly-5m2xfd, basicly-1qi0sz).
+# It had 24 tokens of headroom and neither refusal was smaller than that.
+#
+#   mirror.py         3976 -> 845    headroom 24 -> 3155   which verbs translate, and the refusal
+#   write_verbs.py       new 3721    headroom       279    what one verb states about a record
+#
+# One-way seam, checked rather than assumed: a cross-reference scan showed the moving half takes
+# nothing from the half it left once `MIRROR_PROVENANCE` travels with `_payload`, its only
+# reader. `_CREATED_STATUS` became public rather than being reached across the seam as a private.
+#
+# One density waiver, and the mechanism is inverted from the usual: `mirror.py` did not get
+# denser by gaining prose, it got denser by LOSING 3000 tokens of code. The contract that stayed
+# is the frozen-surface argument in `drafts` plus a ruff `D`-mandated `Raises:` block, and
+# merging back crosses the cap at 4566. Seventh instance in one pass (basicly-e2r08j).
+[ratchet.comment_density]
+count_delta = 1
+
+# `tests/test_mirror.py` fell to 3937, back under the 4000 cap, because the close-reason case
+# moved to `tests/test_write_verbs.py` where it belongs and the duplicate here went. So
+# `basicly-6oypkd`'s rebaseline to 4048 is spent, and leaving it would license 111 tokens of
+# regrowth for free. Withdrawn by cancelling the delta rather than by editing that record's
+# fragment: the withdrawal belongs to the change that made it unnecessary.
+[ratchet.module_size]
+rebaseline_reason = "withdrawing basicly-6oypkd's rebaseline of tests/test_mirror.py, which is spent: the module fell to 3937 under the 4000 cap when the close-reason case moved to test_write_verbs.py, and a baseline above the cap licenses regrowth to it"
+
+[ratchet.module_size.rebaselined]
+"tests/test_mirror.py" = -4048

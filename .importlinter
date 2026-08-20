@@ -52,6 +52,7 @@ layers =
     tracker
     owned_write
     comment_rows | mirror
+    write_verbs
     owned_store
     tracker_argv
     dispatch_phase

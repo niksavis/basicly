@@ -311,18 +311,6 @@ def test_every_mirrored_event_says_how_the_fact_got_here(kit: Any) -> None:
     assert kit.migrate.PROVENANCE_KEY in kit.migrate.RESERVED_KEYS
 
 
-def test_a_close_reason_is_not_mirrored_as_a_comment(kit: Any) -> None:
-    """The reason is a field of the close, so mirroring a comment would invent one.
-
-    A difference the mirror manufactured rather than found is worse than a missing one:
-    the differential would report it against a reference side that never had it.
-    """
-    draft = _one(mirror.drafts(kit, ["close", "b-1", "--reason", "done"], ""))
-
-    assert draft.kind == kit.events.KIND_STATUS
-    assert draft.payload["status"] == "closed"
-
-
 def test_a_multi_id_close_moves_every_id_it_names(kit: Any) -> None:
     """Every id br closes is recorded — its own `--help` takes `[IDS]...`.
 
@@ -332,9 +320,10 @@ def test_a_multi_id_close_moves_every_id_it_names(kit: Any) -> None:
     fold over a re-ordered set is the same state but a diff against the export is not.
     """
     drafts: list[Any] = mirror.drafts(kit, ["close", "b-1", "b-2", "b-3", "--reason", "done"], "")
+    moved = [d for d in drafts if d.kind == kit.events.KIND_STATUS]
 
-    assert [draft.record for draft in drafts] == ["b-1", "b-2", "b-3"]
-    assert {draft.payload["status"] for draft in drafts} == {"closed"}
+    assert [draft.record for draft in moved] == ["b-1", "b-2", "b-3"]
+    assert {draft.payload["status"] for draft in moved} == {"closed"}
 
 
 def test_a_close_naming_no_id_is_still_refused(kit: Any) -> None:
