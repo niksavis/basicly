@@ -7,6 +7,8 @@ description: >-
   without re-planning or widening scope. Use at REPAIR after verify or validate
   failed, when a landing bounced, or whenever the temptation is to re-read the
   requirement and start again.
+covers:
+  phases: [repair]
 instructions: |
   # Repair in place
 

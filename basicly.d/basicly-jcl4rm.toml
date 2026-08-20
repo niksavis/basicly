@@ -1,0 +1,14 @@
+# `skill_coverage` is the unit-side half of "which catalog skills reach a dispatch"
+# (basicly-jcl4rm): ten pure functions, 908 tokens of code, a five-line median body. At
+# that shape the mandated per-function contract docstring alone sets the prose share, and
+# the module measures 50.4% against the 50.0% cap. The waiver is in the file with its
+# reason; this is the count moving in the same commit, which is what makes it reviewable.
+#
+# What was tried first, so the waiver is not the cheap route: three trimming passes cut
+# roughly 1000 characters of prose (61.2% -> 50.4%). Going under would have started
+# deleting the module's actual claims - why coverage is declared rather than inferred, why
+# the Skill-tool counter cannot see an injected body, and why `_catalog` narrows to two
+# exception types. Deleting comments is the cheapest way to pass this gate and it is the
+# one move that leaves it green over the defect it exists to catch.
+[ratchet.comment_density]
+count_delta = 1

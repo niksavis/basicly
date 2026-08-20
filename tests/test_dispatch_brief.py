@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from basicly import dispatch_brief, needs_input, review, roles
+from basicly import dispatch_brief, needs_input, review, roles, skill_coverage
 from basicly.config import WORK_TYPES, SizingConfig
+from basicly.skill_source import SKILLS_SOURCE_DIR
 
 SIZING = SizingConfig(
     working_set_min=9_000,
@@ -122,7 +123,7 @@ def test_a_declared_skill_body_reaches_the_prompt(tmp_path: Path) -> None:
         declares=["python-guidelines"],
         bodies={"python-guidelines": "# Guidelines\nCANARY-EY58-TOKEN\n"},
     )
-    names = dispatch_brief.role_skills(tmp_path, "claude", "implementer")
+    names = skill_coverage.role_skills(tmp_path, "claude", "implementer")
     brief, missing = dispatch_brief.skill_brief(tmp_path, names)
 
     assert names == ("python-guidelines",)
@@ -138,7 +139,7 @@ def test_a_role_declaring_no_skills_leaves_the_prompt_unchanged(tmp_path: Path) 
     which no canary assertion would ever catch.
     """
     _project(tmp_path, role="curator", declares=[], bodies={})
-    names = dispatch_brief.role_skills(tmp_path, "claude", "curator")
+    names = skill_coverage.role_skills(tmp_path, "claude", "curator")
     brief, missing = dispatch_brief.skill_brief(tmp_path, names)
 
     assert names == ()
@@ -155,7 +156,7 @@ def test_an_unreadable_skill_is_named_and_the_readable_ones_still_travel(
         declares=["python-guidelines", "never-projected"],
         bodies={"python-guidelines": "CANARY-EY58-TOKEN"},
     )
-    names = dispatch_brief.role_skills(tmp_path, "claude", "implementer")
+    names = skill_coverage.role_skills(tmp_path, "claude", "implementer")
     brief, missing = dispatch_brief.skill_brief(tmp_path, names)
     prompt = dispatch_brief.with_skills("do the work", brief, missing)
 
@@ -165,13 +166,69 @@ def test_an_unreadable_skill_is_named_and_the_readable_ones_still_travel(
     assert "do the work" in prompt
 
 
-def test_an_unknown_family_declares_nothing_rather_than_raising(tmp_path: Path) -> None:
-    """Codex ships no subagent root, which is a parity gap and not an error."""
-    assert dispatch_brief.role_skills(tmp_path, "codex", "implementer") == ()
-    assert dispatch_brief.role_skills(tmp_path, "claude", "no-such-role") == ()
+def _declare_covers(root: Path, slug: str, covers: str) -> None:
+    """Write a minimal `skill.yaml` source carrying *covers*, plus its projection."""
+    source = root / SKILLS_SOURCE_DIR / slug / "skill.yaml"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(
+        "# yaml-language-server: $schema=../../schemas/skill.schema.json\n"
+        f"schema_version: 1\nname: {slug}\ninvocation: model\ndescription: d\n"
+        f"{covers}instructions: |\n  # {slug}\n",
+        encoding="utf-8",
+    )
+    projected = root / ".claude" / "skills" / slug
+    projected.mkdir(parents=True, exist_ok=True)
+    (projected / "SKILL.md").write_text(f"# {slug}\nCANARY-{slug.upper()}\n", encoding="utf-8")
 
 
-def test_the_declared_list_stops_at_the_next_frontmatter_key() -> None:
-    """`skills:` is one list among several, so the parse must not run into the body."""
-    text = "---\nname: r\nskills:\n- one\n- two\ntools: Read\n---\n\n- not-a-skill\n"
-    assert dispatch_brief._declared_skills(text) == ("one", "two")
+def test_the_brief_names_a_skill_whose_declaration_matches_the_unit(tmp_path: Path) -> None:
+    """The acceptance criterion: a unit's own work reaches the skill that covers it.
+
+    The role is held constant across the two calls, so the only thing that moves is the
+    unit — which is what the persona table could not express (basicly-jcl4rm).
+    """
+    _project(tmp_path, role="implementer", declares=[], bodies={})
+    _declare_covers(tmp_path, "bug-only", "covers:\n  work_types: [bug]\n  phases: [build]\n")
+    _declare_covers(tmp_path, "undeclared", "")
+
+    matched = dispatch_brief.brief_skills(tmp_path, "claude", "implementer", "bug", "build")
+    assert matched == ("bug-only",)
+
+    brief, missing = dispatch_brief.skill_brief(tmp_path, matched)
+    prompt = dispatch_brief.with_skills("do the work", brief, missing)
+    assert "CANARY-BUG-ONLY" in prompt
+    assert "undeclared" not in prompt
+
+
+def test_the_brief_names_a_skill_by_unit_even_when_the_role_declares_none(
+    tmp_path: Path,
+) -> None:
+    """A phase with no persona still dispatches, and the unit route stands alone."""
+    _declare_covers(tmp_path, "phase-only", "covers:\n  phases: [validate]\n")
+    assert dispatch_brief.brief_skills(tmp_path, "claude", None, "task", "validate") == (
+        "phase-only",
+    )
+
+
+def test_the_brief_names_a_skill_once_when_both_routes_declare_it(tmp_path: Path) -> None:
+    """The role declares it and the unit covers it; the agent must not read it twice."""
+    _project(tmp_path, role="implementer", declares=["shared"], bodies={})
+    _declare_covers(tmp_path, "shared", "covers:\n  phases: [build]\n")
+    assert dispatch_brief.brief_skills(tmp_path, "claude", "implementer", "bug", "build") == (
+        "shared",
+    )
+
+
+def test_a_unit_matching_nothing_leaves_the_prompt_unchanged(tmp_path: Path) -> None:
+    """The false-positive half: a dispatch nothing covers must be byte-identical.
+
+    Asserted on identity rather than on a substring, for the reason the sibling role
+    test gives — a preamble grown for a unit with nothing to preload is exactly the
+    regression no canary assertion would catch.
+    """
+    _declare_covers(tmp_path, "phase-only", "covers:\n  phases: [validate]\n")
+    names = dispatch_brief.brief_skills(tmp_path, "claude", None, "chore", "ship")
+    brief, missing = dispatch_brief.skill_brief(tmp_path, names)
+
+    assert names == ()
+    assert dispatch_brief.with_skills("do the work", brief, missing) == "do the work"

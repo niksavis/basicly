@@ -74,6 +74,14 @@ class SkillDefinition:
     compatibility: str | None = None
     allowed_tools: str | None = None
     metadata: tuple[tuple[str, str], ...] = ()
+    # The unit work this skill covers (basicly-jcl4rm), read by
+    # :mod:`basicly.skill_coverage` to decide which skills a dispatch brief names.
+    # Declared, never inferred: a matcher guessing from the `description` misses
+    # silently, and a silent miss is the defect this field exists to close. Empty on
+    # both axes means the skill declares no coverage and no brief can reach it by unit
+    # -- which the usage report names rather than leaves to a reader to notice.
+    covered_work_types: tuple[str, ...] = ()
+    covered_phases: tuple[str, ...] = ()
     # Claude-only frontmatter, projected into `.claude/skills` and nowhere else
     # (basicly-a3ab.11, D36). The four fields above are the Agent Skills portable
     # subset and the whole point of that subset is that a projected SKILL.md loads
@@ -152,6 +160,39 @@ def _load_metadata(value: object, path: Path) -> tuple[tuple[str, str], ...]:
     return tuple(items)
 
 
+def _load_covers(value: object, path: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Validate the optional ``covers`` block into its two axes (work types, phases).
+
+    Shape only. The controlled vocabularies live two tiers up in
+    :mod:`basicly.config` and :mod:`basicly.roles`, which this module may not import,
+    so ``catalog_lint`` holds that half through :mod:`basicly.skill_coverage`.
+    """
+    if value is None:
+        return (), ()
+    if not isinstance(value, dict):
+        raise ValidationError("field 'covers' must be a mapping", path)
+    if unknown := sorted(set(value) - {"work_types", "phases"}):
+        raise ValidationError(f"field 'covers' has unknown key(s) {', '.join(unknown)}", path)
+    axes: list[tuple[str, ...]] = []
+    for axis in ("work_types", "phases"):
+        entry = value.get(axis)
+        if entry is None:
+            axes.append(())
+            continue
+        if not isinstance(entry, list) or not all(
+            isinstance(item, str) and item.strip() for item in entry
+        ):
+            raise ValidationError(f"covers.{axis} must be a list of non-empty strings", path)
+        axes.append(tuple(item.strip() for item in entry))
+    if not any(axes):
+        raise ValidationError(
+            "field 'covers' must declare work_types or phases; an empty block would "
+            "match every dispatch",
+            path,
+        )
+    return axes[0], axes[1]
+
+
 def discover_skills(
     repo_root: Path,
     source_dir: Path = SKILLS_SOURCE_DIR,
@@ -191,6 +232,7 @@ def discover_skills(
         # one) is a catalog_lint rule so the failure can explain itself.
         raw_description = data.get("description")
         description = raw_description.strip() if isinstance(raw_description, str) else ""
+        covers = _load_covers(data.get("covers"), path)
 
         skills.append(
             SkillDefinition(
@@ -207,6 +249,8 @@ def discover_skills(
                 ),
                 allowed_tools=_optional_str(data.get("allowed-tools"), "allowed-tools", path),
                 metadata=_load_metadata(data.get("metadata"), path),
+                covered_work_types=covers[0],
+                covered_phases=covers[1],
                 claude=_load_claude_passthrough(data.get("claude"), path),
             )
         )
