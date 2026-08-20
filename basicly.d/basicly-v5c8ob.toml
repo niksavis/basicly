@@ -1,0 +1,11 @@
+# Section 34's tier and band counts are now a `docs-claims` generated block over
+# `.importlinter` rather than three numbers a lane corrects by hand (basicly-h7bknm). The
+# derivation lives in `.scripts/docs_claim_layers.py`, a fifth sibling of the claim modules
+# `docs_claims.py` already imports, so it carries the same `E402` those four carry and for the
+# same reason: `.scripts` is not a package, the sibling is reachable only after `sys.path`
+# names its directory, and the import therefore cannot precede the statement that makes it
+# resolvable. The alternative rejected was folding the derivation into `docs_claims.py`, which
+# has 500 tokens of module-size headroom against a frozen 5567 and would have needed about
+# 2900. The suppression names its reason, so `unreasoned_count` does not move.
+[ratchet.noqa_debt.frozen]
+E402 = 1

@@ -3284,8 +3284,13 @@ not a bucket.
 The contract is **exhaustive**. A new module joins the package only when a maintainer places
 it in a tier.
 
-The 38 tiers group into nine bands. Every band may import every band below it, and nothing
-above it.
+<!-- docs-claims:begin layering-contract -->
+
+The 38 tiers hold 104 modules and group into 9 bands. Every band may import every band below
+it, and nothing above it. Every count here is derived from `.importlinter`. The band
+*boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
+carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
+against them.
 
 ```mermaid
 flowchart TB
@@ -3295,9 +3300,9 @@ flowchart TB
   b4["4 · configuration and isolation — 2<br/>config · worktree"]
   b5["5 · agent runtime — 5<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 12<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
-  b7["7 · records and telemetry — 11<br/>run_record · artifact_record · lens_review · spend_calibration"]
+  b7["7 · records and telemetry — 13<br/>run_record · artifact_record · lens_review · spend_calibration"]
   b8["8 · tracker seam — 10<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
-  b9["9 · leaf data and pure helpers — 27<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
+  b9["9 · leaf data and pure helpers — 26<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
 
   b1 --> b2 --> b3 --> b4 --> b5 --> b6 --> b7 --> b8 --> b9
   b2 -.->|"declared exemption:<br/>loop imports supervise"| b2
@@ -3306,6 +3311,8 @@ flowchart TB
   classDef shipped fill:#d5efd5,stroke:#2e7d32,color:#000
   class b1,b2,b3,b4,b5,b6,b7,b8,b9 shipped
 ```
+
+<!-- docs-claims:end layering-contract -->
 
 An arrow reads "may import". The two dashed self-edges are the only exceptions to the
 sibling rule, and both are function-level imports declared in the contract. When one cycle
