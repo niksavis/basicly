@@ -2837,7 +2837,7 @@ disposition, because the tolerant direction for a gate is the restrictive one.
 
 `[TARGET]` **No committed artifact carries a machine-specific path, username or hostname.**
 Three rule sets enforce it. The identity half does not hold today, and
-[32.7.1](#3271-the-identity-rule-covers-one-person-and-two-stores-carry-another) is the
+[32.7.1](#3271-the-identity-rule-covers-one-person-and-the-ledger-carries-another) is the
 measurement.
 
 | Rule set | How it is built |
@@ -2869,13 +2869,15 @@ sets. The mirror is real duplication.
 
 That asymmetry is a gap, not a design.
 
-#### 32.7.1 The identity rule covers one person, and two stores carry another
+#### 32.7.1 The identity rule covers one person, and the ledger carries another
 
 **The identity rule is built from the running process's own username, so it can only ever
 redact the committer who is running.** That is deliberate and it is the right default: a
 username is not a shape, and only the running machine knows the string. It is also the
 whole extent of the coverage, and the absolute claim above is false while a second person's
-identity sits in a store this repository commits.
+identity sits in a store this repository commits. The export half of the measurement below is
+now history: `.beads/` is gone with the external dependency, so the live surface is the owned
+ledger alone.
 
 | Store | Lines | A second username | An address |
 | --- | --- | --- | --- |
@@ -3060,7 +3062,7 @@ unchanged, so it is the executable half of the scope contract.
 | R3 | **Validation rules are configuration, not code**, and apply per work type without a rebuild | held for the rule that **judges** a record. `[policy.type_sections]` declares the required-section set per work type, the loader refuses an unknown work type and names it, and an absent table falls back to the built-in set and says so once per process rather than silently. Changing a section set is a configuration edit with no rebuild, demonstrated through `basicly policy dor`. **Open for the rule that writes one:** the scaffold holds no repository root, so a configured heading is judged but never emitted, and the scaffold's own output then fails the gate it exists to satisfy |
 | R4 | **A text field accepts newlines**, and every field settable after creation is settable at creation | held. A multi-line value occupies one physical line and round-trips byte-identically through the log and the fold, and the kit's create surface sets an arbitrary named field |
 | R5 | **A record id is opaque and is never re-parsed.** A short root plus a dotted child counter, with no separator any consumer has to interpret | held for a newly minted id, and stronger than "collision-checked": the root length is sized from a **declared collision budget** by the birthday bound, and only new ids get longer, because an existing id never changes. The ids inherited from the import predate the budget and sit far outside it, which the kit states rather than implies |
-| R6 | **No committed artifact carries a machine-specific path, a username or a hostname**, and portability is a property of the format rather than of a scrubbing pass | **partially held.** [32.7](#327-redaction) is the mechanism and [32.7.1](#3271-the-identity-rule-covers-one-person-and-two-stores-carry-another) is the measured gap |
+| R6 | **No committed artifact carries a machine-specific path, a username or a hostname**, and portability is a property of the format rather than of a scrubbing pass | **partially held.** [32.7](#327-redaction) is the mechanism and [32.7.1](#3271-the-identity-rule-covers-one-person-and-the-ledger-carries-another) is the measured gap |
 | R7 | **N concurrent readers and one writer never corrupt shared state**, and a contention failure that is reported is reported as **retryable**, so the caller backs off | held. Publishing is a rename, the temp name is per-writer, and the give-up error carries retryability as a class attribute rather than as prose |
 | R8 | **Contention waits, and a wait that gives up says so.** The lock is scoped to the ledger it protects, never to the machine or a home directory | held. Scope decides who contends: a lock one level too wide makes every unrelated process on the host a competitor for a record it will never touch, and the failure that produces is a *gate* failing rather than a write waiting |
 | R9 | **A publish never shrinks the artifact silently.** A write emitting fewer records than the file it overwrites reports the shrink and requires explicit intent | held on the derived snapshot, which is the only store left. `write_snapshot` is the single refusal point every publish path already goes through, it names both counts in the message, and `allow_shrink` is how a caller declares the loss intended. The comparison is on **content, never on timestamps** — a timestamp comparison fires on a healthy checkout whose content is byte-identical, so it cannot be the guard. **One path is exempt by construction:** `fsck.rebuild` unlinks the target before writing, so the guard always meets an absent file and the rebuild that loses records is the one it cannot see |
@@ -3322,6 +3324,44 @@ goes, the contract turns red until the exemption goes with it.
 therefore stays testable with no repository, no tracker and no configuration file, and every
 band above it can reach it.
 
+### 34.1 Where the seams are, and what forced each one
+
+Five modules were split on 2026-08-20 because each had reached its size ratchet and the next
+fix could not be written into it. The seams are recorded here because a seam is a decision, not
+a file listing — and because in each case the ratchet named the pressure while a maintainer had
+to name the boundary.
+
+| Split | Boundary |
+| --- | --- |
+| `board_fields` → `board_sections` | what may cross the wire, against which rows a section is |
+| `board_snapshot` → `board_usage` | the ledger half and the assembly, against the sections whose source is `.basicly/usage/` |
+| `mirror` → `write_verbs` | which verbs have an owned-ledger translation, against what one verb states about a record |
+| kit `differential` → `derivation`, `views` | the owned fold and the audit, against a derivation that may read no store, against the shape both sides report in |
+| kit `provenance` → `labels` | writing, reading and folding an edge, against what a label means and what it permits |
+
+Two properties hold across all five, and both were checked rather than assumed. **No seam
+imports back**: a cross-reference scan established that each moving half took nothing from the
+half it left. And **every name a consumer already read is re-exported by alias**, so
+`except DifferentialError` and `kit.is_ready` behave exactly as before — one object per name,
+never a second class with the same spelling.
+
+The kit splits carry a cost the engine splits do not: the kit is a set of sibling files rather
+than a package, so each new module needs a by-path loader caching on a published `sys.modules`
+name. Two loads of one file give two `RecordView` classes, and an `isinstance` against the
+wrong one is false for the right reason.
+
+**The splits also produced the tree's clearest structural tension, recorded rather than
+resolved.** Splitting a module raises the prose share of *both* halves by construction: the code
+divides and each half still owes a contract docstring. `board_snapshot` lost 630 tokens of code
+and 505 of prose in one edit — it became smaller and denser at the same time, 3980 → 2845 tokens
+and 47% → 51.5% prose. Under ruff `D`, which mandates docstrings, that is arithmetic rather
+than style. Seven density waivers were taken across the five splits, each with its reason in
+`basicly.d/`. The size ratchet and the density ratchet are therefore **jointly unsatisfiable on
+the split operation**, and no gate can resolve a genuine conflict between two policies — it can
+only price it. What is missing is the pricing: `check_module_size.py` reports only that a module
+is *over* its limit, never that it is within N tokens, so 19 modules sit at exactly zero
+headroom and none appears in any gate output.
+
 ## 35. Runtime topology
 
 Two facts in this section are the two most frequently re-learned facts in this repository.
@@ -3367,7 +3407,7 @@ flowchart TB
 | --- | --- | --- |
 | base checkout | the repository root | every advance that writes the base branch, and every landing |
 | sibling worktrees | `<repo>.worktrees/<name>`, outside the repository | one lane each, on `harness/<name>` |
-| the work tracker | one store, in the base checkout only | every checkout. A lane worktree never holds a store of its own. Today a redirect file carries that, and §37.2 names it. Today the store is two stores written together, and §37.3 draws the write |
+| the work tracker | one store, in the base checkout only | every checkout. A lane worktree never holds a store of its own. A redirect file carries that, and §37.2 names it. The store is now **one** store - the flip ran, and §37.3 records it |
 | the log files | `.basicly/ledger/` in the base checkout only | one append at a time, behind a file whose existence is the lock |
 | the supervisor lock | `.basicly/usage/supervisor.lock` | one supervisor process, refreshed by a heartbeat thread |
 | agent processes | subprocesses of the worker pool | one per lane. Nothing interrupts a running one |
@@ -3638,8 +3678,8 @@ and every agent that plans from a document reads it as fact.
 | citation ratchet | checks every `file:line` in a document against the code | refuses |
 | pytest tripwire | asserts a documented list against a code constant | fails the suite |
 
-`uv run python .scripts/docs_claims.py --check` reports `4 generated blocks current,
-5 assertions current` [verified 2026-08-16]. Which blocks, assertions and tripwires bind on
+`uv run python .scripts/docs_claims.py --check` reports `6 generated blocks current,
+6 assertions current` [verified 2026-08-20]. Which blocks, assertions and tripwires bind on
 which document is a fact about the documentation set, and
 [`conventions.md`](conventions.md) records it.
 

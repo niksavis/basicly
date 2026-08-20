@@ -83,6 +83,18 @@ evidence each state requires. It is not restated here: the renderer reads that t
 | The judged-output contract: a reviewer structurally incapable of seeing the producer's conclusion, a review base recorded before dispatch, re-review scoped to the fix range, late rounds escalating a tier | designed | **Deterministic engine code, not a persona**, which is why it survived the routing landing |
 | Cost per landed unit | researching | The instrument the tier claims rest on |
 
+## The board
+
+| Capability | Status | Note |
+| --- | --- | --- |
+| A published snapshot contract a foreign harness can conform to | shipped | `.basicly/core/schemas/board-snapshot.schema.json`, deliberately not strict, so a consumer meeting an undeclared key counts and reports it rather than erroring. Carries no figure it cannot re-derive |
+| A file-only producer that folds the log once and spawns nothing | shipped | Four modules — bounds, row reducers, `.basicly/usage/` sections, assembly — with the fold count and the subprocess count both pinned by spies, because "reads only files" is a claim one convenient import breaks |
+| Omit-never-estimate, so an absent source is absent rather than zero | shipped | The schema has no field marking a value as estimated, so a guess would render identically to a billed figure |
+| A command that emits a snapshot | designed | **Nothing calls the producer.** `basicly board` has one verb, `validate`, and `build_document` has no caller outside tests, so no snapshot can be produced today |
+| A rendered page a human can open | designed | No renderer and no template exist. This is what makes the board unusable rather than merely unfinished, and it is the next unit |
+| A conformance kit so another project can adopt the board | designed |  |
+| Live modes — a snapshot on the supervisor tick, and a read-only wall view | designed | Sequenced behind the page |
+
 ## The work graph
 
 | Capability | Status | Note |
@@ -96,9 +108,9 @@ evidence each state requires. It is not restated here: the renderer reads that t
 | A repeatable ledger import a fresh consumer can run | shipped | Refuses a post-flip ledger |
 | A seam-routed surface for a human tracker write, so both stores move together | shipped | Closes the last bypass route the differential can see |
 | No committed artifact carries a host path, username or hostname | partial | The path half is shipped. **The identity half covers the running committer only, and both stores carry a second person's** [measured 2026-08-17: the export holds one on 83 of 924 records and an address on 56; the owned log holds one on 211 of 5,616 lines and an address on 56, and all 263 identity-carrying events carry the import's own marker against a positive control of zero live writes]. The pre-commit floor is green over both, correctly, because it builds its rule from the running user. Architecture §32.7.1. The secret-rule mirror is kept in step by convention only |
-| The owned append-only event log as the source of truth | building | Steps 1 to 3 of the cutover have run; the flip waits on the remaining bypasses and on five unported operations. Architecture §37.3 |
-| A consistency check and rebuild, so "the log is the truth" is checkable | partial | **Built with tests and reached by nothing** [re-measured 2026-08-17: no engine module and no `[[verify.checks]]` entry reaches the kit's `fsck` or `rebuild`, against a positive control of five engine modules reaching the kit's `events`]. The over-advertising half of this note was **false and is withdrawn**: `README.md` and `site/index.html` both mark it `◐ partial` against a legend matching this table |
-| Provenance on every edge: extracted, inferred, ambiguous | partial | **It has a caller and the earlier "no caller" note was false** [measured 2026-08-17 over the ledger: 962 of 962 edge events carry a `provenance` label — 924 `EXTRACTED` from the import and 38 `dual-write` written live by the mirror, which `edge_adoption` promotes to `EXTRACTED`]. What makes it partial is the vocabulary, not the wiring: `INFERRED` and `AMBIGUOUS` have never been written, and `dual-write` is a fourth label absent from `provenance.LABELS`, so by design it ranks below every known label and can never gate |
+| The owned append-only event log as the source of truth | shipped | The flip has happened [measured 2026-08-20: `.beads/` is absent, no engine module spawns the external binary, and `basicly.toml` declares one store]. What remains is surface cleanup rather than cutover: the `br`-shaped argv vocabulary is still the write seam's input language, which is why `mirror.py` translates it |
+| A consistency check and rebuild, so "the log is the truth" is checkable | shipped | The "reached by nothing" note is **withdrawn as false** [measured 2026-08-20: `ledger-fsck` is a `[[verify.checks]]` entry declared in `basicly.d/basicly-t10ipy.toml` and runs on every `verify --mode full`, reporting 6,271 events over 1,022 records]. `rebuild` is still reached by tests only, which is the honest remainder |
+| Provenance on every edge: extracted, inferred, ambiguous | partial | The vocabulary collision is closed [measured 2026-08-20: 1,065 edges fold and `gating_edges` now returns all 1,065, up from 932]. The engine writes `engine` and `dual-write` into the same key this module reads as evidence strength — two axes, one name — and both are now recognised as declared provenance and counted apart in `EdgeFold.writer_labels`. What keeps this `partial` is only that `INFERRED` and `AMBIGUOUS` have still never been written by anything |
 | Cross-repo work offers as self-writes in each repository's own ledger | deferred |  |
 
 <!-- docs-claims:end status-view -->

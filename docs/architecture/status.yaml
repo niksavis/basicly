@@ -212,6 +212,36 @@ sections:
   - name: Cost per landed unit
     status: researching
     note: The instrument the tier claims rest on
+- name: The board
+  capabilities:
+  - name: A published snapshot contract a foreign harness can conform to
+    status: shipped
+    note: '`.basicly/core/schemas/board-snapshot.schema.json`, deliberately not strict, so a
+      consumer meeting an undeclared key counts and reports it rather than erroring. Carries
+      no figure it cannot re-derive'
+  - name: A file-only producer that folds the log once and spawns nothing
+    status: shipped
+    note: 'Four modules — bounds, row reducers, `.basicly/usage/` sections, assembly — with
+      the fold count and the subprocess count both pinned by spies, because "reads only files"
+      is a claim one convenient import breaks'
+  - name: Omit-never-estimate, so an absent source is absent rather than zero
+    status: shipped
+    note: The schema has no field marking a value as estimated, so a guess would render
+      identically to a billed figure
+  - name: A command that emits a snapshot
+    status: designed
+    note: '**Nothing calls the producer.** `basicly board` has one verb, `validate`, and
+      `build_document` has no caller outside tests, so no snapshot can be produced today'
+  - name: A rendered page a human can open
+    status: designed
+    note: No renderer and no template exist. This is what makes the board unusable rather
+      than merely unfinished, and it is the next unit
+  - name: A conformance kit so another project can adopt the board
+    status: designed
+    note: ''
+  - name: Live modes — a snapshot on the supervisor tick, and a read-only wall view
+    status: designed
+    note: Sequenced behind the page
 - name: The work graph
   capabilities:
   - name: Issues, dependencies, gate results, checkpoints and evidence in a tracked graph
@@ -249,24 +279,25 @@ sections:
       both, correctly, because it builds its rule from the running user. Architecture §32.7.1.
       The secret-rule mirror is kept in step by convention only'
   - name: The owned append-only event log as the source of truth
-    status: building
-    note: Steps 1 to 3 of the cutover have run; the flip waits on the remaining bypasses and
-      on five unported operations. Architecture §37.3
+    status: shipped
+    note: 'The flip has happened [measured 2026-08-20: `.beads/` is absent, no engine module
+      spawns the external binary, and `basicly.toml` declares one store]. What remains is
+      surface cleanup rather than cutover: the `br`-shaped argv vocabulary is still the write
+      seam''s input language, which is why `mirror.py` translates it'
   - name: A consistency check and rebuild, so "the log is the truth" is checkable
-    status: partial
-    note: '**Built with tests and reached by nothing** [re-measured 2026-08-17: no engine
-      module and no `[[verify.checks]]` entry reaches the kit''s `fsck` or `rebuild`, against
-      a positive control of five engine modules reaching the kit''s `events`]. The over-advertising
-      half of this note was **false and is withdrawn**: `README.md` and `site/index.html`
-      both mark it `◐ partial` against a legend matching this table'
+    status: shipped
+    note: 'The "reached by nothing" note is **withdrawn as false** [measured 2026-08-20:
+      `ledger-fsck` is a `[[verify.checks]]` entry declared in `basicly.d/basicly-t10ipy.toml`
+      and runs on every `verify --mode full`, reporting 6,271 events over 1,022 records].
+      `rebuild` is still reached by tests only, which is the honest remainder'
   - name: 'Provenance on every edge: extracted, inferred, ambiguous'
     status: partial
-    note: '**It has a caller and the earlier "no caller" note was false** [measured 2026-08-17
-      over the ledger: 962 of 962 edge events carry a `provenance` label — 924 `EXTRACTED`
-      from the import and 38 `dual-write` written live by the mirror, which `edge_adoption`
-      promotes to `EXTRACTED`]. What makes it partial is the vocabulary, not the wiring: `INFERRED`
-      and `AMBIGUOUS` have never been written, and `dual-write` is a fourth label absent from
-      `provenance.LABELS`, so by design it ranks below every known label and can never gate'
+    note: 'The vocabulary collision is closed [measured 2026-08-20: 1,065 edges fold and
+      `gating_edges` now returns all 1,065, up from 932]. The engine writes `engine` and
+      `dual-write` into the same key this module reads as evidence strength — two axes, one
+      name — and both are now recognised as declared provenance and counted apart in
+      `EdgeFold.writer_labels`. What keeps this `partial` is only that `INFERRED` and
+      `AMBIGUOUS` have still never been written by anything'
   - name: Cross-repo work offers as self-writes in each repository's own ledger
     status: deferred
     note: ''
