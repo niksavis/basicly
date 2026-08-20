@@ -919,6 +919,24 @@ Read the stack top-down; a higher tier may import a lower one, never the reverse
 | `board_render` | C | a new line **immediately above `board_schema`**, as `board_actions \| board_render` | `board_schema` and the leaf band (`redact`, `ui`, `schema`) | everything above it; it never sees engine state, only a parsed document |
 | `board_actions` | E | the same new line, as `board_render`'s **sibling** | the leaf band only, plus stdlib `subprocess` | `board_render` (sibling rule), and **every writer** — C12 |
 
+**One dependency in that table is not an import, and it is the one most likely to be got wrong.**
+`board_snapshot` **depends on the marker-family declaration** — the roster of `[harness-*]` families it
+must parse — and that dependency cannot be an import. The rule and the obstacle:
+
+| | |
+| --- | --- |
+| **The rule** | The producer SHALL NOT carry a hand-maintained family list. A second, hand-kept roster is a second source that drifts silently, and nothing would detect the drift — the same cross-producer parity rot this revision exists to prevent, reintroduced one layer down. |
+| **The obstacle, measured** | The authoritative roster is `.scripts/check_marker_families.FROZEN`, and `.scripts/` **is not an importable package** — it carries no `__init__.py` **[M]** — while its sibling gates reach *into* `basicly` via a `sys.path` insert (`check_comment_density.py` imports `basicly.read_cost` **[M]**). So the dependency runs gates → engine, and a runtime module importing a gate would invert it and put a gate script on the engine's import path. |
+| **[D] The mechanism taken** | The producer declares its own set **and a test binds it**, loading the gate by file path exactly as `tests/test_check_marker_families.py` already does (a file-path load through `importlib.util`, not an import **[M]**). A test may reach a gate; a runtime module may not. Drift is then caught by a gate, which is the whole requirement. Unit B AC 9 and unit G AC 3 carry it. |
+
+Two alternatives were considered and both are refused. **(a) The producer imports the gate** — refused on
+the obstacle above: not a package, and it inverts the gates → engine direction. **(b) The roster moves
+into a low-tier `src/basicly` module and the gate reads it from there** — the reuse-correct shape, and
+refused *for this record* rather than on principle: it relocates a roster that `architecture.md` §32.3.2
+specifies beside the alias table it feeds, and it widens unit B's scope into the gate, the architecture
+document and every one of the 11 declaring modules. **If that move is ever made, unit B's AC 9 becomes an
+import and this row simplifies** — recorded so the option is not lost.
+
 Four new tier lines, five new modules. **[D] `board_page.html.j2` is a template, not a module**, and
 templates are not in the contract; it sits beside `board_render` and `check_test_naming.py` has no
 opinion about it.
@@ -1088,6 +1106,8 @@ landed. Nothing is silently dropped; two are refused, with the reason.
 | OQ-D narrows — the consumer never chooses the root, the producer supplies it | **Narrowed and closed**; the same rule resolves the C11 inversion | OQ-D, C11 |
 | OQ-A is **overridden, not answered**, and the design must say so plainly | **Adopted, stated twice** — once as a superseded decision, once as an accepted risk | `## SUPERSEDED — the four-unit phased scope`, OQ-A |
 | OQ-C still open and now blocks unit B | **Settled by measurement**, twice, by paths sharing no step; the one disagreement is dispositioned | OQ-C |
+| The producer must not carry a hand-maintained family list; bind it to the roster's own source and put the dependency in the placement table | **Adopted**, with the mechanism corrected from an import to a test-time binding — `.scripts/` is not an importable package **[M]** | C11 placement table, unit B AC 9 |
+| The conformance kit should assert the roster agreement too | **REFUSED**, with the reason: it would put a basicly-internal fact on the producer-neutral surface | the refusals below, item 0 |
 | OQ-F still open and now load-bearing | **Settled as a design statement**, with the rejected alternatives | OQ-F |
 | C2 must not be re-opened | **Honoured** — untouched | C2 |
 | The RULE in C6 must not be re-opened; only its number is stale | **Honoured**: the rule is untouched, and the stale copy is located in the *schema file* and recorded as a defect for the next unit that opens it | C6 |
@@ -1097,7 +1117,17 @@ landed. Nothing is silently dropped; two are refused, with the reason.
 | OQ-G's answer — the dependency graph stays off the wall | **Honoured** — untouched | OQ-G |
 | The rename-atomic JSON transport, with SQLite refused | **Honoured** — untouched | `## The contract`, transport |
 
-**Two things this revision refused, and why.**
+**Three things this revision refused, and why.**
+
+0. **Putting the marker-family agreement assertion into the conformance kit.** It was asked for
+   alongside the producer binding, and it is refused because it would contradict the acceptance
+   criterion the whole revision is built on. Marker families are a **basicly-internal parse concern**:
+   a foreign producer has none, the shipped schema has no `artifacts` section, and `events[].kind`,
+   `units[].type` and `units[].phase` are open strings with no `enum` **[M]**. A kit that asserted a
+   basicly roster would be a producer-neutral surface carrying a basicly-specific fact, which is
+   exactly the coupling `## The contract` refuses. **The assertion belongs to unit B's test (AC 9),
+   where the parser it constrains lives.** The kit's own parity obligation is the different one it
+   already carries: `conformance.py` agrees with `board_schema` on every fixture (unit G AC 3).
 
 1. **Extracting `cli.py`'s whole argument grammar.** It would move 7,288 tokens along a genuinely
    nameable responsibility and it is still refused: no board unit needs `cli.py` restructured, the
@@ -1163,6 +1193,11 @@ Things I could not establish. These are not guesses dressed as design.
   (`declared_families`, `logged_families`) against `.basicly/ledger/events-0001.jsonl`, **2,784 comment
   events**, 2026-08-20.
 
+  **The *set* is the answer; the per-family counts below are a dated sample and the design does not
+  depend on them.** The store gained 13 comment events while this revision was being written, so every
+  count in the next two blocks moved and the set did not. Unit B binds to the set (AC 9); nothing binds
+  to a count.
+
   **Count 1 — declared by the engine: 11 families**, one producing module each **[M]**:
 
   ```text
@@ -1192,6 +1227,35 @@ Things I could not establish. These are not guesses dressed as design.
   | declared but never observed | **0** | every family the engine declares has rows |
   | observed but not declared | **1** | **`[harness-overrun]`, 12 rows, no producer anywhere in `src/`** |
 
+  **[D] The authoritative figure is `11 declared, 1 retired, 12 frozen` — never "12 families".** That
+  is the gate's own summary line, and the split is the part a producer needs: a parser that treats the
+  retired family as live waits for rows nothing writes any more, and a parser that omits it renders 12
+  real rows as nothing. **Which the board does: it parses all 12 and writes none of them.** The
+  live/retired distinction governs *writing*, and the board never writes a marker (C8), so for a
+  read-only consumer the correct set is the frozen 12 with no live/retired branch in the parse at all.
+  The distinction still has to be *recorded*, because a later reader will otherwise "tidy" the retired
+  entry out of the producer's set and silently lose the history.
+
+  **Two denominators that are easy to swap, and one of them was swapped in review.** The gate's
+  summary counts **rows**, and `rows = sum(census.rows.values())` **[M]** — the total marker-led
+  comment bodies across **all 12 families**, not the retired family's history and not the number of
+  comment events scanned:
+
+  | Figure | Value | What it counts |
+  | --- | ---: | --- |
+  | comment events read | **2,797** **[M]** | the population scanned, marker-led or not |
+  | rows, the gate's summary figure | **2,479** **[M]** | marker-led bodies summed over all 12 families |
+  | `[harness-overrun]` rows | **12** **[M]** | the retired family's whole history |
+
+  **So "ignoring the retired family drops 2,479 rows of history" would be wrong by a factor of 206.6
+  **[M]**. It drops **12**.** The gate's row total is a store-wide figure, and it is not stable enough
+  to put in a criterion: this document measured **2,474** earlier the same day and **2,479** a few
+  landings later, from the same instrument on the same checkout **[M]**, because the ledger is
+  git-tracked and gains rows on most landings **[M]**. Treat it as a health indicator for the probe —
+  a sudden fall means the probe broke — and never as a per-family quantity. Stated because the
+  confusion is cheap to make, it was made once in review, and it was on its way into an acceptance
+  criterion.
+
   **`[harness-overrun]` is the whole finding, and it is not a defect — it is a retirement.** The gate
   froze it deliberately and records why: *"`[harness-overrun]` carries 12 rows in this repository's log
   and has no producer anywhere in `src/`; the string survives only in two negative test assertions. A
@@ -1216,7 +1280,10 @@ Things I could not establish. These are not guesses dressed as design.
     error the leading-marker discriminator exists to prevent, and it is why unit B binds to the gate.
 
   *Positive control: the probe returned 12 non-empty families over 2,784 comment events and the two
-  lists agree at 11, so a zero for `[harness-side]` is a property of the corpus and not of the probe.*
+  lists agree at 11, so a zero for `[harness-side]` is a property of the corpus and not of the probe.
+  Re-run at the end of the same session over 2,797 comment events: still 12 families, still 11
+  declared, `[harness-overrun]` still 12 rows **[M]** — the set is stable under the drift that moved
+  every count.*
 
   **[D] What the board does about a family with no sample: nothing, by construction.** The board
   renders sections of the *snapshot*, not families of the *ledger*. A family the producer has never
@@ -1682,9 +1749,14 @@ loosens; what changes is that it is no longer allowed to be the definition of co
    (measured 2026-08-19 at 19.1 ms **[M]**; the cap is 26× headroom, so it fails on a regression, not
    on noise).
 5. *Ubiquitous* — An ask SHALL be reported pending only when no `[harness-wait]` marker sharing its
-   `id=` carries `answered`. On the committed corpus this SHALL yield **1** pending ask where the
-   naive count yields **140** **[M]**, and the test SHALL assert the answered-marker control
-   (**203** distinct answered wait ids) so a parser that silently matches nothing cannot pass it.
+   `id=` carries `answered`. The test SHALL pin **1** pending against a naive **140**, with the
+   answered-marker control at **203** distinct answered wait ids **[M]**, so a parser that silently
+   matches nothing cannot pass it — and it SHALL pin them against a **frozen fixture corpus committed
+   under `tests/fixtures/board/`, not against the live ledger.** *(The live ledger is git-tracked and
+   grows on most landings: 980 records / 2,474 marker rows became 983 / 2,479 inside a single
+   session, measured on one checkout **[M]**. A test pinning an exact count against it is red on the next landing, which is a flaky
+   gate rather than a regression detector. The same applies to AC 4's timing cap, which is why that cap
+   is 26× the measurement rather than a tight band.)*
 6. *Ubiquitous* — Every string reaching the snapshot SHALL pass `redact.redact_secrets` and
    `redact.redact_machine_paths`; no absolute path or username SHALL appear in the output.
 7. *State-driven* — WHILE `.basicly/usage/run-records.json` is absent, the `spend` and `health`
@@ -1692,14 +1764,21 @@ loosens; what changes is that it is no longer allowed to be the definition of co
 8. *Unwanted* — IF a `[harness-*]` marker is malformed, THEN the producer SHALL skip it and continue,
    matching the existing best-effort parser contract (`policy._parse_wait_event` returns `None`
    rather than raising **[M]**).
-9. *Ubiquitous* — The parser's marker-family set SHALL be taken from
-   `.scripts/check_marker_families.FROZEN` — **12 families: 11 declared by the engine plus
-   `[harness-overrun]`, retired, 12 rows, no producer in `src/`** — and NOT from the families the
-   engine currently declares (OQ-C **[M]**). A test SHALL assert the two sets are equal, so a
-   thirteenth family cannot enter the log without this producer's own test naming it. *(A list derived
-   from live constants drops `[harness-overrun]` and renders its 12 rows as nothing; a list taken from
-   raw text picks up `[harness-side]`, `[harness-estimate]` and `[harness-conflict]`, none of which is
-   a marker — all three occur only inside record descriptions **[M]**.)*
+9. *Ubiquitous* — The parser's marker-family set SHALL equal `.scripts/check_marker_families.FROZEN` —
+   the authoritative roster, reported by its own gate as **11 declared, 1 retired, 12 frozen** **[M]** —
+   and NOT the 11 families the engine currently declares (OQ-C). The producer SHALL parse all 12,
+   including the retired `[harness-overrun]`, and SHALL branch on live-versus-retired nowhere: the
+   distinction governs writing, and this producer writes no marker.
+   **The binding SHALL be a test, not an import.** `.scripts/` is not an importable package — no
+   `__init__.py` **[M]** — and its sibling gates import *into* `basicly`, so a runtime import here
+   would invert the gates → engine direction and put a gate script on the engine's import path. The
+   test SHALL load the gate by file path, as `tests/test_check_marker_families.py` already does, and
+   assert set equality, so a thirteenth family cannot enter the log without this producer's own gate
+   naming it (C11).
+   *(Why neither shortcut works: a list derived from the live constants drops `[harness-overrun]` and
+   renders its **12** rows as nothing; a list taken from a raw text grep picks up `[harness-side]`,
+   `[harness-estimate]` and `[harness-conflict]`, none of which is a marker — all three occur only
+   inside record descriptions **[M]**.)*
 10. *Ubiquitous* — A section whose values would be an **estimate** SHALL be omitted rather than emitted,
    because the schema has no field marking a value as estimated. *(Adapter contract clause 2, and the
    declared limit for the copilot cells: 0 of 398 dispatch records are copilot **[M]**, so a
