@@ -24,7 +24,14 @@ from typing import Any, cast
 
 import pytest
 
-from basicly import board_schema, board_snapshot, owned_store, run_record, verify_artifact
+from basicly import (
+    board_fields,
+    board_schema,
+    board_snapshot,
+    owned_store,
+    run_record,
+    verify_artifact,
+)
 
 REPO_ROOT = Path(__file__).parent.parent
 FIXTURE_LEDGER = REPO_ROOT / "tests" / "fixtures" / "board" / "ledger" / "events-0001.jsonl"
@@ -152,7 +159,7 @@ def test_the_session_section_is_omitted_until_the_caller_supplies_the_lock_facts
     facts = board_snapshot.SessionFacts(
         root_issue="fx-root", supervised=True, session_id="bc7cc925", age_s=6.0, stale=False
     )
-    section = _built(board_repo, session=facts, now=NOW)["session"]
+    section = _built(board_repo, facts=board_snapshot.Facts(session=facts), now=NOW)["session"]
     assert section == {
         "root": "fx-root",
         "supervised": True,
@@ -161,10 +168,33 @@ def test_the_session_section_is_omitted_until_the_caller_supplies_the_lock_facts
     }
 
 
+def test_the_lanes_section_is_omitted_until_the_caller_supplies_the_lane_facts(
+    board_repo: Path,
+) -> None:
+    """basicly-06pvsc: caller-supplied or omitted, and nothing in between.
+
+    The omission is the half that matters. `lanes[].phase` is required and its authority
+    reads a source this producer does not open, so a derived phase would be the estimate
+    the contract forbids - and an *empty* section would claim the caller can see lanes.
+    """
+    assert "lanes" not in _built(board_repo, now=NOW)
+
+    empty = _built(board_repo, facts=board_snapshot.Facts(lanes=[]), now=NOW)
+    assert empty["lanes"] == []
+    assert board_schema.verdict(board_repo, empty).exit_code == 0
+
+    supplied = board_fields.LaneFacts(id="fx-root.1", phase="verify", agent="claude", live=True)
+    document = _built(board_repo, facts=board_snapshot.Facts(lanes=[supplied]), now=NOW)
+    assert document["lanes"] == [
+        {"id": "fx-root.1", "phase": "verify", "agent": "claude", "live": True}
+    ]
+    assert board_schema.verdict(board_repo, document).exit_code == 0
+
+
 def test_a_holder_the_caller_could_not_read_leaves_the_triple_out(board_repo: Path) -> None:
     """No lock held is not a holder with an empty id: the key is absent."""
     facts = board_snapshot.SessionFacts(root_issue="fx-root")
-    section = _built(board_repo, session=facts, now=NOW)["session"]
+    section = _built(board_repo, facts=board_snapshot.Facts(session=facts), now=NOW)["session"]
     assert "holder" not in section
     assert section["supervised"] is False
 
@@ -272,7 +302,7 @@ def test_no_absolute_path_or_username_reaches_the_document(board_repo: Path) -> 
     """AC 6, on the two surfaces that carry one: a caller's facts and a dispatch command."""
     facts = board_snapshot.SessionFacts(root_issue="fx-root", session_id="/home/someone/lock")
     _run_records(board_repo, {"fx-root.1": [_dispatch(command=["claude", "/home/someone/x"])]})
-    rendered = json.dumps(_built(board_repo, session=facts, now=NOW))
+    rendered = json.dumps(_built(board_repo, facts=board_snapshot.Facts(session=facts), now=NOW))
     assert "/home/someone" not in rendered
     assert "C:\\Users" not in rendered
 

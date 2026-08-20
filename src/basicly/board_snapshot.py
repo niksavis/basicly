@@ -25,13 +25,17 @@ is therefore absent from the document - never zero - and the page renders "not e
 producer". `.basicly/usage/` is git-ignored and worktree-local, so in a lane worktree all
 three usage sources really are missing and the tracker half still draws.
 
-Three sections the schema declares are **not** emitted here, and each is named rather than
-forgotten: ``lanes``, because ``lanes[].phase`` is required and its authority is
-``loop_state.read_node_state``, which needs the policy config's required-gate set - a source
-outside this producer's; and ``units`` and ``graph``, whose row shape belongs to the page that
-draws them. ``backlog`` likewise carries no ``ready`` or ``blocked``: both are the tracker's
-own derivation, and a second spelling of either in a display producer is how the two come to
-disagree.
+**Lanes are the second thing a caller supplies, and for the same reason.**
+``lanes[].phase`` is required by the schema and its authority is
+``loop_state.read_node_state``, which calls ``validate_gate.required_config`` for the set of
+gates the unit owes - a fourth source, outside the three files opened here. A phase folded out
+of ledger evidence alone diverges from the engine's for any unit owing validation, so the
+facts arrive as :class:`basicly.board_fields.LaneFacts` and with none supplied the ``lanes``
+section is **omitted**.
+
+``backlog`` carries no ``ready`` or ``blocked``, and ``units`` carries no ``ready``: each is
+the tracker's own derivation over a vocabulary and a full edge population, and a second
+spelling of one in a display producer is how the two come to disagree.
 """
 
 from __future__ import annotations
@@ -110,6 +114,22 @@ class Freshness:
     source: str = ONE_SHOT
     cadence_s: float | None = None
     stale_after_s: float = DEFAULT_STALE_AFTER_S
+
+
+@dataclass(frozen=True)
+class Facts:
+    """Everything the caller knows that this producer may not derive.
+
+    One record rather than one argument each, because the two are one rule - OQ-D's *the
+    layer above supplies the fact the layer below cannot honestly derive*. :attr:`session`
+    needs the supervisor lock, which reading here would close the cycle
+    ``supervise -> board_snapshot -> supervise`` (C11); :attr:`lanes` needs the loop's
+    required-gate set. Whichever is None has its section **omitted**, and unit F's supervisor
+    caller adds its facts here rather than to a signature.
+    """
+
+    session: SessionFacts | None = None
+    lanes: Sequence[board_fields.LaneFacts] | None = None
 
 
 def _read_and_fold(repo_root: Path) -> tuple[list[Any], Mapping[str, Any]] | None:
@@ -279,7 +299,7 @@ def _health(records: dict[str, list]) -> list[dict[str, object]]:
 def build_document(
     repo_root: Path,
     *,
-    session: SessionFacts | None = None,
+    facts: Facts | None = None,
     freshness: Freshness | None = None,
     now: datetime | None = None,
     event_limit: int = EVENT_LIMIT,
@@ -292,8 +312,10 @@ def build_document(
 
     Args:
         repo_root: The checkout to read.
-        session: The live-lock facts, from a caller above ``supervise``. None omits the
-            ``session`` section rather than guessing a root.
+        facts: What the caller knows and this module may not derive - the live-lock facts
+            and the in-flight lanes. Each one absent omits its section rather than guessing
+            a root or a phase. An empty ``lanes`` sequence still emits ``[]``, which is the
+            different claim that the caller can see lanes and there are none.
         freshness: What will rewrite this document. Defaults to a one-shot build.
         now: The instant to stamp. Injected so a test is a function of its fixture rather
             than of the clock.
@@ -301,6 +323,7 @@ def build_document(
     """
     moment = now or datetime.now(UTC)
     chosen = freshness or Freshness()
+    known = facts or Facts()
     document: dict[str, object] = {
         "schema": SCHEMA,
         "generated_at": board_fields.stamp(moment),
@@ -323,8 +346,10 @@ def build_document(
         document["backlog"] = _backlog(_live(records))
         document["asks"] = board_fields.asks(markers)
         document["events"] = board_fields.events(markers, event_limit)
-        if session is not None:
-            document["session"] = _session(session, records)
+        if known.session is not None:
+            document["session"] = _session(known.session, records)
+    if known.lanes is not None:
+        document["lanes"] = board_fields.lanes(known.lanes)
     gates = _gates(repo_root)
     if gates is not None:
         document["gates"] = gates

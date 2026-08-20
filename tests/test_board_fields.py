@@ -198,3 +198,64 @@ def test_the_event_strip_carries_declared_fields_and_never_a_body(
         "kind": "harness-sizing",
         "text": "scope_tokens=1200",
     }
+
+
+def test_a_supplied_lane_row_carries_the_callers_phase_and_never_a_derived_one() -> None:
+    """basicly-06pvsc: `phase` reaches the row from the caller, unchanged and unaudited.
+
+    `verify` is the discriminating value. It is the rung `loop_state.derive_phase` reaches
+    only through `policy.GateStatus`, which reads the required-gate set this producer does
+    not open - so a reducer that had guessed from ledger evidence could not have produced it.
+    """
+    lane = board_fields.LaneFacts(
+        id="fx-root.1",
+        phase="verify",
+        status="in_progress",
+        agent="claude",
+        live=True,
+        started_at="2026-01-01T00:00:04Z",
+        tokens=18794333,
+        branch="harness/fx-root.1",
+    )
+    assert board_fields.lanes([lane]) == [
+        {
+            "id": "fx-root.1",
+            "phase": "verify",
+            "status": "in_progress",
+            "agent": "claude",
+            "live": True,
+            "started_at": "2026-01-01T00:00:04Z",
+            "tokens": 18794333,
+            "branch": "harness/fx-root.1",
+        }
+    ]
+
+
+def test_a_lane_row_emits_only_what_the_caller_knew() -> None:
+    """No zeros and no nulls: an unsupplied lane value is an absent key.
+
+    And a lane missing either value the schema requires is skipped rather than completed,
+    because a row invented for a lane whose phase the caller could not read is exactly the
+    estimate `LaneFacts` exists to refuse.
+    """
+    rows = board_fields.lanes([
+        board_fields.LaneFacts(id="fx-root.3", phase="build"),
+        board_fields.LaneFacts(id="fx-root.4", phase=""),
+        board_fields.LaneFacts(id="", phase="ship"),
+    ])
+    assert rows == [{"id": "fx-root.3", "phase": "build"}]
+
+
+def test_a_lane_branch_and_an_unparsable_start_are_handled_at_the_producer() -> None:
+    """The branch is redacted here, and a stamp that will not parse omits its key.
+
+    The schema names `branch` as the known carrier of a machine username into a published
+    document, and the consumer has no redaction pass, so this is the only place it can go.
+    """
+    rows = board_fields.lanes([
+        board_fields.LaneFacts(
+            id="fx-root.1", phase="build", branch="/home/someone/wt", started_at="whenever"
+        )
+    ])
+    assert "/home/someone" not in str(rows)
+    assert "started_at" not in rows[0]
