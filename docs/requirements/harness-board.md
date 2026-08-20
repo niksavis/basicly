@@ -43,9 +43,21 @@ recorded there: *a requirement lives where the gates can see it, so it cannot de
 Whether D33 is amended or this file is the standing exception is the owner's call and not this
 document's.
 
-**What was deliberately not changed.** The producer/consumer framing, the section shape, and the
-decomposition graph. `basicly-rn0o.10` revises the interface story so the snapshot schema is the only
-interface; it is a separate record and it is blocked on this one.
+**Revised again 2026-08-20 (`basicly-rn0o.10`): the snapshot schema is the only interface.** The
+2026-08-19 move changed where the document lives and which store its numbers are denominated in. This
+revision changes what the document *says*: the producer/consumer framing and the decomposition graph
+were the two things the move deliberately left alone, and both are rewritten here. Unit B stops being
+*the* producer and becomes **a** producer; the schema stops being an internal wire format and becomes
+a published contract with its own compatibility rule and its own distribution path; unit G moves from
+last to first-class, because it is now what makes the interface real rather than a later courtesy.
+Two owner decisions and one architect review drive it, and every finding either lands in this document
+or is recorded here as refused with a reason — see `### Disposition of the architect review` at the
+end of `## Constraints`.
+
+**The record's own `## Scope` was stale and is corrected.** `basicly-rn0o.10` scoped
+`01-solution-design.md` on the `harness/basicly-rn0o` branch. `basicly-rn0o.12` landed before it and
+moved the design to this path on `main`, so that scope named a file no branch reachable from `main`
+carries. The revision was made here.
 
 Evidence marks: **[M]** measured, with the command · **[S]** sourced, cited and dated · **[D]** a
 design decision. Unmarked prose carries no authority. A **[M]** in this document is measured
@@ -69,6 +81,39 @@ That store no longer exists and neither does `br`. `git ls-tree main .beads/` pr
 **[M]**; `basicly.toml`'s `[tracker] mode = "owned"` records the collapsed cutover ladder, and the
 one store is the append-only event log under `.basicly/ledger/`. Every figure in the paragraph above
 is superseded by C5, C6 and S3, which are measured against the log.
+
+---
+
+## SUPERSEDED — the four-unit phased scope, and the trial that will not happen
+
+**Everything in this block is dead as a decision and live as a rationale.** It is kept for the same
+reason the block above it is kept: the scope this document now carries is a correction to it, and a
+correction with no antecedent is unreadable. It is also the only record of what the two units added
+here were justified on, and someone will ask.
+
+**The 2026-08-14 owner decision, verbatim in substance.** Ship units **A, B, C and G only** — a
+complete zero-process product at roughly 470,000 tokens — then *run it against the real factory for
+four weeks* and only then decide D (wall mode), E (the action surface) and F (supervisor emission).
+Unit H was deferred outright. The reason was OQ-A: the whole arrival mechanism rests on an assumption
+about human behaviour that this repository's own data sizes at **n=5**, and D and E are where the
+security surface, the authority boundary and the process argument all live. The design recommended
+spending them last.
+
+**The 2026-08-18 owner decision supersedes it.** Wall mode and the action surface are **in scope now**,
+without the trial. The four-week experiment the phasing existed to run will not be run before D and E
+are built.
+
+**What that costs, stated rather than smoothed over.** OQ-A is now **overridden, not answered** — see
+`## Open questions`. The n=4 in-hours arrival figure is an **accepted risk carried into the build**,
+not a resolved question, and this document still refuses to put a wait-time reduction on the
+acceptance criteria (`## Success`, *What success is not*). The two decisions are consistent only in
+this reading: D and E are being bought for reasons the phasing did not price, and the arrival
+assumption is being carried unmeasured rather than tested. `basicly-rn0o.8` is the only instrument
+that can ever settle it, and it is unit H — still optional, still separately decided.
+
+**What survives the supersession.** The *cut* does not change. A, B, C and G remain a complete
+shippable product with no long-lived process, so a later decision to stop after G loses nothing and
+needs no redesign. That property is why the phasing was cheap to reverse, and it is worth keeping.
 
 ---
 
@@ -190,10 +235,40 @@ is. Verified by stopping the producer and watching the badge flip.
 **[M]** — a **320×** reduction — so a 15 s refresh cadence consumes <0.2% of a core. Verified by a
 timing test in the suite that fails if the build crosses 500 ms on this repo's own corpus.
 
-**S4 — The contract validates independently of the page.**
-`uv run basicly board --out - | uv run basicly board validate -` exits 0, and a snapshot with an
-unknown `schema` major exits non-zero naming the version it saw and the version it wants. A foreign
-harness can be conformance-tested with no basicly runtime.
+**S4 — The contract validates with no basicly runtime, from one file a stranger can copy.**
+`python3 conformance.py <snapshot>` exits 0 on a conforming document and non-zero on a broken one,
+where `conformance.py` is a **single standard-library file that imports no basicly and needs no
+install**. A snapshot with an unknown `schema` major exits non-zero naming the version it saw and the
+version it wants.
+
+**S4 was false as written until 2026-08-20, and the remedy is a new surface rather than a wording
+change.** The claim was *"a foreign harness can be conformance-tested with no basicly runtime"*, and
+it was verified with `basicly board validate` — which **is** the basicly runtime. Re-measured
+2026-08-20 **[M]**: in a directory holding only a copy of `tests/fixtures/board/minimal-v1.json`,
+
+```console
+$ uv run basicly board validate snapshot.json
+not-installed: .basicly/core/schemas/board-snapshot.schema.json is not installed
+$ echo $?
+1
+```
+
+*Positive control: the identical file inside this repository prints `harness-board/v1, ok` and exits 0
+**[M]**, so the 1 is a property of the directory, not of the probe.* The schema resolves from the cwd
+repository's catalog through `catalog_source`, so the contract is readable only by someone who already
+installed the thing the contract exists to avoid depending on.
+
+**[D] The remedy, decided by the owner 2026-08-20: a standalone single-file conformance script that
+imports no basicly.** It was chosen over the two alternatives — a `--schema PATH` flag on
+`board validate`, and a published schema file the how-to tells a foreign producer to vendor — because
+it is the only one of the three that makes **both** S4 and S7 true. A flag still requires the runtime;
+a vendored schema still requires a validator to run it against. Constraint C9 carries the freeze
+consequence and C13 carries the placement, the boundary it must keep and the parity test that stops
+it drifting from `board_schema`.
+
+**The fail-open direction is not reversed.** The shipped `not-installed` outcome exits **non-zero**,
+which is correct: a validator that cannot find its contract must not report a pass. Nothing in this
+remedy may turn that into a 0.
 
 **S5 — Every write the page can perform is a named existing CLI invocation, echoed before it runs.**
 The page never writes a file, never touches the ledger, never mints an authority. Verified by a test
@@ -214,10 +289,37 @@ rather than assumed.*
 as one `answered` marker with no `requested` line before it, so the answered set is legitimately the
 larger one, and a producer that paired in the other direction would report negative work.
 
-**S7 — Another project adopts it by emitting one file.** A repo with no basicly installed that writes
-a `harness-board/v1` snapshot to a path, and serves the shipped `board.html` beside it, gets a
-working board. Verified by a fixture repo in `tests/` containing a hand-written snapshot and no
-basicly state, rendered and asserted.
+**S7 — Another project adopts it by emitting one file, and never runs `basicly install`.** A
+directory holding a `harness-board/v1` snapshot and the two files the kit distributes —
+`conformance.py` and `board.html` — gets a working board and a working conformance check, with no
+basicly on the machine.
+
+**S7 was false as written for a second, different reason, and the fix is the distribution path rather
+than the code.** *"A repo with no basicly installed"* fails even with the runtime present, because the
+contract must be **installed in the tree** for anything to resolve it: a repository that ran
+`basicly install` is fine, a genuinely foreign one is not. So S4's falsity is *the checker is the
+runtime* and S7's is *the contract is not distributed* — two failures, one remedy each, and C9 names
+the surface both remedies add.
+
+Verified by unit G's fixture: a directory under `tests/fixtures/board/foreign/` containing a
+hand-written snapshot and **no basicly state at all**, checked by the distributed
+`conformance.py` under a bare `python3` and rendered by the distributed page.
+
+**S8 — The snapshot is the only interface, enforced rather than intended.** No consumer unit — the
+renderer, the server, the action surface — imports a tracker, ledger, store or writer module. An
+`import-linter` `forbidden` contract names every one of them and fails the build on the first import,
+and the contract is a `forbidden` type rather than a tier placement because the tier stack puts
+`owned_store` and `owned_write` near the *bottom*, so every module above `board_schema` can reach them
+by layering alone (C11 **[M]**). Verified by that contract, plus a test asserting the renderer's only
+input is a parsed snapshot document.
+
+**S9 — The absent-section list is derived from the contract, not written down twice.** The renderer's
+section inventory comes from the shipped schema's own property list, so a section added to the schema
+appears as `not emitted by this producer` on an old snapshot with no renderer edit. Verified by a test
+that adds a property to a copy of the schema and asserts the rendered region count follows. The
+shipped schema declares **15** top-level properties, **3** required and **12** optional **[M]**, and
+`basicly board validate` on the minimal fixture names all 12 absent — so "eight regions" anywhere in
+this document is a layout count and never a section count.
 
 **What success is not.** It is not "the checkpoint wait number goes down". Per the measurement in
 `## Problem` the recoverable share is 20% of that number on a population of **five** events — 8.9%
@@ -286,6 +388,40 @@ Two differences from the 2026-08-14 proposal, both in what shipped and neither a
 lines carry no `board:` prefix, and the refusal does not advise the reader to ask the producer for a
 v1 alongside. The absent-section list is longer because the shipped schema carries two sections this
 document did not propose, `units` and `graph`.
+
+### Mode D — the foreign repository, which is the case that decides whether the *kit* is real
+
+Mode C proves the contract refuses the wrong major. It does not prove a stranger can run the check,
+and until 2026-08-20 nothing did. This is the transcript S4 and S7 are now written against; it is a
+**proposal**, not captured output, because the script it runs does not exist yet (unit G).
+
+```console
+# a directory with no basicly, no .basicly/, no venv - just python3 and two copied files
+$ ls
+board.html  conformance.py  snapshot.json
+
+$ python3 conformance.py snapshot.json
+harness-board/v1, ok
+present   backlog
+absent    generator, repo, session, lanes, asks, gates, spend, health, units, graph, events
+$ echo $?
+0
+
+$ python3 conformance.py broken.json
+refused - "freshness" is required and is absent
+The three required keys are schema, generated_at and freshness. Nothing else can refuse a document.
+$ echo $?
+2
+
+$ python3 -c "import basicly"
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+ModuleNotFoundError: No module named 'basicly'
+```
+
+**The third command is the acceptance criterion, not decoration.** A conformance kit whose check
+imports the harness it is meant to be independent of proves nothing, and that is exactly the defect
+this mode exists to close. `kit-boundary` is the gate that holds it (C13).
 
 ### What appears on the TV
 
@@ -597,6 +733,23 @@ it — 5.6× `config.DEFAULT_WORKING_SET_MAX`, the largest lane working set the 
 quantity:* the ledger holds 1,067 edges in total — 685 `parent-child`, 319 `blocks`, 58 `related`,
 5 `discovered-from` **[M]** — of which 672 touch a record that is not closed.
 
+**The RULE is not re-opened; one number carrying it is stale, and the stale copy is in the shipped
+schema rather than here.** *"Select fields, never records"* is already implemented — no property in
+`.basicly/core/schemas/board-snapshot.schema.json` admits a `description`, an `acceptance_criteria` or
+a raw comment body, and every free-text property is length-bounded **[M]**. What is stale is the
+justification the schema's own `description` carries: *"the whole tracker export is 3336549 B against
+33745 B for the active rows at six selected fields, 98.9x from field selection alone (measured
+2026-08-14)"* **[M]**. Those are the **deleted store's** bytes, and the ratio against the owned ledger
+is **132.5×**, not 98.9× (table above).
+
+**[D] Recorded as a defect against the schema file, not repaired here, and the reason is a gate.** That
+`description` string is the one whose first line already warns that *"prose here is indexed by
+wired_or_deleted as field references (`basicly-r343`); avoid dataclass field names in descriptions
+until that is fixed"* **[M]**. Editing it is a `wired-or-deleted` hazard and it is outside this
+document's scope. **The repair belongs to whichever unit next opens that file** — unit B is the first
+that must — and it is a number swap only: `5,890,340 B` against `44,454 B` for 236 active records at
+six selected fields, **132.5×**, measured 2026-08-19. Nothing about the rule changes.
+
 ### C7 — Stack, build steps and portability
 
 - **Python 3.14 + `uv`; zero new runtime dependencies.** Current runtime deps are `jinja2`,
@@ -627,7 +780,31 @@ quantity:* the ledger holds 1,067 edges in total — 685 `parent-child`, 319 `bl
   list is closed to new entries. The decomposition below is cut into six small modules for that
   reason, not for taste.
 - **Comment-density ratchet**, cap 50% (`.scripts/check_comment_density.py`'s `CAP` **[M]**), applies
-  to every new module.
+  to every new module. A module with no frozen entry fails only above the cap
+  (`_module_finding` returns `_over_cap` when `baseline is None` **[M]**), so for the board's new
+  modules the binding rule is simply *under 50%*.
+- **`wired-or-deleted` indexes the board schema's prose as field references, and the schema says so
+  itself.** The first sentence of `board-snapshot.schema.json`'s top-level `description` is a live
+  warning: *"prose here is indexed by wired_or_deleted as field references (`basicly-r343`); avoid
+  dataclass field names in descriptions until that is fixed"* **[M]**. **[D] Every new property
+  description in that file must therefore avoid dataclass field names**, and a unit that adds one runs
+  `wired-or-deleted` before it commits rather than after. This is a hazard on unit B and on any later
+  unit that widens the schema.
+- **`check_test_naming.py` binds forward only, so every new module owes a test module named after
+  it.** *"A source unit must have a test file; a test file need not have a source unit"* **[M]**, and
+  *"a derived name that is another unit's own test file does not count"* — so `tests/test_board_cli.py`
+  is required by `board_cli.py` and cannot be satisfied by `tests/test_board_schema.py`. **[D] The
+  decomposition below names the test module for every module it creates**, and unit C's
+  `tests/test_cli_board.py` is renamed to `tests/test_board_cli.py` for exactly this reason: the old
+  name derives from no source unit and therefore covers nothing.
+- **`docs_claims` serialises the CLI units against the architecture document.** `_cli_subcommands` and
+  `_cli_subcommands_covered` assert that every shipped subcommand, and every subcommand of a command
+  *group*, appears in a table row under `## 22. The CLI surface` of
+  `docs/architecture/architecture.md` **[M]** — today that section carries one board row,
+  `` `basicly board validate` `` (line 1355 **[M]**). **[D] Units C, D and E therefore each declare
+  `docs/architecture/architecture.md` in their scope.** That is not a formality: it serialises them
+  against every architecture lane as well as against each other, and the decomposition below declares
+  it so the plan gate can see the contention rather than discover it at a landing.
 
 ### C8 — Authority: the engine disposes, agents propose
 
@@ -672,8 +849,8 @@ Five surfaces freeze at v1.0.0: **CLI commands and flags · `basicly.toml` plus 
 the catalog source schemas · the generated-file contract · the owned ledger format**
 **[S** `docs/plan/implementation-plan.md` §7**]**.
 
-This design adds to **three** of them, and I am naming every addition so the freeze audit does not
-have to discover them:
+This design adds to **four** of them — three when it was written, and a fourth once the S4/S7 remedy
+landed as a decision. I am naming every addition so the freeze audit does not have to discover them:
 
 | Frozen surface | What this adds |
 | --- | --- |
@@ -681,11 +858,31 @@ have to discover them:
 | **Generated-file contract** | Two new generated artifacts: `board.html` and `board-snapshot.json`, both disposable and both regenerable from the command. Neither is committed. |
 | **Owned ledger format** | **Only if unit `H` (OQ-15) ships**: one optional `viewed_at` field on the `[harness-wait]` marker payload. Additive and optional, so it is forward-compatible under the rule `work-tracker.md` §4.5 already states — *"skips unknown event kinds and unknown fields, preserving them verbatim"*. **This is the single reason `H` is optional and separately decided.** |
 | `basicly.toml` | Nothing. Board settings, if any, are flags. **[D]** I am deliberately not adding a `[board]` table; "no unrequested config" is a Core Rule and flags are enough. |
-| Catalog source schemas | Nothing. |
+| **Catalog source schemas** | **One, already shipped:** `.basicly/core/schemas/board-snapshot.schema.json` (`basicly-rn0o.1`). The 2026-08-14 revision recorded *Nothing* here and that was true when it was written. It is now the file the whole contract is, so it is the most consequential row in this table. |
+| **The conformance kit's distribution path — NEW 2026-08-20** | One kit directory, `.basicly/core/kit/board/`, holding `conformance.py` and the distributed `board.html`. This is the row the owner decision on S4/S7 adds. It is a *distribution* surface rather than a code surface: what freezes is that a foreign consumer can copy those files and run them under a bare `python3`, and the file names it copies. |
 
-The **snapshot schema itself** is a sixth contract, and I am proposing it be frozen under its own
-`harness-board/vN` version rather than folded into any of the five — because its whole purpose is to
-be implemented by producers that are not basicly, and a foreign producer cannot track basicly's semver.
+**[D] The snapshot schema is frozen under its own `harness-board/vN` version, not folded into
+basicly's semver.** This adopts the 2026-08-14 proposal verbatim, on the owner's decision of
+2026-08-20, and the reason is unchanged: its whole purpose is to be implemented by producers that are
+not basicly, and a foreign producer cannot track basicly's semver. A basicly major bump does not bump
+`harness-board`, and a `harness-board` major bump does not need a basicly major bump.
+
+**[D] Plus the one thing that proposal was missing: a named distribution path.** Freezing a contract
+that only a repository which already ran `basicly install` can read freezes nothing a stranger can
+hold. So the frozen unit is *the contract **and** the two files that distribute it*:
+
+| What is frozen under `harness-board/vN` | Where it lives | How a stranger gets it |
+| --- | --- | --- |
+| the schema | `.basicly/core/schemas/board-snapshot.schema.json` | copied verbatim, or read in the how-to |
+| the conformance check | `.basicly/core/kit/board/conformance.py` | copied verbatim; one file, stdlib only, no install |
+| the consumer page | `.basicly/core/kit/board/board.html` | copied verbatim; opens at `file://` |
+| the adapter contract in prose | `docs/how-to/adopt-the-board.md` | the entry point that names the three above |
+
+The **fifth** freeze-audit consequence, and it is the one a reader will miss: the schema's own
+compatibility rule is **stricter than the ledger's**, and it is written into the shipped file rather
+than into this document. See `## The contract` — *"keys may be added within a major, permitted values
+may never be widened within a major"* **[M]**. A freeze audit that assumed the ledger's additive-only
+rule applied here would sign off a value-set widening that already-shipped consumers refuse.
 
 ### C10 — Security boundary
 
@@ -700,47 +897,391 @@ be implemented by producers that are not basicly, and a foreign producer cannot 
 - `--no-actions` renders a read-only board. **[D] It is the recommended flag for an unattended wall**,
   and the reason is C8: a screen anyone in the room can touch should not be able to kill a lane.
 
+### C11 — Module placement, and the two ratchets that decide it
+
+**The import contract is exhaustive, so placement is a build blocker rather than a tidiness
+question.** `.importlinter`'s `engine-layering` contract sets `exhaustive = True` and states it:
+*"every top-level module of `basicly` must appear in exactly one tier, so a new module cannot join
+the package without a maintainer deciding where it sits"* **[M]**. Siblings on one line *"may not
+import each other. That is what makes a tier a tier rather than a bucket"*
+**[S** `architecture.md` §34 **[M]** re-read 2026-08-20**]**. So this design owes a placement per
+module, and it owes it before the first unit starts.
+
+#### The placement table
+
+Read the stack top-down; a higher tier may import a lower one, never the reverse.
+
+| Module | Unit | Placement in `.importlinter` `layers` | May import | Must not import |
+| --- | --- | --- | --- | --- |
+| `board_cli` | C creates it; D and E extend it | a new line **immediately below `cli`** | `board_serve`, `board_snapshot`, `board_render`, `board_schema`, `supervise`, `ui` | `cli` |
+| `board_serve` | D | a new line **immediately below `board_cli`**, still above `supervise` | `supervise` (the lock reader and its two cadence constants), `board_snapshot`, `board_render`, `board_actions` | `cli`, `board_cli` |
+| `board_snapshot` | B | a new line **immediately below `loop \| release`** | `policy` (wait pairing), `run_record`, `tracker` / `owned_store`, `redact`, `board_schema` | **`supervise`** — see the inversion below — and `cli`, `board_cli`, `board_serve` |
+| `board_render` | C | a new line **immediately above `board_schema`**, as `board_actions \| board_render` | `board_schema` and the leaf band (`redact`, `ui`, `schema`) | everything above it; it never sees engine state, only a parsed document |
+| `board_actions` | E | the same new line, as `board_render`'s **sibling** | the leaf band only, plus stdlib `subprocess` | `board_render` (sibling rule), and **every writer** — C12 |
+
+Four new tier lines, five new modules. **[D] `board_page.html.j2` is a template, not a module**, and
+templates are not in the contract; it sits beside `board_render` and `check_test_naming.py` has no
+opinion about it.
+
+**The inversion this table exists to prevent, and it is a real defect in the 2026-08-14
+decomposition.** Unit B's acceptance criterion 1 names `.basicly/usage/supervisor.lock` as one of four
+files the producer reads, and the natural way to read it is `supervise.read_holder` **[M]**. Unit F
+then has the **supervisor** write a snapshot, which requires `supervise` to import the producer. Those
+two together are a cycle: `supervise → board_snapshot → supervise`. It cannot be declared as an
+exemption either, because the two existing exemptions are function-level imports across one tier and
+this one is a genuine two-way dependency.
+
+**[D] The producer therefore does not read the lock. It takes the live-lock facts as an argument, and
+its caller supplies them.** `board_cli` (Mode A) and `board_serve` (Mode B) are both above
+`supervise`, so both may call `supervise.read_holder` and pass the result down; unit F's caller *is*
+the supervisor and already holds it. This costs one parameter, keeps `reuse > reinvent` — the lock is
+read by the one existing reader, not by a second copy — and it is the same shape as OQ-D's narrowing:
+*the consumer never chooses, the producer supplies*. Unit B's AC 1 is rewritten below to say so.
+
+The alternative was to extract `read_holder`, `LOCK_FILE`, `HEARTBEAT_INTERVAL_S` and `STALE_AFTER_S`
+into a low-tier module. **Rejected**: it moves a public surface every `supervise` caller uses, widening
+unit B's scope into `supervise.py` and its callers, to buy a parameter.
+
+#### The three parser groups, and the extraction — measured, not asserted
+
+Units C, D and E each add a parser group to the CLI. Measured with the gates' own counters
+(`check_module_size.module_tokens`, imports excluded; `check_comment_density.measure`), 2026-08-20:
+
+| Quantity | Value |
+| --- | --- |
+| `cli.py` today | **53,883** tokens against a frozen **54,336** → **453** tokens of room **[M]** |
+| eight comparable parser groups in `cli.py` | 207 · 256 · 258 · 394 · 457 · 507 · 738 · 1,797 tokens; **median 426** **[M]** |
+| three more at the median | **1,278** tokens — **2.8× the room** |
+
+**Three parser groups do not fit, and the arithmetic says so rather than a feeling.** One at the
+median leaves 27 tokens; the largest single group in the file (`_add_loop_parser`, 1,797) would not
+fit on its own.
+
+**[D] The extraction is the board command group's grammar and dispatch, moved into
+`src/basicly/board_cli.py`.** It is a nameable responsibility and it is not invented: `tracker_query`
+already does exactly this, exposing `add_parsers(tracker_sub)` and a `HANDLERS` table that
+`cli._add_tracker_parser` calls in one line **[M]**. `usage_report.cmd_outcomes` and
+`tracker_write.cmd_write` are the same pattern for handlers. So the board follows a shipped precedent
+rather than a size dodge, and after it lands **units C, D and E add zero tokens to `cli.py`**.
+
+**Prose share, which the 2026-08-19 review left unmeasured and which the extraction turns on:**
+
+| Subject | Prose share | Tokens |
+| --- | ---: | ---: |
+| `cli.py` whole | **26.3%** | 54,510 total, 14,327 prose **[M]** |
+| the board block being moved (`_cmd_board_validate` + `cmd_board` + `_add_board_parser`) | **29.6%** | 304 **[M]** |
+| — its handler half alone | 46.0% | 161 **[M]** |
+| — its parser half alone | 11.2% | 143 **[M]** |
+| `cli.py` after the move | **26.3%** | 54,205 total, 14,237 prose **[M]** |
+
+**The rule is satisfied, and the honest reading is that it could not have failed here.** 29.6% > 26.3%,
+so the extracted unit is prose-heavier than the module it leaves and the comment-density ratchet moves
+in the safe direction. But the movement is **0.0 points at the gate's own one-decimal resolution**, and
+the premise behind the rule does not hold for this module: `cli.py` carries **no**
+`[tool.comment_density.frozen]` entry and sits 23.7 points under the 50% cap, so the only
+comment-density outcome that can fail is a *new* module above 50%. `board_cli.py` arrives at 29.6%.
+Both ratchets are green on arrival, and the rule was checked rather than assumed.
+
+*The direction is worth stating because it is counter-intuitive:* every parser group in `cli.py`
+measures **0.0%–10.9%** prose **[M]**, far below the file's 26.3%, so *adding* parser groups pushes
+`cli.py`'s prose share **down** and *extracting* them pushes it **up**. Extracting the whole 7,288-token
+argument-grammar block (5.7% prose **[M]**) would take `cli.py` to 29.5% — still 20.5 points under the
+cap. **[D] That larger extraction is refused**: it is a 700-line refactor of a module no board unit
+needs to restructure, and the board group's own extraction is sufficient and local.
+
+**Size on arrival and after all three units:** `board_cli.py` starts at 304 tokens and, with three
+parser groups and three thin handlers at the measured median, reaches roughly **1,600** — under half
+the 4,000-token `read_cost.SCOPE_FILE_READ_CAP` **[M]**. `cli.py`'s room rises from 453 to about
+**751** and then stops moving.
+
+#### One unguarded surface, named so a unit does not miss it
+
+`architecture.md` §34 states *"The 36 tiers group into nine bands"* and its mermaid diagram carries a
+module count per band **[M]**. **Nothing binds those numbers to `.importlinter`**: no script under
+`.scripts/`, no test, and `docs_claims` asserts CLI coverage and skill work types, not tier counts
+**[M]** — positive control, `docs_claims`'s own assertion list is findable and names four assertions,
+so the zero belongs to the absence and not to the probe. **[D] Each unit that adds a tier line updates
+§34's counts by hand and says so in its commit**, and no section is renumbered — §34 is a cited surface
+in this document and in the modules that cite it.
+
+### C12 — The snapshot is the only interface, and the enforcement is structural
+
+This is the constraint the whole 2026-08-19 owner decision reduces to, so it is stated as a rule and
+given a gate rather than left as an intention.
+
+**[D] RULE: every consumer reads the snapshot document and nothing else.** The renderer, the server and
+the action surface take a parsed `harness-board/v1` document as their only input. None of them reads
+`.basicly/ledger/`, `.basicly/usage/`, a tracker module, a store module or a writer. A consumer that
+reaches past the snapshot is a consumer that only works against basicly's producer, which is the
+parity rot `basicly-rn0o.13` is filed on.
+
+**Tier placement alone cannot deliver this, and it is worth knowing why before someone assumes it
+does.** In `.importlinter`'s stack, `owned_store`, `owned_write`, `mirror` and `tracker_argv` sit near
+the **bottom** **[M]**, so every module placed above `board_schema` may import them by layering alone.
+**[D] The enforcement is therefore a second contract of `type = forbidden`**, naming
+`board_render`, `board_serve` and `board_actions` as sources and the tracker/store/writer modules as
+forbidden targets. `import-linter` is already a dev dependency **[M]** `pyproject.toml:29`, so this
+adds a contract, not a tool.
+
+**The one permitted exception, and it is not a consumer.** `board_snapshot` — the reference producer —
+reads all of it. That is its entire job, and it is why it sits above `policy` and `run_record` in C11
+while every consumer sits below `board_schema`.
+
+### C13 — The conformance kit is a distributed surface, and it has a stricter contract than `src/`
+
+The S4/S7 remedy is a single-file check that imports no basicly. **[D] It ships as a kit**, at
+`.basicly/core/kit/board/`, because the kit already *is* this contract, written down and gated:
+
+> The portable half of this harness. Everything under here is deployed **into a consumer repository**
+> and runs there, so it is written to a stricter contract than `src/basicly/`: the engine imports the
+> kit, and the kit imports nothing.
+> **[S** `.basicly/core/kit/README.md` **[M]** read 2026-08-20**]**
+
+Three properties come free with that choice, and each one is a requirement the remedy would otherwise
+have to invent:
+
+| What the remedy needs | What the kit already guarantees |
+| --- | --- |
+| imports no basicly | *"A kit module imports the standard library and its own siblings, nothing else. `kit-boundary` enforces the first half"* **[M]**, and `kit-boundary.py` scans the whole `.basicly/core/kit` tree, so a new directory is gated on arrival with no gate edit **[M]** |
+| runs on a stranger's Python | *"Parseable by an interpreter older than this repo's 3.14 floor: no syntax newer than 3.9, and **one exception class per handler**"* **[M]** — note this inverts the `python-guidelines` form used in `src/` |
+| a named distribution path | a kit is *deployed into a consumer repository*; a per-kit `README.md` and a row in the kit table are the declared entry points **[M]** |
+
+**[D] `jsonschema` is not available to it**, because it is third party and the kit contract forbids it.
+So `conformance.py` implements the ruling in the standard library: the three required keys, the
+`harness-board/vN` major check, the per-section verdict, and the absent-section inventory. That is a
+**second implementation of a ruling `board_schema` already makes**, and the reuse rule is honoured by
+binding them rather than by sharing code:
+
+**[D] A test asserts `conformance.py` and `board_schema` agree on every fixture under
+`tests/fixtures/board/`, verdict and exit code**, and it is a required criterion of unit G rather than
+a nicety. Two implementations of one contract that nothing compares is the parity rot this whole
+revision is about, one level down — and it is the same defect `basicly-rn0o.13` records for producers.
+
+**[D] `kit-deployment` needs no entry.** The kit README's rule is *"a kit with no such requirements
+needs no entry"* **[M]**, and the board kit imposes nothing on a host repository: it is copied, not
+installed.
+
+### Disposition of the architect review
+
+Every finding from the four `[architect-review N of 4]` comments on `basicly-rn0o.10`, and where it
+landed. Nothing is silently dropped; two are refused, with the reason.
+
+| Finding | Disposition | Where |
+| --- | --- | --- |
+| The four-cell matrix uses "harness" in two readings and the design never distinguishes them | **Adopted, reading (b)** — the driver of the loop — on the owner decision of 2026-08-20 | `## The contract` → *The four harness-and-tracker combinations* |
+| `TRACKER_MODES` is a one-member tuple and `config.py` refuses an unrecognised mode, so every external-tracker cell needs a foreign producer under either reading | **Adopted as a measured fact**, re-verified 2026-08-20 | same section, the fact box |
+| The dispatch ledger holds zero copilot records, so spend and health fidelity for either copilot cell is unmeasured, and a family with no usage format falls back to an estimate the schema cannot mark | **Adopted as a declared limit**, with a named remedy that is v1-compatible | same section, *Declared limit* |
+| S4 is false: `basicly board validate` **is** the basicly runtime | **Adopted**, re-measured independently 2026-08-20 | S4 |
+| S7 is false: the contract must be installed in the tree | **Adopted**, and distinguished from S4's failure | S7 |
+| Pick one of three remedies; whichever is chosen adds a surface to the v1.0.0 freeze audit | **Adopted**: the standalone script, on the owner decision | S4, C9, C13 |
+| The fail-open direction must not be undone | **Adopted as a rule** | S4, last paragraph |
+| C9's `harness-board/vN` freeze proposal is correct, adopt verbatim plus a named distribution path | **Adopted verbatim, plus the distribution table** | C9 |
+| The design must carry a placement table, one row per new module, with its tier and what it may import | **Adopted** | C11 |
+| `cli.py` 453 · `supervise.py` 1,503 · `policy.py` 226 tokens of room; three parser groups will not fit | **Adopted and re-measured**; the arithmetic is stated | C11 |
+| THE TRAP: do not split a module to move a number; extract along a nameable responsibility | **Adopted**, and the precedent it follows is named (`tracker_query.add_parsers`) | C11 |
+| Per-module prose share was not measured and is owed | **Measured and reported**, with the finding that the rule cannot bind on `cli.py` | C11 |
+| `docs_claims` puts `architecture.md` in units C, D and E's scope, serialising them against the architecture lanes | **Adopted**; the scope lines now declare it | C7, and each unit's **Scope** |
+| C7 hazard: the board schema's prose is indexed by `wired-or-deleted` as field references | **Adopted** | C7 |
+| C7 hazard: test naming binds forward only, so every new board module needs a test module named after it | **Adopted**, and unit C's `test_cli_board.py` is renamed for it | C7 |
+| OQ-E answered — the ledger is live and is the only store | **Closed** | OQ-E |
+| OQ-B moot — wall mode serves over HTTP | **Closed as moot** | OQ-B |
+| OQ-D narrows — the consumer never chooses the root, the producer supplies it | **Narrowed and closed**; the same rule resolves the C11 inversion | OQ-D, C11 |
+| OQ-A is **overridden, not answered**, and the design must say so plainly | **Adopted, stated twice** — once as a superseded decision, once as an accepted risk | `## SUPERSEDED — the four-unit phased scope`, OQ-A |
+| OQ-C still open and now blocks unit B | **Settled by measurement**, twice, by paths sharing no step; the one disagreement is dispositioned | OQ-C |
+| OQ-F still open and now load-bearing | **Settled as a design statement**, with the rejected alternatives | OQ-F |
+| C2 must not be re-opened | **Honoured** — untouched | C2 |
+| The RULE in C6 must not be re-opened; only its number is stale | **Honoured**: the rule is untouched, and the stale copy is located in the *schema file* and recorded as a defect for the next unit that opens it | C6 |
+| C8 must not be re-opened | **Honoured** — untouched | C8 |
+| C10's shape must not be re-opened | **Honoured** — untouched | C10 |
+| The shipped schema's open strings on phase, status, type and edge kind are more producer-neutral than this document's prose; reading the prose as the contract generates false findings | **Adopted**, and generalised: the shipped file is the contract, this document's sketch is illustrative | `## The contract`, first paragraph |
+| OQ-G's answer — the dependency graph stays off the wall | **Honoured** — untouched | OQ-G |
+| The rename-atomic JSON transport, with SQLite refused | **Honoured** — untouched | `## The contract`, transport |
+
+**Two things this revision refused, and why.**
+
+1. **Extracting `cli.py`'s whole argument grammar.** It would move 7,288 tokens along a genuinely
+   nameable responsibility and it is still refused: no board unit needs `cli.py` restructured, the
+   board group's own extraction is sufficient, and a 700-line move touching every command group would
+   serialise the board units against every CLI lane in the tree. Recorded in C11 rather than dropped.
+2. **Extracting `supervise`'s lock reader to a low tier.** It resolves the C11 inversion too, and it is
+   refused because it relocates a public surface every `supervise` caller uses in order to save one
+   function parameter. Recorded in C11 with the alternative that was taken.
+
 ---
 
 ## Open questions
 
 Things I could not establish. These are not guesses dressed as design.
 
-- **OQ-A — Does anyone actually stand in front of it?** The entire arrival mechanism assumes a person
-  in the room during working hours. Measured 2026-08-19, **5 tail events** (20% of wait, or 8.9% once
-  the two multi-day escalations are removed from both sides of the ratio) were even
-  *asked* during plausible office hours **[M]**. Whether a display changes behaviour at n=5 is not
-  answerable from this repo's data and I could not find any other source. **What would unblock it:**
-  ship Mode A + Mode B read-only, run for four weeks, and compare the office-hours tail before and
-  after. That is a cheap experiment and it is the honest first release.
-- **OQ-B — Does `<script src="./board-data.js">` reload under `file://` in current Chrome, Edge,
-  Firefox and Safari?** Mode A sidesteps it by inlining, so nothing in the design depends on the
-  answer — but a `file://` mode that *auto-refreshed* without a server would be strictly better than
-  Mode B for a solo operator, and I did not test it. **What would unblock it:** one manual trial per
-  browser. I did not run it because I could not run it on all four platforms and a result on one is
-  not the claim.
-- **OQ-C — Which marker families does the board's parser have to know?** The families actually
-  present in the ledger, counted 2026-08-19 **[M]**, are ten:
+- **OQ-A — Does anyone actually stand in front of it? — OVERRIDDEN 2026-08-18, NOT ANSWERED.** This
+  wording is deliberate and it is the most important line in this section. The entire arrival mechanism
+  assumes a person in the room during working hours. Measured 2026-08-19, **5 tail events** (20% of
+  wait, or 8.9% once the two multi-day escalations are removed from both sides of the ratio) were even
+  *asked* during plausible office hours **[M]**; remove those two escalations and the four office-hours
+  events behind the residual 14,527 s are the same four the 2026-08-14 revision found, to the second —
+  so the effective n is **4**. Whether a display changes behaviour at n=4 is not answerable from this
+  repository's data and no other source was found.
+
+  **What would have unblocked it:** ship Mode A + Mode B read-only, run four weeks against the real
+  factory, compare the office-hours tail before and after. That was the 2026-08-14 decision and it is
+  the experiment this question is *for*.
+
+  **What happened instead:** the owner decided wall mode (D) and the action surface (E) on 2026-08-18
+  without the trial. **[D] The arrival assumption at n=4 is therefore an accepted risk carried into the
+  build, and it is recorded as that rather than as a closed question.** Three consequences follow and
+  all three are live:
+
+  1. **The question stays open.** No measurement answered it. A later reader must not read D and E
+     having shipped as evidence that it was settled.
+  2. **`## Success` still refuses a wait-time claim**, and that refusal is now doing real work: it is
+     the only thing standing between an unmeasured assumption and a release note that claims a
+     reduction. A release note claiming one would still be refused.
+  3. **The instrument that could settle it is unit H**, via `basicly-rn0o.8`'s view events — and H is
+     still optional and separately decided, because a passive wall would close OQ-15 falsely (C3). So
+     the question that justifies D and E can only be answered by the unit that is not in scope. That
+     is the shape of the risk, stated plainly.
+
+  `## SUPERSEDED — the four-unit phased scope` carries the decision history. This entry carries the
+  evidence, so that "what were D and E justified on?" has an answer at the place the question will be
+  asked.
+- **OQ-B — Does `<script src="./board-data.js">` reload under `file://`? — MOOT, closed 2026-08-20.**
+  The question existed because a `file://` mode that auto-refreshed without a server would have been
+  strictly better than Mode B for a solo operator. Wall mode is now in scope and **serves over HTTP**
+  (unit D, `127.0.0.1` only), so the auto-refreshing path exists and does not depend on `file://`
+  reload semantics. Mode A continues to inline, so neither mode depends on the answer. **It is closed
+  as moot rather than answered:** nobody ran the four-browser trial, and if a `file://` auto-refresh is
+  ever wanted the question returns unchanged.
+- **OQ-C — Which marker families does the board's parser have to know? — SETTLED 2026-08-20 by
+  measurement. It blocks unit B, so it is answered here with a set and not with a direction.**
+
+  The 2026-08-19 answer was ten families with three at zero, and it was measured by a hand probe over
+  raw text. That probe was the wrong instrument: it cannot tell a marker from a bead description
+  quoting a marker. **The right instrument already exists** —
+  `.scripts/check_marker_families.py` reconciles exactly the two populations this question needs, and
+  states its own discriminator: *"a family counts only where it **leads** a comment body, which is
+  where a writer puts it"* **[M]**. Both counts below are taken with that script's own functions
+  (`declared_families`, `logged_families`) against `.basicly/ledger/events-0001.jsonl`, **2,784 comment
+  events**, 2026-08-20.
+
+  **Count 1 — declared by the engine: 11 families**, one producing module each **[M]**:
 
   ```text
-  harness-policy 1082   harness-run 389   harness-wait 350   harness-cost 210
-  harness-decision 177  harness-info 96   harness-artifact 64
-  harness-sizing 38     harness-classification 34   harness-overrun 12
+  harness-artifact       artifact_record.py     harness-policy    policy.py
+  harness-classification integrity.py           harness-retro     retrospective.py
+  harness-cost           run_record.py          harness-review    lens_review.py
+  harness-decision       decision_marker.py     harness-run       run_record.py
+  harness-info           supervise.py           harness-sizing    decompose.py
+                                                harness-wait      policy.py
   ```
 
-  `[harness-review]`, `[harness-retro]` and `[harness-side]` have **zero** occurrences, which is the
-  same result the 2026-08-14 revision got against the previous store and is therefore not a
-  migration artefact. `.scripts/check_marker_families.py` is the gate that reconciles the roster in
-  `work-tracker.md` §3 against the code, so the roster question is *its* and not this document's —
-  but the board still cannot render a panel for a family it has never seen a sample of, and the
-  open part is what the board should do about the three empty ones. *Positive control: the same
-  parser scanning the same 2,727 comment events found 1,082 `[harness-policy]`.*
-- **OQ-D — Which root does an unattended wall display show?** `loop session` requires a root issue.
-  A TV cannot be told which one. Options: the root of the live supervisor lock (works only while
-  supervising); the most recently updated epic; a `--root` pinned at launch. I could not find an
-  existing "current session root" concept in the engine to reuse and I will not invent one.
-  **What would unblock it:** the owner saying whether the wall is pinned to one epic or should follow
-  the supervisor.
+  **Count 2 — observed leading a comment body: 12 families** **[M]**:
+
+  ```text
+  harness-policy 1091   harness-run 398   harness-wait 350   harness-cost 214
+  harness-decision 176  harness-info 96   harness-artifact 61
+  harness-classification 35   harness-sizing 35   harness-overrun 12
+  harness-review 4      harness-retro 2
+  ```
+
+  **The reconciliation, which is the answer.**
+
+  | | Count | The disagreement |
+  | --- | ---: | --- |
+  | declared by code | 11 | — |
+  | observed in the ledger | 12 | — |
+  | declared but never observed | **0** | every family the engine declares has rows |
+  | observed but not declared | **1** | **`[harness-overrun]`, 12 rows, no producer anywhere in `src/`** |
+
+  **`[harness-overrun]` is the whole finding, and it is not a defect — it is a retirement.** The gate
+  froze it deliberately and records why: *"`[harness-overrun]` carries 12 rows in this repository's log
+  and has no producer anywhere in `src/`; the string survives only in two negative test assertions. A
+  list derived from the live constants drops it, and those 12 rows then resolve to nothing"* **[M]**.
+  **[D] So the board's parser set is the gate's frozen literal — 11 live plus 1 retired = 12 — and not
+  the declared list**, because a producer built from the declared list renders 12 real rows as nothing.
+  `.scripts/check_marker_families.py` reports `11 declared, 1 retired (12 frozen)` and exits 0
+  **[M]**, so the two lists already agree and unit B has a single source to bind to.
+
+  **The three "zero" families from the 2026-08-19 answer were two different mistakes, and both matter
+  to unit B's parser.**
+  - `[harness-review]` and `[harness-retro]` are **no longer zero** — 4 and 2 rows. The earlier zero
+    was correct when it was taken and expired; a producer written against it would drop them.
+  - `[harness-side]` was **never a marker at all**. The gate's own history records it as *"a phrase
+    from a `commit.py` sentence rather than a marker"* **[M]**, and the ledger confirms it: the one
+    occurrence of the string sits inside a `created` event's description — a bead *about* that very
+    mistake (`basicly-vkh0.37`) **[M]**.
+  - The raw-text probe also finds `[harness-estimate]` and `[harness-conflict]`, one occurrence each.
+    Both sit inside `created` events describing markers a future unit *proposes* **[M]**
+    (`basicly-kjc5.48`, `basicly-m4zv.5`). **[D] Neither is in the set.** A producer keyed on raw text
+    would have grown two panels for markers that do not exist — which is precisely the population
+    error the leading-marker discriminator exists to prevent, and it is why unit B binds to the gate.
+
+  *Positive control: the probe returned 12 non-empty families over 2,784 comment events and the two
+  lists agree at 11, so a zero for `[harness-side]` is a property of the corpus and not of the probe.*
+
+  **[D] What the board does about a family with no sample: nothing, by construction.** The board
+  renders sections of the *snapshot*, not families of the *ledger*. A family the producer has never
+  parsed contributes no key, an absent section renders `not emitted by this producer`, and no panel is
+  ever coded against a family. The open half of the 2026-08-19 question — *what should the board do
+  about the empty ones?* — dissolves once the interface is the snapshot rather than the ledger, which
+  is the whole point of this revision. **The obligation lands on unit B instead**, as an acceptance
+  criterion: bind the parser's family set to `check_marker_families.FROZEN` so a thirteenth family
+  cannot appear in the log without the producer's own gate saying so.
+
+  **Second derivation, by a path sharing no step, and the one disagreement it produced.** A raw-text
+  occurrence count over `src/` **and** `.scripts/` — `grep -rho '\[harness-[a-z-]*\]'` — returns
+  **12** families code-side, against the AST probe's **11** **[M]**. The disagreement is
+  `[harness-overrun]`, and it is instructive rather than a rounding error:
+
+  | | Where its occurrences are | Is it a producer? |
+  | --- | --- | --- |
+  | `src/` | **zero occurrences** **[M]** | no |
+  | `.scripts/check_marker_families.py:11` | the gate's own **docstring**, explaining why the family is frozen | no |
+  | `.scripts/check_marker_families.py:112` | the gate's **frozen literal** | no |
+  | `tests/` | three assertions, two of them negative **[M]** | no |
+
+  **The raw grep counted the census as a member of the census.** Its twelfth family comes entirely
+  from the file whose job is to hold the inventory, so the two `12`s agree by a route worth stating:
+  the ledger has 12 because 12 rows exist, and the grep has 12 because the frozen literal is
+  maintained against those rows. The agreement is real and it is *derived from* the same fact, not
+  independent of it — which is why the AST count over `src/` alone (**11**) is the honest
+  "declared by code" figure and the frozen literal (**12**) is the honest "must be parsed" figure.
+
+  **A second reason the raw grep is the wrong instrument: occurrences are not write sites.**
+  `[harness-classification]` has 4 occurrences of the literal and **one** definition of it —
+  `integrity.CLASSIFICATION_MARKER` at `integrity.py:52`, placed there rather than in its writer
+  *"because two tiers that read it back may not import"* it **[M]**. Two of the other three are
+  docstring prose at `classify.py:20` and `:82`, and the fourth is the gate's own literal **[M]**.
+  *A third shape the occurrence count misses entirely:* `classify.py:39` **re-exports** the constant
+  as `CLASSIFICATION_MARKER` **[M]**, so it is a real reference that the literal grep cannot see and
+  the AST probe correctly does not credit as a declaration. `[harness-review]` is the simpler shape:
+  4 occurrences, the definition at `lens_review.py:33`, with `lens_review.py:16` and
+  `retrospective.py:37` as prose **[M]**. The AST probe reports one producing module per family
+  because it excludes bare string statements, which is the discriminator an occurrence count lacks —
+  and this correction was itself found by a gate, `docs-citations`, which refused the first draft of
+  this paragraph for citing `classify.py:20` while naming a symbol that lives at `:39`.
+
+  **Which population this question is about, stated because two overlapping ones exist.** *Marker
+  family* and *artifact kind* are different populations that intersect: `classification` is produced
+  today as a **comment marker** (`integrity.CLASSIFICATION_MARKER`) rather than as a typed artifact
+  through `handoff.record` **[M]**. **[D] OQ-C is about marker families only, and only inside the
+  producer.** The snapshot touches **neither** population as a closed set: the shipped schema has no
+  `artifacts` section, and `events[].kind`, `units[].type` and `units[].phase` are all **open
+  strings** with no `enum` **[M]**. So a change to either roster can never break a consumer — it can
+  only change what unit B is able to parse, which is why AC 7 binds the producer to the frozen
+  literal and why nothing in the schema needs to know about it.
+- **OQ-D — Which root does an unattended wall display show? — NARROWED and CLOSED 2026-08-20.** The
+  question was framed as a consumer problem and it is not one. **[D] The consumer never chooses the
+  root; the producer supplies it.** `session.root` is a field of the snapshot, so the page renders
+  whatever root the document names and has no selection logic, no fallback ladder and no "current
+  session" concept to invent. What is left is a *producer* question with a three-line answer: the
+  reference producer takes `--root` when given one, otherwise the root named by a fresh supervisor
+  lock, otherwise it omits the `session` section entirely rather than guessing — and an omitted
+  section renders `not emitted by this producer`, which is the honest state for "nothing is being
+  supervised".
+
+  The same narrowing resolves the layering inversion in C11: the producer does not read the lock
+  either, its caller does. So the rule is one rule at two levels — *the layer above supplies the fact
+  the layer below cannot honestly derive.*
 - **OQ-E — RESOLVED 2026-08-19. `.basicly/ledger/events-0001.jsonl` is the live and only source.**
   The 2026-08-14 revision could not tell a frozen import from a live log and declined to guess. It
   is a live log: `basicly.toml` declares `[tracker] mode = "owned"`, the cutover ladder has collapsed
@@ -754,10 +1295,50 @@ Things I could not establish. These are not guesses dressed as design.
   at the base checkout **[M]**, so the tracker a lane reads is the base repository's. A producer that
   resolved the ledger by path rather than through the kit's `ledger_dir` would read a stale copy of
   the log in every worktree.
-- **OQ-F — What is the wall's idle state?** The mock shows a `NOTHING IS WAITING` band. On a real TV,
-  90% of the time nothing is waiting, and a screen that is calm 90% of the time gets ignored — which
-  destroys the arrival mechanism the whole thing rests on. I do not know the right answer (ambient
-  motion? burn-in-safe dimming? a rotating "what shipped today"?) and I would rather ask than guess.
+- **OQ-F — What is the wall's idle state? — SETTLED 2026-08-20 as a design statement.** It became
+  load-bearing when wall mode entered scope, so it is answered rather than carried. The problem is
+  real: 90% of the time nothing is waiting, and a screen that is calm 90% of the time gets ignored,
+  which destroys the arrival mechanism the whole thing rests on.
+
+  **[D] The idle state is the same layout, and the ask band is replaced by a *watch band* that is never
+  empty.** The band carries exactly one line, chosen by the first rule that applies:
+
+  | Priority | Condition | The line | Colour |
+  | ---: | --- | --- | --- |
+  | 1 | the snapshot's age exceeds `freshness.stale_after_s` | `STALE 74s — this screen is not being refreshed` | amber |
+  | 2 | an ask is pending | `2 ASKS WAITING …` (unchanged) | **the only red on screen** |
+  | 3 | a lane is over its token budget, or over the p90 dispatch elapsed | `SPEND OVER BUDGET` / `LANE RUNNING LONG` | amber |
+  | 4 | lanes running, none of the above | `NEXT CHECKPOINT: ship on basicly-kjc5.57 — build running 24m` | dim |
+  | 5 | no lanes | `IDLE — 180 READY, NEXT UP basicly-rn0o.2` | dim |
+
+  **Rule 1 outranks the ask, and that inversion is the load-bearing part.** The failure an idle state
+  must not have is being indistinguishable from a broken producer. A calm screen and a dead screen look
+  identical, and a room that has once mistaken one for the other will read every calm screen as dead.
+  So staleness pre-empts even a waiting ask: a stale screen cannot honestly claim to know whether
+  anything is waiting.
+
+  Every field is already in the snapshot — `freshness`, `asks`, `session`, `lanes`, `backlog` — so this
+  adds no producer work, no new key and no schema change. It keeps the fixed-height no-reflow rule
+  (one line, five spellings) and it keeps red meaning exactly one thing.
+
+  **The three alternatives, and why each was rejected.**
+  - **Ambient motion** — rejected on three counts, any one sufficient: it is burn-in risk on a display
+    left on for weeks, which is the same reason this design already drops sssf's aurora washes; it
+    fights `prefers-reduced-motion`, which the house palette already honours **[M]**; and motion that
+    carries no information trains the room to ignore motion, which is the one channel the ask band
+    needs to keep.
+  - **Burn-in-safe dimming** — rejected as the exact failure mode above. A dimmed screen is
+    indistinguishable from a dead one, so it reintroduces the false zero S2 exists to prevent, and it
+    makes the transition *into* an ask fight a dark-adapted viewer.
+  - **A rotating "what shipped today"** — rejected on two counts: it is historical reporting, which
+    `## Out of scope` refuses by citing `work-tracker.md` §15's exclusion of *"reporting ceremony
+    beyond what the loop consumes"*; and a rotating panel makes the screen's content depend on *when*
+    you looked, so the header's `as of Ns` no longer describes what is on it.
+
+  **The honest limit, stated rather than buried.** Whether rule 5 is enough to keep a room *looking* is
+  OQ-A, which is overridden and not answered. OQ-F settles what the screen *shows*; it does not claim
+  that what it shows works. `basicly-rn0o.8`'s view events are the only instrument that could tell,
+  and they are unit H.
 - **OQ-G — Do 685 `parent-child` + 319 `blocks` edges — 672 of them touching one of the 236 active
   records — render legibly at six metres?** **[M]** on the edge counts; unmeasured on the
   legibility, and the counts have roughly quintupled since the question was first asked. I have deliberately **left the
@@ -771,7 +1352,21 @@ Things I could not establish. These are not guesses dressed as design.
 
 ## The contract: `harness-board/v1`
 
-This is the reusable part. The page is replaceable; this is not.
+This is the reusable part. The page is replaceable; this is not. Since 2026-08-19 it is also **the only
+interface**: every consumer reads a snapshot document and nothing else (C12), and basicly's producer is
+one implementation of the contract rather than the contract itself.
+
+**READ THIS BEFORE TREATING ANY PROSE BELOW AS THE CONTRACT.** The contract is the shipped file,
+`.basicly/core/schemas/board-snapshot.schema.json` (`basicly-rn0o.1`). Everything in this section is a
+**sketch of it**, kept because it is readable and because the criteria in `## Decomposition` were
+accepted against it. Where the two differ, **the file wins** — and they do differ, in three ways that
+each generate a false finding if the prose is read as authoritative:
+
+| This document's prose | The shipped schema |
+| --- | --- |
+| The compatibility rule is the ledger's additive-only rule | It is **stricter** — see the box below. The schema states so explicitly: *"COMPATIBILITY RULE, and it is not the ledger's"* **[M]** |
+| `phase`, `status`, `type` and edge kind read as closed vocabularies | They are **open strings** that name this project's values as *examples* **[M]**. The shipped file is more producer-neutral than this sketch, which is the right direction and is not a defect to be "fixed" back |
+| `freshness.source` is one of three values | It is one of **four**: `supervisor-tick`, `self-refresh`, `state-change`, `one-shot` **[M]** |
 
 **Transport [D]**: a file at a path the consumer is told, default
 `.basicly/usage/board/snapshot.json`. Written temp-then-rename so a reader sees the old file or the
@@ -779,17 +1374,41 @@ new one, never a partial. In serve mode the identical bytes are also `GET /snaps
 no other transport** — no socket, no stream, no database. A producer that can write a file can drive
 this board.
 
-**Versioning rule [D]**, deliberately the same rule `work-tracker.md` §4.5 already fixes for the
-ledger rather than a second one: *never change a key's meaning, never reuse a key name, only add keys
-and optional sections.*
+**Versioning and compatibility rule [D] — as the shipped schema states it, which is *not* the
+ledger's rule.** The 2026-08-14 prose said *"deliberately the same rule `work-tracker.md` §4.5 already
+fixes for the ledger rather than a second one"*. That was wrong, and the shipped file corrects it with
+the reason **[M]**:
 
-- `schema` is `harness-board/vN`. **N changes only on a break.**
-- Within a major: additive only. A consumer **skips unknown keys and reports their count**; it never
-  errors on them and never silently drops them.
+> **Keys may be added within a major; permitted values may never be widened within a major.** An
+> undeclared key is counted and reported, so adding one is compatible; a value outside a closed set is
+> refused, so widening a set, loosening a pattern or raising a length bound produces documents that an
+> already-shipped consumer of the same major refuses. The ledger's additive-only rule does not transfer
+> whole, because **every ledger reader is ours and a board's readers are not.**
+
+- `schema` is `harness-board/vN`. **N changes only on a break**, and *a new permitted value is a
+  break*. The sets here were widened once, before any release carried the file — it landed 2026-08-16,
+  after the v0.9.0 tag of 2026-08-14 — so from the first release that carries it, a new permitted value
+  takes a new major **[M]**.
+- **Frozen under its own version, not basicly's semver** (C9). A basicly major does not bump
+  `harness-board`, and the reverse holds too.
 - A consumer meeting a **different major** refuses to render and names both versions (transcript
   Mode C). It does not guess.
-- **Only `meta` is required.** Every other section is optional, and an absent section renders
-  `not emitted by this producer` — which is what makes the contract adoptable incrementally.
+- **Adding a key is compatible.** A consumer skips unknown keys and **reports their count**; it never
+  errors on them and never silently drops them.
+- **Exactly three keys are required: `schema`, `generated_at`, `freshness`** **[M]**. Every other
+  section is optional — 12 of them — and an absent section renders `not emitted by this producer`,
+  which is what makes the contract adoptable incrementally. *(The 2026-08-14 prose said "only `meta` is
+  required"; there is no `meta` property in the shipped schema.)*
+- **The ruling is per section, not per document** (`basicly-rn0o.11`, closed). Only the three required
+  keys can refuse a document; a violation inside an optional section withholds **that section** and
+  names its violations while the conforming sections still draw. So a length bound costs a panel, never
+  the screen — which is what stops a foreign producer's first honest attempt from blanking a wall.
+
+**Transport [D]**: a file at a path the consumer is told, default
+`.basicly/usage/board/snapshot.json`. Written temp-then-rename so a reader sees the old file or the
+new one, never a partial. In serve mode the identical bytes are also `GET /snapshot.json`. **There is
+no other transport** — no socket, no stream, no database. A producer that can write a file can drive
+this board.
 
 **The minimum conformant snapshot** — this is the whole barrier to entry for a foreign harness:
 
@@ -809,7 +1428,7 @@ and optional sections.*
   "schema": "harness-board/v1",
   "generated_at": "2026-08-14T16:42:52Z",           // REQUIRED, RFC3339 UTC
   "freshness": {                                     // REQUIRED
-    "source": "supervisor-tick",                     // supervisor-tick | self-refresh | one-shot
+    "source": "supervisor-tick",                     // supervisor-tick | self-refresh | state-change | one-shot
     "cadence_s": 15,                                 // null when one-shot
     "stale_after_s": 60
   },
@@ -874,9 +1493,88 @@ and optional sections.*
 - Everything under `lanes[].branch` and any path-shaped string is redacted at the producer, not the
   consumer.
 
-**What a foreign harness must do to adopt it**: write that minimum snapshot, then add whichever
-sections it can populate. Nothing else. Verified by `basicly board validate <file>` and by unit G's
-fixture, which contains a hand-written snapshot and no basicly state at all.
+### The adapter contract a foreign producer satisfies
+
+**What a foreign harness must do to adopt it**: write the minimum snapshot above, then add whichever
+sections it can populate. Nothing else. That is the whole contract, and these six clauses are all of
+it — they are what unit G's how-to states and what unit G's conformance kit checks.
+
+1. **Write three keys.** `schema`, `generated_at`, `freshness`. A four-line file is a conforming
+   snapshot. Every other section is optional and an absent one renders as absent, never as zero.
+2. **Declare only what you know.** A section you cannot populate is **omitted**, not filled with
+   zeros. This is a rule, not a courtesy: a zero that means "unknown" is the false-zero failure S2
+   exists to prevent, and it is the one way a conforming producer can still lie.
+3. **Never widen a value set.** Adding a key is compatible; a value outside a closed set is refused
+   by an already-shipped consumer of the same major. If your vocabulary does not fit, check whether
+   the property is an open string — `phase`, `status`, `type` and edge kind are **[M]** — before
+   assuming you need a new major.
+4. **Redact at the producer, never at the consumer.** Branch names and any path-shaped string are the
+   known carriers of a username. The consumer has no redaction pass and must not need one.
+5. **Write temp-then-rename.** A reader must see the old document or the new one, never a partial.
+   There is no other transport.
+6. **Name only actions the consumer already knows.** `asks[].actions` may only name entries in C8's
+   closed action table. A producer cannot invent an action, because the consumer has no mechanism to
+   execute one it does not have.
+
+**How it is proved, and this is the part that changed on 2026-08-20.** `python3 conformance.py <file>`
+— one standard-library file, no basicly, no install (S4, C13). `basicly board validate <file>` remains
+available *inside* a basicly repository and is the same ruling; a unit G test asserts the two agree on
+every fixture, verdict and exit code, because two implementations of one contract that nothing compares
+is parity rot one level down.
+
+### The four harness-and-tracker combinations, and who supplies the snapshot
+
+The board must work across harnesses **and** across trackers, in every combination. The 2026-08-19
+owner decision names four cells, and **"harness" in that matrix means the *driver of the loop***, not
+the dispatch target inside one basicly engine (owner decision 2026-08-20, reading (b)).
+
+**Why the reading matters, because it is the difference between a contract and a config flag.** Under
+the other reading — harness as the dispatch target, where claude and copilot are runner adapters over
+one agent-neutral basicly loop — the producer is basicly in all four cells, the harness axis changes
+only *values*, the matrix is two cells rather than four, and *"basicly ships one reference producer,
+not the only one"* means nothing. Reading (b) is the one under which the matrix is four cells and the
+reusable-contract framing has a reason.
+
+**The fact that halves the matrix under *either* reading, measured 2026-08-20:** `TRACKER_MODES` in
+`owned_store.py:44` is a **one-member tuple** — `TRACKER_MODES = (MODE_OWNED,)` **[M]** — and
+`config.py:854` refuses an unrecognised mode rather than defaulting to one **[M]**. So the engine has
+exactly one tracker mode and **there is no external-tracker reader to configure**. Every
+external-tracker cell needs a foreign producer, and no flag, table or adapter inside basicly can change
+that.
+
+| Loop driver | Tracker | Which component supplies the snapshot |
+| --- | --- | --- |
+| **claude**, driven by `basicly loop` | the basicly owned ledger | **Unit B**, the reference producer — invoked by `basicly board` for Mode A, or by **unit F** on the supervisor's tick for wall mode. This is the only cell basicly serves end to end. |
+| **copilot**, driven by `basicly loop` | the basicly owned ledger | **Unit B / unit F, unchanged.** The producer reads the ledger, not the runner, so the driver is invisible to it. This cell needs no new code — and it is the cell that shows the harness axis is not a producer axis once the tracker is ours. |
+| **claude coding agent**, no basicly present | its own external tracker | **A foreign producer**, written by whoever owns that tracker, conforming to the adapter contract above and proved by unit G's kit. Not unit B: there is no external-tracker reader in the engine to point it at. |
+| **copilot coding agent**, no basicly present | its own external tracker | **A foreign producer**, same as the row above. This is the cell the whole revision exists for, and the cell in which basicly ships **no** producer at all — only the schema, the conformance script, the page and the how-to. |
+
+**Read the table as two halves, not four cells.** The tracker axis decides *who produces*: ours →
+unit B, theirs → a foreign producer. The harness axis decides *nothing about production* and only
+changes values inside `lanes[].agent` and `health[].agent`. That is the honest shape of the four cells
+once `TRACKER_MODES` is measured, and it is why unit G is first-class: two of four cells are served by
+the kit alone.
+
+**Declared limit — the two copilot cells' spend and health are unmeasured, and this is not a
+footnote.** Counted 2026-08-20 over the ledger's `[harness-run]` markers: **398 dispatch records —
+264 `claude`, 134 `manual`, 0 `copilot`, 0 `codex`** **[M]**. *Positive control: the probe parsed all
+398 payloads and found two families, so the zero for copilot is a property of the corpus and not of the
+probe.* Consequences:
+
+- **No copilot usage format has ever been exercised here**, so the fidelity of `spend` and `health` for
+  either copilot cell is unknown rather than good or bad.
+- A family with no usage format falls back to a **transcript estimate**, and the schema has **no field
+  that marks a value as an estimate**. A rendered `$13.13` derived from a transcript is
+  indistinguishable from a billed `$13.13`, on the one panel this project's justification rests on
+  (`## Problem`, *money burns unattended*).
+- **[D] So the rule is clause 2 of the adapter contract, applied to itself: a producer that can only
+  estimate `spend` or `health` omits the section.** `not emitted by this producer` is honest; an
+  unmarked estimate on the spend panel is the overclaim in the money domain that C1 refuses in the
+  freshness domain.
+- **[D] The named remedy, and it is v1-compatible so it needs no major:** an optional `estimated`
+  boolean on `spend` and on `health[]`. Adding a key is permitted within a major (rule above); widening
+  a value set is not. Whoever first has a copilot corpus to measure adds it — it is not built
+  speculatively here, and it is not needed until a copilot cell exists.
 
 ---
 ---
@@ -899,8 +1597,14 @@ Token budgets are stated as a scope read cost + build factor, in the same chars/
 scope honestly even though it costs you*.
 
 **Sizing constraint that shaped the cut**: a new Python module may never cross the 4,000-token
-module-size cap **[S** `.scripts/check_module_size.py`**]**, so this is six small modules, not two
-large ones.
+module-size cap **[S** `.scripts/check_module_size.py`**]**, so this is small modules rather than two
+large ones. **Revised 2026-08-20:** the cut is now **five new modules** — `board_snapshot`,
+`board_cli`, `board_serve`, `board_render`, `board_actions` — and the constraint that shaped it is no
+longer only the cap. It is **C11**: the import contract is exhaustive, so each module carries a
+declared tier and a declared may-import set, and `cli.py`'s measured **453** tokens of room against
+three parser groups at a measured **median 426** each is what puts the board grammar in `board_cli.py`
+rather than in `cli.py`. Each unit below carries a **Placement** line for that reason. Every new module
+also owes `tests/test_<module>.py`, because `check_test_naming.py` binds forward only (C7).
 
 ---
 
@@ -943,33 +1647,69 @@ contract, ledger format"* **[S** `factory-loop.md` §4**]**).
 
 ---
 
-### B — The file-only snapshot producer
+### B — The file-only snapshot producer — **basicly's reference producer, not *the* producer**
 
-**Integrity** L2. **Scope** `src/basicly/board_snapshot.py`, `tests/test_board_snapshot.py`
+**Renamed in substance by the 2026-08-19 owner decision.** This unit was written as *the* producer and
+is now **one** implementation of the contract: the one basicly ships, for the two cells where the
+tracker is the owned ledger. The two external-tracker cells are served by a foreign producer and unit G
+(see `## The contract` → *The four harness-and-tracker combinations*). Nothing about its criteria
+loosens; what changes is that it is no longer allowed to be the definition of correct.
+
+**Integrity** L2. **Scope** `src/basicly/board_snapshot.py`, `tests/test_board_snapshot.py`,
+`.basicly/core/schemas/board-snapshot.schema.json` (the C6 stale-number repair only)
 **depends_on** `["A — harness-board/v1 snapshot schema and validator"]`
 **budget_tokens** 140,000
+**Placement** a new `.importlinter` tier line immediately below `loop | release`; may import `policy`,
+`run_record`, `tracker`/`owned_store`, `redact`, `board_schema`; **may not import `supervise`** (C11).
 
 #### Acceptance criteria (EARS)
 
 1. *Ubiquitous* — The producer SHALL build a complete snapshot by reading only files:
    `.basicly/ledger/events-0001.jsonl` (resolved through the kit's `ledger_dir`, so a worktree
-   redirect is honoured), `.basicly/usage/run-records.json`, `.basicly/usage/verify-run.json`,
-   `.basicly/usage/supervisor.lock`. It SHALL spawn **zero** subprocesses, and it SHALL fold the
-   ledger exactly once per snapshot (C5: `observe()` folds it 93 times).
-2. *Ubiquitous* — Building a snapshot on this repo's committed corpus SHALL complete in under 500 ms
+   redirect is honoured), `.basicly/usage/run-records.json` and `.basicly/usage/verify-run.json`. It
+   SHALL spawn **zero** subprocesses, and it SHALL fold the ledger exactly once per snapshot (C5:
+   `observe()` folds it 93 times).
+2. *Ubiquitous* — The live-lock facts — holder id, heartbeat age, staleness, and the session root —
+   SHALL be **supplied by the caller as an argument**, never read by this module. The producer SHALL
+   NOT import `supervise`. *(C11: `supervise` imports this module in unit F, so a
+   `supervise.read_holder` call here is the cycle `supervise → board_snapshot → supervise`. Every
+   caller — `board_cli`, `board_serve`, and the supervisor itself — sits above `supervise` or **is**
+   it, so each already holds the fact. Same rule as OQ-D: the layer above supplies the fact the layer
+   below cannot honestly derive.)*
+3. *State-driven* — WHILE no live-lock facts are supplied, the `session` section SHALL be omitted
+   rather than emitted with nulls or a guessed root (OQ-D).
+4. *Ubiquitous* — Building a snapshot on this repo's committed corpus SHALL complete in under 500 ms
    (measured 2026-08-19 at 19.1 ms **[M]**; the cap is 26× headroom, so it fails on a regression, not
    on noise).
-3. *Ubiquitous* — An ask SHALL be reported pending only when no `[harness-wait]` marker sharing its
+5. *Ubiquitous* — An ask SHALL be reported pending only when no `[harness-wait]` marker sharing its
    `id=` carries `answered`. On the committed corpus this SHALL yield **1** pending ask where the
    naive count yields **140** **[M]**, and the test SHALL assert the answered-marker control
    (**203** distinct answered wait ids) so a parser that silently matches nothing cannot pass it.
-4. *Ubiquitous* — Every string reaching the snapshot SHALL pass `redact.redact_secrets` and
+6. *Ubiquitous* — Every string reaching the snapshot SHALL pass `redact.redact_secrets` and
    `redact.redact_machine_paths`; no absolute path or username SHALL appear in the output.
-5. *State-driven* — WHILE `.basicly/usage/run-records.json` is absent, the `spend` and `health`
+7. *State-driven* — WHILE `.basicly/usage/run-records.json` is absent, the `spend` and `health`
    sections SHALL be omitted and the rest SHALL build.
-6. *Unwanted* — IF a `[harness-*]` marker is malformed, THEN the producer SHALL skip it and continue,
+8. *Unwanted* — IF a `[harness-*]` marker is malformed, THEN the producer SHALL skip it and continue,
    matching the existing best-effort parser contract (`policy._parse_wait_event` returns `None`
    rather than raising **[M]**).
+9. *Ubiquitous* — The parser's marker-family set SHALL be taken from
+   `.scripts/check_marker_families.FROZEN` — **12 families: 11 declared by the engine plus
+   `[harness-overrun]`, retired, 12 rows, no producer in `src/`** — and NOT from the families the
+   engine currently declares (OQ-C **[M]**). A test SHALL assert the two sets are equal, so a
+   thirteenth family cannot enter the log without this producer's own test naming it. *(A list derived
+   from live constants drops `[harness-overrun]` and renders its 12 rows as nothing; a list taken from
+   raw text picks up `[harness-side]`, `[harness-estimate]` and `[harness-conflict]`, none of which is
+   a marker — all three occur only inside record descriptions **[M]**.)*
+10. *Ubiquitous* — A section whose values would be an **estimate** SHALL be omitted rather than emitted,
+   because the schema has no field marking a value as estimated. *(Adapter contract clause 2, and the
+   declared limit for the copilot cells: 0 of 398 dispatch records are copilot **[M]**, so a
+   transcript-estimated `spend` would render indistinguishably from a billed one.)*
+11. *Ubiquitous* — Any new or edited property `description` in
+   `.basicly/core/schemas/board-snapshot.schema.json` SHALL avoid dataclass field names, and this unit
+   SHALL run `wired-or-deleted` before committing (C7 hazard, warned in the file's own first line
+   **[M]**). While that file is open, this unit SHALL repair the stale field-selection figure recorded
+   in C6 — `98.9×` against the deleted store's bytes becomes **132.5×** against `5,890,340 B` /
+   `44,454 B` — and change nothing else in it.
 
 **Demonstration** `uv run basicly board --out - | uv run basicly board validate -` exits 0 and
 prints the section inventory.
@@ -980,9 +1720,23 @@ prints the section inventory.
 
 **Integrity** L3 — adds a CLI command, a frozen surface (C9).
 **Scope** `src/basicly/board_render.py`, `src/basicly/board_page.html.j2`,
-`src/basicly/cli.py` (the `board` parser only), `tests/test_board_render.py`, `tests/test_cli_board.py`
-**depends_on** `["B — The file-only snapshot producer"]`
-**budget_tokens** 190,000
+`src/basicly/board_cli.py` (**created here**, and it is where the `board` grammar and dispatch move to),
+`src/basicly/cli.py` (the board block **out**, two registration lines in — C11),
+`.basicly/core/kit/board/board.html` (the distributed page — the kit directory is unit G's, this file
+is C's, and C9's distribution table names both),
+`.importlinter` (three new tier lines), `docs/architecture/architecture.md` (the §22 CLI row, and §34's
+tier counts), `tests/test_board_render.py`, `tests/test_board_cli.py`
+**depends_on** `["B — The file-only snapshot producer", "G — Adoption seam: the foreign-producer conformance kit"]`
+**budget_tokens** 210,000
+**Placement** `board_render` on a new tier line immediately above `board_schema`, as
+`board_actions | board_render`; `board_cli` on a new tier line immediately below `cli` (C11).
+
+**Two scope changes from the 2026-08-14 cut, both forced by a gate rather than by taste.**
+`tests/test_cli_board.py` becomes `tests/test_board_cli.py` because `check_test_naming.py` derives
+coverage from the module name and the old spelling covers no source unit (C7). And
+`docs/architecture/architecture.md` enters scope because `docs_claims` asserts every subcommand appears
+in a §22 table row (C7) — which serialises this unit against every architecture lane, not only against
+D and E.
 
 #### Acceptance criteria (EARS)
 
@@ -1004,6 +1758,33 @@ prints the section inventory.
    a wrong `context_window` constant, and a bar drawn against a wrong ceiling is worse than no bar.)*
 8. *Ubiquitous* — Every state SHALL be encoded on at least two non-colour channels — a glyph and a
    border style — in addition to colour.
+9. *Ubiquitous* — The renderer's section inventory SHALL be derived from the shipped schema's own
+   property list, never written out a second time. A test SHALL add a property to a copy of the schema
+   and assert the rendered region count follows (S9). The shipped schema declares 15 top-level
+   properties, 3 required and **12** optional **[M]**; "eight regions" in this document is a layout
+   count and never a section count.
+10. *Ubiquitous* — The renderer's only input SHALL be a parsed snapshot document. It SHALL NOT read
+   `.basicly/ledger/`, `.basicly/usage/`, or import a tracker, store or writer module; the
+   `import-linter` `forbidden` contract of C12 SHALL name it. A foreign fixture from unit G — three
+   required keys, no basicly state — SHALL render a complete page naming all 12 optional sections
+   absent, with no error. *(These two criteria were unit G's AC 1 and AC 3 in the 2026-08-14 cut. They
+   are assertions about the renderer, so they move to the renderer, which is what lets G depend on A
+   alone and become first-class.)*
+11. *Ubiquitous* — The `board` command group's grammar and dispatch SHALL live in
+   `src/basicly/board_cli.py`, following `tracker_query.add_parsers` **[M]**, and `cli.py` SHALL retain
+   only the registration call and the dispatch-table entry. `cli.py` SHALL be **smaller** after this
+   unit than before it: 53,883 tokens today, ~53,585 after, against a frozen 54,336 **[M]**. A test
+   SHALL assert `basicly board --help` and `basicly board validate` behave identically across the move,
+   because a grammar extraction that changes the surface is not an extraction.
+12. *Ubiquitous* — The page SHALL also be published to the kit as
+   `.basicly/core/kit/board/board.html`, self-contained and openable by a consumer that fetches its
+   snapshot beside it — the second of the two files C9's distribution table freezes. A test SHALL
+   assert it references no external origin and is byte-identical to the page the renderer emits from
+   the same template.
+13. *Ubiquitous* — `.importlinter`'s new tier lines SHALL be added in the same commit as the modules
+   they place — `exhaustive = True` fails the build otherwise **[M]** — and `architecture.md` §34's
+   tier and per-band module counts SHALL be updated by hand, because **no gate binds them to
+   `.importlinter`** (C11 **[M]**). **No architecture section SHALL be renumbered.**
 
 **Demonstration** `uv run basicly board --out /tmp/b.html && python -c "import pathlib,sys;
 t=pathlib.Path('/tmp/b.html').read_text(); sys.exit(0 if 'harness-board/v1' in t and 'src=' not in t
@@ -1013,10 +1794,20 @@ else 1)"` exits 0; then open it in a browser and read it.
 
 ### D — `basicly board serve`: wall mode, read-only (Mode B)
 
-**Integrity** L3. **Scope** `src/basicly/board_serve.py`, `src/basicly/cli.py` (`board serve` parser),
+**Integrity** L3. **Scope** `src/basicly/board_serve.py`,
+`src/basicly/board_cli.py` (the `board serve` parser group — **not `cli.py`**, C11),
+`.importlinter` (one new tier line), `docs/architecture/architecture.md` (the §22 CLI row, §34 counts),
 `tests/test_board_serve.py`
 **depends_on** `["C — basicly board: the on-demand artifact (Mode A)"]`
 **budget_tokens** 170,000
+**Placement** `board_serve` on a new tier line immediately below `board_cli` and above
+`supervise | usage_report` — it is the layer that may read the supervisor lock and hand the facts down
+to the producer (C11).
+
+**This unit adds zero tokens to `cli.py`**, because unit C moved the grammar to `board_cli.py`. It
+still declares `docs/architecture/architecture.md`, because `docs_claims` requires the new
+`board serve` verb to appear in a §22 row (C7) — that is the contention that serialises D against C and
+E and against every architecture lane.
 
 #### Acceptance criteria (EARS)
 
@@ -1043,9 +1834,15 @@ else 1)"` exits 0; then open it in a browser and read it.
 ### E — The action surface, behind existing engine commands
 
 **Integrity** L3 — it touches the anti-autopilot boundary (C8).
-**Scope** `src/basicly/board_actions.py`, `src/basicly/board_serve.py`, `tests/test_board_actions.py`
+**Scope** `src/basicly/board_actions.py`, `src/basicly/board_serve.py`,
+`src/basicly/board_cli.py` (the `--no-actions` flag — **not `cli.py`**, C11),
+`.importlinter` (`board_actions` joins `board_render`'s tier line, plus the C12 `forbidden` contract),
+`docs/architecture/architecture.md` (the §22 flag row, §34 counts), `tests/test_board_actions.py`
 **depends_on** `["D — basicly board serve: wall mode, read-only (Mode B)"]`
 **budget_tokens** 200,000
+**Placement** `board_actions` as `board_render`'s **sibling** on the tier line above `board_schema`.
+Siblings may not import each other and neither needs the other; the placement is what makes "the action
+surface cannot reach the renderer or the engine" structural rather than reviewed (C11, C12).
 
 #### Acceptance criteria (EARS)
 
@@ -1053,7 +1850,12 @@ else 1)"` exits 0; then open it in a browser and read it.
    from a closed table of exactly three entries: `loop answer`, `policy checkpoint --approve`,
    `loop kill`. A test SHALL assert the table's length and contents.
 2. *Ubiquitous* — `board_actions` SHALL import no engine module that writes; an import-linter contract
-   SHALL enforce it (`import-linter` is already a dev dependency **[M]** `pyproject.toml:29`).
+   SHALL enforce it (`import-linter` is already a dev dependency **[M]** `pyproject.toml:29`). It SHALL
+   be a `type = forbidden` contract, **not** a tier placement: `owned_store`, `owned_write`, `mirror`
+   and `tracker_argv` sit near the *bottom* of the layer stack **[M]**, so every module above
+   `board_schema` may reach them by layering alone (C12). A test SHALL assert the contract fails on a
+   deliberately added writer import, because a contract nothing has ever seen fail is a contract nobody
+   knows is wired.
 3. *Unwanted* — IF any code path reads `.basicly/usage/checkpoint-confirms.json`, THEN a test SHALL
    fail. The board SHALL never display a confirm code (C8).
 4. *Event-driven* — WHEN an approve or kill action is submitted without a confirm code typed by the
@@ -1077,6 +1879,10 @@ the real approval land.
 `tests/test_supervise_board.py`
 **depends_on** `["B — The file-only snapshot producer"]`
 **budget_tokens** 90,000
+**Placement** no new module. `supervise` sits above `board_snapshot` in the C11 stack, so
+`supervise → board_snapshot` is a downward import and legal. **The direction is why unit B may not
+import `supervise`** — this unit is the reason that constraint exists, and it is the caller that
+supplies the live-lock facts unit B's AC 1a requires, since it already holds them.
 
 #### Acceptance criteria (EARS)
 
@@ -1096,27 +1902,85 @@ the real approval land.
 
 ---
 
-### G — Adoption seam: the foreign-producer conformance kit
+### G — Adoption seam: the conformance kit — **FIRST-CLASS, second in the build order**
 
-**Integrity** L2. **Scope** `docs/how-to/adopt-the-board.md`, `tests/fixtures/board/foreign/**`,
-`tests/test_board_foreign.py`
-**depends_on** `["C — basicly board: the on-demand artifact (Mode A)"]`
-**budget_tokens** 80,000
+**Promoted from last to second by the 2026-08-19 owner decision, and it is not a courtesy promotion.**
+When unit B was *the* producer, G documented an adoption path nobody was on. Now the schema is the only
+interface, and G is what makes that interface **real**: it is the only unit that serves two of the four
+harness-and-tracker cells, and it is the only unit that makes S4 and S7 true. A contract nobody outside
+this repository can read or check is not a contract; it is an internal wire format with an aspiration
+attached.
+
+**It now depends on A alone**, so it can start the moment the schema exists and it runs in parallel with
+B. That is possible because its two rendering criteria moved to unit C, where the renderer is — see C's
+AC 10. What is left here is the contract's *distribution* and its *proof*, which need no page and no
+producer.
+
+**Integrity** L3 — it defines a distributed surface intended to be implemented and run by parties that
+are not basicly, which is the L3 consumer category, and it adds a row to the v1.0.0 freeze audit (C9).
+**Scope** `.basicly/core/kit/board/conformance.py`, `.basicly/core/kit/board/README.md`,
+`.basicly/core/kit/README.md` (one table row), `docs/how-to/adopt-the-board.md`,
+`tests/fixtures/board/foreign/**`, `tests/test_board_foreign.py`
+**depends_on** `["A — harness-board/v1 snapshot schema and validator"]`
+**budget_tokens** 130,000
+**Placement** no `src/basicly` module, so no tier line and no `check_test_naming` obligation — that gate
+scopes to `src/basicly` **[M]**. The kit's own contract binds instead (C13), and `kit-boundary` already
+scans the whole `.basicly/core/kit` tree, so the new directory is gated on arrival with no gate edit
+**[M]**.
 
 #### Acceptance criteria (EARS)
 
-1. *Ubiquitous* — A fixture directory containing **only** a hand-written `snapshot.json` and no
-   basicly state SHALL render a complete page.
-2. *Ubiquitous* — The minimum conformant snapshot SHALL be under 400 bytes and SHALL be reproduced
-   verbatim in the how-to.
-3. *Event-driven* — WHEN a foreign snapshot omits every optional section, the page SHALL render eight
-   `not emitted by this producer` regions and no error.
-4. *Ubiquitous* — The how-to SHALL live under `docs/how-to/`, which D33 permits
-   **[S** `factory-loop.md` §2, D33 — and see the note under this document's title**]**; no requirement or plan document SHALL be created.
+1. *Ubiquitous* — `conformance.py` SHALL be a **single file importing only the Python standard
+   library**. `kit-boundary` SHALL pass on it, and a test SHALL assert that in the fixture directory
+   `python3 -c "import basicly"` fails while `python3 conformance.py <snapshot>` exits 0 — the two
+   halves of S4, asserted together, because either alone proves nothing.
+2. *Ubiquitous — THE POSITIVE CONTROL, and it is a criterion because a check written only against
+   the failing side passes when it always fails.* The suite SHALL assert **exit 0 on a conforming
+   document** as well as non-zero on a broken one. *This is measured and it holds: a hand-written
+   126-byte document — `schema`, `generated_at`, and `freshness` carrying `source`, `cadence_s` and
+   `stale_after_s` — prints `harness-board/v1, ok` and exits 0 **[M]** 2026-08-20.*
 
-**Demonstration**
-`uv run basicly board --snapshot tests/fixtures/board/foreign/minimal.json --out /tmp/f.html` renders,
-and the page opened in a browser shows the eight absent-section notices.
+   **The trap the control exists to catch, observed rather than imagined.** An independent verifier on
+   2026-08-20 reported being unable to construct a conforming document by hand and recorded exit 0 as
+   unproven. The cause is that **the minimum is not "three keys"**: `freshness` is an object with three
+   *required members* **[M]**, so the real floor is six values, and a document with `"freshness": {}`
+   exits 1 naming all three **[M]**. **[D] So the how-to states the floor as the JSON block, never as
+   a key count**, and AC 5's byte-identical assertion between the how-to's example and the fixture is
+   what keeps that promise honest.
+3. *Ubiquitous* — `conformance.py` SHALL agree with `board_schema` on **every** fixture under
+   `tests/fixtures/board/`, on both the verdict and the exit code. A test SHALL assert the agreement
+   fixture by fixture rather than in aggregate. *(Two implementations of one contract that nothing
+   compares is parity rot one level below the producer parity `basicly-rn0o.13` records. `jsonschema` is
+   third party and the kit contract forbids it, so a second implementation is unavoidable — binding it
+   is not.)*
+4. *Unwanted* — IF `conformance.py` cannot reach a verdict — an unreadable file, unparseable JSON, an
+   absent argument — THEN it SHALL exit **non-zero** and say what it could not answer. It SHALL NOT
+   exit 0. *(The fail-open direction the shipped `not-installed` outcome already takes correctly, and
+   the one thing the S4 remedy must not reverse.)*
+5. *Ubiquitous* — The minimum conformant snapshot SHALL be under 400 bytes and SHALL be reproduced
+   verbatim in the how-to, and a test SHALL assert the how-to's copy and the fixture are byte-identical
+   after whitespace normalisation, so the published example cannot drift from the checked one.
+6. *Ubiquitous* — The how-to SHALL state the **six adapter-contract clauses** verbatim from
+   `## The contract`, and SHALL carry a *"Where it can still fail"* section naming real defects —
+   including the declared limit that a producer with no usage format must omit `spend` and `health`
+   rather than estimate them.
+7. *Ubiquitous* — `conformance.py` SHALL satisfy the kit's portability contract: no syntax newer than
+   Python 3.9 and **one exception class per handler**, which inverts the form `python-guidelines`
+   prescribes for `src/` **[M]** `.basicly/core/kit/README.md`. `.basicly/core/kit/board/README.md`
+   SHALL state which of the kit's two failure modes this kit takes — *fail closed on a question* — and
+   the kit table in `.basicly/core/kit/README.md` SHALL gain its row.
+8. *Ubiquitous* — The how-to SHALL live under `docs/how-to/`, which D33 permits
+   **[S** `factory-loop.md` §2, D33 — and see the note under this document's title**]**; no requirement
+   or plan document SHALL be created.
+9. *Ubiquitous* — `kit-deployment` SHALL NOT gain an entry. The board kit imposes nothing on a host
+   repository — it is copied, not installed — and the kit README's rule is *"a kit with no such
+   requirements needs no entry"* **[M]**.
+
+**Demonstration** in a scratch directory holding **only** `conformance.py` and a hand-written
+`snapshot.json`, with no `.basicly/`, no virtualenv and no basicly on `PYTHONPATH`:
+`python3 conformance.py snapshot.json` prints `harness-board/v1, ok` and the absent-section inventory
+and exits 0; `python3 conformance.py /dev/null` exits non-zero naming what it could not answer; and
+`python3 -c "import basicly"` raises `ModuleNotFoundError`. That is transcript Mode D, run.
 
 ---
 
@@ -1153,30 +2017,65 @@ shows a payload carrying all three timestamps; with the flag unset, the same run
 
 ### Graph and ordering
 
+**Rewritten 2026-08-19/20. G moves from a leaf hanging off C to the second unit in the order**, because
+it is now what makes the interface real rather than a later courtesy, and its two rendering criteria
+moved to C (C's AC 10) so that it depends on A alone.
+
 ```text
-A ──> B ──> C ──> D ──> E ──> H (optional)
-       └──> F
-            C ──> G
+A (SHIPPED) ──┬──> G ──┐
+              │        ├──> C ──> D ──> E ──> H (optional)
+              └──> B ──┤
+                       └──> F
 ```
 
-Acyclic. Scope globs are disjoint except `src/basicly/cli.py` (C, D) and
-`src/basicly/board_serve.py` (D, E), both declared — the plan gate wants overlap **declared**, not
-absent, because overlap is what decides serialisation. C→D and D→E are sequential for that reason.
+Acyclic. **A publishes the schema; G publishes the schema's distribution and its proof; B is one
+producer of it; C, D, E and F are the consumers and the second producer.** Stated as a table, because
+"which unit publishes and which consume" is an acceptance criterion of this revision:
 
-**Total forecast** 1,050,000 tokens across A–G, of which A's 60,000 is spent — **990,000
-remaining**; 1,110,000 remaining including H. Reported, not defended: per
-the `decompose-plan` skill, a large forecast is **reported, never refused**, and the author decides.
-For calibration, this repo's measured lane mean is far larger than these children, so the cut is on
-the conservative side.
+| Unit | Role against the contract | Reads |
+| --- | --- | --- |
+| **A** — SHIPPED | **publishes the contract** — the schema file and the ruling | a snapshot document |
+| **G** | **publishes the contract's distribution** — the standalone check, the how-to, the foreign corpus | a snapshot document, with no basicly present |
+| **B** | **a producer** — basicly's reference one, for the two owned-ledger cells | the ledger and the usage files; the only unit that may |
+| **C** | **consumer** — the page | the snapshot **only** (C12) |
+| **D** | **consumer** — the server | the snapshot only; plus the supervisor lock, which it hands *down* to B |
+| **E** | **consumer** — the action surface | the snapshot only; writes nothing, ever (C8) |
+| **F** | **a second producer path** — the same producer B builds, invoked on the supervisor's tick | the ledger, through B |
+| **H** | optional, separately decided | — |
 
-**A first release that is honest about OQ-A.** A + B + C + G is a complete, shippable, zero-process
-product that satisfies `work-tracker.md` §4.3 requirement 10 and §4.5 exactly as recorded, adds no
-process anywhere, and costs ~470,000 tokens — **~410,000 of it still unspent, since A has shipped**. **[D] I recommend shipping that first, running the wall
-on it via a browser auto-refresh for four weeks, and only then deciding D/E/F/H.** The reason is
-OQ-A: the entire arrival mechanism rests on an assumption about human behaviour that this repo's data
-sizes at n=5, and D/E are where the security surface, the authority boundary and the process
-argument all live. Spending them before the assumption is tested is the shape of mistake the repo's
-own memory records as *"burned a 300M grant for zero landings."*
+**Declared scope overlaps, because overlap is what decides serialisation and the plan gate wants it
+declared rather than absent.** The 2026-08-14 graph declared two; there are **five**, and two of them
+are new findings from the architect review:
+
+| Overlapping path | Units | Consequence |
+| --- | --- | --- |
+| `src/basicly/board_cli.py` | C, D, E | C creates it, D and E extend it. Replaces the 2026-08-14 overlap on `src/basicly/cli.py`, and it is why `cli.py`'s 453 tokens of room stops being the binding constraint (C11). |
+| **`docs/architecture/architecture.md`** | C, D, E | **NEW.** `docs_claims` requires every subcommand in a §22 table row **[M]**, so each CLI unit edits the architecture document — which serialises them against **every architecture lane in the tree**, not only against each other. This is the contention the 2026-08-14 graph did not see. |
+| **`.importlinter`** | B, C, D, E | **NEW.** `exhaustive = True` means each new module needs its tier line in the same commit **[M]**. Four units touch one file with no merge-friendly structure. |
+| `src/basicly/board_serve.py` | D, E | unchanged from 2026-08-14. |
+| `tests/fixtures/board/foreign/**` | G, C | G creates the corpus, C's AC 10 asserts against it. G→C in the graph, so it is ordered, not concurrent. |
+
+C→D and D→E stay sequential for that reason, and **B and G are the only pair that may run
+concurrently** — their scopes are disjoint and both depend only on A.
+
+**Total forecast** 1,180,000 tokens across A–G, of which A's 60,000 is spent — **1,120,000
+remaining**; 1,240,000 including H. That is 130,000 above the 2026-08-14 forecast: +20,000 on C for the
+`board_cli` extraction and the kit page, +50,000 on G for the conformance script and the parity test.
+Reported, not defended: per the `decompose-plan` skill, a large forecast is **reported, never refused**,
+and the author decides. For calibration, this repository's measured lane mean is far larger than these
+children, so the cut is on the conservative side.
+
+**The recommended-first-release paragraph that stood here is superseded and is not repeated.** It
+recommended shipping A + B + C + G, running four weeks, and only then deciding D/E/F/H. The owner
+decided D and E on 2026-08-18 without the trial. `## SUPERSEDED — the four-unit phased scope` carries
+the decision and OQ-A carries the accepted risk; neither is deleted, because the question of what D and
+E were justified on has to have an answer.
+
+**What survives it, and it is worth keeping.** A + B + C + G is still a complete, shippable,
+zero-process product that satisfies `work-tracker.md` §4.3 requirement 10 and §4.5 exactly as recorded
+and adds no process anywhere. So a later decision to stop after G loses nothing and needs no redesign —
+and after this revision that cut is **stronger** than it was, because G no longer depends on C: the
+contract, its distribution and its proof all land before the first page is rendered.
 
 ---
 ---
