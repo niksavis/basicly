@@ -3284,19 +3284,19 @@ not a bucket.
 The contract is **exhaustive**. A new module joins the package only when a maintainer places
 it in a tier.
 
-The 36 tiers group into nine bands. Every band may import every band below it, and nothing
+The 38 tiers group into nine bands. Every band may import every band below it, and nothing
 above it.
 
 ```mermaid
 flowchart TB
   b1["1 · entry — 1 module<br/>cli"]
   b2["2 · drivers — 4<br/>supervise · loop · release · usage_report"]
-  b3["3 · loop mechanics — 29<br/>merge · decompose · policy · verify · decisions · handoff · plan_gate"]
+  b3["3 · loop mechanics — 31<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
   b4["4 · configuration and isolation — 2<br/>config · worktree"]
   b5["5 · agent runtime — 5<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 12<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
   b7["7 · records and telemetry — 11<br/>run_record · artifact_record · lens_review · spend_calibration"]
-  b8["8 · tracker seam — 7<br/>owned_store · mirror · dispatch_phase<br/>plus the transitional external adapter"]
+  b8["8 · tracker seam — 10<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
   b9["9 · leaf data and pure helpers — 27<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
 
   b1 --> b2 --> b3 --> b4 --> b5 --> b6 --> b7 --> b8 --> b9

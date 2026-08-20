@@ -1,0 +1,9 @@
+# `board_fields` states the board contract's field-selection rule and the roster the marker
+# gate owns, against 999 tokens of code — a 12-member tuple, three one-line value helpers and
+# three small reducers — so its 54.9% share is set by the member count rather than by
+# narration. Cutting to 49% would mean deleting the 132.5x measurement, the two refuted
+# roster shortcuts and the 140/203/1 pairing criterion, none of which a reader recovers from
+# the code. The waiver is in the file with its reason; this is the count moving in the same
+# diff, which is what makes it reviewable (basicly-rn0o.2).
+[ratchet.comment_density]
+count_delta = 1
