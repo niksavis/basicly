@@ -312,7 +312,7 @@ def build_document(
         "generator": {"tool": TOOL, "version": board_fields.text(__version__, 60)},
         "repo": {
             "name": board_fields.text(
-                tracker_paths.tracker_root(repo_root).name, board_fields.ID_MAX
+                tracker_paths.tracker_root(repo_root).resolve().name, board_fields.ID_MAX
             )
         },
     }

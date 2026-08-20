@@ -297,3 +297,22 @@ def test_a_caller_on_a_tick_declares_its_own_cadence(board_repo: Path) -> None:
         "stale_after_s": 60,
     }
     assert board_schema.verdict(board_repo, document).exit_code == 0
+
+
+def test_a_relative_repo_root_still_names_the_repo(board_repo: Path, monkeypatch) -> None:
+    """`repo.name` may not depend on how the caller spelled the path.
+
+    Found by validating the shipped producer as a consumer does, from the repository
+    root, where `build_document(Path("."))` is the obvious call: `Path(".").name` is
+    `""`, the schema refuses an empty name, and the whole `repo` section was withheld
+    with exit 3 while every other section rendered. The worktree demonstration missed
+    it because it passed an absolute path. Resolving before taking the last component
+    is the fix; asserting the relative spelling is what keeps it fixed.
+    """
+    monkeypatch.chdir(board_repo)
+    relative = board_snapshot.build_document(Path())
+    absolute = board_snapshot.build_document(board_repo.resolve())
+
+    assert relative["repo"] == absolute["repo"]
+    assert relative["repo"] == {"name": board_repo.resolve().name}
+    assert board_schema.verdict(board_repo, relative).exit_code == 0
