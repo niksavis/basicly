@@ -93,6 +93,13 @@ def test_the_stated_tier_and_module_counts_are_the_contracts_own() -> None:
     assert sum(_band_counts(REPO)) == modules
 
 
+def _tiers_and_modules(sentence: str) -> tuple[int, int]:
+    """The two counts the block's first sentence states, as numbers."""
+    found = re.match(r"The (\d+) tiers hold (\d+) modules", sentence)
+    assert found is not None, sentence
+    return int(found[1]), int(found[2])
+
+
 def test_a_tier_added_to_the_contract_makes_the_gate_refuse_until_the_block_is_regenerated(
     work_repo: Path,
 ) -> None:
@@ -103,13 +110,21 @@ def test_a_tier_added_to_the_contract_makes_the_gate_refuse_until_the_block_is_r
     block has to fail.
     """
     assert _run(work_repo, "--check") == 0
+    before = block_body((work_repo / ARCHITECTURE_MD).read_text(encoding="utf-8"), BLOCK)
+    tiers, modules = _tiers_and_modules(before[0])
+
     _edit_contract(work_repo, "\n    tracker_paths\n", "\n    tracker_paths\n    planted_tier\n")
     assert _run(work_repo, "--check") == 1
     assert _run(work_repo, "--fix") == 0
     assert _run(work_repo, "--check") == 0
+
     body = block_body((work_repo / ARCHITECTURE_MD).read_text(encoding="utf-8"), BLOCK)
-    assert body[0].startswith("The 39 tiers hold 105 modules")
-    assert sum(_band_counts(work_repo)) == 105
+    # The delta, never the absolute: a tier planted inside the bottom band moves each count
+    # by exactly one. Asserting `39`/`105` pinned this test to the tree it was written on, and
+    # the next lane to add a module broke it - which is the defect the whole block exists to
+    # refuse, arriving in the test that proves the block works (basicly-jcl4rm).
+    assert _tiers_and_modules(body[0]) == (tiers + 1, modules + 1)
+    assert sum(_band_counts(work_repo)) == modules + 1
 
 
 def test_the_block_says_the_band_boundaries_are_declared_rather_than_derived() -> None:

@@ -901,7 +901,7 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
         if role is None
         else roles.resolve_named_role(ctx.repo_root, spec, role)
     )
-    prompt = _with_role_skills(ctx.repo_root, spec, role, prompt)
+    prompt = _with_role_skills(ctx, spec, role, prompt, phase)
     with runner.process_budget().slot(runner.LANE):
         result = runner.run(
             spec,
@@ -932,20 +932,23 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
 
 
 def _with_role_skills(
-    repo_root: Path, spec: runner.RunnerSpec, role: str | None, prompt: str
+    ctx: _Ctx, spec: runner.RunnerSpec, role: str | None, prompt: str, phase: str
 ) -> str:
-    """*prompt* carrying the bodies of the skills *role* declares (basicly-ey58).
+    """*prompt* carrying the bodies of the skills this dispatch declares (basicly-ey58).
 
     A declared ``skills:`` is inert under the headless spawn shape - probed twice on
     claude 2.1.231 with a positive control - so a specialist ran without its
     specialism. Injecting the bodies costs about 0.03% of a lane and reaches every
     family, where the vendor's own mechanism reaches one.
+
+    The unit's own work type and phase are passed too, so a skill declaring ``covers:``
+    reaches the dispatch it covers rather than waiting on an author to recall it
+    (basicly-jcl4rm). No role is still a dispatch: the unit route stands alone.
     """
-    if role is None:
+    names = dispatch_brief.brief_skills(ctx.repo_root, spec.name, role, ctx.state.issue_type, phase)
+    if not names:
         return prompt
-    brief, missing = dispatch_brief.skill_brief(
-        repo_root, dispatch_brief.role_skills(repo_root, spec.name, role)
-    )
+    brief, missing = dispatch_brief.skill_brief(ctx.repo_root, names)
     return dispatch_brief.with_skills(prompt, brief, missing)
 
 
@@ -1146,7 +1149,7 @@ def _run_proposer(ctx: _Ctx, kind: str, prompt: str, *, phase: str) -> tuple[str
             "proposer cannot be bounded to the issue's own requirement"
         )
     role = roles.resolve_role(ctx.repo_root, spec, phase)
-    prompt = _with_role_skills(ctx.repo_root, spec, role, prompt)
+    prompt = _with_role_skills(ctx, spec, role, prompt, phase)
     with runner.process_budget().slot(runner.DECIDER):
         result = runner.run(
             spec,

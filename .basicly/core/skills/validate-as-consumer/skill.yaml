@@ -8,6 +8,8 @@ description: >-
   gate suite that already passed. Use at VALIDATE, before claiming a capability on a
   README or release note, or whenever "the tests pass" is standing in for "the
   feature works".
+covers:
+  phases: [validate]
 instructions: |
   # Validate as a consumer
 

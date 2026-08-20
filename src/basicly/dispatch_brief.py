@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from . import needs_input, review, roles, skills
+from . import needs_input, review, skill_coverage, skills
 from .config import WORK_TYPES
 
 if TYPE_CHECKING:
@@ -196,44 +196,19 @@ def child_plan_prompt(issue_id: str, corpus: str, sizing: SizingConfig) -> str:
     )
 
 
-def role_skills(repo_root: Path, family: str, role: str) -> tuple[str, ...]:
-    """The skill names *role*'s projected definition declares for *family*.
+def brief_skills(
+    repo_root: Path, family: str, role: str | None, work_type: str | None, phase: str | None
+) -> tuple[str, ...]:
+    """Every skill this dispatch should carry: *role*'s declarations plus the unit's.
 
-    Read from the projected file rather than the catalog source, for the reason
-    :func:`roles.role_is_available` gives: the projected file is what the host loads,
-    so a source that was never built declares nothing the dispatch can honour.
+    Two routes into one list, deduplicated in declaration-then-name order. The role
+    route answers "who is running this"; the unit route answers "what work is it", which
+    no persona table can express — an implementer builds a bug and a chore through the
+    same persona, and only one of them wants ``root-cause`` (basicly-jcl4rm).
     """
-    entry = roles.AGENT_ROOTS.get(family)
-    if entry is None:
-        return ()
-    root, suffix = entry
-    path = repo_root / root / f"{role}{suffix}"
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return ()
-    return _declared_skills(text)
-
-
-def _declared_skills(text: str) -> tuple[str, ...]:
-    """The `skills:` list of a projected agent's frontmatter (pure).
-
-    Hand-parsed rather than handed to a YAML loader because only the frontmatter is
-    YAML: the body below it is markdown that would fail to load, and splitting on the
-    fence to feed a loader costs more than reading the one list this needs.
-    """
-    names: list[str] = []
-    inside = False
-    for line in text.splitlines():
-        if line.startswith("skills:"):
-            inside = True
-            continue
-        if inside and line.startswith("- "):
-            names.append(line[2:].strip())
-            continue
-        if inside:
-            break
-    return tuple(names)
+    declared = skill_coverage.role_skills(repo_root, family, role) if role else ()
+    ordered = [*declared, *skill_coverage.unit_skills(repo_root, work_type, phase)]
+    return tuple(dict.fromkeys(ordered))
 
 
 def skill_brief(repo_root: Path, names: Sequence[str]) -> tuple[str, tuple[str, ...]]:
@@ -266,12 +241,12 @@ def _skill_body(repo_root: Path, name: str) -> str | None:
 
 
 def with_skills(prompt: str, brief: str, missing: Sequence[str] = ()) -> str:
-    """*prompt* carrying *brief*, or unchanged when the role declared no skills.
+    """*prompt* carrying *brief*, or unchanged when nothing was declared for it.
 
     The bodies lead: a dispatch is one turn and the agent reads forward, so guidance
-    arriving after the task was read too late to shape how it is done. Unchanged for a
-    role declaring none, which keeps this invisible to every dispatch that worked
-    before it (basicly-ey58).
+    arriving after the task was read too late to shape how it is done. Unchanged when
+    neither route declares any, which keeps this invisible to every dispatch that
+    worked before it (basicly-ey58).
 
     *missing* is named in the prompt rather than logged. The agent is the one that can
     act on it - by loading the skill through the Skill tool - and a thinner brief that
@@ -282,12 +257,12 @@ def with_skills(prompt: str, brief: str, missing: Sequence[str] = ()) -> str:
     parts = []
     if brief:
         parts.append(
-            "Your role declares the skills below. Their full text follows, so you "
-            f"already have them and need not load them:\n\n{brief}"
+            "Your role and this unit's work declare the skills below. Their full text "
+            f"follows, so you already have them and need not load them:\n\n{brief}"
         )
     if missing:
         parts.append(
-            f"Your role also declares {', '.join(missing)}, which could not be read "
-            "from this checkout. Load it with the Skill tool before you rely on it."
+            f"Also declared for this dispatch: {', '.join(missing)}, which could not be "
+            "read from this checkout. Load it with the Skill tool before you rely on it."
         )
     return "\n\n".join([*parts, "---", prompt])

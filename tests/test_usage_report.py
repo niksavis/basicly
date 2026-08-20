@@ -33,7 +33,36 @@ def test_cli_usage_report_tables_counters_and_flags_unused_skills(work_repo: Pat
     assert result.returncode == 0, result.stderr
     assert "rg" in result.stdout and "7" in result.stdout
     assert "conventional-commits" in result.stdout
-    assert "Never-used catalog skills" in result.stdout
+    assert "Never invoked through the Skill tool" in result.stdout
+
+
+def test_cli_usage_report_separates_unexercised_from_unwanted(work_repo: Path) -> None:
+    """A zero in the Skill counter is two claims, and the report must not merge them.
+
+    "Culling candidates" was the old wording and it is the reason six process skills
+    sat unexercised: the counter records `Skill` tool calls, and a body the dispatch
+    brief injects is not one, so a delivered skill reads as a dead one (basicly-jcl4rm).
+    `tool-jq` is the positive control — nothing routes to it, so it must land on the
+    other side of the split rather than the whole list landing on one.
+    """
+    usage_dir = work_repo / ".basicly" / "usage"
+    # The fixture copies the live repo, which may carry real telemetry.
+    shutil.rmtree(usage_dir, ignore_errors=True)
+    usage_dir.mkdir(parents=True)
+    (usage_dir / "tool-usage.json").write_text(
+        json.dumps({"skill:conventional-commits": {"count": 2, "last_used": "2026-07-16"}}),
+        encoding="utf-8",
+    )
+    result = run_basicly(work_repo, "usage", "report")
+    assert result.returncode == 0, result.stderr
+    assert "culling candidates" not in result.stdout
+    assert "Not a culling list" in result.stdout
+
+    _, _, tail = result.stdout.partition("Never invoked through the Skill tool")
+    delivered, _, unreachable = tail.partition("unreachable")
+    assert "root-cause" in delivered and "worktree-isolation" in delivered
+    assert "tool-jq" in unreachable
+    assert "root-cause" not in unreachable
 
 
 def test_cli_usage_report_names_the_bucket_the_unparsed_heads_go_to(work_repo: Path) -> None:

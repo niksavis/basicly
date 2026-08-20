@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 from . import (
     decompose,
     run_record,
+    skill_coverage,
     skill_source,
     tuning,
     ui,
@@ -37,6 +38,7 @@ from .config import load_sizing_config
 
 if TYPE_CHECKING:
     import argparse
+    from collections.abc import Sequence
 
 
 def _spend_accuracy_report(repo_root: Path) -> None:
@@ -287,14 +289,29 @@ def cmd_report(_args: argparse.Namespace) -> int:
             [[e.name, str(e.count), e.last_used] for e in report.skills],
         )
     if report.never_used_skills:
-        ui.say(
-            "Never-used catalog skills (culling candidates): "
-            + ", ".join(report.never_used_skills),
-            style="muted",
-        )
+        _say_never_invoked(repo_root, report.never_used_skills)
     else:
         ui.say("Every catalog skill has recorded usage.", style="ok")
     return 0
+
+
+def _say_never_invoked(repo_root: Path, names: Sequence[str]) -> None:
+    """Print the never-Skill-invoked set as the two claims it really holds.
+
+    :func:`skill_coverage.partition_never_invoked` states why they are two.
+    """
+    split = skill_coverage.partition_never_invoked(repo_root, names)
+    ui.say(
+        f"Never invoked through the Skill tool ({len(names)}). Not a culling list: the "
+        "counter cannot see a body the dispatch brief injects.",
+        style="muted",
+    )
+    for label, group in (
+        ("delivered by a dispatch, never self-invoked", split.delivered),
+        ("unreachable - no role declares them and no `covers:` block matches", split.unreachable),
+    ):
+        if group:
+            ui.say(f"  {label} ({len(group)}): " + ", ".join(group), style="muted")
 
 
 # Not an engine outcome: `run_record` writes one of its four constants, so a record

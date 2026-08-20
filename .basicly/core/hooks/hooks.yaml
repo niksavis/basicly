@@ -84,6 +84,18 @@ hooks:
     stage: pretooluse
     manager: claude
     matcher: Bash
+  # `$?` after `cmd | tail` is tail's status, so a failing gate reports success. Prose
+  # has been tried: the rule is already always-on and it recurred twice on 2026-08-20,
+  # plus once as a background run notifying "exit code 0" over a failed gate. `head` and
+  # `tail` are the 1st and 3rd most-used tools here (16394 / 13960), so the trap sits on
+  # the most travelled path and the note against it competes with the whole always-on
+  # budget. Fires only where the status is actually read (basicly-xkqxp9), never on the
+  # idiom, or it becomes noise and gets switched off.
+  - id: pipe-status-guard
+    script: pipe-status-guard.py
+    stage: pretooluse
+    manager: claude
+    matcher: Bash
   # Deterministic, agent-independent commit-time backstop for the fail-open,
   # Claude-only protect-generated PreToolUse guard (basicly-yw28): blocks a
   # commit that stages a generated output whose content diverges from the

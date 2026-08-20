@@ -8,6 +8,8 @@ description: >-
   token budget, an integrity level, and the command that demonstrates each child end
   to end. Use at DECOMPOSE, when a plan gate has just refused a child, or when a
   child turns out to have no consumer-visible behaviour to check.
+covers:
+  phases: [decompose]
 instructions: |
   # Decompose a plan the gate will accept
 

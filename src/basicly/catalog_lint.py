@@ -41,7 +41,7 @@ from pathlib import Path
 
 import yaml
 
-from . import agents, read_cost, routing_evals, rubrics, skill_source
+from . import agents, read_cost, routing_evals, rubrics, skill_coverage, skill_source
 from .catalog_source import (
     AGENTS_DIR,
     CORE_DIR,
@@ -54,7 +54,7 @@ from .catalog_source import (
     schema_validator,
     schema_violations,
 )
-from .schema import MODEL_TIERS, TECHNOLOGIES
+from .schema import MODEL_TIERS, TECHNOLOGIES, ValidationError
 
 # Agent Skills spec (https://agentskills.io/specification) name rule: 1-64 chars,
 # lowercase a-z0-9 and single hyphens, no leading/trailing/consecutive hyphen.
@@ -262,7 +262,25 @@ def lint_catalog(repo_root: Path) -> list[str]:
     # 9. Tier-2 routing evals over the model-invoked set (basicly-m4zv.2)
     violations.extend(routing_evals.routing_outcome(repo_root).violations)
 
+    # 10. `covers:` values stay inside the engine's own dispatch vocabulary. A value the
+    # engine never dispatches matches nothing, and matching nothing is indistinguishable
+    # from declaring nothing — the silent miss basicly-jcl4rm exists to close.
+    violations.extend(_check_coverage_vocabulary(repo_root))
+
     return violations
+
+
+def _check_coverage_vocabulary(repo_root: Path) -> list[str]:
+    """Flag `covers:` work types and phases the engine cannot dispatch.
+
+    Loaded through ``skill_source`` rather than re-parsed here, so the shape rules stay
+    where the authored form is validated and only the vocabulary half lives at this tier.
+    """
+    try:
+        skills = skill_source.discover_skills(repo_root)
+    except ValidationError:
+        return []  # schema validation already reports a malformed source
+    return skill_coverage.vocabulary_problems(skills)
 
 
 def _check_skill_spec(repo_root: Path) -> list[str]:

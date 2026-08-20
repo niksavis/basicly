@@ -98,6 +98,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "protect-generated",
         "protect-generated-commit",
         "unsplit-loop-guard",
+        "pipe-status-guard",
         "tool-usage",
         "tool-usage-copilot",
     }

@@ -91,6 +91,50 @@ every commit in the repository, so git had published it long before the tracker 
 finding was real and the exposure was not, and the difference is a baseline nobody had
 measured.
 
+## Exclude the instrument from its own population
+
+A probe must not count the file that defines its own vocabulary. **The instrument is
+not a member of its own population**, and when it is, the probe and the thing it
+checks share a step - so an agreement between them is a derived route, not a second
+derivation.
+
+Measured instance: a tree-wide grep for marker families returned 12 and was reported
+as independent confirmation of a gate's own 12. Every hit for one family was inside
+that gate's docstring and frozen literal. The census had counted itself, so the two
+numbers could not have disagreed, and the "confirmation" carried no information at all.
+
+The always-on rule that a number is derived twice by paths sharing no step is what
+this violates. So before believing an agreement:
+
+1. **Name the population**, then name what defines it. The definition is excluded -
+   the gate's own module, the schema, the fixture, the test that enumerates the set.
+2. **Re-run the probe with the definer excluded.** If the number moves, the agreement
+   was the instrument reading itself. If it holds, you have a second derivation.
+3. **Split the hits by population before reporting one total.** A single number over
+   two populations - real occurrences and the definition of "occurrence" - reads as
+   evidence and is not.
+
+## A number is only valid against the instrument and the tree it came from
+
+Excluding the definer fixes the *population*. Two other substitutions leave the
+population correct and the number wrong, and neither has a symptom on the corpus - so
+no positive control over the data can catch either.
+
+- **The instrument was swapped.** A measurement script written to a path other lanes
+  can write is not yours. A sibling overwrote one between the write and the run, and
+  the run printed the sibling's numbers under this lane's command. Keep an instrument
+  where only you can write it.
+- **The tree was wrong.** `uv run --project <worktree> pytest` from another checkout's
+  directory selects the *environment*, not the tree, so it collects the other tree's
+  tests. A lane read three drifting suite counts as its own progress; the tell is that
+  the count moved without a matching change. Run it with the tree as the working
+  directory, and prove the tree is the one you meant with a control that only it can
+  satisfy - a symbol, a file or a string that exists in your tree and nowhere else.
+
+Both are the same error as counting the census: the answer arrived by a route you did
+not check. So state, with any number that will be believed, *what* measured it and
+*where* it ran - and re-take anything that came from a shared path or an unpinned tree.
+
 ## What this is not
 
 - Not `test-discipline`, which is about how a test is *structured* once the behaviour
