@@ -57,7 +57,17 @@
 # Declared under [ratchet] and not at the document root: the schema accepts it there, and
 # `dropin` reads it off the same section the gate tables live in.
 [ratchet]
-base_commit = "be56ce2d0927d66c8b9168f69ab41457147b7641"
+# **Re-recorded on the rebase, and the guard is why.** The first value was this lane's own first
+# commit; `basicly worktree merge` rebases before merging, so that sha was rewritten and stopped
+# being reachable, and this fragment's own gate refused it on all three ratchets. That refusal was
+# correct in substance - main had moved through three landings, so the headroom really was sized
+# against another tree - and the deltas below are re-measured here.
+#
+# **It also exposes a flaw this record did not see, now filed separately.** The guard fires when the
+# recorded base is a *rewritten* commit and stays silent when it is the *branch point*, because a
+# branch point survives a rebase as an ancestor. Which of the two an author records is arbitrary,
+# and the branch point is the case the record was filed for.
+base_commit = "1b06dd7f72c7cf9f5981d73cc45055847266b7b6"
 
 [ratchet.module_size]
 count_delta = 1
