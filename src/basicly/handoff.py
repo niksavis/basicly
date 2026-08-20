@@ -19,16 +19,6 @@ different field sets — and nothing here writes or parses a marker, which is
 :mod:`basicly.artifact_record`'s. The boundary is *the ruling* against *the recorded
 form*, the same cut ``plan_gate``/``plan_record`` is drawn on.
 
-## Where an artifact is stored
-
-One ``artifact`` event in the owned ledger, its kind a typed field and its body under a
-payload key the per-event cap does not name (D-36). :mod:`basicly.artifact_record` owns that
-form and ``tracker.add_artifact`` the append. Until `basicly-pp7q4i` the pair travelled as a
-``[harness-artifact]`` comment marker, whose body is free text and so was cut at 4096 bytes:
-31 of the first 54 artifacts are stored cut, and :func:`_cut_violation` is what those refuse
-through. Nothing bounds the new body by size — D-36 bounds an artifact by taking out what the
-ledger can already derive, which `basicly-gvlpxm` applied to the changed-path list.
-
 ## The ratchet, and the population it discriminates
 
 :func:`entry_verdict` admits a unit that carries **no** artifact. Absence is ambiguous — a
@@ -46,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
-from . import artifact_record, catalog_source, comment_rows, plan_gate, tracker
+from . import artifact_record, catalog_source, plan_gate
 
 if TYPE_CHECKING:
     from jsonschema import Draft202012Validator
@@ -192,34 +182,6 @@ def record(repo_root: Path, issue_id: str, kind: str, payload: dict) -> None:
     artifact_record.write(repo_root, issue_id, kind, payload)
 
 
-def _cut_violation(repo_root: Path, issue_id: str, kind: str, payload: object) -> str | None:
-    """Why *payload* is unusable when the marker cap cut it, or None when it was stored whole.
-
-    Only the retired transport can produce one: an ``artifact`` event's body is never cut, so
-    this answers None for everything recorded since `basicly-pp7q4i`, and 31 stored markers
-    are why it still runs. The row is found by content rather than by re-selecting the last, so
-    this cannot come to disagree with :func:`artifact_record.read` about which row it
-    describes; reaching it only after a refusal is what makes a second fold of the ledger
-    affordable. Both sizes go in the reason because the pair is what separates a body the
-    transport destroyed from one a producer malformed.
-    """
-    for row in tracker.read_comments(repo_root, issue_id):
-        if comment_rows.TRUNCATED_KEY not in row:
-            continue
-        stored = str(row.get(tracker.COMMENT_TEXT_KEY, ""))
-        if artifact_record.recorded_payload(stored.strip(), kind) != payload:
-            continue
-        # Unstripped: the cap measured the whole stored field, so the pair of sizes is
-        # only comparable against the same bytes it counted.
-        return (
-            "the recorded body was truncated by the event text cap to "
-            f"{len(stored.encode('utf-8'))} bytes of {row[comment_rows.ORIGINAL_LENGTH_KEY]} "
-            "and cannot be recovered from the append-only log; re-record the artifact "
-            "from the producing state"
-        )
-    return None
-
-
 def entry_verdict(repo_root: Path, issue_id: str, kind: str) -> ArtifactVerdict:
     """Whether the next state may accept *issue_id*'s *kind* artifact (a read).
 
@@ -242,7 +204,7 @@ def entry_verdict(repo_root: Path, issue_id: str, kind: str) -> ArtifactVerdict:
     violations = _violations(validator, payload)
     if not violations:
         return ArtifactVerdict(issue_id, kind)
-    cut = _cut_violation(repo_root, issue_id, kind, payload)
+    cut = artifact_record.cut_violation(repo_root, issue_id, kind, payload)
     return ArtifactVerdict(issue_id, kind, (cut,) if cut else violations)
 
 

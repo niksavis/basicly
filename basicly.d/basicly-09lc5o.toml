@@ -1,0 +1,29 @@
+# The cut-violation reader lands in the module that owns the recorded form, so `handoff.py`
+# graduates rather than keeping a frozen entry it did not have (basicly-09lc5o).
+# `basicly-u2hl.59` took it 3991 -> 4504 against a 4000-token cap it had 9 tokens of headroom
+# under, and named this move as the debt: `basicly-wug2o2` had put `_cut_violation` in
+# `handoff.py` because the ruling owns the reason text, and `basicly-pp7q4i` then fixed the
+# transport, which is where that fragment says the function should land.
+#
+# `handoff.py` 4504 -> 3946, so the 4504 entry is deleted with a -4504 delta rather than left
+# licensing regrowth back to it. Two things moved and both are one responsibility: the
+# function, and the `## Where an artifact is stored` docstring section that existed to explain
+# it. Four of that section's five sentences were already in `artifact_record.py`'s own
+# docstring, sentence for sentence — the transport, the typed field, the payload key the
+# per-event cap does not name, the 31 of 54 cut at 4096 bytes — so what moved is the fifth
+# ("nothing bounds the new body by size") plus the reference to the function itself. `handoff`
+# now names the recorded form only where its opening sentence already draws the boundary.
+#
+# No narration was cut to make the number move, and the other ratchet is the proof: prose
+# share is **65.4 before and 65.4 after**, against a frozen 69.2. The 561 tokens that left are
+# 66.5% prose, within a tenth of a point of the module's own share, which is why neither
+# ratchet moved in the direction the other one refuses.
+#
+# `artifact_record.py` 1079 -> 1565 against 2921 tokens of headroom, and its prose share
+# **falls 69.0 -> 66.8** under a frozen 69.2 it had 0.2 points under: the moved unit is
+# code-heavier than the module it joins, which is the direction that module needed. No new
+# module, so no `.importlinter` tier and no `check_test_naming` entry: `artifact_record` is
+# already a tier below `handoff` and already imports `tracker`, and `comment_rows` sits below
+# `tracker`, so the two constants it now reads are a downward import.
+[ratchet.module_size.frozen]
+"src/basicly/handoff.py" = -4504
