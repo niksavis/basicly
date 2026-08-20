@@ -114,6 +114,12 @@ instructions: |
     and only survived because the decisions were still recoverable from the conversation.
     Write a durable artifact straight to its final path, or have the agent that produces
     it write there. Treat a scratchpad file as lost the moment you stop looking at it.
+  - **The scratchpad is shared between concurrent lanes, which is the worse reason.**
+    Cleaning loses a file loudly; a sibling lane writing the same path substitutes one
+    silently. Nine lanes ran against one session directory, a `measure.py` was
+    overwritten between the write and the run, and the run printed the sibling's numbers
+    under this lane's command. Write to a lane-unique subdirectory, never the scratchpad
+    root, and verify any backup against `git show HEAD:<path>` before restoring from it.
   - End with a summary of: what changed (with issue ids), what was verified
     (gates run, their results), what remains open, and the usage-statistics
     highlights from step 1.
