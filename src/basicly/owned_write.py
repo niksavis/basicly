@@ -106,6 +106,30 @@ def _without_label_flags(args: Sequence[str]) -> list[str]:
     return kept
 
 
+def _refuse_a_write_that_records_nothing(args: Sequence[str], drafts: Sequence[Any]) -> None:
+    """Refuse a write whose translation produced no event at all.
+
+    ``cmd_write`` prints ``recorded:`` from no exception having been raised rather than
+    from what landed, so a write translating to nothing reported success and appended
+    nothing — measured on a flagless ``update``, which `mirror._update_drafts` translates
+    to an empty list (basicly-holhk4). Here and not in that translator because the defect
+    is the shape rather than the verb: any translation yielding nothing is a confirmation
+    about nothing, and this covers all seven.
+
+    ``init`` and ``sync`` are exempt by construction: `mirror.UNMIRRORED_WRITES` is the set
+    of writes that legitimately state nothing about a record.
+
+    Raises:
+        TrackerDivergenceError: *args* records nothing and is not an unmirrored write.
+    """
+    if drafts or (args and args[0] in mirror.UNMIRRORED_WRITES):
+        return
+    raise TrackerDivergenceError(
+        f"{' '.join(args)} states nothing the ledger can record, so no event was appended; "
+        f"name what should change, because the seam would otherwise report it as recorded"
+    )
+
+
 def refuse_a_write_to_an_absent_record(
     kit_module: Any, ledger: Path, subject: str, drafts: Sequence[Any]
 ) -> None:
@@ -214,6 +238,7 @@ def append(repo_root: Path, args: Sequence[str]) -> None:
     try:
         with events.LedgerLock(ledger) as lock:
             drafts = mirror.drafts(kit_module, _resolve_labels(kit_module, ledger, args), "")
+            _refuse_a_write_that_records_nothing(args, drafts)
             refuse_a_write_to_an_absent_record(kit_module, ledger, " ".join(args), drafts)
             _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
             events.append(

@@ -84,7 +84,7 @@ def test_an_untranslated_write_is_refused_and_names_both_repairs(kit: Any) -> No
 
     message = str(excinfo.value)
     assert "_MIRRORED_WRITES" in message
-    assert "_UNMIRRORED_WRITES" in message
+    assert "UNMIRRORED_WRITES" in message
 
 
 # --- comments: 45% of this repo's tracker traffic ------------------------------

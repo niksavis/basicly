@@ -43,7 +43,7 @@ MIRROR_PROVENANCE = "dual-write"
 # defaulted to "skip", because the default for an unrecognised write is a refusal — see
 # :func:`drafts`. The ledger needs no equivalent of either: it *is* the committed
 # artifact (git is its transport, §4) and `events.append` creates its directory.
-_UNMIRRORED_WRITES = frozenset({"init", "sync"})
+UNMIRRORED_WRITES = frozenset({"init", "sync"})
 
 
 def _priority(value: str) -> int:
@@ -332,14 +332,14 @@ def drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[object]:
         TrackerDivergenceError: *args* is a write with no owned-ledger translation.
     """
     surface, _ = tracker_usage.split_invocation(list(args))
-    if tracker_usage.classify_access(surface) == "read" or surface in _UNMIRRORED_WRITES:
+    if tracker_usage.classify_access(surface) == "read" or surface in UNMIRRORED_WRITES:
         return []
     translate = _MIRRORED_WRITES.get(surface)
     if translate is None:
         raise TrackerDivergenceError(
             f"{surface!r} is not a write this tracker knows how to record; the verbs that "
             f"are: {', '.join(sorted(_MIRRORED_WRITES))}. Add a translation to "
-            f"mirror._MIRRORED_WRITES, or list it in mirror._UNMIRRORED_WRITES if it "
+            f"mirror._MIRRORED_WRITES, or list it in mirror.UNMIRRORED_WRITES if it "
             f"states nothing about a record"
         )
     return translate(kit_module, args, stdout)

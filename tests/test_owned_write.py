@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from basicly import config, label_source, owned_store, owned_write, tracker
+from basicly import config, label_source, mirror, owned_store, owned_write, tracker
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 KIT_SOURCE = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -91,6 +91,29 @@ def test_a_field_write_lands_stamped_as_the_engines_own(tmp_path: Path) -> None:
     assert field.payload["name"] == "issue_type"
     assert field.payload["value"] == "feature"
     assert field.payload[kit.migrate.PROVENANCE_KEY] == owned_write.OWNED_PROVENANCE
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_flagless_update_is_refused_rather_than_reported_as_recorded(tmp_path: Path) -> None:
+    """`cmd_write` prints `recorded:` from no exception, not from what landed (holhk4)."""
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT)
+    before = len(events_of(repo, PARENT))
+
+    with pytest.raises(owned_store.TrackerDivergenceError, match="states nothing"):
+        owned_write.append(repo, ["update", PARENT])
+
+    assert len(events_of(repo, PARENT)) == before
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_write_that_legitimately_records_nothing_is_left_alone(tmp_path: Path) -> None:
+    """`init` and `sync` state nothing about a record, so the refusal must not reach them."""
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT)
+
+    for verb in sorted(mirror.UNMIRRORED_WRITES):
+        owned_write.append(repo, [verb])
 
 
 @pytest.mark.usefixtures("no_br")
