@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -25,15 +26,14 @@ from basicly import (
     handoff,
     loop,
     merge,
-    plan_gate,
     tracker,
+    validate_gate,
     verify,
     worktree,
 )
 from basicly.config import PolicyConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import GateStatus
-from tests.test_artifact_record import record_marker
 from tests.test_handoff import _FakeBr, decomposition, fake_br, spec, summary
 
 __all__ = ["fake_br"]  # re-exported so the fixture resolves in this module
@@ -124,7 +124,7 @@ def _state(phase: str, **kw) -> NodeState:
         issue_type=kw.pop("issue_type", "task"),
         phase=phase,
         worktree=kw.pop("worktree", None),
-        gates=GateStatus(phase == "verify", (), (), (), ()),
+        gates=kw.pop("gates", GateStatus(phase == "verify", (), (), (), ())),
         checkpoints=(),
         rework={},
         has_children=kw.pop("has_children", False),
@@ -258,61 +258,66 @@ def test_a_landing_records_the_head_the_merge_took_not_the_one_it_started_from(
     assert recorded["commit"] == "634c125"
 
 
-# --- a corrupted artifact refused at the entry, moved here from `test_handoff`
-# because that module reached its size baseline for the fourth time and this is the
-# responsibility its siblings already live under (basicly-kmqno2, basicly-8ro0nx).
-
-
-def test_a_hand_corrupted_plan_is_refused_naming_the_failing_field(work_repo: Path) -> None:
-    """The acceptance criterion: an artifact edited out of shape names the field it broke."""
-    payload = handoff.plan_payload(decomposition())
-    payload["tasks"][0]["integrity"] = "L9"
-    artifact_record.write(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
-    verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
-    assert not verdict.admitted
-    assert "integrity" in verdict.reason and "L9" in verdict.reason
-
-
-def test_a_task_naming_no_demonstration_is_refused_though_a_recorded_bead_is_not(
-    work_repo: Path,
+@pytest.mark.usefixtures("fake_br", "landing")
+def test_repair_reland_records_the_head_that_merge_took(
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """D18 binds on the artifact and not on ``PLAN_FIELDS``, and the two populations differ.
+    """The second merge site, which `basicly-gvlpxm` did not reach (basicly-3katht).
 
-    A bead recorded before the field existed is admitted by ``plan_entry`` because its
-    silence is ambiguous. This artifact has no such population — its only producer is a
-    plan ``plan_gate.require_plan`` passed — so here the same silence is a defect.
+    Nothing exercised this path at all: a search of `tests/` for its own block message
+    found nothing, against a positive control finding the string in `loop.py`.
     """
-    payload = handoff.plan_payload(decomposition())
-    del payload["tasks"][0]["demonstration"]
-    artifact_record.write(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
-    verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
-    assert not verdict.admitted
-    assert plan_gate.DEMONSTRATION_FIELD in verdict.reason
+    _pin_landing(monkeypatch, work_repo, landed_head="7381a14")
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: False)
+    monkeypatch.setattr(loop, "_dispatch_validation", lambda *_a, **_k: None)
+    # The changed set differs across the merge, so *when* it is read is observable rather
+    # than assumed. Injected, never raced.
+    merged = []
+    monkeypatch.setattr(
+        merge,
+        "branch_changed_paths",
+        lambda *_a, **_k: ("src/basicly/anything_else.py",) if merged else ("src/basicly/loop.py",),
+    )
+    real_merge = merge.merge_worktree
+
+    def _merge_then_mark(*args: Any, **kwargs: Any) -> merge.MergeResult:
+        result = real_merge(*args, **kwargs)
+        merged.append(True)
+        return result
+
+    monkeypatch.setattr(merge, "merge_worktree", _merge_then_mark)
+    state = _state(
+        "validate",
+        worktree=WorktreeBinding("proj-i", "harness/proj-i"),
+        gates=GateStatus(False, (), (validate_gate.VALIDATE_GATE,), (), ()),
+    )
+    _advance(work_repo, state, monkeypatch)
+
+    recorded = artifact_record.read(work_repo, "proj-i", handoff.CHANGE_SUMMARY)
+    assert isinstance(recorded, dict)
+    assert recorded["commit"] == "7381a14"
+    assert recorded["changed_digest"] == hashlib.sha256(b"src/basicly/loop.py").hexdigest()
 
 
-def test_a_plan_whose_payload_is_not_json_is_refused_not_ignored(work_repo: Path) -> None:
-    """A truncated marker is a corrupted artifact, never a unit that carries none."""
-    record_marker(work_repo, "proj-feat", f"{artifact_record.MARKER} kind=implementation-plan {{n")
-    verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
-    assert not verdict.admitted and "is not of type 'object'" in verdict.reason
-
-
-def test_every_violation_is_reported_at_once(work_repo: Path) -> None:
-    """One advance per fixed field is the round-trip cost this gate exists to avoid."""
-    payload = handoff.plan_payload(decomposition())
-    payload["tasks"][0]["acceptance"] = []
-    payload["tasks"][1]["budget_tokens"] = 0
-    artifact_record.write(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
-    verdict = handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN)
-    assert len(verdict.violations) == 2
-
-
-def test_a_hand_corrupted_change_summary_is_refused_naming_the_failing_field(
-    work_repo: Path,
+@pytest.mark.usefixtures("fake_br", "landing")
+def test_repair_reland_failed_records_no_change_summary(
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The BUILD->VERIFY half of the same control pair."""
-    payload = summary()
-    payload["self_check"]["passed"] = "yes"
-    artifact_record.write(work_repo, "proj-i", handoff.CHANGE_SUMMARY, payload)
-    verdict = handoff.entry_verdict(work_repo, "proj-i", handoff.CHANGE_SUMMARY)
-    assert not verdict.admitted and "passed" in verdict.reason
+    """A merge that did not happen leaves the artifact as it was, not a summary of nothing."""
+    _pin_landing(monkeypatch, work_repo)
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        merge,
+        "merge_worktree",
+        lambda *_a, **_k: merge.MergeResult(
+            "proj-i", "conflict", "both modified x", landed_head=""
+        ),
+    )
+    state = _state(
+        "validate",
+        worktree=WorktreeBinding("proj-i", "harness/proj-i"),
+        gates=GateStatus(False, (), (validate_gate.VALIDATE_GATE,), (), ()),
+    )
+    _advance(work_repo, state, monkeypatch)
+
+    assert artifact_record.read(work_repo, "proj-i", handoff.CHANGE_SUMMARY) is None

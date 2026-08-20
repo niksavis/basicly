@@ -91,7 +91,6 @@ parseable by an interpreter older than this repo's 3.14 floor, so: no syntax new
 from __future__ import annotations
 
 import importlib.util
-import re
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -137,162 +136,58 @@ def _load_events() -> Any:
 
 events = _load_events()
 
+_LABELS_MODULE_NAME = "basicly_tracker_kit_labels"
 
-class InvalidEdgeError(events.InvalidEventError):
-    """An edge assertion that cannot be recorded, or a recorded one that cannot be read.
 
-    A subclass of the event log's own :class:`events.InvalidEventError`, so a caller
-    wrapping a build-and-append in one ``except events.LedgerError`` catches both halves
-    rather than the draft builder's refusal escaping the handler written for the write.
+def _load_labels() -> Any:
+    """Load ``labels.py`` from beside this file, :func:`_load_events`' way.
+
+    The vocabulary is a separate module because two folds need the same answer to *which
+    spelling is this payload in* - this one and `differential.py`'s - and a second copy of
+    that table is how they came to read different populations of one log (basicly-oii83r).
     """
+    cached = sys.modules.get(_LABELS_MODULE_NAME)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(_LABELS_MODULE_NAME, _HERE / "labels.py")
+    if spec is None or spec.loader is None:
+        raise RuntimeError("the tracker kit's labels.py is missing from beside provenance.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_LABELS_MODULE_NAME] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-# --- the vocabulary -----------------------------------------------------------
+labels = _load_labels()
 
-EXTRACTED = "EXTRACTED"
-INFERRED = "INFERRED"
-AMBIGUOUS = "AMBIGUOUS"
-
-# Order matters only for a stable report; :data:`_STRENGTH` is what ranks them.
-LABELS = (AMBIGUOUS, EXTRACTED, INFERRED)
-
-# How much a label is worth when two events disagree. Not exposed as a number: a caller
-# comparing strengths is asking about a disposition, and :func:`disposition` answers that
-# without inviting a fourth label to be slotted between two existing ones by arithmetic.
-_STRENGTH = {AMBIGUOUS: 1, INFERRED: 2, EXTRACTED: 3}
-
-# A label from a newer writer ranks below every label we know, so it can never win a
-# promotion contest and can never inherit a stronger label's disposition.
-_UNKNOWN_STRENGTH = 0
-
-# What an edge is allowed to do, one per label. Strings rather than an enum: the kit
-# targets an interpreter older than this repo's and these values cross a JSON boundary
-# into the engine's decision queue, where a string is what arrives anyway.
-DISPOSITION_GATE = "gate"
-DISPOSITION_PROPOSE = "propose"
-DISPOSITION_DECIDE = "decide"
-
-_DISPOSITIONS = {
-    EXTRACTED: DISPOSITION_GATE,
-    INFERRED: DISPOSITION_PROPOSE,
-    AMBIGUOUS: DISPOSITION_DECIDE,
-}
-
-# The kind an edge assertion is recorded under, from the one definition (§4.5).
+# The vocabulary, re-exported under the names every consumer already reads. Aliases rather
+# than a `from` import, for `differential`'s reason: one object per name, so an
+# `except InvalidEdgeError` and an identity comparison behave exactly as before the split.
+InvalidEdgeError = labels.InvalidEdgeError
 KIND_EDGE = events.KIND_EDGE
-
-# The payload's structural fields. `detail` is the only free-text one, and the only one
-# `events.TRUNCATABLE_KEYS` may cut — see the module docstring for why that split is not
-# a style choice.
-#
-# One spelling per field on the **write** side, and these names are it (R2). A store spelling
-# one dependency edge `id`/`dependency_type` from one command and `depends_on_id`/`type` from
-# another leaves a reader of the wrong spelling with an empty graph rather than an error
-# (basicly-kjc5.10) — which is what this module then did to itself, per the block below.
-KEY_TARGET = "target"
-KEY_TYPE = "edge_type"
-KEY_LABEL = "provenance"
-KEY_DETAIL = "detail"
-
-# The **read** side takes a second dialect, because the log already holds one. `migrate.py`
-# writes `to`/`type` and `differential.py` reads it, so all 1,083 edge events committed here
-# are in that spelling and none is in the pair above [measured 2026-08-20]; the split is
-# recorded in `fsck.py`. This fold therefore read *zero* of them and `gating_edges` answered
-# for the whole population by seeing nothing — a fail-open, and the reason the second name of
-# each pair is accepted on read and never written (basicly-svct4w). The equality with
-# `migrate.py`'s own constants is pinned by a test, so a rename there fails loudly instead of
-# silently reopening the blindness.
-ALT_KEY_TARGET = "to"
-ALT_KEY_TYPE = "type"
-
-# What :attr:`EdgeFold.dialects` counts under. The fold **says which spelling it read**: an
-# empty edge set is otherwise the same answer for a ledger with no edges and a ledger whose
-# every edge the reader could not parse, and those are opposite facts.
-DIALECT_DECLARED = f"{KEY_TARGET}/{KEY_TYPE}"
-DIALECT_ENGINE = f"{ALT_KEY_TARGET}/{ALT_KEY_TYPE}"
-
-# Dialect to the two structural keys that spell it.
-_DIALECT_KEYS = {
-    DIALECT_DECLARED: (KEY_TARGET, KEY_TYPE),
-    DIALECT_ENGINE: (ALT_KEY_TARGET, ALT_KEY_TYPE),
-}
-
-# The edge type is caller vocabulary — `blocks`, `parent-child`, `discovered-from` — but
-# it is still a permanent token, so it is restricted to a shape every surface can round
-# trip. A hyphen is fine here and only here: this is a payload value, never part of an id,
-# so the commit gate's first-hyphen split (`ids.validate_prefix`) cannot reach it.
-EDGE_TYPE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
-
-# The decision queue's kind for an edge that cannot stand on its own. `validate` is the
-# engine's existing entry for *an uncertain machine judgment a human should check*
-# (`decisions.KINDS`), which is precisely §9.6's disposition for `AMBIGUOUS` — the point
-# of routing there is that the path already exists and is already governed by D2.
-DECISION_KIND = "validate"
-
-
-def strength_of(label: str) -> int:
-    """How strong *label* is, for the promotion contest. Unknown ranks below all of them.
-
-    Args:
-        label: The label to rank.
-
-    Returns:
-        A positive rank for a known label, ``0`` for anything else.
-    """
-    return _STRENGTH.get(label, _UNKNOWN_STRENGTH)
-
-
-def disposition(label: str) -> str:
-    """What an edge carrying *label* may do.
-
-    Fails closed: a label this version does not know gets :data:`DISPOSITION_DECIDE`,
-    never :data:`DISPOSITION_GATE`. Only the exact known string gates.
-
-    Args:
-        label: The label to dispose of.
-
-    Returns:
-        One of :data:`DISPOSITION_GATE`, :data:`DISPOSITION_PROPOSE` or
-        :data:`DISPOSITION_DECIDE`.
-    """
-    return _DISPOSITIONS.get(label, DISPOSITION_DECIDE)
-
-
-def validate_label(label: str) -> str:
-    """Return *label* unchanged, or refuse it — on the **write side only**.
-
-    The read side deliberately does not call this: a newer writer's label is preserved
-    and disposed of conservatively rather than rejected (see the module docstring).
-
-    Args:
-        label: The label a caller is about to assert.
-
-    Returns:
-        *label*, unchanged.
-
-    Raises:
-        InvalidEdgeError: *label* is not one this version can assert.
-    """
-    if label not in LABELS:
-        raise InvalidEdgeError(f"provenance label {label!r} must be one of {LABELS}")
-    return label
-
-
-def validate_edge_type(edge_type: str) -> str:
-    """Return *edge_type* unchanged, or refuse it.
-
-    Args:
-        edge_type: The relation the edge names, read source-to-target.
-
-    Returns:
-        *edge_type*, unchanged.
-
-    Raises:
-        InvalidEdgeError: *edge_type* does not match :data:`EDGE_TYPE_PATTERN`.
-    """
-    if not EDGE_TYPE_PATTERN.match(edge_type):
-        raise InvalidEdgeError(f"edge type {edge_type!r} must match {EDGE_TYPE_PATTERN.pattern}")
-    return edge_type
+EXTRACTED = labels.EXTRACTED
+INFERRED = labels.INFERRED
+AMBIGUOUS = labels.AMBIGUOUS
+LABELS = labels.LABELS
+WRITER_LABELS = labels.WRITER_LABELS
+DISPOSITION_GATE = labels.DISPOSITION_GATE
+DISPOSITION_PROPOSE = labels.DISPOSITION_PROPOSE
+DISPOSITION_DECIDE = labels.DISPOSITION_DECIDE
+DECISION_KIND = labels.DECISION_KIND
+KEY_TARGET = labels.KEY_TARGET
+KEY_TYPE = labels.KEY_TYPE
+KEY_LABEL = labels.KEY_LABEL
+KEY_DETAIL = labels.KEY_DETAIL
+ALT_KEY_TARGET = labels.ALT_KEY_TARGET
+ALT_KEY_TYPE = labels.ALT_KEY_TYPE
+DIALECT_DECLARED = labels.DIALECT_DECLARED
+DIALECT_ENGINE = labels.DIALECT_ENGINE
+EDGE_TYPE_PATTERN = labels.EDGE_TYPE_PATTERN
+strength_of = labels.strength_of
+disposition = labels.disposition
+validate_label = labels.validate_label
+validate_edge_type = labels.validate_edge_type
+edge_dialect = labels.edge_dialect
 
 
 # --- the edge -----------------------------------------------------------------
@@ -422,6 +317,10 @@ class EdgeFold:
 
     Attributes:
         edges: Edge identity to state.
+        writer_labels: Writer identity to count, for an event whose label is one of
+            :data:`labels.WRITER_LABELS`. Separate from ``unknown_labels`` because these are
+            **known** and gate - but an edge that carried a writer identity never carried an
+            evidence label, and one count for both would say it did (basicly-493g5f).
         unknown_labels: Label to count, for a label this version does not know. Reported
             rather than raised (§4.5) — and disposed of as :data:`DISPOSITION_DECIDE`, so
             the report is a warning about a decision that was routed, not about a gate
@@ -436,6 +335,7 @@ class EdgeFold:
 
     edges: dict[EdgeKey, EdgeState] = field(default_factory=dict)
     unknown_labels: dict[str, int] = field(default_factory=dict)
+    writer_labels: dict[str, int] = field(default_factory=dict)
     malformed: list[MalformedEdge] = field(default_factory=list)
     dialects: dict[str, int] = field(default_factory=dict)
 
@@ -562,33 +462,6 @@ def _required_text(payload: Any, key: str) -> str:
     return value
 
 
-def _has_text(payload: Any, key: str) -> bool:
-    """Whether *key* clears the bar :func:`_required_text` sets, without raising."""
-    value = payload.get(key)
-    return isinstance(value, str) and bool(value)
-
-
-def edge_dialect(payload: Any) -> str:
-    """Which spelling *payload* carries both structural fields in.
-
-    :data:`DIALECT_ENGINE` only when that pair is complete **and** this module's own is
-    not, so a payload carrying both is read as the declared one and a payload carrying
-    neither still reads as declared — which is what keeps the refusal in
-    :func:`read_assertion` naming the documented spelling rather than guessing which of
-    two writers meant to produce an unreadable line.
-
-    Args:
-        payload: The event's payload.
-
-    Returns:
-        :data:`DIALECT_DECLARED` or :data:`DIALECT_ENGINE`. Never empty: an unreadable
-        payload is a refusal from the caller, not a third dialect.
-    """
-    declared = _has_text(payload, KEY_TARGET) and _has_text(payload, KEY_TYPE)
-    engine = _has_text(payload, ALT_KEY_TARGET) and _has_text(payload, ALT_KEY_TYPE)
-    return DIALECT_ENGINE if engine and not declared else DIALECT_DECLARED
-
-
 def read_assertion(event: Any) -> EdgeAssertion:
     """The assertion one edge event carries.
 
@@ -609,7 +482,7 @@ def read_assertion(event: Any) -> EdgeAssertion:
     if not is_edge_event(event):
         raise InvalidEdgeError(f"event {event.id} is kind {event.kind!r}, not {KIND_EDGE!r}")
     payload = event.payload
-    target_key, type_key = _DIALECT_KEYS[edge_dialect(payload)]
+    target_key, type_key = labels.DIALECT_KEYS[edge_dialect(payload)]
     key = EdgeKey(
         source=event.record,
         edge_type=_required_text(payload, type_key),
@@ -655,7 +528,10 @@ def fold_edges(collected: Iterable[Any]) -> EdgeFold:
             result.malformed.append(MalformedEdge(event.id, event.record, str(exc)))
             continue
         result.dialects[dialect] = result.dialects.get(dialect, 0) + 1
-        if assertion.label not in LABELS:
+        if assertion.label in WRITER_LABELS:
+            count = result.writer_labels.get(assertion.label, 0)
+            result.writer_labels[assertion.label] = count + 1
+        elif assertion.label not in LABELS:
             count = result.unknown_labels.get(assertion.label, 0)
             result.unknown_labels[assertion.label] = count + 1
         state = result.edges.get(assertion.key)

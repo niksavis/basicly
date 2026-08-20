@@ -940,12 +940,12 @@ def test_an_edge_is_asserted_confirmed_and_folded_with_no_basicly_importable(
 
     ``-S`` drops site-packages, which is where this repo's own ``basicly`` lives, and
     ``-I`` drops ``PYTHONPATH``, the user site directory and the script's own directory.
-    All three kit files are copied because the sibling loader chain is part of what is
-    being proved: a consumer copies the directory, not one file.
+    The directory is copied rather than a named list: that is what a consumer does, and a
+    hand list went stale the moment `labels.py` split out (basicly-493g5f).
     """
     consumer = tmp_path / "consumer" / "kit" / "tracker"
     consumer.mkdir(parents=True)
-    for source in (PROVENANCE_SOURCE, EVENTS_SOURCE, IDS_SOURCE):
+    for source in sorted(KIT_DIR.glob("*.py")):
         shutil.copy2(source, consumer / source.name)
     driver = tmp_path / "drive.py"
     driver.write_text(_DRIVER, encoding="utf-8")

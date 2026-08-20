@@ -42,14 +42,8 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 FSCK_SOURCE = KIT_DIR / "fsck.py"
-KIT_SOURCES = (
-    FSCK_SOURCE,
-    KIT_DIR / "snapshot.py",
-    KIT_DIR / "events.py",
-    KIT_DIR / "ids.py",
-    KIT_DIR / "migrate.py",
-    KIT_DIR / "provenance.py",
-)
+# Derived, never enumerated: a hand list went stale when `labels.py` split out.
+KIT_SOURCES = tuple(sorted(KIT_DIR.glob("*.py")))
 
 
 def _load(path: Path, name: str) -> ModuleType:

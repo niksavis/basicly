@@ -191,10 +191,7 @@ provenance = _load_provenance()
 # Dialect to the pair of structural keys that spells it, taken from `provenance` rather than
 # respelled: a second copy of this table is exactly how the two folds came to read different
 # populations of one log (basicly-oii83r).
-_EDGE_KEYS = {
-    provenance.DIALECT_DECLARED: (provenance.KEY_TARGET, provenance.KEY_TYPE),
-    provenance.DIALECT_ENGINE: (provenance.ALT_KEY_TARGET, provenance.ALT_KEY_TYPE),
-}
+_EDGE_KEYS = provenance.labels.DIALECT_KEYS
 
 
 # The derivation's surface, re-exported under the names every consumer already reads. Aliases

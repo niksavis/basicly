@@ -482,6 +482,9 @@ def _repair_from_validate(ctx: _Ctx, gate: str) -> AdvanceResult | None:
     split on the ancestry proof ``_on_ship`` refuses on: a branch base does not hold
     carries the repair's commit and is merged before the validator re-runs against it;
     otherwise the waiting brief goes out under the same spend gate (basicly-xab3).
+
+    **The re-land records the ``change-summary``** (basicly-3katht): the second merge site,
+    whose silence left the artifact describing the first landing.
     """
     binding = ctx.state.worktree
     if binding is None:
@@ -489,6 +492,8 @@ def _repair_from_validate(ctx: _Ctx, gate: str) -> AdvanceResult | None:
     if _worktree_landed(ctx.repo_root, binding):
         return _repair_in_place(ctx, binding)
     mode = ctx.inputs.verify_mode
+    # Before the merge — see :func:`_changed_paths`.
+    changed = _changed_paths(ctx, binding.name)
     landed = merge.merge_worktree(ctx.repo_root, binding.name, bead=ctx.issue_id, verify_mode=mode)
     if not landed.merged:
         return _rework(
@@ -499,6 +504,9 @@ def _repair_from_validate(ctx: _Ctx, gate: str) -> AdvanceResult | None:
             findings=_landing_findings(landed),
             evidence=_landing_evidence(landed, mode),
         )
+    held = _record_change_summary(ctx, changed, landed)
+    if held is not None:
+        return held
     revalidated = _dispatch_validation(ctx, gate)
     if revalidated is not None:
         return revalidated

@@ -1,0 +1,17 @@
+# Reconcile the two vocabularies sharing the provenance key (basicly-493g5f), which needed
+# `provenance.py` split first: it sat at 7,890 tokens, exactly its frozen baseline, so the
+# vocabulary could not gain an entry.
+#
+#   provenance.py  7890 -> 6686   headroom 0 -> 1204   write, read and fold an edge
+#   labels.py         new 2979    headroom     1021    what a label means, and the key names
+#
+# A real gain beyond the size: `provenance` and `differential` now read **one** DIALECT_KEYS
+# table instead of two copies, which is the root cause of basicly-oii83r removed rather than
+# patched on both sides.
+#
+# One density waiver, the third instance in this pass of the mechanism basicly-e2r08j records.
+# `labels.py` is 74.7% because it *is* a vocabulary: a label here is a string that crosses a
+# JSON boundary into a consumer's ledger and decides whether an edge may gate a landing, and
+# that rule cannot be recovered from `EXTRACTED = "EXTRACTED"`.
+[ratchet.comment_density]
+count_delta = 1
