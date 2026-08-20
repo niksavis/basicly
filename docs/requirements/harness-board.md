@@ -733,22 +733,28 @@ it — 5.6× `config.DEFAULT_WORKING_SET_MAX`, the largest lane working set the 
 quantity:* the ledger holds 1,067 edges in total — 685 `parent-child`, 319 `blocks`, 58 `related`,
 5 `discovered-from` **[M]** — of which 672 touch a record that is not closed.
 
-**The RULE is not re-opened; one number carrying it is stale, and the stale copy is in the shipped
-schema rather than here.** *"Select fields, never records"* is already implemented — no property in
-`.basicly/core/schemas/board-snapshot.schema.json` admits a `description`, an `acceptance_criteria` or
-a raw comment body, and every free-text property is length-bounded **[M]**. What is stale is the
-justification the schema's own `description` carries: *"the whole tracker export is 3336549 B against
-33745 B for the active rows at six selected fields, 98.9x from field selection alone (measured
-2026-08-14)"* **[M]**. Those are the **deleted store's** bytes, and the ratio against the owned ledger
-is **132.5×**, not 98.9× (table above).
+**The RULE is not re-opened; one number carrying it was stale, and both stale copies were in the
+shipped schema rather than here — and both are now repaired.** *"Select fields, never records"* is
+implemented — no property in `.basicly/core/schemas/board-snapshot.schema.json` admits a `description`,
+an `acceptance_criteria` or a raw comment body, and every free-text property is length-bounded **[M]**.
+The justification carried *"the whole tracker export is 3336549 B against 33745 B for the active rows
+at six selected fields, 98.9x from field selection alone (measured 2026-08-14)"* — the **deleted
+store's** bytes. `basicly-rn0o.2` swapped it at both sites, the top-level `description` and `units`, for
+`5,890,340 B` against `44,454 B` at six selected fields, **132.5×**, measured 2026-08-19 **[M]**
+re-read 2026-08-20. Nothing about the rule changed.
 
-**[D] Recorded as a defect against the schema file, not repaired here, and the reason is a gate.** That
-`description` string is the one whose first line already warns that *"prose here is indexed by
+**The gate hazard that deferred the repair no longer exists, and the warning that announced it is
+gone too (`basicly-desr1v`).** The schema's first line used to read *"prose here is indexed by
 wired_or_deleted as field references (`basicly-r343`); avoid dataclass field names in descriptions
-until that is fixed"* **[M]**. Editing it is a `wired-or-deleted` hazard and it is outside this
-document's scope. **The repair belongs to whichever unit next opens that file** — unit B is the first
-that must — and it is a number swap only: `5,890,340 B` against `44,454 B` for 236 active records at
-six selected fields, **132.5×**, measured 2026-08-19. Nothing about the rule changes.
+until that is fixed"*, which is why C7 below listed a schema-prose edit as a `wired-or-deleted`
+hazard. `basicly-r343` had already narrowed the scan: `wired_or_deleted.schema_names` visits every
+object key and only descends string values under `required`, `enum`, `const` and `$ref`, so a
+`description` is never read **[M]** 2026-08-20. *Positive control on the same function: a probe
+schema's key and its `enum` value are both indexed while its `description` prose is not, so the zero
+belongs to the gate and not to the probe — and `record-field:basicly.run_record.CostRollup.dispatches`
+still reproduces with the word `dispatches` sitting in the schema's `spend` description today.* The
+first line now states what the gate does read; the hazard is a key or a permitted value repeating a
+declared name, not prose.
 
 ### C7 — Stack, build steps and portability
 
@@ -783,13 +789,14 @@ six selected fields, **132.5×**, measured 2026-08-19. Nothing about the rule ch
   to every new module. A module with no frozen entry fails only above the cap
   (`_module_finding` returns `_over_cap` when `baseline is None` **[M]**), so for the board's new
   modules the binding rule is simply *under 50%*.
-- **`wired-or-deleted` indexes the board schema's prose as field references, and the schema says so
-  itself.** The first sentence of `board-snapshot.schema.json`'s top-level `description` is a live
-  warning: *"prose here is indexed by wired_or_deleted as field references (`basicly-r343`); avoid
-  dataclass field names in descriptions until that is fixed"* **[M]**. **[D] Every new property
-  description in that file must therefore avoid dataclass field names**, and a unit that adds one runs
-  `wired-or-deleted` before it commits rather than after. This is a hazard on unit B and on any later
-  unit that widens the schema.
+- **`wired-or-deleted` indexes the board schema's keys and its permitted values, never its prose —
+  corrected 2026-08-20.** This entry read that the prose was indexed, citing the schema's own first
+  line. That line was itself stale and is gone (`basicly-desr1v`); the scan reads object keys plus the
+  string values under `required`, `enum`, `const` and `$ref` **[M]**, and see C6 for the positive
+  control. **[D] So the hazard on a unit that widens the schema is a new *key* or a new *permitted
+  value* that repeats a name declared in `src/basicly`** — which can retire that name's finding — and
+  not a word in a `description`. A unit that adds either still runs `wired-or-deleted` before it
+  commits rather than after.
 - **`check_test_naming.py` binds forward only, so every new module owes a test module named after
   it.** *"A source unit must have a test file; a test file need not have a source unit"* **[M]**, and
   *"a derived name that is another unit's own test file does not count"* — so `tests/test_board_cli.py`
@@ -1783,12 +1790,13 @@ loosens; what changes is that it is no longer allowed to be the definition of co
    because the schema has no field marking a value as estimated. *(Adapter contract clause 2, and the
    declared limit for the copilot cells: 0 of 398 dispatch records are copilot **[M]**, so a
    transcript-estimated `spend` would render indistinguishably from a billed one.)*
-11. *Ubiquitous* — Any new or edited property `description` in
-   `.basicly/core/schemas/board-snapshot.schema.json` SHALL avoid dataclass field names, and this unit
-   SHALL run `wired-or-deleted` before committing (C7 hazard, warned in the file's own first line
-   **[M]**). While that file is open, this unit SHALL repair the stale field-selection figure recorded
-   in C6 — `98.9×` against the deleted store's bytes becomes **132.5×** against `5,890,340 B` /
-   `44,454 B` — and change nothing else in it.
+11. *Ubiquitous* — Any new or edited **key** or **permitted value** in
+   `.basicly/core/schemas/board-snapshot.schema.json` SHALL avoid repeating a name declared in
+   `src/basicly`, and this unit SHALL run `wired-or-deleted` before committing (C7 hazard, corrected
+   2026-08-20 — a `description` is not read by that scan, so prose is not the hazard **[M]**). The
+   stale field-selection figure recorded in C6 was repaired by `basicly-rn0o.2` at both of its sites,
+   and the schema's own stale first-line warning by `basicly-desr1v`; both are closed and neither is
+   this unit's to repeat.
 
 **Demonstration** `uv run basicly board --out - | uv run basicly board validate -` exits 0 and
 prints the section inventory.
