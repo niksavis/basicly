@@ -14,21 +14,64 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from basicly import integrity
+from basicly import handoff, integrity
 
 SCHEMA_DIR = Path(__file__).parent.parent / ".basicly" / "core" / "schemas"
 
-# The seven the requirements name (factory-loop §8). Two shipped earlier; this bead
-# added the rest. Listed rather than globbed: a glob would pass by finding nothing.
-HANDOFF_KINDS = (
-    "implementation-plan",
-    "change-summary",
-    "classification",
-    "change-shape",
-    "verification-evidence",
-    "validation-transcript",
-    "release-record",
-)
+# The one kind `handoff.PRODUCERS` declares that no schema is authored for (basicly-qnt8ng).
+# `basicly-u2hl.59` added `PRODUCERS` so which kinds exist stops being read out of absence, and
+# a second hand maintained copy of that set here put the same drift back one layer out: a ninth
+# kind could enter one list and not the other, and the one it missed is the one that exercises
+# it. Not a glob over the schema directory, which would pass by finding nothing — the
+# declaration is the source, and `test_handoff` already pins it against its own producers.
+KINDS_WITHOUT_A_SCHEMA = frozenset({"solution-design"})
+
+# The kinds the requirements name (factory-loop §8) that a schema is authored for.
+HANDOFF_KINDS = tuple(kind for kind in handoff.PRODUCERS if kind not in KINDS_WITHOUT_A_SCHEMA)
+
+
+def _declared_with_no_schema_file() -> set[str]:
+    """Every declared kind that no schema file on disk is named for.
+
+    Measured off disk rather than read off :data:`KINDS_WITHOUT_A_SCHEMA`, which is what makes
+    the assertion discriminate: the constant is the claim and this is the observation.
+    """
+    return {
+        kind for kind in handoff.PRODUCERS if not (SCHEMA_DIR / f"{kind}.schema.json").is_file()
+    }
+
+
+def _drift() -> set[str]:
+    """Every kind the declaration and this suite disagree about; empty is the only pass.
+
+    A declared kind that *has* a schema reaches :data:`HANDOFF_KINDS` by construction, so what
+    can still drift is one declared with no schema authored for it — it would enter neither
+    list, and nothing here would exercise it.
+    """
+    return _declared_with_no_schema_file() ^ set(KINDS_WITHOUT_A_SCHEMA)
+
+
+def test_the_kinds_this_suite_exercises_are_one_enumeration_with_the_declaration() -> None:
+    """`handoff.PRODUCERS` is the only place the set of kinds is written down.
+
+    Two claims, because the tuple being derived closes only half the drift: every declared
+    kind is either exercised here or named as one no schema was authored for, and that second
+    list is what the schema directory actually lacks.
+    """
+    assert set(HANDOFF_KINDS) | KINDS_WITHOUT_A_SCHEMA == set(handoff.PRODUCERS)
+    assert _drift() == set()
+
+
+def test_a_kind_the_declaration_gains_is_named_here_rather_than_silently_unexercised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The regression: a ninth kind entering one list and not the other used to be silent.
+
+    Under the hand maintained tuple this suite simply did not parametrize the new kind, so a
+    schema nobody had authored read as a live contract because it appeared in a list.
+    """
+    monkeypatch.setitem(handoff.PRODUCERS, "a-ninth-kind", None)
+    assert _drift() == {"a-ninth-kind"}
 
 
 def _schema(kind: str) -> dict:
