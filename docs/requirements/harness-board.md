@@ -25,7 +25,7 @@ machine-local and self-ignored — which is itself a finding, recorded in C5. Ti
 | --- | --- |
 | Tracker source: the external store named in the superseded block | That store was deleted. The source is `.basicly/ledger/events-0001.jsonl`. |
 | `observe()` costs 11 s because it spawns 345 `br` subprocesses | It costs 6.1 s and spawns **one** subprocess. The cause moved from process spawn to 93 repeated whole-log folds (C5). |
-| Build from files 15 ms, a 733× reduction | 19.1 ms, a **320×** reduction (S3, C5). |
+| Build from files 15 ms, a 733× reduction | **103.8 ms, a 59× reduction** (S3, C5). The 2026-08-19 revision recorded 19.1 ms and 320×; that figure excluded the log read and was refuted by C5's own table on 2026-08-20 (`basicly-ef953m`). |
 | Field selection buys 98.9× | It buys **132.5×** (C6). |
 | Naive pending-ask count 132, paired count 0 | Naive **140**, paired **1** (S6). |
 | 44.4 h of human wait, 9% addressable | **284.5 h**, **20%** addressable — and one 7.7-day outlier carries 65% of the total (Problem). |
@@ -231,9 +231,12 @@ carries the snapshot's `generated_at` and a computed **age in seconds**, and sho
 is. Verified by stopping the producer and watching the badge flip.
 
 **S3 — Snapshot build is affordable enough to refresh.** Building a full snapshot from files costs
-**19.1 ms** (median of 7, `perf_counter`) **[M]** against `observe()`'s **6,105 ms** (median of 3)
-**[M]** — a **320×** reduction — so a 15 s refresh cadence consumes <0.2% of a core. Verified by a
-timing test in the suite that fails if the build crosses 500 ms on this repo's own corpus.
+**103.8 ms** (median of 21, `perf_counter`, 2026-08-20, on the tree that ships `units` and `graph`)
+**[M]** against `observe()`'s **6,105 ms** (median of 3) **[M]** — a **59×** reduction — so a 15 s
+refresh cadence consumes 0.7% of a core. Verified by a timing test in the suite that fails if the
+build crosses 500 ms on this repo's own corpus. *The 19.1 ms and 320× this criterion carried until
+2026-08-20 excluded the log read and were refuted by C5's own per-source table
+(`basicly-ef953m`).*
 
 **S4 — The contract validates with no basicly runtime, from one file a stranger can copy.**
 `python3 conformance.py <snapshot>` exits 0 on a conforming document and non-zero on a broken one,
@@ -335,7 +338,7 @@ a release note that claimed one.
 
 ```console
 $ uv run basicly board --out board.html
-board: harness-board/v1 snapshot built in 19 ms from 4 sources
+board: harness-board/v1 snapshot built in 104 ms from 4 sources
        tracker   .basicly/ledger/events-0001.jsonl   968 records, 236 active, 2727 comment events
        runs      .basicly/usage/run-records.json     431 dispatches over 317 records (machine-local)
        verify    .basicly/usage/verify-run.json      mode=fast passed=True, 20 checks
@@ -690,11 +693,42 @@ operator's base checkout. Timings are `perf_counter` medians, run counts stated.
 | `.basicly/usage/run-records.json` | 517,521 B | 431 dispatches over 317 records | **1.25 ms** parse (median of 5) |
 | `.basicly/usage/verify-run.json` | 3,178 B | last gate pass, mode and checks | **0.01 ms** parse (median of 5) |
 | `.basicly/usage/supervisor.lock` | absent on both checkouts | holder id, heartbeat age | **0.002 ms** `supervise.read_holder`, no lock (median of 200) |
-| **Whole snapshot build** | — | all four, plus ask pairing and status tallies | **19.1 ms** (median of 7) |
+| **Whole snapshot build** | — | all four, plus ask pairing and status tallies | ~~19.1 ms~~ **see below** |
 
-19.1 ms against `observe()`'s 6,105 ms is a **320×** reduction, and it is the whole reason this
-design is affordable. The 2026-08-14 revision claimed 733×; the ratio fell because the numerator
-fell, not because the producer got slower.
+**The 19.1 ms in that last row was wrong, and its own table said so (`basicly-ef953m`).** A whole
+build cannot cost 19.1 ms when the fold alone above it costs 16.5 ms and the fold is not even the
+expensive part: the figure excluded the **log read**, which is the single largest cost in the whole
+producer. Re-measured 2026-08-20 against the tree that ships `units` and `graph`
+(`basicly-vhixrn`), on the ledger at `.basicly/ledger/` — **6,310,689 B · 6,167 rows · 1,010
+records** — with `perf_counter`, after one warm build **[M]**:
+
+| Step | Cost |
+| --- | ---: |
+| `kit.read_ledger` — the log off disk and parsed to events | **51.4 ms** (median of 7) |
+| `kit.events.fold` | **13.8 ms** (median of 7) |
+| `board_fields.units` — 270 field-selected rows | **8.8 ms** (median of 7) |
+| `board_fields.read_markers` | **7.3 ms** (median of 7) |
+| `board_fields.edge_triples` — 676 edges | **1.9 ms** (median of 7) |
+| `board_fields.asks` | **0.3 ms** (median of 7) |
+| **Whole snapshot build** | **103.8 ms** (median of **21**: min 88.4, p25 100.0, p75 109.6, max 115.0) |
+
+**This decomposition adds up and the old one did not, which is the actual repair.** The six steps
+sum to 83.5 ms of the 103.8; the remainder is the graph rows, the status tallies, the two usage
+parses and the document assembly. A reader can now check the whole against its parts, which is
+the property C5 lost when the log read was left out of it.
+
+**The run count is 21 rather than 7 because the box was running nine concurrent lanes**, and two
+earlier medians on the same tree disagreed by 26% (132.1 ms against 104.8 ms) before the sample was
+widened. The tight p25–p75 band of 100.0–109.6 is what makes 103.8 reportable; a median of 7 here
+is a load reading, not a cost.
+
+103.8 ms against `observe()`'s 6,105 ms is a **59×** reduction, not the 320× this section claimed,
+and against the 500 ms acceptance cap the real headroom is **4.8×** at the median and **4.3×** at
+the slowest of 21 runs — not 26×. The design remains affordable at a 15 s refresh cadence, which
+costs 0.7% of a core rather than the <0.2% claimed. **What is no longer true is that the cap is a
+loose bound.** A runner three times slower than this box would sit at the cap, so AC 4's 500 ms is
+now a band rather than the 26× margin it was chosen as, and whether the cap moves or the log read
+gets cached is a decision this correction does not take.
 
 **[D] The board's producer reads files, and calls no engine read path that re-folds per record.**
 This is the direction `work-tracker.md` §4 already mandates for bulk reads: the file is the only bulk
@@ -1753,8 +1787,9 @@ loosens; what changes is that it is no longer allowed to be the definition of co
 3. *State-driven* — WHILE no live-lock facts are supplied, the `session` section SHALL be omitted
    rather than emitted with nulls or a guessed root (OQ-D).
 4. *Ubiquitous* — Building a snapshot on this repo's committed corpus SHALL complete in under 500 ms
-   (measured 2026-08-19 at 19.1 ms **[M]**; the cap is 26× headroom, so it fails on a regression, not
-   on noise).
+   (re-measured 2026-08-20 at **103.8 ms**, median of 21 **[M]** — see C5; the cap is **4.8×** that,
+   so it still fails on a regression rather than on noise, but it is a band and no longer a loose
+   bound. The 19.1 ms this criterion was written against excluded the log read, `basicly-ef953m`).
 5. *Ubiquitous* — An ask SHALL be reported pending only when no `[harness-wait]` marker sharing its
    `id=` carries `answered`. The test SHALL pin **1** pending against a naive **140**, with the
    answered-marker control at **203** distinct answered wait ids **[M]**, so a parser that silently
@@ -1763,7 +1798,7 @@ loosens; what changes is that it is no longer allowed to be the definition of co
    grows on most landings: 980 records / 2,474 marker rows became 983 / 2,479 inside a single
    session, measured on one checkout **[M]**. A test pinning an exact count against it is red on the next landing, which is a flaky
    gate rather than a regression detector. The same applies to AC 4's timing cap, which is why that cap
-   is 26× the measurement rather than a tight band.)*
+   is 4.8× the measurement rather than a tight band.)*
 6. *Ubiquitous* — Every string reaching the snapshot SHALL pass `redact.redact_secrets` and
    `redact.redact_machine_paths`; no absolute path or username SHALL appear in the output.
 7. *State-driven* — WHILE `.basicly/usage/run-records.json` is absent, the `spend` and `health`
