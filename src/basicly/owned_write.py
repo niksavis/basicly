@@ -12,7 +12,8 @@ reaches and refuses one inside a read-only section.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+import os
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,41 @@ from basicly.owned_store import TrackerDivergenceError
 # mirrored (:data:`mirror.MIRROR_PROVENANCE`) and one `migrate.py` extracted out of the
 # export. One of `migrate.RESERVED_KEYS`, so it is dropped when a record is rendered back.
 OWNED_PROVENANCE = "engine"
+
+# The dispatched agent's own name, from the overlay `runner.br_attribution_env` puts on every
+# dispatch. Nothing has read it since the flip retired br, which was its only reader.
+AGENT_ENV_VAR = "BR_AGENT_NAME"
+
+# Prefixed, so an agent named `claude` cannot read as an operator of that name.
+AGENT_ACTOR = "agent:"
+OPERATOR_ACTOR = "operator:"
+
+# Not `events.UNATTRIBUTED_ACTOR`, which says no caller supplied one: this says the seam looked.
+UNRESOLVED_ACTOR = "unresolved:no-redactable-identity"
+
+# `actor` sits outside the payload, so `events.prepare_payload`'s cap never reaches it.
+MAX_ACTOR_CHARS = 64
+
+
+def resolved_actor(environ: Mapping[str, str] | None = None) -> str:
+    """Who an append is made under: the dispatched agent, else this machine's masked operator.
+
+    The agent wins, so a landing names the runner that produced it rather than the account the
+    supervisor runs as (`work-tracker.md` §4.3 item 5).
+
+    An operator is the redactor's placeholder and never the username: `redact.machine_identity`
+    answers ``""`` for a name too short to word-bound, so handing that name to
+    `redact_committed` would return it verbatim into the committed store R6 cleared. Redact then
+    cap, never the reverse — capping first can split a value past the point its rule matches.
+    """
+    values = os.environ if environ is None else environ
+    agent = " ".join(values.get(AGENT_ENV_VAR, "").split())
+    if agent:
+        return AGENT_ACTOR + redact.redact_committed(agent)[:MAX_ACTOR_CHARS]
+    name = redact.machine_identity()
+    if not name:
+        return UNRESOLVED_ACTOR
+    return OPERATOR_ACTOR + redact.redact_machine_identity(name)
 
 
 def _stamped(kit_module: Any, drafts: Sequence[Any]) -> list[Any]:
@@ -244,6 +280,7 @@ def append(repo_root: Path, args: Sequence[str]) -> None:
             events.append(
                 ledger,
                 _stamped(kit_module, drafts),
+                actor=resolved_actor(),
                 redact=redact.redact_committed,
                 held_lock=lock,
             )
@@ -295,6 +332,7 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
             events.append(
                 ledger,
                 _stamped(kit_module, drafts),
+                actor=resolved_actor(),
                 redact=redact.redact_committed,
                 held_lock=lock,
             )

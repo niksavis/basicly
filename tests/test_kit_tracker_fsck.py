@@ -790,6 +790,37 @@ def test_rebuild_refuses_a_log_the_fold_cannot_read_rather_than_writing_a_wrong_
         fsck.rebuild(ledger)
 
 
+# --- the unattributed census (basicly-at5tph) ----------------------------------
+
+
+def test_events_naming_no_actor_are_counted_in_both_spellings(tmp_path: Path) -> None:
+    """The empty field and `events.UNATTRIBUTED_ACTOR` are one population, counted together.
+
+    Two lines are rewritten to each spelling over a five-event control, which is what makes
+    the census discriminating: counting either spelling alone answers 2, and counting every
+    event answers 5. Rewriting `actor` cannot disturb anything else — it is excluded from the
+    event id digest, so no line stops re-minting from its own content.
+    """
+    ledger = _seed(tmp_path / "ledger")
+    lines = _lines(_log(ledger))
+    assert len(lines) == 5
+    rewritten = []
+    for position, line in enumerate(lines):
+        event = json.loads(line)
+        if position < 2:
+            event["actor"] = ""
+        elif position < 4:
+            event["actor"] = events.UNATTRIBUTED_ACTOR
+        rewritten.append(_dumps(event))
+    _write(_log(ledger), rewritten)
+
+    report = fsck.check(ledger)
+    assert report.events == 5
+    assert report.unattributed == 4
+    assert report.as_dict()["unattributed"] == 4
+    assert report.clean, "an unattributed event is a census, never a finding to fail on"
+
+
 # --- the entry point -----------------------------------------------------------
 
 

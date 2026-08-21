@@ -1011,6 +1011,38 @@ def test_an_event_already_carrying_a_truncation_flag_folds_as_it_always_did(tmp_
     assert parsed[0].payload["value_original_length_bytes"] == _WPC8_DESCRIPTION_BYTES
 
 
+# --- attribution (basicly-at5tph) ---------------------------------------------
+
+
+def test_no_appended_event_can_carry_an_empty_actor(tmp_path: Path) -> None:
+    """The chain is the draft's actor, then the call's, then the reason — never ``""``.
+
+    All three in one test because the chain is the property: a fallback that shadowed an
+    explicit actor would satisfy the last assertion alone, and one that only defaulted the
+    call would satisfy the first two.
+    """
+    minted = events.append(
+        tmp_path,
+        [
+            events.Draft(RECORD_A, "created", {"title": "a"}, actor="lane:one"),
+            events.Draft(RECORD_B, "created", {"title": "b"}),
+        ],
+        actor="lane:two",
+        clock=lambda: CLOCK_EARLY,
+    )
+    assert [event.actor for event in minted] == ["lane:one", "lane:two"]
+
+    bare = events.append(
+        tmp_path, [events.Draft(RECORD_C, "created", {"title": "c"})], clock=lambda: CLOCK_EARLY
+    )
+    assert [event.actor for event in bare] == [events.UNATTRIBUTED_ACTOR]
+
+    # Read back off the file, not off the return value: the field has to survive the JSON.
+    stored, _ = events.read_events(tmp_path)
+    assert len(stored) == 3
+    assert all(event.actor for event in stored)
+
+
 # --- the writer's lock --------------------------------------------------------
 
 

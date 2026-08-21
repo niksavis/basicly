@@ -229,6 +229,8 @@ class Report:
         delegated_kinds: ``(kind, count, the sibling fold that owns it)`` per kind the record
             fold leaves to a sibling. A census, not a finding, so the population reads as
             counted rather than as gone.
+        unattributed: Events naming no actor, over the same set as :attr:`events`. A census on
+            `delegated_kinds`' grounds, and because no event can supply a missing actor.
     """
 
     directory: Path
@@ -236,6 +238,7 @@ class Report:
     events: int = 0
     records: int = 0
     delegated_kinds: tuple[tuple[str, int, str], ...] = ()
+    unattributed: int = 0
 
     def of_severity(self, severity: str) -> tuple[Finding, ...]:
         """Every finding at *severity*."""
@@ -267,6 +270,7 @@ class Report:
             "derived": len(self.of_severity(DERIVED)),
             "warnings": len(self.of_severity(WARNING)),
             "findings": [found.as_dict() for found in self.findings],
+            "unattributed": self.unattributed,
             "delegated_kinds": {
                 kind: {"events": count, "folded_by": owner}
                 for kind, count, owner in self.delegated_kinds
@@ -716,6 +720,11 @@ def check(directory: Path | str) -> Report:
     # disagreement downstream of the hole is its consequence rather than a second defect.
     voided = set(folded.forked) | {event.record for _, event, _ in malformed} | set(gaps)
 
+    # One population, two spellings: the empty field, and the reason that replaced it.
+    unattributed = sum(
+        1 for event in ordered if not event.actor or event.actor == events.UNATTRIBUTED_ACTOR
+    )
+
     findings = _unparseable_findings(quarantined)
     findings += _malformed_findings(malformed)
     findings += _fork_findings(ordered)
@@ -734,6 +743,7 @@ def check(directory: Path | str) -> Report:
         events=len(ordered),
         records=len(folded.records),
         delegated_kinds=_delegated_census(folded),
+        unattributed=unattributed,
     )
 
 
