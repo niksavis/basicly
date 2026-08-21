@@ -409,9 +409,10 @@ modes = ["fast", "full"]
 # the rule for the next check, and fails on POSIX too rather than waiting for CI.
 # The published board contract still accepts its own conforming example. Narrow on
 # purpose, and the narrowness is the honest part: it proves the schema and the validator
-# have not drifted apart, and it proves nothing about a snapshot the engine produced,
-# because no producer exists yet (basicly-rn0o.2). When one does, this check gains the
-# real artifact and keeps the fixture as its control.
+# have not drifted apart. It proves nothing about a snapshot a *producer* wrote — a producer
+# now exists (basicly-rn0o.2) and so does a second, foreign one, and the `board-foreign` check
+# in `basicly.d/basicly-rn0o.13.toml` is the contract run against that. This entry stays as
+# the fixture control both are read against.
 [[verify.checks]]
 name = "board-schema"
 command = ["uv", "run", "basicly", "board", "validate", "tests/fixtures/board/minimal-v1.json"]

@@ -1,0 +1,43 @@
+{
+  "tool": "acme-tracker",
+  "tool_version": "3.2.1",
+  "exported_at": "2026-08-21T09:15:00Z",
+  "project": {"key": "ACME", "name": "acme-web"},
+  "issues": [
+    {
+      "key": "ACME-1",
+      "summary": "Checkout retries twice on a declined card",
+      "state": "In Progress",
+      "severity": "P1",
+      "kind": "Bug"
+    },
+    {
+      "key": "ACME-2",
+      "summary": "Session cookie survives a password reset",
+      "state": "Open",
+      "severity": "P1",
+      "kind": "Bug"
+    },
+    {
+      "key": "ACME-3",
+      "summary": "Add a per-tenant rate limit to the public API",
+      "state": "Open",
+      "severity": "P2",
+      "kind": "Story"
+    },
+    {
+      "key": "ACME-4",
+      "summary": "Ship the invoice PDF renderer",
+      "state": "Done",
+      "severity": "P2",
+      "kind": "Story"
+    },
+    {
+      "key": "ACME-5",
+      "summary": "Drop the unused staging bucket",
+      "state": "Done",
+      "severity": "P3",
+      "kind": "Chore"
+    }
+  ]
+}
