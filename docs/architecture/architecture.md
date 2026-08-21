@@ -2964,8 +2964,13 @@ why this item came first.
 **The closed set of kinds has one definition, and that was the precondition for everything
 else here** (`basicly-vkh0.36`, `basicly-vkh0.43`). It was **six** partial definitions rather
 than the four the table below recorded: `baseline.py` and `provenance.py` were both missing
-from it. What stands now is `events.KNOWN_KINDS`, an explicit eight-member frozenset in the
-vocabulary block, with every sibling taking its kind from it rather than respelling one.
+from it. What stands now is `events.KNOWN_KINDS`, an explicit twelve-member frozenset in the
+vocabulary block, with every sibling taking its kind from it rather than respelling one. The
+twelve are the ten built kinds of [32.3](#323-the-event-vocabulary) plus two the specification
+table does not list: `comment`, which is the permanent alias rather than a target kind, and
+`edge_retracted`, which the fold delegates beside `edge`. A member outside the eighteen is not
+a widening of the vocabulary — it is the alias and the retraction the log already holds
+[measured 2026-08-21, `len(events.KNOWN_KINDS)` against `events.DELEGATED_KINDS`].
 `baseline.py` still spells its own `created` kind, deliberately and with the reason at the
 declaration — it loads no sibling at all. Two tests bind the arrangement: one folds this
 repository's own log and asserts every kind in it is a member, with an event-count floor as the
@@ -3126,9 +3131,10 @@ Four rules make it safe, and the first is what keeps the cap out of the fold.
   **The bound is a property of the kind, and the rule it implements is the inverse of the
   key-name allow-list it replaced** (`basicly-vbl35a`, landed 2026-08-19 at `6435977d`).
   `FOLD_READ_KEYS` names the 22 payload keys the fold and its delegates read *by name*, which
-  the cap may never cut. `KIND_TEXT_BYTES` declares the bound per kind: eleven kinds are
-  declared, nine of them at 4096 bytes, and `created` and `artifact` store their payload whole
-  for reasons stated at the declaration. Everything outside the fold-read set is therefore
+  the cap may never cut. `KIND_TEXT_BYTES` declares the bound per kind: twelve kinds are
+  declared, ten of them at 4096 bytes, and `created` and `artifact` store their payload whole
+  for reasons stated at the declaration [measured 2026-08-21, `events.KIND_TEXT_BYTES`].
+  Everything outside the fold-read set is therefore
   **cut by default**, so a new payload key is bounded without anyone remembering to name it,
   and **a kind that declares no bound is refused rather than stored unbounded** — the single
   refusal in a cap whose point is that it does not refuse. That refusal reaches a nested body,
@@ -3230,36 +3236,31 @@ will type it, and the output it will print.
 2. **The artifacts travel as `artifact` events in the owned ledger**, typed by artifact
    kind and never truncated. The argument is
    [D-36](#d-36--a-handoff-artifact-is-a-typed-ledger-event-bounded-by-derivability-rather-than-by-a-byte-cap).
-   `[TARGET]` **The transport below is what runs today, and it is losing artifacts.**
 
-**Until D-36 lands, the marker seam carries them, and it cuts 58% of them.** An artifact is
-one `[harness-artifact]` comment marker, so its body is a `text` payload key, so the
-per-event cap in [32.10](#3210-the-per-event-size-cap-and-honest-truncation) applies to it.
-A JSON body cut at 4096 bytes stops being JSON.
+**The typed transport has landed, and the marker family is now read-only** (`basicly-pp7q4i`,
+`basicly-wug2o2`, both closed). An artifact is one `artifact` event whose kind is a typed field
+and whose body sits under a payload key `KIND_TEXT_BYTES` declares unbounded, so the per-event
+cap of [32.10](#3210-the-per-event-size-cap-and-honest-truncation) cannot reach it. Measured
+2026-08-21 over this repository's committed ledger: **10 `"kind":"artifact"` events**, six
+`change-summary` and four `release-record`, across six records — against a positive control of
+61 `[harness-artifact]` comment markers, so neither number belongs to the probe.
 
-**`basicly-vbl35a` did not stop this, and the distinction is the whole point.** That change
-made the `artifact` *kind* declare that it stores its payload whole, so a typed artifact event
-would not be cut. **There is no typed artifact event.** Re-measured 2026-08-19 at `4e7dfa3a`
-over this repository's committed ledger: **59 `[harness-artifact]` comment markers, and zero
-`"kind":"artifact"` events** — against a positive control of 2,704 `"kind":"comment"` events,
-so the zero belongs to the population and not to the probe. Artifacts still travel as capped
-comment markers, and they are still being lost.
-
-**The loss to date**, re-measured 2026-08-19 at `4e7dfa3a`: **34 of the 59 artifacts ever
-written are cut, and 369,018 bytes are gone.** The producer validates the payload it composed
-and the consumer reads the payload that was stored, and those are not the same bytes, so of
-the 50 distinct record-and-kind pairs the consumer's last-marker-wins rule resolves to, **all
-25 truncated pairs are refused by their own entry predicate** — against a control of the 25
-intact pairs, every one of them admitted. Two of the 25 are `implementation-plan`s, and one of
-those, `basicly-ejdm`, is an open item that cannot leave DECOMPOSE because of it. **The figure
-grows with the log, which is why it is pinned to a commit rather than stated flat:** it was 31
-of 54 and 337,353 bytes on 2026-08-18, and 24 of 48 pairs earlier on 2026-08-19 at
-`a2ce9b42`. The bodies are unrecoverable: the external store is deleted, and
+**The historical loss is frozen, not ongoing, and it is the reason this passage stays.** The
+old transport was one `[harness-artifact]` comment marker, so its body was a `text` payload key
+and the cap applied to it, and a JSON body cut at 4096 bytes stops being JSON. Measured
+2026-08-21: **35 of the 61 markers ever written are cut**, and of the 52 distinct
+record-and-kind pairs the reader's last-marker-wins rule resolves to, **26 resolve to a
+truncated body** — against a control of the 26 intact pairs, every one of them admitted. Those
+bodies are unrecoverable: the external store is deleted, and
 [32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) forbids rewriting the log.
-`basicly-pp7q4i` is the fix, and `basicly-wug2o2` makes the refusal say truncation instead
-of reporting a schema violation on a fragment.
+`artifact_record.cut_violation` is what a cut pair now refuses through, so
+`handoff.entry_verdict` names truncation rather than reporting a schema violation on a
+fragment.
 
-Marker storage is idempotent on the whole body, and a read takes the last matching marker.
+**Two counts moved and one did not, which is why the marker figures are re-measured rather
+than carried.** The marker population grows only while a producer writes to it, and none does;
+the pair count grows with any later read of an old record. Marker storage was idempotent on the
+whole body, and a read still takes the last matching marker.
 
 **Two relaxations weaken even the wired pair. Both are deliberate, and the code states
 both.**
