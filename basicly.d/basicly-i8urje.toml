@@ -1,0 +1,40 @@
+# `basicly worktree create <record>` now writes the binding it just earned, so the loop
+# derives `build` for a lane it did not seed (basicly-i8urje). `derive_phase` reads `build`
+# off the binding alone; the hand path provisioned the tree, the branch, the dependencies
+# and the hooks and recorded nothing, so three records landed green on main and every one
+# had to be closed by hand, with no landing gate, no ship checkpoint and no release record.
+#
+# `src/basicly/cli.py` needs no rebaseline, but only just: 53717 -> 54323 against the frozen
+# 54336, so 13 tokens are left. Prose share 26.4 -> 26.7 with no frozen entry and a 50.0 cap.
+# No existing comment was cut to hold that number; the ~60 tokens taken back out of the
+# change were restatements inside its own new docstring, and every claim it makes survives.
+#
+# `tests/test_worktree.py` +696 over its frozen 7562, the module having sat exactly on it.
+# Three tests, one per criterion the record can assert at this layer, and each was shown to
+# fail against a mutant of the fix before it was kept:
+#
+#   +~330  the demonstration: `worktree create` on a seeded record, then `read_node_state`
+#          showing `build` and the binding, against a control record that is the same open
+#          task with no worktree and still derives `intake`. Both halves fail with the
+#          binding write removed.
+#   +~200  the second-create refusal: a record already carrying a binding is refused before
+#          provisioning, so neither a second binding nor a second tree appears. The held
+#          binding's branch may hold unlanded commits, which is what overwriting the ref
+#          would make unreachable.
+#   +~170  the unchanged-behaviour control, and it is the one that needs a live ledger: a
+#          repo with no tracker passes it by never being asked, so the fixture seeds a real
+#          ledger, the lookup runs, finds nothing, and the ledger is asserted still empty.
+#          An unconditional write fails it.
+#
+# The alternative measured and refused: a new `tests/test_worktree_binding.py` under the
+# §9.4 `test_<module>_<aspect>` split. `test_worktree.py`'s preamble — `_git`, `_init_repo`,
+# the `git_repo` fixture and the autouse `_stub_provisioning` — is 440 tokens on this
+# measure, and a new module either duplicates it or moves it to `conftest.py`, which rewrites
+# the fixtures under 40 tests this record's scope does not name. Spending 440 tokens of
+# duplicated fixture to avoid 696 of debt buys the drift `check_test_naming` exists to stop.
+# Cutting prose from `test_worktree.py` to pay for the code is refused outright.
+[ratchet.module_size]
+rebaseline_reason = "tests/test_worktree.py: the record's own demonstration (bound record derives build, control derives intake), the already-bound refusal, and the not-a-record control that only a live ledger can discriminate; the module sat exactly on its frozen number and its 440-token fixture preamble makes a split a duplication rather than an extraction"
+
+[ratchet.module_size.rebaselined]
+"tests/test_worktree.py" = 696
