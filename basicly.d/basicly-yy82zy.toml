@@ -1,0 +1,59 @@
+# Every committed mermaid block, drawn by the renderer the reader's browser runs
+# (basicly-yy82zy, backlog B3). 17 blocks — 16 in the architecture document, 1 in the README
+# — and nothing looked at any of them: a block with an error renders as a red box on the
+# hosting site, and no gate here could see it. One revision named a `sequenceDiagram`
+# participant `Loop`, which collides with mermaid's `loop` keyword; a parser caught that,
+# review did not.
+#
+# **The criterion is renders, never parses**, and that is a measurement rather than a
+# preference. `mermaid.parse` stops at the grammar and never runs the diagram's own `draw`.
+# Probed against 11.16.1, three blocks parse clean and refuse to render: a subgraph whose id
+# repeats a node id ("would create a cycle"), a `gantt` task with an unparseable date, and a
+# `stateDiagram-v2` note on a state that does not exist ("No such shape: undefined"). A gate
+# written to `parse` passes all three, which is the shape B3 refused in advance.
+# `tests/test_check_mermaid.py` runs those three through both instruments and asserts the
+# parser accepts every one, so the criterion stays a measurement and not a comment.
+#
+# **The renderer is pinned to the one the hosting surface serves.** B3's open question was
+# which that is, because a check pinned to the wrong renderer is a gate that agrees with
+# itself. Established 2026-08-21: `.github/workflows/pages.yml` publishes `site/` alone and
+# `site/` holds no markdown, so **Pages renders none of these blocks** — the surface a reader
+# sees is github.com's own markdown view, which draws mermaid in an iframe from
+# `viewscreen.githubusercontent.com/markdown/mermaid`. That bundle's `renderer.draw` call
+# carries the literal `11.16.1`, and the same probe against unpkg's `mermaid@11.16.1` and
+# `mermaid@11.17.0` returns each package's own number, which is the control that makes the
+# literal a version and not a coordinate. `package.json` pins `mermaid` at exactly 11.16.1,
+# the check prints both numbers, and a drift between them fails — a line printed by a passing
+# gate is a line nobody reads.
+#
+# **No skip, and no empty pass.** A missing node, a missing install, a renderer that writes
+# nothing usable and a tree with zero blocks all exit non-zero. A skip and a pass are the same
+# line in a log, and the skip is the one that ships the red box; an empty population is the
+# collector breaking, not the tree being clean.
+#
+# 147 packages and 192 MB, measured after `npm install`: `mermaid` plus `jsdom`, and
+# deliberately **not** `@mermaid-js/mermaid-cli`, which declares a `puppeteer` peer dependency
+# and would download a browser. `find node_modules -iname '*chrom*' -o -iname '*puppeteer*'`
+# returns nothing. The two `npm audit` advisories both predate this change — js-yaml 5.2.0,
+# reached only through `markdownlint-cli2`.
+#
+# `.scripts/render_mermaid.mjs` is the node half, because only node can load mermaid. jsdom
+# stands in for the browser and its text measurements are shimmed, which is load-bearing
+# rather than incidental: with the usual zero-sized stubs the layout maths degenerates and
+# refuses **valid** diagrams — a `classDiagram` carrying a note, a `mindmap` with no canvas.
+# Both are in the good-block fixture so a shim that stops being good enough is a red test and
+# not a waived gate.
+#
+# A repo-local script rather than a CLI subcommand, on the same grounds as `module-size` and
+# `code-citations`: the documents are basicly's own and a consumer's hosting surface would be
+# its own decision with its own pinned renderer. `uv run python`, not a bare `python`, per the
+# note above `basicly.toml`'s `docs-claims` entry.
+#
+# No `fix_command`. A refused block has no mechanical repair — the diagram has to say what the
+# author meant — and the renderer's message plus the file and line is the whole mechanism. In
+# `fast` as well as `full`: 1.54-1.75 s over three runs on this machine, node start and the
+# mermaid import being nearly all of it, against `pyright` in the same mode.
+[[verify.checks]]
+name = "mermaid"
+command = ["uv", "run", "python", ".scripts/check_mermaid.py"]
+modes = ["fast", "full"]
