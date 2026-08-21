@@ -1,0 +1,33 @@
+<!doctype html><html><head><style>
+ body { margin:0; font:14px/1.2 system-ui, sans-serif; color:#222 }
+ /* The wall's own defect in miniature. A grid whose rows are a *fixed* height, holding a
+    name too long for its column: the name wraps, the row does not grow, and the row below
+    is painted across the second line. Nothing here overflows - the cell's scroll height
+    equals its client height, because the second line is laid out and then drawn over - so
+    this page is the positive control for overlap and the negative control for clipping. */
+ .fixed-rows  { display:grid; grid-template-columns:repeat(2, 110px);
+                grid-template-rows:repeat(2, 1.2em); gap:0 16px; width:236px }
+ /* `baseline`, not the default `stretch`: a stretched child is resized to the fixed row and
+    the wrap is invisible to a box measurement. The wall's own cell aligns on the baseline. */
+ .fixed-rows .cell { align-items:baseline; display:flex; min-width:0 }
+ /* Adjacent and touching, never overlapping: two boxes that share an edge intersect by zero
+    in one axis, and sub-pixel rounding makes that zero a fraction. */
+ .apart       { display:flex; margin-top:60px }
+ .apart span  { border:1px solid #333; padding:2px }
+ /* A parent carrying text around a child carrying text. Their boxes intersect by
+    construction, on every page ever written, and neither is a defect. */
+ .nested      { margin-top:12px }
+ /* Out of flow and drawn over its neighbour *on purpose*, which is what an overlay is. */
+ .layer       { position:relative; margin-top:12px; height:2em }
+ .layer .over { position:absolute; top:0; left:0; background:#ffd }
+</style></head><body>
+ <div class="fixed-rows">
+  <div class="cell"><div class="name">a deliberately over long name</div></div>
+  <div class="cell"><div class="name">short</div></div>
+  <div class="cell"><div class="name">painted over</div></div>
+  <div class="cell"><div class="name">short</div></div>
+ </div>
+ <div class="apart"><span>one</span><span>two</span><span>three</span></div>
+ <p class="nested">outer text <span>inner text</span> more outer text</p>
+ <div class="layer">underneath<span class="over">an overlay is not a defect</span></div>
+</body></html>

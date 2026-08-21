@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report every element of a rendered page whose content overflows its own box.
+"""Report two geometry faults of a rendered page: a box that clips, and boxes that collide.
 
 A green check set cannot see a clip. Three board pages shipped in one day with every
 gate passing and a region cut off the screen: a schema dump nobody could read, five
@@ -11,6 +11,15 @@ is a human act that does not scale and does not survive a handover.
 silence and the absence of a scrollbar proves nothing. The measurement is the DOM's own:
 an element whose `scrollWidth`/`scrollHeight` exceeds its `clientWidth`/`clientHeight`
 holds more than it shows.
+
+**Overlap is a second fault and it needs a second signal.** The day after this landed it
+reported zero on a wall where two gate names were painted over the two below them, and it
+was right to: an element drawn across its neighbour does not overflow. Its content fits
+its own box - the box is simply in the same place as another box, because a fixed row
+height was allotted to a name that took two lines. So the two are measured side by side
+and reported apart, one line each, and neither is folded into the other: an overlap
+report is a pairwise intersection of the boxes that carry text, an overflow report is an
+element measured against itself, and a page can fail either alone.
 
 Deliberately **not** a `[[verify.checks]]` entry: continuous integration has no browser,
 and a check that skips reads as a pass - this repository's own failure-semantics table
@@ -52,9 +61,20 @@ TOLERANCE_PX = 2
 # back the document and never the log.
 _MARKER = "data-overflow-report"
 
+# How the two signals name themselves in the output. Spelled once, because the pass line and
+# the failure line of each have to agree, and a reader greps for the prefix.
+OVERFLOW = "render-overflow"
+OVERLAP = "render-overlap"
+
 _PROBE = """
 <script>
 window.addEventListener('load', function () {
+  // How a finding names the element it found, in the order a reader recognises it.
+  var names = function (el) {
+    return el.id || (el.className && el.className.toString ? el.className.toString() : '')
+      || el.tagName.toLowerCase();
+  };
+  var says = function (el) { return el.textContent.trim().slice(0, 40); };
   var out = [];
   document.querySelectorAll('*').forEach(function (el) {
     var css = getComputedStyle(el);
@@ -79,9 +99,63 @@ window.addEventListener('load', function () {
       });
     }
   });
+  // The second signal. Only the elements that *carry text* are paired: a wrapper drawn over
+  // a wrapper loses nothing a reader can see, and pairing every element on the page turns a
+  // two-row collision into a hundred findings nobody reads.
+  var carriers = new Set();
+  document.querySelectorAll('*').forEach(function (el) {
+    var owns = Array.prototype.some.call(el.childNodes, function (node) {
+      return node.nodeType === 3 && node.textContent.trim() !== '';
+    });
+    if (!owns) { return; }
+    var css = getComputedStyle(el);
+    // Out of flow is stacked *on purpose*: an overlay, a tooltip and a sticky header are all
+    // drawn over their neighbours by design, and a measurement that calls that a defect
+    // cannot be left on. Only the normal flow is claimed here.
+    if (css.position === 'absolute' || css.position === 'fixed' || css.position === 'sticky') {
+      return;
+    }
+    // Nothing is painted over an element a reader cannot see in the first place.
+    if (css.visibility === 'hidden' || css.opacity === '0') { return; }
+    var box = el.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) { return; }
+    carriers.add(el);
+  });
+  // Only the *outermost* carrier of each run of text. An inline element's rect is its font's
+  // em box, not its line box, so a monospace glyph inside a sans line sticks a few pixels out
+  // of the block that lays it out and intersects the block above - six such pairs on the
+  // board, against one real collision. The ancestor's box holds the inner one anyway, so a
+  // real collision is still reported; only the duplicate naming of it is lost.
+  var texted = [];
+  carriers.forEach(function (el) {
+    for (var up = el.parentElement; up; up = up.parentElement) {
+      if (carriers.has(up)) { return; }
+    }
+    texted.push({ el: el, box: el.getBoundingClientRect() });
+  });
+  var collided = [];
+  for (var i = 0; i < texted.length; i++) {
+    for (var j = i + 1; j < texted.length; j++) {
+      var a = texted[i], b = texted[j];
+      // An ancestor's box holds its descendant's by construction, so the pair intersects on
+      // every page ever written. `<p>outer <span>inner</span></p>` is not a collision.
+      if (a.el.contains(b.el) || b.el.contains(a.el)) { continue; }
+      var ix = Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left);
+      var iy = Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top);
+      // Both axes, and both above the tolerance: two boxes that share an edge intersect in
+      // one dimension by zero, and sub-pixel rounding makes that zero a fraction.
+      if (ix > TOL && iy > TOL) {
+        collided.push({
+          a: names(a.el), b: names(b.el), text_a: says(a.el), text_b: says(b.el),
+          shared_x: Math.round(ix), shared_y: Math.round(iy)
+        });
+      }
+    }
+  }
   document.body.setAttribute('MARKER', JSON.stringify({
     viewport: [document.documentElement.clientWidth, document.documentElement.clientHeight],
-    clipped: out
+    clipped: out,
+    collided: collided
   }));
 });
 </script>
@@ -173,16 +247,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if not args.page.is_file():
-        print(f"render-overflow: no such page: {args.page}", file=sys.stderr)
-        return 2
+        return _refuse(f"no such page: {args.page}")
     browser = find_browser()
     if browser is None:
-        print(
-            "render-overflow: no chrome, chromium or edge found, so nothing was measured. "
-            "This fails rather than skips: a skip reads as a pass.",
-            file=sys.stderr,
+        return _refuse(
+            "no chrome, chromium or edge found, so nothing was measured. "
+            "This fails rather than skips: a skip reads as a pass."
         )
-        return 2
     try:
         report = _measure_at_viewport(args.page, browser, args.width, args.height)
     except (
@@ -191,23 +262,55 @@ def main(argv: list[str] | None = None) -> int:
         json.JSONDecodeError,
         UnicodeDecodeError,
     ) as exc:
-        print(f"render-overflow: {exc}", file=sys.stderr)
-        return 2
+        return _refuse(str(exc))
 
-    clipped = report["clipped"]
-    viewport = "x".join(str(n) for n in report["viewport"])
+    where = f"{args.page.name} at {'x'.join(str(n) for n in report['viewport'])}"
+    # Both signals report on every run and the exit code is their disjunction. Neither
+    # short-circuits the other: a page that clips nothing may still paint a row over a row,
+    # which is the pair of runs that produced this second signal in the first place.
+    clipped = _report_clipped(report["clipped"], where)
+    return max(clipped, _report_collided(report["collided"], where))
+
+
+def _refuse(reason: str) -> int:
+    """Exit 2 under *both* prefixes: a reader grepping one must not read the silence as a pass."""
+    print(f"{OVERFLOW}/{OVERLAP}: {reason}", file=sys.stderr)
+    return 2
+
+
+def _report_clipped(clipped: list[dict], where: str) -> int:
+    """The overflow signal: elements holding more than their own box shows."""
     if not clipped:
-        print(f"render-overflow: {args.page.name} at {viewport}: nothing is clipped")
+        print(f"{OVERFLOW}: {where}: nothing is clipped")
         return 0
     print(
-        f"render-overflow: {args.page.name} at {viewport}: {len(clipped)} element(s) hold "
-        f"more than they show",
+        f"{OVERFLOW}: {where}: {len(clipped)} element(s) hold more than they show",
         file=sys.stderr,
     )
     for item in clipped:
         name = item["id"] or item["cls"] or item["tag"]
         print(
             f"  {name}: {item['overflow_x']}px wider, {item['overflow_y']}px taller than its box",
+            file=sys.stderr,
+        )
+    return 1
+
+
+def _report_collided(collided: list[dict], where: str) -> int:
+    """The overlap signal: pairs of text-carrying boxes drawn over one another.
+
+    The text each box holds is printed beside its class, because a grid of cells that all
+    share one class is named identically by every other field and `noqa-debt` under
+    `projection-permissions` is the whole finding.
+    """
+    if not collided:
+        print(f"{OVERLAP}: {where}: nothing is drawn over anything")
+        return 0
+    print(f"{OVERLAP}: {where}: {len(collided)} pair(s) of text boxes intersect", file=sys.stderr)
+    for item in collided:
+        print(
+            f"  {item['a']} {item['text_a']!r} over {item['b']} {item['text_b']!r}: "
+            f"{item['shared_x']}x{item['shared_y']}px shared",
             file=sys.stderr,
         )
     return 1

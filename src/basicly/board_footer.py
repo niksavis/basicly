@@ -50,8 +50,13 @@ LINE_MAX = 180
 # The gate strip's capacity, as the grid it reserves rather than as a maximum. The check count
 # is the producer's own and it stood at 12 in the fixture this layout was built against and 36
 # in the tree that drew it, so a strip that took the room its cells needed took it from the
-# region below. Six columns is what a 32-character name fits across the footer's right half,
-# and six rows is what the footer has for it.
+# region below. Six rows is what the footer has for it; six columns is what fits *beside* it,
+# and not what fits a name - measured at six widths, six columns hold the tree's longest check
+# name (`projection-permissions`, 22 characters) only at 1920px, and no column count holds it
+# at every width this layout claims. So the name is truncated by the template rather than
+# wrapped: a wrapped name took a second line the row height had already allotted to the check
+# below and was painted across it (basicly-uvpu6b). :data:`NAME_MAX` bounds what the model
+# hands over, never what the column can show.
 GATE_COLUMNS = 6
 GATE_ROWS = 6
 GATE_SLOTS = GATE_COLUMNS * GATE_ROWS

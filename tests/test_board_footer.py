@@ -14,13 +14,17 @@ Three of these are regressions rather than demonstrations:
   checks and the tree carried 36, so the capacity assertions below are taken against a fixture
   with *more* checks than the tree has - a cap proved only at the count of the day is the
   defect one number along.
+* **The longest gate name wrapped and was painted over the check below it.** The count was
+  bound to the tree and the *width* was not, so the same fixture that proved the cap proved
+  nothing about the name: its longest was `comment-density` while the tree ran
+  `projection-permissions`. The binding below is the missing half.
 """
 
 from __future__ import annotations
 
-from basicly import board_footer, board_wall
+from basicly import board_footer, board_wall, config
 from tests.test_board_regions import _reads
-from tests.test_board_wall import readings
+from tests.test_board_wall import REPO_ROOT, document, readings
 
 
 def test_the_dependency_edge_count_is_read_out_of_the_object_the_schema_declares() -> None:
@@ -128,6 +132,23 @@ def test_the_gate_strip_reserves_the_same_grid_at_thirteen_checks_and_at_forty()
     assert len(few.cells) < len(many.cells), "both fixtures carry the same check count"
     assert (few.columns, few.rows) == (many.columns, many.rows)
     assert (few.columns, few.rows) == (board_footer.GATE_COLUMNS, board_footer.GATE_ROWS)
+
+
+def test_the_render_fixture_carries_a_gate_name_as_long_as_the_longest_the_tree_runs() -> None:
+    """A layout proved against short names is proved at the count of the day, not the width.
+
+    `dense-v1.json` is the fixture the page is rendered at capacity against, so it is the one
+    that has to carry the worst name as well as the worst count. Bound to this repository's
+    own ``[[verify.checks]]`` rather than to a number written down here, because the failure
+    this guards is a longer check name landing and nobody re-measuring the column.
+    """
+    checks = config.load_verify_config(REPO_ROOT).checks
+    longest = max((check.name for check in checks), key=len)
+    drawn = max((check["name"] for check in document("dense-v1.json")["gates"]["checks"]), key=len)
+    assert len(drawn) >= len(longest), (
+        f"the tree runs {longest!r} and the render fixture's longest name is {drawn!r}: "
+        f"the layout is proved against a name shorter than the one it has to draw"
+    )
 
 
 def test_the_health_strip_caps_its_agents_and_names_the_ones_it_did_not_draw() -> None:
