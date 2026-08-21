@@ -1,22 +1,22 @@
-"""The footer: whether the work is moving, whether the tree is green, and what it cost.
+"""The accounting: whether the tree is green, whether the work is moving, and what it cost.
 
-One region below the fold of the wall, and it reads five of the twelve sections - `backlog`
-and `graph` on the left, then `gates`, `spend` and `health` as one strip, then `events` as
-the only prose on the page, then :func:`inventory`.
+Six of the twelve sections, each reduced to what a wall can rank. **A green state costs one
+token; an exception expands** - :func:`gates` is the sharpest case, where a passing set reads
+`GREEN` and only a failing or unrun check spells its own name, which is why the check-name
+overlap it replaces cannot recur: there is no grid of names left to collide.
 
-:func:`inventory` is why the four question regions above are safe to write. It draws the
-verdict's whole roster with a state on each name, so a section that no region reads still
-reports itself, and :func:`legend` spells what those states mean - an absent one reads
-:data:`board_wall.ABSENT_TEXT` and never a nought. Without the pair, a change of layout
-could silently drop a section the schema declares.
+:func:`inventory` is why the regions above are safe to write. It draws the verdict's whole
+roster with a state on each name, so a section that no region reads still reports itself, and
+:func:`legend` spells what those states mean. Without the pair, a change of layout could
+silently drop a section the schema declares.
 
-A sibling of :mod:`basicly.board_regions` rather than part of it: the two share the
-vocabulary in :mod:`basicly.board_wall` and neither reads the other.
+A sibling of :mod:`basicly.board_regions`: the two share :mod:`basicly.board_wall`'s
+vocabulary and neither reads the other.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .board_wall import (
     ABSENT,
@@ -28,9 +28,9 @@ from .board_wall import (
     UNKNOWN,
     WITHHELD,
     Cell,
-    Panel,
     bar,
     clip,
+    day,
     joined,
     more,
     number,
@@ -38,57 +38,61 @@ from .board_wall import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from .board_wall import Reading
 
-# How many event lines the ticker draws before it reports the rest.
-EVENT_LINES = 3
+# One line. A wall answers "is anything happening" and the newest event answers it; the two
+# behind it were a scrolling log at six metres, and the dropped count still says they exist.
+EVENT_LINES = 1
 NAME_MAX = 32
 LINE_MAX = 180
 
-# The gate strip's capacity, as the grid it reserves rather than as a maximum. The check count
-# is the producer's own and it stood at 12 in the fixture this layout was built against and 36
-# in the tree that drew it, so a strip that took the room its cells needed took it from the
-# region below. Six rows is what the footer has for it; six columns is what fits *beside* it,
-# and not what fits a name - measured at six widths, six columns hold the tree's longest check
-# name (`projection-permissions`, 22 characters) only at 1920px, and no column count holds it
-# at every width this layout claims. So the name is truncated by the template rather than
-# wrapped: a wrapped name took a second line the row height had already allotted to the check
-# below and was painted across it (basicly-uvpu6b). :data:`NAME_MAX` bounds what the model
-# hands over, never what the column can show.
-GATE_COLUMNS = 6
-GATE_ROWS = 6
-GATE_SLOTS = GATE_COLUMNS * GATE_ROWS
+# How many exception names the gate token spells before it stops naming them. Not a layout
+# capacity - there is no grid left to overflow - but a bound on the one arrangement that would
+# put all 36 names back on the wall: a tree where everything failed.
+GATE_NAMES = 4
 
-# The footer's other two open-ended populations. `health` draws one line per agent, and
-# `by_priority` is keyed by the producer's own label vocabulary, which the schema declines to
-# close - "a fixed set would silently drop a label" - so neither has a length the page can
-# assume. Health reserves its grid for the same reason the gate strip does: four agents where
-# the last snapshot had two would otherwise take the height off the region above.
-HEALTH_COLUMNS = 2
-HEALTH_ROWS = 2
-HEALTH_SLOTS = HEALTH_COLUMNS * HEALTH_ROWS
+# The two open-ended populations that remain: one cell per agent, and `by_priority` keyed by the
+# producer's own label vocabulary, which the schema declines to close - "a fixed set would
+# silently drop a label". Neither has a length the page can assume, so each says what it dropped.
+HEALTH_SLOTS = 4
 PRIORITY_SLOTS = 8
 
+# The event kind a producer writes a lifecycle change under, and the status counted. Both are
+# the producer's vocabulary: `events[].kind` is an open string, so a producer that records no
+# status change supplies no throughput and the figure is absent rather than nought.
+STATUS_KIND = "status"
+CLOSED_STATUS = "closed"
+
 _BACKLOG_KEYS = ("total", "active", "ready", "blocked", "in_progress", "closed")
-_SPEND_KEYS = ("scope", "lifetime_usd", "largest_dispatch_usd", "input_tokens", "output_tokens")
+# Each spend figure and its unit: four bare numbers in a row is a quantity nobody can name.
+# `scope` is not here, because it is drawn first and verbatim.
+_SPEND_UNITS = {
+    "lifetime_usd": "usd",
+    "largest_dispatch_usd": "usd largest",
+    "input_tokens": "in",
+    "output_tokens": "out",
+}
 _HEALTH_KEYS = ("runs", "score", "failure_rate", "drift")
-_GATE_STATE = {"pass": RENDERABLE, "fail": FAIL, "not_run": ABSENT}
-# What the gate strip's caption spells, and the word it spells each key as.
+# The producer's word for a check result, per state. One direction only: the token names the
+# exceptions, so nothing looks a passing check up.
+_STATUS_WORD = {FAIL: "fail", ABSENT: "not_run"}
+# What the gate token's caption spells, and the word it spells each key as.
 _GATE_CAPTION = {"mode": "mode", "recorded_at": "recorded"}
 
 
-def backlog(reads: Mapping[str, Reading]) -> Panel:
-    """The backlog counts, the closed bar, and the edge count that explains a blocked one.
+def backlog(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
+    """The backlog counts on one line, the closed bar, and the edge count beside them.
 
     ``graph`` is read here rather than given a region because the schema says what it is for:
     edges are "the answer to why an item is not ready - the one question a count of blocked
-    items raises and cannot settle", so the count belongs beside that question.
+    items raises and cannot settle". A section that could not be read is one cell carrying its
+    own note, the shape :func:`spend` and :func:`health` also take.
     """
     read, edges = reads["backlog"], reads["graph"]
     if not read.drawn:
-        return Panel("backlog", read.state, read.note)
+        return (Cell("backlog", read.note, read.state),)
     held = read.fields
     closed = bar(held.get("closed"), held.get("total"))
     cells = [
@@ -98,7 +102,7 @@ def backlog(reads: Mapping[str, Reading]) -> Panel:
     held_edges = edges.fields.get("edges")
     counted = number(len(held_edges)) if isinstance(held_edges, list) else UNKNOWN
     cells.append(Cell("dep edges", counted if edges.drawn else edges.note, edges.state))
-    return Panel("backlog", read.state, "", tuple(cells))
+    return tuple(cells)
 
 
 def priorities(reads: Mapping[str, Reading]) -> tuple[tuple[Cell, ...], str]:
@@ -122,70 +126,78 @@ def priorities(reads: Mapping[str, Reading]) -> tuple[tuple[Cell, ...], str]:
     return cells, more(len(labels) - PRIORITY_SLOTS, "priorities")
 
 
-def _gates(read: Reading) -> Panel:
-    """The gate strip: the mode and the stamp above it, then a glyph per check, capped.
+def _named(rows: Sequence[Mapping[str, Any]], status: str) -> list[str]:
+    """The names of the checks recorded at *status*, in the producer's own order."""
+    return [
+        clip(check.get("name", UNKNOWN), NAME_MAX)
+        for check in rows
+        if str(check.get("status")) == status
+    ]
 
-    The mode and the stamp are the caption rather than two cells because the checks below are
-    a reserved grid of one-line names, and a two-line cell among them would take a row the
-    grid had allotted to a check. Neither carries a glyph: the strip's own title already holds
-    the verdict, and a second badge saying the same thing below it is the duplication this
-    render removed.
+
+def _verdict(rows: Sequence[Mapping[str, Any]], passed: object) -> tuple[str, str]:
+    """The whole check set as one token, and the state key that token is drawn in.
+
+    A failing check names itself, an unrun one names itself, and a set with neither reads
+    `GREEN`. ``passed`` wins over the rows: a producer that says it failed while emitting no
+    failing row is reporting something these names cannot show, and `FAILING` with no name is
+    the honest reading of that.
     """
+    for status, word in ((FAIL, "FAILING"), (ABSENT, "NOT RUN")):
+        named = _named(rows, _STATUS_WORD[status])
+        if named:
+            dropped = more(len(named) - GATE_NAMES, "checks")
+            spelled = DOT.join([*named[:GATE_NAMES], *([dropped] if dropped else [])])
+            return f"{len(named)} {word}: {spelled}", status
+    return ("GREEN", RENDERABLE) if passed is not False else ("FAILING", FAIL)
+
+
+def gates(reads: Mapping[str, Reading]) -> tuple[Cell, str]:
+    """The whole gate set as one token, and the run that produced it beneath.
+
+    The caption is the mode and the stamp, because a token saying `GREEN` is worth nothing
+    without which suite said so and when. `gates` is an object carrying a `checks` array, not
+    an array section, so the list comes out of the fields: reading it as
+    :attr:`board_wall.Reading.rows` is how the edge count came back a zero.
+    """
+    read = reads["gates"]
     if not read.drawn:
-        return Panel("gates", read.state, read.note)
+        return Cell("gates", read.note, read.state), ""
     held = read.fields
-    passed = held.get("passed")
-    state = BY_KEY[RENDERABLE if passed else FAIL] if isinstance(passed, bool) else read.state
-    # `gates` is an object carrying a `checks` array, not an array section, so the list comes
-    # out of the fields: reading it as `Reading.rows` is how the edge count came back a zero.
     checks = held.get("checks")
     rows = [
         check for check in (checks if isinstance(checks, list) else []) if isinstance(check, dict)
     ]
-    cells = tuple(
-        Cell(
-            clip(check.get("name", UNKNOWN), NAME_MAX),
-            "",
-            BY_KEY[_GATE_STATE.get(str(check.get("status")), ABSENT)],
-        )
-        for check in rows[:GATE_SLOTS]
-    )
+    token, state = _verdict(rows, held.get("passed"))
     caption = DOT.join(
         f"{word} {held[key]}" for key, word in _GATE_CAPTION.items() if held.get(key)
     )
-    return Panel(
-        "gates",
-        state,
-        "",
-        cells,
-        caption=clip(caption, LINE_MAX) if caption else UNKNOWN,
-        more=more(len(rows) - GATE_SLOTS, "checks"),
-        columns=GATE_COLUMNS,
-        rows=GATE_ROWS,
-    )
+    return Cell("gates", token, BY_KEY[state]), clip(caption, LINE_MAX) if caption else UNKNOWN
 
 
-def _spend(read: Reading) -> Panel:
-    """The spend strip. ``scope`` is drawn verbatim: machine-local is not a team total."""
+def spend(reads: Mapping[str, Reading]) -> Cell:
+    """What this machine has been billed, as one status-bar cell.
+
+    ``scope`` is drawn verbatim and first: machine-local is not a team total, and a currency
+    figure with no scope beside it reads as one.
+    """
+    read = reads["spend"]
     if not read.drawn:
-        return Panel("spend", read.state, read.note)
-    cells = tuple(
-        Cell(
-            key.replace("_", " "),
-            str(read.fields.get(key, UNKNOWN)) if key == "scope" else number(read.fields.get(key)),
-        )
-        for key in _SPEND_KEYS
-    )
-    return Panel("spend", read.state, "", cells)
+        return Cell("spend", read.note, read.state)
+    held = read.fields
+    figures = [f"{number(held.get(key))} {unit}" for key, unit in _SPEND_UNITS.items()]
+    spelled = clip(DOT.join([str(held.get("scope", UNKNOWN)), *figures]), LINE_MAX)
+    return Cell("spend", spelled, read.state)
 
 
-def _health(read: Reading) -> Panel:
-    """The health strip, one line per agent, capped. The agent names the row, never its index."""
+def health(reads: Mapping[str, Reading]) -> tuple[tuple[Cell, ...], str]:
+    """One cell per agent, capped, and what the cap dropped. The agent names its own cell."""
+    read = reads["health"]
     if not read.drawn:
-        return Panel("health", read.state, read.note)
+        return (Cell("agents", read.note, read.state),), ""
     agents = read.dicts
     if not agents:
-        return Panel("health", read.state, "no run in the producer's window")
+        return (Cell("agents", "no run in the producer's window", read.state),), ""
     cells = tuple(
         Cell(
             clip(agent.get("agent", UNKNOWN), NAME_MAX),
@@ -193,28 +205,37 @@ def _health(read: Reading) -> Panel:
         )
         for agent in agents[:HEALTH_SLOTS]
     )
-    return Panel(
-        "health",
-        read.state,
-        "",
-        cells,
-        more=more(len(agents) - HEALTH_SLOTS, "agents"),
-        columns=HEALTH_COLUMNS,
-        rows=HEALTH_ROWS,
-    )
+    return cells, more(len(agents) - HEALTH_SLOTS, "agents")
 
 
-def strips(reads: Mapping[str, Reading]) -> tuple[Panel, ...]:
-    """Gates, spend and health as one footer strip, in that order."""
-    return (_gates(reads["gates"]), _spend(reads["spend"]), _health(reads["health"]))
+def throughput(reads: Mapping[str, Reading], today: str) -> Cell:
+    """How many units the producer recorded closed on *today*, or that it cannot say.
+
+    The one figure that answers "is the factory improving" rather than "how big is the pile".
+    Distinct records, not rows: a unit closed twice is one unit closed.
+
+    **Absent, never nought.** A producer that records no :data:`STATUS_KIND` row at all has not
+    measured this and the cell says so; one that records them and closed nothing today is a
+    measured zero. An undateable row is in no day, so it cannot fall into this one.
+    """
+    read = reads["events"]
+    rows = [row for row in read.dicts if str(row.get("kind")) == STATUS_KIND] if read.drawn else []
+    if not rows or not today:
+        return Cell("closed today", UNKNOWN, BY_KEY[ABSENT])
+    closed = {
+        str(row.get("issue", ""))
+        for row in rows
+        if CLOSED_STATUS in str(row.get("text", "")).split() and day(row.get("at")) == today
+    }
+    return Cell("closed today", number(len(closed)), read.state)
 
 
 def events(reads: Mapping[str, Reading]) -> tuple[tuple[str, ...], str]:
-    """The last few events newest first, and how many older ones were not drawn.
+    """The newest events, and how many older ones were not drawn.
 
     The only region that reads as prose, and the dropped count is returned beside the lines
     rather than appended to them: the ticker's row height is fixed at :data:`EVENT_LINES`, so
-    a fourth line would be the content the marker exists to account for.
+    one more line would be the content the marker exists to account for.
     """
     read = reads["events"]
     if not read.drawn:

@@ -154,3 +154,33 @@ def test_a_number_the_producer_never_gave_reads_unmeasured() -> None:
     assert board_wall.number(0) == "0"
     assert board_wall.duration(None) == board_wall.UNKNOWN
     assert board_wall.duration(3661) == "1h 1m"
+
+
+@pytest.mark.parametrize(
+    ("seconds", "spelled"),
+    [
+        (536_280, "6 DAYS"),
+        (86_400, "1 DAY"),
+        (86_399, "23 HOURS"),
+        (3600, "1 HOUR"),
+        (3599, "59 MINUTES"),
+        (60, "1 MINUTE"),
+        (59, "59 SECONDS"),
+        (1, "1 SECOND"),
+        (0, "0 SECONDS"),
+    ],
+)
+def test_a_headline_age_is_the_coarsest_unit_that_is_still_true(seconds: int, spelled: str) -> None:
+    """`6 DAYS`, not `148h 52m`, and truncating rather than rounding is what keeps it honest.
+
+    Every boundary in both directions, because the failure this guards is a wall reading one
+    unit too coarse - `86399` seconds rounded up is a day that has not happened.
+    """
+    assert board_wall.coarse(seconds) == spelled
+
+
+def test_an_undatable_stamp_falls_into_no_day_at_all() -> None:
+    """The throughput figure keys on this, so a row nobody could date must not land in today."""
+    assert board_wall.day("2026-08-21T22:15:00Z") == "2026-08-21"
+    assert board_wall.day("not a stamp") == ""
+    assert board_wall.day(None) == ""

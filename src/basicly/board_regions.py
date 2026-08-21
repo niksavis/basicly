@@ -48,6 +48,7 @@ from .board_wall import (
     bar,
     cell,
     clip,
+    coarse,
     duration,
     joined,
     more,
@@ -75,32 +76,51 @@ PHASES: tuple[str, ...] = (
     "ship",
 )
 
-# How many items a fixed-height region draws before it reports the rest. Slots rather than a
-# maximum: the in-flight row keeps its shape at one lane and at six, so an empty frame reads
-# as spare capacity instead of as a layout that moved when a number changed.
+# How many items a capped region draws before it reports the rest. The running row no longer
+# reserves empty frames: a dashed placeholder announcing nothing three times is 40% of a wall
+# spent on the state that costs one token, so an empty row collapses to a line and the ready
+# list takes the width. The cap survives because six live lanes still have to fit.
 FLIGHT_SLOTS = 6
 READY_SLOTS = 8
-BAND_ASKS = 2
-EVENT_LINES = 3
+
+# What the ready list draws once the running row has collapsed and handed it the page, and how
+# long a title may be there. The eight rows and 62-character titles of the narrow column leave
+# two thirds of a 1080px screen blank and still truncate every line.
+#
+# **Both figures are the shortest wall this layout claims, not the roomiest.** Measured off the
+# rendered page: 1440x900 gives the reclaimed region 373px of content box, because the status
+# bar, the backlog line and the section roster each take a second line at that width, so 14
+# rows of 24.1px under an 18.2px heading is what fits - against 26 at 1920x1080. A count taken
+# at the roomiest width is the defect this repository already paid for once: the gate-name
+# overlap reproduced at 1200 through 1800 and was absent at 1920, which is why it passed review.
+READY_SLOTS_WIDE = 14
+READY_TITLE_WIDE = 110
+
+# One ask on the band, not two. The age is the headline now, and an age belongs to exactly one
+# ask - the one that has waited longest. A second detail line under a 44px headline is what
+# pushes the alarm past the height the design gives it; the dropped count names the rest.
+BAND_ASKS = 1
 
 QUESTION_MAX = 70
 
 
 def head(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
-    """The header strip: which tree, which run, and what the run is allowed to spend.
+    """The status bar's tree half: which checkout, and what the run is allowed to spend.
 
-    The spend bar sits at the top rather than in the footer because "are we about to spend
-    money we did not agree to" is the one number that has to be legible before anything else.
+    Two cells, not four. The grant is one cell rather than a name beside a token count
+    because the bar already carries the share and the raw figure is a debugging view; the
+    producer's name and version moved beside the freshness sentence, which is the sentence
+    it is the producer *of*.
     """
     session = reads["session"]
     spent = session.fields.get("spent_tokens")
     return (
         cell(reads["repo"], "repo", ("name", "branch", "head")),
-        cell(reads["session"], "run", ("root", "root_status", "grant_level")),
-        cell(reads["generator"], "producer", ("tool", "version")),
         Cell(
-            "tokens",
-            number(spent) if session.drawn else session.note,
+            "run",
+            joined(session.fields, ("root", "root_status", "grant_level"))
+            if session.drawn
+            else session.note,
             session.state,
             bar(spent, session.fields.get("token_budget")),
         ),
@@ -122,13 +142,18 @@ def _ask_line(ask: Mapping[str, Any], now: datetime) -> str:
 
 
 def band(reads: Mapping[str, Reading], drawn: Age, now: datetime) -> Band:
-    """The watch band, which reads five ways and no more.
+    """The alarm, which reads five ways and no more.
 
     Four of them are the ask verdict and exactly one holds: **withheld**, then **absent**,
     then **waiting**, then **calm**, in that precedence - a section that could not be read
     must never be reported as a quiet room. The fifth is the **stale** marker, appended to
     whichever of the four holds rather than replacing it, so a frozen screen says it is
     frozen and still shows the last values it knew.
+
+    **While anybody is waiting the headline is the age**, in the coarsest unit that is still
+    true, because that is what a wall ranks by; the id and the kind go beneath it and the
+    exact elapsed phrase goes with them. An ask nobody could date keeps the alarm and says so
+    rather than borrowing a number.
     """
     read = reads["asks"]
     stale = (
@@ -139,16 +164,18 @@ def band(reads: Mapping[str, Reading], drawn: Age, now: datetime) -> Band:
     )
     if not read.drawn:
         headline = "ASKS WITHHELD" if read.state.key == WITHHELD else "ASKS NOT EMITTED"
-        return Band(read.state, headline, (clip(read.note, NOTE_MAX * 2),), stale)
+        return Band(read.state, headline, "", (clip(read.note, NOTE_MAX * 2),), stale)
     asks = sorted(read.dicts, key=lambda ask: _waited(ask, now) or -1.0, reverse=True)
     if not asks:
         calm = ("no checkpoint and no decision is pending",)
-        return Band(BY_KEY[CALM], "NOTHING IS WAITING", calm, stale)
+        return Band(BY_KEY[CALM], "NOTHING IS WAITING", "", calm, stale)
+    waited = _waited(asks[0], now)
     lines = [_ask_line(ask, now) for ask in asks[:BAND_ASKS]]
     dropped = more(len(asks) - BAND_ASKS, "waiting")
     return Band(
         BY_KEY[WAITING],
-        f"{len(asks)} WAITING ON A PERSON",
+        coarse(waited) if waited is not None else "WAITING",
+        f"{len(asks)} waiting on a person",
         tuple(lines + ([dropped] if dropped else [])),
         stale,
     )
@@ -193,11 +220,21 @@ def loop(reads: Mapping[str, Reading]) -> tuple[tuple[Phase, ...], str]:
             unphased += 1
     here = {_phase_of(row) for row in lanes.dicts} - {""}
     measured = units.drawn and bool(counts)
+    # The whole this row is a share *of* is the phased population and never the units section's
+    # length: an unphased unit is in no phase, so counting it would make every bar short of its
+    # own row by the same wrong amount. Both terms come from the one map, so `bar` refuses the
+    # ratio exactly when the count is unmeasured.
+    population = sum(counts.values())
     row = tuple(
-        Phase(name, counts.get(name, 0) if measured else None, name in here)
+        _phase(name, counts.get(name, 0) if measured else None, name in here, population)
         for name in list(PHASES) + sorted(set(counts) - set(PHASES))
     )
     return row, _loop_note(units, lanes, counts, unphased)
+
+
+def _phase(name: str, count: int | None, here: bool, population: int) -> Phase:
+    """One phase box: its count, its mark, and its share of the phased population."""
+    return Phase(name, count, here, bar(count, population))
 
 
 def _lane_cells(lane: Mapping[str, Any]) -> tuple[Cell, ...]:
@@ -224,10 +261,17 @@ def _lane_cells(lane: Mapping[str, Any]) -> tuple[Cell, ...]:
 
 
 def flight(reads: Mapping[str, Reading]) -> tuple[tuple[Card, ...], str, str]:
-    """The in-flight cards, what was dropped, and why there is nothing to draw."""
+    """The running cards, what was dropped, and the one line that replaces them.
+
+    **No empty slots.** The row used to reserve :data:`FLIGHT_SLOTS` dashed frames so its
+    shape held at one lane and at six; on this repository's own wall that is 40% of the
+    screen announcing nothing three times, while the ready list beside it truncated every
+    title. A green state costs one token, so no lane means no card and the caller collapses
+    the row to its note. The cap still holds because six live lanes still have to fit.
+    """
     read = reads["lanes"]
     lanes = read.dicts if read.drawn else []
-    cards = [
+    cards = tuple(
         Card(
             clip(lane.get("id", UNKNOWN), TITLE_MAX),
             _phase_of(lane) or UNKNOWN,
@@ -236,10 +280,9 @@ def flight(reads: Mapping[str, Reading]) -> tuple[tuple[Card, ...], str, str]:
             _lane_cells(lane),
         )
         for lane in lanes[:FLIGHT_SLOTS]
-    ]
-    cards += [Card("", "", BY_KEY[ABSENT], "")] * (FLIGHT_SLOTS - len(cards))
-    note = read.note if not read.drawn else "" if lanes else "no lane is running"
-    return tuple(cards), more(len(lanes) - FLIGHT_SLOTS, "lanes"), note
+    )
+    note = read.note if not read.drawn else "" if lanes else "no lane is dispatched"
+    return cards, more(len(lanes) - FLIGHT_SLOTS, "lanes"), note
 
 
 def _rank(unit: Mapping[str, Any]) -> tuple[str, str]:
@@ -247,12 +290,16 @@ def _rank(unit: Mapping[str, Any]) -> tuple[str, str]:
     return str(unit.get("priority") or "\N{TILDE}"), str(unit.get("id") or "")
 
 
-def next_up(reads: Mapping[str, Reading]) -> Listing:
+def next_up(reads: Mapping[str, Reading], *, wide: bool = False) -> Listing:
     """The ready set, ranked, with priority, id and title on each row.
 
     Three absences are distinguished and not one of them is a zero: the section not emitted,
     the section emitted with no ``ready`` flag on any row, and a flagged set with nothing in
     it. The middle one is the case a count would have reported as "0 ready".
+
+    *wide* is the shape the list takes when no lane is dispatched and the running row gave it
+    the width: more rows, and a title bound that fits them. Two shapes rather than one because
+    a cap is a promise about a rendered width, and the list has two.
     """
     read = reads["units"]
     if not read.drawn:
@@ -261,14 +308,16 @@ def next_up(reads: Mapping[str, Reading]) -> Listing:
     flagged = [unit for unit in units if isinstance(unit.get("ready"), bool)]
     if not flagged:
         return Listing(BY_KEY[ABSENT], note=f"ready {ABSENT_TEXT} on any of the {len(units)} units")
+    slots = READY_SLOTS_WIDE if wide else READY_SLOTS
+    titles = READY_TITLE_WIDE if wide else TITLE_MAX
     ready = sorted((unit for unit in flagged if unit["ready"]), key=_rank)
     rows = tuple(
         Item(
             str(unit.get("priority") or UNKNOWN),
             clip(unit.get("id", UNKNOWN), TITLE_MAX),
-            clip(unit.get("title") or UNKNOWN, TITLE_MAX),
+            clip(unit.get("title") or UNKNOWN, titles),
         )
-        for unit in ready[:READY_SLOTS]
+        for unit in ready[:slots]
     )
     note = "" if ready else f"nothing is ready of the {len(flagged)} units emitted"
-    return Listing(BY_KEY[RENDERABLE], rows, more(len(ready) - READY_SLOTS, "ready"), note)
+    return Listing(BY_KEY[RENDERABLE], rows, more(len(ready) - slots, "ready"), note)

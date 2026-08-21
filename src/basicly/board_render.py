@@ -45,20 +45,33 @@ def context(document: Mapping[str, Any], verdict: SnapshotVerdict, now: datetime
     cards, flight_more, flight_note = board_regions.flight(reads)
     lines, events_more = board_footer.events(reads)
     hist, priorities_more = board_footer.priorities(reads)
+    agents, health_more = board_footer.health(reads)
+    gates, gates_note = board_footer.gates(reads)
     return {
         "age": drawn,
+        "producer": board_wall.cell(reads["generator"], "producer", ("tool", "version")),
         "head": board_regions.head(reads),
+        "gates": gates,
+        "gates_note": gates_note,
+        "spend": board_footer.spend(reads),
+        # The throughput figure is dated against the *document's* own day, never the reader's:
+        # a page opened after midnight would otherwise report the producer's yesterday as an
+        # empty today.
+        "throughput": board_footer.throughput(reads, board_wall.day(drawn.generated_at)),
         "band": board_regions.band(reads, drawn, now),
         "phases": phases,
         "loop_note": loop_note,
         "cards": cards,
         "flight_more": flight_more,
         "flight_note": flight_note,
-        "ready": board_regions.next_up(reads),
+        # The ready list is handed the shape the running row left it, which is the one place
+        # the layout's two states have to agree with the model's two capacities.
+        "ready": board_regions.next_up(reads, wide=not cards),
         "backlog": board_footer.backlog(reads),
         "priorities": hist,
         "priorities_more": priorities_more,
-        "strips": board_footer.strips(reads),
+        "agents": agents,
+        "health_more": health_more,
         "events": lines,
         "events_more": events_more,
         "inventory": board_footer.inventory(reads),
