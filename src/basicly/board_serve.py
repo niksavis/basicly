@@ -36,7 +36,8 @@ from urllib.parse import urlsplit
 from . import board_render, board_schema, board_snapshot, supervise, ui
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Callable
+from pathlib import Path
 
 # C10, and the only line here that is a security boundary: the loopback literally, never
 # `0.0.0.0` and never a name a resolver is free to point off this box.
@@ -98,10 +99,23 @@ class Board:
     ledger cannot stack up behind itself.
     """
 
-    def __init__(self, repo_root: Path, *, refresh_s: float = DEFAULT_REFRESH_S) -> None:
-        """Hold *repo_root* and the cadence a self-refresh keeps; no I/O until a refresh."""
+    def __init__(
+        self,
+        repo_root: Path,
+        *,
+        refresh_s: float = DEFAULT_REFRESH_S,
+        build: Callable[[], dict[str, object]] | None = None,
+    ) -> None:
+        """Hold *repo_root*, the cadence and how to build; no I/O until a refresh.
+
+        **`build` comes from above, and its absence was a real defect**: folding with the
+        lock facts alone served 0 phases of 232 where `board --out` served 232.
+        `board_facts` sits above this tier, so the caller passes a builder rather than this
+        module reaching upward for one (basicly-sp8lce).
+        """
         self.repo_root = repo_root
         self.refresh_s = refresh_s
+        self._build = build
         self.refreshes = 0
         self.failures = 0
         self._served: bytes | None = None
@@ -111,6 +125,28 @@ class Board:
     def snapshot_path(self) -> Path:
         """Where a supervisor lands its snapshot: the file this process reads and never writes."""
         return self.repo_root / board_snapshot.SNAPSHOT_FILE
+
+    def _fold(self) -> dict[str, object]:
+        """One document, through the caller's builder where it gave one.
+
+        The freshness is this module's either way: a self-refresh is what *this* process
+        does, and a builder written for Mode A cannot know the cadence it is served at.
+        """
+        freshness = board_snapshot.Freshness(
+            source=board_snapshot.SELF_REFRESH,
+            cadence_s=self.refresh_s,
+            stale_after_s=supervise.STALE_AFTER_S,
+        )
+        if self._build is None:
+            facts = board_snapshot.Facts(session=session_facts(self.repo_root))
+            return board_snapshot.build_document(self.repo_root, facts=facts, freshness=freshness)
+        document = self._build()
+        document["freshness"] = {
+            "source": freshness.source,
+            "cadence_s": freshness.cadence_s,
+            "stale_after_s": freshness.stale_after_s,
+        }
+        return document
 
     def refresh(self) -> bool:
         """Fold one document into memory unless a live supervisor owns the tick; did it fold.
@@ -125,15 +161,7 @@ class Board:
         if not self._folding.acquire(blocking=False):
             return False
         try:
-            document = board_snapshot.build_document(
-                self.repo_root,
-                facts=board_snapshot.Facts(session=session_facts(self.repo_root)),
-                freshness=board_snapshot.Freshness(
-                    source=board_snapshot.SELF_REFRESH,
-                    cadence_s=self.refresh_s,
-                    stale_after_s=supervise.STALE_AFTER_S,
-                ),
-            )
+            document = self._fold()
         except Exception:  # noqa: BLE001 — a display must outlive one bad fold
             self.failures += 1
             return False
@@ -299,7 +327,11 @@ class Listener:
 
 
 def bind(
-    repo_root: Path, *, port: int = DEFAULT_PORT, refresh_s: float = DEFAULT_REFRESH_S
+    repo_root: Path,
+    *,
+    port: int = DEFAULT_PORT,
+    refresh_s: float = DEFAULT_REFRESH_S,
+    build: Callable[[], dict[str, object]] | None = None,
 ) -> Listener:
     """Bind :data:`HOST` and fold the first document; a listener that is not yet serving.
 
@@ -307,7 +339,7 @@ def bind(
     arrive: `--port 0` is the documented way to run a second board or a test, and polling a
     fixed port until it opens is exactly the flake that avoids.
     """
-    board = Board(repo_root, refresh_s=refresh_s)
+    board = Board(repo_root, refresh_s=refresh_s, build=build)
     board.refresh()
     return Listener(_httpd=_Server((HOST, port), board), board=board)
 
@@ -319,7 +351,11 @@ def _tick(board: Board, stop: threading.Event) -> None:
 
 
 def serve(
-    repo_root: Path, *, port: int = DEFAULT_PORT, refresh_s: float = DEFAULT_REFRESH_S
+    repo_root: Path,
+    *,
+    port: int = DEFAULT_PORT,
+    refresh_s: float = DEFAULT_REFRESH_S,
+    build: Callable[[], dict[str, object]] | None = None,
 ) -> int:
     """Run the board until SIGINT, then report what it did; the exit code.
 
@@ -328,7 +364,7 @@ def serve(
     not a stream nobody reads.
     """
     try:
-        listener = bind(repo_root, port=port, refresh_s=refresh_s)
+        listener = bind(repo_root, port=port, refresh_s=refresh_s, build=build)
     except OSError as exc:
         ui.warn(f"board: cannot listen on {HOST}:{port} - {exc}")
         return 1

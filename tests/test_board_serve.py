@@ -314,3 +314,32 @@ def test_the_serve_help_carries_both_frozen_claims_and_never_the_word_it_refuses
     assert board_cli.NO_WRITES in printed
     assert "real-time" not in printed
     assert "real time" not in printed
+
+
+def test_the_served_document_carries_what_the_emitted_one_carries(tmp_path: Path) -> None:
+    """Two producers, one contract: the server must not be the poorer of them.
+
+    It was. Measured on a live tree before the fix: the served document carried a phase on
+    0 of 232 units against the emitted document's 232, no `ready` at all, and a `repo`
+    section holding only a name. `board_facts` sits above this tier and cannot be imported
+    here, so the caller passes a builder rather than this module reaching for one - and
+    this test is what keeps a third producer from diverging in silence.
+    """
+    marker = {"schema": "harness-board/v1", "units": [{"id": "demo-1", "phase": "build"}]}
+    board = board_serve.Board(tmp_path, build=lambda: dict(marker))
+
+    assert board.refresh() is True
+    served = json.loads(board.payload() or b"{}")
+
+    assert served["units"] == marker["units"], "the builder's facts must reach the wire"
+
+
+def test_the_served_freshness_is_the_servers_own_cadence(tmp_path: Path) -> None:
+    """A builder written for Mode A cannot know the cadence it is served at."""
+    board = board_serve.Board(tmp_path, refresh_s=7.0, build=lambda: {"schema": "harness-board/v1"})
+
+    assert board.refresh() is True
+    freshness = json.loads(board.payload() or b"{}")["freshness"]
+
+    assert freshness["source"] == board_snapshot.SELF_REFRESH
+    assert freshness["cadence_s"] == 7.0

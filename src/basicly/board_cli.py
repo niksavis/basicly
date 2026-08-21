@@ -144,7 +144,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
     answers, and what the stop line may claim. This is the argv-to-argument seam and nothing
     more, which is what keeps the network surface out of the parser module.
     """
-    return board_serve.serve(Path.cwd(), port=args.port, refresh_s=args.refresh)
+    root = Path.cwd()
+    # The builder, not just the root: `board_facts` sits above `board_serve`, so the
+    # server cannot gather what this layer can. Without it a served document carried no
+    # phase on any unit while `--out` carried 232 - two producers, one contract.
+    return board_serve.serve(
+        root, port=args.port, refresh_s=args.refresh, build=lambda: _document(root)
+    )
 
 
 _HANDLERS = {None: cmd_emit, "serve": cmd_serve, "validate": cmd_validate}
