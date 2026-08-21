@@ -1,0 +1,48 @@
+# The board contract, run against a producer that is not this harness (basicly-rn0o.13).
+#
+# ## What was missing
+#
+# A conformance kit exercised only against the native producer cannot detect cross-producer
+# parity rot, because one implementation is always self-consistent: the check goes green and
+# reports nothing about the *contract*. `board-schema` in `basicly.toml` concedes the same gap
+# from the other side — it validates a hand-written fixture, so it proves the schema and the
+# validator have not drifted apart and nothing about a snapshot anybody produced.
+#
+# The measured precedent, and it is why this is a gate rather than a note: three agent families
+# are advertised and the dispatch ledger holds records for two — 229 claude, 194 manual, zero
+# copilot over 423 runs. A capability nothing exercises reads as working.
+#
+# ## What this check is
+#
+# `tests/fixtures/board/foreign/produce.py` reads a fake *external* tracker export in that
+# tracker's own vocabulary and emits a snapshot, importing no basicly module. This entry is the
+# published `validate` verb run against what it emits, so a schema change a foreign adopter
+# could not satisfy fails here rather than after adoption.
+#
+# The section-by-section comparison between the two producers is `tests/test_board_parity.py`,
+# not this check: it needs both documents in one process, and the reference producer has no
+# file artifact to point a command at until `basicly board --out` lands (unit C,
+# basicly-rn0o.3). When it does, its output belongs here beside this one.
+#
+# Wired here rather than appended to `basicly.toml`'s anchor, per `basicly.d/README.md`:
+# `[[verify.checks]]` is the shared anchor that bounced three of five lanes on 2026-08-08, and
+# three sibling board lanes are in flight.
+#
+# ## The ongoing cost, stated rather than hidden
+#
+# The second producer is a maintained artifact, not a fixture: every schema change reaches it,
+# it is a second implementation of the mapping that can drift on purpose as well as by
+# accident, and it is held to the kit contract's style rather than `src/`'s. The full statement
+# is `tests/fixtures/board/foreign/README.md`; the cheaper alternative — a hand-written foreign
+# fixture and no producer — was refused because a fixture cannot stop agreeing.
+[[verify.checks]]
+name = "board-foreign"
+command = [
+    "uv",
+    "run",
+    "basicly",
+    "board",
+    "validate",
+    "tests/fixtures/board/foreign/snapshot.json",
+]
+modes = ["fast", "full"]

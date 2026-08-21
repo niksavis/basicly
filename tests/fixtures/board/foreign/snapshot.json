@@ -1,0 +1,50 @@
+{
+  "schema": "harness-board/v1",
+  "generated_at": "2026-08-21T09:15:00Z",
+  "freshness": {
+    "source": "one-shot",
+    "cadence_s": null,
+    "stale_after_s": 60
+  },
+  "generator": {
+    "tool": "acme-tracker",
+    "version": "3.2.1"
+  },
+  "repo": {
+    "name": "acme-web"
+  },
+  "backlog": {
+    "total": 5,
+    "active": 3,
+    "in_progress": 1,
+    "closed": 2,
+    "by_priority": {
+      "P1": 2,
+      "P2": 2,
+      "P3": 1
+    }
+  },
+  "units": [
+    {
+      "id": "ACME-1",
+      "title": "Checkout retries twice on a declined card",
+      "status": "In Progress",
+      "priority": "P1",
+      "type": "Bug"
+    },
+    {
+      "id": "ACME-2",
+      "title": "Session cookie survives a password reset",
+      "status": "Open",
+      "priority": "P1",
+      "type": "Bug"
+    },
+    {
+      "id": "ACME-3",
+      "title": "Add a per-tenant rate limit to the public API",
+      "status": "Open",
+      "priority": "P2",
+      "type": "Story"
+    }
+  ]
+}
