@@ -22,6 +22,12 @@ Cross-platform scripts for this repository.
   the claims it can only check (every shipped subcommand appears in the architecture
   command tables). Wired as the `docs-claims` [`[[verify.checks]]`](../basicly.toml)
   entry, so `--check` gates every commit and `--fix` is the mechanical repair.
+- [`headroom.py`](headroom.py) — report how much a module may still add before either
+  size ratchet refuses it: tokens against `module-size`'s cap or frozen baseline, and prose
+  share against `comment-density`'s, in one answer. Not a gate — both ratchets already bind
+  at commit time; this is the read that sizes a change before it is written. Run
+  `uv run python .scripts/headroom.py <path>`, or with no path for every module an ordinary
+  edit would take past a bound.
 - [`generate_model_map.py`](generate_model_map.py) — resolve each model tier's anchor
   against models.dev into the committed [`model-map.json`](../.basicly/core/models/README.md),
   and `--check` it for upstream drift. Needs the network, so it runs at authoring and

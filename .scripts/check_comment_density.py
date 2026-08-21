@@ -64,7 +64,7 @@ CAP = 50.0
 
 # Below this a single mandatory docstring dominates the file, so the share says nothing
 # about how densely anyone wrote. 7 modules are exempt on this floor, all stubs.
-_MIN_TOKENS = 200
+MIN_TOKENS = 200
 
 _PRAGMA = re.compile(
     r"#\s*(?:noqa|nosec|type:\s*ignore|pragma:|pyright:|mypy:|ruff:|[\w-]+-waiver:)"
@@ -138,7 +138,7 @@ def load_ratchet(repo: Path) -> Ratchet[float]:
 
 
 def tracked_modules(repo: Path) -> list[Module]:
-    """Every tracked ``.py`` in scope at or above :data:`_MIN_TOKENS`, measured, by path.
+    """Every tracked ``.py`` in scope at or above :data:`MIN_TOKENS`, measured, by path.
 
     Raises:
         RatchetError: git refused to list the tree.
@@ -152,7 +152,7 @@ def tracked_modules(repo: Path) -> list[Module]:
             # reason this gate cannot run. The refusal is for the other caller: a lane
             # measuring a fragment, which has no ruff run standing behind it.
             share, tokens = 0.0, _text_tokens(text)
-        if tokens >= _MIN_TOKENS:
+        if tokens >= MIN_TOKENS:
             modules.append(
                 Module(
                     path=name,
