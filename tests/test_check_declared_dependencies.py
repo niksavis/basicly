@@ -16,6 +16,7 @@ the gate's answer to give, and pinning it here would redden the suite on any tra
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess  # nosec B404
 import sys
 import tomllib
@@ -208,7 +209,13 @@ def test_the_gate_runs_over_this_repository() -> None:
 
     assert completed.returncode in (0, 1), completed.stderr
     assert completed.stdout.startswith(f"{gate._LABEL}: ")
-    assert "0 open record(s)" not in completed.stdout + completed.stderr
+    # Read the count, never a substring of the sentence carrying it: `0 open record(s)` is
+    # inside `230 open record(s)`, so the substring form passed on an empty population and
+    # failed on a healthy one. Two predicates over one fact, one of them a substring, is
+    # basicly-9rv0's shape.
+    counted = re.search(r"across \d+ of (\d+) open record\(s\)", completed.stdout)
+    assert counted is not None, completed.stdout
+    assert int(counted.group(1)) > 0, "an empty population is the probe failing, not a pass"
 
 
 def test_the_gate_is_wired_as_a_verify_check() -> None:
