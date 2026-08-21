@@ -119,3 +119,50 @@ def test_a_create_naming_a_title_appends_exactly_what_it_did_before(kit: Any) ->
 def test_the_refusal_uses_the_error_class_the_sibling_already_raises() -> None:
     """The third criterion: one class, not a second one beside it."""
     assert write_verbs.TrackerDivergenceError is TrackerDivergenceError
+
+
+def test_a_create_carrying_a_stray_positional_is_refused_naming_it_and_its_flag(kit: Any) -> None:
+    """`create "<title>" bug 1` minted a record with neither field set (basicly-ve0b7d).
+
+    The refusal has to name both halves the caller needs: the word that has nowhere to go, and
+    the flag that would have carried it. Naming only the arity sends a reader looking for a
+    positional the verb never had.
+    """
+    with pytest.raises(TrackerDivergenceError) as refusal:
+        mirror.drafts(kit, ["create", "a real title", "bug", "1"], json.dumps({"id": "b-9"}))
+
+    message = str(refusal.value)
+    assert "create" in message
+    assert "'bug'" in message
+    assert "'1'" in message
+    assert "--type" in message
+    assert "--priority" in message
+
+
+def test_a_create_whose_values_sit_on_their_flags_records_both_fields(kit: Any) -> None:
+    """The control the refusal is measured against: the same values, spelled as flags."""
+    drafts: list[Any] = mirror.drafts(
+        kit, ["create", "a real title", "-t", "bug", "-p", "1"], json.dumps({"id": "b-9"})
+    )
+
+    created = next(draft for draft in drafts if draft.kind == kit.events.KIND_CREATED)
+    assert created.payload["issue_type"] == "bug"
+    assert created.payload["priority"] == 1
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["close", "b-1", "b-2", "b-3"],
+        ["dep", "add", "b-1", "b-2", "-t", "blocks"],
+        ["update", "b-1", "b-2", "-p", "1"],
+    ],
+)
+def test_a_verb_that_legitimately_takes_several_positionals_is_not_refused(
+    kit: Any, argv: list[str]
+) -> None:
+    """Arity is not the discriminator: br closes `[IDS]...` and an edge is three words.
+
+    A refusal keyed on "more than one positional" would refuse every plural close in the log.
+    """
+    assert mirror.drafts(kit, argv, "")

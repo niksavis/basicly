@@ -153,6 +153,16 @@ def _create_drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[ob
             f"event stating nothing, and `ledger_bodies` reads the event's presence rather "
             f"than its content, so nothing downstream would report it"
         )
+    # `create` alone: `close` and `update` take `[IDS]...`, so a further word is a record
+    # `owned_write.refuse_a_write_to_an_absent_record` speaks for, and the `dep` verbs and
+    # `gate report` each check an arity of their own (basicly-ve0b7d).
+    if strays := positional[2:]:
+        raise TrackerDivergenceError(
+            f"br create places one positional, the title, so "
+            f"{', '.join(repr(word) for word in strays)} cannot be placed: a field is set by "
+            f"a flag ({', '.join(tracker_argv.CREATE_LONG_FLAGS)}). Dropping it mints a "
+            f"record nothing reads as typed"
+        )
     fields: dict[str, object] = {"title": positional[1]}
     parent = ""
     for flag, value in tracker_argv.flag_pairs(args, VALUE_FLAGS["create"]):

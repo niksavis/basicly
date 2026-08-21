@@ -80,6 +80,10 @@ CREATE_FIELD_FLAGS = {
     "--parent": "parent",
 }
 
+# Every field flag a create takes, long spelling only, for the refusal that names them —
+# read off the table above, so a flag added there joins that advice by existing.
+CREATE_LONG_FLAGS = tuple(sorted(flag for flag in CREATE_FIELD_FLAGS if flag.startswith("--")))
+
 # Flags whose value is the following token, per subcommand. Needed to find the
 # positional a write is about: `br gate report` puts the issue id *last*, after four
 # or five flag/value pairs, so "the last argument" is only right by accident and
