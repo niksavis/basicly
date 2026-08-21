@@ -97,12 +97,10 @@ skips = ["B101"]
 [tool.vulture]
 ignore_names = [
   "PERMISSION_TARGETS",
-  "PHASES",
   "baseline_failure_rate",
   "baseline_runs",
   "border_style",
   "can_leave_classify",
-  "cards",
   "clear_overrides",
   "config_overrides",
   "copilot",
@@ -121,7 +119,6 @@ ignore_names = [
   "recent_failure_rate",
   "recent_runs",
   "reset_process_budget",
-  "stale_after",
   "stale_declarations",
   "stale_sessions",
   "tagged",
