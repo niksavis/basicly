@@ -1,0 +1,18 @@
+[ratchet.noqa_debt.frozen]
+# Mode B's fold catches everything and counts the failure (`board_serve.Board.refresh`). The
+# alternative rejected was narrowing to the exceptions a fold is known to raise today, which
+# makes the next unknown one the thing that darkens a wall display: the whole point of the
+# counter and the STALE band is that a board keeps showing its last document with a growing
+# age rather than exiting. It is the same call `supervise.HeartbeatThread._emit_board` already
+# records for the same producer one layer up — "a board must never fail a pass" there, "a
+# display must outlive one bad fold" here — so this is a second site of one decision, not a
+# second decision. The suppression names its reason, so `unreasoned_count` does not move.
+BLE001 = 1
+# `board_serve._Handler.log_message` names its first parameter `format`, which is a builtin.
+# Both alternatives were tried and both are refused by another gate: renaming it, and dropping
+# it for a variadic, each make pyright report `reportIncompatibleMethodOverride` on all three
+# platform legs — the base class declares `format` as a keyword parameter, so an override has
+# to spell it. The tree already took this trade twice, at `tests/test_runner.py:645` for
+# `Popen.communicate` and at `run_record.py:303` for a ledger field; a stdlib signature is not
+# ours to rename.
+A002 = 1

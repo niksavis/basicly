@@ -42,6 +42,26 @@ A root nobody is supervising is a valid attach, not an error. Exit status is 0
 either way — use `basicly loop decisions` when you want an exit code that
 means "blocked on a human".
 
+## A wall display attaches the same way
+
+For a screen in the room rather than a terminal:
+
+```sh
+basicly board serve                  # http://127.0.0.1:8787, GET only
+basicly board serve --port 0         # take an ephemeral port and print it
+```
+
+It is a client in exactly this skill's sense: it binds the loopback and
+nothing else, takes no lock, writes no file, and answers GET alone — a POST is
+405, so nobody can drive a lane from a screen anyone in the room can touch.
+While the supervisor's heartbeat is fresh it serves the snapshot that
+supervisor already wrote and folds nothing; with no live holder it folds for
+itself every `--refresh` seconds. Every panel carries the snapshot's age, so a
+frozen screen reads as frozen rather than as calm.
+
+`GET /snapshot.json` is the same `harness-board/v1` document, byte for byte,
+for any other consumer. Ctrl-C reports how many refreshes it managed.
+
 ## Never take the lock from a live holder
 
 The lock is a repo singleton because two supervisors would land to the same

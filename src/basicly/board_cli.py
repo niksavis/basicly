@@ -23,7 +23,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import board_render, board_schema, board_snapshot, supervise, ui
+from . import board_render, board_schema, board_serve, board_snapshot, ui
 
 # The sidecar the transcript names. Beside the page rather than derived from its stem, so two
 # pages written to one directory do not each claim their own copy of one contract.
@@ -36,6 +36,14 @@ FRESHNESS = (
     "The board is as fresh as the producer that wrote its snapshot, and it always shows "
     "how old that snapshot is. In wall mode with a live supervisor it refreshes on the "
     "supervisor's 15-second tick."
+)
+
+# Mode B's own claim, and it is the one a reader of `--help` has to be able to check: the
+# server holds no lock and writes nothing, so it can never be the reason a gate or a landing
+# failed. Spelled beside FRESHNESS because both are frozen wording rather than help prose.
+NO_WRITES = (
+    "The server acquires no lock and writes no file, so it blocks no gate and a board "
+    "can never be the reason a landing failed."
 )
 
 _BYTES_PER_KB = 1024
@@ -53,21 +61,10 @@ MISS = (
 def _session_facts(repo_root: Path) -> board_snapshot.SessionFacts | None:
     """The supervisor lock's facts, or None where no lock names a root.
 
-    None rather than a guessed root: the `session` section is then omitted and its panel says
-    the producer did not emit it, which is true. A root invented here would be a claim about
-    which pass is running, drawn on a wall.
+    Mode A and Mode B both read the lock at this tier and hand the facts down, so the reading
+    lives once - in `board_serve`, the tier immediately below - rather than twice.
     """
-    held = supervise.read_holder(repo_root)
-    if held is None or not held.root_issue:
-        return None
-    stale = held.age_s > supervise.STALE_AFTER_S
-    return board_snapshot.SessionFacts(
-        root_issue=held.root_issue,
-        supervised=not stale,
-        session_id=held.session_id or "",
-        age_s=held.age_s,
-        stale=stale,
-    )
+    return board_serve.session_facts(repo_root)
 
 
 def _kb(path: Path) -> str:
@@ -121,7 +118,17 @@ def cmd_emit(args: argparse.Namespace) -> int:
     return verdict.exit_code
 
 
-_HANDLERS = {None: cmd_emit, "validate": cmd_validate}
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Mode B: serve the board on the loopback until Ctrl-C, and never write a thing.
+
+    The whole verb, because every judgement is `board_serve`'s - who produces, what a route
+    answers, and what the stop line may claim. This is the argv-to-argument seam and nothing
+    more, which is what keeps the network surface out of the parser module.
+    """
+    return board_serve.serve(Path.cwd(), port=args.port, refresh_s=args.refresh)
+
+
+_HANDLERS = {None: cmd_emit, "serve": cmd_serve, "validate": cmd_validate}
 
 
 def cmd_board(args: argparse.Namespace) -> int:
@@ -158,3 +165,23 @@ def add_parsers(subparsers: argparse._SubParsersAction) -> None:
         "validate", help="Check a board snapshot against the schema this consumer reads"
     )
     validate.add_argument("path", type=Path, help="The snapshot file to read")
+    serve = board_sub.add_parser(
+        "serve",
+        help=f"Serve the board on {board_serve.HOST} for a wall display, read only",
+        description=(
+            f"Serve the harness board on {board_serve.HOST} only, answering GET alone. "
+            f"{FRESHNESS} {NO_WRITES}"
+        ),
+    )
+    serve.add_argument(
+        "--port",
+        type=int,
+        default=board_serve.DEFAULT_PORT,
+        help="The loopback port to bind; 0 takes an ephemeral one and prints it",
+    )
+    serve.add_argument(
+        "--refresh",
+        type=float,
+        default=board_serve.DEFAULT_REFRESH_S,
+        help="Seconds between folds where no supervisor is writing snapshots",
+    )
