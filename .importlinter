@@ -43,6 +43,7 @@ layers =
     claude_settings | runner
     context_window
     agents | catalog_verify | copilot_store | fleet | hooks | loader | models | permissions | planner | renderers | skills | state
+    skill_pairing
     runner_usage
     decider_contract
     corpus_drift | decision_marker

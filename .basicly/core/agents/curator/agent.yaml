@@ -7,6 +7,8 @@ returns: Returns a `release-record` in which each claim carries its evidence, an
 posture: Read-only.
 tier: medium
 tools: [Read, Grep, Glob, Bash]
+claude:
+  skills: [falsify-first]
 slots:
   role:
     - text: |

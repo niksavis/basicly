@@ -7,6 +7,8 @@ returns: Returns a `classification` with the level, the depth and the rule that 
 posture: Read-only.
 tier: medium
 tools: [Read, Grep, Glob]
+claude:
+  skills: [work-tracker, root-cause]
 slots:
   role:
     - text: |
