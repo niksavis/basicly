@@ -50,7 +50,8 @@ _LABEL = "headroom"
 
 # What one unit's edit actually adds to one module, so what counts as no room left. Measured
 # over this repo's own rebaseline records in `basicly.d` (2026-08-21): 44 `module_size`
-# declarations, median 615 tokens; 5 `comment_density` declarations, largest 0.9 points. A
+# declarations, median 614.5 tokens rounded up; 5 `comment_density` declarations, largest
+# 0.9 points. A
 # module with less room than this is one ordinary unit away from refusing the next edit.
 TIGHT_TOKENS = 615
 TIGHT_POINTS = 1.0
