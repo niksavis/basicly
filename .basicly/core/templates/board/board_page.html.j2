@@ -50,8 +50,9 @@
         overflow: hidden;
         padding: 10px;
       }
-      /* Fixed rows, fixed columns. A wall display that reflows when a number changes is
-         unreadable, so every row has a stated height and nothing inside it can grow. */
+      /* Fixed columns, and rows that reflow only when a *capacity* changes. A wall display
+         that moves when a number changes is unreadable, so every region caps what it draws at
+         a slot count the model states and reports the rest. */
       .wall {
         display: grid;
         gap: 8px;
@@ -64,10 +65,12 @@
           "foot   foot"
           "tick   tick"
           "inv    inv";
-        /* Measured against the tallest content each row can hold, not guessed: the footer
-           has to fit three strips and the ticker three lines, and a row one line short is
-           the clipped-without-a-marker defect this layout was rebuilt to remove. */
-        grid-template-rows: 56px 106px 106px minmax(0, 1fr) 226px 78px 32px;
+        /* Each row is the height of what it holds, and never a pixel measured against the
+           tallest content of the day. A hand-tuned row is one line short the moment a
+           producer emits one more of anything - the footer's gate strip went from 12 checks
+           to 36 and pushed `health` off the page - so the row is bounded by its content and
+           the content is bounded by the model's own slot counts. `flight` takes the slack. */
+        grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto;
         height: 100%;
       }
       .region {
@@ -85,9 +88,18 @@
         letter-spacing: 0.22em;
         text-transform: uppercase;
       }
+      /* One declaration for both, because a reserved strip row is one line of a label: the
+         `em` the row is stated in has to resolve against the type size of what the row
+         actually holds, not against the body's. 1.4 of it rather than the declared
+         line-height of 1.2, because a monospace glyph beside a sans label raises the line box
+         above its line-height and the reservation has to clear the taller of the two - which
+         is measured off the rendered page, not computed from the fonts. */
+      .label,
+      .strip.fixed {
+        font-size: 14px;
+      }
       .label {
         color: var(--text-dim);
-        font-size: 14px;
         letter-spacing: 0.08em;
         text-transform: uppercase;
       }
@@ -246,22 +258,36 @@
         border-style: dashed;
         opacity: 0.45;
       }
+      /* The id and the phase share one line. A card is the region that takes the wall's
+         slack - every other row is bounded by a capacity and this one absorbs what is left -
+         so a second heading line saying as much as the first is one it cannot afford. */
+      .card .title {
+        align-items: baseline;
+        display: flex;
+        gap: 12px;
+        min-width: 0;
+      }
       .card .id {
         color: var(--text-bright);
         font-family: var(--mono);
         font-size: 19px;
+        min-width: 0;
       }
       .card .phase-name {
         color: var(--indigo);
+        flex: none;
         font-size: 17px;
         font-weight: 700;
         letter-spacing: 0.12em;
         text-transform: uppercase;
       }
+      /* Two pairs to a line, so a card's six figures cost three rows rather than six. A card
+         is the one region the wall lets shrink - it takes the slack every other row leaves -
+         so its own content has to be the cheapest arrangement that still reads. */
       .card dl {
         column-gap: 8px;
         display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-columns: repeat(2, auto minmax(0, 1fr));
         line-height: 1.15;
       }
       .card dt {
@@ -312,6 +338,25 @@
         line-height: 1.2;
         min-width: 0;
       }
+      /* A strip that declares a capacity draws it as a grid and reserves every row of it,
+         filled or not, so the strips below cannot move when the count above them changes. The
+         grid itself is the model's: its columns and rows come from the panel, so the CSS
+         cannot state a capacity the code does not.
+
+         A reserved row is one line, so a cell here puts its label and its value on that line
+         rather than above it - a two-line cell among one-line ones would take a row the grid
+         had allotted to another item. */
+      .strip.fixed {
+        display: grid;
+      }
+      .strip.fixed .cell {
+        align-items: baseline;
+        display: flex;
+        gap: 8px;
+      }
+      .strip.fixed .cell .value {
+        font-size: inherit;
+      }
       .strip .cell {
         min-width: 0;
       }
@@ -320,7 +365,8 @@
       }
       .hist {
         display: flex;
-        gap: 12px;
+        flex-wrap: wrap;
+        gap: 2px 12px;
         margin-top: 2px;
       }
       .events {
@@ -490,11 +536,13 @@
 {%- for card in cards %}
         <div class="card{% if not card.title %} empty{% endif %} state-{{ card.state.key }}">
 {%- if card.title %}
-          <div class="id clip">
-            <span class="glyph state-{{ card.state.key }}">{{ card.state.glyph }}</span
-            >{{ card.title }}
+          <div class="title">
+            <div class="id clip">
+              <span class="glyph state-{{ card.state.key }}">{{ card.state.glyph }}</span
+              >{{ card.title }}
+            </div>
+            <div class="phase-name clip">{{ card.phase }}</div>
           </div>
-          <div class="phase-name clip">{{ card.phase }}</div>
           <dl>
 {%- for cell in card.cells %}
             <dt>{{ cell.label }}</dt>
@@ -540,7 +588,7 @@
 
       <section class="region foot">
         <div>
-          <h2>backlog</h2>
+          <h2>backlog{% if priorities_more %} — {{ priorities_more }}{% endif %}</h2>
 {%- if backlog.note %}
           <p class="note state-{{ backlog.state.key }}">
             <span class="glyph">{{ backlog.state.glyph }}</span>{{ backlog.note }}
@@ -585,11 +633,23 @@
 {%- for panel in strips %}
           <h2 class="state-{{ panel.state.key }}">
             <span class="glyph">{{ panel.state.glyph }}</span>{{ panel.title }}
+{%- if panel.more %} — {{ panel.more }}{% endif %}
           </h2>
 {%- if panel.note %}
           <p class="note clip">{{ panel.note }}</p>
 {%- endif %}
-          <div class="strip">
+{%- if panel.caption %}
+          <p class="note clip">{{ panel.caption }}</p>
+{%- endif %}
+          <div
+            class="strip{% if panel.columns %} fixed{% endif %}"
+{%- if panel.columns %}
+            style="
+              grid-template-columns: repeat({{ panel.columns }}, minmax(0, 1fr));
+              grid-template-rows: repeat({{ panel.rows }}, 1.4em);
+            "
+{%- endif %}
+          >
 {%- for cell in panel.cells %}
             <div class="cell">
               <div class="label">

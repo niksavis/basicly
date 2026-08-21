@@ -150,12 +150,23 @@ class Band:
 
 @dataclass(frozen=True)
 class Panel:
-    """One footer strip: its state, its cells, and the note it carries instead of them."""
+    """One footer strip: its state, its cells, and the note it carries instead of them.
+
+    ``caption`` is the strip's own subtitle, for a fact that belongs beside its title rather
+    than in the cells below. ``more`` names what its capacity dropped, and ``columns`` by
+    ``rows`` *is* that capacity: a strip that declares one reserves the whole grid whether or
+    not its cells fill it, so the region below it cannot lose height when the count above it
+    changes. A strip declaring no capacity takes the room its cells need.
+    """
 
     title: str
     state: State
     note: str
     cells: tuple[Cell, ...] = ()
+    caption: str = ""
+    more: str = ""
+    columns: int = 0
+    rows: int = 0
 
 
 @dataclass(frozen=True)

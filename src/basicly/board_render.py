@@ -44,6 +44,7 @@ def context(document: Mapping[str, Any], verdict: SnapshotVerdict, now: datetime
     phases, loop_note = board_regions.loop(reads)
     cards, flight_more, flight_note = board_regions.flight(reads)
     lines, events_more = board_footer.events(reads)
+    hist, priorities_more = board_footer.priorities(reads)
     return {
         "age": drawn,
         "head": board_regions.head(reads),
@@ -55,7 +56,8 @@ def context(document: Mapping[str, Any], verdict: SnapshotVerdict, now: datetime
         "flight_note": flight_note,
         "ready": board_regions.next_up(reads),
         "backlog": board_footer.backlog(reads),
-        "priorities": board_footer.priorities(reads),
+        "priorities": hist,
+        "priorities_more": priorities_more,
         "strips": board_footer.strips(reads),
         "events": lines,
         "events_more": events_more,

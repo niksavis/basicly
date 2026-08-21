@@ -10,6 +10,10 @@ Three of these are regressions rather than demonstrations:
   section is unreadable.
 * **The gate strip badged its verdict twice**, once on the title and once on the line below,
   which is the duplication the render this replaces was refused for.
+* **The gate strip grew four rows and pushed `health` off the footer.** The fixture carried 12
+  checks and the tree carried 36, so the capacity assertions below are taken against a fixture
+  with *more* checks than the tree has - a cap proved only at the count of the day is the
+  defect one number along.
 """
 
 from __future__ import annotations
@@ -52,9 +56,10 @@ def test_the_closed_bar_needs_both_of_its_numbers() -> None:
 
 def test_the_priority_histogram_is_sorted_and_each_bar_is_a_share_of_the_counted_set() -> None:
     """Unsorted was one of the six named defects: P3 above P0 is not a histogram."""
-    cells = board_footer.priorities(_reads("wall-v1.json"))
+    cells, dropped = board_footer.priorities(_reads("wall-v1.json"))
     assert [cell.label for cell in cells] == ["P0", "P1", "P2", "P3"]
     assert [cell.value for cell in cells] == ["6", "121", "94", "21"]
+    assert not dropped, "four labels under an eight-slot histogram dropped nothing"
     assert all(cell.bar is not None for cell in cells)
     widths = [cell.bar.width for cell in cells if cell.bar]
     assert widths[1] > widths[2] > widths[3] > widths[0]
@@ -62,15 +67,17 @@ def test_the_priority_histogram_is_sorted_and_each_bar_is_a_share_of_the_counted
 
 def test_a_backlog_with_no_priority_map_draws_no_histogram_rather_than_an_empty_one() -> None:
     """An empty axis claims a measurement of nothing; drawing nothing claims nothing."""
-    assert board_footer.priorities(_reads("wall-v1.json", backlog={"total": 3})) == ()
+    assert board_footer.priorities(_reads("wall-v1.json", backlog={"total": 3})) == ((), "")
 
 
 def test_the_gate_strip_carries_one_verdict_badge_and_a_state_per_check() -> None:
     """One badge, on the title. The three check states must each be distinguishable."""
     gates, spend, health = board_footer.strips(_reads("wall-v1.json"))
     assert gates.state.key == board_wall.FAIL, "a failing pass flag did not reach the title"
-    mode = next(cell for cell in gates.cells if cell.label == "mode")
-    assert mode.state is None, "the verdict is badged twice, once on the title and once below"
+    assert gates.caption == "mode full \N{MIDDLE DOT} recorded 2026-08-21T16:42:12Z"
+    assert not any(cell.label in {"mode", "recorded"} for cell in gates.cells), (
+        "the mode is a two-line cell among one-line ones, taking a row allotted to a check"
+    )
     keyed = {cell.label: cell.state.key for cell in gates.cells if cell.state}
     assert keyed["pytest"] == board_wall.FAIL
     assert keyed["ruff"] == board_wall.RENDERABLE
@@ -93,6 +100,53 @@ def test_the_event_ticker_reads_newest_first_and_reports_what_it_did_not_draw() 
     assert len(lines) == board_footer.EVENT_LINES
     assert "pytest failed" in lines[0], "the ticker is not newest first"
     assert dropped == "+2 more events"
+
+
+def test_the_gate_strip_draws_its_capacity_and_reports_the_checks_beyond_it() -> None:
+    """The named defect, asserted against 40 checks - four more than the tree has today.
+
+    A cap is only a cap if it holds above the count that broke the layout, so the fixture
+    carries more than that count rather than exactly it.
+    """
+    dense = readings("dense-v1.json")
+    assert len(dense["gates"].fields["checks"]) > board_footer.GATE_SLOTS, "the probe is blunt"
+    gates = board_footer.strips(dense)[0]
+    assert board_footer.GATE_SLOTS == board_footer.GATE_COLUMNS * board_footer.GATE_ROWS
+    assert len(gates.cells) == board_footer.GATE_SLOTS, "the strip drew past its own capacity"
+    assert gates.more == "+4 more checks", "checks were dropped with nothing said about it"
+    assert [cell.label for cell in gates.cells[-1:]] == ["mermaid"], "the order is not the run's"
+
+
+def test_the_gate_strip_reserves_the_same_grid_at_thirteen_checks_and_at_forty() -> None:
+    """The height of the strip is its capacity, not its content: the whole point of the fix.
+
+    A strip that took the room its cells needed is what pushed `health` off the footer, so what
+    is asserted is that the declared grid does not move with the count.
+    """
+    few = board_footer.strips(_reads("wall-v1.json"))[0]
+    many = board_footer.strips(readings("dense-v1.json"))[0]
+    assert len(few.cells) < len(many.cells), "both fixtures carry the same check count"
+    assert (few.columns, few.rows) == (many.columns, many.rows)
+    assert (few.columns, few.rows) == (board_footer.GATE_COLUMNS, board_footer.GATE_ROWS)
+
+
+def test_the_health_strip_caps_its_agents_and_names_the_ones_it_did_not_draw() -> None:
+    """One line per agent over an open-ended list is the gate strip's defect in another key."""
+    health = board_footer.strips(readings("dense-v1.json"))[2]
+    assert len(health.cells) == board_footer.HEALTH_SLOTS
+    assert health.more == "+2 more agents"
+    assert (health.columns, health.rows) == (
+        board_footer.HEALTH_COLUMNS,
+        board_footer.HEALTH_ROWS,
+    )
+
+
+def test_the_priority_histogram_caps_a_vocabulary_the_schema_declines_to_close() -> None:
+    """`by_priority` is keyed by the producer's own labels, so ten of them is a legal document."""
+    cells, dropped = board_footer.priorities(readings("dense-v1.json"))
+    assert len(cells) == board_footer.PRIORITY_SLOTS
+    assert dropped == "+2 more priorities"
+    assert [cell.label for cell in cells[-1:]] == ["P7"], "the histogram is no longer sorted"
 
 
 def test_the_roster_covers_every_section_the_verdict_named_and_the_key_spells_absence() -> None:

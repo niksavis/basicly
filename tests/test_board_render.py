@@ -32,7 +32,7 @@ from typing import Any
 
 import pytest
 
-from basicly import board_render, board_schema, catalog_source
+from basicly import board_footer, board_render, board_schema, catalog_source
 from tests.test_board_wall import REPO_ROOT, STAMPED, document
 
 TEMPLATES = REPO_ROOT / ".basicly" / "core" / "templates" / "board"
@@ -161,21 +161,72 @@ def test_the_css_names_every_state_the_code_declares() -> None:
         assert f"color: {state.colour};" in page
 
 
-def test_the_wall_declares_a_fixed_row_per_region_and_one_column_below_1280px() -> None:
-    """A wall display that reflows when a number changes is unreadable; a laptop is not a wall."""
-    page = render("wall-v1.json")
-    rows = re.search(r"grid-template-rows: ([^;]+);", page)
-    assert rows is not None
-    stated = rows.group(1).split()
-    assert len([part for part in stated if part.endswith("px")]) == 6, "a row lost its height"
-    assert "minmax(0, 1fr)" in rows.group(1), "no region absorbs the slack"
+def test_no_row_of_the_wall_is_a_hand_tuned_pixel_and_one_column_below_1280px() -> None:
+    """The defect this file's row assertion could not see, asserted as its own property.
+
+    The row list used to be six stated pixel heights, measured against the tallest content of
+    the day. That catches a row *losing* its height and cannot catch a row going one line short
+    of its content, which is what happened when the gate strip went from 12 checks to 36: the
+    footer clipped `health` and the loop row cut its caption to a partial line. So what is
+    asserted is that no row states a length at all - each is the height of what it holds, and
+    what it holds is bounded by the capacities :func:`test_no_region_draws_past_its_capacity`
+    covers.
+    """
+    page = render("dense-v1.json")
+    stated = re.search(r"grid-template-rows: ([^;]+);", page)
+    assert stated is not None
+    rows = stated.group(1)
+    # Eight regions over seven rows, because `flight` and `ready` share the one that absorbs
+    # the slack. The other six are the height of what they hold and state no length at all.
+    assert rows.count("minmax(0, 1fr)") == 1, "no region absorbs the slack"
+    assert rows.count("auto") == len(REGIONS) - 2, "a row is not bounded by what it holds"
+    assert re.search(r"[\d.]+(px|em|%)", rows) is None, f"a wall row is a hand-tuned length: {rows}"
     assert "@media (max-width: 1279px)" in page
     single = page.split("@media (max-width: 1279px)", 1)[1]
     assert "grid-template-columns: minmax(0, 1fr);" in single
     assert 'grid-template-areas: "head" "band" "loop"' in single
 
 
-@pytest.mark.parametrize("fixture", ["wall-v1.json", "no-phase-v1.json", "minimal-v1.json"])
+def test_no_region_draws_past_its_capacity_at_more_checks_than_the_tree_has() -> None:
+    """The other half of the fix: a bounded row is only safe over bounded content.
+
+    The fixture carries 40 gate checks against the tree's 36, six agents, ten priority labels,
+    seven lanes and five events, so every capped population on the page is over its cap at once
+    - which is the arrangement the hand-tuned rows were never rendered against. Each cap has to
+    report what it dropped, because a row that is the height of its content will happily be the
+    height of *all* of it and push the region below off the screen.
+
+    What a picture shows and this cannot is that the result fits 1080px; the screenshots the
+    unit was reviewed against are that record, and the pre-change template clips five regions
+    on this repository's own snapshot.
+    """
+    page = render("dense-v1.json")
+    for marker in (
+        "+4 more checks",
+        "+2 more agents",
+        "+2 more priorities",
+        "+1 more lanes",
+        "+5 more ready",
+        "+2 more events",
+        "+1 more waiting",
+    ):
+        assert marker in page, f"a population ran past its row with nothing said: {marker}"
+    # Every strip that reserves a grid states it from the model, so the CSS cannot hold a
+    # capacity the code does not - the two disagreeing is the same defect in two files.
+    reserved = re.findall(
+        r"grid-template-columns: repeat\((\d+), minmax\(0, 1fr\)\);\s+"
+        r"grid-template-rows: repeat\((\d+), [\d.]+em\);",
+        page,
+    )
+    assert reserved == [
+        (str(board_footer.GATE_COLUMNS), str(board_footer.GATE_ROWS)),
+        (str(board_footer.HEALTH_COLUMNS), str(board_footer.HEALTH_ROWS)),
+    ], f"the reserved grids are not the model's: {reserved}"
+
+
+@pytest.mark.parametrize(
+    "fixture", ["wall-v1.json", "no-phase-v1.json", "minimal-v1.json", "dense-v1.json"]
+)
 def test_the_page_draws_whether_or_not_the_producer_populated_its_phases(fixture: str) -> None:
     """Built against the schema, not against one producer's current output.
 
