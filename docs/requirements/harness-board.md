@@ -1764,6 +1764,8 @@ tracker is the owned ledger. The two external-tracker cells are served by a fore
 loosens; what changes is that it is no longer allowed to be the definition of correct.
 
 **Integrity** L2. **Scope** `src/basicly/board_snapshot.py`, `tests/test_board_snapshot.py`,
+`tests/test_board_snapshot_lock.py` (AC 12's aspect split — the producer's own sections and the lock
+fact crossing the boundary do not fit one module under the 4,000-token cap **[M]**),
 `.basicly/core/schemas/board-snapshot.schema.json` (the C6 stale-number repair only)
 **depends_on** `["A — harness-board/v1 snapshot schema and validator"]`
 **budget_tokens** 140,000
@@ -1832,6 +1834,18 @@ loosens; what changes is that it is no longer allowed to be the definition of co
    stale field-selection figure recorded in C6 was repaired by `basicly-rn0o.2` at both of its sites,
    and the schema's own stale first-line warning by `basicly-desr1v`; both are closed and neither is
    this unit's to repeat.
+12. *Ubiquitous* — `supervise.read_holder` SHALL be the **only** parser of
+   `.basicly/usage/supervisor.lock` in the tree, and a test SHALL assert that the `session.holder`
+   heartbeat age this producer emits **equals** that reader's `age_s` on one fixture lock, with
+   `stale` derived from `supervise.STALE_AFTER_S`. The fixture lock SHALL carry a payload field the
+   reader ignores, so an age taken from the payload rather than from `st_mtime` fails the assertion
+   rather than passing by coincidence. `read_holder`'s recorded invariant — *"a corrupt payload still
+   reports the heartbeat age (staleness is mtime-only by design), with the identity fields None"* —
+   SHALL be asserted **through the producer**, so a crashed supervisor renders an age and no holder id.
+   *(AC 2 makes the import direction one-way and `lint-imports` proves it, but nothing structural
+   proves the two ends still agree once the fact is copied across the boundary by hand. A second age
+   disagrees about whether a supervisor is alive silently, and only after a crash — the one moment a
+   wall display is worth reading: basicly-rn0o.14.)*
 
 **Demonstration** `uv run basicly board --out - | uv run basicly board validate -` exits 0 and
 prints the section inventory.
