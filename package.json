@@ -2,6 +2,8 @@
   "name": "basicly",
   "private": true,
   "devDependencies": {
-    "markdownlint-cli2": "^0.23.0"
+    "jsdom": "30.0.1",
+    "markdownlint-cli2": "^0.23.0",
+    "mermaid": "11.16.1"
   }
 }
