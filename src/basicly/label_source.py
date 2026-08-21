@@ -11,8 +11,9 @@ one replacement (`tracker_argv.UPDATE_LABEL_FLAGS`). So a label this reads was a
 write, carried by a ``create``, or extracted by the import.
 """
 
-# comment-density-waiver: 3 documented members over 250 tokens of code, so the share is set
-# by the member count and not by narration — the same shape as `gate_source` beside it.
+# comment-density-waiver: cohesion: 3 documented members over 250 tokens of code, so the
+# share is set by the member count and not by narration — the same shape as `gate_source`
+# beside it.
 # What is left is why a closed record stays in the answer, which is the one fact a caller
 # cannot get from the code.
 

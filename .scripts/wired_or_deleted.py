@@ -57,8 +57,9 @@ Run::
     uv run python .scripts/wired_or_deleted.py
 """
 
-# module-size-waiver: one BASELINE and one traversal serve all four surfaces, so the cut
-# the cap wants moves `build_index` out from under the rule that reads it. Measured before
+# module-size-waiver: cost(basicly-kr7t): one BASELINE and one traversal serve all four
+# surfaces, so the cut the cap wants moves `build_index` out from under the rule that reads
+# it. Measured before
 # basicly-r343: 6525 tokens of a frozen 6554, so the ratchet refused *any* fix to this file
 # — the split is the follow-up that headroom needs, not part of the schema-scan fix.
 #

@@ -1,0 +1,14 @@
+# Nothing ratcheted the waiver count across the gates that grant them (basicly-twfj), and
+# nothing read a waiver again once it was granted. `.scripts/waivers.py` now holds the
+# record — the two kinds a waiver is bought with, and the record a cost waiver expires on —
+# and `.scripts/check_waivers.py` is the census and the expiry over both markers.
+#
+# Eight `E402` suppressions, every one the shape the five fragments before this one record:
+# `.scripts` is not a package, so a sibling module is reachable only after `sys.path` names
+# its directory, and the import cannot precede the statement that makes it resolvable. Six
+# are the new pair of modules reaching `ratchet`, `waivers`, the two granting gates and
+# `basicly`; two are `check_module_size.py` and `check_comment_density.py` taking the waiver
+# reader from the module that now owns it. All eight name their reason, so `unreasoned_count`
+# does not move.
+[ratchet.noqa_debt.frozen]
+E402 = 8

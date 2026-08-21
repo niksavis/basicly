@@ -10,7 +10,7 @@ from pathlib import Path
 
 from basicly import tracker
 
-# comment-density-waiver: three tests over ~200 tokens of code, so the share is set by the
+# comment-density-waiver: cohesion: three tests over ~200 tokens of code, so the share is set by the
 # member count and not by narration — the same shape as `label_source`. What is left is
 # the incident behind the tree guard, which is the one fact a reader cannot get from the
 # assertion. Two thirds of this module left with the subprocess it described.

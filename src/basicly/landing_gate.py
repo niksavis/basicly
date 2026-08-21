@@ -12,7 +12,7 @@ nothing else the phase engine holds.
 
 from __future__ import annotations
 
-# comment-density-waiver: this module's payload IS provenance. Four small functions
+# comment-density-waiver: cohesion: this module's payload IS provenance. Four small functions
 # carrying the incident history that makes them correct - tcmy.6's unbounded escalation
 # ladder, 4tjt's unimplemented remedy, why a delegated answer may not waive a gate, and
 # why the gate name is returned rather than a bool. Cutting to 50% would delete the

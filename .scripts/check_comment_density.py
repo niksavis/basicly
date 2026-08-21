@@ -15,7 +15,8 @@ at 75 frozen entries — the size the `module-size` ratchet already carries.
 A ratchet, not a hard cap — `ratchet.py` holds that mechanism for all three gates: a module
 over 50% records its go-live share in `[tool.comment_density.frozen]` and may only fall.
 Deleting a true comment to pass is the gaming shape `python-guidelines` names; the repair is
-to cut narration, not evidence.
+to cut narration, not evidence. A module may be waived instead, and `waivers.py` holds what
+that waiver has to say — permanent, or debt with a record that retires it.
 
 Run::
 
@@ -49,8 +50,14 @@ from ratchet import (  # noqa: E402 - the path above comes first
     report,
     stale,
     tracked_sources,
+)
+from waivers import (  # noqa: E402 - the path above comes first
+    COHESION,
+    COST,
+    Waiver,
+    read_waiver,
+    unclassified_waiver,
     waiver_findings,
-    waiver_reason,
 )
 
 from basicly.read_cost import _text_tokens  # noqa: E402  (path set above)
@@ -70,11 +77,12 @@ _PRAGMA = re.compile(
     r"#\s*(?:noqa|nosec|type:\s*ignore|pragma:|pyright:|mypy:|ruff:|[\w-]+-waiver:)"
 )
 # The waiver marker, without its colon. A string rather than a column-0 comment, so this
-# script and its tests can name it without waiving themselves.
-_WAIVER_MARKER = "comment-density-waiver"
+# script and its tests can name it without waiving themselves. Public because
+# `check_waivers.py` censuses both gates' markers and must not respell either.
+WAIVER_MARKER = "comment-density-waiver"
 
 _DOCSTRING_OWNER = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
-_LABEL = "comment-density"
+LABEL = "comment-density"
 
 
 @dataclass(frozen=True)
@@ -84,7 +92,7 @@ class Module:
     path: str
     share: float
     tokens: int
-    waiver: str | None = None
+    waiver: Waiver | None = None
 
 
 def prose_tokens(text: str) -> int:
@@ -158,7 +166,7 @@ def tracked_modules(repo: Path) -> list[Module]:
                     path=name,
                     share=share,
                     tokens=tokens,
-                    waiver=waiver_reason(text, _WAIVER_MARKER),
+                    waiver=read_waiver(name, text, WAIVER_MARKER),
                 )
             )
     return sorted(modules, key=lambda module: module.path)
@@ -172,7 +180,8 @@ def _over_cap(module: Module) -> Finding:
         remedy=(
             "cut narration — a comment that restates the statement below it, or a docstring "
             "that describes the code rather than the contract — or waive it with a column-0 "
-            f"`# {_WAIVER_MARKER}: <reason>` and {count_delta_remedy(_GATE, 1)}"
+            f"`# {WAIVER_MARKER}: {COHESION}|{COST}(<record-id>): <reason>` and "
+            f"{count_delta_remedy(_GATE, 1)}"
         ),
     )
 
@@ -208,7 +217,7 @@ def _graduated(module: Module, baseline: float) -> Finding:
 def _module_finding(module: Module, ratchet: Ratchet[float]) -> Finding | None:
     """How one module disagrees with the ratchet, or ``None`` if it agrees."""
     if module.waiver is not None:
-        return None
+        return unclassified_waiver(WAIVER_MARKER, module.waiver) if not module.waiver.kind else None
     baseline = ratchet.frozen.get(module.path)
     if baseline is None:
         return _over_cap(module) if module.share > CAP else None
@@ -253,16 +262,16 @@ def main() -> int:
         ratchet = load_ratchet(REPO_ROOT)
         modules = tracked_modules(REPO_ROOT)
     except RatchetError as exc:
-        print(f"{_LABEL}: {exc}", file=sys.stderr)
+        print(f"{LABEL}: {exc}", file=sys.stderr)
         return 1
 
     findings = collect(modules, ratchet)
     if findings:
-        report(_LABEL, findings)
+        report(LABEL, findings)
         return 1
     waived = sum(1 for module in modules if module.waiver is not None)
     print(
-        f"{_LABEL}: {len(modules)} tracked modules within the {CAP}% cap or their frozen "
+        f"{LABEL}: {len(modules)} tracked modules within the {CAP}% cap or their frozen "
         f"share ({len(ratchet.frozen)} frozen, {waived} waived{rebaseline_clause(ratchet)})"
     )
     return 0

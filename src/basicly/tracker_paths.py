@@ -10,7 +10,7 @@ Below :mod:`basicly.tracker` because :mod:`basicly.tracker_usage` cannot import 
 without a cycle.
 """
 
-# comment-density-waiver: three one-line resolvers over 130 tokens of code, so the share
+# comment-density-waiver: cohesion: three one-line resolvers over 130 tokens of code, so the share
 # is set by the member count and not by narration — the same shape as `label_source`. The
 # prose is the incident behind the rule and the two ways a redirect resolves to nothing,
 # neither of which a reader gets from the code.

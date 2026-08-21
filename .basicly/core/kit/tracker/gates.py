@@ -23,7 +23,7 @@ Kit rules bind here in full — no basicly, no syntax newer than 3.9, one except
 handler (`.basicly/core/kit/README.md`).
 """
 
-# comment-density-waiver: 16 documented members over 1,424 tokens of code, so the share is
+# comment-density-waiver: cohesion: 16 documented members over 1,424 tokens of code, so the share is
 # set by the member count; the prose holds the fail-closed rules and the duplication against
 # differential.py, which no statement here says. 537 tokens of repeated prose were cut first.
 

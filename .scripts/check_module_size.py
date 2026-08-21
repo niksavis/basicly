@@ -20,8 +20,9 @@ proportionally *more* defect-prone). See `docs/requirements/factory-loop.md` §9
 78 of 179 tracked modules were already over the cap when this landed, so each one's go-live
 token count is recorded in `[tool.module_size.frozen]` and a frozen module may only
 *shrink*. Adding a line to `cli.py` is therefore a failing commit until something else in
-it goes — with one exception below. A cohesive module may exceed the cap deliberately with a
-column-0 ``module-size-waiver:`` comment, against a counted `waiver_count`.
+it goes — with one exception below. A module may exceed the cap deliberately with a column-0
+``module-size-waiver:`` comment, against a counted `waiver_count`; `waivers.py` holds what
+that comment has to say and `check_waivers.py` censuses both markers.
 
 **Top-level imports are not counted** — :func:`module_tokens` holds the measurement that
 forced that, and the frozen baselines were recomputed once on the same measure, so nothing
@@ -59,8 +60,14 @@ from ratchet import (  # noqa: E402 - the path above comes first
     report,
     stale,
     tracked_sources,
+)
+from waivers import (  # noqa: E402 - the path above comes first
+    COHESION,
+    COST,
+    Waiver,
+    read_waiver,
+    unclassified_waiver,
     waiver_findings,
-    waiver_reason,
 )
 
 from basicly.read_cost import SCOPE_FILE_READ_CAP, _text_tokens  # noqa: E402  (path set above)
@@ -71,10 +78,11 @@ _GATE = "module_size"
 FROZEN_TABLE = frozen_table(_GATE)
 
 # The waiver marker, without its colon. Spelled as a string rather than a column-0 comment so
-# that this script and its tests can name it without waiving themselves.
-_WAIVER_MARKER = "module-size-waiver"
+# that this script and its tests can name it without waiving themselves. Public because
+# `check_waivers.py` censuses both gates' markers and must not respell either.
+WAIVER_MARKER = "module-size-waiver"
 
-_LABEL = "module-size"
+LABEL = "module-size"
 
 # Where "first touch brings it under" stops applying (OQ-12, resolved 2026-08-08). Below
 # 2x the cap a single extraction reaches 4,000; above it, not growing is the whole rule.
@@ -92,7 +100,7 @@ class Module:
 
     path: str
     tokens: int
-    waiver: str | None = None
+    waiver: Waiver | None = None
 
 
 def module_tokens(text: str) -> int:
@@ -143,7 +151,7 @@ def tracked_modules(repo: Path) -> list[Module]:
         Module(
             path=name,
             tokens=module_tokens(text),
-            waiver=waiver_reason(text, _WAIVER_MARKER),
+            waiver=read_waiver(name, text, WAIVER_MARKER),
         )
         for name, text in tracked_sources(repo)
     ]
@@ -157,8 +165,8 @@ def _over_cap(module: Module, cap: int) -> Finding:
         detail=f"{module.tokens} tokens, over the {cap}-token cap",
         remedy=(
             "split it along a nameable responsibility (not into _part1/_part2), or waive it "
-            f"with a column-0 `# {_WAIVER_MARKER}: <reason>` and "
-            f"{count_delta_remedy(_GATE, 1)}"
+            f"with a column-0 `# {WAIVER_MARKER}: {COHESION}|{COST}(<record-id>): <reason>` "
+            f"and {count_delta_remedy(_GATE, 1)}"
         ),
     )
 
@@ -206,7 +214,7 @@ def _graduated(module: Module, baseline: int, cap: int) -> Finding:
 def _module_finding(module: Module, ratchet: Ratchet[int], cap: int) -> Finding | None:
     """How one module disagrees with the ratchet, or ``None`` if it agrees."""
     if module.waiver is not None:
-        return None
+        return unclassified_waiver(WAIVER_MARKER, module.waiver) if not module.waiver.kind else None
     baseline = ratchet.frozen.get(module.path)
     if baseline is None:
         return _over_cap(module, cap) if module.tokens > cap else None
@@ -256,16 +264,16 @@ def main() -> int:
         ratchet = load_ratchet(REPO_ROOT)
         modules = tracked_modules(REPO_ROOT)
     except RatchetError as exc:
-        print(f"{_LABEL}: {exc}", file=sys.stderr)
+        print(f"{LABEL}: {exc}", file=sys.stderr)
         return 1
 
     findings = collect(modules, ratchet)
     if findings:
-        report(_LABEL, findings)
+        report(LABEL, findings)
         return 1
     waived = sum(1 for module in modules if module.waiver is not None)
     print(
-        f"{_LABEL}: {len(modules)} tracked modules within the {SCOPE_FILE_READ_CAP}-token cap "
+        f"{LABEL}: {len(modules)} tracked modules within the {SCOPE_FILE_READ_CAP}-token cap "
         f"or their frozen baseline ({len(ratchet.frozen)} frozen, {waived} waived"
         f"{rebaseline_clause(ratchet)})"
     )

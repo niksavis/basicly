@@ -62,7 +62,7 @@ the module body runs — ``dataclasses`` resolves a string annotation through
     spec.loader.exec_module(module)
 """
 
-# module-size-waiver: the kit's contract is that a foreign harness can copy this file
+# module-size-waiver: cohesion: the kit's contract is that a foreign harness can copy this file
 # and its hook flat into one directory and have them work, so splitting it along the
 # seam the cap wants (the model-map lookup) would break the thing the module exists for.
 

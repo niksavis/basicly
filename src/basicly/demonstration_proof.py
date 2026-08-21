@@ -20,7 +20,7 @@ the honest majority and gets waived away.
 
 from __future__ import annotations
 
-# comment-density-waiver: 57.4% of a 1,940-token module, and the prose is the finding. The
+# comment-density-waiver: cohesion: 57.4% of a 1,940-token module, and the prose is the finding. The
 # same zero-selection result is a report at one rung and a refusal at the next; delete the
 # paragraph saying why and the next reader "simplifies" them into one rule, which is the
 # first cut of this gate (it refused two honest plans out of three probed) and the defect

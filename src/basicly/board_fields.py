@@ -13,8 +13,8 @@ The six section reducers that consume all of this are :mod:`basicly.board_sectio
 boundary is what may cross the wire against which rows a section is.
 """
 
-# comment-density-waiver: a 12-member roster, seven bounds and four one-line value helpers,
-# so the share is set by the member count and not by narration - the same shape as
+# comment-density-waiver: cohesion: a 12-member roster, seven bounds and four one-line
+# value helpers, so the share is set by the member count and not by narration - the same shape as
 # `tracker_paths` and `.scripts/ratchet.py`. Every block states a measurement or a rule a
 # reader cannot recover from the code: the 132.5x field-selection figure, the two roster
 # shortcuts that are refuted (11 derived, 15 grepped), and why the roster is composed rather

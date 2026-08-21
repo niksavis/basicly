@@ -25,23 +25,20 @@ a frozen subject may only move the safe way. Three consequences, each its own fi
   Leaving it would license regrowth back to the go-live number, which is the fail-open shape
   this repo keeps paying for. An entry that reaches zero is deleted, not zeroed.
 
-**Waivers, and why they are counted.** A subject may exceed the cap deliberately by carrying
-a one-line reason as a column-0 comment — ``<gate-marker>:`` followed by the reason, which
-:func:`waiver_reason` reads. The count is itself ratcheted against the recorded
-``waiver_count``, exactly as ``[tool.vulture]``'s suppression list is policed by
+**Waivers, and why they are counted.** A subject may exceed the cap deliberately, against a
+``waiver_count`` ratcheted exactly as ``[tool.vulture]``'s suppression list is policed by
 `wired_or_deleted.py`, so a waiver may be added only in a diff that moves the count. The
 frozen list needs no equivalent, and the asymmetry is the point: an entry added there is a
 line in ``pyproject.toml`` that a reviewer sees, while a waiver is one comment somewhere
-inside a 5,000-line module that nobody would find. The reason must be non-empty and the
-marker must start the line, which is what keeps a mention of it inside a string or a
-docstring from waiving the file that mentions it.
+inside a 5,000-line module that nobody would find. `waivers.py` holds the record itself —
+what buys one, and what it owes back (basicly-twfj).
 
 A lane moves any of these numbers with a **delta** in its own ``basicly.d`` fragment rather
 than by editing the shared table (basicly-ef7t); :func:`count_delta_remedy` is how a finding
 says so. Stdlib plus :mod:`basicly.dropin`, because these gates run on every commit.
 """
 
-# comment-density-waiver: this module's payload is the rationale three gates enforce, held
+# comment-density-waiver: cohesion: this module's payload is the rationale three gates enforce, held
 # once instead of three times - the 78-of-179 measurement that made these ratchets rather
 # than caps, why the frozen list is reviewable and the waiver count therefore has to be
 # ratcheted, and the 51.3 - 0.1 float case behind the rounding. Measured at 58.4% against
@@ -50,12 +47,11 @@ says so. Stdlib plus :mod:`basicly.dropin`, because these gates run on every com
 
 from __future__ import annotations
 
-import re
 import subprocess  # nosec B404
 import sys
 import tomllib
 import types
-from collections.abc import Collection, Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -270,18 +266,6 @@ def tracked_sources(repo: Path) -> Iterator[tuple[str, str]]:
         yield name, text
 
 
-def waiver_reason(text: str, marker: str) -> str | None:
-    """The reason *text* waives *marker*'s cap with, or ``None`` if it does not waive it.
-
-    *marker* is spelled without its colon. The pattern is built rather than held as a
-    constant so that this module names no gate's marker and therefore cannot waive itself.
-    """
-    match = re.search(
-        rf"^#[ \t]*{re.escape(marker)}:[ \t]*(\S.*?)[ \t]*$", text, flags=re.MULTILINE
-    )
-    return match.group(1) if match else None
-
-
 def stale(gate: str, subject: str, detail: str) -> Finding:
     """A frozen entry that no longer describes anything."""
     return Finding(
@@ -289,25 +273,6 @@ def stale(gate: str, subject: str, detail: str) -> Finding:
         detail=detail,
         remedy=f'delete `"{subject}"` from {frozen_table(gate)}',
     )
-
-
-def waiver_findings(gate: str, waived: Collection[str], recorded: int) -> list[Finding]:
-    """The waiver-count ratchet, which moves only in a diff that says it moved."""
-    listed_paths = sorted(waived)
-    if len(listed_paths) == recorded:
-        return []
-    direction = "added" if len(listed_paths) > recorded else "removed"
-    listed = ", ".join(listed_paths) or "none"
-    return [
-        Finding(
-            subject="pyproject.toml",
-            detail=(
-                f"{len(listed_paths)} module(s) carry a waiver but waiver_count is "
-                f"{recorded} — a waiver was {direction} without saying so (waived: {listed})"
-            ),
-            remedy=count_delta_remedy(gate, len(listed_paths) - recorded),
-        )
-    ]
 
 
 def report(label: str, findings: Iterable[Finding]) -> None:

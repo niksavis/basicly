@@ -15,8 +15,9 @@ populations of one log (basicly-oii83r), so it is declared once, here.
 :data:`WRITER_LABELS` is what makes the second axis legible instead of unknown.
 """
 
-# comment-density-waiver: 74.7% because the module is a vocabulary - three evidence labels,
-# two writer identities, two dialect spellings, four payload key names - and what each one
+# comment-density-waiver: cohesion: 74.7% because the module is a vocabulary - three
+# evidence labels, two writer identities, two dialect spellings, four payload key names -
+# and what each one
 # *means* is the payload. A label here is a string that crosses a JSON boundary into a
 # consumer's ledger and decides whether an edge may gate a landing, so the rule it carries
 # cannot be recovered from `EXTRACTED = "EXTRACTED"`. Third instance in one pass of the two

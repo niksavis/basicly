@@ -10,7 +10,7 @@ The rows keep the shape the engine has always parsed, the way :func:`tracker.own
 renders a record, so the caller has one parser.
 """
 
-# comment-density-waiver: 4 documented members plus the module contract over 300 tokens of
+# comment-density-waiver: cohesion: 4 documented members plus the module contract over 300 tokens of
 # code, so the share is set by the member count and not by narration — the same shape as
 # `label_source` beside it. What is left is the two states an empty answer can mean, which
 # is the one fact a caller cannot get from the code.
