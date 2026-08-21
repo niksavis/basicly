@@ -123,11 +123,17 @@ class NodeState:
     title: str = ""
 
 
+# The dependency type a decomposition writes, and the direction is the load-bearing part:
+# the *child* declares it onto its parent, so a record has children when an edge of this type
+# points **at** it. Measured on this repo's log: 688 of 1072 asserted edges.
+PARENT_CHILD = "parent-child"
+
+
 def _has_children(record: dict) -> bool:
     """True when the issue has a parent-child dependent (it has been decomposed)."""
     dependents = record.get("dependents") or []
     return any(
-        isinstance(dep, dict) and dep.get("dependency_type") == "parent-child" for dep in dependents
+        isinstance(dep, dict) and dep.get("dependency_type") == PARENT_CHILD for dep in dependents
     )
 
 
@@ -217,6 +223,46 @@ def read_node_state(
         has_children=has_children,
         title=str(record.get("title", "")),
     )
+
+
+def phase_map(repo_root: Path, config: PolicyConfig | None = None) -> dict[str, str]:
+    """Every live record's loop phase, keyed by record, from **one** fold of the log.
+
+    :func:`read_node_state` is per record by construction — seven whole-log reads each — so
+    a phase for the whole population cost 138 s and was capped at the eight-record ready
+    front instead (basicly-s1vqq2). `tracker.all_views` folds once and its view carries
+    every value :func:`derive_phase` takes, so no cap is needed.
+
+    **It calls the real derivation, and its inputs are the real readers too.** A second
+    spelling of any of them is how two phases come to disagree while rendering identically,
+    so the gate rows go through `policy.classify_gates` and the required set through
+    `validate_gate.required_in`. The kit ships a `derive_phase` of its own and this is
+    deliberately not it: that one folds the ledger alone and cannot see the level a unit's
+    validate gate hangs off.
+    """
+    config = config or load_policy_config(repo_root)
+    live = tracker.all_views(repo_root)
+    parents = {
+        edge.target
+        for view in live.values()
+        for edge in view.dependencies
+        if edge.type == PARENT_CHILD
+    }
+    return {
+        record: derive_phase(
+            view.status,
+            tuple(
+                name for name in CHECKPOINTS if policy.checkpoint_approved_in(view.comments, name)
+            ),
+            parse_worktree_ref(view.external_ref),
+            policy.classify_gates(
+                [policy.GateVerdict(row.gate, row.provider, row.passed) for row in view.gates],
+                validate_gate.required_in(view.comments, config),
+            ),
+            record in parents,
+        )
+        for record, view in live.items()
+    }
 
 
 # --- Ready / blocked sets ---------------------------------------------------

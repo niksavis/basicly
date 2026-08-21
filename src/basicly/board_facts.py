@@ -12,7 +12,7 @@ says the producer did not emit it, which is true.
 
 # comment-density-waiver: cohesion: 56.1% because the split moved the code and its reasons
 # together, and every comment left is a measurement or an incident rather than narration -
-# PHASE_LIMIT carries the 591 ms per record that sets it, `grant_spend` carries the
+# `phases` carries the 591 ms per record that once capped it, `grant_spend` carries the
 # 177970761/4000000 a lifetime figure once drew against a grant ceiling, and `questions`
 # carries why a wait marker holds no prose. Architecture 34.1: the size and density ratchets
 # are jointly unsatisfiable on a split, so this is the priced outcome, not an unmeasured one.
@@ -35,13 +35,6 @@ from . import (
     run_record,
     tracker_query,
 )
-
-# How many records get a loop phase, and the number is a cost rather than a taste.
-# `loop_state.read_node_state` is the only route to `derive_phase` and it reads the whole log
-# seven times per record - 591 ms over 20 records, measured 2026-08-21 - so all 234 active
-# records is 138 s against a 171 ms build. The ranked ready front is the cut because it is the
-# column a wall board is read for; outside it `phase` stays absent rather than guessed.
-PHASE_LIMIT = 8
 
 # What every fact-gathering read below treats as "no answer": no kit installed, an unreadable
 # ledger, a report whose shape moved. Each costs its own key and never the page.
@@ -152,22 +145,19 @@ def readiness(repo_root: Path) -> board_sections.Readiness | None:
 
 
 def phases(repo_root: Path) -> dict[str, str]:
-    """A loop phase for the front of the ready queue, keyed by record; empty on no answer.
+    """A loop phase for every live record, keyed by record; empty on no answer.
 
-    Bounded by :data:`PHASE_LIMIT`, and read through `loop_state.read_node_state` so
-    `derive_phase` stays the one derivation - a phase folded out of the ledger alone diverges
-    from the engine's for any unit owing validation, and renders identically.
+    Unbounded since basicly-s1vqq2, and `loop_state.phase_map` is why: it folds the event
+    log once for the whole population instead of the seven reads per record
+    `read_node_state` costs, which is what capped this at the eight-record ready front and
+    left the loop region reading `intake 8` over 234 units. `derive_phase` is still the one
+    derivation - a phase folded out of the ledger alone diverges from the engine's for any
+    unit owing validation, and renders identically.
     """
-    found: dict[str, str] = {}
     try:
-        front = tracker_query.ready_report(repo_root, PHASE_LIMIT)["records"]
-        config = loop_state.load_policy_config(repo_root)
-        for row in front:
-            record = str(row["record"])
-            found[record] = loop_state.read_node_state(repo_root, record, config).phase
+        return loop_state.phase_map(repo_root)
     except UNREADABLE:
         return {}
-    return found
 
 
 def questions(repo_root: Path, document: dict[str, object]) -> dict[str, str]:

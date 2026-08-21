@@ -122,6 +122,10 @@ def test_a_tombstoned_record_reads_as_absent_after_the_flip(tmp_path: Path) -> N
     )
 
     assert tracker.read_record(repo, record) is None
+    # The population read owes the same absence under its own rule: `all_views` filters the
+    # kit's view map rather than going through `read_record`, so a loop phase drawn for a
+    # deleted record would come past this filter and nothing else.
+    assert record not in tracker.all_views(repo)
 
 
 def test_no_module_outside_the_seam_reads_the_owned_store() -> None:
