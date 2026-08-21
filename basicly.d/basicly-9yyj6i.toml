@@ -1,0 +1,23 @@
+# The declared-dependency reconciliation, bound (basicly-9yyj6i). A body's `- depends on:`
+# line and the ledger's `blocks` edges are two statements of one fact, and an inverted edge
+# reads as correct from either side — `basicly-rn0o.4` was the one board lane no supervised
+# pass could dispatch, and nothing reported it.
+#
+# `fast` as well as `full`: it reads the committed ledger and folds it once, which is the
+# same read `corpus-drift` already makes in the fast set.
+#
+# No `fix_command`. Either repair is a tracker write — correcting the body or recording the
+# edge — and which one is right is the judgement the gate exists to force.
+[[verify.checks]]
+name = "declared-dependencies"
+command = ["uv", "run", "python", ".scripts/check_declared_dependencies.py"]
+modes = ["fast", "full"]
+
+# One `# noqa: E402` for this gate (basicly-9yyj6i). The script is run as
+# `uv run python .scripts/check_declared_dependencies.py`, not as a module on an installed
+# path, so the `sys.path.insert` that makes `basicly` importable has to precede the import —
+# the same suppression the other gate scripts carry, for the same reason. The alternative,
+# duplicating `plan_record.parse_plan_section` here, is the second spelling of the recorded
+# form that module exists to prevent.
+[ratchet.noqa_debt.frozen]
+E402 = 1
