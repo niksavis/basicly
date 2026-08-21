@@ -327,6 +327,10 @@ EVENT_FAMILY = "ev"
 # verbatim in `Event.extra` and written back out unchanged.
 KNOWN_FIELDS = frozenset({"id", "record", "seq", "kind", "actor", "ts", "payload", "totals"})
 
+# What `actor` says when no caller supplied one. Never ``""``, which cannot say whether the
+# writer knew nobody or never looked.
+UNATTRIBUTED_ACTOR = "unattributed:no-actor-supplied"
+
 
 # --- totals -------------------------------------------------------------------
 
@@ -433,7 +437,8 @@ class Draft:
         payload: The fact. String values are redacted; free text is capped at the bound
             *kind* declares.
         actor: An opaque lease holder — a lane, a session, a human. Not
-            assignee-as-person modelling (§4.5). Falls back to :func:`append`'s *actor*.
+            assignee-as-person modelling (§4.5). Falls back to :func:`append`'s *actor*,
+            then :data:`UNATTRIBUTED_ACTOR`.
         generation: ``>1`` names a genuine re-recording of an identical fact, which needs
             its own id rather than collapsing into the first by content.
     """
@@ -1346,7 +1351,7 @@ def append(  # noqa: PLR0913 — every keyword is an injected dependency the kit
                     record=draft.record,
                     seq=item.max_seq,
                     kind=draft.kind,
-                    actor=draft.actor or actor,
+                    actor=draft.actor or actor or UNATTRIBUTED_ACTOR,
                     ts=_stamp(now()),
                     payload=payload,
                     totals=item.totals,

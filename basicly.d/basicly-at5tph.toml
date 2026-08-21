@@ -1,0 +1,48 @@
+# Every live ledger event carried an empty `actor`, so no state change was attributable
+# (basicly-at5tph). `actor` is declared on the event record (architecture §32.2) and populated
+# by nothing: 2,608 of this ledger's 6,383 events carry an empty one, against a positive
+# control of 3,775 that carry `<redacted:machine-username>` — and every one of those 3,775 is
+# an imported row, so the whole live population is unattributed [measured 2026-08-21 at
+# 649c0e47]. Nothing reported it, which is why "every state change is attributable" read true.
+#
+# The mechanism was already there and unread. `runner.br_attribution_env` sets `BR_AGENT_NAME`
+# in every dispatched agent's environment for br's tier-1 attribution; the flip to the owned
+# ledger retired br, and `rg` finds no reader outside `runner.py` and its own tests. So the
+# fix is a resolver at the seam rather than a new channel.
+#
+# Four modules were measured before the first edit. `events.py` had **0** tokens of module-size
+# headroom and **0.0** of comment-density slack; `fsck.py` the same; the two test modules 0 and
+# 11. `src/basicly/owned_write.py` had 471 and 1.2 and is **not** frozen, so it took the
+# resolver only after the prose was cut to fit inside the hard cap — it lands at 3,964 of 4,000
+# and 50.0%, with no entry here.
+#
+# `events.py` +63: `UNATTRIBUTED_ACTOR` and the third link of `append`'s fallback chain. Its
+# prose share is **57.1 before and 57.1 after**, which is the proof none of these tokens came
+# out of the comment budget — the census figure above was written into the comment first and
+# then taken out again, because a count in prose is a claim that decays (the bead measured
+# 1,078 for the same population) and this file is where it would decay unread.
+#
+# `fsck.py` +126: the `Report.unattributed` census and the sum behind it. A census and not a
+# finding, on `delegated_kinds`' precedent and one reason of its own: no corrective event can
+# supply an actor for a write already made, so a finding would fail every commit forever over
+# a population that cannot be repaired. Prose share **51.5 before and 51.5 after**.
+#
+# `tests/test_kit_tracker_events.py` +311 and `tests/test_kit_tracker_fsck.py` +307: the two
+# kit-side regression tests, each written against a mutation that had to fail first — the
+# fallback removed (the append then wrote `""`), and the census narrowed to the empty spelling
+# alone (it then answered 2 where the seeded ledger holds 4). The engine-side tests are a new
+# file, `tests/test_owned_write_actor.py`, under the `test_<module>_<aspect>.py` convention
+# `check_test_naming.py` records: `tests/test_owned_write.py` measured 3,929 of its 4,000
+# permitted tokens and is not frozen, so it can never take another test, and squeezing 71
+# tokens of assertions in would have been the wrong repair to a measurement.
+[ratchet]
+base_commit = "649c0e4744b496ef148c511f15cb6fcdddbe635e"
+
+[ratchet.module_size]
+rebaseline_reason = "the actor fallback, the fsck census and the two kit regression tests, in four modules with 0 to 11 tokens of headroom"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/events.py" = 63
+".basicly/core/kit/tracker/fsck.py" = 126
+"tests/test_kit_tracker_events.py" = 311
+"tests/test_kit_tracker_fsck.py" = 307

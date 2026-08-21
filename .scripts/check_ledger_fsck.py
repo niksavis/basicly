@@ -64,6 +64,9 @@ class Counted:
         warnings: Findings that are reported and never fatal, as printable lines.
         events: Events the run folded, so a pass over an empty ledger is not silent.
         records: Records it folded, for the same reason.
+        unattributed: Events among them naming no actor. Reported and never failed: the
+            population is inherited and an append-only log has no way to attribute a write
+            already made, so a gate on it would refuse every commit forever.
     """
 
     broken: dict[str, int]
@@ -71,6 +74,7 @@ class Counted:
     warnings: tuple[str, ...]
     events: int
     records: int
+    unattributed: int
 
 
 def load_kit(kit_dir: Path) -> Any:
@@ -137,6 +141,7 @@ def measure(kit: Any, ledger: Path) -> Counted:
         warnings=tuple(sorted(warnings)),
         events=report.events,
         records=report.records,
+        unattributed=report.unattributed,
     )
 
 
@@ -205,7 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         f"{_LABEL}: {counted.events} event(s) over {counted.records} record(s) in "
         f"{args.ledger.as_posix()}; {recorded} recorded defect(s), no new one, "
-        f"{len(counted.warnings)} warning(s)"
+        f"{len(counted.warnings)} warning(s), {counted.unattributed} event(s) with no actor"
     )
     return 0
 
