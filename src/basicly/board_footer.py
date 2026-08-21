@@ -47,11 +47,31 @@ EVENT_LINES = 3
 NAME_MAX = 32
 LINE_MAX = 180
 
+# The gate strip's capacity, as the grid it reserves rather than as a maximum. The check count
+# is the producer's own and it stood at 12 in the fixture this layout was built against and 36
+# in the tree that drew it, so a strip that took the room its cells needed took it from the
+# region below. Six columns is what a 32-character name fits across the footer's right half,
+# and six rows is what the footer has for it.
+GATE_COLUMNS = 6
+GATE_ROWS = 6
+GATE_SLOTS = GATE_COLUMNS * GATE_ROWS
+
+# The footer's other two open-ended populations. `health` draws one line per agent, and
+# `by_priority` is keyed by the producer's own label vocabulary, which the schema declines to
+# close - "a fixed set would silently drop a label" - so neither has a length the page can
+# assume. Health reserves its grid for the same reason the gate strip does: four agents where
+# the last snapshot had two would otherwise take the height off the region above.
+HEALTH_COLUMNS = 2
+HEALTH_ROWS = 2
+HEALTH_SLOTS = HEALTH_COLUMNS * HEALTH_ROWS
+PRIORITY_SLOTS = 8
 
 _BACKLOG_KEYS = ("total", "active", "ready", "blocked", "in_progress", "closed")
 _SPEND_KEYS = ("scope", "lifetime_usd", "largest_dispatch_usd", "input_tokens", "output_tokens")
 _HEALTH_KEYS = ("runs", "score", "failure_rate", "drift")
 _GATE_STATE = {"pass": RENDERABLE, "fail": FAIL, "not_run": ABSENT}
+# What the gate strip's caption spells, and the word it spells each key as.
+_GATE_CAPTION = {"mode": "mode", "recorded_at": "recorded"}
 
 
 def backlog(reads: Mapping[str, Reading]) -> Panel:
@@ -76,46 +96,68 @@ def backlog(reads: Mapping[str, Reading]) -> Panel:
     return Panel("backlog", read.state, "", tuple(cells))
 
 
-def priorities(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
-    """The per-priority histogram, sorted by label, each bar a share of the counted set.
+def priorities(reads: Mapping[str, Reading]) -> tuple[tuple[Cell, ...], str]:
+    """The per-priority histogram, sorted by label, and how many labels it did not draw.
 
     Both terms come from the same map, so the ratio is one the producer actually measured; a
-    label whose count is not a number draws the raw value and no bar.
+    label whose count is not a number draws the raw value and no bar. The vocabulary is the
+    producer's and the schema keeps it open, so the row is capped at :data:`PRIORITY_SLOTS`
+    and reports the rest rather than running off the end of the column.
     """
     read = reads["backlog"]
     held = read.fields.get("by_priority") if read.drawn else None
     if not isinstance(held, dict) or not held:
-        return ()
+        return (), ""
     whole = sum(value for value in held.values() if numeric(value) is not None)
-    return tuple(
-        Cell(str(label), number(held[label]), bar=bar(held[label], whole)) for label in sorted(held)
+    labels = sorted(held)
+    cells = tuple(
+        Cell(str(label), number(held[label]), bar=bar(held[label], whole))
+        for label in labels[:PRIORITY_SLOTS]
     )
+    return cells, more(len(labels) - PRIORITY_SLOTS, "priorities")
 
 
 def _gates(read: Reading) -> Panel:
-    """The gate strip: the mode and the stamp it was recorded at, then a glyph per check."""
+    """The gate strip: the mode and the stamp above it, then a glyph per check, capped.
+
+    The mode and the stamp are the caption rather than two cells because the checks below are
+    a reserved grid of one-line names, and a two-line cell among them would take a row the
+    grid had allotted to a check. Neither carries a glyph: the strip's own title already holds
+    the verdict, and a second badge saying the same thing below it is the duplication this
+    render removed.
+    """
     if not read.drawn:
         return Panel("gates", read.state, read.note)
     held = read.fields
     passed = held.get("passed")
     state = BY_KEY[RENDERABLE if passed else FAIL] if isinstance(passed, bool) else read.state
-    # No glyph on these two: the strip's own title already carries the verdict, and a second
-    # badge saying the same thing on the line below is the duplication this render removed.
-    cells = [
-        Cell("mode", joined(held, ("mode",))),
-        Cell("recorded", joined(held, ("recorded_at",))),
-    ]
+    # `gates` is an object carrying a `checks` array, not an array section, so the list comes
+    # out of the fields: reading it as `Reading.rows` is how the edge count came back a zero.
     checks = held.get("checks")
-    cells += [
+    rows = [
+        check for check in (checks if isinstance(checks, list) else []) if isinstance(check, dict)
+    ]
+    cells = tuple(
         Cell(
             clip(check.get("name", UNKNOWN), NAME_MAX),
             "",
             BY_KEY[_GATE_STATE.get(str(check.get("status")), ABSENT)],
         )
-        for check in (checks if isinstance(checks, list) else [])
-        if isinstance(check, dict)
-    ]
-    return Panel("gates", state, "", tuple(cells))
+        for check in rows[:GATE_SLOTS]
+    )
+    caption = DOT.join(
+        f"{word} {held[key]}" for key, word in _GATE_CAPTION.items() if held.get(key)
+    )
+    return Panel(
+        "gates",
+        state,
+        "",
+        cells,
+        caption=clip(caption, LINE_MAX) if caption else UNKNOWN,
+        more=more(len(rows) - GATE_SLOTS, "checks"),
+        columns=GATE_COLUMNS,
+        rows=GATE_ROWS,
+    )
 
 
 def _spend(read: Reading) -> Panel:
@@ -133,7 +175,7 @@ def _spend(read: Reading) -> Panel:
 
 
 def _health(read: Reading) -> Panel:
-    """The health strip, one line per agent. The agent names the row, never its list index."""
+    """The health strip, one line per agent, capped. The agent names the row, never its index."""
     if not read.drawn:
         return Panel("health", read.state, read.note)
     agents = read.dicts
@@ -144,9 +186,17 @@ def _health(read: Reading) -> Panel:
             clip(agent.get("agent", UNKNOWN), NAME_MAX),
             DOT.join(f"{key.replace('_', ' ')} {number(agent.get(key))}" for key in _HEALTH_KEYS),
         )
-        for agent in agents
+        for agent in agents[:HEALTH_SLOTS]
     )
-    return Panel("health", read.state, "", cells)
+    return Panel(
+        "health",
+        read.state,
+        "",
+        cells,
+        more=more(len(agents) - HEALTH_SLOTS, "agents"),
+        columns=HEALTH_COLUMNS,
+        rows=HEALTH_ROWS,
+    )
 
 
 def strips(reads: Mapping[str, Reading]) -> tuple[Panel, ...]:
