@@ -14,6 +14,8 @@ posture: Read-only.
 # gives: the scope is exactly the diff or paths named, never the whole tree.
 tier: high
 tools: [Read, Grep, Glob]
+claude:
+  skills: [falsify-first, interface-facts]
 slots:
   role:
     - text: |

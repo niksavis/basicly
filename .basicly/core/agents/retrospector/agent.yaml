@@ -9,7 +9,7 @@ tier: high
 tools: [Read, Grep, Glob, Bash]
 claude:
   effort: high
-  skills: [root-cause]
+  skills: [root-cause, falsify-first]
 slots:
   role:
     - text: |

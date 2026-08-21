@@ -324,10 +324,15 @@ def _agent_source(
 ) -> Path:
     path = root / agents_dir / slug / "agent.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Declares the fixture catalog's one model-invoked skill, because a catalog holding an
+    # agent and a skill no agent declares is not a clean catalog any more (basicly-sromom):
+    # `skill_pairing` reports the unpaired skill, and the `== []` cases below would be
+    # asserting over a real defect rather than over the rule each of them is about.
     path.write_text(
         f"schema_version: 1\nname: {slug}\npurpose: Reviews things.\n"
         f"triggers: Use proactively after changes.\nreturns: Returns findings.\n"
-        f"posture: Read-only.\ntools: [Read, Grep, Glob]\n{extra}slots:\n{_AGENT_SLOTS}",
+        f"posture: Read-only.\ntools: [Read, Grep, Glob]\n{extra}"
+        f"claude:\n  skills: [s]\nslots:\n{_AGENT_SLOTS}",
         encoding="utf-8",
     )
     return path

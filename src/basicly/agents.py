@@ -17,6 +17,7 @@ from pathlib import Path
 
 import yaml
 
+from . import skill_pairing
 from .copilot_tools import (
     _COPILOT_TOOL_NAMES,
     _WRITE_TOOLS_FOLDED,
@@ -369,32 +370,11 @@ def unknown_block_refs(agent: AgentDefinition, blocks: dict[str, BlockDefinition
     ]
 
 
-CLAUDE_SKILLS_KEY = "skills"
-
-
 def unknown_skill_refs(agent: AgentDefinition, skill_slugs: set[str]) -> list[str]:
-    """Return the skills the agent's Claude passthrough preloads that do not exist.
-
-    Tolerant of the two shapes the host accepts — a YAML list and a single string —
-    because the passthrough is deliberately untyped (its shape is the host's to
-    define) and a checker that only understood one would report a false unknown on
-    the other.
-    """
-    declared = dict(agent.claude).get(CLAUDE_SKILLS_KEY)
-    if declared is None:
-        return []
-    # Narrowed rather than iterated: the passthrough is typed `object` on purpose,
-    # so anything that is not a string and not a sequence is a malformed source
-    # rather than a name list — reporting it as an unknown skill would blame the
-    # wrong thing, and the schema is what refuses it.
-    names: list[object]
-    if isinstance(declared, str):
-        names = [declared]
-    elif isinstance(declared, (list, tuple)):
-        names = list(declared)
-    else:
-        return []
-    return [str(name) for name in names if str(name) not in skill_slugs]
+    """Return the skills the agent's Claude passthrough preloads that do not exist."""
+    return [
+        name for name in skill_pairing.declared_skill_names(agent.claude) if name not in skill_slugs
+    ]
 
 
 def compose_body(agent: AgentDefinition, blocks: dict[str, BlockDefinition]) -> str:
@@ -569,11 +549,21 @@ def lint_agent_sources(repo_root: Path) -> list[str]:
     # the preload check is skipped rather than guessed — every name would resolve
     # to nothing and every agent would be blamed for a defect in a skill.
     try:
-        skill_slugs = {skill.slug for skill in discover_skills(repo_root)}
+        skills = discover_skills(repo_root)
     except ValidationError:
-        skill_slugs = None
+        skills = None
+    skill_slugs = None if skills is None else {skill.slug for skill in skills}
 
     violations: list[str] = []
+    # The reverse of the per-agent preload check below: a model-invoked skill no agent
+    # declares reaches no dispatch at all (skill_pairing). Only asked when there are
+    # agents to ask it of — with an empty roster every skill is trivially unpaired, which
+    # is a catalog carrying no personas rather than fourteen gaps in one.
+    if skills is not None and agents:
+        declared = {
+            name for agent in agents for name in skill_pairing.declared_skill_names(agent.claude)
+        }
+        violations.extend(skill_pairing.unpaired_skills(repo_root, skills, declared))
     for agent in agents:
         rel = _rel(agent.source_path, repo_root)
         if agent.deprecated_model:
