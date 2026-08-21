@@ -219,7 +219,7 @@ def test_the_caller_supplies_every_derivation_the_producer_refuses(tmp_path: Pat
     assert granted.status == "approved"
     _lock(repo, "bd-1")
 
-    document: dict[str, Any] = board_cli._document(repo)
+    document: dict[str, Any] = board_facts.document(repo)
     rows = {row["id"]: row for row in document["units"]}
 
     assert rows["bd-1"]["phase"] == loop_state.read_node_state(repo, "bd-1", config).phase
@@ -244,7 +244,7 @@ def test_a_checkout_with_no_tracker_costs_the_derivations_and_not_the_page(
     assert board_facts.readiness(tmp_path) is None
     assert board_facts.phases(tmp_path) == {}
     assert board_facts.questions(tmp_path, {"asks": "not a list"}) == {}
-    assert set(board_cli._document(tmp_path)) == {
+    assert set(board_facts.document(tmp_path)) == {
         "schema",
         "generated_at",
         "freshness",

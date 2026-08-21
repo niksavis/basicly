@@ -31,6 +31,7 @@ import pytest
 
 from basicly import (
     board_cli,
+    board_facts,
     board_schema,
     board_serve,
     board_snapshot,
@@ -332,6 +333,35 @@ def test_the_served_document_carries_what_the_emitted_one_carries(tmp_path: Path
     served = json.loads(board.payload() or b"{}")
 
     assert served["units"] == marker["units"], "the builder's facts must reach the wire"
+
+
+def test_a_live_supervisor_serves_no_less_than_the_viewer_folded_for_itself(
+    board_repo: Path,
+) -> None:
+    """basicly-bd4epr: handing production to the supervisor must not cost the wall a section.
+
+    A live lock displaces the viewer's fold entirely - `refresh` returns False and the route
+    answers the supervisor's file - so these are two producers under one contract, and the only
+    honest check is the relation between them. Both are folded here rather than one being
+    remembered: a count copied from a previous run cannot fail when the corpus moves under it.
+    """
+    viewer = board_serve.Board(board_repo, build=lambda: board_facts.document(board_repo))
+    assert viewer.refresh() is True
+    unsupervised: dict[str, Any] = json.loads(viewer.payload() or b"{}")
+
+    _lock(board_repo)
+    board_facts.emit_tick(board_repo, supervise.HEARTBEAT_INTERVAL_S)
+    supervised = board_serve.Board(board_repo, build=lambda: board_facts.document(board_repo))
+    assert supervised.refresh() is False, "a live holder owns the tick"
+    served: dict[str, Any] = json.loads(supervised.payload() or b"{}")
+
+    assert set(unsupervised) <= set(served)
+    phased = [unit for unit in served["units"] if unit.get("phase")]
+    assert phased, "the corpus must carry a phase for this comparison to discriminate"
+    assert len(phased) == len([unit for unit in unsupervised["units"] if unit.get("phase")])
+    assert served["backlog"]["ready"] == unsupervised["backlog"]["ready"]
+    assert served["freshness"]["source"] == board_snapshot.SUPERVISOR_TICK
+    assert board_schema.verdict(board_repo, served).readable
 
 
 def test_the_served_freshness_is_the_servers_own_cadence(tmp_path: Path) -> None:

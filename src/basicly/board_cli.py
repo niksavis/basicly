@@ -4,11 +4,11 @@ Extracted from `cli.py` because that module carries a frozen size ratchet and th
 groups were queued behind it; `tracker_query.add_parsers` is the shape followed, so `cli.py`
 keeps the registration call and the dispatch-table entry and nothing else.
 
-**This is where the live-lock facts are read, and the layer is the reason.** The producer may
-not call `supervise.read_holder` itself - the import would close
-`supervise -> board_snapshot -> supervise`, since the supervisor emits a snapshot of its own.
-This module sits above `supervise`, so it reads the lock and passes the facts down. The layer
-above supplies the fact the layer below cannot honestly derive.
+**The facts a producer may not derive are gathered above it**, in `board_facts`: the producer
+cannot call `supervise.read_holder` itself, since the import would close
+`supervise -> board_snapshot -> supervise` and the supervisor emits a snapshot of its own. The
+layer above supplies the fact the layer below cannot honestly derive, and this module is the
+argv seam over that - it assembles no document of its own.
 
 **Mode A writes two files, and the second is the point.** The page is for a human; the
 snapshot beside it is the contract, and every other consumer - a foreign board, a kit-only
@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -29,7 +28,6 @@ from . import (
     board_render,
     board_schema,
     board_serve,
-    board_snapshot,
     ui,
 )
 
@@ -82,28 +80,6 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return verdict.exit_code
 
 
-def _document(repo_root: Path) -> dict[str, object]:
-    """One snapshot of *repo_root*, with every fact this layer can supply supplied.
-
-    **The second build is a fact this layer cannot gather first, not a retry.** A wait's wording
-    is keyed by wait id and only the producer knows which waits are pending, so
-    :func:`_questions` reads the first document to learn what to ask about. Folding again is
-    171 ms and only when an ask is pending, against the 13.1 s walk asking blind would cost. The
-    producer's guarantee is untouched: each call folds the log once.
-    """
-    facts = board_snapshot.Facts(
-        session=board_facts.session_facts(repo_root),
-        repo=board_facts.repo_facts(repo_root),
-        phases=board_facts.phases(repo_root),
-        readiness=board_facts.readiness(repo_root),
-    )
-    document = board_snapshot.build_document(repo_root, facts=facts)
-    questions = board_facts.questions(repo_root, document)
-    if not questions:
-        return document
-    return board_snapshot.build_document(repo_root, facts=replace(facts, questions=questions))
-
-
 def cmd_emit(args: argparse.Namespace) -> int:
     """Mode A: fold a snapshot, write the page and the contract beside it, say what it holds.
 
@@ -116,7 +92,7 @@ def cmd_emit(args: argparse.Namespace) -> int:
         return 2
     repo_root = Path.cwd()
     started = time.perf_counter()
-    document = _document(repo_root)
+    document = board_facts.document(repo_root)
     verdict = board_schema.verdict(repo_root, document)
     took = (time.perf_counter() - started) * 1000
     if not verdict.readable:
@@ -149,7 +125,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     # server cannot gather what this layer can. Without it a served document carried no
     # phase on any unit while `--out` carried 232 - two producers, one contract.
     return board_serve.serve(
-        root, port=args.port, refresh_s=args.refresh, build=lambda: _document(root)
+        root, port=args.port, refresh_s=args.refresh, build=lambda: board_facts.document(root)
     )
 
 
