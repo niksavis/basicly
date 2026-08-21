@@ -357,6 +357,22 @@
       .strip.fixed .cell .value {
         font-size: inherit;
       }
+      /* A reserved row is one line, so the *name* filling it has to be one line too, and the
+         rule above said so about the cell and left the label free to wrap inside it. It did:
+         `projection-permissions` and `declared-dependencies` each took a second line the row
+         height had already allotted to the check below and were painted across it. Measured,
+         not assumed - six columns hold a 22-character name at 1920px and not at 1680px, and
+         no column count holds it at every width this layout claims, so the name declares its
+         truncation the way every other text on this page does. `overflow: hidden` here is
+         what makes `text-overflow` apply, and `min-width: 0` is what lets a flex item shrink
+         below its own content at all. Nothing sees this without `check_render_overflow.py`'s
+         second signal: an element painted over its neighbour does not overflow. */
+      .strip.fixed .cell .label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .strip .cell {
         min-width: 0;
       }

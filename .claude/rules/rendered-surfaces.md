@@ -19,8 +19,9 @@ edges. Every one passed the whole check set.
   then open the PNG. Check each acceptance criterion against the picture, not your intent.
 - **Drive it from real data, not only a fixture.** The fixture carried 12 gate checks and
   the tree has 36; that difference is what pushed a whole region off screen.
-- **`uv run python .scripts/check_render_overflow.py <page.html>`** reports every element
-  whose scroll size exceeds its client size. A green suite cannot see a clip; this can.
+- **`uv run python .scripts/check_render_overflow.py <page.html>`** reports two signals:
+  `render-overflow`, a box holding more than it shows, and `render-overlap`, two text
+  boxes painted over each other. An overlap overflows nothing, so read both lines.
 - **A scrollbar is not the signal.** `overflow: hidden` clips in silence, so absence of a
   scrollbar proves nothing. Measure the overflow.
 - Shoot every viewport the layout claims. A reflow rule is a claim about a width nobody
