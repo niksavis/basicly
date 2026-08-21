@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from basicly import cli, worktree
+from basicly import cli, loop_state, tracker, worktree
 from basicly.tracker_paths import LEDGER_DIR_NAME as LEDGER_DIR
+from tests import flipped_tracker
 
 # Bound at import to the real function, so it stays reachable past the autouse
 # stub below (which rebinds ``worktree.provision_deps`` for the other tests).
@@ -778,3 +779,67 @@ def test_cleanup_ignores_dep_dirs_and_the_tracker_redirect(
 
     worktree.cleanup("depsonly")
     assert not session.path.exists()
+
+
+@pytest.fixture
+def tracked_repo(git_repo: Path) -> Path:
+    """``git_repo`` with an owned ledger, so a worktree name can also be a record id."""
+    return flipped_tracker.flipped_repo(git_repo)
+
+
+def test_cli_create_binds_the_record_it_provisioned_for(
+    tracked_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hand path derives ``build``; a record with no worktree still derives ``intake``.
+
+    ``derive_phase`` reads ``build`` off the binding alone, so a lane this verb provisioned
+    used to sit at ``intake`` with work in flight and no advance could land it. The control
+    is what makes the assertion discriminating: both records are open tasks, and only the
+    provisioning tells them apart.
+    """
+    flipped_tracker.seed(tracked_repo, "wt-1", issue_type="task")
+    flipped_tracker.seed(tracked_repo, "wt-control", issue_type="task")
+    monkeypatch.chdir(tracked_repo)
+
+    assert cli.main(["worktree", "create", "wt-1"]) == 0
+
+    state = loop_state.read_node_state(tracked_repo, "wt-1")
+    assert state.worktree == loop_state.WorktreeBinding("wt-1", "harness/wt-1")
+    assert state.phase == "build"
+    assert loop_state.read_node_state(tracked_repo, "wt-control").phase == "intake"
+
+
+def test_cli_create_refuses_a_record_that_already_carries_a_binding(
+    tracked_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second create writes no second binding, and provisions nothing.
+
+    Refused before provisioning: the held binding names a lane whose branch may still
+    hold unlanded commits, and overwriting the ref is what makes those unreachable.
+    """
+    held = loop_state.format_worktree_ref("wt-held", "harness/wt-held")
+    flipped_tracker.seed(tracked_repo, "wt-2", external_ref=held)
+    monkeypatch.chdir(tracked_repo)
+
+    assert cli.main(["worktree", "create", "wt-2"]) == 1
+
+    assert worktree.load_session("wt-2", tracked_repo) is None
+    state = loop_state.read_node_state(tracked_repo, "wt-2")
+    assert state.worktree == loop_state.WorktreeBinding("wt-held", "harness/wt-held")
+
+
+def test_cli_create_binds_nothing_for_a_name_that_is_not_a_record(
+    tracked_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Provisioning for no tracked record is unchanged, against a tracker that can answer.
+
+    A repo with no ledger would pass this by not being asked; here the lookup runs, finds
+    nothing, and the ledger stays empty — so an unconditional write would fail the test.
+    """
+    monkeypatch.chdir(tracked_repo)
+
+    assert cli.main(["worktree", "create", "not-a-record"]) == 0
+
+    assert worktree.load_session("not-a-record", tracked_repo) is not None
+    assert tracker.read_record(tracked_repo, "not-a-record") is None
+    assert flipped_tracker.ledger_events(tracked_repo) == []

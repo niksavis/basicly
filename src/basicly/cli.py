@@ -4163,14 +4163,61 @@ def _cmd_worktree_merge_queue(args: argparse.Namespace) -> int:
 
 
 def _cmd_worktree_create(args: argparse.Namespace) -> int:
-    """Create + provision a worktree, honoring the configured base and cap."""
+    """Create + provision a worktree, honoring the configured base and cap.
+
+    When NAME is a tracked record, this writes the binding too, as the loop's own seeding
+    advance does. The two paths used to disagree about the same fact: `derive_phase` reads
+    `build` off the binding alone, so a hand-provisioned lane sat at `intake` with work in
+    flight, no advance could land a merge that had already happened, and the record missed
+    its landing gate, its ship checkpoint and its release record (basicly-i8urje).
+    Refusing to provision is the other honest remedy, and is not taken: `worktree-isolation`
+    ships this verb as the documented way to isolate work by hand.
+
+    A NAME that is not a record provisions exactly as before, binding nothing.
+    """
     repo_root = _repo_root()
     config = load_worktree_config(repo_root)
+    record = tracker.read_record(repo_root, args.name)
+    bound = loop_state.parse_worktree_ref(record.get("external_ref")) if record else None
+    if bound is not None:
+        # Before provisioning, not after: a second binding overwrites the first, and the
+        # lane it named — whose branch may hold unlanded commits — becomes unreachable
+        # from every advance that reads the ref.
+        print(
+            f"Error: {args.name} is already bound to worktree {bound.name!r} on "
+            f"{bound.branch!r}; land or clean up that lane before provisioning another",
+            file=sys.stderr,
+        )
+        return 1
     refusal = worktree.cap_refusal(config.concurrency, repo_root)
     if refusal:
         print(f"Error: {refusal}", file=sys.stderr)
         return 1
-    worktree.create(args.name, base=args.base or config.base_branch, repo_root=repo_root)
+    session = worktree.create(args.name, base=args.base or config.base_branch, repo_root=repo_root)
+    if record is None:
+        return 0
+    return _bind_provisioned_worktree(repo_root, args.name, session)
+
+
+def _bind_provisioned_worktree(repo_root: Path, issue_id: str, session: worktree.Session) -> int:
+    """Stash *session* on *issue_id*'s external_ref; non-zero when the write did not land.
+
+    Reported rather than raised: the worktree exists by now, so the tree is in exactly the
+    unbound state this command was changed to prevent, and the caller needs the record to
+    bind by hand rather than a traceback.
+    """
+    ref = loop_state.format_worktree_ref(session.name, session.branch)
+    try:
+        tracker.write(repo_root, ["update", issue_id, "--external-ref", ref])
+    except RuntimeError as exc:
+        print(
+            f"Error: worktree {session.name!r} exists but {issue_id} could not be bound "
+            f"to it ({exc}); the loop will read this record as intake until "
+            f"`basicly tracker update {issue_id} --external-ref {ref}` lands",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"  bound:  {issue_id} -> {ref}")
     return 0
 
 
