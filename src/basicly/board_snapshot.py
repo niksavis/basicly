@@ -66,6 +66,7 @@ DEFAULT_STALE_AFTER_S = 60.0
 # one-shot by definition; a caller on a tick says so itself.
 ONE_SHOT = "one-shot"
 SUPERVISOR_TICK = "supervisor-tick"
+SELF_REFRESH = "self-refresh"
 
 # The whole transport: a file at a path the consumer is told, and no other. Under
 # `.basicly/usage/`, whose `.gitignore` is a bare `*`, so one operator's board never commits.
@@ -279,6 +280,17 @@ def build_document(
     return document
 
 
+def serialize(document: Mapping[str, object]) -> str:
+    """*document* as the bytes the transport carries: sorted, indented, newline-terminated.
+
+    One function because a server that holds its own fold in memory must answer
+    ``GET /snapshot.json`` with the same bytes :func:`write_document` would have landed - the
+    contract says the served bytes *are* the file's - and two spellings of the encoding would
+    make that identity a coincidence.
+    """
+    return json.dumps(document, indent=2, sort_keys=True) + "\n"
+
+
 def write_document(repo_root: Path, document: Mapping[str, object]) -> Path:
     """Land *document* at :data:`SNAPSHOT_FILE` under *repo_root*; the path written.
 
@@ -287,5 +299,5 @@ def write_document(repo_root: Path, document: Mapping[str, object]) -> Path:
     transport, not any one producer's choice of where to put its output.
     """
     path = repo_root / SNAPSHOT_FILE
-    projection.atomic_write_text(path, json.dumps(document, indent=2, sort_keys=True) + "\n")
+    projection.atomic_write_text(path, serialize(document))
     return path

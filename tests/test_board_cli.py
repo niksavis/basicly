@@ -77,7 +77,7 @@ def test_the_group_registers_validate_and_leaves_the_artifact_on_no_subcommand()
     parsed = cli._build_parser().parse_args(["board", "--out", "b.html"])
     assert parsed.board_command is None
     assert board_cli._HANDLERS[None] is board_cli.cmd_emit
-    assert set(board_cli._HANDLERS) == {None, "validate"}
+    assert set(board_cli._HANDLERS) == {None, "serve", "validate"}
 
 
 def test_the_command_group_lives_in_its_own_module_and_cli_keeps_only_the_wiring() -> None:

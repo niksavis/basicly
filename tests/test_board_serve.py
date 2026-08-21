@@ -1,0 +1,316 @@
+"""Mode B: the loopback board, and the four refusals that are the unit (basicly-rn0o.5).
+
+Every property here is one a green suite would happily let regress, so each is instrumented
+rather than asserted about the source. The bind address is read off the live socket, not off
+:data:`basicly.board_serve.HOST`, because a constant is not a binding. The no-writes claim is a
+spy over the two write seams plus a before/after listing of the tree, because "writes nothing"
+is exactly the property one convenience call restores to false while every other test stays
+green - the shape `test_board_snapshot.py` uses for its fold count.
+
+Nothing here sleeps. The listener is bound before its thread starts, so a connect succeeds on
+the backlog immediately; the one-refresh-in-flight test gates a fold on an
+:class:`threading.Event` and waits for the condition rather than for a duration; and the port is
+always 0, so no test ever waits for a fixed port to open.
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import json
+import os
+import shutil
+import subprocess
+import threading
+import urllib.error
+import urllib.request
+from contextlib import contextmanager
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import pytest
+
+from basicly import (
+    board_cli,
+    board_schema,
+    board_serve,
+    board_snapshot,
+    cli,
+    owned_store,
+    projection,
+    supervise,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+REPO_ROOT = Path(__file__).parent.parent
+FIXTURE_LEDGER = REPO_ROOT / "tests" / "fixtures" / "board" / "ledger" / "events-0001.jsonl"
+MINIMAL = REPO_ROOT / "tests" / "fixtures" / "board" / "minimal-v1.json"
+
+# Every wait in this module is a condition with a bound, never a duration to elapse.
+TIMEOUT_S = 20.0
+
+
+@pytest.fixture
+def board_repo(work_repo: Path) -> Path:
+    """A work repo whose ledger is the frozen board corpus, so a fold has something to read."""
+    ledger = owned_store.ledger_dir(work_repo)
+    ledger.mkdir(parents=True, exist_ok=True)
+    for stale in ledger.glob("events-*.jsonl"):
+        stale.unlink()
+    shutil.copy2(FIXTURE_LEDGER, ledger / "events-0001.jsonl")
+    return work_repo
+
+
+def _lock(repo_root: Path, *, age_s: float = 0.0) -> Path:
+    """A supervisor lock whose heartbeat is *age_s* old, by mtime - staleness is mtime-only."""
+    path = repo_root / supervise.LOCK_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"pid": 4321, "session_id": "x-1:beef", "root_issue": "x-1"}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    stamp = path.stat().st_mtime - age_s
+    os.utime(path, (stamp, stamp))
+    return path
+
+
+@contextmanager
+def _running(listener: board_serve.Listener) -> Iterator[board_serve.Listener]:
+    """*listener* serving on a background thread, torn down however the body exits."""
+    thread = threading.Thread(target=listener.run, daemon=True)
+    thread.start()
+    try:
+        yield listener
+    finally:
+        listener.stop()
+        listener.close()
+        thread.join(timeout=TIMEOUT_S)
+
+
+def _get(url: str) -> tuple[int, bytes, dict[str, str]]:
+    """One GET: status, body and headers."""
+    with urllib.request.urlopen(url, timeout=TIMEOUT_S) as response:
+        return response.status, response.read(), dict(response.headers)
+
+
+def test_the_listener_binds_the_loopback_and_never_a_wildcard_or_a_name(board_repo: Path) -> None:
+    """AC 1 and C10, read off the live socket rather than off the constant.
+
+    The address is asserted to parse as a loopback IPv4 literal, which refuses `0.0.0.0` and
+    refuses a hostname in one assertion - a name is the case a `!= "0.0.0.0"` check waves
+    through, and a resolver is free to point one off this box.
+    """
+    with _running(board_serve.bind(board_repo, port=0)) as listener:
+        bound = ipaddress.ip_address(listener.host)
+        assert bound.is_loopback
+        assert not bound.is_unspecified
+        assert listener.host == "127.0.0.1"
+        assert listener.port > 0
+        assert listener.url == f"http://127.0.0.1:{listener.port}"
+
+
+def test_the_two_get_routes_answer_and_a_post_is_405(board_repo: Path) -> None:
+    """AC 6: the action surface is a separate unit and must not appear here.
+
+    405 rather than the base class's 501, because 501 reads as "not implemented yet" and this
+    resource is never going to take a POST.
+    """
+    with _running(board_serve.bind(board_repo, port=0)) as listener:
+        status, body, headers = _get(f"{listener.url}/snapshot.json")
+        assert status == 200
+        assert json.loads(body)["schema"] == board_schema.VERSION
+        assert headers["Content-Type"] == "application/json"
+
+        status, page, headers = _get(listener.url + "/")
+        assert status == 200
+        assert board_schema.VERSION in page.decode("utf-8")
+        assert headers["Refresh"] == "15"
+
+        post = urllib.request.Request(f"{listener.url}/action", data=b"", method="POST")
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(post, timeout=TIMEOUT_S)
+        assert refused.value.code == 405
+        assert refused.value.headers["Allow"] == "GET"
+
+        with pytest.raises(urllib.error.HTTPError) as missing:
+            urllib.request.urlopen(f"{listener.url}/elsewhere", timeout=TIMEOUT_S)
+        assert missing.value.code == 404
+
+
+def test_the_served_snapshot_validates_and_is_fresher_than_the_cadence_it_declares(
+    board_repo: Path,
+) -> None:
+    """The record's acceptance criterion, over the wire rather than over the function.
+
+    `cadence_s` is what the document promises about itself, so a served document whose own age
+    already exceeds it is a board lying about its liveness on the first request.
+    """
+    with _running(board_serve.bind(board_repo, port=0, refresh_s=15.0)) as listener:
+        _status, body, _headers = _get(f"{listener.url}/snapshot.json")
+    document: dict[str, Any] = json.loads(body)
+
+    assert board_schema.verdict(board_repo, document).readable
+    assert document["freshness"]["source"] == board_snapshot.SELF_REFRESH
+    assert document["freshness"]["cadence_s"] == 15.0
+    assert document["freshness"]["stale_after_s"] == supervise.STALE_AFTER_S
+    assert board_serve.DEFAULT_REFRESH_S == supervise.HEARTBEAT_INTERVAL_S == 15.0
+
+
+def test_a_fresh_lock_makes_the_route_the_supervisors_file_byte_for_byte(
+    board_repo: Path,
+) -> None:
+    """AC 2 and the transport rule: in serve mode the identical bytes are `GET /snapshot.json`.
+
+    The file written here is deliberately *not* what a fold of this repo would produce, so a
+    server that folded anyway would answer with different bytes rather than with equal ones.
+    """
+    _lock(board_repo)
+    minimal = json.loads(MINIMAL.read_text(encoding="utf-8"))
+    landed = board_snapshot.write_document(board_repo, minimal)
+
+    board = board_serve.Board(board_repo)
+    assert board.refresh() is False
+    assert board.refreshes == 0
+    assert board.payload() == landed.read_bytes()
+    assert board.producer().startswith("board: producer  supervisor x-1:beef (pid 4321)")
+
+
+def test_a_stale_lock_hands_the_fold_back_to_the_viewer(board_repo: Path) -> None:
+    """AC 3: a stale lock is a crashed supervisor, which is when a viewer must fold for itself."""
+    _lock(board_repo, age_s=supervise.STALE_AFTER_S + 1)
+    board = board_serve.Board(board_repo, refresh_s=1.0)
+
+    assert board.refresh() is True
+    assert board.refreshes == 1
+    served = board.payload()
+    assert served is not None
+    assert json.loads(served)["session"]["holder"]["stale"] is True
+    assert "self-refresh every 1s" in board.producer()
+
+
+def test_the_server_takes_no_lock_and_writes_nothing_at_all(
+    board_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC 5, instrumented twice: the write seams refuse, and the tree is listed before and after.
+
+    Two instruments because either alone is fail-open. A spy misses a write that reaches the
+    filesystem by some path it does not name; a tree listing misses a write that lands the same
+    bytes that were already there. `.basicly/ledger/` is inside the listing, so the criterion's
+    own path is covered by the general claim rather than by a second assertion.
+    """
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("the board server wrote state")
+
+    monkeypatch.setattr(projection, "atomic_write_text", refuse)
+    monkeypatch.setattr(board_snapshot, "write_document", refuse)
+    monkeypatch.setattr(supervise, "acquire", refuse)
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+
+    before = sorted(path.relative_to(board_repo) for path in board_repo.rglob("*"))
+    with _running(board_serve.bind(board_repo, port=0)) as listener:
+        assert _get(f"{listener.url}/snapshot.json")[0] == 200
+        assert _get(listener.url + "/")[0] == 200
+        listener.board.refresh()
+
+    assert sorted(path.relative_to(board_repo) for path in board_repo.rglob("*")) == before
+    assert not (board_repo / supervise.LOCK_FILE).exists()
+    assert not (board_repo / board_snapshot.SNAPSHOT_FILE).exists()
+
+
+def test_a_tick_arriving_mid_fold_is_dropped_rather_than_queued(
+    board_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC 3's "never more than one refresh in flight", as a concurrency measurement.
+
+    The fold is gated on an event so the second caller is guaranteed to arrive while the first
+    is still inside it - the ordering is made deterministic rather than raced for.
+    """
+    inside = threading.Event()
+    release = threading.Event()
+    depth: list[int] = []
+    real = board_snapshot.build_document
+
+    def gated(*args: Any, **kwargs: Any) -> Any:
+        depth.append(1)
+        inside.set()
+        assert release.wait(TIMEOUT_S)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(board_snapshot, "build_document", gated)
+    board = board_serve.Board(board_repo)
+    first = threading.Thread(target=board.refresh)
+    first.start()
+    assert inside.wait(TIMEOUT_S)
+
+    assert board.refresh() is False
+    release.set()
+    first.join(timeout=TIMEOUT_S)
+
+    assert depth == [1]
+    assert board.refreshes == 1
+
+
+def test_a_fold_that_raises_is_counted_and_leaves_the_last_document_standing(
+    board_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dark screen is the failure this design is against, so a bad fold costs a counter."""
+    board = board_serve.Board(board_repo)
+    assert board.refresh() is True
+    good = board.payload()
+
+    def explode(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("corrupt source")
+
+    monkeypatch.setattr(board_snapshot, "build_document", explode)
+    assert board.refresh() is False
+    assert board.failures == 1
+    assert board.refreshes == 1
+    assert board.payload() == good
+
+
+def test_ctrl_c_reports_the_counts_and_that_no_state_was_written(
+    board_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AC 5's clean exit, by entering the real recovery path rather than reading it.
+
+    `serve_forever` is replaced with the interrupt it would raise, which is the only thing a
+    Ctrl-C does to this process; everything after it - the ticker stop, the socket close and the
+    report - is the code under test.
+    """
+    monkeypatch.chdir(board_repo)
+
+    def interrupt(_self: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(board_serve._Server, "serve_forever", interrupt)
+    assert cli.main(["board", "serve", "--port", "0"]) == 0
+
+    printed = capsys.readouterr().out
+    assert f"serving {board_schema.VERSION} on http://127.0.0.1:" in printed
+    assert "(127.0.0.1 only; Ctrl-C to stop)" in printed
+    assert "holds no lock and blocks no gate" in printed
+    assert board_serve.STOPPED.format(refreshes=1, failures=0) in printed
+
+
+def test_a_port_already_taken_is_reported_rather_than_raised(board_repo: Path) -> None:
+    """A consumer gets a line and an exit code, never a traceback out of a socket."""
+    with _running(board_serve.bind(board_repo, port=0)) as listener:
+        assert board_serve.serve(board_repo, port=listener.port) == 1
+
+
+def test_the_serve_help_carries_both_frozen_claims_and_never_the_word_it_refuses(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """C1, on the surface that would be tempted: a live-attached mode is where the word appears.
+
+    Asserted in both directions, as `test_board_cli.py` does for the group: a surface that
+    spends the word in order to deny it has still spent it.
+    """
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(["board", "serve", "--help"])
+    assert exit_info.value.code == 0
+    printed = " ".join(capsys.readouterr().out.split())
+    assert board_cli.FRESHNESS in printed
+    assert board_cli.NO_WRITES in printed
+    assert "real-time" not in printed
+    assert "real time" not in printed
