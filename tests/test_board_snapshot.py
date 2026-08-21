@@ -259,6 +259,41 @@ def test_the_units_and_graph_sections_pin_the_frozen_corpus(board_repo: Path) ->
     assert board_schema.verdict(board_repo, document).exit_code == 0
 
 
+def test_the_callers_derivations_reach_every_section_that_needs_one(board_repo: Path) -> None:
+    """basicly-f3tked: phase, readiness, git state and the grant, all from above.
+
+    The counterpart of the two absence assertions above it - `backlog` without `ready`, a unit
+    row without `phase` - so the pair discriminates a producer that honours the facts from one
+    that ignores them. `frozenset` sizes rather than a re-walk: `backlog.ready` counts what the
+    caller handed over, which is why it cannot disagree with the flags on the rows.
+    """
+    facts = board_snapshot.Facts(
+        session=board_snapshot.SessionFacts(
+            root_issue="fx-root", grant_level="L3", token_budget=80000000, spent_tokens=12
+        ),
+        repo=board_sections.RepoFacts(branch="harness/fx", head="7c930755", dirty=True),
+        phases={"fx-root.1": "verify"},
+        readiness=board_sections.Readiness(
+            ready=frozenset({"fx-root.1", "fx-root.3"}), blocked=frozenset({"fx-root.4"})
+        ),
+        questions={"fx-root.1#wait-ship": "ship it?"},
+    )
+    document = _built(board_repo, facts=facts, now=NOW)
+    rows = {row["id"]: row for row in document["units"]}
+
+    assert document["repo"]["branch"] == "harness/fx"
+    assert document["repo"]["dirty"] is True
+    assert (document["backlog"]["ready"], document["backlog"]["blocked"]) == (2, 1)
+    assert rows["fx-root.1"]["phase"] == "verify"
+    assert (rows["fx-root.1"]["ready"], rows["fx-root.4"]["ready"]) == (True, False)
+    assert "ready" not in rows["fx-root"]
+    assert document["asks"][0]["question"] == "ship it?"
+    assert document["asks"][0]["waiting_s"] > 0
+    assert document["session"]["token_budget"] == 80000000
+    assert (document["session"]["grant_level"], document["session"]["spent_tokens"]) == ("L3", 12)
+    assert board_schema.verdict(board_repo, document).exit_code == 0
+
+
 def test_no_absolute_path_or_username_reaches_the_document(board_repo: Path) -> None:
     """AC 6, on the two surfaces that carry one: a caller's facts and a dispatch command."""
     facts = board_snapshot.SessionFacts(root_issue="fx-root", session_id="/home/someone/lock")

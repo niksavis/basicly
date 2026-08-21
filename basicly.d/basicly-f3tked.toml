@@ -1,0 +1,20 @@
+# The board producer's missing fields (basicly-f3tked).
+#
+# ## release_notes: one declaration, and it is not this lane's own debt
+#
+# `basicly-rn0o.5` ("serve the board in wall mode read only") was closed as **deferred by
+# owner decision** while these two board lanes were being filed, and it declares a `## Scope`
+# reaching `src/basicly/`. So the gate refuses every commit on every branch off that point,
+# this one included — it is a shared blocker at the branch base rather than a finding about
+# this change.
+#
+# Declared invisible rather than answered with a note, because it shipped nothing a consumer
+# can see and a note claiming otherwise would be a false release claim. The evidence is a zero
+# with a positive control: `src/basicly/board_serve.py` and `tests/test_board_serve.py` do not
+# exist, no `board serve` verb appears under `src/`, and `src/basicly/board_cli.py` — from the
+# same scope list — does exist, so the probe is not looking in the wrong place.
+#
+# Reversible in one edit if the owner would rather write the note: delete the
+# [tool.release_notes.invisible] entry and this delta together.
+[ratchet.release_notes]
+count_delta = 1

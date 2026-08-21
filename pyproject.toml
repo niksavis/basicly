@@ -565,6 +565,7 @@ declared_count = 0
 # here and `count_delta = +1` under [ratchet.release_notes] in the lane's own basicly.d
 # fragment — for the reason every ratchet number is a delta.
 [tool.release_notes.invisible]
+"basicly-rn0o.5" = "closed as deferred by owner decision without shipping: its scope names `src/basicly/board_serve.py` and `tests/test_board_serve.py`, neither of which exists, and no `board serve` verb appears anywhere in `src/` — the positive control is `src/basicly/board_cli.py` from the same scope list, which does exist"
 
 # The 145 closed records that declared a scope reaching a shipped surface and produced no
 # release note when the gate landed (2026-08-20). Measured over the whole tracker: 984

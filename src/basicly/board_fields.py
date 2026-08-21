@@ -86,6 +86,11 @@ KIND_MAX = 40
 NAME_MAX = 80
 AGENT_MAX = 60
 PRIORITY_MAX = 16
+# `repo.head` is a commit, abbreviated or full, so 40 is the full sha and not a prose bound.
+HEAD_MAX = 40
+# `asks[].question` is the one value bounded wider than :data:`TEXT_MAX`, and the schema says
+# why: it is a prompt somebody in the room has to read, not the marker body it was parsed from.
+QUESTION_MAX = 500
 
 # The family, then the rest of its first line. The character class is the roster gate's own, so
 # a malformed marker fails to match and is skipped rather than raising - the best-effort

@@ -2,11 +2,11 @@
 
 The boundary is which rows a section is, against what may cross the wire
 (:mod:`basicly.board_fields`). Every string still leaves through :func:`board_fields.text`, so
-that rule is enforced in one place and consumed in six (basicly-y754k2).
+that rule is enforced in one place and consumed in seven (basicly-y754k2).
 """
 
 # comment-density-waiver: cohesion: 51.5% after the split that basicly-y754k2 asked for,
-# and the split is the cause: six reducers each carry the contract a schema consumer needs
+# and the split is the cause: seven reducers each carry the contract a schema consumer needs
 # - which rows a section is, which fields are omitted rather than guessed - against a body
 # that is one comprehension. Measured at every step down from 55.1%: the stale `_session`
 # cross-reference
@@ -22,7 +22,8 @@ from typing import TYPE_CHECKING, Any
 from . import board_fields
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
+    from datetime import datetime
 
 # The separator a wait id uses to carry its subject, read only by :func:`asks`.
 _SUBJECT_SEP = "#wait-"
@@ -58,7 +59,67 @@ class LaneFacts:
     branch: str = ""
 
 
-def asks(markers: Sequence[board_fields.Marker]) -> list[dict[str, object]]:
+@dataclass(frozen=True)
+class RepoFacts:
+    """Which checkout the document is about, past the name a path component answers.
+
+    **A subprocess is the whole reason this is an argument.** ``dirty`` is the index against
+    the working tree - ``git status`` and nothing cheaper - while the producer's contract is
+    that it opens files and spawns nothing, pinned by a spy in
+    ``tests/test_board_snapshot.py``. Reading git state below this line would break that for
+    every caller to serve one, so the caller already running git supplies all three at once.
+    """
+
+    branch: str = ""
+    head: str = ""
+    dirty: bool | None = None
+
+
+def repo(name: str, facts: RepoFacts | None) -> dict[str, object]:
+    """Which checkout this is: *name*, plus whatever git state the caller held.
+
+    A field the caller left empty omits its key rather than filling one, because a branch with
+    no ``dirty`` beside it is a weaker claim than a clean tree that is not clean.
+    """
+    section: dict[str, object] = {"name": board_fields.text(name, board_fields.ID_MAX)}
+    if facts is None:
+        return section
+    if facts.branch:
+        section["branch"] = board_fields.text(facts.branch, board_fields.TEXT_MAX)
+    if facts.head:
+        section["head"] = board_fields.text(facts.head, board_fields.HEAD_MAX)
+    if facts.dirty is not None:
+        section["dirty"] = facts.dirty
+    return section
+
+
+@dataclass(frozen=True)
+class Readiness:
+    """Which records the tracker calls ready and which it calls blocked, from the caller.
+
+    **Two sets rather than a predicate, because the third answer is the point.** A record in
+    neither set is one the tracker's own ready walk did not rule on, and :meth:`flag` returns
+    None for it so the row omits ``ready`` instead of reading False. `ready` is a derivation
+    over a status vocabulary and the whole edge population - the kit's `queries` owns it - and
+    a second spelling here is how two derivations come to disagree.
+    """
+
+    ready: frozenset[str] = frozenset()
+    blocked: frozenset[str] = frozenset()
+
+    def flag(self, record: str) -> bool | None:
+        """Whether *record* is ready; None when neither set names it."""
+        if record in self.ready:
+            return True
+        return False if record in self.blocked else None
+
+
+def asks(
+    markers: Sequence[board_fields.Marker],
+    *,
+    now: datetime,
+    questions: Mapping[str, str] | None = None,
+) -> list[dict[str, object]]:
     """The pending asks: a wait whose id no marker anywhere reports as answered.
 
     **Pairing, not counting, and that is the whole criterion.** Reading every request as
@@ -67,9 +128,11 @@ def asks(markers: Sequence[board_fields.Marker]) -> list[dict[str, object]]:
     the test pins all three. Order-independent, ``policy._open_wait_stamp``'s rule: an answer
     anywhere closes the wait, and comment order is not chronological.
 
-    No ``waiting_s``: the schema leaves it optional, a consumer holding ``requested_at`` and
-    the document's ``generated_at`` has it exactly, and subtracting two wall-clock readings in
-    the engine is what ``test_no_engine_interval_is_measured_on_a_wall_clock`` refuses.
+    ``waiting_s`` is *now* minus the request stamp, and *now* is the caller's injected instant
+    rather than a reading taken here - the same stamp the document is dated with, so the two
+    can never disagree. ``question`` is caller-supplied and keyed by wait id: a request marker
+    carries no prose at all (``policy.record_wait_request`` writes id, kind and ``requested``),
+    so the wording exists only on the decision queue and a wait with none keeps the key absent.
     """
     waits = [row for row in markers if row.family == board_fields.WAIT_FAMILY]
     answered = {
@@ -90,8 +153,11 @@ def asks(markers: Sequence[board_fields.Marker]) -> list[dict[str, object]]:
             "requested_at": board_fields.stamp(requested),
             "issue": board_fields.text(row.record, board_fields.ID_MAX),
         }
+        ask["waiting_s"] = max(0.0, (now - requested).total_seconds())
         if subject := wait_id.partition(_SUBJECT_SEP)[2]:
             ask["subject"] = board_fields.text(subject, board_fields.TEXT_MAX)
+        if question := (questions or {}).get(wait_id, ""):
+            ask["question"] = board_fields.text(question, board_fields.QUESTION_MAX)
         pending.append(ask)
     return pending
 
@@ -130,8 +196,13 @@ def lanes(facts: Iterable[LaneFacts]) -> list[dict[str, object]]:
     return rows
 
 
-def units(states: Iterable[Any]) -> list[dict[str, object]]:
-    """One bounded row per folded record in *states*, at the five fields a board draws.
+def units(
+    states: Iterable[Any],
+    *,
+    phases: Mapping[str, str] | None = None,
+    ready: Readiness | None = None,
+) -> list[dict[str, object]]:
+    """One bounded row per folded record in *states*, at the fields a board draws.
 
     **This is the rule at its sharpest: fields, never records.** A folded record carries its
     description, its acceptance criteria and every comment body, and a row shaped like one
@@ -139,11 +210,13 @@ def units(states: Iterable[Any]) -> list[dict[str, object]]:
     module exists for. `title` is the only prose admitted and it is bounded, so a description
     cannot arrive by being called a title.
 
-    Two properties the schema offers are deliberately not filled. `phase` has the same
-    authority problem :class:`LaneFacts` documents, and `ready` is the tracker's own
-    derivation over a status vocabulary and the whole edge population - the same reason
-    `backlog` carries no `ready` or `blocked`. A second spelling of either here is how two
-    derivations come to disagree, so both stay absent until a caller supplies them.
+    `phase` and `ready` reach a row from *phases* and *ready* and from nowhere else, which is
+    the same rule :class:`LaneFacts` states one section over: `phase`'s authority is
+    `loop_state.derive_phase` reading a required-gate set outside the three files this producer
+    opens, and `ready` is the tracker's own walk. Neither map has to be complete - a record
+    absent from *phases* keeps `phase` absent, and :meth:`Readiness.flag` returning None keeps
+    `ready` absent - because the schema has no field marking a value as derived here, so a
+    guess would render identically to a read.
     """
     rows = []
     for state in states:
@@ -157,6 +230,10 @@ def units(states: Iterable[Any]) -> list[dict[str, object]]:
             row["priority"] = board_fields.text(f"P{priority}", board_fields.PRIORITY_MAX)
         if kind := state.fields.get("issue_type"):
             row["type"] = board_fields.text(kind, board_fields.KIND_MAX)
+        if phase := (phases or {}).get(state.record, ""):
+            row["phase"] = board_fields.text(phase, board_fields.KIND_MAX)
+        if ready is not None and (flag := ready.flag(state.record)) is not None:
+            row["ready"] = flag
         rows.append(row)
     return rows
 

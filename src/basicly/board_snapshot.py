@@ -17,9 +17,11 @@ the import would close ``supervise -> board_snapshot -> supervise``. Every calle
 above ``supervise`` or *is* it, so every caller already holds the facts: they arrive as
 :class:`SessionFacts`, and with none supplied the ``session`` section is **omitted**.
 
-``backlog`` carries no ``ready`` or ``blocked``: each is the tracker's own derivation over a
-status vocabulary and a full edge population, and a second spelling of one in a display
-producer is how the two come to disagree. The sections whose source is ``.basicly/usage/`` are
+``backlog``'s ``ready`` and ``blocked``, ``units[].phase`` and ``units[].ready``,
+``repo``'s git state and the grant triple on ``session`` all arrive the same way and for the
+same reason: each is a derivation whose authority is a layer above this one, and a second
+spelling of one in a display producer is how the two come to disagree. Whichever the caller
+withholds is **omitted**. The sections whose source is ``.basicly/usage/`` are
 :mod:`basicly.board_usage`; the row reducers are :mod:`basicly.board_sections`.
 """
 
@@ -114,22 +116,41 @@ class SessionFacts:
     session_id: str = ""
     age_s: float | None = None
     stale: bool | None = None
+    # The autonomy grant the run is under, from ``policy.active_grant``. Empty level and None
+    # budget omit their keys: an L1 grant genuinely has no budget, and a wall board that draws
+    # `0` for it has published a ceiling nobody set.
+    grant_level: str = ""
+    token_budget: int | None = None
+    # Spend under *this grant*, never the session's lifetime figure. The two cover different
+    # windows, so publishing the lifetime one beside the ceiling is how a display comes to draw
+    # 177970761/4000000 with nothing spent under that grant (basicly-e2mz.13);
+    # ``policy.tokens_under_grant`` is the subtraction that makes the pair comparable. None
+    # where the caller could not measure it, which omits the key rather than reporting zero
+    # spend on a session whose run records this checkout cannot see.
+    spent_tokens: int | None = None
 
 
 @dataclass(frozen=True)
 class Facts:
     """Everything the caller knows that this producer may not derive.
 
-    One record rather than one argument each, because the two are one rule - OQ-D's *the
-    layer above supplies the fact the layer below cannot honestly derive*. :attr:`session`
-    needs the supervisor lock, which reading here would close the cycle
-    ``supervise -> board_snapshot -> supervise`` (C11); :attr:`lanes` needs the loop's
-    required-gate set. Whichever is None has its section **omitted**, and unit F's supervisor
-    caller adds its facts here rather than to a signature.
+    One record rather than one argument each, because they are one rule - OQ-D's *the layer
+    above supplies the fact the layer below cannot honestly derive*. :attr:`session` needs the
+    supervisor lock, which reading here would close the cycle
+    ``supervise -> board_snapshot -> supervise`` (C11); :attr:`lanes` and :attr:`phases` need
+    the loop's required-gate set, whose authority is ``loop_state.derive_phase``;
+    :attr:`readiness` is the tracker's own ready walk; :attr:`repo` needs a subprocess; and
+    :attr:`questions` is the decision queue's wording, which no wait marker carries. Whichever
+    is None has its section or its key **omitted**, and a caller adds its facts here rather
+    than to a signature.
     """
 
     session: SessionFacts | None = None
     lanes: Sequence[board_sections.LaneFacts] | None = None
+    repo: board_sections.RepoFacts | None = None
+    phases: Mapping[str, str] | None = None
+    readiness: board_sections.Readiness | None = None
+    questions: Mapping[str, str] | None = None
 
 
 def _read_and_fold(repo_root: Path) -> tuple[Mapping[str, Any], list[Any], list[tuple]] | None:
@@ -165,8 +186,12 @@ def _live(records: Mapping[str, Any]) -> list[Any]:
     return [records[name] for name in sorted(records) if not records[name].tombstoned]
 
 
-def _backlog(live: Sequence[Any]) -> dict[str, object]:
-    """The status tally, and a count per priority label as the producer spells it."""
+def _backlog(live: Sequence[Any], readiness: board_sections.Readiness | None) -> dict[str, object]:
+    """The status tally, a count per priority label, and the caller's two set sizes.
+
+    ``ready`` and ``blocked`` are ``len`` over the sets *readiness* carries, which is counting
+    a supplied answer rather than deriving one - the tracker's ready walk stays the only walk.
+    """
     counts: dict[str, int] = {}
     priorities: dict[str, int] = {}
     for state in live:
@@ -175,13 +200,17 @@ def _backlog(live: Sequence[Any]) -> dict[str, object]:
         if isinstance(priority, int) and not isinstance(priority, bool):
             priorities[f"P{priority}"] = priorities.get(f"P{priority}", 0) + 1
     closed = counts.get(_CLOSED_STATUS, 0)
-    return {
+    section: dict[str, object] = {
         "total": len(live),
         "active": len(live) - closed,
         "in_progress": counts.get(_ACTIVE_STATUS, 0),
         "closed": closed,
         "by_priority": priorities,
     }
+    if readiness is not None:
+        section["ready"] = len(readiness.ready)
+        section["blocked"] = len(readiness.blocked)
+    return section
 
 
 def _session(facts: SessionFacts, records: Mapping[str, Any]) -> dict[str, object]:
@@ -202,6 +231,12 @@ def _session(facts: SessionFacts, records: Mapping[str, Any]) -> dict[str, objec
         holder["stale"] = facts.stale
     if holder:
         section["holder"] = holder
+    if facts.grant_level:
+        section["grant_level"] = board_fields.text(facts.grant_level, board_fields.PRIORITY_MAX)
+    if facts.token_budget is not None:
+        section["token_budget"] = max(0, facts.token_budget)
+    if facts.spent_tokens is not None:
+        section["spent_tokens"] = max(0, facts.spent_tokens)
     return section
 
 
@@ -221,10 +256,12 @@ def build_document(
 
     Args:
         repo_root: The checkout to read.
-        facts: What the caller knows and this module may not derive - the live-lock facts
-            and the in-flight lanes. Each one absent omits its section rather than guessing
-            a root or a phase. An empty ``lanes`` sequence still emits ``[]``, which is the
-            different claim that the caller can see lanes and there are none.
+        facts: What the caller knows and this module may not derive - the live-lock facts,
+            the in-flight lanes, a phase per record, the ready walk, the checkout's git state
+            and the wording of each pending ask. Each one absent omits its section or its key
+            rather than guessing a root, a phase or a clean tree. An empty ``lanes`` sequence
+            still emits ``[]``, which is the different claim that the caller can see lanes and
+            there are none.
         freshness: What will rewrite this document. Defaults to a one-shot build.
         now: The instant to stamp. Injected so a test is a function of its fixture rather
             than of the clock.
@@ -242,11 +279,11 @@ def build_document(
             "stale_after_s": chosen.stale_after_s,
         },
         "generator": {"tool": TOOL, "version": board_fields.text(__version__, 60)},
-        "repo": {
-            "name": board_fields.text(
-                tracker_paths.tracker_root(repo_root).resolve().name, board_fields.ID_MAX
-            )
-        },
+        # Resolved before its last component is taken, or a caller spelling the root as
+        # `Path(".")` publishes an empty name and the schema withholds the whole section.
+        "repo": board_sections.repo(
+            tracker_paths.tracker_root(repo_root).resolve().name, known.repo
+        ),
     }
     read = _read_and_fold(repo_root)
     if read is not None:
@@ -256,12 +293,12 @@ def build_document(
         # rather than what the log holds, and C6 priced the payload on exactly this cut.
         active = [state for state in live if state.status != _CLOSED_STATUS]
         drawn = {state.record for state in active}
-        document["backlog"] = _backlog(live)
-        document["units"] = board_sections.units(active)
+        document["backlog"] = _backlog(live, known.readiness)
+        document["units"] = board_sections.units(active, phases=known.phases, ready=known.readiness)
         document["graph"] = board_sections.graph(
             edge for edge in edges if edge[0] in drawn or edge[2] in drawn
         )
-        document["asks"] = board_sections.asks(markers)
+        document["asks"] = board_sections.asks(markers, now=moment, questions=known.questions)
         document["events"] = board_sections.events(markers, event_limit)
         if known.session is not None:
             document["session"] = _session(known.session, records)

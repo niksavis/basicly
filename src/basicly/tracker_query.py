@@ -43,12 +43,24 @@ def _report(payload: object) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
 
 
+def ready_report(repo_root: Path, limit: int | None = None) -> dict[str, Any]:
+    """The kit's ranked ready report for *repo_root* — what :func:`cmd_ready` prints.
+
+    The function rather than the print, for a caller that needs the answer as data: the board
+    producer's caller draws the ready set, and reaching the kit itself would put a second
+    module on the store's seam for a question this one already routes (basicly-f3tked).
+    """
+    return _queries(repo_root).ready(owned_store.ledger_dir(repo_root), limit=limit)
+
+
+def blocked_report(repo_root: Path) -> dict[str, Any]:
+    """The kit's blocked report for *repo_root* — what :func:`cmd_blocked` prints."""
+    return _queries(repo_root).blocked(owned_store.ledger_dir(repo_root))
+
+
 def cmd_ready(args: argparse.Namespace) -> int:
     """Print the ranked ready set — what can be worked on now, best first."""
-    repo_root = Path.cwd()
-    report = _queries(repo_root).ready(
-        owned_store.ledger_dir(repo_root), limit=getattr(args, "limit", None)
-    )
+    report = ready_report(Path.cwd(), getattr(args, "limit", None))
     if getattr(args, "json", False):
         _report(report)
         return 0
@@ -65,8 +77,7 @@ def cmd_ready(args: argparse.Namespace) -> int:
 
 def cmd_blocked(args: argparse.Namespace) -> int:
     """Print each dispatchable record that is not ready, and what holds it."""
-    repo_root = Path.cwd()
-    report = _queries(repo_root).blocked(owned_store.ledger_dir(repo_root))
+    report = blocked_report(Path.cwd())
     if getattr(args, "json", False):
         _report(report)
         return 0
