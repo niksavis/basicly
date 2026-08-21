@@ -186,7 +186,7 @@ def test_a_composed_share_is_reported_on_the_grid_it_is_measured_on() -> None:
 def test_a_small_module_is_out_of_scope() -> None:
     """One mandatory docstring dominates a stub, so its share says nothing about density."""
     modules = gate.tracked_modules(REPO_ROOT)
-    assert all(module.tokens >= gate._MIN_TOKENS for module in modules)
+    assert all(module.tokens >= gate.MIN_TOKENS for module in modules)
 
 
 def test_the_frozen_list_matches_the_tree() -> None:

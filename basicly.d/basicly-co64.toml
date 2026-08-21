@@ -1,0 +1,51 @@
+# The two-ratchet headroom read, as `.scripts/headroom.py` (basicly-co64).
+#
+# ## Why a new script and not the two the record's scope named
+#
+# The record's scope named `check_module_size.py`, `check_comment_density.py` and
+# `ratchet.py`, and its demonstration named the first of them as the command. It was written
+# before the code was read, and the module-size ratchet refused that placement: the read
+# built inside `check_module_size.py` measured **4140 tokens against the 4000-token cap**, a
+# 140-token overrun, having started at 2588 with 1412 to spare. The addition is 1552 tokens,
+# not the ~580 estimated before writing — argparse help and the refusal message are most of
+# it. So the gate's own remedy applies to the placement rather than a rebaseline: split along
+# a nameable responsibility. "The pre-write sizing read" is one, and it is not the same
+# responsibility as "the commit-time size gate" — this is the third time a record of this
+# shape has been redesigned into a new module (basicly-c357, basicly-e2mz.49), and both
+# earlier ones were refused by this same arithmetic.
+#
+# Standing alone it costs the two gates nothing: `check_module_size.py` is untouched, both
+# ratchets pass with no rebaseline in either table, and `headroom.py` measures 1745 tokens at
+# 41.5% prose against its own fresh 4000/50.0 bounds.
+#
+# `ratchet.py` was also left alone, and deliberately: it states that nothing in it reads what
+# a subject *means*, and composing tokens against a prose share is exactly that reading. A
+# composer there would also have to import the two gates that import it.
+#
+# ## The margins
+#
+# `TIGHT_TOKENS = 615` and `TIGHT_POINTS = 1.0` are this repo's own record of what one unit's
+# edit costs one module, not a preference: over the `rebaselined` declarations in this
+# directory, 44 `module_size` entries have a median of 614.5 tokens (min 6, p75 987, max
+# 4504) and 5 `comment_density` entries a maximum of 0.9 points. Below that much room, an
+# ordinary unit is refused. Measured on this tree: **164 of 426 tracked modules** are inside
+# one of those two margins, against **0 of 1** on a control tree holding a module with room
+# on both bounds — the control is what makes "nothing is close" falsifiable.
+#
+# ## The suppressions
+#
+# Three E402, one per import: `.scripts` is not a package, so both gates and `ratchet` are
+# reachable only after `sys.path` names their directory, and the import cannot precede the
+# statement that makes it resolvable. It is the same shape `check_module_size.py`,
+# `check_comment_density.py` and `improvement_controller.py` each already carry, and
+# `improvement_controller.py` is also the precedent for importing a gate as a sensor rather
+# than re-measuring. Each carries its reason inline, so `unreasoned_count` does not move.
+#
+# The alternative rejected was deferring the imports into the function bodies, which trades
+# three E402 for two PLC0415 and prices the imports as code against this module's own size.
+
+[ratchet]
+base_commit = "649c0e4744b496ef148c511f15cb6fcdddbe635e"
+
+[ratchet.noqa_debt.frozen]
+E402 = 3
