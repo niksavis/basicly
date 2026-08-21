@@ -32,7 +32,7 @@ from typing import Any
 
 import pytest
 
-from basicly import board_footer, board_render, board_schema, catalog_source
+from basicly import board_regions, board_render, board_schema, catalog_source
 from tests.test_board_wall import REPO_ROOT, STAMPED, document
 
 TEMPLATES = REPO_ROOT / ".basicly" / "core" / "templates" / "board"
@@ -171,16 +171,19 @@ def test_no_row_of_the_wall_is_a_hand_tuned_pixel_and_one_column_below_1280px() 
     asserted is that no row states a length at all - each is the height of what it holds, and
     what it holds is bounded by the capacities :func:`test_no_region_draws_past_its_capacity`
     covers.
+
+    **Both row lists**, because the running row now collapses and the wall has two shapes; a
+    check that read only the first would let the collapsed one state whatever it liked.
     """
     page = render("dense-v1.json")
-    stated = re.search(r"grid-template-rows: ([^;]+);", page)
-    assert stated is not None
-    rows = stated.group(1)
-    # Eight regions over seven rows, because `flight` and `ready` share the one that absorbs
-    # the slack. The other six are the height of what they hold and state no length at all.
-    assert rows.count("minmax(0, 1fr)") == 1, "no region absorbs the slack"
-    assert rows.count("auto") == len(REGIONS) - 2, "a row is not bounded by what it holds"
-    assert re.search(r"[\d.]+(px|em|%)", rows) is None, f"a wall row is a hand-tuned length: {rows}"
+    stated = re.findall(r"grid-template-rows: ([^;]+);", page)
+    assert len(stated) >= 2, "the collapsed shape declares no rows of its own"
+    for shape, regions in zip(stated[:2], (len(REGIONS) - 2, len(REGIONS) - 1), strict=True):
+        # `flight` and `ready` share the slack row while a lane runs and separate when none
+        # does, so the count of content-bounded rows moves by one and the slack row never does.
+        assert shape.count("minmax(0, 1fr)") == 1, "no region absorbs the slack"
+        assert shape.count("auto") == regions, "a row is not bounded by what it holds"
+        assert re.search(r"[\d.]+(px|em|%)", shape) is None, f"a wall row is hand-tuned: {shape}"
     assert "@media (max-width: 1279px)" in page
     single = page.split("@media (max-width: 1279px)", 1)[1]
     assert "grid-template-columns: minmax(0, 1fr);" in single
@@ -196,32 +199,24 @@ def test_no_region_draws_past_its_capacity_at_more_checks_than_the_tree_has() ->
     report what it dropped, because a row that is the height of its content will happily be the
     height of *all* of it and push the region below off the screen.
 
+    The gate set is the one population with no marker left, and its absence is the assertion:
+    it no longer has a capacity to run past, because 40 checks and 13 draw the same one token.
+
     What a picture shows and this cannot is that the result fits 1080px; the screenshots the
-    unit was reviewed against are that record, and the pre-change template clips five regions
-    on this repository's own snapshot.
+    unit was reviewed against are that record.
     """
     page = render("dense-v1.json")
     for marker in (
-        "+4 more checks",
         "+2 more agents",
         "+2 more priorities",
         "+1 more lanes",
         "+5 more ready",
-        "+2 more events",
-        "+1 more waiting",
+        "+4 more events",
+        "+2 more waiting",
     ):
         assert marker in page, f"a population ran past its row with nothing said: {marker}"
-    # Every strip that reserves a grid states it from the model, so the CSS cannot hold a
-    # capacity the code does not - the two disagreeing is the same defect in two files.
-    reserved = re.findall(
-        r"grid-template-columns: repeat\((\d+), minmax\(0, 1fr\)\);\s+"
-        r"grid-template-rows: repeat\((\d+), [\d.]+em\);",
-        page,
-    )
-    assert reserved == [
-        (str(board_footer.GATE_COLUMNS), str(board_footer.GATE_ROWS)),
-        (str(board_footer.HEALTH_COLUMNS), str(board_footer.HEALTH_ROWS)),
-    ], f"the reserved grids are not the model's: {reserved}"
+    assert "more checks" not in page, "the gate grid is back, and so is the name that overlapped"
+    assert "1 FAILING: pytest" in page, "the token that replaced it is not on the page"
 
 
 @pytest.mark.parametrize(
@@ -240,10 +235,30 @@ def test_the_page_draws_whether_or_not_the_producer_populated_its_phases(fixture
         assert f'class="region {region}' in page, f"the {region} row is not drawn"
 
 
+def test_the_running_row_gives_its_width_to_the_ready_list_when_no_lane_is_dispatched() -> None:
+    """The page's two shapes, and the state the wall is in most of the day is the second.
+
+    Asserted on the class the grid switches on *and* on the row count that follows it, because
+    those are the two halves that have to agree: a page that reflowed the grid and still drew
+    eight rows would leave the reclaimed height blank, and one that drew fourteen without
+    reflowing would put them in the 470px column.
+    """
+    busy = render("dense-v1.json")
+    assert 'class="wall"' in busy, "the wall reflowed while seven lanes were running"
+    assert busy.count('class="card ') == board_regions.FLIGHT_SLOTS
+    assert busy.count('<td class="pri">') == board_regions.READY_SLOTS
+
+    calm = render("no-phase-v1.json")
+    assert 'class="wall calm"' in calm, "an empty running row kept the width it was not using"
+    assert 'class="card ' not in calm, "a card was drawn for a lane that does not exist"
+    flight = calm.split('class="region flight', 1)[1].split("</section>", 1)[0]
+    assert board_render.board_wall.ABSENT_TEXT in flight, "the collapsed row named no producer"
+
+
 def test_a_wall_with_more_than_it_can_draw_says_how_much_more() -> None:
     """No content is cut without a marker naming what was dropped."""
     page = render("wall-v1.json")
-    for marker in ("+1 more waiting", "+5 more ready", "+2 more events"):
+    for marker in ("+2 more waiting", "+5 more ready", "+4 more events"):
         assert marker in page
 
 

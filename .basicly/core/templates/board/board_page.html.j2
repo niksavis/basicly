@@ -48,14 +48,14 @@
         /* The page never scrolls and neither does a region. Anything that does not fit was
            dropped by the model, which said how many and of what. */
         overflow: hidden;
-        padding: 10px;
+        padding: 8px;
       }
       /* Fixed columns, and rows that reflow only when a *capacity* changes. A wall display
          that moves when a number changes is unreadable, so every region caps what it draws at
          a slot count the model states and reports the rest. */
       .wall {
         display: grid;
-        gap: 8px;
+        gap: 7px;
         grid-template-columns: minmax(0, 1fr) 470px;
         grid-template-areas:
           "head   head"
@@ -67,39 +67,50 @@
           "inv    inv";
         /* Each row is the height of what it holds, and never a pixel measured against the
            tallest content of the day. A hand-tuned row is one line short the moment a
-           producer emits one more of anything - the footer's gate strip went from 12 checks
-           to 36 and pushed `health` off the page - so the row is bounded by its content and
-           the content is bounded by the model's own slot counts. `flight` takes the slack. */
+           producer emits one more of anything, so the row is bounded by its content and the
+           content is bounded by the model's own slot counts. `flight` takes the slack. */
         grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto;
         height: 100%;
       }
+      /* No lane dispatched: the running row is one line and the ready list takes the whole
+         width and the whole of the slack. This is the state the wall is in most of the day, so
+         it is the state the layout is tuned for - six dashed frames announcing nothing three
+         times was 40% of the screen, and the list beside them truncated every title. */
+      .wall.calm {
+        grid-template-areas:
+          "head   head"
+          "band   band"
+          "loop   loop"
+          "flight flight"
+          "ready  ready"
+          "foot   foot"
+          "tick   tick"
+          "inv    inv";
+        grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto;
+      }
+      /* Rank by weight, not by uniform outline. Only the alarm and the running lanes carry a
+         lit border; everything the reader consults rather than reacts to recedes into the
+         page and is separated by a rule instead of a box. */
       .region {
+        min-width: 0;
+        overflow: hidden;
+      }
+      .region.framed {
         background: var(--bg-raise);
         border: 2px solid var(--border);
         border-radius: 6px;
-        min-width: 0;
-        overflow: hidden;
-        padding: 6px 10px;
+        padding: 5px 10px;
       }
       h2 {
         color: var(--text-dim);
-        font-size: 15px;
+        font-size: 14px;
         font-weight: 600;
         letter-spacing: 0.22em;
         text-transform: uppercase;
       }
-      /* One declaration for both, because a reserved strip row is one line of a label: the
-         `em` the row is stated in has to resolve against the type size of what the row
-         actually holds, not against the body's. 1.4 of it rather than the declared
-         line-height of 1.2, because a monospace glyph beside a sans label raises the line box
-         above its line-height and the reservation has to clear the taller of the two - which
-         is measured off the rendered page, not computed from the fonts. */
-      .label,
-      .strip.fixed {
-        font-size: 14px;
-      }
       .label {
         color: var(--text-dim);
+        font-size: 13px;
         letter-spacing: 0.08em;
         text-transform: uppercase;
       }
@@ -107,46 +118,96 @@
       .mono {
         font-family: var(--mono);
       }
+      /* A state glyph carries the border-style channel, so it is a bordered inline box and it
+         stands taller than the text beside it - a 16px value on a 1.3 line box is 21px while a
+         glyph with a 3px border is 24px, and a `.clip` line holding one then holds 3px more
+         than it shows. Sized under its line rather than widening every line that might carry
+         one: the border stays 3px, because `double` needs three to read as double and that is
+         the channel that distinguishes withheld from renderable. */
       .glyph {
         font-family: var(--mono);
-        margin-right: 6px;
+        font-size: 0.82em;
+        line-height: 1;
+        margin-right: 5px;
       }
       .clip {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-
-      /* --- head: the tree, the run, and the money, plus the one freshness sentence ----- */
-      .head {
-        align-items: center;
-        display: flex;
-        gap: 22px;
-        grid-area: head;
+      .note {
+        color: var(--text-dim);
+        font-family: var(--mono);
+        font-size: 13px;
       }
-      .head .mark {
+
+      /* --- head: one status line, and the gate set is one token of it ------------------ */
+      /* Two columns rather than one wrapping row. The freshness sentence is the page's single
+         reading of its own age and it belongs top right at every width, so it gets a column
+         of its own; the facts wrap under themselves in the other. A row that wraps as one
+         flex line sends the sentence to the bottom right of a second line the moment the
+         first is full, which is exactly the width where a reader most needs to find it. */
+      .head {
+        display: grid;
+        grid-area: head;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0 18px;
+      }
+      .facts {
+        align-items: baseline;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 18px;
+        min-width: 0;
+      }
+      .facts .mark {
         color: var(--indigo);
-        font-size: 26px;
+        font-size: 22px;
         font-weight: 700;
         letter-spacing: 0.04em;
       }
-      .head .cell {
+      /* One cell is one line: the label sits beside its value, not above it. */
+      .facts .cell {
+        align-items: baseline;
+        display: flex;
+        gap: 7px;
         min-width: 0;
       }
-      .head .cell .value {
-        font-size: 17px;
+      .facts .cell .value {
+        font-size: 16px;
+      }
+      /* The gate token. The only thing in the status bar drawn at headline weight, because it
+         is the only thing in it that can be an exception. Its caption takes a line of its own
+         - which suite said `GREEN`, and when - and the bar is already two lines tall for the
+         freshness sentence, so that line is free. */
+      .facts .token {
+        flex-wrap: wrap;
+      }
+      /* A badge on purpose: the border style and colour come from the state class, which is
+         the second and third channel under the glyph inside it. */
+      .facts .token .value {
+        border-width: 2px;
+        border-radius: 4px;
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        padding: 0 9px;
+      }
+      .facts .token .note {
+        min-width: 0;
       }
       /* The freshness sentence, once for the whole page rather than once per panel. Every
          value on the wall is drawn under it, which is what makes one enough. */
       .fresh {
+        align-self: start;
         font-family: var(--mono);
-        font-size: 17px;
+        font-size: 15px;
         margin-left: auto;
         text-align: right;
         white-space: nowrap;
       }
 
-      /* --- band: the only orange on the page ------------------------------------------- */
+      /* --- band: the alarm, and the only orange on the page ---------------------------- */
       /* `site/index.html` ships no red, so orange is this page's alarm channel and the band
          is its only site. A **fill** rather than a text colour, because a failing gate is
          amber text and the two hues are close: an amber outline is a red tree, an orange
@@ -154,6 +215,7 @@
       .band.state-waiting,
       .band.state-waiting .headline,
       .band.state-waiting .lines,
+      .band.state-waiting .kicker,
       .band.state-waiting .stale,
       .band.state-waiting .note {
         background: var(--orange);
@@ -164,58 +226,84 @@
         align-items: center;
         border-width: 4px;
         display: flex;
-        gap: 26px;
+        gap: 22px;
         grid-area: band;
+        /* The one stated height on the page, and it is a floor rather than a fixture: the
+           alarm has to be the same size whether or not anybody is waiting, or the region
+           below it moves every time somebody answers. */
+        min-height: 64px;
       }
+      /* The age, and it is the largest text on the wall. `6 DAYS`, not `148h 52m`: a reader
+         six metres back ranks by magnitude, and the exact phrase is on the line beneath. */
       .band .headline {
-        font-size: 40px;
+        font-size: 44px;
         font-weight: 700;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.03em;
+        line-height: 1.05;
         white-space: nowrap;
+      }
+      .band.state-calm .headline,
+      .band.state-withheld .headline,
+      .band.state-absent .headline {
+        font-size: 30px;
       }
       .band .lines {
         font-family: var(--mono);
-        font-size: 19px;
+        font-size: 18px;
         min-width: 0;
+      }
+      .band .kicker {
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
       }
       .band .stale {
         color: var(--amber);
         font-family: var(--mono);
-        font-size: 18px;
+        font-size: 16px;
         margin-left: auto;
         max-width: 300px;
         text-align: right;
       }
 
-      /* --- loop: seven phases in order, counted, with the current one marked ----------- */
+      /* --- loop: seven phases in order, counted, barred, current one marked ------------ */
       .loop {
         grid-area: loop;
       }
       .phases {
         display: flex;
         gap: 6px;
-        margin-top: 4px;
+        margin-top: 2px;
       }
       .phase {
         background: var(--bg-sunk);
-        border: 2px solid var(--border);
+        border: 1px solid var(--border);
         border-radius: 4px;
         flex: 1 1 0;
         min-width: 0;
-        padding: 2px 6px;
+        padding: 1px 7px 4px;
         text-align: center;
       }
       .phase .count {
         display: block;
         font-family: var(--mono);
-        font-size: 27px;
+        font-size: 26px;
         font-weight: 700;
+        line-height: 1.1;
       }
       .phase .none {
         color: var(--text-dim);
         display: block;
         font-family: var(--mono);
-        font-size: 17px;
+        font-size: 16px;
+      }
+      /* The bar is what makes 213 against 1 visible: seven counts in seven identical boxes
+         rank by nothing, and a digit read at six metres is a magnitude nobody can compare. */
+      .phase .track {
+        display: block;
+        margin: 2px auto 0;
+        width: 100%;
       }
       /* Where the work is now, on three channels: the glyph, the indigo border, and the
          fill. Position in the ordered row is the fourth. */
@@ -228,23 +316,28 @@
       .phase.here .count {
         color: var(--text-bright);
       }
-      .note {
-        color: var(--text-dim);
-        font-family: var(--mono);
-        font-size: 15px;
-      }
 
-      /* --- flight: fixed cards that truncate, never a grid that moves ------------------ */
+      /* --- flight: one card per running lane, and one line when there are none --------- */
+      /* A card is the height of what it says and the rows stack from the top. Rows that shared
+         the region's height stretched a 90px card over 350px, which is the dead space this
+         redraw removes wearing a border - and the space below the last card is the only honest
+         thing that space means: room for another lane. */
       .flight {
+        align-content: start;
         display: grid;
         gap: 6px;
         grid-area: flight;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        grid-template-rows: auto repeat(2, minmax(0, 1fr));
       }
       .flight > h2,
       .flight > .note {
         grid-column: 1 / -1;
+      }
+      /* The collapsed state: no rows to reserve, no columns to divide, one line of text. */
+      .flight.quiet {
+        align-items: baseline;
+        display: flex;
+        gap: 14px;
       }
       .card {
         background: var(--bg-sunk);
@@ -253,10 +346,6 @@
         min-width: 0;
         overflow: hidden;
         padding: 5px 8px;
-      }
-      .card.empty {
-        border-style: dashed;
-        opacity: 0.45;
       }
       /* The id and the phase share one line. A card is the region that takes the wall's
          slack - every other row is bounded by a capacity and this one absorbs what is left -
@@ -281,9 +370,7 @@
         letter-spacing: 0.12em;
         text-transform: uppercase;
       }
-      /* Two pairs to a line, so a card's six figures cost three rows rather than six. A card
-         is the one region the wall lets shrink - it takes the slack every other row leaves -
-         so its own content has to be the cheapest arrangement that still reads. */
+      /* Two pairs to a line, so a card's six figures cost three rows rather than six. */
       .card dl {
         column-gap: 8px;
         display: grid;
@@ -302,7 +389,14 @@
       }
 
       /* --- ready: the ranked set, priority then id then title -------------------------- */
+      /* The list draws the model's slot count and the *pitch* is the layout's, which is how
+         one capacity fits two very different boxes. A fixed pitch cannot: sized for the 385px
+         the reclaimed row has at 1440x900 it leaves 300px blank at 1920x1080, and sized for
+         1920 it clips at 1440 - the dead space this redraw exists to remove, reintroduced one
+         region over. So the rows share the height they are given and the text stays put. */
       .ready {
+        display: flex;
+        flex-direction: column;
         grid-area: ready;
       }
       .ready table {
@@ -310,10 +404,15 @@
         table-layout: fixed;
         width: 100%;
       }
+      /* Only in the reclaimed row, where the height is the list's to use. Beside the lanes the
+         same rule spread eight rows over 700px, which is the dead space one column over. */
+      .wall.calm .ready table {
+        flex: 1 1 auto;
+      }
       .ready td {
         font-family: var(--mono);
         font-size: 17px;
-        padding: 2px 0;
+        padding: 1px 0;
       }
       .ready .pri {
         color: var(--amber);
@@ -324,75 +423,40 @@
         width: 158px;
       }
 
-      /* --- foot: backlog and the histogram, then gates, spend and health as one strip -- */
+      /* --- foot: the backlog on one line, the agents beside it ------------------------- */
       .foot {
-        display: grid;
-        grid-area: foot;
-        grid-template-columns: 430px minmax(0, 1fr);
-        gap: 8px;
-      }
-      .strip {
+        align-items: baseline;
         display: flex;
         flex-wrap: wrap;
-        gap: 2px 16px;
+        gap: 2px 18px;
+        grid-area: foot;
+      }
+      .strip {
+        align-items: baseline;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 14px;
         line-height: 1.2;
         min-width: 0;
       }
-      /* A strip that declares a capacity draws it as a grid and reserves every row of it,
-         filled or not, so the strips below cannot move when the count above them changes. The
-         grid itself is the model's: its columns and rows come from the panel, so the CSS
-         cannot state a capacity the code does not.
-
-         A reserved row is one line, so a cell here puts its label and its value on that line
-         rather than above it - a two-line cell among one-line ones would take a row the grid
-         had allotted to another item. */
-      .strip.fixed {
-        display: grid;
-      }
-      .strip.fixed .cell {
+      .strip .cell {
         align-items: baseline;
         display: flex;
-        gap: 8px;
-      }
-      .strip.fixed .cell .value {
-        font-size: inherit;
-      }
-      /* A reserved row is one line, so the *name* filling it has to be one line too, and the
-         rule above said so about the cell and left the label free to wrap inside it. It did:
-         `projection-permissions` and `declared-dependencies` each took a second line the row
-         height had already allotted to the check below and were painted across it. Measured,
-         not assumed - six columns hold a 22-character name at 1920px and not at 1680px, and
-         no column count holds it at every width this layout claims, so the name declares its
-         truncation the way every other text on this page does. `overflow: hidden` here is
-         what makes `text-overflow` apply, and `min-width: 0` is what lets a flex item shrink
-         below its own content at all. Nothing sees this without `check_render_overflow.py`'s
-         second signal: an element painted over its neighbour does not overflow. */
-      .strip.fixed .cell .label {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .strip .cell {
+        gap: 6px;
         min-width: 0;
       }
       .strip .cell .value {
-        font-size: 17px;
-      }
-      .hist {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 2px 12px;
-        margin-top: 2px;
-      }
-      .events {
-        color: var(--text-dim);
         font-family: var(--mono);
-        font-size: 15px;
-        line-height: 1.45;
+        font-size: 16px;
+      }
+      .foot .agents {
+        margin-left: auto;
+      }
+      .foot .agents .cell .value {
+        font-size: 13px;
       }
 
-      /* --- tick: the only region that reads as prose ----------------------------------- */
+      /* --- tick: the only region that reads as prose, and it is one line --------------- */
       .tick {
         align-items: baseline;
         display: flex;
@@ -400,6 +464,9 @@
         grid-area: tick;
       }
       .tick .lines {
+        color: var(--text-dim);
+        font-family: var(--mono);
+        font-size: 14px;
         min-width: 0;
       }
 
@@ -414,7 +481,7 @@
       }
       .inv .chip {
         font-family: var(--mono);
-        font-size: 15px;
+        font-size: 13px;
         white-space: nowrap;
       }
 
@@ -424,9 +491,9 @@
         background: var(--bg);
         border: 1px solid var(--border-lit);
         display: inline-block;
-        height: 10px;
+        height: 9px;
         vertical-align: middle;
-        width: 92px;
+        width: 84px;
       }
       .fill {
         background: var(--indigo);
@@ -453,7 +520,8 @@
           height: auto;
           overflow: auto;
         }
-        .wall {
+        .wall,
+        .wall.calm {
           grid-template-columns: minmax(0, 1fr);
           grid-template-areas: "head" "band" "loop" "flight" "ready" "foot" "tick" "inv";
           grid-template-rows: none;
@@ -469,7 +537,8 @@
           grid-template-rows: none;
         }
         .fresh,
-        .band .stale {
+        .band .stale,
+        .foot .agents {
           margin-left: 0;
           text-align: left;
         }
@@ -483,11 +552,12 @@
     </style>
   </head>
   <body>
-    <main class="wall">
+    <main class="wall{% if not cards %} calm{% endif %}">
       <section class="region head">
+        <div class="facts">
         <span class="mark">basicly</span>
 {%- for cell in head %}
-        <div class="cell clip">
+        <div class="cell">
           <div class="label">{{ cell.label }}</div>
           <div class="value clip">
 {%- if cell.state %}<span class="glyph state-{{ cell.state.key }}">{{ cell.state.glyph }}</span>{% endif %}{{ cell.value }}
@@ -503,17 +573,47 @@
           </div>
         </div>
 {%- endfor %}
+        <div class="cell token">
+          <div class="label">{{ gates.label }}</div>
+          <div class="value clip state-{{ gates.state.key }}">
+            <span class="glyph">{{ gates.state.glyph }}</span>{{ gates.value }}
+          </div>
+{%- if gates_note %}
+          <div class="note clip">{{ gates_note }}</div>
+{%- endif %}
+        </div>
+        <div class="cell">
+          <div class="label">{{ spend.label }}</div>
+          <div class="value clip">
+{%- if spend.state %}<span class="glyph state-{{ spend.state.key }}">{{ spend.state.glyph }}</span>{% endif %}{{ spend.value }}
+          </div>
+        </div>
+        <div class="cell">
+          <div class="label">{{ throughput.label }}</div>
+          <div class="value clip">
+            <span class="glyph state-{{ throughput.state.key }}">{{ throughput.state.glyph }}</span
+            >{{ throughput.value }}
+          </div>
+        </div>
+        </div>
         <p class="fresh state-{{ age.state.key }}">
           <span class="glyph">{{ age.state.glyph }}</span>as of {{ age.phrase }}<br />
-          <span class="note">{{ age.generated_at }} · stale after {{ age.stale_after }}</span>
+          <span class="note"
+            >{{ age.generated_at }} · stale after {{ age.stale_after }} ·
+            <span class="state-{{ producer.state.key }}">{{ producer.state.glyph }}</span>
+            {{ producer.label }} {{ producer.value }}</span
+          >
         </p>
       </section>
 
-      <section class="region band state-{{ band.state.key }}">
+      <section class="region band framed state-{{ band.state.key }}">
         <div class="headline state-{{ band.state.key }}">
           <span class="glyph">{{ band.state.glyph }}</span>{{ band.headline }}
         </div>
         <div class="lines">
+{%- if band.kicker %}
+          <div class="kicker">{{ band.kicker }}</div>
+{%- endif %}
 {%- for line in band.lines %}
           <div class="clip">{{ line }}</div>
 {%- endfor %}
@@ -536,6 +636,11 @@
             <span class="label name clip"
               >{% if phase.here %}{{ here_glyph }} {% endif %}{{ phase.name }}</span
             >
+{%- if phase.share %}
+            <span class="track"
+              ><span class="fill" style="width: {{ phase.share.width }}%"></span
+            ></span>
+{%- endif %}
           </div>
 {%- endfor %}
         </div>
@@ -544,14 +649,13 @@
 {%- endif %}
       </section>
 
-      <section class="region flight">
-        <h2>in flight{% if flight_more %} — {{ flight_more }}{% endif %}</h2>
+      <section class="region flight{% if not cards %} quiet{% endif %}">
+        <h2>running now{% if flight_more %} — {{ flight_more }}{% endif %}</h2>
 {%- if flight_note %}
         <p class="note clip">{{ flight_note }}</p>
 {%- endif %}
 {%- for card in cards %}
-        <div class="card{% if not card.title %} empty{% endif %} state-{{ card.state.key }}">
-{%- if card.title %}
+        <div class="card state-{{ card.state.key }}">
           <div class="title">
             <div class="id clip">
               <span class="glyph state-{{ card.state.key }}">{{ card.state.glyph }}</span
@@ -579,12 +683,11 @@
 {%- if card.note %}
           <div class="note clip">{{ card.note }}</div>
 {%- endif %}
-{%- endif %}
         </div>
 {%- endfor %}
       </section>
 
-      <section class="region ready">
+      <section class="region ready framed">
         <h2>next up{% if ready.more %} — {{ ready.more }}{% endif %}</h2>
         <table>
 {%- for item in ready.rows %}
@@ -603,79 +706,47 @@
       </section>
 
       <section class="region foot">
-        <div>
-          <h2>backlog{% if priorities_more %} — {{ priorities_more }}{% endif %}</h2>
-{%- if backlog.note %}
-          <p class="note state-{{ backlog.state.key }}">
-            <span class="glyph">{{ backlog.state.glyph }}</span>{{ backlog.note }}
-          </p>
-{%- endif %}
-          <div class="strip">
-{%- for cell in backlog.cells %}
-            <div class="cell">
-              <div class="label">{{ cell.label }}</div>
-              <div class="value clip">
-                {{- cell.value }}
+        <span class="label">backlog{% if priorities_more %} — {{ priorities_more }}{% endif %}</span>
+        <div class="strip">
+{%- for cell in backlog %}
+          <div class="cell">
+            <div class="label">{{ cell.label }}</div>
+            <div class="value clip">
+{%- if cell.state %}<span class="glyph state-{{ cell.state.key }}">{{ cell.state.glyph }}</span>{% endif %}{{ cell.value }}
 {%- if cell.bar %}
-                <span class="track"
-                  ><span
-                    class="fill{% if cell.bar.over %} over{% endif %}"
-                    style="width: {{ cell.bar.width }}%"
-                  ></span
-                ></span>
-                {{ cell.bar.label }}
+              <span class="track"
+                ><span
+                  class="fill{% if cell.bar.over %} over{% endif %}"
+                  style="width: {{ cell.bar.width }}%"
+                ></span
+              ></span>
+              {{ cell.bar.label }}
 {%- endif %}
-              </div>
             </div>
-{%- endfor %}
           </div>
-          <div class="hist">
+{%- endfor %}
 {%- for cell in priorities %}
-            <div class="cell">
-              <div class="label">{{ cell.label }}</div>
-              <div class="value">
-                {{- cell.value }}
+          <div class="cell">
+            <div class="label">{{ cell.label }}</div>
+            <div class="value">
+              {{- cell.value }}
 {%- if cell.bar %}
-                <span class="track" style="width: 54px"
-                  ><span class="fill" style="width: {{ cell.bar.width }}%"></span
-                ></span>
+              <span class="track" style="width: 48px"
+                ><span class="fill" style="width: {{ cell.bar.width }}%"></span
+              ></span>
 {%- endif %}
-              </div>
             </div>
-{%- endfor %}
           </div>
-        </div>
-        <div>
-{%- for panel in strips %}
-          <h2 class="state-{{ panel.state.key }}">
-            <span class="glyph">{{ panel.state.glyph }}</span>{{ panel.title }}
-{%- if panel.more %} — {{ panel.more }}{% endif %}
-          </h2>
-{%- if panel.note %}
-          <p class="note clip">{{ panel.note }}</p>
-{%- endif %}
-{%- if panel.caption %}
-          <p class="note clip">{{ panel.caption }}</p>
-{%- endif %}
-          <div
-            class="strip{% if panel.columns %} fixed{% endif %}"
-{%- if panel.columns %}
-            style="
-              grid-template-columns: repeat({{ panel.columns }}, minmax(0, 1fr));
-              grid-template-rows: repeat({{ panel.rows }}, 1.4em);
-            "
-{%- endif %}
-          >
-{%- for cell in panel.cells %}
-            <div class="cell">
-              <div class="label">
-{%- if cell.state %}<span class="glyph state-{{ cell.state.key }}">{{ cell.state.glyph }}</span>{% endif %}{{ cell.label }}
-              </div>
-{%- if cell.value %}
-              <div class="value clip">{{ cell.value }}</div>
-{%- endif %}
-            </div>
 {%- endfor %}
+        </div>
+        <div class="strip agents">
+          <span class="label">agents{% if health_more %} — {{ health_more }}{% endif %}</span>
+{%- for cell in agents %}
+          <div class="cell">
+            <div class="label">
+{%- if cell.state %}<span class="glyph state-{{ cell.state.key }}">{{ cell.state.glyph }}</span>{% endif %}{{ cell.label }}
+            </div>
+            <div class="value clip">{{ cell.value }}</div>
           </div>
 {%- endfor %}
         </div>
@@ -683,7 +754,7 @@
 
       <section class="region tick">
         <span class="label">events{% if events_more %} — {{ events_more }}{% endif %}</span>
-        <div class="lines events">
+        <div class="lines">
 {%- for line in events %}
           <div class="clip">{{ line }}</div>
 {%- endfor %}

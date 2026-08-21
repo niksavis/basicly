@@ -82,6 +82,12 @@ BY_KEY: Mapping[str, State] = {state.key: state for state in STATES}
 _FULL = 100.0
 _MINUTE = 60
 _HOUR = 3600
+_DAY = 86400
+
+# The units a headline may be spelled in, coarsest first. Six metres reads a magnitude, not a
+# figure, so the first unit with a whole count in it wins and the exact elapsed phrase stays on
+# the detail line beneath for the reader who needs it.
+_COARSE: tuple[tuple[int, str], ...] = ((_DAY, "DAY"), (_HOUR, "HOUR"), (_MINUTE, "MINUTE"))
 
 DOT = " \N{MIDDLE DOT} "
 _CLIP = "\N{HORIZONTAL ELLIPSIS}"
@@ -122,11 +128,17 @@ class Card:
 
 @dataclass(frozen=True)
 class Phase:
-    """One loop phase: its name, its count, and whether work sits here now."""
+    """One loop phase: its name, its count, its share, and whether work sits here now.
+
+    ``share`` is what makes 213 against 1 visible at six metres: seven numbers in seven
+    identical boxes rank by nothing, so the bar carries the magnitude and the digits carry
+    the value. It is None wherever :func:`bar` refuses one.
+    """
 
     name: str
     count: int | None
     here: bool
+    share: Bar | None = None
 
 
 @dataclass(frozen=True)
@@ -140,33 +152,19 @@ class Item:
 
 @dataclass(frozen=True)
 class Band:
-    """The watch band: its spelling, its detail lines, and the stale marker."""
+    """The alarm: how long it has waited, what it is, and the stale marker.
+
+    ``headline`` is the **age** while anybody is waiting and the verdict otherwise, because
+    that is the one figure the band exists to rank by; ``kicker`` says how many are waiting
+    and ``lines`` say which. A green state costs one token here too - a quiet room is a
+    headline and no kicker.
+    """
 
     state: State
     headline: str
+    kicker: str
     lines: tuple[str, ...]
     stale: str
-
-
-@dataclass(frozen=True)
-class Panel:
-    """One footer strip: its state, its cells, and the note it carries instead of them.
-
-    ``caption`` is the strip's own subtitle, for a fact that belongs beside its title rather
-    than in the cells below. ``more`` names what its capacity dropped, and ``columns`` by
-    ``rows`` *is* that capacity: a strip that declares one reserves the whole grid whether or
-    not its cells fill it, so the region below it cannot lose height when the count above it
-    changes. A strip declaring no capacity takes the room its cells need.
-    """
-
-    title: str
-    state: State
-    note: str
-    cells: tuple[Cell, ...] = ()
-    caption: str = ""
-    more: str = ""
-    columns: int = 0
-    rows: int = 0
 
 
 @dataclass(frozen=True)
@@ -284,6 +282,30 @@ def elapsed(seconds: float) -> str:
     if seconds < _HOUR:
         return f"{int(seconds // _MINUTE)}m {int(seconds % _MINUTE)}s"
     return f"{int(seconds // _HOUR)}h {int(seconds % _HOUR // _MINUTE)}m"
+
+
+def coarse(seconds: float) -> str:
+    """*seconds* as the coarsest unit that is still true, spelled for a headline.
+
+    ``6 DAYS``, never ``148h 52m``: a reader six metres back ranks by magnitude and cannot
+    divide. Truncating rather than rounding keeps it honest - 6 days and 20 hours is still
+    ``6 DAYS``, and the exact phrase :func:`elapsed` gives is drawn beneath it.
+    """
+    for bound, unit in _COARSE:
+        count = int(seconds // bound)
+        if count:
+            return f"{count} {unit}" if count == 1 else f"{count} {unit}S"
+    return f"{int(seconds)} SECONDS" if int(seconds) != 1 else "1 SECOND"
+
+
+def day(stamp: object) -> str:
+    """The UTC date of an RFC3339 *stamp*, or an empty string where it will not parse.
+
+    A caller comparing two of these has to reject the empty one first: two unparseable
+    stamps compare equal, and a row must not land in "today" because nobody could date it.
+    """
+    written = board_fields.instant(stamp) if isinstance(stamp, str) else None
+    return "" if written is None else written.date().isoformat()
 
 
 def duration(value: object) -> str:
