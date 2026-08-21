@@ -9,15 +9,18 @@ to nothing, a read-only posture granting a write.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
+from basicly import handoff
 from basicly.agents import (
     MAX_BODY_CHARS,
     SLOT_ORDER,
     default_agent_roots,
     discover_agents,
+    discover_blocks,
     lint_agent_sources,
     unknown_skill_refs,
 )
@@ -245,3 +248,124 @@ def test_a_preloaded_skill_may_be_a_bare_string(tmp_path: Path) -> None:
 
     assert not any("claude.skills" in v for v in lint_agent_sources(tmp_path))
     assert unknown_skill_refs(discover_agents(default_agent_roots(tmp_path))[0], {"real"}) == []
+
+
+# --- an artifact contract names its schema's field set -------------------------
+#
+# The refusal these stand in for is not an authoring-time one: SHIP has already
+# merged when a release record is refused, so a curator reply carrying a key the
+# schema forbids costs the record and blocks nothing (basicly-s07cgc). The
+# producer's contract is the only place the field set can be stated in time.
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SCHEMAS_DIR = REPO_ROOT / ".basicly/core/schemas"
+FIELD_SET_BLOCK = "artifact-field-set"
+
+# Which wired kind is composed from an **agent's reply**, against the agent that
+# writes it. Declared, never derived: only this population can be refused for a
+# key a model chose, and the other one — a payload the engine derives from its own
+# facts — would be actively wrong to brief a model about. A kind's absence from an
+# agent source is ambiguous between the two, which is what the test below pins.
+REPLY_COMPOSED: dict[str, str] = {handoff.RELEASE_RECORD: "curator"}
+ENGINE_DERIVED = frozenset({handoff.IMPLEMENTATION_PLAN, handoff.CHANGE_SUMMARY})
+
+
+def _required_field_names(node: object) -> set[str]:
+    """Every property name *node* requires, at any depth (pure).
+
+    Recursive because the field set a producer has to be told is not the top-level
+    one: `suggested_wording` was refused two levels down, on `unsupported[]`.
+    """
+    if not isinstance(node, dict):
+        return set()
+    names = {name for name in node.get("required", []) if isinstance(name, str)}
+    properties = node.get("properties")
+    if isinstance(properties, dict):
+        for child in properties.values():
+            names |= _required_field_names(child)
+    return names | _required_field_names(node.get("items"))
+
+
+def _unnamed_required_fields(contract: str, schema: object) -> list[str]:
+    """The required field names *contract* does not name as fields (pure).
+
+    Backticked, not merely present: "claim" occurs in this role's prose throughout
+    without ever telling the model a key by that name exists, so a bare substring
+    test would pass on the contract that caused the defect.
+    """
+    return sorted(f for f in _required_field_names(schema) if f"`{f}`" not in contract)
+
+
+def _contract_text(slug: str) -> tuple[str, tuple[str, ...]]:
+    """The named agent's rendered output contract, and the blocks it references."""
+    roots = default_agent_roots(REPO_ROOT)
+    agent = next(a for a in discover_agents(roots) if a.slug == slug)
+    blocks = discover_blocks(roots)
+    items = agent.slot("output_contract")
+    rendered = "\n\n".join(
+        item.value if item.kind == "text" else blocks[item.value].body for item in items
+    )
+    return rendered, tuple(i.value for i in items if i.kind == "block")
+
+
+@pytest.mark.parametrize(("kind", "slug"), sorted(REPLY_COMPOSED.items()))
+def test_a_reply_composed_artifact_contract_names_every_required_field(
+    kind: str, slug: str
+) -> None:
+    """A producer told to emit an artifact and not told its field set invents one."""
+    schema = json.loads((SCHEMAS_DIR / f"{kind}.schema.json").read_text(encoding="utf-8"))
+    contract, _ = _contract_text(slug)
+
+    assert _unnamed_required_fields(contract, schema) == []
+
+
+@pytest.mark.parametrize(("kind", "slug"), sorted(REPLY_COMPOSED.items()))
+def test_a_reply_composed_artifact_contract_closes_the_object(kind: str, slug: str) -> None:
+    """Naming the fields is half of it; the other half is that no other key is admitted.
+
+    Asserted on the block reference rather than on wording, so the rule stays one
+    text with one owner as the population grows past its first member.
+    """
+    _, blocks = _contract_text(slug)
+
+    assert FIELD_SET_BLOCK in blocks, f"{slug} emits {kind} without the closed-object rule"
+
+
+def test_the_field_set_check_fails_a_contract_that_names_no_fields() -> None:
+    """The positive control: a passing gate above must be able to fail.
+
+    This is the curator's contract as it was when a release record was refused —
+    every claim named in prose, not one key named as a key.
+    """
+    schema = json.loads(
+        (SCHEMAS_DIR / f"{handoff.RELEASE_RECORD}.schema.json").read_text(encoding="utf-8")
+    )
+    before = (
+        "Emit a `release-record`: each claim with its evidence, each unsupported "
+        "claim named, and the post-ship action pre-declared before the tag moves."
+    )
+
+    assert _unnamed_required_fields(before, schema) == [
+        "claim",
+        "claims",
+        "evidence",
+        "issue",
+        "kind",
+        "post_ship_action",
+        "reference",
+        "schema_version",
+        "unsupported",
+        "why",
+    ]
+
+
+def test_every_wired_artifact_kind_declares_who_composes_it() -> None:
+    """A new wired kind is a decision, not a default.
+
+    Without this a kind added to `PRODUCERS` would join neither population and be
+    briefed by nobody — the same silence that cost the release records, one
+    artifact further out.
+    """
+    wired = {kind for kind in handoff.PRODUCERS if handoff.wired(kind)}
+
+    assert wired == set(REPLY_COMPOSED) | ENGINE_DERIVED

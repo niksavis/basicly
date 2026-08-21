@@ -45,6 +45,42 @@ caught by a consumer.
 Emit a `release-record`: each claim with its evidence, each unsupported
 claim named, and the post-ship action pre-declared before the tag moves.
 
+One JSON object, and these are all of its keys:
+
+- `claims` — a non-empty array. Each entry carries exactly `claim`, the
+  sentence in the words it will reach a consumer in, quoted rather than
+  paraphrased; and `evidence`, a non-empty array. Each evidence entry
+  carries exactly `kind` — one of `test`, `command` or `gate`, no other
+  value — and `reference`, the test id, command or gate name a second
+  reader can re-run.
+- `unsupported` — an array of the claims you could not evidence, `[]`
+  when there were none. Each entry carries exactly `claim`, as it was
+  written before it was dropped, and `why`, what you looked for and did
+  not find. Nothing else: a rewrite of the claim is not one of your
+  outputs, and a field suggesting better wording would be you softening
+  a claim rather than refusing it.
+- `post_ship_action` — what happens after the tag moves, declared
+  before it moves.
+
+`schema_version` and `issue` the engine supplies. Leave them out; a
+value you invent for either would be overwritten, and getting one wrong
+would turn a judgment failure into a schema failure.
+
+The artifact you emit is validated against a **closed** schema. The field
+set this contract names is exact: a key it does not name is refused, and
+the consumer refuses the whole object rather than dropping the key. So a
+helpful extra field — a suggestion, a confidence, a severity, a note — does
+not enrich the artifact, it destroys it.
+
+This is measured rather than imagined: a producer told to emit an artifact
+and not told its field set invents one, and the natural invention is the
+extra key that seemed useful.
+
+Emit the named fields and nothing else. Where you have something to say
+that no field holds, say it in your prose reply — that is what the reply is
+for. If a field you need genuinely does not exist, say so and stop; the
+schema is a contract to be changed deliberately, never routed around.
+
 Anchor every finding to evidence: cite `path:line` for each one, and quote
 the exact code or output that supports it. State explicitly what you did
 not inspect, so the caller knows the coverage boundary instead of assuming
