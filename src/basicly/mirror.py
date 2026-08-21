@@ -4,7 +4,7 @@ The boundary is *which verbs are translatable* against *what a verb means*, whic
 :mod:`basicly.write_verbs`. Nothing here touches a file.
 """
 
-# comment-density-waiver: 53.4% of 845 tokens, because the code left. This module is now a
+# comment-density-waiver: cohesion: 53.4% of 845 tokens, because the code left. This module is now a
 # dispatch table and one function: the nine translations moved to `write_verbs` under
 # basicly-5m2xfd, taking 3000 tokens of code and their own docstrings with them, so the
 # denominator fell and the contract did not. What remains is the frozen-surface argument in

@@ -12,7 +12,7 @@ report in. Split out when `differential.py` reached 11,110 tokens with no headro
 to its fold could not be written (the blocker on basicly-oii83r).
 """
 
-# comment-density-waiver: 52.7% after this module was split out of a 11,110-token
+# comment-density-waiver: cohesion: 52.7% after this module was split out of a 11,110-token
 # `differential.py`. Splitting raises the prose share of both halves by construction - the code
 # divides and each half still owes a contract docstring - and it is the second time in one pass
 # that the size ratchet and this one pulled opposite ways on the same edit. Every docstring

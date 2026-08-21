@@ -13,7 +13,7 @@ Delivery is not invocation: the ``tool-usage`` hook observes ``Skill`` tool call
 injected body is not one, so the usage report needs this to say which it means.
 """
 
-# comment-density-waiver: 908 tokens of code across 10 functions, so the share is set by
+# comment-density-waiver: cohesion: 908 tokens of code across 10 functions, so the share is set by
 # the per-function contract ruff `D` mandates and not by narration - the median body here
 # is five lines. Three passes already cut ~1000 characters of prose off this module; what
 # is left is why the declaration is explicit rather than inferred, why the Skill-tool

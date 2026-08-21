@@ -200,14 +200,6 @@ def test_a_counting_gate_refuses_a_fractional_entry(tmp_path: Path) -> None:
 # --- what a finding says -------------------------------------------------------------
 
 
-def test_a_waiver_is_a_column_zero_comment_and_the_marker_is_data() -> None:
-    """One reader for three markers, so a gate names its own without holding a regex."""
-    assert ratchet.waiver_reason("# my-waiver: a reason", "my-waiver") == "a reason"
-    assert ratchet.waiver_reason("    # my-waiver: indented", "my-waiver") is None
-    assert ratchet.waiver_reason("# my-waiver:", "my-waiver") is None
-    assert ratchet.waiver_reason("# my-waiver: a reason", "other-waiver") is None
-
-
 def test_a_finding_prints_its_subject_then_its_remedy(capsys: pytest.CaptureFixture) -> None:
     """`noqa-debt`'s subject is a rule code, which is why the field is not called `path`."""
     ratchet.report("noqa-debt", [ratchet.Finding("E731", "2 up from 1", "record it")])

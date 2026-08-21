@@ -11,7 +11,7 @@ back into the seam that calls it. Split out of ``br`` when the module-size ratch
 caught that module growing (`basicly-wpc8.1`).
 """
 
-# comment-density-waiver: 67.3% of a 1063-token module [re-measured 2026-08-18 after two
+# comment-density-waiver: cohesion: 67.3% of a 1063-token module [re-measured 2026-08-18 after two
 # lanes merged here], and what is left after a cutting pass is the four rules a reader would
 # otherwise re-derive wrongly: canonical order (two readers depend on oldest-first),
 # tombstone-as-absent (the stores spell a deletion differently), raise-rather-than-empty (an

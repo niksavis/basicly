@@ -15,7 +15,7 @@ composed baseline does not depend on landing order.
 Stdlib only: the ratchet gates under ``.scripts/`` read this on every commit.
 """
 
-# comment-density-waiver: this module's payload is the convention three ratchet gates
+# comment-density-waiver: cohesion: this module's payload is the convention three ratchet gates
 # enforce, and every refusal in it is a rule a lane will read in a failure message rather
 # than in the code - why a number here is a delta and never a total, why `fractional` is a
 # parameter rather than inferred, why a raised baseline needs its own counted table, and

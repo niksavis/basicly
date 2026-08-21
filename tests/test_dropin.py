@@ -15,7 +15,7 @@ baseline is landing-order independent, and a regression that made composition or
 would still pass every other assertion here.
 """
 
-# module-size-waiver: one module's contract in one place, and the six cases basicly-nwx4ku
+# module-size-waiver: cohesion: one module's contract in one place, and the six cases basicly-nwx4ku
 # adds are six distinct verdicts on one guard - refused, absent, ancestor, unresolvable,
 # malformed, other-gate - none of which the others imply. Splitting them out is the gate's
 # first remedy and was rejected on two counts: the record's demonstration is

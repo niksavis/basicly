@@ -29,6 +29,7 @@ from basicly import dropin
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".scripts" / "check_comment_density.py"
 RATCHET = REPO_ROOT / ".scripts" / "ratchet.py"
+WAIVERS = REPO_ROOT / ".scripts" / "waivers.py"
 
 
 def _load(path: Path, name: str) -> ModuleType:
@@ -43,7 +44,7 @@ def _load(path: Path, name: str) -> ModuleType:
 
 gate = _load(SCRIPT, "check_comment_density")
 
-# The marker the gate reads, without its colon; `ratchet.waiver_reason` takes it as data.
+# The marker the gate reads, without its colon; `waivers.read_waiver` takes it as data.
 WAIVER_MARKER = "comment-density-waiver"
 
 
@@ -63,7 +64,7 @@ def _prose_module(marker: str = "") -> str:
 
 
 def _scratch_repo(tmp_path: Path, module: str, *, frozen: str = "", waiver_count: int = 0) -> Path:
-    """A tiny git repo holding the gate, the two modules it reads through, and *module*.
+    """A tiny git repo holding the gate, the modules it reads through, and *module*.
 
     The gate resolves its root from its own location, so a copy of it in a tmp tree
     exercises `git ls-files`, the tokenizer, the TOML read and the fragments together
@@ -76,7 +77,7 @@ def _scratch_repo(tmp_path: Path, module: str, *, frozen: str = "", waiver_count
     """
     scripts = tmp_path / ".scripts"
     scripts.mkdir()
-    for script in (SCRIPT, RATCHET):
+    for script in (SCRIPT, RATCHET, WAIVERS):
         shutil.copy(script, scripts / script.name)
     package = tmp_path / "src" / "basicly"
     package.mkdir(parents=True)
@@ -103,7 +104,7 @@ def _fragment(repo: Path, name: str, body: str) -> None:
 def _second_waived_module(repo: Path) -> None:
     """A second module carrying a waiver, tracked, so two waivers are outstanding."""
     (repo / "src" / "other.py").write_text(
-        _prose_module("# comment-density-waiver: also provenance"), encoding="utf-8"
+        _prose_module("# comment-density-waiver: cohesion: also provenance"), encoding="utf-8"
     )
     subprocess.run(["git", "-C", str(repo), "add", "-f", "src/other.py"], check=True)
 
@@ -140,7 +141,7 @@ def test_a_fragment_delta_reaches_the_gate_end_to_end(tmp_path: Path) -> None:
 
 def test_two_fragments_each_carrying_a_waiver_compose_to_two_new_waivers(tmp_path: Path) -> None:
     """The shape `basicly-kr7t` could not record: a waiver taken without editing the anchor."""
-    repo = _scratch_repo(tmp_path, _prose_module("# comment-density-waiver: provenance"))
+    repo = _scratch_repo(tmp_path, _prose_module("# comment-density-waiver: cohesion: provenance"))
     _second_waived_module(repo)
     for name in ("basicly-one", "basicly-two"):
         _fragment(repo, name, "[ratchet.comment_density]\ncount_delta = 1\n")
@@ -153,7 +154,7 @@ def test_two_fragments_each_carrying_a_waiver_compose_to_two_new_waivers(tmp_pat
 
 def test_the_waiver_ratchet_still_binds_when_a_fragment_is_missing(tmp_path: Path) -> None:
     """The mutation: one fragment for two waivers is still a waiver nothing declared."""
-    repo = _scratch_repo(tmp_path, _prose_module("# comment-density-waiver: provenance"))
+    repo = _scratch_repo(tmp_path, _prose_module("# comment-density-waiver: cohesion: provenance"))
     _second_waived_module(repo)
     _fragment(repo, "basicly-one", "[ratchet.comment_density]\ncount_delta = 1\n")
 
@@ -195,4 +196,6 @@ def test_the_gate_composes_the_fragments_the_other_ratchets_do(tmp_path: Path) -
 
 def test_this_half_carries_no_waiver_either() -> None:
     """The sibling asserts it for itself and the gate; a split must not drop the claim."""
-    assert gate.waiver_reason(Path(__file__).read_text(encoding="utf-8"), WAIVER_MARKER) is None
+    body = Path(__file__).read_text(encoding="utf-8")
+
+    assert gate.read_waiver(__file__, body, WAIVER_MARKER) is None

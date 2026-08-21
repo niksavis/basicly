@@ -43,7 +43,7 @@ REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".scripts" / "check_module_size.py"
 CAP = SCOPE_FILE_READ_CAP
 
-# The marker the gate reads, without its colon; `ratchet.waiver_reason` takes it as data.
+# The marker the gate reads, without its colon; `waivers.read_waiver` takes it as data.
 WAIVER_MARKER = "module-size-waiver"
 
 
@@ -60,8 +60,15 @@ def _load(path: Path, name: str) -> ModuleType:
 gate = _load(SCRIPT, "check_module_size")
 
 
+def _waiver(subject: str, reason: str) -> object:
+    """A granted waiver of the ordinary kind: permanent, so nothing retires it."""
+    return gate.Waiver(subject=subject, kind=gate.COHESION, retires=None, reason=reason)
+
+
 def _module(path: str, tokens: int, waiver: str | None = None) -> object:
-    return gate.Module(path=path, tokens=tokens, waiver=waiver)
+    return gate.Module(
+        path=path, tokens=tokens, waiver=None if waiver is None else _waiver(path, waiver)
+    )
 
 
 def _ratchet(frozen: dict[str, int] | None = None, waivers: int = 0) -> object:
@@ -230,7 +237,9 @@ def test_a_waiver_is_a_column_zero_comment_carrying_a_reason(line: str, reason: 
     argument. Column zero is what lets the gate and its tests name the marker without
     waiving themselves, which a substring search would not.
     """
-    assert gate.waiver_reason(f"x = 1\n{line}\ny = 2\n", WAIVER_MARKER) == reason
+    waiver = gate.read_waiver("m.py", f"x = 1\n{line}\ny = 2\n", WAIVER_MARKER)
+
+    assert (waiver.reason if waiver is not None else None) == reason
 
 
 def test_the_waiver_count_ratchet_fails_when_a_waiver_appears_unannounced() -> None:
@@ -254,7 +263,8 @@ def test_the_waiver_count_ratchet_fails_when_the_last_waiver_disappears() -> Non
 def test_neither_the_gate_nor_this_test_carries_a_waiver() -> None:
     """Both name the marker repeatedly; neither may thereby exempt itself."""
     for path in (SCRIPT, Path(__file__)):
-        assert gate.waiver_reason(path.read_text(encoding="utf-8"), WAIVER_MARKER) is None, path
+        body = path.read_text(encoding="utf-8")
+        assert gate.read_waiver(str(path), body, WAIVER_MARKER) is None, path
 
 
 # --- the recorded state, and the wiring ---------------------------------------------

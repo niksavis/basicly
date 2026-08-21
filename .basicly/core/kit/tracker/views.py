@@ -11,8 +11,8 @@ Split out of `derivation` when that module crossed the 4,000-token cap on the wa
 otherwise beyond the standard library, which is what makes it the bottom of this stack.
 """
 
-# comment-density-waiver: 73.4% because the module is five frozen records and no behaviour -
-# the docstrings ARE the payload. Each field's contract is what makes a differential
+# comment-density-waiver: cohesion: 73.4% because the module is five frozen records and no
+# behaviour - the docstrings ARE the payload. Each field's contract is what makes a differential
 # meaningful: two sides may only be compared while they report the same fields, so what a
 # field admits is declared once here instead of twice. Deleting that leaves five anonymous
 # tuples. Merging back into `derivation` is not available: 3597 + 1236 crosses the 4000 cap.

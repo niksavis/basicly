@@ -23,7 +23,7 @@ producer is how the two come to disagree. The sections whose source is ``.basicl
 :mod:`basicly.board_usage`; the row reducers are :mod:`basicly.board_sections`.
 """
 
-# comment-density-waiver: 51.5% after basicly-y754k2 moved the usage sections and the row
+# comment-density-waiver: cohesion: 51.5% after basicly-y754k2 moved the usage sections and the row
 # reducers out. The module lost 630 tokens of code and 505 of prose, so the share rose while
 # the file got smaller - the two ratchets pulling opposite ways, measured. Every paragraph
 # left is a measurement or a refuted alternative: the 93-fold 6.1 s cost of `observe()`, the

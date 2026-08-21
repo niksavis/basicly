@@ -19,7 +19,7 @@ and ``[harness-artifact]``, through the :func:`basicly.tracker.add_comment` seam
 
 from __future__ import annotations
 
-# comment-density-waiver: 11 lines of code carrying the §6.4 contract they exist to
+# comment-density-waiver: cohesion: 11 lines of code carrying the §6.4 contract they exist to
 # satisfy, the layer fact that forced the split off `roles`, and why an empty reply and
 # a repeat review are handled the opposite way to `[harness-artifact]`. Cutting to 50%
 # would leave a recorder whose per-lens shape reads as a formatting choice — which is

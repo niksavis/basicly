@@ -5,10 +5,11 @@ The boundary is which rows a section is, against what may cross the wire
 that rule is enforced in one place and consumed in six (basicly-y754k2).
 """
 
-# comment-density-waiver: 51.5% after the split that basicly-y754k2 asked for, and the split
-# is the cause: six reducers each carry the contract a schema consumer needs - which rows a
-# section is, which fields are omitted rather than guessed - against a body that is one
-# comprehension. Measured at every step down from 55.1%: the stale `_session` cross-reference
+# comment-density-waiver: cohesion: 51.5% after the split that basicly-y754k2 asked for,
+# and the split is the cause: six reducers each carry the contract a schema consumer needs
+# - which rows a section is, which fields are omitted rather than guessed - against a body
+# that is one comprehension. Measured at every step down from 55.1%: the stale `_session`
+# cross-reference
 # and the restatement of what `test_board_sections` asserts are gone. What remains is the
 # 140/203/1 pairing criterion, the second-fold cost this reader exists to avoid, and why a
 # lane phase is an argument. Deleting any of those is what the cap exists to prevent.

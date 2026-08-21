@@ -49,8 +49,18 @@ CAP = gate.CAP
 WAIVER_MARKER = "comment-density-waiver"
 
 
+def _waiver(subject: str, reason: str) -> object:
+    """A granted waiver of the ordinary kind: permanent, so nothing retires it."""
+    return gate.Waiver(subject=subject, kind=gate.COHESION, retires=None, reason=reason)
+
+
 def _module(path: str, share: float, waiver: str | None = None) -> object:
-    return gate.Module(path=path, share=share, tokens=1000, waiver=waiver)
+    return gate.Module(
+        path=path,
+        share=share,
+        tokens=1000,
+        waiver=None if waiver is None else _waiver(path, waiver),
+    )
 
 
 def _ratchet(frozen: dict[str, float] | None = None, waivers: int = 0) -> object:
@@ -160,9 +170,9 @@ def test_the_waiver_count_is_ratcheted_in_both_directions(
 
 def test_a_waiver_must_start_the_line_and_carry_a_reason() -> None:
     """Otherwise a file that merely mentions the marker waives itself."""
-    assert gate.waiver_reason("    # comment-density-waiver: indented", WAIVER_MARKER) is None
-    assert gate.waiver_reason("# comment-density-waiver:", WAIVER_MARKER) is None
-    reason = gate.waiver_reason("# comment-density-waiver: vendor data", WAIVER_MARKER)
+    assert gate.read_waiver("a.py", "    # comment-density-waiver: indented", WAIVER_MARKER) is None
+    assert gate.read_waiver("a.py", "# comment-density-waiver:", WAIVER_MARKER) is None
+    reason = gate.read_waiver("a.py", "# comment-density-waiver: vendor data", WAIVER_MARKER).reason
     assert reason == "vendor data"
 
 
@@ -218,4 +228,4 @@ def test_the_gate_is_wired_to_something_that_runs_it() -> None:
 def test_neither_the_gate_nor_this_test_carries_a_waiver() -> None:
     """Both files name the marker repeatedly; a column-0 one would exempt them."""
     for path in (SCRIPT, Path(__file__)):
-        assert gate.waiver_reason(path.read_text(encoding="utf-8"), WAIVER_MARKER) is None
+        assert gate.read_waiver(str(path), path.read_text(encoding="utf-8"), WAIVER_MARKER) is None

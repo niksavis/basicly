@@ -500,6 +500,22 @@ name = "noqa-debt"
 command = ["uv", "run", "python", ".scripts/check_noqa_debt.py"]
 modes = ["fast", "full"]
 
+# The waiver census and the expiry it makes possible (basicly-twfj). The script's docstring
+# holds the argument; what it buys is that the two gates above stop being the only readers
+# of their own waiver counts, and that a waiver bought on cost cannot outlive the record it
+# named. `fast` as well as `full` on the same grounds as `release-notes`: it reads the
+# committed ledger and the tree, both already on disk.
+#
+# A repo-local script rather than a CLI subcommand, on the same grounds as `module-size`:
+# the waivers being censused are basicly's own.
+#
+# No `fix_command`. Deleting a waiver comment is the repair and it is a judgment — whether
+# the module can now live under the cap is exactly what the retiring record was for.
+[[verify.checks]]
+name = "waivers"
+command = ["uv", "run", "python", ".scripts/check_waivers.py"]
+modes = ["fast", "full"]
+
 # Release-note debt, as a per-record ratchet (basicly-7phc). `changelog.d` refuses a
 # fragment that is empty or misnamed, so every check it had bound on a fragment that
 # *exists*; nothing bound on a closed record that produced none, and absence is the one
