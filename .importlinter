@@ -21,6 +21,7 @@ containers =
 exhaustive = True
 layers =
     cli
+    board_cli
     supervise | usage_report
     loop | release
     board_snapshot
@@ -58,6 +59,7 @@ layers =
     dispatch_phase
     runner_envelope
     board_sections
+    board_render
     board_fields | board_schema
     base_lock | catalog | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_usage | tree_schema | ui | usage | verify_artifact
     tracker_paths
@@ -82,3 +84,23 @@ exhaustive = True
 layers =
     claude | codex | copilot
     common
+
+# The C12 rule the tier stack cannot carry: every board consumer reads the snapshot document
+# and nothing else. `owned_store`, `owned_write`, `mirror` and `tracker_argv` sit near the
+# bottom of the stack, so layering alone lets anything above them import them — which is
+# exactly what a renderer that only ever works against basicly's own producer would do. Unit D
+# adds `board_serve` and unit E `board_actions` as further sources; the reference producer
+# `board_snapshot` is deliberately not one, because reading all of it is its whole job.
+[importlinter:contract:consumer-reads-only-the-snapshot]
+name = A board consumer reads the snapshot document, never engine state
+type = forbidden
+source_modules =
+    basicly.board_render
+forbidden_modules =
+    basicly.mirror
+    basicly.owned_store
+    basicly.owned_write
+    basicly.tracker
+    basicly.tracker_argv
+    basicly.tracker_write
+    basicly.write_verbs

@@ -274,5 +274,11 @@ def test_import_linter_cannot_see_a_kit_violation(tmp_path: Path) -> None:
     proc = subprocess.run([binary], cwd=root, env=env, capture_output=True, text=True, check=False)
 
     assert proc.returncode == 0, f"contracts unexpectedly broke:\n{proc.stdout}{proc.stderr}"
-    assert "Contracts: 2 kept, 0 broken." in proc.stdout
+    # Derived, not pinned: the count was the literal `2` and a lane adding a third contract
+    # turned this red for the one reason the test is not about (basicly-rn0o.3).
+    declared = (
+        (REPO_ROOT / ".importlinter").read_text(encoding="utf-8").count("[importlinter:contract:")
+    )
+    assert declared > 1, "the contract file declares nothing to keep"
+    assert f"Contracts: {declared} kept, 0 broken." in proc.stdout
     assert _rules(kit) == ["imports-basicly"]

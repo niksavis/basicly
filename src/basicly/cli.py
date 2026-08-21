@@ -21,7 +21,7 @@ from typing import Any
 from . import (
     __version__,
     agents,
-    board_schema,
+    board_cli,
     catalog_lint,
     catalog_verify,
     claude_settings,
@@ -1691,22 +1691,6 @@ def cmd_usage(args: argparse.Namespace) -> int:
         "outcomes": usage_report.cmd_outcomes,
     }
     return _dispatch(args, "usage_command", handlers, group="usage")
-
-
-def _cmd_board_validate(args: argparse.Namespace) -> int:
-    """Report whether one snapshot is readable by this consumer, and exit on the answer.
-
-    The whole verb, because the judgement is `board_schema`'s: a major-version mismatch
-    is a different contract and refuses, an unknown key is reported and admitted.
-    """
-    verdict = board_schema.validate_file(Path.cwd(), args.path)
-    ui.say(verdict.summary)
-    return verdict.exit_code
-
-
-def cmd_board(args: argparse.Namespace) -> int:
-    """Dispatch the harness board's subcommands."""
-    return _dispatch(args, "board_command", {"validate": _cmd_board_validate}, group="board")
 
 
 def cmd_tracker(args: argparse.Namespace) -> int:
@@ -4925,18 +4909,6 @@ def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
-def _add_board_parser(subparsers: argparse._SubParsersAction) -> None:
-    """Register `basicly board` — the harness board's snapshot surface."""
-    board_parser = subparsers.add_parser(
-        "board", help="The harness board: the factory and the tracker, on one page"
-    )
-    board_sub = board_parser.add_subparsers(dest="board_command", required=True)
-    b_validate = board_sub.add_parser(
-        "validate", help="Check a board snapshot against the schema this consumer reads"
-    )
-    b_validate.add_argument("path", type=Path, help="The snapshot file to read")
-
-
 def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the `basicly tracker` command group — the owned tracker's cutover."""
     tracker_parser = subparsers.add_parser(
@@ -5024,7 +4996,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     brief_parser.add_argument("issue_id", help="The tracked issue to brief")
 
-    _add_board_parser(subparsers)
+    board_cli.add_parsers(subparsers)
     _add_tracker_parser(subparsers)
 
     skills_build_parser = subparsers.add_parser(
@@ -5112,7 +5084,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "rubric": cmd_rubric,
         "usage": cmd_usage,
         "brief": cmd_brief,
-        "board": cmd_board,
+        "board": board_cli.cmd_board,
         "tracker": cmd_tracker,
     }
 
