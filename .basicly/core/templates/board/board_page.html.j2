@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1920, initial-scale=1" />
+    <title>basicly board — {{ schema }}</title>
+    <style>
+      /* Every custom property below is already defined in site/index.html :root. The board
+         looks like basicly because it lifts that palette rather than inventing one. */
+      :root {
+        --bg: #0f1117;
+        --bg-raise: #171a23;
+        --bg-sunk: #0b0d12;
+        --border: #262b38;
+        --border-lit: #333a4d;
+        --text: #d7dce6;
+        --text-bright: #f2f5fa;
+        --text-dim: #8b93a7;
+        --indigo: #818cf8;
+        --indigo-deep: #6366f1;
+        --amber: #f59e0b;
+        --orange: #fb923c;
+        --green: #34d399;
+        --mono:
+          ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      /* No animation to reduce, and the block is here anyway: a later region that gains one
+         inherits the honoured setting rather than shipping without it. */
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        /* Six metres, not a laptop: the floor is well above site/index.html's 16px. */
+        font-size: 20px;
+        height: 100vh;
+        line-height: 1.4;
+        /* The page never scrolls; a region does. A wall display with a scrollbar is a wall
+           display showing somebody the top of a list nobody scrolled. */
+        overflow: hidden;
+        padding: 12px;
+      }
+      /* Fixed rows. A wall display that reflows when a number changes is unreadable, so a
+         region scrolls its own overflow and the grid never moves. */
+      .wall {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+          "header  header"
+          "asks    asks"
+          "lanes   spend"
+          "lanes   gates"
+          "lanes   health"
+          "backlog backlog"
+          "events  events";
+        /* `minmax(0, ...)` on every row is what makes a region's own `overflow` bind: a
+           default `auto` minimum lets the content set the row height and the page grows
+           instead, which is the reflow this layout exists to refuse. */
+        grid-template-rows:
+          minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1fr)
+          minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr);
+        height: 100%;
+      }
+      .region {
+        background: var(--bg-raise);
+        border: 2px solid var(--border);
+        border-radius: 6px;
+        overflow: auto;
+        padding: 10px 12px;
+      }
+      .region > h2 {
+        color: var(--text-dim);
+        font-family: var(--sans);
+        font-size: 18px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .panel {
+        background: var(--bg-sunk);
+        border-radius: 4px;
+        border-width: 3px;
+        margin-top: 8px;
+        padding: 8px 10px;
+      }
+      .panel > h3 {
+        font-size: 22px;
+        color: var(--text-bright);
+      }
+      .glyph {
+        font-family: var(--mono);
+        margin-right: 8px;
+        padding: 0 4px;
+      }
+      /* The freshness line. Every panel carries one, which is the whole honesty claim: no
+         value on this page is drawn without the age of the snapshot it came from. */
+      .fresh {
+        color: var(--text-dim);
+        font-family: var(--mono);
+        font-size: 17px;
+      }
+      .note {
+        color: var(--text-dim);
+        font-family: var(--sans);
+        font-style: italic;
+      }
+      .card {
+        border-top: 1px solid var(--border);
+        margin-top: 6px;
+        padding-top: 4px;
+      }
+      .card > h4 {
+        color: var(--indigo);
+        font-family: var(--mono);
+        font-size: 19px;
+      }
+      .rows {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      .rows th {
+        color: var(--text-dim);
+        font-family: var(--sans);
+        font-weight: 400;
+        text-align: left;
+        width: 40%;
+      }
+      .rows td {
+        color: var(--text);
+        font-family: var(--mono);
+        text-align: left;
+      }
+      .track {
+        background: var(--bg);
+        border: 1px solid var(--border-lit);
+        display: inline-block;
+        height: 14px;
+        vertical-align: middle;
+        width: 160px;
+      }
+      .fill {
+        background: var(--indigo);
+        display: block;
+        height: 100%;
+      }
+      .fill.over {
+        background: var(--orange);
+      }
+      /* Three channels per state: a glyph in the markup, a border style here, and colour.
+         Generated from board_render.STATES so the CSS cannot name a state the code does not. */
+{%- for state in states %}
+      .state-{{ state.key }} {
+        border-style: {{ state.border_style }};
+        border-color: {{ state.colour }};
+        color: {{ state.colour }};
+      }
+{%- endfor %}
+    </style>
+  </head>
+  <body>
+    <main class="wall">
+{%- for region in regions %}
+      <section class="region" style="grid-area: {{ region.key }}">
+        <h2>{{ region.title }}</h2>
+{%- for panel in region.panels %}
+        <div class="panel state-{{ panel.state.key }}">
+          <h3>
+            <span class="glyph state-{{ panel.state.key }}">{{ panel.state.glyph }}</span
+            >{{ panel.section }}
+          </h3>
+          <p class="fresh">
+            <span class="glyph state-{{ age.state.key }}">{{ age.state.glyph }}</span
+            >as of {{ age.phrase }} · generated_at {{ age.generated_at }} · stale after
+            {{ age.stale_after }}
+          </p>
+{%- if panel.note %}
+          <p class="note">{{ panel.note }}</p>
+{%- endif %}
+{%- for card in panel.cards %}
+          <div class="card">
+{%- if card.title %}
+            <h4>{{ card.title }}</h4>
+{%- endif %}
+            <table class="rows">
+{%- for row in card.rows %}
+              <tr>
+                <th>{{ row.label }}</th>
+                <td>
+{%- if row.glyph %}<span class="glyph">{{ row.glyph }}</span>{% endif %}{{ row.value }}
+{%- if row.bar %}
+                  <span class="track"
+                    ><span
+                      class="fill{% if row.bar.over %} over{% endif %}"
+                      style="width: {{ row.bar.width }}%"
+                    ></span
+                  ></span>
+                  {{ row.bar.label }}
+{%- endif %}
+                </td>
+              </tr>
+{%- endfor %}
+            </table>
+          </div>
+{%- endfor %}
+        </div>
+{%- endfor %}
+      </section>
+{%- endfor %}
+    </main>
+  </body>
+</html>

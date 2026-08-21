@@ -1352,6 +1352,7 @@ and overrides were cut from scope. The `basicly catalog verify` output covers th
 | `basicly runner list\|dry-run\|run` | Agent-agnostic headless runner adapters; the dry run prints the exact command an adapter would execute before any live invocation |
 | `basicly tracker ready\|blocked\|stats\|show\|list` | The backlog, read out of the owned ledger: ready is the ranked set that can be worked now, blocked names what holds each record that is not ready, stats totals the graph by status, and show and list read one record and the set. The engine resolves the ledger's location, so a consumer never retypes it |
 | `basicly tracker write` | One human tracker write through the engine seam, so it lands on the store the engine reads rather than beside it |
+| `basicly board --out FILE` | Write the harness board as one self-contained HTML page, with the `harness-board/v1` snapshot beside it as `board-snapshot.json`. The page references no external origin and every panel carries the snapshot's age, so a value is never drawn without it |
 | `basicly board validate` | Read a board snapshot and say whether this consumer can render it. A major-version mismatch refuses; an unknown key is reported and admitted |
 | `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Bump the single-sourced version, regenerate version-stamped projections in a fresh interpreter, rewrite install pins on the consumer surfaces, fold the per-lane changelog fragments into a dated section, commit, and create the annotated tag. **Never pushes** |
 
@@ -3289,7 +3290,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 42 tiers hold 108 modules and group into 9 bands. Every band may import every band below
+The 44 tiers hold 110 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3298,13 +3299,13 @@ against them.
 ```mermaid
 flowchart TB
   b1["1 · entry — 1 module<br/>cli"]
-  b2["2 · drivers — 4<br/>supervise · loop · release · usage_report"]
+  b2["2 · drivers — 5<br/>supervise · loop · release · usage_report"]
   b3["3 · loop mechanics — 33<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
   b4["4 · configuration and isolation — 2<br/>config · worktree"]
   b5["5 · agent runtime — 5<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 12<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
   b7["7 · records and telemetry — 13<br/>run_record · artifact_record · lens_review · spend_calibration"]
-  b8["8 · tracker seam — 12<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
+  b8["8 · tracker seam — 13<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
   b9["9 · leaf data and pure helpers — 26<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
 
   b1 --> b2 --> b3 --> b4 --> b5 --> b6 --> b7 --> b8 --> b9

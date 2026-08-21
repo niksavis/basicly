@@ -2017,6 +2017,15 @@ WALL_CLOCK_EXEMPT = {
     "policy.py": "the confirm-code TTL is persisted to disk and read back by another process",
 }
 
+# The same exemption for the `.total_seconds()` half, which had none: a datetime difference is
+# banned because it is the shape of two `datetime.now()` readings, and a snapshot's age is not
+# that shape - it subtracts a stamp another process wrote from an instant the caller injects,
+# which is the category the three entries above are already granted on. Counted rather than
+# flagged so a second site in the same module still fails.
+STAMP_COMPARISON_EXEMPT = {
+    "board_render.py": 1,
+}
+
 
 def test_no_engine_interval_is_measured_on_a_wall_clock() -> None:
     """``time.time()`` appears only in the two exempt ``_now()`` seams, and nowhere else.
@@ -2030,11 +2039,17 @@ def test_no_engine_interval_is_measured_on_a_wall_clock() -> None:
     src = Path(__file__).resolve().parents[1] / "src" / "basicly"
     offenders: list[str] = []
     seen_exempt: set[str] = set()
+    stamped: dict[str, int] = {}
     for path in sorted(src.glob("*.py")):
         lines = path.read_text(encoding="utf-8").splitlines()
         for number, line in enumerate(lines):
             if ".total_seconds()" in line:
-                offenders.append(f"{path.name}:{number + 1}: duration from a datetime difference")
+                if path.name in STAMP_COMPARISON_EXEMPT:
+                    stamped[path.name] = stamped.get(path.name, 0) + 1
+                else:
+                    offenders.append(
+                        f"{path.name}:{number + 1}: duration from a datetime difference"
+                    )
                 continue
             if "time.time()" not in line:
                 continue
@@ -2051,6 +2066,9 @@ def test_no_engine_interval_is_measured_on_a_wall_clock() -> None:
     assert not offenders, "wall-clock interval(s) in the engine: " + "; ".join(offenders)
     # Keep the exemption list honest: a site that stopped needing it must be
     # removed, or the next reader treats a dead entry as licence.
+    assert stamped == STAMP_COMPARISON_EXEMPT, (
+        f"stamp-comparison exemptions moved: recorded {STAMP_COMPARISON_EXEMPT}, found {stamped}"
+    )
     assert seen_exempt == set(WALL_CLOCK_EXEMPT), (
         f"stale wall-clock exemption(s): {sorted(set(WALL_CLOCK_EXEMPT) - seen_exempt)}"
     )
