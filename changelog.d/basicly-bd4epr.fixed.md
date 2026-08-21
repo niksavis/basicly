@@ -17,5 +17,9 @@
   A fact the tick genuinely cannot gather still leaves its section **absent** rather than
   zeroed: with no lock the `session` and `lanes` sections are omitted, and a session this
   checkout cannot derive publishes no lane list at all. A failed emission still costs one
-  narrative line and never the pass. One emission measures a 0.48 s median against the 15 s
-  beat it rides (`basicly-bd4epr`).
+  narrative line and never the pass.
+
+  One emission measures 1.50 s on this repository, and 7.11 s - 47% of the 15 s beat - once
+  run records exist, because the grant-spend walk behind `session.spent_tokens` costs 5.9 s of
+  that. It runs after the heartbeat write, so it delays the next beat and never a landing, and
+  clears the 60 s staleness horizon by 8x (`basicly-bd4epr`).

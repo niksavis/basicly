@@ -12,9 +12,10 @@ and a live supervisor made the board go backwards: 0 phases of 234 where `board 
 
 The emission cost is bounded by the beat it rides, not by the 50 ms the design's AC 3 names.
 That 50 ms was written against a 19.1 ms build figure the design itself records as wrong, and
-the tick now folds Mode A's whole document rather than the lock: a 0.48 s median over five
-emissions on this module's fixture, and 1.50 s on this repository's own tree with a lane
-adopted, against the 15 s interval either way.
+the tick now folds Mode A's whole document rather than the lock. Measured three ways, and the
+spread is the point: 0.48 s on this module's fixture, 1.50 s on this repository with a lane
+adopted, and 7.11 s on the same tree once 333 run records turn on the grant-spend walk. The
+fixture reaches none of that, so :data:`EMIT_CAP_S` bounds the fixture and says so.
 """
 
 from __future__ import annotations
@@ -37,10 +38,12 @@ if TYPE_CHECKING:
 # the thread's own start. The design's demonstration allows 40 s for two ticks at 15 s.
 TICK_S = 0.05
 
-# The bound that is real: a board must not slow the beat. A fifth of the interval the beat
-# keeps, which the fixture's 0.48 s median clears by 6x and the live tree's 1.50 s by 2x - the
-# producer's own `BUILD_CAP_S` no longer covers this path, because the tick folds every section
-# Mode A folds.
+# What one emission may cost *on this fixture*, which carries no run records: a fifth of the
+# beat, which the 0.48 s median clears by 6x. Deliberately not read as a bound on a live tree,
+# where the same emission measures 7.11 s - `policy.session_issue_ids` is 5.9 s of it and only
+# runs where run records exist. The bound that governs there is the staleness horizon, because
+# the emission runs *after* the heartbeat write: it delays the next beat, never the pass, and
+# 7.11 s clears `STALE_AFTER_S` by 8x.
 EMIT_CAP_S = supervise.HEARTBEAT_INTERVAL_S / 5
 
 _SESSION = "epic:board"
@@ -219,7 +222,7 @@ def test_a_failed_emission_costs_one_line_and_never_the_beat(
 
 
 def test_one_emission_stays_inside_the_beat_it_rides(work_repo: Path) -> None:
-    """AC 3's intent: the beat's cadence stays orders above what an emission costs."""
+    """AC 3's intent: an emission stays well inside the beat it rides, on this corpus."""
     supervise.acquire(work_repo, _SESSION, _ROOT)
     board_facts.emit_tick(work_repo, TICK_S)  # warm the caches the cap is not about
     started = time.perf_counter()

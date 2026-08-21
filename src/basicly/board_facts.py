@@ -297,9 +297,11 @@ def emit_tick(repo_root: Path, cadence_s: float, *, lane_label: str | None = Non
     it keeps. `stale_after_s` is `supervise.STALE_AFTER_S`, the same question one horizon on: a
     document older than that came from a holder a contender may by now have replaced.
 
-    One emission measures a 1.50 s median on this repository with a lane adopted - 10% of the
-    15 s beat, and after the heartbeat write rather than before it, so what it can delay is the
-    next beat and never a landing.
+    **The cost is dominated by one read and it is worth knowing which.** One emission measures
+    1.50 s on this repository with a lane adopted, and 7.11 s - 47% of the beat - on the same
+    tree once run records exist, because :func:`grant_spend` then walks
+    `policy.session_issue_ids` at 5.9 s. It runs *after* the heartbeat write, so what it delays
+    is the next beat and never a landing, and 7.11 s clears `supervise.STALE_AFTER_S` by 8x.
     """
     built = document(repo_root, lane_label=lane_label, in_flight=True)
     built["freshness"] = {
