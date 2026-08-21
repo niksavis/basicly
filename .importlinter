@@ -61,6 +61,8 @@ layers =
     runner_envelope
     board_sections
     board_render
+    board_footer | board_regions
+    board_wall
     board_fields | board_schema
     base_lock | catalog | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_usage | tree_schema | ui | usage | verify_artifact
     tracker_paths
@@ -96,7 +98,10 @@ layers =
 name = A board consumer reads the snapshot document, never engine state
 type = forbidden
 source_modules =
+    basicly.board_footer
+    basicly.board_regions
     basicly.board_render
+    basicly.board_wall
 forbidden_modules =
     basicly.mirror
     basicly.owned_store

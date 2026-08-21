@@ -1,0 +1,138 @@
+{
+  "schema": "harness-board/v1",
+  "generated_at": "2026-08-21T16:42:52Z",
+  "freshness": {
+    "source": "one-shot",
+    "cadence_s": null,
+    "stale_after_s": 60
+  },
+  "generator": {
+    "tool": "basicly",
+    "version": "0.9.0"
+  },
+  "repo": {
+    "name": "basicly",
+    "branch": "main",
+    "head": "7c93075",
+    "dirty": false
+  },
+  "gates": {
+    "mode": "fast",
+    "recorded_at": "2026-08-21T16:40:00Z",
+    "passed": true,
+    "checks": [
+      {
+        "name": "ruff",
+        "status": "pass"
+      },
+      {
+        "name": "pytest",
+        "status": "pass"
+      }
+    ]
+  },
+  "backlog": {
+    "total": 1012,
+    "active": 242,
+    "closed": 770,
+    "by_priority": {
+      "P0": 6,
+      "P1": 121,
+      "P2": 94,
+      "P3": 21
+    }
+  },
+  "units": [
+    {
+      "id": "basicly-rn0o.1",
+      "title": "populate units phase and ready on the reference producer",
+      "status": "open",
+      "priority": "P1",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.2",
+      "title": "emit the lanes section from the supervisor's own lane records",
+      "status": "open",
+      "priority": "P1",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.3",
+      "title": "bind the marker family roster to the gate that owns it",
+      "status": "open",
+      "priority": "P2",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.4",
+      "title": "carry a close reason that survives a tracker round trip",
+      "status": "open",
+      "priority": "P2",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.5",
+      "title": "refuse a repair brief the branch has moved past",
+      "status": "open",
+      "priority": "P3",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.6",
+      "title": "measure the context window against the ledger not the constant",
+      "status": "open",
+      "priority": "P0",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.7",
+      "title": "extract the wall model out of the render module",
+      "status": "open",
+      "priority": "P1",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.8",
+      "title": "redraw the board as a wall layout that answers four questions",
+      "status": "open",
+      "priority": "P1",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.9",
+      "title": "populate units phase and ready on the reference producer",
+      "status": "open",
+      "priority": "P2",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.10",
+      "title": "emit the lanes section from the supervisor's own lane records",
+      "status": "in_progress",
+      "priority": "P2",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.11",
+      "title": "bind the marker family roster to the gate that owns it",
+      "status": "in_progress",
+      "priority": "P3",
+      "type": "task"
+    },
+    {
+      "id": "basicly-rn0o.12",
+      "title": "carry a close reason that survives a tracker round trip",
+      "status": "in_progress",
+      "priority": "P0",
+      "type": "task"
+    }
+  ],
+  "events": [
+    {
+      "at": "2026-08-21T16:40:00Z",
+      "kind": "gates",
+      "text": "fast mode recorded"
+    }
+  ]
+}

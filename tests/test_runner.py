@@ -2023,7 +2023,7 @@ WALL_CLOCK_EXEMPT = {
 # which is the category the three entries above are already granted on. Counted rather than
 # flagged so a second site in the same module still fails.
 STAMP_COMPARISON_EXEMPT = {
-    "board_render.py": 1,
+    "board_wall.py": 1,
 }
 
 

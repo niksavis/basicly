@@ -1,0 +1,505 @@
+{
+  "schema": "harness-board/v1",
+  "generated_at": "2026-08-21T16:42:52Z",
+  "freshness": {
+    "source": "supervisor-tick",
+    "cadence_s": 15,
+    "stale_after_s": 60
+  },
+  "generator": {
+    "tool": "basicly",
+    "version": "0.9.0"
+  },
+  "repo": {
+    "name": "basicly",
+    "branch": "main",
+    "head": "7c93075",
+    "dirty": false
+  },
+  "session": {
+    "root": "basicly-kjc5",
+    "root_status": "open",
+    "supervised": true,
+    "holder": {
+      "id": "bc7cc925",
+      "heartbeat_age_s": 6,
+      "stale": false
+    },
+    "grant_level": "L3",
+    "token_budget": 4000000,
+    "spent_tokens": 177970761,
+    "human_wait_s": 30856,
+    "delegated_wait_s": 237,
+    "dispatch_s": 16074.8
+  },
+  "lanes": [
+    {
+      "id": "basicly-rbnz49",
+      "phase": "build",
+      "status": "in_progress",
+      "agent": "claude",
+      "model": "claude-opus-5",
+      "live": true,
+      "started_at": "2026-08-21T16:18:00Z",
+      "elapsed_s": 1487,
+      "tokens": 18794333,
+      "cost_usd": 13.13,
+      "context_used": 209041,
+      "context_window": 1000000,
+      "rework_attempt": 0,
+      "rework_allowance": 2,
+      "branch": "harness/basicly-rbnz49",
+      "note": null
+    },
+    {
+      "id": "basicly-f3tked",
+      "phase": "verify",
+      "status": "in_progress",
+      "agent": "claude",
+      "model": "claude-opus-5",
+      "live": true,
+      "started_at": "2026-08-21T16:39:12Z",
+      "elapsed_s": 215,
+      "tokens": 2108441,
+      "cost_usd": 1.9,
+      "context_used": 88010,
+      "context_window": 1000000,
+      "rework_attempt": 0,
+      "rework_allowance": 2,
+      "branch": "harness/basicly-f3tked",
+      "note": "gates running, 12 of 20 reported"
+    },
+    {
+      "id": "basicly-7bur",
+      "phase": "build",
+      "status": "repair",
+      "agent": "claude",
+      "model": "claude-opus-5",
+      "live": true,
+      "started_at": "2026-08-21T15:52:03Z",
+      "elapsed_s": 3050,
+      "tokens": 31447900,
+      "cost_usd": 26.41,
+      "context_used": 812004,
+      "context_window": 1000000,
+      "rework_attempt": 1,
+      "rework_allowance": 2,
+      "branch": "harness/basicly-7bur",
+      "note": "merge bounced 4m ago on a scope collision"
+    },
+    {
+      "id": "basicly-4t9z",
+      "phase": "ship",
+      "status": "waiting",
+      "agent": "claude",
+      "model": "claude-opus-5",
+      "live": false,
+      "started_at": "2026-08-21T14:11:44Z",
+      "elapsed_s": 9066,
+      "tokens": 7740210,
+      "cost_usd": 6.02,
+      "rework_attempt": 0,
+      "rework_allowance": 2,
+      "branch": "harness/basicly-4t9z",
+      "note": "blocked on the ship checkpoint above"
+    }
+  ],
+  "asks": [
+    {
+      "wait_id": "basicly-1th1#wait-classify",
+      "issue": "basicly-1th1",
+      "kind": "checkpoint",
+      "subject": "classify",
+      "requested_at": "2026-08-21T16:38:41Z",
+      "waiting_s": 251,
+      "question": "approve the plan for the wall layout redraw?",
+      "actions": [
+        {
+          "offer": "approve the plan",
+          "basicly": "checkpoint-approve"
+        }
+      ]
+    },
+    {
+      "wait_id": "basicly-4t9z#wait-ship",
+      "issue": "basicly-4t9z",
+      "kind": "checkpoint",
+      "subject": "ship",
+      "requested_at": "2026-08-21T16:11:50Z",
+      "waiting_s": 1862,
+      "question": "merge landed and gates are green; ship it?",
+      "actions": [
+        {
+          "offer": "ship it",
+          "basicly": "checkpoint-approve"
+        }
+      ]
+    },
+    {
+      "wait_id": "basicly-7bur#wait-decision",
+      "issue": "basicly-7bur",
+      "kind": "decision",
+      "subject": "scope",
+      "requested_at": "2026-08-21T16:41:02Z",
+      "waiting_s": 110,
+      "question": "widen the lane scope to .importlinter, or split a child?"
+    }
+  ],
+  "gates": {
+    "mode": "full",
+    "recorded_at": "2026-08-21T16:42:12Z",
+    "passed": false,
+    "checks": [
+      {
+        "name": "ruff",
+        "status": "pass"
+      },
+      {
+        "name": "ruff-format",
+        "status": "pass"
+      },
+      {
+        "name": "pyright",
+        "status": "pass"
+      },
+      {
+        "name": "bandit",
+        "status": "pass"
+      },
+      {
+        "name": "pytest",
+        "status": "fail"
+      },
+      {
+        "name": "markdownlint",
+        "status": "pass"
+      },
+      {
+        "name": "module-size",
+        "status": "pass"
+      },
+      {
+        "name": "comment-density",
+        "status": "pass"
+      },
+      {
+        "name": "tree-growth",
+        "status": "pass"
+      },
+      {
+        "name": "noqa-audit",
+        "status": "pass"
+      },
+      {
+        "name": "lint-imports",
+        "status": "pass"
+      },
+      {
+        "name": "catalog-review",
+        "status": "not_run"
+      },
+      {
+        "name": "docs-claims",
+        "status": "not_run"
+      }
+    ]
+  },
+  "spend": {
+    "scope": "machine-local",
+    "lifetime_usd": 1254.26,
+    "largest_dispatch_usd": 36.59,
+    "input_tokens": 48120334,
+    "output_tokens": 3901220,
+    "cache_read_tokens": 2011409883,
+    "cache_write_tokens": 61220441
+  },
+  "health": [
+    {
+      "agent": "claude",
+      "runs": 163,
+      "score": 0.825,
+      "failure_rate": 0.178,
+      "drift": -0.04
+    },
+    {
+      "agent": "manual",
+      "runs": 194,
+      "score": 0.995,
+      "failure_rate": 0.005,
+      "drift": 0.0
+    }
+  ],
+  "backlog": {
+    "total": 1012,
+    "active": 242,
+    "ready": 181,
+    "blocked": 2,
+    "in_progress": 4,
+    "closed": 770,
+    "by_priority": {
+      "P0": 6,
+      "P1": 121,
+      "P2": 94,
+      "P3": 21
+    }
+  },
+  "units": [
+    {
+      "id": "basicly-rn0o.1",
+      "title": "populate units phase and ready on the reference producer",
+      "status": "open",
+      "priority": "P1",
+      "type": "task",
+      "phase": "intake",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.2",
+      "title": "emit the lanes section from the supervisor's own lane records",
+      "status": "open",
+      "priority": "P1",
+      "type": "task",
+      "phase": "intake",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.3",
+      "title": "bind the marker family roster to the gate that owns it",
+      "status": "open",
+      "priority": "P2",
+      "type": "task",
+      "phase": "intake",
+      "ready": false
+    },
+    {
+      "id": "basicly-rn0o.4",
+      "title": "carry a close reason that survives a tracker round trip",
+      "status": "open",
+      "priority": "P2",
+      "type": "task",
+      "phase": "intake",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.5",
+      "title": "refuse a repair brief the branch has moved past",
+      "status": "open",
+      "priority": "P3",
+      "type": "task",
+      "phase": "classify",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.6",
+      "title": "measure the context window against the ledger not the constant",
+      "status": "open",
+      "priority": "P0",
+      "type": "task",
+      "phase": "classify",
+      "ready": false
+    },
+    {
+      "id": "basicly-rn0o.7",
+      "title": "extract the wall model out of the render module",
+      "status": "open",
+      "priority": "P1",
+      "type": "task",
+      "phase": "decompose",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.8",
+      "title": "redraw the board as a wall layout that answers four questions",
+      "status": "open",
+      "priority": "P1",
+      "type": "task",
+      "phase": "decompose",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.9",
+      "title": "populate units phase and ready on the reference producer",
+      "status": "open",
+      "priority": "P2",
+      "type": "task",
+      "phase": "decompose",
+      "ready": false
+    },
+    {
+      "id": "basicly-rn0o.10",
+      "title": "emit the lanes section from the supervisor's own lane records",
+      "status": "in_progress",
+      "priority": "P2",
+      "type": "task",
+      "phase": "build",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.11",
+      "title": "bind the marker family roster to the gate that owns it",
+      "status": "in_progress",
+      "priority": "P3",
+      "type": "task",
+      "phase": "build",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.12",
+      "title": "carry a close reason that survives a tracker round trip",
+      "status": "in_progress",
+      "priority": "P0",
+      "type": "task",
+      "phase": "build",
+      "ready": false
+    },
+    {
+      "id": "basicly-rn0o.13",
+      "title": "refuse a repair brief the branch has moved past",
+      "status": "in_progress",
+      "priority": "P1",
+      "type": "task",
+      "phase": "build",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.14",
+      "title": "measure the context window against the ledger not the constant",
+      "status": "in_progress",
+      "priority": "P1",
+      "type": "task",
+      "phase": "build",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.15",
+      "title": "extract the wall model out of the render module",
+      "status": "in_progress",
+      "priority": "P2",
+      "type": "task",
+      "phase": "verify",
+      "ready": false
+    },
+    {
+      "id": "basicly-rn0o.16",
+      "title": "redraw the board as a wall layout that answers four questions",
+      "status": "in_progress",
+      "priority": "P2",
+      "type": "task",
+      "phase": "verify",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.17",
+      "title": "populate units phase and ready on the reference producer",
+      "status": "open",
+      "priority": "P3",
+      "type": "task",
+      "phase": "validate",
+      "ready": true
+    },
+    {
+      "id": "basicly-rn0o.18",
+      "title": "emit the lanes section from the supervisor's own lane records",
+      "status": "open",
+      "priority": "P0",
+      "type": "task",
+      "phase": "ship",
+      "ready": false
+    },
+    {
+      "id": "basicly-rn0o.19",
+      "title": "bind the marker family roster to the gate that owns it",
+      "status": "open",
+      "priority": "P1",
+      "type": "task",
+      "phase": "ship",
+      "ready": true
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "basicly-rn0o.2",
+        "to": "basicly-rn0o.1",
+        "kind": "blocks"
+      },
+      {
+        "from": "basicly-rn0o.3",
+        "to": "basicly-rn0o.2",
+        "kind": "blocks"
+      },
+      {
+        "from": "basicly-rn0o.4",
+        "to": "basicly-rn0o.3",
+        "kind": "blocks"
+      },
+      {
+        "from": "basicly-rn0o.5",
+        "to": "basicly-rn0o.4",
+        "kind": "blocks"
+      },
+      {
+        "from": "basicly-rn0o.6",
+        "to": "basicly-rn0o.5",
+        "kind": "blocks"
+      },
+      {
+        "from": "basicly-rn0o.7",
+        "to": "basicly-rn0o.6",
+        "kind": "blocks"
+      },
+      {
+        "from": "basicly-rn0o.8",
+        "to": "basicly-rn0o.7",
+        "kind": "blocks"
+      },
+      {
+        "from": "basicly-rn0o.9",
+        "to": "basicly-rn0o.8",
+        "kind": "blocks"
+      },
+      {
+        "from": "basicly-rn0o.10",
+        "to": "basicly-rn0o.9",
+        "kind": "blocks"
+      },
+      {
+        "from": "basicly-rn0o.11",
+        "to": "basicly-rn0o.10",
+        "kind": "blocks"
+      }
+    ]
+  },
+  "events": [
+    {
+      "at": "2026-08-21T16:31:04Z",
+      "issue": "basicly-4t9z",
+      "kind": "checkpoint",
+      "text": "ship asked"
+    },
+    {
+      "at": "2026-08-21T16:37:41Z",
+      "issue": "basicly-7bur",
+      "kind": "merge",
+      "text": "bounced on a scope collision"
+    },
+    {
+      "at": "2026-08-21T16:39:12Z",
+      "issue": "basicly-f3tked",
+      "kind": "dispatched",
+      "text": "verify claude-opus-5"
+    },
+    {
+      "at": "2026-08-21T16:41:02Z",
+      "issue": "basicly-7bur",
+      "kind": "decision",
+      "text": "scope widening asked"
+    },
+    {
+      "at": "2026-08-21T16:42:12Z",
+      "issue": "basicly-rbnz49",
+      "kind": "gates",
+      "text": "full mode recorded, pytest failed"
+    }
+  ]
+}
