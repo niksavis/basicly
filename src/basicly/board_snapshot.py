@@ -33,6 +33,7 @@ producer is how the two come to disagree. The sections whose source is ``.basicl
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,6 +46,7 @@ from . import (
     board_sections,
     board_usage,
     owned_store,
+    projection,
     run_record,
     tracker_paths,
 )
@@ -63,6 +65,11 @@ DEFAULT_STALE_AFTER_S = 60.0
 # `freshness.source`, from the schema's closed set. One call to `build_document` is a
 # one-shot by definition; a caller on a tick says so itself.
 ONE_SHOT = "one-shot"
+SUPERVISOR_TICK = "supervisor-tick"
+
+# The whole transport: a file at a path the consumer is told, and no other. Under
+# `.basicly/usage/`, whose `.gitignore` is a bare `*`, so one operator's board never commits.
+SNAPSHOT_FILE = Path(".basicly/usage/board/snapshot.json")
 
 
 @dataclass(frozen=True)
@@ -270,3 +277,15 @@ def build_document(
             document["spend"] = spend
         document["health"] = board_usage.health_rows(runs)
     return document
+
+
+def write_document(repo_root: Path, document: Mapping[str, object]) -> Path:
+    """Land *document* at :data:`SNAPSHOT_FILE` under *repo_root*; the path written.
+
+    Temp-then-rename, so a consumer polling the path reads the previous document or this one
+    and never a partial. Here rather than in each producer because the path is the contract's
+    transport, not any one producer's choice of where to put its output.
+    """
+    path = repo_root / SNAPSHOT_FILE
+    projection.atomic_write_text(path, json.dumps(document, indent=2, sort_keys=True) + "\n")
+    return path

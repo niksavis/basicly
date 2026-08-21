@@ -100,7 +100,6 @@ ignore_names = [
   "PHASES",
   "baseline_failure_rate",
   "baseline_runs",
-  "build_document",
   "can_leave_classify",
   "clear_overrides",
   "config_overrides",

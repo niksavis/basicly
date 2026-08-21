@@ -64,6 +64,7 @@ from pathlib import Path
 from typing import Any
 
 from . import (
+    board_snapshot,
     commit,
     decisions,
     decompose,
@@ -264,6 +265,58 @@ def release(lock_path: Path, session_id: str) -> None:
         lock_path.unlink(missing_ok=True)
 
 
+# --- The board rides the beat (basicly-rn0o.7) --------------------------------
+
+
+def _board_facts(repo_root: Path) -> board_snapshot.Facts:
+    """The live-lock facts `board_snapshot` may not read for itself.
+
+    Reading the lock there would close `supervise -> board_snapshot -> supervise`, which is
+    why that module takes them as an argument and this is the caller that has them. No lock
+    means this beat has just been taken over, so the `session` section is omitted rather than
+    naming a root this process no longer supervises.
+
+    `lanes` stays None and that costs the section. Its `phase` is
+    `loop_state.read_node_state` per lane, the read family `board_snapshot` measures at 6.1 s
+    over 93 folds of the log, against 50 ms a tick may spend. An omitted section renders as
+    not emitted, which is true.
+    """
+    holder = read_holder(repo_root)
+    if holder is None or not holder.root_issue:
+        return board_snapshot.Facts()
+    return board_snapshot.Facts(
+        session=board_snapshot.SessionFacts(
+            root_issue=holder.root_issue,
+            supervised=True,
+            session_id=holder.session_id or "",
+            age_s=holder.age_s,
+            stale=holder.age_s >= STALE_AFTER_S,
+        )
+    )
+
+
+def emit_board_snapshot(repo_root: Path, cadence_s: float) -> Path:
+    """Fold one board snapshot for *repo_root* and land it; the path written.
+
+    *cadence_s* is the beating thread's own interval rather than
+    :data:`HEARTBEAT_INTERVAL_S`, so a caller that pinned its interval publishes the cadence
+    it keeps. `stale_after_s` is :data:`STALE_AFTER_S`, the same question one horizon on: a
+    document older than that came from a holder a contender may by now have replaced.
+    """
+    return board_snapshot.write_document(
+        repo_root,
+        board_snapshot.build_document(
+            repo_root,
+            facts=_board_facts(repo_root),
+            freshness=board_snapshot.Freshness(
+                source=board_snapshot.SUPERVISOR_TICK,
+                cadence_s=cadence_s,
+                stale_after_s=STALE_AFTER_S,
+            ),
+        ),
+    )
+
+
 class HeartbeatThread(threading.Thread):
     """Background heartbeat so long phases never let the lock go stale.
 
@@ -277,24 +330,52 @@ class HeartbeatThread(threading.Thread):
     """
 
     def __init__(
-        self, lock_path: Path, session_id: str, interval: float = HEARTBEAT_INTERVAL_S
+        self,
+        lock_path: Path,
+        session_id: str,
+        interval: float = HEARTBEAT_INTERVAL_S,
+        *,
+        repo_root: Path | None = None,
+        report: Callable[[str], None] | None = None,
     ) -> None:
-        """Bind the beater to one lock file and session; daemonized by default."""
+        """Bind the beater to one lock file and session; daemonized by default.
+
+        With *repo_root* the beat also emits the board (:func:`emit_board_snapshot`);
+        without it the thread only beats. *report* takes the line a failed emission costs.
+        """
         super().__init__(name="supervisor-heartbeat", daemon=True)
         self._lock_path = lock_path
         self._session_id = session_id
         self._interval = interval
+        self._repo_root = repo_root
+        self._report = report
         self._stopped = threading.Event()
         self.lost: LockLostError | None = None
 
     def run(self) -> None:
-        """Beat until stopped; capture (do not raise) a lost lock."""
+        """Beat until stopped; capture (do not raise) a lost lock, then emit the board."""
         while not self._stopped.wait(self._interval):
             try:
                 heartbeat(self._lock_path, self._session_id)
             except LockLostError as exc:
                 self.lost = exc
                 return
+            self._emit_board()
+
+    def _emit_board(self) -> None:
+        """Ride this beat with a board snapshot; never let the board cost the pass.
+
+        After the beat, not before: the beat is what stops a contender taking the lock
+        mid-landing, so a slow producer must delay a display rather than that. The catch is
+        deliberately everything - narrowing it to what a fold is known to raise today makes
+        the next unknown one the thing that fails a landing.
+        """
+        if self._repo_root is None:
+            return
+        try:
+            emit_board_snapshot(self._repo_root, self._interval)
+        except Exception as exc:  # noqa: BLE001 — a board must never fail a pass
+            _say(self._report, f"board:    snapshot not written - {exc}")
 
     def stop(self) -> None:
         """Stop beating (idempotent); the holder is releasing or has lost the lock."""

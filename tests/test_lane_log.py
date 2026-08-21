@@ -239,8 +239,8 @@ def test_the_narrative_redacts_a_secret_a_routed_detail_carried(tmp_path: Path) 
 class _Heartbeat:
     """A heartbeat that does nothing, so the pass under test owns no timing."""
 
-    def __init__(self, *_args: object) -> None:
-        """Accept the lock and session id the command constructs it with."""
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        """Accept the lock, the session id and the board wiring the command supplies."""
 
     def start(self) -> None:
         """Started and stopped by the command; there is nothing to beat."""
