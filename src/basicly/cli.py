@@ -15,6 +15,7 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ from . import (
     __version__,
     agents,
     board_cli,
+    board_facts,
     catalog_lint,
     catalog_verify,
     claude_settings,
@@ -3389,10 +3391,11 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     # Background beats keep the lock fresh through long landings (verify
     # suites easily outlast the staleness horizon); hb.check raises promptly
     # when a contender took over so no two supervisors ever land concurrently.
-    # `repo_root` and `say` are what turns the beat into the board's producer: the snapshot
-    # rides the tick that already runs, so wall mode is current with no second process
-    # (basicly-rn0o.7). A failed emission spends one narrative line and nothing else.
-    hb = supervise.HeartbeatThread(lock, session_id, repo_root=repo_root, report=say)
+    # `board` and `say` turn the beat into the board's producer: the snapshot rides the tick
+    # that already runs, so wall mode is current with no second process (basicly-rn0o.7).
+    # A failed emission costs one line and never the pass.
+    emit = partial(board_facts.emit_tick, repo_root, lane_label=args.label)
+    hb = supervise.HeartbeatThread(lock, session_id, board=emit, report=say)
     hb.start()
     try:
         return _supervise_rounds(repo_root, args, hb=hb, say=say, session_id=session_id)

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from . import (
     board_sections,
@@ -33,12 +34,22 @@ from . import (
     owned_store,
     policy,
     run_record,
+    supervise,
     tracker_query,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 # What every fact-gathering read below treats as "no answer": no kit installed, an unreadable
 # ledger, a report whose shape moved. Each costs its own key and never the page.
 UNREADABLE = (owned_store.TrackerDivergenceError, OSError, ValueError, KeyError, TypeError)
+
+# What a *session* derivation additionally treats as no answer: `tracker.require_record` raises
+# `RuntimeError` for a root it cannot show and `supervise.LaneSelectionError` is one for a
+# selector naming nothing. Named rather than spelled in the clause, because `except *UNREADABLE,
+# RuntimeError:` - the paren-free house form - parses as an `except*` group and is a SyntaxError.
+NO_SESSION = (*UNREADABLE, RuntimeError)
 
 
 def session_facts(repo_root: Path) -> board_snapshot.SessionFacts | None:
@@ -190,3 +201,112 @@ def questions(repo_root: Path, document: dict[str, object]) -> dict[str, str]:
             if item.pending and subject in item.question:
                 found[wait_id] = item.question
     return found
+
+
+def lane_facts(
+    repo_root: Path,
+    root_issue: str,
+    phase_map: Mapping[str, str],
+    *,
+    lane_label: str | None = None,
+) -> tuple[board_sections.LaneFacts, ...] | None:
+    """The pass's in-flight lanes as board rows, or None where the session will not derive.
+
+    **`IN FLIGHT` had no producer at all until this.** `supervise.observe` already builds these
+    views for `loop session`; the facts existed and never reached the board. `supervise.lane_view`
+    is reused rather than widened a second time, so there stays one answer to what a lane last ran.
+
+    The phase comes out of *phase_map*, which the caller has folded once for the whole
+    population, so a lane costs no read of its own - the per-lane `loop_state.read_node_state`
+    that priced this section out is not on the path.
+
+    *lane_label* is the selector the supervisor was started with. Without it a label pass reports
+    the root's children instead, which is a truthful view of a *different* session.
+
+    None rather than `()`: an empty tuple is the claim that lanes are visible and there are none,
+    and a derivation this checkout could not run has made no claim at all.
+    """
+    try:
+        state = supervise.derive_session(repo_root, root_issue, lane_label=lane_label)
+        views = [supervise.lane_view(repo_root, lane) for lane in state.adopted]
+    except NO_SESSION:
+        return None
+    return tuple(
+        board_sections.LaneFacts(
+            id=view.issue_id,
+            phase=phase_map.get(view.issue_id, ""),
+            status=view.status,
+            agent=view.last_agent or "",
+            live=view.live,
+            started_at=view.last_run_at or "",
+            tokens=view.last_tokens,
+            branch=view.branch,
+        )
+        for view in views
+    )
+
+
+def document(
+    repo_root: Path, *, lane_label: str | None = None, in_flight: bool = False
+) -> dict[str, object]:
+    """One snapshot of *repo_root*, with every fact this layer can supply supplied.
+
+    **The second build is a fact this layer cannot gather first, not a retry.** A wait's wording
+    is keyed by wait id and only the producer knows which waits are pending, so
+    :func:`questions` reads the first document to learn what to ask about. Folding again is
+    171 ms and only when an ask is pending, against the 13.1 s walk asking blind would cost. The
+    producer's guarantee is untouched: each call folds the log once.
+
+    *in_flight* adds :func:`lane_facts`, and only a caller that knows the pass may ask for it:
+    Mode A and Mode B fold whatever lock they find without knowing its selector, so a label
+    pass drawn from there would name the root's children.
+    """
+    phase_map = phases(repo_root)
+    session = session_facts(repo_root)
+    facts = board_snapshot.Facts(
+        session=session,
+        repo=repo_facts(repo_root),
+        phases=phase_map,
+        readiness=readiness(repo_root),
+        lanes=(
+            lane_facts(repo_root, session.root_issue, phase_map, lane_label=lane_label)
+            if in_flight and session is not None
+            else None
+        ),
+    )
+    built = board_snapshot.build_document(repo_root, facts=facts)
+    asked = questions(repo_root, built)
+    if not asked:
+        return built
+    return board_snapshot.build_document(repo_root, facts=replace(facts, questions=asked))
+
+
+def emit_tick(repo_root: Path, cadence_s: float, *, lane_label: str | None = None) -> Path:
+    """Land the supervisor tick's board snapshot for *repo_root*; the path written.
+
+    **Here rather than in `supervise`, because here is where the facts are.** A live lock hands
+    production from the server to the beat - `board_serve.refresh` folds nothing while a holder
+    is fresh - and the tick used to fold on the lock alone. Measured either side on this tree:
+    0 phases of 234 units against `board --out`'s 234, no ready set, `repo` holding only a name
+    and `IN FLIGHT` with no producer at all. The richest producer was displaced by
+    the poorest exactly when a human was watching (basicly-bd4epr). `supervise` cannot reach
+    this module, so the beat takes the emission as a callback instead.
+
+    *cadence_s* is the beating thread's own interval rather than
+    `supervise.HEARTBEAT_INTERVAL_S`, so a caller that pinned its interval publishes the cadence
+    it keeps. `stale_after_s` is `supervise.STALE_AFTER_S`, the same question one horizon on: a
+    document older than that came from a holder a contender may by now have replaced.
+
+    **The cost is dominated by one read and it is worth knowing which.** One emission measures
+    1.50 s on this repository with a lane adopted, and 7.11 s - 47% of the beat - on the same
+    tree once run records exist, because :func:`grant_spend` then walks
+    `policy.session_issue_ids` at 5.9 s. It runs *after* the heartbeat write, so what it delays
+    is the next beat and never a landing, and 7.11 s clears `supervise.STALE_AFTER_S` by 8x.
+    """
+    built = document(repo_root, lane_label=lane_label, in_flight=True)
+    built["freshness"] = {
+        "source": board_snapshot.SUPERVISOR_TICK,
+        "cadence_s": cadence_s,
+        "stale_after_s": supervise.STALE_AFTER_S,
+    }
+    return board_snapshot.write_document(repo_root, built)

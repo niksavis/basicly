@@ -4,12 +4,18 @@ Split from `test_supervise` rather than added to it: that module sits 413 tokens
 frozen `module_size` baseline, which this unit's tests do not fit under, and
 `check_test_naming` permits the `test_<module>_<aspect>.py` form for exactly this.
 
-The emission cost is bounded by unit B's own `BUILD_CAP_S`, not by the 50 ms the design's AC 3
-names. That 50 ms was written against a 19.1 ms build figure the design itself records as
-wrong: `test_board_snapshot` measures `build_document` at 103.8 ms on this corpus, and the
-whole emission measures a median 78.0 ms here. The intent - a board must not slow the beat -
-holds against the 15 s tick with three orders of margin; the number does not, and a gate
-asserting it would be red on arrival.
+**The producer sits above `supervise` and the beat carries it as a callback (basicly-bd4epr).**
+`board_facts.emit_tick` folds what a wall needs and `supervise` cannot import it, so these tests
+wire the two the way `cli.cmd_supervise` does. Before that the tick folded on the lock alone,
+and a live supervisor made the board go backwards: 0 phases of 234 where `board --out` carried
+234, no ready set, and `IN FLIGHT` with no producer at all.
+
+The emission cost is bounded by the beat it rides, not by the 50 ms the design's AC 3 names.
+That 50 ms was written against a 19.1 ms build figure the design itself records as wrong, and
+the tick now folds Mode A's whole document rather than the lock. Measured three ways, and the
+spread is the point: 0.48 s on this module's fixture, 1.50 s on this repository with a lane
+adopted, and 7.11 s on the same tree once 333 run records turn on the grant-spend walk. The
+fixture reaches none of that, so :data:`EMIT_CAP_S` bounds the fixture and says so.
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from basicly import board_schema, board_snapshot, projection, supervise
+from basicly import board_facts, board_schema, board_snapshot, loop_state, projection, supervise
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -32,8 +38,13 @@ if TYPE_CHECKING:
 # the thread's own start. The design's demonstration allows 40 s for two ticks at 15 s.
 TICK_S = 0.05
 
-# Unit B's cap on one build, which is the bound this emission is actually held to.
-EMIT_CAP_S = 0.5
+# What one emission may cost *on this fixture*, which carries no run records: a fifth of the
+# beat, which the 0.48 s median clears by 6x. Deliberately not read as a bound on a live tree,
+# where the same emission measures 7.11 s - `policy.session_issue_ids` is 5.9 s of it and only
+# runs where run records exist. The bound that governs there is the staleness horizon, because
+# the emission runs *after* the heartbeat write: it delays the next beat, never the pass, and
+# 7.11 s clears `STALE_AFTER_S` by 8x.
+EMIT_CAP_S = supervise.HEARTBEAT_INTERVAL_S / 5
 
 _SESSION = "epic:board"
 _ROOT = "epic"
@@ -55,7 +66,11 @@ def beating(work_repo: Path) -> Iterator[tuple[Path, list[str]]]:
     lock = supervise.acquire(work_repo, _SESSION, _ROOT)
     said: list[str] = []
     thread = supervise.HeartbeatThread(
-        lock, _SESSION, interval=TICK_S, repo_root=work_repo, report=said.append
+        lock,
+        _SESSION,
+        interval=TICK_S,
+        board=lambda cadence: board_facts.emit_tick(work_repo, cadence),
+        report=said.append,
     )
     thread.start()
     try:
@@ -132,7 +147,7 @@ def test_the_session_section_carries_the_lock_this_beat_holds(
     assert session["holder"]["stale"] is False
 
 
-def test_a_beat_without_a_repo_root_only_beats(work_repo: Path) -> None:
+def test_a_beat_without_a_board_only_beats(work_repo: Path) -> None:
     """The board is opt-in at construction, so a beater that only fences the lock still can."""
     lock = supervise.acquire(work_repo, _SESSION, _ROOT)
     # Backdated first, so "the lock is fresh" is a claim about this beater rather than about
@@ -169,7 +184,7 @@ def test_the_write_goes_through_the_shared_temp_then_rename(
         "atomic_write_bytes",
         lambda path, content: (routed.append(path), original(path, content))[1],
     )
-    written = supervise.emit_board_snapshot(work_repo, TICK_S)
+    written = board_facts.emit_tick(work_repo, TICK_S)
     assert routed == [written]
     assert written == work_repo / board_snapshot.SNAPSHOT_FILE
     assert list(written.parent.iterdir()) == [written], "a temp file survived the rename"
@@ -181,13 +196,17 @@ def test_a_failed_emission_costs_one_line_and_never_the_beat(
     """AC 4: a board that cannot be written must not fail a pass or a landing."""
     lock = supervise.acquire(work_repo, _SESSION, _ROOT)
     monkeypatch.setattr(
-        supervise.board_snapshot,
+        board_facts.board_snapshot,
         "build_document",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("corpus unreadable")),
     )
     said: list[str] = []
     thread = supervise.HeartbeatThread(
-        lock, _SESSION, interval=TICK_S, repo_root=work_repo, report=said.append
+        lock,
+        _SESSION,
+        interval=TICK_S,
+        board=lambda cadence: board_facts.emit_tick(work_repo, cadence),
+        report=said.append,
     )
     thread.start()
     try:
@@ -202,23 +221,73 @@ def test_a_failed_emission_costs_one_line_and_never_the_beat(
     assert not (work_repo / board_snapshot.SNAPSHOT_FILE).exists()
 
 
-def test_one_emission_stays_inside_the_producers_own_build_cap(work_repo: Path) -> None:
-    """AC 3's intent: the beat's cadence is three orders above what an emission costs."""
+def test_one_emission_stays_inside_the_beat_it_rides(work_repo: Path) -> None:
+    """AC 3's intent: an emission stays well inside the beat it rides, on this corpus."""
     supervise.acquire(work_repo, _SESSION, _ROOT)
-    supervise.emit_board_snapshot(work_repo, TICK_S)  # warm the caches the cap is not about
+    board_facts.emit_tick(work_repo, TICK_S)  # warm the caches the cap is not about
     started = time.perf_counter()
-    supervise.emit_board_snapshot(work_repo, TICK_S)
+    board_facts.emit_tick(work_repo, TICK_S)
     assert time.perf_counter() - started < EMIT_CAP_S
 
 
-def test_the_lanes_section_is_omitted_rather_than_derived_on_a_tick(work_repo: Path) -> None:
-    """A tick may not afford `read_node_state` per lane, and absent is the honest claim."""
+def test_the_tick_carries_every_derivation_the_idle_board_carries(work_repo: Path) -> None:
+    """The regression: a live supervisor must not publish less than no supervisor did.
+
+    Compared against the same fold with no lock held rather than against a remembered number,
+    because the claim is a relation between two producers and not a count.
+    """
+    idle: dict[str, Any] = board_facts.document(work_repo)
     supervise.acquire(work_repo, _SESSION, _ROOT)
-    supervise.emit_board_snapshot(work_repo, TICK_S)
-    assert "lanes" not in _document(work_repo)
+    ticked = json.loads(board_facts.emit_tick(work_repo, TICK_S).read_text(encoding="utf-8"))
+
+    assert set(idle) <= set(ticked)
+    phased = [unit for unit in ticked["units"] if unit.get("phase")]
+    assert len(phased) == len([unit for unit in idle["units"] if unit.get("phase")])
+    assert phased, "the corpus must carry a phase for the comparison to discriminate"
+    assert ticked["backlog"]["ready"] == idle["backlog"]["ready"]
+    assert ticked["backlog"]["blocked"] == idle["backlog"]["blocked"]
+    assert ticked["repo"] == idle["repo"]
 
 
-def test_the_session_section_is_omitted_once_the_lock_is_gone(work_repo: Path) -> None:
-    """A taken-over beat names no root: a guessed one is the false claim on a wall."""
-    supervise.emit_board_snapshot(work_repo, TICK_S)
-    assert "session" not in _document(work_repo)
+def test_in_flight_carries_one_card_per_adopted_lane(
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC 2: the lane views `loop session` already builds reach the wall.
+
+    The session derivation is pinned rather than the lane row: `supervise.lane_view` and the
+    phase lookup are the code under test, and a fixture that also supplied those would assert
+    its own input back.
+    """
+    adopted = supervise.AdoptedLane(
+        issue_id="basicly-0jiq",
+        status="in_progress",
+        binding=loop_state.WorktreeBinding("basicly-0jiq", "harness/basicly-0jiq"),
+        live=True,
+    )
+    monkeypatch.setattr(
+        board_facts.supervise,
+        "derive_session",
+        lambda *_a, **_k: supervise.SessionState(_ROOT, "open", (), (adopted,)),
+    )
+    supervise.acquire(work_repo, _SESSION, _ROOT)
+    ticked = json.loads(board_facts.emit_tick(work_repo, TICK_S).read_text(encoding="utf-8"))
+
+    assert [lane["id"] for lane in ticked["lanes"]] == ["basicly-0jiq"]
+    card = ticked["lanes"][0]
+    assert card["status"] == "in_progress"
+    assert card["branch"] == "harness/basicly-0jiq"
+    assert card["live"] is True
+    assert card["phase"] == loop_state.phase_map(work_repo)["basicly-0jiq"]
+
+
+def test_the_session_and_lane_sections_are_omitted_once_the_lock_is_gone(
+    work_repo: Path,
+) -> None:
+    """A taken-over beat names no root: a guessed one is the false claim on a wall.
+
+    `lanes` goes with it, and absent rather than `[]`: an empty list is the claim that lanes
+    are visible and there are none, which a producer with no root has not earned.
+    """
+    document = json.loads(board_facts.emit_tick(work_repo, TICK_S).read_text(encoding="utf-8"))
+    assert "session" not in document
+    assert "lanes" not in document
