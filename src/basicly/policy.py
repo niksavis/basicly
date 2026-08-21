@@ -30,7 +30,7 @@ import os
 import re
 import secrets
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -394,7 +394,23 @@ class GateStatus:
 
 
 def gate_status(repo_root: Path, issue_id: str, config: PolicyConfig) -> GateStatus:
-    """Classify recorded gates against the required set; advance only when all pass.
+    """*issue_id*'s recorded gates, classified by :func:`classify_gates`.
+
+    The read half only. Which store answers is `gate_source.read_gates`', not this
+    module's (basicly-vkh0.27), and the rule is stated once next door so a caller
+    holding rows already folded classifies them the same way.
+    """
+    return classify_gates(
+        [
+            GateVerdict(r["gate"], r.get("provider", ""), bool(r["passed"]))
+            for r in gate_source.read_gates(repo_root, issue_id)
+        ],
+        config,
+    )
+
+
+def classify_gates(rows: Sequence[GateVerdict], config: PolicyConfig) -> GateStatus:
+    """Classify *rows* against the required set; advance only when all pass (pure).
 
     A required gate that is missing or failed blocks advancement. Any recorded
     gate not in the required set is advisory and never affects ``can_advance``.
@@ -408,13 +424,7 @@ def gate_status(repo_root: Path, issue_id: str, config: PolicyConfig) -> GateSta
     the only result recorded the gate reads missing while the tracker plainly shows
     a pass — an operator needs to be told which result is being ignored and why.
     Advisory gates still accept any provider.
-
-    Which store answers is `gate_source.read_gates`', not this module's (basicly-vkh0.27).
     """
-    rows = [
-        GateVerdict(r["gate"], r.get("provider", ""), bool(r["passed"]))
-        for r in gate_source.read_gates(repo_root, issue_id)
-    ]
     required = config.required_gates
     # br keeps one result per (gate, provider), not one per gate — measured, not
     # assumed: reporting verify under two providers leaves two rows, in no
@@ -1169,10 +1179,19 @@ def _checkpoint_marker(name: str) -> str:
     return f"{MARKER} checkpoint={name} approved"
 
 
+def checkpoint_approved_in(texts: Iterable[str], name: str) -> bool:
+    """True when *texts* records approval of the *name* checkpoint (pure).
+
+    The rule, for a caller that already holds a record's markers: a whole-population
+    read folds the log once and must not pay a read per checkpoint to ask this.
+    """
+    marker = _checkpoint_marker(name)
+    return any(_marker_matches(text, marker) for text in texts)
+
+
 def checkpoint_approved(repo_root: Path, issue_id: str, name: str) -> bool:
     """True when the *name* checkpoint has been approved on *issue_id*."""
-    marker = _checkpoint_marker(name)
-    return any(_marker_matches(text, marker) for text in _comment_texts(repo_root, issue_id))
+    return checkpoint_approved_in(_comment_texts(repo_root, issue_id), name)
 
 
 def approve_checkpoint(repo_root: Path, issue_id: str, name: str) -> None:

@@ -128,12 +128,14 @@ def test_a_unit_resting_in_validate_counts_as_downstream_wip() -> None:
         (["[harness-classification] rule=x"], None),
     ],
 )
-def test_recorded_level_reads_the_standing_marker(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, comments: list[str], expected: str | None
+def test_the_recorded_level_is_read_from_the_standing_marker(
+    comments: list[str], expected: str | None
 ) -> None:
-    """The standing verdict, whether rewritten, absent or unreadable."""
-    _install(monkeypatch, _FakeBr(comments=comments))
-    assert validate_gate.recorded_level(tmp_path, "i") == expected
+    """The standing verdict, whether rewritten, absent or unreadable.
+
+    Against the pure reader, which is the whole reader since basicly-s1vqq2.
+    """
+    assert validate_gate.level_in(comments) == expected
 
 
 def test_l3_promotes_the_consumer_gate_and_nothing_else(

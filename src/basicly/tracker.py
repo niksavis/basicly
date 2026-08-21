@@ -869,6 +869,37 @@ def scrub_ledger(repo_root: Path) -> int:
 # --- The whole-tracker read (basicly-kjc5.50) --------------------------------
 
 
+def all_views(repo_root: Path) -> dict[str, Any]:
+    """Every live record as the kit's own view, from **one** fold of the log.
+
+    The population read behind `loop_state.phase_map` (basicly-s1vqq2). One view carries the
+    status, the ``external_ref``, the markers, the gate rows and the edges that
+    ``derive_phase`` takes, so a phase for the whole tracker costs this one read rather than
+    the seven per record :func:`read_node_state` pays — measured on this repo's log, 0.125 s
+    over 1036 records against 128.1 s over 236.
+
+    The kit's view rather than :func:`_rendered`'s shape, and the fold count is the reason:
+    rendering also needs ``events.fold``'s ``fields``, which is a second fold over the same
+    event list. A caller wanting a record's fields wants :func:`all_records`.
+
+    Tombstones are dropped here, at the seam, for the reason :func:`owned_record` gives: a
+    deletion is an event in this store and an absence to every reader.
+
+    **One boundary, stated rather than assumed:** ``view.gates`` is the differential's own
+    gate pass, not :mod:`basicly.gate_source`'s, and the kit owns that duplication — the two
+    agree on every well-formed event and part on a malformed one, which the gates fold names
+    and this one coerces. Measured 2026-08-21, all 236 active records derive the same phase
+    through either, and `ledger-fsck` is the gate for a log that holds such an event at all.
+
+    Raises:
+        TrackerDivergenceError: the kit is not installed or will not load. Hard, because an
+            empty population reads as a tracker holding no work.
+    """
+    kit_module = kit(repo_root)
+    views = kit_module.views_from_events(kit_module.read_ledger(ledger_dir(repo_root)))
+    return {record: view for record, view in views.items() if not view.tombstoned}
+
+
 def all_records(repo_root: Path) -> list[dict]:
     """Every record the ledger holds, in id order, in :func:`owned_record`'s shape.
 

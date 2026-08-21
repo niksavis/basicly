@@ -28,10 +28,11 @@
   **Two facts are bounded by cost, and the bound is published rather than hidden.**
   `loop_state.read_node_state` is the only route to `derive_phase` and it reads the whole event
   log seven times per record - 591 ms over 20 records on this repo's log - so a phase for all
-  234 active records is 138 s against a 171 ms build. `basicly board` derives phases for the
-  ranked ready front only, `PHASE_LIMIT` records, and every unit outside it keeps `phase`
-  absent. `session.spent_tokens` sits behind `policy.session_issue_ids` at 13.1 s and behind a
-  run-record file this checkout may not have, so it is emitted only where both hold: the figure
+  234 active records is 138 s against a 171 ms build. `basicly board` derived phases for the
+  ranked ready front only, and every unit outside it kept `phase` absent; `basicly-s1vqq2`
+  removed that cap. `session.spent_tokens` sits behind `policy.session_issue_ids` at 13.1 s and
+  behind a run-record file this checkout may not have, so it is emitted only where both hold:
+  the figure
   is spend *under the active grant*, never the lifetime one, because publishing the lifetime
   figure beside a ceiling is how a display comes to draw 177970761/4000000 with nothing spent
   under that grant (`basicly-f3tked`).

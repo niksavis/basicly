@@ -15,6 +15,7 @@ required set; *which* set a unit owes is a question about the unit.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Iterator
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -48,16 +49,21 @@ _MARKUP = re.compile(r"[*_`]+")
 _MARKER = re.compile(r"^[#>\-+\s]+")
 
 
-def recorded_level(repo_root: Path, issue_id: str) -> str | None:
-    """The level classify recorded for *issue_id*, or None when unmarked.
+def _texts(repo_root: Path, issue_id: str) -> Iterator[str]:
+    """*issue_id*'s marker bodies, the one shape the pure readers below take."""
+    return (str(comment.get("text", "")) for comment in _read_comments(repo_root, issue_id))
+
+
+def level_in(texts: Iterable[str]) -> str | None:
+    """The level *texts* records, or None when unmarked (pure).
 
     Read back from the marker, never re-derived from scope, which would disagree
     with the record whenever the path rules changed after classify ran. Markers
     arrive oldest-first, so the last one is the standing verdict.
     """
     level: str | None = None
-    for comment in _read_comments(repo_root, issue_id):
-        text = str(comment.get("text", "")).strip()
+    for body in texts:
+        text = body.strip()
         if not text.startswith(integrity.CLASSIFICATION_MARKER):
             continue
         for field in text.split():
@@ -74,13 +80,23 @@ def requires_validation(level: str | None) -> bool:
     return VALIDATE_GATE in integrity.selection_for(level).gates
 
 
-def required_config(repo_root: Path, issue_id: str, config: PolicyConfig) -> PolicyConfig:
-    """*config* with ``validate-as-consumer`` required when *issue_id* recorded L3."""
-    if not requires_validation(recorded_level(repo_root, issue_id)):
+def required_in(texts: Iterable[str], config: PolicyConfig) -> PolicyConfig:
+    """*config* with ``validate-as-consumer`` required when *texts* records L3 (pure).
+
+    *config* itself back where nothing is promoted, so a caller can still tell the two
+    apart by identity — which `test_validate_gate` asserts, because a fresh equal copy
+    would hide a promotion that silently rebuilt the required set.
+    """
+    if not requires_validation(level_in(texts)):
         return config
     if VALIDATE_GATE in config.required_gates:
         return config
     return replace(config, required_gates=(*config.required_gates, VALIDATE_GATE))
+
+
+def required_config(repo_root: Path, issue_id: str, config: PolicyConfig) -> PolicyConfig:
+    """*config* with ``validate-as-consumer`` required when *issue_id* recorded L3."""
+    return required_in(_texts(repo_root, issue_id), config)
 
 
 def outstanding(gates: policy.GateStatus) -> bool:

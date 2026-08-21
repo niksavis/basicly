@@ -18,7 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from basicly import board_facts, supervise, tracker
+from basicly import board_facts, integrity, loop_state, supervise, tracker
+from basicly.config import VERIFY_GATE_PROVIDER
 
 REPO_ROOT = Path(__file__).parent.parent
 KIT_SOURCE = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -69,6 +70,37 @@ def _owned_repo(root: Path, *records: str) -> Path:
     return root
 
 
+def _seeded(repo: Path, *, level: str) -> Path:
+    """``bd-1`` bound to a worktree with a green verify gate, at *level* where one is given.
+
+    Written through the engine's own writers rather than hand-spelled markers: the phase under
+    test turns on the ``[harness-classification]`` body and on the gate provider a required
+    gate counts, and an invented spelling of either would agree with itself on both paths.
+    """
+    if level:
+        tracker.add_comment(repo, "bd-1", f"{integrity.CLASSIFICATION_MARKER} level={level}")
+    tracker.write(
+        repo,
+        ["update", "bd-1", "--external-ref", loop_state.format_worktree_ref("w", "harness/w")],
+    )
+    tracker.write(
+        repo,
+        # The argv `validate_gate.record_verdict` writes, on the gate the loop's landing records.
+        [
+            "gate",
+            "report",
+            "bd-1",
+            "--gate",
+            "verify",
+            "--provider",
+            VERIFY_GATE_PROVIDER,
+            "--status",
+            "pass",
+        ],
+    )
+    return repo
+
+
 def test_no_supervisor_lock_yields_no_session_facts(tmp_path: Path) -> None:
     """A guessed root would be a claim about which pass is running, drawn on a wall."""
     assert board_facts.session_facts(tmp_path) is None
@@ -97,11 +129,6 @@ def test_an_unreadable_tracker_yields_no_phases(tmp_path: Path) -> None:
 def test_a_document_with_no_asks_yields_no_questions(tmp_path: Path) -> None:
     """Nothing to pair against is not a wait with an empty question."""
     assert board_facts.questions(tmp_path, {}) == {}
-
-
-def test_the_phase_limit_is_a_positive_bound() -> None:
-    """A limit of zero would silently emit no phase at all while looking configured."""
-    assert board_facts.PHASE_LIMIT > 0
 
 
 def test_the_session_section_is_omitted_rather_than_guessed(tmp_path: Path) -> None:
@@ -153,17 +180,61 @@ def test_a_directory_git_will_not_answer_for_keeps_the_repo_section_to_its_name(
     assert board_facts.repo_facts(tmp_path) is None
 
 
-def test_the_phase_map_is_bounded_because_each_entry_reads_the_whole_log(tmp_path: Path) -> None:
-    """`PHASE_LIMIT` is a cost bound, and a map longer than it would be 138 s on this repo.
+def test_the_phase_map_covers_every_record_and_folds_the_log_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """basicly-s1vqq2: the map is the whole population now, and the cost that capped it is gone.
 
-    The lower bound is the control: an empty map would satisfy the ceiling while emitting no
-    phase at all, which is the shape the defect this fixes had.
+    **A spy, not a stopwatch**, the instrument `test_board_snapshot` already uses on the
+    producer beside this one: the defect was seven whole-log reads per record - 591 ms over 20,
+    so 138 s for 234 - and the property that fixes it is the fold count. A duration assertion
+    would instead fail on whichever runner is slowest that day.
+
+    The subprocess refusal rides along because a fold reached through a tracker spawn would
+    satisfy the count while paying the cost this removes.
     """
-    records = tuple(f"bd-{index}" for index in range(board_facts.PHASE_LIMIT + 3))
+    records = tuple(f"bd-{index}" for index in range(11))
     repo = _owned_repo(tmp_path, *records)
+    kit = tracker.kit(repo)
+    folds: list[int] = []
+    real_fold = kit.events.fold
+
+    def counting_fold(*args: object, **kwargs: object) -> object:
+        folds.append(1)
+        return real_fold(*args, **kwargs)
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("the phase map spawned a subprocess")
+
+    monkeypatch.setattr(kit.events, "fold", counting_fold)
+    monkeypatch.setattr(subprocess, "Popen", refuse)
 
     phases = board_facts.phases(repo)
 
-    assert 0 < len(phases) <= board_facts.PHASE_LIMIT
-    assert set(phases) < set(records)
+    assert len(folds) == 1
+    assert set(phases) == set(records)
     assert all(value for value in phases.values())
+
+
+def test_a_mapped_phase_is_the_engine_derivation_on_a_unit_owing_validation(
+    tmp_path: Path,
+) -> None:
+    """The map calls `loop_state.derive_phase`, and this is the case that proves which one.
+
+    An L3 unit whose verify gate is green and whose validate gate is not is in ``validate``,
+    and only a reader that knows the recorded level can say so - the kit ships a phase
+    derivation folded out of the ledger alone, which reads ``verify`` here and renders
+    identically. The L2 repo beside it is the control: same gate, same binding, no level
+    marker, and the answer has to differ or the marker is not being read at all.
+
+    Both are also checked against `read_node_state`, the per-record route this replaces -
+    measured on this repository's own log, 236 active records agreed on both paths, 128.1 s
+    against 0.125 s.
+    """
+    l3 = _seeded(_owned_repo(tmp_path / "l3", "bd-1"), level="L3")
+    l2 = _seeded(_owned_repo(tmp_path / "l2", "bd-1"), level="")
+
+    assert loop_state.phase_map(l3)["bd-1"] == "validate"
+    assert loop_state.phase_map(l2)["bd-1"] == "verify"
+    for repo in (l3, l2):
+        assert loop_state.phase_map(repo)["bd-1"] == loop_state.read_node_state(repo, "bd-1").phase
