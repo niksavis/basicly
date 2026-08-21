@@ -3405,7 +3405,10 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     # Background beats keep the lock fresh through long landings (verify
     # suites easily outlast the staleness horizon); hb.check raises promptly
     # when a contender took over so no two supervisors ever land concurrently.
-    hb = supervise.HeartbeatThread(lock, session_id)
+    # `repo_root` and `say` are what turns the beat into the board's producer: the snapshot
+    # rides the tick that already runs, so wall mode is current with no second process
+    # (basicly-rn0o.7). A failed emission spends one narrative line and nothing else.
+    hb = supervise.HeartbeatThread(lock, session_id, repo_root=repo_root, report=say)
     hb.start()
     try:
         return _supervise_rounds(repo_root, args, hb=hb, say=say, session_id=session_id)

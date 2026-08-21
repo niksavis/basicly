@@ -1,0 +1,18 @@
+# The supervisor's heartbeat now emits the board snapshot, and AC 4 of unit F says a board
+# that cannot be written must never fail a pass or a landing. `HeartbeatThread._emit_board`
+# therefore catches everything.
+#
+# The alternative rejected is the narrow catch. `board_snapshot.build_document` folds a ledger,
+# parses three usage files and reaches `owned_store`, `run_record` and `board_usage`; today
+# that raises `OSError`, `ValueError` and `json.JSONDecodeError`, and enumerating those three
+# is a list that goes stale the first time a section gains a source. A board failure escaping
+# this thread does not merely lose a display: it kills the beater, the lock goes stale inside
+# four missed beats, and a contender takes the repository over mid-landing - the
+# two-supervisors state the lock exists to prevent (basicly-kjc5.7). A narrow catch converts
+# the next unknown exception into exactly that, so the breadth here is the requirement rather
+# than a convenience.
+#
+# It is not swallowed: the failure spends one reported line on the pass narrative, which is
+# where every other supervisor decision is recorded.
+[ratchet.noqa_debt.frozen]
+BLE001 = 1
