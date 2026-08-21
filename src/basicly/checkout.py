@@ -114,6 +114,19 @@ def git(
     return run(["git", *args], cwd=cwd, check=check)
 
 
+def names_in(ref: str, directory: str, cwd: Path | str | None = None) -> tuple[str, ...]:
+    """File names *ref* holds under *directory*, or empty where the question cannot be asked.
+
+    Empty covers no git, no such ref and no such directory alike, because a caller asking
+    what another branch holds has no answer in any of the three and a raise would make an
+    absent remote fatal.
+    """
+    done = git(["ls-tree", "--name-only", f"{ref}:{directory}"], cwd=cwd, check=False)
+    if done.returncode != 0:
+        return ()
+    return tuple(line for line in done.stdout.splitlines() if line)
+
+
 def git_common_dir(cwd: Path | str | None = None) -> Path:
     """Return the shared git common dir (``<main>/.git`` for the main checkout)."""
     out = git(["rev-parse", "--git-common-dir"], cwd=cwd).stdout.strip()

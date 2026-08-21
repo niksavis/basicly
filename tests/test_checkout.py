@@ -122,3 +122,25 @@ def test_is_linked_checkout_distinguishes_worktree_from_base(git_repo: Path) -> 
     assert checkout.is_linked_checkout(linked) is True
     assert checkout.is_linked_checkout(git_repo) is False
     assert checkout.is_linked_checkout(git_repo.parent) is False  # not a repo
+
+
+def test_names_in_reads_what_a_ref_holds_under_a_directory(tmp_path: Path) -> None:
+    """The reader behind `release-notes` naming a fragment the base branch already has."""
+    checkout.git(["init", "-q", "-b", "probe"], cwd=tmp_path)
+    checkout.git(["config", "user.email", "probe@example.invalid"], cwd=tmp_path)
+    checkout.git(["config", "user.name", "probe"], cwd=tmp_path)
+    (tmp_path / "changelog.d").mkdir()
+    (tmp_path / "changelog.d" / "demo-1.added.md").write_text("- x\n", encoding="utf-8")
+    checkout.git(["add", "-A"], cwd=tmp_path)
+    checkout.git(["commit", "-qm", "seed"], cwd=tmp_path)
+
+    assert checkout.names_in("probe", "changelog.d", cwd=tmp_path) == ("demo-1.added.md",)
+
+
+def test_names_in_is_empty_where_the_question_cannot_be_asked(tmp_path: Path) -> None:
+    """No git, no such ref and no such directory are one answer: nothing to report.
+
+    A raise here would make an absent remote fatal for every caller asking what another
+    branch holds, which is the common case in a fresh clone.
+    """
+    assert checkout.names_in("no-such-ref", "changelog.d", cwd=tmp_path) == ()

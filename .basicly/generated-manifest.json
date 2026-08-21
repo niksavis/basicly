@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-08-21T12:12:53.071563+00:00",
+  "generated_at": "2026-08-21T20:41:32.133027+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
       "hash": "sha256:ad44c5b868b19e2c3a6cf68a53faf4a9ebc5e0dd4988875ee23b6060919b978f",
@@ -44,6 +44,12 @@
         "code-is-authoritative"
       ]
     },
+    ".claude/rules/rendered-surfaces.md": {
+      "hash": "sha256:3f7e49620193ef6f467539e49da731132c37c089faf4fc4a8fa9b7cfee2da917",
+      "source_fragments": [
+        "rendered-surfaces"
+      ]
+    },
     ".claude/rules/platform-hermetic-tests.md": {
       "hash": "sha256:19617d1dce077c15a0ce28e80a84392d4e21350e39f3a5b0bca5494bc2911c9f",
       "source_fragments": [
@@ -51,7 +57,7 @@
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:03d29896bd208d4756b2d489be112d28b32ef4c8a02de2478c804ff4e38ef35a",
+      "hash": "sha256:15645672b7a7a5641da89f3bd455e66e6b443d018ce9ce98fefead9a55cd17d3",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -68,6 +74,7 @@
         "core-rules",
         "harness-loop",
         "quality-gate",
+        "rendered-surfaces",
         "use",
         "platform-hermetic-tests",
         "catalog-authoring",

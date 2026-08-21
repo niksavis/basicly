@@ -87,7 +87,7 @@ from ratchet import (  # noqa: E402 - the path above comes first
     report,
 )
 
-from basicly import config, plan_record, release, tracker  # noqa: E402 - the path above
+from basicly import checkout, config, plan_record, release, tracker  # noqa: E402 - the path above
 
 # The gate, as `[tool.release_notes]` and `[ratchet.release_notes]` spell it.
 _GATE = "release_notes"
@@ -191,8 +191,36 @@ def declarations(repo: Path) -> dict[str, str]:
     return table
 
 
+def _on_base_branch(subject: str) -> str | None:
+    """The fragment path for *subject* that the base branch already holds, or None.
+
+    **The population and the evidence come from different trees.** The record comes from
+    the shared ledger a worktree reaches through the redirect; the fragment is in the
+    lane's own checkout. A record closed on base after the lane branched therefore
+    refuses every commit on that branch over a note that exists one tree away - three
+    times in one session, and one lane answered by declaring it invisible with a control
+    true at its branch point and false on arrival.
+    """
+    for ref in ("origin/main", "main"):
+        for name in checkout.names_in(ref, "changelog.d", cwd=REPO_ROOT):
+            if name.startswith(f"{subject}."):
+                return f"changelog.d/{name}"
+    return None
+
+
 def _owes(subject: str) -> Finding:
     """A closed record that changed a shipped surface and produced no release note."""
+    remedy = (
+        f"write `changelog.d/{subject}.<category>.md`, or declare it invisible to a "
+        f"consumer in {INVISIBLE_TABLE} with its reason and "
+        f"{count_delta_remedy(_GATE, 1)}"
+    )
+    if existing := _on_base_branch(subject):
+        remedy = (
+            f"`{existing}` is on the base branch and absent here: this tree is behind, "
+            f"not in debt. Rebase. Never declare it invisible - such an entry is true at "
+            f"a branch point and false on arrival"
+        )
     return Finding(
         subject=subject,
         detail=(
@@ -200,11 +228,7 @@ def _owes(subject: str) -> Finding:
             "release workflow reads CHANGELOG.md from the tagged commit, so the note "
             "cannot be added once the tag exists"
         ),
-        remedy=(
-            f"write `changelog.d/{subject}.<category>.md`, or declare it invisible to a "
-            f"consumer in {INVISIBLE_TABLE} with its reason and "
-            f"{count_delta_remedy(_GATE, 1)}"
-        ),
+        remedy=remedy,
     )
 
 

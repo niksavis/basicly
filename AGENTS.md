@@ -189,6 +189,27 @@ ratchets prose share (comments plus docstrings) per module. Needing a comment to
 - In a plan awaiting approval, mark parts resting on unread code as assumptions, not design — an approval spent on a false premise costs the checkpoint + the rework budget behind it.
 - Same for a capability claim on a consumer surface (README · release notes · repo description): exercise before publishing — `docs-claims` catches only an invented command.
 
+## Rendered Surfaces
+
+`quality-gate` says run it and read the output. Here the output is an **image**, and
+reading the HTML instead is what shipped three green-but-unreadable pages in one day:
+a schema dump nobody could read, five clipped regions — four of them already clipped
+on the very fixture the layout passed against — and a panel drawing `0` over ten real
+edges. Every one passed the whole check set.
+
+- **Render it and look at the picture** before you call it done. On WSL, drive Windows
+  Chrome over a UNC path: `chrome.exe --headless=new --disable-gpu
+  --window-size=1920,1080 --screenshot=<win-path> "file://\\\\wsl.localhost\\<distro>\\<path>"`,
+  then open the PNG. Check each acceptance criterion against the picture, not your intent.
+- **Drive it from real data, not only a fixture.** The fixture carried 12 gate checks and
+  the tree has 36; that difference is what pushed a whole region off screen.
+- **`uv run python .scripts/check_render_overflow.py <page.html>`** reports every element
+  whose scroll size exceeds its client size. A green suite cannot see a clip; this can.
+- **A scrollbar is not the signal.** `overflow: hidden` clips in silence, so absence of a
+  scrollbar proves nothing. Measure the overflow.
+- Shoot every viewport the layout claims. A reflow rule is a claim about a width nobody
+  checked unless it was shot at that width.
+
 ## Use
 
 - Read this file before acting; re-read after context resets or long tool chains.
