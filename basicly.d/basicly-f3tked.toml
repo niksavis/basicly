@@ -1,0 +1,17 @@
+# The board producer's missing fields (basicly-f3tked).
+#
+# The lane also declared `basicly-rn0o.5` invisible to `release_notes`, on a measured zero:
+# `board_serve.py`, `test_board_serve.py` and the `board serve` verb did not exist. That was
+# true at this lane's branch point and false by the time it landed - `basicly-rn0o.5` shipped
+# as 157ea7c4 and wrote `changelog.d/basicly-rn0o.5.added.md`. Both the entry and its delta
+# are removed, so nothing here exempts a record that owes a note.
+#
+# The general trap, and it is worse than a blocked commit: a lane branched before a
+# release-notes red is fixed on main measures the absence honestly and records a
+# declaration that is stale on arrival (basicly-fi1i7z).
+
+# The split `board_cli` crossing 4108 of 4000 forced. Both halves are green on size;
+# `board_facts` is 6.1 points over on prose because the comments moved with the code they
+# explain. Waived on cohesion at the declaration, delta recorded here.
+[ratchet.comment_density]
+count_delta = 1

@@ -101,8 +101,8 @@ stats  → {"records": 934, "by_status": {"blocked": 2, "closed": 709, "deferred
 - `blocked` returns `{count, records:[{record, status, blocked_by:[{record,status}], children:[...]}]}` —
   `.basicly/core/kit/tracker/queries.py:109-132`
 - `stats` returns counts by status plus ready/blocked — `.basicly/core/kit/tracker/queries.py:149-167`
-- CLI wrappers: `src/basicly/tracker_query.py:46` (`cmd_ready`), `:66` (`cmd_blocked`),
-  `:89` (`cmd_stats`), `:107` (`cmd_show`), `:122` (`cmd_list`)
+- CLI wrappers: `src/basicly/tracker_query.py:61` (`cmd_ready`), `:78` (`cmd_blocked`),
+  `:100` (`cmd_stats`), `:118` (`cmd_show`), `:138` (`cmd_list`)
 
 So the data is graph-shaped (`blocked_by` and `children` are real edges), it is **935 records
 wide**, and every record's most important attribute is its **status**.

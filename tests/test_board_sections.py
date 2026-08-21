@@ -13,6 +13,7 @@ a frozen corpus is cheap enough that the copy costs less than the coupling.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -23,6 +24,10 @@ from basicly import board_fields, board_sections, owned_store
 
 REPO_ROOT = Path(__file__).parent.parent
 FIXTURE_LEDGER = REPO_ROOT / "tests" / "fixtures" / "board" / "ledger"
+
+# The instant every ask below is aged against. Injected rather than read, so `waiting_s` is a
+# function of the fixture and the assertion is an arithmetic identity rather than a race.
+NOW = datetime(2026, 1, 2, tzinfo=UTC)
 
 # What the frozen corpus holds, and the three ask numbers are the point. 140 request markers
 # is what a tally reports; 1 is what a pairing reports; 203 distinct answered ids is the
@@ -78,7 +83,7 @@ def test_the_pending_ask_is_a_pairing_and_not_a_tally(
     assert len(naive) == NAIVE_REQUESTS
     assert len(answered) == ANSWERED_IDS
 
-    pending = board_sections.asks(markers)
+    pending = board_sections.asks(markers, now=NOW)
     assert len(pending) == PENDING_ASKS
     assert pending[0]["wait_id"] == "fx-root.1#wait-ship"
     assert pending[0]["subject"] == "ship"
@@ -93,7 +98,7 @@ def test_an_answer_anywhere_closes_a_wait_whatever_the_comment_order() -> None:
     at = "2026-01-01T00:00:00Z"
     for bodies in ((answer, request), (request, answer)):
         rows = [board_fields.marker("r-1", at, body) for body in bodies]
-        assert board_sections.asks([row for row in rows if row is not None]) == []
+        assert board_sections.asks([row for row in rows if row is not None], now=NOW) == []
 
 
 def test_a_wait_with_no_kind_is_skipped_and_still_counts_as_a_request() -> None:
@@ -101,14 +106,53 @@ def test_a_wait_with_no_kind_is_skipped_and_still_counts_as_a_request() -> None:
     body = "[harness-wait] id=r-1#wait-x requested"
     row = board_fields.marker("r-1", "2026-01-01T00:00:00Z", body)
     assert row is not None and row.fields == {"id": "r-1#wait-x"}
-    assert board_sections.asks([row]) == []
+    assert board_sections.asks([row], now=NOW) == []
 
 
 def test_a_wait_whose_stamp_will_not_parse_is_skipped() -> None:
     """A row with no readable request time has no waiting_s, and the schema requires one."""
     row = board_fields.marker("r-1", "not a timestamp", "[harness-wait] id=r-1#w kind=decision")
     assert row is not None
-    assert board_sections.asks([row]) == []
+    assert board_sections.asks([row], now=NOW) == []
+
+
+def test_a_pending_ask_carries_its_age_and_the_question_only_a_caller_can_supply() -> None:
+    """basicly-f3tked: `waiting_s` is arithmetic on *now*; `question` is supplied or absent.
+
+    The absent half is the one that matters. `policy.record_wait_request` writes an id, a kind
+    and the word `requested` - no prose at all - so a producer that filled `question` from
+    anything it can see would be inventing the sentence a person is asked to answer.
+    """
+    row = board_fields.marker(
+        "r-1", "2026-01-01T00:00:00Z", "[harness-wait] id=r-1#wait-ship kind=checkpoint"
+    )
+    assert row is not None
+
+    bare = board_sections.asks([row], now=NOW)
+    assert bare[0]["waiting_s"] == 24 * 60 * 60.0
+    assert "question" not in bare[0]
+
+    asked = board_sections.asks([row], now=NOW, questions={"r-1#wait-ship": "ship it? " * 200})
+    assert asked[0]["question"] == ("ship it? " * 200)[: board_fields.QUESTION_MAX]
+    assert board_sections.asks([row], now=NOW, questions={"r-2#wait-ship": "wrong id"}) == bare
+
+
+def test_a_stamp_ahead_of_now_is_clamped_rather_than_reported_as_negative() -> None:
+    """A ledger stamp written by another process may lead this document's own instant."""
+    row = board_fields.marker(
+        "r-1", "2027-01-01T00:00:00Z", "[harness-wait] id=r-1#wait-ship kind=checkpoint"
+    )
+    assert row is not None
+    assert board_sections.asks([row], now=NOW)[0]["waiting_s"] == 0.0
+
+
+def test_the_repo_section_is_the_name_alone_until_a_caller_runs_git() -> None:
+    """basicly-f3tked: `dirty` is `git status`, so all three arrive from above or not at all."""
+    assert board_sections.repo("basicly", None) == {"name": "basicly"}
+    assert board_sections.repo("basicly", board_sections.RepoFacts()) == {"name": "basicly"}
+    assert board_sections.repo(
+        "basicly", board_sections.RepoFacts(branch="harness/x", head="7c930755", dirty=False)
+    ) == {"name": "basicly", "branch": "harness/x", "head": "7c930755", "dirty": False}
 
 
 def test_the_event_strip_carries_declared_fields_and_never_a_body(
@@ -228,6 +272,30 @@ def test_a_unit_row_bounds_a_title_and_omits_what_the_record_lacks() -> None:
     rows = board_sections.units([long])
     assert rows[0]["title"] == "t" * board_fields.TEXT_MAX
     assert set(rows[0]) == {"id", "title"}
+
+
+def test_a_unit_row_carries_a_supplied_phase_and_readiness_and_omits_the_rest() -> None:
+    """basicly-f3tked: three answers, and the third is what keeps the panel honest.
+
+    A record named by neither readiness set is one the tracker's own walk did not rule on, so
+    `ready` is absent rather than False - the schema has no field marking a value as unknown,
+    and a False there reads as "every dependency checked, one is unmet".
+    """
+    states = [
+        SimpleNamespace(record="fx-1", status="open", fields={}),
+        SimpleNamespace(record="fx-2", status="open", fields={}),
+        SimpleNamespace(record="fx-3", status="open", fields={}),
+    ]
+    rows = board_sections.units(
+        states,
+        phases={"fx-1": "verify"},
+        ready=board_sections.Readiness(ready=frozenset({"fx-1"}), blocked=frozenset({"fx-2"})),
+    )
+    assert rows == [
+        {"id": "fx-1", "status": "open", "phase": "verify", "ready": True},
+        {"id": "fx-2", "status": "open", "ready": False},
+        {"id": "fx-3", "status": "open"},
+    ]
 
 
 def test_the_graph_section_is_triples_and_the_edge_kind_passes_through() -> None:

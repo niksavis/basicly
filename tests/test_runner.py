@@ -2024,6 +2024,10 @@ WALL_CLOCK_EXEMPT = {
 # flagged so a second site in the same module still fails.
 STAMP_COMPARISON_EXEMPT = {
     "board_render.py": 1,
+    # `asks[].waiting_s` is the same shape one layer down: the request stamp comes off a ledger
+    # event another process wrote, and the instant it is subtracted from is `build_document`'s
+    # injected `now` - the same one the document is dated with, so the two cannot disagree.
+    "board_sections.py": 1,
 }
 
 

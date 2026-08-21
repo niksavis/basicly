@@ -20,10 +20,18 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import board_render, board_schema, board_serve, board_snapshot, ui
+from . import (
+    board_facts,
+    board_render,
+    board_schema,
+    board_serve,
+    board_snapshot,
+    ui,
+)
 
 # The sidecar the transcript names. Beside the page rather than derived from its stem, so two
 # pages written to one directory do not each claim their own copy of one contract.
@@ -58,15 +66,6 @@ MISS = (
 )
 
 
-def _session_facts(repo_root: Path) -> board_snapshot.SessionFacts | None:
-    """The supervisor lock's facts, or None where no lock names a root.
-
-    Mode A and Mode B both read the lock at this tier and hand the facts down, so the reading
-    lives once - in `board_serve`, the tier immediately below - rather than twice.
-    """
-    return board_serve.session_facts(repo_root)
-
-
 def _kb(path: Path) -> str:
     """*path*'s size as the transcript prints it."""
     return f"{path.stat().st_size / _BYTES_PER_KB:.0f} KB"
@@ -83,6 +82,28 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return verdict.exit_code
 
 
+def _document(repo_root: Path) -> dict[str, object]:
+    """One snapshot of *repo_root*, with every fact this layer can supply supplied.
+
+    **The second build is a fact this layer cannot gather first, not a retry.** A wait's wording
+    is keyed by wait id and only the producer knows which waits are pending, so
+    :func:`_questions` reads the first document to learn what to ask about. Folding again is
+    171 ms and only when an ask is pending, against the 13.1 s walk asking blind would cost. The
+    producer's guarantee is untouched: each call folds the log once.
+    """
+    facts = board_snapshot.Facts(
+        session=board_facts.session_facts(repo_root),
+        repo=board_facts.repo_facts(repo_root),
+        phases=board_facts.phases(repo_root),
+        readiness=board_facts.readiness(repo_root),
+    )
+    document = board_snapshot.build_document(repo_root, facts=facts)
+    questions = board_facts.questions(repo_root, document)
+    if not questions:
+        return document
+    return board_snapshot.build_document(repo_root, facts=replace(facts, questions=questions))
+
+
 def cmd_emit(args: argparse.Namespace) -> int:
     """Mode A: fold a snapshot, write the page and the contract beside it, say what it holds.
 
@@ -95,9 +116,7 @@ def cmd_emit(args: argparse.Namespace) -> int:
         return 2
     repo_root = Path.cwd()
     started = time.perf_counter()
-    document = board_snapshot.build_document(
-        repo_root, facts=board_snapshot.Facts(session=_session_facts(repo_root))
-    )
+    document = _document(repo_root)
     verdict = board_schema.verdict(repo_root, document)
     took = (time.perf_counter() - started) * 1000
     if not verdict.readable:

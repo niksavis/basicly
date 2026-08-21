@@ -22,6 +22,7 @@ exhaustive = True
 layers =
     cli
     board_cli
+    board_facts
     board_serve
     supervise | usage_report
     loop | release
