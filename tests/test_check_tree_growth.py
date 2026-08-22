@@ -205,13 +205,27 @@ def test_a_checkout_git_cannot_answer_for_reports_and_exits_zero(
 
 
 def test_the_signal_reports_a_value_and_a_window_on_this_repository() -> None:
-    """Run as a consumer runs it — a number and the two ends it was measured between."""
+    """Run as a consumer runs it — the shape the running checkout can honestly print.
+
+    Which shape is correct is a property of the checkout, not of the machine, so the
+    branch is taken on ``baseline_ref`` — the gate's own answer to whether this clone
+    reaches back the window — rather than on the output being read. The matrix job
+    clones at depth 1, where one ``unmeasured`` line is the honest report; demanding
+    the measured shape there turned every push red on output the gate was right to
+    print. Asserted rather than skipped, because the unreachable-window path is the
+    one a consumer meets on CI.
+    """
     completed = subprocess.run(
         [sys.executable, str(SCRIPT)], capture_output=True, text=True, check=False, cwd=REPO_ROOT
     )
+    lines = completed.stdout.splitlines()
 
     assert completed.returncode == 0, completed.stderr
-    first, second, *_ = completed.stdout.splitlines()
+    if gate.baseline_ref(REPO_ROOT) is None:
+        assert len(lines) == 1
+        assert "unmeasured" in lines[0]
+        return
+    first, second, *_ = lines
     assert "tokens over 7d" in first
     assert "->" in first
     assert "tracked modules" in first
