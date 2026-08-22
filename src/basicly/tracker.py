@@ -341,8 +341,8 @@ def _comments_add_argv(issue_id: str, body: str) -> list[str]:
     return ["comments", "add", issue_id, body]
 
 
-def write(repo_root: Path, args: list[str]) -> None:
-    """Record one engine write on the owned ledger.
+def write(repo_root: Path, args: list[str]) -> bool:
+    """Record one engine write on the owned ledger; False if the ledger already held it.
 
     The caller states the write as an argv, which is what
     :func:`_refuse_write_in_read_only` classifies and what the translator turns into
@@ -364,7 +364,7 @@ def write(repo_root: Path, args: list[str]) -> None:
     # the reply instead of to the call (basicly-vkh0.29).
     if args and args[0] == "create":
         raise RuntimeError(f"a create names an id the store mints; call create_record: {args}")
-    owned_write.append(repo_root, args)
+    return owned_write.append(repo_root, args)
 
 
 def create_record(repo_root: Path, args: list[str]) -> str:

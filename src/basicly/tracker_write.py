@@ -37,8 +37,14 @@ def cmd_write(args: argparse.Namespace) -> int:
         return 0
     if argv[0] == "close" and len(argv) > 1:
         _say_criteria(argv[1])
-    tracker.write(Path.cwd(), argv)
-    ui.say(f"recorded: {' '.join(argv)}")
+    if tracker.write(Path.cwd(), argv):
+        ui.say(f"recorded: {' '.join(argv)}")
+        return 0
+    # Not `recorded:`, because nothing was appended. The ledger's event ids are content
+    # digests, so a fact it already holds is skipped as a replay — and a caller reading
+    # success moves on, which cost three commands and a wrong diagnosis (basicly-kn4rip).
+    ui.say(f"already recorded, so nothing was appended: {' '.join(argv)}")
+    ui.say("  the ledger already holds this exact event; the record still reads as it did")
     return 0
 
 

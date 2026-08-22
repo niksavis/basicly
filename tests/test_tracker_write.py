@@ -156,3 +156,45 @@ def test_the_read_only_guard_binds_this_surface_too(
     assert policy.DOR_GATE in err
     assert "close writes" in err
     assert (tracker.read_record(repo, ROOT) or {})["status"] == "open"
+
+
+def test_a_field_driven_a_then_b_then_a_says_it_appended_nothing(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The seam may not report a write it did not make (basicly-kn4rip).
+
+    An event id is a digest over the fact, so driving one field to A, to B, and back to A
+    re-mints the first A's id and the append skips it as a replay. Three commands reported
+    ``recorded:`` and the field never moved, which cost a wrong diagnosis. What is pinned
+    here is that the *third* command says so — the swallow itself is
+    `events.append`'s documented property and is asserted in both directions in
+    `tests/test_kit_tracker_events.py`.
+    """
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "--add-label", "live-demo"]) == 0
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "--remove-label", "live-demo"]) == 0
+    capsys.readouterr()
+
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "--add-label", "live-demo"]) == 0
+
+    out = capsys.readouterr().out
+    assert "already recorded" in out
+    assert "recorded:" not in out
+    # The claim and the ledger agree: the seam says nothing landed, and nothing did.
+    assert (tracker.read_record(repo, ROOT) or {})["labels"] == []
+
+
+def test_replaying_one_identical_write_is_reported_rather_than_reconfirmed(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: a true replay still appends once and still changes nothing.
+
+    Idempotent replay is the property the content digest exists for, so the second command
+    must not append a second event — only stop claiming it did.
+    """
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "-p", "2"]) == 0
+    assert "recorded:" in capsys.readouterr().out
+
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "-p", "2"]) == 0
+
+    assert "already recorded" in capsys.readouterr().out
+    assert (tracker.read_record(repo, ROOT) or {})["priority"] == 2
