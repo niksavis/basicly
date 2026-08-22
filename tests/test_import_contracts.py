@@ -89,6 +89,17 @@ def _add_undeclared_module(root: Path) -> None:
     (root / "basicly" / "ghost.py").write_text('"""Undeclared."""\n', encoding="utf-8")
 
 
+def _action_surface_reads_engine_state(root: Path) -> None:
+    """The board's action surface reaching `policy`, which mints the confirm code it may not read.
+
+    The edge that would defeat the anti-autopilot gate rather than break a tier: `policy` is
+    *below* `board_actions`, so layering permits the import and only the forbidden contract
+    refuses it - through `policy -> tracker`, which the chain in the report names
+    (basicly-rn0o.6).
+    """
+    _append_import(root / "basicly" / "board_actions.py", "from basicly import policy")
+
+
 def test_contracts_pass_on_the_unchanged_package(tmp_path: Path) -> None:
     """The positive control: the staged copy is exactly what the repo ships."""
     result = _run_lint_imports(_stage_package(tmp_path))
@@ -115,6 +126,14 @@ def test_contracts_pass_on_the_unchanged_package(tmp_path: Path) -> None:
             _add_undeclared_module,
             ("not listed as layers", "basicly.ghost"),
             id="module-outside-every-tier",
+        ),
+        pytest.param(
+            _action_surface_reads_engine_state,
+            (
+                "basicly.board_actions is not allowed to import basicly.tracker",
+                "basicly.board_actions -> basicly.policy",
+            ),
+            id="action-surface-reaching-engine-state",
         ),
     ],
 )

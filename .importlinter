@@ -24,6 +24,7 @@ layers =
     board_cli
     board_facts
     board_serve
+    board_actions
     supervise | usage_report
     loop | release
     board_snapshot
@@ -98,11 +99,15 @@ layers =
 # its whole job. `board_serve` is not one either, and the design's prediction that it would be
 # was wrong: a forbidden contract counts indirect imports, and Mode B hosts the fold — measured
 # 2026-08-21, adding it reported seven broken chains, every one running through `board_snapshot`
-# or through the lock read `supervise` owns. Unit E's `board_actions` folds nothing, so it joins.
+# or through the lock read `supervise` owns. Unit E's `board_actions` folds nothing, so it joins -
+# and the contract is load-bearing there rather than decorative: `policy`, which mints the confirm
+# code the action surface must never read, imports `tracker`, so `board_actions -> policy` breaks
+# this contract through an indirect chain (basicly-rn0o.6).
 [importlinter:contract:consumer-reads-only-the-snapshot]
 name = A board consumer reads the snapshot document, never engine state
 type = forbidden
 source_modules =
+    basicly.board_actions
     basicly.board_footer
     basicly.board_regions
     basicly.board_render

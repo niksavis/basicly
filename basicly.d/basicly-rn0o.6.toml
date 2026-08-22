@@ -1,0 +1,16 @@
+# The board's action surface: a human acts from the wall through existing engine commands only
+# (basicly-rn0o.6, unit E of basicly-rn0o).
+#
+# One new `S603`, 14 -> 15, on the single `subprocess.run` in `board_actions._spawn`. It is not
+# reducible: the whole unit is "the board runs the `basicly` CLI and holds no authority itself"
+# (C8), so the alternative — calling `policy.approve_checkpoint_guarded` in-process — is both
+# the authority the design denies the board and an import `.importlinter`'s
+# `consumer-reads-only-the-snapshot` contract forbids through `policy -> tracker`. Verified by
+# positive control: adding `from . import policy` to `board_actions` reports two broken chains.
+#
+# The three mitigations a reviewer should check rather than take on trust, each asserted in
+# `tests/test_board_actions.py`: the head is `shutil.which`-resolved, never a string; every
+# field is matched against `_ID`, which admits no leading `-`, so a POST cannot smuggle
+# `--discard` past argparse; and `shell` is never set on any path.
+[ratchet.noqa_debt.frozen]
+S603 = 1

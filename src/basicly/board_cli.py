@@ -49,7 +49,9 @@ FRESHNESS = (
 # failed. Spelled beside FRESHNESS because both are frozen wording rather than help prose.
 NO_WRITES = (
     "The server acquires no lock and writes no file, so it blocks no gate and a board "
-    "can never be the reason a landing failed."
+    "can never be the reason a landing failed. An action an operator submits is run by the "
+    "basicly CLI, which writes what that command has always written; --no-actions removes "
+    "the route entirely."
 )
 
 _BYTES_PER_KB = 1024
@@ -125,7 +127,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
     # server cannot gather what this layer can. Without it a served document carried no
     # phase on any unit while `--out` carried 232 - two producers, one contract.
     return board_serve.serve(
-        root, port=args.port, refresh_s=args.refresh, build=lambda: board_facts.document(root)
+        root,
+        port=args.port,
+        refresh_s=args.refresh,
+        build=lambda: board_facts.document(root),
+        actions=not args.no_actions,
     )
 
 
@@ -168,10 +174,11 @@ def add_parsers(subparsers: argparse._SubParsersAction) -> None:
     validate.add_argument("path", type=Path, help="The snapshot file to read")
     serve = board_sub.add_parser(
         "serve",
-        help=f"Serve the board on {board_serve.HOST} for a wall display, read only",
+        help=f"Serve the board on {board_serve.HOST} for a wall display",
         description=(
-            f"Serve the harness board on {board_serve.HOST} only, answering GET alone. "
-            f"{FRESHNESS} {NO_WRITES}"
+            f"Serve the harness board on {board_serve.HOST} only. Reads are GET; the one "
+            f"POST route runs a `basicly` command an operator submitted. {FRESHNESS} "
+            f"{NO_WRITES}"
         ),
     )
     serve.add_argument(
@@ -185,4 +192,10 @@ def add_parsers(subparsers: argparse._SubParsersAction) -> None:
         type=float,
         default=board_serve.DEFAULT_REFRESH_S,
         help="Seconds between folds where no supervisor is writing snapshots",
+    )
+    serve.add_argument(
+        "--no-actions",
+        action="store_true",
+        help="Register no action route at all - the recommended flag for an unattended wall, "
+        "because a screen anyone in the room can touch should not be able to kill a lane",
     )
