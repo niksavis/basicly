@@ -1417,6 +1417,36 @@ def test_merge_worktree_still_reports_verify_failed_when_it_reproduces(
 
 
 @pytest.mark.usefixtures("base_ready")
+def test_a_reproduced_failure_carries_the_remedy_the_gate_already_printed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lane close reported only the check's name twice on 2026-08-21 (basicly-fi1i7z).
+
+    `release-notes` prints the exact `changelog.d/<id>.<category>.md` to write, and the
+    re-run above already captures it for the unreliable-failure tests, so the remedy was
+    in memory and thrown away. The output below is what `.scripts/ratchet.py` `report`
+    printed when driven with a real `_owes` finding.
+    """
+    printed = (
+        "release-notes: basicly-fi1i7z: closed with a `## Scope` naming a shipped path "
+        "and no release note\n"
+        "release-notes:   write `changelog.d/basicly-fi1i7z.<category>.md`, or declare it "
+        "invisible to a consumer\n"
+    )
+    report = verify.VerifyReport(
+        "full", (verify.CheckResult("release-notes", "fail", 1, output=printed),)
+    )
+    _patch_git(monkeypatch, _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)}))
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: report)
+    monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: report)
+
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+
+    assert result.status == "verify-failed"
+    assert "changelog.d/basicly-fi1i7z.<category>.md" in result.detail
+
+
+@pytest.mark.usefixtures("base_ready")
 def test_merge_worktree_forgives_a_reproduced_failure_that_is_a_dependency_defect(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

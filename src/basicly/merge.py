@@ -349,7 +349,26 @@ def _verify_for_landing(
             f"verify {verify_mode} failed on {failures}: the rebuild this landing ran before "
             f"the gate did not make a declared generated path current — {'; '.join(unrebuilt)}",
         )
-    return MergeResult(name, "verify-failed", f"verify {verify_mode} failed: {failures}")
+    return MergeResult(
+        name, "verify-failed", f"verify {verify_mode} failed: {_verify_reasons(rerun) or failures}"
+    )
+
+
+def _verify_reasons(rerun: verify.VerifyReport) -> str:
+    """Each failed check in *rerun* with the remedy it printed, or empty when none printed one.
+
+    The names alone sent an operator to re-run a gate that had already written the answer:
+    `release-notes` names the exact `changelog.d/<id>.<category>.md` to write, and a lane
+    close reported only its name twice on 2026-08-21 (basicly-fi1i7z). The output is here
+    for free — the re-run above captures it for the unreliable-failure tests.
+    """
+    named = []
+    for result in rerun.results:
+        if result.status != "fail":
+            continue
+        if remedy := verify.check_remedy(result.output, result.name):
+            named.append(f"{result.name}: {remedy}")
+    return "; ".join(named)
 
 
 def probe_merge(repo_root: Path, base: str, branch: str) -> ProbeResult:

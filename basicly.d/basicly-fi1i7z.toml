@@ -1,0 +1,33 @@
+# A failing gate was reported as an opaque command failure, so the cause was hidden
+# (basicly-fi1i7z). Three code paths on 2026-08-21 reported a hook refusal and none named a
+# check: `commit.salvage` quoted `protect-generated-commit...Passed` — the chain's last line,
+# belonging to a hook that passed — and two lane closes printed the argv and the exit code
+# while `checkout.run` preferred `stderr or stdout`, which in this repo is always a `uv`
+# `VIRTUAL_ENV` warning. Reproduced before the fix: reverting `checkout.run` alone makes
+# `tests/test_checkout.py` print `command failed (1): <argv>` followed by that warning and
+# nothing else.
+#
+# `src/basicly/merge.py` +202: `_verify_reasons`, which carries each failed check's own remedy
+# into the `verify-failed` detail. The output was already captured by the `rerun_failures` call
+# above it for the unreliable-failure tests, so `release-notes` had already written the exact
+# `changelog.d/<id>.<category>.md` to create and the landing threw it away.
+#
+# `tests/test_commit.py` +365 and `tests/test_merge.py` +356: one regression test each, both at
+# 0 tokens of headroom, measured before the first edit. The salvage test needs the *mid-chain*
+# shape — a failure with passing hooks after it — because a single-hook fixture passes under the
+# defective code. The merge test asserts the remedy string, not the check name.
+#
+# `checkout.py` (+1,795, to 3,985 of 4,000) and `verify.py` (+266, to 4,708 of 5,436) absorb the
+# two readers and need no entry. They are not one new module because `.importlinter` is
+# `exhaustive = True`, so a new module must edit it, and a live lane (basicly-rn0o.6) declares
+# that file: the landing's scope-collision check refuses the diff. The split is the honest one
+# either way — a check's remedy belongs with `CheckResult`, and the hook-chain reader is
+# `checkout.run`'s own error path, which is what every gated git command in the engine goes
+# through.
+[ratchet.module_size]
+rebaseline_reason = "one regression test each in two test modules at 0 tokens of headroom, and the remedy-carrying branch in merge.py"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/merge.py" = 202
+"tests/test_commit.py" = 365
+"tests/test_merge.py" = 356

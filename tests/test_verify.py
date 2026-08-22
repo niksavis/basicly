@@ -1486,3 +1486,27 @@ def test_this_repo_declares_its_whole_check_set_between_the_config_and_the_fragm
         names += [check["name"] for check in (document.get("verify") or {}).get("checks", [])]
 
     assert [check.name for check in load_verify_config(_REPO_ROOT).checks] == names
+
+
+# What `.scripts/ratchet.py` `report` writes for a closed record owing a note, verbatim:
+# subject line, then the indented remedy naming the exact file to create.
+_RELEASE_NOTES = (
+    "release-notes: basicly-fi1i7z: closed with a `## Scope` naming a shipped path and "
+    "no release note\n"
+    "release-notes:   write `changelog.d/basicly-fi1i7z.<category>.md`, or declare it "
+    "invisible to a consumer\n"
+)
+
+
+def test_the_remedy_a_ratchet_gate_printed_is_carried() -> None:
+    """A lane close reported only the check's name twice on 2026-08-21 (basicly-fi1i7z)."""
+    remedy = verify.check_remedy(_RELEASE_NOTES, "release-notes")
+    assert remedy is not None
+    assert "changelog.d/basicly-fi1i7z.<category>.md" in remedy
+    # The label is stripped: the caller already prints the check's name.
+    assert not remedy.startswith("release-notes:")
+
+
+def test_a_check_that_printed_no_labelled_line_yields_no_remedy() -> None:
+    """Absence is None rather than an empty string, so a caller can fall back."""
+    assert verify.check_remedy(_RELEASE_NOTES, "module-size") is None

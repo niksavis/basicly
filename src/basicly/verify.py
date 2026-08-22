@@ -108,6 +108,28 @@ class VerifyReport:
         return tuple(r.name for r in self.results if r.status == "fail")
 
 
+# The remedy lands in a one-line detail; the transcript stays in `CheckResult.output`.
+_REMEDY_CHARS = 400
+
+
+def check_remedy(output: str, check: str) -> str | None:
+    """The lines *check* prefixed with its own name in *output*, or None when it printed none.
+
+    The shape is observed off `.scripts/ratchet.py` `report`, not composed:
+    `release-notes: <subject>: <detail>` then an indented `release-notes:   <remedy>`.
+    Carrying that second line is the point — it names the exact
+    `changelog.d/<id>.<category>.md` to write, and a landing reporting only the check's name
+    sent an operator to re-run a gate that had already written it (basicly-fi1i7z). The
+    label is stripped; every caller prints the check's name itself.
+    """
+    label = f"{check}:"
+    lines = [line.strip() for line in output.splitlines() if line.strip().startswith(label)]
+    if not lines:
+        return None
+    joined = " · ".join(line.removeprefix(label).strip() for line in lines)
+    return joined if len(joined) <= _REMEDY_CHARS else joined[:_REMEDY_CHARS] + "…"
+
+
 def staged_files(repo_root: Path, suffix: str) -> list[str] | None:
     """Staged (added/copied/modified) files ending in *suffix*; None if git failed.
 
