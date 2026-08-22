@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import board_facts, integrity, loop_state, supervise, tracker
+from basicly import board_facts, board_sections, integrity, loop_state, supervise, tracker
 from basicly.config import VERIFY_GATE_PROVIDER
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -308,3 +308,18 @@ def test_a_boolean_is_not_read_as_a_measurement() -> None:
     )
     assert fact.cost_usd is None
     assert fact.context_used is None
+
+
+def test_a_lane_that_has_reported_zero_tokens_states_no_spend_at_all() -> None:
+    """A live meter registered but not yet reporting omits `tokens` rather than stating 0.
+
+    The stream is published the instant a dispatch starts, so `inflight_spend` carries a real
+    `0` for every lane between its registration and its first metered turn - the exact window
+    the defect was reported in. `0 tok` on a card reads as a measured figure and a free lane.
+    """
+    view = supervise.LaneView(
+        issue_id="a", status="open", worktree="a", branch="harness/a", live=True
+    )
+    fact = board_facts._lane_fact(view, {"a": "build"}, {"a": 0}, {}, [])
+    assert fact.tokens is None
+    assert "tokens" not in board_sections.lanes([fact])[0]

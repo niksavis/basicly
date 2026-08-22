@@ -230,6 +230,38 @@ def test_a_lane_branch_and_an_unparsable_start_are_handled_at_the_producer() -> 
     assert "started_at" not in rows[0]
 
 
+def test_a_running_lane_row_carries_the_live_figures_and_bounds_the_prose() -> None:
+    """basicly-0hxck3: the eight fields the card gained emit, and `note` is bounded prose.
+
+    `note` is the first agent-authored text this section admits, and an agent's turn is
+    paragraphs. The producer clips it, so the bound here is the second of two - the one that
+    holds when a future caller supplies the field from somewhere else.
+    """
+    rows = board_sections.lanes([
+        board_sections.LaneFacts(
+            id="fx-root.1",
+            phase="build",
+            live=True,
+            model="claude-opus-5",
+            note="w" * 500,
+            cost_usd=12.5,
+            elapsed_s=900.0,
+            context_used=180_000,
+            context_window=1_000_000,
+            rework_attempt=1,
+            rework_allowance=2,
+        )
+    ])
+    assert rows[0]["model"] == "claude-opus-5"
+    note = rows[0]["note"]
+    assert isinstance(note, str)
+    assert len(note) <= board_fields.TEXT_MAX
+    assert rows[0]["cost_usd"] == 12.5
+    assert (rows[0]["elapsed_s"], rows[0]["rework_attempt"]) == (900.0, 1)
+    assert (rows[0]["context_used"], rows[0]["context_window"]) == (180_000, 1_000_000)
+    assert rows[0]["rework_allowance"] == 2
+
+
 def test_a_unit_row_carries_the_bounded_title_and_no_other_prose() -> None:
     """basicly-vhixrn: fields, never records - and `title` is the only prose admitted.
 
