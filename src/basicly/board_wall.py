@@ -168,6 +168,15 @@ class Band:
 
 
 @dataclass(frozen=True)
+class Group:
+    """One feature's ready rows, headed by the feature they serve."""
+
+    name: str
+    count: str
+    rows: tuple[Item, ...] = ()
+
+
+@dataclass(frozen=True)
 class Listing:
     """A ranked region: what it drew, what it dropped, and why it drew nothing."""
 
@@ -175,6 +184,36 @@ class Listing:
     rows: tuple[Item, ...] = ()
     more: str = ""
     note: str = ""
+    groups: tuple[Group, ...] = ()
+
+
+# 41 of the 187 ready units on 2026-08-22, so the count under this heading is a finding in
+# its own right rather than a leftover bucket.
+UNATTACHED = "Not attached to any feature"
+
+# The edge kind naming the feature a unit serves. Spelled here rather than imported from
+# `loop_state`, which declares it too but which the layer contract puts above this module.
+PARENT_CHILD = "parent-child"
+
+
+def feature_of(ident: str, parents: Mapping[str, str], titles: Mapping[str, str]) -> str:
+    """The title of the root feature *ident* serves, or ``""`` where none is reachable.
+
+    The *root* rather than the immediate parent, so a unit two levels down is filed under the
+    epic a reader recognises. Four endings share one answer because a reader can act on none
+    of them: no parent edge, a chain leaving the map before a titled record, a titleless root,
+    and a cycle. The second is reachable once an intermediate ancestor closes, the served
+    graph being filtered to edges touching the drawn set. Meeting a seen id abandons the walk
+    rather than taking the title where it stopped: a unit feeding a cycle is not in one.
+    """
+    seen: set[str] = set()
+    at = ident
+    while at in parents:
+        if at in seen:
+            return ""
+        seen.add(at)
+        at = parents[at]
+    return titles.get(at, "") if at != ident else ""
 
 
 @dataclass(frozen=True)
