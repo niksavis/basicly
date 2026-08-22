@@ -33,6 +33,8 @@ import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
+from . import gate_failure
+
 # pre-commit's `no_git_env` allowlist, minus the `GIT_CONFIG_*` trio it forwards to hooks.
 GIT_ENV_KEPT = frozenset({
     "GIT_ALLOW_PROTOCOL",
@@ -100,11 +102,29 @@ def run(
         capture_output=True,
     )
     if check and proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()
-        raise RuntimeError(
-            f"command failed ({proc.returncode}): {' '.join(map(str, args))}\n{detail}"
-        )
+        raise RuntimeError(_failure(args, proc, cwd))
     return proc
+
+
+def _failure(
+    args: list[str],
+    proc: subprocess.CompletedProcess[str],
+    cwd: Path | str | None,
+) -> str:
+    """Why *proc* failed, naming the check when a hook is what refused.
+
+    Both streams are joined rather than preferred: pre-commit reports the chain on stdout
+    while git and `uv` warn on stderr, so the `stderr or stdout` this replaces discarded the
+    whole report whenever anything had warned — and a `uv` `VIRTUAL_ENV` warning was the only
+    text three lane closes reported on 2026-08-21 (basicly-fi1i7z). A failure with no chain
+    in it keeps the old wording; `rev-parse` has no check to name.
+    """
+    output = f"{proc.stdout or ''}{proc.stderr or ''}"
+    argv = " ".join(map(str, args))
+    named = gate_failure.summarise(output, repo_root=Path(cwd) if cwd is not None else Path.cwd())
+    if named is not None:
+        return f"a gate refused `{argv}`: {named}"
+    return f"command failed ({proc.returncode}): {argv}\n{output.strip()}"
 
 
 def git(

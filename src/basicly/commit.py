@@ -27,7 +27,7 @@ import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import loop_state, run_record, tracker
+from . import gate_failure, loop_state, run_record, tracker
 from .worktree import git, main_checkout
 
 MIN_DESCRIPTION_LENGTH = 3
@@ -556,7 +556,8 @@ def salvage(worktree_root: Path, bead: str, *, reason: str) -> Salvage:
         envelope = assemble(root, SALVAGE_DESCRIPTION, bead=bead, body=_salvage_body(reason))
         result = run_commit(root, envelope)
         if not result.committed:
-            return Salvage("refused", f"the salvage commit was rejected: {_tail(result.output)}")
+            rejection = _rejection(root, result.output)
+            return Salvage("refused", f"the salvage commit was rejected: {rejection}")
         head = git(["rev-parse", "--short", "HEAD"], cwd=root, check=False).stdout.strip()
     except (RuntimeError, OSError, ValueError) as exc:
         return Salvage("refused", f"the worktree could not be committed: {exc}")
@@ -584,3 +585,15 @@ def _tail(output: str) -> str:
     lines = (output or "").strip().splitlines()
     detail = lines[-1] if lines else "no output"
     return detail if len(detail) <= _REFUSAL_CHARS else detail[:_REFUSAL_CHARS] + "…"
+
+
+def _rejection(root: Path, output: str) -> str:
+    """Why the salvage commit was refused, naming the check when a hook refused it.
+
+    :func:`_tail` is wrong for a gated commit and was measurably worse than silence here:
+    the last line of a hook chain belongs to the hook that ran *last*, so this reported
+    ``protect-generated-commit...Passed`` as the rejection reason and sent a reader to
+    audit a check that had passed (basicly-fi1i7z). It stays for the staging failure above,
+    where git writes one line and no chain runs.
+    """
+    return gate_failure.summarise(output, repo_root=root) or _tail(output)

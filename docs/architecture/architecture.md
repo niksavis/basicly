@@ -3307,7 +3307,7 @@ flowchart TB
   b6["6 · projection — 12<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
   b7["7 · records and telemetry — 14<br/>run_record · artifact_record · lens_review · spend_calibration"]
   b8["8 · tracker seam — 16<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
-  b9["9 · leaf data and pure helpers — 26<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
+  b9["9 · leaf data and pure helpers — 27<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
 
   b1 --> b2 --> b3 --> b4 --> b5 --> b6 --> b7 --> b8 --> b9
   b2 -.->|"declared exemption:<br/>loop imports supervise"| b2

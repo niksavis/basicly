@@ -669,6 +669,37 @@ def test_a_rejected_salvage_leaves_the_work_where_the_kill_left_it(
     assert _subject(killed_worktree) == "init"
 
 
+def test_a_rejected_salvage_names_the_hook_that_failed_not_the_one_that_ran_last(
+    monkeypatch: pytest.MonkeyPatch, killed_worktree: Path
+) -> None:
+    """The reported defect: the reason was the chain's last line (basicly-fi1i7z).
+
+    `protect-generated-commit` runs last in this repo and passed, so the salvage reported a
+    *passing* check as its rejection reason — worse than silence, because a reader who
+    trusts it goes and audits a check that did not fail. The chain below is trimmed from a
+    real `pre-commit run` in this repo; the mid-chain shape is what makes it bind.
+    """
+    chain = (
+        "markdownlint.............................................................Failed\n"
+        "- hook id: markdownlint\n"
+        "- exit code: 1\n"
+        "\n"
+        "note.md:1:1 error MD018/no-missing-space-atx No space after hash\n"
+        "\n"
+        "protect-generated-commit.................................................Passed\n"
+    )
+    (killed_worktree / "notes.txt").write_text("work\n", encoding="utf-8")
+    monkeypatch.setattr(commit, "run_commit", lambda *_a: commit.CommitResult(1, chain))
+
+    salvaged = commit.salvage(killed_worktree, "basicly-yvx9", reason="runner_timeout after 1800s")
+
+    assert salvaged.status == "refused"
+    assert "markdownlint" in salvaged.detail
+    assert "MD018" in salvaged.detail
+    assert "protect-generated-commit" not in salvaged.detail
+    assert "Passed" not in salvaged.detail
+
+
 def test_a_worktree_that_is_not_a_repo_is_refused_rather_than_raising(tmp_path: Path) -> None:
     """The caller is already handling a killed run; a failed rescue is not a crash."""
     salvaged = commit.salvage(tmp_path, "basicly-yvx9", reason="runner_timeout after 1800s")

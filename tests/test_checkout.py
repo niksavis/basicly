@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -144,3 +145,61 @@ def test_names_in_is_empty_where_the_question_cannot_be_asked(tmp_path: Path) ->
     branch holds, which is the common case in a fresh clone.
     """
     assert checkout.names_in("no-such-ref", "changelog.d", cwd=tmp_path) == ()
+
+
+# The observed shape of a refusal: pre-commit reports the chain on stdout and something
+# else — here `uv`, always in this repo — warns on stderr. Trimmed from the real run.
+_CHAIN = (
+    "markdownlint.............................................................Failed\n"
+    "- hook id: markdownlint\n"
+    "- exit code: 1\n"
+    "\n"
+    "note.md:1:1 error MD018/no-missing-space-atx No space after hash\n"
+    "\n"
+    "protect-generated-commit.................................................Passed\n"
+)
+_WARNING = "warning: `VIRTUAL_ENV=/elsewhere/.venv` does not match the project environment\n"
+
+
+def _two_stream_failure(tmp_path: Path, out: str, err: str) -> list[str]:
+    """An argv that exits 1 after writing *out* to stdout and *err* to stderr.
+
+    A real subprocess through :func:`checkout.run` rather than a hand-built
+    ``CompletedProcess``: the defect was in which stream the wrapper read, so a fake that
+    supplies both streams itself would assert the fake's idea of the split.
+    """
+    script = tmp_path / "refuse.py"
+    script.write_text(
+        f"import sys\nsys.stdout.write({out!r})\nsys.stderr.write({err!r})\nsys.exit(1)\n",
+        encoding="utf-8",
+    )
+    return [sys.executable, str(script)]
+
+
+def test_a_hook_refusal_names_the_check_and_not_the_argv(tmp_path: Path) -> None:
+    """The reported defect: three lane closes named no check (basicly-fi1i7z).
+
+    The warning on stderr is the whole regression. ``stderr or stdout`` preferred it and
+    discarded the chain, so the only text an operator got was a `uv` warning about a
+    virtualenv — and something writes to stderr on every run in this repo.
+    """
+    with pytest.raises(RuntimeError) as raised:
+        checkout.run(_two_stream_failure(tmp_path, _CHAIN, _WARNING), cwd=tmp_path)
+
+    message = str(raised.value)
+    assert "markdownlint" in message
+    assert "MD018" in message
+    # The check that ran last passed; quoting it is what sent a reader to audit it.
+    assert "Passed" not in message
+    assert "protect-generated-commit" not in message
+
+
+def test_a_failure_that_ran_no_hooks_keeps_the_plain_wording(tmp_path: Path) -> None:
+    """Most of this module's traffic is ``rev-parse``; it has no check to name."""
+    argv = _two_stream_failure(tmp_path, "", "fatal: not a git repository\n")
+    with pytest.raises(RuntimeError) as raised:
+        checkout.run(argv, cwd=tmp_path)
+
+    message = str(raised.value)
+    assert "command failed (1)" in message
+    assert "fatal: not a git repository" in message
