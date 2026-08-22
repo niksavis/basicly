@@ -1222,3 +1222,155 @@ records, hit a second time, which is itself evidence the note belongs in a gate 
 document. And a "files holding both `fiber.dispose()` and `ctx.plugin(`" probe returned 258 files at
 rc.8 against about 250 at rc.7; it cannot separate co-occurrence in one test body from
 co-occurrence in a file, so it was discarded.
+
+## 13. Re-measured at `dsh-v0.1.1-rc.2` — verified 2026-08-22
+
+`basicly-6oa3mt`. Architecture rule D-36 says an absorbed *Because* inherits a measurement that can
+expire, so before `basicly-e2mz.46` carries anything from this document into `architecture.md`, every
+number in it is re-run. This section is that run. It changes no finding above; it dates them.
+
+**Read this first: the pin moved.** §12 was established at `dsh-v0.1.0-rc.8`. That is no longer the
+head of the repository, and §12.1's sentence *"The repository holds exactly two tags, rc.7 and rc.8"*
+is now false.
+
+| | Old pin (§12.1) | New pin | Command |
+| --- | --- | --- | --- |
+| Tag | `dsh-v0.1.0-rc.8` | **`dsh-v0.1.1-rc.2`** (intermediate: `dsh-v0.1.1-rc.1`) | `git ls-remote --symref origin HEAD` |
+| Commit | `141eb6fef8`, 2026-08-19T23:11:50+08:00 | **`b150a551b8`**, 2026-08-21T20:03:37+08:00 | `git log -1 --format=%cI <tag>` |
+| `package.json` | `0.1.0-rc.8` | **`0.1.1-rc.2`** | `git show <tag>:package.json` |
+| Tags in repo | 2 | **4** | `git tag \| wc -l` |
+| Distance | — | **207 commits** over about two days | `git rev-list --count dsh-v0.1.0-rc.8..dsh-v0.1.1-rc.2` |
+
+**What changed between the pins, at the level this document measures.** The minor version moved
+`0.1.0` → `0.1.1`. No `packages/` family was added or removed (55 at both). One workspace member was
+added. The vendored Cordis is untouched — same version, same `fiber.ts` blob — so every §11 finding
+that rests on `vendor/cordis` is carried unchanged by construction, not by re-reading. `BENCHMARK.md`
+is byte-identical across all three tags.
+
+### 13.1 The instrument, recovered
+
+This document never recorded the commands behind its `rg` figures, which made every one of them
+unverifiable on its face. They are recovered here, because the recovery is what makes the rest of
+this section auditable — and the recovered instrument reproduces four of the document's own control
+figures **exactly**, which is the evidence that it is the right one:
+
+```sh
+# §5.2 corpus. Note -c counts MATCHING LINES, not occurrences: `rg -o | wc -l` gives 2383, not 3385.
+rg -i --no-ignore-vcs -g 'packages/**/*.ts' -c 'subagent' . | awk -F: '{s+=$NF;f++} END{print s" / "f}'
+# §5.6 corpus adds apps/:            -g 'packages/**/*.ts' -g 'apps/**/*.ts'
+# §11.1 corpus excludes tests:       -g '!**/tests/**' -g '!**/*.test.ts'
+```
+
+| Control, at the pin it was recorded against | Recorded | Re-run 2026-08-22 | |
+| --- | --- | --- | --- |
+| `subagent`, §5.2, rc.7 | 3 385 hits / 226 files | **3 385 / 226** | reproduces |
+| `session`, §5.6, rc.7 | 30 624 hits / 1 029 files | **30 624 / 1 029** | reproduces |
+| `rollback`, §11.1, rc.7 | 126 | **126** | reproduces |
+| `.effect(`, §11.1, rc.7 | 203 sites | **203** | reproduces; "tree-wide" is loose — the corpus is `packages/**/*.ts` less tests |
+
+Trees are read with `git archive <tag> | tar -x` into a scratch directory, so no clone working tree
+is disturbed and all three tags are measured by one instrument.
+
+### 13.2 The evidence table
+
+Every row verified **2026-08-22**. `=` means the figure is unchanged from the recorded one; a changed
+figure carries the command that produced it. `✓` marks a recorded figure this pass reproduced at its
+own pin — the control for every delta beside it.
+
+| Claim | § | Recorded | rc.8 re-run | **0.1.1-rc.2** | Command |
+| --- | --- | --- | --- | --- | --- |
+| Tracked files | 12.1 | 7 466 (rc.7) / 7 807 (rc.8) | ✓ both | **7 903** | `git ls-tree -r --name-only <tag> \| wc -l` |
+| `package.json` under `packages/` | 12.1 | 226 / 233 | ✓ both | **234** | `git ls-tree -r --name-only <tag> -- packages \| grep -c '/package\.json$'` |
+| pnpm workspace members | 12.1 | 219 / 226 | ✓ both | **227** | same, `\| awk -F/ 'NF==4' \| wc -l` |
+| Top-level `packages/` families | 12.1 | 54 / 55 | ✓ both | 55 `=` | `... \| cut -d/ -f2 \| sort -u \| wc -l` |
+| Commits reachable | 12.1 | 12 940 | ✓ | **13 147** | `git rev-list --count <tag>` |
+| Vendored Cordis version | 12.1 | `4.0.1` | ✓ | `4.0.1` `=` | `git show <tag>:vendor/cordis/package.json` |
+| `fiber.ts` blob | 12.1 | `38a3197e` | ✓ | `38a3197e` `=` | `git rev-parse --short=8 <tag>:vendor/cordis/src/fiber.ts` |
+| `BENCHMARK.md` | 12.1/12.4 | 3 lines, 231 bytes | ✓ | 3 lines, 231 bytes, blob `d5e9dc78` `=` | `git cat-file -s <tag>:BENCHMARK.md` |
+| Sealed manifest entries | 12.1/12.5 | 426 (rc.7) / 429 (rc.8) | ✓ both | 429 `=` | `git show <tag>:.agents/notes/archived/manifest.json \| grep -c sha256` |
+| `.agents/notes/archived/` files | 12.5 | 285 / 287 | ✓ both | 287 `=` | `find .agents/notes/archived -name '*.md' \| wc -l` |
+| `.agents/notes/proposed/` files | 12.5 | 50 / 50 | ✓ both | **52** | same, `proposed` |
+| `.agents/notes/rejected/` files | 12.5 | 22 / 22 | ✓ both | 22 `=` | same, `rejected` |
+| `.agents/notes/implemented/` files | 12.5 | 1 030 / 1 090 | 1 029 / 1 089 — **off by one at both pins**, see 13.4 | **1 119** | same, `implemented` |
+| `scripts/run-gates.ts` | 5.5/7 | 909 lines (rc.7) | ✓ 909; **967 at rc.8** | **968** | `wc -l < scripts/run-gates.ts` |
+| `standard/agent.cordis.yml` | 5.7 | 251 lines (rc.7) | ✓ 251; 252 at rc.8 | 252 | `wc -l < apps/cli/config/agent-presets/standard/agent.cordis.yml` |
+| `packages/goal/goal/src/fold.ts` | 5.5 | 349 lines | ✓ | 349 `=` | `wc -l < packages/goal/goal/src/fold.ts` |
+| `docs/cordis-primer.md` | 3.4/10 | 44 lines | ✓ | 44 `=` | `wc -l < docs/cordis-primer.md` |
+| `task-graph.ts` | 12.2 | 69 lines | ✓ | 69 `=` | `wc -l < packages/experimental/agent-team/src/task-graph.ts` |
+| `task-board.ts` | 12.2 | 297 lines | ✓ | 297 `=` | `wc -l < packages/experimental/agent-team/src/task-board.ts` |
+| CI workflows | 7 | 14 | **15 at rc.7** — see 13.4 | **18** | `ls -1 .github/workflows \| wc -l` |
+| `subagent` (control) | 5.2 | 3 385 / 226 | ✓ | **3 575 / 235** | 13.1 |
+| `decompos` | 5.2 | 0 | ✓ 0 | **0** — §12.2's heading still stands | 13.1 |
+| `depends_on` | 5.2 | 0 | ✓ 0 | 0 `=` | 13.1 |
+| `blockedBy` | 5.2/12.2 | 0 (rc.7) → 36 (rc.8) | ✓ both | 36 `=` | 13.1 |
+| `session` (control) | 5.6 | 30 624 / 1 029 | ✓ | **31 695 / 1 083** | 13.1 |
+| `rollback` (control) | 11.1 | 126 | ✓ | **147** | 13.1, tests excluded |
+| `revertible` | 11.1 | 0 | ✓ 0 | **0** against a live 147 control | 13.1, tests excluded |
+| `.effect(` sites | 11.1 | 203 | ✓ | **209** | `rg --no-ignore-vcs -g 'packages/**/*.ts' -g '!**/tests/**' -g '!**/*.test.ts' -oF '.effect(' . \| wc -l` |
+| `fs-local` `.effect(` sites | 11.1/12.8 | 0 | ✓ 0 | **0** — P1 holds at a third pin | `rg --no-ignore-vcs -oF '.effect(' packages/fs/fs-local \| wc -l` |
+| `win32.ts:20` `backup: null` | 11.1/12.8 | present | ✓ | present `=`, still line 20 | `rg -n 'backup: null' packages/fs/fs-local/src/win32.ts` |
+| `id: loader` in `*.yml`/`*.yaml` | 12.3 | 0, control `id: hmr` = 3 | ✓ 0 / 3 | 0 / 3 `=` | `rg -g '*.yml' -g '*.yaml' -c 'id: loader' .` |
+| `ctx.plugin(` in `apps/cli/src` + `app-boot/src` | 12.3 | 1 | ✓ | 1 `=` | `rg -oF 'ctx.plugin(' apps/cli/src packages/boot/app-boot/src \| wc -l` |
+| Swappable rows, `bundle/base` | 12.3 | 78 | ✓ | 78 `=` | `rg -o '^\s*- id: ' packages/bundle/base \| wc -l` |
+| Swappable rows, `bundle/web-app` | 12.3 | 84 | ✓ | 84 `=` | same, `web-app` |
+| `docs/architecture.md:13` "no privileged core" | 12.3 | present, unweakened at rc.8 | ✓ | **still present, still unweakened** | `sed -n '13p' docs/architecture.md` |
+| Markdown files matching `benchmark` | 12.4 | 3 | ✓ | 3 `=` | `rg -li -g '*.md' 'benchmark' . \| wc -l` |
+| Markdown files matching `ops/sec`, `ns/op`, `p99` | 12.4 | 0 each | ✓ 0 each | **0 each**, control `benchmark`=3 | `rg -li -g '*.md' -F '<term>' . \| wc -l` |
+| Markdown files matching `overhead` | 12.4 | 3 | **2** at rc.7 and rc.8 — see 13.4 | **2** | `rg -li -g '*.md' 'overhead' . \| wc -l` |
+| `paper.pdf` size | 10 | 2 140 840 bytes, HTTP 200 | — | **2 140 840, HTTP 200** `=` | `curl -sI https://raw.githubusercontent.com/cordiverse/paper/main/paper.pdf` |
+| `basicly` `architecture.md` | 10 | 4 485 lines at `ee7d263` | — | **4 808 lines** on `main` | `wc -l < docs/architecture/architecture.md` |
+
+**The one finding this pass strengthens.** §12.5 called archival velocity "very low" at +30 implemented
+/ +1 archived over 536 commits. Over the next 207 commits it is **+30 implemented / +0 archived / +2
+proposed**. The trigger being a judgement rather than a gate (§12.5) continues to produce a monotonic
+`implemented/` and a static `archived/`.
+
+### 13.3 Droppable — claims that only restate shipped `basicly` code
+
+Marked so `basicly-e2mz.46` **drops** rather than moves them.
+
+- **§7's comparison rows that describe our own gate stack** — "git hooks (lefthook) + a topologically
+  sorted gate DAG + CI workflows" against "four strictly-linear layers … [arch §36.1, L3296-3310]".
+  The right-hand column is `architecture.md` quoting itself. Absorbing it into `architecture.md`
+  writes the file's own §36.1 back into it at a second location, where the two copies can drift. Keep
+  the harness column, drop the `basicly` column and cite §36.1.
+- **§7's determinism row**, same shape: *"two builds on identical sources produce byte-identical
+  output" [arch §11, L558-560]* is a quotation of the target document.
+- **§10's `basicly` architecture provenance row.** It pins our own file at a commit that is 323 lines
+  stale (13.2). Inside `architecture.md` a self-pin is not evidence, it is a stale mirror.
+
+**Both line citations are already stale, measured 2026-08-22** — which is the concrete cost of a
+self-pin and the reason these rows are droppable rather than merely redundant. `architecture.md` has
+grown 4 485 → 4 808 lines since §10 pinned it, and `sed -n '558,560p' docs/architecture/architecture.md`
+now returns three lines of a mermaid diagram; the determinism sentence has moved to lines **365** and
+**568**. `sed -n '3296,3299p'` returns prose about `docs_claim_layers.py`, not the four-layer gate
+stack. Absorbed as written, each row would land inside `architecture.md` pointing at the wrong part
+of `architecture.md`.
+
+### 13.4 Not re-measurable, and why — stated rather than restated
+
+- **`overhead` matches 3 markdown files (§12.4).** Re-run gives **2**, at all three tags, and §12.4's
+  own prose names only two packages — `token-meter` and `compaction-basic` — which are exactly the two
+  files matched. The figure is a transcription slip, not a change: there is no pin at which 3 was
+  true. The finding it supports (both hits are about token *estimation*, not runtime overhead) is
+  unaffected.
+- **`implemented/` = 1 030 files (§12.5).** Re-run gives 1 029 at rc.7 and 1 089 at rc.8: a constant
+  offset of one at both pins, so it is an instrument difference and not drift. §12.5 does not record
+  its filter, and `find … -name '*.md'` is one file short of whatever it used. The pairs conclusion
+  (515 notes) is unaffected by which of the two counts is right; the odd file is why 1 029 is not even.
+- **14 CI workflows (§7).** `.github/workflows` holds **15** entries at rc.7, the pin §7 was written
+  against. §7 does not record its filter, so the one excluded file cannot be identified. The claim
+  cannot be reproduced and is not restated; the current count is 18.
+- **91 raw filesystem syscall occurrences in `packages/fs` outside tests (§11.1).** §11.1 does not
+  name the syscall set, and a substituted ten-name set gives 45. **Unverifiable**: the probe is not
+  recoverable from the text. §12.8's "91 → 91 reproduces exactly" was run by the author against their
+  own probe and stands on that basis, not on this one.
+- **1 087 files import cordis (§6.2).** §6.2 does not record its import pattern;
+  `from ['"](@deepseek-ai/)?cordis` gives 1 116 at rc.7. **Unverifiable** for the same reason. The
+  neighbouring "226 packages" in that row *does* reproduce (13.2).
+- **`fiber.dispose()` + `ctx.plugin(` = 258 files (§12.9).** Already discarded by §12.9 as a probe
+  that cannot separate co-occurrence in a test body from co-occurrence in a file. It stays discarded;
+  re-running it would launder a failed probe into a datum.
+- **The paper's page count, `/CreationDate` and Typst version (§10).** Only the byte length and HTTP
+  status were re-checked, and both reproduce. The PDF was not re-parsed.
+- **Everything requiring `dsh` to run (§12.4's Q3).** Still unmeasured, and this pass did not run it.
