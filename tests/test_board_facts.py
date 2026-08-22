@@ -238,3 +238,73 @@ def test_a_mapped_phase_is_the_engine_derivation_on_a_unit_owing_validation(
     assert loop_state.phase_map(l2)["bd-1"] == "verify"
     for repo in (l3, l2):
         assert loop_state.phase_map(repo)["bd-1"] == loop_state.read_node_state(repo, "bd-1").phase
+
+
+def _view(issue_id: str, *, live: bool) -> supervise.LaneView:
+    """A lane binding as the tracker holds it, with no run history of its own."""
+    return supervise.LaneView(
+        issue_id=issue_id,
+        status="open",
+        worktree=issue_id,
+        branch=f"harness/{issue_id}",
+        live=live,
+        last_agent="claude",
+        last_tokens=11,
+    )
+
+
+_RUN = {
+    "agent": "claude",
+    "model": "claude-opus-5",
+    "cost": 12.5,
+    "duration_s": 900.0,
+    "context_tokens": 180_000,
+    "context_window": 1_000_000,
+}
+
+
+def test_a_running_lane_carries_what_it_is_spending_and_saying_now() -> None:
+    """The live stream's figures reach the card, and they beat the last run's."""
+    fact = board_facts._lane_fact(
+        _view("a", live=True), {"a": "build"}, {"a": 5_000_000}, {"a": "reading the gate"}, [_RUN]
+    )
+    assert fact.tokens == 5_000_000
+    assert fact.note == "reading the gate"
+    assert fact.model == "claude-opus-5"
+
+
+def test_a_running_lane_does_not_inherit_the_last_dispatch_cost_or_occupancy() -> None:
+    """Per-dispatch figures are omitted while a lane runs, rather than carried forward.
+
+    The failure this refuses is quiet: last run's cost printed under a heading that says the
+    lane is running now reads as this run's, and nothing on the card would say otherwise.
+    """
+    fact = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {}, {}, [_RUN])
+    assert fact.cost_usd is None
+    assert fact.elapsed_s is None
+    assert fact.context_used is None
+    assert fact.context_window is None
+
+
+def test_a_finished_lane_carries_every_figure_its_run_record_holds() -> None:
+    """The control for the case above: the same record, read off a lane that is not live."""
+    fact = board_facts._lane_fact(_view("a", live=False), {"a": "build"}, {}, {}, [_RUN])
+    assert (fact.cost_usd, fact.elapsed_s) == (12.5, 900.0)
+    assert (fact.context_used, fact.context_window) == (180_000, 1_000_000)
+
+
+def test_a_lane_with_no_run_record_states_no_figure_it_was_not_given() -> None:
+    """An unfillable fact stays absent, which is this module's whole rule."""
+    fact = board_facts._lane_fact(_view("a", live=False), {"a": "build"}, {}, {}, [])
+    assert fact.model == ""
+    assert fact.note == ""
+    assert (fact.cost_usd, fact.context_used) == (None, None)
+
+
+def test_a_boolean_is_not_read_as_a_measurement() -> None:
+    """`True` is an `int` in Python, so a truthy field would otherwise price a lane at 1."""
+    fact = board_facts._lane_fact(
+        _view("a", live=False), {"a": "build"}, {}, {}, [{"cost": True, "context_tokens": False}]
+    )
+    assert fact.cost_usd is None
+    assert fact.context_used is None

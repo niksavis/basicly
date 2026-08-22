@@ -1,0 +1,24 @@
+# Filling the board's lane card (basicly-0hxck3).
+#
+# The card carried five of the sixteen properties the snapshot contract declares, so a
+# running lane rendered as `not measured` in five of its six cells while the supervisor's
+# own terminal printed the same figures. The producer now reads each from the tier that
+# holds it: the live stream for what a running lane is spending and saying, the last run
+# record for a finished dispatch's cost and occupancy, the tracker binding for the rest.
+#
+# ## module_size: one waiver, bought on cost
+#
+# `src/basicly/board_facts.py` at 4219 of 4000. The nameable cut exists - `_lane_fact` and
+# its three coercions are one responsibility and would move to `board_lane.py` cleanly - and
+# it is blocked rather than absent: every one of the 116 modules under `src/basicly/` is
+# named in `.importlinter`'s layer list, so a new module needs a line there, and that file
+# is declared scope of `basicly-rn0o.6`, committed and unlanded when this was written.
+#
+# Prose was cut first, 113 tokens out of two docstrings, and stopped where the remainder was
+# the reasoning about which tier holds which figure - which is the content the cap exists to
+# protect, not narration. The module is already prose-waived at 58.5%, so density was never
+# the binding constraint; size was.
+#
+# Owed back under `basicly-0bj8q1`, which blocks on `basicly-rn0o.6` landing.
+[ratchet.module_size]
+count_delta = 1
