@@ -41,12 +41,14 @@ class LaneFacts:
     a value as derived, so the two would render identically. Caller-supplied or omitted, and
     nothing between - the same rule the supervisor lock takes in `board_snapshot.SessionFacts`.
 
-    The eight fields are exactly what a caller above the loop already holds:
+    The first eight fields are what a caller above the loop already holds:
     `supervise.LaneView` carries `issue_id`, `status`, `last_agent`, `live`, `last_tokens`,
     `branch` and `last_run_at`, and the phase comes from the loop read beside it. The schema's
     other lane properties - `model`, `cost_usd`, `elapsed_s`, the `context_used` pair, the
-    rework counters, `note` - are unemitted until a caller holds them, because an omitted
-    property renders as absent while a guessed one renders as fact.
+    rework counters, `note` - are carried too, on the same rule: emitted only where the caller
+    held one, so an omitted property renders as absent and a guessed one would render as
+    fact. It bites hardest on a *live* lane, whose last run holds a cost and an occupancy
+    for a different dispatch; carrying those forward states this run's spend as last run's.
     """
 
     id: str
@@ -57,6 +59,14 @@ class LaneFacts:
     started_at: str = ""
     tokens: int | None = None
     branch: str = ""
+    model: str = ""
+    cost_usd: float | None = None
+    elapsed_s: float | None = None
+    context_used: int | None = None
+    context_window: int | None = None
+    rework_attempt: int | None = None
+    rework_allowance: int | None = None
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -192,6 +202,20 @@ def lanes(facts: Iterable[LaneFacts]) -> list[dict[str, object]]:
             row["tokens"] = max(0, lane.tokens)
         if lane.branch:
             row["branch"] = board_fields.text(lane.branch, board_fields.TEXT_MAX)
+        if lane.model:
+            row["model"] = board_fields.text(lane.model, board_fields.AGENT_MAX)
+        if lane.note:
+            row["note"] = board_fields.text(lane.note, board_fields.TEXT_MAX)
+        for name, held in (
+            ("cost_usd", lane.cost_usd),
+            ("elapsed_s", lane.elapsed_s),
+            ("context_used", lane.context_used),
+            ("context_window", lane.context_window),
+            ("rework_attempt", lane.rework_attempt),
+            ("rework_allowance", lane.rework_allowance),
+        ):
+            if held is not None:
+                row[name] = max(0, held)
         rows.append(row)
     return rows
 

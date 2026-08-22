@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import board_facts, integrity, loop_state, supervise, tracker
+from basicly import board_facts, board_sections, integrity, loop_state, supervise, tracker
 from basicly.config import VERIFY_GATE_PROVIDER
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -238,3 +238,120 @@ def test_a_mapped_phase_is_the_engine_derivation_on_a_unit_owing_validation(
     assert loop_state.phase_map(l2)["bd-1"] == "verify"
     for repo in (l3, l2):
         assert loop_state.phase_map(repo)["bd-1"] == loop_state.read_node_state(repo, "bd-1").phase
+
+
+def _view(issue_id: str, *, live: bool) -> supervise.LaneView:
+    """A lane binding as the tracker holds it, with no run history of its own."""
+    return supervise.LaneView(
+        issue_id=issue_id,
+        status="open",
+        worktree=issue_id,
+        branch=f"harness/{issue_id}",
+        live=live,
+        last_agent="claude",
+        last_tokens=11,
+    )
+
+
+_RUN = {
+    "agent": "claude",
+    "model": "claude-opus-5",
+    "cost": 12.5,
+    "duration_s": 900.0,
+    "context_tokens": 180_000,
+    "context_window": 1_000_000,
+}
+
+
+def test_a_running_lane_carries_what_it_is_spending_and_saying_now() -> None:
+    """The live stream's figures reach the card, and they beat the last run's."""
+    fact = board_facts._lane_fact(
+        _view("a", live=True), {"a": "build"}, {"a": 5_000_000}, {"a": "reading the gate"}, [_RUN]
+    )
+    assert fact.tokens == 5_000_000
+    assert fact.note == "reading the gate"
+    assert fact.model == "claude-opus-5"
+
+
+def test_a_running_lane_does_not_inherit_the_last_dispatch_cost_or_occupancy() -> None:
+    """Per-dispatch figures are omitted while a lane runs, rather than carried forward.
+
+    The failure this refuses is quiet: last run's cost printed under a heading that says the
+    lane is running now reads as this run's, and nothing on the card would say otherwise.
+    """
+    fact = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {}, {}, [_RUN])
+    assert fact.cost_usd is None
+    assert fact.elapsed_s is None
+    assert fact.context_used is None
+    assert fact.context_window is None
+
+
+def test_a_finished_lane_carries_every_figure_its_run_record_holds() -> None:
+    """The control for the case above: the same record, read off a lane that is not live."""
+    fact = board_facts._lane_fact(_view("a", live=False), {"a": "build"}, {}, {}, [_RUN])
+    assert (fact.cost_usd, fact.elapsed_s) == (12.5, 900.0)
+    assert (fact.context_used, fact.context_window) == (180_000, 1_000_000)
+
+
+def test_a_lane_with_no_run_record_states_no_figure_it_was_not_given() -> None:
+    """An unfillable fact stays absent, which is this module's whole rule."""
+    fact = board_facts._lane_fact(_view("a", live=False), {"a": "build"}, {}, {}, [])
+    assert fact.model == ""
+    assert fact.note == ""
+    assert (fact.cost_usd, fact.context_used) == (None, None)
+
+
+def test_a_boolean_is_not_read_as_a_measurement() -> None:
+    """`True` is an `int` in Python, so a truthy field would otherwise price a lane at 1."""
+    fact = board_facts._lane_fact(
+        _view("a", live=False), {"a": "build"}, {}, {}, [{"cost": True, "context_tokens": False}]
+    )
+    assert fact.cost_usd is None
+    assert fact.context_used is None
+
+
+def test_a_lane_that_has_reported_zero_tokens_states_no_spend_at_all() -> None:
+    """A live meter registered but not yet reporting omits `tokens` rather than stating 0.
+
+    The stream is published the instant a dispatch starts, so `inflight_spend` carries a real
+    `0` for every lane between its registration and its first metered turn - the exact window
+    the defect was reported in. `0 tok` on a card reads as a measured figure and a free lane.
+    """
+    view = supervise.LaneView(
+        issue_id="a", status="open", worktree="a", branch="harness/a", live=True
+    )
+    fact = board_facts._lane_fact(view, {"a": "build"}, {"a": 0}, {}, [])
+    assert fact.tokens is None
+    assert "tokens" not in board_sections.lanes([fact])[0]
+
+
+def test_the_zero_window_does_not_fall_through_to_a_previous_run() -> None:
+    """The zero window with something to fall back to, which is where it actually bit.
+
+    `test_a_lane_that_has_reported_zero_tokens_states_no_spend_at_all` pins the same window
+    on a lane with no run history, where a falsy test resolves to `None` by luck rather than
+    by rule. Give the lane a previous dispatch and the two stop agreeing: a falsy test hands
+    the window that dispatch's total, and the card reads as a lane that spent ten million
+    tokens in its first second.
+    """
+    fact = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {"a": 0}, {}, [])
+    assert _view("a", live=True).last_tokens == 11
+    assert fact.tokens is None
+
+
+def test_a_live_lane_never_shows_a_previous_dispatch_total() -> None:
+    """No stream to read is silence too, on the same rule as a stream reporting zero.
+
+    A producer that is not the supervisor cannot see the process-local streams at all, so
+    it holds nothing for a lane it can see is live. Falling back there prints the last
+    dispatch's total under a heading saying the lane runs now - the same failure as the
+    zero window, reached from the other side.
+    """
+    fact = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {}, {}, [])
+    assert fact.tokens is None
+
+
+def test_a_finished_lane_does_fall_back_to_its_last_recorded_run() -> None:
+    """The control: the fallback is not removed, it is confined to lanes that are not live."""
+    fact = board_facts._lane_fact(_view("a", live=False), {"a": "build"}, {}, {}, [])
+    assert fact.tokens == 11

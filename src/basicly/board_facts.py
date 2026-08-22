@@ -10,6 +10,12 @@ Every read fails to an absence, never a zero: an unfillable section is omitted a
 says the producer did not emit it, which is true.
 """
 
+# module-size-waiver: cost(basicly-0bj8q1): 4219 of 4000 tokens. Filling the lane card from
+# the three tiers that hold its figures added 641; 113 came back out of two docstrings before
+# the rest was the reasoning the cap exists to protect. The nameable cut - `_lane_fact` and
+# its three coercions into `board_lane.py` - needs a line in `.importlinter`, whose 116
+# entries leave no module unlisted, and that file is unlanded scope of `basicly-rn0o.6`.
+
 # comment-density-waiver: cohesion: 56.1% because the split moved the code and its reasons
 # together, and every comment left is a measurement or an incident rather than narration -
 # `phases` carries the 591 ms per record that once capped it, `grant_spend` carries the
@@ -39,7 +45,8 @@ from . import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
+    from typing import Any
 
 # What every fact-gathering read below treats as "no answer": no kit installed, an unreadable
 # ledger, a report whose shape moved. Each costs its own key and never the page.
@@ -231,19 +238,81 @@ def lane_facts(
         views = [supervise.lane_view(repo_root, lane) for lane in state.adopted]
     except NO_SESSION:
         return None
+    spending = supervise.inflight_spend()
+    doing = supervise.inflight_activity()
+    runs = run_record.load_run_records(repo_root) or {}
     return tuple(
-        board_sections.LaneFacts(
-            id=view.issue_id,
-            phase=phase_map.get(view.issue_id, ""),
-            status=view.status,
-            agent=view.last_agent or "",
-            live=view.live,
-            started_at=view.last_run_at or "",
-            tokens=view.last_tokens,
-            branch=view.branch,
-        )
+        _lane_fact(view, phase_map, spending, doing, runs.get(view.issue_id) or [])
         for view in views
     )
+
+
+def _lane_fact(
+    view: supervise.LaneView,
+    phase_map: Mapping[str, str],
+    spending: Mapping[str, int],
+    doing: Mapping[str, str],
+    runs: Sequence[Mapping[str, Any]],
+) -> board_sections.LaneFacts:
+    """One lane's card, each figure from the tier that holds it.
+
+    The live stream (:func:`supervise.inflight_spend`, :func:`supervise.inflight_activity`)
+    holds a running lane's spend and its last word; it is process-local to the supervisor,
+    so it answers only where the producer *is* the tick and is empty elsewhere rather than
+    zero. The last run record holds a finished dispatch's cost, occupancy and duration.
+    :class:`supervise.LaneView` holds what the tracker binds.
+
+    **A live lane does not inherit the previous dispatch's cost or occupancy.** Those are
+    per-dispatch, so carrying them forward prints last run's spend as this run's under a
+    heading saying the lane runs now. `agent` and `model` do carry: a lane keeps its runner.
+
+    `tokens` obeys the same rule as cost and occupancy rather than an exception to it: a
+    **live lane never shows a figure from a previous dispatch.** While a lane runs the live
+    stream is the only admissible source, and where it has nothing to say the card says
+    nothing. Two windows produce that silence and both must stay silent - a stream published
+    the instant a dispatch starts and not yet metered, which reports a real `0`, and a
+    producer that is not the supervisor and so cannot see the process-local streams at all.
+    Falling back on either hands the window to the last dispatch's total, which reads as a
+    lane that has already spent millions the second it starts.
+
+    Where the live figure does speak, it over-reports the record it becomes by a factor
+    :mod:`supervise` measures, so it rises toward a known-larger number - the safe direction
+    for a reader watching a budget.
+    """
+    live = bool(view.live)
+    last = runs[-1] if runs else {}
+    spent = spending.get(view.issue_id)
+    return board_sections.LaneFacts(
+        id=view.issue_id,
+        phase=phase_map.get(view.issue_id, ""),
+        status=view.status,
+        agent=view.last_agent or _text(last.get("agent")),
+        live=view.live,
+        started_at=view.last_run_at or "",
+        tokens=(spent or None) if live else view.last_tokens,
+        branch=view.branch,
+        model=_text(last.get("model")),
+        note=doing.get(view.issue_id, ""),
+        cost_usd=None if live else _number(last.get("cost")),
+        elapsed_s=None if live else _number(last.get("duration_s")),
+        context_used=None if live else _whole(last.get("context_tokens")),
+        context_window=None if live else _whole(last.get("context_window")),
+    )
+
+
+def _text(held: object) -> str:
+    """*held* as a string, else empty."""
+    return held if isinstance(held, str) else ""
+
+
+def _number(held: object) -> float | None:
+    """*held* as a float, else None. A bool is not a measurement of anything."""
+    return float(held) if isinstance(held, int | float) and not isinstance(held, bool) else None
+
+
+def _whole(held: object) -> int | None:
+    """*held* as an int, else None. Excludes bool for the same reason."""
+    return held if isinstance(held, int) and not isinstance(held, bool) else None
 
 
 def document(
