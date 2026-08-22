@@ -414,13 +414,57 @@
         font-size: 17px;
         padding: 1px 0;
       }
+      /* The widths live on the columns, not on the first row's cells: `table-layout: fixed`
+         reads row one, and row one is a group heading whose single cell spans all three, so
+         cell-borne widths stopped applying the moment grouping landed and the title column
+         collapsed to the right-hand edge. A colgroup states them independently of any row. */
+      .ready col.pri {
+        width: 46px;
+      }
+      .ready col.id {
+        width: 158px;
+      }
       .ready .pri {
         color: var(--amber);
-        width: 46px;
       }
       .ready .id {
         color: var(--indigo);
-        width: 158px;
+      }
+      /* The heading a row is read *through*: it has to win against the rows without taking
+         a row's worth of height, so it pays in weight and colour rather than in leading. The
+         rule above it is what separates two features at six metres once the list is dense. */
+      .ready .feature td {
+        border-top: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--sans);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        padding: 7px 0 1px;
+      }
+      /* The flex row is a div inside the cell, never the cell itself: `display: flex` on a
+         `td` of a fixed-layout table left the name with no width to lay out in and the wall
+         drew five counts with no feature beside them. A block child takes the cell's width. */
+      .ready .feature .heading {
+        display: flex;
+        gap: 16px;
+        justify-content: space-between;
+      }
+      .ready .feature .name {
+        min-width: 0;
+      }
+      .ready tr.feature:first-child td {
+        border-top: 0;
+        padding-top: 1px;
+      }
+      /* Right-aligned so the counts stack into a column the eye can compare down, which is
+         what makes "42 unattached against 9 anywhere else" legible without reading titles. */
+      .ready .feature .count {
+        color: var(--text-dim);
+        flex: 0 0 auto;
+        font-family: var(--mono);
+        font-weight: 400;
+        text-align: right;
+        white-space: nowrap;
       }
 
       /* --- foot: the backlog on one line, the agents beside it ------------------------- */
@@ -690,12 +734,23 @@
       <section class="region ready framed">
         <h2>next up{% if ready.more %} — {{ ready.more }}{% endif %}</h2>
         <table>
-{%- for item in ready.rows %}
+          <colgroup><col class="pri" /><col class="id" /><col /></colgroup>
+{%- for group in ready.groups %}
+          <tr class="feature">
+            <td colspan="3">
+              <div class="heading">
+                <span class="name clip">{{ group.name }}</span>
+                <span class="count">{{ group.count }} ready</span>
+              </div>
+            </td>
+          </tr>
+{%- for item in group.rows %}
           <tr>
             <td class="pri">{{ item.priority }}</td>
             <td class="id clip">{{ item.ident }}</td>
             <td class="clip">{{ item.title }}</td>
           </tr>
+{%- endfor %}
 {%- endfor %}
         </table>
 {%- if ready.note %}

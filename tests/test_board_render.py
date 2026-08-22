@@ -210,7 +210,7 @@ def test_no_region_draws_past_its_capacity_at_more_checks_than_the_tree_has() ->
         "+2 more agents",
         "+2 more priorities",
         "+1 more lanes",
-        "+5 more ready",
+        "+6 more ready",
         "+4 more events",
         "+2 more waiting",
     ):
@@ -246,7 +246,8 @@ def test_the_running_row_gives_its_width_to_the_ready_list_when_no_lane_is_dispa
     busy = render("dense-v1.json")
     assert 'class="wall"' in busy, "the wall reflowed while seven lanes were running"
     assert busy.count('class="card ') == board_regions.FLIGHT_SLOTS
-    assert busy.count('<td class="pri">') == board_regions.READY_SLOTS
+    drawn = busy.count('<td class="pri">') + busy.count('<tr class="feature">')
+    assert drawn == board_regions.READY_SLOTS, "a group heading is a drawn line and spends a slot"
 
     calm = render("no-phase-v1.json")
     assert 'class="wall calm"' in calm, "an empty running row kept the width it was not using"
@@ -258,7 +259,7 @@ def test_the_running_row_gives_its_width_to_the_ready_list_when_no_lane_is_dispa
 def test_a_wall_with_more_than_it_can_draw_says_how_much_more() -> None:
     """No content is cut without a marker naming what was dropped."""
     page = render("wall-v1.json")
-    for marker in ("+2 more waiting", "+5 more ready", "+4 more events"):
+    for marker in ("+2 more waiting", "+6 more ready", "+4 more events"):
         assert marker in page
 
 

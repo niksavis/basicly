@@ -232,10 +232,11 @@ def test_the_ready_set_is_ranked_with_priority_and_id_and_title() -> None:
     """Ranked rather than merely listed: an unordered ready set is a list nobody can act on."""
     listing = board_regions.next_up(_reads("wall-v1.json"))
     assert listing.state.key == board_wall.RENDERABLE
-    assert len(listing.rows) == board_regions.READY_SLOTS
+    # A slot is a line, and a group heading is a line, so the two share the one budget.
+    assert len(listing.rows) + len(listing.groups) == board_regions.READY_SLOTS
     assert [row.priority for row in listing.rows] == sorted(row.priority for row in listing.rows)
     assert all(row.ident and row.title for row in listing.rows)
-    assert listing.more == "+5 more ready"
+    assert listing.more == "+6 more ready"
     assert not listing.note
 
 
@@ -258,7 +259,7 @@ def test_the_reclaimed_width_leaves_the_top_ready_titles_untruncated() -> None:
     wide = board_regions.next_up(_reads("wall-v1.json", units=units), wide=True)
     assert [row.title for row in wide.rows[:3]] == [long] * 3
     assert len(wide.rows) > len(narrow.rows), "the reclaimed height drew no more rows"
-    assert len(wide.rows) == board_regions.READY_SLOTS_WIDE
+    assert len(wide.rows) + len(wide.groups) == board_regions.READY_SLOTS_WIDE
 
 
 def test_the_ready_region_tells_three_absences_apart_and_none_of_them_is_a_zero() -> None:

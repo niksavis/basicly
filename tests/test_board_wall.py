@@ -184,3 +184,49 @@ def test_an_undatable_stamp_falls_into_no_day_at_all() -> None:
     assert board_wall.day("2026-08-21T22:15:00Z") == "2026-08-21"
     assert board_wall.day("not a stamp") == ""
     assert board_wall.day(None) == ""
+
+
+def test_a_row_is_filed_under_its_root_ancestor_and_not_its_immediate_parent() -> None:
+    """The whole point of walking: a task's own parent is a feature nobody recognises.
+
+    The two-level chain is the discriminator. Asserting only the one-level case would pass
+    against an implementation that reads `parents[ident]` once, which is the bug the walk
+    exists to avoid, so the depth-two id is checked against the *root* title and the
+    intermediate is asserted to be a title the answer is not.
+    """
+    parents = {"task": "feature", "feature": "epic"}
+    titles = {"epic": "the epic", "feature": "the feature", "task": "the task"}
+
+    assert board_wall.feature_of("task", parents, titles) == "the epic"
+    assert board_wall.feature_of("feature", parents, titles) == "the epic"
+    assert board_wall.feature_of("epic", parents, titles) == ""
+
+
+def test_a_cycle_terminates_and_reports_unattached_rather_than_a_member_of_the_loop() -> None:
+    """The regression: the walk stopped on a seen id and returned that id's title.
+
+    Two shapes, and the second is the one that was wrong. A unit *inside* a cycle already
+    came back empty because the walk ended where it started. A unit that merely *feeds* a
+    cycle ended on some arbitrary member of the loop and took its title, filing the row
+    under a feature the graph never claimed. Both must read unattached, and the test would
+    pass on the old code without the `feeder` case.
+    """
+    inside = {"a": "b", "b": "a"}
+    assert board_wall.feature_of("a", inside, {"a": "A", "b": "B"}) == ""
+
+    feeder = {"feeds": "a", "a": "b", "b": "a"}
+    assert board_wall.feature_of("feeds", feeder, {"a": "A", "b": "B", "feeds": "F"}) == ""
+
+    assert board_wall.feature_of("self", {"self": "self"}, {"self": "S"}) == ""
+
+
+def test_a_chain_that_leaves_the_map_or_reaches_a_titleless_root_reads_unattached() -> None:
+    """Both are reachable on a served document, and neither may render a blank heading.
+
+    The served graph is filtered to edges touching the drawn set, so a chain through a
+    closed intermediate ancestor loses its second edge and stops on an id `units[]` never
+    carried. That must fold to the unattached group rather than to an empty string a
+    template would draw as a heading with no name.
+    """
+    assert board_wall.feature_of("task", {"task": "gone"}, {"task": "T"}) == ""
+    assert board_wall.feature_of("task", {"task": "root"}, {"root": ""}) == ""

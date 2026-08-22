@@ -24,6 +24,7 @@ The vocabulary, the honesty rules and the shapes are :mod:`basicly.board_wall`'s
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from .board_wall import (
@@ -34,14 +35,17 @@ from .board_wall import (
     DOT,
     LIVE,
     NOTE_MAX,
+    PARENT_CHILD,
     RENDERABLE,
     TITLE_MAX,
+    UNATTACHED,
     UNKNOWN,
     WAITING,
     WITHHELD,
     Band,
     Card,
     Cell,
+    Group,
     Item,
     Listing,
     Phase,
@@ -50,6 +54,7 @@ from .board_wall import (
     clip,
     coarse,
     duration,
+    feature_of,
     joined,
     more,
     number,
@@ -58,7 +63,7 @@ from .board_wall import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
     from datetime import datetime
 
     from .board_wall import Age, Reading
@@ -290,6 +295,48 @@ def _rank(unit: Mapping[str, Any]) -> tuple[str, str]:
     return str(unit.get("priority") or "\N{TILDE}"), str(unit.get("id") or "")
 
 
+def _feature_names(
+    reads: Mapping[str, Reading], units: Sequence[Mapping[str, Any]], ready: Sequence[Any]
+) -> list[str]:
+    """The root feature each *ready* unit serves, in the order they rank.
+
+    Edges and titles both come off the document this tick already carries, so naming a row's
+    feature costs no read of its own. A producer may omit ``graph``: that leaves no parent
+    edges, folds every row into the unattached group, and still draws the wall.
+    """
+    read = reads.get("graph")
+    edges = read.held.get("edges", ()) if read is not None and read.drawn else ()
+    parents = {
+        str(edge["from"]): str(edge["to"])
+        for edge in edges
+        if edge.get("kind") == PARENT_CHILD and edge.get("from") and edge.get("to")
+    }
+    titles = {str(u["id"]): str(u["title"]) for u in units if u.get("id") and u.get("title")}
+    return [feature_of(str(u.get("id", UNKNOWN)), parents, titles) or UNATTACHED for u in ready]
+
+
+def grouped(rows: Sequence[Item], names: Sequence[str]) -> tuple[Group, ...]:
+    """*rows* under one heading per feature, each counted over the whole ready set.
+
+    *names* is the feature of every ready unit in rank order and *rows* is the leading slice
+    the region has the height to draw, so the two zip and a count outruns its rows on purpose.
+    Counting the drawn slice would have put 6 on the unattached heading where the document
+    holds 41; the region's own ``more`` reconciles the pair. Group order follows its best row,
+    so the ranking the wall already computed decides the page, and the unattached group sorts
+    last because a row belonging to no feature is a filing gap rather than urgent work.
+    """
+    totals = Counter(names)
+    order: list[str] = []
+    held: dict[str, list[Item]] = {}
+    for row, name in zip(rows, names, strict=False):
+        if name not in held:
+            held[name] = []
+            order.append(name)
+        held[name].append(row)
+    order.sort(key=lambda name: name == UNATTACHED)
+    return tuple(Group(name, str(totals[name]), tuple(held[name])) for name in order)
+
+
 def next_up(reads: Mapping[str, Reading], *, wide: bool = False) -> Listing:
     """The ready set, ranked, with priority, id and title on each row.
 
@@ -309,15 +356,21 @@ def next_up(reads: Mapping[str, Reading], *, wide: bool = False) -> Listing:
     if not flagged:
         return Listing(BY_KEY[ABSENT], note=f"ready {ABSENT_TEXT} on any of the {len(units)} units")
     slots = READY_SLOTS_WIDE if wide else READY_SLOTS
-    titles = READY_TITLE_WIDE if wide else TITLE_MAX
+    bound = READY_TITLE_WIDE if wide else TITLE_MAX
     ready = sorted((unit for unit in flagged if unit["ready"]), key=_rank)
+    names = _feature_names(reads, units, ready)
+    # A heading spends a slot, a slot promising rendered height: six over fourteen rows ran
+    # the region 137px past its box at 1440x900. The floor covers every top row being its own
+    # feature, and half the slots carry at most half a slot of heading, so it cannot overrun.
+    slots = max(slots // 2, slots - len(set(names[:slots])))
     rows = tuple(
         Item(
             str(unit.get("priority") or UNKNOWN),
             clip(unit.get("id", UNKNOWN), TITLE_MAX),
-            clip(unit.get("title") or UNKNOWN, titles),
+            clip(unit.get("title") or UNKNOWN, bound),
         )
         for unit in ready[:slots]
     )
     note = "" if ready else f"nothing is ready of the {len(flagged)} units emitted"
-    return Listing(BY_KEY[RENDERABLE], rows, more(len(ready) - slots, "ready"), note)
+    groups = grouped(rows, names)
+    return Listing(BY_KEY[RENDERABLE], rows, more(len(ready) - slots, "ready"), note, groups)
