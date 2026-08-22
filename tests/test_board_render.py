@@ -40,11 +40,14 @@ SITE = REPO_ROOT / "site" / "index.html"
 SOURCES = ("board_render", "board_regions", "board_footer", "board_wall")
 
 # The eight fixed rows of the wall, in the order the grid declares them.
-REGIONS = ("head", "band", "loop", "flight", "ready", "foot", "tick", "inv")
+# The rows every page draws. `inv` is deliberately not among them: the roster carries only
+# the sections that did NOT draw, so a page with nothing withheld or absent has no roster to
+# draw and its absence is the statement. `_ALWAYS` is what a layout change must not drop.
+REGIONS = ("head", "band", "loop", "flight", "ready", "foot", "tick")
 
 # One roster chip, and the section it names. Only the roster matches: the key beneath it wraps
 # its glyph onto its own line, so a count taken with this pattern is the section count.
-_ROSTER = re.compile(r'<span class="chip state-\w+">. ([a-z_]+)</span>')
+_ROSTER = re.compile(r'<span class="miss state-\w+">([a-z_]+) —')
 
 _DEFINED = re.compile(r"^\s*(--[a-z-]+):", re.MULTILINE)
 _USED = re.compile(r"var\((--[a-z-]+)\)")
@@ -172,18 +175,21 @@ def test_no_row_of_the_wall_is_a_hand_tuned_pixel_and_one_column_below_1280px() 
     what it holds is bounded by the capacities :func:`test_no_region_draws_past_its_capacity`
     covers.
 
-    **Both row lists**, because the running row now collapses and the wall has two shapes; a
-    check that read only the first would let the collapsed one state whatever it liked.
+    **Every row list the page states**, not the first: a check reading only one would let
+    another state whatever it liked. There is one now - a single column means `flight` and
+    `ready` are always separate rows, so the two shapes the wall used to have collapsed into
+    one - and the assertion is written over all of them so a second shape cannot reappear
+    unchecked.
     """
     page = render("dense-v1.json")
     stated = re.findall(r"grid-template-rows: ([^;]+);", page)
-    assert len(stated) >= 2, "the collapsed shape declares no rows of its own"
-    for shape, regions in zip(stated[:2], (len(REGIONS) - 2, len(REGIONS) - 1), strict=True):
-        # `flight` and `ready` share the slack row while a lane runs and separate when none
-        # does, so the count of content-bounded rows moves by one and the slack row never does.
+    assert stated, "the wall states no row list at all"
+    for shape in stated:
+        if shape.strip() == "none":  # the single-column query states no rows at all
+            continue
         assert shape.count("minmax(0, 1fr)") == 1, "no region absorbs the slack"
-        assert shape.count("auto") == regions, "a row is not bounded by what it holds"
         assert re.search(r"[\d.]+(px|em|%)", shape) is None, f"a wall row is hand-tuned: {shape}"
+        assert set(shape.split()) <= {"auto", "minmax(0,", "1fr)"}, f"a row is sized: {shape}"
     assert "@media (max-width: 1279px)" in page
     single = page.split("@media (max-width: 1279px)", 1)[1]
     assert "grid-template-columns: minmax(0, 1fr);" in single
@@ -230,9 +236,12 @@ def test_the_page_draws_whether_or_not_the_producer_populated_its_phases(fixture
     up, so all three fixtures draw the same seven regions.
     """
     page = render(fixture)
-    assert page.count('<section class="region') == len(REGIONS)
     for region in REGIONS:
         assert f'class="region {region}' in page, f"the {region} row is not drawn"
+    # Exactly the seven, plus the roster only where the fixture withholds or omits something.
+    # A page that draws an eighth row for any other reason has grown one unaccounted for.
+    expected = len(REGIONS) + (1 if _ROSTER.search(page) else 0)
+    assert page.count('<section class="region') == expected
 
 
 def test_the_running_row_gives_its_width_to_the_ready_list_when_no_lane_is_dispatched() -> None:
@@ -268,9 +277,10 @@ def test_an_absent_section_says_the_producer_did_not_emit_it() -> None:
     page = render("minimal-v1.json")
     assert board_render.board_wall.ABSENT_TEXT in page
     assert "ASKS NOT EMITTED" in page
-    # Every section this fixture omits, named on the roster with the state that says so.
+    # Every section this fixture omits, named in words. The roster carries only what did not
+    # draw, so the twelve-chip row is gone and the naming it existed for is not.
     for section in ("session", "lanes", "asks", "gates", "spend", "health", "backlog", "units"):
-        assert f'state-absent">\N{WHITE CIRCLE} {section}</span>' in page, f"{section} unnamed"
+        assert f'state-absent">{section} —' in page, f"{section} unnamed"
 
 
 def test_the_roster_follows_the_schema_rather_than_the_layout(tmp_path: Path) -> None:

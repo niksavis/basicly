@@ -22,6 +22,12 @@ The vocabulary, the honesty rules and the shapes are :mod:`basicly.board_wall`'s
 :mod:`basicly.board_render` draws what this module returns.
 """
 
+# module-size-waiver: cost(basicly-bb98v4): 4056 of 4000. The layout rewrite grew the lane
+# card - a row per figure the producer holds, a working mark, and the note that says whether
+# a lane is stuck. The nameable cut is `flight`, `_lane_cells` and `_phase_of` into `board_flight`,
+# and the test split already proves the seam; it needs a line in `.importlinter`, whose 116
+# entries leave no module unlisted, and that file is unlanded scope of `basicly-rn0o.6`.
+
 from __future__ import annotations
 
 from collections import Counter
@@ -243,10 +249,10 @@ def _phase(name: str, count: int | None, here: bool, population: int) -> Phase:
 
 
 def _lane_cells(lane: Mapping[str, Any]) -> tuple[Cell, ...]:
-    """The six figures a lane card carries, each with its own absence.
+    """The figures a lane card carries, each drawn only where the producer held one.
 
-    The context bar is the rule's sharpest case: the two terms travel together or not at all,
-    so a producer knowing only the occupancy draws the number and no bar.
+    The context bar is the sharpest case: the two terms travel together or not at all, so a
+    producer knowing only the occupancy draws the number and no bar.
     """
     used = lane.get("context_used")
     attempt = lane.get("rework_attempt")
@@ -255,7 +261,7 @@ def _lane_cells(lane: Mapping[str, Any]) -> tuple[Cell, ...]:
         if attempt is None
         else f"{number(attempt)} of {number(lane.get('rework_allowance'))}"
     )
-    return (
+    drawn = (
         Cell("agent", joined(lane, ("agent", "model"))),
         Cell("running", duration(lane.get("elapsed_s"))),
         Cell("tokens", number(lane.get("tokens"))),
@@ -263,6 +269,9 @@ def _lane_cells(lane: Mapping[str, Any]) -> tuple[Cell, ...]:
         Cell("context", number(used), bar=bar(used, lane.get("context_window"))),
         Cell("rework", rework),
     )
+    # A row saying "no value here" spends one on a non-exception; the absence is stated by
+    # the row not being there.
+    return tuple(cell for cell in drawn if cell.value != UNKNOWN)
 
 
 def flight(reads: Mapping[str, Reading]) -> tuple[tuple[Card, ...], str, str]:
@@ -283,6 +292,7 @@ def flight(reads: Mapping[str, Reading]) -> tuple[tuple[Card, ...], str, str]:
             BY_KEY[LIVE] if lane.get("live") else BY_KEY[ABSENT],
             clip(lane.get("note") or lane.get("status") or "", NOTE_MAX),
             _lane_cells(lane),
+            working=bool(lane.get("note") or lane.get("tokens")),
         )
         for lane in lanes[:FLIGHT_SLOTS]
     )

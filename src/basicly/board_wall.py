@@ -124,6 +124,8 @@ class Card:
     state: State
     note: str
     cells: tuple[Cell, ...] = ()
+    # A live stream this beat; `state` answers only the worktree binding.
+    working: bool = False
 
 
 @dataclass(frozen=True)

@@ -56,38 +56,30 @@
       .wall {
         display: grid;
         gap: 7px;
-        grid-template-columns: minmax(0, 1fr) 470px;
+        grid-template-columns: minmax(0, 1fr);
         grid-template-areas:
-          "head   head"
-          "band   band"
-          "loop   loop"
-          "flight ready"
-          "foot   foot"
-          "tick   tick"
-          "inv    inv";
+          "head"
+          "band"
+          "loop"
+          "flight"
+          "ready"
+          "inv"
+          "foot"
+          "tick";
         /* Each row is the height of what it holds, and never a pixel measured against the
            tallest content of the day. A hand-tuned row is one line short the moment a
            producer emits one more of anything, so the row is bounded by its content and the
            content is bounded by the model's own slot counts. `flight` takes the slack. */
-        grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto;
-        height: 100%;
+        grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto;
+        min-height: 100%;
       }
       /* No lane dispatched: the running row is one line and the ready list takes the whole
          width and the whole of the slack. This is the state the wall is in most of the day, so
          it is the state the layout is tuned for - six dashed frames announcing nothing three
          times was 40% of the screen, and the list beside them truncated every title. */
-      .wall.calm {
-        grid-template-areas:
-          "head   head"
-          "band   band"
-          "loop   loop"
-          "flight flight"
-          "ready  ready"
-          "foot   foot"
-          "tick   tick"
-          "inv    inv";
-        grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto;
-      }
+      /* `calm` no longer changes the grid: one column means `flight` and `ready` are always
+         separate rows, so the wall's two shapes collapse into one. The class survives because
+         `.flight.quiet` still restyles the row itself. */
       /* Rank by weight, not by uniform outline. Only the alarm and the running lanes carry a
          lit border; everything the reader consults rather than reacts to recedes into the
          page and is separated by a rule instead of a box. */
@@ -327,7 +319,7 @@
         display: grid;
         gap: 6px;
         grid-area: flight;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
       }
       .flight > h2,
       .flight > .note {
@@ -344,8 +336,41 @@
         border: 3px solid var(--border);
         border-radius: 4px;
         min-width: 0;
+        padding: 9px 12px 10px;
+      }
+      /* The activity line is the field with no substitute, so it wraps rather than clipping. */
+      .card > .note {
+        border-top: 1px solid var(--border);
+        color: var(--text);
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        font-size: 14px;
+        line-height: 1.35;
+        margin-top: 7px;
         overflow: hidden;
-        padding: 5px 8px;
+        padding-top: 6px;
+      }
+      /* A still card and a wedged card look identical, so a lane reporting a live stream
+         carries a moving mark. Motion is the one channel a frozen page cannot fake. */
+      .card.working .phase-name::after {
+        animation: pulse 1.6s ease-in-out infinite;
+        background: var(--indigo);
+        border-radius: 50%;
+        content: "";
+        display: inline-block;
+        height: 8px;
+        margin-left: 8px;
+        width: 8px;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.15; }
+      }
+      .miss {
+        color: var(--text-dim);
+        font-size: 13px;
+        margin-right: 14px;
       }
       /* The id and the phase share one line. A card is the region that takes the wall's
          slack - every other row is bounded by a capacity and this one absorbs what is left -
@@ -604,7 +629,7 @@
         <div class="cell">
           <div class="label">{{ cell.label }}</div>
           <div class="value clip">
-{%- if cell.state %}<span class="glyph state-{{ cell.state.key }}">{{ cell.state.glyph }}</span>{% endif %}{{ cell.value }}
+{{ cell.value }}
 {%- if cell.bar %}
             <span class="track"
               ><span
@@ -620,7 +645,7 @@
         <div class="cell token">
           <div class="label">{{ gates.label }}</div>
           <div class="value clip state-{{ gates.state.key }}">
-            <span class="glyph">{{ gates.state.glyph }}</span>{{ gates.value }}
+            {{ gates.value }}
           </div>
 {%- if gates_note %}
           <div class="note clip">{{ gates_note }}</div>
@@ -629,19 +654,18 @@
         <div class="cell">
           <div class="label">{{ spend.label }}</div>
           <div class="value clip">
-{%- if spend.state %}<span class="glyph state-{{ spend.state.key }}">{{ spend.state.glyph }}</span>{% endif %}{{ spend.value }}
+{{ spend.value }}
           </div>
         </div>
         <div class="cell">
           <div class="label">{{ throughput.label }}</div>
           <div class="value clip">
-            <span class="glyph state-{{ throughput.state.key }}">{{ throughput.state.glyph }}</span
-            >{{ throughput.value }}
+            {{ throughput.value }}
           </div>
         </div>
         </div>
         <p class="fresh state-{{ age.state.key }}">
-          <span class="glyph">{{ age.state.glyph }}</span>as of {{ age.phrase }}<br />
+          as of {{ age.phrase }}<br />
           <span class="note"
             >{{ age.generated_at }} · stale after {{ age.stale_after }} ·
             <span class="state-{{ producer.state.key }}">{{ producer.state.glyph }}</span>
@@ -652,7 +676,7 @@
 
       <section class="region band framed state-{{ band.state.key }}">
         <div class="headline state-{{ band.state.key }}">
-          <span class="glyph">{{ band.state.glyph }}</span>{{ band.headline }}
+          {{ band.headline }}
         </div>
         <div class="lines">
 {%- if band.kicker %}
@@ -699,11 +723,10 @@
         <p class="note clip">{{ flight_note }}</p>
 {%- endif %}
 {%- for card in cards %}
-        <div class="card state-{{ card.state.key }}">
+        <div class="card state-{{ card.state.key }}{% if card.working %} working{% endif %}">
           <div class="title">
             <div class="id clip">
-              <span class="glyph state-{{ card.state.key }}">{{ card.state.glyph }}</span
-              >{{ card.title }}
+              {{ card.title }}
             </div>
             <div class="phase-name clip">{{ card.phase }}</div>
           </div>
@@ -755,7 +778,7 @@
         </table>
 {%- if ready.note %}
         <p class="note state-{{ ready.state.key }}">
-          <span class="glyph">{{ ready.state.glyph }}</span>{{ ready.note }}
+          {{ ready.note }}
         </p>
 {%- endif %}
       </section>
@@ -767,7 +790,7 @@
           <div class="cell">
             <div class="label">{{ cell.label }}</div>
             <div class="value clip">
-{%- if cell.state %}<span class="glyph state-{{ cell.state.key }}">{{ cell.state.glyph }}</span>{% endif %}{{ cell.value }}
+{{ cell.value }}
 {%- if cell.bar %}
               <span class="track"
                 ><span
@@ -799,7 +822,7 @@
 {%- for cell in agents %}
           <div class="cell">
             <div class="label">
-{%- if cell.state %}<span class="glyph state-{{ cell.state.key }}">{{ cell.state.glyph }}</span>{% endif %}{{ cell.label }}
+{{ cell.label }}
             </div>
             <div class="value clip">{{ cell.value }}</div>
           </div>
@@ -816,18 +839,14 @@
         </div>
       </section>
 
+{%- if inventory %}
       <section class="region inv">
-        <span class="label">sections</span>
+        <span class="label">not drawn</span>
 {%- for cell in inventory %}
-        <span class="chip state-{{ cell.state.key }}">{{ cell.state.glyph }} {{ cell.label }}</span>
-{%- endfor %}
-        <span class="label">key</span>
-{%- for cell in legend %}
-        <span class="chip state-{{ cell.state.key }}"
-          >{{ cell.state.glyph }} <span class="note">{{ cell.value }}</span></span
-        >
+        <span class="miss state-{{ cell.state.key }}">{{ cell.label }} — {{ cell.value }}</span>
 {%- endfor %}
       </section>
+{%- endif %}
     </main>
   </body>
 </html>
