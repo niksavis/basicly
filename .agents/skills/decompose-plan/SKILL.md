@@ -43,6 +43,42 @@ Cut along `change-shape` instead. It is derived from the call graph rather
 than authored, which is exactly why it can express a slice that crosses
 directories.
 
+## Locate the producer, never the surface
+
+A scope is a claim about **where a wrong value is produced**, and the tempting
+answer is where it is *displayed*. They are usually different modules, and the
+gap is only found when a lane has already spent a budget reaching it.
+
+Four scopes were written wrong in one session on 2026-08-22, all the same way:
+
+| declared | the value is actually produced in |
+|---|---|
+| `loop.py`, `supervise.py`, `verify.py` | `checkout.py`, `commit.py`, `merge.py` |
+| `board_wall.py` | `board_regions.py` |
+| two skill surfaces | skills project to **three** |
+| `board_render.py` | `board_regions.py` |
+
+One was bounced at the landing gate for changing eleven files outside its
+declared four — about thirty million tokens of rework, on work that was
+already correct. One was caught by `projection-skills` refusing the commit.
+Two were caught by probing before dispatch. Only the probe is cheap.
+
+**The probe is one command.** Take a literal string the wrong output prints, or
+the name of the function that returns the wrong value, and grep for it. The file
+that *emits* it is the scope; the file that *renders* it usually is not:
+
+    rg -n '<the literal the defect prints>' src/
+    rg -n 'def <the function whose result is wrong>' src/
+
+Then ask the question that catches the rest: **does this value have more than
+one consumer, and does it reach more than one surface?** A projected artifact
+usually has several — `basicly skills-build --all-default-roots` writes two
+roots, and a scope naming one of them fails the projection gate. A renderer
+almost always sits one call above a builder that owns the fact.
+
+A scope that names a file the fix never touches is not a smaller claim than the
+truth. It is a different claim, and the merge queue is where it is corrected.
+
 ## Declare the scope honestly even though it costs you
 
 A scope declared honestly reads as a bigger lane, because the band prices what
