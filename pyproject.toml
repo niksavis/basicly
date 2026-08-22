@@ -112,6 +112,11 @@ skips = ["B101"]
 [tool.vulture]
 ignore_names = [
   "PERMISSION_TARGETS",
+  # A fourth kind: read by a stdlib base class vulture does not traverse.
+  # `socketserver.TCPServer.server_bind` reads `allow_reuse_address`, so `board_serve._Server`
+  # setting it False is what stops `SO_REUSEADDR` being asked for; the value is asserted in
+  # `tests/test_board_serve.py`, which is what actually holds it (basicly-t31pvf).
+  "allow_reuse_address",
   "baseline_failure_rate",
   "baseline_runs",
   "border_style",

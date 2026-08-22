@@ -1,31 +1,16 @@
 """Serve the board on the loopback for a wall display: Mode B (basicly-rn0o.5, basicly-rn0o.6).
 
-Three properties are this module, and each is a refusal rather than a feature. The listener
-binds :data:`HOST` and nothing else, so a screen in an engineering room is driven by a browser
-on the same machine and never by anything on the network. The only POST route is the one
-:mod:`basicly.board_actions` owns, absent under `--no-actions`, because a display anyone in the
-room can touch must not be able to kill a lane; any write an action causes is the engine's own
-command making it. And this process writes nothing at all - no lock, no snapshot file, no path
-under `.basicly/ledger/` - so a board can never fail a landing, and the stop line's "No state
-was written" is a fact rather than a hope.
-
-**Who produces is decided per tick, not per process.** While the supervisor lock is fresh, the
-supervisor is already folding a snapshot on its own beat, so this process serves that file's
-bytes and computes nothing: a second fold would be a second producer racing the first over one
-path, and the transcript's `producer` line says which one is speaking. With no fresh holder it
-folds for itself at ``--refresh`` and keeps the result in memory, which is why nothing it
-serves outlives it.
-
-**This is the layer that may read the lock**, and `board_cli` reads it through here rather than
-spelling the shape twice. :mod:`basicly.board_snapshot` may not read it at all - the import
-would close ``supervise -> board_snapshot -> supervise``, since the supervisor emits a snapshot
-of its own - so the facts are read at this tier and passed down (C11).
+Loopback-only, writes nothing, and one POST route that `--no-actions` removes. Each is
+asserted in `tests/test_board_serve.py`, not described here. Who produces is decided per tick:
+a fresh supervisor lock means serve its bytes, no lock means fold in memory. The lock is read
+at this tier and passed down, which `.importlinter` enforces (C11).
 """
 
 from __future__ import annotations
 
 import contextlib
 import json
+import socket
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -269,17 +254,29 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+# Windows only. `SO_REUSEADDR`, which `http.server` sets, "allows a socket to forcibly bind to
+# a port in use by another socket" there, so a taken port never errors [S learn.microsoft.com,
+# Using SO_REUSEADDR and SO_EXCLUSIVEADDRUSE]. Named, not `sys.platform`, so a test injects it.
+EXCLUSIVE_BIND_OPTION: int | None = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+
+
 class _Server(ThreadingHTTPServer):
     """A threaded loopback listener carrying the :class:`Board` its handlers read.
 
-    Threaded because one browser holding a page open must not make the snapshot route wait;
-    `daemon_threads` and `allow_reuse_address` are the base class's own defaults and are
-    deliberately not respelled here.
+    Threaded because one browser holding a page open must not make the snapshot route wait.
     """
+
+    allow_reuse_address = EXCLUSIVE_BIND_OPTION is None
 
     def __init__(self, address: tuple[str, int], board: Board) -> None:
         self.board = board
         super().__init__(address, _Handler)
+
+    def server_bind(self) -> None:
+        """Bind, claiming the port exclusively wherever the platform offers that."""
+        if EXCLUSIVE_BIND_OPTION is not None:
+            self.socket.setsockopt(socket.SOL_SOCKET, EXCLUSIVE_BIND_OPTION, 1)
+        super().server_bind()
 
 
 @dataclass(frozen=True)

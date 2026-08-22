@@ -1,16 +1,7 @@
 """Mode B: the loopback board, and the four refusals that are the unit (basicly-rn0o.5).
 
-Every property here is one a green suite would happily let regress, so each is instrumented
-rather than asserted about the source. The bind address is read off the live socket, not off
-:data:`basicly.board_serve.HOST`, because a constant is not a binding. The no-writes claim is a
-spy over the two write seams plus a before/after listing of the tree, because "writes nothing"
-is exactly the property one convenience call restores to false while every other test stays
-green - the shape `test_board_snapshot.py` uses for its fold count.
-
-Nothing here sleeps. The listener is bound before its thread starts, so a connect succeeds on
-the backlog immediately; the one-refresh-in-flight test gates a fold on an
-:class:`threading.Event` and waits for the condition rather than for a duration; and the port is
-always 0, so no test ever waits for a fixed port to open.
+Two rules for anything added here. Instrument the property off the live socket, never off a
+constant. Never sleep: bind before the thread starts, gate on an Event, always port 0.
 """
 
 from __future__ import annotations
@@ -19,6 +10,7 @@ import ipaddress
 import json
 import os
 import shutil
+import socket
 import subprocess
 import threading
 import urllib.error
@@ -299,6 +291,28 @@ def test_a_port_already_taken_is_reported_rather_than_raised(board_repo: Path) -
     """A consumer gets a line and an exit code, never a traceback out of a socket."""
     with _running(board_serve.bind(board_repo, port=0)) as listener:
         assert board_serve.serve(board_repo, port=listener.port) == 1
+
+
+def test_the_bind_claims_the_port_exclusively_wherever_the_platform_offers_that(
+    board_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refusal above, on the platform that does not give it free.
+
+    Injected, never raced: the option is Windows-only and cost one run 5h57m in `serve_forever`.
+    """
+    assert board_serve._Server.allow_reuse_address is (board_serve.EXCLUSIVE_BIND_OPTION is None)
+
+    asked: list[int] = []
+    real = socket.socket.setsockopt
+    monkeypatch.setattr(board_serve, "EXCLUSIVE_BIND_OPTION", socket.SO_REUSEADDR)
+    monkeypatch.setattr(
+        socket.socket,
+        "setsockopt",
+        lambda self, level, option, value: asked.append(option) or real(self, level, option, value),
+    )
+    board_serve.bind(board_repo, port=0).close()
+
+    assert socket.SO_REUSEADDR in asked
 
 
 def test_the_serve_help_carries_both_frozen_claims_and_never_the_word_it_refuses(
