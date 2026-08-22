@@ -75,7 +75,6 @@ def context(document: Mapping[str, Any], verdict: SnapshotVerdict, now: datetime
         "events": lines,
         "events_more": events_more,
         "inventory": board_footer.inventory(reads),
-        "legend": board_footer.legend(),
         "states": board_wall.STATES,
         # Named rather than indexed out of `states`: the loop row marks its current phase and
         # its unmeasured ones with a glyph, and a template reaching in by position would pick

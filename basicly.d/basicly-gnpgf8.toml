@@ -1,0 +1,24 @@
+# The board's layout and lane card (basicly-gnpgf8).
+#
+# A fixed 470-pixel column clipped the model id at every width while the row beside it left
+# most of the page black. One column fixes both, and the card then has room for the field
+# with no substitute - the line saying what a lane is doing, which is the only thing that
+# tells a working lane from a wedged one.
+#
+# ## module_size: one waiver, bought on cost
+#
+# `src/basicly/board_regions.py` at 4056 of 4000. The cut is nameable and is proven: the
+# running-lane region is `flight`, `_lane_cells` and `_phase_of`, and the test half of that
+# split landed in the same change as `tests/test_board_regions_flight.py`. It is blocked
+# rather than absent - every one of the 116 modules under `src/basicly/` is named in
+# `.importlinter`, so a new module needs a line there, and that file is declared scope of
+# `basicly-rn0o.6`, committed and unlanded with an agent in its worktree.
+#
+# Waived rather than rebaselined because the module is not frozen: it sat under the cap and
+# this change crossed it, so there is no baseline to raise. Prose was cut first and stopped
+# where the remainder is the reasoning about which tier holds which fact.
+#
+# Owed back under `basicly-bb98v4`. Second instance today of one cause - `basicly-0bj8q1` is
+# the first - which is itself recorded on that record.
+[ratchet.module_size]
+count_delta = 1

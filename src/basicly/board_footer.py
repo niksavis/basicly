@@ -5,10 +5,10 @@ token; an exception expands** - :func:`gates` is the sharpest case, where a pass
 `GREEN` and only a failing or unrun check spells its own name, which is why the check-name
 overlap it replaces cannot recur: there is no grid of names left to collide.
 
-:func:`inventory` is why the regions above are safe to write. It draws the verdict's whole
-roster with a state on each name, so a section that no region reads still reports itself, and
-:func:`legend` spells what those states mean. Without the pair, a change of layout could
-silently drop a section the schema declares.
+:func:`inventory` is why the regions above are safe to write. It names every section that did
+not draw, with the word for why, so a section no region reads still reports itself and a
+change of layout cannot silently drop one the schema declares. Only the exceptions: naming the
+twelve that drew spent a standing row saying twelve things are normal.
 
 A sibling of :mod:`basicly.board_regions`: the two share :mod:`basicly.board_wall`'s
 vocabulary and neither reads the other.
@@ -175,6 +175,20 @@ def gates(reads: Mapping[str, Reading]) -> tuple[Cell, str]:
     return Cell("gates", token, BY_KEY[state]), clip(caption, LINE_MAX) if caption else UNKNOWN
 
 
+def compact(value: object) -> str:
+    """A large count as a reader compares it: 616,122,594 becomes 616M.
+
+    Nine digits are what pushed the spend line past its bound and clipped the figure beside
+    it; nobody compares token counts digit by digit.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return number(value)
+    for bound, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "k")):
+        if abs(value) >= bound:
+            return f"{value / bound:.1f}".rstrip("0").rstrip(".") + suffix
+    return number(value)
+
+
 def spend(reads: Mapping[str, Reading]) -> Cell:
     """What this machine has been billed, as one status-bar cell.
 
@@ -185,7 +199,10 @@ def spend(reads: Mapping[str, Reading]) -> Cell:
     if not read.drawn:
         return Cell("spend", read.note, read.state)
     held = read.fields
-    figures = [f"{number(held.get(key))} {unit}" for key, unit in _SPEND_UNITS.items()]
+    figures = [
+        f"{(number if unit.startswith('usd') else compact)(held.get(key))} {unit}"
+        for key, unit in _SPEND_UNITS.items()
+    ]
     spelled = clip(DOT.join([str(held.get("scope", UNKNOWN)), *figures]), LINE_MAX)
     return Cell("spend", spelled, read.state)
 
@@ -251,24 +268,18 @@ def events(reads: Mapping[str, Reading]) -> tuple[tuple[str, ...], str]:
 
 
 def inventory(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
-    """Every section the verdict named, glyphed, what draws first and what is absent last.
+    """Only the sections that did **not** draw, each with the word for why.
 
-    This is the accounting that makes the four question regions safe to write: a section no
-    region reads still reports itself here, so nothing the schema declares can be silently
-    dropped by a change of layout. What each glyph stands for is :func:`legend`'s.
+    The accounting that makes the four question regions safe to write is unchanged: a
+    section no region reads still reports itself here, so nothing the schema declares can be
+    silently dropped by a change of layout. What changed is which half is spoken. Naming all
+    twelve spent a standing row of an operator's dashboard saying that twelve things are
+    normal, and a mark that is almost always present carries no information. The exceptions
+    are the half worth a reader's attention, and an empty tuple is the statement that there
+    are none.
     """
-    return tuple(Cell(read.name, "", read.state) for read in reads.values())
-
-
-def legend() -> tuple[Cell, ...]:
-    """What the roster's three glyphs mean, spelled once rather than twelve times.
-
-    Twelve copies of :data:`board_wall.ABSENT_TEXT` do not fit the strip's fixed height at
-    1920px, and a region that actually reads an absent section still prints the phrase in
-    full - this only names what a roster glyph carries.
-    """
-    return (
-        Cell("", "renders", BY_KEY[RENDERABLE]),
-        Cell("", "withheld, and says why", BY_KEY[WITHHELD]),
-        Cell("", ABSENT_TEXT, BY_KEY[ABSENT]),
+    return tuple(
+        Cell(read.name, ABSENT_TEXT if read.state.key == ABSENT else WITHHELD, read.state)
+        for read in reads.values()
+        if read.state.key != RENDERABLE
     )

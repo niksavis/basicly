@@ -112,7 +112,7 @@ def test_the_spend_figures_each_carry_the_unit_they_are_denominated_in() -> None
     value = board_footer.spend(_reads("wall-v1.json")).value
     assert value.startswith("machine-local"), "scope is drawn verbatim and first"
     assert "1,254.26 usd" in value, "a currency figure was drawn as a bare float"
-    assert "48,120,334 in" in value
+    assert "48.1M in" in value
 
 
 def test_the_agent_health_row_is_named_by_its_agent_and_not_by_its_index() -> None:
@@ -200,11 +200,20 @@ def test_the_priority_histogram_caps_a_vocabulary_the_schema_declines_to_close()
 
 
 def test_the_roster_covers_every_section_the_verdict_named_and_the_key_spells_absence() -> None:
-    """The accounting that lets a region read several sections or none without losing one."""
+    """The accounting that lets a region read several sections or none without losing one.
+
+    It now names only what did NOT draw. Naming all twelve spent a standing row saying twelve
+    things are normal, and a mark almost always present carries nothing; the audit purpose is
+    unchanged, because a section the schema declares and the producer omits is still named
+    here and cannot be dropped by a change of layout. The legend went with the glyphs it
+    existed to explain - each cell now carries its own word.
+    """
     reads = readings("no-phase-v1.json")
     roster = board_footer.inventory(reads)
-    assert [cell.label for cell in roster] == list(reads)
-    assert len(roster) == 12, "a section the schema declares is missing from the roster"
-    drawn = [cell.label for cell in roster if cell.state and cell.state.key == board_wall.ABSENT]
-    assert drawn == ["session", "lanes", "asks", "spend", "health", "graph"]
-    assert [cell.value for cell in board_footer.legend()][-1] == board_wall.ABSENT_TEXT
+    absent = ["session", "lanes", "asks", "spend", "health", "graph"]
+    assert [cell.label for cell in roster] == absent
+    assert all(cell.value for cell in roster), "a named section carries no word for why"
+    assert board_wall.ABSENT_TEXT in [cell.value for cell in roster]
+    # The control: a section that drew is deliberately not named, which is the whole change.
+    assert "backlog" not in [cell.label for cell in roster]
+    assert not hasattr(board_footer, "legend")

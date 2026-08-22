@@ -90,8 +90,8 @@ skips = ["B101"]
 # `width` are assigned on a ruamel `YAML()` instance (hooks.py:280,282), which reads
 # them from its own attributes, so no Python reference to either name exists to find.
 #
-# `border_style` and `kicker` are a third kind: fields of the board's own model that its
-# Jinja template reads and nothing under `src/` or `.scripts/` does. Vulture is pointed at
+# `border_style`, `kicker` and `working` are a third kind: fields of the board's own model
+# that its Jinja template reads and nothing under `src/` or `.scripts/` does. Vulture is pointed at
 # those two trees only, so a template read is invisible to it — `tests/test_board_regions.py`
 # is what actually holds them to their values. `generated_at` was one of these until
 # `board_render` began dating the throughput figure off it, at which point its entry stopped
@@ -133,6 +133,7 @@ ignore_names = [
   "tone",
   "untiered_metered_runners",
   "window_violations",
+  "working",
 ]
 
 # Module-size ratchet (basicly-u2hl.5). The gate is `.scripts/check_module_size.py`, wired

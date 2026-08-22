@@ -168,66 +168,6 @@ def test_a_phase_the_harness_does_not_declare_is_appended_rather_than_dropped() 
     assert next(phase.count for phase in phases if phase.name == "build") == 1
 
 
-def test_the_running_row_draws_one_card_per_lane_and_names_what_it_dropped() -> None:
-    """One card per lane, no reserved frames, and the cap still holds above six.
-
-    The reserved slot is the thing being removed: it kept the row's shape at one lane and at
-    six by announcing nothing in the other five, which on this repository's own wall is 40% of
-    the screen. The cap survives because six live lanes still have to fit the row.
-    """
-    cards, dropped, note = board_regions.flight(_reads("wall-v1.json"))
-    assert [card.title for card in cards] == [
-        "basicly-rbnz49",
-        "basicly-f3tked",
-        "basicly-7bur",
-        "basicly-4t9z",
-    ], "the row drew a slot the producer gave it no lane for"
-    assert not dropped and not note
-
-    lanes = [{"id": f"lane-{index}", "phase": "build"} for index in range(9)]
-    cards, dropped, _ = board_regions.flight(_reads("wall-v1.json", lanes=lanes))
-    assert len(cards) == board_regions.FLIGHT_SLOTS
-    assert dropped == f"+{9 - board_regions.FLIGHT_SLOTS} more lanes"
-
-
-def test_no_lane_dispatched_draws_no_card_and_says_which_of_its_two_silences_it_is() -> None:
-    """Three ways to have nothing running, and only one of them is a producer that measured.
-
-    The note is what the collapsed row prints in place of the cards, so it has to carry the
-    difference: a producer that omitted `lanes` said nothing about what is running, while one
-    that emitted an empty list said nothing is.
-    """
-    reads = _reads("wall-v1.json")
-    for empty, expected in (
-        (_reads("wall-v1.json", lanes=[]), "no lane is dispatched"),
-        (_absent("lanes", reads), board_wall.ABSENT_TEXT),
-    ):
-        cards, dropped, note = board_regions.flight(empty)
-        assert cards == (), "a collapsed row still reserved a card"
-        assert not dropped
-        assert note == expected
-
-
-def test_a_lane_card_draws_a_context_bar_only_when_both_of_its_terms_are_there() -> None:
-    """`context_used` and `context_window` travel together, and one alone draws no bar."""
-    cards, _, _ = board_regions.flight(_reads("wall-v1.json"))
-    paired = next(card for card in cards if card.title == "basicly-rbnz49")
-    lonely = next(card for card in cards if card.title == "basicly-4t9z")
-    assert next(cell.bar for cell in paired.cells if cell.label == "context") is not None
-    assert next(cell.bar for cell in lonely.cells if cell.label == "context") is None
-    assert (
-        next(cell.value for cell in lonely.cells if cell.label == "context") == board_wall.UNKNOWN
-    )
-
-
-def test_a_lane_that_is_not_live_is_marked_on_two_channels() -> None:
-    """A dashed border and a different glyph, not only a colour."""
-    cards, _, _ = board_regions.flight(_reads("wall-v1.json"))
-    live = next(card for card in cards if card.title == "basicly-rbnz49").state
-    last_known = next(card for card in cards if card.title == "basicly-4t9z").state
-    assert (live.glyph, live.border_style) != (last_known.glyph, last_known.border_style)
-
-
 def test_the_ready_set_is_ranked_with_priority_and_id_and_title() -> None:
     """Ranked rather than merely listed: an unordered ready set is a list nobody can act on."""
     listing = board_regions.next_up(_reads("wall-v1.json"))
