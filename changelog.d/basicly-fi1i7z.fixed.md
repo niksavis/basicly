@@ -13,7 +13,7 @@
   quoted as a rejection. Within that block the reason is chosen by what a line claims rather than
   by where it sits: the first design took the block's tail, and real output refuted it, because
   this repository's `pre-commit-script` hook wraps the whole verify suite and its block ends on a
-  list of the checks it ran while the answer - `checks failed: 29/32 passed ... (failed: ...)` -
+  list of the checks it ran while the answer - `checks failed: 28/32 passed ... (failed: ...)` -
   sits six lines earlier. A failure with no hook chain in it keeps the old wording, since
   `git rev-parse` has no check to name.
 

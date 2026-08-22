@@ -7,7 +7,7 @@
 # `tests/test_checkout.py` print `command failed (1): <argv>` followed by that warning and
 # nothing else.
 #
-# `src/basicly/merge.py` +204: `_verify_reasons`, which carries each failed check's own remedy
+# `src/basicly/merge.py` +202: `_verify_reasons`, which carries each failed check's own remedy
 # into the `verify-failed` detail. The output was already captured by the `rerun_failures` call
 # above it for the unreliable-failure tests, so `release-notes` had already written the exact
 # `changelog.d/<id>.<category>.md` to create and the landing threw it away.
@@ -17,18 +17,17 @@
 # shape — a failure with passing hooks after it — because a single-hook fixture passes under the
 # defective code. The merge test asserts the remedy string, not the check name.
 #
-# The new module and its test file are under the cap and need no entry. The comment-density
-# waiver on `src/basicly/gate_failure.py` is the one debt: 51.7% of a 2,208-token module whose
-# prose is the two output formats it parses, both read off their producers. Trimming reached
-# 51.7% from 61.5% by deleting restatement; the remaining ~74 tokens would have to come out of
-# the observed-format evidence or the incident record, which is what the gate says to keep.
+# `checkout.py` (+1,795, to 3,985 of 4,000) and `verify.py` (+266, to 4,708 of 5,436) absorb the
+# two readers and need no entry. They are not one new module because `.importlinter` is
+# `exhaustive = True`, so a new module must edit it, and a live lane (basicly-rn0o.6) declares
+# that file: the landing's scope-collision check refuses the diff. The split is the honest one
+# either way — a check's remedy belongs with `CheckResult`, and the hook-chain reader is
+# `checkout.run`'s own error path, which is what every gated git command in the engine goes
+# through.
 [ratchet.module_size]
 rebaseline_reason = "one regression test each in two test modules at 0 tokens of headroom, and the remedy-carrying branch in merge.py"
 
 [ratchet.module_size.rebaselined]
-"src/basicly/merge.py" = 204
+"src/basicly/merge.py" = 202
 "tests/test_commit.py" = 365
 "tests/test_merge.py" = 356
-
-[ratchet.comment_density]
-count_delta = +1

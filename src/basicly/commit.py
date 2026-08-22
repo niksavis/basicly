@@ -27,7 +27,7 @@ import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import gate_failure, loop_state, run_record, tracker
+from . import checkout, loop_state, run_record, tracker
 from .worktree import git, main_checkout
 
 MIN_DESCRIPTION_LENGTH = 3
@@ -596,4 +596,4 @@ def _rejection(root: Path, output: str) -> str:
     audit a check that had passed (basicly-fi1i7z). It stays for the staging failure above,
     where git writes one line and no chain runs.
     """
-    return gate_failure.summarise(output, repo_root=root) or _tail(output)
+    return checkout.gate_refusal(output, repo_root=root) or _tail(output)

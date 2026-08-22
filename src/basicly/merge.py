@@ -65,7 +65,6 @@ from pathlib import Path
 from . import (
     base_lock,
     decompose,
-    gate_failure,
     owned_store,
     policy,
     rebase,
@@ -367,7 +366,7 @@ def _verify_reasons(rerun: verify.VerifyReport) -> str:
     for result in rerun.results:
         if result.status != "fail":
             continue
-        if remedy := gate_failure.check_remedy(result.output, result.name):
+        if remedy := verify.check_remedy(result.output, result.name):
             named.append(f"{result.name}: {remedy}")
     return "; ".join(named)
 

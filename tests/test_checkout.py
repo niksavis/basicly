@@ -1,8 +1,13 @@
-"""Tests for where a checkout stands in git's worktree layout.
+"""Tests for where a checkout stands in git's worktree layout, and for what refused.
 
 Driven against a real git repo rather than a stubbed ``git``: every answer here
 is a reading of ``rev-parse``/``worktree list`` output, so a fake would be
 asserting this module's idea of git rather than git's.
+
+The refusal fixtures below hold to the same rule and are **observed**: the chain
+text is what ``uv run pre-commit run --all-files`` printed in this worktree on
+2026-08-22. An invented fixture is how a parser comes to key on text its producer
+never emits.
 """
 
 from __future__ import annotations
@@ -203,3 +208,69 @@ def test_a_failure_that_ran_no_hooks_keeps_the_plain_wording(tmp_path: Path) -> 
     message = str(raised.value)
     assert "command failed (1)" in message
     assert "fatal: not a git repository" in message
+
+
+# This repo's own hook wraps the whole verify suite, so its block ends on a list of check
+# names while the answer sits earlier. The tail heuristic this refuted was the first design.
+_SUITE_CHAIN = """pre-commit-script........................................................Failed
+- hook id: pre-commit-script
+- exit code: 1
+
+FAILED: comment-density (1.07s)
+checks failed: 28/32 passed in 22.47s (failed: comment-density)
+==> ruff
+==> mermaid
+
+protect-generated-commit.................................................Passed
+"""
+
+_ONLY_PASSES = "identity-guard...........................................................Passed\n"
+
+
+def test_only_the_failing_hook_becomes_a_refusal() -> None:
+    """Two hooks passed after the failure in `_CHAIN`; neither is a refusal."""
+    assert [r.check for r in checkout.refusals(_CHAIN)] == ["markdownlint"]
+
+
+def test_the_reason_is_the_stated_verdict_not_the_tail_of_the_block() -> None:
+    """A hook that wraps a suite states its verdict before it lists what it ran."""
+    (refusal,) = checkout.refusals(_SUITE_CHAIN)
+    assert refusal.check == "pre-commit-script"
+    assert "checks failed: 28/32" in refusal.reason
+    assert "==> mermaid" not in refusal.reason
+
+
+def test_output_with_no_hook_chain_is_left_to_its_caller() -> None:
+    """None is "not my question", and is distinct from the admission below."""
+    assert checkout.ran_hooks("fatal: not a git repository") is False
+    assert checkout.gate_refusal("fatal: not a git repository") is None
+
+
+def test_an_unidentifiable_refusal_says_so_and_names_where_the_output_went(
+    tmp_path: Path,
+) -> None:
+    """The honest fallback: a chain ran, nothing in it failed identifiably."""
+    summary = checkout.gate_refusal(_ONLY_PASSES, repo_root=tmp_path)
+    assert summary is not None
+    assert "names no failing check" in summary
+    assert checkout.GATE_OUTPUT_DUMP.as_posix() in summary
+    assert (tmp_path / checkout.GATE_OUTPUT_DUMP).read_text(encoding="utf-8") == _ONLY_PASSES
+
+
+def test_the_dump_is_not_named_when_it_could_not_be_written() -> None:
+    """A message naming no path is degraded; losing the refusal to an OSError is not."""
+    summary = checkout.gate_refusal(_ONLY_PASSES)
+    assert summary is not None
+    assert "it was not captured" in summary
+    assert checkout.GATE_OUTPUT_DUMP.as_posix() not in summary
+
+
+def test_a_reformatting_hook_reports_the_only_line_it_printed() -> None:
+    """A formatter fails with this annotation and frequently no output at all."""
+    chain = (
+        "ruff-format..............................................................Failed\n"
+        "- hook id: ruff-format\n"
+        "- files were modified by this hook\n"
+    )
+    (refusal,) = checkout.refusals(chain)
+    assert refusal.reason == "files were modified by this hook"
