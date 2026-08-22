@@ -339,7 +339,11 @@ name = "pytest"
 # cores: `-n auto` ran 2119 passed in 17.5s with zero lock failures, and again in
 # 19.3s under 1297 concurrent writes against the same machine; the lock it named did
 # not exist. See basicly-m4zv.14. Re-measure before trusting either number elsewhere.
-command = ["pytest", "-q", "-n", "4"]
+# `--durations` is an instrument, not a limit: it prints and changes nothing. It is here
+# rather than in a CI-only flag because the number it answers - which tests are slow, and
+# on which platform - is one no local run can produce for another. windows-latest took
+# 5h57m against ubuntu's 113s and no log said which test spent it (basicly-t31pvf).
+command = ["pytest", "-q", "-n", "4", "--durations=25"]
 modes = ["full"]
 
 # The five projection gates, run locally (basicly-m4zv.11). They were CI-only,

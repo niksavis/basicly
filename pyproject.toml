@@ -46,6 +46,14 @@ addopts = ["--import-mode=importlib"]
 # behind. Numbered-run retention stays at pytest's default of 3.
 tmp_path_retention_policy = "failed"
 
+# A test over this dumps every thread's stack and keeps going. Chosen over `--durations`
+# alone because durations print at the end and a job killed on its timeout never reaches
+# them: windows-latest ran 5h57m against ubuntu's 113s and no artifact said which test
+# spent it. This writes while the run is still going, so a killed job still names the
+# culprit. 60s is far above this suite's slowest test (15.8s, `board --out` folding the
+# real ledger), so a dump means something is wrong rather than merely slow.
+faulthandler_timeout = "60"
+
 # Type checking (basicly-u2hl.15). Both `include` and `exclude` are spelled out
 # because pyright's defaults silently drop the two trees with the widest blast
 # radius: the default `exclude` is `["**/node_modules", "**/__pycache__", "**/.*"]`,
@@ -428,6 +436,13 @@ waiver_count = 2
 "docs/requirements/factory-loop.md" = 12
 "docs/requirements/harness-board.md" = 9
 "docs/research/2026-07-26-sota-review.md" = 3
+# A dated design record imported from a harness branch that outlived the board it designed
+# (basicly-rn0o.6 cites it by name). Its 11 *stale* citations were repaired rather than banked,
+# because that table is closed: each `file:line` became the symbol it meant, which is what a
+# line number was standing in for and does not drift. These 9 name no symbol at all, so there
+# is nothing to repoint them to without rewriting sentences in a record of what was decided on
+# 2026-08-14. Banked at its arriving count, which may only fall.
+"docs/research/2026-08-14-harness-board-design.md" = 9
 "docs/research/2026-08-17-archify-visualization.md" = 2
 
 [tool.code_citations]

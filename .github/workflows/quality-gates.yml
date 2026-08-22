@@ -84,6 +84,13 @@ jobs:
   quality-gates:
     name: Quality gates on ${{ matrix.os }}
     needs: commit-messages
+    # ubuntu runs this in ~3 minutes and macos in ~4, so 30 is headroom rather than a
+    # budget. It exists because a job with no timeout runs to the runner's 6-hour limit,
+    # and GitHub serves no log for a job until its whole run finishes: windows-latest sat
+    # at 5h57m on every push for two days, and the ubuntu failure underneath it was
+    # unreadable the entire time. A slow job must fail while somebody is still looking
+    # (basicly-t31pvf).
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
