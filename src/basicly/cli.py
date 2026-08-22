@@ -69,6 +69,7 @@ from .config import (
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
     LOCAL_CONFIG_FILE,
+    MODEL_TIERS,
     VERIFY_MODES,
     WORK_TYPES,
     ProjectPaths,
@@ -3324,6 +3325,10 @@ def _apply_session_overrides(repo_root: Path, args: argparse.Namespace) -> tuple
         if autonomy not in AUTONOMY_LEVELS:
             raise ValueError(f"unknown autonomy level {autonomy!r}; one of {list(AUTONOMY_LEVELS)}")
         pending.append(("policy", "autonomy", autonomy))
+    if tier := getattr(args, "tier", None):
+        if tier not in MODEL_TIERS:
+            raise ValueError(f"unknown model tier {tier!r}; one of {list(MODEL_TIERS)}")
+        pending.append(("runner", "default_tier", tier))
     for section, key, value in pending:
         session_config.set_override(section, key, value)
     return session_config.override_pairs()
@@ -4646,11 +4651,17 @@ def _add_rubric_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_session_override_args(parser: argparse.ArgumentParser) -> None:
-    """Add the per-invocation ``--runner``/``--autonomy`` overrides (basicly-nvm1).
+    """Add the per-invocation ``--runner``/``--autonomy``/``--tier`` overrides (basicly-nvm1).
 
     Shared by every loop subcommand that can dispatch an agent, so the choice is
     answerable per invocation instead of only by the committed config — which is what
     forced one key to serve both the supervised and the interactive mode.
+
+    ``--tier`` joins the pair on the same ground (basicly-pmhmsp): a capability tier is
+    the third thing an operator picks for one run, and picking it meant editing
+    ``[runner] default_tier`` — which :mod:`basicly.session`'s own docstring names as the
+    wrong answer, because it changes behaviour for every consumer. It selects the tier for
+    the whole pass and not per lane; ``runner.select_runner`` resolves one spec a round.
     """
     parser.add_argument(
         "--runner",
@@ -4662,6 +4673,14 @@ def _add_session_override_args(parser: argparse.ArgumentParser) -> None:
         choices=AUTONOMY_LEVELS,
         help="Grantable autonomy ceiling for this invocation only, overriding "
         "[policy] autonomy without editing any committed config",
+    )
+    parser.add_argument(
+        "--tier",
+        choices=MODEL_TIERS,
+        help="Capability tier every lane of this invocation dispatches at, overriding "
+        "[runner] default_tier without editing any committed config; the tier resolves "
+        "to a concrete model per vendor and surface, and resolves to nothing rather than "
+        "to a neighbouring tier where it has none",
     )
 
 

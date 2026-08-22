@@ -1,0 +1,32 @@
+# A run can choose its model tier (basicly-pmhmsp).
+#
+# `loop supervise` took `--runner` and `--autonomy` and no way to name a capability
+# tier, so dispatching at `maximum` - `claude-fable-5` on anthropic - meant editing
+# `[runner] default_tier`. `session.py`'s own docstring names that as the wrong answer:
+# it changes behaviour for every consumer. `--tier` joins the pair on the same
+# mechanism, validated before applying and recorded in every run record for free.
+#
+# ## module_size: cli.py rebaselined, not waived
+#
+# The flag costs `src/basicly/cli.py` 266 tokens: one argparse argument in the shared
+# session-override helper, one validated branch beside the other two, one import, and
+# the two docstring paragraphs that say the tier is per pass and not per lane.
+#
+# Rebaselined rather than waived, and the distinction is load-bearing. A waiver
+# REPLACES a frozen entry outright, so waiving this module would delete its 54336-token
+# ceiling - 13x the cap - to buy 266 tokens, and license unbounded growth in exchange.
+# Rebaselining raises the recorded figure by what was actually added, stays counted, and
+# prints on the pass line.
+#
+# No split was available. The module is one connected component under a reference walk:
+# every candidate cut leaves a caller behind, which is why its frozen figure is 13x the
+# cap in the first place. The gate's own graduated remedy says so - at or above 2x the
+# cap it asks only that the module not grow, deliberately, because charging a 13x
+# module's decomposition as a toll on the next edit stopped a lint adoption dead on
+# 2026-08-08.
+[ratchet]
+base_commit = "efb8c07cf859b642fc11f9a8b46ef61cbdd08c2d"
+
+[ratchet.module_size]
+rebaselined = { "src/basicly/cli.py" = 54602 }
+rebaseline_reason = "one session-override flag in the shared helper: an argparse argument, a validated branch beside --runner and --autonomy, an import, and the two paragraphs stating the tier is per pass rather than per lane. No split exists - the module is one connected component - and a waiver would delete its 54336-token ceiling to buy 266 tokens."
