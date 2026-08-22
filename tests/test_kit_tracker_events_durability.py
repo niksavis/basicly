@@ -186,7 +186,10 @@ def test_a_durable_append_reports_success_without_an_fsync(
 
     assert len(written) == 5
     assert calls == [], f"the append path now syncs: {calls}"
-    handle = os.open(str(tmp_path / events.INITIAL_LOG_NAME), os.O_RDONLY)
+    # Opened for write because the control has to survive both platforms: `fsync` on a
+    # read-only descriptor is legal on POSIX and is `EBADF` on Windows, where it maps to
+    # `_commit`, so `O_RDONLY` made the control itself the failure (basicly-t31pvf).
+    handle = os.open(str(tmp_path / events.INITIAL_LOG_NAME), os.O_RDWR)
     try:
         os.fsync(handle)
     finally:

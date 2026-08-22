@@ -299,7 +299,16 @@ def test_the_gate_fails_end_to_end_on_a_heading_that_went_away(tmp_path: Path) -
             [sys.executable, copied], capture_output=True, text=True, check=False, cwd=tmp_path
         )
 
-    assert run().returncode == 0
+    # Positive control on the fixture, not on the gate: a run that reads no module reports no
+    # citation and exits 0, so the green below would mean nothing and the red after it would
+    # name the wrong cause. On windows-latest both runs read `0 module(s)` and the only thing
+    # said was `assert 0 == 1`, which sent a reader to the gate rather than to the tree it was
+    # handed (basicly-t31pvf).
+    baseline = run()
+    assert baseline.returncode == 0
+    assert "in 0 module(s)" not in baseline.stdout, (
+        f"the fixture repo lists no tracked module, so this asserts nothing: {baseline.stdout}"
+    )
     document.write_text(SPEC.replace("### 4.6 The aggregate", "### The aggregate"))
     completed = run()
 
