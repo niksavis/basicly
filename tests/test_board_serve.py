@@ -110,12 +110,14 @@ def test_the_listener_binds_the_loopback_and_never_a_wildcard_or_a_name(board_re
 
 
 def test_the_two_get_routes_answer_and_a_post_is_405(board_repo: Path) -> None:
-    """AC 6: the action surface is a separate unit and must not appear here.
+    """AC 6, and `basicly-rn0o.6`'s AC 7 once the action surface landed: a read-only board.
 
-    405 rather than the base class's 501, because 501 reads as "not implemented yet" and this
-    resource is never going to take a POST.
+    `actions=False` is spelled rather than left to the default, because the default is now a
+    board that registers the action route - so this asserts the read-only board and not merely
+    whatever `bind` happens to construct. 405 rather than the base class's 501: 501 reads as
+    "not implemented yet", and this resource is not going to take a POST.
     """
-    with _running(board_serve.bind(board_repo, port=0)) as listener:
+    with _running(board_serve.bind(board_repo, port=0, actions=False)) as listener:
         status, body, headers = _get(f"{listener.url}/snapshot.json")
         assert status == 200
         assert json.loads(body)["schema"] == board_schema.VERSION

@@ -1,12 +1,13 @@
-"""Serve the board on the loopback for a wall display: Mode B, GET only (basicly-rn0o.5).
+"""Serve the board on the loopback for a wall display: Mode B (basicly-rn0o.5, basicly-rn0o.6).
 
 Three properties are this module, and each is a refusal rather than a feature. The listener
 binds :data:`HOST` and nothing else, so a screen in an engineering room is driven by a browser
-on the same machine and never by anything on the network. Every route is a GET and a POST is
-405, because the action surface is a separate unit and a display anyone in the room can touch
-must not be able to kill a lane. And the process writes nothing at all - no lock, no snapshot
-file, no path under `.basicly/ledger/` - so a board can never fail a landing, and the stop
-line's "No state was written" is a fact rather than a hope.
+on the same machine and never by anything on the network. The only POST route is the one
+:mod:`basicly.board_actions` owns, absent under `--no-actions`, because a display anyone in the
+room can touch must not be able to kill a lane; any write an action causes is the engine's own
+command making it. And this process writes nothing at all - no lock, no snapshot file, no path
+under `.basicly/ledger/` - so a board can never fail a landing, and the stop line's "No state
+was written" is a fact rather than a hope.
 
 **Who produces is decided per tick, not per process.** While the supervisor lock is fresh, the
 supervisor is already folding a snapshot on its own beat, so this process serves that file's
@@ -33,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
-from . import board_render, board_schema, board_snapshot, supervise, ui
+from . import board_actions, board_render, board_schema, board_snapshot, supervise, ui
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -105,8 +106,11 @@ class Board:
         *,
         refresh_s: float = DEFAULT_REFRESH_S,
         build: Callable[[], dict[str, object]] | None = None,
+        actions: board_actions.ActionSurface | None = None,
     ) -> None:
-        """Hold *repo_root*, the cadence and how to build; no I/O until a refresh.
+        """Hold *repo_root*, the cadence, how to build and what may be acted on.
+
+        *actions* is None for a read-only board: no surface, no POST route, and no panel.
 
         **`build` comes from above, and its absence was a real defect**: folding with the
         lock facts alone served 0 phases of 232 where `board --out` served 232.
@@ -116,6 +120,7 @@ class Board:
         self.repo_root = repo_root
         self.refresh_s = refresh_s
         self._build = build
+        self.actions = actions
         self.refreshes = 0
         self.failures = 0
         self._served: bytes | None = None
@@ -202,7 +207,8 @@ class Board:
         verdict = board_schema.verdict(self.repo_root, document)
         if not verdict.readable:
             return None
-        return board_render.page(document, verdict, now=now).encode("utf-8")
+        drawn = board_render.page(document, verdict, now=now)
+        return board_actions.inject(drawn, self.actions).encode("utf-8")
 
     def producer(self) -> str:
         """The transcript's `producer` line: which process writes the document being served."""
@@ -220,12 +226,7 @@ class Board:
 
 
 class _Handler(BaseHTTPRequestHandler):
-    """Two GET routes, and 405 for the method that would mutate something.
-
-    ``do_POST`` is spelled out rather than left to the base class, whose answer is 501. The
-    difference is the whole of AC 6: 501 says this server has not implemented POST and a later
-    build will, while 405 says this resource does not take one.
-    """
+    """Two GET routes, and the action surface's POST where a board registered one."""
 
     @property
     def board(self) -> Board:
@@ -246,19 +247,15 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
-        """405 carrying an `Allow`, so a client learns the route exists and takes GET only."""
-        self.send_response(HTTPStatus.METHOD_NOT_ALLOWED)
-        self.send_header("Allow", "GET")
-        self.send_header("Content-Length", "0")
-        self.end_headers()
+        """Whatever the action surface answers, or 405 where this board registered none."""
+        board_actions.handle_post(self, self.board.actions)
 
     def _send(self, body: bytes | None, content_type: str, *, reload: bool = False) -> None:
         """One response, or 503 while the producer has not landed a document yet.
 
         503 rather than 404 because the route exists and will answer; it is the document that
         does not exist. *reload* sets the `Refresh` header, which is how the page re-fetches on
-        the cadence without a line of script in it - Mode A's page is byte-identical to the one
-        served here, and a self-refreshing artifact on disk would be the wrong claim.
+        the cadence with no script in it, and which Mode A's artifact on disk cannot claim.
         """
         if body is None:
             self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "no board snapshot yet")
@@ -332,6 +329,7 @@ def bind(
     port: int = DEFAULT_PORT,
     refresh_s: float = DEFAULT_REFRESH_S,
     build: Callable[[], dict[str, object]] | None = None,
+    actions: bool = True,
 ) -> Listener:
     """Bind :data:`HOST` and fold the first document; a listener that is not yet serving.
 
@@ -339,7 +337,8 @@ def bind(
     arrive: `--port 0` is the documented way to run a second board or a test, and polling a
     fixed port until it opens is exactly the flake that avoids.
     """
-    board = Board(repo_root, refresh_s=refresh_s, build=build)
+    surface = board_actions.ActionSurface(repo_root) if actions else None
+    board = Board(repo_root, refresh_s=refresh_s, build=build, actions=surface)
     board.refresh()
     return Listener(_httpd=_Server((HOST, port), board), board=board)
 
@@ -356,6 +355,7 @@ def serve(
     port: int = DEFAULT_PORT,
     refresh_s: float = DEFAULT_REFRESH_S,
     build: Callable[[], dict[str, object]] | None = None,
+    actions: bool = True,
 ) -> int:
     """Run the board until SIGINT, then report what it did; the exit code.
 
@@ -364,7 +364,7 @@ def serve(
     not a stream nobody reads.
     """
     try:
-        listener = bind(repo_root, port=port, refresh_s=refresh_s, build=build)
+        listener = bind(repo_root, port=port, refresh_s=refresh_s, build=build, actions=actions)
     except OSError as exc:
         ui.warn(f"board: cannot listen on {HOST}:{port} - {exc}")
         return 1
@@ -372,7 +372,7 @@ def serve(
         f"board: serving {board_schema.VERSION} on {listener.url}  ({HOST} only; Ctrl-C to stop)"
     )
     ui.say(listener.board.producer())
-    ui.say("board: actions   none - this build answers GET only")
+    ui.say(board_actions.transcript(listener.board.actions))
     ui.say("board: press Ctrl-C to stop. This process holds no lock and blocks no gate.")
     stop = threading.Event()
     threading.Thread(target=_tick, args=(listener.board, stop), daemon=True).start()
