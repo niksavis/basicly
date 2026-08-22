@@ -338,6 +338,38 @@ def test_an_unknown_runner_is_refused_rather_than_silently_ignored(tmp_path: Pat
 # in either order, and without either test naming the other.
 
 
+# --- The tier override (basicly-pmhmsp) --------------------------------------
+
+
+def test_a_named_tier_reaches_the_runner_config(repo: Path) -> None:
+    """`--tier` selects the tier for the pass and writes no file."""
+    args = argparse.Namespace(runner=None, autonomy=None, tier="maximum")
+    assert cli._apply_session_overrides(repo, args) == ("runner.default_tier=maximum",)
+    assert load_runner_config(repo).specs[0].tier == "maximum"
+    assert (repo / "basicly.toml").read_text(encoding="utf-8") == CONFIG
+
+
+def test_an_unknown_tier_is_refused_before_anything_is_overridden(repo: Path) -> None:
+    """A valid flag beside an invalid one leaves no half-applied pair, per basicly-tcmy.22."""
+    args = argparse.Namespace(runner="manual", autonomy=None, tier="titanium")
+    with pytest.raises(ValueError, match="unknown model tier"):
+        cli._apply_session_overrides(repo, args)
+    assert session.override_pairs() == ()
+
+
+def test_no_tier_flag_leaves_the_committed_default_alone(repo: Path) -> None:
+    """The control: absence of the flag is not an override of it to anything."""
+    args = argparse.Namespace(runner=None, autonomy=None, tier=None)
+    assert cli._apply_session_overrides(repo, args) == ()
+    assert "default_tier" not in str(session.override_pairs())
+
+
+def test_a_tier_override_is_recorded_on_the_run_record(repo: Path) -> None:
+    """Read off a built record, not the registry: the record is what a later reader has."""
+    cli._apply_session_overrides(repo, argparse.Namespace(runner=None, autonomy=None, tier="low"))
+    assert _record().config_overrides == ("runner.default_tier=low",)
+
+
 def test_no_test_inherits_the_process_globals_left_by_another_first_half() -> None:
     """Half of a pair; see the comment above.
 
