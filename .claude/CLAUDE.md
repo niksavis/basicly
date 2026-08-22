@@ -104,7 +104,7 @@ uv run basicly permissions-check
 
 - Minimal diffs; no unrelated refactors.
 - Solve the stated requirement only — no speculative abstractions, no unrequested config.
-- Reuse > reinvent: grep for the helper, skill or gate before proposing one; absence needs a probe.
+- Reuse > reinvent: prove a capability absent before building it; the authority is the code that reads it, not the docs or `--help`.
 - Root cause, not symptom: check other call sites before calling a single-site patch complete.
 - Back claims with evidence: files read · commands run · tests.
 - No dead code, debug prints, or silent error swallowing.
@@ -153,7 +153,3 @@ uv run basicly permissions-check
 - Use non-interactive flags (`cp -f`, `mv -f`, `rm -f`, package-manager `-y`, `ssh -o BatchMode=yes`) for ops that can hang on a prompt — some shells alias these to interactive mode.
 - Never loop over an unquoted variable (`for x in $LIST`): zsh does not word-split, so it runs once with the whole string and the silent no-op looks like success. Use an inline list, an array (`for x in "${arr[@]}"`), or one batch command — then check the count actually changed.
 - Name the expected site count before a scripted multi-site replace, and reconcile after. More sites than named means it also matched the definition the replacement refers to, rewriting it into a call to itself; a count delta is a stop, not a footnote.
-
-## Tool Usage
-
-- Retrieval ladder: find files by name, localize with focused search, read only the ranges you need; don't bulk-load unrelated files.
