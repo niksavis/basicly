@@ -70,10 +70,39 @@ Test quality is out of scope — `test-discipline` owns it.
 - The check: state what you did without naming the gate. "Split the collision
   reporting out of pass admission" is a fix; "got `cli.py` back under its
   baseline" is a score. If only the second sentence is available, you gamed it.
-- When no honest split exists, take the waiver instead: a column-0
-  `module-size-waiver: <reason>` comment in the file, in the same diff that
-  raises `waiver_count` under `[tool.module_size]` in `pyproject.toml`. A
-  stated waiver is reviewable; a fake split is not.
+- **Extracting is not free, and two in three natural cuts make it worse.**
+  Removing a unit raises the parent's prose share whenever the unit is
+  prose-*lighter* than the parent, so a cut that fixes `module-size` breaks
+  `comment-density`. Measured over 3,588 real top-level defs in the 68 frozen
+  oversized modules: only 34.4% are prose-heavier than their parent and so
+  satisfy both gates. Check that ratio for your candidate before you cut. This
+  binds only where a module is frozen in *both* tables — 17 of them today.
+- **Three legitimate routes when the cut does not exist. Rebaselining is the
+  usual one and is not a defeat.** Record it in `basicly.d/<record-id>.toml`
+  under `[ratchet.module_size]` or `[ratchet.comment_density]` as
+  `rebaselined`, with a non-empty `rebaseline_reason` and a `base_commit` that
+  is an ancestor of HEAD. It is counted and printed on the pass line, so it is
+  reviewable rather than silent. It is already used 50 times across 26 entries.
+  What is forbidden is only the *silent* raise: hand-editing `[tool.*.frozen]`
+  in `pyproject.toml`, or a `frozen` delta that loosens, are both refused.
+- **The waiver, when the module's prose genuinely is its contract.** A column-0
+  comment in the file, and it **must state a kind** or the gate refuses it:
+
+      # module-size-waiver: cohesion: <why this module is one responsibility>
+      # comment-density-waiver: cost(<record-id>): <what is owed back>
+
+  `cohesion` is permanent; `cost(<record-id>)` is debt and expires when that
+  record closes, policed by `.scripts/check_waivers.py`. A waiver with no kind
+  parses as unclassified and is rejected — *states no kind, so nothing says
+  whether this is permanent or owed back*. Count it in the same
+  `basicly.d/<record-id>.toml` with `count_delta`, **not** with `waiver_count`
+  in `pyproject.toml`, which is the shared anchor that bounced three of five
+  lanes on 2026-08-08 and which `basicly-ef7t` replaced.
+- **A waiver on a frozen module replaces its frozen entry outright**, so
+  waiving a module that sits far above the cap deletes its ceiling and
+  licenses unbounded growth. Rebaseline that one instead.
+- A stated waiver is reviewable; a fake split is not. But reach for the split's
+  ratio first, then rebaseline, then the waiver — in that order.
 
 ## Suppressions — `noqa`, and the `nosec` that does nothing
 
@@ -108,7 +137,8 @@ Test quality is out of scope — `test-discipline` owns it.
   added code lines against 10.5% mid-history. `comment-density` (basicly-wxr3) ratchets
   that share per module. The two rules meet on *content*: narration is deletable and is
   what the gate is for; a measurement, a vendor fact or a why is evidence and stays,
-  with `# comment-density-waiver: <reason>` for a module whose payload is provenance.
+  with `# comment-density-waiver: cohesion: <reason>` for a module whose payload is
+  provenance. The kind is not optional; a waiver without one is refused.
 - Never narrate the next statement. The Google convention this repo pins
   (`convention = "google"`) says "never describe the code" — and says it directly
   after requiring that complicated operations get a few lines of comment first, so
