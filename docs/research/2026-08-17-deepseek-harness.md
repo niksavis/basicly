@@ -1235,7 +1235,7 @@ is now false.
 
 | | Old pin (§12.1) | New pin | Command |
 | --- | --- | --- | --- |
-| Tag | `dsh-v0.1.0-rc.8` | **`dsh-v0.1.1-rc.2`** (intermediate: `dsh-v0.1.1-rc.1`) | `git ls-remote --symref origin HEAD` |
+| Tag | `dsh-v0.1.0-rc.8` | **`dsh-v0.1.1-rc.2`** (intermediate: `dsh-v0.1.1-rc.1`) | `git fetch --tags && git describe --tags --abbrev=0 origin/master` |
 | Commit | `141eb6fef8`, 2026-08-19T23:11:50+08:00 | **`b150a551b8`**, 2026-08-21T20:03:37+08:00 | `git log -1 --format=%cI <tag>` |
 | `package.json` | `0.1.0-rc.8` | **`0.1.1-rc.2`** | `git show <tag>:package.json` |
 | Tags in repo | 2 | **4** | `git tag \| wc -l` |
@@ -1374,3 +1374,25 @@ of `architecture.md`.
 - **The paper's page count, `/CreationDate` and Typst version (§10).** Only the byte length and HTTP
   status were re-checked, and both reproduce. The PDF was not re-parsed.
 - **Everything requiring `dsh` to run (§12.4's Q3).** Still unmeasured, and this pass did not run it.
+
+### 13.5 Second pass over this section, 2026-08-22
+
+`basicly-6oa3mt`. §13 was re-checked against the script that produced it, and every figure in 13.2
+was re-derived from the recorded output. Four of them were additionally re-run from the clone by a
+second path, sharing no step with the first: `git tag | wc -l` gives **4** with `dsh-v0.1.1-rc.2` as
+`git describe --tags --abbrev=0 origin/master`, `git ls-tree -r --name-only dsh-v0.1.1-rc.2 | wc -l`
+gives **7 903**, and `git rev-list --count dsh-v0.1.0-rc.8..dsh-v0.1.1-rc.2` gives **207**. The pin
+move, the tag count, the tree size and the distance are therefore each confirmed twice.
+
+**One command in 13's own table was wrong** and is corrected above: the Tag row cited
+`git ls-remote --symref origin HEAD`, which returns a SHA and a symbolic ref and *cannot* return a tag
+name. The tag figures were right; the instrument named beside them would not have produced them, so
+the next reader following the row literally would have concluded the section was unreproducible. The
+row now names the command that does.
+
+**The two `architecture.md` line citations in 13.3 reproduce as stale, exactly as recorded.**
+`sed -n '558,560p' docs/architecture/architecture.md` returns three lines of a mermaid diagram; the
+determinism sentence is at lines **365** and **568**; `sed -n '3296,3299p'` returns prose about
+`.scripts/docs_claim_layers.py`. The self-pin argument for dropping those rows is confirmed, not
+merely asserted — and Appendix B.7 of `2026-07-26-sota-review.md` records a third instance of the
+same class inside the other document.

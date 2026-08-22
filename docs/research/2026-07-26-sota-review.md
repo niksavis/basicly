@@ -1416,14 +1416,16 @@ because the comparison above is against *that* branch: for `graphify` (`v8`) and
 from today's head would be a statement about a different branch.
 
 **Structural counts the review cites, re-counted at each head**
-(`gh api repos/<repo>/git/trees/HEAD?recursive=1 --jq '.tree[].path'`, then a path filter):
+`gh api repos/<repo>/git/trees/HEAD?recursive=1 --jq '.tree[].path'`, then the filter named in the
+row — spelled out rather than left as "a path filter", because the one figure here that moved is
+otherwise not reproducible:
 
-| Cited | § | Recorded | 2026-08-22 | |
-| --- | --- | --- | --- | --- |
-| addyosmani: skills / personas / slash commands | 2.3 | 24 / 4 / 8 | **24 / 4 / 8** | unchanged over 59 commits |
-| lattice: skills, in three tiers | 2.5 | 27, `atoms`/`molecules`/`refiners` | **27, same three** | pin identical; control |
-| gsd-core: named agents | 2.6 | 34 | **35** | +1 over 642 commits |
-| mattpocock: skills | 2.1 | — | 36 | not previously counted |
+| Cited | § | Recorded | 2026-08-22 | Filter | |
+| --- | --- | --- | --- | --- | --- |
+| addyosmani: skills / personas / slash commands | 2.3 | 24 / 4 / 8 | **24 / 4 / 8** | `grep -c '^skills/[^/]*/SKILL\.md$'`; `'^agents/[^/]*\.md$'`; `'^\.claude/commands/[^/]*\.md$'` | unchanged over 59 commits |
+| lattice: skills, in three tiers | 2.5 | 27, `atoms`/`molecules`/`refiners` | **27, same three** | `find skills -name SKILL.md \| wc -l`; `ls skills` — pin identical, read from the clone at `75b7e07` | control |
+| gsd-core: named agents | 2.6 | 34 | **35** | `grep -c '^agents/[^/]*\.md$'` | +1 over 642 commits |
+| mattpocock: skills | 2.1 | — | 36 | `grep -c '^skills/[^/]*/SKILL\.md$'` | not previously counted |
 
 The addyosmani count needed a corrected probe before it could be reported: `commands/*.md` returns
 **0** while `skills/` and `agents/` beside it return 24 and 4, and the zero is the probe — the slash
@@ -1438,13 +1440,13 @@ Verified **2026-08-22** on branch `harness/basicly-6oa3mt`.
 
 | Claim | § | Recorded 2026-07-26 | 2026-08-22 | Command |
 | --- | --- | --- | --- | --- |
-| Catalog entries | 6.1 | "~30" | **63** — 41 skills + 22 fragments | `find .basicly/core/skills -name skill.yaml \| wc -l`; same for `fragments/*.yaml` |
-| Descriptions routing rests on | 2.12 | 33 | **20** model-invoked, of 41 skills | `python -c "from basicly.routing_evals import _model_invoked_descriptions as d; print(len(d(Path('.'))))"` |
+| Catalog entries | 6.1 | "~30" | **63** — 41 skills + 22 fragments | `find .basicly/core/skills -name skill.yaml \| wc -l`; `find .basicly/core/fragments -name '*.fragment.yaml' \| wc -l` |
+| Descriptions routing rests on | 2.12 | 33 | **20** model-invoked, of 41 skills | `python -c "from pathlib import Path; from basicly.routing_evals import _model_invoked_descriptions as d; print(len(d(Path('.'))))"` |
 | Always-on baseline, Claude | 6.2 | ~9 000 cap, "roughly 1 000 characters of headroom" | cap 9 000, **8 893 used — 107 left** | `wc -m < .claude/CLAUDE.md` vs `max_size_warning` in `.basicly/core/targets/claude.yaml` |
 | Always-on baseline, Copilot | 6.2 | — | cap 9 000, **8 992 used — 8 left** | `wc -m < .github/copilot-instructions.md` |
 | Always-on baseline, Codex | 6.2 | — | cap **16 000** (was 12 000), 15 791 used — 209 left | `wc -m < AGENTS.md` vs `.basicly/core/targets/codex.yaml` |
 | Baseline in words | 6.2 | "on the order of 1 300 words" | **1 384** | `wc -w < .claude/CLAUDE.md` |
-| Tracker records | 2.10 | 330 | **1 049** (808 closed, 236 open) | `basicly tracker stats` |
+| Tracker records | 2.10 | 330 | **1 049** (808 closed, 236 open) — **volatile, see B.7** | `basicly tracker stats` |
 | `docs/` layout | 6.7 | "nine design documents" | **19 markdown files** across 6 directories | `find docs -name '*.md' \| wc -l` |
 | `architecture.md` | — | — | **4 808 lines** | `wc -l < docs/architecture/architecture.md` |
 | Routing rank-1 rate | 6.1 | not measured | **41/46 = 89.1%**, floor 85.0% | `basicly catalog lint` |
@@ -1490,7 +1492,9 @@ would land as a false statement about the code in the same repository.
    review's own §2.1 recommendation is shipped. This is also why the description corpus fell from 33
    to 20 (B.2) while the skill count grew.
 2. **§2.12: "we have no cross-skill check at all — every `catalog lint` rule inspects one file in
-   isolation."** **False.** The function that claim cites is `lint_catalog` (`src/basicly/catalog_lint.py:219-292`), and `catalog_lint.py:262` inside it is rule 9,
+   isolation."** **False.** The function that claim cites is
+   `lint_catalog`, `src/basicly/catalog_lint.py:198`, spanning 198–271 today — **not** the `219-292`
+   the claim gives, which no longer locates it (B.7). Line **262** inside it is rule 9,
    *"Tier-2 routing evals over the model-invoked set"*, delegating to `basicly.routing_evals` — a
    check over the whole description corpus, which is precisely the cross-skill check §2.12 says we
    do not have.
@@ -1546,8 +1550,9 @@ path fetched at HEAD via `gh api repos/<repo>/contents/<file> --jq .content | ba
 
 **Result: all 21 licence-bearing files are byte-identical between pin and HEAD** — the eighteen
 `LICENSE`/`LICENSE.md` files plus `NOTICE` for `graphify` and `symphony` and `NOTICE.md` for
-`hankweave-runtime`. Across up to 1 999 commits of upstream movement (B.1), **not one repo has
-relicensed**. Every conclusion in Appendix A §2 stands unchanged, including all three clean-room
+`hankweave-runtime`. **Twenty of the twenty-one were compared by the sweep that produced this row;
+the twenty-first was compared separately and afterwards — see B.7.** Across up to 1 999 commits of
+upstream movement (B.1), **not one repo has relicensed**. Every conclusion in Appendix A §2 stands unchanged, including all three clean-room
 boundaries:
 
 - **`beads_rust` (§2.1)** — the OpenAI/Anthropic rider is present at HEAD, unmodified, 159 commits
@@ -1567,3 +1572,69 @@ characterisation is right — the file opens `Apache License` and hashes identic
 re-checker following the sentence literally gets a file-not-found and has to decide whether the repo
 dropped its licence. That is the failure this appendix's own probe hit before the filename was
 corrected, which is why it is recorded rather than silently fixed.
+
+### B.7 What a second pass over this appendix changed
+
+`basicly-6oa3mt`, **2026-08-22**. B.1–B.6 were re-checked against the scripts that produced them
+rather than re-read. Five things did not survive that check. They are recorded here because three of
+them are the *instrument* rather than a finding, and a re-measurement whose commands do not run is not
+re-measurable by the next reader — which is the whole failure D-36 exists to prevent.
+
+1. **The licence sweep compared twenty files, not twenty-one.** Its repo list probed
+   `SouthBridgeAI/hankweave-runtime` at path `LICENSE`, which does not exist — the same slip B.6's own
+   closing paragraph corrects in Appendix A §2.3 — so that row returned `PIN-COPY-MISSING` and
+   `LICENSE.md` was never hashed. B.6's conclusion is nevertheless correct, and is now measured:
+
+   ```text
+   clone HEAD: 66a9921  (pin recorded: 66a9921)
+   LICENSE.md   IDENTICAL
+   NOTICE.md    IDENTICAL
+   LICENSE at HEAD -> HTTP 404, Not Found
+   ```
+
+   The 404 is the positive result, not a failed probe: there is no `LICENSE` in that repository at
+   HEAD either, so the Apache-2.0 text lives only at `LICENSE.md` and it has not moved. **All 21 are
+   now compared and all 21 are identical.** The clean-room boundary in Appendix A §2.3 stands on a
+   hash rather than on an inference.
+
+2. **Two commands in B.2 did not run as written.** The catalog-entry row gave the fragment count as
+   "same for `fragments/*.yaml`"; that glob matches **nothing**, because fragments sit one directory
+   deeper — `.basicly/core/fragments/` holds **nine subdirectories and zero files**. The figure 22 is
+   right; the command now shown produces it. The description-corpus row omitted
+   `from pathlib import Path`, so it raised `NameError` rather than printing 20. Both are corrected in
+   place, because a wrong instrument is not a finding worth preserving beside its own correction.
+
+3. **`catalog_lint.py:219-292` no longer locates `lint_catalog`.** The function spans **198–271** on
+   this branch and on `main` at `ca72a50`. Line 262 — rule 9, the cross-skill check that makes B.4's
+   claim false — is correct in both, so the finding is unaffected. The stale range is inherited from
+   the §6.1 claim being refuted, written 2026-07-26, and it is a third instance of exactly what §13.3
+   of the deepseek document calls a self-pin: a line citation into a file in the same repository ages
+   silently and points at the wrong code with no gate to catch it. **Absorption should carry the
+   symbol name, not the line range.**
+
+4. **The tracker-record figure is a live counter and must not be absorbed as a constant.** B.2 records
+   **1 049 (808 closed, 236 open)**, verified this morning. Re-run this afternoon, `basicly tracker
+   stats` printed **1 055 records, 811 closed, 239 open** — a drift of six inside one day, from the
+   seven tracker commits `main` landed past this branch's base. Re-run once more an hour later, after
+   merging that base in, it printed **1 055 records, 812 closed, 238 open**. Nothing is wrong with any
+   of the three readings, and the third is the argument: the sentence written here about drift drifted
+   before it was committed. The row's *shape* is wrong for `architecture.md`. What §2.10 needs is the
+   order-of-magnitude contrast with "330 records" — a threefold growth in four weeks — and that
+   survives all three readings, where the digits survive none of them.
+
+5. **B.1's structural-count table said "a path filter" and named no filter.** Of its four rows one had
+   moved — gsd-core 34 → **35** named agents — so that row was the only changed figure in either
+   document with no reproducible command behind it. Each row now carries its filter, and all four
+   re-derive: `grep -c '^agents/[^/]*\.md$'` gives 35, and the addyosmani triple gives **24 / 4 / 8**
+   against the same tree listing. This was found by running the demonstration rather than by reading:
+   the check that every changed figure names its command is the check that failed, once the probe was
+   tightened to reject a backticked SHA as a "command".
+
+**Unchanged by this pass.** B.1's eighteen pins, B.3's five unverifiable claims, B.4's other four
+droppable items and B.5's two counting defects were each re-derived from the recorded scripts and
+outputs in `.basicly/usage/scratch/` and reproduce as written. B.2's remaining eight rows were re-run
+directly: 41 skills, 22 fragments, 8 893 / 8 992 / 15 791 characters against caps 9 000 / 9 000 /
+16 000, 1 384 words, 19 markdown files under `docs/`, 4 808 lines of `architecture.md`, five
+`.claude/rules/*.md`, six `docs/how-to/` guides, `docs/tutorial/first-loop.md`, the
+**20 `model` / 21 `user`** invocation split, and `catalog lint` printing
+`routing: rank-1 rate 41/46 = 89.1% (floor 85.0%)`.
