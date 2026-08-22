@@ -266,8 +266,16 @@ def _lane_fact(
     per-dispatch, so carrying them forward prints last run's spend as this run's under a
     heading saying the lane runs now. `agent` and `model` do carry: a lane keeps its runner.
 
-    `tokens` has two sources and the live one wins while a lane runs, being the only figure
-    that moves during a dispatch. It over-reports the record it becomes, by a factor
+    `tokens` obeys the same rule as cost and occupancy rather than an exception to it: a
+    **live lane never shows a figure from a previous dispatch.** While a lane runs the live
+    stream is the only admissible source, and where it has nothing to say the card says
+    nothing. Two windows produce that silence and both must stay silent - a stream published
+    the instant a dispatch starts and not yet metered, which reports a real `0`, and a
+    producer that is not the supervisor and so cannot see the process-local streams at all.
+    Falling back on either hands the window to the last dispatch's total, which reads as a
+    lane that has already spent millions the second it starts.
+
+    Where the live figure does speak, it over-reports the record it becomes by a factor
     :mod:`supervise` measures, so it rises toward a known-larger number - the safe direction
     for a reader watching a budget.
     """
@@ -281,7 +289,7 @@ def _lane_fact(
         agent=view.last_agent or _text(last.get("agent")),
         live=view.live,
         started_at=view.last_run_at or "",
-        tokens=spent or view.last_tokens,
+        tokens=(spent or None) if live else view.last_tokens,
         branch=view.branch,
         model=_text(last.get("model")),
         note=doing.get(view.issue_id, ""),

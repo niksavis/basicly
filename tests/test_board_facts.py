@@ -323,3 +323,35 @@ def test_a_lane_that_has_reported_zero_tokens_states_no_spend_at_all() -> None:
     fact = board_facts._lane_fact(view, {"a": "build"}, {"a": 0}, {}, [])
     assert fact.tokens is None
     assert "tokens" not in board_sections.lanes([fact])[0]
+
+
+def test_the_zero_window_does_not_fall_through_to_a_previous_run() -> None:
+    """The zero window with something to fall back to, which is where it actually bit.
+
+    `test_a_lane_that_has_reported_zero_tokens_states_no_spend_at_all` pins the same window
+    on a lane with no run history, where a falsy test resolves to `None` by luck rather than
+    by rule. Give the lane a previous dispatch and the two stop agreeing: a falsy test hands
+    the window that dispatch's total, and the card reads as a lane that spent ten million
+    tokens in its first second.
+    """
+    fact = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {"a": 0}, {}, [])
+    assert _view("a", live=True).last_tokens == 11
+    assert fact.tokens is None
+
+
+def test_a_live_lane_never_shows_a_previous_dispatch_total() -> None:
+    """No stream to read is silence too, on the same rule as a stream reporting zero.
+
+    A producer that is not the supervisor cannot see the process-local streams at all, so
+    it holds nothing for a lane it can see is live. Falling back there prints the last
+    dispatch's total under a heading saying the lane runs now - the same failure as the
+    zero window, reached from the other side.
+    """
+    fact = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {}, {}, [])
+    assert fact.tokens is None
+
+
+def test_a_finished_lane_does_fall_back_to_its_last_recorded_run() -> None:
+    """The control: the fallback is not removed, it is confined to lanes that are not live."""
+    fact = board_facts._lane_fact(_view("a", live=False), {"a": "build"}, {}, {}, [])
+    assert fact.tokens == 11
