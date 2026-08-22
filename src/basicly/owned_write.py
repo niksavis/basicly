@@ -145,12 +145,12 @@ def _without_label_flags(args: Sequence[str]) -> list[str]:
 def _refuse_a_write_that_records_nothing(args: Sequence[str], drafts: Sequence[Any]) -> None:
     """Refuse a write whose translation produced no event at all.
 
-    ``cmd_write`` prints ``recorded:`` from no exception having been raised rather than
-    from what landed, so a write translating to nothing reported success and appended
-    nothing — measured on a flagless ``update``, which `mirror._update_drafts` translates
-    to an empty list (basicly-holhk4). Here and not in that translator because the defect
-    is the shape rather than the verb: any translation yielding nothing is a confirmation
-    about nothing, and this covers all seven.
+    ``cmd_write`` reports from what landed, and a translation yielding **nothing** lands
+    vacuously — every one of no events — so the empty case still reads as success and is
+    refused here. Measured on a flagless ``update``, which `mirror._update_drafts`
+    translates to an empty list (basicly-holhk4). Here and not in that translator because
+    the defect is the shape rather than the verb: any translation yielding nothing is a
+    confirmation about nothing, and this covers all seven.
 
     ``init`` and ``sync`` are exempt by construction: `mirror.UNMIRRORED_WRITES` is the set
     of writes that legitimately state nothing about a record.
@@ -251,8 +251,8 @@ def _refuse_a_retraction_of_an_absent_edge(
         )
 
 
-def append(repo_root: Path, args: Sequence[str]) -> None:
-    """Record on the owned ledger the fact *args* states.
+def append(repo_root: Path, args: Sequence[str]) -> bool:
+    """Record on the owned ledger the fact *args* states; False if it was already there.
 
     The echo is empty because no process ran, which is why ``create`` cannot come through
     here — its translation reads the reply for the minted id, and :func:`create` is that
@@ -277,13 +277,15 @@ def append(repo_root: Path, args: Sequence[str]) -> None:
             _refuse_a_write_that_records_nothing(args, drafts)
             refuse_a_write_to_an_absent_record(kit_module, ledger, " ".join(args), drafts)
             _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
-            events.append(
+            stamped = _stamped(kit_module, drafts)
+            landed = events.append(
                 ledger,
-                _stamped(kit_module, drafts),
+                stamped,
                 actor=resolved_actor(),
                 redact=redact.redact_committed,
                 held_lock=lock,
             )
+            return len(landed) == len(stamped)
     except (events.LedgerError, OSError, ValueError) as exc:
         raise TrackerDivergenceError(
             f"{' '.join(args)} did not reach the owned ledger: {exc}"
