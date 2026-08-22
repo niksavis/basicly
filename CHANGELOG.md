@@ -57,16 +57,15 @@ Delta: v0.8.0..v0.9.0
   resolves to nothing, so the pairing is a checked relation rather than a sentence in a document
   (`basicly-4kdm`, `basicly-u2hl.52`).
 
-A dispatched lane's transcript now names the tools each turn called, so a lane's token
-spend can be split into context acquisition and implementation. That split is what
-`basicly-ejdm` reasons about and had no instrument for: the claim that a lane's
-multi-million-token floor is "bought by the instruction" was unfalsifiable without it.
+- **A dispatched lane's transcript now names the tools each turn called**, so a lane's token
+  spend splits into context acquisition and implementation. That split is what `basicly-ejdm`
+  reasons about and had no instrument for: the claim that a lane's multi-million-token floor is
+  "bought by the instruction" was unfalsifiable without it.
 
-Claude only — codex emits no per-tool event this stack parses, and the report that
-consumes this must say so rather than implying coverage. A turn that called nothing
-records an empty list; a transcript line written before the field stays absent, so a
-reader can tell "called no tools" from "predates the measurement" rather than
-classifying the entire historical corpus as pure implementation.
+  Claude only — codex emits no per-tool event this stack parses, and the report that consumes
+  this must say so rather than implying coverage. A turn that called nothing records an empty
+  list; a transcript line written before the field stays absent, so a reader can tell "called no
+  tools" from "predates the measurement".
 
 - **`basicly tracker shadow` runs the work-tracker cutover's shadow differential against the
   live tracker.** Step 2 of `docs/design/work-tracker.md` §5 had every piece of machinery and
@@ -148,23 +147,22 @@ classifying the entire historical corpus as pure implementation.
   iteration — a landing bounce and a re-review of a three-line fix must not share a budget
   (`basicly-m4zv.6`).
 
-Five of the seven unbuilt handoff artifact kinds now have schemas: `classification`,
-`change-shape`, `verification-evidence`, `validation-transcript` and `release-record`.
-Their absence is why `validator`, `curator`, `retrospector` and `reviewer` were authored
-and unreachable — a role with no schema has nothing a state can validate, so no state
-dispatches it.
+- **Five of the seven unbuilt handoff artifact kinds now have schemas**: `classification`,
+  `change-shape`, `verification-evidence`, `validation-transcript` and `release-record`. Their
+  absence is why `validator`, `curator`, `retrospector` and `reviewer` were authored and
+  unreachable — a role with no schema has nothing a state can validate, so no state dispatches
+  it.
 
-Each is strict in the same way the two existing schemas are: `additionalProperties: false`
-at every object level, a `required` array naming every declared property, and
-`schema_version` pinned. `classification` is asserted against a payload built from
-`integrity.assign()` rather than a hand-written example, because a schema agreeing with an
-example someone wrote for it proves nothing.
+  Each is strict in the same way the two existing schemas are: `additionalProperties: false` at
+  every object level, a `required` array naming every declared property, and `schema_version`
+  pinned. `classification` is asserted against a payload built from `integrity.assign()` rather
+  than a hand-written example, because a schema agreeing with an example someone wrote for it
+  proves nothing.
 
-The requirements' artifact table said "Six schemas" while listing seven rows and omitting
-`release-record` entirely — corrected, with the row added. `solution-design` is the one
-remaining kind with no schema, and deliberately: D17 specifies it as markdown sections
-rather than a JSON payload, so whether it belongs to this family is an open question
-(`basicly-32qz`) rather than an omission.
+  The requirements' artifact table said "Six schemas" while listing seven rows and omitting
+  `release-record` entirely — corrected, with the row added. `solution-design` is the one
+  remaining kind with no schema, and deliberately: D17 specifies it as markdown sections rather
+  than a JSON payload, so that is an open question (`basicly-32qz`) rather than an omission.
 
 - **Every supervised dispatch now leaves a transcript.** A lane's `stream-json` output was read
   into memory, spent entirely on token accounting and dropped when the process exited: measured
@@ -379,53 +377,53 @@ rather than a JSON payload, so whether it belongs to this family is an open ques
   binds the next function that crosses instead of arriving with a backlog and an argument
   (basicly-u2hl.5).
 
-`validate` is a real loop phase, sequential after `verify` and before `ship`, with its
-own handler and an entry in `[policy.evidence]`. Its gate, `validate-as-consumer`, binds
-only where a unit's recorded `[harness-classification]` marker names L3 — L1 and L2 cross
-the state in the advance they always did, and a unit carrying no marker is unaffected, so
-work already in flight neither gains a rung nor is refused. A unit resting in `validate`
-counts against the downstream WIP bound.
+- **`validate` is a real loop phase**, sequential after `verify` and before `ship`, with its
+  own handler and an entry in `[policy.evidence]`. Its gate, `validate-as-consumer`, binds
+  only where a unit's recorded `[harness-classification]` marker names L3 — L1 and L2 cross
+  the state in the advance they always did, and a unit carrying no marker is unaffected, so
+  work already in flight neither gains a rung nor is refused. A unit resting in `validate`
+  counts against the downstream WIP bound.
 
-Two supporting fixes this rests on. The `verify` and `ship` rungs are now derived from the
-per-gate fields of `GateStatus` rather than the aggregate `can_advance`, so requiring a
-second gate no longer drops a merged unit back to `build` and re-runs a landing that
-already succeeded. And intake now passes the bead's declared `## Scope` to `classify`,
-which it never did: `integrity.assign(())` hit its `unclassified` fallback, so **every
-unit the loop had ever classified was recorded L2** and no L3-gated behaviour could fire.
+  Two supporting fixes this rests on. The `verify` and `ship` rungs are now derived from the
+  per-gate fields of `GateStatus` rather than the aggregate `can_advance`, so requiring a
+  second gate no longer drops a merged unit back to `build` and re-runs a landing that
+  already succeeded. And intake now passes the bead's declared `## Scope` to `classify`,
+  which it never did: `integrity.assign(())` hit its `unclassified` fallback, so **every
+  unit the loop had ever classified was recorded L2** and no L3-gated behaviour could fire.
 
-The advance out of `validate` now refuses on a failed or missing consumer gate, and the two
-refusals are different. A `validate-as-consumer` result recorded **failed** by an engine
-provider spends one bounded rework attempt through the existing `_rework` path and escalates
-into the decision queue at `max_rework`. A **missing** result blocks without spending an
-attempt — nobody has looked yet, so there is no finding to repair, and charging it would burn
-the budget that exists for repairing findings and then escalate a unit whose validation had
-never run. A result whose provider is outside `ENGINE_GATE_PROVIDERS` still leaves the gate
-missing, but is now named in the refusal rather than silently ignored. Neither refusal merges,
-tears down a worktree, closes the bead or commits tracker state.
+  The advance out of `validate` now refuses on a failed or missing consumer gate, and the two
+  refusals are different. A `validate-as-consumer` result recorded **failed** by an engine
+  provider spends one bounded rework attempt through the existing `_rework` path and escalates
+  into the decision queue at `max_rework`. A **missing** result blocks without spending an
+  attempt — nobody has looked yet, so there is no finding to repair, and charging it would burn
+  the budget that exists for repairing findings and then escalate a unit whose validation had
+  never run. A result whose provider is outside `ENGINE_GATE_PROVIDERS` still leaves the gate
+  missing, but is now named in the refusal rather than silently ignored. Neither refusal merges,
+  tears down a worktree, closes the bead or commits tracker state.
 
-VALIDATE now dispatches the `validator` role. The dispatch resolves its persona through
-`roles.resolve_role` exactly as the repair dispatch does, falls back to the default runner when
-the family cannot load the role rather than emitting a flag the host would drop, and runs in the
-base checkout because a consumer exercises the merged product rather than the branch that made
-it. It is metered like any other dispatch, so it binds the spend ceiling as a fifth site. When it
-returns, the engine re-reads the gate instead of assuming a verdict was recorded — a dispatch
-that recorded nothing leaves the unit resting in `validate`.
+  VALIDATE now dispatches the `validator` role. The dispatch resolves its persona through
+  `roles.resolve_role` exactly as the repair dispatch does, falls back to the default runner when
+  the family cannot load the role rather than emitting a flag the host would drop, and runs in the
+  base checkout because a consumer exercises the merged product rather than the branch that made
+  it. It is metered like any other dispatch, so it binds the spend ceiling as a fifth site. When it
+  returns, the engine re-reads the gate instead of assuming a verdict was recorded — a dispatch
+  that recorded nothing leaves the unit resting in `validate`.
 
-A validate dispatch is now recorded under `run_record.VALIDATE_PHASE` rather than `BUILD_PHASE`.
-Every dispatch through `loop._run_agent` was previously labelled a build, which would have put a
-read-only judge's cost into the write-dispatch sample the spend calibration prices a lane from.
+  A validate dispatch is now recorded under `run_record.VALIDATE_PHASE` rather than `BUILD_PHASE`.
+  Every dispatch through `loop._run_agent` was previously labelled a build, which would have put a
+  read-only judge's cost into the write-dispatch sample the spend calibration prices a lane from.
 
-Two extractions the size and density ratchets forced, both real seams: `dispatch_brief` now holds
-the prompts the loop dispatches with, and `landing_gate` holds the reading of an answered gate
-escalation and what it authorises. `landing_gate` carries a stated `comment-density-waiver` — its
-four functions are small and their docstrings are the incident history that makes them correct.
+  Two extractions the size and density ratchets forced, both real seams: `dispatch_brief` now holds
+  the prompts the loop dispatches with, and `landing_gate` holds the reading of an answered gate
+  escalation and what it authorises. `landing_gate` carries a stated `comment-density-waiver` — its
+  four functions are small and their docstrings are the incident history that makes them correct.
 
-The verdict is recorded by the engine, not by the validator. `br gate report` requires
-`--provider` and authenticates nothing, so an agent told to report its own gate would
-either error and record nothing — leaving the unit in `validate` forever while believing
-it had reported — or self-certify a required gate. The validator now ends its reply with
-`VALIDATION: PASS` or `VALIDATION: FAIL` and the engine writes the result under its own
-provider.
+  The verdict is recorded by the engine, not by the validator. `br gate report` requires
+  `--provider` and authenticates nothing, so an agent told to report its own gate would
+  either error and record nothing — leaving the unit in `validate` forever while believing
+  it had reported — or self-certify a required gate. The validator now ends its reply with
+  `VALIDATION: PASS` or `VALIDATION: FAIL` and the engine writes the result under its own
+  provider.
 
 - **The loop originates the work type and the child plan instead of waiting for one.**
   Under a grant whose level permits it (L2+), `loop advance` dispatches a corpus-bounded,
@@ -495,15 +493,15 @@ provider.
 
 ### Fixed
 
-A dispatched classify, decompose or lane run now carries the persona its phase declares.
-`resolve_role` had exactly one caller, inside `_run_agent`, whose only call sites are build and
-repair — so the two proposal dispatches and the supervised lane dispatch all ran on the default
-runner unspecialised, and no recorded dispatch had ever reached an argv with `--agent` on it.
-The work-type proposal now resolves classify's persona, the child-plan proposal decompose's, and
-a lane build's. The phase is passed per call site rather than derived from the proposal's label,
-so a third proposal cannot silently inherit no persona; and resolution still answers None for a
-family that cannot select a role, so an un-upgraded consumer gets an unspecialised loop rather
-than a flag its host would drop without a word.
+- **A dispatched classify, decompose or lane run now carries the persona its phase declares.**
+  `resolve_role` had exactly one caller, inside `_run_agent`, whose only call sites are build and
+  repair — so the two proposal dispatches and the supervised lane dispatch all ran on the default
+  runner unspecialised, and no recorded dispatch had ever reached an argv with `--agent` on it.
+  The work-type proposal now resolves classify's persona, the child-plan proposal decompose's, and
+  a lane build's. The phase is passed per call site rather than derived from the proposal's label,
+  so a third proposal cannot silently inherit no persona; and resolution still answers None for a
+  family that cannot select a role, so an un-upgraded consumer gets an unspecialised loop rather
+  than a flag its host would drop without a word.
 
 - **A landing no longer silently discards a lane's merge resolution.** `git rebase` skips merge
   commits unless `--rebase-merges` is passed, so a lane that resolved a conflict with
@@ -571,15 +569,15 @@ than a flag its host would drop without a word.
   non-zero; the wired gate ratchets against `[tool.corpus_drift.frozen]`, which records the one
   bead already unaccounted for when it landed and may only fall (`basicly-b9ef`).
 
-A repair dispatch is now refused when the grant cannot pay for it. D3's halt predicate had three
-enforcing call sites — delegated approval, supervised lane admission and decider delegation — and
-`basicly-1th1` added a fourth for the interactive build dispatch, but the repair path reached
-`runner.run` past all of them. So a landing that failed a gate briefed and spawned a metered agent
-on an exhausted grant, which is exactly when a grant is most likely to be spent. The spend ceiling
-is now checked before the repair spawns, and the brief is written back on refusal rather than
-consumed, so "no budget" does not turn into "the failure is forgotten". D3's halt was split out of
-the composite refusal for this, because a repair is a second attempt at work already planned and
-already sized and must not be re-admitted against the plan gate or the working-set band.
+- **A repair dispatch is now refused when the grant cannot pay for it.** D3's halt predicate had
+  three enforcing call sites — delegated approval, supervised lane admission and decider delegation — and
+  `basicly-1th1` added a fourth for the interactive build dispatch, but the repair path reached
+  `runner.run` past all of them. So a landing that failed a gate briefed and spawned a metered agent
+  on an exhausted grant, which is exactly when a grant is most likely to be spent. The spend ceiling
+  is now checked before the repair spawns, and the brief is written back on refusal rather than
+  consumed, so "no budget" does not turn into "the failure is forgotten". D3's halt was split out of
+  the composite refusal for this, because a repair is a second attempt at work already planned and
+  already sized and must not be re-admitted against the plan gate or the working-set band.
 
 - **Completing a bead's `## Scope` no longer makes its lane look bigger.** One field was serving
   two gates that want opposite things: the merge scope-collision gate wants the declaration
@@ -597,32 +595,32 @@ already sized and must not be re-admitted against the plan gate or the working-s
   authored changes; a ceiling refusal now names declaring one as the alternative to splitting a
   lane that has not grown (basicly-efw2).
 
-A role's declared `skills:` now reach the agent that was dispatched for it. The field is
-documented and typed, but it is honoured only when a definition is spawned as a subagent —
-under `claude --agent <name> -p`, the shape the engine dispatches with, it does nothing
+- **A role's declared `skills:` now reach the agent dispatched for it.** The field is
+  documented and typed, but it is honoured only when a definition is spawned as a subagent —
+  under `claude --agent <name> -p`, the shape the engine dispatches with, it does nothing
 (probed twice on claude 2.1.231 with a positive control). Five of eleven projected roles
-declare skills, so every one of them ran without its specialism.
+  declare skills, so every one of them ran without its specialism.
 
-The engine now reads the bodies a role declares and carries them in the dispatch prompt,
-ahead of the task. Measured against the alternative before choosing it: the largest role's
-skills are 3,261 tokens where a lane costs 8–11 million, so this is about 0.03% of a lane —
-and unlike the vendor's own mechanism it reaches codex and copilot too, which matters for a
-harness that advertises three families. A role declaring no skills gets a byte-identical
-prompt. A declared skill with no readable body is named in the prompt rather than logged,
-because the agent is what can act on it by loading the skill itself.
+  The engine now reads the bodies a role declares and carries them in the dispatch prompt,
+  ahead of the task. Measured against the alternative before choosing it: the largest role's
+  skills are 3,261 tokens where a lane costs 8–11 million, so this is about 0.03% of a lane —
+  and unlike the vendor's own mechanism it reaches codex and copilot too, which matters for a
+  harness that advertises three families. A role declaring no skills gets a byte-identical
+  prompt. A declared skill with no readable body is named in the prompt rather than logged,
+  because the agent is what can act on it by loading the skill itself.
 
-This also gives `catalog_lint`'s skill/role pairing a runtime effect it did not have before,
-so the lint now enforces something real.
+  This also gives `catalog_lint`'s skill/role pairing a runtime effect it did not have before,
+  so the lint now enforces something real.
 
-A claude dispatch record now carries its cache split. `claude_json_usage` and
-`claude_turn_usage` summed the four reported token counts into the total and discarded the
-breakdown, so every claude run record read `cache_read_tokens: null` and no cache-hit ratio
-could be derived from the ledger at all. Claude reports its counts disjoint from each other
-where codex reports `input_tokens` inclusive of the cached portion, so the claude extractor
-folds them to the same provider-neutral convention rather than storing the raw field — which
-keeps `input_tokens - cache_read_tokens` a valid uncached figure whoever produced the numbers.
-A usage block that omits a cache key records null rather than 0, because a turn that really
-read no cache reports a genuine 0.
+  A claude dispatch record now carries its cache split. `claude_json_usage` and
+  `claude_turn_usage` summed the four reported token counts into the total and discarded the
+  breakdown, so every claude run record read `cache_read_tokens: null` and no cache-hit ratio
+  could be derived from the ledger at all. Claude reports its counts disjoint from each other
+  where codex reports `input_tokens` inclusive of the cached portion, so the claude extractor
+  folds them to the same provider-neutral convention rather than storing the raw field — which
+  keeps `input_tokens - cache_read_tokens` a valid uncached figure whoever produced the numbers.
+  A usage block that omits a cache key records null rather than 0, because a turn that really
+  read no cache reports a genuine 0.
 
 - **The type checker now analyses the scripts and hooks it had been silently skipping.**
   pyright's default `exclude` is `["**/node_modules", "**/__pycache__", "**/.*"]`, and that last
@@ -668,25 +666,25 @@ read no cache reports a genuine 0.
   HTTPS on first use, which a consumer's git hook cannot do. That is a decision with its error band
   recorded rather than an unmeasured default (`basicly-u2hl.32`, `basicly-ca42`).
 
-Answering `park` on a stalled lane now parks it. Five question shapes across
-`policy.rework_escalation_question` and `supervise._capped_dispatch` offer that route, but the
-carrier accepted the answer only from a decision of kind `escalation` — so an operator who parked
-a stalled lane saw `answered <id> by human`, the bead stayed `open` and dispatchable, and the next
-supervised pass ran it again. The carrier now binds on the `or park?` suffix every one of those
-questions ends with, so it cannot accept a route its producer offers and then drop it. Answering
-`park` on a question that offers no routes still holds nothing, and a delegated answer still
-cannot park a lane.
+- **Answering `park` on a stalled lane now parks it.** Five question shapes across
+  `policy.rework_escalation_question` and `supervise._capped_dispatch` offer that route, but the
+  carrier accepted the answer only from a decision of kind `escalation` — so an operator who parked
+  a stalled lane saw `answered <id> by human`, the bead stayed `open` and dispatchable, and the next
+  supervised pass ran it again. The carrier now binds on the `or park?` suffix every one of those
+  questions ends with, so it cannot accept a route its producer offers and then drop it. Answering
+  `park` on a question that offers no routes still holds nothing, and a delegated answer still
+  cannot park a lane.
 
-Corrected the `--resume --fork-session` economics recorded in the requirements and the
-implementation plan, re-measured on claude 2.1.231. The mechanism stands; two figures a lane
-would have been sized against did not. The 19x headline is denominated in the ~21,800-token
-host floor rather than a repo corpus, so corpus reuse is nearer 10x. And the cross-directory
-penalty is one-time **per working directory**, not per fork — a first fork into a fresh
-worktree reads 74–87%, every later fork into that same directory reads 100% — so the earlier
+  Corrected the `--resume --fork-session` economics recorded in the requirements and the
+  implementation plan, re-measured on claude 2.1.231. The mechanism stands; two figures a lane
+  would have been sized against did not. The 19x headline is denominated in the ~21,800-token
+  host floor rather than a repo corpus, so corpus reuse is nearer 10x. And the cross-directory
+  penalty is one-time **per working directory**, not per fork — a first fork into a fresh
+  worktree reads 74–87%, every later fork into that same directory reads 100% — so the earlier
 "5.4x degradation" was a first-fork measurement read as a steady state. Whether
-`--exclude-dynamic-system-prompt-sections` composes with `--agent` is now recorded as
-unestablished rather than inferred: that probe was confounded by arm ordering, which a
-position control demonstrated.
+  `--exclude-dynamic-system-prompt-sections` composes with `--agent` is now recorded as
+  unestablished rather than inferred: that probe was confounded by arm ordering, which a
+  position control demonstrated.
 
 ## v0.8.0 - 2026-08-07
 
