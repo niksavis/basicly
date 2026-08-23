@@ -1,0 +1,1 @@
+- Concurrent confirm-code mints and consumes no longer lose each other's writes: the store's read-modify-write is serialised across processes, so two checkpoint approvals racing each other keep both codes.
