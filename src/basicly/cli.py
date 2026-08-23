@@ -113,6 +113,8 @@ from .scaffolds import (
 from .schema import (
     CATEGORIES,
     TECHNOLOGIES,
+    Fragment,
+    OutputDef,
     PlannedOutput,
     Target,
     ValidationError,
@@ -2147,13 +2149,14 @@ def cmd_release(args: argparse.Namespace) -> int:
 
 
 def cmd_catalog(args: argparse.Namespace) -> int:
-    """Dispatch the ``catalog`` subcommands (lint / verify / review / new / list)."""
+    """Dispatch the ``catalog`` subcommands (lint / verify / review / new / list / dump)."""
     handlers = {
         "lint": cmd_catalog_lint,
         "verify": cmd_catalog_verify,
         "review": cmd_review,
         "new": _cmd_catalog_new,
         "list": _cmd_catalog_list,
+        "dump": _cmd_catalog_dump,
     }
     return _dispatch(args, "catalog_command", handlers, group="catalog")
 
@@ -2175,6 +2178,99 @@ def _cmd_catalog_list(args: argparse.Namespace) -> int:
         "agent": cmd_agents_list,
     }
     return listers[args.kind](args)
+
+
+def _cmd_catalog_dump(_args: argparse.Namespace) -> int:
+    """Print the composed selection: every planned item, its origin, and what selected it.
+
+    ``build`` composes core and overlay sources over four axes and then prints only
+    the files it wrote, so an operator debugging a wrong projection had to read the
+    sources by hand and re-derive the selection (basicly-8kqkxy). Derived by calling
+    :func:`plan_outputs`, never by respelling its filters, so the dump cannot claim a
+    selection the build would not make.
+    """
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+    fragments, targets = _load_context(repo_root, paths)
+    planned = plan_outputs(fragments, targets, repo_root)
+    declared = {(t.name, o.name): o for t in targets for o in t.outputs}
+
+    for line in _dump_preamble(repo_root, paths, planned):
+        ui.say(line)
+    for line in _dump_overrides(fragments, repo_root):
+        ui.say(line)
+    for item in planned:
+        ui.heading(_dump_output_line(item, declared[item.target_name, item.output_name], repo_root))
+        for fragment in item.fragments:
+            ui.say(f"  {_dump_item_line(fragment, repo_root)}")
+    return 0
+
+
+def _dump_preamble(repo_root: Path, paths: ProjectPaths, planned: list[PlannedOutput]) -> list[str]:
+    """The composition inputs: the technology axis, then every fragment root in load order."""
+    selection = load_technology_selection(repo_root)
+    roots = ", ".join(
+        f"{_format_path(repo_root / root, repo_root)} [{hint or 'inferred'}]"
+        + ("" if (repo_root / root).is_dir() else " (absent)")
+        for root, hint in _fragment_roots(paths)
+    )
+    return [
+        f"technologies: {', '.join(sorted(selection)) if selection else 'unrestricted'}",
+        f"roots: {roots}",
+        f"composed: {len(planned)} outputs, "
+        f"{sum(len(item.fragments) for item in planned)} selected items",
+        "",
+    ]
+
+
+def _dump_overrides(fragments: list[Fragment], repo_root: Path) -> list[str]:
+    """Each overlay-over-core replacement, naming the override and the source it shadows.
+
+    Mirrors :func:`planner._apply_user_replacements`: an active overlay fragment
+    shadows, and only a core fragment is shadowed. Printed before the outputs because
+    a shadowed source is absent from every one of them, so a reader looking for why an
+    item vanished would otherwise have to reach the end of the dump to find out.
+    """
+    active = {f.id: f for f in fragments if f.status == "active"}
+    lines = [
+        f"  {shadowed.id} ({_dump_origin(shadowed, repo_root)}) shadowed by "
+        f"{fragment.id} ({_dump_origin(fragment, repo_root)})"
+        for fragment in active.values()
+        if fragment.source == "user"
+        for replaced_id in fragment.replaces
+        if (shadowed := active.get(replaced_id)) is not None and shadowed.source == "core"
+    ]
+    return [f"overridden by the overlay: {len(lines)}", *sorted(lines), ""] if lines else []
+
+
+def _dump_output_line(item: PlannedOutput, output: OutputDef, repo_root: Path) -> str:
+    """One planned output: its path, its target, and the two axes the output itself declares."""
+    scoped_only = output.path_template is not None or output.has_scope
+    rule = (
+        "scoped only" if scoped_only else "unscoped only" if output.exclude_scoped else "any scope"
+    )
+    return (
+        f"{_format_path(item.output_path, repo_root)} [{item.target_name}/{item.output_name}] "
+        f"filter.applies_to={','.join(output.applies_to_filter) or 'none'} {rule} "
+        f"({len(item.fragments)})"
+    )
+
+
+def _dump_item_line(fragment: Fragment, repo_root: Path) -> str:
+    """One selected item: its id, the axis values that selected it, and where it was read."""
+    return (
+        f"{fragment.id} applies_to={','.join(fragment.applies_to)} "
+        f"scope={fragment.scope_summary} "
+        f"technologies={','.join(fragment.technologies) or 'any'} "
+        f"<- {_dump_origin(fragment, repo_root)} [{fragment.source}]"
+    )
+
+
+def _dump_origin(fragment: Fragment, repo_root: Path) -> str:
+    """A fragment's source file, or a named placeholder for one built in memory."""
+    if fragment.source_path is None:
+        return "<no source file>"
+    return _format_path(fragment.source_path, repo_root)
 
 
 def cmd_policy(args: argparse.Namespace) -> int:
@@ -4363,7 +4459,8 @@ _CATALOG_KINDS = ("fragment", "skill", "agent")
 
 def _add_catalog_parser(subparsers: argparse._SubParsersAction) -> None:
     catalog_parser = subparsers.add_parser(
-        "catalog", help="Author and inspect the catalog sources (lint/verify/review/new/list)"
+        "catalog",
+        help="Author and inspect the catalog sources (lint/verify/review/new/list/dump)",
     )
     catalog_sub = catalog_parser.add_subparsers(dest="catalog_command", required=True)
 
@@ -4406,6 +4503,11 @@ def _add_catalog_parser(subparsers: argparse._SubParsersAction) -> None:
         default="fragment",
         choices=_CATALOG_KINDS,
         help="Source kind to list (default: fragment)",
+    )
+
+    catalog_sub.add_parser(
+        "dump",
+        help="Print the composed fragment selection: per-item origin and selecting axes",
     )
 
 
@@ -4906,6 +5008,7 @@ command groups:
 
   contributor (author the catalog in the basicly repo itself, under `catalog`):
     catalog list [fragment|skill|agent]      inspect the catalog
+    catalog dump                             the composed selection, with each item's origin
     catalog new <fragment|skill|agent> NAME  scaffold a new source
     catalog lint / verify / review           deterministic and semantic gates
 

@@ -101,6 +101,15 @@ instructions: |
   sources under the catalog, and forbids non-`.yaml` YAML there. It runs on
   commit and in CI — run it locally before committing.
 
+  ## Read the composed selection before hunting a projection by hand
+
+  `basicly catalog dump` prints what the sources compose to: every planned output
+  with the two axes the output itself declares, every item it selected with the
+  core or `.basicly-local` file that item was read from, and each overlay
+  override named beside the core source it shadows. A wrong projection is a
+  selection question, and this is the answer — `build` prints only the files it
+  wrote.
+
   ## Verify against what the agent is told, not the file you edited
 
   The projected file is **not** the delivered artifact. A host may substitute or

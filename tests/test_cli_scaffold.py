@@ -22,8 +22,15 @@ def _catalog_subparser() -> argparse._SubParsersAction:
 
 
 def test_catalog_group_exposes_the_authoring_verbs() -> None:
-    """`basicly catalog` groups exactly lint/verify/review/new/list (basicly-b6j)."""
-    assert set(_catalog_subparser().choices) == {"lint", "verify", "review", "new", "list"}
+    """`basicly catalog` groups exactly lint/verify/review/new/list/dump (basicly-b6j)."""
+    assert set(_catalog_subparser().choices) == {
+        "lint",
+        "verify",
+        "review",
+        "new",
+        "list",
+        "dump",
+    }
 
 
 @pytest.mark.parametrize(
