@@ -686,7 +686,7 @@ Adopt `oma skills audit` (`cli/commands/skills/audit.ts:9-36`,
 `cli/utils/text-similarity.ts:105-129`): dependency-free TF-IDF/cosine over skill *descriptions*
 flagging near-duplicate pairs and "black-hole" skills whose mean similarity to the library is an
 outlier. Our routing rests on 33 descriptions and we have **no cross-skill check at all** — every
-`catalog lint` rule inspects one file in isolation (`src/basicly/catalog_lint.py:219-292`). Sharpens
+`catalog lint` rule inspects one file in isolation (`src/basicly/catalog_lint.py:213-291`). Sharpens
 `basicly-m4zv.2` rather than adding work. We stay ahead on three axes with evidence: our sources are
 deliberately non-discoverable YAML while their SSOT *is* `SKILL.md`/`AGENTS.md` defended by a prose
 instruction (`cli/platform/rules.ts:267`); our composition is a real render-time merge while their
@@ -1493,8 +1493,8 @@ would land as a false statement about the code in the same repository.
    to 20 (B.2) while the skill count grew.
 2. **§2.12: "we have no cross-skill check at all — every `catalog lint` rule inspects one file in
    isolation."** **False.** The function that claim cites is
-   `lint_catalog`, `src/basicly/catalog_lint.py:198`, spanning 198–271 today — **not** the `219-292`
-   the claim gives, which no longer locates it (B.7). Line **262** inside it is rule 9,
+   `lint_catalog`, `src/basicly/catalog_lint.py:213`, spanning 213–291 today — **not** the `219-292`
+   the claim gives, which no longer locates it (B.7). Line **277** inside it is rule 9,
    *"Tier-2 routing evals over the model-invoked set"*, delegating to `basicly.routing_evals` — a
    check over the whole description corpus, which is precisely the cross-skill check §2.12 says we
    do not have.
@@ -1604,9 +1604,10 @@ re-measurable by the next reader — which is the whole failure D-36 exists to p
    `from pathlib import Path`, so it raised `NameError` rather than printing 20. Both are corrected in
    place, because a wrong instrument is not a finding worth preserving beside its own correction.
 
-3. **`catalog_lint.py:219-292` no longer locates `lint_catalog`.** The function spans **198–271** on
-   this branch and on `main` at `ca72a50`. Line 262 — rule 9, the cross-skill check that makes B.4's
-   claim false — is correct in both, so the finding is unaffected. The stale range is inherited from
+3. **The `219-292` range cited for `catalog_lint.py` no longer locates `lint_catalog`.** The function
+   spans **213–291** on this branch and spanned **198–270** on `main` at `ca72a50`. Rule 9 — the
+   cross-skill check that makes B.4's claim false — is correct in both, so the finding is
+   unaffected. The stale range is inherited from
    the §6.1 claim being refuted, written 2026-07-26, and it is a third instance of exactly what §13.3
    of the deepseek document calls a self-pin: a line citation into a file in the same repository ages
    silently and points at the wrong code with no gate to catch it. **Absorption should carry the
