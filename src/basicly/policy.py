@@ -31,11 +31,12 @@ import re
 import secrets
 import time
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import gate_source, run_record, tracker
+from . import base_lock, gate_source, run_record, tracker
 from .config import (
     AUTONOMY_LEVELS,
     CHECKPOINTS,
@@ -1265,28 +1266,52 @@ def _write_confirms(path: Path, data: dict[str, dict]) -> None:
     tmp.replace(path)
 
 
+# One JSON parse and one atomic replace, so a lock held past this is a crashed holder.
+_CONFIRM_HOLD_BUDGET_S = 5.0
+_CONFIRM_WAIT_S = 60.0
+
+
+def _confirm_store_lock(path: Path) -> AbstractContextManager[None]:
+    """Serialize a read-modify-write on the confirm-code store across processes.
+
+    Unguarded, two concurrent writers each read before either writes and the second
+    clobbers the first (basicly-kas8q7); `_write_confirms` was already torn-write-safe
+    via tmp-then-replace, which does not cover the lost update.
+    """
+    return base_lock.hold_file(
+        path.with_suffix(".lock"),
+        hold_budget_s=_CONFIRM_HOLD_BUDGET_S,
+        wait_s=_CONFIRM_WAIT_S,
+    )
+
+
 def _issue_confirm_code(repo_root: Path, issue_id: str, name: str) -> str:
     """Generate, store, and return a one-time confirm code for the checkpoint."""
     path = repo_root / _CONFIRM_FILE
-    data = _read_confirms(path)
     code = _new_code()
-    data[_confirm_key(issue_id, name)] = {"code": code, "expires": _now() + CONFIRM_TTL_SECONDS}
-    _write_confirms(path, data)
+    with _confirm_store_lock(path):
+        data = _read_confirms(path)
+        data[_confirm_key(issue_id, name)] = {
+            "code": code,
+            "expires": _now() + CONFIRM_TTL_SECONDS,
+        }
+        _write_confirms(path, data)
     return code
 
 
 def _consume_confirm_code(repo_root: Path, issue_id: str, name: str, code: str) -> bool:
     """True when *code* matches the stored, unexpired code; consumes it on match."""
     path = repo_root / _CONFIRM_FILE
-    data = _read_confirms(path)
-    entry = data.get(_confirm_key(issue_id, name))
-    if not isinstance(entry, dict):
-        return False
-    expired = _now() > float(entry.get("expires", 0))
-    ok = not expired and secrets.compare_digest(str(entry.get("code", "")), code)
-    if expired or ok:  # single-use on match, housekeeping on expiry
-        data.pop(_confirm_key(issue_id, name), None)
-        _write_confirms(path, data)
+    with _confirm_store_lock(path):
+        data = _read_confirms(path)
+        entry = data.get(_confirm_key(issue_id, name))
+        if not isinstance(entry, dict):
+            return False
+        expired = _now() > float(entry.get("expires", 0))
+        ok = not expired and secrets.compare_digest(str(entry.get("code", "")), code)
+        if expired or ok:  # single-use on match, housekeeping on expiry
+            data.pop(_confirm_key(issue_id, name), None)
+            _write_confirms(path, data)
     return ok
 
 

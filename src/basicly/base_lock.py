@@ -9,6 +9,10 @@ the supervisor's lock, which refuses a contender, here everyone must get in.
 Liveness is the lock's mtime and nothing refreshes it, so a holder older than
 :data:`HOLD_BUDGET_S` is declared crashed and its lock stolen; the theft costs one
 lane a duplicate-publish refusal, not correctness.
+
+:func:`hold_file` is that queue over any lock path, budgets and wording parameterised:
+the confirm-code store needed the same serialisation (basicly-kas8q7) and a second
+hand-rolled `O_EXCL` loop would have re-opened the windows this one closed.
 """
 
 from __future__ import annotations
@@ -44,7 +48,11 @@ def _ignored_dir(directory: Path) -> None:
         gitignore.write_text("*\n", encoding="utf-8")
 
 
-class BaseCheckoutBusyError(RuntimeError):
+class LockBusyError(RuntimeError):
+    """A live holder kept a lock file past a waiter's whole budget."""
+
+
+class BaseCheckoutBusyError(LockBusyError):
     """A concurrent dispatch held the base checkout for longer than the wait budget."""
 
 
@@ -102,8 +110,12 @@ def _release(path: Path, sleep: Callable[[float], None]) -> None:
 
 
 def holder(repo_root: Path) -> tuple[int | None, float] | None:
-    """The lock's age, and the holding pid when readable; None when nobody holds it."""
-    path = repo_root / LOCK_FILE
+    """The base checkout lock's age and holding pid; None when nobody holds it."""
+    return holder_of(repo_root / LOCK_FILE)
+
+
+def holder_of(path: Path) -> tuple[int | None, float] | None:
+    """*path*'s age, and the holding pid when readable; None when nobody holds it."""
     try:
         age = _now() - path.stat().st_mtime
     except OSError:
@@ -131,7 +143,7 @@ def _steal(path: Path) -> bool:
     return _take(path)
 
 
-def _busy(pid: int | None, age: float, waited: float, path: Path) -> BaseCheckoutBusyError:
+def _busy(path: Path, pid: int | None, age: float, waited: float) -> BaseCheckoutBusyError:
     """The refusal, worded so nobody reads contention as a rejected commit."""
     who = f"pid {pid}" if pid is not None else "an unidentified process"
     return BaseCheckoutBusyError(
@@ -140,6 +152,60 @@ def _busy(pid: int | None, age: float, waited: float, path: Path) -> BaseCheckou
         "contention between concurrent dispatches, not a rejected commit — let the "
         f"running dispatch finish and re-run, or delete {path} if none is running"
     )
+
+
+def _generic_busy(path: Path, pid: int | None, age: float, waited: float) -> LockBusyError:
+    """The refusal for a lock whose caller did not word one of its own."""
+    who = f"pid {pid}" if pid is not None else "an unidentified process"
+    return LockBusyError(
+        f"{who} has held {path} for {age:.0f}s and did not release it in {waited:.0f}s; "
+        "let the holder finish and re-run, or delete the lock if none is running"
+    )
+
+
+@contextlib.contextmanager
+def hold_file(  # noqa: PLR0913 - reason in basicly.d/basicly-kas8q7.toml
+    path: Path,
+    *,
+    hold_budget_s: float,
+    wait_s: float,
+    poll_s: float = POLL_S,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    busy: Callable[[Path, int | None, float, float], Exception] = _generic_busy,
+) -> Iterator[None]:
+    """Hold *path* as a cross-process mutex for the block; queue for it if busy.
+
+    What a second resource reuses here is not the loop, which is short, but what the
+    loop learned: a create refused by a delete-pending window is busy rather than
+    broken, a stale holder is stolen from by rename-aside so exactly one waiter wins,
+    and a release retries the sharing violation a reader causes — three windows already
+    paid for once each on windows (basicly-s2obqz).
+
+    A holder older than *hold_budget_s* is declared crashed; *busy* words the refusal a
+    live holder outlasting *wait_s* earns, given the path, the pid, that holder's age
+    and the wait.
+
+    Yields:
+        Nothing; the block runs with *path* held.
+
+    Raises:
+        Exception: whatever *busy* returns, :class:`LockBusyError` by default.
+    """
+    _ignored_dir(path.parent)
+    started = monotonic()
+    while not _take(path):
+        pid, age = holder_of(path) or (None, 0.0)
+        if age > hold_budget_s and _steal(path):
+            break
+        waited = monotonic() - started
+        if waited >= wait_s:
+            raise busy(path, pid, age, waited)
+        sleep(poll_s)
+    try:
+        yield
+    finally:
+        _release(path, sleep)
 
 
 @contextlib.contextmanager
@@ -162,18 +228,13 @@ def hold(
     Raises:
         BaseCheckoutBusyError: the budget elapsed with the lock still held.
     """
-    path = repo_root / LOCK_FILE
-    _ignored_dir(path.parent)
-    started = monotonic()
-    while not _take(path):
-        pid, age = holder(repo_root) or (None, 0.0)
-        if age > HOLD_BUDGET_S and _steal(path):
-            break
-        waited = monotonic() - started
-        if waited >= wait_s:
-            raise _busy(pid, age, waited, path)
-        sleep(poll_s)
-    try:
+    with hold_file(
+        repo_root / LOCK_FILE,
+        hold_budget_s=HOLD_BUDGET_S,
+        wait_s=wait_s,
+        poll_s=poll_s,
+        monotonic=monotonic,
+        sleep=sleep,
+        busy=_busy,
+    ):
         yield
-    finally:
-        _release(path, sleep)

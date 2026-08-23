@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -223,6 +224,33 @@ def test_a_crashed_holders_lock_is_taken_over_rather_than_waited_out(tmp_path: P
         os.utime(path, (0.0, 0.0))
         with base_lock.hold(tmp_path, wait_s=0.0):
             assert path.exists()
+
+
+def test_a_second_resource_gets_the_queue_with_its_own_budget(tmp_path: Path) -> None:
+    """`hold_file` steals against the budget it was passed, not the checkout's.
+
+    The confirm-code store's hold is one JSON parse (basicly-kas8q7), so 10s stale is a
+    crashed holder there and nowhere near it under `HOLD_BUDGET_S`. Staleness is the
+    file's age, so the crash is test data rather than a wait.
+    """
+    path = tmp_path / "usage" / "confirms.lock"
+    with base_lock.hold_file(path, hold_budget_s=5.0, wait_s=0.0):
+        os.utime(path, (0.0, time.time() - 10.0))
+        with base_lock.hold_file(path, hold_budget_s=5.0, wait_s=0.0):
+            assert path.exists()
+    assert not path.exists()
+
+
+def test_a_caller_with_no_wording_of_its_own_gets_a_refusal_naming_the_lock(
+    tmp_path: Path,
+) -> None:
+    """The default refusal has to be actionable without the base checkout's words."""
+    path = tmp_path / "usage" / "confirms.lock"
+    with (
+        base_lock.hold_file(path, hold_budget_s=300.0, wait_s=0.0),
+        pytest.raises(base_lock.LockBusyError, match=rf"pid {os.getpid()} has held .*confirms"),
+    ):
+        base_lock.hold_file(path, hold_budget_s=300.0, wait_s=0.0).__enter__()
 
 
 def test_a_holder_releases_the_base_checkout_even_when_the_commit_raises(
