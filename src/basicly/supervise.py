@@ -65,6 +65,7 @@ from typing import Any
 
 from . import (
     commit,
+    context_meter,
     decisions,
     decompose,
     health,
@@ -1107,65 +1108,6 @@ def _already_coupled(repo_root: Path, bead: str, coupled_to: str) -> bool:
         if (dep.get("depends_on_id") or dep.get("id")) == coupled_to:
             return True
     return False
-
-
-# --- Usage meter: the context ceiling as observability (D8 measured, D23) ----
-
-
-def ceiling_tokens(spec: runner.RunnerSpec, sizing: SizingConfig) -> int:
-    """The observation threshold for *spec*, in tokens of final context occupancy."""
-    return int(spec.context_window * sizing.context_ceiling)
-
-
-@dataclass(frozen=True)
-class CeilingVerdict:
-    """What the context meter measured on one finished dispatch."""
-
-    occupancy: int | None
-    ceiling: int
-    overrun: bool
-
-    @property
-    def observation(self) -> str:
-        """Both numbers in one clause for the surface that reports the run, else "".
-
-        The demoted control's whole output (D23): a number that only blocks is invisible
-        until it fires, which is how a trigger at a fifth of its intended point survived
-        for months with the ledger already contradicting it.
-        """
-        if not self.overrun:
-            return ""
-        return (
-            f"context occupancy {self.occupancy} tokens is over the {self.ceiling}-token "
-            "ceiling (observed, not enforced)"
-        )
-
-
-def meter_context_ceiling(
-    spec: runner.RunnerSpec, result: runner.RunResult, sizing: SizingConfig
-) -> CeilingVerdict:
-    """Measure a finished dispatch against *spec*'s ceiling, and only measure it.
-
-    Demoted from a control to observability (D23, requirements §15.6). It used to
-    finalize the lane early and spin the remainder into a follow-up bead, and over 79
-    recorded lanes it has **zero** correct firings: the 18 follow-ups it produced all
-    came from months at a 120000-token trigger — a fifth of its intended point, from a
-    stale window declaration — and nothing has crossed the corrected 600000 since (max
-    observed 403051). A prediction that blocks has to be right, and this one never was.
-
-    The one metering site both write paths reach (basicly-7kxq), still: a second copy in
-    ``loop`` is how the two paths came to disagree about a bead's fate for reasons
-    unrelated to the bead. What each caller does with the verdict is now the same thing
-    — report it — while ``run_record``'s ``context_tokens`` and ``context_window`` keep
-    the pair falsifiable against the ledger long after the pass line is gone.
-    """
-    occupancy = runner.context_occupancy(spec, result)
-    ceiling = ceiling_tokens(spec, sizing)
-    return CeilingVerdict(
-        occupancy=occupancy,
-        ceiling=ceiling,
-        overrun=occupancy is not None and occupancy >= ceiling,
-    )
 
 
 # --- The spend ceiling at pass admission (D3 looking forward, basicly-jr0l.22) ---
@@ -2888,7 +2830,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         policy.record_needs_input(repo_root, lane.issue_id, needs.fact)
         # And one decision-queue item (basicly-kjc5.4) for `loop answer`.
         decisions.enqueue(repo_root, lane.issue_id, "needs-input", needs.fact, needs.detail)
-    verdict = meter_context_ceiling(spec, result, sizing)
+    verdict = context_meter.meter_context_ceiling(spec, result, sizing)
     if result.returncode != 0:
         detail = f"runner exited {result.returncode}"
     elif needs is not None:

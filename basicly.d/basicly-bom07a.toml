@@ -1,0 +1,5 @@
+# The loop->supervise cycle is removed (basicly-bom07a): the context meter moved to
+# `context_meter`, below both former callers, so loop.py's deferred upward import and
+# its PLC0415 suppression retire, and the `.importlinter` exemption goes with them.
+[ratchet.noqa_debt.frozen]
+PLC0415 = -1

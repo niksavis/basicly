@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from basicly import run_record, runner, supervise
+from basicly import context_meter, run_record, runner
 from basicly.config import load_sizing_config
 from basicly.run_record import (
     EXECUTED,
@@ -275,7 +275,7 @@ def test_a_dispatch_records_the_occupancy_and_the_window_its_ceiling_came_from(
     ``BUILTIN_RUNNERS`` — the shipped figure has since moved (basicly-89hm), and a test
     that re-derives history from the current tree stops describing the beads it exists
     to explain. The threshold is still recomputed through
-    :func:`supervise.ceiling_tokens`, because the 120000 those beads fired under *is*
+    :func:`context_meter.ceiling_tokens`, because the 120000 those beads fired under *is*
     that window times the configured fraction, and 145570 is what basicly-kjc5.42
     actually recorded against it.
     """
@@ -299,7 +299,7 @@ def test_a_dispatch_records_the_occupancy_and_the_window_its_ceiling_came_from(
     assert persisted["context_tokens"] == 145_570
     assert persisted["context_window"] == 200_000
     assert persisted["context_window_source"] == runner.ADAPTER_WINDOW
-    ceiling = supervise.ceiling_tokens(stale, load_sizing_config(tmp_path))
+    ceiling = context_meter.ceiling_tokens(stale, load_sizing_config(tmp_path))
     assert ceiling == 120_000
     assert persisted["context_tokens"] > ceiling
 

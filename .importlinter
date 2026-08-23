@@ -32,7 +32,7 @@ layers =
     catalog_lint | contention | cost_rollup | curate | health | landing_gate | tracker_query | tracker_write
     commit | merge
     rebase | repair_brief | wip | working_set
-    classify | decompose | loop_state | plan_entry | retrospective | rubrics
+    classify | context_meter | decompose | loop_state | plan_entry | retrospective | rubrics
     validate_gate
     dispatch_brief
     skill_coverage
@@ -70,12 +70,11 @@ layers =
     base_lock | catalog | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_usage | tree_schema | ui | usage | verify_artifact
     tracker_paths
     stemmer
-# Two cycles survive as function-level imports carrying `# noqa: PLC0415`; the
-# top-level direction is the one the tiers encode. Listing them here is not a
-# weakening: `unmatched_ignore_imports_alerting` defaults to `error`, so when a cycle
+# One cycle survives as a function-level import carrying `# noqa: PLC0415`; the
+# top-level direction is the one the tiers encode. Listing it here is not a
+# weakening: `unmatched_ignore_imports_alerting` defaults to `error`, so when the cycle
 # is finally removed this contract fails until the exemption goes with it.
 ignore_imports =
-    basicly.loop -> basicly.supervise
     basicly.policy -> basicly.decisions
 
 # The projector's per-target renderers: each target module renders on top of the

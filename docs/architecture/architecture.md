@@ -3291,7 +3291,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 50 tiers hold 117 modules and group into 9 bands. Every band may import every band below
+The 50 tiers hold 118 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3301,7 +3301,7 @@ against them.
 flowchart TB
   b1["1 · entry — 1 module<br/>cli"]
   b2["2 · drivers — 8<br/>supervise · loop · release · usage_report"]
-  b3["3 · loop mechanics — 33<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
+  b3["3 · loop mechanics — 34<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
   b4["4 · configuration and isolation — 2<br/>config · worktree"]
   b5["5 · agent runtime — 5<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 12<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
@@ -3310,7 +3310,6 @@ flowchart TB
   b9["9 · leaf data and pure helpers — 26<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
 
   b1 --> b2 --> b3 --> b4 --> b5 --> b6 --> b7 --> b8 --> b9
-  b2 -.->|"declared exemption:<br/>loop imports supervise"| b2
   b3 -.->|"declared exemption:<br/>policy imports decisions"| b3
 
   classDef shipped fill:#d5efd5,stroke:#2e7d32,color:#000
