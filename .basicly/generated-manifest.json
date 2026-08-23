@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-08-22T19:39:05.795409+00:00",
+  "generated_at": "2026-08-23T11:14:55.706464+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
       "hash": "sha256:482bf9bfdd541913073e4801c3c5ba0190d676f204f26e372011618b3d80c1c9",
@@ -55,8 +55,14 @@
         "platform-hermetic-tests"
       ]
     },
+    ".claude/rules/release-fragments.md": {
+      "hash": "sha256:2078c938132ec7205b42ca2edc2648b5e9361da26d36f6c4e7e721734336eae4",
+      "source_fragments": [
+        "release-fragments"
+      ]
+    },
     "AGENTS.md": {
-      "hash": "sha256:f2b09c9ff5f4004d266d2cd2fe1c18b717ee19b204b8395112ede4b5d1769d33",
+      "hash": "sha256:ea56ea6921d26ec85f27ad0d00aba1a1ebc8662a13217a1e593bcabed6f55145",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",
@@ -77,6 +83,7 @@
         "use",
         "platform-hermetic-tests",
         "catalog-authoring",
+        "release-fragments",
         "self-improvement-retro",
         "session-completion",
         "non-interactive-shell"

@@ -43,6 +43,17 @@ def test_the_dispatch_prompt_withholds_the_landing_verbs() -> None:
     assert "Do not merge, push, or close" in prompt
 
 
+def test_the_dispatch_prompt_names_the_release_fragment_obligation() -> None:
+    """All three wave-one lanes of basicly-xglise owed a fragment and none wrote one.
+
+    The record closes at ship, and the release-notes ratchet then refuses the next
+    commit on main for a note nobody asked the lane for (basicly-aj6w74).
+    """
+    prompt = dispatch_brief.dispatch_prompt("i")
+    assert "changelog.d/i." in prompt
+    assert "under 400 characters" in prompt
+
+
 def test_the_work_type_prompt_fences_the_requirement_as_data() -> None:
     """Tracker text is data, not instructions — the decider_prompt stance."""
     prompt = dispatch_brief.work_type_prompt("i", "Ship the parser.")

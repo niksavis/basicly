@@ -145,7 +145,11 @@ def dispatch_prompt(issue_id: str) -> str:
         "If you exhaust your ability to resolve a required fact, do NOT guess: "
         f"write {needs_input.SENTINEL_FILE.as_posix()} as "
         '{"fact": "<the missing fact>", "detail": "<what you tried>"} and stop '
-        "without committing a guess — the loop will block and surface it."
+        "without committing a guess — the loop will block and surface it. "
+        "If a consumer of the shipped surface can see your change, also write "
+        f"changelog.d/{issue_id}.<added|changed|fixed|removed|deprecated|security>.md: "
+        "one `- ` bullet, under 400 characters — a gate refuses a grown or bulletless "
+        "fragment, and the release cannot recover a note written after the tag."
     )
 
 

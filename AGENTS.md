@@ -244,6 +244,13 @@ Make the platform difference an *input* instead:
 
 - Author catalog content as YAML sources, never a discoverable `.md`; scaffold with `basicly catalog new skill`/`catalog new fragment` and follow the `catalog-authoring` skill — `basicly catalog lint` enforces the format.
 
+## Release Fragments
+
+A change a consumer can see writes `changelog.d/<record-id>.<category>.md` before its
+record closes: one dash-space bullet, under 400 characters. Write it in the lane — the
+release reads the tagged commit, and a closed record with a shipped scope and no
+fragment blocks the next commit on main.
+
 ## Self Improvement Retro
 
 - When a session hits a real rejection or user-corrected mistake, run the retro from the `session-finish` skill: find the root cause and propose the exact fragment/skill/hook change that would have prevented it — never a vague "be careful", never self-applied. Skip it when nothing concrete surfaced.
