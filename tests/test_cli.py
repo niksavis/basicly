@@ -245,14 +245,31 @@ def test_cli_install_technology_selection_filters_and_prunes(tmp_path: Path) -> 
     assert "Unknown technology value" in result.stderr
 
 
-def test_record_install_technologies_rejects_empty_selection(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_validate_install_technologies_rejects_empty_selection(
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A flag value that parses to nothing is an error, not an empty selection."""
-    assert cli._record_install_technologies(tmp_path, None) is True
-    assert cli._record_install_technologies(tmp_path, ",") is False
+    assert cli._validate_install_technologies(None) == []
+    assert cli._validate_install_technologies(",") is None
     assert "at least one value" in capsys.readouterr().err
-    assert not (tmp_path / "basicly.toml").exists()
+
+
+def test_cli_install_rejects_unknown_technology_before_writing_any_file(
+    tmp_path: Path,
+) -> None:
+    """An invalid --technologies value exits non-zero before install writes anything.
+
+    Regression for basicly-859cqk: cmd_install used to sync the catalog, write
+    install state, scaffold the overlay and config, and only then validate the
+    flag — leaving a half-installed repo behind a rejected command.
+    """
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+
+    result = run_basicly_consumer(consumer, "install", "--technologies", "pyton")
+    assert result.returncode == 1
+    assert "Unknown technology value" in result.stderr
+    assert list(consumer.iterdir()) == []
 
 
 def test_setup_tracker_creates_the_ledger_and_reports_a_derived_prefix(
