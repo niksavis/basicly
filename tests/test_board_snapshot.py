@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,12 +38,10 @@ REPO_ROOT = Path(__file__).parent.parent
 FIXTURE_LEDGER = REPO_ROOT / "tests" / "fixtures" / "board" / "ledger" / "events-0001.jsonl"
 MINIMAL = REPO_ROOT / "tests" / "fixtures" / "board" / "minimal-v1.json"
 
-# AC 4's cap, and the margin behind it is 4.8x rather than the 26x this comment used to claim:
-# the build measures 103.8 ms on this corpus (median of 21, 2026-08-20), not the 19.1 ms the
-# design carried, which had excluded the log read (`basicly-ef953m`). Still wide enough to fail
-# on a regression rather than on a slow runner, but it is now a band - a runner three times
-# slower than this box sits at the cap, which is recorded in C5 rather than absorbed here.
-BUILD_CAP_S = 0.5
+# AC 4's cap. The build measures 103.8 ms on this corpus here (median of 21, 2026-08-20) and
+# a 0.64 s median on windows-latest (run 32601602015, 2026-08-22), so one cap cannot both bind
+# a regression here and pass that runner; each platform gets a bound sized to its own floor.
+BUILD_CAP_S = 1.5 if sys.platform == "win32" else 0.5
 
 NOW = datetime(2026, 1, 2, tzinfo=UTC)
 

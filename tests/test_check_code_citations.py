@@ -290,7 +290,7 @@ def test_the_gate_fails_end_to_end_on_a_heading_that_went_away(tmp_path: Path) -
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("", encoding="utf-8")
     shutil.copy(REPO_ROOT / "src" / "basicly" / "dropin.py", package / "dropin.py")
-    (package / "mod.py").write_text(f'"""`{DOC}` {MARK}4.6 states the rule."""\n')
+    (package / "mod.py").write_text(f'"""`{DOC}` {MARK}4.6 states the rule."""\n', encoding="utf-8")
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
 
@@ -299,15 +299,14 @@ def test_the_gate_fails_end_to_end_on_a_heading_that_went_away(tmp_path: Path) -
             [sys.executable, copied], capture_output=True, text=True, check=False, cwd=tmp_path
         )
 
-    # Positive control on the fixture, not on the gate: a run that reads no module reports no
-    # citation and exits 0, so the green below would mean nothing and the red after it would
-    # name the wrong cause. On windows-latest both runs read `0 module(s)` and the only thing
-    # said was `assert 0 == 1`, which sent a reader to the gate rather than to the tree it was
-    # handed (basicly-t31pvf).
+    # Positive control on the fixture, not on the gate: a run that finds no citing module
+    # reports nothing and exits 0, so the green below would mean nothing and the red after it
+    # would name the wrong cause. It fired once: `mod.py` written without an encoding became
+    # cp1252 on windows, and the gate's utf-8 read turned the mark into U+FFFD (basicly-t31pvf).
     baseline = run()
     assert baseline.returncode == 0
     assert "in 0 module(s)" not in baseline.stdout, (
-        f"the fixture repo lists no tracked module, so this asserts nothing: {baseline.stdout}"
+        f"the fixture holds no readable citation, so this asserts nothing: {baseline.stdout}"
     )
     document.write_text(SPEC.replace("### 4.6 The aggregate", "### The aggregate"))
     completed = run()
