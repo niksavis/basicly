@@ -265,3 +265,30 @@ def test_a_mapped_phase_is_the_engine_derivation_on_a_unit_owing_validation(
     assert loop_state.phase_map(l2)["bd-1"] == "verify"
     for repo in (l3, l2):
         assert loop_state.phase_map(repo)["bd-1"] == loop_state.read_node_state(repo, "bd-1").phase
+
+
+def _ask(kind: str, issue: str, subject: str = "") -> dict[str, str]:
+    row = {"wait_id": f"{issue}#wait-{subject or 'x'}", "issue": issue, "kind": kind}
+    return {**row, "subject": subject} if subject else row
+
+
+def test_visible_asks_matches_each_acceptance_case() -> None:
+    """basicly-0i86tl AC1-4: a delegated or closed checkpoint drops; a decision never does."""
+    filt, both = board_facts._visible_asks, frozenset({"bd-1", "bd-2"})
+    classify, decision = _ask("checkpoint", "bd-1", "classify"), _ask("decision", "bd-2")
+    assert [a["issue"] for a in filt([classify, decision], both, "L3")] == ["bd-2"]  # AC1
+    assert filt([classify], frozenset({"bd-2"}), "") == []  # AC2
+    assert filt([classify], both, "L1") == [classify]  # AC3
+    assert filt([decision], both, "L3") == [decision]  # AC4
+
+
+def test_hide_unanswerable_reads_the_grant_and_the_units_off_the_document() -> None:
+    """The wiring `document` relies on: both facts come off the built document itself."""
+    built = {
+        "asks": [_ask("checkpoint", "bd-1", "classify"), _ask("decision", "bd-2")],
+        "units": [{"id": "bd-1"}, {"id": "bd-2"}],
+        "session": {"grant_level": "L3"},
+    }
+    board_facts._hide_unanswerable(built)
+    assert [a["issue"] for a in built["asks"]] == ["bd-2"]
+    assert board_facts._hide_unanswerable({"units": []}) == {"units": []}
