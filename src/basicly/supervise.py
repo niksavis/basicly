@@ -2786,10 +2786,10 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         # transcript is what leaves a claim about what this lane *did* evidenceable
         # once the process is gone. In the `with` so it closes on every route out.
         with (
-            watchdog,
             live_lane(lane.issue_id, stream),
             lane_log.lane_transcript(repo_root, session.log_session, lane.issue_id) as transcript,
             runner.process_budget().slot(runner.LANE),
+            watchdog,
         ):
             result = runner.run(
                 spec,
