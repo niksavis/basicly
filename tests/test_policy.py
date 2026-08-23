@@ -3156,8 +3156,8 @@ def test_check_pass_spend_admits_when_no_ceiling_applies() -> None:
 
 # --- Gate types and the pre-flight write ban (basicly-m4zv.6) ----------------
 #
-# `factory-loop.md` §5.1: the taxonomy and the read-only rule, absorbed there when
-# `gates-and-rework-design.md` was deleted on 2026-08-08 — which is the section
+# The taxonomy lives in `policy.GATE_TYPE_BY_GATE` and these tests; the read-only
+# rule is architecture D-23 — which is the record
 # `policy.preflight_gate` already names for the same rule. The write the ban has to refuse
 # is a *tracker* write: both incidents behind the rule, a hand-recorded verify gate and an
 # approved ship checkpoint, were tracker writes that no command can undo.
@@ -3196,11 +3196,11 @@ def test_each_gate_type_classifies_at_least_one_real_gate() -> None:
 
 
 def test_the_declared_types_are_the_ones_the_design_decided() -> None:
-    """The mapping `factory-loop.md` §5.1 states, asserted rather than left in prose.
+    """The mapping the design decided, asserted rather than left in prose.
 
-    Two halves of the deleted design note landed in that section: the table of existing
+    Two halves of the deleted design note survive here: the table of existing
     gates, and the split that types the deterministic rubric half pre-flight and the judged
-    half escalation. The second has no document of its own — the section delegates the five
+    half escalation. Neither has a document of its own — both delegate the five
     named gates to `policy.GATE_TYPE_BY_GATE`, which is what these assertions read.
     """
     assert policy.gate_type(policy.DOR_GATE) == policy.PREFLIGHT

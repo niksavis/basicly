@@ -1,7 +1,6 @@
 """Resolve a loop phase to the agent role that drives it (basicly-4kdm).
 
-The gap this closes was measured for two days and stated the same way each time:
-the projection works and nothing consumes it. Eleven agent sources are authored,
+The measured gap: the projection works and nothing consumes it. Eleven agent sources are authored,
 rendered into both agent roots and vendored to consumers, and no code path asked
 the host to run one — every dispatch ended at a bare ``claude -p <prompt>``.
 
@@ -9,9 +8,9 @@ Three properties, and each is a decision rather than an implementation detail.
 
 **The map is data, not judgment.** A phase resolves by table lookup, so the choice
 is not gameable, costs no tokens and cannot drift between lanes. It mirrors the
-state table in ``factory-loop.md`` §3.1, which is the point: a reader who knows the
-state knows the role, and a role that is not in the state table has no business
-being dispatched by the engine. Two tables, because §3.1 gives VALIDATE two roles:
+role table in ``architecture.md`` §30, which is the point: a reader who knows the
+state knows the role, and a role that is not in the role table has no business
+being dispatched by the engine. Two tables, because that table gives VALIDATE two roles:
 :data:`ROLE_BY_PHASE` names the one role that *drives* a phase and whose reply the
 engine acts on, and :data:`LENS_ROLE_BY_PHASE` the one it fans out beside it, once
 per entry in :data:`REVIEW_LENSES`.
@@ -55,14 +54,14 @@ class HasAgentStyle(Protocol):
         ...
 
 
-# Phase -> role, mirroring the state table in factory-loop.md §3.1. Phases the
+# Phase -> role, mirroring the role table in architecture.md §30. Phases the
 # engine has but no role drives are absent rather than mapped to a placeholder:
 # VERIFY is deterministic gates with no persona by decision, and `done` is a
 # terminal marker rather than work.
 #
 # All three of VALIDATE, REPAIR and RETROSPECTIVE are dispatched today, each as a `phase=`
 # on `loop._run_agent`. Only VALIDATE is a rung of the ladder, so this table is reviewed
-# against §3.1 and not against `config.LOOP_PHASES` or `loop_state.PHASES` (the same ladder
+# against architecture.md §30, not `config.LOOP_PHASES` or `loop_state.PHASES` (the same ladder
 # plus the terminal `done`) — neither of those names repair or retrospective at all.
 ROLE_BY_PHASE: dict[str, str] = {
     "classify": "decider",
@@ -92,11 +91,11 @@ class RoleDispatch:
 # gate already covers spends tokens restating a green check. `security` is here
 # because `basicly.toml` scopes bandit away from `src/` entirely; maintainability is
 # refused because ruff, pyright, vulture and the size ratchets bind it mechanically.
-# factory-loop.md §6.5 carries the argument per axis.
+# architecture.md §26.1 carries the argument per axis.
 REVIEW_LENSES: tuple[str, ...] = ("correctness", "security")
 
 # The role a phase dispatches once per lens, beside the role that drives it. VALIDATE
-# is the only such phase (§3.1); a dict rather than a branch, so "no other phase fans
+# is the only such phase (architecture.md §30); a dict rather than a branch, so "no other phase fans
 # out" stays a lookup on data like the table above it.
 LENS_ROLE_BY_PHASE: dict[str, str] = {"validate": "reviewer"}
 

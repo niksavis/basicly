@@ -5,6 +5,10 @@ Status: **design; one unit shipped.** Authored 2026-08-14 as `01-solution-design
 (`basicly-rn0o.12`). The six-section shape is unchanged: the structured requirement register
 (`basicly-vkh0.42.12`) does not exist yet, and this document is reformatted when it ships.
 
+> The `factory-loop.md` sections quoted below as `[S ...]` sources were absorbed into
+> `architecture.md` and the file was deleted on 2026-08-23 (`basicly-1hp91f`). The quotes
+> stand as dated evidence; the live rules are the architecture's decision records.
+
 **Why it moved.** The branch it lived on is 283 commits behind main
 (`git rev-list --count harness/basicly-rn0o..main` → `283`, 2026-08-19; `basicly-rn0o.12` recorded
 `248` when it was filed, and the gap widening while the record sat open is the decay it was filed

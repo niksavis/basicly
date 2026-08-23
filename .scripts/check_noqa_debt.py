@@ -1,7 +1,7 @@
 """Fail when the `# noqa` suppression debt grows without saying so (basicly-u2hl.12).
 
-Nothing counts suppressions. `docs/requirements/factory-loop.md` §9.1 recorded the
-debt as 46 across 20 files; re-measured 2026-08-08 after the `S`/`BLE` families landed it is
+Nothing counts suppressions. The debt was first recorded (2026-08-07) as 46 across 20
+files; re-measured 2026-08-08 after the `S`/`BLE` families landed it is
 **76 across 13 codes**, and every one of those arrived through a green gate. A suppression is
 the one edit that makes a linter quieter, so the only thing that can police it is a count
 kept outside the code — this is that count, wired as a `[[verify.checks]]` fast entry beside

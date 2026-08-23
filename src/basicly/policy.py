@@ -58,12 +58,12 @@ from .tracker import write as _write
 MARKER = "[harness-policy]"
 
 
-# --- Gate types (factory-loop.md §5.1) ------------------------------
+# --- Gate types (the mapping tests/test_policy.py asserts) ----------
 #
 # The four behaviours a gate can have when it fails. Naming them is what makes
 # "what happens when this fails" a property of the gate rather than a decision
-# re-taken at each call site — and §1.1's mapping found all four already in use
-# here, unnamed, so this documents existing behaviour more than it adds any.
+# re-taken at each call site — and the original mapping found all four already
+# in use here, unnamed, so this documents existing behaviour more than it adds any.
 
 PREFLIGHT = "pre-flight"  # blocks entry; no partial work created
 REVISION = "revision"  # evaluates produced output, loops back under a cap
@@ -146,7 +146,7 @@ def preflight_gate(gate: str) -> contextlib.AbstractContextManager[None]:
     if declared != PREFLIGHT:
         raise ValueError(
             f"gate {gate!r} is typed {declared}, not {PREFLIGHT}; only a pre-flight "
-            "gate is read-only (factory-loop.md §5.1)"
+            "gate is read-only (architecture D-23)"
         )
     return tracker.read_only(f"pre-flight gate {gate}")
 

@@ -136,7 +136,7 @@ def _scored(entries: list[tuple[str, str, str | None]]) -> list[str]:
     """The outcomes in *entries* that say something about the agent that ran them.
 
     Everything a terminal bound stopped is dropped: the harness killed that run, by
-    design (``factory-loop.md`` 15.7), so scoring it as a failed dispatch reports a
+    design (``architecture`` D-19), so scoring it as a failed dispatch reports a
     degrading runner every time the budget runs out.
     """
     return [outcome for _timestamp, outcome, bound in entries if bound is None]

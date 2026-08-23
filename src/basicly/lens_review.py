@@ -6,7 +6,7 @@ without this the VALIDATE fan-out would spend a dispatch per lens and drop every
 answer. Split from :mod:`basicly.roles`, which owns the vocabulary, because the layer
 stack puts ``roles`` below the tracker seam and a recorder must reach it.
 
-**One comment per lens, and that is the contract.** factory-loop.md §6.4 closes with
+**One comment per lens, and that is the contract.** architecture.md §26.1 closes with
 the rule that lens output is reported per lens and never merged into one ranked list,
 since a change can pass one axis and fail another and a merged ranking lets the strong
 axis mask the weak one. No call shape here merges two lenses: :func:`record` takes one,

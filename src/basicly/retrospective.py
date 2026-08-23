@@ -2,7 +2,7 @@
 
 RETROSPECTIVE is not a lane state and nothing here is a rung in the ladder: no unit ever
 sits in it, ``config.LOOP_PHASES`` does not carry it and ``loop._HANDLERS`` has no entry
-for it. factory-loop.md §3.2 makes it a *conditional process* over the recorded
+for it. architecture.md §26.3 makes it a *conditional process* over the recorded
 gate-failure history, entered by a computed signal — so the module answers one question.
 Does this ledger show a special cause, or a stable process read one failure at a time?
 

@@ -1,9 +1,9 @@
 """The handoff artifacts a loop state hands the next one, and what refuses a bad one.
 
-Three of the eight §8 names an artifact for, and deliberately three: `implementation-plan`
+Three of the eight §33 names an artifact for, and deliberately three: `implementation-plan`
 (DECOMPOSE → BUILD), `change-summary` (BUILD → VERIFY) and `release-record` (SHIP, which
 has already merged, so nothing downstream is left to refuse it). D4 was taken against a
-recommendation to prove one schema first, and §2.1's accepted mitigation is to sequence
+recommendation to prove one schema first; the accepted mitigation is to sequence
 these first and let the rest be built to a shape that has survived contact.
 `implementation-plan` was the cheapest to start from because the plan gate already refuses
 a child that declares none of its plan fields, so the schema formalises a live contract
@@ -49,7 +49,7 @@ IMPLEMENTATION_PLAN = "implementation-plan"
 CHANGE_SUMMARY = "change-summary"
 RELEASE_RECORD = "release-record"
 
-# Every kind §8 names, against the symbol that records it: ``module:function`` inside this
+# Every kind §33 names, against the symbol that records it: ``module:function`` inside this
 # package, or None for a kind nothing records. **Declared, never derived from absence.** A
 # probe for a kind's own name reads the English word as a producer — measured 2026-08-20,
 # six files for `classification` and five of them prose — so a missing *reference* is

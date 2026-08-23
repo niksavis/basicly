@@ -28,8 +28,8 @@ what modules present at both ends did, and what deletion removed. `feat(gates): 
 comment density` reads +4,958 net of +4,958 new; `feat(models): ... split the generic
 tier resolution` reads +4,314 net of +14,966 new.
 
-**It never blocks, and that is the requirement rather than a concession.** D23
-(`docs/requirements/factory-loop.md` §15.7): a sizing control with no recorded correct
+**It never blocks, and that is the requirement rather than a concession.**
+(`docs/architecture/architecture.md` D-19): a sizing control with no recorded correct
 firing is observability. This one has no firing history at all, having not existed, so it
 prints a number and exits 0 — including when it cannot reach one. It earns the right to
 refuse after it has refused something correctly.
