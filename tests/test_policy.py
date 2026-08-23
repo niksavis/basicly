@@ -2023,24 +2023,20 @@ def test_a_finding_carrying_a_separator_round_trips_out_of_the_record(
 def test_the_stored_finding_set_is_bounded_in_members_and_in_length(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A gate that reports hundreds of failures must not write a comment to match."""
+    """Failures stay bounded; outgrowing the cap still reads as no progress."""
     _install(monkeypatch, _FakeBr())
     flood = [f"check-{n:03d}-{'x' * 400}" for n in range(60)]
-
     recorded = _round(tmp_path, *flood)
-
     assert len(recorded.members) == policy.MAX_FINDING_SET_MEMBERS
     assert max(len(m) for m in recorded.members) == policy.MAX_FINDING_MEMBER_CHARS
+
+    assert _round(tmp_path, *flood, *[f"a{n}" for n in range(6)]).verdict == policy.STALLED
 
 
 def test_an_unreadable_finding_set_record_is_dropped_rather_than_raised(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A corrupt marker costs one round of history, never the rework path itself.
-
-    This runs while a gate is *already* failing, so a second way to fall over here
-    would turn a bounded rework attempt into a crashed advance.
-    """
+    """A corrupt marker costs one round of history, not the already-failing rework path."""
     fake = _FakeBr()
     fake.comments.append(f"{policy.FINDING_SET_MARKER} gate=verify verdict=stalled findings=[oops")
     _install(monkeypatch, fake)
