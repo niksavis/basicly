@@ -4,6 +4,12 @@ Two rules for anything added here. Instrument the property off the live socket, 
 constant. Never sleep: bind before the thread starts, gate on an Event, always port 0.
 """
 
+# module-size-waiver: cohesion: 3877 -> 4469 of 4000, headroom was already 123.
+# `board_serve.py`'s own docstring states its behaviour is "asserted in
+# tests/test_board_serve.py, not described here" - the three self-staleness tests are that
+# assertion, sharing `board_repo` and `_ready_document` with the rest of this module; a second
+# suite would either duplicate the fixture or import it across files nothing else here does.
+
 from __future__ import annotations
 
 import ipaddress
@@ -13,9 +19,11 @@ import shutil
 import socket
 import subprocess
 import threading
+import time
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +32,7 @@ import pytest
 from basicly import (
     board_cli,
     board_facts,
+    board_render,
     board_schema,
     board_serve,
     board_snapshot,
@@ -390,3 +399,66 @@ def test_the_served_freshness_is_the_servers_own_cadence(tmp_path: Path) -> None
 
     assert freshness["source"] == board_snapshot.SELF_REFRESH
     assert freshness["cadence_s"] == 7.0
+
+
+def _ready_document() -> dict[str, Any]:
+    """One readable document naming exactly one ready unit, for the fault tests below."""
+    return {
+        "schema": "harness-board/v1",
+        "generated_at": "2026-08-14T16:42:52Z",
+        "units": [{"id": "demo-1", "title": "Demo One", "priority": "P1", "ready": True}],
+    }
+
+
+def test_the_page_always_names_this_producers_own_age(board_repo: Path) -> None:
+    """AC 3: the page already reports the document's freshness; it must report its own too."""
+    board = board_serve.Board(board_repo, build=_ready_document)
+
+    assert board.refresh() is True
+    page = board.page(datetime.now(UTC))
+
+    assert page is not None
+    assert "producer age" in page.decode("utf-8")
+
+
+def test_a_template_newer_than_this_process_is_named_a_fault_not_a_blank(board_repo: Path) -> None:
+    """AC 1 and AC 4, reproducing `f7788bb7` without touching the real template on disk.
+
+    A sibling lane may be rendering through that same file, so staleness is injected via
+    *template_mtime* rather than by writing to it.
+    """
+    board = board_serve.Board(
+        board_repo, build=_ready_document, template_mtime=lambda: time.time() + 3600
+    )
+    assert board.refresh() is True
+
+    page = board.page(datetime.now(UTC))
+
+    assert page is not None
+    text = page.decode("utf-8")
+    assert "the template changed" in text
+    assert "Restart the board." in text
+
+
+def test_rows_the_model_computed_that_never_reached_the_page_are_named_a_fault(
+    board_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC 2: `ready.rows` non-empty but `ready.groups` drew nothing is exactly `f7788bb7`.
+
+    `board_render.page` is replaced with a version that renders as an old template would
+    have - dropping the one row's id - while the unpatched `board_render.context` still
+    reports the row this process actually computed, which is the mismatch this guards.
+    """
+    real_page = board_render.page
+
+    def outdated(*args: Any, **kwargs: Any) -> str:
+        return real_page(*args, **kwargs).replace("demo-1", "")
+
+    monkeypatch.setattr(board_render, "page", outdated)
+    board = board_serve.Board(board_repo, build=_ready_document)
+    assert board.refresh() is True
+
+    page = board.page(datetime.now(UTC))
+
+    assert page is not None
+    assert board_serve.DROPPED_ROWS_FAULT in page.decode("utf-8")
