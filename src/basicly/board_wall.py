@@ -50,6 +50,7 @@ ABSENT = "absent"
 LIVE = "live"
 STALE = "stale"
 WAITING = "waiting"
+STUCK = "stuck"
 CALM = "calm"
 FAIL = "fail"
 
@@ -70,7 +71,8 @@ STATES: tuple[State, ...] = (
     State(ABSENT, "\N{WHITE CIRCLE}", "dashed", "var(--text-dim)"),
     State(LIVE, "\N{BLACK RIGHT-POINTING TRIANGLE}", "solid", "var(--green)"),
     State(STALE, "\N{BLACK DIAMOND}", "double", "var(--amber)"),
-    State(WAITING, "\N{BLACK UP-POINTING TRIANGLE}", "solid", "var(--orange)"),
+    State(WAITING, "\N{BLACK UP-POINTING TRIANGLE}", "solid", "var(--amber)"),
+    State(STUCK, "\N{BLACK UP-POINTING TRIANGLE}", "double", "var(--orange)"),
     State(CALM, "\N{BULLSEYE}", "solid", "var(--green)"),
     State(FAIL, "\N{MULTIPLICATION X}", "double", "var(--amber)"),
 )
@@ -85,8 +87,8 @@ _HOUR = 3600
 _DAY = 86400
 
 # The units a headline may be spelled in, coarsest first. Six metres reads a magnitude, not a
-# figure, so the first unit with a whole count in it wins and the exact elapsed phrase stays on
-# the detail line beneath for the reader who needs it.
+# figure, so the first unit with a whole count in it wins; the caller states this figure once
+# and never repeats it in a second unit on the line beneath.
 _COARSE: tuple[tuple[int, str], ...] = ((_DAY, "DAY"), (_HOUR, "HOUR"), (_MINUTE, "MINUTE"))
 
 DOT = " \N{MIDDLE DOT} "

@@ -201,15 +201,17 @@
 
       /* --- band: the alarm, and the only orange on the page ---------------------------- */
       /* `site/index.html` ships no red, so orange is this page's alarm channel and the band
-         is its only site. A **fill** rather than a text colour, because a failing gate is
-         amber text and the two hues are close: an amber outline is a red tree, an orange
-         field is a person in the room waiting on an answer. */
-      .band.state-waiting,
-      .band.state-waiting .headline,
-      .band.state-waiting .lines,
-      .band.state-waiting .kicker,
-      .band.state-waiting .stale,
-      .band.state-waiting .note {
+         is its only site - and only once a wait has outlasted normal attended turnaround
+         (`board_regions.BAND_ALARM_AFTER_S`); a shorter wait stays the generic amber
+         `state-waiting` border below (basicly-v8jwf0). A **fill** rather than a text colour,
+         because a failing gate is amber text and the two hues are close: an amber outline is
+         a red tree, an orange field is a person in the room waiting past that threshold. */
+      .band.state-stuck,
+      .band.state-stuck .headline,
+      .band.state-stuck .lines,
+      .band.state-stuck .kicker,
+      .band.state-stuck .stale,
+      .band.state-stuck .note {
         background: var(--orange);
         border-color: var(--orange);
         color: var(--bg-sunk);

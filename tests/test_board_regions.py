@@ -4,9 +4,10 @@ The owner's verdict on the render this replaces was that the page did not answer
 being implemented, where the loop is, what state it is in, or what is in the backlog*. So each
 region is asserted on the answer it owes:
 
-* **the alarm** must say whether a person is waiting, in all five of its spellings, must lead
-  with the *age* in the coarsest unit that is still true, and must never report an unreadable
-  `asks` section as a quiet room;
+* **the alarm** must say whether a person is waiting, in all six of its spellings, must lead
+  with the *age* in the coarsest unit that is still true and stated once, must escalate to its
+  alarm colour only past a declared wait and never on existence alone, and must never report an
+  unreadable `asks` section as a quiet room;
 * **the loop** must count per phase, carry each count's share of the population as a bar, and
   mark where work sits - and when no unit carries a phase, must say so rather than draw seven
   noughts;
@@ -50,20 +51,34 @@ def _absent(name: str, reads: dict[str, board_wall.Reading]) -> dict[str, board_
     return _swap(name, reads, board_wall.ABSENT, board_wall.ABSENT_TEXT)
 
 
+def _ask(waiting_s: float) -> dict[str, object]:
+    """A synthetic ask waiting exactly *waiting_s*, for driving the alarm threshold by hand."""
+    return {
+        "wait_id": "w",
+        "issue": "basicly-x",
+        "kind": "checkpoint",
+        "subject": "test",
+        "requested_at": "2026-08-21T00:00:00Z",
+        "waiting_s": waiting_s,
+    }
+
+
 def test_a_pending_ask_leads_with_its_age_in_the_coarsest_unit_that_is_still_true() -> None:
     """The one question a display in a room exists to move, and the age is the headline.
 
     `31 MINUTES`, not `31m 2s`: the criterion is that the largest text in the region is the
     age, so the count of asks steps down to the kicker and the id and kind go beneath. The
-    exact phrase stays on that detail line, which is the assertion that this is a *ranking*
-    rather than a loss.
+    detail line states an absolute since-when and the producer's own offer instead of a
+    second spelling of the same duration - basicly-v8jwf0's fault.
     """
     band = board_regions.band(_reads("wall-v1.json"), _age("wall-v1.json"), STAMPED)
     assert band.state.key == board_wall.WAITING
     assert band.headline == "31 MINUTES"
     assert band.kicker == "3 waiting on a person"
     assert "basicly-4t9z" in band.lines[0], "the longest wait is not first"
-    assert "31m 2s" in band.lines[0], "the exact figure left the page with the coarse one"
+    assert "since Fri 21 Aug 16:11 UTC" in band.lines[0], "the age is not stated once, in one unit"
+    assert "31m" not in band.lines[0] and "1862" not in band.lines[0], "the age repeats itself"
+    assert "do: ship it" in band.lines[0], "the offer says nothing about what to do"
     assert band.lines[-1] == "+2 more waiting", "an ask was dropped with no marker"
     assert not band.stale
 
@@ -72,6 +87,7 @@ def test_an_empty_ask_list_reads_calm_and_an_unreadable_one_never_does() -> None
     """A section that could not be read must not be reported as a quiet room."""
     calm = board_regions.band(_reads("wall-v1.json", asks=[]), _age("wall-v1.json"), STAMPED)
     assert calm.state.key == board_wall.CALM
+    assert calm.state.key not in (board_wall.WAITING, board_wall.STUCK), "nothing pending, no alarm"
     assert calm.headline == "NOTHING IS WAITING"
     assert not calm.kicker, "a quiet room costs one token and no count"
 
@@ -92,23 +108,27 @@ def test_a_stale_document_says_so_without_hiding_what_it_last_knew() -> None:
     assert band.lines[0], "a stale board drew no last known value"
 
 
-def test_the_band_reads_five_ways_and_no_more() -> None:
+def test_the_band_reads_six_ways_and_no_more() -> None:
     """Each spelling exercised, rather than a list of names read back off the module.
 
-    A declared list agrees with itself while the branch that would produce a sixth reading
-    goes unasserted, so the band is driven into all five instead: the four exclusive ask
-    verdicts, and the stale marker that rides on whichever of them holds.
+    A declared list agrees with itself while the branch that would produce a seventh reading
+    goes unasserted, so the band is driven into all six instead: the four exclusive ask
+    verdicts - waiting itself now split by severity into WAITING and STUCK - and the stale
+    marker that rides on whichever of them holds.
     """
     reads, fresh = _reads("wall-v1.json"), _age("wall-v1.json")
     withheld = _swap("asks", reads, board_wall.WITHHELD, "$.asks[0]: too long")
+    stuck = _reads("wall-v1.json", asks=[_ask(board_regions.BAND_ALARM_AFTER_S)])
     verdicts = {
         board_regions.band(reads, fresh, STAMPED).state.key: "waiting",
+        board_regions.band(stuck, fresh, STAMPED).state.key: "stuck",
         board_regions.band(_reads("wall-v1.json", asks=[]), fresh, STAMPED).state.key: "calm",
         board_regions.band(_absent("asks", reads), fresh, STAMPED).state.key: "absent",
         board_regions.band(withheld, fresh, STAMPED).state.key: "withheld",
     }
     assert set(verdicts) == {
         board_wall.WAITING,
+        board_wall.STUCK,
         board_wall.CALM,
         board_wall.ABSENT,
         board_wall.WITHHELD,
@@ -117,6 +137,20 @@ def test_the_band_reads_five_ways_and_no_more() -> None:
     assert "$.asks[0]" in board_regions.band(withheld, fresh, STAMPED).lines[0]
     assert board_regions.band(reads, _age("wall-v1.json", 900), STAMPED).stale.startswith("STALE")
     assert not board_regions.band(reads, fresh, STAMPED).stale
+
+
+def test_the_alarm_colour_steps_at_the_declared_threshold_and_no_earlier() -> None:
+    """A short wait and a long wait must not paint the same colour (basicly-v8jwf0).
+
+    Driven across :data:`board_regions.BAND_ALARM_AFTER_S` on both sides, rather than against
+    a literal this test would have to keep in step with the region by hand.
+    """
+    boundary = board_regions.BAND_ALARM_AFTER_S
+    fresh = _age("wall-v1.json")
+    under = board_regions.band(_reads("wall-v1.json", asks=[_ask(boundary - 1)]), fresh, STAMPED)
+    at = board_regions.band(_reads("wall-v1.json", asks=[_ask(boundary)]), fresh, STAMPED)
+    assert under.state.key == board_wall.WAITING, "a wait short of the boundary already alarms"
+    assert at.state.key == board_wall.STUCK, "a wait at the boundary still reads as normal"
 
 
 def test_the_loop_counts_a_phase_per_unit_and_marks_where_the_lanes_are() -> None:

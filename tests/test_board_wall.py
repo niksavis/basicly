@@ -94,9 +94,13 @@ def test_every_state_is_encoded_on_a_glyph_and_a_border_as_well_as_colour() -> N
 
 
 def test_the_alarm_colour_is_reserved_for_one_state() -> None:
-    """`site/index.html` ships no red, so orange is the alarm and only the band may use it."""
+    """`site/index.html` ships no red, so orange is the alarm and only the band may use it.
+
+    `STUCK`, not `WAITING`: a wait past the alarm boundary escalates past the amber that a
+    merely-pending ask reads (basicly-v8jwf0), and orange still belongs to exactly one state.
+    """
     orange = [state.key for state in board_wall.STATES if state.colour == "var(--orange)"]
-    assert orange == [board_wall.WAITING]
+    assert orange == [board_wall.STUCK]
 
 
 def test_every_section_the_verdict_named_gets_a_reading() -> None:
