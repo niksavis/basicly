@@ -373,6 +373,47 @@ def _whole(held: object) -> int | None:
     return held if isinstance(held, int) and not isinstance(held, bool) else None
 
 
+def _visible_asks(
+    asks: Sequence[Mapping[str, Any]], live_ids: frozenset[str], grant_level: str
+) -> list[dict[str, object]]:
+    """*asks* minus a checkpoint no human can, or need, answer (basicly-0i86tl).
+
+    A record ``document`` no longer lists in ``units`` is closed or tombstoned - the same
+    "active population" cut `board_snapshot._read_and_fold` draws - and a wait pinned to it
+    is unanswerable by anyone, however old its stamp. `policy.GRANT_COVERAGE` is the table
+    `approve_checkpoint_guarded` already checks before ever asking a human, so a checkpoint
+    it covers under the session's own grant needs no ask either. A decision carries no
+    checkpoint name to cover, so it clears the second test by construction and renders
+    whenever its record is live - the grant is never consulted for it.
+    """
+    covered = policy.GRANT_COVERAGE.get(grant_level, ())
+    visible = []
+    for ask in asks:
+        if str(ask.get("issue", "")) not in live_ids:
+            continue
+        if ask.get("kind") == "checkpoint" and ask.get("subject") in covered:
+            continue
+        visible.append(dict(ask))
+    return visible
+
+
+def _hide_unanswerable(built: dict[str, object]) -> dict[str, object]:
+    """*built*, with :func:`_visible_asks` applied to its ``asks`` section, if any."""
+    asks = built.get("asks")
+    if not isinstance(asks, list):
+        return built
+    units = built.get("units")
+    live_ids = (
+        frozenset(str(row["id"]) for row in units if isinstance(row, dict) and "id" in row)
+        if isinstance(units, list)
+        else frozenset()
+    )
+    session = built.get("session")
+    grant_level = str(session.get("grant_level", "")) if isinstance(session, dict) else ""
+    built["asks"] = _visible_asks(asks, live_ids, grant_level)
+    return built
+
+
 def document(
     repo_root: Path, *, lane_label: str | None = None, in_flight: bool = False
 ) -> dict[str, object]:
@@ -387,6 +428,10 @@ def document(
     *in_flight* adds :func:`lane_facts`, and only a caller that knows the pass may ask for it:
     Mode A and Mode B fold whatever lock they find without knowing its selector, so a label
     pass drawn from there would name the root's children.
+
+    **The action band never gets a marker `build_document` alone would still emit.**
+    :func:`_hide_unanswerable` runs on whichever build is returned - the ask-free first pass
+    or the reworded second one - so neither exit publishes a wait nobody can act on.
     """
     phase_map = phases(repo_root)
     session = session_facts(repo_root)
@@ -405,7 +450,7 @@ def document(
     asked = questions(repo_root, built)
     if asked:
         built = board_snapshot.build_document(repo_root, facts=replace(facts, questions=asked))
-    return _with_live_spend(built, session)
+    return _with_live_spend(_hide_unanswerable(built), session)
 
 
 def emit_tick(repo_root: Path, cadence_s: float, *, lane_label: str | None = None) -> Path:

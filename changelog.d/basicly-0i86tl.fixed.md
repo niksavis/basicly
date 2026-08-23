@@ -1,0 +1,1 @@
+- The board action band no longer alarms on a checkpoint a live grant already delegates, or one whose record has closed; a queued decision still renders regardless of any grant.
