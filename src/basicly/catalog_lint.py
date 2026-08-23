@@ -1,7 +1,9 @@
 """Catalog source lint — the deterministic gate that keeps the YAML contract.
 
-Enforces nine invariants across the managed core catalog so the double-load fix
-and the single-extension decision cannot regress (architecture §10.2):
+Enforces eleven invariants across the managed core catalog so the double-load fix
+and the single-extension decision cannot regress (architecture §10.2). The count was
+stale at "nine" while rule 10 was already in ``lint_catalog``, so it is stated here
+against the numbered calls in that function and nowhere else:
 
 1. No discoverable-name *sources*: no ``SKILL.md`` under ``core/skills``, no
    ``*.fragment.md`` under ``core/fragments``, and no markdown under
@@ -23,6 +25,11 @@ and the single-extension decision cannot regress (architecture §10.2):
 9. Tier-2 routing (basicly-m4zv.2): the eval cases colocated with each
    model-invoked entry route to their owner, no two descriptions collide, and
    the rank-1 rate clears a floor this gate refuses to lower.
+10. Dispatch vocabulary (basicly-jcl4rm): a ``covers:`` value the engine never
+    dispatches matches nothing, which is indistinguishable from declaring nothing.
+11. Declared cost: every skill and fragment states what it costs the always-on
+    surfaces, and the statement agrees with the measured projection
+    (:mod:`basicly.catalog_token_cost`, which also owns the migration window).
 
 ``README.md`` and other documentation files are not sources and are left alone.
 
@@ -41,7 +48,15 @@ from pathlib import Path
 
 import yaml
 
-from . import agents, read_cost, routing_evals, rubrics, skill_coverage, skill_source
+from . import (
+    agents,
+    catalog_token_cost,
+    read_cost,
+    routing_evals,
+    rubrics,
+    skill_coverage,
+    skill_source,
+)
 from .catalog_source import (
     AGENTS_DIR,
     CORE_DIR,
@@ -267,6 +282,12 @@ def lint_catalog(repo_root: Path) -> list[str]:
     # from declaring nothing — the silent miss basicly-jcl4rm exists to close.
     violations.extend(_check_coverage_vocabulary(repo_root))
 
+    # 11. Every source declares what it costs the always-on surfaces, and the declaration
+    # agrees with the measured projection. :mod:`basicly.catalog_token_cost` owns the
+    # measurement and the migration window; an absent declaration reaches this list only
+    # once that window has closed.
+    violations.extend(catalog_token_cost.violations(repo_root))
+
     return violations
 
 
@@ -426,6 +447,7 @@ def skill_warnings(repo_root: Path) -> list[str]:
     """
     warnings: list[str] = list(routing_evals.routing_outcome(repo_root).warnings)
     warnings.extend(listing_budget_warnings(repo_root))
+    warnings.extend(catalog_token_cost.warnings(repo_root))
     for path in sorted((repo_root / SKILLS_DIR).glob("*/skill.yaml")):
         data = load_mapping(path)
         if data is None:

@@ -1,0 +1,1 @@
+- Catalog sources may declare `token_cost:`, the always-on tokens they add per surface (a target name for a fragment, `listing` for a skill). `basicly catalog lint` measures the real cost and fails a declaration that has rotted past its tolerance; an absent declaration is reported without failing until 0.11.0, since the schema is a contract other repos author against.
