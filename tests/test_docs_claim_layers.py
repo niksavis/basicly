@@ -148,15 +148,14 @@ def test_the_declared_exemptions_are_read_from_the_contract_not_from_the_diagram
     The contract's prose names ``unmatched_ignore_imports_alerting``, so keying the parse on
     the bare word landed inside that comment and returned no exemptions at all - which
     renders a diagram with no exemption edges drawn and nothing to disagree with it. So the
-    live tree is asserted to yield both pairs before any mutation, and removing one is
+    live tree is asserted to yield the surviving pair before any mutation, and removing it is
     asserted to take its edge out of the document.
     """
-    assert layers.exemptions(REPO) == [("loop", "supervise"), ("policy", "decisions")]
+    assert layers.exemptions(REPO) == [("policy", "decisions")]
     _edit_contract(work_repo, "\n    basicly.policy -> basicly.decisions\n", "\n")
-    assert layers.exemptions(work_repo) == [("loop", "supervise")]
+    assert layers.exemptions(work_repo) == []
     assert _run(work_repo, "--fix") == 0
     body = " ".join(block_body((work_repo / ARCHITECTURE_MD).read_text(encoding="utf-8"), BLOCK))
-    assert "loop imports supervise" in body
     assert "policy imports decisions" not in body
 
 

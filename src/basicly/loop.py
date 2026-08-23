@@ -51,6 +51,7 @@ from typing import TYPE_CHECKING
 from . import (
     classify,
     commit,
+    context_meter,
     cost_rollup,
     curate,
     decisions,
@@ -783,9 +784,7 @@ def _observe_context_ceiling(ctx: _Ctx, dispatch: _Dispatch) -> str:
 
     Returns the detail suffix — empty when nothing crossed.
     """
-    from . import supervise  # noqa: PLC0415 — supervise imports loop; deferred to break it
-
-    verdict = supervise.meter_context_ceiling(
+    verdict = context_meter.meter_context_ceiling(
         dispatch.spec, dispatch.result, load_sizing_config(ctx.repo_root)
     )
     return f"; {verdict.observation}" if verdict.overrun else ""
