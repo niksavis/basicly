@@ -9,6 +9,7 @@ at this tier and passed down, which `.importlinter` enforces (C11).
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import json
 import socket
 import threading
@@ -25,9 +26,28 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 from pathlib import Path
 
-# C10, and the only line here that is a security boundary: the loopback literally, never
-# `0.0.0.0` and never a name a resolver is free to point off this box.
+# C10, and the security boundary here: the loopback by default, and only ever a literal
+# IPv4 address the operator chose (basicly-bxk5g8, for touch walls) — never `0.0.0.0`,
+# never a name a resolver is free to point off this box. `admitted_host` is the rule.
 HOST = "127.0.0.1"
+
+
+def admitted_host(value: str) -> str:
+    """The bind address, admitted; raises ValueError naming the refused rule.
+
+    A wildcard exposes interfaces the operator never saw, a name resolves wherever a
+    resolver says, and IPv6 would need its own address family here.
+    """
+    try:
+        parsed = ipaddress.ip_address(value)
+    except ValueError:
+        raise ValueError(f"{value!r} is not an IP literal; a resolvable name is refused") from None
+    if parsed.version != 4:
+        raise ValueError(f"{value!r} is IPv6; this listener binds IPv4 literals only")
+    if parsed.is_unspecified:
+        raise ValueError(f"{value!r} binds every interface; name the one you mean")
+    return str(parsed)
+
 
 # The transcript's port, fixed so a wall display's bookmark survives a restart. `--port 0`
 # takes an ephemeral one, which is what a test and a second board on one machine use.
@@ -95,12 +115,9 @@ class Board:
     ) -> None:
         """Hold *repo_root*, the cadence, how to build and what may be acted on.
 
-        *actions* is None for a read-only board: no surface, no POST route, and no panel.
-
-        **`build` comes from above, and its absence was a real defect**: folding with the
-        lock facts alone served 0 phases of 232 where `board --out` served 232.
-        `board_facts` sits above this tier, so the caller passes a builder rather than this
-        module reaching upward for one (basicly-sp8lce).
+        *actions* is None for a read-only board: no surface, no POST route, no panel.
+        `build` comes from above because `board_facts` outranks this tier; folding from
+        the lock facts alone served 0 phases of 232 (basicly-sp8lce).
         """
         self.repo_root = repo_root
         self.refresh_s = refresh_s
@@ -141,10 +158,8 @@ class Board:
     def refresh(self) -> bool:
         """Fold one document into memory unless a live supervisor owns the tick; did it fold.
 
-        A failure is counted and swallowed on purpose. A display whose fold hit a corrupt
-        source must keep showing its last document with a growing age - that is what the STALE
-        band is for - because exiting replaces a stale screen with a dark one, and a dark
-        screen is the failure this whole design is against.
+        A failure is counted and swallowed on purpose: a stale screen with a growing age
+        beats the dark one that exiting would leave, which is what the STALE band is for.
         """
         if live_holder(self.repo_root) is not None:
             return False
@@ -179,8 +194,7 @@ class Board:
     def page(self, now: datetime) -> bytes | None:
         """The board as one HTML page, or None where no readable document is available.
 
-        A document the contract refuses is not drawn, for Mode A's reason: a page rendered over
-        a document with no valid age on it is the one output this design has no honest use for.
+        A document the contract refuses is not drawn, for Mode A's reason.
         """
         payload = self.payload()
         if payload is None:
@@ -283,10 +297,8 @@ class _Server(ThreadingHTTPServer):
 class Listener:
     """A bound but not-yet-serving board, so a caller can read the port it actually got.
 
-    The socket is held privately and reached through :meth:`run`, :meth:`stop` and
-    :meth:`close`, because the three have an order a caller must not have to know: `stop`
-    belongs to another thread than `run`, and `close` is the only one safe after an interrupt
-    took `run` out from under the base class's own shutdown event.
+    The socket is private: `stop` belongs to another thread than `run`, and `close` is
+    the only call safe after an interrupt, so the order lives here and not in callers.
     """
 
     _httpd: _Server
@@ -320,15 +332,16 @@ class Listener:
         self._httpd.server_close()
 
 
-def bind(
+def bind(  # noqa: PLR0913 — mirrors the CLI surface
     repo_root: Path,
     *,
     port: int = DEFAULT_PORT,
     refresh_s: float = DEFAULT_REFRESH_S,
     build: Callable[[], dict[str, object]] | None = None,
     actions: bool = True,
+    host: str = HOST,
 ) -> Listener:
-    """Bind :data:`HOST` and fold the first document; a listener that is not yet serving.
+    """Bind *host* and fold the first document; a listener that is not yet serving.
 
     Separate from :func:`serve` so a caller can read the assigned port before any request could
     arrive: `--port 0` is the documented way to run a second board or a test, and polling a
@@ -337,7 +350,7 @@ def bind(
     surface = board_actions.ActionSurface(repo_root) if actions else None
     board = Board(repo_root, refresh_s=refresh_s, build=build, actions=surface)
     board.refresh()
-    return Listener(_httpd=_Server((HOST, port), board), board=board)
+    return Listener(_httpd=_Server((admitted_host(host), port), board), board=board)
 
 
 def _tick(board: Board, stop: threading.Event) -> None:
@@ -346,13 +359,14 @@ def _tick(board: Board, stop: threading.Event) -> None:
         board.refresh()
 
 
-def serve(
+def serve(  # noqa: PLR0913 — mirrors the CLI surface
     repo_root: Path,
     *,
     port: int = DEFAULT_PORT,
     refresh_s: float = DEFAULT_REFRESH_S,
     build: Callable[[], dict[str, object]] | None = None,
     actions: bool = True,
+    host: str = HOST,
 ) -> int:
     """Run the board until SIGINT, then report what it did; the exit code.
 
@@ -361,13 +375,23 @@ def serve(
     not a stream nobody reads.
     """
     try:
-        listener = bind(repo_root, port=port, refresh_s=refresh_s, build=build, actions=actions)
+        host = admitted_host(host)
+    except ValueError as exc:
+        ui.warn(f"board: refusing to bind - {exc}")
+        return 2
+    try:
+        listener = bind(
+            repo_root, port=port, refresh_s=refresh_s, build=build, actions=actions, host=host
+        )
     except OSError as exc:
-        ui.warn(f"board: cannot listen on {HOST}:{port} - {exc}")
+        ui.warn(f"board: cannot listen on {host}:{port} - {exc}")
         return 1
     ui.say(
-        f"board: serving {board_schema.VERSION} on {listener.url}  ({HOST} only; Ctrl-C to stop)"
+        f"board: serving {board_schema.VERSION} on {listener.url}  ({host} only; Ctrl-C to stop)"
     )
+    if not ipaddress.ip_address(host).is_loopback:
+        reach = "code-gated actions" if actions else "no action route"
+        ui.say(f"board: {host} is reachable beyond this machine - {reach}")
     ui.say(listener.board.producer())
     ui.say(board_actions.transcript(listener.board.actions))
     ui.say("board: press Ctrl-C to stop. This process holds no lock and blocks no gate.")

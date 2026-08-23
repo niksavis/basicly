@@ -1,0 +1,5 @@
+# `bind` and `serve` each gained the `host` the touch wall needs (basicly-bxk5g8), and each
+# already mirrored the CLI surface argument-for-argument; folding host+port into a carrier
+# object was rejected because every existing caller and test names `port=` directly.
+[ratchet.noqa_debt.frozen]
+PLR0913 = 2

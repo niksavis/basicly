@@ -132,6 +132,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         refresh_s=args.refresh,
         build=lambda: board_facts.document(root),
         actions=not args.no_actions,
+        host=args.bind,
     )
 
 
@@ -185,7 +186,13 @@ def add_parsers(subparsers: argparse._SubParsersAction) -> None:
         "--port",
         type=int,
         default=board_serve.DEFAULT_PORT,
-        help="The loopback port to bind; 0 takes an ephemeral one and prints it",
+        help="The port to bind; 0 takes an ephemeral one and prints it",
+    )
+    serve.add_argument(
+        "--bind",
+        default=board_serve.HOST,
+        help="A literal IPv4 interface address for a touch wall or a team display; "
+        "the default stays the loopback, and a wildcard or a hostname is refused",
     )
     serve.add_argument(
         "--refresh",

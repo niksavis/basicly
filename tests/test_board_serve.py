@@ -86,12 +86,7 @@ def _get(url: str) -> tuple[int, bytes, dict[str, str]]:
 
 
 def test_the_listener_binds_the_loopback_and_never_a_wildcard_or_a_name(board_repo: Path) -> None:
-    """AC 1 and C10, read off the live socket rather than off the constant.
-
-    The address is asserted to parse as a loopback IPv4 literal, which refuses `0.0.0.0` and
-    refuses a hostname in one assertion - a name is the case a `!= "0.0.0.0"` check waves
-    through, and a resolver is free to point one off this box.
-    """
+    """AC 1 and C10, read off the live socket rather than off the constant."""
     with _running(board_serve.bind(board_repo, port=0)) as listener:
         bound = ipaddress.ip_address(listener.host)
         assert bound.is_loopback
@@ -101,13 +96,33 @@ def test_the_listener_binds_the_loopback_and_never_a_wildcard_or_a_name(board_re
         assert listener.url == f"http://127.0.0.1:{listener.port}"
 
 
-def test_the_two_get_routes_answer_and_a_post_is_405(board_repo: Path) -> None:
-    """AC 6, and `basicly-rn0o.6`'s AC 7 once the action surface landed: a read-only board.
+@pytest.mark.parametrize(
+    ("value", "reason"),
+    [
+        ("0.0.0.0", "every interface"),
+        ("board.example.com", "not an IP literal"),
+        ("::1", "IPv6"),
+    ],
+)
+def test_a_wildcard_a_name_and_ipv6_are_refused_by_the_admission_rule(
+    value: str, reason: str
+) -> None:
+    """C10 survives the LAN bind (basicly-bxk5g8): only a chosen IPv4 literal is admitted."""
+    with pytest.raises(ValueError, match=reason):
+        board_serve.admitted_host(value)
 
-    `actions=False` is spelled rather than left to the default, because the default is now a
-    board that registers the action route - so this asserts the read-only board and not merely
-    whatever `bind` happens to construct. 405 rather than the base class's 501: 501 reads as
-    "not implemented yet", and this resource is not going to take a POST.
+
+def test_an_explicit_interface_literal_is_admitted_and_bound(board_repo: Path) -> None:
+    """The touch-wall case, driven on the one non-loopback-free address every box has."""
+    assert board_serve.admitted_host("127.0.0.1") == "127.0.0.1"
+    with _running(board_serve.bind(board_repo, port=0, host="127.0.0.1")) as listener:
+        assert listener.host == "127.0.0.1"
+
+
+def test_the_two_get_routes_answer_and_a_post_is_405(board_repo: Path) -> None:
+    """AC 6 and AC 7: the read-only board, spelled `actions=False` rather than defaulted.
+
+    405 rather than the base class's 501: this resource is never going to take a POST.
     """
     with _running(board_serve.bind(board_repo, port=0, actions=False)) as listener:
         status, body, headers = _get(f"{listener.url}/snapshot.json")
@@ -134,11 +149,7 @@ def test_the_two_get_routes_answer_and_a_post_is_405(board_repo: Path) -> None:
 def test_the_served_snapshot_validates_and_is_fresher_than_the_cadence_it_declares(
     board_repo: Path,
 ) -> None:
-    """The record's acceptance criterion, over the wire rather than over the function.
-
-    `cadence_s` is what the document promises about itself, so a served document whose own age
-    already exceeds it is a board lying about its liveness on the first request.
-    """
+    """The acceptance criterion over the wire: a document must not outlive its own cadence."""
     with _running(board_serve.bind(board_repo, port=0, refresh_s=15.0)) as listener:
         _status, body, _headers = _get(f"{listener.url}/snapshot.json")
     document: dict[str, Any] = json.loads(body)
@@ -153,11 +164,7 @@ def test_the_served_snapshot_validates_and_is_fresher_than_the_cadence_it_declar
 def test_a_fresh_lock_makes_the_route_the_supervisors_file_byte_for_byte(
     board_repo: Path,
 ) -> None:
-    """AC 2 and the transport rule: in serve mode the identical bytes are `GET /snapshot.json`.
-
-    The file written here is deliberately *not* what a fold of this repo would produce, so a
-    server that folded anyway would answer with different bytes rather than with equal ones.
-    """
+    """AC 2: the file differs from a fold, so folding anyway would not compare equal."""
     _lock(board_repo)
     minimal = json.loads(MINIMAL.read_text(encoding="utf-8"))
     landed = board_snapshot.write_document(board_repo, minimal)
@@ -185,13 +192,7 @@ def test_a_stale_lock_hands_the_fold_back_to_the_viewer(board_repo: Path) -> Non
 def test_the_server_takes_no_lock_and_writes_nothing_at_all(
     board_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """AC 5, instrumented twice: the write seams refuse, and the tree is listed before and after.
-
-    Two instruments because either alone is fail-open. A spy misses a write that reaches the
-    filesystem by some path it does not name; a tree listing misses a write that lands the same
-    bytes that were already there. `.basicly/ledger/` is inside the listing, so the criterion's
-    own path is covered by the general claim rather than by a second assertion.
-    """
+    """AC 5, twice: the write seams refuse and the tree is listed, as either is fail-open."""
 
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("the board server wrote state")
