@@ -1,0 +1,9 @@
+# A frozen table is the wrong shape for a population 96% over the line, so this gate's
+# baseline is git itself: a fragment in HEAD carries its committed size as its own ceiling
+# and may only shrink; one absent from HEAD is new and must fit the 400-char cap. The
+# bullet rule is unconditional — loose prose orphans its entry at assembly, the defect
+# that cost five v0.9.0 entries their bullet (basicly-x8hwwv, basicly-n8nbsq).
+[[verify.checks]]
+name = "release-fragments"
+command = ["uv", "run", "python", ".scripts/check_release_fragments.py"]
+modes = ["fast", "full"]
