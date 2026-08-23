@@ -1103,14 +1103,18 @@ def _scaffold_local_config_ignore(repo_root: Path) -> None:
     print(f"Added {LOCAL_CONFIG_FILE} to .gitignore")
 
 
-def _record_install_technologies(repo_root: Path, raw: str | None) -> bool:
-    """Record a ``--technologies`` selection in basicly.toml; False on bad input."""
+def _validate_install_technologies(raw: str | None) -> list[str] | None:
+    """Parse and vet ``--technologies`` before any install work runs; None on bad input.
+
+    Kept separate from recording the selection so a rejected flag exits before
+    the first file write, not after cmd_install's sync/scaffold steps have run.
+    """
     if raw is None:
-        return True
+        return []
     technologies = [item.strip() for item in raw.split(",") if item.strip()]
     if not technologies:
         print("--technologies requires at least one value", file=sys.stderr)
-        return False
+        return None
     unknown = sorted(set(technologies) - TECHNOLOGIES)
     if unknown:
         print(
@@ -1118,7 +1122,14 @@ def _record_install_technologies(repo_root: Path, raw: str | None) -> bool:
             f"Allowed: {', '.join(sorted(TECHNOLOGIES))}",
             file=sys.stderr,
         )
-        return False
+        return None
+    return technologies
+
+
+def _record_install_technologies(repo_root: Path, technologies: list[str]) -> bool:
+    """Record a pre-validated ``--technologies`` selection in basicly.toml."""
+    if not technologies:
+        return True
     try:
         record_technology_selection(repo_root, technologies)
     except ValueError as exc:
@@ -1138,6 +1149,10 @@ def cmd_install(args: argparse.Namespace) -> int:
     project fragments, skills, agents, and hooks. Re-running from a newer
     pinned ref is the upgrade path.
     """
+    technologies = _validate_install_technologies(getattr(args, "technologies", None))
+    if technologies is None:
+        return 1
+
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
 
@@ -1197,7 +1212,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         print(f"Wrote {CONFIG_FILE}")
     _scaffold_local_config_ignore(repo_root)
 
-    if not _record_install_technologies(repo_root, getattr(args, "technologies", None)):
+    if not _record_install_technologies(repo_root, technologies):
         return 1
 
     _setup_tracker(repo_root)
