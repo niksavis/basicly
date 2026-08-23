@@ -237,6 +237,75 @@ def test_a_holder_releases_the_base_checkout_even_when_the_commit_raises(
         pass
 
 
+def test_the_release_retries_the_sharing_violation_a_waiter_read_causes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WinError 32 by injection (basicly-s2obqz): a reader must not strand the lock.
+
+    Proven live in CI run 32632831403: the holder's unlink raced a waiter's
+    `holder()` read, died unreleased, and the surviving waiters polled out the
+    whole wait budget.
+    """
+    real = base_lock._unlink
+    refusals = [PermissionError("in use"), PermissionError("in use")]
+    naps: list[float] = []
+
+    def read_locked(path: Path) -> None:
+        if refusals:
+            raise refusals.pop()
+        real(path)
+
+    monkeypatch.setattr(base_lock, "_unlink", read_locked)
+    with base_lock.hold(tmp_path, sleep=naps.append):
+        pass
+
+    assert not (tmp_path / base_lock.LOCK_FILE).exists()
+    assert naps == [base_lock.POLL_S] * 2
+
+
+def test_a_release_refused_past_every_retry_is_loud(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An undeletable lock is a real fault; swallowing it would wedge every waiter."""
+    attempts = 0
+
+    def welded(_path: Path) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(base_lock, "_unlink", welded)
+    with pytest.raises(PermissionError), base_lock.hold(tmp_path, sleep=lambda _s: None):
+        pass
+
+    assert attempts == base_lock.RELEASE_ATTEMPTS
+
+
+def test_a_create_refused_by_a_delete_pending_window_reads_as_busy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The take side of the same race: a peer's in-flight unlink refuses the create.
+
+    Windows answers `O_CREAT | O_EXCL` on a delete-pending file with
+    PermissionError rather than FileExistsError; the waiter must poll on, not die.
+    """
+    real_open = os.open
+    refusals = [PermissionError("delete pending")]
+    naps: list[float] = []
+
+    def delete_pending(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        if str(path).endswith(base_lock.LOCK_FILE.name) and refusals:
+            raise refusals.pop()
+        return real_open(path, flags, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(base_lock.os, "open", delete_pending)
+    with base_lock.hold(tmp_path, sleep=naps.append):
+        pass
+
+    assert not (tmp_path / base_lock.LOCK_FILE).exists()
+    assert naps == [base_lock.POLL_S]
+
+
 def test_the_lock_stays_invisible_to_the_checkout_it_protects(tmp_path: Path) -> None:
     """A lock git can see would make the commit it guards decline, on every dispatch.
 

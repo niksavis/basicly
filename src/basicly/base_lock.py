@@ -1,22 +1,14 @@
 """The base checkout is a single-writer resource; this is the queue for it.
 
 Every lane gets its own checkout, but the commit that publishes its claim runs in
-the **base** one. Measured 2026-08-19: four same-second `basicly loop run` dispatches
-left one commit and three non-zero exits having done nothing — two on ``git
-commit``'s exit 1 (a peer had committed the same dirt, so nothing was staged) and
-one on exit 128 (a peer held ``.git/index.lock``). Fan-out was bounded by an
-unguarded serial step, not by the isolation model (basicly-kjc5.63).
+the **base** one; unguarded, concurrent dispatches lose to each other's git
+(basicly-kjc5.63). :func:`hold` queues them: a loser waits, and one that waits past
+:data:`WAIT_S` is told it lost to *contention*, not to a rejected commit. Unlike
+the supervisor's lock, which refuses a contender, here everyone must get in.
 
-:func:`hold` is the queue they were missing: a loser waits, and one that waits past
-:data:`WAIT_S` is told it lost to *contention*. That wording is half the bug —
-``command failed (1): git commit`` reads as a rejected commit, so an operator
-debugged the hook chain. Not the supervisor's lock, which *refuses* a contender to
-keep supervisor-ness a singleton; here everyone must eventually get in.
-
-**Failure mode.** Liveness is the lock's mtime and nothing refreshes it: the section
-has no thread to beat from. It runs the whole pre-commit chain, so
-:data:`HOLD_BUDGET_S` is minutes — and a slower commit is declared crashed and its
-lock stolen. The theft costs one lane the pre-fix behaviour, not correctness.
+Liveness is the lock's mtime and nothing refreshes it, so a holder older than
+:data:`HOLD_BUDGET_S` is declared crashed and its lock stolen; the theft costs one
+lane a duplicate-publish refusal, not correctness.
 """
 
 from __future__ import annotations
@@ -69,14 +61,44 @@ def _payload() -> str:
 
 
 def _take(path: Path) -> bool:
-    """Create the lock atomically; False when another dispatch already holds it."""
+    """Create the lock atomically; False when another dispatch already holds it.
+
+    PermissionError is busy, not broken: windows surfaces a peer's in-flight
+    unlink as a delete-pending window that refuses the create (basicly-s2obqz).
+    """
     try:
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
+    except FileExistsError, PermissionError:
         return False
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(_payload())
     return True
+
+
+def _unlink(path: Path) -> None:
+    """One removal attempt; the seam :func:`_release` retries through."""
+    path.unlink(missing_ok=True)
+
+
+# Bounded and short: the colliding reader holds the file for one `read_text`.
+RELEASE_ATTEMPTS = 8
+
+
+def _release(path: Path, sleep: Callable[[float], None]) -> None:
+    """Remove the lock, retrying the sharing violation a waiter's read causes.
+
+    Windows refuses to delete a file a `holder()` poll holds open; unretried, that
+    stranded the lock and wedged every waiter (basicly-s2obqz). The last attempt
+    propagates: a lock undeletable past the retries must be loud.
+    """
+    for _ in range(RELEASE_ATTEMPTS - 1):
+        try:
+            _unlink(path)
+        except PermissionError:
+            sleep(POLL_S)
+        else:
+            return
+    _unlink(path)
 
 
 def holder(repo_root: Path) -> tuple[int | None, float] | None:
@@ -154,4 +176,4 @@ def hold(
     try:
         yield
     finally:
-        path.unlink(missing_ok=True)
+        _release(path, sleep)
