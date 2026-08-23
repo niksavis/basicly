@@ -1,0 +1,1 @@
+- The board's alarm band now colours by how long an ask has waited, not by whether one exists: a wait past one hour turns orange, a shorter one stays amber. The detail line states the wait once, as an absolute since-when plus the offered action, instead of repeating the headline's duration in a second unit.

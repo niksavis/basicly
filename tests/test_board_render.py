@@ -145,7 +145,7 @@ def test_the_alarm_colour_is_only_ever_the_watch_bands() -> None:
     ]
     assert users, "no rule uses the alarm colour at all, so this probe proves nothing"
     for selector in users:
-        assert ":root" in selector or ".band" in selector or ".state-waiting" in selector, (
+        assert ":root" in selector or ".band" in selector or ".state-stuck" in selector, (
             f"the alarm colour escaped the watch band: {selector}"
         )
 

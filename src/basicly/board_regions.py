@@ -31,8 +31,10 @@ The vocabulary, the honesty rules and the shapes are :mod:`basicly.board_wall`'s
 from __future__ import annotations
 
 from collections import Counter
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
+from . import board_fields
 from .board_wall import (
     ABSENT,
     ABSENT_TEXT,
@@ -43,6 +45,7 @@ from .board_wall import (
     NOTE_MAX,
     PARENT_CHILD,
     RENDERABLE,
+    STUCK,
     TITLE_MAX,
     UNATTACHED,
     UNKNOWN,
@@ -72,7 +75,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from datetime import datetime
 
-    from .board_wall import Age, Reading
+    from .board_wall import Age, Reading, State
 
 # The harness's own lifecycle, in order, and the order is the load-bearing part: the palette
 # ships four hues and there are seven phases, so a phase is carried by its **position** in
@@ -112,7 +115,29 @@ READY_TITLE_WIDE = 110
 # pushes the alarm past the height the design gives it; the dropped count names the rest.
 BAND_ASKS = 1
 
+# The wait, in seconds, past which the band escalates from WAITING's amber to STUCK's orange.
+# One hour: basicly-k6tpep's Fable-5 review found a checkpoint answered within it is normal
+# attended turnaround, so the alarm has to mean the wait outlasted that, not that one exists.
+BAND_ALARM_AFTER_S = 3600.0
+
 QUESTION_MAX = 70
+
+# Fixed rather than `strftime`, whose `%a`/`%b` read the host locale this repo cannot pin.
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+_MONTHS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
 
 
 def head(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
@@ -144,27 +169,56 @@ def _waited(ask: Mapping[str, Any], now: datetime) -> float | None:
     return given if given is not None else since(ask.get("requested_at"), now)
 
 
-def _ask_line(ask: Mapping[str, Any], now: datetime) -> str:
-    """One pending ask: who is waiting, on what, for how long, and in whose words."""
+def _since(ask: Mapping[str, Any]) -> str:
+    """When *ask* was made, as an absolute UTC stamp - never the headline's duration again."""
+    stamp = ask.get("requested_at")
+    written = board_fields.instant(stamp) if isinstance(stamp, str) else None
+    if written is None:
+        return "since an unreadable time"
+    at = written.astimezone(UTC)
+    return (
+        f"since {_WEEKDAYS[at.weekday()]} {at.day:02d} {_MONTHS[at.month - 1]}"
+        f" {at.hour:02d}:{at.minute:02d} UTC"
+    )
+
+
+def _offer(ask: Mapping[str, Any]) -> str:
+    """What the producer offered to do about *ask*, in its own wording, or ""."""
+    actions = ask.get("actions")
+    first = actions[0] if isinstance(actions, list) and actions else None
+    return str(first.get("offer", "")) if isinstance(first, dict) else ""
+
+
+def _ask_line(ask: Mapping[str, Any]) -> str:
+    """One pending ask: who is waiting, since when, on what, and what to do about it."""
     question = ask.get("question")
     asked = f' "{clip(question, QUESTION_MAX)}"' if question else ""
+    offer = _offer(ask)
+    action = f"{DOT}do: {offer}" if offer else ""
     named = joined(ask, ("issue", "kind", "subject"))
-    return f"{named}{DOT}{duration(_waited(ask, now))}{asked}"
+    return f"{named}{DOT}{_since(ask)}{asked}{action}"
+
+
+def _severity(waited: float | None) -> State:
+    """STUCK for *waited* seconds at or past :data:`BAND_ALARM_AFTER_S`, else WAITING."""
+    if waited is not None and waited >= BAND_ALARM_AFTER_S:
+        return BY_KEY[STUCK]
+    return BY_KEY[WAITING]
 
 
 def band(reads: Mapping[str, Reading], drawn: Age, now: datetime) -> Band:
-    """The alarm, which reads five ways and no more.
+    """The alarm, which reads six ways and no more.
 
     Four of them are the ask verdict and exactly one holds: **withheld**, then **absent**,
-    then **waiting**, then **calm**, in that precedence - a section that could not be read
-    must never be reported as a quiet room. The fifth is the **stale** marker, appended to
-    whichever of the four holds rather than replacing it, so a frozen screen says it is
-    frozen and still shows the last values it knew.
+    then **waiting** - split by :func:`_severity` into WAITING and STUCK - then **calm**, in
+    that precedence, a section that could not be read must never report as a quiet room. The
+    fifth is the **stale** marker, appended to whichever holds rather than replacing it, so a
+    frozen screen says it is frozen and still shows the last values it knew.
 
     **While anybody is waiting the headline is the age**, in the coarsest unit that is still
-    true, because that is what a wall ranks by; the id and the kind go beneath it and the
-    exact elapsed phrase goes with them. An ask nobody could date keeps the alarm and says so
-    rather than borrowing a number.
+    true, stated once, because that is what a wall ranks by; the id and the kind go beneath
+    it with an absolute since-when instead of that duration again. An ask nobody could date
+    keeps the alarm and says so rather than borrowing a number.
     """
     read = reads["asks"]
     stale = (
@@ -181,10 +235,10 @@ def band(reads: Mapping[str, Reading], drawn: Age, now: datetime) -> Band:
         calm = ("no checkpoint and no decision is pending",)
         return Band(BY_KEY[CALM], "NOTHING IS WAITING", "", calm, stale)
     waited = _waited(asks[0], now)
-    lines = [_ask_line(ask, now) for ask in asks[:BAND_ASKS]]
+    lines = [_ask_line(ask) for ask in asks[:BAND_ASKS]]
     dropped = more(len(asks) - BAND_ASKS, "waiting")
     return Band(
-        BY_KEY[WAITING],
+        _severity(waited),
         coarse(waited) if waited is not None else "WAITING",
         f"{len(asks)} waiting on a person",
         tuple(lines + ([dropped] if dropped else [])),
