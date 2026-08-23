@@ -2185,34 +2185,12 @@ def _answered_asks(repo_root: Path, issue_id: str) -> frozenset[tuple[str, str]]
 def _live_session_violations(repo_root: Path, issue_id: str, config: PolicyConfig) -> list[str]:
     """The session-wide precondition violations *issue_id* still contributes.
 
-    Both markers this reads are append-only, so a bead that once reached
-    ``max_rework`` reported a live session-wide violation forever: one shipped child
-    (basicly-kjc5.56, closed 2026-07-27) dropped every later ship under its 55-child
-    epic to a human and permanently degraded L3 to L2 (basicly-i1s8). Closing the
-    bead *is* one resolution, so a closed bead's markers are discounted by the same
-    rule that makes a grant on a closed root issue dead whatever its markers say
-    (basicly-hsrs) — a marker on closed work is history, not live state.
-
-    needs-input is discounted on the same rule rather than being left behind. It
-    has exactly the same staleness: a closed bead's missing fact was either
-    supplied or its work was abandoned, and neither is live. Treating one carrier
-    of resolved history as history while the other stays live would leave the same
-    permanent poisoning in place for any long epic.
-
-    **Answering** the question is the other resolution, and it retires the marker on
-    the same rule (basicly-jr0l.65). Discounting only *closed* beads still poisoned
-    every later ship in a session from one open bead carrying a resolved question:
-    on the 2026-08-02 basicly-tcmy pass two merged, verified children could not ship
-    under the grant until the answered sibling was closed, at which point both were
-    delegated with no further human input. An answered ask is resolved state exactly
-    as a closed bead's marker is — the human already supplied what was missing, so
-    holding ship for it asks them the same question twice.
-
-    Still deliberately narrow: an unanswered ask on open work refuses a delegated
-    ship, unchanged. Resolution is read last and only for a bead that actually
-    carries a marker, so that bead costs one ``br show`` plus one ``br comments
-    list`` and the ordinary bead stays at the single ``br comments list`` it already
-    cost on every ship.
+    Every marker read here is append-only, so resolved history must be discounted
+    or one bead poisons every later ship in its session (basicly-i1s8): a closed
+    bead's markers are history (basicly-hsrs), an answered ask or a granted retry
+    allowance retires what it answered (basicly-jr0l.65, basicly-54t8w5), and an
+    unanswered ask on open work still refuses a delegated ship. Each rule is
+    pinned in ``test_policy.py``.
     """
     texts = _comment_texts(repo_root, issue_id)
     facts = [
@@ -2221,9 +2199,13 @@ def _live_session_violations(repo_root: Path, issue_id: str, config: PolicyConfi
     capped: list[tuple[str, int]] = []
     for gate in config.required_gates:
         marker = _rework_marker(gate)
+        allowance = _rework_allowance_marker(gate)
         attempts = sum(1 for text in texts if _marker_matches(text, marker))
-        if attempts >= config.max_rework:
-            capped.append((gate, attempts))
+        granted = sum(1 for text in texts if _marker_matches(text, allowance))
+        # Charged, not raw, matching `rework_charged` (basicly-54t8w5).
+        charged = max(0, attempts - granted)
+        if charged >= config.max_rework:
+            capped.append((gate, charged))
     if not facts and not capped:
         return []
     if _issue_is_closed(repo_root, issue_id):

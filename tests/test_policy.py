@@ -1338,10 +1338,8 @@ def _epic_with_a_wrinkled_sibling(
 ) -> _PerIssueBr:
     """An L3-granted epic, a green child to ship, and a wrinkle on its sibling.
 
-    *sibling_status* is the whole distinction basicly-i1s8 turns on: the same two
-    markers are a live violation while root.2 is open and resolved history once it
-    is closed. *wrinkle* swaps the carrier, since needs-input is discounted on the
-    same rule.
+    *sibling_status* is the basicly-i1s8 distinction: the same two markers are live
+    while root.2 is open and history once closed. *wrinkle* swaps the carrier.
     """
     children = [
         {"id": "root.1", "dependency_type": "parent-child", "status": "open"},
@@ -1366,9 +1364,8 @@ def test_a_declined_child_ship_names_the_precondition_and_its_sibling_bead(
 ) -> None:
     """The measured incident (basicly-5ltn): a bare confirmation request said nothing.
 
-    A grant existed, covered ship, was not spend-halted, and declined because of a
-    rework escalation on another bead in the epic's session - which took several
-    tool calls to find by hand. The decision is unchanged; only the reason is new.
+    The decline came from a rework escalation on another bead in the session, found
+    by hand over several tool calls. The decision is unchanged; the reason is new.
     """
     _install(monkeypatch, _epic_with_a_wrinkled_sibling())
 
@@ -1392,16 +1389,29 @@ def test_a_rework_escalation_counts_only_while_its_bead_is_open(
 ) -> None:
     """basicly-i1s8, both directions of the one rule, on identical markers.
 
-    Rework markers are append-only and nothing marks an escalation resolved, so the
-    escalation on a bead that was fixed, shipped and closed read as a live
-    session-wide violation forever (basicly-kjc5.56 poisoned every ship under
-    basicly-kjc5). Closing the bead resolves it; leaving it open does not.
+    Nothing marks an append-only escalation resolved, so a fixed, shipped, closed
+    bead read as a live violation forever. Closing resolves it; open does not.
     """
     _install(monkeypatch, _epic_with_a_wrinkled_sibling(sibling_status="open"))
     live = policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1")
     assert live == ("rework escalation on root.2 (gate verify: 2/2)",)
 
     _install(monkeypatch, _epic_with_a_wrinkled_sibling(sibling_status="closed"))
+    assert policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1") == ()
+
+
+def test_a_granted_allowance_discounts_the_escalation_like_every_other_consumer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The escalation counts charged rework, not raw markers (basicly-54t8w5).
+
+    Two attempts plus one `--allow-retry` allowance is one charged of two allowed;
+    counting raw read `2/2` and degraded L3 to L2 for the whole session.
+    """
+    fake = _epic_with_a_wrinkled_sibling()
+    fake.per_issue["root.2"].append("[harness-policy] rework-allowance gate=verify")
+    _install(monkeypatch, fake)
+
     assert policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1") == ()
 
 
@@ -1426,11 +1436,9 @@ def _seed_answered_wrinkle(
 ) -> _PerIssueBr:
     """Install the epic fixture with root.2's wrinkle also queued, answered when asked.
 
-    The marker and its queue item are written together at every real call site
-    (``loop._runner_outcome``, ``supervise._rework``), so a fixture seeding only the
-    marker cannot tell an answered question from an unanswered one — which is the
-    whole distinction basicly-jr0l.65 turns on. *answer* is the control: the same
-    fixture with the item left pending.
+    Marker and queue item travel together at every real call site, so seeding only
+    the marker cannot tell answered from unanswered (basicly-jr0l.65). *answer* is
+    the control: the same fixture with the item left pending.
     """
     marker = (
         f"[harness-policy] needs-input {question}"
@@ -1457,11 +1465,8 @@ def test_an_answered_wrinkle_stops_counting_while_its_bead_stays_open(
 ) -> None:
     """basicly-jr0l.65, both directions of the one rule, on both marker families.
 
-    Measured on the 2026-08-02 basicly-tcmy pass: the question was answered, and every
-    delegated ship in the session stayed refused until the bead carrying it was
-    *closed*. Answering is a resolution exactly as closing is, so the marker retires
-    on the same rule - and the control, the identical marker with its question still
-    pending, must still refuse.
+    Answering is a resolution exactly as closing is, so the marker retires on the
+    same rule; the control, the same marker still pending, must still refuse.
     """
     _seed_answered_wrinkle(tmp_path, monkeypatch, kind, question, answer=False)
     live = policy.lights_out_violations(tmp_path, "root", CONFIG, shipping="root.1")
