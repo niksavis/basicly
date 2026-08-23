@@ -1378,8 +1378,9 @@ The loop is the execution plane. It binds work isolation, a workflow and hard ga
 one predictable machine. Any supported agent drives it identically.
 
 **One mechanism carries three names in the tree.** The command-line verb is `basicly
-loop`. The tracker markers are spelled `[harness-*]`. The requirements document is named
-`factory-loop.md`. The name for it is **the loop**.
+loop`. The tracker markers are spelled `[harness-*]`. The requirements document that
+first specified it was absorbed into this document and deleted. The name for it is
+**the loop**.
 
 Its thesis is **lean over substrate**. It wraps four primitives the work tracker already
 has: a gate ledger, a dependency graph, readiness, and a definition-of-ready lint. It
@@ -4080,6 +4081,11 @@ decision keeps its record and gains a `superseded by` line.
 | D-34 | One kind for prose, and typed kinds for machine state | **proposed** | §32.3 |
 | D-35 | The external tracker binary is transitional, not a component | **discharged** at the flip | §37 |
 | D-36 | A handoff artifact is a typed ledger event, bounded by derivability rather than by a byte cap | accepted, supersedes D-28 | §33 |
+| D-37 | The factory has a light mode and a dark mode | accepted, light dispatch path unbuilt | §29 |
+| D-38 | A ratchet waiver carries a reason at the lower integrity levels and an approval at `consumer-surface` | accepted, approval half unbuilt | §36.6 |
+| D-39 | The plugin is a second distribution channel packaging the same projected output | accepted, unbuilt | §21 |
+| D-40 | A tier resolves by declared vendor order, verified at install | accepted, partly built | §17 |
+| D-41 | The authority order over design documents | **withdrawn** — both ranked documents are deleted | §1 |
 
 ### D-01 · Authority is asymmetric
 
@@ -4395,11 +4401,18 @@ because an observation checks one.
 ### D-26 · `docs/` carries four kinds of document and no more
 
 **Decision.** `docs/` carries architecture, tutorial, how-to and a contributor guide. Nobody
-creates a new requirement document or plan document as a file. A new requirement enters as a
-design artifact on a branch.
+creates a new requirement document or plan document as a file.
 
 **Because.** A path gate makes the rule a free deterministic check, instead of a
 disciplinary one.
+
+**Superseded in part.** The withdrawn requirements document's D33 named a lane branch as
+the home for a new requirement (`01-solution-design.md` on the branch). Measured against
+the loop: teardown deletes that branch, observed live on `basicly-vkh0.30`, and the one
+requirement that lived on a branch decayed 283 commits behind main before it was rescued
+(the harness-board document records its own move). So the branch-home clause is superseded
+by measurement, not restated: `docs/requirements/` survives as the gated home for a
+requirement not yet built, and `basicly-vkh0.42.12` owns its format.
 
 ### D-27 · Everything is a plain, git-tracked file
 
@@ -4737,6 +4750,81 @@ bought an unbounded body with no owner, which is the growth failure the cap exis
 **It was not free.** Exempting every key the fold reads is what left `field`.`value` bounded by
 nothing, which [32.10](#3210-the-per-event-size-cap-and-honest-truncation) states and
 `basicly-u2hl.60` owns — the same derivability argument, owed now to a field.
+
+### D-37 · The factory has a light mode and a dark mode
+
+**Decision.** Dark mode is the headless dispatch this engine runs: one process per lane, a
+pre-approved permission surface, unattended. Light mode is one interactive session using the
+host's own subagents, where permission prompts reach the human. INTAKE is inherently light:
+without a supplied requirements document it cannot run unattended by definition.
+
+**Because.** The split is capacity of *attention*, not of context. The original argument —
+"one shared context window cannot hold many lanes" — was refuted by measurement on
+2026-08-15: a host subagent runs in an isolated window and only its final message returns.
+What survives is the permissions row, which is measured and unchanged: light mode's prompts
+reach a human, so it cannot run unattended, and unattended multi-lane operation is the
+factory's exit criterion.
+
+**Consequence.** Light mode as a second dispatch path is unbuilt (`basicly-xjd2` owns the
+open question of what else it buys). Nothing in the engine may assume the mode from the
+runner name; the discriminator is whether a human receives the prompts.
+
+### D-38 · A ratchet waiver carries a reason at the lower integrity levels and an approval at `consumer-surface`
+
+**Decision.** A module-size or comment-density waiver always carries a one-line reason in
+the file. At `docs-and-tests` and `engine` the reason suffices; at `consumer-surface` the
+waiver needs an approval, reusing the integrity level the unit already computed.
+
+**Because.** The hole is the self-granted waiver on a consumer surface: the author of the
+overrun is the wrong party to excuse it exactly where the blast radius is widest.
+[36.6](#366-ratchets) already separates the two waiver kinds the record cannot
+otherwise tell apart — bought on cohesion (permanent, owes nothing) and bought on cost
+(debt, expires against a named record) — and the `waivers` gate ratchets the count.
+
+**Consequence.** The reason half and the count ratchet are built; the level-gated approval
+half is not, and nothing currently refuses a `consumer-surface` waiver with no approval.
+
+### D-39 · The plugin is a second distribution channel packaging the same projected output
+
+**Decision.** A conforming plugin package (Agent Plugins 1.0.0) is emitted from the same
+projected output `basicly install` vendors. One source of truth, two delivery shapes.
+
+**Because.** Betting the primary channel on a specification with seven areas still under
+`FUTURE_CONSIDERATIONS` would be premature; refusing the channel entirely forfeits the
+hosts that only load plugins. The overlap areas the specification has not standardised —
+permissions, provenance, audit, testing — are expressed in skill `metadata` or a plugin
+`extensions` namespace, never as invented top-level manifest fields, so a later migration
+is a rename rather than a redesign.
+
+**Consequence.** Unbuilt; `basicly-u2hl.24` owns it. Until it ships, `basicly install` is
+the only channel and the packaging claim may not appear on a consumer surface.
+
+### D-40 · A tier resolves by declared vendor order, verified at install
+
+**Decision.** `anchors.yaml` declares a `vendor_order` per tier; resolution walks it and
+takes the first vendor the committed map marks available for the surface in effect.
+`basicly install`/`upgrade` probes each chosen model once and records a rejection.
+
+**Because.** The map already refuses to substitute another tier's model, but nothing ranked
+vendors *within* a tier, and `status: available` is the generator's claim rather than this
+consumer's entitlement. Neither host lists its models non-interactively, so entitlement is
+probed once at install rather than queried per dispatch — the dispatch path stays offline
+and deterministic.
+
+**Consequence.** Partly built: the map and the cross-tier refusal ship; `vendor_order` and
+the install-time probe do not. A dispatch with no resolved tier is a bug, not a default
+([17. Model tiers](#17-model-tiers)).
+
+### D-41 · The authority order over design documents — withdrawn
+
+**Decision (withdrawn).** An order once ranked sources of truth: measured evidence in this
+repository, then the factory-loop requirements document, then the factory design document.
+Both ranked documents are deleted, so the order names nothing and is withdrawn rather than
+restated.
+
+**What survives.** The first clause only, and it is already this document's doctrine:
+measured evidence in this repository outranks any prose, and this document is the one
+permanent design surface ([1. What this is](#1-what-this-is-and-what-it-fixes), D-26).
 
 ---
 

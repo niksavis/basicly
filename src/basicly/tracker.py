@@ -30,7 +30,7 @@ from basicly import (
     tracker_usage,
 )
 
-# --- Read-only sections (factory-loop.md §5.1) -------------------------
+# --- Read-only sections (architecture D-23) ----------------------------
 #
 # A pre-flight gate reads the world, returns a verdict, and writes nothing. The
 # rule earns enforcement here, at the funnel, rather than at each gate's call

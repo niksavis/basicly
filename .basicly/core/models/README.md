@@ -58,7 +58,7 @@ loudly instead of being handed a different tier's model — the silent demotion
 
 Only Anthropic publishes a genuine fourth class (Fable). OpenAI, Moonshot and
 Google ship three-class ladders, so their `high` and `maximum` resolve to the same
-top model — which is what `docs/requirements/factory-loop.md` D26 already says.
+top model — the vendor-ladder fact behind `architecture` D-08's tier routing.
 Rather than repeating a row and hoping a reader notices, the collapsed tier carries:
 
 ```json

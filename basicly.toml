@@ -547,9 +547,9 @@ name = "release-notes"
 command = ["uv", "run", "python", ".scripts/check_release_notes.py"]
 modes = ["fast", "full"]
 
-# One test file per source module, enforced by name (basicly-u2hl.14,
-# `docs/requirements/factory-loop.md` §9.4). The convention was *emergent* when the
-# requirements doc measured it — 48 modules, 84 test files, every module covered — and
+# One test file per source module, enforced by name (basicly-u2hl.14;
+# `.scripts/check_test_naming.py` states the convention). It was *emergent* when
+# first measured — 48 modules, 84 test files, every module covered — and
 # nothing made it binding, so the first splits broke it: after `dad39f4`, ten source units
 # had no test file named after them and nine of those were created that day. Their tests
 # were not missing, they stayed in the file named after the module they were extracted

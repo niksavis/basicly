@@ -38,9 +38,8 @@ def _text_tokens(text: str) -> int:
 
     It is calibrated on prose and on nothing else, and the second half of that
     sentence is a prohibition rather than a caveat. Measured 2026-08-08 against
-    tiktoken's ``o200k_base`` over real payloads from this repo (basicly-u2hl.32),
-    the same tokenizer ``docs/requirements/factory-loop.md`` §15.1 measured
-    formats with — each figure is the signed relative error against the tokenizer,
+    tiktoken's ``o200k_base`` over real payloads from this repo (basicly-u2hl.32)
+    — each figure is the signed relative error against the tokenizer,
     ``(chars/4 - real) / real``, so a real count is recovered as
     ``estimate / (1 + error)``::
 

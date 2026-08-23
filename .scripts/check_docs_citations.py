@@ -34,7 +34,7 @@ at all, and what the second rule then holds it to.
 Run over every document, or over named ones::
 
     uv run python .scripts/check_docs_citations.py
-    uv run python .scripts/check_docs_citations.py docs/requirements/factory-loop.md
+    uv run python .scripts/check_docs_citations.py docs/requirements/work-tracker.md
 """
 
 from __future__ import annotations

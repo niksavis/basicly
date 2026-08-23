@@ -2,8 +2,8 @@
 
 Every unit of work gets exactly one of three levels, and the level — not a
 judgement, not a prompt — decides the gate set, the model tier and the rework
-allowance it earns. The requirements document argues the economics
-(`docs/requirements/factory-loop.md` §4): a level is the spend gate as
+allowance it earns. The architecture argues the economics
+(`architecture.md` §9.2): a level is the spend gate as
 much as the quality gate, so it has to be cheap, total and ungameable.
 
 Three properties this module exists to keep:

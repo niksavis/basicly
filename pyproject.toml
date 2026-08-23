@@ -438,7 +438,6 @@ waiver_count = 2
 # licenses regrowth back to it for free.
 [tool.docs_citations.unverifiable]
 "docs/plan/implementation-plan.md" = 6
-"docs/requirements/factory-loop.md" = 12
 "docs/requirements/harness-board.md" = 9
 "docs/research/2026-07-26-sota-review.md" = 3
 # A dated design record imported from a harness branch that outlived the board it designed
@@ -466,17 +465,13 @@ binding_count = 3
 ".basicly/core/kit/tracker/" = "docs/requirements/work-tracker.md"
 #
 # Two more, both added 2026-08-20 when this gate first ran on a rebase and caught citations
-# `basicly-u2hl.59` had just landed. **`handoff.py`'s bare §8 does NOT mean the architecture
-# document** - a reader resolving it there lands on `## 8. Non-goals`. It means
-# `factory-loop.md` §8, `Handoff artifact schemas [D4]`, the only document in the tree naming
-# `validation-transcript`, and its §2.1 `Risk accepted on D4` is the "accepted mitigation".
+# `basicly-u2hl.59` had just landed. `handoff.py`'s bare marks originally meant the
+# factory-loop requirements document's `Handoff artifact schemas [D4]`; `basicly-1hp91f`
+# absorbed that document into the architecture (§33, `Handoff artifacts and their
+# contracts`) and repointed the marks, so the binding now names the architecture.
 # Bound rather than named inline because `handoff.py` has 9 tokens of module-size headroom and
-# spelling the path on three citing lines costs about 24.
-#
-# These point at a document scheduled for deletion (`basicly-1hp91f` absorbs `factory-loop.md`).
-# That is correct: cite what defines the section today, and let this gate refuse the absorption
-# until the citations are repointed. It is why `1hp91f` blocks on this record.
-"src/basicly/handoff.py" = "docs/requirements/factory-loop.md"
+# spelling the path on the citing lines costs about 24.
+"src/basicly/handoff.py" = "docs/architecture/architecture.md"
 "tests/test_handoff.py" = "docs/architecture/architecture.md"
 
 # Unresolved code-to-document citation debt (basicly-e2mz.49). The gate is
@@ -486,7 +481,8 @@ binding_count = 3
 # 2026-08-20 reach no heading. Two of those were the live findings the gate landed with, and
 # basicly-fsuhg3 repaired both by finding the target rather than deleting the reference:
 # `tests/test_policy.py` cited `gates-and-rework-design.md`, absorbed and deleted 2026-08-08
-# into `factory-loop.md`, and the shipped tracker kit's `events.py` cited three architecture
+# into `factory-loop.md` (itself absorbed into the architecture and deleted, basicly-1hp91f),
+# and the shipped tracker kit's `events.py` cited three architecture
 # sections while naming its own source document. Both entries graduated at zero.
 #
 # The list is closed - a module absent from it may carry no unresolved mark. A count that
@@ -514,12 +510,12 @@ binding_count = 3
 "src/basicly/loop.py" = 9
 "src/basicly/loop_state.py" = 3
 "src/basicly/mirror.py" = 1
-"src/basicly/policy.py" = 8
+"src/basicly/policy.py" = 7
 "src/basicly/read_cost.py" = 1
 "src/basicly/repair_brief.py" = 4
 "src/basicly/retrospective.py" = 6
 "src/basicly/review.py" = 5
-"src/basicly/roles.py" = 5
+"src/basicly/roles.py" = 2
 "src/basicly/rubrics.py" = 9
 "src/basicly/runner.py" = 1
 "src/basicly/schema.py" = 1

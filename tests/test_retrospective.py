@@ -1,6 +1,6 @@
 """Tests for the special-cause signal over the gate-failure ledger (basicly-xmhc).
 
-The suppression tests matter more than the firing ones. factory-loop.md §3.2 makes
+The suppression tests matter more than the firing ones. architecture.md §26.3 makes
 acting on common cause *tampering*, so a detector that fires on every failure is worse
 than no detector: each test that asserts silence names the shape it must stay silent on.
 """
