@@ -1,0 +1,1 @@
+- A `retired-vocabulary` verify gate now refuses prose growth of the removed tracker's name in comments and docstrings, with git HEAD as the per-module baseline (`basicly-e90rue`).
