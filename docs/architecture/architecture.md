@@ -1329,10 +1329,12 @@ They fall into three surfaces.
 | `basicly catalog lint` | Source-format and composition gate; wired as a pre-commit hook and a CI step |
 | `basicly catalog verify` | Deterministic content checks beyond the load path: duplicate bodies, contradictions, ambiguity, scope overlaps |
 | `basicly catalog review [--runner NAME] [--dry-run]` | Advisory agent-assisted semantic review; always exits zero |
+| `basicly catalog dump` | The composed selection the build would make: the technology axis and every fragment root in load order, each overlay-over-core override beside the core source it shadows, then every planned output with the axes it declares and every item it selected with that item's own origin |
 | `basicly rubric eval <issue> [--runner NAME] [--dry-run]` | Evaluate the issue's work-type behavioural rubric: deterministic checks through the verify runner, judged checks through one agent prompt. Reports an advisory gate, promotable by naming it in the required set |
 
-The names above are the whole authoring surface. Two planned reporting views for conflicts
-and overrides were cut from scope. The `basicly catalog verify` output covers that need.
+The names above are the whole authoring surface. Of the two planned reporting views, the conflict
+one was cut from scope and the `basicly catalog verify` output covers that need; the override one
+is `basicly catalog dump`.
 
 **Harness.**
 

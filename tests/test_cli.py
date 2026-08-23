@@ -927,6 +927,64 @@ def test_cli_catalog_verify_flags_duplicate_bodies(work_repo: Path) -> None:
     assert "identical bodies" in result.stderr
 
 
+def _write_overlay_fragment(work_repo: Path, fragment_id: str, extra: str = "") -> Path:
+    """Author one active overlay fragment: the .basicly-local half of a composed catalog."""
+    path = work_repo / ".basicly-local/fragments/user" / f"{fragment_id}.fragment.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"schema_version: 1\nid: {fragment_id}\ndescription: overlay {fragment_id}\n"
+        f"category: commands\napplies_to: [all]\n{extra}body: |\n  Overlay body.\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_cli_catalog_dump_names_every_selected_item_with_its_origin_and_axes(
+    work_repo: Path,
+) -> None:
+    """Every selected item prints with its source file and the axis values that selected it."""
+    _write_overlay_fragment(work_repo, "overlay-only")
+
+    result = run_basicly(work_repo, "catalog", "dump")
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        ".claude/CLAUDE.md [claude/claude_wrapper] filter.applies_to=all,claude unscoped only"
+        in result.stdout
+    )
+    assert (
+        "core-rules applies_to=all scope=** technologies=any "
+        "<- .basicly/core/fragments/project/core-rules.fragment.yaml [core]"
+    ) in result.stdout
+    assert (
+        "overlay-only applies_to=all scope=** technologies=any "
+        "<- .basicly-local/fragments/user/overlay-only.fragment.yaml [user]"
+    ) in result.stdout
+
+
+def test_cli_catalog_dump_names_both_the_override_and_the_source_it_shadows(
+    work_repo: Path,
+) -> None:
+    """An overlay replacement prints beside the core source it removed from the projection.
+
+    The control runs first: asserting the shadowed item is gone says nothing unless the
+    same probe found it before the override was authored.
+    """
+    control = run_basicly(work_repo, "catalog", "dump")
+    assert "git-discipline applies_to=" in control.stdout, control.stderr
+
+    _write_overlay_fragment(work_repo, "mine", extra="override: true\nreplaces: [git-discipline]\n")
+    result = run_basicly(work_repo, "catalog", "dump")
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "overridden by the overlay: 1\n"
+        "  git-discipline (.basicly/core/fragments/commands/git-discipline.fragment.yaml) "
+        "shadowed by mine (.basicly-local/fragments/user/mine.fragment.yaml)"
+    ) in result.stdout
+    assert "git-discipline applies_to=" not in result.stdout
+
+
 def test_cli_build_verify_blocks_and_writes_nothing(work_repo: Path) -> None:
     """Build --verify fails the gate before writing, leaving the manifest untouched."""
     manifest = work_repo / ".basicly/generated-manifest.json"
