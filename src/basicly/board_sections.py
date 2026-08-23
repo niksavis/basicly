@@ -42,13 +42,16 @@ class LaneFacts:
     nothing between - the same rule the supervisor lock takes in `board_snapshot.SessionFacts`.
 
     The first eight fields are what a caller above the loop already holds:
-    `supervise.LaneView` carries `issue_id`, `status`, `last_agent`, `live`, `last_tokens`,
+    `supervise.LaneView` carries `issue_id`, `status`, `last_agent`, `last_tokens`,
     `branch` and `last_run_at`, and the phase comes from the loop read beside it. The schema's
     other lane properties - `model`, `cost_usd`, `elapsed_s`, the `context_used` pair, the
     rework counters, `note` - are carried too, on the same rule: emitted only where the caller
     held one, so an omitted property renders as absent and a guessed one would render as
     fact. It bites hardest on a *live* lane, whose last run holds a cost and an occupancy
     for a different dispatch; carrying those forward states this run's spend as last run's.
+
+    `live` and `provisioned` used to share one key (basicly-ze0po3): `live` is an agent inside
+    the lane now, `provisioned` is only its worktree existing. `board_facts._lane_fact` says why.
     """
 
     id: str
@@ -56,6 +59,7 @@ class LaneFacts:
     status: str = ""
     agent: str = ""
     live: bool | None = None
+    provisioned: bool | None = None
     started_at: str = ""
     tokens: int | None = None
     branch: str = ""
@@ -194,8 +198,11 @@ def lanes(facts: Iterable[LaneFacts]) -> list[dict[str, object]]:
             row["status"] = board_fields.text(lane.status, board_fields.KIND_MAX)
         if lane.agent:
             row["agent"] = board_fields.text(lane.agent, board_fields.AGENT_MAX)
-        if lane.live is not None:
-            row["live"] = lane.live
+        row.update(
+            (name, flag)
+            for name, flag in (("live", lane.live), ("provisioned", lane.provisioned))
+            if flag is not None
+        )
         if (started := board_fields.instant(lane.started_at)) is not None:
             row["started_at"] = board_fields.stamp(started)
         if lane.tokens is not None:

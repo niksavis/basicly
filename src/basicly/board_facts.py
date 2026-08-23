@@ -262,24 +262,33 @@ def _lane_fact(
     zero. The last run record holds a finished dispatch's cost, occupancy and duration.
     :class:`supervise.LaneView` holds what the tracker binds.
 
-    **A live lane does not inherit the previous dispatch's cost or occupancy.** Those are
+    **`running` is presence in the live stream, not `view.live` (basicly-ze0po3).**
+    `view.live` only says the worktree session record still exists on disk, which a schema
+    consumer reads as "still running" - so a lane whose agent exited hours ago and whose
+    worktree nobody has cleaned up was drawn as work in flight (basicly-rn0o.6 v. -fi1i7z,
+    the same pass, one carrying a note and tokens and the other neither). `spending` names
+    exactly the lanes with a live stream registered right now, so membership in it is the
+    fact the schema's `live` promises; the worktree fact still matters and travels apart as
+    `provisioned`, because a lane waiting for its next dispatch is a real, distinct state.
+
+    **A running lane does not inherit the previous dispatch's cost or occupancy.** Those are
     per-dispatch, so carrying them forward prints last run's spend as this run's under a
     heading saying the lane runs now. `agent` and `model` do carry: a lane keeps its runner.
 
     `tokens` obeys the same rule as cost and occupancy rather than an exception to it: a
-    **live lane never shows a figure from a previous dispatch.** While a lane runs the live
+    **running lane never shows a figure from a previous dispatch.** While a lane runs the live
     stream is the only admissible source, and where it has nothing to say the card says
     nothing. Two windows produce that silence and both must stay silent - a stream published
-    the instant a dispatch starts and not yet metered, which reports a real `0`, and a
-    producer that is not the supervisor and so cannot see the process-local streams at all.
-    Falling back on either hands the window to the last dispatch's total, which reads as a
-    lane that has already spent millions the second it starts.
+    the instant a dispatch starts and not yet metered, which reports a real `0`, and a lane
+    the supervisor has not yet registered a stream for at all. Falling back on either hands
+    the window to the last dispatch's total, which reads as a lane that has already spent
+    millions the second it starts.
 
     Where the live figure does speak, it over-reports the record it becomes by a factor
     :mod:`supervise` measures, so it rises toward a known-larger number - the safe direction
     for a reader watching a budget.
     """
-    live = bool(view.live)
+    running = view.issue_id in spending
     last = runs[-1] if runs else {}
     spent = spending.get(view.issue_id)
     return board_sections.LaneFacts(
@@ -287,16 +296,17 @@ def _lane_fact(
         phase=phase_map.get(view.issue_id, ""),
         status=view.status,
         agent=view.last_agent or _text(last.get("agent")),
-        live=view.live,
+        live=running,
+        provisioned=view.live,
         started_at=view.last_run_at or "",
-        tokens=(spent or None) if live else view.last_tokens,
+        tokens=(spent or None) if running else view.last_tokens,
         branch=view.branch,
         model=_text(last.get("model")),
         note=doing.get(view.issue_id, ""),
-        cost_usd=None if live else _number(last.get("cost")),
-        elapsed_s=None if live else _number(last.get("duration_s")),
-        context_used=None if live else _whole(last.get("context_tokens")),
-        context_window=None if live else _whole(last.get("context_window")),
+        cost_usd=None if running else _number(last.get("cost")),
+        elapsed_s=None if running else _number(last.get("duration_s")),
+        context_used=None if running else _whole(last.get("context_tokens")),
+        context_window=None if running else _whole(last.get("context_window")),
     )
 
 

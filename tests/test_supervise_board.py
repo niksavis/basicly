@@ -257,6 +257,10 @@ def test_in_flight_carries_one_card_per_adopted_lane(
     The session derivation is pinned rather than the lane row: `supervise.lane_view` and the
     phase lookup are the code under test, and a fixture that also supplied those would assert
     its own input back.
+
+    `live=True` on the adopted lane means only that its worktree binding exists (basicly-
+    ze0po3): no `live_lane` stream is registered for it here, so the card reports it
+    `provisioned` and not `live` - a worktree on disk is not a running agent.
     """
     adopted = supervise.AdoptedLane(
         issue_id="basicly-0jiq",
@@ -276,7 +280,8 @@ def test_in_flight_carries_one_card_per_adopted_lane(
     card = ticked["lanes"][0]
     assert card["status"] == "in_progress"
     assert card["branch"] == "harness/basicly-0jiq"
-    assert card["live"] is True
+    assert card["live"] is False
+    assert card["provisioned"] is True
     assert card["phase"] == loop_state.phase_map(work_repo)["basicly-0jiq"]
 
 
