@@ -116,6 +116,54 @@ def grant_spend(repo_root: Path, root_issue: str, grant: policy.Grant | None) ->
     return policy.tokens_under_grant(status.spent_tokens, grant)
 
 
+def live_grant_spend(session: board_snapshot.SessionFacts) -> int | None:
+    """*session*'s recorded spend plus what the lanes running now have reported, or None.
+
+    **The one number that moves while the pass runs.** `grant_spend` only advances when a
+    lane's run record lands, so a nine-minute lane reports 0% for the whole of it
+    (basicly-wctp0g); `supervise.inflight_spend` holds the same lanes' tokens-so-far and is the
+    only source that can. A separate key rather than a replacement of `spent_tokens`, because
+    the two are different denominations - the recorded figure is what D3's gate binds on
+    (`policy.spend_status`, never read through this module) and this changes what is reported,
+    not what is enforced.
+
+    None below a budget: with no `token_budget` there is no ceiling to show the estimate
+    against. None where nothing is live too: a producer that is not the supervisor sees no
+    process-local stream at all, and a zero here would read as a lane that spent nothing
+    rather than as a fact this checkout cannot see.
+    """
+    if session.token_budget is None:
+        return None
+    live = sum(supervise.inflight_spend().values())
+    if not live:
+        return None
+    return max(0, (session.spent_tokens or 0) + live)
+
+
+def _with_live_spend(
+    built: dict[str, object], session: board_snapshot.SessionFacts | None
+) -> dict[str, object]:
+    """*built*, its session section carrying the live estimate beside the recorded figure.
+
+    Marked as an over-estimate with the measured direction attached
+    (`supervise.LIVE_OVERREPORT_BOUND`), rather than left for a reader to assume the two
+    figures are comparable at face value - they are not, and the measured direction is that
+    the live one reads high.
+    """
+    if session is None:
+        return built
+    section = built.get("session")
+    if not isinstance(section, dict):
+        return built
+    live = live_grant_spend(session)
+    if live is None:
+        return built
+    section["spent_tokens_live"] = live
+    section["spent_tokens_live_over_estimate"] = True
+    section["spent_tokens_live_bound"] = supervise.LIVE_OVERREPORT_BOUND
+    return built
+
+
 def repo_facts(repo_root: Path) -> board_sections.RepoFacts | None:
     """Which checkout and which commit, from git, or None when git will not answer.
 
@@ -355,9 +403,9 @@ def document(
     )
     built = board_snapshot.build_document(repo_root, facts=facts)
     asked = questions(repo_root, built)
-    if not asked:
-        return built
-    return board_snapshot.build_document(repo_root, facts=replace(facts, questions=asked))
+    if asked:
+        built = board_snapshot.build_document(repo_root, facts=replace(facts, questions=asked))
+    return _with_live_spend(built, session)
 
 
 def emit_tick(repo_root: Path, cadence_s: float, *, lane_label: str | None = None) -> Path:

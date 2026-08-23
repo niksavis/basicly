@@ -18,7 +18,15 @@ from pathlib import Path
 
 import pytest
 
-from basicly import board_facts, board_sections, integrity, loop_state, supervise, tracker
+from basicly import (
+    board_facts,
+    board_sections,
+    board_snapshot,
+    integrity,
+    loop_state,
+    supervise,
+    tracker,
+)
 from basicly.config import VERIFY_GATE_PROVIDER
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -151,6 +159,26 @@ def test_a_held_lock_supplies_the_session_facts_the_producer_may_not_derive(tmp_
     assert facts.session_id == "abc"
     assert facts.supervised is True
     assert facts.stale is False
+
+
+def test_live_grant_spend_is_absent_then_advances_and_rides_named_apart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """basicly-wctp0g: no ceiling/stream is None; once live it advances, named apart, bounded."""
+    assert board_facts.live_grant_spend(board_snapshot.SessionFacts(root_issue="x-1")) is None
+    session = board_snapshot.SessionFacts(root_issue="x-1", token_budget=1_000_000, spent_tokens=10)
+    assert board_facts.live_grant_spend(session) is None
+    built: dict[str, object] = {"session": {"spent_tokens": 10}}
+    monkeypatch.setattr(supervise, "inflight_spend", lambda: {"x-1.1": 200})
+    first = board_facts.live_grant_spend(session)
+    monkeypatch.setattr(supervise, "inflight_spend", lambda: {"x-1.1": 500})
+    second = board_facts.live_grant_spend(session)
+    assert (first, second) == (210, 510)
+    section = board_facts._with_live_spend(built, session)["session"]
+    assert isinstance(section, dict)
+    assert (section["spent_tokens"], section["spent_tokens_live"]) == (10, 510)
+    assert section["spent_tokens_live_over_estimate"] is True
+    assert section["spent_tokens_live_bound"] == supervise.LIVE_OVERREPORT_BOUND
 
 
 def test_the_git_state_the_producer_may_not_read_comes_from_this_layer(git_repo: Path) -> None:
