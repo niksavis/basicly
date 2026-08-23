@@ -1,0 +1,1 @@
+- The session walk behind `basicly board` and the grant spend meter reads the tracker ledger once per walk instead of once per bead in the session: an 87-bead session cost 8.77 s over 87 folds of the whole log and now costs 0.20 s. Same ids, same figures.
