@@ -79,6 +79,23 @@ def test_a_lane_that_is_not_live_is_marked_on_two_channels() -> None:
     assert (live.glyph, live.border_style) != (last_known.glyph, last_known.border_style)
 
 
+def test_a_lane_with_no_measurable_figure_still_names_the_lane_and_its_phase() -> None:
+    """Zero rows is a legitimate card, not a missing one: the id and phase still draw.
+
+    A lane just dispatched can hold nothing but its id and phase for a beat - no agent, no
+    tokens, nothing the run has reported yet. That is still a lane that is running, so the
+    card keeps its identity and draws no `not measured` row rather than the six placeholders
+    this record removed.
+    """
+    lanes = [{"id": "basicly-bare", "phase": "intake", "live": True}]
+    reads = _reads("wall-v1.json", lanes=lanes)
+    cards, _, _ = board_regions.flight(reads)
+    assert len(cards) == 1
+    card = cards[0]
+    assert (card.title, card.phase) == ("basicly-bare", "intake")
+    assert card.cells == ()
+
+
 def test_only_a_lane_reporting_a_live_stream_is_marked_as_working() -> None:
     """A still card and a wedged card look identical, so the page carries this as motion.
 
