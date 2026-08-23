@@ -31,7 +31,7 @@ The vocabulary, the honesty rules and the shapes are :mod:`basicly.board_wall`'s
 from __future__ import annotations
 
 from collections import Counter
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from . import board_fields
@@ -63,6 +63,7 @@ from .board_wall import (
     clip,
     coarse,
     duration,
+    elapsed,
     feature_of,
     joined,
     more,
@@ -73,7 +74,6 @@ from .board_wall import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from datetime import datetime
 
     from .board_wall import Age, Reading, State
 
@@ -306,7 +306,8 @@ def _lane_cells(lane: Mapping[str, Any]) -> tuple[Cell, ...]:
     """The figures a lane card carries, each drawn only where the producer held one.
 
     The context bar is the sharpest case: the two terms travel together or not at all, so a
-    producer knowing only the occupancy draws the number and no bar.
+    producer knowing only the occupancy draws the number and no bar. `id` and `branch` sit
+    here rather than on the title line, demoted beside the agent that ran them (basicly-0xtzf1).
     """
     used = lane.get("context_used")
     attempt = lane.get("rework_attempt")
@@ -316,7 +317,9 @@ def _lane_cells(lane: Mapping[str, Any]) -> tuple[Cell, ...]:
         else f"{number(attempt)} of {number(lane.get('rework_allowance'))}"
     )
     drawn = (
+        Cell("id", str(lane.get("id") or UNKNOWN)),
         Cell("agent", joined(lane, ("agent", "model"))),
+        Cell("branch", str(lane.get("branch") or UNKNOWN)),
         Cell("running", duration(lane.get("elapsed_s"))),
         Cell("tokens", number(lane.get("tokens"))),
         Cell("cost usd", number(lane.get("cost_usd"))),
@@ -328,7 +331,78 @@ def _lane_cells(lane: Mapping[str, Any]) -> tuple[Cell, ...]:
     return tuple(cell for cell in drawn if cell.value != UNKNOWN)
 
 
-def flight(reads: Mapping[str, Reading]) -> tuple[tuple[Card, ...], str, str]:
+def _unit_titles(reads: Mapping[str, Reading]) -> dict[str, str]:
+    """Every unit's title, keyed by id - the join `lanes[].id` makes to `units[].title`.
+
+    Both sections ride on every snapshot already, so the join costs no extra read
+    (basicly-k6tpep's design of record), on the same rule :func:`_feature_names` reads `graph`.
+    """
+    units = reads["units"]
+    return {
+        str(row["id"]): str(row["title"])
+        for row in units.dicts
+        if row.get("id") and row.get("title")
+    }
+
+
+def _started_ago(lane: Mapping[str, Any], moment: datetime) -> str:
+    """The phrase "started {elapsed} ago" from the lane's own stamp, or "" if it named none.
+
+    Never "running for": `elapsed_s` is absent while a lane is live (`board_facts._lane_fact`),
+    so this absolute stamp is the only duration left, and the label names what it measures.
+    """
+    waited = since(lane.get("started_at"), moment)
+    return f"started {elapsed(waited)} ago" if waited is not None else ""
+
+
+def _primary_state(lane: Mapping[str, Any], moment: datetime) -> str:
+    """The card's headline: the phase, plus how long ago a *confirmed-live* lane started.
+
+    Never the tracker's own status, which does not move while a lane runs and read six
+    working lanes as six idle ones (basicly-0xtzf1). No duration for a lane nobody confirms
+    is live: its stamp would belong to whichever dispatch last ended, not one running now.
+    """
+    phase = _phase_of(lane) or UNKNOWN
+    if not lane.get("live"):
+        return phase
+    ago = _started_ago(lane, moment)
+    return f"{phase}{DOT}{ago}" if ago else phase
+
+
+def _note_line(lane: Mapping[str, Any]) -> str:
+    """The card's activity line: what a live stream last said, in full.
+
+    Unclipped (basicly-0xtzf1): the producer already bounds it, and a second, tighter clip
+    here left a card with nothing more to expand to. A lane nobody confirms is live says so
+    plainly rather than showing a stale excerpt as if it were still happening.
+    """
+    said = lane.get("note") or ""
+    if lane.get("live"):
+        return said
+    return f"not confirmed live{DOT}{said}" if said else "not confirmed live"
+
+
+def _card(lane: Mapping[str, Any], titles: Mapping[str, str], moment: datetime) -> Card:
+    """One lane's card: its unit title dominant, its id demoted to :func:`_lane_cells`.
+
+    `working` now requires `live` too (basicly-0xtzf1): a parked lane can still carry a
+    previous dispatch's `tokens` and `note`, which drew the pulse of one nobody has confirmed.
+    """
+    lane_id = str(lane.get("id") or UNKNOWN)
+    live = bool(lane.get("live"))
+    return Card(
+        clip(titles.get(lane_id, "") or lane_id, TITLE_MAX),
+        _primary_state(lane, moment),
+        BY_KEY[LIVE] if live else BY_KEY[ABSENT],
+        _note_line(lane),
+        _lane_cells(lane),
+        working=live and bool(lane.get("note") or lane.get("tokens")),
+    )
+
+
+def flight(
+    reads: Mapping[str, Reading], *, now: datetime | None = None
+) -> tuple[tuple[Card, ...], str, str]:
     """The running cards, what was dropped, and the one line that replaces them.
 
     **No empty slots.** The row used to reserve :data:`FLIGHT_SLOTS` dashed frames so its
@@ -336,20 +410,15 @@ def flight(reads: Mapping[str, Reading]) -> tuple[tuple[Card, ...], str, str]:
     screen announcing nothing three times, while the ready list beside it truncated every
     title. A green state costs one token, so no lane means no card and the caller collapses
     the row to its note. The cap still holds because six live lanes still have to fit.
+
+    *now* is `board_render.context`'s own injected instant, the same one :func:`band` takes;
+    it defaults to the wall clock only for a caller that has none to inject.
     """
     read = reads["lanes"]
     lanes = read.dicts if read.drawn else []
-    cards = tuple(
-        Card(
-            clip(lane.get("id", UNKNOWN), TITLE_MAX),
-            _phase_of(lane) or UNKNOWN,
-            BY_KEY[LIVE] if lane.get("live") else BY_KEY[ABSENT],
-            clip(lane.get("note") or lane.get("status") or "", NOTE_MAX),
-            _lane_cells(lane),
-            working=bool(lane.get("note") or lane.get("tokens")),
-        )
-        for lane in lanes[:FLIGHT_SLOTS]
-    )
+    titles = _unit_titles(reads)
+    moment = now or datetime.now(UTC)
+    cards = tuple(_card(lane, titles, moment) for lane in lanes[:FLIGHT_SLOTS])
     note = read.note if not read.drawn else "" if lanes else "no lane is dispatched"
     return cards, more(len(lanes) - FLIGHT_SLOTS, "lanes"), note
 

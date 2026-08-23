@@ -340,18 +340,29 @@
         min-width: 0;
         padding: 9px 12px 10px;
       }
-      /* The activity line is the field with no substitute, so it wraps rather than clipping. */
+      /* The activity line is the field with no substitute (basicly-0xtzf1): the summary
+         carries the one-line clip so a card still fits collapsed, and the disclosure
+         beneath it is the same text again, unclipped, for a reader who wants it in full. */
       .card > .note {
         border-top: 1px solid var(--border);
         color: var(--text);
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
         font-size: 14px;
         line-height: 1.35;
         margin-top: 7px;
-        overflow: hidden;
         padding-top: 6px;
+      }
+      .card > .note summary {
+        cursor: pointer;
+      }
+      /* Authored rather than left to the UA sheet: a headless probe's DOM dump measured a
+         closed `.full` at its full box regardless (basicly-0xtzf1), so this is stated rather
+         than assumed. */
+      .card > .note:not([open]) .full {
+        display: none;
+      }
+      .card > .note .full {
+        margin-top: 4px;
+        white-space: pre-wrap;
       }
       /* A still card and a wedged card look identical, so a lane reporting a live stream
          carries a moving mark. Motion is the one channel a frozen page cannot fake. */
@@ -374,7 +385,7 @@
         font-size: 13px;
         margin-right: 14px;
       }
-      /* The id and the phase share one line. A card is the region that takes the wall's
+      /* The title and the phase share one line. A card is the region that takes the wall's
          slack - every other row is bounded by a capacity and this one absorbs what is left -
          so a second heading line saying as much as the first is one it cannot afford. */
       .card .title {
@@ -383,10 +394,14 @@
         gap: 12px;
         min-width: 0;
       }
-      .card .id {
+      /* The unit title (basicly-0xtzf1's `units[].title` join, id demoted to a dim cell
+         below), never the id itself - a card no longer leads with the one line a human
+         cannot recognise on sight. */
+      .card .title-text {
         color: var(--text-bright);
-        font-family: var(--mono);
-        font-size: 19px;
+        font-family: var(--sans);
+        font-size: 17px;
+        font-weight: 600;
         min-width: 0;
       }
       .card .phase-name {
@@ -397,7 +412,7 @@
         letter-spacing: 0.12em;
         text-transform: uppercase;
       }
-      /* Two pairs to a line, so a card's six figures cost three rows rather than six. */
+      /* Two pairs to a line, halving how many rows a card's figures cost. */
       .card dl {
         column-gap: 8px;
         display: grid;
@@ -727,7 +742,7 @@
 {%- for card in cards %}
         <div class="card state-{{ card.state.key }}{% if card.working %} working{% endif %}">
           <div class="title">
-            <div class="id clip">
+            <div class="title-text clip">
               {{ card.title }}
             </div>
             <div class="phase-name clip">{{ card.phase }}</div>
@@ -750,7 +765,10 @@
 {%- endfor %}
           </dl>
 {%- if card.note %}
-          <div class="note clip">{{ card.note }}</div>
+          <details class="note">
+            <summary class="clip">{{ card.note }}</summary>
+            <div class="full">{{ card.note }}</div>
+          </details>
 {%- endif %}
         </div>
 {%- endfor %}
