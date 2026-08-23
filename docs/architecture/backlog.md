@@ -38,78 +38,12 @@ to catch, and it now holds one deliberately.
 
 ---
 
-## B2 — Correct every `architecture §N` citation in code, and gate the direction
+## B2 and B3 — landed
 
-**Why.** Architecture §3 states that section numbers are a cited surface. The rewritten
-document renumbered every section, so every existing citation in the tree is stale.
-`.scripts/check_docs_citations.py` walks `docs/**/*.md` for `file:line` references into
-code. Nothing walks code for `§N` references into a document, which is why the stale
-citations sat in the tree with every gate green.
-
-**This must land in the same change that swaps `architecture-v2.md` over
-`architecture.md`.** A renumbered document with uncorrected citations is worse than a
-document with no numbers: a citation that resolves to the *wrong* section reads as correct.
-
-The mapping is mechanical and is recorded in the rewrite changelog.
-
-| Item | Value |
-| --- | --- |
-| Scope | `docs/architecture/architecture.md`, `src/basicly/*.py`, `tests/test_skill_source.py`, `tests/test_docs_drift.py`, `.basicly/README.md`, `.basicly/core/hooks/**`, `.basicly/core/targets/codex.yaml`, `docs/requirements/factory-loop.md`, `.scripts/check_docs_citations.py`, `.scripts/docs_claims.py`, `basicly.toml` |
-| Integrity | `engine` |
-| Depends on | the architecture rewrite landing |
-| Acceptance | WHEN code cites the architecture document, IT SHALL cite a section number the document currently defines. WHEN a cited number names no heading, THE CHECK SHALL exit non-zero and name the file, the line and the missing number. WHEN every citation resolves, THE CHECK SHALL exit zero and print the citation count |
-| Demonstrated by | the new check reporting at least 25 citations and 0 failures on the fixed tree, and exactly 1 failure after deleting one heading; plus `uv run pytest tests/test_docs_citations.py -q` |
-| Cost | 25 comment and prose edits in a repository whose comment-density ratchet is at its cap. Measure per-file headroom before editing |
-| Buys | the code can cite the design again, and a citation cannot go stale in silence |
-
----
-
-## B3 — Validate every mermaid block
-
-**Why.** `architecture.md` carries 16 mermaid blocks after the rewrite, and the README
-carries 1. **Nothing checks that any of them parses** [measured 2026-08-16:
-`rg -i mermaid` over `.scripts/`, `src/` and `.pre-commit-config.yaml` returns nothing,
-against a positive control that returns matches for `basicly` in the same files]. A block
-with a syntax error renders as a red error box on the hosting site, and no gate here would
-stop it landing.
-
-The defect is not hypothetical. One revision of the architecture document named a
-`sequenceDiagram` participant `Loop`, which collides with mermaid's `loop` keyword. A parser
-caught it. Review did not.
-
-| Item | Value |
-| --- | --- |
-| Scope | `.scripts/`, `package.json`, `.pre-commit-config.yaml`, `basicly.toml` |
-| Integrity | `engine` |
-| Depends on | nothing |
-| Acceptance | WHEN a tracked markdown file holds a mermaid block the renderer refuses, THE CHECK SHALL exit non-zero and name the file, the line, the renderer version and its message. WHEN every block renders, THE CHECK SHALL exit zero and print the block count and the renderer version |
-| Demonstrated by | a check that reports the tree's current block count and 0 failures, and 1 failure after a deliberate typo |
-| Cost | **a dependency addition**, and therefore a human decision. It needs node plus `mermaid` and `jsdom`. `@mermaid-js/mermaid-cli` is not the answer — it declares a `puppeteer` peer dependency, which means a browser download |
-| Buys | the only defect class in the architecture document that is invisible to every existing gate and visible to every reader |
-
-**A correction carried forward from the previous version of this item.** Its cost paragraph
-quoted "102 packages, 181 MB, and 426 ms to validate all blocks in two files, measured on
-this machine". `node_modules/@mermaid-js/parser` is present on the authoring machine while
-`package.json` declares only `markdownlint-cli2`, so that measurement came from an untracked
-install nobody can reproduce. The figure is unverifiable from the repository, and the number
-a human is being asked to approve is therefore unknown. Re-measure before approving.
-
-Its acceptance also once said "reports 12 blocks", which counted the legend as a view. The
-count belongs in the check's output, not in the acceptance criterion.
-
-**A second correction, and it is the one that decides whether this item is worth
-building.** The acceptance above used to say *parses*. A parse is the wrong instrument.
-Measured 2026-08-16 against mermaid 11 in a real browser: `mermaid.parse()` **accepts** a
-`stateDiagram-v2` block whose transition label carries a second colon, and a renderer
-**refuses** the same block with *"No diagram type detected matching given
-configuration"*. A gate written to the old criterion would have passed the exact block a
-reader reported as a red error box. The criterion now says *renders*.
-
-**One thing is unestablished and blocks sizing.** The reported failure could not be
-reproduced on mermaid 11 — that build renders the offending block. The reporting renderer
-is therefore a different version or configuration, and it is unknown which. **Establish
-which renderer the hosting surface uses, and its version, before approving the
-dependency**: a check pinned to the wrong renderer is a gate that agrees with itself.
+Deleted rather than marked, on this file's own rule. `.scripts/check_code_citations.py`
+gates the code-to-document direction as the `code-citations` verify check (the remaining
+unresolved citations are its frozen, shrink-only debt), and `.scripts/check_mermaid.py`
+renders every committed block through a pinned mermaid as the `mermaid` verify check.
 
 ---
 
@@ -158,21 +92,10 @@ flag and always writes both.
 
 ---
 
-## B6 — Say "pin" in `CONTRIBUTING.md`
+## B6 — landed with B9
 
-**Why.** Architecture §37.5 records that the README, both how-to pages and the tutorial now
-say "a pin, not a floor". `CONTRIBUTING.md:37` still calls `0.2.16` "the known-good floor",
-and the code warns in both directions from an exact pin.
-
-| Item | Value |
-| --- | --- |
-| Scope | `CONTRIBUTING.md` |
-| Integrity | `docs-and-tests` |
-| Depends on | nothing |
-| Acceptance | WHEN a contributor reads the tracker-binary prerequisite, IT SHALL say the version is an exact pin and that the harness warns on any other version in either direction |
-| Demonstrated by | `rg -c 'known-good floor' CONTRIBUTING.md` returning 0, against a positive control of `rg -c '0.2.16' CONTRIBUTING.md` returning at least 1 |
-| Cost | one sentence |
-| Buys | the last surviving instance of a contradiction the architecture document used to record rather than resolve |
+Deleted rather than marked. The external tracker binary is gone, so `CONTRIBUTING.md`
+carries no version-pin sentence to correct: it describes the owned ledger.
 
 ---
 
@@ -186,7 +109,7 @@ goes stale on every landing. It stays only because four gates bind on it.
 | --- | --- |
 | Scope | `docs/architecture/architecture.md`, `docs/reference/cli.md`, `.scripts/docs_claims.py`, `tests/test_docs_drift.py`, `basicly.toml` |
 | Integrity | `engine`. The assertion targets move |
-| Depends on | B2 |
+| Depends on | nothing — B2's citation gate shipped, so the assertion targets can move |
 | Acceptance | WHEN the CLI ships a subcommand, THE `cli-commands` AND `cli-subcommands` ASSERTIONS SHALL check the CLI reference and not the architecture document. WHEN a subcommand is removed, THE REVERSE TRIPWIRE SHALL check the CLI reference. WHEN the architecture document is read, IT SHALL NOT contain a per-command behaviour table |
 | Demonstrated by | `uv run python .scripts/docs_claims.py --check` green after the target move, plus `uv run pytest tests/test_docs_drift.py -q` |
 | Cost | a new document, four gate retargets, and one more file in the documentation set |
@@ -271,25 +194,8 @@ is separable from B8 rather than part of it.
 
 ---
 
-## B9 — Remove the external tracker binary
+## B9 — landed
 
-**Why.** Architecture §37 is the whole account. Two defects found on 2026-08-16 moved this
-from a plan to a priority, and the second is reproducible on this checkout: the vendor's
-documented repair path *"rebuilds DB from JSONL"*, and the JSONL export carries **0** gate
-results against hundreds in the database [measured 2026-08-16, the probe in architecture
-§37.4: 389 in the database, 0 in the export, against a positive control of 24 distinct
-export keys]. Running the documented recovery for a corrupted store therefore erases the
-gate ledger the phase derivation reads the word "landed" from.
-
-This is a parent, not a leaf. Its children are the five unported operations in §37.2 and
-the remaining bypass routes.
-
-| Item | Value |
-| --- | --- |
-| Scope | `src/basicly/br.py`, `src/basicly/mirror.py`, `src/basicly/owned_store.py`, `.basicly/core/kit/tracker/**`, `src/basicly/loop*.py`, `src/basicly/policy.py`, `src/basicly/decompose.py`, `src/basicly/supervise.py`, `src/basicly/merge.py` |
-| Integrity | `consumer-surface` |
-| Depends on | B8 |
-| Acceptance | WHEN the engine reads a work item, IT SHALL read the owned fold. WHEN the engine writes a work item, IT SHALL append to the owned log and SHALL NOT spawn an external binary. WHEN the shadow differential runs before the flip, IT SHALL report clean and conclusive. WHERE an operation has no owned equivalent, THE FLIP SHALL NOT proceed until it does |
-| Demonstrated by | `uv run basicly tracker shadow` reporting clean and conclusive, then `rg -c 'run_br\|try_run_br' src/basicly -g '!br.py'` returning 0, plus `uv run pytest -q` |
-| Cost | the largest remaining item in the tree. Five unported operations, each a design question |
-| Buys | the loop's state stops depending on unowned code whose documented repair path destroys the gate ledger |
+Deleted rather than marked. `src/basicly/br.py` no longer exists, every engine read is the
+owned fold, every write appends to `.basicly/ledger/` through the engine seam, and
+`ledger-fsck` gates the log on every commit.

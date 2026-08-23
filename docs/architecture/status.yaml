@@ -139,12 +139,14 @@ sections:
       events, 18.09% of the log, out of the false-unknown population. The closed set is checked
       to be exactly applied plus delegated, and disjoint. Architecture §32.8'
   - name: The owned tracker as the only store
-    status: building
-    note: Architecture §32 specifies it; §37 is the account of the external binary still carrying
-      part of it
-  - name: A mermaid parse check on every committed block
-    status: designed
-    note: See [`backlog.md`](backlog.md)
+    status: shipped
+    note: 'The external binary is removed: no `br.py`, every write goes through the engine
+      seam into `.basicly/ledger/`, and `ledger-fsck` gates the log on every commit.
+      Architecture §32'
+  - name: A mermaid render check on every committed block
+    status: shipped
+    note: '`.scripts/check_mermaid.py` renders every block through `render_mermaid.mjs`
+      (mermaid pinned) and runs as the `mermaid` verify check'
 - name: The loop
   capabilities:
   - name: Single-track loop driven identically by any supported agent
