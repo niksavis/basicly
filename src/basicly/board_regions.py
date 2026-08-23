@@ -30,6 +30,7 @@ The vocabulary, the honesty rules and the shapes are :mod:`basicly.board_wall`'s
 
 from __future__ import annotations
 
+import itertools
 from collections import Counter
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -100,15 +101,64 @@ READY_SLOTS = 8
 # What the ready list draws once the running row has collapsed and handed it the page, and how
 # long a title may be there. The eight rows and 62-character titles of the narrow column leave
 # two thirds of a 1080px screen blank and still truncate every line.
-#
-# **Both figures are the shortest wall this layout claims, not the roomiest.** Measured off the
-# rendered page: 1440x900 gives the reclaimed region 373px of content box, because the status
-# bar, the backlog line and the section roster each take a second line at that width, so 14
-# rows of 24.1px under an 18.2px heading is what fits - against 26 at 1920x1080. A count taken
-# at the roomiest width is the defect this repository already paid for once: the gate-name
-# overlap reproduced at 1200 through 1800 and was absent at 1920, which is why it passed review.
 READY_SLOTS_WIDE = 14
 READY_TITLE_WIDE = 110
+
+# basicly-ffm2yp: 24.09px is the measured height of a data row on the live board - font-size
+# 17px at line-height 1.3 plus 1px padding top and bottom, confirmed against a real render
+# rather than read off the CSS, because the CSS number alone was the previous defect.
+READY_ROW_PITCH_PX = 24.09
+
+# What sits above and below the reclaimed row on the *live* board, in CSS pixels, at three
+# widths this layout claims - found by binary search against `.scripts/check_render_overflow.py`
+# on the real repo document, not a fixture: a synthetic calibration first measured 442px at
+# every width and it clipped 54px on the live page, because live head/band content wraps more
+# at 1440 than the fixture's did. Chrome falls as width grows because less of it wraps, so one
+# constant cannot serve every width; these three points, interpolated, do. Sorted by width.
+READY_CHROME_CALIBRATION: tuple[tuple[float, float], ...] = (
+    (1440.0, 514.0),
+    (1600.0, 429.0),
+    (1920.0, 381.0),
+)
+
+# One row's worth of headroom on top of the tightest measured chrome, because the live figures
+# above are one day's real content and a longer branch name or one more gate tomorrow wraps a
+# little further. Losing a row to the margin is a wasted line; losing it to a clip is the bug.
+READY_CHROME_SAFETY_MARGIN_PX = READY_ROW_PITCH_PX
+
+
+def _chrome_px(viewport_width: float | None) -> float:
+    """The calibrated chrome height at *viewport_width*, interpolated between measured points.
+
+    None or narrower than the narrowest calibration point takes that point's figure - the
+    most conservative one measured - rather than extrapolating past what was ever checked.
+    """
+    points = READY_CHROME_CALIBRATION
+    if viewport_width is None or viewport_width <= points[0][0]:
+        return points[0][1]
+    if viewport_width >= points[-1][0]:
+        return points[-1][1]
+    for (w0, c0), (w1, c1) in itertools.pairwise(points):
+        if w0 <= viewport_width <= w1:
+            fraction = (viewport_width - w0) / (w1 - w0)
+            return c0 + fraction * (c1 - c0)
+    return points[-1][1]  # pragma: no cover - unreachable, the loop above covers the range
+
+
+def ready_capacity(viewport_height: float | None, viewport_width: float | None = None) -> int:
+    """How many reclaimed-row slots fit at this viewport, or :data:`READY_SLOTS_WIDE`.
+
+    A height of None means the caller does not know the viewport at all - basicly-ffm2yp's
+    own finding is that guessing a number here for that case is the defect, so it is never
+    guessed: the caller that knows a wall's own height is the one that must pass it, and
+    until one does this returns the figure the layout has always been safe at instead of a
+    computed one.
+    """
+    if viewport_height is None:
+        return READY_SLOTS_WIDE
+    chrome = _chrome_px(viewport_width) + READY_CHROME_SAFETY_MARGIN_PX
+    return max(1, int((viewport_height - chrome) // READY_ROW_PITCH_PX))
+
 
 # One ask on the band, not two. The age is the headline now, and an age belongs to exactly one
 # ask - the one that has waited longest. A second detail line under a 44px headline is what
@@ -470,7 +520,13 @@ def grouped(rows: Sequence[Item], names: Sequence[str]) -> tuple[Group, ...]:
     return tuple(Group(name, str(totals[name]), tuple(held[name])) for name in order)
 
 
-def next_up(reads: Mapping[str, Reading], *, wide: bool = False) -> Listing:
+def next_up(
+    reads: Mapping[str, Reading],
+    *,
+    wide: bool = False,
+    viewport_height: float | None = None,
+    viewport_width: float | None = None,
+) -> Listing:
     """The ready set, ranked, with priority, id and title on each row.
 
     Three absences are distinguished and not one of them is a zero: the section not emitted,
@@ -479,7 +535,10 @@ def next_up(reads: Mapping[str, Reading], *, wide: bool = False) -> Listing:
 
     *wide* is the shape the list takes when no lane is dispatched and the running row gave it
     the width: more rows, and a title bound that fits them. Two shapes rather than one because
-    a cap is a promise about a rendered width, and the list has two.
+    a cap is a promise about a rendered width, and the list has two. *viewport_height* and
+    *viewport_width* are :func:`ready_capacity`'s own arguments, threaded through rather than
+    read here, because a caller that knows the wall's actual size is the one with the fact
+    to give.
     """
     read = reads["units"]
     if not read.drawn:
@@ -488,7 +547,7 @@ def next_up(reads: Mapping[str, Reading], *, wide: bool = False) -> Listing:
     flagged = [unit for unit in units if isinstance(unit.get("ready"), bool)]
     if not flagged:
         return Listing(BY_KEY[ABSENT], note=f"ready {ABSENT_TEXT} on any of the {len(units)} units")
-    slots = READY_SLOTS_WIDE if wide else READY_SLOTS
+    slots = ready_capacity(viewport_height, viewport_width) if wide else READY_SLOTS
     bound = READY_TITLE_WIDE if wide else TITLE_MAX
     ready = sorted((unit for unit in flagged if unit["ready"]), key=_rank)
     names = _feature_names(reads, units, ready)

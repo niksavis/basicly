@@ -236,6 +236,40 @@ def test_the_reclaimed_width_leaves_the_top_ready_titles_untruncated() -> None:
     assert len(wide.rows) + len(wide.groups) == board_regions.READY_SLOTS_WIDE
 
 
+def test_ready_capacity_is_derived_from_the_viewport_actually_given_not_a_constant() -> None:
+    """basicly-ffm2yp: 14 rows drawn where 26 fit, because the cap ignored the viewport.
+
+    `.scripts/check_render_overflow.py`'s own answer, found by binary search against the
+    *live* repo document (`.basicly/usage/scratch/find_capacity_live.py`) rather than a
+    fixture: the true ceiling was 16 rows at 1440x900, 32 at 1600x1200 and 29 at 1920x1080.
+    The formula lands one row under each - the margin `READY_CHROME_SAFETY_MARGIN_PX` is meant
+    to spend - and it is derived from the viewport rather than a single guessed count.
+    """
+    assert board_regions.ready_capacity(900, 1440) == 15
+    assert board_regions.ready_capacity(1200, 1600) == 31
+    assert board_regions.ready_capacity(1080, 1920) == 28
+    assert board_regions.ready_capacity(1200, 1600) > board_regions.ready_capacity(900, 1440), (
+        "a taller wall must fit more rows, not the same guessed count"
+    )
+
+
+def test_ready_capacity_falls_back_to_the_stated_default_when_the_viewport_is_unknown() -> None:
+    """Unknown is never guessed into a number; it draws the figure that has always been safe."""
+    assert board_regions.ready_capacity(None) == board_regions.READY_SLOTS_WIDE
+
+
+def test_next_up_draws_more_of_the_reclaimed_width_at_a_taller_viewport() -> None:
+    """The row count moves with the height passed in, at the same width's row set."""
+    long = "the board goes backwards the moment a supervisor starts and in flight has no producer"
+    row = {"ready": True, "priority": "P0", "title": long}
+    units = [{"id": f"u-{n:02d}", **row} for n in range(60)]
+    reads = _reads("wall-v1.json", units=units)
+    short_wall = board_regions.next_up(reads, wide=True, viewport_height=900)
+    tall_wall = board_regions.next_up(reads, wide=True, viewport_height=1080)
+    assert len(tall_wall.rows) > len(short_wall.rows)
+    assert len(short_wall.rows) + len(short_wall.groups) <= board_regions.ready_capacity(900)
+
+
 def test_the_ready_region_tells_three_absences_apart_and_none_of_them_is_a_zero() -> None:
     """The middle case is the one a count would have reported as "0 ready"."""
     absent = board_regions.next_up(_absent("units", _reads("wall-v1.json")))

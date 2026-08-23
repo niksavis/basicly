@@ -100,7 +100,9 @@ def cmd_emit(args: argparse.Namespace) -> int:
     if not verdict.readable:
         ui.say(verdict.summary)
         return verdict.exit_code
-    page = board_render.page(document, verdict, now=datetime.now(UTC))
+    page = board_render.page(
+        document, verdict, now=datetime.now(UTC), viewport=(args.height, args.width)
+    )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(page, encoding="utf-8")
     sidecar = args.out.parent / SNAPSHOT_NAME
@@ -167,6 +169,21 @@ def add_parsers(subparsers: argparse._SubParsersAction) -> None:
         type=Path,
         default=None,
         help=f"Write the page here, with {SNAPSHOT_NAME} beside it",
+    )
+    board.add_argument(
+        "--height",
+        type=float,
+        default=None,
+        help="The wall's own CSS pixel height, so the reclaimed ready list draws as many rows "
+        "as actually fit there instead of the conservative default for an unstated one "
+        "(basicly-ffm2yp)",
+    )
+    board.add_argument(
+        "--width",
+        type=float,
+        default=None,
+        help="The wall's own CSS pixel width, alongside --height: chrome above the reclaimed "
+        "list wraps more at a narrow width, so the row count reads this too where it is given",
     )
     board_sub = board.add_subparsers(dest="board_command", required=False)
     validate = board_sub.add_parser(
