@@ -3289,7 +3289,12 @@ def _seeding_declined(
     if ready_lanes(repo_root, session, skip=skip):
         return ()
     if not session.open_children:
-        return ()
+        # No children at all is a leaf root, which seeds itself as the single lane
+        # (`loop._start_build_leaf`) — the case `preflight` prices as one. Children
+        # all closed is an exhausted epic, which is done (basicly-xkaya9).
+        leaf = not session.children and loop_state.is_dispatchable(session.root_status)
+        if not leaf:
+            return ()
     if admission is None:
         return None
     blocked_runner = metered_without_a_budget(repo_root, admission)

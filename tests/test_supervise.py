@@ -5122,10 +5122,10 @@ def test_seeding_is_skipped_while_a_lane_is_already_dispatchable(
     assert supervise.seed_lanes(tmp_path, _session(_lane("epic.1"))) == ()
 
 
-def test_seeding_is_skipped_when_the_root_has_no_open_children(
+def test_seeding_is_skipped_when_every_child_of_the_root_is_closed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Nothing to provision, so the session is simply done."""
+    """An exhausted epic has nothing left to provision, so the session is done."""
     _patch_readiness(monkeypatch)
     monkeypatch.setattr(
         supervise.loop,
@@ -5133,8 +5133,42 @@ def test_seeding_is_skipped_when_the_root_has_no_open_children(
         lambda *_a, **_k: pytest.fail("there is no child to fan out"),
     )
 
-    empty = supervise.SessionState("epic", "open", children=(), adopted=())
-    assert supervise.seed_lanes(tmp_path, empty) == ()
+    exhausted = supervise.SessionState("epic", "open", children=(("epic.1", "closed"),), adopted=())
+    assert supervise.seed_lanes(tmp_path, exhausted) == ()
+
+
+def test_a_childless_root_seeds_itself_as_the_single_lane(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The other half of what `preflight` promises for a leaf (basicly-xkaya9).
+
+    `preflight <leaf>` prices exactly one lane for a childless root
+    (`test_preflight_still_prices_a_childless_root_as_its_own_lane`); before this,
+    `supervise <leaf>` read the empty child set as an exhausted epic and exited 1
+    having dispatched nothing. The same childless state must seed.
+    """
+    advanced = _seed_fixture(monkeypatch, steps=(_step("dispatched"),))
+
+    leaf = supervise.SessionState("leaf", "open", children=(), adopted=())
+    routed = supervise.seed_lanes(tmp_path, leaf)
+
+    assert advanced == ["leaf@leaf"], "the leaf root is advanced under its own grant"
+    assert [(r.issue_id, r.route) for r in routed] == [("leaf", "seeded")]
+
+
+def test_a_childless_root_that_is_not_dispatchable_does_not_seed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A deferred leaf is parked by a human; seeding it would un-park it by side effect."""
+    _patch_readiness(monkeypatch)
+    monkeypatch.setattr(
+        supervise.loop,
+        "run_ceremony",
+        lambda *_a, **_k: pytest.fail("a non-dispatchable leaf must not be advanced"),
+    )
+
+    parked = supervise.SessionState("leaf", "deferred", children=(), adopted=())
+    assert supervise.seed_lanes(tmp_path, parked) == ()
 
 
 # --- A metered dispatch needs a budget (basicly-kkux) ---------------------------
