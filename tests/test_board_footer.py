@@ -33,7 +33,8 @@ def test_an_absent_graph_says_so_where_a_zero_would_have_read_as_no_edges() -> N
     """No dependencies, and the producer cannot see dependencies, are different claims."""
     cells = board_footer.backlog(readings("no-phase-v1.json"))
     edges = next(cell for cell in cells if cell.label == "dep edges")
-    assert edges.value == board_wall.ABSENT_TEXT
+    assert edges.value == board_footer._NOT_IN_SNAPSHOT
+    assert "producer" not in edges.value and "emitted" not in edges.value
     assert edges.state is not None and edges.state.key == board_wall.ABSENT
 
 
@@ -123,11 +124,14 @@ def test_the_agent_health_row_is_named_by_its_agent_and_not_by_its_index() -> No
 
 
 def test_a_section_the_producer_did_not_emit_reads_absent_rather_than_an_empty_row() -> None:
-    """Three readings, three absences, and each says which producer did not emit it."""
+    """Three readings, three absences, and each says so in a reader's own vocabulary."""
     reads = readings("no-phase-v1.json")
-    assert board_footer.gates(reads)[0].value != board_wall.ABSENT_TEXT, "the fixture emits gates"
-    assert board_footer.spend(reads).value == board_wall.ABSENT_TEXT
-    assert board_footer.health(reads)[0][0].value == board_wall.ABSENT_TEXT
+    absent = board_footer._NOT_IN_SNAPSHOT
+    assert board_footer.gates(reads)[0].value != absent, "the fixture emits gates"
+    assert board_footer.spend(reads).value == absent
+    assert board_footer.health(reads)[0][0].value == absent
+    for word in ("producer", "emitted", "section", "withheld"):
+        assert word not in absent, f"{word!r} is engine vocabulary a dashboard reader lacks"
 
 
 def test_the_event_ticker_reads_newest_first_and_reports_what_it_did_not_draw() -> None:
@@ -213,7 +217,28 @@ def test_the_roster_covers_every_section_the_verdict_named_and_the_key_spells_ab
     absent = ["session", "lanes", "asks", "spend", "health", "graph"]
     assert [cell.label for cell in roster] == absent
     assert all(cell.value for cell in roster), "a named section carries no word for why"
-    assert board_wall.ABSENT_TEXT in [cell.value for cell in roster]
+    assert board_footer._NOT_IN_SNAPSHOT in [cell.value for cell in roster]
+    # The regression: the row used to spell the bare state key, "withheld", for a withheld
+    # section, and board_wall.ABSENT_TEXT - "not emitted by this producer" - for an absent one.
+    # Neither word is in a reader's vocabulary, and the bare key threw away the schema's own
+    # violation reason a withheld section carries.
+    for cell in roster:
+        for word in ("producer", "emitted", "section", "withheld"):
+            assert word not in cell.value, f"{cell.label} spells engine vocabulary {word!r}"
     # The control: a section that drew is deliberately not named, which is the whole change.
     assert "backlog" not in [cell.label for cell in roster]
     assert not hasattr(board_footer, "legend")
+
+
+def test_a_withheld_section_spells_its_own_violation_rather_than_the_bare_state_key() -> None:
+    """`inventory` used to draw the literal word "withheld", dropping the schema's own reason.
+
+    `broken-section-v1.json`'s `units` section is withheld over one title that broke the
+    two-hundred-character bound; that reason is what a reader without the schema can act on,
+    and it is what the bare state key threw away.
+    """
+    reads = readings("broken-section-v1.json")
+    units = next(cell for cell in board_footer.inventory(reads) if cell.label == "units")
+    assert units.value == reads["units"].note
+    assert "too long" in units.value, "the schema's own violation reason did not survive"
+    assert units.value != "withheld"
