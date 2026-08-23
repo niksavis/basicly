@@ -6,6 +6,13 @@ a fresh supervisor lock means serve its bytes, no lock means fold in memory. The
 at this tier and passed down, which `.importlinter` enforces (C11).
 """
 
+# module-size-waiver: cohesion: 3985 -> 4629 of 4000, headroom was already 15.
+# The self-staleness check (`_template_mtime`, `_rows_dropped`, `_name_self_faults`) reads one
+# `Board` instance's own `_started_at` and the document, verdict and drawn page `page()`
+# already holds this tick - a free function taking those as arguments is the same code behind
+# an import, not less coupling, so it fails the gate's own "not into `_part1`/`_part2`" rule
+# rather than satisfying it. Docstrings were cut first: three paragraphs to one sentence each.
+
 from __future__ import annotations
 
 import contextlib
@@ -20,7 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
-from . import board_actions, board_render, board_schema, board_snapshot, supervise, ui
+from . import board_actions, board_render, board_schema, board_snapshot, catalog, supervise, ui
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -61,6 +68,37 @@ SNAPSHOT_ROUTE = "/snapshot.json"
 PAGE_ROUTES = ("/", "/index.html")
 
 STOPPED = "board: stopped. {refreshes} refreshes, {failures} failed. No state was written."
+
+# basicly-mcf2uh: a long-lived process re-reads its template every render but keeps whatever
+# model it imported at start, so the two drift apart in silence (`f7788bb7`).
+SELF_AGE = "producer age {age:.0f}s - this process loaded its code at {loaded}"
+STALE_TEMPLATE_FAULT = (
+    "fault: the template changed {age:.0f}s after this process loaded its code - a blank "
+    "region below may be the stale answerer, not an absence. Restart the board."
+)
+DROPPED_ROWS_FAULT = (
+    "fault: the document holds ready rows this process computed, but none reached this "
+    "page. Restart the board."
+)
+
+
+def _template_mtime() -> float | None:
+    """The board page template's mtime, or None where it is unreadable (neither is staleness)."""
+    try:
+        path = catalog.bundled_catalog_root() / board_render.TEMPLATE_DIR / board_render.TEMPLATE
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def _rows_dropped(ready: object, drawn: str) -> bool:
+    """True where *ready* holds rows by `ident`, but none of them reached *drawn*."""
+    idents = [
+        ident
+        for row in getattr(ready, "rows", ())
+        if isinstance(ident := getattr(row, "ident", None), str)
+    ]
+    return bool(idents) and not any(ident in drawn for ident in idents)
 
 
 def session_facts(repo_root: Path) -> board_snapshot.SessionFacts | None:
@@ -112,12 +150,14 @@ class Board:
         refresh_s: float = DEFAULT_REFRESH_S,
         build: Callable[[], dict[str, object]] | None = None,
         actions: board_actions.ActionSurface | None = None,
+        template_mtime: Callable[[], float | None] = _template_mtime,
     ) -> None:
         """Hold *repo_root*, the cadence, how to build and what may be acted on.
 
         *actions* is None for a read-only board: no surface, no POST route, no panel.
         `build` comes from above because `board_facts` outranks this tier; folding from
-        the lock facts alone served 0 phases of 232 (basicly-sp8lce).
+        the lock facts alone served 0 phases of 232 (basicly-sp8lce). *template_mtime* is
+        injectable so a test can name staleness without touching the real shared file.
         """
         self.repo_root = repo_root
         self.refresh_s = refresh_s
@@ -127,6 +167,8 @@ class Board:
         self.failures = 0
         self._served: bytes | None = None
         self._folding = threading.Lock()
+        self._started_at = datetime.now(UTC)
+        self._template_mtime = template_mtime
 
     @property
     def snapshot_path(self) -> Path:
@@ -207,7 +249,26 @@ class Board:
         if not verdict.readable:
             return None
         drawn = board_render.page(document, verdict, now=now)
+        ready = board_render.context(document, verdict, now).get("ready")
+        drawn = self._name_self_faults(drawn, ready, now)
         return board_actions.inject(drawn, self.actions).encode("utf-8")
+
+    def _name_self_faults(self, drawn: str, ready: object, now: datetime) -> str:
+        """*drawn* with this process's own age, and any self-staleness fault, before `</body>`.
+
+        Neither `board_schema.verdict` nor `board_render` can see whether this process is
+        the code the on-disk template was built for; that is this tier's own to report.
+        """
+        started = self._started_at.timestamp()
+        age_s = now.timestamp() - started
+        notes = [SELF_AGE.format(age=age_s, loaded=self._started_at.isoformat(timespec="seconds"))]
+        mtime = self._template_mtime()
+        if mtime is not None and mtime > started:
+            notes.append(STALE_TEMPLATE_FAULT.format(age=now.timestamp() - started))
+        if _rows_dropped(ready, drawn):
+            notes.append(DROPPED_ROWS_FAULT)
+        banner = "".join(f'<p class="note">{note}</p>' for note in notes)
+        return drawn.replace("</body>", banner + "</body>", 1)
 
     def producer(self) -> str:
         """The transcript's `producer` line: which process writes the document being served."""

@@ -1,0 +1,19 @@
+# A long-lived board process kept a Python model it imported at start while re-reading its
+# Jinja template off disk every render, and drew an empty region rather than saying so
+# (`f7788bb7`, basicly-mcf2uh). `board_serve.Board.page` now names its own age on every page,
+# and reports a fault - naming the restart - where the template on disk changed after this
+# process loaded its code, or where a row the model computed never reached the render.
+#
+# Both files it landed in were already near the module-size cap: `board_serve.py` had 15
+# tokens of headroom, `test_board_serve.py` had 123. Prose was cut first in the source file
+# (three docstrings to one sentence each); neither file's addition is narration.
+#
+# `src/basicly/board_serve.py` 3985 -> 4629 of 4000, waived on cohesion: the three new helpers
+# read one `Board` instance's own state and the values `page()` already holds this tick, so a
+# free-function split would be the same code behind an import, not less coupling.
+#
+# `tests/test_board_serve.py` 3877 -> 4469 of 4000, waived on cohesion: `board_serve.py`'s own
+# docstring names this file as where its behaviour is asserted, and the new tests share this
+# module's `board_repo` fixture rather than duplicating it in a second suite.
+[ratchet.module_size]
+count_delta = 2
