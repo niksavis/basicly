@@ -218,17 +218,36 @@ def test_an_escalation_on_a_gated_bead_is_reported_as_pending(
     assert [i.decision_id for i in decisions.pending(tmp_path, "b-epic")] == [item.decision_id]
 
 
-def _write_export(repo_root: Path, statuses: dict[str, str]) -> None:
-    """The committed ledger `closed_ids` reads, with one status event per id."""
+def _write_export(
+    repo_root: Path, statuses: dict[str, str], parents: dict[str, str] | None = None
+) -> None:
+    """The committed ledger `closed_ids` reads: a status event per id, an edge per parent.
+
+    *parents* is not decoration. Two readers reach two stores here — the argv stand-in
+    answers one record's edges, this ledger answers the whole population's statuses — and
+    `policy.session_issue_ids` reads the population since basicly-mdv1qu. A ledger seeded
+    with statuses alone described a tracker whose stand-in had a child and whose log had
+    none, so the walk covered the root only and the control assertion failed.
+    """
     repo = flipped_tracker.flipped_repo(repo_root)
     kit = tracker.kit(repo)
-    kit.events.append(
-        tracker.ledger_dir(repo),
-        [
-            kit.events.Draft(record, kit.events.KIND_STATUS, {"status": status})
-            for record, status in statuses.items()
-        ],
-    )
+    drafts = [
+        kit.events.Draft(record, kit.events.KIND_STATUS, {"status": status})
+        for record, status in statuses.items()
+    ]
+    drafts += [
+        kit.events.Draft(
+            child,
+            kit.migrate.KIND_EDGE,
+            {
+                kit.migrate.EDGE_FROM: child,
+                kit.migrate.EDGE_TO: parent,
+                kit.migrate.EDGE_TYPE: "parent-child",
+            },
+        )
+        for child, parent in (parents or {}).items()
+    ]
+    kit.events.append(tracker.ledger_dir(repo), drafts)
 
 
 def test_pending_drops_items_on_closed_beads(
@@ -248,13 +267,13 @@ def test_pending_drops_items_on_closed_beads(
     stale = decisions.enqueue(tmp_path, "b-epic.1", "checkpoint", "approve the ship checkpoint")
     live = decisions.enqueue(tmp_path, "b-epic", "escalation", "widen the band?")
 
-    _write_export(tmp_path, {"b-epic": "open", "b-epic.1": "open"})
+    _write_export(tmp_path, {"b-epic": "open", "b-epic.1": "open"}, {"b-epic.1": "b-epic"})
     assert {i.decision_id for i in decisions.pending(tmp_path, "b-epic")} == {
         stale.decision_id,
         live.decision_id,
     }, "control: while the bead is open its item is outstanding"
 
-    _write_export(tmp_path, {"b-epic": "open", "b-epic.1": "closed"})
+    _write_export(tmp_path, {"b-epic": "open", "b-epic.1": "closed"}, {"b-epic.1": "b-epic"})
     assert [i.decision_id for i in decisions.pending(tmp_path, "b-epic")] == [live.decision_id]
 
 

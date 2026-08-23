@@ -1916,12 +1916,18 @@ def session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
     than the grant it is accounted against (basicly-tcmy.30). ``policy`` owns it
     because the dependency runs that way — ``loop_state`` imports ``policy``.
     """
+    # One ledger read for the whole population: `tracker.read_record` folds the *whole*
+    # log per call and this walk hops once per bead, so 87 ids cost 8.77 s over 87 reads
+    # against 0.20 s here (basicly-mdv1qu). An id the population does not hold — a
+    # dangling edge, a tombstone — still goes to the seam, so coverage is unmoved.
+    population = {row["id"]: row for row in tracker.all_records(repo_root)}
     # (record key, dependency type) pairs: the edges that lead into the session.
     edges = (("dependents", "parent-child"), ("dependencies", "blocks"))
     seen: dict[str, None] = {root_issue: None}  # insertion-ordered BFS
     queue = [root_issue]
     while queue:
-        record = tracker.read_record(repo_root, queue.pop(0))
+        held = queue.pop(0)
+        record = population.get(held) or tracker.read_record(repo_root, held)
         if record is None:
             continue
         for key, wanted in edges:

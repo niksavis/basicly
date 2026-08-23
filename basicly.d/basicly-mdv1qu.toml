@@ -1,0 +1,39 @@
+# The session walk reads the ledger once, not once per bead (basicly-mdv1qu).
+#
+# `policy.session_issue_ids` hopped through `tracker.read_record`, and that seam reads and
+# folds the *whole* ledger per call. Measured on this repository's log (7082 events, 1090
+# records): 8 ids in 0.90 s over 8 reads, 87 ids in 8.77 s over 87 reads - ~101 ms a bead,
+# linear in session size. `tracker.all_records` answers the same population in 0.20 s, and
+# it already exists for exactly this reason ("One fold for the whole tracker, never one per
+# record"). Same ids, same `spent_tokens` on the board's session section, 43x cheaper.
+#
+# ## Where the bead was wrong
+#
+# It reports the walk "re-derived for every beat of one build" and asks for memoisation.
+# One `board_facts.document()` build calls it **once** (instrumented: `walks=1`), so a memo
+# inside a build buys nothing and a memo across builds is the staleness the record's own
+# third criterion forbids. The cost was inside a single walk.
+#
+# ## module_size: policy.py rebaselined by 116
+#
+# What the 116 buys: the population read, the two-line hop that serves each bead out of it,
+# and four lines of comment carrying the two measurements above. Nothing else moved.
+#
+# Rebaselined rather than waived, for basicly-kas8q7's reason on this same module: a waiver
+# would delete `policy.py`'s ceiling, 8x the cap, to buy 116 tokens. No prose was cut to pay
+# for it - the comment was tightened from six lines to four while keeping both figures and
+# the coverage claim, and the gate's graduated remedy asks a module this far over only not to
+# grow. Prose share is unmoved at 56.7% against a frozen 57.6.
+#
+# `tests/test_policy.py` needs no rebaseline: the regression tests are in a new
+# `tests/test_policy_session_walk.py` under the §9.4 `test_<module>_<aspect>` form, at 1125
+# of 4000 tokens against its own fresh bounds. They need a real ledger and share none of
+# `test_policy.py`'s argv stand-in preamble.
+[ratchet]
+base_commit = "1f945f031dd898bcafde398164c1667b1e316b55"
+
+[ratchet.module_size]
+rebaseline_reason = "one whole-population ledger read replacing one read per session bead: 87 ids cost 8.77 s over 87 folds of the whole log, 0.20 s after. The 116 tokens are the population read, the hop that serves each bead out of it, and the two measurements in comment. policy.py is 8x the cap and a waiver would delete its ceiling to buy 116 tokens."
+
+[ratchet.module_size.rebaselined]
+"src/basicly/policy.py" = 116
