@@ -278,12 +278,34 @@ def test_a_running_lane_does_not_inherit_the_last_dispatch_cost_or_occupancy() -
 
     The failure this refuses is quiet: last run's cost printed under a heading that says the
     lane is running now reads as this run's, and nothing on the card would say otherwise.
+    `spending` carries the key with `0`: registered and not yet metered is still running.
     """
-    fact = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {}, {}, [_RUN])
+    fact = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {"a": 0}, {}, [_RUN])
+    assert fact.live is True
     assert fact.cost_usd is None
     assert fact.elapsed_s is None
     assert fact.context_used is None
     assert fact.context_window is None
+
+
+def test_a_provisioned_lane_with_no_live_stream_is_not_reported_as_running() -> None:
+    """basicly-ze0po3: a worktree on disk outlives the agent that made it (rn0o.6 v. fi1i7z).
+
+    `view.live` only says the tracker's worktree binding still exists, which a schema
+    consumer reads as "still running" and stays true for hours after the process that made
+    it has exited. `spending` names exactly the lanes with a live stream registered right
+    now, so a lane absent from it is idle rather than running, and its last known figures
+    speak instead of a blank "running" card carrying no note and no tokens. The worktree
+    fact itself does not disappear - it travels as `provisioned`.
+    """
+    fact = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {}, {}, [_RUN])
+    assert fact.live is False
+    assert fact.provisioned is True
+    assert fact.tokens == 11
+    assert (fact.cost_usd, fact.elapsed_s) == (12.5, 900.0)
+    row = board_sections.lanes([fact])[0]
+    assert row["live"] is False
+    assert row["provisioned"] is True
 
 
 def test_a_finished_lane_carries_every_figure_its_run_record_holds() -> None:
@@ -339,16 +361,17 @@ def test_the_zero_window_does_not_fall_through_to_a_previous_run() -> None:
     assert fact.tokens is None
 
 
-def test_a_live_lane_never_shows_a_previous_dispatch_total() -> None:
-    """No stream to read is silence too, on the same rule as a stream reporting zero.
+def test_a_provisioned_lane_falls_back_exactly_like_a_finished_one() -> None:
+    """basicly-ze0po3: the worktree still existing must not change what a card falls back to.
 
-    A producer that is not the supervisor cannot see the process-local streams at all, so
-    it holds nothing for a lane it can see is live. Falling back there prints the last
-    dispatch's total under a heading saying the lane runs now - the same failure as the
-    zero window, reached from the other side.
+    That distinction is `provisioned` now, and `live` answers only whether the supervisor
+    has a stream registered for the lane.
     """
-    fact = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {}, {}, [])
-    assert fact.tokens is None
+    provisioned = board_facts._lane_fact(_view("a", live=True), {"a": "build"}, {}, {}, [])
+    finished = board_facts._lane_fact(_view("a", live=False), {"a": "build"}, {}, {}, [])
+    assert (provisioned.live, provisioned.provisioned) == (False, True)
+    assert (finished.live, finished.provisioned) == (False, False)
+    assert provisioned.tokens == finished.tokens == 11
 
 
 def test_a_finished_lane_does_fall_back_to_its_last_recorded_run() -> None:
