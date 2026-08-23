@@ -20,13 +20,11 @@ from typing import TYPE_CHECKING, Any
 
 from .board_wall import (
     ABSENT,
-    ABSENT_TEXT,
     BY_KEY,
     DOT,
     FAIL,
     RENDERABLE,
     UNKNOWN,
-    WITHHELD,
     Cell,
     bar,
     clip,
@@ -81,6 +79,15 @@ _STATUS_WORD = {FAIL: "fail", ABSENT: "not_run"}
 # What the gate token's caption spells, and the word it spells each key as.
 _GATE_CAPTION = {"mode": "mode", "recorded_at": "recorded"}
 
+# board_wall.ABSENT_TEXT names the schema's vocabulary; this module's own reading stays
+# reachable at board-snapshot.json, the sidecar `basicly board` writes beside the page.
+_NOT_IN_SNAPSHOT = "not in this snapshot"
+
+
+def _say(read: Reading) -> str:
+    """The word a cell shows for a reading that did not draw, in a reader's vocabulary."""
+    return _NOT_IN_SNAPSHOT if read.state.key == ABSENT else read.note
+
 
 def backlog(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
     """The backlog counts on one line, the closed bar, and the edge count beside them.
@@ -92,7 +99,7 @@ def backlog(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
     """
     read, edges = reads["backlog"], reads["graph"]
     if not read.drawn:
-        return (Cell("backlog", read.note, read.state),)
+        return (Cell("backlog", _say(read), read.state),)
     held = read.fields
     closed = bar(held.get("closed"), held.get("total"))
     cells = [
@@ -101,7 +108,7 @@ def backlog(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
     ]
     held_edges = edges.fields.get("edges")
     counted = number(len(held_edges)) if isinstance(held_edges, list) else UNKNOWN
-    cells.append(Cell("dep edges", counted if edges.drawn else edges.note, edges.state))
+    cells.append(Cell("dep edges", counted if edges.drawn else _say(edges), edges.state))
     return tuple(cells)
 
 
@@ -162,7 +169,7 @@ def gates(reads: Mapping[str, Reading]) -> tuple[Cell, str]:
     """
     read = reads["gates"]
     if not read.drawn:
-        return Cell("gates", read.note, read.state), ""
+        return Cell("gates", _say(read), read.state), ""
     held = read.fields
     checks = held.get("checks")
     rows = [
@@ -197,7 +204,7 @@ def spend(reads: Mapping[str, Reading]) -> Cell:
     """
     read = reads["spend"]
     if not read.drawn:
-        return Cell("spend", read.note, read.state)
+        return Cell("spend", _say(read), read.state)
     held = read.fields
     figures = [
         f"{(number if unit.startswith('usd') else compact)(held.get(key))} {unit}"
@@ -211,7 +218,7 @@ def health(reads: Mapping[str, Reading]) -> tuple[tuple[Cell, ...], str]:
     """One cell per agent, capped, and what the cap dropped. The agent names its own cell."""
     read = reads["health"]
     if not read.drawn:
-        return (Cell("agents", read.note, read.state),), ""
+        return (Cell("agents", _say(read), read.state),), ""
     agents = read.dicts
     if not agents:
         return (Cell("agents", "no run in the producer's window", read.state),), ""
@@ -256,7 +263,7 @@ def events(reads: Mapping[str, Reading]) -> tuple[tuple[str, ...], str]:
     """
     read = reads["events"]
     if not read.drawn:
-        return (f"events {read.note}",), ""
+        return (f"events {_say(read)}",), ""
     rows = read.dicts
     if not rows:
         return ("no event recorded",), ""
@@ -276,10 +283,10 @@ def inventory(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
     twelve spent a standing row of an operator's dashboard saying that twelve things are
     normal, and a mark that is almost always present carries no information. The exceptions
     are the half worth a reader's attention, and an empty tuple is the statement that there
-    are none.
+    are none. A withheld section spells `_say`'s note, not the bare state name.
     """
     return tuple(
-        Cell(read.name, ABSENT_TEXT if read.state.key == ABSENT else WITHHELD, read.state)
+        Cell(read.name, _say(read), read.state)
         for read in reads.values()
         if read.state.key != RENDERABLE
     )
