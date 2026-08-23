@@ -799,7 +799,7 @@ class Convergence:
 
     @property
     def stalled(self) -> bool:
-        """True when this round reported exactly the previous round's findings."""
+        """True when the round repeated the previous findings or its own view was truncated."""
         return self.verdict == STALLED
 
     @property
@@ -810,10 +810,15 @@ class Convergence:
     @property
     def detail(self) -> str:
         """What the comparison found, for a human reading the bead or the queue."""
-        if self.stalled:
+        if self.stalled and self.members == self.previous:
             return (
                 f"the gate reported the same {len(self.members)} finding(s) as the previous "
                 f"attempt ({', '.join(self.members)}); this round changed nothing it reports"
+            )
+        if self.stalled:
+            return (
+                f"the gate's finding set hit the recorded cap of {len(self.members)}; a "
+                "truncated view cannot prove this round improved, so it reads as no progress"
             )
         if self.diverging:
             added = ", ".join(m for m in self.members if m not in set(self.previous))
@@ -833,12 +838,18 @@ def finding_signature(findings: Sequence[str]) -> tuple[str, ...]:
     per :data:`MAX_FINDING_MEMBER_CHARS`; the list itself per
     :data:`MAX_FINDING_SET_MEMBERS`.
     """
+    return _finding_signature_and_truncation(findings)[0]
+
+
+def _finding_signature_and_truncation(findings: Sequence[str]) -> tuple[tuple[str, ...], bool]:
+    """:func:`finding_signature`'s bounded list, plus whether the cap cut a real growth to it."""
     members = {
         member.strip()[:MAX_FINDING_MEMBER_CHARS]
         for member in findings
         if member and member.strip()
     }
-    return tuple(sorted(members)[:MAX_FINDING_SET_MEMBERS])
+    ordered = sorted(members)
+    return tuple(ordered[:MAX_FINDING_SET_MEMBERS]), len(ordered) > MAX_FINDING_SET_MEMBERS
 
 
 def _finding_set_marker(gate: str) -> str:
@@ -886,12 +897,16 @@ def _finding_set_history(repo_root: Path, issue_id: str, gate: str) -> list[tupl
 
 
 def _compare_finding_sets(
-    history: Sequence[tuple[str, ...]], members: tuple[str, ...]
+    history: Sequence[tuple[str, ...]], members: tuple[str, ...], *, truncated: bool = False
 ) -> tuple[str, tuple[str, ...], int]:
     """Judge *members* against the most recent entry in *history* (pure).
 
     Only the most recent, because the rule is about *consecutive* rounds: a gate
     that reported A, then B, then A again has moved twice, not stalled.
+
+    *truncated* means *members* itself hit the cap, so a view that is neither
+    equal to nor a superset of *previous* can still be a reordered slice of a
+    set that only grew and is read as stalled, not progress (basicly-95mp1k).
     """
     if not history:
         return PROGRESSING, (), 0
@@ -905,6 +920,8 @@ def _compare_finding_sets(
         return STALLED, previous, rounds
     if set(members) > set(previous):
         return DIVERGING, previous, 0
+    if truncated:
+        return STALLED, previous, 0
     return PROGRESSING, previous, 0
 
 
@@ -922,9 +939,9 @@ def record_finding_set(
     nothing has no set to compare and is not this function's business — its
     caller keeps the plain bounded cap.
     """
-    members = finding_signature(findings)
+    members, truncated = _finding_signature_and_truncation(findings)
     verdict, previous, rounds = _compare_finding_sets(
-        _finding_set_history(repo_root, issue_id, gate), members
+        _finding_set_history(repo_root, issue_id, gate), members, truncated=truncated
     )
     body = f"{_finding_set_marker(gate)} verdict={verdict} findings={json.dumps(list(members))}"
     _add_comment(repo_root, issue_id, body)
