@@ -1,8 +1,8 @@
 """The confirm-code store under concurrency: two writers, and a reader mid-write.
 
-Split out of `tests/test_policy.py` under `docs/requirements/factory-loop.md` §9.4's
-`test_<module>_<aspect>` form rather than banked as ratchet debt on a module already 9x
-the read cap; these tests share none of that module's fixtures.
+Split out of `tests/test_policy.py` under the `test_<module>_<aspect>` form that
+`.scripts/check_test_naming.py` enforces, rather than banked as ratchet debt on a module
+already 9x the read cap; these tests share none of that module's fixtures.
 """
 
 from __future__ import annotations

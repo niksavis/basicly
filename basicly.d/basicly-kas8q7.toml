@@ -10,15 +10,15 @@
 # `base_lock` closed on windows (basicly-s2obqz): no delete-pending retry on the create,
 # a steal by `unlink` that two waiters can both win, and no retry on the release.
 #
-# ## module_size: policy.py rebaselined by 96
+# ## module_size: policy.py rebaselined by 97
 #
-# What the 96 buys: two named budgets, the `_confirm_store_lock` wrapper both call sites
+# What the 97 buys: two named budgets, the `_confirm_store_lock` wrapper both call sites
 # take, and the indentation of the two guarded bodies. The mechanism itself is +581 in
 # `base_lock.py` (2116 of 4000) and its tests +304 in `test_base_lock.py` (3748 of 4000),
 # both paid out of headroom, so only the call site is banked here.
 #
 # Rebaselined rather than waived: a waiver would delete `policy.py`'s 32482-token
-# ceiling, 8x the cap, to buy 96 tokens. No prose was cut to pay for it — the gate's own
+# ceiling, 8x the cap, to buy 97 tokens. No prose was cut to pay for it — the gate's own
 # graduated remedy asks a module this far over only not to grow, and the store's split
 # out of `policy.py` is blocked on the docs that cite `policy._CONFIRM_FILE` and
 # `policy.CONFIRM_TTL_SECONDS`, which this record does not scope.
@@ -40,7 +40,7 @@ base_commit = "5d38ae82c80f9499869a5b9b2fd047e66950faf4"
 PLR0913 = 1
 
 [ratchet.module_size]
-rebaseline_reason = "one cross-process lock at the confirm store's two call sites: two named budgets, the wrapper both take, and the indentation of the guarded bodies. The mechanism itself is in base_lock.py, paid for out of its headroom; policy.py is 8x the cap and a waiver would delete its ceiling to buy 96 tokens."
+rebaseline_reason = "one cross-process lock at the confirm store's two call sites: two named budgets, the wrapper both take, and the indentation of the guarded bodies. The mechanism itself is in base_lock.py, paid for out of its headroom; policy.py is 8x the cap and a waiver would delete its ceiling to buy 97 tokens."
 
 [ratchet.module_size.rebaselined]
-"src/basicly/policy.py" = 96
+"src/basicly/policy.py" = 97
