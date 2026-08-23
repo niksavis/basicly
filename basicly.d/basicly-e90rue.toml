@@ -1,0 +1,8 @@
+# This repo removed its external tracker, and over 139 prose lines still describe it by
+# that retired name with nothing gating vocabulary growth. The baseline is git itself: a
+# module's allowance is its own prose count in HEAD, so a module may only hold or shrink
+# its mentions and a new module starts at zero (basicly-e90rue).
+[[verify.checks]]
+name = "retired-vocabulary"
+command = ["uv", "run", "python", ".scripts/check_retired_vocabulary.py"]
+modes = ["fast", "full"]
