@@ -363,3 +363,40 @@ def test_the_ceiling_is_never_stricter_than_the_per_gate_cap_it_bounds() -> None
     for max_rework in range(0, 6):
         config = PolicyConfig(required_gates=("verify",), max_rework=max_rework)
         assert loop.lane_rework_ceiling(config) >= max_rework
+
+
+# --- a brief the branch has moved past (basicly-1djm17) -----------------------
+
+
+def test_a_stale_brief_is_discarded_and_the_landing_runs_in_the_same_invocation(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A hand repair moved the head, so the brief is dropped and the landing runs.
+
+    Observed on basicly-0xtzf1: the advance refused with "re-run the gate to raise a brief
+    against what is there now", and there was no such step left — ``take_repair_brief``
+    consumed the brief on the very read that judged it stale, so the next advance landed
+    normally. The refusal cost one invocation and one human read per hand repair.
+    """
+    cwd = _worktree(tmp_path, monkeypatch)
+    at(_state())
+    brief = repair_brief.RepairBrief("i", verify.DEFAULT_GATE, "failed", branch_head="aaa1111")
+    assert repair_brief.write_repair_brief(cwd, brief)
+    monkeypatch.setattr(merge, "branch_head", lambda *_a, **_k: "bbb2222")  # the hand fix
+    done = merge.MergeResult("i", "merged", "landed @ bbb2222")
+    merged: list[str] = []
+    monkeypatch.setattr(loop.merge, "merge_worktree", lambda _r, n, **_k: merged.append(n) or done)
+    notes: list[str] = []
+    # ``raising=False`` so this reds on the missing landing, not on a missing attribute:
+    # the defect is the refusal, and a test that stops earlier never asserts it.
+    monkeypatch.setattr(
+        loop, "_add_comment", lambda _r, _i, body: notes.append(body), raising=False
+    )
+    monkeypatch.setattr(runner, "run", lambda *_a, **_k: pytest.fail("no repair on a stale brief"))
+
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+
+    assert merged == ["i"], "the landing must run in this same invocation"
+    assert result.needs_input is None
+    assert notes and "may already be fixed" in notes[0] and "discarding it" in notes[0]
+    assert "worktree 'i'" in notes[0]
