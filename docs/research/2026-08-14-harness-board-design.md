@@ -310,7 +310,7 @@ That restatement is **correct and I am not asking to reverse it.** What I am ask
 second, separately-named mode with a separately-named claim.
 
 **What real-time would cost, concretely.** The producer's own liveness resolution is
-`HEARTBEAT_INTERVAL_S = 15.0` and `STALE_AFTER_S = 60.0` **[S** `src/basicly/supervise.py:106-107`**]**.
+`HEARTBEAT_INTERVAL_S = 15.0` and `STALE_AFTER_S = 60.0` **[S** `src/basicly/supervise.py:109-110`**]**.
 A consumer polling at 1 s cannot be fresher than a producer ticking at 15 s. Genuine sub-second
 freshness would require the engine to push on every state transition — an event bus, a persistent
 connection, and an ordering guarantee across five writers — which is the daemon the non-goals refuse
@@ -924,7 +924,7 @@ the real approval land.
 4. *Unwanted* — IF snapshot emission raises, THEN the supervisor SHALL log one line and continue; a
    board failure SHALL never fail a pass or a landing.
 5. *Ubiquitous* — The supervisor's four coverage lines (`band:`, `spend:`, `health:`, `drift:`
-   **[S** `supervise.py:1417-1421`**]**) SHALL be carried into the snapshot as structured fields, not
+   **[S** `supervise.py:1420-1424`**]**) SHALL be carried into the snapshot as structured fields, not
    as the free-text strings they are printed as.
 
 **Demonstration** run `uv run basicly loop supervise <root>` in a scratch fixture repo and assert

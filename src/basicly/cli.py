@@ -3562,6 +3562,10 @@ def _supervise_rounds(
         if state.done:
             say("done:     yes")
             return 0
+        # Plus the lanes whose commits are already on their branch, read from git:
+        # the carry above is in-process, so a crash between passes would otherwise
+        # re-dispatch work that only needs landing (basicly-pjaudy).
+        carried |= supervise.committed_lanes(repo_root, state)
         # Both bounds are read at the round boundary: the previous round's lanes have
         # landed through the routing layer and the next one has seeded nothing, so
         # returning here interrupts no agent (basicly-o40x).
