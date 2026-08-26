@@ -578,7 +578,7 @@ binding_count = 3
 # only ever shrinks, so a declaration is the one way this gate's exemption surface can grow,
 # and it may not grow in a diff that does not say so.
 [tool.release_notes]
-declared_count = 0
+declared_count = 1
 
 # Records whose change no consumer can see, each with the reason. The declaration exists so
 # the gate does not train people to write empty fragments, and it is validated against the
@@ -588,6 +588,7 @@ declared_count = 0
 # here and `count_delta = +1` under [ratchet.release_notes] in the lane's own basicly.d
 # fragment — for the reason every ratchet number is a delta.
 [tool.release_notes.invisible]
+"basicly-ibzr0f" = "test-only: the lane found basicly-gnpgf8 had already removed the labelled empty rows from a lane card, and added one regression test; no consumer surface changed"
 
 # The 145 closed records that declared a scope reaching a shipped surface and produced no
 # release note when the gate landed (2026-08-20). Measured over the whole tracker: 984
