@@ -142,6 +142,16 @@ append_only_paths = []
 # hook applies it to the staged files (and `basicly verify --fix` before the
 # checks), so the check never reports a failure a script could have fixed.
 #
+# `inputs` is what a check reads, as repo-relative globs, and it is only ever read by the
+# pre-commit hook: a commit whose staged diff matches none of them skips that check by name,
+# and `full` — the mode a landing and a push run — ignores the key entirely, so no green
+# landing rests on a skip. A check that declares nothing always runs, which is why the key is
+# absent from most entries below rather than approximated on all of them: each list here was
+# derived from the tool's own scope (`ratchet.SCOPE_ROOTS`, `[tool.pyright] include`,
+# `bandit -r` argv), and one that is *narrower* than the truth buys a bounced landing.
+# `waivers`, `ledger-*` and the projection gates read the ledger or the whole catalog, so
+# they have no list to declare.
+#
 # **A lane wires its new check in `basicly.d/<bead-id>.toml`, not here.** The entries below
 # are the assembled base; a fragment's are appended in filename order, by the engine and by
 # the pre-commit hook alike. Three of five lanes bounced on this array on 2026-08-08 because
@@ -150,6 +160,7 @@ append_only_paths = []
 name = "ruff"
 command = ["ruff", "check"]
 modes = ["fast", "full", "staged"]
+inputs = ["**/*.py", "**/*.pyi", ".ruff.toml", "pyproject.toml"]
 staged_suffix = ".py"
 
 [[verify.checks]]
@@ -157,12 +168,21 @@ name = "ruff-format"
 command = ["ruff", "format", "--check"]
 fix_command = ["ruff", "format"]
 modes = ["fast", "full", "staged"]
+inputs = ["**/*.py", "**/*.pyi", ".ruff.toml", "pyproject.toml"]
 staged_suffix = ".py"
 
 [[verify.checks]]
 name = "pyright"
 command = ["pyright"]
 modes = ["fast", "staged"]
+inputs = [
+  "src/**/*.py",
+  "tests/**/*.py",
+  ".scripts/**/*.py",
+  ".basicly/core/**/*.py",
+  "pyproject.toml",
+  "uv.lock",
+]
 staged_suffix = ".py"
 
 # Cross-platform type resolution (basicly-kjc5.55). pyright resolves per platform
@@ -208,6 +228,7 @@ command = [
   ".basicly/core/kit",
 ]
 modes = ["fast", "full"]
+inputs = [".scripts/**/*.py", ".basicly/core/**/*.py", "pyproject.toml"]
 
 # Dead code (basicly-uexy). `vulture` was declared at pyproject.toml:37 and called
 # from nowhere — not by a check, not by a script — so the dependency that finds
@@ -227,6 +248,7 @@ modes = ["fast", "full"]
 name = "vulture"
 command = ["vulture", "--min-confidence", "60", "src", ".scripts"]
 modes = ["fast", "full"]
+inputs = ["src/**/*.py", ".scripts/**/*.py", "pyproject.toml"]
 
 # Wired-or-deleted (basicly-uexy): nothing merges with references only inside its own
 # module and under `tests/`. Covers the three surfaces vulture cannot see — a CLI
@@ -248,6 +270,16 @@ modes = ["fast", "full"]
 name = "wired-or-deleted"
 command = ["uv", "run", "python", ".scripts/wired_or_deleted.py"]
 modes = ["fast", "full"]
+inputs = [
+  "src/**/*.py",
+  "tests/**/*.py",
+  ".scripts/**/*",
+  ".basicly/core/**/*",
+  ".basicly-local/**/*",
+  ".github/workflows/*",
+  "basicly.toml",
+  "pyproject.toml",
+]
 
 # The one-way kit boundary (basicly-vkh0.16). `docs/requirements/work-tracker.md` §4 named
 # `lint-imports` below as the enforcement for it. That was not a gap in the wiring, it
@@ -313,6 +345,7 @@ name = "lint-imports"
 # a finding no amount of bounded rework could act on.
 command = ["uv", "run", "lint-imports"]
 modes = ["fast", "full"]
+inputs = ["src/**/*.py", ".importlinter"]
 
 [[verify.checks]]
 name = "pytest"
@@ -447,6 +480,14 @@ modes = ["fast", "full"]
 name = "module-size"
 command = ["uv", "run", "python", ".scripts/check_module_size.py"]
 modes = ["fast", "full"]
+inputs = [
+  "src/**/*.py",
+  "tests/**/*.py",
+  ".scripts/**/*.py",
+  ".basicly/core/**/*.py",
+  "pyproject.toml",
+  "basicly.d/*.toml",
+]
 
 # Prose density, as a per-module ratchet (basicly-wxr3). The tree measured 39.4% prose —
 # comments plus docstrings, in the same token unit `module-size` uses — with recent commits
@@ -465,6 +506,14 @@ modes = ["fast", "full"]
 name = "comment-density"
 command = ["uv", "run", "python", ".scripts/check_comment_density.py"]
 modes = ["fast", "full"]
+inputs = [
+  "src/**/*.py",
+  "tests/**/*.py",
+  ".scripts/**/*.py",
+  ".basicly/core/**/*.py",
+  "pyproject.toml",
+  "basicly.d/*.toml",
+]
 
 # `except` clause form, as PEP 758 states it. `python-guidelines` settles the house form —
 # paren-free `except A, B:`, parentheses only where the clause binds — and that was the whole
@@ -487,6 +536,7 @@ modes = ["fast", "full"]
 name = "except-form"
 command = ["uv", "run", "python", ".scripts/check_except_form.py"]
 modes = ["fast", "full"]
+inputs = ["src/**/*.py", "tests/**/*.py", ".scripts/**/*.py", ".basicly/core/**/*.py"]
 
 # Suppression debt, as a per-code ratchet (basicly-u2hl.12). ruff cannot police its own
 # suppressions — a `# noqa` is the one edit that makes the linter agree with you — so the
@@ -503,6 +553,14 @@ modes = ["fast", "full"]
 name = "noqa-debt"
 command = ["uv", "run", "python", ".scripts/check_noqa_debt.py"]
 modes = ["fast", "full"]
+inputs = [
+  "src/**/*.py",
+  "tests/**/*.py",
+  ".scripts/**/*.py",
+  ".basicly/core/**/*.py",
+  "pyproject.toml",
+  "basicly.d/*.toml",
+]
 
 # The waiver census and the expiry it makes possible (basicly-twfj). The script's docstring
 # holds the argument; what it buys is that the two gates above stop being the only readers
@@ -574,6 +632,7 @@ modes = ["fast", "full"]
 name = "test-naming"
 command = ["uv", "run", "python", ".scripts/check_test_naming.py"]
 modes = ["fast", "full"]
+inputs = ["src/basicly/**/*.py", "tests/**/*.py"]
 
 # Problem-statement drift (basicly-b9ef). An epic's `## Context` bullets are the decider's
 # whole authority (`decider_contract.intake_corpus`), so a bullet its own closed children

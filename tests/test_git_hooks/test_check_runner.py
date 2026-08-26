@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -287,6 +287,116 @@ def test_a_malformed_fragment_check_names_the_fragment_not_the_config(tmp_path: 
         SystemExit, match=r"basicly-lane.toml: check 'no-command' needs a 'command'"
     ):
         module.load_checks(tmp_path, "fast")
+
+
+# Scoped commit subset (basicly-j7spdb). `sys.executable` rather than `true`/`false` so a
+# check that must be *observed passing* cannot pass by being absent from PATH.
+_PASSES = f'["{Path(sys.executable).as_posix()}", "-c", ""]'
+_FAILS = f'["{Path(sys.executable).as_posix()}", "-c", "raise SystemExit(1)"]'
+
+
+@pytest.fixture
+def repo_with_a_scoped_gate(tmp_path: Path) -> Path:
+    """A git repo with a staged doc and a failing gate that declares only Python inputs."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _write_config(
+        repo,
+        f'[[verify.checks]]\nname = "py-only"\ncommand = {_FAILS}\n'
+        'modes = ["fast", "full"]\ninputs = ["src/**/*.py"]\n'
+        f'[[verify.checks]]\nname = "unscoped"\ncommand = {_PASSES}\nmodes = ["fast", "full"]\n',
+    )
+    (repo / "notes.md").write_text("doc\n", encoding="utf-8")
+    _git(repo, "add", "notes.md")
+    return repo
+
+
+def test_a_gate_no_staged_path_can_reach_is_skipped_by_name(
+    repo_with_a_scoped_gate: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A doc-only commit runs the gates its diff reaches and says which it skipped."""
+    module = _load_check_runner()
+
+    assert module.run_checks(repo_with_a_scoped_gate, "fast", scope_to_diff=True) == 0
+
+    out = capsys.readouterr().out
+    assert "py-only SKIPPED" in out
+    assert "1/1" in out and "1 skipped: py-only" in out
+
+
+def test_the_landing_mode_still_fails_on_a_gate_the_commit_skipped(
+    repo_with_a_scoped_gate: Path,
+) -> None:
+    """No green landing rests on a skip: `full` ignores `inputs` (basicly-j7spdb).
+
+    Same tree and same staged diff as the scoped run above, so the mode is the only
+    difference — the property the commit-time subset is affordable on.
+    """
+    module = _load_check_runner()
+
+    assert module.run_checks(repo_with_a_scoped_gate, "full") == 1
+    assert module.run_checks(repo_with_a_scoped_gate, "fast") == 1
+
+
+def test_a_matching_staged_path_keeps_the_gate(repo_with_a_scoped_gate: Path) -> None:
+    """The scoped run is a filter on the diff, not a mode: a matching path still gates."""
+    module = _load_check_runner()
+    source = repo_with_a_scoped_gate / "src"
+    source.mkdir()
+    (source / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    _git(repo_with_a_scoped_gate, "add", "src/mod.py")
+
+    assert module.run_checks(repo_with_a_scoped_gate, "fast", scope_to_diff=True) == 1
+
+
+def test_an_undeterminable_diff_skips_nothing(tmp_path: Path) -> None:
+    """Every uncertainty runs the check: not a repo at all, then a repo with an empty index."""
+    module = _load_check_runner()
+    _write_config(
+        tmp_path,
+        f'[[verify.checks]]\nname = "py-only"\ncommand = {_FAILS}\n'
+        'modes = ["fast"]\ninputs = ["src/**/*.py"]\n',
+    )
+    assert module.scoped_skips(tmp_path, "fast") == {}
+    assert module.run_checks(tmp_path, "fast", scope_to_diff=True) == 1
+
+    _git(tmp_path, "init", "-b", "main")
+    assert module.scoped_skips(tmp_path, "fast") == {}
+
+
+def test_malformed_inputs_is_a_loud_error(tmp_path: Path) -> None:
+    """`inputs` that is not a list of globs is rejected, not read as "reads everything"."""
+    module = _load_check_runner()
+    _write_config(
+        tmp_path,
+        '[[verify.checks]]\nname = "lint"\ncommand = ["ruff"]\nmodes = ["fast"]\ninputs = "src"\n',
+    )
+    with pytest.raises(SystemExit, match="'inputs' must be a list"):
+        module.load_inputs(tmp_path, "fast")
+
+
+def test_every_declared_input_set_matches_something_in_this_repo() -> None:
+    """No check of this repo's own is skipped by every commit there is (basicly-j7spdb).
+
+    The fail-open the `inputs` key introduces is a typo: a glob matching nothing makes the
+    gate skip on every diff. Per check, not per glob — `**/*.pyi` legitimately matches
+    nothing today and starts mattering the day a stub is added.
+    """
+    module = _load_check_runner()
+    repo_root = Path(__file__).resolve().parents[2]
+    tracked = subprocess.run(  # nosec B603 B607
+        ["git", "-C", str(repo_root), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\0")
+    paths = [PurePosixPath(name) for name in tracked if name]
+
+    for mode in ("fast", "full"):
+        for name, globs in module.load_inputs(repo_root, mode).items():
+            matched = [g for g in globs if any(path.full_match(g) for path in paths)]
+            assert matched, f"{mode}: check {name!r} declares inputs matching no tracked file"
 
 
 def test_the_hook_and_the_engine_assemble_the_same_set_for_this_repo() -> None:

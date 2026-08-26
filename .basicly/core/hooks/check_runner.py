@@ -13,7 +13,7 @@ import subprocess  # nosec B404
 import sys
 import time
 import tomllib
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 CONFIG_FILE = "basicly.toml"
 
@@ -81,6 +81,11 @@ def _mode_entries(repo_root: Path, mode: str) -> list[dict]:
             and all(isinstance(a, str) for a in fix_command)
         ):
             raise SystemExit(f"{source}: check {name!r} 'fix_command' must be a list of strings")
+        inputs = entry.get("inputs")
+        if inputs is not None and not (
+            isinstance(inputs, list) and inputs and all(isinstance(g, str) and g for g in inputs)
+        ):
+            raise SystemExit(f"{source}: check {name!r} 'inputs' must be a list of glob strings")
         if mode in modes:
             entries.append(entry)
     return entries
@@ -116,8 +121,24 @@ def load_fixes(repo_root: Path, mode: str) -> list[tuple[str, list[str], str | N
     return fixes
 
 
-def _git_lines(repo_root: Path, *args: str) -> list[str] | None:
-    """Non-empty output lines of a ``git`` call; None when the call itself failed."""
+def load_inputs(repo_root: Path, mode: str) -> dict[str, list[str]]:
+    """Return the ``inputs`` globs of each *mode* check that declares any.
+
+    A check absent from the mapping declared none, which means "reads the whole tree":
+    the key is how a check opts *into* being skippable, so a consumer that never adds
+    one keeps today's behaviour and a new gate is un-skippable until its author says
+    what it reads.
+    """
+    declared: dict[str, list[str]] = {}
+    for entry in _mode_entries(repo_root, mode):
+        globs = entry.get("inputs")
+        if globs:
+            declared[str(entry["name"]).strip()] = [str(g) for g in globs]
+    return declared
+
+
+def _git_output(repo_root: Path, *args: str) -> str | None:
+    """Stdout of a ``git`` call; None when the call itself failed."""
     try:
         proc = subprocess.run(  # nosec B603 B607
             ["git", *args],
@@ -128,9 +149,48 @@ def _git_lines(repo_root: Path, *args: str) -> list[str] | None:
         )
     except OSError:
         return None
-    if proc.returncode != 0:
-        return None
-    return [line for line in proc.stdout.splitlines() if line]
+    return None if proc.returncode != 0 else proc.stdout
+
+
+def _git_lines(repo_root: Path, *args: str) -> list[str] | None:
+    """Non-empty output lines of a ``git`` call; None when the call itself failed."""
+    out = _git_output(repo_root, *args)
+    return None if out is None else [line for line in out.splitlines() if line]
+
+
+def diff_paths(repo_root: Path) -> list[str] | None:
+    """Every path the staged diff touches; None when git could not say.
+
+    No ``--diff-filter``: a deletion or a rename is a change to the file's gates too, and
+    the widest answer is the safe one here — this list is what *keeps* a check, so a path
+    this misses is a check that gets skipped. ``-z`` for the same reason, because
+    ``--name-only`` alone quotes a path holding a non-ASCII byte and a quoted path matches
+    no glob anyone would write.
+    """
+    out = _git_output(repo_root, "diff", "--cached", "--name-only", "-z")
+    return None if out is None else [path for path in out.split("\0") if path]
+
+
+def scoped_skips(repo_root: Path, mode: str) -> dict[str, str]:
+    """Return ``name -> reason`` for each *mode* check the staged diff cannot affect.
+
+    The inner loop of a lane runs the gates whose declared inputs its diff touches; the
+    landing runs the mode (``full``) that declares no ``inputs`` at all, so a gate skipped
+    here is still the thing that has to pass before anything merges. That asymmetry is what
+    makes the skip affordable — and it is also why every uncertainty resolves to *running*
+    the check: git failing, an empty diff, and a check that declared no inputs all yield no
+    skip at all.
+    """
+    if not (declared := load_inputs(repo_root, mode)):
+        return {}
+    changed = diff_paths(repo_root)
+    if not changed:
+        return {}
+    skips: dict[str, str] = {}
+    for name, globs in declared.items():
+        if not any(PurePosixPath(path).full_match(glob) for path in changed for glob in globs):
+            skips[name] = f"no staged path matches its inputs ({' '.join(globs)})"
+    return skips
 
 
 def apply_fixes(repo_root: Path, mode: str) -> None:
@@ -201,16 +261,26 @@ def _restage_fixed(
     print(f"auto-fixed and re-staged ({', '.join(applied)}): {', '.join(restage)}")
 
 
-def run_checks(repo_root: Path, mode: str) -> int:
-    """Run every check configured for *mode*; return a process exit code."""
+def run_checks(repo_root: Path, mode: str, *, scope_to_diff: bool = False) -> int:
+    """Run every check configured for *mode*; return a process exit code.
+
+    ``scope_to_diff`` skips the checks whose declared ``inputs`` the staged diff cannot
+    reach (:func:`scoped_skips`), naming each one it skips. Off by default, so ``full``
+    — the mode a landing and a push run — is every declared check whatever any of them
+    says about its inputs.
+    """
     checks = load_checks(repo_root, mode)
     if not checks:
         print(f"No verify checks configured for mode '{mode}' in {CONFIG_FILE}; nothing to gate.")
         return 0
 
+    skips = scoped_skips(repo_root, mode) if scope_to_diff else {}
     total_start = time.perf_counter()
     failed: list[str] = []
     for name, command in checks:
+        if name in skips:
+            print(f"==> {name} SKIPPED: {skips[name]}")
+            continue
         print(f"==> {name}")
         start = time.perf_counter()
         try:
@@ -235,13 +305,14 @@ def run_checks(repo_root: Path, mode: str) -> int:
             print(f"FAILED: {name} ({elapsed:.2f}s)", file=sys.stderr)
 
     total_elapsed = time.perf_counter() - total_start
-    passed_count = len(checks) - len(failed)
+    ran = len(checks) - len(skips)
+    tail = f" ({len(skips)} skipped: {', '.join(sorted(skips))})" if skips else ""
     if failed:
         print(
-            f"checks failed: {passed_count}/{len(checks)} passed in {total_elapsed:.2f}s "
-            f"(failed: {', '.join(failed)})",
+            f"checks failed: {ran - len(failed)}/{ran} passed in {total_elapsed:.2f}s "
+            f"(failed: {', '.join(failed)}){tail}",
             file=sys.stderr,
         )
         return 1
-    print(f"checks passed: {len(checks)}/{len(checks)} in {total_elapsed:.2f}s")
+    print(f"checks passed: {ran}/{ran} in {total_elapsed:.2f}s{tail}")
     return 0

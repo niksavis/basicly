@@ -471,8 +471,10 @@ class ProjectPaths:
 
 _OPEN_TABLE = Table(open_keys=True)
 
+# `inputs` is read by `.basicly/core/hooks/check_runner.py`, not by `VerifyCheck`: it scopes
+# the pre-commit subset to the staged diff, and a mode this loader serves never skips on it.
 _VERIFY_CHECK_TABLE = Table(
-    keys=frozenset({"name", "command", "modes", "staged_suffix", "fix_command"})
+    keys=frozenset({"name", "command", "modes", "staged_suffix", "fix_command", "inputs"})
 )
 
 # One lane's contribution to a ratchet, in its own basicly.d fragment. `frozen` is open
