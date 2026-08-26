@@ -86,7 +86,8 @@ def test_a_lane_with_no_measurable_figure_still_names_the_lane_and_its_phase() -
     A lane just dispatched can hold nothing but its id and phase for a beat - no agent, no
     tokens, nothing the run has reported yet. That is still a lane that is running, so the
     card keeps its identity and draws no `not measured` row rather than the six placeholders
-    this record removed.
+    this record removed. The one cell it does draw is the id, demoted to the address line
+    (basicly-0xtzf1): a cell with a value is not a placeholder.
     """
     lanes = [{"id": "basicly-bare", "phase": "intake", "live": True}]
     reads = _reads("wall-v1.json", lanes=lanes)
@@ -94,7 +95,7 @@ def test_a_lane_with_no_measurable_figure_still_names_the_lane_and_its_phase() -
     assert len(cards) == 1
     card = cards[0]
     assert (card.title, card.phase) == ("basicly-bare", "intake")
-    assert card.cells == ()
+    assert [(cell.label, cell.value) for cell in card.cells] == [("id", "basicly-bare")]
 
 
 def test_only_a_lane_reporting_a_live_stream_is_marked_as_working() -> None:
