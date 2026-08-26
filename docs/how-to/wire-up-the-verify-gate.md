@@ -49,6 +49,36 @@ configured command that is missing from `PATH` fails the run with a one-line
 message rather than being skipped — a check you cannot run is not a check that
 passed.
 
+## Scope a check to what it reads
+
+A check may declare the files it reads, as repo-relative globs:
+
+```toml
+[[verify.checks]]
+name = "lint-imports"
+command = ["uv", "run", "lint-imports"]
+modes = ["fast", "full"]
+inputs = ["src/**/*.py", ".importlinter"]
+```
+
+The pre-commit hook then skips that check, by name, on a commit whose staged diff
+matches none of its globs — a docs-only commit stops paying for the type checker.
+Nothing else reads the key: `full`, the mode a landing and a push run, runs every
+declared check whatever it says about its inputs, so a skip can never be what a
+green landing rested on.
+
+Two rules keep that safe. A check declaring no `inputs` always runs, so the key is
+opt-in per check and a repo that adds none keeps today's behaviour. And an
+undeterminable diff runs everything: git failing to report the staged paths, or an
+empty index, skips nothing.
+
+Derive the list from the tool's own scope rather than guessing it. A list *narrower*
+than what the check really reads costs a bounced landing — the gate the commit
+skipped fails on the rebased tree instead. A glob that matches nothing is worse,
+because it skips the check on every commit there is; this repo pins its own lists
+against `git ls-files` in
+`tests/test_git_hooks/test_check_runner.py::test_every_declared_input_set_matches_something_in_this_repo`.
+
 ## Run it
 
 ```sh
