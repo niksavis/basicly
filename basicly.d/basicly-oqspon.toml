@@ -1,0 +1,28 @@
+# Worktree provisioning reuses a lockfile-identical `node_modules` instead of installing
+# one per lane (basicly-oqspon). Both modules were measured before the first edit, at 0
+# tokens of headroom each.
+#
+# The bead's context claimed provisioning costs 1-2 min and named the uv resolver as half
+# of it; measured on this tree with warm caches, a second worktree costs 6.1-6.5s and
+# `npm install` is 5.6s of it, while `uv sync` materialises 146 packages in 0.2-0.5s by
+# hardlinking from the shared uv cache. So the Python half already *is* the reuse and is
+# left alone, and the whole change is on the node half.
+#
+# `worktree.py` +614: `NODE_LOCKFILE`, `node_modules_donor`, `provision_node_modules`, the
+# `donors` parameter on `provision_deps`, and the base-plus-live-siblings list `create`
+# passes it. Prose share fell 49.6 -> 49.4 rather than climbing, so `comment_density` takes
+# no delta and no existing comment was touched.
+#
+# `tests/test_worktree.py` +1196: four tests — a donor copied (with npm never called and the
+# relative `.bin` link still a relative link), three shapes that install as before (lock
+# differs, donor unprovisioned, lane has no lock), a part-way copy discarded and installed
+# over, and `create`'s donor list. Two fixture helpers build npm's layout in miniature.
+[ratchet]
+base_commit = "e07359cc0a0a5f3053ac3a7b68e140ee0ef7cc3b"
+
+[ratchet.module_size]
+rebaseline_reason = "node_modules reuse and the tests that bind it, in two modules with 0 tokens of headroom each"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/worktree.py" = 614
+"tests/test_worktree.py" = 1196
