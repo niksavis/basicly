@@ -3241,7 +3241,9 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
     if status.halted:
         print(f"halted:    {status.detail}")
         blockers.append(
-            "a dispatch under this grant could not be metered"
+            # Named, not counted: the operator's next move is to fix that runner's
+            # usage format, and a bare count sends them looking (basicly-6y0tg5).
+            f"could not be metered: {', '.join(status.unmetered_labels)}"
             if status.unmetered_dispatches
             else "the grant's budget is spent"
         )

@@ -370,7 +370,7 @@ marker written when the operator first views the checkpoint."*
 The seam is already shaped for it. `WaitEvent` **[S** `policy.WaitEvent`**]** already
 carries `requested_at` and `answered_at`; the wait id is **derived, not minted** —
 `wait_id_for_checkpoint(issue_id, name)` returns `f"{issue_id}#wait-{name}"`
-**[S** `policy.py:2331-2337`**]** — so any observer can name an existing wait without creating one.
+**[S** `policy.py:2365-2371`**]** — so any observer can name an existing wait without creating one.
 A third timestamp is one optional field on one dataclass and one marker rewrite.
 
 **But a wall display cannot supply that field, and I want to be blunt about why.** An always-on TV

@@ -1976,6 +1976,9 @@ class SpendMeter:
     # earlier grant already answered for (:attr:`Grant.unmetered_at_issue`). A
     # dispatch that never started an agent is excluded — see :func:`session_spend`.
     unmetered_dispatches: int
+    # Which ones, each with its model: a count leaves the operator guessing which
+    # runner to fix (basicly-6y0tg5).
+    unmetered_labels: tuple[str, ...] = ()
 
 
 def tokens_under_grant(spent_tokens: int, grant: Grant) -> int:
@@ -2008,8 +2011,10 @@ class SpendStatus:
     halted: bool
     detail: str = ""
     # Dispatches under *this grant* whose usage could not be measured, so nothing
-    # says what they cost.
+    # says what they cost, and which ones the meter saw — its whole walk, so an
+    # older grant's may be among them.
     unmetered_dispatches: int = 0
+    unmetered_labels: tuple[str, ...] = ()
 
     @property
     def remaining_tokens(self) -> int | None:
@@ -2123,13 +2128,14 @@ def spend_status(
             spent_tokens=spent,
             halted=True,
             unmetered_dispatches=unmetered,
+            unmetered_labels=meter.unmetered_labels,
             detail=(
                 f"{grant.level} grant cannot be metered: {unmetered} dispatch(es) under it "
                 f"reported no measurable usage, so only a chars/4 floor over their captured "
                 f"output exists ({meter.estimated_tokens} estimated, far below real spend) "
                 f"and {under_grant}/{budget} tokens is not what this grant has cost; the "
                 "session is human-only until re-granted or the runner is configured with a "
-                "usage format"
+                f"usage format. Unmeasured here: {', '.join(meter.unmetered_labels)}"
             ),
         )
     if under_grant < budget:
@@ -2151,48 +2157,41 @@ def session_spend(
 ) -> SpendMeter:
     """Run-record spend across the session's beads, split by how it was known.
 
-    The grant's meter. An entry the adapter measured adds to
-    :attr:`SpendMeter.measured_tokens`; a chars/4 fallback
-    (``estimated=True``) adds to :attr:`SpendMeter.estimated_tokens` and is
-    counted as one unmeasurable dispatch instead. *ids* skips re-walking the
+    The grant's meter. Each entry is classed by ``run_record.spend_sample``, which
+    holds the rules; this sums them per class and names what it could not measure, so
+    the halt can say which runner to fix (basicly-6y0tg5). *ids* skips re-walking the
     session tree when the caller already has it.
 
-    An entry carrying tokens but no ``estimated`` flag at all can only come from a
-    version that predates the field, and every writer since sets it explicitly
-    whenever tokens are present (``runner.extract_usage`` returns a bool or no usage
-    at all), so it is read as measured — the behaviour it had when it was written.
-
-    An ``unstarted`` entry is the one estimate that is *not* an unmeasurable
-    dispatch (basicly-jr0l.64). Its floor still lands in
-    :attr:`SpendMeter.estimated_tokens` — nothing measured it — but it counts no
-    unmeasurable dispatch, because what makes a floor dangerous is the agent run
-    hiding behind it, and there was no agent: the captured error text *is* the
-    whole transcript. Counting it halted a 60000000-token grant with 43438526
-    unspent over a tracker read that spawned no process (the 2026-08-02
-    basicly-tcmy pass).
+    An ``unstarted`` floor is the one estimate that is not an unmeasurable dispatch
+    (basicly-jr0l.64): what makes a floor dangerous is the agent run hiding behind it,
+    and there was none — the captured error text *is* the whole transcript. Counting
+    it halted a 60000000-token grant with 43438526 unspent over a tracker read that
+    spawned no process (the 2026-08-02 basicly-tcmy pass).
     """
     records = run_record.load_run_records(repo_root) or {}
     measured = 0
     estimated = 0
-    unmetered = 0
+    unmetered: list[str] = []
     for issue_id in ids if ids is not None else session_issue_ids(repo_root, root_issue):
         history = records.get(issue_id)
         if not isinstance(history, list):
             continue
         for entry in history:
-            tokens = entry.get("tokens") if isinstance(entry, dict) else None
-            if not isinstance(tokens, int) or isinstance(tokens, bool):
+            sample = run_record.spend_sample(entry) if isinstance(entry, dict) else None
+            if sample is None:
                 continue
-            if entry.get("estimated") is True:
-                estimated += tokens
-                if entry.get("outcome") != run_record.UNSTARTED:
-                    unmetered += 1
-            else:
+            tokens, kind = sample
+            if kind == run_record.MEASURED:
                 measured += tokens
+                continue
+            estimated += tokens
+            if kind == run_record.UNMETERED:
+                unmetered.append(run_record.dispatch_label(issue_id, entry))
     return SpendMeter(
         measured_tokens=measured,
         estimated_tokens=estimated,
-        unmetered_dispatches=unmetered,
+        unmetered_dispatches=len(unmetered),
+        unmetered_labels=tuple(unmetered),
     )
 
 

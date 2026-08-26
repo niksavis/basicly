@@ -876,6 +876,38 @@ class ForecastErrorReport:
         return {name: tuple(items) for name, items in sorted(grouped.items())}
 
 
+# What one entry's tokens are worth to a grant's meter (:func:`spend_sample`).
+MEASURED = "measured"
+UNMETERED = "unmetered"
+
+
+def spend_sample(entry: Mapping[str, object]) -> tuple[int, str] | None:
+    """*entry*'s (tokens, class) for a spend meter, or None when it counts nothing.
+
+    Classification lives with the schema that writes the fields, so a second reader
+    cannot spell the rules differently. Three classes, and the split is the safety
+    property (basicly-jr0l.35): :data:`MEASURED` is spend, :data:`UNMETERED` is a
+    chars/4 floor hiding an agent run, :data:`UNSTARTED` is a floor over an engine
+    error with no agent behind it.
+
+    Tokens with no ``estimated`` field predate it and read as measured — the
+    behaviour they were written with; every writer since sets it whenever tokens are
+    present.
+    """
+    tokens = entry.get("tokens")
+    if isinstance(tokens, bool) or not isinstance(tokens, int):
+        return None
+    if entry.get("estimated") is not True:
+        return tokens, MEASURED
+    return tokens, UNSTARTED if entry.get("outcome") == UNSTARTED else UNMETERED
+
+
+def dispatch_label(bead_id: str, entry: Mapping[str, object]) -> str:
+    """*bead_id* named with the model that ran it, for a message about one dispatch."""
+    model = _text(entry, "model") or _text(entry, "agent")
+    return f"{bead_id} on {model}" if model else bead_id
+
+
 def positive_int(entry: Mapping[str, object], key: str) -> int | None:
     """*entry*'s value at *key* when it is a usable positive count, else None.
 

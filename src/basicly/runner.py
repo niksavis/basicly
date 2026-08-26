@@ -66,6 +66,7 @@ from .runner_envelope import (
 from .runner_usage import (
     Usage,
     claude_json_usage,
+    claude_stream_usage,
     claude_turn_usage,
     codex_jsonl_usage,
     codex_turn_usage,
@@ -1576,6 +1577,17 @@ def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
     store takes the very same estimate fallback, flagged the same way — a
     measurement that could not be made is never reported as one that was.
 
+    A dispatch a bound **killed** never reaches its terminating envelope, and the two
+    stream formats answer that differently: codex's total is already the sum over the
+    ``turn.completed`` events its partial stream carries, while claude's was read off
+    the result event alone and fell all the way to the floor. So the claude arm takes
+    the same partial-stream reading its sibling always had
+    (:func:`runner_usage.claude_stream_usage`, basicly-6y0tg5) — measured, in a
+    per-turn denomination that reads high rather than 54-102x low, and only when no
+    result event parsed. Metering that floor as an unmeterable dispatch is what took
+    a 110000000-token L3 session human-only at its first checkpoint with 55401958
+    tokens unspent (decision basicly-ze0po3#ec15dfaca8).
+
     A dispatch that died before its agent process started has no adapter to ask,
     but the engine's own captured error *is* the whole transcript — so the floor
     over it is a real bound rather than the structural under-count it is for an
@@ -1591,7 +1603,9 @@ def extract_usage(spec: RunnerSpec, result: RunResult) -> Usage | None:
     if spec.usage_format == CLAUDE_JSON:
         reported = claude_json_usage(result.stdout)
     elif spec.usage_format == CLAUDE_STREAM_JSON:
-        reported = claude_json_usage(claude_result_event(result.stdout))
+        reported = claude_json_usage(claude_result_event(result.stdout)) or claude_stream_usage(
+            result.stdout
+        )
     elif spec.usage_format == CODEX_JSONL:
         reported = codex_jsonl_usage(result.stdout)
     elif spec.usage_format == COPILOT_SESSION_STORE:
