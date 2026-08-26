@@ -54,8 +54,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from . import checkout, merge, policy, worktree
 from . import commit as commit_mod
-from . import merge, policy, worktree
 from .capability_proof import unexercised_capabilities
 
 if TYPE_CHECKING:
@@ -122,6 +122,10 @@ FRAGMENT_DIR = Path("changelog.d")
 
 # The directory's own documentation, not a lane's entry.
 FRAGMENT_DOC = "README.md"
+
+# Where a lane's base lives, remote first: a checkout seeded before a record closed is
+# behind whichever of these the closing commit reached.
+BASE_REFS = ("origin/main", "main")
 
 # Keep a Changelog's section set, in the order a dated section lists them. This
 # ordering is the deterministic half of assembly — category first, then filename —
@@ -320,6 +324,34 @@ def accounted_records(repo_root: Path, known_ids: Iterable[str]) -> set[str]:
         bodies.append(changelog.read_text(encoding="utf-8"))
     named = {item.path.stem.rpartition(".")[0] for item in fragments}
     return named | {found for body in bodies for found in cited_records(body, pattern)}
+
+
+def fragments_on_base(repo_root: Path) -> dict[str, str]:
+    """Each record whose fragment a base ref holds and *repo_root* merely predates, to its path.
+
+    The record comes from the shared ledger a worktree reaches through the redirect while its
+    fragment is in the lane's own checkout, so a record closed on base after the lane branched
+    refused every commit on that branch over a note one tree away - three lanes in one
+    session, each told to rebase by the gate preventing it (basicly-h8dxhy).
+
+    The merge base is the discriminator and the fragment's absence here is not: one the merge
+    base already held is one this checkout *deleted*, which is debt rather than lag. On a base
+    branch the merge base is HEAD, so nothing is ever behind there.
+    """
+    found: dict[str, str] = {}
+    directory = FRAGMENT_DIR.as_posix()
+    for ref in BASE_REFS:
+        names = checkout.names_in(ref, directory, cwd=repo_root)
+        point = checkout.git(["merge-base", ref, "HEAD"], cwd=repo_root, check=False)
+        if not names or point.returncode != 0:
+            continue
+        landed = set(checkout.names_in(point.stdout.strip(), directory, cwd=repo_root))
+        found.update({
+            Path(name).stem.rpartition(".")[0]: f"{directory}/{name}"
+            for name in names
+            if name not in landed
+        })
+    return found
 
 
 def plan_release(repo_root: Path, version: str, *, date: str | None = None) -> ReleasePlan:
