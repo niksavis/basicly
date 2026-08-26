@@ -547,3 +547,21 @@ def test_the_cache_split_survives_serialisation_to_disk(tmp_path: Path) -> None:
     assert on_disk["b-1"][0]["cache_read_tokens"] == 15_496
     stored = run_record.latest_record(tmp_path, "b-1")
     assert stored is not None and stored.cache_read_tokens == 15_496
+
+
+def test_spend_sample_reads_a_pre_flag_entry_as_measured() -> None:
+    """Tokens with no `estimated` field predate it and keep the meaning they were written with."""
+    assert run_record.spend_sample({"tokens": 90}) == (90, run_record.MEASURED)
+    assert run_record.spend_sample({"tokens": 90, "estimated": True}) == (90, run_record.UNMETERED)
+    assert run_record.spend_sample({"tokens": True}) is None
+    assert run_record.spend_sample({"cost": 1.0}) is None
+
+
+def test_dispatch_label_falls_back_to_the_agent_when_no_model_was_pinned() -> None:
+    """A halt must still say *which runner*, and a family with no model flag pins none."""
+    entry = {"agent": "copilot", "model": None}
+    assert run_record.dispatch_label("b-1", entry) == "b-1 on copilot"
+    assert run_record.dispatch_label("b-1", {"agent": "claude", "model": "claude-opus-5"}) == (
+        "b-1 on claude-opus-5"
+    )
+    assert run_record.dispatch_label("b-1", {}) == "b-1"

@@ -299,6 +299,8 @@ class _Preflight:
     grant: Grant | None = None
     halted: bool = False
     metered: str | None = None
+    # The unmeasurable dispatches the halt names, as `spend_status` reports them.
+    unmetered: tuple[str, ...] = ()
     lanes: tuple[object, ...] = ()
     # The root's (issue_id, status) parent-child dependents, as derive_session reads
     # them. Varied so a test can pin a status the candidate rule has to decide on.
@@ -351,12 +353,13 @@ def _calibration(**overrides) -> decompose.CalibrationStatus:
 
 def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> None:
     """Pin every probe `_cmd_loop_preflight` makes against the repo and the tracker."""
-    dirty, grant, halted, metered, lanes = (
+    dirty, grant, halted, metered, lanes, unmetered = (
         pinned.dirty,
         pinned.grant,
         pinned.halted,
         pinned.metered,
         pinned.lanes,
+        pinned.unmetered,
     )
     # Bound rather than constructed in the lambda: `Path(".")` autofixes to `Path()`,
     # which then reads as a redundant lambda, and the two rules chase each other.
@@ -384,7 +387,13 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
     monkeypatch.setattr(
         cli.policy,
         "spend_status",
-        lambda *_a, **_k: SpendStatus(grant=grant, spent_tokens=0, halted=halted),
+        lambda *_a, **_k: SpendStatus(
+            grant=grant,
+            spent_tokens=0,
+            halted=halted,
+            unmetered_dispatches=len(unmetered),
+            unmetered_labels=unmetered,
+        ),
     )
     monkeypatch.setattr(cli.supervise, "metered_without_a_budget", lambda *_a: metered)
     monkeypatch.setattr(cli.supervise, "ready_lanes", lambda *_a, **_k: lanes)
@@ -521,6 +530,24 @@ def _sized(
     )
     sizing = decompose.DispatchSizing(task_class="task", estimate=estimate, source="dispatch")
     return working_set.WorkingSetAdmission(issue_id, sizing, violation or None, refused=refused)
+
+
+def test_preflight_blocker_names_the_dispatch_that_could_not_be_metered(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The blocker an operator acts on says *which* runner to fix (basicly-6y0tg5)."""
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L3", token_budget=110_000_000),
+            halted=True,
+            unmetered=("basicly-mcf2uh on claude-sonnet-5",),
+        ),
+    )
+
+    cli._cmd_loop_preflight(_preflight_args())
+
+    assert "could not be metered: basicly-mcf2uh on claude-sonnet-5" in capsys.readouterr().out
 
 
 def test_preflight_sizes_each_candidate_when_none_is_dispatchable_yet(

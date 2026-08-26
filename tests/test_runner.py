@@ -1272,11 +1272,39 @@ def test_context_occupancy_claude_stream_is_none_without_a_turn() -> None:
     assert runner.context_occupancy(spec, _executed(spec, stdout)) is None
 
 
-def test_extract_usage_claude_stream_without_a_result_event_estimates() -> None:
-    """A stream cut off before its result event has no reported total to trust."""
+def test_extract_usage_claude_stream_without_a_result_event_sums_its_turns() -> None:
+    """A killed stream is metered off the turns it did report, not off its length.
+
+    This asserted the opposite until basicly-6y0tg5, on the rationale that a stream
+    cut off before its result event "has no reported total to trust". The turns are
+    the adapter's own counts; what the kill costs is the *denomination*, and the
+    alternative it fell to measured 54x, 58x and 102x lower on the three lanes a
+    bound stopped — floors that read as "no measurable usage" and took a 110000000-
+    token L3 session human-only with 55401958 of it unspent.
+
+    The fixture is this module's pinned live stream with its result event dropped and
+    a truncated tail, which is the shape a kill really leaves. Its sum lands on the
+    very total the result event carried, so the fallback is checked against the
+    number it replaces rather than against itself.
+    """
     spec = _claude_spec()
-    stdout = '{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":5}}}'
-    usage = runner.extract_usage(spec, _executed(spec, stdout))
+    killed = _CLAUDE_STREAM.rsplit("\n", 1)[0] + '\n{"type":"assistant","message":{"usage'
+    usage = runner.extract_usage(spec, _executed(spec, killed))
+
+    assert usage is not None
+    assert usage.estimated is False
+    assert usage.tokens == 4 + 5960 + 0 + 91 + 2 + 40 + 15496 + 17
+    whole = runner.extract_usage(spec, _executed(spec, _CLAUDE_STREAM))
+    assert whole is not None and usage.tokens == whole.tokens
+    # Only the result event carries `total_cost_usd`, so a killed dispatch has no cost
+    # to report and reports none rather than a share of one.
+    assert usage.cost is None
+
+
+def test_extract_usage_claude_stream_with_no_turn_at_all_still_estimates() -> None:
+    """Nothing the adapter reported means nothing measured — the floor, flagged."""
+    spec = _claude_spec()
+    usage = runner.extract_usage(spec, _executed(spec, '{"type":"system","subtype":"init"}'))
 
     assert usage is not None and usage.estimated is True
 

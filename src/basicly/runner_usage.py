@@ -36,6 +36,7 @@ from .runner_envelope import (
     claude_result_object,
     codex_turn_usages,
     forwarded,
+    stream_events,
 )
 
 
@@ -62,6 +63,15 @@ class Usage:
     # adding them into one number would be a silent accounting defect.
     credits: float | None = None
 
+
+# The per-kind counts a summation carries across turns, in Usage's own spelling.
+_SPLIT_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "reasoning_tokens",
+)
 
 # codex `turn.completed` usage keys mapped onto Usage's split fields
 # (basicly-jr0l.37). `input_tokens` is the **superset**, exactly as copilot's
@@ -131,6 +141,50 @@ def claude_turn_usage(event: dict) -> Usage | None:
     if not values:
         return None
     return Usage(tokens=sum(values), cost=None, estimated=False, **_claude_usage_split(usage))
+
+
+def claude_stream_usage(stdout: str) -> Usage | None:
+    """Sum claude's per-turn ``assistant`` usage — the reading for a killed stream.
+
+    A kill lands before the terminating ``result`` event, leaving
+    :func:`claude_json_usage` nothing and the caller the chars/4 floor: 54x, 58x and
+    102x under this sum on the three lanes a bound stopped (their kept transcripts
+    against their run records, 2026-08-21 and -23), and read as "no measurable usage",
+    which takes a granted session human-only (basicly-6y0tg5). Codex's total was
+    always this partial-stream sum (:func:`codex_jsonl_usage`); this is the claude arm.
+
+    The fallback only. Its per-turn denomination is **not** the result event's: 1.67x
+    to 3.04x above it, median 2.31, over the 17 kept transcripts that pair with their
+    own record on end time *and* duration; the mechanism is unestablished
+    (:data:`supervise.LIVE_OVERREPORT_BOUND`). Erring high is the safe direction for a
+    ceiling, which spends less than it was authorized to.
+
+    Reported, not estimated — every count is the adapter's own. None when no turn
+    carried usage, leaving the caller its floor.
+    """
+    turns = [
+        usage for event in stream_events(stdout) if (usage := claude_turn_usage(event)) is not None
+    ]
+    if not turns:
+        return None
+    return Usage(
+        tokens=sum(turn.tokens for turn in turns), cost=None, estimated=False, **_summed(turns)
+    )
+
+
+def _summed(turns: list[Usage]) -> dict[str, int | None]:
+    """Add the split fields across *turns*, leaving a kind no turn reported null.
+
+    Takes :class:`Usage` values, not raw blocks, so each family's summation semantics
+    stay in its own extractor. Null-preserving: a real 0 is a measurement.
+    """
+    split: dict[str, int | None] = dict.fromkeys(_SPLIT_FIELDS)
+    for turn in turns:
+        for field in _SPLIT_FIELDS:
+            value = getattr(turn, field)
+            if value is not None:
+                split[field] = (split[field] or 0) + value
+    return split
 
 
 def codex_turn_usage(event: dict) -> Usage | None:
