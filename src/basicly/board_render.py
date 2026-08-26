@@ -33,11 +33,20 @@ TEMPLATE_DIR = "templates/board"
 TEMPLATE = "board_page.html.j2"
 
 
-def context(document: Mapping[str, Any], verdict: SnapshotVerdict, now: datetime) -> dict[str, Any]:
+def context(
+    document: Mapping[str, Any],
+    verdict: SnapshotVerdict,
+    now: datetime,
+    *,
+    viewport_height: float | None = None,
+    viewport_width: float | None = None,
+) -> dict[str, Any]:
     """Every region of the wall, keyed as the template names it.
 
     The readings are derived once and handed to every region, so the verdict's inventory is
-    the only inventory a region can draw from.
+    the only inventory a region can draw from. *viewport_height* and *viewport_width* are
+    board_regions.next_up's own arguments: this layer neither reads nor guesses either, it
+    only carries what its caller gave it (basicly-ffm2yp).
     """
     reads = board_wall.readings(document, verdict)
     drawn = board_wall.age(document, now)
@@ -66,7 +75,9 @@ def context(document: Mapping[str, Any], verdict: SnapshotVerdict, now: datetime
         "flight_note": flight_note,
         # The ready list is handed the shape the running row left it, which is the one place
         # the layout's two states have to agree with the model's two capacities.
-        "ready": board_regions.next_up(reads, wide=not cards),
+        "ready": board_regions.next_up(
+            reads, wide=not cards, viewport_height=viewport_height, viewport_width=viewport_width
+        ),
         "backlog": board_footer.backlog(reads),
         "priorities": hist,
         "priorities_more": priorities_more,
@@ -99,6 +110,7 @@ def page(
     *,
     now: datetime,
     templates_dir: Path | None = None,
+    viewport: tuple[float | None, float | None] | None = None,
 ) -> str:
     """One self-contained HTML page for *document*, referencing no external origin.
 
@@ -110,5 +122,11 @@ def page(
             function of its inputs.
         templates_dir: The directory holding :data:`TEMPLATE`. Defaults to the bundled
             catalog's, which resolves in a source checkout and in an installed wheel alike.
+        viewport: The wall's own (height, width) in CSS pixels, where a caller has one to
+            give (basicly-ffm2yp) - one pair rather than two arguments, so `page` still
+            fits under the arity ratchet. None renders the reclaimed ready list at the
+            conservative default rather than a guess, because this layer cannot see a screen.
     """
-    return _env(templates_dir).get_template(TEMPLATE).render(context(document, verdict, now))
+    height, width = viewport if viewport is not None else (None, None)
+    filled = context(document, verdict, now, viewport_height=height, viewport_width=width)
+    return _env(templates_dir).get_template(TEMPLATE).render(filled)
