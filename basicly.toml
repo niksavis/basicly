@@ -152,6 +152,13 @@ append_only_paths = []
 # `waivers`, `ledger-*` and the projection gates read the ledger or the whole catalog, so
 # they have no list to declare.
 #
+# Every list carries `uv.lock`, whatever the check reads. The lock is what picks the *version*
+# of the tool whose verdict the check is — a bump to ruff, bandit, vulture, import-linter or
+# the interpreter changes the answer without touching a single file the check scans — so a
+# lock-only commit (which is the whole shape of a dependency bump) would otherwise skip ten
+# gates and hand the landing a tree they now reject. `pyright` was the only entry that had it
+# (basicly-j7spdb); `tests/test_git_hooks/test_check_runner.py` now holds the invariant.
+#
 # **A lane wires its new check in `basicly.d/<bead-id>.toml`, not here.** The entries below
 # are the assembled base; a fragment's are appended in filename order, by the engine and by
 # the pre-commit hook alike. Three of five lanes bounced on this array on 2026-08-08 because
@@ -160,7 +167,7 @@ append_only_paths = []
 name = "ruff"
 command = ["ruff", "check"]
 modes = ["fast", "full", "staged"]
-inputs = ["**/*.py", "**/*.pyi", ".ruff.toml", "pyproject.toml"]
+inputs = ["**/*.py", "**/*.pyi", ".ruff.toml", "pyproject.toml", "uv.lock"]
 staged_suffix = ".py"
 
 [[verify.checks]]
@@ -168,7 +175,7 @@ name = "ruff-format"
 command = ["ruff", "format", "--check"]
 fix_command = ["ruff", "format"]
 modes = ["fast", "full", "staged"]
-inputs = ["**/*.py", "**/*.pyi", ".ruff.toml", "pyproject.toml"]
+inputs = ["**/*.py", "**/*.pyi", ".ruff.toml", "pyproject.toml", "uv.lock"]
 staged_suffix = ".py"
 
 [[verify.checks]]
@@ -228,7 +235,7 @@ command = [
   ".basicly/core/kit",
 ]
 modes = ["fast", "full"]
-inputs = [".scripts/**/*.py", ".basicly/core/**/*.py", "pyproject.toml"]
+inputs = [".scripts/**/*.py", ".basicly/core/**/*.py", "pyproject.toml", "uv.lock"]
 
 # Dead code (basicly-uexy). `vulture` was declared at pyproject.toml:37 and called
 # from nowhere — not by a check, not by a script — so the dependency that finds
@@ -248,7 +255,7 @@ inputs = [".scripts/**/*.py", ".basicly/core/**/*.py", "pyproject.toml"]
 name = "vulture"
 command = ["vulture", "--min-confidence", "60", "src", ".scripts"]
 modes = ["fast", "full"]
-inputs = ["src/**/*.py", ".scripts/**/*.py", "pyproject.toml"]
+inputs = ["src/**/*.py", ".scripts/**/*.py", "pyproject.toml", "uv.lock"]
 
 # Wired-or-deleted (basicly-uexy): nothing merges with references only inside its own
 # module and under `tests/`. Covers the three surfaces vulture cannot see — a CLI
@@ -279,6 +286,7 @@ inputs = [
   ".github/workflows/*",
   "basicly.toml",
   "pyproject.toml",
+  "uv.lock",
 ]
 
 # The one-way kit boundary (basicly-vkh0.16). `docs/requirements/work-tracker.md` §4 named
@@ -345,7 +353,7 @@ name = "lint-imports"
 # a finding no amount of bounded rework could act on.
 command = ["uv", "run", "lint-imports"]
 modes = ["fast", "full"]
-inputs = ["src/**/*.py", ".importlinter"]
+inputs = ["src/**/*.py", ".importlinter", "uv.lock"]
 
 [[verify.checks]]
 name = "pytest"
@@ -487,6 +495,7 @@ inputs = [
   ".basicly/core/**/*.py",
   "pyproject.toml",
   "basicly.d/*.toml",
+  "uv.lock",
 ]
 
 # Prose density, as a per-module ratchet (basicly-wxr3). The tree measured 39.4% prose —
@@ -513,6 +522,7 @@ inputs = [
   ".basicly/core/**/*.py",
   "pyproject.toml",
   "basicly.d/*.toml",
+  "uv.lock",
 ]
 
 # `except` clause form, as PEP 758 states it. `python-guidelines` settles the house form —
@@ -536,7 +546,7 @@ inputs = [
 name = "except-form"
 command = ["uv", "run", "python", ".scripts/check_except_form.py"]
 modes = ["fast", "full"]
-inputs = ["src/**/*.py", "tests/**/*.py", ".scripts/**/*.py", ".basicly/core/**/*.py"]
+inputs = ["src/**/*.py", "tests/**/*.py", ".scripts/**/*.py", ".basicly/core/**/*.py", "uv.lock"]
 
 # Suppression debt, as a per-code ratchet (basicly-u2hl.12). ruff cannot police its own
 # suppressions — a `# noqa` is the one edit that makes the linter agree with you — so the
@@ -560,6 +570,7 @@ inputs = [
   ".basicly/core/**/*.py",
   "pyproject.toml",
   "basicly.d/*.toml",
+  "uv.lock",
 ]
 
 # The waiver census and the expiry it makes possible (basicly-twfj). The script's docstring
@@ -632,7 +643,7 @@ modes = ["fast", "full"]
 name = "test-naming"
 command = ["uv", "run", "python", ".scripts/check_test_naming.py"]
 modes = ["fast", "full"]
-inputs = ["src/basicly/**/*.py", "tests/**/*.py"]
+inputs = ["src/basicly/**/*.py", "tests/**/*.py", "uv.lock"]
 
 # Problem-statement drift (basicly-b9ef). An epic's `## Context` bullets are the decider's
 # whole authority (`decider_contract.intake_corpus`), so a bullet its own closed children

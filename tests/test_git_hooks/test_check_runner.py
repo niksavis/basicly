@@ -399,6 +399,18 @@ def test_every_declared_input_set_matches_something_in_this_repo() -> None:
             assert matched, f"{mode}: check {name!r} declares inputs matching no tracked file"
 
 
+def test_every_declared_input_set_carries_the_lock() -> None:
+    """A lock-only commit is the whole shape of a dependency bump, and it skipped ten gates.
+
+    The lock resolves the tool whose verdict the check *is* (basicly-j7spdb).
+    """
+    module = _load_check_runner()
+    repo_root = Path(__file__).resolve().parents[2]
+
+    for name, globs in module.load_inputs(repo_root, "fast").items():
+        assert "uv.lock" in globs, f"check {name!r} declares inputs without uv.lock"
+
+
 def test_the_hook_and_the_engine_assemble_the_same_set_for_this_repo() -> None:
     """Two readers of one convention, pinned to agree on the tree they both really run on.
 
