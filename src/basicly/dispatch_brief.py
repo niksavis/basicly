@@ -37,6 +37,12 @@ VERDICT_PREFIX = "VALIDATION:"
 # session and not by lane, which is the substitution basicly-z9xvwa measured.
 LANE_SCRATCH_DIR = Path(".basicly/usage/scratch")
 
+# The gate the build brief hands the release-note judgement to. Named as a command the lane
+# runs rather than as a conclusion the brief draws: three lanes read "if a consumer can see
+# your change" as no and closed owing a note nobody could add afterwards (basicly-ibzr0f,
+# basicly-mcf2uh, basicly-aj6w74).
+RELEASE_NOTES_GATE = Path(".scripts/check_release_notes.py")
+
 
 def validate_prompt(issue_id: str) -> str:
     """Exercise the merged change as a consumer would, then record the gate.
@@ -146,10 +152,14 @@ def dispatch_prompt(issue_id: str) -> str:
         f"write {needs_input.SENTINEL_FILE.as_posix()} as "
         '{"fact": "<the missing fact>", "detail": "<what you tried>"} and stop '
         "without committing a guess — the loop will block and surface it. "
-        "If a consumer of the shipped surface can see your change, also write "
-        f"changelog.d/{issue_id}.<added|changed|fixed|removed|deprecated|security>.md: "
-        "one `- ` bullet, under 400 characters — a gate refuses a grown or bulletless "
-        "fragment, and the release cannot recover a note written after the tag."
+        "Whether this record owes a release note is not yours to judge: run "
+        f"`uv run python {RELEASE_NOTES_GATE.as_posix()} --landing {issue_id}` and do what "
+        "it says. The landing runs that same command before it merges and refuses on a "
+        "failure, and the two ways past it are "
+        f"changelog.d/{issue_id}.<added|changed|fixed|removed|deprecated|security>.md — "
+        "one `- ` bullet, under 400 characters — or an entry declaring the change "
+        "invisible to a consumer. Write it here: the release reads CHANGELOG.md from the "
+        "tagged commit and ship tears this worktree down before the refusal lands."
     )
 
 

@@ -315,10 +315,15 @@ def _verify_for_landing(
 
     A failure that is none of the three is the lane's, and is still named against the file
     when a declared generated path is what failed (:func:`_unrebuilt_generated`).
+
+    A green suite is not the whole verdict: the debt no closed-record gate can see from here
+    is the lane's own release note (:func:`verify.release_note_debt`).
     """
     report = verify.run_verify(worktree_path, verify_mode)
     if report.passed:
-        return None
+        owed = verify.release_note_debt(repo_root, worktree_path, verify_mode, bead)
+        detail = f"{verify.RELEASE_NOTES_CHECK} refuses this landing: {owed}"
+        return MergeResult(name, "verify-failed", detail) if owed else None
     failures = ", ".join(report.failures)
     rerun = verify.rerun_failures(report, worktree_path, verify_mode, capture=True)
     if rerun.passed:

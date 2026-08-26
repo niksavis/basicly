@@ -72,7 +72,7 @@ hand-written copy of them was stale within days:
 | Measure | Value |
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 119 |
-| Test files | 243 |
+| Test files | 245 |
 | `[[verify.checks]]` declared | 39 |
 | …of which run in `--mode fast` | 34 |
 | …of which run in `--mode full` | 38 |
@@ -342,7 +342,7 @@ decide  24         31,991    0.23       14     5/29  = 17.2%
 ```
 
 `decide` is a dispatch **handed its corpus**; `lane` is a dispatch **told to go and read**. Same
-model, same repo: **254x the tokens and 27x the cost**. `dispatch_brief.dispatch_prompt` (`dispatch_brief.py:121`) is
+model, same repo: **254x the tokens and 27x the cost**. `dispatch_brief.dispatch_prompt` (`dispatch_brief.py:127`) is
 about ninety words and passes only the issue id — no requirement, no scope, no plan, no prior
 finding — so the floor every lane pays before its first edit is bought by the prompt, not by the
 work.

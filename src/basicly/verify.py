@@ -26,7 +26,7 @@ a declared check — see :func:`run_check`.
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import tracker, tracker_paths, usage, worktree
@@ -128,6 +128,36 @@ def check_remedy(output: str, check: str) -> str | None:
         return None
     joined = " · ".join(line.removeprefix(label).strip() for line in lines)
     return joined if len(joined) <= _REMEDY_CHARS else joined[:_REMEDY_CHARS] + "…"
+
+
+# The check that refuses a record owing a release note, and the flag that asks it about one
+# record that is still open. Its argv comes from `[[verify.checks]]`, so a second spelling
+# of the script path cannot go stale here.
+RELEASE_NOTES_CHECK = "release-notes"
+RELEASE_NOTES_LANDING_FLAG = "--landing"
+
+
+def release_note_debt(repo_root: Path, tree: Path, mode: str, bead: str) -> str | None:
+    """What `release-notes` says *bead* owes in *tree*, or None when it owes nothing.
+
+    The check judges *closed* records, so a lane's own is invisible to it while the lane
+    lands and the refusal arrives on the commit that closes it — after the worktree that
+    would repair it is gone (basicly-ibzr0f). None when nothing declares the check: a tree
+    without the gate is not in debt to it.
+
+    A failure never answers with an empty string: a caller reading that as "owes nothing"
+    would take a silent gate failure for a pass.
+    """
+    declared = load_verify_config(repo_root).checks
+    check = next((item for item in declared if item.name == RELEASE_NOTES_CHECK), None)
+    if check is None:
+        return None
+    asked = replace(check, command=(*check.command, RELEASE_NOTES_LANDING_FLAG, bead))
+    result = run_check(asked, tree, mode, capture=True)
+    if result.status != "fail":
+        return None
+    said = (check_remedy(result.output, check.name) or result.detail or result.output).strip()
+    return said or f"{check.name} failed and printed nothing"
 
 
 def staged_files(repo_root: Path, suffix: str) -> list[str] | None:
