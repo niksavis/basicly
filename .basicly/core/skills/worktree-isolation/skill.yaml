@@ -45,9 +45,10 @@ instructions: |
 
   1. **Create + provision** — `basicly worktree create <name> [--base <branch>]`. This adds the
      sibling worktree, provisions its own standalone `.venv` (`uv sync`) and `node_modules`
-     (`npm install`), and installs the repo's git hooks for every stage. The dependency trees
-     are freshly installed (never symlinked to main), so the worktree is self-contained and
-     teardown is safe. Creation is refused once `[worktree].concurrency` is reached — read the
+     (copied from a checkout whose `package-lock.json` is byte-identical, else `npm install`),
+     and installs the repo's git hooks for every stage. The dependency trees are real trees of
+     their own (never symlinked to main), so the worktree is self-contained and teardown is
+     safe. Creation is refused once `[worktree].concurrency` is reached — read the
      configured value, never a number quoted in prose.
   2. **Work** — do the change in the worktree; its hooks gate commits exactly as on main.
   3. **Merge** — `basicly worktree merge <name> --bead <id>` lands one finished branch on its

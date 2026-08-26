@@ -1,0 +1,1 @@
+- Worktree provisioning now copies `node_modules` from the base checkout or a sibling worktree whose `package-lock.json` is byte-identical, instead of running `npm install` in every lane; a differing lockfile still installs in full. Measured on this repo: a second worktree provisions in 1.4s against 6.2s.

@@ -58,7 +58,7 @@ def _stub_provisioning(monkeypatch: pytest.MonkeyPatch) -> None:
     ``create``'s git/session/path logic is deterministic and cheap to test; the
     real ``uv sync`` / ``npm install`` / hook install are exercised by dogfood.
     """
-    monkeypatch.setattr(worktree, "provision_deps", lambda _wt: ["deps: stubbed"])
+    monkeypatch.setattr(worktree, "provision_deps", lambda *_a, **_kw: ["deps: stubbed"])
     monkeypatch.setattr(worktree, "install_worktree_hooks", lambda _wt: "hooks: stubbed")
 
 
@@ -566,6 +566,119 @@ def test_provision_deps_selects_commands_by_manifest(
     (lock_only / "uv.lock").write_text("", encoding="utf-8")
     assert real_provision_deps(lock_only) == [".venv: uv sync"]
     assert calls == [["uv", "sync"]]
+
+
+def _node_project(root: Path, lock: str) -> Path:
+    """A checkout with a ``package.json`` and the given ``package-lock.json`` content."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "package.json").write_text("{}\n", encoding="utf-8")
+    (root / "package-lock.json").write_text(lock, encoding="utf-8")
+    return root
+
+
+def _donor_with_node_modules(root: Path, lock: str) -> Path:
+    """A provisioned donor: npm's layout in miniature, relative ``.bin`` link included."""
+    donor = _node_project(root, lock)
+    (donor / "node_modules" / "pkg").mkdir(parents=True)
+    (donor / "node_modules" / "pkg" / "index.js").write_text("ok\n", encoding="utf-8")
+    (donor / "node_modules" / ".bin").mkdir()
+    try:
+        (donor / "node_modules" / ".bin" / "cli").symlink_to(Path("..") / "pkg" / "index.js")
+    except OSError, NotImplementedError:  # pragma: no cover - unprivileged Windows
+        pytest.skip("symlinks not available on this platform")
+    return donor
+
+
+def test_provision_deps_copies_node_modules_from_a_lockfile_identical_donor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A donor built from the same lockfile is copied instead of installed again.
+
+    Measured 2026-08-26: ``npm install`` was 5.6s of the 6.2s a second worktree spent
+    provisioning, against 0.4s to copy the same tree (basicly-oqspon).
+    """
+    calls: list[list[str]] = []
+    monkeypatch.setattr(worktree, "run", lambda args, **_kw: calls.append(args))
+    donor = _donor_with_node_modules(tmp_path / "donor", "lock-v1\n")
+    lane = _node_project(tmp_path / "lane", "lock-v1\n")
+
+    notes = real_provision_deps(lane, [donor])
+
+    assert calls == []
+    assert (lane / "node_modules" / "pkg" / "index.js").read_text(encoding="utf-8") == "ok\n"
+    link = lane / "node_modules" / ".bin" / "cli"
+    assert link.is_symlink()
+    assert not Path(link.readlink()).is_absolute()  # stays inside the lane's own tree
+    assert notes == ["node_modules: copied from donor (identical package-lock.json)"]
+
+
+def test_provision_deps_installs_when_no_donor_lockfile_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A differing lock, an unprovisioned donor and a missing lock each install as before."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(worktree, "run", lambda args, **_kw: calls.append(args))
+    changed = _donor_with_node_modules(tmp_path / "changed", "lock-v2\n")
+    bare = _node_project(tmp_path / "bare", "lock-v1\n")
+    lane = _node_project(tmp_path / "lane", "lock-v1\n")
+
+    assert real_provision_deps(lane, [changed, bare]) == ["node_modules: npm install"]
+    assert calls == [["npm", "install"]]
+    assert not (lane / "node_modules").exists()
+
+    calls.clear()
+    unlocked = tmp_path / "unlocked"
+    unlocked.mkdir()
+    (unlocked / "package.json").write_text("{}\n", encoding="utf-8")
+    assert real_provision_deps(unlocked, [changed]) == ["node_modules: npm install"]
+    assert calls == [["npm", "install"]]
+
+
+def test_provision_deps_discards_a_failed_copy_and_installs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy that dies part-way is removed and installed over, and the note says why.
+
+    A half-copied tree is the one state npm would install *over*, so it must not survive.
+    """
+    calls: list[list[str]] = []
+    monkeypatch.setattr(worktree, "run", lambda args, **_kw: calls.append(args))
+    donor = _donor_with_node_modules(tmp_path / "donor", "lock-v1\n")
+    lane = _node_project(tmp_path / "lane", "lock-v1\n")
+
+    def _die(_src: Path, dst: Path, **_kw: object) -> None:
+        Path(dst).mkdir()
+        (Path(dst) / "half").write_text("partial\n", encoding="utf-8")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(worktree.shutil, "copytree", _die)
+
+    notes = real_provision_deps(lane, [donor])
+
+    assert calls == [["npm", "install"]]
+    assert not (lane / "node_modules").exists()
+    assert notes == ["node_modules: npm install (copy from donor failed: disk full)"]
+
+
+def test_create_offers_the_base_checkout_and_live_siblings_as_donors(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Provisioning is offered the base checkout first, then every live sibling worktree."""
+    monkeypatch.chdir(git_repo)
+    seen: list[list[Path]] = []
+
+    def _record(_wt: Path, donors: object = ()) -> list[str]:
+        seen.append(list(donors))  # type: ignore[arg-type]
+        return ["deps: stubbed"]
+
+    monkeypatch.setattr(worktree, "provision_deps", _record)
+    worktree.create("first")
+    worktree.create("second")
+
+    base = worktree.main_checkout(git_repo)
+    first = worktree.load_session("first", git_repo)
+    assert first is not None
+    assert seen == [[base], [base, first.path]]
 
 
 def test_create_and_cleanup_leave_base_head_untouched(
