@@ -50,6 +50,34 @@ def test_run_check_maps_returncode_to_status(
     assert seen == [["ok"], ["bad"]]
 
 
+def test_run_check_drops_a_base_virtual_env_for_a_worktree_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A check run in a worktree loses the base checkout's VIRTUAL_ENV; the base keeps it.
+
+    Regression (basicly-uq3pki): `uv` ignores the mismatched value and warns, so every
+    `uv run` check printed a `does not match the project environment path` line.
+    """
+    base = tmp_path / "base"
+    (base / ".venv").mkdir(parents=True)
+    lane = tmp_path / "base.worktrees" / "lane"
+    lane.mkdir(parents=True)
+    monkeypatch.setenv("VIRTUAL_ENV", str(base / ".venv"))
+    seen: list[dict[str, str]] = []
+
+    def fake_run(_command, **kw):
+        seen.append(kw["env"])
+        return _Proc(0)
+
+    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+
+    verify.run_check(_check("ok", ("full",)), lane, "full")
+    verify.run_check(_check("ok", ("full",)), base, "full")
+
+    assert "VIRTUAL_ENV" not in seen[0]
+    assert seen[1]["VIRTUAL_ENV"] == str(base / ".venv")
+
+
 def test_run_check_fails_cleanly_on_missing_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

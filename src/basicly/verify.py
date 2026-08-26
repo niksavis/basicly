@@ -25,12 +25,14 @@ a declared check — see :func:`run_check`.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import tracker, tracker_paths, usage, worktree
 from .config import VERIFY_GATE_PROVIDER, VerifyCheck, VerifyConfig, load_verify_config
+from .runner import sanitised_project_env
 from .verify_artifact import write_run_artifact
 
 DEFAULT_GATE = "verify"
@@ -258,6 +260,7 @@ def _run(
         proc = subprocess.run(  # noqa: S603 — repo-declared argv, list form, no shell
             command,
             cwd=repo_root,
+            env=sanitised_project_env(os.environ, repo_root),
             check=False,
             capture_output=capture,
             text=capture or None,
