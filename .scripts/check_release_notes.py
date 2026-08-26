@@ -50,6 +50,11 @@ the tree. Four ways it disagrees:
   deleting the entry or writing the note, and after the deletion the re-close is refused.
 * A **declaration** that exempts nothing.
 
+**A tree that is behind is not in debt.** A fragment the base branch holds and this
+checkout merely predates is warned about, never failed: the remedy is a rebase, and a
+gate refusing the commit has already refused the clean tree a rebase needs — three lanes
+deadlocked that way in one session.
+
 **The declaration half.** A change genuinely invisible to a consumer has to be declarable
 or the gate trains people to write empty fragments. It is an entry in
 `[tool.release_notes.invisible]` carrying its reason, counted against `declared_count` as
@@ -87,7 +92,7 @@ from ratchet import (  # noqa: E402 - the path above comes first
     report,
 )
 
-from basicly import checkout, config, plan_record, release, tracker  # noqa: E402 - the path above
+from basicly import config, plan_record, release, tracker  # noqa: E402 - the path above
 
 # The gate, as `[tool.release_notes]` and `[ratchet.release_notes]` spell it.
 _GATE = "release_notes"
@@ -123,6 +128,8 @@ class Standing:
     record: str
     owed: bool
     reason: str
+    # The base-branch fragment this tree predates, still owed so the arithmetic is unchanged.
+    behind: str = ""
 
     @property
     def count(self) -> int:
@@ -139,13 +146,19 @@ def standings(repo: Path) -> dict[str, Standing]:
     records = tracker.all_records(repo)
     ids = [str(record.get("id")) for record in records]
     accounted = release.accounted_records(repo, ids)
+    behind = release.fragments_on_base(repo)
     return {
-        issue_id: _standing(issue_id, record, accounted)
+        issue_id: _standing(issue_id, record, accounted, behind)
         for issue_id, record in zip(ids, records, strict=True)
     }
 
 
-def _standing(issue_id: str, record: Mapping[str, object], accounted: Collection[str]) -> Standing:
+def _standing(
+    issue_id: str,
+    record: Mapping[str, object],
+    accounted: Collection[str],
+    behind: Mapping[str, str],
+) -> Standing:
     """Whether *record* owes a release note, and the reason when it does not."""
     if record.get("status") != CLOSED:
         return Standing(issue_id, False, _OPEN)
@@ -158,7 +171,7 @@ def _standing(issue_id: str, record: Mapping[str, object], accounted: Collection
         return Standing(issue_id, False, _MACHINERY)
     if issue_id in accounted:
         return Standing(issue_id, False, _NOTED)
-    return Standing(issue_id, True, "")
+    return Standing(issue_id, True, "", behind.get(issue_id, ""))
 
 
 def load_ratchet(repo: Path) -> Ratchet[int]:
@@ -191,36 +204,19 @@ def declarations(repo: Path) -> dict[str, str]:
     return table
 
 
-def _on_base_branch(subject: str) -> str | None:
-    """The fragment path for *subject* that the base branch already holds, or None.
-
-    **The population and the evidence come from different trees.** The record comes from
-    the shared ledger a worktree reaches through the redirect; the fragment is in the
-    lane's own checkout. A record closed on base after the lane branched therefore
-    refuses every commit on that branch over a note that exists one tree away - three
-    times in one session, and one lane answered by declaring it invisible with a control
-    true at its branch point and false on arrival.
-    """
-    for ref in ("origin/main", "main"):
-        for name in checkout.names_in(ref, "changelog.d", cwd=REPO_ROOT):
-            if name.startswith(f"{subject}."):
-                return f"changelog.d/{name}"
-    return None
+def behind_warnings(found: Mapping[str, Standing]) -> list[str]:
+    """What to say about each record whose note the base branch holds and this tree lacks."""
+    return [
+        f"{_LABEL}: {item.record}: `{item.behind}` is on the base branch and absent here: "
+        "this tree is behind, not in debt. Rebase - never declare it invisible, such an "
+        "entry is true at a branch point and false on arrival"
+        for item in sorted(found.values(), key=lambda item: item.record)
+        if item.behind
+    ]
 
 
 def _owes(subject: str) -> Finding:
     """A closed record that changed a shipped surface and produced no release note."""
-    remedy = (
-        f"write `changelog.d/{subject}.<category>.md`, or declare it invisible to a "
-        f"consumer in {INVISIBLE_TABLE} with its reason and "
-        f"{count_delta_remedy(_GATE, 1)}"
-    )
-    if existing := _on_base_branch(subject):
-        remedy = (
-            f"`{existing}` is on the base branch and absent here: this tree is behind, "
-            f"not in debt. Rebase. Never declare it invisible - such an entry is true at "
-            f"a branch point and false on arrival"
-        )
     return Finding(
         subject=subject,
         detail=(
@@ -228,7 +224,11 @@ def _owes(subject: str) -> Finding:
             "release workflow reads CHANGELOG.md from the tagged commit, so the note "
             "cannot be added once the tag exists"
         ),
-        remedy=remedy,
+        remedy=(
+            f"write `changelog.d/{subject}.<category>.md`, or declare it invisible to a "
+            f"consumer in {INVISIBLE_TABLE} with its reason and "
+            f"{count_delta_remedy(_GATE, 1)}"
+        ),
     )
 
 
@@ -330,6 +330,9 @@ def collect(
         if subject in declared:
             findings.extend(_declared(subject, declared[subject], standing, ratchet.frozen))
             continue
+        if standing is not None and standing.behind:
+            # The note is one tree away; only a rebase brings it and only a pass permits one.
+            continue
         baseline = ratchet.frozen.get(subject)
         if baseline is None:
             findings.append(_owes(subject))
@@ -344,11 +347,11 @@ def collect(
 def summary(found: Mapping[str, Standing], ratchet: Ratchet[int], declared: Collection[str]) -> str:
     """The pass line: what was judged, and how much of it is exempt rather than accounted."""
     judged = [item for item in found.values() if item.reason not in (_OPEN, _UNSCOPED)]
-    owed = [item for item in judged if item.owed]
+    owed = [item for item in judged if item.owed and not item.behind]
     return (
         f"{_LABEL}: {len(judged)} closed record(s) judged, {len(owed)} owing a release "
         f"note and each at its frozen entry ({len(ratchet.frozen)} frozen, "
-        f"{len(declared)} declared invisible)"
+        f"{len(declared)} declared invisible, {len(behind_warnings(found))} behind the base)"
     )
 
 
@@ -362,6 +365,8 @@ def main() -> int:
         return 1
 
     found = standings(REPO_ROOT)
+    for line in behind_warnings(found):
+        print(line)
     findings = collect(found, ratchet, declared)
     if findings:
         report(_LABEL, findings)

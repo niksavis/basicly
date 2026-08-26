@@ -1,0 +1,1 @@
+- The release-notes gate no longer refuses a commit in a checkout that merely predates a record's note. A fragment the base branch holds and the branch point did not is now reported as a rebase to make, not as debt to pay, so a lane seeded before a record closed can still commit.

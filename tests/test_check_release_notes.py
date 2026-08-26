@@ -14,12 +14,13 @@ and this gate's whole reason for existing is that absence is invisible to a pres
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
 from types import ModuleType
 
-from basicly import config, tracker
+from basicly import config, release, tracker
 from tests import flipped_tracker
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -260,3 +261,84 @@ def test_a_malformed_declaration_table_refuses_rather_than_reading_as_empty(
         assert "must map each record id to its reason" in str(exc)
     else:
         raise AssertionError("a malformed table read as empty")
+
+
+# --- A tree that is behind, against real git (basicly-h8dxhy) ----------------
+#
+# Stubbing git here would assert only that we asked it something. The whole judgement is
+# whether the merge base already held the fragment, and only a real branch point has one.
+
+
+def _git(repo: Path, *args: str) -> None:
+    """Run git in *repo*, with no hooks to run because the fixture repo has none."""
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
+
+
+def _lane(tmp_path: Path, *, lands: bool = True, ratchet: dict[str, object] | None = None) -> Path:
+    """A lane branched off main, with `fix-1`'s note landing on main after it branched.
+
+    The deadlock's exact shape when *lands*: the note exists one tree away, so the lane is
+    behind rather than in debt. With ``lands=False`` nothing ever wrote it and the lane owes
+    it — the control that says the discriminator is the note and not the branching.
+    """
+    repo = _repo(tmp_path, [_closed("fix-1")], ratchet=ratchet)
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "tester@example.invalid")
+    _git(repo, "config", "user.name", "tester")
+    (repo / "changelog.d" / ".keep").write_text("", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "the branch point")
+    _git(repo, "branch", "-q", "harness/lane")
+    if lands:
+        (repo / FRAGMENT).write_text("- did a thing\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "the note lands on main")
+    _git(repo, "checkout", "-q", "harness/lane")
+    return repo
+
+
+def test_a_note_that_landed_on_base_after_the_lane_branched_is_behind_not_owed(
+    tmp_path: Path,
+) -> None:
+    """The deadlock: the gate named a rebase the tree it was refusing could not perform."""
+    repo = _lane(tmp_path)
+    assert release.fragments_on_base(repo) == {"fix-1": FRAGMENT}
+    assert _findings(repo) == []
+
+
+def test_a_lane_that_is_behind_is_told_to_rebase_and_the_pass_line_counts_it(
+    tmp_path: Path,
+) -> None:
+    """Not failing must not mean going quiet — the lane still has to be told what to do."""
+    repo = _lane(tmp_path)
+    found = gate.standings(repo)
+    warnings = gate.behind_warnings(found)
+    assert len(warnings) == 1
+    assert FRAGMENT in warnings[0]
+    assert "Rebase" in warnings[0]
+    assert "1 behind the base" in gate.summary(found, gate.load_ratchet(repo), {})
+
+
+def test_a_note_on_neither_tree_is_refused_exactly_as_before(tmp_path: Path) -> None:
+    """The control: one commit apart from the case above, and it still fails."""
+    repo = _lane(tmp_path, lands=False)
+    assert release.fragments_on_base(repo) == {}
+    assert [line.split(":")[0] for line in _findings(repo)] == ["fix-1"]
+
+
+def test_a_note_deleted_on_the_base_branch_itself_is_debt_rather_than_lag(
+    tmp_path: Path,
+) -> None:
+    """On base the merge base is HEAD, so a fragment gone from the tree was deleted here."""
+    repo = _lane(tmp_path)
+    _git(repo, "checkout", "-q", "main")
+    (repo / FRAGMENT).unlink()
+    assert release.fragments_on_base(repo) == {}
+    assert [line.split(":")[0] for line in _findings(repo)] == ["fix-1"]
+
+
+def test_a_behind_record_still_counts_against_its_frozen_entry(tmp_path: Path) -> None:
+    """Reading it as noted would report every frozen entry a landed note graduated as stale."""
+    repo = _lane(tmp_path, ratchet={"frozen": {"fix-1": 1}})
+    assert gate.standings(repo)["fix-1"].count == gate.OWED
+    assert _findings(repo) == []
