@@ -42,7 +42,7 @@ def context(document: Mapping[str, Any], verdict: SnapshotVerdict, now: datetime
     reads = board_wall.readings(document, verdict)
     drawn = board_wall.age(document, now)
     phases, loop_note = board_regions.loop(reads)
-    cards, flight_more, flight_note = board_regions.flight(reads)
+    cards, flight_more, flight_note = board_regions.flight(reads, now=now)
     lines, events_more = board_footer.events(reads)
     hist, priorities_more = board_footer.priorities(reads)
     agents, health_more = board_footer.health(reads)
