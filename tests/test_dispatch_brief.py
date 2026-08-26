@@ -54,6 +54,19 @@ def test_the_dispatch_prompt_names_the_release_fragment_obligation() -> None:
     assert "under 400 characters" in prompt
 
 
+def test_the_dispatch_prompt_hands_the_release_note_judgement_to_the_gate() -> None:
+    """A lane told "if a consumer can see your change" answers no and lands owing a note.
+
+    basicly-ibzr0f did exactly that: the landing merged green, ship closed the record, and
+    the closing commit was refused with the worktree already gone. The brief names the
+    command the landing itself runs, so the lane can get the same answer first.
+    """
+    prompt = dispatch_brief.dispatch_prompt("i")
+    assert f"{dispatch_brief.RELEASE_NOTES_GATE.as_posix()} --landing i" in prompt
+    assert "not yours to judge" in prompt
+    assert "invisible to a consumer" in prompt
+
+
 def test_the_work_type_prompt_fences_the_requirement_as_data() -> None:
     """Tracker text is data, not instructions — the decider_prompt stance."""
     prompt = dispatch_brief.work_type_prompt("i", "Ship the parser.")

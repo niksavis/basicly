@@ -44,6 +44,11 @@ def _load(path: Path, name: str) -> ModuleType:
 
 gate = _load(SCRIPT, "check_release_notes")
 
+# The measurement half the gate imports (`.scripts/release_note_standing.py`). Read off
+# sys.modules rather than loaded again, so a test compares against the very objects the gate
+# is holding — a second load would give `Standing` a second identity.
+standing = sys.modules["release_note_standing"]
+
 
 def _repo(
     tmp_path: Path,
@@ -126,7 +131,7 @@ def test_a_closed_record_declaring_no_scope_is_not_judged(tmp_path: Path) -> Non
     """Absence alone cannot tell a forgotten note from a record that predates the rule."""
     repo = _repo(tmp_path, [_closed("old-1", "## Acceptance Criteria\n\n- it works\n")])
     assert _findings(repo) == []
-    assert gate.standings(repo)["old-1"].reason == gate._UNSCOPED
+    assert gate.standings(repo)["old-1"].reason == standing.UNSCOPED
 
 
 def test_a_closed_record_scoped_to_machinery_alone_owes_nothing(tmp_path: Path) -> None:
@@ -340,5 +345,5 @@ def test_a_note_deleted_on_the_base_branch_itself_is_debt_rather_than_lag(
 def test_a_behind_record_still_counts_against_its_frozen_entry(tmp_path: Path) -> None:
     """Reading it as noted would report every frozen entry a landed note graduated as stale."""
     repo = _lane(tmp_path, ratchet={"frozen": {"fix-1": 1}})
-    assert gate.standings(repo)["fix-1"].count == gate.OWED
+    assert gate.standings(repo)["fix-1"].count == standing.OWED
     assert _findings(repo) == []

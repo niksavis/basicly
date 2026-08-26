@@ -1,0 +1,39 @@
+# The landing now asks `release-notes` about the lane's own still-open record, so a lane
+# that owes a note is refused while it still has a worktree to write one in (basicly-18iz59).
+#
+# Every module was measured before the first edit. Four of the six scoped files had no room:
+# `merge.py` and `tests/test_merge.py` at 0 tokens, `.scripts/check_release_notes.py` at 21,
+# `dispatch_brief.py` at 226. Three of the four were paid for rather than rebaselined:
+#
+# - The gate script's measurement half moved to `.scripts/release_note_standing.py` — the
+#   split its own docstring already draws between "owed is measured against the shipped
+#   surface" and "a ratchet, not a hard gate". The script came out at 3875, under the cap.
+# - The landing tests went to `tests/test_merge_landing.py` and the gate's landing tests to
+#   `tests/test_check_release_notes_landing.py`, so `tests/test_merge.py` is byte-unchanged
+#   in size and its sibling has 424 tokens spare.
+# - The reader that asks one configured check about one record went to `verify.py`, beside
+#   `dependency_defect`, which already owns interpreting what a gate printed. That is where
+#   `load_verify_config`, `run_check` and `check_remedy` all live, and it left 358 spare.
+#
+# `merge.py` keeps only the landing's own decision — three lines turning that answer into a
+# `MergeResult`, plus the docstring line saying a green suite is not the whole verdict. It
+# cannot move: `MergeResult` is this module's, and `release.py` already imports `merge`, so
+# nothing on the release side can be imported back. The remaining cut is the queue half
+# (~450 lines), which ripples into `loop`, `supervise`, `contention` and `cli` — a
+# decomposition track, not this bug fix. merge.py has now taken four rebaselines, which is
+# the signal `basicly.d/README.md` says means split it.
+#
+# `E402 = +1` is the new script's `from basicly import ...` after its `sys.path` insert, the
+# same suppression with the same reason every other gate under `.scripts/` carries.
+[ratchet]
+base_commit = "4573706a77a78bebba47adff09129b765eec9d56"
+
+[ratchet.module_size]
+rebaseline_reason = "the landing's own refusal decision, in the only module that can hold it: merge.py owns MergeResult and release.py already imports merge, so the release side cannot be imported back"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/merge.py" = 96
+
+# Reasoned, so `unreasoned_count` does not move.
+[ratchet.noqa_debt.frozen]
+E402 = 1

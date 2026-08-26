@@ -63,17 +63,24 @@ from: an entry naming a record the tracker does not hold, or one that is not clo
 that owes no note anyway, or one that already has a note, fails as stale. An empty reason
 fails as an empty fragment does.
 
+**The landing mode, because closed is too late.** Everything above judges a *closed*
+record, and a lane's record is still open while it lands — so the gate passes at every
+landing and refuses the commit that closes it, after ship has torn the worktree down.
+`--landing <record>` asks the same question about that one open record, from the landing,
+while the lane still has somewhere to write the note (:func:`landing`).
+
 Run::
 
     uv run python .scripts/check_release_notes.py
+    uv run python .scripts/check_release_notes.py --landing <record>
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 import tomllib
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -91,8 +98,16 @@ from ratchet import (  # noqa: E402 - the path above comes first
     fragment,
     report,
 )
-
-from basicly import config, plan_record, release, tracker  # noqa: E402 - the path above
+from release_note_standing import (  # noqa: E402 - the path above comes first
+    LABEL,
+    OPEN,
+    UNKNOWN,
+    UNSCOPED,
+    Standing,
+    behind_warnings,
+    landing_standing,
+    standings,
+)
 
 # The gate, as `[tool.release_notes]` and `[ratchet.release_notes]` spell it.
 _GATE = "release_notes"
@@ -100,78 +115,6 @@ FROZEN_TABLE = f"[tool.{_GATE}.frozen]"
 INVISIBLE_TABLE = f"[tool.{_GATE}.invisible]"
 FROZEN_FRAGMENT = fragment(f"{_GATE}.frozen")
 COUNT_KEY = "declared_count"
-
-# What the wheel carries plus what a consumer reads.
-SHIPPED = ("src/basicly/", ".basicly/core/", "README.md", "site/")
-
-# One record owes at most one note, so an entry is a flag counted as a number: the ratchet
-# machinery is arithmetic over a per-subject count, and this is that count's only non-zero
-# value.
-OWED = 1
-
-CLOSED = "closed"
-
-_LABEL = "release-notes"
-
-# Why a record owes nothing, in the words a stale-entry finding quotes back.
-_UNKNOWN = "names no record the tracker holds"
-_OPEN = "is not closed"
-_UNSCOPED = "declares no backticked `## Scope`, so nothing says what it touched"
-_MACHINERY = "declares no shipped path"
-_NOTED = "already has a release note"
-
-
-@dataclass(frozen=True)
-class Standing:
-    """One record's answer to "does this owe a release note", and why not when it does not."""
-
-    record: str
-    owed: bool
-    reason: str
-    # The base-branch fragment this tree predates, still owed so the arithmetic is unchanged.
-    behind: str = ""
-
-    @property
-    def count(self) -> int:
-        """What the ratchet measures for this record."""
-        return OWED if self.owed else 0
-
-
-def standings(repo: Path) -> dict[str, Standing]:
-    """Every record the tracker holds, judged."""
-    # The `config` call is for its side effect: it installs the tracker mode reader the
-    # owned store refuses to answer without. `check_corpus_drift` reaches the committed
-    # ledger the same way, so this runs in a fresh clone with no tracker binary.
-    config.load_tracker_mode(repo)
-    records = tracker.all_records(repo)
-    ids = [str(record.get("id")) for record in records]
-    accounted = release.accounted_records(repo, ids)
-    behind = release.fragments_on_base(repo)
-    return {
-        issue_id: _standing(issue_id, record, accounted, behind)
-        for issue_id, record in zip(ids, records, strict=True)
-    }
-
-
-def _standing(
-    issue_id: str,
-    record: Mapping[str, object],
-    accounted: Collection[str],
-    behind: Mapping[str, str],
-) -> Standing:
-    """Whether *record* owes a release note, and the reason when it does not."""
-    if record.get("status") != CLOSED:
-        return Standing(issue_id, False, _OPEN)
-    scope = plan_record.backticked_entries(
-        str(record.get("description") or ""), plan_record.SCOPE_HEADING
-    )
-    if not scope:
-        return Standing(issue_id, False, _UNSCOPED)
-    if not any(path.startswith(SHIPPED) for path in scope):
-        return Standing(issue_id, False, _MACHINERY)
-    if issue_id in accounted:
-        return Standing(issue_id, False, _NOTED)
-    return Standing(issue_id, True, "", behind.get(issue_id, ""))
 
 
 def load_ratchet(repo: Path) -> Ratchet[int]:
@@ -204,15 +147,12 @@ def declarations(repo: Path) -> dict[str, str]:
     return table
 
 
-def behind_warnings(found: Mapping[str, Standing]) -> list[str]:
-    """What to say about each record whose note the base branch holds and this tree lacks."""
-    return [
-        f"{_LABEL}: {item.record}: `{item.behind}` is on the base branch and absent here: "
-        "this tree is behind, not in debt. Rebase - never declare it invisible, such an "
-        "entry is true at a branch point and false on arrival"
-        for item in sorted(found.values(), key=lambda item: item.record)
-        if item.behind
-    ]
+def _write_or_declare(subject: str) -> str:
+    """The two ways out, always named together: nothing else clears this gate."""
+    return (
+        f"write `changelog.d/{subject}.<category>.md`, or declare it invisible to a "
+        f"consumer in {INVISIBLE_TABLE} with its reason and {count_delta_remedy(_GATE, 1)}"
+    )
 
 
 def _owes(subject: str) -> Finding:
@@ -224,11 +164,24 @@ def _owes(subject: str) -> Finding:
             "release workflow reads CHANGELOG.md from the tagged commit, so the note "
             "cannot be added once the tag exists"
         ),
-        remedy=(
-            f"write `changelog.d/{subject}.<category>.md`, or declare it invisible to a "
-            f"consumer in {INVISIBLE_TABLE} with its reason and "
-            f"{count_delta_remedy(_GATE, 1)}"
+        remedy=_write_or_declare(subject),
+    )
+
+
+def _owed_at_ship(subject: str) -> Finding:
+    """An open record whose landing must be refused, because its close will be.
+
+    Shorter than :func:`_owes` on purpose: a landing reports this through
+    :func:`~basicly.verify.check_remedy`, which caps detail-plus-remedy at 400 characters,
+    and the longer wording spent the budget the second remedy needs.
+    """
+    return Finding(
+        subject=subject,
+        detail=(
+            "declares a shipped path in `## Scope` and holds no release note; ship closes "
+            "it and removes this worktree before the closing commit is refused"
         ),
+        remedy=_write_or_declare(subject),
     )
 
 
@@ -238,7 +191,7 @@ def _graduated(subject: str, standing: Standing | None, baseline: int) -> Findin
         subject=subject,
         detail=(
             f"{FROZEN_TABLE} records it as owing a release note, but it "
-            f"{standing.reason if standing else _UNKNOWN}"
+            f"{standing.reason if standing else UNKNOWN}"
         ),
         remedy=(
             f'record `"{subject}" = {-baseline:+d}` in {FROZEN_FRAGMENT} — an entry left '
@@ -283,7 +236,7 @@ def _declared(
                 subject=subject,
                 detail=(
                     f"declared invisible in {INVISIBLE_TABLE} but exempts nothing: it "
-                    f"{standing.reason if standing else _UNKNOWN}"
+                    f"{standing.reason if standing else UNKNOWN}"
                 ),
                 remedy=(
                     f"delete the entry and {count_delta_remedy(_GATE, -1)} — an exemption "
@@ -346,22 +299,60 @@ def collect(
 
 def summary(found: Mapping[str, Standing], ratchet: Ratchet[int], declared: Collection[str]) -> str:
     """The pass line: what was judged, and how much of it is exempt rather than accounted."""
-    judged = [item for item in found.values() if item.reason not in (_OPEN, _UNSCOPED)]
+    judged = [item for item in found.values() if item.reason not in (OPEN, UNSCOPED)]
     owed = [item for item in judged if item.owed and not item.behind]
     return (
-        f"{_LABEL}: {len(judged)} closed record(s) judged, {len(owed)} owing a release "
+        f"{LABEL}: {len(judged)} closed record(s) judged, {len(owed)} owing a release "
         f"note and each at its frozen entry ({len(ratchet.frozen)} frozen, "
         f"{len(declared)} declared invisible, {len(behind_warnings(found))} behind the base)"
     )
 
 
-def main() -> int:
+def landing(repo: Path, record_id: str) -> int:
+    """Refuse *record_id*'s landing when the commit that closes it would be refused.
+
+    Named against the lane rather than the tree: every other record in the tracker is
+    somebody else's, and failing a landing on one of them would charge this lane for a
+    debt its diff cannot pay (basicly-qorx).
+    """
+    try:
+        ratchet = load_ratchet(repo)
+        declared = declarations(repo)
+    except RatchetError as exc:
+        print(f"{LABEL}: {exc}", file=sys.stderr)
+        return 1
+    standing = landing_standing(repo, record_id)
+    exempt = record_id in declared or record_id in ratchet.frozen
+    if standing.owed and not standing.behind and not exempt:
+        report(LABEL, [_owed_at_ship(record_id)])
+        return 1
+    if exempt:
+        settled = f"already exempt in {INVISIBLE_TABLE} or {FROZEN_TABLE}"
+    elif standing.behind:
+        settled = f"`{standing.behind}` is on the base branch this tree rebases onto"
+    else:
+        settled = standing.reason
+    print(f"{LABEL}: {record_id}: nothing owed at ship — it {settled}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
     """Entry point: report every closed record whose change reached a consumer unannounced."""
+    parser = argparse.ArgumentParser(description="Refuse a release note nobody can add later.")
+    parser.add_argument(
+        "--landing",
+        metavar="RECORD",
+        help="judge only this one still-open record, as its ship close will judge it - what "
+        "a landing asks while the lane still has a worktree to write the note in",
+    )
+    args = parser.parse_args(argv)
+    if args.landing:
+        return landing(REPO_ROOT, args.landing)
     try:
         ratchet = load_ratchet(REPO_ROOT)
         declared = declarations(REPO_ROOT)
     except RatchetError as exc:
-        print(f"{_LABEL}: {exc}", file=sys.stderr)
+        print(f"{LABEL}: {exc}", file=sys.stderr)
         return 1
 
     found = standings(REPO_ROOT)
@@ -369,7 +360,7 @@ def main() -> int:
         print(line)
     findings = collect(found, ratchet, declared)
     if findings:
-        report(_LABEL, findings)
+        report(LABEL, findings)
         return 1
     print(summary(found, ratchet, declared))
     return 0
