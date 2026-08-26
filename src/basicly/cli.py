@@ -86,6 +86,7 @@ from .config import (
 )
 from .hooks import (
     AGENT_HOOK_HOSTS,
+    PRE_PUSH_STAGE,
     agent_hook_surface_present,
     check_copilot_hooks,
     check_hooks,
@@ -1580,10 +1581,19 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
     )
     if missing:
         stage_flags = " ".join(f"-t {stage}" for stage in missing)
+        remedy = (
+            f"Run `basicly hooks-build` or `uvx pre-commit install --install-hooks "
+            f"{stage_flags}` to activate them locally."
+        )
+        if PRE_PUSH_STAGE in missing:
+            # `pre-commit install` alone would leave this note firing: the pre-push hook
+            # additionally carries the ledger guard, which only `hooks-build` writes.
+            remedy = (
+                "Run `basicly hooks-build` to activate them locally — pre-push also carries "
+                "a ledger guard that `pre-commit install` does not write."
+            )
         print(
-            f"Note: git hooks are not installed for stages: {', '.join(missing)}. "
-            f"Run `basicly hooks-build` or `uvx pre-commit install --install-hooks {stage_flags}` "
-            "to activate them locally.",
+            f"Note: git hooks are not installed for stages: {', '.join(missing)}. {remedy}",
             file=sys.stderr,
         )
 

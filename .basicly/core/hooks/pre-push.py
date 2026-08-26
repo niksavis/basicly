@@ -7,8 +7,14 @@ held to exactly what the repo configures (and nothing it doesn't have).
 
 **Why this hook also asks about the ledger.** ``pre-commit`` stashes the unstaged tree for
 this stage; a landing writing the ledger inside that window makes the restore conflict, and
-the push dies naming the stash rather than the contention. The refusal below runs *before*
-the stash exists, so there is nothing to conflict (basicly-u3b65o).
+the push dies naming the stash rather than the contention. The refusal below names the
+holder instead (basicly-u3b65o).
+
+It cannot *prevent* the stash: ``pre-commit`` enters ``staged_files_only`` before any hook
+of the stage runs, so this already executes inside the window and the refusal only shortens
+it from the length of the full checks to one lock read (measured basicly-6ajmrc). Closing
+the window is the ledger guard ``hooks.apply_pre_push_guard`` writes into the installed
+pre-push hook, which is upstream of ``pre-commit`` and therefore of the stash.
 """
 
 from __future__ import annotations
