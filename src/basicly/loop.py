@@ -88,6 +88,7 @@ from .config import (
     load_worktree_config,
 )
 from .dispatch_brief import child_plan_prompt, dispatch_prompt, work_type_prompt
+from .tracker import try_add_comment as _add_comment
 from .tracker import write as _write
 
 if TYPE_CHECKING:
@@ -1666,9 +1667,10 @@ def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceR
     left where that dispatch reads it instead.
 
     The brief is consumed on read, so a repair that itself fails leaves a fresh one
-    through :func:`_rework` and a repair the gate then accepts leaves none — the
-    loop is bounded by the same per-gate cap and total ceiling as any other rework
-    round, and this adds no cycle of its own.
+    through :func:`_rework` and a repair the gate then accepts leaves none — the loop
+    is bounded by the same per-gate cap and total ceiling as any other rework round,
+    and this adds no cycle of its own. One the branch moved past is dropped with a
+    note and the landing runs.
     """
     if not ctx.repair_dispatch:
         return None
@@ -1680,8 +1682,10 @@ def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceR
     where = f"worktree {binding.name!r}"
     before = merge.branch_head(ctx.repo_root, session.branch)
     stale = repair_brief.stale_against(brief, before) if brief is not None else ""
+    if stale:
+        _add_comment(ctx.repo_root, ctx.issue_id, f"{stale} ({where})")
     if brief is None or stale:
-        return _blocked(ctx, f"{stale} ({where})", needs_input="validation") if stale else None
+        return None
     # The fourth site D3's halt predicate has to bind at, and the one basicly-1th1 left:
     # a repair is a full metered dispatch, and a landing that just failed a gate is
     # exactly when a grant is most likely to be spent (basicly-dbbh).

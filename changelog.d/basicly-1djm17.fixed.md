@@ -1,0 +1,1 @@
+- `basicly loop advance` no longer blocks for input when a repair brief is stale against the branch head. The read that judges it stale has already consumed it, so there is no gate left to re-run: the advance now discards the brief, records why on the lane, and continues to the landing in the same invocation.

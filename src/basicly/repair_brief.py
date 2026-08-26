@@ -229,13 +229,15 @@ def stale_against(brief: RepairBrief, head: str | None) -> str:
     another route - observed on `basicly-gvlpxm`, whose brief asked for a change that had
     merged hours earlier. Cannot-tell dispatches: a brief predating this field, or a head that
     would not resolve, is not evidence of staleness.
+
+    It doubles as the note the caller records, so it names the discard, not a gate re-run.
     """
     if not brief.branch_head or not head or brief.branch_head == head:
         return ""
     return (
         f"the repair brief for gate {brief.gate!r} was written against {brief.branch_head} and "
-        f"the branch is now at {head}, so its defect may already be fixed; re-run the gate to "
-        f"raise a brief against what is there now"
+        f"the branch is now at {head}, so its defect may already be fixed; discarding it and "
+        f"landing what the branch holds now"
     )
 
 

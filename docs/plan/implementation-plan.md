@@ -128,7 +128,7 @@ _run_agent call sites   loop.py:530        _dispatch_validation
                         loop.py            _dispatch_reviews    (once per lens)
                         loop.py            _dispatch_runner     (build)
                         loop.py:1699       _repair_in_place
-                        loop.py:1828       _run_subtask
+                        loop.py:1824       _run_subtask
                         loop.py:2250       _retrospective
 ```
 

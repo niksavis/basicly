@@ -141,6 +141,8 @@ def test_a_stale_brief_is_refused_against_a_head_that_moved() -> None:
     assert "aaa1111" in reason
     assert "bbb2222" in reason
     assert "may already be fixed" in reason
+    # The disposition, not a step: the read that judged it stale consumed it (basicly-1djm17).
+    assert "discarding it" in reason
 
 
 def test_a_brief_against_the_current_head_is_dispatched_unchanged() -> None:
