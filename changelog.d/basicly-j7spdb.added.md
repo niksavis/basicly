@@ -1,0 +1,1 @@
+- **A `[[verify.checks]]` check can declare `inputs`, and the pre-commit hook skips one no staged file matches.** A lane's commit runs the gates whose declared inputs intersect its diff plus every gate that declares none, and names each skip. `--mode full` (the landing, the push) ignores `inputs` and runs all of them, so nothing green rests on a skip (`basicly-j7spdb`).
