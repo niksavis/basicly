@@ -910,15 +910,55 @@ def br_attribution_env(spec: RunnerSpec) -> dict[str, str]:
     return env
 
 
-def dispatch_env(spec: RunnerSpec, base: Mapping[str, str]) -> dict[str, str]:
-    """*base* as the dispatched agent gets it: scrubbed, then the overlays.
+# The variable `uv` exports for the environment it activated, and the one the engine
+# hands on to a subprocess in a *different* checkout. Third in the family with
+# `sanitised_git_env` and `sanitised_colour_env`: an inherited value that contradicts
+# the caller's cwd, dropped so cwd decides.
+PROJECT_ENV_VAR = "VIRTUAL_ENV"
+
+
+def sanitised_project_env(env: Mapping[str, str], cwd: Path | str | None) -> dict[str, str]:
+    """*env* without a ``VIRTUAL_ENV`` pointing outside the checkout that holds *cwd*.
+
+    The engine is launched with ``uv run`` from the base checkout, so it carries
+    ``VIRTUAL_ENV=<base>/.venv`` — and every verify check and lane dispatch it starts
+    has a lane worktree for its *cwd*, where the project environment is a different
+    directory. ``uv`` resolves the project from *cwd* and ignores the variable, so the
+    tree runs correctly and prints a ``does not match the project environment path``
+    warning first. Twenty-five of this repo's full-mode checks are ``uv run`` invocations
+    — counted through the loader, because `basicly.d/` fragments add checks that reading
+    `basicly.toml` alone misses — and that is exactly the 25 warning lines one landing
+    logged (basicly-uq3pki): noise around the single gate line an operator reads a
+    landing by, and that a lane agent reads too.
+
+    Dropping it changes only the noise, because ``uv`` was already ignoring it —
+    measured 2026-08-26 in a lane worktree, ``uv run python -c 'import basicly'``
+    resolved the worktree's own package both with the variable set to the base venv and
+    with it unset. The comparison is against the *parent* of the environment directory,
+    which is the checkout ``uv`` itself compares; *cwd* inside it — the base checkout
+    running its own gates — leaves *env* untouched. ``None`` means this process's cwd,
+    matching what ``subprocess`` does with no *cwd*.
+    """
+    venv = env.get(PROJECT_ENV_VAR)
+    if not venv:
+        return dict(env)
+    here = (Path.cwd() if cwd is None else Path(cwd)).resolve()
+    if here.is_relative_to(Path(venv).resolve().parent):
+        return dict(env)
+    return {name: value for name, value in env.items() if name != PROJECT_ENV_VAR}
+
+
+def dispatch_env(
+    spec: RunnerSpec, base: Mapping[str, str], cwd: Path | str | None
+) -> dict[str, str]:
+    """*base* as the dispatched agent gets it: scrubbed for *cwd*, then the overlays.
 
     The scrub first, the overlays after, because an inherited ``GIT_DIR`` is the one
     thing the child must not have (basicly-e2mz.16) while ``git_identity_env``'s four
     ``GIT_*`` are deliberate and have to survive it.
     """
     identity = git_identity_env(spec)
-    scrubbed = sanitised_colour_env(sanitised_git_env(base))
+    scrubbed = sanitised_project_env(sanitised_colour_env(sanitised_git_env(base)), cwd)
     return {**scrubbed, **br_attribution_env(spec), **(identity or {})}
 
 
@@ -1484,7 +1524,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     # reads as a wedged lane to the StallWatchdog rather than as the hang it is. The
     # prompt is already on the argv, so there is nothing this end should ever send.
     stdin_source = subprocess.PIPE if stdin is not None else subprocess.DEVNULL
-    env = dispatch_env(spec, os.environ)
+    env = dispatch_env(spec, os.environ, cwd)
     start = time.perf_counter()
     timed_out = False
     stopped: StopReason | None = None

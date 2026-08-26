@@ -757,8 +757,12 @@ def test_run_injects_bot_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_without_identity_adds_only_attribution(monkeypatch: pytest.MonkeyPatch) -> None:
     """Without a bot identity only the br attribution overlay is added.
 
-    The basicly-smzg inherit-unchanged contract, extended by basicly-kjc5.3.
+    The basicly-smzg inherit-unchanged contract, extended by basicly-kjc5.3. Its one
+    exception has its own test: `VIRTUAL_ENV` is dropped when the dispatch cwd is a
+    different checkout, so it is cleared here rather than left to whether the process
+    running the suite happens to carry one (basicly-uq3pki).
     """
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
     captured = _patch_popen(monkeypatch)
     spec = RunnerSpec("claude", HEADLESS, ("claude", "-p", PROMPT_PLACEHOLDER))
     runner.run(spec, "go", Path("/work"))
@@ -1383,7 +1387,7 @@ def test_dispatch_env_drops_an_inherited_git_dir() -> None:
     commits at the shared repository instead of its own worktree (basicly-e2mz.16).
     """
     base = {"GIT_DIR": "/repo/.git/worktrees/lane", "GIT_INDEX_FILE": "/repo/.git/index"}
-    env = runner.dispatch_env(_claude_spec(), base)
+    env = runner.dispatch_env(_claude_spec(), base, None)
 
     assert "GIT_DIR" not in env
     assert "GIT_INDEX_FILE" not in env
@@ -1398,7 +1402,7 @@ def test_dispatch_env_drops_an_operators_forced_colour() -> None:
     the plain output the gates assert.
     """
     base = {"FORCE_COLOR": "3", "CLICOLOR_FORCE": "1", "COLORTERM": "truecolor", "NO_COLOR": "1"}
-    env = runner.dispatch_env(_claude_spec(), base)
+    env = runner.dispatch_env(_claude_spec(), base, None)
 
     assert "FORCE_COLOR" not in env
     assert "CLICOLOR_FORCE" not in env
@@ -1419,12 +1423,30 @@ def test_dispatch_env_keeps_the_deliberate_identity_and_transport_vars() -> None
         git_name="basicly-bot",
         git_email="bot@example.com",
     )
-    env = runner.dispatch_env(spec, {"GIT_DIR": "/repo/.git", "GIT_SSH_COMMAND": "ssh -i k"})
+    env = runner.dispatch_env(spec, {"GIT_DIR": "/repo/.git", "GIT_SSH_COMMAND": "ssh -i k"}, None)
 
     assert env["GIT_AUTHOR_NAME"] == "basicly-bot"
     assert env["GIT_COMMITTER_EMAIL"] == "bot@example.com"
     assert env["GIT_SSH_COMMAND"] == "ssh -i k"  # transport config, not a repo pointer
     assert "GIT_DIR" not in env
+
+
+def test_dispatch_env_drops_a_virtual_env_from_another_checkout(tmp_path: Path) -> None:
+    """A lane worktree loses the base checkout's `VIRTUAL_ENV`; the base itself keeps it.
+
+    Regression (basicly-uq3pki): `uv` ignores a value naming a different project and
+    warns on every invocation, and a lane agent reads that noise as its own output.
+    """
+    base_tree = tmp_path / "base"
+    (base_tree / "src").mkdir(parents=True)
+    inherited = {"VIRTUAL_ENV": str(base_tree / ".venv"), "PATH": "/usr/bin"}
+
+    lane = runner.dispatch_env(_claude_spec(), inherited, tmp_path / "base.worktrees" / "lane")
+    same = runner.dispatch_env(_claude_spec(), inherited, base_tree / "src")
+
+    assert "VIRTUAL_ENV" not in lane
+    assert lane["PATH"] == "/usr/bin"  # only the one variable goes
+    assert same["VIRTUAL_ENV"] == str(base_tree / ".venv")
 
 
 def test_run_does_not_hand_the_child_an_inherited_git_dir(
@@ -1495,7 +1517,14 @@ def test_run_starts_the_dispatch_in_its_own_session_on_posix(
 def test_run_starts_a_windows_dispatch_in_its_own_process_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The Windows branch is unreachable on POSIX CI, so pin it directly."""
+    """The Windows branch is unreachable on POSIX CI, so pin it directly.
+
+    `runner.os` is the real module, so faking `os.name` also switches `pathlib`'s
+    flavour for the whole process — a POSIX cwd then cannot be resolved as a
+    `WindowsPath`. Clearing `VIRTUAL_ENV` keeps this test on the process-group
+    question by leaving `sanitised_project_env` with nothing to compare.
+    """
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
     monkeypatch.setattr(runner.os, "name", "nt")
     captured = _patch_popen(monkeypatch)
     runner.run(_claude_spec(), "go", Path("/work"))
