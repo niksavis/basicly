@@ -104,26 +104,22 @@ READY_SLOTS = 8
 READY_SLOTS_WIDE = 14
 READY_TITLE_WIDE = 110
 
-# basicly-ffm2yp: 24.09px is the measured height of a data row on the live board - font-size
-# 17px at line-height 1.3 plus 1px padding top and bottom, confirmed against a real render
-# rather than read off the CSS, because the CSS number alone was the previous defect.
+# The measured height of a data row on the live board (basicly-ffm2yp): 17px at line-height
+# 1.3 plus 1px padding each side, confirmed against a real render, not read off the CSS.
 READY_ROW_PITCH_PX = 24.09
 
-# What sits above and below the reclaimed row on the *live* board, in CSS pixels, at three
-# widths this layout claims - found by binary search against `.scripts/check_render_overflow.py`
-# on the real repo document, not a fixture: a synthetic calibration first measured 442px at
-# every width and it clipped 54px on the live page, because live head/band content wraps more
-# at 1440 than the fixture's did. Chrome falls as width grows because less of it wraps, so one
-# constant cannot serve every width; these three points, interpolated, do. Sorted by width.
+# The chrome above and below the reclaimed rows on the *live* board, in CSS pixels, at the
+# three widths this layout claims, found by binary search with `.scripts/check_render_overflow.py`
+# on the real document. A fixture-measured constant clipped 54px live, because live content
+# wraps more at 1440; chrome falls as width grows, so three points interpolate. Sorted by width.
 READY_CHROME_CALIBRATION: tuple[tuple[float, float], ...] = (
     (1440.0, 514.0),
     (1600.0, 429.0),
     (1920.0, 381.0),
 )
 
-# One row's worth of headroom on top of the tightest measured chrome, because the live figures
-# above are one day's real content and a longer branch name or one more gate tomorrow wraps a
-# little further. Losing a row to the margin is a wasted line; losing it to a clip is the bug.
+# One row of headroom over the measured chrome: tomorrow's longer branch name wraps a little
+# further, and losing a row to the margin is cheaper than losing one to a clip.
 READY_CHROME_SAFETY_MARGIN_PX = READY_ROW_PITCH_PX
 
 
