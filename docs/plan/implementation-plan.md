@@ -72,7 +72,7 @@ hand-written copy of them was stale within days:
 | Measure | Value |
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 119 |
-| Test files | 242 |
+| Test files | 243 |
 | `[[verify.checks]]` declared | 39 |
 | …of which run in `--mode fast` | 34 |
 | …of which run in `--mode full` | 38 |
@@ -123,7 +123,7 @@ two the row said never ask now do.
 roles.resolve_role      loop.py            _run_agent           → validate · reviews · build ·
                                                                   repair · sub-task · retrospective
                         loop.py            _run_proposer        → classify · decompose
-                        supervise.py:2707  _dispatch_lane       → lane build
+                        supervise.py:2710  _dispatch_lane       → lane build
 _run_agent call sites   loop.py:530        _dispatch_validation
                         loop.py            _dispatch_reviews    (once per lens)
                         loop.py            _dispatch_runner     (build)
@@ -245,7 +245,7 @@ decide-then-spawn-then-mirror ordering as the shipped design. The lesson they pr
 
 **And one ready P0 is named by no ordering in this file.** `basicly-jn1x` — **0 of 357 dispatch
 records carry `--agent`**, against a positive control of 163 carrying `-p`. The role wiring exists
-in code (`supervise.py:2749`), so the two readings are "the lane path does not apply the role" and
+in code (`supervise.py:2752`), so the two readings are "the lane path does not apply the role" and
 "it does and the record does not capture it", and the ledger cannot tell them apart. That makes it
 a prerequisite of any measurement that cites a role — `ejdm.4`'s before/after among them — rather
 than a defect competing with them for a slot.

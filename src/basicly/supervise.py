@@ -29,6 +29,9 @@ than dispatched again (basicly-kjc5.18): its runner already finished and
 committed, so a fresh implement-and-commit dispatch would pay for work that is
 on the branch. The carry lapses the moment the lane's own work needs changing —
 rework, a bounce, a retry — because that is when a dispatch is the right move.
+A pass also re-derives that set from git (``committed_lanes``), so a lane whose
+commits outlived the supervisor that made them lands after a crash rather than
+being built a second time (basicly-pjaudy).
 
 Three rules, all from the design:
 
@@ -2943,11 +2946,52 @@ def carried_forward(routed: tuple[RoutedOutcome, ...]) -> frozenset[str]:
     bounced, retry), which is exactly when a fresh dispatch *is* the right move —
     so the carry lapses and the lane re-enters dispatch normally.
 
-    The carry is an in-process optimization, not state: a supervisor that
-    restarts mid-session simply re-dispatches the lane, which is the behavior
-    before this existed. Correctness still derives from ``br`` alone.
+    This half of the carry is in-process only, so a supervisor that crashed
+    mid-session remembers nothing; :func:`committed_lanes` re-derives the same
+    set from git at the next pass, which is what keeps the carry across a
+    restart (basicly-pjaudy).
     """
     return frozenset(r.issue_id for r in routed if r.route == "held")
+
+
+def _awaits_landing(repo_root: Path, lane: AdoptedLane) -> bool:
+    """True when *lane*'s branch already holds committed work no agent need redo.
+
+    A repair brief outranks the commits: a failed gate left it for the lane's
+    next dispatch, and landing again would only re-fail the same gate.
+    """
+    session = worktree.load_session(lane.binding.name, repo_root)
+    if session is None or session.stale:
+        return False
+    if (session.path / repair_brief.REPAIR_BRIEF_FILE).is_file():
+        return False
+    if not merge.carried_commits(repo_root, session.base, session.branch):
+        return False
+    dirty = worktree.git(
+        ["status", "--porcelain", "--untracked-files=no"], cwd=session.path, check=False
+    )
+    return dirty.returncode == 0 and not dirty.stdout.strip()
+
+
+def committed_lanes(repo_root: Path, session: SessionState) -> frozenset[str]:
+    """Ready lanes whose work is committed and clean already: land, do not dispatch.
+
+    The durable half of :func:`carried_forward`, read from git rather than from
+    the last pass's routes, so a lane that was committed before a crash — or by
+    hand — lands instead of paying for a second implement run (basicly-pjaudy).
+    Eligibility is :func:`ready_lanes`, so a lane already blocked, parked past
+    build, or holding a queued decision is none of this function's business —
+    but a session with nothing adopted is answered without asking it, because
+    ``ready_lanes`` filters ``adopted`` and its two tracker reads could only
+    return empty. That is every pass of a root still being seeded.
+    """
+    if not session.adopted:
+        return frozenset()
+    return frozenset(
+        lane.issue_id
+        for lane in ready_lanes(repo_root, session)
+        if _awaits_landing(repo_root, lane)
+    )
 
 
 def _carried_outcome(issue_id: str) -> LaneOutcome:
