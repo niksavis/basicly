@@ -700,6 +700,11 @@ max_rework = 2
 # That is the stated intent of this setting rather than a side effect of the raise:
 # make review, not slots or tokens, the thing that limits throughput. Raise it only
 # with a reason to believe unreviewed output is safe to accumulate.
+#
+# **Counted over work already downstream, never over the pass's own admissions.** Below
+# five, every ready lane starts and `[worktree] concurrency` decides how many run at
+# once; at five or more, none does. Charging a pass for the cohort it is about to start
+# is what left a slot idle with an empty review queue (basicly-08rnmd).
 max_downstream_wip = 5
 
 # The body sections each work type owes beyond the acceptance criteria every bead owes
