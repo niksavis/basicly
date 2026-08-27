@@ -244,3 +244,40 @@ def test_no_role_leaves_every_family_exactly_as_it_was() -> None:
     for spec in BUILTIN_RUNNERS:
         if spec.command:
             assert format_command(spec, "PROMPT", role=None) == format_command(spec, "PROMPT")
+
+
+# --- Which roles inherit a seeded session (basicly-2kh170) ----------------------
+
+
+def test_the_policy_never_names_a_role_the_engine_does_not_dispatch() -> None:
+    """An entry for a persona no phase resolves to is inheritance nothing can ever use."""
+    dispatched = set(roles.ROLE_BY_PHASE.values()) | set(roles.LENS_ROLE_BY_PHASE.values())
+
+    assert dispatched >= roles.INHERITING_ROLES
+
+
+def test_the_implementer_inherits_and_repair_inherits_with_it() -> None:
+    """Repair is the implementer's second state, so one entry covers both dispatches."""
+    assert roles.inherits_context(roles.role_for_phase("build"))
+    assert roles.inherits_context(roles.role_for_phase("repair"))
+
+
+@pytest.mark.parametrize("phase", ["classify", "validate", "retrospective", "ship", "decompose"])
+def test_a_judging_phase_stays_cold(phase: str) -> None:
+    """Independence is what these roles are for: a fork would review its own reasoning."""
+    role = roles.role_for_phase(phase)
+
+    assert role is not None
+    assert not roles.inherits_context(role)
+
+
+def test_the_reviewer_fanned_out_beside_validate_stays_cold_too() -> None:
+    """The lens dispatches are not on the phase table, so they need their own check."""
+    for dispatch in roles.lens_dispatches("validate"):
+        assert not roles.inherits_context(dispatch.role)
+
+
+def test_a_dispatch_with_no_role_at_all_starts_cold() -> None:
+    """VERIFY has no persona and codex cannot select one; both must dispatch as they did."""
+    assert not roles.inherits_context(roles.role_for_phase("verify"))
+    assert not roles.inherits_context(None)
