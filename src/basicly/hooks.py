@@ -347,12 +347,64 @@ def _git_hooks_dir(repo_root: Path) -> Path:
     return path if path.is_absolute() else repo_root / path
 
 
+PRE_PUSH_STAGE = "pre-push"
+# The ledger guard, spelled against the script `pre-commit install` writes rather than
+# rebuilt: inserting into that file keeps pre-commit's own interpreter resolution and
+# `hook-impl` arguments, so this survives changes to either.
+PRE_PUSH_GUARD_MARKER = "basicly: ledger-safe pre-push dispatch"
+_PRE_PUSH_ANCHOR = 'ARGS+=(--hook-dir "$HERE" -- "$@")\n'
+_PRE_PUSH_GUARD = f"""
+# {PRE_PUSH_GUARD_MARKER} (basicly-6ajmrc). `hook-impl` stashes the unstaged tree before
+# any hook runs and restores it after; the ledger is append-only shared state a live
+# engine process writes *during* the push, so a kill inside that window drops every event
+# appended since the stash. `run --all-files` is the same stage without a stash, and every
+# pre-push hook here is `always_run` with `pass_filenames: false`, so the two do identical
+# work. Anything unstaged outside the ledger takes the unchanged path, stash included.
+if [ -n "$(git diff --name-only --ignore-submodules -- .basicly/ledger/)" ] &&
+   [ -z "$(git diff --name-only --ignore-submodules -- . ':(exclude).basicly/ledger/')" ]; then
+    ARGS=(run --hook-stage pre-push --all-files)
+fi
+"""
+
+
+def apply_pre_push_guard(repo_root: Path) -> bool:
+    """Insert the ledger guard into the installed pre-push hook; True when it is in place.
+
+    False is every shape this cannot repair — no hook file, an unreadable one, or a
+    dispatcher without pre-commit's ``--hook-dir`` line to anchor against (a template
+    this version does not recognise). It never writes a script it did not recognise,
+    because a mangled pre-push hook is a worse failure than the stash window.
+
+    The write restores the file mode: :func:`atomic_write_text` replaces the inode, and a
+    pre-push hook git cannot execute is silently no gate at all.
+    """
+    path = _git_hooks_dir(repo_root) / PRE_PUSH_STAGE
+    try:
+        text = path.read_text(encoding="utf-8")
+        mode = path.stat().st_mode
+    except OSError:
+        return False
+    if PRE_PUSH_GUARD_MARKER in text:
+        return True
+    if _PRE_PUSH_ANCHOR not in text:
+        return False
+    atomic_write_text(path, text.replace(_PRE_PUSH_ANCHOR, _PRE_PUSH_ANCHOR + _PRE_PUSH_GUARD, 1))
+    path.chmod(mode)
+    return True
+
+
 def missing_hook_installations(repo_root: Path, stages: list[str]) -> list[str]:
     """Return the stages whose git hook is not installed by pre-commit.
 
     A stage counts as installed when ``<git-hooks-dir>/<stage>`` exists and is a
     pre-commit-generated dispatcher (contains the ``pre-commit`` marker). This is
     a local-activation check, distinct from the projected-file drift check.
+
+    ``pre-push`` is held to more: it must also carry the ledger guard
+    :func:`apply_pre_push_guard` writes. A bare ``pre-commit install`` rewrites that
+    file unconditionally, so without this the guard would be dropped silently and the
+    stash window would come back unannounced; reported as missing, `basicly hooks-build`
+    puts it back.
     """
     hooks_dir = _git_hooks_dir(repo_root)
     missing: list[str] = []
@@ -362,6 +414,8 @@ def missing_hook_installations(repo_root: Path, stages: list[str]) -> list[str]:
         if hook_file.exists():
             text = hook_file.read_text(encoding="utf-8", errors="ignore")
             installed = "pre-commit" in text
+            if stage == PRE_PUSH_STAGE:
+                installed = installed and PRE_PUSH_GUARD_MARKER in text
         if not installed:
             missing.append(stage)
     return missing
@@ -417,7 +471,13 @@ def install_hooks(repo_root: Path, stages: list[str]) -> tuple[bool, str]:
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
         return False, f"pre-commit install failed ({detail}); run manually: {manual}"
-    return True, result.stdout.strip() or "hooks installed"
+    message = result.stdout.strip() or "hooks installed"
+    if PRE_PUSH_STAGE in stages and not apply_pre_push_guard(repo_root):
+        message += (
+            "\nwarning: the pre-push hook was not recognised, so the ledger guard "
+            "was not applied; a push will stash unstaged ledger writes"
+        )
+    return True, message
 
 
 def uninstall_hooks(repo_root: Path, stages: list[str]) -> tuple[bool, str]:
