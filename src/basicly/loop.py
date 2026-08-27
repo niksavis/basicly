@@ -1613,10 +1613,10 @@ def _landing_findings(result: merge.MergeResult) -> tuple[str, ...]:
     the gate's own rendering of it and is stable round to round for the same
     failures (``verify full failed: pytest, ruff``). So a *repeat* is detectable,
     which is what bounds the loop. It is one member rather than a parsed list, on
-    purpose: a growing set of failing checks therefore reads as a change rather
-    than as divergence, and closing that needs the failing checks carried as data
-    on :class:`merge.MergeResult` — merge's contract to widen, not a string this
-    function guesses at.
+    purpose: a growing set of failing checks reads as a change rather than as
+    divergence. Those checks are now data on :attr:`merge.MergeResult.checks`
+    (basicly-3oxf0d), so closing that is possible — but it changes how rework
+    converges rather than what a repair is told, so it is another record's.
 
     Tagged with the status for the same reason the bounce tags its own: a cause
     must never compare equal to a path or to a check name.
@@ -1629,25 +1629,34 @@ def _landing_findings(result: merge.MergeResult) -> tuple[str, ...]:
 def _landing_evidence(
     result: merge.MergeResult, mode: str
 ) -> tuple[repair_brief.GateEvidence, ...]:
-    """How to reproduce a landing's red verify, for the repair brief (pure).
+    """A landing's red verify as the gate reported it, for the repair brief (pure).
 
-    Only the command, not the output. The landing gate ran the checks inside the
-    worktree and captured their output for its unreliable-gate test, but that
-    report does not survive on :class:`merge.MergeResult` — the same limit
-    :func:`_landing_findings` records, and widening it is merge's contract to
-    change, not a string this function should guess at. So the brief carries the
-    gate's own rendering of *which* checks failed (in the findings) and the one
-    command that reproduces them, which is what a repair run needs to get to the
-    output itself.
+    One entry per check the landing's re-run reproduced, with the argv it ran and the
+    output it printed. The landing captures that transcript for its unreliable-gate test
+    and used to drop it, so a repair was briefed with `"output": ""` and re-ran the gate by
+    hand to learn the two errors it had already printed (basicly-3oxf0d).
+
+    The whole-suite command stands in when the failure carries no checks — the release-note
+    debt refuses a landing whose suite was green, so nothing was re-run — because a command
+    that reproduces the verdict is the least a repair can start from.
 
     Nothing for any other status: a collision, a stale branch or an uncommitted
-    worktree is not a check a repair run can re-run.
+    worktree is not a check a repair run can re-run, and an unreliable or foreign verdict
+    carries no checks because it is not evidence against the lane's work.
     """
     if result.status != repair_brief.LANDING_VERIFY_FAILED:
         return ()
-    return (
-        repair_brief.GateEvidence(check=f"verify {mode}", command=f"basicly verify --mode {mode}"),
-    )
+    whole_suite = f"basicly verify --mode {mode}"
+    if not result.checks:
+        return (repair_brief.GateEvidence(check=f"verify {mode}", command=whole_suite),)
+    return tuple(
+        repair_brief.GateEvidence(
+            check=check.name,
+            command=" ".join(check.command) or whole_suite,
+            output=repair_brief.clip_output(check.output or check.detail),
+        )
+        for check in result.checks
+    )[: repair_brief.MAX_REPAIR_EVIDENCE]
 
 
 def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceResult | None:

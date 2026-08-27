@@ -63,6 +63,11 @@ class CheckOutcome(Protocol):
         """One line of context the tool itself could not report; empty when it did."""
         ...
 
+    @property
+    def command(self) -> tuple[str, ...]:
+        """The argv the check ran; empty for one that never reached a process."""
+        ...
+
 
 @runtime_checkable
 class RunVerdict(Protocol):
@@ -87,6 +92,22 @@ class RunVerdict(Protocol):
     def results(self) -> tuple[CheckOutcome, ...]:
         """Every check the run produced an outcome for."""
         ...
+
+
+def recorded_detail(outcome: CheckOutcome) -> str:
+    """*outcome*'s ``detail`` for the record, never empty when it failed.
+
+    A landing wrote `"detail": ""` for the check that refused it, and the session that
+    picked the failure up had to re-run the gate by hand to learn what it said
+    (basicly-3oxf0d). A streamed failure has no detail of its own, so the argv that
+    reproduces it stands in — and the transcript itself still does not land here, for the
+    redaction reason this module states: a tool's stdout can carry a secret.
+    """
+    if outcome.status != "fail" or outcome.detail:
+        return outcome.detail
+    if not outcome.command:
+        return "the check failed and reported nothing"
+    return f"output streamed rather than captured; reproduce with: {' '.join(outcome.command)}"
 
 
 def write_run_artifact(repo_root: Path, report: RunVerdict) -> Path | None:
@@ -118,7 +139,7 @@ def write_run_artifact(repo_root: Path, report: RunVerdict) -> Path | None:
                 "name": r.name,
                 "status": r.status,
                 "returncode": r.returncode,
-                "detail": r.detail,
+                "detail": recorded_detail(r),
             }
             for r in report.results
         ],

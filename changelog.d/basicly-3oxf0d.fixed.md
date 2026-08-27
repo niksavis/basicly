@@ -1,0 +1,1 @@
+- A landing that fails its verify gate now briefs the repair with each failing check's own command and captured output instead of the whole-suite command and an empty string, and `verify-run.json` no longer records a blank `detail` for a failed check — it names the argv that reproduces it.

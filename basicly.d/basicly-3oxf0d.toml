@@ -1,0 +1,43 @@
+# Carry the failing checks a landing's re-run captured out to the repair brief
+# (basicly-3oxf0d). The transcript existed and was thrown away: `merge._verify_for_landing`
+# re-runs the failures with `capture=True` for its unreliable-gate test, `MergeResult` kept
+# only a one-line `detail`, and `loop._landing_evidence` briefed the repair with the
+# whole-suite command and `"output": ""`. Measured on `basicly-6ajmrc`, where the next
+# session re-ran `pyright-windows` by hand to learn two errors the landing had already read.
+#
+# Two src modules grew, measured on the commit below:
+#
+#   src/basicly/merge.py  16178 -> 16380  (+202)  `MergeResult.checks` and `_failed_checks`
+#   src/basicly/loop.py   31663 -> 31797  (+133)  `_landing_evidence` renders one entry per check
+#
+# Neither has a cheaper placement. The data has to sit on the verdict the landing already
+# returns — the same widening `_landing_findings` and `_landing_evidence` each named in their
+# own docstrings as "merge's contract to widen" — and the render has to sit where the brief
+# is written. Extracting either into a new module puts one dataclass field and one 12-line
+# reducer behind an import in the module that is already the only caller, which is the
+# `_part1/_part2` split the size gate's own remedy refuses.
+#
+# Everything that could be placed instead of declared, was, so no test module is rebaselined:
+# `tests/test_merge.py` (frozen at exactly its own 21603) and `tests/test_loop_repair.py`
+# (3903 against the 4000 cap, unfrozen, so a fragment cannot raise it at all) both stayed
+# byte-identical, and the new coverage went into `tests/test_merge_evidence.py` (783) and
+# `tests/test_loop_repair_evidence.py` (1306) on the sibling convention those two files
+# already follow — `test_merge_landing.py`, `test_loop_repair_spend.py`.
+#
+# The record's own third acceptance criterion is also why `verify_artifact.py` took the
+# never-empty-`detail` rule rather than `verify.py`: the redaction reason lives in that
+# module's docstring (a status cannot carry a secret, a tool's stdout can), and it has 2443
+# tokens of headroom, so the rule is where it belongs and costs no baseline.
+#
+# Prose share moved down on both modules, so `comment-density` had nothing to say: the
+# growth is code plus one field comment and two docstring paragraphs, against 60.0% and
+# 52.3% already recorded.
+[ratchet]
+base_commit = "63a057187157f00f73bfbe7bd0242f70fbeb5af2"
+
+[ratchet.module_size]
+rebaseline_reason = "the landing verdict is where the captured checks have to live and the brief render is where they have to be read, so both frozen modules grew by code; every test addition was placed in a new sibling module instead of declared, and the never-empty-detail rule went to the module whose docstring states the redaction rule it obeys"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/merge.py" = 202
+"src/basicly/loop.py" = 133
