@@ -1694,20 +1694,23 @@ def cmd_brief(args: argparse.Namespace) -> int:
     would drift from the one the engine actually sends, and a preview that differs
     from the dispatch is worse than none.
 
-    It is the base prompt, and the omissions are named because a preview that hid
-    them would be the drift it exists to prevent: cross-lane records and answered
-    decisions are folded in at dispatch time against the session's live bead set; a
-    role's declared skills are prepended by :func:`dispatch_brief.with_skills`; and a
-    lane that failed a gate is re-dispatched from a repair brief instead of this one.
+    It is the base prompt plus the scope fence, and the remaining omissions are named
+    because a preview that hid them would be the drift it exists to prevent: cross-lane
+    records and answered decisions are folded in at dispatch time against the session's
+    live bead set; a role's declared skills are prepended by
+    :func:`dispatch_brief.with_skills`; and a lane that failed a gate is re-dispatched
+    from a repair brief instead of this one.
 
-    The id is checked against the tracker first. The brief is a pure function of it,
-    so a typo renders a complete, plausible brief pointing at nothing — the one
-    failure a preview exists to stop a human reading past.
+    The id is checked against the tracker first, because the base prompt is a pure
+    function of it: a typo renders a complete, plausible brief pointing at nothing — the
+    one failure a preview exists to stop a human reading past.
     """
-    if tracker.read_record(_repo_root(), args.issue_id) is None:
+    repo_root = _repo_root()
+    if tracker.read_record(repo_root, args.issue_id) is None:
         ui.fail(f"No tracked issue {args.issue_id}")
         return 1
-    ui.say(dispatch_brief.dispatch_prompt(args.issue_id))
+    prompt = dispatch_brief.dispatch_prompt(args.issue_id)
+    ui.say(contention.with_scope_fence(repo_root, args.issue_id, prompt))
     return 0
 
 
