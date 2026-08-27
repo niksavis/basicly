@@ -251,6 +251,8 @@ def _kill_the_hook_mid_run(repo: Path, tmp_path: Path) -> str:
         assert process.poll() is None, f"the hook exited before it ran: {log.read_text()}"
         time.sleep(0.05)
     assert (tmp_path / "started").exists(), "the pre-push hook never reached its slow hook"
+    # The callers carry ``posix_hooks``; this narrows the same fact for the Windows type check.
+    assert sys.platform != "win32"
     os.killpg(process.pid, signal.SIGKILL)
     process.wait(timeout=30)
     return log.read_text(encoding="utf-8", errors="ignore")
