@@ -1,0 +1,39 @@
+# A refused tracker-sync commit lost the gate name, turned a committed lane into a
+# re-dispatch and the rest of the pass into holds (basicly-85cadb). One chain, three
+# repairs, each in a module that was already at or over its size baseline.
+#
+# Measured before the first edit, and that measurement is why this fragment exists rather
+# than a smaller diff: `merge.py` had **0** tokens of module-size headroom, `checkout.py`
+# **15**, `supervise.py` **456** with **0.0** points of comment-density headroom, and
+# `tests/test_supervise.py` **488**. Deleting existing prose would have paid for all of it
+# and no claim in these modules is wrong, so nothing was cut but the narration this change
+# itself added.
+#
+# `checkout.py` +247, and it crosses the 4,000-token cap for the first time (3,985 ->
+# 4,232) rather than raising a frozen baseline. `_runner_verdicts` reads
+# `check_runner.py`'s own `FAILED: <check>` and `checks failed: N/M` lines off the whole
+# output and `gate_refusal` appends whichever the block reader missed. The block reader is
+# left alone deliberately: it is right about third-party hooks, and what it cannot be right
+# about is *which block* those lines land in, because the runner writes them on its stderr
+# while its `==> <check>` progress lines sit on block-buffered stdout and flush after them.
+# Not split along the run/refusal-reader seam the module docstring already names: that is a
+# new module, a new test module and a decomposition track of its own, where the defect here
+# is 6 lines. Comment-density **fell**, 54.1 -> 54.0.
+#
+# `merge.py` +725: `TrackerCommitRefusedError`, one bounded retry of the engine's own chore
+# commit in `_commit_staged_tracker_state`, and `_replay_verify_merge` — steps 1-5 of
+# `merge_worktree` extracted so the retry note has one result to fold into instead of six
+# early returns. The extraction pays for itself twice: it also drops the redundant `name`
+# parameter, so no `PLR0913` suppression is added. Comment-density fell, 60.0 -> 59.9.
+#
+# `supervise.py` +296 fits inside its 456 and is not declared; its prose share is unchanged
+# at 56.6 because the routing comment was cut to fit rather than paid for out of the
+# ratchet. `tests/test_supervise.py` grew +605 for the two routing tests, of which 488 was
+# headroom, so 117 is declared.
+[ratchet.module_size]
+rebaseline_reason = "the gate-name reader, the bounded tracker-sync retry and the landing split that carries its note, in three modules holding 0, 15 and 456 tokens of headroom between them"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/checkout.py" = 4232
+"src/basicly/merge.py" = 725
+"tests/test_supervise.py" = 117

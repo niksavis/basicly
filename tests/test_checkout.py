@@ -274,3 +274,61 @@ def test_a_reformatting_hook_reports_the_only_line_it_printed() -> None:
     )
     (refusal,) = checkout.refusals(chain)
     assert refusal.reason == "files were modified by this hook"
+
+
+# Captured from a real refused `git commit` in this repo on 2026-08-27 by staging a module
+# ruff, lint-imports and test-naming all reject, and reading `subprocess` streams the way
+# `checkout.run` does. Trimmed to the verdict lines and one line of each check's own
+# output; the ordering is the observation — git sends every hook stream to stderr, and the
+# runner's `==> <check>` progress lines land after its `checks failed:` summary because
+# they are on its block-buffered stdout while the summary is on its stderr.
+_THREE_FAILURES = """identity-guard...........................................................Passed
+pre-commit-script........................................................Failed
+- hook id: pre-commit-script
+- exit code: 1
+- files were modified by this hook
+
+F401 [*] `os` imported but unused
+FAILED: ruff (0.04s)
+Contracts: 2 kept, 1 broken.
+FAILED: lint-imports (0.18s)
+test-naming: src/basicly/_probe: no test file named after it
+FAILED: test-naming (0.03s)
+checks failed: 30/33 passed in 19.99s (failed: ruff, lint-imports, test-naming)
+==> ruff
+==> mermaid
+
+catalog-lint.............................................................Passed
+"""
+
+
+def test_every_check_the_runner_failed_reaches_the_refusal() -> None:
+    """`_REASON_LINES` kept the last three stated lines, so the first failure fell off."""
+    summary = checkout.gate_refusal(_THREE_FAILURES)
+    assert summary is not None
+    for check in ("FAILED: ruff", "FAILED: lint-imports", "FAILED: test-naming"):
+        assert check in summary
+    assert "checks failed: 30/33" in summary
+
+
+def test_a_block_holding_only_warnings_still_names_what_refused() -> None:
+    """The shape that cost basicly-j7spdb a re-dispatch: bandit's warning as the reason.
+
+    Which block the runner's verdict lines land in is an artefact of two streams
+    interleaving, so the reader must not depend on it — here they sit past the next
+    hook's verdict line, where the block reader cannot see them at all.
+    """
+    chain = (
+        "pre-commit-script........................................................Failed\n"
+        "- hook id: pre-commit-script\n"
+        "[tester]\tWARNING\tnosec encountered (B603), but no failed test on file "
+        ".basicly/core/hooks/catalog-lint.py:48\n"
+        "Contracts: 3 kept, 0 broken.\n"
+        "catalog-lint.............................................................Passed\n"
+        "FAILED: release-notes (0.06s)\n"
+        "checks failed: 32/33 passed in 21.10s (failed: release-notes)\n"
+    )
+    summary = checkout.gate_refusal(chain)
+    assert summary is not None
+    assert "FAILED: release-notes" in summary
+    assert "checks failed: 32/33" in summary

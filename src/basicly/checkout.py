@@ -237,6 +237,13 @@ _MODIFIED = "- files were modified by this hook"
 # A check stating its own verdict, in the vocabulary this repo's gates use.
 _STATED = ("FAILED:", "checks failed:", "BROKEN")
 
+# `.basicly/core/hooks/check_runner.py`'s own two verdict shapes. Read off the whole output
+# and *appended* to the block reader's answer rather than selected by it, because a line
+# reaches that answer only if it survives both the per-block boundary and `_REASON_LINES`:
+# a refusal reporting bandit's `nosec` warning while `FAILED: release-notes` sat in the same
+# output cost basicly-j7spdb a re-dispatch and stopped two green lanes (basicly-85cadb).
+_RUNNER_VERDICTS = ("FAILED:", "checks failed:")
+
 # Weaker evidence, for a third-party tool that prints no summary line.
 _FAILURE_WORDS = ("error", "fail", "broken")
 
@@ -319,6 +326,16 @@ def ran_hooks(output: str) -> bool:
     return any(_verdict(line) is not None for line in output.splitlines())
 
 
+def _runner_verdicts(output: str) -> tuple[str, ...]:
+    """Every :data:`_RUNNER_VERDICTS` line anywhere in *output*, deduplicated, in run order."""
+    seen = [
+        stripped
+        for line in output.splitlines()
+        if (stripped := line.strip()).startswith(_RUNNER_VERDICTS)
+    ]
+    return tuple(dict.fromkeys(seen))
+
+
 def refusals(output: str) -> tuple[Refusal, ...]:
     """Every check in *output* that refused, in the order the chain ran them.
 
@@ -371,7 +388,9 @@ def gate_refusal(output: str, *, repo_root: Path | None = None) -> str | None:
     if not ran_hooks(output):
         return None
     if refused := refusals(output):
-        return "; ".join(str(refusal) for refusal in refused)
+        named = "; ".join(str(refusal) for refusal in refused)
+        missed = [line for line in _runner_verdicts(output) if line not in named]
+        return f"{named} · {' · '.join(missed)}" if missed else named
     written = _write_gate_output(repo_root, output) if repo_root is not None else None
     where = (
         f"the full output is in {GATE_OUTPUT_DUMP.as_posix()}" if written else "it was not captured"

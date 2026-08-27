@@ -1,0 +1,1 @@
+- A hook that refuses an engine-run `git commit` is now reported by the check that failed and the `checks failed: N/M` summary, never by warning lines alone; the loop's own tracker-sync commit is retried once and says so, and a landing that fails on it leaves the lane ready to land instead of re-dispatching it and pausing the rest of the pass.
