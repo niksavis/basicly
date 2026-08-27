@@ -138,13 +138,14 @@ def test_a_unit_parked_in_validate_is_counted_and_driven_by_one_set(
     assert [(item.issue_id, item.route) for item in routed] == [("epic.1", "merged")]
 
 
-def test_admit_takes_the_pass_own_lanes_off_the_headroom(
+def test_admit_does_not_charge_the_pass_for_its_own_lanes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A limit of three with one unlanded admits two more, in dispatch order.
+    """A limit of three with one unlanded admits all three ready lanes, not two.
 
-    The pass's own admissions count, which is the whole difference between a bound
-    on unlanded work and a bound that resets whenever the queue happens to be empty.
+    The defect this pins (basicly-08rnmd): ``limit - downstream`` was read as a quota
+    on the pass, so a cohort larger than the remainder was split and a slot idled with
+    a review queue that had room. Only work *already* downstream reduces the bound.
     """
     _limit(monkeypatch, 3)
     _phases(monkeypatch, {"epic.9": "verify"})
@@ -152,10 +153,56 @@ def test_admit_takes_the_pass_own_lanes_off_the_headroom(
 
     bound = wip.admit(Path(), ready, (*ready, _lane("epic.9")))
 
-    assert [lane.issue_id for lane in bound.admitted] == ["epic.1", "epic.2"]
-    assert [lane.issue_id for lane in bound.refused] == ["epic.3"]
+    assert [lane.issue_id for lane in bound.admitted] == ["epic.1", "epic.2", "epic.3"]
+    assert bound.refused == ()
     assert bound.downstream == ("epic.9",)
     assert not bound.stalled
+
+
+def test_admit_takes_a_full_cohort_while_the_review_queue_has_room(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The AC's first demonstration: 10 ready, limit 5, nothing downstream, 10 admitted.
+
+    The reported shape was the same with six: five started and the sixth was refused
+    against a limit that had five units of room. Concurrency, not this bound, is what
+    decides how many of the ten run at once, so a lane admitted here is never one the
+    pass cannot house.
+    """
+    _limit(monkeypatch, 5)
+    _phases(monkeypatch, {})
+    ready = tuple(_lane(f"epic.{index}") for index in range(1, 11))
+
+    bound = wip.admit(Path(), ready, ready)
+
+    assert len(bound.admitted) == 10
+    assert bound.refused == ()
+    assert bound.downstream == ()
+    assert "0/5 unlanded downstream of build" in bound.coverage
+    assert "10 lane(s) admitted" in bound.coverage
+
+
+def test_admit_holds_the_whole_cohort_once_the_limit_stands_downstream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The AC's second demonstration: 5 unlanded against a limit of 5 admits nothing.
+
+    The other half of the correction — dropping the per-pass quota must not turn the
+    bound off. Five units in the parked phases refuse every ready lane and the pass
+    escalates, which is what makes review the constraint that binds.
+    """
+    _limit(monkeypatch, 5)
+    parked = tuple(_lane(f"epic.{index}") for index in range(1, 6))
+    _phases(monkeypatch, dict.fromkeys((lane.issue_id for lane in parked), "verify"))
+    ready = (_lane("epic.6"), _lane("epic.7"))
+
+    bound = wip.admit(Path(), ready, (*ready, *parked))
+
+    assert bound.admitted == ()
+    assert [lane.issue_id for lane in bound.refused] == ["epic.6", "epic.7"]
+    assert len(bound.downstream) == 5
+    assert bound.stalled
+    assert "5 unit(s) past build" in bound.reason
 
 
 def test_admit_names_the_limit_in_the_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -307,3 +354,43 @@ def test_a_second_lane_is_refused_while_the_first_is_unlanded(
     assert dispatched == ["epic.2"]
     assert [outcome.issue_id for outcome in admitted] == ["epic.2"]
     assert not admitted[0].refused
+
+
+def test_a_ten_lane_cohort_dispatches_whole_against_a_limit_of_five(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The AC's demonstration at the dispatch surface: 10 ready, limit 5, cap 10, 0 downstream.
+
+    Where the defect was observed (basicly-08rnmd): six ready lanes under a limit of
+    five and a concurrency of 10 dispatched five, and the sixth's refusal named a bound
+    with nothing standing downstream of build. Asserted through ``dispatch_lanes`` and
+    not ``admit`` alone, because what idled was a slot the pass held and never used.
+    """
+    lanes = tuple(_lane(f"epic.{index}") for index in range(1, 11))
+    session = _session(*lanes)
+    _ready(monkeypatch)
+    _limit(monkeypatch, 5)
+    _phases(monkeypatch, {})
+    dispatched: list[str] = []
+    monkeypatch.setattr(
+        supervise,
+        "_dispatch_lane",
+        lambda _r, _s, lane, *_a, **_k: (
+            dispatched.append(lane.issue_id)
+            or supervise.LaneOutcome(
+                issue_id=lane.issue_id,
+                runner_name="manual",
+                result=None,
+                needs_fact=None,
+                occupancy=None,
+                overrun=False,
+                detail="test",
+            )
+        ),
+    )
+
+    outcomes = supervise.dispatch_lanes(Path(), session, cap=10)
+
+    assert sorted(dispatched) == sorted(lane.issue_id for lane in lanes)
+    assert len(outcomes) == 10
+    assert not any(outcome.refused for outcome in outcomes)

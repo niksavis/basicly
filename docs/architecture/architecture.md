@@ -1919,6 +1919,11 @@ bounds how much finished work waits for review. A pass can exhaust the downstrea
 stay well inside the concurrency cap. A lower downstream limit makes review the binding
 constraint, instead of slots or tokens.
 
+**Gate 4 counts work that already stands downstream, not the pass's own admissions.** Below
+the limit, every ready lane is admitted and the concurrency cap decides how many run at
+once. At the limit or above, the gate admits nothing and every held lane names the limit.
+Sources: `wip.admit` and `[policy] max_downstream_wip` [verified 2026-08-27].
+
 ### 28.3 The decision queue
 
 **One durable decision queue.** An item is a comment marker on the affected issue. Its id is

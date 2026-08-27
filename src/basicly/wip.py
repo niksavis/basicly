@@ -16,12 +16,12 @@ what ``supervise.advance_parked`` imports and drives each pass: what drains the 
 exactly what the bound counts, so a blocked pass is not a wedged one. A closed unit is
 done and counts for nothing; a unit still building has produced nothing to review yet.
 
-**The pass's own admissions count toward the limit**, which is the one place this
-goes beyond a literal reading of the predicate. Checking only what is *already*
-downstream would admit a whole cohort at once whenever the queue happened to be
-empty, and the cohort is the case the requirement is about. So the bound is on
-unlanded work at all times: ``limit - downstream`` lanes start, the rest are refused
-naming the limit, and they are dispatched by a later pass once earlier work lands.
+**The pass's own admissions do not count toward the limit** (basicly-08rnmd). This
+is a gate on what already stands downstream, not a per-pass quota: below the limit
+every ready lane starts and ``[worktree] concurrency`` decides how many of them run
+at once, at or above it none starts and all are refused naming the limit. Charging a
+pass for its own cohort idled half a ten-slot pass while the review queue was empty
+— the cost the bound exists to prevent, not one for it to impose.
 
 This module knows nothing of lanes, worktrees or runners: it works over anything
 carrying an ``issue_id`` (:class:`Unit`) and hands the caller back its own objects, so
@@ -90,8 +90,8 @@ class WipAdmission[T: Unit]:
 
         The count, not the ids: which units to go and land is the *caller's* half of
         the message (``supervise.dispatch_lanes`` appends it from :attr:`downstream`),
-        because a lane held with nothing downstream — a limit smaller than the pass —
-        has a reason but no one to name.
+        so a caller that renders the refusal differently is not made to strip a list
+        back out of a sentence.
         """
         return (
             f"downstream work in progress is at the [policy] max_downstream_wip limit "
@@ -151,8 +151,8 @@ def admit[T: Unit](
     *ready* is the pass's dispatch-ordered lanes and *parked* the session's live
     units, the ones a phase read might find downstream; *exclude* drops one id from
     that count, which is how a session's anchoring root stays out of a tally of the
-    work it is the parent of. Dispatch order is preserved, so the lanes held are the
-    lowest-ranked ones rather than an arbitrary subset.
+    work it is the parent of. The split is all-or-nothing — the count that decides it
+    is of work already downstream — and dispatch order is preserved either way.
 
     The limit is read here rather than passed in so no dispatch path can bypass the
     bound by forgetting to look it up, which is the same rule ``dispatch_lanes``
@@ -162,12 +162,12 @@ def admit[T: Unit](
     downstream = downstream_units(
         repo_root, (unit.issue_id for unit in parked if unit.issue_id != exclude)
     )
-    headroom = max(0, limit - len(downstream))
+    at_limit = len(downstream) >= limit
     return WipAdmission(
         limit=limit,
         downstream=downstream,
-        admitted=tuple(ready[:headroom]),
-        refused=tuple(ready[headroom:]),
+        admitted=() if at_limit else tuple(ready),
+        refused=tuple(ready) if at_limit else (),
     )
 
 
