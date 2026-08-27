@@ -5931,3 +5931,37 @@ def test_the_stall_flag_names_the_bound_a_quiet_lane_will_actually_reach(
         "no commits and no file changes for 900s; the run continues "
         "until the quiet bound (1800s), still holding a lane slot"
     ]
+
+
+_CLAUDE = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "claude")
+
+
+def test_a_lane_build_dispatch_inherits_the_features_seed(tmp_path: Path) -> None:
+    """BUILD resolves to `implementer`, the one role the policy lets share a session."""
+    runner.record_session_seed(tmp_path, "basicly-2kh170", "claude", "s-1")
+
+    seed = supervise._lane_seed(tmp_path, "basicly-2kh170", _CLAUDE)
+
+    assert seed == runner.SessionSeed("s-1", exists=True)
+
+
+def test_only_a_lane_that_returned_clean_records_its_new_seed(tmp_path: Path) -> None:
+    """A killed dispatch may have created nothing, and the dead id would cost every lane."""
+    minted = runner.SessionSeed("s-new", exists=False)
+    failed = runner.RunResult("claude", (), executed=True, returncode=1)
+
+    supervise._keep_lane_seed(tmp_path, "basicly-2kh170", _CLAUDE, minted, failed)
+    assert runner.session_seed(tmp_path, "basicly-2kh170", "claude").exists is False
+
+    ok = runner.RunResult("claude", (), executed=True, returncode=0)
+    supervise._keep_lane_seed(tmp_path, "basicly-2kh170", _CLAUDE, minted, ok)
+    assert runner.session_seed(tmp_path, "basicly-2kh170", "claude") == runner.SessionSeed(
+        "s-new", exists=True
+    )
+
+
+def test_a_family_that_cannot_fork_is_never_handed_a_seed(tmp_path: Path) -> None:
+    """Recording an id no session backs would make every later lane fork a ghost."""
+    codex = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "codex")
+
+    assert supervise._lane_seed(tmp_path, "basicly-2kh170", codex) is None

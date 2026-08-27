@@ -184,3 +184,32 @@ def resolve_named_role(repo_root: Path, spec: HasAgentStyle, role: str) -> str |
         return None
     current = SUPERSEDED_ROLES.get(role.strip().lower(), role)
     return current if role_is_available(repo_root, spec.name, current) else None
+
+
+# Which roles inherit a seeded session (basicly-2kh170). One entry, covering repair too:
+# REPAIR maps to `implementer` in :data:`ROLE_BY_PHASE`. Measured, not assumed — an
+# implementer re-reads the same corpus every dispatch and a fork bills it as a cache read.
+INHERITING_ROLES: frozenset[str] = frozenset({"implementer"})
+
+# Absence from that set is how a cold role is spelled; a second table would be policy no
+# dispatch path reads. Independence is what the judging four are *for* — a reviewer,
+# validator, decider or retrospector forked from the session that wrote the code cannot
+# refute it. The curator reads the landed diff; the decomposer runs once per feature.
+
+
+def inherits_context(role: str | None) -> bool:
+    """Whether a dispatch as *role* should fork a seeded session rather than start cold.
+
+    None — no persona owns the phase, or the family cannot select one — is False, so an
+    unspecialised dispatch behaves as it does today.
+    """
+    return role is not None and role.strip().lower() in INHERITING_ROLES
+
+
+def phase_inherits_context(phase: str) -> bool:
+    """Whether the role driving *phase* forks a seeded session (the composition).
+
+    The entry point a dispatch path should use, for :func:`resolve_role`'s reason: no call
+    site then spells the phase-to-role hop a second time.
+    """
+    return inherits_context(role_for_phase(phase))

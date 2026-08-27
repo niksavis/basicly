@@ -100,6 +100,22 @@ PROMPT_VIA = ("arg", "stdin")
 AGENT_NAME_FLAG = "agent-name"
 AGENT_STYLES = (AGENT_NAME_FLAG,)
 
+# How a family spells "start this dispatch from an existing session" (RunnerSpec.resume_style,
+# basicly-2kh170). claude mints a named session with `--session-id <uuid>` and re-enters it with
+# `--resume <uuid> --fork-session`, which issues a *new* id and leaves the named one intact, so
+# one seed serves every later dispatch — probed on claude 2.1.247, 2026-08-27, not recalled.
+# copilot and codex are absent for the same kind of parity gap `agent_style` declares: copilot
+# resumes but has no fork flag, so two dispatches off one seed would interleave in one
+# conversation, and codex spells resume as a subcommand this argv shape cannot express.
+RESUME_FORK_FLAGS = "resume-fork"
+RESUME_STYLES = (RESUME_FORK_FLAGS,)
+
+# What claude prints when `--resume` names a session it no longer holds (probed verbatim, 2.1.247,
+# exit 1 with empty stdout). Sessions are pruned on their own schedule, so a recorded seed can
+# vanish under a live feature; matching this is what turns that into a cold dispatch rather than
+# a lost round.
+LOST_SESSION_MARKER = "No conversation found with session ID"
+
 # How a family spells a tool denial on its argv (RunnerSpec.deny_style).
 # `--deny-tool=<spec>` once per entry (copilot, verified against its --help),
 # versus a single `--disallowedTools` taking every name after it (claude).
@@ -195,6 +211,10 @@ class RunnerSpec:
     # from `deny_style` because the two are independent: codex denies tools and
     # cannot select a role.
     agent_style: str | None = None
+    # How this family spells session inheritance, or None when it cannot inherit at all
+    # (basicly-2kh170). Independent of the other two styles: a family may select a role and
+    # still have no forkable session.
+    resume_style: str | None = None
     # Invocation-time sandbox/approval guardrails (basicly-t0kt). Codex forbids
     # overriding approval_policy/sandbox_mode at repo scope in .codex/config.toml
     # by design, so safe defaults cannot be projected as committed catalog output;
@@ -256,6 +276,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         ("claude", "-p", PROMPT_PLACEHOLDER),
         deny_style=DISALLOWED_TOOLS_FLAG,
         agent_style=AGENT_NAME_FLAG,
+        resume_style=RESUME_FORK_FLAGS,
         usage_format=CLAUDE_STREAM_JSON,
         context_window=ADAPTER_WINDOWS["claude"].tokens,
         context_window_source=ADAPTER_WINDOW,
@@ -326,15 +347,20 @@ class RunResult:
     # tier, from which input, honoured or not) is the part telemetry needs and
     # cannot re-derive afterwards. None when no model and no tier were in play.
     model_resolution: models.ModelResolution | None = None
+    # The seed this dispatch inherited or created (basicly-2kh170). Carried back because
+    # only a returned dispatch proves the session exists, and `exists=False` on a clean
+    # result is the caller's cue to record it: :func:`record_session_seed`.
+    seed: SessionSeed | None = None
 
 
-def format_command(
+def format_command(  # noqa: PLR0913 — an argv fact each; a bundle hides which are optional
     spec: RunnerSpec,
     prompt: str,
     *,
     capture_usage: bool = False,
     session_id: str | None = None,
     role: str | None = None,
+    seed: SessionSeed | None = None,
 ) -> list[str]:
     """Return the exact argv *spec* would execute for *prompt*.
 
@@ -369,6 +395,9 @@ def format_command(
     generated here, so the argv stays a pure function of its inputs — :func:`run`
     mints one per dispatch and hands the same value back on the result.
 
+    *seed* (basicly-2kh170) is the session this dispatch inherits or creates, per
+    :func:`_apply_seed`; None is the cold dispatch every call site made before it existed.
+
     Raises for a handoff runner (it has no command line) and for an arg-injected
     template missing its prompt placeholder — a silent drop would send an empty
     prompt.
@@ -389,7 +418,7 @@ def format_command(
     # role goes outermost of all, so `--agent <role>` reads first on a logged argv
     # — that line is how an operator tells a specialised dispatch from a default
     # one, and it is worth nothing if it is buried behind six tool denials.
-    argv = _apply_deny_tools(spec, argv)
+    argv = _apply_seed(spec, _apply_deny_tools(spec, argv), seed)
     argv = _apply_role(spec, _apply_model(spec, _apply_sandbox(spec, argv)), role)
     return _apply_usage(spec, argv, session_id) if capture_usage else argv
 
@@ -536,6 +565,94 @@ def _apply_role(spec: RunnerSpec, argv: list[str], role: str | None) -> list[str
             f"known: {list(AGENT_STYLES)}"
         )
     return [argv[0], "--agent", role, *argv[1:]]
+
+
+@dataclass(frozen=True)
+class SessionSeed:
+    """The one session a feature's inheriting dispatches share (basicly-2kh170).
+
+    ``exists`` is the whole of the branch :func:`_apply_seed` takes, and it is a recorded
+    fact rather than a guess: claude refuses ``--session-id`` on an id it already holds
+    ("Session ID already in use", exit 1), so minting and forking are not interchangeable.
+    A seed is recorded only once a dispatch has come back clean, which is why the flag can
+    be trusted — a first dispatch that died before creating the session leaves nothing
+    behind and the next one mints again.
+    """
+
+    session_id: str
+    exists: bool
+
+
+# Where the per-feature seeds live, beside the run records and self-ignored the same way.
+# Repo-root rather than per-worktree on purpose: lanes of one feature run in separate
+# worktrees, and a cross-directory fork was measured to work (16,197 of 36,963 input tokens
+# served as cache read, 2026-08-27), so the seed has to outlive any single tree.
+SESSION_SEEDS_FILE = run_record.USAGE_DIR / "session-seeds.json"
+
+_SEED_LOCK = threading.Lock()
+
+
+def _read_seeds(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def session_seed(repo_root: Path, feature_id: str, family: str) -> SessionSeed:
+    """The seed *family*'s dispatches on *feature_id* share, minting one when none exists.
+
+    Keyed by family as well as feature because a seed *is* one agent's session: a copilot
+    dispatch cannot fork a claude conversation, so sharing the key would hand it an id its
+    CLI would refuse. A minted seed comes back ``exists=False`` and is not yet written —
+    :func:`record_session_seed` is what commits it, after the dispatch that creates it.
+    """
+    known = _read_seeds(repo_root / SESSION_SEEDS_FILE).get(feature_id)
+    if isinstance(known, dict) and isinstance(known.get(family), str) and known[family]:
+        return SessionSeed(known[family], exists=True)
+    return SessionSeed(str(uuid.uuid4()), exists=False)
+
+
+def record_session_seed(repo_root: Path, feature_id: str, family: str, session_id: str) -> None:
+    """Record that *session_id* now exists, so the next dispatch forks instead of minting."""
+    path = repo_root / SESSION_SEEDS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Self-ignored on creation, as `run_record.record` does it: in a consumer repo this may be
+    # the first writer to `.basicly/usage/`, and a committed seed points at a session that
+    # exists on exactly one machine.
+    gitignore = path.parent / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text("*\n", encoding="utf-8")
+    with _SEED_LOCK:
+        data = _read_seeds(path)
+        entry = data.get(feature_id)
+        if not isinstance(entry, dict):
+            entry = {}
+            data[feature_id] = entry
+        entry[family] = session_id
+        tmp = path.with_suffix(f".{os.getpid()}.json.tmp")
+        tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        tmp.replace(path)
+
+
+def _apply_seed(spec: RunnerSpec, argv: list[str], seed: SessionSeed | None) -> list[str]:
+    """Inject the family's session-inheritance flags for *seed* (basicly-2kh170).
+
+    Dropped rather than raised for a family with no ``resume_style``, on ``_apply_role``'s
+    asymmetry: a lost seed is a dispatch that starts cold, which is what every dispatch did
+    before this existed, while a lost denial is a lost guarantee.
+    """
+    if seed is None or spec.resume_style is None:
+        return argv
+    if spec.resume_style != RESUME_FORK_FLAGS:
+        raise ValueError(
+            f"runner {spec.name!r} has resume_style {spec.resume_style!r}; "
+            f"known: {list(RESUME_STYLES)}"
+        )
+    if seed.exists:
+        return [argv[0], "--resume", seed.session_id, "--fork-session", *argv[1:]]
+    return [argv[0], "--session-id", seed.session_id, *argv[1:]]
 
 
 def _apply_deny_tools(spec: RunnerSpec, argv: list[str]) -> list[str]:
@@ -1442,6 +1559,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     on_event: EventSink | None = None,
     bounds: DispatchBounds | None = None,
     role: str | None = None,
+    seed: SessionSeed | None = None,
 ) -> RunResult:
     """Invoke *spec* on *prompt* in *cwd*, capturing output.
 
@@ -1489,6 +1607,10 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     :attr:`RunResult.stopped` naming the bound, because a bound stop *is* a hard
     kill — same tree kill, same partial transcript, same salvage — and only the
     attribution differs.
+
+    *seed* is the session this dispatch inherits (basicly-2kh170). A fork whose seed the
+    agent no longer holds is retried once on a freshly minted one, so a pruned session
+    costs a re-read and not the round.
     """
     # Resolve first, and ahead of the handoff return, so a refusal costs no
     # process and a handoff still records that its tier could not be honoured.
@@ -1506,7 +1628,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         str(uuid.uuid4()) if capture_usage and spec.usage_format == COPILOT_SESSION_STORE else None
     )
     argv = format_command(
-        spec, prompt, capture_usage=capture_usage, session_id=session_id, role=role
+        spec, prompt, capture_usage=capture_usage, session_id=session_id, role=role, seed=seed
     )
     if dry_run:
         return RunResult(
@@ -1515,6 +1637,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
             executed=False,
             session_id=session_id,
             model_resolution=carried,
+            seed=seed,
         )
     stdin = prompt if spec.prompt_via == "stdin" else None
     # An arg-prompt dispatch must get stdin *closed*, not inherited (basicly-jr0l.36).
@@ -1587,7 +1710,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     # can leak a credential the agent echoed (basicly-3p2i). Network egress is not
     # sandboxed here — that is agent-layer (codex basicly-t0kt, claude/copilot
     # config); basicly cannot portably restrict a generic subprocess.
-    return RunResult(
+    result = RunResult(
         spec.name,
         tuple(argv),
         executed=True,
@@ -1599,6 +1722,33 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         stopped=stopped,
         session_id=session_id,
         model_resolution=carried,
+        seed=seed,
+    )
+    if not _seed_was_lost(seed, result):
+        return result
+    # Re-seed rather than fall back cold: a cold retry would leave the dead id recorded and
+    # every later dispatch on this feature would pay the same failed fork.
+    return run(
+        spec,
+        prompt,
+        cwd,
+        capture_usage=capture_usage,
+        timeout=timeout,
+        on_event=on_event,
+        bounds=bounds,
+        role=role,
+        seed=SessionSeed(str(uuid.uuid4()), exists=False),
+    )
+
+
+def _seed_was_lost(seed: SessionSeed | None, result: RunResult) -> bool:
+    """Whether *result* failed only because the seed it forked from is gone."""
+    return (
+        seed is not None
+        and seed.exists
+        and not result.timed_out
+        and result.returncode != 0
+        and LOST_SESSION_MARKER in result.stderr
     )
 
 

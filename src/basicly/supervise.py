@@ -2608,6 +2608,42 @@ def record_unstarted_dispatch(
     )
 
 
+def _lane_seed(
+    repo_root: Path, root_issue: str, spec: runner.RunnerSpec
+) -> runner.SessionSeed | None:
+    """The session a lane's BUILD dispatch inherits, or None when its role stays cold.
+
+    Keyed on the *root issue* because a corpus belongs to the feature, not the lane: every
+    lane after the first forks what its predecessor read rather than re-reading it
+    (basicly-2kh170). BUILD resolves to `implementer`, the one role the policy lets inherit,
+    so the question is asked of :mod:`basicly.roles` rather than answered here.
+
+    A family with no ``resume_style`` gets None: the argv drops such a seed but the store
+    would still record it, and every later lane would fork a session that never existed.
+    """
+    if spec.resume_style is None or not roles.phase_inherits_context("build"):
+        return None
+    return runner.session_seed(repo_root, root_issue, runner.model_family(spec))
+
+
+def _keep_lane_seed(
+    repo_root: Path,
+    root_issue: str,
+    spec: runner.RunnerSpec,
+    seed: runner.SessionSeed | None,
+    result: runner.RunResult,
+) -> None:
+    """Record a seed this dispatch created, so the next lane forks it instead of minting.
+
+    Only a clean return proves the session exists — a refused or killed dispatch may have
+    left nothing to resume, and recording that id would cost every later lane a failed fork.
+    """
+    if seed is not None and not seed.exists and result.returncode == 0:
+        runner.record_session_seed(
+            repo_root, root_issue, runner.model_family(spec), seed.session_id
+        )
+
+
 def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane input
     repo_root: Path,
     session: SessionState,
@@ -2703,6 +2739,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         # a long test suite, and the stream emits nothing inside that same long tool
         # call. An adapter with no stream to read contributes a constant, which
         # leaves the probe exactly the git reading it was.
+        seed = _lane_seed(repo_root, session.root_issue, spec)
         stream = LaneStream()
         watchdog = runner.StallWatchdog(
             runner_config.stall_after,
@@ -2746,7 +2783,9 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
                 bounds=bounds,
                 # Passed no role at all until basicly-4xmu: 0 of 346 reached an argv.
                 role=roles.resolve_role(repo_root, spec, "build"),
+                seed=seed,
             )
+        _keep_lane_seed(repo_root, session.root_issue, spec, seed, result)
     except (RuntimeError, OSError, ValueError) as exc:
         record_unstarted_dispatch(repo_root, lane.issue_id, spec, exc)
         raise

@@ -1,0 +1,36 @@
+# Per-role context inheritance (basicly-2kh170). An implementer re-read the repo from zero on
+# every dispatch; it now forks the session its predecessor on the same feature seeded, while
+# every judging role stays cold because independence is what those roles are for.
+#
+# ## noqa_debt: one PLR0913 on `runner.format_command`
+#
+# The function grew a sixth keyword, `seed`. Each of the six is an independent fact about the
+# argv — the prompt, usage capture, the copilot store key, the role, the seed — and the
+# alternative rejected was bundling them into an options dataclass: that hides which are
+# optional behind a type and puts a second spelling of the argv's shape one indirection away
+# from the function that builds it. `run()` above it carries the same suppression for the same
+# reason. It names its reason, so `unreasoned_count` does not move.
+[ratchet.noqa_debt.frozen]
+PLR0913 = 1
+
+# ## comment_density: roles.py rebaselined by 0.1
+#
+# `roles.py` is a policy module: it holds 8 tokens of data and the argument for them, so it
+# was already at 75.0% against a 50% cap and any addition at the module's own density pushes
+# the ratio up. This one is code-heavier than the module — 89 code tokens against 266 prose,
+# 74.9% — and it still lands at 75.2, because the denominator is small.
+#
+# Prose was cut first and the cut stopped where the remainder was evidence: the cache-read
+# measurement that justifies forking at all, and the reason each judging role is refused one.
+# What went was narration — 116 prose tokens across two passes, including a whole second
+# table of cold-role reasons that no dispatch path read (vulture found it, correctly: the
+# roles that stay cold need no wiring to keep doing what they already do).
+#
+# The other ratchet is the proof that this is not prose growth: `roles.py` is 2137 -> 2485
+# tokens against a 4000 cap it is under, so size was never the binding constraint. Rebaselined
+# rather than waived, which would delete the module's ceiling to buy a tenth of a point.
+[ratchet.comment_density]
+rebaseline_reason = "a policy module holding 8 tokens of data and the argument for them was already at 75.0% against a 50% cap, so an addition at its own density raises the ratio. This one is code-heavier than the module (89 code tokens to 266 prose, 74.9%) and still lands at 75.2 because the denominator is small. 116 prose tokens were cut first, stopping at the cache-read measurement and the per-role refusals; a waiver would delete the ceiling to buy a tenth of a point."
+
+[ratchet.comment_density.rebaselined]
+"src/basicly/roles.py" = 0.1
