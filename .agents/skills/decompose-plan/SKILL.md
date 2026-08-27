@@ -86,6 +86,20 @@ it reads. Declare it anyway. One bead moved from 78,709 to 197,646 to 245,466
 tokens on an unchanged diff as its scope was corrected, and the version that
 under-declared was the version that collided at landing.
 
+## Name the child's own file, never a directory glob
+
+The band prices every file a scope glob matches, not the files the change will
+touch. On 2026-08-27 a plan declared `changelog.d/*.md` and `basicly.d/*.toml` on
+each of five children; the estimator read all 147 fragments into every lane and
+forecast 50M tokens each. The same day `seu7rx` was refused at 305,831 tokens
+because its scope said `.claude/skills/**` for a change to five skills. Name the
+file the child will create: `changelog.d/<epic-id>.<n>.<category>.md` and
+`basicly.d/<epic-id>.<n>.toml`, where `<n>` is the child's position in the plan
+(children are minted `<epic-id>.1`, `.2`, ...). For projected output name the
+projected file, `.claude/skills/<name>/SKILL.md`, not the tree. A scope whose glob
+matches more than a handful of files is a population, and the dry run should make
+you say why (basicly-tskiym adds the warning).
+
 ## Flatten, never deepen
 
 A child that needs children of its own is a child you cut wrong. Nesting moves

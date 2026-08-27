@@ -119,6 +119,11 @@ instructions: |
     store half-done: `update --estimate 5` is refused with *--estimate has no owned-ledger
     equivalent*, and `dep add <a> <b>` with no `-t` for the same reason — the edge type is
     part of the fact, not a default.
+  - **A status the record once held is dropped as a replay.** Event ids are content
+    digests, so `update <id> --status open` on a deferred record matches the `open` it
+    was created with and appends nothing; the command still exits 0 and prints *already
+    recorded* (basicly-bj8kks). Reactivate with `--status in_progress`, which is in the
+    ready set, and read the status back with `show` — never the exit code.
 
   ## Safe Defaults
 
