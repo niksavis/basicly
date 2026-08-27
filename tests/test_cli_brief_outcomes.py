@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import dispatch_brief, run_record, tracker_paths, usage_report
+from basicly import contention, dispatch_brief, run_record, tracker_paths, usage_report
 from tests.test_cli import run_basicly
 
 if TYPE_CHECKING:
@@ -32,15 +32,53 @@ def _a_tracked_id(root: Path) -> str:
     raise AssertionError("the committed ledger is empty, so no id can be briefed")
 
 
+def _a_sibling_fenced_id(root: Path) -> str:
+    """A record from the committed ledger whose root has an open sibling declaring scope.
+
+    Derived from the checkout's own tracker rather than seeded, for the reason
+    ``_a_tracked_id`` is: the fence reads a real ``parent-child`` graph and a real
+    ``## Scope``, and a fixture that built one would be asserting on the fixture.
+    """
+    for log in sorted((root / tracker_paths.LEDGER_DIR_NAME).glob("events-*.jsonl")):
+        for line in log.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            record = str(json.loads(line)["record"])
+            if contention.sibling_scopes(root, record):
+                return record
+    raise AssertionError("no committed record has an open sibling declaring a scope")
+
+
 def test_brief_prints_the_assemblers_own_output(work_repo: Path) -> None:
-    """A preview that differs from the dispatch is worse than no preview."""
+    """A preview that differs from the dispatch is worse than no preview.
+
+    Composed through both assemblers rather than the base prompt alone. Held to the base
+    alone, this passed for every record whose root has no open scoped sibling — which is
+    most of the ledger — so it would have read green with the fence wired nowhere.
+    """
     issue = _a_tracked_id(work_repo)
     result = run_basicly(work_repo, "brief", issue)
 
     assert result.returncode == 0, result.stderr
     # Byte-exact, not whitespace-normalised: rich rewraps at the terminal width
     # unless soft_wrap is set, and a normalised compare would call that identical.
-    assert result.stdout.rstrip("\n") == dispatch_brief.dispatch_prompt(issue)
+    assert result.stdout.rstrip("\n") == contention.with_scope_fence(
+        work_repo, issue, dispatch_brief.dispatch_prompt(issue)
+    )
+
+
+def test_brief_prints_the_ground_an_open_sibling_declares(work_repo: Path) -> None:
+    """The reproduction at the surface the bead names, against the real record graph.
+
+    A positive control on the test above: that one is an equality against a fence which
+    is empty for most ids, so on its own it cannot tell a wired fence from an unwired one.
+    """
+    issue = _a_sibling_fenced_id(work_repo)
+    result = run_basicly(work_repo, "brief", issue)
+
+    assert result.returncode == 0, result.stderr
+    assert "Scope this pass has already handed out" in result.stdout
+    assert " owns `" in result.stdout
 
 
 def test_brief_requires_an_issue_id(work_repo: Path) -> None:
