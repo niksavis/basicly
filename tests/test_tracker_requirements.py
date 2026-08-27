@@ -375,7 +375,8 @@ def test_r8_a_contended_write_lock_does_not_spend_the_lanes_rework_budget(
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: failed)
     monkeypatch.setattr(verify, "rerun_failures", lambda *_a, **_k: contended)
 
-    result = merge._verify_for_landing(tmp_path, "lane", tmp_path, "full", "basicly-x")
+    clock = merge._Landing(tmp_path, "basicly-x")
+    result = merge._verify_for_landing("lane", tmp_path, "full", clock)
 
     assert result is not None
     assert result.status == merge.VERIFY_UNRELIABLE

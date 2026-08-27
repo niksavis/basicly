@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -94,6 +95,14 @@ class CheckResult:
     # reproduce it: a landing briefed a repair with the whole-suite command because the
     # per-check argv lived in a config the brief could not read (basicly-3oxf0d).
     command: tuple[str, ...] = ()
+    # Wall clock for this check's own subprocess, which is the only place a verify
+    # run's cost can be attributed from: the run streams its children's output and
+    # keeps no clock, so a landing could say `verify: 132s` and nothing could say
+    # which of 38 checks that was. Measured on this tree 2026-08-27, `pytest` is
+    # 84.4s of a 132.4s full run and the three `pyright-*` platform passes another
+    # 32.2s — 88% in four checks (basicly-tjhjmk). Zero for a check that never
+    # spawned (a `staged` skip, a spawn that raised), which is not a fast check.
+    duration_s: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -258,6 +267,7 @@ def _run(
         if not files:
             return CheckResult(name, "skip", 0)
         command += files
+    started = time.perf_counter()
     try:
         # `command` is the repo's own `[[verify.checks]]` argv plus staged filenames —
         # both inside the trust boundary, since running a repo's declared checks *is* the
@@ -298,6 +308,7 @@ def _run(
         proc.returncode,
         output=output,
         command=tuple(command),
+        duration_s=round(time.perf_counter() - started, 3),
     )
 
 
