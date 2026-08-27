@@ -72,7 +72,7 @@ hand-written copy of them was stale within days:
 | Measure | Value |
 | --- | --- |
 | Engine modules (`src/basicly/*.py`) | 119 |
-| Test files | 246 |
+| Test files | 248 |
 | `[[verify.checks]]` declared | 39 |
 | …of which run in `--mode fast` | 34 |
 | …of which run in `--mode full` | 38 |
@@ -128,8 +128,8 @@ _run_agent call sites   loop.py:530        _dispatch_validation
                         loop.py            _dispatch_reviews    (once per lens)
                         loop.py            _dispatch_runner     (build)
                         loop.py:1699       _repair_in_place
-                        loop.py:1824       _run_subtask
-                        loop.py:2250       _retrospective
+                        loop.py:1833       _run_subtask
+                        loop.py:2251       _retrospective
 ```
 
 Every line above cites the *defining* line of the symbol named beside it, not the call inside it,

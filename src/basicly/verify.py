@@ -90,6 +90,10 @@ class CheckResult:
     # (basicly-kjc5.56). Empty for a streamed run, which is every normal one —
     # a gate's output belongs on the operator's terminal, not in memory.
     output: str = ""
+    # The argv run, staged filenames included, so a consumer holding only the result can
+    # reproduce it: a landing briefed a repair with the whole-suite command because the
+    # per-check argv lived in a config the brief could not read (basicly-3oxf0d).
+    command: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -249,6 +253,7 @@ def _run(
                 1,
                 "git diff --cached failed — cannot determine staged files, "
                 "refusing to skip the check",
+                command=tuple(command),
             )
         if not files:
             return CheckResult(name, "skip", 0)
@@ -272,6 +277,7 @@ def _run(
             127,
             f"command not found: {command[0]} — install it or edit "
             f"[[verify.checks]] in basicly.toml",
+            command=tuple(command),
         )
     except OSError as exc:
         # e.g. PermissionError: a PATH candidate exists but is not executable
@@ -283,10 +289,15 @@ def _run(
             126,
             f"cannot run {command[0]} ({exc.strerror or exc}) — check "
             f"[[verify.checks]] in basicly.toml",
+            command=tuple(command),
         )
     output = f"{proc.stdout or ''}{proc.stderr or ''}" if capture else ""
     return CheckResult(
-        name, "pass" if proc.returncode == 0 else "fail", proc.returncode, output=output
+        name,
+        "pass" if proc.returncode == 0 else "fail",
+        proc.returncode,
+        output=output,
+        command=tuple(command),
     )
 
 
@@ -300,6 +311,10 @@ def run_verify(repo_root: Path, mode: str, config: VerifyConfig | None = None) -
     (basicly-m0s4). Not from :func:`rerun_failures`: that re-runs only the checks
     that failed, and overwriting the run's record with a subset would leave the
     artifact describing a run that never happened.
+
+    The record gets :func:`failure_detail` applied and the returned report does not: the
+    derived line exists for a reader who has only the file, and the caller streamed the
+    real output already.
     """
     config = config or load_verify_config(repo_root)
     results = tuple(run_check(check, repo_root, mode) for check in config.for_mode(mode))

@@ -178,6 +178,12 @@ class MergeResult:
     # the message) because the queue attributes the missed coupling from them
     # (D5); empty when git reported none.
     conflicts: tuple[str, ...] = ()
+    # The checks that failed on this landing's own re-run, each with its argv and the output
+    # it printed. Carried as data for the reason *conflicts* is: the repair brief is written
+    # from it, and a landing that kept only the one-line detail left the next run to re-run
+    # the gate by hand to learn what failed (basicly-3oxf0d). Empty for an unreliable or
+    # foreign verdict, which is no evidence against the work.
+    checks: tuple[verify.CheckResult, ...] = ()
     # Lanes whose records invalidated a tracker-wide gate, for VERIFY_FOREIGN.
     # Carried as data for the same reason *conflicts* is: the caller records the
     # attribution against them, and must not have to parse it back out of the
@@ -353,10 +359,19 @@ def _verify_for_landing(
             "verify-failed",
             f"verify {verify_mode} failed on {failures}: the rebuild this landing ran before "
             f"the gate did not make a declared generated path current — {'; '.join(unrebuilt)}",
+            checks=_failed_checks(rerun),
         )
     return MergeResult(
-        name, "verify-failed", f"verify {verify_mode} failed: {_verify_reasons(rerun) or failures}"
+        name,
+        "verify-failed",
+        f"verify {verify_mode} failed: {_verify_reasons(rerun) or failures}",
+        checks=_failed_checks(rerun),
     )
+
+
+def _failed_checks(rerun: verify.VerifyReport) -> tuple[verify.CheckResult, ...]:
+    """The failures *rerun* reproduced, in the order it ran them."""
+    return tuple(result for result in rerun.results if result.status == "fail")
 
 
 def _verify_reasons(rerun: verify.VerifyReport) -> str:

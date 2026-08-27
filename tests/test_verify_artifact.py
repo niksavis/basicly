@@ -129,7 +129,12 @@ def test_the_run_artifact_never_holds_a_checks_output(
 def test_the_run_artifact_records_a_failing_run_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """It is the record of a run, not of a pass — otherwise presence means two things."""
+    """It is the record of a run, not of a pass — otherwise presence means two things.
+
+    The failure's ``detail`` names the argv that reproduces it. It read `""` until
+    basicly-3oxf0d: a landing recorded a blank one for the check that refused it and the
+    session that picked the failure up re-ran the gate by hand to learn what it said.
+    """
     monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(2))
 
     verify.run_verify(tmp_path, "full", VerifyConfig((_check("pytest", ("full",)),)))
@@ -140,8 +145,27 @@ def test_the_run_artifact_records_a_failing_run_too(
         "name": "pytest",
         "status": "fail",
         "returncode": 2,
-        "detail": "",
+        "detail": "output streamed rather than captured; reproduce with: pytest",
     }
+
+
+def test_a_passing_check_records_no_derived_detail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The false-positive half: only a failure gets a stand-in, so a pass stays silent."""
+    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(0))
+
+    verify.run_verify(tmp_path, "full", VerifyConfig((_check("ruff", ("full",)),)))
+
+    recorded = json.loads((tmp_path / verify_artifact.RUN_ARTIFACT).read_text(encoding="utf-8"))
+    assert recorded["checks"][0]["detail"] == ""
+
+
+def test_a_failure_that_never_reached_a_process_still_records_a_reason() -> None:
+    """No argv to name, so the reason says so rather than recording an empty string."""
+    outcome = verify.CheckResult("pytest", "fail", 1)
+
+    assert verify_artifact.recorded_detail(outcome) == "the check failed and reported nothing"
 
 
 def test_a_mode_with_no_checks_still_writes_a_non_empty_artifact(tmp_path: Path) -> None:
