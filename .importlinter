@@ -56,7 +56,7 @@ layers =
     dependency_graph | gate_source | label_source
     tracker
     owned_write
-    comment_rows | mirror
+    comment_rows | mirror | re_record
     write_verbs
     owned_store
     tracker_argv

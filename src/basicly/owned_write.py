@@ -18,7 +18,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from basicly import mirror, owned_store, redact, tracker_argv
+from basicly import mirror, owned_store, re_record, redact, tracker_argv
 from basicly.owned_store import TrackerDivergenceError
 
 # How a write the engine made itself says it got here — as against one the dual write
@@ -123,23 +123,10 @@ def _resolve_labels(kit_module: Any, ledger: Path, args: Sequence[str]) -> list[
                 labels.append(name)
             elif not adding and name in labels:
                 labels.remove(name)
-    return [*_without_label_flags(args), "--labels", tracker_argv.LABEL_SEPARATOR.join(labels)]
-
-
-def _without_label_flags(args: Sequence[str]) -> list[str]:
-    """*args* with each label flag and the value it consumes dropped."""
-    kept: list[str] = []
-    skip = False
-    for arg in args:
-        if skip:
-            skip = False
-            continue
-        name, sep, _ = arg.partition("=")
-        if name in tracker_argv.UPDATE_LABEL_FLAGS:
-            skip = not sep
-            continue
-        kept.append(arg)
-    return kept
+    stripped = tracker_argv.without_flags(
+        args, tracker_argv.UPDATE_LABEL_FLAGS, tracker_argv.VALUE_FLAGS["update"]
+    )
+    return [*stripped, "--labels", tracker_argv.LABEL_SEPARATOR.join(labels)]
 
 
 def _refuse_a_write_that_records_nothing(args: Sequence[str], drafts: Sequence[Any]) -> None:
@@ -264,10 +251,11 @@ def append(repo_root: Path, args: Sequence[str]) -> bool:
     drop one of the two labels.
 
     Raises:
-        TrackerDivergenceError: the kit is not installed, the write has no owned-ledger
-            translation, the write names a record the ledger does not hold, a retraction
-            names an edge nothing holds, or the append failed.
+        TrackerDivergenceError: the kit is not installed, the write has no translation or
+            carries a flag its verb cannot read, it names an absent record, a
+            retraction names an edge nothing holds, or the append failed.
     """
+    args, repeat = re_record.read_the_seams_own_flags(args)
     kit_module = owned_store.kit(repo_root)
     events = kit_module.events
     ledger = owned_store.ledger_dir(repo_root)
@@ -278,6 +266,10 @@ def append(repo_root: Path, args: Sequence[str]) -> bool:
             refuse_a_write_to_an_absent_record(kit_module, ledger, " ".join(args), drafts)
             _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
             stamped = _stamped(kit_module, drafts)
+            if repeat:
+                # After the stamp, never before: stamping rewrites the payload the id
+                # derives from.
+                stamped = re_record.at_the_generation_a_repeat_needs(kit_module, ledger, stamped)
             landed = events.append(
                 ledger,
                 stamped,

@@ -97,6 +97,20 @@ VALUE_FLAGS: dict[str, frozenset[str]] = {
     "gate report": frozenset({"--gate", "--provider", "--status", "--note", "--actor"}),
 }
 
+# The flag that says a re-record is deliberate, which `re_record` reads. Valueless, so it
+# needs no entry above: the grammar already reads a bare `--flag` as a pair with no value.
+REPEAT_FLAG = "--again"
+
+# The verbs whose flags are wholly tabulated, so one they read nothing from can be named
+# rather than dropped. Derived above, so a flag added there joins by existing. Out by
+# construction: `update` refuses an unknown flag itself, `comments add` takes its body by
+# position where a leading `-` is text, and `create` mints its id per call, so a flag it
+# half-reads collides with nothing.
+GUARDED_FLAGS: dict[str, frozenset[str]] = {
+    surface: VALUE_FLAGS[surface] | {REPEAT_FLAG}
+    for surface in ("close", "dep add", "dep remove", "gate report")
+}
+
 
 def positionals(args: Sequence[str], value_flags: Collection[str]) -> list[str]:
     """The positional words in *args*, with each value-taking flag's value consumed.
@@ -135,3 +149,36 @@ def flag_pairs(args: Sequence[str], value_flags: Collection[str]) -> list[tuple[
                 pairs.append((name, ""))
         index += 1
     return pairs
+
+
+def unreadable_flags(surface: str, args: Sequence[str]) -> list[str]:
+    """Every flag in *args* that *surface* reads nothing from, in the order given.
+
+    Empty for a surface absent from :data:`GUARDED_FLAGS`, which says that verb answers for
+    its own flags rather than that nothing is wrong.
+    """
+    known = GUARDED_FLAGS.get(surface)
+    if known is None:
+        return []
+    return [flag for flag, _ in flag_pairs(args, VALUE_FLAGS[surface]) if flag not in known]
+
+
+def without_flags(
+    args: Sequence[str], flags: Collection[str], value_flags: Collection[str]
+) -> list[str]:
+    """*args* with every flag in *flags* dropped, and the value each consumes with it.
+
+    A flag in *value_flags* takes the following token, unless it carried its own after ``=``.
+    """
+    kept: list[str] = []
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+            continue
+        name, sep, _ = arg.partition("=")
+        if name in flags:
+            skip = not sep and name in value_flags
+            continue
+        kept.append(arg)
+    return kept
