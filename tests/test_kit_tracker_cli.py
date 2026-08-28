@@ -278,6 +278,21 @@ def test_a_tombstoned_record_leaves_the_query_and_stays_readable(tmp_path: Path)
     assert held["tombstoned"] is True
 
 
+def test_a_swallowed_write_is_reported_not_raised(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A re-record appends nothing and used to raise; `close` names ids (basicly-wu4w8v)."""
+    ledger = tmp_path / "l"
+    record = cli.create_record(ledger, {}, prefix="acme")[0].record
+    skipped = {"record": record, "events": [], "appended": False}
+    for verb in (["update", "--status", "blocked"], ["close"]):
+        argv = [verb[0], str(ledger), record, *verb[1:]]
+        assert cli.main(argv) == cli.EXIT_OK
+        capsys.readouterr()
+        assert cli.main(argv) == cli.EXIT_OK
+        assert json.loads(capsys.readouterr().out) == skipped
+
+
 # --- the refusals ------------------------------------------------------------
 
 

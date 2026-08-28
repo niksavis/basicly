@@ -528,15 +528,16 @@ def _report_one(
     """Record one gate through the write seam; a refusal carries its own reason out.
 
     Not swallowed into a bare False: a cause-less "gate not recorded" strands whoever has
-    to explain the gap in the gate list.
+    to explain the gap in the gate list. The message carries the verb: a ledger already
+    holding the row appends nothing (basicly-wu4w8v).
     """
     args = ["gate", "report", "--gate", gate, "--provider", GATE_PROVIDER]
     args += ["--status", status, "--note", note, issue_id]
     try:
-        tracker.write(repo_root, args)
+        appended = tracker.write(repo_root, args)
     except RuntimeError as exc:
         return False, f"{gate} gate not recorded: {exc}"
-    return True, f"{gate}={status}"
+    return True, f"recorded {gate}={status}" if appended else f"{gate}={status} already held"
 
 
 def report_gate(repo_root: Path, issue_id: str, verdicts: list[CheckVerdict]) -> tuple[bool, str]:
@@ -589,4 +590,4 @@ def report_gate(repo_root: Path, issue_id: str, verdicts: list[CheckVerdict]) ->
     )
     if not (preflight_ok and escalation_ok):
         return False, f"{preflight_msg}; {escalation_msg}"
-    return True, f"recorded gates {preflight_msg}, {escalation_msg} on {issue_id}"
+    return True, f"{preflight_msg}, {escalation_msg} on {issue_id}"

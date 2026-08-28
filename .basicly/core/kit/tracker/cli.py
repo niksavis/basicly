@@ -318,9 +318,16 @@ def _run(
         return EXIT_OK, view(args)
     if (write := _WRITES.get(args.command)) is not None:
         appended = write(args, redact)
+        if appended:
+            record = appended[0].record
+        else:
+            # `close` names ids (basicly-wu4w8v).
+            ids = args.record
+            record = ids if isinstance(ids, str) else ids[0]
         return EXIT_OK, {
-            "record": appended[0].record,
+            "record": record,
             "events": [event.id for event in appended],
+            "appended": bool(appended),
         }
     records = query_records(args.directory, status=args.status, limit=args.limit)
     return EXIT_OK, {"count": len(records), "records": records}

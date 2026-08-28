@@ -462,6 +462,10 @@ def report_gate(
     Returns ``(ok, message)`` and never raises: a store that will not take the write must
     not mask the verify result, and it carries its own reason out, because a cause-less
     "gate not recorded" strands the next landing.
+
+    ``ok`` stays True when the ledger already held this exact row: it is there, so
+    refusing would strand the lane. The message then says the held one stands rather
+    than claiming this run recorded it (basicly-wu4w8v).
     """
     status = "pass" if report.passed else "fail"
     detail = ", ".join(f"{r.name}={r.status}" for r in report.results) or "no checks"
@@ -482,7 +486,9 @@ def report_gate(
         args += ["--actor", actor]
     args.append(issue_id)
     try:
-        tracker.write(repo_root, args)
+        appended = tracker.write(repo_root, args)
     except RuntimeError as exc:
         return False, f"gate {gate} NOT recorded on {issue_id}: {exc}"
+    if not appended:
+        return True, f"gate {gate}={status} on {issue_id} was already held; kept the first"
     return True, f"recorded gate {gate}={status} on {issue_id}"
