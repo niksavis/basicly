@@ -11,7 +11,9 @@ A spawn fails the test.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -261,3 +263,105 @@ def test_replaying_one_identical_write_is_reported_and_exits_non_zero(
 
     assert "already recorded" in capsys.readouterr().out
     assert (tracker.read_record(repo, ROOT) or {})["priority"] == 2
+
+
+def _hold_the_ledger_lock(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Leave the ledger locked by a live holder, and stop the seam waiting five seconds.
+
+    Our own pid, because the lock frees one whose holder is known dead. The timeout is
+    injected through the lock the seam constructs rather than through the module constant,
+    which is bound as a default at definition time and cannot be patched afterwards.
+    """
+    kit = tracker.kit(repo)
+    real = kit.events.LedgerLock
+
+    def _no_wait(directory: Path, **_kwargs: object) -> object:
+        return real(directory, timeout_s=0.0)
+
+    monkeypatch.setattr(kit.events, "LedgerLock", _no_wait)
+    (tracker.ledger_dir(repo) / kit.events.LOCK_NAME).write_text(
+        json.dumps({"pid": os.getpid(), "monotonic": time.monotonic()}), encoding="utf-8"
+    )
+
+
+def test_a_landed_write_names_the_fact_it_appended_rather_than_the_argv(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`recorded: <argv>` echoed the caller's own words back, which is not evidence.
+
+    The flag in the message is the one the ledger's field maps to, so it says what is now
+    stored rather than what was typed — here `-p 1` read back as `--priority=1`.
+    """
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "-p", "1"]) == 0
+
+    out = capsys.readouterr().out
+    assert f"recorded: {ROOT} --priority=1" in out
+    assert (tracker.read_record(repo, ROOT) or {})["priority"] == 1
+
+
+def test_a_write_the_store_does_not_keep_is_reported_as_not_recorded(
+    repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The measured incident: the append returns, and the log holds none of it.
+
+    Twenty consecutive writes printed success over a store that kept nothing, because a
+    concurrent process was restoring the log's bytes (basicly-vkh0.51). That restore is
+    what is reproduced here — the seam answers exactly as it did then, and the command
+    must not call it recorded.
+    """
+    kit = tracker.kit(repo)
+    log = kit.events.append_target(tracker.ledger_dir(repo))
+    appended = kit.events.append
+
+    def _append_then_lose_it(*args: object, **kwargs: object) -> object:
+        held = log.read_bytes()
+        landed = appended(*args, **kwargs)
+        log.write_bytes(held)
+        return landed
+
+    monkeypatch.setattr(kit.events, "append", _append_then_lose_it)
+
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "--notes", "probe"]) != 0
+
+    err = capsys.readouterr().err
+    assert "not recorded" in err
+    assert f"{ROOT} --notes=probe" in err
+    assert (tracker.read_record(repo, ROOT) or {}).get("notes") is None
+
+
+def test_a_write_that_cannot_take_the_lock_says_so_and_that_it_may_be_retried(
+    repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lane holding the lock is contention, not a failed write: appended or refused.
+
+    The retry line is bound to the ledger's own ``retryable`` contract rather than to the
+    message text, so a failure that retrying cannot fix does not get it.
+    """
+    _hold_the_ledger_lock(repo, monkeypatch)
+
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "--notes", "probe"]) == 1
+
+    err = capsys.readouterr().err
+    assert "not recorded" in err
+    assert "running it again is safe" in err
+    assert (tracker.read_record(repo, ROOT) or {}).get("notes") is None
+
+
+def test_a_write_landing_beside_a_fact_the_ledger_held_reports_both(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A partial landing is neither `recorded: <argv>` nor `nothing was appended`.
+
+    One flag of the two was a replay, so echoing the argv would claim the title moved and
+    the `already recorded` line would deny the notes ever landed.
+    """
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "--title", "one"]) == 0
+    capsys.readouterr()
+
+    argv = ["tracker", "write", "--", "update", ROOT, "--title", "one", "--notes", "n"]
+    assert cli.main(argv) == 0
+
+    out = capsys.readouterr().out
+    assert f"recorded: {ROOT} --notes=n" in out
+    assert "and 1 fact(s) the ledger already held" in out
+    assert (tracker.read_record(repo, ROOT) or {})["notes"] == "n"

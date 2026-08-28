@@ -52,7 +52,7 @@ def test_a_field_driven_back_to_a_value_it_held_folds_to_that_value(tmp_path: Pa
 
     owned_write.append(repo, ["update", RECORD, "--title", "one"])
     owned_write.append(repo, ["update", RECORD, "--title", "two"])
-    landed = owned_write.append(repo, ["update", RECORD, "--title", "one", "--again"])
+    _, landed = owned_write.append(repo, ["update", RECORD, "--title", "one", "--again"])
 
     assert landed
     assert titles(repo) == ["one", "two", "one"]
@@ -74,7 +74,7 @@ def test_the_same_sequence_without_the_flag_records_the_recurrence_too(
 
     owned_write.append(repo, ["update", RECORD, "--title", "one"])
     owned_write.append(repo, ["update", RECORD, "--title", "two"])
-    landed = owned_write.append(repo, ["update", RECORD, "--title", "one"])
+    _, landed = owned_write.append(repo, ["update", RECORD, "--title", "one"])
 
     assert landed
     assert titles(repo) == ["one", "two", "one"]
@@ -88,7 +88,7 @@ def test_an_identical_write_run_twice_appends_once(tmp_path: Path) -> None:
     seed(repo, RECORD)
 
     owned_write.append(repo, ["update", RECORD, "--title", "one"])
-    landed = owned_write.append(repo, ["update", RECORD, "--title", "one"])
+    _, landed = owned_write.append(repo, ["update", RECORD, "--title", "one"])
 
     assert not landed
     assert titles(repo) == ["one"]
@@ -101,7 +101,7 @@ def test_the_flag_appends_every_time_it_is_run(tmp_path: Path) -> None:
     seed(repo, RECORD)
 
     for _ in range(3):
-        assert owned_write.append(repo, ["update", RECORD, "--title", "one", "--again"])
+        assert owned_write.append(repo, ["update", RECORD, "--title", "one", "--again"])[1]
 
     assert titles(repo) == ["one", "one", "one"]
 
@@ -114,7 +114,7 @@ def test_a_gate_that_ran_twice_and_passed_twice_is_recorded_twice(tmp_path: Path
     argv = ["gate", "report", "--gate", "verify", "--provider", "engine", "--status", "pass"]
 
     owned_write.append(repo, [*argv, "--note", "first run", RECORD])
-    landed = owned_write.append(repo, [*argv, "--note", "second run", RECORD, "--again"])
+    _, landed = owned_write.append(repo, [*argv, "--note", "second run", RECORD, "--again"])
 
     kit = owned_store.kit(repo)
     assert landed
@@ -192,7 +192,7 @@ def test_the_repeat_flag_itself_is_not_read_as_a_misspelling(tmp_path: Path) -> 
 
     owned_write.append(repo, ["close", RECORD, "--reason", "shipped", "--again"])
 
-    assert owned_write.append(repo, ["close", RECORD, "--reason", "shipped", "--again"])
+    assert owned_write.append(repo, ["close", RECORD, "--reason", "shipped", "--again"])[1]
 
 
 def test_a_verb_that_answers_for_its_own_flags_is_left_to_do_it() -> None:

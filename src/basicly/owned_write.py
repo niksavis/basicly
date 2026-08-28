@@ -238,8 +238,8 @@ def _refuse_a_retraction_of_an_absent_edge(
         )
 
 
-def append(repo_root: Path, args: Sequence[str]) -> bool:
-    """Record on the owned ledger the fact *args* states; False if it was already there.
+def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
+    """Record the fact *args* states: the drafts stamped, and the events that landed.
 
     The echo is empty because no process ran, which is why ``create`` cannot come through
     here — its translation reads the reply for the minted id, and :func:`create` is that
@@ -278,7 +278,7 @@ def append(repo_root: Path, args: Sequence[str]) -> bool:
                 redact=redact.redact_committed,
                 held_lock=lock,
             )
-            return len(landed) == len(stamped)
+            return stamped, landed
     except (events.LedgerError, OSError, ValueError) as exc:
         raise TrackerDivergenceError(
             f"{' '.join(args)} did not reach the owned ledger: {exc}"
