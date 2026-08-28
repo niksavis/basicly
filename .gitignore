@@ -73,6 +73,17 @@ node_modules/
 # developer's checkout.
 .basicly/ledger/redirect
 
+# The tracker's append lock (`events.LOCK_NAME`), written and unlinked around a single
+# ledger write so it exists only for the width of one append. Named exactly, never as a
+# glob over the directory: a pattern wide enough to catch it would also hide a real event
+# log, and the log is the truth. Ignored for the same reason `basicly.local.toml` is — a
+# checkout carries dirt outside the tracker, so an untracked one blocks every landing. Two
+# lanes appending to a shared ledger make that a live race rather than a theoretical one,
+# and the landing's own sweep is the worse half: `merge._commit_tracker_state` runs
+# `git add .basicly/ledger`, which stages a transient lock into a `chore(beads)` commit
+# (basicly-6mfhjp).
+.basicly/ledger/.events.lock
+
 # Session handover notes: a session's own claims about where it stopped, written
 # for whoever picks up next and deleted once acted on. Local on purpose — they are
 # unverified by construction, so committing them would put assertions in the repo
