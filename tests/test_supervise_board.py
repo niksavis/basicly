@@ -43,8 +43,9 @@ TICK_S = 0.05
 # where the same emission measures 7.11 s - `policy.session_issue_ids` is 5.9 s of it and only
 # runs where run records exist. The bound that governs there is the staleness horizon, because
 # the emission runs *after* the heartbeat write: it delays the next beat, never the pass, and
-# 7.11 s clears `STALE_AFTER_S` by 8x.
-EMIT_CAP_S = supervise.HEARTBEAT_INTERVAL_S / 5
+# 7.11 s clears `STALE_AFTER_S` by 8x. Half the beat, not a fifth: the fixture measured 3.1 s on
+# the windows-latest runner against 0.48 s here, and a fifth of the beat refused it.
+EMIT_CAP_S = supervise.HEARTBEAT_INTERVAL_S / 2
 
 _SESSION = "epic:board"
 _ROOT = "epic"
