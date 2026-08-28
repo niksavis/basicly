@@ -419,13 +419,24 @@ def _section_end(lines: list[str], heading: str) -> int | None:
 
 
 def _fragment_body(repo_root: Path, fragment: ChangelogFragment) -> list[str]:
-    """A fragment's lines, trimmed of the blank padding an editor leaves behind."""
+    """A fragment's lines, trimmed, and citing the record its filename named.
+
+    The filename is deleted by the assembly that publishes the body, and
+    :func:`accounted_records` then has only ``CHANGELOG.md`` to read, so a body that
+    never cites its own id would owe a note in the release commit (basicly-k8b75o).
+    """
     text = (repo_root / fragment.path).read_text(encoding="utf-8")
     lines = [line.rstrip() for line in text.splitlines()]
     while lines and not lines[0].strip():
         lines.pop(0)
     while lines and not lines[-1].strip():
         lines.pop()
+    record = fragment.path.stem.rpartition(".")[0]
+    if lines and record not in cited_records(text, id_pattern([record])):
+        if lines[-1].startswith("```"):
+            lines.append(f"  ({record})")
+        else:
+            lines[-1] = f"{lines[-1]} ({record})"
     return lines
 
 
