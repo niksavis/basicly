@@ -12,7 +12,9 @@ nothing on any other.
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import time
 from pathlib import Path
 
 import pytest
@@ -137,3 +139,110 @@ def test_a_clean_ledger_is_left_byte_identical(tmp_path: Path) -> None:
 
     assert tracker.scrub_ledger(repo) == 0
     assert path.read_text(encoding="utf-8") == before
+
+
+def _hold_the_lock(repo: Path) -> Path:
+    """The lock file a live writer holding the ledger would have left.
+
+    Our own pid, because the steal rule frees a lock whose holder is known dead and an
+    invented pid is either dead or somebody else's process — which would make the test
+    assert about this machine's process table instead of about the lock.
+    """
+    kit = tracker.kit(repo)
+    path = tracker.ledger_dir(repo) / kit.events.LOCK_NAME
+    path.write_text(
+        json.dumps({"pid": os.getpid(), "monotonic": time.monotonic()}), encoding="utf-8"
+    )
+    return path
+
+
+def _dirty_ledger(tmp_path: Path) -> tuple[Path, Path]:
+    """A repo whose single event carries the username, and that event's log."""
+    repo = _repo(tmp_path)
+    events = [_event(repo, "basicly-a", 1, USERNAME, {"created_by": USERNAME})]
+    return repo, _write_events(repo, events)
+
+
+def test_a_rewrite_takes_the_writer_lock_and_touches_nothing_while_another_holds_it(
+    tmp_path: Path,
+) -> None:
+    """The whole-file rewrite was the only writer taking no lock (basicly-cqu7i3).
+
+    Refused rather than waiting forever: ``LockUnavailableError`` is the retryable failure
+    every other writer already raises, so a caller backs off instead of a log being lost.
+    """
+    repo, path = _dirty_ledger(tmp_path)
+    before = path.read_text(encoding="utf-8")
+    _hold_the_lock(repo)
+    kit = tracker.kit(repo)
+
+    with pytest.raises(kit.events.LockUnavailableError):
+        tracker.scrub_ledger(repo, lock_timeout_s=0.0)
+
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_an_append_arriving_during_a_rewrite_is_refused_by_the_lock_not_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The destroyed-silently shape: an append landing between the read and the rename.
+
+    Before the lock the append succeeded, the rename dropped its line, and nothing
+    reported it — the file parsed and the fold was consistent because the lost line was
+    never in the text re-emitted. The publish is the window, so the append is attempted
+    from there.
+    """
+    repo, path = _dirty_ledger(tmp_path)
+    kit = tracker.kit(repo)
+    ledger = tracker.ledger_dir(repo)
+    outcome: list[object] = []
+    publish = tracker._publish
+
+    def _append_then_publish(tmp: Path, target: Path) -> bool:
+        draft = kit.events.Draft("basicly-a", "comment", {"text": "arrived mid rewrite"})
+        try:
+            outcome.append(kit.events.append(ledger, [draft], lock_timeout_s=0.0))
+        except kit.events.LockUnavailableError as exc:
+            outcome.append(exc)
+        return publish(tmp, target)
+
+    monkeypatch.setattr(tracker, "_publish", _append_then_publish)
+
+    assert tracker.scrub_ledger(repo) == 1
+
+    assert isinstance(outcome[0], kit.events.LockUnavailableError)
+    assert len(_read(path)) == 1
+
+
+def test_an_append_queued_behind_a_rewrite_lands_once_the_lock_is_released(
+    tmp_path: Path,
+) -> None:
+    """Serialised, not refused forever: the hold ends with the rewrite."""
+    repo, path = _dirty_ledger(tmp_path)
+
+    assert tracker.scrub_ledger(repo) == 1
+
+    kit = tracker.kit(repo)
+    draft = kit.events.Draft("basicly-a", "comment", {"text": "queued behind the rewrite"})
+    landed = kit.events.append(tracker.ledger_dir(repo), [draft], lock_timeout_s=0.0)
+
+    ids = {event["id"] for event in _read(path)}
+    assert [event.id for event in landed] and all(event.id in ids for event in landed)
+
+
+def test_a_lock_hold_past_the_stale_bound_renames_nothing(tmp_path: Path) -> None:
+    """The hold is bounded, because a waiter may steal one older than the bound.
+
+    Past that point the rename excludes nobody, so it could clobber the append the thief
+    made. Not scrubbing leaves the leak for `tracker-path-scan`; renaming would lose it.
+    """
+    repo, path = _dirty_ledger(tmp_path)
+    before = path.read_text(encoding="utf-8")
+    kit = tracker.kit(repo)
+    readings = iter([0.0, kit.events.LOCK_STALE_AFTER_S + 1.0])
+
+    with pytest.raises(TrackerDivergenceError):
+        tracker.scrub_ledger(repo, monotonic=lambda: next(readings))
+
+    assert path.read_text(encoding="utf-8") == before
+    assert not list(tracker.ledger_dir(repo).glob("*.tmp"))

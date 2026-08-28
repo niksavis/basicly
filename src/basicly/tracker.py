@@ -17,7 +17,7 @@ import contextvars
 import json
 import os
 import time
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -797,7 +797,31 @@ def _event_generation(counts: dict[tuple[str, str, str], int], event: Mapping[st
     return counts[key]
 
 
-def scrub_ledger(repo_root: Path) -> int:
+def _refuse_a_rename_past_the_hold(events: Any, tmp: Path, held_s: float) -> None:
+    """Discard *tmp* and raise when the hold outran the lock's stale bound.
+
+    The hold has to be bounded or a rewrite of a long log would wedge every appender
+    forever, which is worse than one that failed. The lock bounds it by letting a waiter
+    *steal* a hold older than ``LOCK_STALE_AFTER_S`` — so past that point the rename is
+    no longer protected by anything and could clobber the append the thief just made.
+    Not scrubbing is safe (the leak stays, and `tracker-path-scan` is the gate for it);
+    renaming over a writer we no longer exclude is the bug this lock exists to close.
+    """
+    if held_s <= events.LOCK_STALE_AFTER_S:
+        return
+    tmp.unlink(missing_ok=True)
+    raise TrackerDivergenceError(
+        f"{tmp.name}: the rewrite held the ledger lock {held_s:.1f}s, past the"
+        f" {events.LOCK_STALE_AFTER_S}s a waiter may steal it at, so nothing is renamed"
+    )
+
+
+def scrub_ledger(
+    repo_root: Path,
+    *,
+    lock_timeout_s: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> int:
     """Strip machine identity and paths from the owned ledger; return events changed.
 
     The one place this design edits a line rather than appending one (work-tracker
@@ -812,6 +836,27 @@ def scrub_ledger(repo_root: Path) -> int:
     unless that derivation reproduces **every** stored id first. Minting counts the
     redacted payloads separately, so two events that redact to the same content get
     distinct ids rather than colliding.
+
+    **The rewrite is whole-file, so it takes the writer's lock** (basicly-cqu7i3). Every
+    other writer reaches the log through ``events.append``, which holds
+    :class:`events.LedgerLock` for one append; this one read the whole text, so an append
+    landing before its rename was destroyed *silently* — the rename succeeded, the log
+    parsed, and the fold was consistent because the lost lines were never in the text
+    re-emitted. Under the lock a concurrent append is serialised behind the rewrite or
+    refused with the retryable ``LockUnavailableError`` every other writer already raises.
+
+    Args:
+        repo_root: The checkout whose owned ledger is scrubbed.
+        lock_timeout_s: How long to wait for the writer's lock. The kit's default when
+            ``None``; a caller on the commit path wants the same wait an append gets.
+        monotonic: The clock the hold is bounded against. Injected so the bound is test
+            data rather than a property of how fast the machine ran.
+
+    Raises:
+        TrackerDivergenceError: an event id does not re-mint from its own content, or the
+            hold outran the lock's own stale bound before the rename.
+        events.LockUnavailableError: another writer held the lock past *lock_timeout_s*.
+            Retryable: nothing was read and nothing was written.
     """
     # Files before the kit, and that ordering is the point: this runs on the commit
     # path beside :func:`scrub_export`, so a repo with no ledger — `external`, or a
@@ -820,49 +865,54 @@ def scrub_ledger(repo_root: Path) -> int:
     if not files:
         return 0
     kit_module = kit(repo_root)
+    events = kit_module.events
+    timeout_s = events.DEFAULT_LOCK_TIMEOUT_S if lock_timeout_s is None else lock_timeout_s
     changed = 0
-    for path in files:
-        raw = path.read_text(encoding="utf-8")
-        stored: dict[tuple[str, str, str], int] = {}
-        minted: dict[tuple[str, str, str], int] = {}
-        lines: list[str] = []
-        for line in raw.splitlines():
-            if not line.strip():
-                lines.append(line)
-                continue
-            event = json.loads(line)
-            generation = _event_generation(stored, event)
-            expected = kit_module.events.event_id_for(
-                event["record"], event["kind"], event["payload"], generation=generation
-            )
-            if expected != event["id"]:
-                raise TrackerDivergenceError(
-                    f"{path.name}: {event['id']} does not re-mint from its own content, so the"
-                    " generation cannot be derived and nothing is rewritten"
+    with events.LedgerLock(ledger_dir(repo_root), timeout_s=timeout_s):
+        held_since = monotonic()
+        for path in files:
+            raw = path.read_text(encoding="utf-8")
+            stored: dict[tuple[str, str, str], int] = {}
+            minted: dict[tuple[str, str, str], int] = {}
+            lines: list[str] = []
+            for line in raw.splitlines():
+                if not line.strip():
+                    lines.append(line)
+                    continue
+                event = json.loads(line)
+                generation = _event_generation(stored, event)
+                expected = events.event_id_for(
+                    event["record"], event["kind"], event["payload"], generation=generation
                 )
-            scrubbed = dict(event)
-            scrubbed["actor"] = redact.redact_committed(str(event.get("actor") or ""))
-            scrubbed["payload"] = _redact_paths(event["payload"])
-            # Counted for every event, not only a rewritten one: an untouched event still
-            # occupies its generation, so a later event that redacts onto the same content
-            # takes the next one instead of colliding with it.
-            scrubbed["id"] = kit_module.events.event_id_for(
-                scrubbed["record"],
-                scrubbed["kind"],
-                scrubbed["payload"],
-                generation=_event_generation(minted, scrubbed),
-            )
-            if scrubbed == event:
-                lines.append(line)
+                if expected != event["id"]:
+                    raise TrackerDivergenceError(
+                        f"{path.name}: {event['id']} does not re-mint from its own content, so"
+                        " the generation cannot be derived and nothing is rewritten"
+                    )
+                scrubbed = dict(event)
+                scrubbed["actor"] = redact.redact_committed(str(event.get("actor") or ""))
+                scrubbed["payload"] = _redact_paths(event["payload"])
+                # Counted for every event, not only a rewritten one: an untouched event still
+                # occupies its generation, so a later event that redacts onto the same content
+                # takes the next one instead of colliding with it.
+                scrubbed["id"] = events.event_id_for(
+                    scrubbed["record"],
+                    scrubbed["kind"],
+                    scrubbed["payload"],
+                    generation=_event_generation(minted, scrubbed),
+                )
+                if scrubbed == event:
+                    lines.append(line)
+                    continue
+                lines.append(_dump_record(scrubbed))
+                changed += 1
+            if not changed:
                 continue
-            lines.append(_dump_record(scrubbed))
-            changed += 1
-        if not changed:
-            continue
-        trailer = "\n" if raw.endswith("\n") else ""
-        tmp = path.with_suffix(f".{os.getpid()}.jsonl.tmp")
-        tmp.write_text("\n".join(lines) + trailer, encoding="utf-8")
-        _publish(tmp, path)
+            trailer = "\n" if raw.endswith("\n") else ""
+            tmp = path.with_suffix(f".{os.getpid()}.jsonl.tmp")
+            tmp.write_text("\n".join(lines) + trailer, encoding="utf-8")
+            _refuse_a_rename_past_the_hold(events, tmp, monotonic() - held_since)
+            _publish(tmp, path)
     return changed
 
 
