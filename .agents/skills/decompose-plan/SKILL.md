@@ -14,7 +14,7 @@ one state later — BUILD is where nearly all tokens go.
 
 | Field | Refused when | Why it is on the gate |
 | --- | --- | --- |
-| Acceptance criteria | absent, or not in EARS | EARS distinguishes trigger, state, condition, feature-gated and ubiquitous; GWT collapses all five, and that distinction is what makes a check derivable |
+| Acceptance criteria | absent | The gate checks presence only (`plan_gate.missing_fields` tests `bool(acceptance)`), so the EARS discipline is yours to keep: it distinguishes trigger, state, condition, feature-gated and ubiquitous, GWT collapses all five, and that distinction is what makes a check derivable |
 | Scope globs | absent | Overlap decides what serializes. Two children writing one path collide at the merge queue, at a rework retry each |
 | Dependencies | cyclic | A cycle is a plan that cannot start |
 | Token budget | absent | The band prices the lane before it runs |
@@ -55,7 +55,7 @@ Four scopes were written wrong in one session on 2026-08-22, all the same way:
 |---|---|
 | `loop.py`, `supervise.py`, `verify.py` | `checkout.py`, `commit.py`, `merge.py` |
 | `board_wall.py` | `board_regions.py` |
-| two skill surfaces | skills project to **three** |
+| two skill surfaces | the YAML source plus both projected roots — `.claude/skills` and `.agents/skills` |
 | `board_render.py` | `board_regions.py` |
 
 One was bounced at the landing gate for changing eleven files outside its

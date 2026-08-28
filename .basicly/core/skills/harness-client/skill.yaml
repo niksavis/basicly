@@ -15,8 +15,9 @@ instructions: |
   (`basicly loop supervise <root>`). Reach for this skill when a supervisor is
   already running, or may be, and you are a *second* session looking in.
 
-  Everything here is either a pure read or a write to one decision item. Nothing
-  in this skill touches a worktree, a branch, or a gate.
+  Every command here is either a pure read or a write to one decision item, and
+  none of them touches a worktree, a branch, or a gate. The one exception is the
+  board's default action route, below: it can approve a checkpoint or kill a lane.
 
   ## Attach: one command, no lock
 
@@ -47,13 +48,16 @@ instructions: |
   For a screen in the room rather than a terminal:
 
   ```sh
-  basicly board serve                  # http://127.0.0.1:8787, GET only
+  basicly board serve                  # http://127.0.0.1:8787
   basicly board serve --port 0         # take an ephemeral port and print it
   ```
 
-  It is a client in exactly this skill's sense: it binds the loopback and
-  nothing else, takes no lock, writes no file, and answers GET alone — a POST is
-  405, so nobody can drive a lane from a screen anyone in the room can touch.
+  It takes no lock and writes no file, but by default it registers one POST route
+  that runs the basicly command an operator submits — a closed table of three
+  (answer a decision, approve a checkpoint, kill a lane), the last two behind a
+  typed confirm code. Pass `--no-actions` for an unattended wall, where a POST is
+  405 and nobody can drive a lane from a screen anyone in the room can touch, and
+  leave `--bind` unset so it stays on the loopback.
   While the supervisor's heartbeat is fresh it serves the snapshot that
   supervisor already wrote and folds nothing; with no live holder it folds for
   itself every `--refresh` seconds. Every panel carries the snapshot's age, so a

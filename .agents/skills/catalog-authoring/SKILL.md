@@ -34,7 +34,9 @@ gate rejects it.
 2. Fill in `name` (must equal the slug), a strong one-line `description` (the
    discovery trigger — state *when* to use it), and the `instructions` body as
    a `|` literal block scalar (markdown, indented two spaces).
-3. Project + verify: `basicly skills-build` then `basicly skills-check`.
+3. Project + verify: `basicly skills-build --all-default-roots` then
+   `basicly skills-check --all-default-roots` — bare, both touch only
+   `.claude/skills`, and the `projection-skills` gate checks both roots.
 
 ## Author a fragment
 
