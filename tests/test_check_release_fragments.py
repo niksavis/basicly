@@ -123,7 +123,13 @@ def test_the_gate_fails_end_to_end_and_names_the_file(repo: Path) -> None:
 
 
 def test_the_live_tree_passes_its_own_gate() -> None:
-    """The positive control for the wiring: the population is real and currently green."""
+    """The positive control for the wiring: the gate sees the whole live population, green.
+
+    No floor on the count: a release deletes every fragment it assembles, so a release
+    commit legitimately holds zero and the directory's README is the marker that the
+    population is the real one (basicly-ssv5qq).
+    """
     refused, new, inherited = gate.findings(REPO_ROOT)
     assert refused == []
-    assert inherited + new > 100
+    assert (REPO_ROOT / gate.FRAGMENT_DIR / "README.md").is_file()
+    assert inherited + new == len(gate.fragment_paths(REPO_ROOT))
