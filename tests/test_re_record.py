@@ -60,10 +60,15 @@ def test_a_field_driven_back_to_a_value_it_held_folds_to_that_value(tmp_path: Pa
 
 
 @pytest.mark.usefixtures("no_br")
-def test_the_same_sequence_without_the_flag_still_folds_to_the_second_value(
+def test_the_same_sequence_without_the_flag_records_the_recurrence_too(
     tmp_path: Path,
 ) -> None:
-    """The control: the swallow is unchanged where nobody asked for a re-record."""
+    """The flag stopped being the only way through for a field (basicly-bj8kks).
+
+    A state the record has moved off is re-stated about *now*, so the seam derives the
+    generation instead of waiting to be told. What the flag is still for is the kinds that
+    accumulate and the immediate repeat below, neither of which this rule touches.
+    """
     repo = owned_repo(tmp_path)
     seed(repo, RECORD)
 
@@ -71,9 +76,9 @@ def test_the_same_sequence_without_the_flag_still_folds_to_the_second_value(
     owned_write.append(repo, ["update", RECORD, "--title", "two"])
     landed = owned_write.append(repo, ["update", RECORD, "--title", "one"])
 
-    assert not landed
-    assert titles(repo) == ["one", "two"]
-    assert folded_title(repo) == "two"
+    assert landed
+    assert titles(repo) == ["one", "two", "one"]
+    assert folded_title(repo) == "one"
 
 
 @pytest.mark.usefixtures("no_br")

@@ -266,10 +266,11 @@ def append(repo_root: Path, args: Sequence[str]) -> bool:
             refuse_a_write_to_an_absent_record(kit_module, ledger, " ".join(args), drafts)
             _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
             stamped = _stamped(kit_module, drafts)
-            if repeat:
-                # After the stamp, never before: stamping rewrites the payload the id
-                # derives from.
-                stamped = re_record.at_the_generation_a_repeat_needs(kit_module, ledger, stamped)
+            # After the stamp, never before: stamping rewrites the payload the id
+            # derives from.
+            stamped = re_record.at_the_generation_this_write_needs(
+                kit_module, ledger, stamped, repeat=repeat
+            )
             landed = events.append(
                 ledger,
                 stamped,
