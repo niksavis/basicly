@@ -18,6 +18,7 @@ import json
 import os
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -341,8 +342,91 @@ def _comments_add_argv(issue_id: str, body: str) -> list[str]:
     return ["comments", "add", issue_id, body]
 
 
-def write(repo_root: Path, args: list[str]) -> bool:
-    """Record one engine write on the owned ledger; False if the ledger already held it.
+# The long form of each flag a field write can arrive as, so a receipt names something the
+# parser accepts: the fact is stored under `issue_type` and the flag is `--type`.
+_FIELD_FLAGS = {
+    name: max(
+        (flag for flag, held in tracker_argv.UPDATE_FIELD_FLAGS.items() if held == name), key=len
+    )
+    for name in set(tracker_argv.UPDATE_FIELD_FLAGS.values())
+}
+
+
+@dataclass(frozen=True)
+class WriteReceipt:
+    """What one write did, as the facts it landed rather than the argv that stated them.
+
+    Truthy exactly when every fact was newly appended, which is the bool :func:`write`
+    returned before this type existed and is how every call site still reads it.
+    """
+
+    landed: tuple[str, ...]
+    replayed: int
+
+    def __bool__(self) -> bool:
+        """True when the ledger held none of these facts already."""
+        return self.replayed == 0
+
+
+def _fact(kit_module: Any, event: Any) -> str:
+    """One draft or event as the record it is about and the flag that writes it.
+
+    A field no update flag reaches — `close_reason`, which `close --reason` stores —
+    falls back to the name the ledger holds it under, never to an invented flag.
+    """
+    payload = dict(event.payload)
+    kinds = kit_module.events
+    if event.kind == kinds.KIND_FIELD:
+        name = str(payload.get("name", ""))
+        return f"{event.record} {_FIELD_FLAGS.get(name, name)}={payload.get('value')}"
+    if event.kind == kinds.KIND_STATUS:
+        return f"{event.record} --status={payload.get('status')}"
+    return f"{event.record} {event.kind}"
+
+
+def _refuse_a_write_the_store_did_not_keep(repo_root: Path, landed: list[Any]) -> None:
+    """Raise unless the ledger, read back, holds every event the append just minted.
+
+    The seam's evidence of success used to be that the call returned, and that is not
+    evidence: twenty consecutive writes printed success over a store that kept none of
+    them, while another process restored the log's bytes underneath (basicly-vkh0.51).
+    An append-only log has no undo, so this moment is the only one at which the loss can
+    be seen at all — nothing read later can say an event was meant to be there.
+
+    A text scan for the id the kit minted rather than a second fold: an id is a content
+    digest, so finding it back checks the write without re-deriving what it checks, and
+    it measures 6.2 ms against 65.2 ms for a parse of this repository's 8.1 MB log.
+
+    Raises:
+        TrackerDivergenceError: the log does not hold an event the append returned.
+    """
+    kit_module = kit(repo_root)
+    logs = kit_module.events.log_paths(ledger_dir(repo_root))
+    text = "".join(path.read_text(encoding="utf-8") for path in logs)
+    lost = [event for event in landed if f'"id":"{event.id}"' not in text]
+    if not lost:
+        return
+    raise TrackerDivergenceError(
+        f"the ledger does not hold what it just accepted: "
+        f"{', '.join(_fact(kit_module, event) for event in lost)} — the append returned "
+        f"{len(landed)} event(s) and a re-read of the log finds {len(landed) - len(lost)}, "
+        f"so another process is rewriting it and nothing here is recorded"
+    )
+
+
+def _appended(repo_root: Path, args: list[str]) -> WriteReceipt:
+    """Append *args*, and answer what it did once the store is known to hold it."""
+    stamped, landed = owned_write.append(repo_root, args)
+    _refuse_a_write_the_store_did_not_keep(repo_root, landed)
+    kit_module = kit(repo_root)
+    return WriteReceipt(
+        landed=tuple(_fact(kit_module, event) for event in landed),
+        replayed=len(stamped) - len(landed),
+    )
+
+
+def write(repo_root: Path, args: list[str]) -> WriteReceipt:
+    """Record one engine write on the owned ledger; what landed, and what it already held.
 
     The caller states the write as an argv, which is what
     :func:`_refuse_write_in_read_only` classifies and what the translator turns into
@@ -364,7 +448,7 @@ def write(repo_root: Path, args: list[str]) -> bool:
     # the reply instead of to the call (basicly-vkh0.29).
     if args and args[0] == "create":
         raise RuntimeError(f"a create names an id the store mints; call create_record: {args}")
-    return owned_write.append(repo_root, args)
+    return _appended(repo_root, args)
 
 
 def create_record(repo_root: Path, args: list[str]) -> str:
@@ -391,7 +475,7 @@ def try_write(repo_root: Path, args: list[str]) -> bool:
     """
     _refuse_write_in_read_only(args)
     try:
-        owned_write.append(repo_root, args)
+        _appended(repo_root, args)
     except TrackerDivergenceError:
         return False
     return True

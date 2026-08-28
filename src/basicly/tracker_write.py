@@ -37,8 +37,32 @@ def cmd_write(args: argparse.Namespace) -> int:
         return 0
     if argv[0] == "close" and len(argv) > 1:
         _say_criteria(argv[1])
-    if tracker.write(Path.cwd(), argv):
-        ui.say(f"recorded: {' '.join(argv)}")
+    return _record(argv)
+
+
+def _record(argv: list[str]) -> int:
+    """Run one write through the seam and report what the ledger now holds because of it.
+
+    Three outcomes and no fourth: facts appended, facts the ledger already held, or a
+    failure that says the write is not recorded. The success line used to be printed
+    whatever the seam answered, so a dropped write and a landed one read identically
+    (basicly-vkh0.50).
+    """
+    try:
+        receipt = tracker.write(Path.cwd(), argv)
+    except RuntimeError as exc:
+        # The read-only refusal is deliberately not caught: `TrackerWriteRefusedError` is
+        # not a `RuntimeError` precisely so a guard's violation reaches the top untouched.
+        ui.fail(f"not recorded: {exc}")
+        # `retryable` is the ledger lock's own contract for contention, carried on the
+        # error `owned_write` wrapped; anything else is a reason retrying will not fix.
+        if getattr(exc.__cause__, "retryable", False):
+            ui.fail("  the ledger took no part of this write, so running it again is safe")
+        return 1
+    if receipt.landed:
+        ui.say(f"recorded: {'; '.join(receipt.landed)}")
+        if receipt.replayed:
+            ui.say(f"  and {receipt.replayed} fact(s) the ledger already held")
         return 0
     # Not `recorded:`, and not zero either. A write stating what the record's newest events
     # already say is skipped as a replay — and a caller reading success moves on, which cost
