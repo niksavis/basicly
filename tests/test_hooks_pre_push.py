@@ -58,6 +58,19 @@ def _lock(repo_root: Path, pid: int) -> Path:
     return path
 
 
+def _ignored(relative: str) -> bool:
+    """Whether this repo's rules ignore *relative*, asked of git rather than of the file."""
+    return (
+        subprocess.run(
+            ["git", "check-ignore", "-q", "--no-index", "--", relative],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
 def test_contention_is_named_when_a_live_writer_holds_the_ledger(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -314,3 +327,23 @@ def test_a_pre_push_hook_without_the_guard_reads_as_not_installed(tmp_path: Path
 
     hook_file.write_text(f"# pre-commit\n# {hooks.PRE_PUSH_GUARD_MARKER}\n", encoding="utf-8")
     assert hooks.missing_hook_installations(tmp_path, ["pre-push"]) == []
+
+
+def test_this_repo_ignores_the_ledger_lock_without_hiding_a_real_log() -> None:
+    """The lock is transient, so only an ignore rule keeps it out of a cleanliness check.
+
+    It is held for the width of one append and then unlinked, and no rule matched it: a
+    `git status` sampled mid-write reported the base checkout dirty and refused the landing
+    for a file that had already ceased to exist. The sweep was the worse half —
+    `merge._commit_tracker_state` runs `git add .basicly/ledger`, and before the rule
+    `git add -n` on that directory printed `add '.basicly/ledger/.events.lock'`, so a
+    transient lock went into a `chore(beads)` commit (basicly-6mfhjp).
+
+    Asked of git for `kit_deployment.py`'s reason: matching the glob by hand would
+    reimplement git's precedence and be wrong where it matters. The second assertion is the
+    control — a rule wide enough to catch the lock would also hide an event log, which is
+    the truth the folds are derived from.
+    """
+    lock = f".basicly/ledger/{events.LOCK_NAME}"
+    assert _ignored(lock), f"{lock} is unignored; a status sampled mid-append reads dirty"
+    assert not _ignored(".basicly/ledger/events-0002.jsonl"), "the rule widened over the log"
