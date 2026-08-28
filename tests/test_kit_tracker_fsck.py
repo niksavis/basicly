@@ -790,6 +790,80 @@ def test_rebuild_refuses_a_log_the_fold_cannot_read_rather_than_writing_a_wrong_
         fsck.rebuild(ledger)
 
 
+# --- R9's reach through the rebuild (basicly-dx2ngn) ---------------------------
+
+# Every `write_snapshot` call site in the kit, and what answers *a publish here that would
+# drop records*. `guard` is the writer's own refusal; `call site` is a caller that unlinks its
+# target first, so the writer always lands on its nothing-to-compare branch and the comparison
+# has to be taken before the delete.
+GUARD_REACH = {
+    ("snapshot.py", "rebuild"): "guard",
+    ("snapshot.py", "refresh"): "guard",
+    ("snapshot.py", "rotate"): "guard",
+    ("fsck.py", "rebuild"): "call site",
+}
+
+
+def _calls(function: Any, name: str) -> bool:
+    """Whether *function* calls *name*, bare or through a module attribute."""
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        called = node.func
+        if getattr(called, "attr", None) == name or getattr(called, "id", None) == name:
+            return True
+    return False
+
+
+def _functions() -> dict[tuple[str, str], Any]:
+    """Every kit function by module name and function name, a method included.
+
+    Walked rather than read off `tree.body`: a call site added inside a class would be
+    invisible to a top-level scan, which is the same fail-open shape as the defect below.
+    """
+    found: dict[tuple[str, str], Any] = {}
+    for source in KIT_SOURCES:
+        for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                found[(source.name, node.name)] = node
+    return found
+
+
+def test_a_rebuild_whose_publish_would_shrink_refuses_and_deletes_nothing(tmp_path: Path) -> None:
+    """The incident's shape through the publish R9's guard did not reach (basicly-dx2ngn).
+
+    Nothing removed is the second half: a refusal taken after the unlink would itself
+    destroy the records it exists to keep.
+    """
+    ledger = _seed(tmp_path / "ledger")
+    fsck.rebuild(ledger)
+    published = _derived_text(ledger)
+    for log in events.log_paths(ledger):
+        log.unlink()
+
+    with pytest.raises(snapshot.SnapshotError) as refusal:
+        fsck.rebuild(ledger)
+
+    assert "0 records over a file holding 2" in str(refusal.value)
+    assert _derived_text(ledger) == published
+
+
+def test_every_publish_site_answers_whether_the_shrink_guard_reaches_it() -> None:
+    """A fifth call site fails here until somebody records which answer covers it.
+
+    The guard is one `if` inside `write_snapshot`, so its *reach* is a property of the
+    callers and a caller that deletes its target first silently opts out. Each answer is
+    checked against the code rather than believed: `call site` means the caller takes the
+    comparison itself, `guard` means it leaves it to the writer.
+    """
+    functions = _functions()
+    sites = {key for key, node in functions.items() if _calls(node, "write_snapshot")}
+
+    assert sites == set(GUARD_REACH)
+    for site, answer in GUARD_REACH.items():
+        assert _calls(functions[site], "shrinkage") is (answer == "call site")
+
+
 # --- the unattributed census (basicly-at5tph) ----------------------------------
 
 

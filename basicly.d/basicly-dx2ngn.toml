@@ -1,0 +1,44 @@
+# R9's shrink guard now fires on the publish most likely to lose records (basicly-dx2ngn).
+# `write_snapshot` refuses a snapshot holding fewer records than the file it replaces, and
+# `fsck.rebuild` unlinks every derived file before writing, so the writer always landed on its
+# nothing-to-compare branch: the guard covered the three paths that were already safest and
+# not the one it was bought for. Reproduced on the CLI against HEAD - a ledger whose logs
+# vanish rebuilds to `"records": 0`, `"clean": true`, exit 0, over a 2-record snapshot.
+#
+# Option 1 of the three the record put up: `rebuild` derives and compares before it deletes,
+# so both contracts survive - fsck still repairs by delete-and-rebuild, and a refusal removes
+# nothing. Option 2 (stop unlinking the snapshot) buys the guard for free and rewrites fsck's
+# stated contract; option 3 records the bypass and leaves the population uncovered.
+#
+# Both scoped modules were measured before the first edit and both sat *exactly* on their
+# composed baseline - 9730 and 9844, zero headroom either side.
+#
+# `.basicly/core/kit/tracker/fsck.py` +215: the hoisted derive, the comparison loop over every
+# derived target, and two docstring lines - the `SnapshotError` it now raises, and the sentence
+# that keeps the module's "nothing derived seeds the repair" invariant true now that a replaced
+# file's record count is read. Prose share 51.0 -> 51.4 against a frozen 51.5, and none of the
+# 215 tokens came out of the comment budget: cutting prose from `fsck.py` to pay for code is
+# the cheapest way to clear this gate and the reason the comment rule exists (basicly-0cpn51
+# refused the same trade in the same module).
+#
+# `tests/test_kit_tracker_fsck.py` +766: the incident driven through `fsck.rebuild` (refused,
+# both counts in the message, every derived file byte-unchanged), and the call-site census that
+# fails when a fifth `write_snapshot` caller appears with no recorded answer. Each was shown to
+# fail against HEAD's module first - the first with DID NOT RAISE, the second because `rebuild`
+# calls no comparison.
+#
+# The alternative measured and refused: a new `tests/test_kit_tracker_fsck_shrink.py` under the
+# §9.4 `test_<module>_<aspect>` split. The preamble those two tests reach for - `_load` and the
+# shared-module-object rule it exists for, `KIT_SOURCES`, `_append`, `_seed`, `_derived_text` -
+# is 130 lines and 1231 tokens on this gate's measure, so a new module spends 1231 duplicated
+# tokens to avoid 766 of debt, or moves the fixtures to `conftest.py` and rewrites them under
+# 38 tests this record's scope does not name. It is also outside the record's scope fence.
+[ratchet]
+base_commit = "8737c567384618ac677370335d7f780655c5da97"
+
+[ratchet.module_size]
+rebaseline_reason = "fsck.rebuild takes the shrink comparison before its own unlink, which is the only place it can be taken while both contracts hold, plus the two tests that pin it; both modules sat exactly on their composed baseline and the fixture preamble makes a test-file split a 1231-token duplication"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/fsck.py" = 215
+"tests/test_kit_tracker_fsck.py" = 766
