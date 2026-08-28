@@ -1,7 +1,7 @@
 """The kit-boundary gate must discriminate, not merely report (basicly-vkh0.16).
 
-`docs/requirements/work-tracker.md` §4 claimed the one-way kit boundary was already
-enforced by `lint-imports`. It was not: import-linter analyses the `basicly`
+`.basicly/core/kit/tracker/SPEC.md` §4 records the claim that the one-way kit boundary
+was already enforced by `lint-imports`. It was not: import-linter analyses the `basicly`
 package, and the kit is flat modules outside it. `test_import_linter_cannot_see_a_kit_violation`
 runs the tool on a seeded violation and records that it reports clean — so this
 file's other tests are the control pair for a gate that replaces an unenforceable

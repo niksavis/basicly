@@ -1,0 +1,40 @@
+# `docs/requirements/work-tracker.md` is deleted and its citations repointed at the kit's own
+# `.basicly/core/kit/tracker/SPEC.md`, which ships with the kit (owner decision 2026-08-20).
+# 144 marks in 28 modules resolved to that document, measured with the gate's own reader:
+# 126 of them are bare marks in `.basicly/core/kit/tracker/`, so repointing the one
+# `[tool.code_citations.bindings]` line carries all 126 with no edit to a citing line.
+#
+# 14 marks in 9 modules could not be repointed, and every one is a *named* citation - the
+# gate attributes a mark to the document named earlier on its own line, so the binding
+# cannot reach it. Those 9 modules are held by live lanes (`basicly-bj8kks`,
+# `basicly-vkh0.34`, `basicly-dx2ngn`, `basicly-vkh0.50`, `basicly-tjhjmk`), which is why
+# this record's scope excludes four of them by name and why the other five are left too:
+# editing a file another lane is rewriting produces the merge conflict the scope check
+# exists to prevent. Each is a one-line pointer swap for whichever lane lands last, and
+# `tests/test_tracker_requirements.py` is deliberately not one of them - its mention is
+# dated history ("It was `work-tracker.md` §2.1 until 2026-08-18"), correct as written, and
+# the follow-up should repoint the other eight and leave that one alone.
+#
+# Counted rather than described: 4 modules take a first entry (events 1, migrate 1,
+# owned_write 1, events_durability 5) and 5 rise by one or two against a recorded count
+# (tracker 2->3, kit_tracker_fsck 9->11, provenance 1->2, scheduler 1->2, requirements 3->4).
+# `binding_count` does not move: the binding's value changed, no key was added.
+[ratchet]
+base_commit = "8737c567"
+
+[ratchet.code_citations]
+# The fourth binding: `write_verbs.py`, whose one mark now means the kit's `SPEC.md`. A
+# binding may only appear in a diff that says it appeared, which is what this line is.
+count_delta = 1
+rebaseline_reason = "the cited document was deleted into the kit's own SPEC.md; these 14 named citations sit in 9 modules held by live lanes, so the pointer swap is deferred rather than raced"
+
+[ratchet.code_citations.rebaselined]
+".basicly/core/kit/tracker/events.py" = 1
+".basicly/core/kit/tracker/migrate.py" = 1
+"src/basicly/owned_write.py" = 1
+"src/basicly/tracker.py" = 1
+"tests/test_kit_tracker_events_durability.py" = 5
+"tests/test_kit_tracker_fsck.py" = 2
+"tests/test_kit_tracker_provenance.py" = 1
+"tests/test_kit_tracker_scheduler.py" = 1
+"tests/test_tracker_requirements.py" = 1

@@ -12,7 +12,7 @@ module no gate is looking at. That is how the tier kit's three files went ungate
 | Kit | What it is for | Its own README |
 | --- | --- | --- |
 | [`tier/`](tier/README.md) | resolving a declared model tier into the model a host will actually spawn, by a hook installed into that host | [`tier/README.md`](tier/README.md) |
-| `tracker/` | the owned append-only work-tracker ledger: events, snapshot, `fsck`, import, ranking | — |
+| `tracker/` | the owned append-only work-tracker ledger: events, snapshot, `fsck`, import, ranking | [`tracker/SPEC.md`](tracker/SPEC.md) |
 
 ## Constraints anything here must keep
 

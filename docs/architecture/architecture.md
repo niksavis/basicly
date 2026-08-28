@@ -3057,9 +3057,10 @@ can hold green through a regression.
 **Nine properties of this component were paid for in sessions spent diagnosing the binary it
 replaces, and each is a requirement rather than a lesson learned.** A dependency's defect is
 requirements input for our own store, and the proof becomes a committed gate here rather than
-a patch applied upstream. The register of what each one cost is
-[the work-tracker requirements](../requirements/work-tracker.md) §2.1, which is where the
-incidents live; this table is the specification they became.
+a patch applied upstream. The register of what each one cost was the work-tracker
+requirements document's §2.1, deleted with that document (basicly-vkh0.42.13) — the
+incidents live in the tracker and in `git log`, and this table is the specification they
+became.
 
 **Each is pinned by a test named for its id**, in `tests/test_tracker_requirements.py`, and
 each test asserts *this* system's defence against the defective input. **The table below is

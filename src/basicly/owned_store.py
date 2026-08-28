@@ -6,7 +6,7 @@ it. Nothing here reads or writes an event — :mod:`basicly.mirror` says what a
 write becomes and :mod:`basicly.tracker` appends it — so asking where the store is
 never loads it.
 
-Steps 3 and 4 of the cutover in `docs/requirements/work-tracker.md` §5. The kit under
+Steps 3 and 4 of the cutover in `.basicly/core/kit/tracker/SPEC.md` §5. The kit under
 :data:`KIT_TRACKER_DIR` is the owned store; the engine side of the seam that
 writes to it and, once flipped, reads from it, sits above this module.
 

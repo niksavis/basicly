@@ -4,7 +4,7 @@ The responsibility is *the command line*; the boundary is against the modules it
 Nothing here folds, mints or writes a line — ``events`` appends, ``ids`` mints,
 ``commands`` writes, ``queries`` reads.
 
-**The gap it closes** (`work-tracker.md` §4, a kit consumable with zero basicly imports
+**The gap it closes** (§4 in `SPEC.md`, a kit consumable with zero basicly imports
 and nothing on PATH): the write side had only ``basicly tracker``, which is the engine, so
 a repository that copied the kit could read a ledger it had no way to advance.
 
@@ -96,7 +96,7 @@ def _fields(title: str, pairs: Sequence[str]) -> dict[str, object]:
     """The ``created`` event's payload, from ``--title`` and the ``--field name=value`` list.
 
     The title's field name comes from :data:`scheduler.TITLE_FIELD` rather than a literal:
-    R2 in `work-tracker.md` is exactly one spelling per field, and the scheduler is the
+    the store takes exactly one spelling per field, and the scheduler is the
     module that declares this one.
 
     Raises:

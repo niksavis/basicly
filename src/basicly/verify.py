@@ -386,7 +386,7 @@ DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[tuple[str, ...], str], ...] = (
         "the ledger serialises every append behind one lock and fails the write "
         "outright when it cannot take it before the timeout, so a gate contends with "
         "whatever else drives the tracker at that moment; no diff can make that "
-        "contention its own fault (R8 in docs/requirements/work-tracker.md)",
+        "contention its own fault (R8 in docs/architecture/architecture.md §32.9)",
     ),
 )
 

@@ -44,7 +44,7 @@ rank1_floor_high_water = 0.85
 [tracker]
 # Which store the engine reads and writes. There is one: the append-only event log
 # under `.basicly/ledger/`, committed and carried by git (basicly-vkh0.19,
-# docs/requirements/work-tracker.md).
+# .basicly/core/kit/tracker/SPEC.md).
 #
 # **The ladder collapsed to its last rung** (basicly-vkh0.42.7). It ran `external` ->
 # `dual` -> `owned` while a second store existed: the import replayed that store's
@@ -289,7 +289,7 @@ inputs = [
   "uv.lock",
 ]
 
-# The one-way kit boundary (basicly-vkh0.16). `docs/requirements/work-tracker.md` §4 named
+# The one-way kit boundary (basicly-vkh0.16). The kit's own `.basicly/core/kit/tracker/SPEC.md` §4 named
 # `lint-imports` below as the enforcement for it. That was not a gap in the wiring, it
 # was unenforceable: import-linter analyses one `root_package`, declared as `basicly`,
 # and the kit is flat modules under `.basicly/core/kit` with no `__init__.py` and not
