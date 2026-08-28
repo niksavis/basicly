@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from basicly import release
@@ -44,3 +45,22 @@ def test_the_assembled_changelog_accounts_for_the_records_once_the_files_are_gon
     accounted = release.accounted_records(tmp_path, ["fx-1", "fx-2"])
 
     assert accounted == {"fx-1", "fx-2"}
+
+
+def test_regeneration_applies_the_fast_fixers_before_the_commit_meets_the_hook(
+    tmp_path: Path,
+) -> None:
+    """basicly-cmc998: a generated block the hook rewrites mid-commit fails the release commit."""
+    python = Path(sys.executable).as_posix()
+    (tmp_path / "basicly.toml").write_text(
+        "[[verify.checks]]\n"
+        'name = "docs-claims"\n'
+        f'command = ["{python}", "-c", "0"]\n'
+        f'fix_command = ["{python}", "-c", "open(\'marker\', \'w\').close()"]\n'
+        'modes = ["fast"]\n',
+        encoding="utf-8",
+    )
+
+    release._refresh_generated_docs(tmp_path)
+
+    assert (tmp_path / "marker").exists()

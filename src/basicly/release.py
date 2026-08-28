@@ -54,7 +54,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import checkout, merge, policy, worktree
+from . import checkout, merge, policy, verify, worktree
 from . import commit as commit_mod
 from .capability_proof import unexercised_capabilities
 
@@ -731,6 +731,16 @@ def _regenerate(repo_root: Path) -> None:
         cwd=repo_root,
         env=env,
     )
+    _refresh_generated_docs(repo_root)
+
+
+def _refresh_generated_docs(repo_root: Path) -> None:
+    """Apply every ``fast`` fixer, as the pre-commit hook does, before the commit meets it.
+
+    The bump adds a character to every projected header and `always-on-sizes` states
+    those sizes; a block the hook rewrites mid-commit fails the commit (basicly-cmc998).
+    """
+    verify.apply_fixes(repo_root, "fast")
 
 
 def _write_changelog(repo_root: Path, plan: ReleasePlan) -> None:
