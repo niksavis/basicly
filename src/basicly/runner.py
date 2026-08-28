@@ -1548,6 +1548,16 @@ def _wait_bounded(
             return _Streamed("", "", None, timed_out=True, stopped=reason)
 
 
+def _process_isolation(os_name: str) -> tuple[bool, int]:
+    """``(start_new_session, creationflags)`` that make a dispatch killable as a tree."""
+    return os_name != "nt", CREATE_NEW_PROCESS_GROUP if os_name == "nt" else 0
+
+
+def _resolved(argv: list[str], env: Mapping[str, str]) -> list[str]:
+    """``argv`` with its command found on the dispatch PATH: Windows never reads PATHEXT."""
+    return [shutil.which(argv[0], path=env.get("PATH")) or argv[0], *argv[1:]]
+
+
 def run(  # noqa: PLR0913 — mirrors the CLI surface
     spec: RunnerSpec,
     prompt: str,
@@ -1662,8 +1672,9 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     # has no equivalent for signalling a tree (taskkill /T walks it instead); it
     # gets its own group only so a stray Ctrl-C cannot cross over. Each flag is
     # inert on the other platform.
+    new_session, creationflags = _process_isolation(os.name)
     proc = subprocess.Popen(  # noqa: S603 — argv is the engine-built spec, no shell
-        argv,
+        _resolved(argv, env),
         cwd=cwd,
         stdin=stdin_source,
         stdout=subprocess.PIPE,
@@ -1675,8 +1686,8 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         # keeps the default so its behaviour is untouched.
         errors=STREAM_ERRORS if sink is not None else None,
         env=env,
-        start_new_session=os.name != "nt",
-        creationflags=CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+        start_new_session=new_session,
+        creationflags=creationflags,
     )
     try:
         if sink is not None:

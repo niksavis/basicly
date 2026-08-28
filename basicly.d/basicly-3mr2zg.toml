@@ -1,0 +1,7 @@
+# The v0.10.0 release record (basicly-3mr2zg).
+#
+# The record declares the version file and the pin sites as its scope, so `release-notes`
+# judged it as owing a note once it closed. The release commit is the note; declared
+# invisible in `[tool.release_notes.invisible]`, delta recorded here.
+[ratchet.release_notes]
+count_delta = 1

@@ -588,6 +588,7 @@ declared_count = 1
 # here and `count_delta = +1` under [ratchet.release_notes] in the lane's own basicly.d
 # fragment — for the reason every ratchet number is a delta.
 [tool.release_notes.invisible]
+"basicly-3mr2zg" = "the v0.10.0 release record: its change is the CHANGELOG section and the tag themselves, so a note about the release inside the release describes nothing"
 "basicly-uhiq" = "epic anchor: each of its four children shipped its own change and note; the epic itself changed no file and closed 2026-08-28 as complete, its rule carried forward by basicly-hnnmk9"
 "basicly-ibzr0f" = "test-only: the lane found basicly-gnpgf8 had already removed the labelled empty rows from a lane card, and added one regression test; no consumer surface changed"
 

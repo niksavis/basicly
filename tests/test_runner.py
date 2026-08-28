@@ -1502,35 +1502,14 @@ def test_run_timeout_returns_a_timed_out_result(monkeypatch: pytest.MonkeyPatch)
 # --- Portable process-tree kill on timeout (basicly-kjc5.15) -------------------
 
 
-def test_run_starts_the_dispatch_in_its_own_session_on_posix(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_a_posix_dispatch_starts_in_its_own_session() -> None:
     """Without its own session there is no group to kill: the flag is not optional."""
-    monkeypatch.setattr(runner.os, "name", "posix")
-    captured = _patch_popen(monkeypatch)
-    runner.run(_claude_spec(), "go", Path("/work"))
-
-    assert captured["start_new_session"] is True
-    assert captured["creationflags"] == 0  # inert off Windows
+    assert runner._process_isolation("posix") == (True, 0)
 
 
-def test_run_starts_a_windows_dispatch_in_its_own_process_group(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The Windows branch is unreachable on POSIX CI, so pin it directly.
-
-    `runner.os` is the real module, so faking `os.name` also switches `pathlib`'s
-    flavour for the whole process — a POSIX cwd then cannot be resolved as a
-    `WindowsPath`. Clearing `VIRTUAL_ENV` keeps this test on the process-group
-    question by leaving `sanitised_project_env` with nothing to compare.
-    """
-    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
-    monkeypatch.setattr(runner.os, "name", "nt")
-    captured = _patch_popen(monkeypatch)
-    runner.run(_claude_spec(), "go", Path("/work"))
-
-    assert captured["creationflags"] == runner.CREATE_NEW_PROCESS_GROUP
-    assert captured["start_new_session"] is False
+def test_a_windows_dispatch_starts_in_its_own_process_group() -> None:
+    """Asserted by injection: faking ``os.name`` flips pathlib for the whole process."""
+    assert runner._process_isolation("nt") == (False, runner.CREATE_NEW_PROCESS_GROUP)
 
 
 class _Stubborn:
