@@ -39,16 +39,19 @@ def _load(file_name: str, module_name: str) -> Any:
 
 
 queries = _load("queries.py", "basicly_tracker_kit_queries")
+label_shape = _load("label_shape.py", "basicly_tracker_kit_label_shape")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
 ids = events.ids
 
-# The field a record's labels live under, and the separator one argv joins them with. The
-# joined form is forced rather than chosen: ``value`` is one of `events.TRUNCATABLE_KEYS`,
-# so the schema refuses a list under a `field` event.
-LABELS_FIELD = "labels"
-LABEL_SEPARATOR = ","
+# The field a record's labels live under, the separator one argv joins them with, and the
+# split that gets them back. Declared in `label_shape.py` and re-exported rather than
+# respelled: `fsck.py` checks the same shape and a second copy of the separator is how a
+# checker and a writer come to disagree about one log (basicly-0cpn51).
+LABELS_FIELD = label_shape.LABELS_FIELD
+LABEL_SEPARATOR = label_shape.LABEL_SEPARATOR
+labels_of = label_shape.labels_of
 
 # The status a close moves a record to, and the field the reason lands under.
 CLOSED_STATUS = "closed"
@@ -61,18 +64,6 @@ class TrackerCommandError(events.LedgerError):
     A subclass of the ledger's own error so ``cli.main`` reports it on the path it already
     has, rather than growing a second handler the kit's one-class-per-handler rule forbids.
     """
-
-
-def labels_of(value: object) -> tuple:
-    """A folded ``labels`` field as the labels it names, whichever shape holds it.
-
-    Split, never iterated: a bare string iterates as its characters.
-    """
-    if isinstance(value, str):
-        return tuple(part for part in (raw.strip() for raw in value.split(LABEL_SEPARATOR)) if part)
-    if isinstance(value, (list, tuple)):
-        return tuple(str(item) for item in value)
-    return ()
 
 
 def _ledger(directory: Path | str) -> Path:
