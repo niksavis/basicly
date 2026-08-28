@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import tracker, ui
+from . import tracker, tracker_argv, ui
 
 if TYPE_CHECKING:
     import argparse
@@ -45,6 +45,10 @@ def cmd_write(args: argparse.Namespace) -> int:
     # success moves on, which cost three commands and a wrong diagnosis (basicly-kn4rip).
     ui.say(f"already recorded, so nothing was appended: {' '.join(argv)}")
     ui.say("  the ledger already holds this exact event; the record still reads as it did")
+    ui.say(
+        f"  if you mean to record it a second time, add {tracker_argv.REPEAT_FLAG} — which "
+        f"appends once more every time it is run, and is not idempotent"
+    )
     return 0
 
 
