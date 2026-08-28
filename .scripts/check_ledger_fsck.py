@@ -18,9 +18,9 @@ everything else — the same shape `check_docs_citations.py` uses, and for the s
 exists to prevent. A count that falls has to be banked in the same diff, for the reason
 ``[tool.module_size.frozen]`` states: leaving the higher number licenses regrowth for free.
 
-Warnings are printed and never fatal, which is `fsck`'s own rule (work-tracker.md §4.5) — an
-unfolded kind is
-a newer writer, not corruption.
+Warnings are printed and never fatal, which is `fsck`'s own rule
+(.basicly/core/kit/tracker/SPEC.md §4.5) — an unfolded kind is a newer writer, not
+corruption.
 
 Run::
 

@@ -454,7 +454,7 @@ binding_count = 3
 
 [tool.code_citations.bindings]
 # Which document a *bare* section mark in a directory means (basicly-e2mz.49). The shipped
-# tracker kit is the case that forced this: each module names `work-tracker.md` in its header
+# tracker kit is the case that forced this: each module names its own `SPEC.md` in its header
 # once and then writes bare marks, so 113 of them could be attributed to no document by any
 # reader who opened one module in isolation - or by any gate. One line here makes all 113
 # checkable. Longest matching prefix wins; a key that is a full path binds one module.
@@ -462,7 +462,7 @@ binding_count = 3
 # `binding_count` ratchets this table in both directions, because a binding added quietly is
 # the one edit that could make a whole directory's marks resolve against a document nobody
 # chose - the fail-open shape, arriving through a green gate.
-".basicly/core/kit/tracker/" = "docs/requirements/work-tracker.md"
+".basicly/core/kit/tracker/" = ".basicly/core/kit/tracker/SPEC.md"
 #
 # Two more, both added 2026-08-20 when this gate first ran on a rebase and caught citations
 # `basicly-u2hl.59` had just landed. `handoff.py`'s bare marks originally meant the
@@ -473,6 +473,12 @@ binding_count = 3
 # spelling the path on the citing lines costs about 24.
 "src/basicly/handoff.py" = "docs/architecture/architecture.md"
 "tests/test_handoff.py" = "docs/architecture/architecture.md"
+#
+# A fourth, 2026-08-28 (basicly-vkh0.42.13): `write_verbs.py` cites the provenance
+# vocabulary, which left `docs/requirements/work-tracker.md` for the kit's own `SPEC.md`
+# when that document was deleted. Bound rather than named inline for `handoff.py`'s reason
+# measured again here - 13 tokens of module-size headroom against about 24 for the path.
+"src/basicly/write_verbs.py" = ".basicly/core/kit/tracker/SPEC.md"
 
 # Unresolved code-to-document citation debt (basicly-e2mz.49). The gate is
 # `.scripts/check_code_citations.py`, wired as the `code-citations` [[verify.checks]] entry. A

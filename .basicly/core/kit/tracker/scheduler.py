@@ -1,6 +1,6 @@
 r"""The owned ranking: a pure score over the graph, with no age term (basicly-vkh0.20).
 
-`work-tracker.md` §9.2 settled this ranking, and the sharp half of it is a
+§9.2 in `SPEC.md` settled this ranking, and the sharp half of it is a
 *subtraction*: **the ranking must drop `created_at`**. An age term makes dispatch order
 clock-dependent for a graph nobody changed — which D9 forbids for anything outliving the
 pass. Two ledgers holding the same work, stamped by two clocks, must rank identically, and

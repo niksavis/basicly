@@ -1,6 +1,6 @@
 r"""`fsck` and `rebuild` — the two commands that make "the log is the truth" checkable.
 
-`work-tracker.md` §13 names them together and says why: without a check that
+§13 in `SPEC.md` names them together and says why: without a check that
 folds the whole log and reports what it finds, and a rebuild that regenerates every
 derivative from the log alone, "the log is the truth" is a claim nobody can test. This
 module is both, and it owns no state of its own — every defect it names is a property of

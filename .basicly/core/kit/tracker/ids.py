@@ -1,6 +1,6 @@
 """Mint the work tracker's two kinds of id: opaque records, content-derived evidence.
 
-The split this module exists to keep (`work-tracker.md` §9.4, basicly-vkh0.12),
+The split this module exists to keep (§9.4 in `SPEC.md`, basicly-vkh0.12),
 and it is a split rather than a preference because the two kinds have opposite
 lifetimes:
 
@@ -70,7 +70,7 @@ including the positive control that a hyphenated id really is refused.
 
 ## What this module may not do
 
-Kit rules (`work-tracker.md` §4): **no basicly**, standard library only, no
+Kit rules (§4 in `SPEC.md`): **no basicly**, standard library only, no
 network, no subprocess, no file or environment access — everything comes in as an
 argument. It also reads **no clock**: §9.5 makes a timestamp evidence rather than a
 constraint, and nothing here has a timestamp to be tempted by. Ordering of the child
@@ -239,7 +239,7 @@ def minted_ever(live: Iterable[str], tombstoned: Iterable[str] = ()) -> frozense
     Naming the union is the point. A mint that checked only live ids would hand a
     deleted record's id to a new one, and the ledger's history would then read as one
     record that changed its mind — which is why a delete leaves a **tombstone** rather
-    than removing anything (`work-tracker.md` §9.4).
+    than removing anything (§9.4 in `SPEC.md`).
     """
     return frozenset(live) | frozenset(tombstoned)
 

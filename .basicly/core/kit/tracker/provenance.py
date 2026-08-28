@@ -1,6 +1,6 @@
 r"""Provenance on every edge event: how an edge got there decides what it may do.
 
-Today a dependency edge is just an edge (`work-tracker.md` §9.6, basicly-vkh0.13).
+Today a dependency edge is just an edge (§9.6 in `SPEC.md`, basicly-vkh0.13).
 An edge a human asserted during decomposition, an edge an agent proposed from a scope-glob
 overlap, and an edge the merge queue deduced after a bounce are **indistinguishable in the
 graph** — yet only the first should be trusted, unexamined, to hold up a landing. This

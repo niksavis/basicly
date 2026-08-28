@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 
-# How a translated fact says it got here (`work-tracker.md` §9.6). Distinguishes it from one
+# How a translated fact says it got here (§9.6, bound in pyproject). Distinguishes it from one
 # `migrate.py` extracted out of an import, and it is one of `migrate.RESERVED_KEYS`, so it is
 # dropped again when a record is rendered back. `owned_write` restamps it as the engine's own.
 MIRROR_PROVENANCE = "dual-write"

@@ -4,7 +4,7 @@ One operation per function, each taking a ledger directory and returning JSON-sh
 ``cli.py`` owns the argument surface above it. The boundary is that split: nothing here
 parses an argument and nothing there folds an event.
 
-**Why it exists** (`work-tracker.md` §4): the kit promised a tracker a repository can run
+**Why it exists** (§4 in `SPEC.md`): the kit promised a tracker a repository can run
 with nothing on PATH, and shipped three verbs. The engine reached ranking, the blocked set,
 edges and deletion through these modules directly, so a consumer with no engine could
 create a record and never advance one.

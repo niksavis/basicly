@@ -1,6 +1,6 @@
 """The flip boundary: which records the shadow differential may be judged on.
 
-Step 2 of the cutover (`work-tracker.md` §5) proves **the dual write agrees**, not that
+Step 2 of the cutover (§5 in `SPEC.md`) proves **the dual write agrees**, not that
 history agrees. `basicly-c357` records why both open records about the same gap were right —
 a consumer needs a re-runnable import (`vkh0.23`), and closing this repo's historical gap
 by re-importing would leave the owned side tracking the external one (`u4xu`).

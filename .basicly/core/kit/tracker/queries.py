@@ -3,7 +3,7 @@
 The read half of the kit's operation surface, against ``commands.py``'s write half. The
 boundary is the lock: nothing here takes one, so a query never blocks a writer.
 
-**Why it exists** (`work-tracker.md` §4): the engine reached ranking and readiness through
+**Why it exists** (§4 in `SPEC.md`): the engine reached ranking and readiness through
 `scheduler` and `differential` directly, so a consumer with no engine had no way to ask
 what to work on next. Kit rules are in `.basicly/core/kit/README.md`.
 """

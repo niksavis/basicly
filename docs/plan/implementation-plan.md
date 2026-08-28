@@ -8,10 +8,8 @@ absorbed into three authoritative documents and deleted, three carried nothing l
 Shipped history is deliberately absent. `git log` holds the sequence and the tracker holds the
 incidents; this file is the ladder and nothing else.
 
-This file plus [`architecture.md`](../architecture/architecture.md) and
-[`requirements/work-tracker.md`](../requirements/work-tracker.md) are the whole picture.
-Architecture is the **specification** and wins over both of the others; the requirements
-document is the argument behind the decisions it records; this file is the order.
+This file plus [`architecture.md`](../architecture/architecture.md) are the whole picture.
+Architecture is the **specification** and wins over this one; this file is the order.
 
 ## 1. How to work from this file
 
@@ -489,8 +487,8 @@ nobody re-examined, which is the shape §3's roster paragraph took for five days
 
 ## 6. What is left of the `br` cut
 
-Tracked by `basicly-vkh0`; specified by
-[`requirements/work-tracker.md`](../requirements/work-tracker.md).
+Tracked by `basicly-vkh0`; specified by architecture and, for the store the kit ships, by
+[`.basicly/core/kit/tracker/SPEC.md`](../../.basicly/core/kit/tracker/SPEC.md).
 
 The five cutover steps, their states and the five unported operations are in architecture —
 *Dual write, and where it leaks*, and *The shadow differential*.
@@ -592,7 +590,6 @@ exist.
 | `architecture/status.md` | **Live** | The capability status view, extracted from the architecture reference so the reference holds specification only. Deleted when a status view is generated from the tracker rather than written by hand. |
 | `architecture/backlog.md` | **Live** | Plan-gate-shaped items the architecture review emitted. Deleted when the last item is filed as a tracked issue. |
 | `architecture/conventions.md` | **Live** | How the architecture reference is produced — the diagram renderer, the types used and declined, the reading order and the authority order. Extracted so the reference describes the system and never itself. Deleted only if the reference stops carrying diagrams. |
-| `requirements/work-tracker.md` | **Live** | Survives until `br` leaves the runtime path (§6). The only record of what the replacement must be, including nine requirements carried forward from `br` defects already paid for. |
 | `requirements/harness-board.md` | **Live** | The `harness-board` design, moved off the `harness/basicly-rn0o` branch on 2026-08-19 (`basicly-rn0o.12`) so the gates read it. Deleted when `basicly-rn0o` closes and the board's specification is absorbed into architecture. |
 | `plan/implementation-plan.md` | **Authoritative** | This file. Deleted when `v1.0.0` ships and the ladder is spent. |
 | `tutorial/first-loop.md` | **Consumer-facing** | Never deleted while `basicly install` ships. Re-executed against a fresh repo whenever a command or its output changes (`imnu.2`). |
