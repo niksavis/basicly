@@ -589,6 +589,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
             "module_size": _RATCHET_TABLE,
             "noqa_debt": _RATCHET_TABLE,
             "release_notes": _RATCHET_TABLE,
+            "spend_accuracy": _RATCHET_TABLE,
         },
     ),
     "policy": Table(

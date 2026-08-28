@@ -632,6 +632,7 @@ inputs = [
   ".basicly/ledger/**",
   "pyproject.toml",
   "basicly.d/*.toml",
+  "uv.lock",
 ]
 
 # One test file per source module, enforced by name (basicly-u2hl.14;
