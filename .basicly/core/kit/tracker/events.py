@@ -107,7 +107,7 @@ import re
 import sys
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
@@ -245,6 +245,10 @@ KIND_EDGE_RETRACTED = "edge_retracted"
 KIND_GATE = "gate"
 KIND_CHECKPOINT = "checkpoint"
 KIND_ARTIFACT = "artifact"
+# The audit trail of the one rewrite this log permits (basicly-vkh0.34). A corrective append
+# is enough for a wrong *fact* and not for a wrong *disclosure*, which stays readable until
+# the bytes go: :func:`withdraw` takes them out and appends one of these to say it did.
+KIND_WITHDRAWN = "withdrawn"
 
 # The closed set (§4.5), declared once so a sibling aliases these names rather than respelling
 # a literal (basicly-vkh0.36). A non-member is read, never refused.
@@ -261,6 +265,7 @@ KNOWN_KINDS = frozenset({
     KIND_GATE,
     KIND_CHECKPOINT,
     KIND_ARTIFACT,
+    KIND_WITHDRAWN,
 })
 
 # What each kind declares about its free text: the bound, in bytes, that every payload key outside
@@ -286,6 +291,7 @@ KIND_TEXT_BYTES = MappingProxyType({
     KIND_EDGE_RETRACTED: MAX_TEXT_BYTES,
     KIND_GATE: MAX_TEXT_BYTES,
     KIND_CHECKPOINT: MAX_TEXT_BYTES,
+    KIND_WITHDRAWN: MAX_TEXT_BYTES,
 })
 
 # The one kind that carries prose, and the external tracker's word for the same event. A
@@ -326,6 +332,19 @@ EVENT_FAMILY = "ev"
 # The fields this version understands. Anything else on a parsed line is preserved
 # verbatim in `Event.extra` and written back out unchanged.
 KNOWN_FIELDS = frozenset({"id", "record", "seq", "kind", "actor", "ts", "payload", "totals"})
+
+# What a withdrawal writes over the value it takes out, and the two keys that say so. The
+# suffix follows the cap's own `text_truncated` marker, so a reader learns which field lost
+# evidence. `withdrawn_from` carries the id the line had before the rewrite: it keeps the
+# re-minted id unique, and `fsck` reads it to notice a union merge restoring that line.
+WITHDRAWN_PLACEHOLDER = ""
+WITHDRAWN_SUFFIX = "_withdrawn"
+WITHDRAWN_FROM = "withdrawn_from"
+
+# What a `withdrawn` event says, both read by the fold. `target` is in
+# :data:`FOLD_READ_KEYS` already; `reason` is capped free text like any other.
+WITHDRAWN_TARGET = "target"
+WITHDRAWN_REASON = "reason"
 
 # What `actor` says when no caller supplied one. Never ``""``, which cannot say whether the
 # writer knew nobody or never looked.
@@ -588,6 +607,26 @@ def from_json(line: str) -> Event:
 # --- the fold -----------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Withdrawal:
+    """One withdrawal, as the fold reports it: what went, why, and when.
+
+    Attributes:
+        record: The item whose content was withdrawn.
+        target: The event whose payload was withdrawn, by the id it carries **after** the
+            rewrite. The id before it is on that event, under :data:`WITHDRAWN_FROM`.
+        reason: Why the content was taken out. A withdrawal with no reason is refused.
+        at: The withdrawal event's ``ts`` — the one place the fold reads a clock, and
+            evidence rather than a constraint (§9.5). A time in the payload would put the
+            clock inside the id digest, so two clocks would mint two ids for one fact.
+    """
+
+    record: str
+    target: str
+    reason: str
+    at: str
+
+
 @dataclass
 class RecordState:
     """One item's state, folded from its events.
@@ -639,6 +678,12 @@ class FoldResult:
             :attr:`RecordState.totals` is that restatement.
         mismatched_totals: Ids whose carried totals disagree with the fold. A finding for
             `fsck` to report, **never** a repair in place (§4.4).
+        withdrawals: Every withdrawal in the folded set, in canonical order. The half no
+            reader gets from the bytes: the withdrawn payload says content went, this says
+            why and when. Here and not on :class:`RecordState`, which
+            `snapshot.record_to_dict` serialises field by field; a **seeded** fold sees only
+            the current file, the boundary :func:`fold` already names for a straddling fork,
+            and `fsck` folds the whole history so its report is never the partial one.
     """
 
     records: dict[str, RecordState] = field(default_factory=dict)
@@ -647,6 +692,7 @@ class FoldResult:
     duplicate_ids: list[str] = field(default_factory=list)
     forked: list[str] = field(default_factory=list)
     mismatched_totals: list[str] = field(default_factory=list)
+    withdrawals: list[Withdrawal] = field(default_factory=list)
 
 
 def _apply_created(state: RecordState, payload: Mapping[str, object]) -> None:
@@ -705,6 +751,36 @@ def _apply_artifact(state: RecordState, payload: Mapping[str, object]) -> None:
     state.artifacts[kind] = payload.get("body")
 
 
+def _withdrawal_facts(payload: Mapping[str, object]) -> tuple[str, str]:
+    """The target and the reason a ``withdrawn`` payload must carry.
+
+    Refused rather than defaulted, because a withdrawal that cannot say why it happened is
+    the audit missing, and that is what makes a rewrite indistinguishable from tampering.
+
+    Raises:
+        InvalidEventError: either is absent or empty.
+    """
+    target = payload.get(WITHDRAWN_TARGET)
+    reason = payload.get(WITHDRAWN_REASON)
+    if not isinstance(target, str) or not target:
+        raise InvalidEventError(
+            f"a {KIND_WITHDRAWN} event needs the {WITHDRAWN_TARGET} event id, got {target!r}"
+        )
+    if not isinstance(reason, str) or not reason:
+        raise InvalidEventError(
+            f"a {KIND_WITHDRAWN} event needs a {WITHDRAWN_REASON}, got {reason!r}"
+        )
+    return target, reason
+
+
+def _apply_withdrawn(result: FoldResult, event: Event) -> None:
+    """A withdrawal is recorded as the fold's, naming the record whose content it took out."""
+    target, reason = _withdrawal_facts(event.payload)
+    result.withdrawals.append(
+        Withdrawal(record=event.record, target=target, reason=reason, at=event.ts)
+    )
+
+
 def _apply_tombstone(state: RecordState, payload: Mapping[str, object]) -> None:  # noqa: ARG001
     """The record is deleted, and stays in the log saying so."""
     state.tombstoned = True
@@ -727,7 +803,9 @@ _HANDLERS: dict[str, Callable[[RecordState, Mapping[str, object]], None]] = {
     KIND_ARTIFACT: _apply_artifact,
 }
 
-APPLIED_KINDS = frozenset(_HANDLERS) | {KIND_DISPATCH}
+# `withdrawn` is applied and absent from the table for the reason :func:`fold` gives: it is
+# folded from the event, and every entry above takes a payload.
+APPLIED_KINDS = frozenset(_HANDLERS) | {KIND_DISPATCH, KIND_WITHDRAWN}
 
 
 def classify_kind(kind: str) -> str:
@@ -803,6 +881,11 @@ def fold(events: Iterable[Event], *, seed: Mapping[str, RecordState] | None = No
         state.totals = accumulate(state.totals, event.kind, event.payload)
         if event.totals != state.totals:
             result.mismatched_totals.append(event.id)
+        if event.kind == KIND_WITHDRAWN:
+            # The one kind folded from the event and not from its payload, because the time
+            # a withdrawal happened is `ts` and nothing in a payload may hold a clock.
+            _apply_withdrawn(result, event)
+            continue
         handler = _HANDLERS.get(event.kind)
         if handler is not None:
             handler(state, event.payload)
@@ -1364,3 +1447,153 @@ def append(  # noqa: PLR0913 — every keyword is an injected dependency the kit
     finally:
         if acquired:
             lock.release()
+
+
+# --- the one rewrite ----------------------------------------------------------
+
+
+def _withdrawn_payload(event: Event) -> dict[str, object]:
+    """*event*'s payload with every value the fold does not read by name taken out.
+
+    The set kept is :data:`FOLD_READ_KEYS`, which §4.2 also forbids the cap to cut, for the
+    same reason: a value the fold reads by name decides another reader's answer, so removing
+    one would change what the log *means* rather than what it discloses. A pasted secret is
+    free text, which is exactly what falls outside that set.
+    """
+    payload: dict[str, object] = {WITHDRAWN_FROM: event.id}
+    for key, value in event.payload.items():
+        if key in FOLD_READ_KEYS:
+            payload[key] = value
+            continue
+        payload[key] = WITHDRAWN_PLACEHOLDER
+        payload[key + WITHDRAWN_SUFFIX] = True
+    return payload
+
+
+def _find_line(ledger: Path, event_id: str) -> tuple[Path, str, int, Event]:
+    """The log file, its whole text, the line's index and the parsed event for *event_id*.
+
+    Raises:
+        InvalidEventError: no line carries that id. Fail closed — a withdrawal that found
+            nothing and said nothing would report success with the content still readable.
+    """
+    for path in log_paths(ledger):
+        text = path.read_text(encoding="utf-8")
+        for index, line in enumerate(text.splitlines()):
+            try:
+                event = from_json(line)
+            except InvalidEventError:
+                # A line that will not parse cannot be the one asked for, and repairing it
+                # is `fsck`'s business and not a withdrawal's.
+                continue
+            if event.id == event_id:
+                return path, text, index, event
+    raise InvalidEventError(f"no event in the log carries the id {event_id!r}")
+
+
+def _publish_text(path: Path, text: str) -> None:
+    """Replace *path* with *text* by writing a temporary file and renaming it over.
+
+    Atomic publication (§4.4) for the one file this design ever rewrites, so a reader sees
+    the old log or the new one and a crash leaves one of the two. The pid in the temporary
+    name and ``replace`` over ``rename`` are `snapshot.write_snapshot`'s reasons.
+    """
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="\n") as stream:
+            stream.write(text)
+        temporary.replace(path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def withdraw(  # noqa: PLR0913 - `append`'s injected seams, plus which event and why
+    directory: Path | str,
+    event_id: str,
+    *,
+    reason: str,
+    actor: str = "",
+    clock: Callable[[], float] | None = None,
+    redact: Callable[[str], str] | None = None,
+    lock_timeout_s: float = DEFAULT_LOCK_TIMEOUT_S,
+) -> Event:
+    """Take one event's free text out of the log, and append the audit trail saying so.
+
+    **The only function in this design that rewrites a line, and the reason there is one.**
+    Append-only is what gives a fold its authority, and a corrective append is the right
+    repair for a wrong *fact*. It repairs a wrong *disclosure* not at all: the secret stays
+    readable in every clone of a committed store. So removal is admitted once, narrowly, and
+    it leaves evidence — everything else here still only appends, and `fsck` reports an
+    edited line that did not come through this function.
+
+    Three things make the rewrite safe to fold over afterwards:
+
+    - **Only free text goes.** :func:`_withdrawn_payload` keeps every key the fold reads by
+      name, so no other reader's answer moves and no handler is left without what it needs.
+    - **The id is re-minted, because an id digests the payload.** Leaving the old id would
+      make the line disagree with its own content, and `tracker.scrub_ledger` refuses to
+      touch a ledger holding one — which would wedge the tracker's own commit path. The
+      retired id stays on the line under :data:`WITHDRAWN_FROM`, so the new id is unique
+      without a clock in it, and a union merge that restores the retired line is visible.
+    - **The bytes go first and the trail lands second.** A crash between them leaves the
+      content gone and the trail missing, which `fsck` reports and a corrective append
+      repairs. The other order would leave a trail claiming a withdrawal that never
+      happened, and a false claim is worse than a missing one.
+
+    Returns:
+        The ``withdrawn`` event, which is where the time and the reason are recorded.
+
+    Raises:
+        InvalidEventError: no event carries *event_id*; it is a ``withdrawn`` event, whose
+            own trail may not be withdrawn; it has already been withdrawn; it has no free
+            text to withdraw, so the trail would claim a removal that removed nothing; or
+            the re-minted id is already in the log.
+        LockUnavailableError: another writer holds the ledger. Retryable.
+    """
+    ledger = Path(directory)
+    with LedgerLock(ledger, timeout_s=lock_timeout_s) as lock:
+        path, text, index, target = _find_line(ledger, event_id)
+        if target.kind == KIND_WITHDRAWN:
+            raise InvalidEventError(
+                f"{event_id} is the {KIND_WITHDRAWN} trail of another withdrawal, and "
+                f"withdrawing that would leave the first one unaccounted for"
+            )
+        if WITHDRAWN_FROM in target.payload:
+            raise InvalidEventError(f"{event_id} has already been withdrawn")
+        payload = _withdrawn_payload(target)
+        # Every withdrawn key adds its marker beside the placeholder, so a payload that grew
+        # by the retired id alone is one where nothing was taken out.
+        if len(payload) == len(target.payload) + 1:
+            raise InvalidEventError(
+                f"every key on {event_id} is one the fold reads by name, so there is no free "
+                f"text to withdraw and the trail would claim a removal that removed nothing"
+            )
+        minted = event_id_for(target.record, target.kind, payload)
+        stored, _ = read_events(ledger)
+        if any(event.id == minted for event in stored):
+            raise InvalidEventError(
+                f"withdrawing {event_id} would mint {minted}, which the log already holds"
+            )
+        lines = text.splitlines()
+        lines[index] = to_json(replace(target, id=minted, payload=payload))
+        # The trailer rather than a newline per line: a torn final line stays torn, because
+        # completing one would turn a tolerated crash signature into interior garbage.
+        _publish_text(path, "\n".join(lines) + ("\n" if text.endswith("\n") else ""))
+        recorded = append(
+            ledger,
+            [
+                Draft(
+                    target.record,
+                    KIND_WITHDRAWN,
+                    {WITHDRAWN_TARGET: minted, WITHDRAWN_REASON: reason},
+                )
+            ],
+            actor=actor,
+            clock=clock,
+            redact=redact,
+            held_lock=lock,
+        )
+        # `append` skips a draft whose id the log already holds; this one cannot be held,
+        # because the target id it carries was refused above if the log had it.
+        return recorded[0]

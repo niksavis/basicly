@@ -1,0 +1,60 @@
+# A wrong disclosure can be withdrawn, and only that path may rewrite the log
+# (basicly-vkh0.34). Append-only is right for a wrong *fact* and no repair at all for a wrong
+# *disclosure*: a corrective append leaves the secret readable in every clone of a committed
+# store. So one narrow rewrite is admitted, it leaves evidence, and `fsck` reports any other.
+# Three modules, all measured before the first edit: `events.py` and `fsck.py` at 0 tokens of
+# headroom, the test file at 0.
+#
+# `events.py` +2838: the `withdrawn` kind, the `Withdrawal` the fold reports, and `withdraw`
+# with its three helpers. The design decisions that cost most of it are the ones a reader
+# cannot re-derive: that only keys outside `FOLD_READ_KEYS` go, so a withdrawal cannot change
+# what the log *means*; that the id is re-minted, because `tracker.scrub_ledger` refuses a
+# ledger holding a line that disagrees with its own id and would wedge the tracker's commit
+# path; that the retired id stays on the line, which keeps the new id unique with no clock in
+# it; and that the bytes go before the trail, because a trail claiming a withdrawal that never
+# happened is worse than a missing one. The report is on `FoldResult` and not on `RecordState`
+# because `snapshot.record_to_dict` serialises every field of that class by a stated invariant
+# and `snapshot.py` is not in this record's scope. The other ratchet is the proof that none of
+# these tokens came out of the comment budget: the module's prose share is **57.1 before and
+# 57.1 after**, held at its frozen figure by cutting words out of this change's own prose.
+#
+# `fsck.py` +1430: four finding classes and two checks. `unminted-id` is the one that makes
+# "only the withdrawal path rewrites the log" a fact about the file rather than a promise — an
+# id digests its payload, so an edit that leaves the id alone stops deriving it. It was
+# measured absent first: `fsck` reported a hand-edited payload **clean** on 2026-08-28, against
+# a dangling-record positive control on the same harness, so `tracker.scrub_ledger`'s docstring
+# claim that "fsck reads every scrubbed event as inconsistent" was false and is now true. The
+# generation is matched at *any* value up to the record's event count rather than as the dense
+# occurrence count, because a withdrawal moves its event out of the group of identical payloads
+# it was counted in and density would report the survivors as edited. Prose share **51.0 before
+# and 49.3 after**, which takes the module under the 50% cap and graduates its entry.
+#
+# `tests/test_kit_tracker_events.py` +2843: the six tests the acceptance criteria name, run
+# against eight mutations that each had to fail first — the id not re-minted, fold-read keys
+# withdrawn along with the free text, the fold not recording the withdrawal, a reason dropped,
+# the lock not excluding a holder, the trail itself withdrawable, and each of the two `fsck`
+# checks removed. One holds the bytes gone and the fold's report together, because either alone
+# is the half that does not discharge the criterion. One withdraws a `dispatch` carrying both
+# `spend_micros` and free text, so a withdrawal that moved an aggregate fails rather than
+# passing on the leak alone. Three drive `fsck` as a **subprocess** — the surface a consumer
+# has, and the way to avoid the second `events` module that importing a sibling here would
+# mint — over a sound withdrawal, a hand edit, a merge that restored the retired line, and each
+# half of a withdrawal that only half landed. One holds the four refusals to their messages.
+[ratchet.module_size]
+rebaseline_reason = "the withdrawal path, the two checks that bind it and their tests, in three modules with 0 tokens of headroom"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/events.py" = 2838
+".basicly/core/kit/tracker/fsck.py" = 1430
+"tests/test_kit_tracker_events.py" = 2843
+
+# `fsck.py` fell under the 50% cap, so its entry is retired rather than left licensing regrowth
+# back to 51.5. The delta lands the composed baseline on zero, which `dropin.compose` drops.
+[ratchet.comment_density.frozen]
+".basicly/core/kit/tracker/fsck.py" = -51.5
+
+# `withdraw` takes the six injected seams `append` takes plus which event and why. The
+# rejected alternative was a parameter object, which would put a second shape between a
+# caller and the one function it hands its clock and redactor to.
+[ratchet.noqa_debt.frozen]
+PLR0913 = 1

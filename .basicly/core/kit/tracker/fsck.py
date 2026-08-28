@@ -172,6 +172,22 @@ DERIVED_DISAGREES = "derived-disagrees"
 # A kind no module folds: a newer writer's, or a malformed one. A warning and not a failure,
 # because neither is corruption — but a finding, which a delegated kind is not.
 UNFOLDED_KIND = "unfolded-kind"
+# An event whose id does not re-mint from the record, kind and payload on its own line, so
+# the line was rewritten in place by something that is not `events.withdraw` (basicly-vkh0.34).
+# The one check that makes "only the withdrawal path rewrites the log" a fact about the file
+# rather than a promise: an id digests the payload, so an edit that leaves the id alone breaks
+# the derivation. It catches an edit, not a forger — a rewrite that re-minted the id too reads
+# as an ordinary append, and nothing in a single file can tell those apart.
+UNMINTED_ID = "unminted-id"
+# A payload carrying a withdrawal marker that no `withdrawn` event names, and its mirror: a
+# `withdrawn` event whose target is not in the log. One withdrawal is two writes — the rewrite
+# and the trail — so either alone is the half that did not land.
+WITHDRAWAL_UNRECORDED = "withdrawal-unrecorded"
+WITHDRAWAL_UNAPPLIED = "withdrawal-unapplied"
+# The retired line is back: a withdrawal rewrote a line, and a union merge of a branch holding
+# the old bytes re-added it. Both lines now parse and fold, so this is the only signal that the
+# withdrawn content is readable again.
+WITHDRAWAL_RESURRECTED = "withdrawal-resurrected"
 # A label write naming a label of one character; `label_shape.py` holds why that is the
 # signature of a string iterated rather than split. :data:`BROKEN` on that constant's own
 # terms — the log is internally consistent, so only a corrective write can clear it.
@@ -612,6 +628,117 @@ def _unfolded_kind_findings(folded: Any, ordered: Sequence[Any]) -> list[Finding
     ]
 
 
+def _minted_at_some_generation(event: Any, bound: int) -> bool:
+    """Whether *event*'s id is the one its own content mints, at any generation up to *bound*.
+
+    Any generation rather than the dense occurrence count, and the bound is what keeps that
+    honest: a withdrawal changes a payload, so its event leaves the group of identical
+    payloads it was counted in and the survivors' generations stop being dense. Requiring
+    density would report those survivors as edited, which is a false report of the defect
+    this check exists to find. *bound* is the record's own event count, since no generation
+    can exceed the number of times its record was written to.
+    """
+    for generation in range(1, bound + 1):
+        if event.id == events.event_id_for(
+            event.record, event.kind, event.payload, generation=generation
+        ):
+            return True
+    return False
+
+
+def _unminted_id_findings(ordered: Sequence[Any]) -> list[Finding]:
+    """One finding per event whose line disagrees with the id on it.
+
+    A record id that is not one is skipped rather than reported: `event_id_for` refuses it,
+    and :func:`_reference_findings` already names the record that was never created.
+    """
+    per_record: dict[str, int] = {}
+    for event in ordered:
+        per_record[event.record] = per_record.get(event.record, 0) + 1
+    findings = []
+    for event in ordered:
+        if not events.ids.is_record_id(event.record):
+            continue
+        if _minted_at_some_generation(event, per_record[event.record]):
+            continue
+        findings.append(
+            Finding(
+                kind=UNMINTED_ID,
+                severity=BROKEN,
+                subject=event.id,
+                detail=(
+                    "this id is not the one the record, kind and payload on this line mint, so "
+                    "the line was rewritten in place by something other than the withdrawal "
+                    "path, which re-mints"
+                ),
+                event_ids=(event.id,),
+            )
+        )
+    return findings
+
+
+def _withdrawal_findings(ordered: Sequence[Any]) -> list[Finding]:
+    """Findings for the one rewrite this log permits: a half-landed one, or an undone one.
+
+    Three populations, all read off the log alone — the withdrawn lines, the trails that
+    name them, and the ids those lines retired. A withdrawal is sound when the first two
+    pair up exactly and the third names nothing the log still holds.
+    """
+    present = {event.id for event in ordered}
+    marked = {
+        event.id: event.payload[events.WITHDRAWN_FROM]
+        for event in ordered
+        if events.WITHDRAWN_FROM in event.payload
+    }
+    audited: dict[str, str] = {}
+    for event in ordered:
+        if event.kind != events.KIND_WITHDRAWN:
+            continue
+        target = event.payload.get(events.WITHDRAWN_TARGET)
+        if isinstance(target, str):
+            audited[target] = event.id
+    findings = [
+        Finding(
+            kind=WITHDRAWAL_UNRECORDED,
+            severity=BROKEN,
+            subject=event_id,
+            detail=(
+                f"this payload says content was withdrawn and no {events.KIND_WITHDRAWN} event "
+                f"names it, so the rewrite has no reason and no time recorded"
+            ),
+            event_ids=(event_id,),
+        )
+        for event_id in sorted(set(marked) - set(audited))
+    ]
+    findings += [
+        Finding(
+            kind=WITHDRAWAL_UNAPPLIED,
+            severity=BROKEN,
+            subject=event_id,
+            detail=(
+                "a withdrawal names this event as the content it took out and the log holds no "
+                "such event, so the trail is evidence of a rewrite that is not here"
+            ),
+            event_ids=(audited[event_id],),
+        )
+        for event_id in sorted(set(audited) - present)
+    ]
+    return findings + [
+        Finding(
+            kind=WITHDRAWAL_RESURRECTED,
+            severity=BROKEN,
+            subject=str(retired),
+            detail=(
+                f"{event_id} withdrew this event's content and the retired line is in the log "
+                f"again, so a merge of a branch written before the withdrawal made it readable"
+            ),
+            event_ids=(str(retired), event_id),
+        )
+        for event_id, retired in sorted(marked.items())
+        if isinstance(retired, str) and retired in present
+    ]
+
+
 def _split_label_findings(ordered: Sequence[Any]) -> list[Finding]:
     """One finding per record whose label writes name a one-character label.
 
@@ -757,6 +884,8 @@ def check(directory: Path | str) -> Report:
     findings += _gap_findings(gaps)
     findings += _duplicate_id_findings(sound)
     findings += _reference_findings(ordered)
+    findings += _unminted_id_findings(ordered)
+    findings += _withdrawal_findings(ordered)
     findings += _totals_findings(folded, ordered, voided)
     findings += _unfolded_kind_findings(folded, ordered)
     findings += _split_label_findings(ordered)
