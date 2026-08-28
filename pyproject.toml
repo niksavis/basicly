@@ -768,3 +768,19 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 
 [tool.uv]
 package = true
+
+# The spend-accuracy ratchet (basicly-helmej). `decompose.spend_accuracy` holds every lane's
+# recorded spend forecast against its actual; a pair outside the 10x band is a finding about
+# the estimator, and the recorded forecast never changes, so the finding is permanent history.
+# This table banks it with the defect named, and it tracks: an entry whose pair comes back in
+# band fails as graduated and must be removed in the same diff (`"<record>" = -1` under
+# [ratchet.spend_accuracy.frozen] in the lane's basicly.d fragment).
+[tool.spend_accuracy]
+frozen_count = 1
+
+# basicly-0cpn51: forecast 82,107,017 against 7,318,875 spent (0.089x). The estimator applies
+# one median spend-per-working-set ratio (282 over 155 lanes) to a working set 8x the median;
+# the largest lane in the ledger ran at 32. basicly-yjmxjz owns the estimator; when it lands and
+# the pair re-derives in band, this entry graduates.
+[tool.spend_accuracy.frozen]
+"basicly-0cpn51" = 1

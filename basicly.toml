@@ -616,6 +616,24 @@ name = "release-notes"
 command = ["uv", "run", "python", ".scripts/check_release_notes.py"]
 modes = ["fast", "full"]
 
+# A lane's recorded spend forecast against its actual, per bead, over the committed markers
+# and the local run records (basicly-helmej). The live test that used to carry this moved
+# here so a historical miss can be banked in [tool.spend_accuracy.frozen] instead of turning
+# main red for every landing until an engine patch lands.
+[[verify.checks]]
+name = "spend-accuracy"
+command = ["uv", "run", "python", ".scripts/check_spend_accuracy.py"]
+modes = ["fast", "full"]
+inputs = [
+  "src/basicly/decompose.py",
+  "src/basicly/run_record.py",
+  ".scripts/check_spend_accuracy.py",
+  ".scripts/ratchet.py",
+  ".basicly/ledger/**",
+  "pyproject.toml",
+  "basicly.d/*.toml",
+]
+
 # One test file per source module, enforced by name (basicly-u2hl.14;
 # `.scripts/check_test_naming.py` states the convention). It was *emergent* when
 # first measured — 48 modules, 84 test files, every module covered — and

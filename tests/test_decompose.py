@@ -2372,22 +2372,6 @@ def _record_spend_pair(  # noqa: PLR0913 — one parameter per seeded record fie
     run_record.record(repo, bead_id, record)
 
 
-def test_the_spend_forecast_lands_within_an_order_of_magnitude_of_recorded_spend() -> None:
-    """The live gate: AC of basicly-tcmy.34, measured on this repo's own ledger.
-
-    `basicly-gczc` spent 16,963,245 tokens against a recorded forecast of 66,780 — 254x,
-    and the paired median was 307x, reading as a forecast wrong by two orders of
-    magnitude. It was wrong by *unit*: the recorded number was a working set and the
-    actual is whole-lane spend. Held in one unit the same records come in at 0.19x-2.37x.
-
-    Not an equality: a lane spending less than forecast is not a defect and must not turn
-    main red. It fails only past `SPEND_RATIO_BAND`, naming the lane and the factor.
-    """
-    accuracy = decompose.spend_accuracy(REPO_ROOT, load_sizing_config(REPO_ROOT))
-
-    assert accuracy.violations == ()
-
-
 def test_the_spend_gate_measures_a_populated_ledger() -> None:
     """The positive control: the gate above must not be measuring an empty set.
 

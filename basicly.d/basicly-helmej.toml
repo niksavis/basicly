@@ -1,0 +1,8 @@
+# The spend-accuracy ratchet gate (basicly-helmej).
+#
+# `.scripts/check_spend_accuracy.py` carries the three `# noqa: E402` every gate script
+# under `.scripts/` carries: `sys.path` is set before the imports so the script runs
+# standalone under `uv run python`, and the alternative rejected is a package install
+# for a one-file gate. Each line names that reason; the count moves here.
+[ratchet.noqa_debt.frozen]
+E402 = 3
