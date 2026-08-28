@@ -1,1 +1,0 @@
-- The decompose-plan skill tells a plan to name a child's own fragment file instead of a directory glob, and the work-tracker skill records that a status a record once held cannot be rewritten (reactivate with in_progress).

@@ -1,1 +1,0 @@
-- **A lane a bound killed no longer reads as unmeterable.** A claude stream cut off before its result event is now metered off the per-turn usage it did report, as codex's always was, so one killed lane stops taking a granted session human-only. A halt that genuinely cannot be metered now names the dispatch and its model.

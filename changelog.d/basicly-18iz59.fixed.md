@@ -1,1 +1,0 @@
-- A landing now asks `release-notes` about the lane's own still-open record and refuses before the merge when it owes a note, instead of admitting the lane and failing the commit that closes it once the worktree is gone.

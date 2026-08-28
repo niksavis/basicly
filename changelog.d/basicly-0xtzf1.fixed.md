@@ -1,1 +1,0 @@
-- **A running lane's card now shows the unit title, its phase and how long it has run, and its full activity note.** The card led with the tracker's own status and a bare id even while an agent worked, and a parked lane's stale tokens still drew the pulse of a live one; it now names the unit, states liveness plainly, and expands to the note in full.

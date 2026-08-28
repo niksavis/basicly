@@ -6,6 +6,2360 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.10.0 - 2026-08-28
+
+Delta: v0.9.0..v0.10.0
+
+### Added
+
+- **The board snapshot can now carry the `lanes` section, and only when a caller supplies
+  the lane facts.** `lanes[].phase` is required by the contract and its authority is
+  `loop_state.read_node_state`, which reads the policy config's required-gate set - a
+  source the file-only producer does not open. So the facts arrive as
+  `board_fields.LaneFacts` from a caller that drives the loop, exactly as the supervisor
+  lock facts already do, and with none supplied the section is omitted rather than filled
+  with a derived phase that would diverge from the engine's for any unit owing validation.
+  An empty sequence still emits `[]`, which is the different claim that the caller can see
+  lanes and there are none (`basicly-06pvsc`).
+
+- **`basicly status` names the agent-hook tier this machine actually delivers, instead of letting a
+  projected file imply it.** The `Hooks` table's `activation` column was `-` for the `claude` and
+  `copilot` managers: git activation was reported, and the two agent surfaces were reported as
+  projected and nothing more. A projected hook only fires where its host runs, so on a machine
+  without that host the file is present and enforces nothing — the built-and-never-connected shape
+  this repo keeps rediscovering. Each agent manager now reads `active` or
+  `unavailable (<host> absent)`, with a line under the table naming which surfaces are active, which
+  are not, and that the git hooks remain the commit-time floor either way. `basicly status --json`
+  carries the same two facts per agent manager as `host` and `surface_present`; the payload is
+  additive, so `schema_version` is unchanged.
+
+  The probe behind it is `hooks.agent_hook_surface_present`, which resolves the host binary through
+  an injected `which` like `runner.is_available` does — the suite hides the ambient agent CLIs on
+  purpose, so an injected resolver is the only way a test can assert either answer.
+
+  **The enforcement itself is now tested by running it, not by reading it.**
+  `test_projected_agent_hook_fires_and_its_refusal_reaches_the_agent` plays the host against the
+  projected `.claude/settings.json`: it selects a group by its `matcher`, substitutes
+  `${CLAUDE_PROJECT_DIR}`, runs the command verbatim on an `Edit` payload, and asserts the block
+  code *and* the refusal text — the exit code alone does not discriminate, because
+  `python <missing>.py` also exits 2 (`basicly-0p8n`).
+
+  **Both hosts have a hook surface, re-probed 2026-08-15 against the installed binaries**: claude
+  2.1.233 and Copilot CLI 1.0.79, whose `copilot help config` documents a `hooks` key and
+  `disableAllHooks`. The 2026-08-08 "copilot has no hook surface at all" finding was an artifact of
+  its probe and is already retracted in `.basicly/core/kit/tier/README.md`. What copilot still does
+  not receive is the `protect-generated` guard — it gets only the telemetry hook — and that gap is
+  `basicly-66ix`, not this change.
+
+- **`tree-growth` is a `[[verify.checks]]` entry: the whole tree's growth is now a number, because
+  every other structural gate is blind to it.** `module-size`, `comment-density`, `noqa-debt`,
+  `vulture`, `wired-or-deleted`, `lint-imports` and `pyright` are each a per-file or per-symbol
+  predicate, so a tree can add fifty individually compliant modules and every one of them stays
+  green. That is what happened: `src/basicly/` went from 50 modules holding 408,954 tokens on
+  2026-08-07 to 91 holding 476,002 on 2026-08-14, with all seven passing throughout.
+
+  `.scripts/check_tree_growth.py` reports **net tokens over a seven-day window**, in the same unit
+  `module-size` counts in, decomposed into what sits in modules that did not exist when the window
+  opened, what modules present at both ends did, and what deletion removed. Net tokens rather than
+  module count, and the decomposition rather than a mean, because those are the only readings that
+  separate growth from redistribution — a module extracted out of another takes from one term what
+  it adds to the other, leaving the net flat, while a compliant *addition* moves it by its whole
+  size. Chosen against this repository's own history, and the two commits that fixed the choice are
+  asserted in `tests/test_check_tree_growth.py`.
+
+  **It reports and never blocks, including when it cannot reach a number.** D23
+  (`docs/requirements/factory-loop.md` §15.7) makes a sizing control with no recorded correct firing
+  observability; this one has no firing history at all. Its window is anchored on HEAD's own
+  committer date rather than the wall clock, so one checkout always answers the same thing, and a
+  checkout that does not reach back a week — CI clones the quality-gates matrix at depth 1 — says
+  the window is uncovered instead of inventing a baseline.
+
+  Like `module-size` and `noqa-debt`, this is basicly's own gate rather than something `basicly
+  install` projects: a consumer's tree is its own decision, and the growth of this one is what the
+  number is about (`basicly-5p49`).
+
+- **The wall ranks by urgency instead of by uniform weight.** A green state costs one token and
+  an exception expands: 36 named gate checks collapse to `GATES ● GREEN`, or to the failing
+  names and only those. The ask band leads with `6 DAYS` rather than `149h 37m`. `RUNNING NOW`
+  collapses to one line when nothing is dispatched, and the ready list takes the reclaimed
+  width with fifteen untruncated titles where eight were truncated. Each loop phase carries a
+  bar proportional to its share, and the status bar carries units closed today or says it
+  cannot measure them (`basicly-7ogfbq`).
+
+- **A closed record that produced no release note now refuses the cut.** `changelog.d`
+  could only ever check a fragment that *exists*, so nothing bound on a record that
+  produced none — and 19 of the 54 records closed for v0.9.0 shipped with no note,
+  including the seven specialist agents and five loop skills `basicly install` vendors to
+  every consumer. The release workflow reads `CHANGELOG.md` from the **tagged** commit, so
+  a note written afterwards can never reach the published release. The new `release-notes`
+  check ratchets it: a closed record whose declared `## Scope` reaches a shipped surface
+  (`src/basicly/`, `.basicly/core/`, `README.md`, `site/`) with no fragment named for it
+  and no parenthetical citation in a fragment body or in `CHANGELOG.md` is named and
+  refused, at the commit that closes the record and again in `basicly release`'s own
+  refusals. It judges only a record that declares a machine-readable scope, so a record
+  that closed before that convention is not reported; the 145 already unaccounted for are
+  frozen in `[tool.release_notes.frozen]` so the backlog does not block a cut while a new
+  omission does; and a change genuinely invisible to a consumer is declared in
+  `[tool.release_notes.invisible]` with its reason, validated against the population it
+  exempts from (basicly-7phc).
+
+- **`basicly catalog dump` prints the composed fragment selection with each item's origin.**
+  Every planned output lists the axes it declares and every item it selected, each with the
+  core or `.basicly-local` file it was read from, and an overlay override is named beside the
+  core source it shadows - so debugging a projection no longer means reading the sources by
+  hand. (basicly-8kqkxy)
+
+- **A gate reconciles a record's declared `depends on` against the `blocks` edges it has.**
+  Two sources held one fact and nothing compared them, so an inverted edge read as correct
+  from either side and held a ready lane unreachable. The check names the record, the
+  declared id and the edges it does have, and refuses an empty population rather than
+  reporting a vacuous pass (`basicly-9yyj6i`).
+
+- `basicly board serve --bind <ipv4>` binds a chosen interface address for a touch wall
+  or a team display; the default stays the loopback, a wildcard or a hostname is refused
+  before binding, and actions stay gated by typed confirm codes on any address. (basicly-bxk5g8)
+
+- **`.scripts/headroom.py` reports both size ratchets in one command.** Measuring headroom
+  took two commands, so an agent measured one and paid for the other — three times in one
+  session. The report names every module's token headroom and its prose-share headroom side
+  by side and ends with how many of the tree's modules sit close to a bound. Measured on this
+  tree at the time it landed: 163 of 433 modules within 615 tokens or 1.0 point of a bound,
+  20 at zero token headroom and 46 at zero prose headroom (`basicly-co64`).
+
+- **The loop dispatches the `curator` at ship, so a shipped unit's release claims arrive bound
+  to their evidence.** `curator` was the last loop role no code path could reach: the
+  phase-to-role table named `ship` while `loop._on_ship` never called an agent, so the persona
+  was authored, projected, vendored and inert. It is dispatched now, priced and bounded exactly
+  as the validator's judges are — outside the write phases, past the grant halt, and skipped
+  under the supervisor's landing pass, which has no watchdog or stream meter of its own.
+
+  The reply is read into a `release-record` artifact, and the schema **refuses** it unless every
+  claim carries a test, a command or a gate a second reader can re-run, and unless the claims it
+  could not evidence are named rather than dropped. Three outcomes stay distinguishable on the
+  ship's detail line — bounded, refused, and not attempted — because silence reads as the first.
+  **It never fails a ship**: the package has already merged by the time it runs, so a refused or
+  bounded curation costs the landing nothing (basicly-e2mz.23).
+
+- **`interface-facts` now names the machine-readable documentation route for every dependency
+  this repo declares, so rung 3 stops costing an open-ended search.** Twelve rows, each fetched
+  rather than recalled on 2026-08-19: `llms.txt` plus per-page markdown for uv, ruff, Claude
+  Code, the Anthropic API, Codex and GitHub Docs; Sphinx `_sources/*.rst.txt` and `objects.inv`
+  for Python, pytest and the library dependencies; and git and pre-commit stated as rung 2,
+  answered by the installed binary. Absence is controlled for — every host that 404'd on
+  `llms.txt` was re-probed on a page it must serve.
+
+  The table sits **below** the binary-first rule, with the incident that forces the ordering:
+  a `uv` installed at 0.11.28 against 0.12.5 released, where the current documentation described
+  a `uv init` default the installed binary did not have and `--help` could not reveal. It also
+  states what to refuse — never cache or commit fetched documentation, never cite an aggregator,
+  never record a fact without its version and date — and tells the reader to probe a row rather
+  than trust it, because three of the twelve routes redirected on the day they were written.
+  GitHub Docs' Search API is documented with the **undocumented `client_name` parameter** it
+  requires: the example GitHub prints in its own `llms.txt` answers 400 without it. The probe
+  behind the table, including the two claims it refuted, is
+  `docs/research/2026-08-19-documentation-routes.md` (`basicly-e2mz.48.1`).
+
+- Catalog sources may declare `token_cost:`, the always-on tokens they add per surface (a target name for a fragment, `listing` for a skill). `basicly catalog lint` measures the real cost and fails a declaration that has rotted past its tolerance; an absent declaration is reported without failing until 0.11.0, since the schema is a contract other repos author against. (basicly-e2mz.48.3)
+
+- **`code-citations` is a `[[verify.checks]]` entry: a section mark written in code, pointing at a
+  document, is now checked against the headings that document defines.** `docs-citations` only ever
+  ran the other direction — a `file.py:line` written in a document — so a `§N` in a comment or a
+  docstring was checked by nothing at all, and a mark that resolves to the *wrong* section is worse
+  than none because it reads as correct (`basicly-e2mz.49`).
+
+  Measured over tracked Python in `src/`, `tests/`, `.scripts/` and `.basicly/core/`: **370 marks in
+  94 modules**, of which **220 reached no heading**. Two of them cite
+  `gates-and-rework-design.md`, absorbed and deleted 2026-08-08; four in the shipped tracker kit read
+  as the kit's own source document while meaning the architecture. Those are the citations the two
+  document absorptions blocked on this check would otherwise have orphaned with every gate green.
+
+  **A citable target is a document and a number, both nameable.** The document is a `.md` path on the
+  citing line, or a path-prefix binding in `[tool.code_citations.bindings]`; the number must match a
+  numbered heading — `## 4. Title`, `### 4.6 Title` — the document defines today, which is the surface
+  the architecture's section 3 promises a citation may rely on. A mark missing either half is
+  **unresolved** and is a finding, not a silent pass: `docs-citations` counts 32 citations it cannot
+  verify and exits zero, and that is exactly the shape this gate refuses.
+
+  A **binding** is one reviewable line that made the kit's 113 bare marks checkable, and it is
+  ratcheted against `binding_count` in both directions — added quietly, one binding could make a whole
+  directory's marks resolve against a document nobody chose. A binding whose prefix stopped matching
+  anything is reported rather than silently satisfied.
+
+  **A ratchet, not a ban.** The 220 already-unresolved marks are recorded per module in
+  `[tool.code_citations.frozen]` and may only fall; a module absent from that closed list may carry
+  none. **No `fix_command`, and the omission is the point**: a mark whose section was absorbed into
+  another document has no derivable target, and repointing a number whose sentence also went stale
+  repairs the pointer and leaves the false claim.
+
+  Like `docs-citations` and `module-size`, this is basicly's own gate rather than something `basicly
+  install` projects: a consumer's document set is its own decision with its own frozen list and its
+  own bindings.
+
+- A `retired-vocabulary` verify gate now refuses prose growth of the removed tracker's name in comments and docstrings, with git HEAD as the per-module baseline (`basicly-e90rue`).
+
+- **VALIDATE now dispatches the `reviewer` agent, once per lens, beside the validator.**
+  The agent was authored, projected to both agent roots and vendored to consumers, but
+  `roles.ROLE_BY_PHASE` mapped a phase to exactly one role, so nothing could reach it.
+  A phase now resolves through two tables: `ROLE_BY_PHASE` for the role that drives it,
+  and `LENS_ROLE_BY_PHASE` for the role it fans out over `roles.REVIEW_LENSES`. Each
+  review is dispatched with its own lens in the brief and records its findings under its
+  own `[harness-review] lens=<lens>` marker on the unit; nothing merges two lenses into
+  one ranking. The vocabulary ships as two axes — `correctness` and `security` — so an
+  L3 unit pays two extra read-priced dispatches per VALIDATE advance, and L1 and L2 units
+  pay nothing because they never derive the phase (`basicly-feje`).
+
+- **A dependency edge can be retracted, so a decision that inverts one can be enacted.** The
+  work tracker could add an edge and never remove one, which left an owner decision that
+  *reverses* which of two records goes first with no safe route: adding the reverse edge without
+  withdrawing the original closes a two-record cycle, and the cycle report cannot be relied on to
+  refuse it. `basicly tracker write -- dep remove <record> <target> -t <type>` now records a
+  retraction. It is a retraction and not a deletion — the ledger stays append-only, the fold
+  answers with the edge gone, and the history still reads as asserted then withdrawn, which is
+  the shape a tombstoned record already had. Two decisions are made explicitly: retracting an
+  edge the ledger does not hold is **refused**, naming both records, because a typo in a record
+  id would otherwise record a withdrawal of nothing while reading as success; and a
+  `parent-child` edge is **not retractable**, because removing one re-parents a record and
+  `basicly loop supervise` fans out over `parent-child` dependents, so it would silently change
+  which records a supervised run touches (basicly-he6200).
+
+- **A `[[verify.checks]]` check can declare `inputs`, and the pre-commit hook skips one no staged file matches.** A lane's commit runs the gates whose declared inputs intersect its diff plus every gate that declares none, and names each skip. `--mode full` (the landing, the push) ignores `inputs` and runs all of them, so nothing green rests on a skip (`basicly-j7spdb`).
+
+- **`docs-citations` is a `[[verify.checks]]` entry: a `file.py:line` written in a document is now
+  checked against the code it points at.** Nothing read one before. `docs-claims` gates generated
+  blocks and `corpus-drift` gates an epic's problem statement, so a claim recorded in a requirements
+  document on one day and refuted by the next day's commit kept asserting itself — measured on this
+  repo's own plan, where four such claims sent a session at a P0 against a remedy the tree had
+  already replaced (`basicly-miqr`).
+
+  `.scripts/check_docs_citations.py` applies two exact rules and refuses to guess past them. A cited
+  line must be **live code** — past end-of-file or blank is a citation that has certainly drifted. And
+  when the citing sentence also names a **module-level** `def`, `class` or assignment of the cited
+  file, in backticks or bare inside a fenced block, the cited line must fall inside that symbol; the
+  failure prints the line the symbol moved to. A citation whose sentence names no symbol of the cited
+  file is reported as *uncheckable* rather than as a pass, so the summary's coverage share can never
+  be mistaken for the population. Module level only, and the module's own stem excluded, because a
+  local named `total` or a word matching the filename matches half this repo's prose and would turn
+  an exact rule into a coin toss.
+
+  **A ratchet, not a hard gate.** Four citations were already stale in documents no single lane
+  should rewrite, so the go-live debt is recorded per document in `[tool.docs_citations.frozen]` and
+  may only fall — a document absent from that list may not carry one stale citation. **No
+  `fix_command`, and the omission is the point**: renumbering a pointer whose surrounding sentence
+  has also gone stale repairs the citation and leaves the false claim.
+
+  Like `module-size` and `tree-growth`, this is basicly's own gate rather than something `basicly
+  install` projects: a consumer's document set is its own decision with its own frozen list.
+
+- **A supervisor can be stopped without killing the lanes it has in flight.**
+  `basicly loop supervise` ran `while True` and returned only when every child of the
+  root had closed, so the only lever short of the session finishing was a signal — and
+  the lanes are `claude -p` subprocesses of that process, which a signal leaves killed
+  mid-write or orphaned against a grant nothing is metering. Lock takeover was not the
+  control it looked like either: a lock is stolen only from a holder whose heartbeat has
+  gone stale, so a *working* supervisor could not be asked to finish. Two bounds now end
+  a session between rounds, where nothing it started is still running.
+  `basicly loop stop <root> --reason "<why>" [--by NAME]` writes a marker naming the
+  requester and the reason, prints the lanes it is waiting to land, and returns once the
+  session does: the round in flight completes, every dispatched lane lands, and no
+  further lane is seeded. It refuses when nothing is supervising that root, because an
+  unread marker would stop the next session started there before it ran a round.
+  `basicly loop supervise --max-passes N` is the cheaper half — it returns after N
+  rounds even with open children left, so a launch can commit to a bounded spend up
+  front. Both exits are non-zero and name themselves on the pass narrative
+  (`stopped:  …`), which is where the requester and reason are recoverable afterwards
+  (`basicly-o40x`).
+
+- **A run can now choose the model tier it dispatches at, without editing committed
+  config.** `basicly loop supervise` took `--runner` and `--autonomy` and no way to name a
+  capability tier, so dispatching at `maximum` — `claude-fable-5` on Anthropic — meant
+  editing `[runner] default_tier`. The session-override module's own reasoning rules that
+  out: editing the committed file changes behaviour for every consumer, while the whole
+  point of the registry is that configuring one run should be one command rather than a
+  config edit plus a revert the operator has to remember.
+
+  `--tier {low,medium,high,maximum}` joins the other two on the same mechanism and in the
+  same shared helper, so it reaches every subcommand that can dispatch an agent. It is
+  validated against the known tiers **before** anything is applied, on the all-or-nothing
+  rule the existing pair already follows, and it lands in every run record for free
+  because the record builder stamps the active overrides centrally — an unrecorded
+  override would leave two genuinely different dispatches behind indistinguishable
+  records.
+
+  It selects the tier for the **whole pass**, not per lane: runner selection resolves one
+  spec per round. Two models can still appear on one board at the same time, because a
+  lane card reads its model from that lane's own last run record rather than from the
+  current pass — so a lane whose previous dispatch ran on one model renders it beside a
+  lane dispatched now on another. Per-lane selection is a separate, unbuilt piece of work. (basicly-pmhmsp)
+
+- **The harness board is a wall layout that answers four questions, not a dump of the
+  schema.** The previous render gave every schema key a fixed-height box its content
+  overflowed and repeated the same freshness sentence on all ten, so the page did not
+  say what is being built, where the loop is, what is waiting, or what is in the
+  backlog. It now draws eight fixed rows at 1920x1080 with no scrollbar: a watch band
+  in the page's only alarm colour, a loop row counting each of the seven phases and
+  marking where the lanes are, fixed-size in-flight cards beside the ranked ready set,
+  a footer carrying the backlog with a closed bar and a per-priority histogram plus
+  gates, spend and health, an event ticker, and the verdict's whole section roster. A
+  region that cannot draw everything says `+N more` naming what it dropped, the
+  freshness reading is taken once for the page rather than once per panel, an absent
+  section still reads `not emitted by this producer`, a bar is still refused unless
+  both of its terms were measured, and the layout reflows to one column below 1280px
+  (`basicly-rbnz49`).
+
+- **A published snapshot contract, `harness-board/v1`, and `basicly board validate` to check
+  a snapshot against it.** The schema ships as a catalog source at
+  `.basicly/core/schemas/board-snapshot.schema.json`, and a `board-schema` entry in the
+  verify pipeline checks it on every run. A snapshot carries only `meta` as required; every
+  other section is optional, so a producer declares what it can supply rather than filling
+  fields it cannot know. Closed value sets are deliberately few — `phase`, `status`, `type`
+  and edge kind are open strings that name this project's values as examples rather than as
+  the enum, so a producer with its own vocabulary is not refused. **What this means for a
+  consumer:** the contract is the interface, so a repository can emit a conforming snapshot
+  from whatever work tracker it already uses and have it checked, without adopting this
+  project's store (basicly-rn0o.1).
+
+- **The snapshot contract is checked against a producer that is not basicly.** A
+  fixture emits a `harness-board/v1` document without importing the engine, and the
+  validator admits it, so the published contract is exercised as a foreign consumer
+  would exercise it rather than only against our own producer (`basicly-rn0o.13`).
+
+- **A `harness-board/v1` snapshot producer that reads files and spawns nothing.**
+  `board_snapshot.build_document(repo_root)` folds a conformant snapshot out of three sources —
+  the owned event log, `.basicly/usage/run-records.json` and `.basicly/usage/verify-run.json` —
+  in **zero subprocesses** and **one** fold of the log, measured by a spy in
+  `tests/test_board_snapshot.py` rather than asserted. The producer exists because
+  `supervise.observe()` folds the same log **93 times** to answer one question, at 6.1 s; a whole
+  snapshot on this repository's committed corpus is **81 ms** (median of 7) against a 500 ms cap.
+  Nothing consumes it yet — `basicly board --out` is a later unit — so this adds a library surface
+  and no command (`basicly-rn0o.2`).
+
+  **The live-lock facts are an argument, never a read.** Reading the supervisor lock here would
+  mean calling `supervise.read_holder`, and the supervisor emits a snapshot itself, so the import
+  would close the cycle `supervise → board_snapshot → supervise`. Callers pass a `SessionFacts`
+  carrying `supervise.LockInfo`'s own field names, and with none supplied the `session` section is
+  **omitted** rather than filled with nulls or a guessed root.
+
+  **Omit, never estimate**, because the schema has no field marking a value as estimated. A
+  transcript-estimated dispatch is left out of `spend`, and where every dispatch is an estimate the
+  section is absent rather than indistinguishable from a billed one. In a lane worktree
+  `.basicly/usage/` does not exist, so `spend`, `health` and `gates` are all absent and the tracker
+  half of the board still draws. `lanes`, `units` and `graph` are not emitted by this producer:
+  `lanes[].phase`'s authority is `loop_state.read_node_state`, which needs a source outside this
+  producer's three files.
+
+  **The marker roster is bound by a gate, not by a hand-kept list.** `board_fields.MARKER_FAMILIES`
+  must equal `.scripts/check_marker_families.FROZEN` — 11 declared plus 1 retired — and
+  `tests/test_board_fields.py` asserts that by loading the gate **by file path**, since `.scripts/`
+  is not an importable package and its gates import into `basicly`. All 12 are parsed, the retired
+  `[harness-overrun]` included, and a malformed marker is skipped rather than raised.
+
+  **A pending ask is a pairing, not a tally.** Reading every `[harness-wait]` request as open
+  reports **140** on this repository's log against **1** genuinely pending; the test pins both
+  against a frozen corpus under `tests/fixtures/board/ledger/`, with the answered side at **203**
+  distinct ids so a parser that silently matched nothing cannot pass. Every string in the document
+  passes `redact.redact_committed`, so no absolute path and no username reaches a board.
+
+- **The board snapshot schema's field-selection figures now name the store this repo has.** Two
+  `description` strings quoted `3336549 B` against `33745 B` — `98.9×` — which are the deleted
+  external tracker's bytes. Against the owned ledger it is **5890340 B** against **44454 B** for
+  the 236 active records at six selected fields, **132.5×**. The rule is unchanged; only the
+  measurement behind it was stale (`basicly-rn0o.2`).
+
+- **`basicly board --out <path>` writes the board as one self-contained HTML file.**
+  The producer that folded the snapshot had no caller outside tests, so no snapshot
+  could be produced and nothing rendered. The command now emits the page and the
+  `harness-board/v1` snapshot beside it, and prints a per-source inventory naming
+  each source it read. Every panel renders its own `generated_at` and a computed
+  age, and a section the producer did not emit renders as `not emitted by this
+  producer` rather than as a zero (`basicly-rn0o.3`).
+
+- **`basicly board serve` puts the board on a wall display, read only.** It binds
+  `127.0.0.1` and nothing else, answers `GET /` with the page and
+  `GET /snapshot.json` with the `harness-board/v1` contract, and returns 405 to any
+  POST — the action surface is a separate unit and a screen anyone in the room can
+  touch cannot kill a lane. While a supervisor lock is fresh it serves that
+  producer's snapshot bytes and folds nothing; otherwise it folds for itself every
+  `--refresh` seconds (default 15, the supervisor's own heartbeat) and keeps the
+  result in memory. The process takes no lock and writes no file, so a board can
+  never be the reason a gate or a landing failed, and Ctrl-C reports how many
+  refreshes it managed (`basicly-rn0o.5`).
+
+- **A human can now act on a lane from the board, and the board still holds no authority of its
+  own.** Every action the page offers is run by spawning the `basicly` CLI, which writes what
+  that command has always written; the board decides nothing and may be removed without
+  changing what any write means. `basicly board serve --no-actions` removes the route entirely.
+
+  The anti-autopilot boundary is kept rather than worked around. The board never reads
+  `.basicly/usage/checkpoint-confirms.json`, because a page that read it and offered a
+  one-click approve would be relaying the confirm code to itself. It presents an empty box a
+  human fills - deliberately more friction than a button.
+
+  Three mitigations on the one `subprocess.run` behind it, each asserted in
+  `tests/test_board_actions.py` rather than left to trust: the executable is resolved with
+  `shutil.which` and is never a string, every field is matched against an id pattern that
+  admits no leading `-` so a POST cannot smuggle a flag past argparse, and `shell` is never
+  set on any path. (basicly-rn0o.6)
+
+- **The supervisor tick writes a board snapshot.** A supervised pass now publishes
+  `.basicly/usage/board/snapshot.json` on its own tick, temp-then-rename, so a
+  reader sees the previous document or the new one and never a partial. A failure
+  logs one line and never fails the pass (`basicly-rn0o.7`).
+
+- **A rendered surface is not exercised until its rendering has been looked at.** The new
+  path-scoped `rendered-surfaces` rule says so on the board modules, the templates and the
+  site, and `.scripts/check_render_overflow.py` measures it: every element whose scroll size
+  exceeds its client size *and* whose box hides the difference. A declared ellipsis and a
+  scrollable box are not clips, and the script measures the viewport asked for rather than a
+  window of that size. It fails rather than skips with no browser, and is deliberately not a
+  verify check because continuous integration has none (`basicly-skg052`).
+- **`release-notes` names the fragment the base branch already holds.** A lane branched
+  before a record closed on base was refused every commit over a note that existed one tree
+  away, and answered by declaring the record invisible with a control that was true at its
+  branch point and false on arrival. The refusal now says which file and says rebase
+  (`basicly-skg052`).
+
+- **Each agent role now declares the skills its purpose names.** Fourteen of the
+  twenty model-invoked skills reached no role, and five roles declared none at all,
+  so guidance the engine inlines into a dispatch prompt never arrived. `catalog
+  lint` now reports any model-invoked skill no agent declares, against an exemption
+  list that names the operator and environment skills a lane role must not carry
+  and says why (`basicly-sromom`).
+
+- **The waiver count is ratcheted across the gates that grant it.** Each ratchet counted its
+  own waivers and nothing counted them together, so pressure moved to whichever gate was
+  cheapest to waive and no total ever rose. A waiver is now counted once, across every gate,
+  against a frozen total that may only fall (`basicly-twfj`).
+
+- **`basicly loop improve` runs the second loop shape: a control loop over a property of the
+  codebase, rather than over a requirement.** The delivery loop takes a requirement and ships a
+  change; this one holds module size against the 4,000-token agent working-set cap and chips at the
+  standing debt on a schedule. Set point, sensor and dampener already existed and are used rather
+  than restated — `read_cost.SCOPE_FILE_READ_CAP`, `.scripts/check_module_size.py`, and the frozen
+  ratchet in `[tool.module_size]` that stops the property getting worse meanwhile. What was missing
+  was the controller and the actuator, and `.scripts/improvement_controller.py` is both.
+
+  **The engine disposes.** Selection is arithmetic over the sensor's measurements: the unwaived
+  module furthest above the cap, ties broken by path, so two runs over one tree pick the same
+  target and no model chooses it. It reads the sensor's *measurements* and never its findings — a
+  frozen module sitting at 60,089 tokens is exactly what the ratchet permits and exactly what this
+  loop exists to reduce, so a loop driven by the gate's failures would have nothing to do on a
+  green tree. A waived module is never a target: the waiver is a recorded decision, and
+  re-targeting it would re-open it every run.
+
+  **One unlanded lane at a time**, and the bound is basicly-u2hl.23's `wip.WipAdmission` rather
+  than a second record beside it. Its occupancy set is deliberately wider than BUILD's
+  `wip.DOWNSTREAM_PHASES`: a lane this loop filed still counts while it is being built, because a
+  second target selected over the same tree is the duplicate work the bound exists to prevent. A
+  run with a lane open files nothing and names what to land; a run with none files exactly one.
+
+  **The drop is reported.** One run selects one of sixty-nine candidates and prints the count it
+  did not select — a silent top-1 reads as "nothing else is over the cap" (`basicly-u2hl.27`).
+
+- **A handoff artifact kind with no producer is now reported as unwired instead of counting as a
+  live contract.** Eight kinds are named and seven have a schema, which read as seven contracts;
+  three run. The four schemas nothing records — `classification`, `change-shape`,
+  `verification-evidence` and `validation-transcript` — resolved through the same seam the wired
+  three do, so `handoff.adopted` answered yes for a kind no state produces and no state reads, and
+  `handoff.record` would refuse a payload for an artifact that never travels.
+
+  `handoff.PRODUCERS` declares, per kind, the `module:function` that records it or `None`, and
+  `handoff.wired` is the predicate `_validator` consults before it resolves a schema file. So an
+  unwired kind is inert at both ends, the way an uninstalled schema already was.
+
+  **Declared, not derived from absence.** Searching for a caller cannot tell "unwired" from
+  "probed wrongly": a search for a kind's own name returns the English word, six files for
+  `classification` and five of them prose. A missing declaration is not ambiguous. Two states and
+  no third — *why* an unwired kind has no producer is a backlog fact, and a copy of it here would
+  go stale the day a record lands.
+
+  The declaration is kept honest by its own test: each declared producer is read out of the
+  package's source and shown to define the named function, to name that kind's own constant, and to
+  be called. A renamed or dead producer therefore fails as a defect rather than demoting its kind
+  to unwired, which would hand the fail-open answer straight back to absence. (basicly-u2hl.59)
+
+- **The board snapshot now carries the `units` and `graph` sections, so a board can draw
+  the work rather than only count it.** `units` is one field-selected row per drawn record
+  at five fields, `title` the only prose admitted and bounded so a description cannot
+  arrive by being called one; `graph` is the dependency edges among those records as
+  triples. Both are the active cut rather than everything the log holds, which is the
+  population C6 priced the payload on. Neither costs a second read: they come out of the
+  one fold and the one event list the producer already had, and the edge reader is bound by
+  test to the kit's own reader so a retraction cannot drift between them. `units` carries
+  no `ready` and no `phase`, and `backlog` still carries no `ready` or `blocked` - each is
+  the tracker's own derivation, and a second spelling is how two derivations come to
+  disagree (`basicly-vhixrn`).
+
+- **`basicly tracker write -- <subcommand> ...` makes one hand-authored tracker write through
+  the engine seam.** Editing the append-only event log by hand appends events nothing
+  validated, to a store with no undo; spawning a tracker binary beside the engine has the same
+  effect, and three records on this repository's own tracker arrived that way and were the whole
+  of what its store comparison could not reconcile. The verb routes the argv down the path the
+  engine's own writes take, so the read-only guard, the argv classification and the event
+  translation all apply to a human's write, and the seam's refusals land **before** anything is
+  recorded: an unresolvable tracker mode and an argv the translator cannot represent are both
+  refused ahead of the write rather than after half of it. The `work-tracker` skill names the
+  verb, which is what makes it reachable to a dispatched agent rather than merely present
+  (basicly-vkh0.24).
+
+- A `pipe-status-guard` PreToolUse hook refuses reading a pipeline's exit status when a
+  pass-through filter ends it (`cmd | tail` reports tail's status over a failed gate);
+  it fires only where the status is actually read and names the redirect-to-a-file repair.
+- `falsify-first` gains the rule that a probe must exclude the file defining its own
+  vocabulary: the instrument is not a member of its own population. (basicly-xkqxp9)
+
+- **A `mermaid` verify check draws every committed diagram with the renderer the reader's
+  browser runs.** The architecture document carries 16 mermaid blocks and the README one, and
+  nothing looked at any of them: a block with an error renders as a red box on the hosting site
+  while every gate here stayed green. One revision named a `sequenceDiagram` participant `Loop`,
+  which collides with mermaid's `loop` keyword — a parser caught that one, review did not.
+
+  **The criterion is renders, not parses, and that distinction is measured rather than assumed.**
+  `mermaid.parse` stops at the grammar and never runs the diagram's own `draw`. Three blocks
+  parse clean and refuse to render on this version: a subgraph whose id repeats a node id, a
+  `gantt` task with an unparseable date, and a `stateDiagram-v2` note on a state that does not
+  exist. A check written to `parse` would have passed all three, and the tests run those three
+  through both instruments so the claim stays a measurement.
+
+  **The renderer is pinned to what the hosting surface actually serves.** GitHub Pages publishes
+  `site/`, which holds no markdown, so it renders none of these blocks; the surface a reader sees
+  is github.com's own markdown view, which draws mermaid from
+  `viewscreen.githubusercontent.com/markdown/mermaid`. That bundle runs mermaid 11.16.1, so
+  `package.json` pins 11.16.1, the check prints both numbers on every run, and a drift between
+  them fails rather than being logged — a check pinned to the wrong renderer is a gate that
+  agrees with itself. Nothing skips: a missing node, a missing `npm install`, a renderer that
+  writes no usable report and a tree holding zero blocks all exit non-zero, because a skip and a
+  pass are the same line in a log and an empty population is the collector breaking.
+
+  The cost is a dependency addition an owner approved: `mermaid` and `jsdom`, 147 packages, no
+  browser download — `@mermaid-js/mermaid-cli` was rejected for its `puppeteer` peer dependency
+  (basicly-yy82zy).
+
+- **The supervisor pass line now states each runner's own health and drift.** `basicly health`
+  scored every agent off the run-record log and nothing in the engine read it, so a runner whose
+  failure rate had moved was visible only to whoever ran the command — never to whoever reads a
+  pass, where the band and spend numbers already are. `supervise.health_coverage` adds two lines
+  beside them before anything dispatches:
+
+  ```text
+  health:   claude 0.78 over 163 runs (fail 18%, rework 17% — 18 bead(s) re-dispatched); manual
+            0.99 over 194 runs (fail 0%, rework 2% — 3 bead(s) re-dispatched)
+  drift:    REGRESSED claude: fail 80% over the recent 5 vs 16% over 158 baseline runs (+0.64)
+  ```
+
+  That is this repository's own log on 2026-08-14, not an illustration.
+
+  It is **observability, not a gate**: a pure in-process read over
+  `.basicly/usage/run-records.json`, so it spawns nothing, meters nothing and refuses no lane.
+  D23 (`docs/requirements/factory-loop.md` §15.7) makes a signal with no recorded correct firing
+  reportable rather than blocking, and this one has never fired in anger. The drift half prints
+  both window sizes, because the flag only means anything with enough runs on each side of it.
+
+  A repo with no log says so — `no run-records yet` — rather than printing a zero (`basicly-zdtx`).
+
+- **`basicly tracker show <id>` answers what a record blocks, what blocks it, and what its
+  children are.** Neither the engine's command nor the kit's own `show` rendered a single edge:
+  both returned the folded record's seven keys with no `dependencies` and no `dependents`, while
+  the engine's internal reader answered both directions off the same edge events in the same
+  store. So no command-line surface answered the dependency question one record at a time —
+  which is the question an agent orienting through the CLI asks first, and the reason a snapshot
+  producer built over this surface would have emitted a graph with no edges.
+
+  Both surfaces now carry both keys. Each edge names its type and the other record's status; a
+  dependent also carries its title, because a caller listing children has no second read to
+  reach for. **Both keys are always present and empty when the record has no edges**, so absence
+  is distinguishable from a surface that never rendered them — the failure that prevents is a
+  reader taking a missing key for "no blockers". A test holds the two producers to one shape over
+  three records including a dangling edge, because they are two producers and not one: the kit
+  cannot import the engine, so no single implementation is available from that side. The
+  `work-tracker` skill, which listed six keys of a folded record, names both (basicly-ztik9a).
+
+### Changed
+
+- **The reader that reports a truncated handoff artifact now lives with the recorded form,
+  and `handoff.py` is back inside the module size cap with no frozen baseline.** The
+  cut-violation lookup moved from `basicly.handoff._cut_violation` to
+  `basicly.artifact_record.cut_violation`: reading the retired `[harness-artifact]` marker off
+  a stored row is the recorded form's job, and the ruling only needs the reason it hands back.
+  Behaviour is unchanged — a body the per-event text cap cut is still refused naming the
+  truncation and both byte counts, rather than reported as a schema violation. `handoff.py`
+  falls 4504 -> 3946 tokens under the 4000-token cap, so the baseline `basicly-u2hl.59` froze
+  it at is deleted rather than left licensing regrowth, and its prose share is unchanged at
+  65.4% because the extracted unit was within a tenth of a point of the module's own share
+  (`basicly-09lc5o`).
+
+- **A supervised implementer now forks the session its predecessor seeded** instead of
+  re-reading the repo from zero. Implementer and repair inherit; reviewer, validator,
+  decider, retrospector, curator and decomposer stay cold, because independence is what
+  those roles are for. Claude only, and a pruned seed re-seeds rather than losing the round. (basicly-2kh170)
+
+- **A generated path now declares its own rebuild command, and a partly generated file
+  is safe to declare.** `[worktree] generated_paths` and `[worktree] regenerate_command`
+  are replaced by one keyed table, `[worktree.regenerate_commands]`, mapping each
+  generated path to the argv that rebuilds it. The old keys are refused by name, because
+  one repo-wide command was silently a no-op for any artifact it could not write — this
+  repo declared `basicly build` and the implementation plan's `docs-claims` block was
+  rebuilt by nothing. A landing rebase now runs each conflicted path's own command, and
+  bounces to the lane rather than staging a path whose rebuild left a conflict marker
+  behind, so a file that is generated in one marked block and hand-authored around it can
+  be declared without risking the hand-written half (`basicly-3w51`).
+
+- The context-occupancy meter moved to its own module below `loop` and `supervise`, so
+  the engine's declared `loop -> supervise` import cycle is gone and the layering
+  contract no longer carries its exemption. (basicly-bom07a)
+
+- The decompose-plan skill tells a plan to name a child's own fragment file instead of a directory glob, and the work-tracker skill records that a status a record once held cannot be rewritten (reactivate with in_progress). (basicly-d7rxd4)
+
+- `basicly brief <id>` now names the ground the lane may not touch: the paths each still-open sibling of its root declares, the paths this landing admits from the lane itself, and `.basicly/usage/needs-input.json` with fact `scope` as the route when the work genuinely needs a sibling's path. A brief for a lane whose root has no open scoped sibling is unchanged. (basicly-dy4f94)
+
+- **BREAKING: the `architect` agent can write, and the one file it may write is the
+  architecture document.** `tools` is a vendored consumer surface — `basicly install` projects
+  it into `.claude/agents/` and `.github/agents/` — so a consumer who upgrades gets an
+  architect whose tool list is `[Read, Grep, Glob, Bash, Write, Edit]` where it was
+  `[Read, Grep, Glob, Bash]`. The role named for architecture could previously only ever
+  return a backlog about a document somebody else had to write.
+
+  **The narrower constraint is now in the role's instructions rather than in its tool list**,
+  and that is the part to read before upgrading: the agent is told it writes exactly one file,
+  the architecture document, and is read-only everywhere else, but nothing in the projected
+  `tools` allowlist enforces the *which file* half. If your repository depended on this being
+  one of the agents that mechanically cannot edit, that is what changed. The trade-off is
+  recorded rather than hidden: a document author differs from a tree surveyor in both tools and
+  artifact, so it could have been an eighth role, and widening this one was the choice taken
+  (basicly-e2mz.23).
+
+- **The always-on instruction layer now says what counts as *authority* when checking whether
+  a capability already exists.** Its reuse rule said *"grep for the helper, skill or gate
+  before proposing one; absence needs a probe"* — and an agent followed it, grepped the
+  config file, read `--help`, and concluded a feature was missing that had shipped long ago.
+  The key it needed is read by the config loader and appears nowhere in the config file, so
+  every honest reading of the documented surface said "absent".
+
+  The rule now reads: **prove a capability absent before building it; the authority is the
+  code that reads it, not the docs or `--help`.** A live key can be undocumented, and a
+  missing flag is not a missing feature.
+
+  It was added by **removing**, not appending — the layer had eight characters of headroom on
+  its tightest surface, and the tightest surface binds for anything always-on. The retired
+  fragment was a generic retrieval ladder: *"find files by name, localize with focused
+  search, read only the ranges you need."* That is agent hygiene rather than repo knowledge,
+  and reading the narrow range and stopping is precisely the habit that hid the key. Retired
+  rather than deleted, so the reason stays on the record.
+
+  Net effect on every projected surface is smaller, not larger: headroom rose from 107 to
+  224, 209 to 326, and 8 to 125 characters. (basicly-grpzkw)
+
+- **A `change-summary` artifact carries a changed-path count and digest instead of the
+  path list.** The list was the only field that grew with the diff — 4096 of the largest
+  recorded summary's 18555 bytes were sorted paths — and it is the only field a reader can
+  recover from the `commit` the same payload carries: `git show --name-only <commit>` for a
+  build that committed once, `git log --name-only <base>..<commit>` otherwise, checked
+  against `changed_digest`. A 400-file landing now stores a body under 1 KB. Summaries
+  recorded before this are still accepted, so nothing already handed on is refused
+  (`basicly-gvlpxm`).
+
+- **The event log's durability bound is measured rather than asserted, and the defect it was
+  filed for does not exist.** `events.py` states the choice - no `fsync`, the push is the
+  durability boundary - and nothing exercised it, so the bound behind that sentence was a
+  claim. It is now five tests. What they establish:
+
+  The append path asks the platform for no sync at all: a spy over a whole `append()` of five
+  drafts counts zero `fsync` and zero `fdatasync`, against a control that counts one on a
+  deliberate sync, and a tokenized scan excluding comments and strings finds no sync call on
+  the write path - so the module docstring's own sentence cannot satisfy the probe. An
+  interrupted batch is a **whole-line prefix**, never a hole and never a tear: a batch under
+  one buffer chunk is all-or-nothing, and a larger one loses a suffix of complete lines that
+  folds with no fork and no quarantine.
+
+  **That refutes the record this was filed under.** `basicly-vkh0.30` holds sequences 1-8 and
+  10-34, and the two survivors around the gap are **one file line and 525 microseconds apart**,
+  while one append over that ledger measures 54-61 ms - so they were minted in one batch and
+  written by one call. A partial batch truncates a suffix, so an interior line whose successor
+  survives cannot be lost that way, and **an `fsync` would not have prevented it**. The loss
+  happened after the bytes were in the file. The class moves from an unflushed write to a
+  post-write mutation; the cause stays unidentified, as the record said.
+
+  The useful half is that the next one is already detectable and is now pinned. The event above
+  a hole carries totals a fold of the survivors cannot reach, and the next append restates from
+  the fold, so exactly one event disagrees - measured live as one disagreement across 6,263
+  events, one sequence hole, nothing quarantined. `BUFFER_CHUNK_BYTES` is asserted against
+  `io.DEFAULT_BUFFER_SIZE`, having had exactly one occurrence in the tree before this: its own
+  definition (basicly-mbkqxi).
+
+- Worktree provisioning now copies `node_modules` from the base checkout or a sibling worktree whose `package-lock.json` is byte-identical, instead of running `npm install` in every lane; a differing lockfile still installs in full. Measured on this repo: a second worktree provisions in 1.4s against 6.2s. (basicly-oqspon)
+
+- **Every agent source must declare a model tier, and `catalog lint` now refuses one that does not.**
+  The tier vocabulary is `low`, `medium`, `high`, `maximum`. The rule it enforces is that a dispatch
+  with no resolved tier is a defect rather than a default: an omitted tier inherits the spawning
+  session's model, which is usually the most expensive one, so the routing rule defeats itself in
+  silence.
+
+  **A consumer inherits this.** An overlay agent under `.basicly-local/agents/` that declares no
+  tier now fails `basicly catalog lint` with a message naming the file and the allowed values. The
+  check walks every agent root, so core and overlay get the identical diagnostic — the asymmetry
+  where a rule bound on core sources and not on overlay ones is the same one already closed for the
+  tier vocabulary.
+
+  Two shipped roles had no tier and now do. `code-reviewer` and `security-auditor` are both `high`,
+  each argued against the tiers the other roles already declare rather than assigned: the
+  hand-invoked review path must not be weaker than the engine path on the same diff, and a role with
+  read-only tools has no external oracle to check its own inference, so its failure mode is a silent
+  false negative.
+
+  **What this does not do, stated because the gap is easy to misread.** The declaration is now
+  mandatory and checkable. It is not yet effective: no spawn in this repository reads the tier, and
+  `basicly-a3yi` is the open work that injects it into a projected surface. A declared tier reaches
+  no model today (`basicly-plhx`).
+
+- **The set of handoff artifact kinds is written down once.** `handoff.PRODUCERS` is now the
+  only enumeration of it: the schema suite derives the kinds it exercises from that declaration
+  instead of keeping a second hand-maintained tuple beside it, and the one declared kind with
+  no schema authored for it is named against what the schema directory actually lacks. A ninth
+  kind added to the declaration is exercised by construction, or named — it can no longer enter
+  one list, miss the other, and read as a live contract because it appears in a list
+  (`basicly-qnt8ng`).
+
+- **The harness board's design now makes the `harness-board/v1` snapshot the only interface, and
+  the contract readable without basicly.** `docs/requirements/harness-board.md` is revised so every
+  consumer reads a snapshot document and nothing else, basicly's producer is one implementation
+  rather than the definition, and a foreign producer gets a stated six-clause adapter contract plus
+  a conformance kit that proves it. Two success claims were measured false and are fixed with a
+  named remedy: `basicly board validate` answers `not-installed` and exits 1 in a directory with no
+  catalog, so the check that was supposed to prove independence *was* the runtime, and the contract
+  was distributed only to repositories that had already installed it. The remedy is a standalone
+  single-file conformance script under `.basicly/core/kit/board/`, and the snapshot schema freezes
+  under its own `harness-board/vN` version rather than folding into basicly's semver. Wall mode and
+  the action surface are back in scope with the superseded four-unit decision recorded rather than
+  deleted, the conformance kit moves from last to second in the build order, and the marker-family
+  set and the wall's idle state are settled by measurement. **What this means for a consumer:** a
+  repository that never runs `basicly install` can emit a conforming snapshot from whatever work
+  tracker it already has, check it under a bare `python3`, and get a working board
+  (`basicly-rn0o.10`).
+
+- **A record may no longer be closed against a demonstration command that selects no test.**
+  The plan gate checked the `demonstration` field's *form* — present, one line, something
+  backticked — and never ran it, so a `uv run pytest <file> -k <expr>` whose expression matches
+  zero tests passed. Measured over one session, five records were closed or worked naming
+  exactly that, against positive controls collecting 210, 142, 87 and 23 tests in the very files
+  they named: every real regression existed under another name and passed. So the field was
+  refused for being absent and accepted for being wrong, and a third form rule could not tell a
+  command that selects nothing from one that selects everything.
+
+  `demonstration_proof` runs the criterion as `pytest --collect-only` with an allow-listed argv
+  and refuses only on pytest's exit code 5, *no tests collected*; a missing instrument fails
+  open rather than refusing an honest plan.
+
+  **Where it refuses is the load-bearing part.** The first cut refused at plan time and was
+  wrong: probed against three records filed that morning, two honest plans were refused, because
+  at decomposition the test does not exist yet. Plan time now *reports*, in one line naming the
+  children whose demonstration collects nothing and saying that this is fine for a test the plan
+  will write and a typo otherwise. The **closing** advance refuses, ahead of every side effect,
+  on the ground that a record claiming to be done was supposed to have written the test it
+  names by now — and the refusal says so, with the two repairs. Measured over this repository's
+  backlog when it landed: 17 records carried a demonstration, 1 collected nothing and was open,
+  and 0 closed records would have been refused (basicly-u2hl.58).
+
+- **The owned tracker's event vocabulary splits: `note` carries prose, `checkpoint` and `artifact`
+  are typed machine state the fold reads by name.** One kind carried both before — 2,667 of this
+  repository's 5,752 ledger events are `comment` [measured 2026-08-18], holding the prose a human
+  wrote *and* every marker the loop derives state from — so a reader could not select machine state
+  without grepping a free-text body, and the fold could not refuse a malformed marker.
+
+  A folded record now answers two more questions directly: `checkpoints` maps an approved
+  checkpoint to the approver the event named, and `artifacts` maps a handoff artifact kind to the
+  last body recorded under it. Both are carried in the derived `snapshot.jsonl` and in a rotation
+  checkpoint, because the resumed fold reads a checkpoint rather than the archive: one that dropped
+  `checkpoints` would read an approved item as never approved. An artifact body sits outside the
+  free-text cap, so it is stored whole rather than cut at 4,096 bytes.
+
+  **`comment` is aliased, never retired, and no line on disk changes.** The log is append-only, so
+  every `comment` event stays exactly as it is and folds to the same work log a `note` folds to —
+  asserted as state equality between two ledgers written in the two spellings, because the
+  unknown-kind skip path would have silently dropped the prose history and the checkpoint markers of
+  every item older than this change. The kit's own writer records `note` from now on; the `comment`
+  subcommand keeps its name, which is a consumer surface and moves under its own window.
+
+  **What this does not do.** The `br` mirror seam still writes `comment`, deliberately: the reader
+  must accept both spellings before any writer switches. The remaining kinds of the specified
+  vocabulary — `decision`, `scope`, `wait`, `grant`, `rework`, `sizing`, `classification` — and the
+  reader that resolves an existing marker body to its typed kind are not here; nothing yet reads a
+  checkpoint or an artifact off its kind rather than out of prose (`basicly-vkh0.30`).
+
+### Removed
+
+- `docs/requirements/factory-loop.md` is deleted. Its five undocumented decisions live in
+  the architecture as D-37 to D-41; D33's branch-home clause is superseded inside D-26.
+  Every live code, gate and config citation now points at the architecture section that
+  carries the rule; dated history keeps its original wording. (basicly-1hp91f)
+
+- **BREAKING: the `code-reviewer` agent is removed; `reviewer` supersedes it.** `code-reviewer` was
+  projected into `.claude/agents/` and `.github/agents/` and vendored to consumers by `basicly
+  install`, so this deletes an agent you may be invoking by name today. `reviewer` does the same job
+  with the stronger contract: it reviews **one named lens** and reports on that axis alone, with a
+  severity on every finding and no ranking merged across lenses — a change can pass one axis and
+  fail another, and reranking lets the strong axis mask the weak one (`basicly-e2mz.5`).
+
+  **What to do.** Ask for `reviewer` instead, and name the lens you want: `correctness` or
+  `security`. Those two are the whole vocabulary. If you name none, it takes one, says which, and
+  answers for that axis alone rather than covering both in one reply. It fetches its own diff
+  (`git diff HEAD`, or the range or component you name), so the ad-hoc path that `code-reviewer`
+  served still works without a VALIDATE dispatch behind it.
+
+  **The old name still resolves.** `roles.resolve_named_role` redirects `code-reviewer` to
+  `reviewer` before it checks whether the file is there, so a caller holding the retired name gets
+  the replacement rather than a silent fall back to an unspecialised runner. The supersession is
+  also stated in `reviewer`'s projected `description`, which is the surface your host matches for
+  delegation and lists to you.
+
+  **One thing `basicly install` will not do for you.** Agent projection prunes a projected file only
+  when a technology selection excludes its source, so an existing install keeps an orphaned
+  `.claude/agents/code-reviewer.md` and `.github/agents/code-reviewer.agent.md` after the upgrade.
+  Delete those two files by hand. A fresh install never writes them.
+
+- **The external tracker binary and its store are gone from the runtime path entirely.**
+  The cutover ladder collapsed to its last rung: `[tracker] mode` now accepts exactly one
+  value, `owned`, and the `external` and `dual` modes are gone with the store they named.
+  The engine reads and writes the owned append-only event ledger under `.basicly/ledger/`
+  and nothing else. The `.beads/` directory, its ignore rules, the binary's installer, its
+  tool skill and the five skills that named it are all removed, and the commit gate reads
+  the owned ledger instead. **What this means for a consumer:** installing basicly no
+  longer installs, pins or upgrades a third-party tracker binary, and no command shells out
+  to one. The `mode` key itself is kept rather than deleted from the schema, so a repository
+  that already committed `mode = "owned"` is not refused as declaring an unknown name
+  (basicly-vkh0.42.7).
+
+### Fixed
+
+- **The Python guidance no longer tells an agent to write a waiver the gate refuses.**
+  `python-guidelines` is path-scoped on `**/*.py`, so every agent touching Python loads it,
+  and its waiver recipe was three weeks stale in three ways at once. It omitted the kind, so
+  its literal example parsed as unclassified and `waivers.py` rejected it - *states no kind,
+  so nothing says whether this is permanent or owed back*. It named `waiver_count` under
+  `[tool.module_size]` in `pyproject.toml`, the shared anchor that bounced three of five
+  lanes on one day and that a per-record `count_delta` in `basicly.d` replaced. And it never
+  mentioned rebaselining, which is the ordinary permitted route - already used 50 times
+  across 26 entries, requiring a reason and a base commit, counted and printed on the pass
+  line rather than silent.
+
+  The cost was measured, not supposed. Three of four agents in one parallel pass
+  independently reported the two size ratchets as a systemic blocker and spent budget on
+  them rather than on their task. One earlier unit was a total loss to it: it enumerated all
+  8.4 million subsets of a file's 26 natural blocks against the gates' own measurement
+  functions, found 225,756 that satisfy both ratchets and not one that is a nameable
+  responsibility, and reverted - on a margin of 28 prose tokens.
+
+  The guidance now gives the economics before the remedy. **Extracting is not free and two
+  in three natural cuts make it worse**: removing a unit raises the parent's prose share
+  whenever the unit is prose-lighter than the parent, so a cut that satisfies `module-size`
+  breaks `comment-density`. Measured over 3,588 real top-level definitions in the 68 frozen
+  oversized modules, only 34.4% are prose-heavier than their parent and so satisfy both at
+  once. Then rebaselining, with its two required inputs. Then the waiver, in both accepted
+  spellings - `cohesion:` for permanent and `cost(<record-id>):` for debt that expires when
+  that record closes. And the trap that makes the obvious move wrong: **a waiver on a frozen
+  module replaces its frozen entry outright**, so waiving a module far above the cap deletes
+  its ceiling to buy a few hundred tokens.
+
+  Checked by feeding every waiver example in every surface to the gate's own parser rather
+  than by reading them - three examples, zero unclassified, on the catalog source and both
+  projections. Sweeping the whole file instead of only the edited passage is what found a
+  third stale kindless example that the original finding had not named. (basicly-03ykuf)
+
+- **A supervised pass now dispatches every ready lane while the review queue has room.** The
+  downstream-WIP bound charged a pass for its own admissions, so six ready lanes under a limit
+  of 5 started 5 and refused one against a limit nothing stood at. `wip.admit` gates on work
+  already downstream: below the limit all start, at it none does. (basicly-08rnmd)
+
+- **A lane that is running no longer renders as one that has done nothing.** The board's
+  in-flight card carried five of the sixteen properties the snapshot contract declares, so
+  five of its six cells read `not measured` while the supervisor's own terminal printed
+  those very figures for that very lane in the same second. The cause was the tier it read
+  from: the card was built from the tracker binding alone, and that binding holds only the
+  **last finished run** — which a lane on its first dispatch does not have.
+
+  Three tiers now supply it, each asked for what it actually holds. The live event stream
+  holds what a running lane has spent and the last thing it said; it is process-local to
+  the supervisor, so it answers where the producer is the supervisor's own tick and is
+  empty elsewhere rather than zero. The last run record holds a finished dispatch's cost,
+  occupancy and duration exactly. The tracker binding holds the branch, the status and the
+  agent.
+
+  **A live lane does not inherit the previous dispatch's figures**, and that is the whole
+  care in the change. Cost and occupancy are per-dispatch, so carrying them forward prints
+  last run's spend under a heading that says the lane is running now. The agent and the
+  model do carry, because a lane keeps its runner between dispatches.
+
+  The activity line is the field with no substitute. Elapsed time and spend say a lane is
+  alive and expensive without saying whether it is stuck.
+
+  One rule was almost broken by its own implementation. Tokens has two sources and the
+  live one wins while a lane runs, and preferring it on *truth* rather than on *presence*
+  handed one window straight back to the previous dispatch: a lane's stream is published
+  the instant the dispatch starts, so it reports a real `0` until the first turn is
+  metered, and a falsy test resolved that to the last run's total — a card reading ten
+  million tokens in a lane's first second. Tokens now obeys the same rule as cost and
+  occupancy, and two tests pin it, one of them the window with a previous run to fall back
+  to. The falsy form kills two of the three, so they discriminate on the rule and not on a
+  value.
+
+  Live elapsed time is deliberately still absent: no start time exists on the lane's
+  stream, on its tracker view, or anywhere on disk, because the run record is written after
+  the process ends. That is recorded as a follow-on rather than left as a silent gap. (basicly-0hxck3)
+
+- The board action band no longer alarms on a checkpoint a live grant already delegates, or one whose record has closed; a queued decision still renders regardless of any grant. (basicly-0i86tl)
+
+- **The wall board no longer cuts a region off the screen when a producer emits one more of
+  anything.** The layout stated six pixel row heights, each measured against the tallest content
+  that row could hold *on the day it was written*. The fixture behind it carried 12 gate checks;
+  this repository's own snapshot carries 36, so the gate strip grew four rows, pushed `HEALTH`
+  past the bottom of the footer, and cut the caption under the loop strip to a partial line.
+  Measured against the pre-change template, the repository's own snapshot clipped **five** of the
+  eight regions - `head`, `loop`, `foot`, `tick` and `inv` - and four of them were already one
+  line short on the 12-check fixture the layout shipped green against.
+
+  Every row is now the height of what it holds, and what it holds is bounded by a capacity the
+  model states. `GATES` draws a reserved grid of `GATE_COLUMNS` x `GATE_ROWS` cells whether or not
+  the checks fill it, so the strips below it cannot move when the count above them changes, and it
+  says `+N more checks` for the rest. `HEALTH` and the priority histogram gained the same
+  treatment - one is a line per agent and the other is keyed by the producer's own label
+  vocabulary, which the schema deliberately does not close, so neither had a length the page could
+  assume. The gate strip's mode and stamp moved from two cells to the strip's caption, because a
+  two-line cell among one-line ones takes a row the grid had allotted to a check. A lane card now
+  puts its id and its phase on one line and its six figures on three, because the in-flight row is
+  the one region that absorbs the wall's slack.
+
+  **A pixel tuned against today's count is the same defect one number along**, so the row test
+  asserts that no wall row states a length at all, and a new `dense-v1` fixture puts every capped
+  population over its cap at once - 40 gate checks against the tree's 36, six agents, ten priority
+  labels, seven lanes, all seven phases counted - and asserts each one names what it dropped. Both
+  assertions fail on the pre-change template and model. What a test cannot show is that the result
+  fits 1080px: that was measured by rendering headless at 1920x1080 and 1200x900 and reporting
+  every element whose scroll size exceeded its client size, across five fixtures and the
+  repository's own snapshot. Zero, against five clipped regions before. (basicly-0jzq6g)
+
+- **A running lane's card now shows the unit title, its phase and how long it has run, and its full activity note.** The card led with the tracker's own status and a bare id even while an agent worked, and a parked lane's stale tokens still drew the pulse of a live one; it now names the unit, states liveness plainly, and expands to the note in full. (basicly-0xtzf1)
+
+- A landing now asks `release-notes` about the lane's own still-open record and refuses before the merge when it owes a note, instead of admitting the lane and failing the commit that closes it once the worktree is gone. (basicly-18iz59)
+
+- `basicly loop advance` no longer blocks for input when a repair brief is stale against the branch head. The read that judges it stale has already consumed it, so there is no gate left to re-run: the advance now discards the brief, records why on the lane, and continues to the landing in the same invocation. (basicly-1djm17)
+
+- **A repair that re-lands from validate records the `change-summary` for the landing it just
+  performed.** The landing path has two merge call sites and only one recorded.
+  `loop._verify_and_land` merges and calls `_record_change_summary`, which after
+  `basicly-gvlpxm` correctly records the head the merge took; `loop._repair_from_validate`
+  called `merge.merge_worktree` directly and recorded nothing. So after any repair re-land the
+  artifact still described the first landing - `gvlpxm`'s own defect statement word for word,
+  reached by the other route. `gvlpxm`'s own repair demonstrated it: its summary still names
+  `d3422f81`, the pre-rebase head, while the fix reached main as `7381a145`.
+
+  The changed paths are read **before** the merge, which is the ordering `_changed_paths`'
+  docstring requires - afterwards the changed set is whatever else landed alongside - and a
+  failed merge records nothing, leaving a true summary of the first landing rather than
+  replacing it with a summary of nothing.
+
+  **The record posed a design question and declined to answer it; its acceptance criteria
+  answer it.** The two readings were that a re-land should re-record, or that the phase model
+  is wrong to let a merge happen outside the state owning the artifact. The criteria choose the
+  first, and it holds on its own terms: `handoff.record` is content addressed rather than write
+  once, so the corrected payload is a second event and nothing is overwritten.
+
+  **Nothing exercised this path at all.** A search of `tests/` for `_repair_from_validate`'s
+  own block message returns nothing, against a positive control finding the string in
+  `loop.py` - which is why the missing call went unnoticed through two records about the same
+  artifact. The first test pair written for it did not discriminate either: reading the paths
+  *after* the merge still passed, because the fixture pinned `branch_changed_paths` to a
+  constant. The changed set now differs across the merge by injection, so *when* it is read is
+  observable, and that mutation fails.
+
+  `tests/test_handoff_states.py` crossed the 4,000-token cap under the new pair, carrying a
+  third responsibility by then. The entry-refusal tests moved to `tests/test_handoff_entry.py`,
+  their second move for the same five tests - which is `basicly-e2r08j`'s mechanism exactly:
+  every split raises both halves' prose share, so the module that receives a section is the
+  next one to overflow (basicly-3katht).
+
+- A landing that fails its verify gate now briefs the repair with each failing check's own command and captured output instead of the whole-suite command and an empty string, and `verify-run.json` no longer records a blank `detail` for a failed check — it names the argv that reproduces it. (basicly-3oxf0d)
+
+- **The two vocabularies sharing the provenance key are reconciled, so every folded edge is
+  accounted for.** `migrate.PROVENANCE_KEY` and `provenance.KEY_LABEL` are literally the same
+  string: the engine's write seam stamps *who wrote the event* into the field the fold reads as
+  *how strong the evidence is*. Two axes, one name, and never reconciled. Measured on this
+  repository's log: 142 edge events carried `engine` or `dual-write`, folding to 133 edges
+  disposed `decide` for want of a vocabulary rather than for want of a fact, which is why
+  `gating_edges` read 932 of 1065. It now reads **1065 of 1065**, and `unknown_labels` is
+  empty.
+
+  The two writer identities gate because of what they mean, not as a convenience: an event the
+  engine's own seam appended is one a command asked for, which is the claim `EXTRACTED` makes.
+  This widens the gating set by **two exact strings** and keeps the rule that only an exact
+  known string gates - a near miss - `engine` with a trailing space, `dual-writer` - still routes a decision, and
+  a test asserts that, because a prefix match here would be a fail-open on the one gate that
+  decides whether an edge may hold up a landing. The blast radius was measured before the
+  change: `gating_edges` has no production consumer, so resolving the 133 could not start
+  gating anything today.
+
+  They are counted in a new `EdgeFold.writer_labels` rather than folded into `unknown_labels`,
+  because an edge that carried a writer identity never carried an evidence label and one count
+  for both would say it did. The agreements the kit cannot enforce for itself - it may not
+  import `basicly` - are pinned from the test side, which is the only place that can see both:
+  `WRITER_LABELS == {owned_write.OWNED_PROVENANCE, mirror.MIRROR_PROVENANCE}`, and
+  `KEY_LABEL == migrate.PROVENANCE_KEY`, so a later split of the key fails there first.
+
+  This needed `provenance.py` split: it sat at 7,890 tokens, exactly its frozen baseline, so
+  the vocabulary could not gain an entry. It is now 6,686 with the vocabulary and the payload
+  key names in `labels.py` at 2,979. **A real gain beyond the size:** `provenance` and
+  `differential` read one `DIALECT_KEYS` table instead of two copies, which is
+  `basicly-oii83r`'s root cause removed rather than patched on both sides. Two standalone-kit
+  fixtures enumerate the files a consumer copies, and both refused the new module until it was
+  named - the control working, on the one constraint the kit cannot check from inside
+  (basicly-493g5f).
+
+- `--allow-retry` no longer degrades an L3 session to L2: the session-wide escalation
+  scan now counts charged rework (attempts minus granted allowances), matching every
+  other consumer of the cap. (basicly-54t8w5)
+
+- **A repair brief the branch has moved past is refused as stale, and a repair that committed
+  nothing is named rather than charged.** Observed on `basicly-gvlpxm`: its worktree still held
+  a brief asking for the *post-regeneration branch head*, which had been fixed and landed hours
+  earlier as `merge.MergeResult.landed_head`. Advancing would have dispatched a full metered
+  repair for finished work. Nothing invalidated a brief when its defect closed by another
+  route - not the landing that carried the fix, not the gate, and not the brief's own reader.
+
+  **The wedge, which is why this was not merely wasteful.** A repair that finds nothing to do
+  commits nothing, so the branch carries nothing its base does not hold, so the next advance
+  takes the same branch and the same brief again. The brief is consumed on read, so the
+  following advance falls through to `_rework` and charges the last slot for a round with
+  nothing in it.
+
+  The signal needed no clock. A brief now records the branch head it was written against, and
+  a head that has moved means that work landed by some other route - the only fact that changes
+  when work lands. Both halves fail **quiet** on anything short of proof: a brief written before
+  the field existed carries no head, and a ref that will not resolve answers None, and neither
+  is evidence of staleness. Refusing a repair on the reader's own uncertainty would strand work
+  a red gate really does owe, which is the opposite failure and the more expensive one.
+
+  **Where the code went was decided by a linter, and it was right.** `_repair_in_place` sits at
+  exactly the six-return budget `ruff` PLR0911 allows - the same budget that forced
+  `_repair_outcome` out of it under `basicly-dbbh` - so the staleness refusal widens the
+  existing early-out rather than adding a branch, and the committed-nothing check went into
+  `_repair_outcome`, whose stated job is what a finished repair leaves the loop blocked on. Both
+  refusal messages live in `repair_brief.py` beside the predicate that raises them rather than
+  at the call site, and a `landed=(branch, head)` tuple collapsed to a branch name once it was
+  clear the brief already records the head to compare against (basicly-59fkfu).
+
+- **A close carries its reason onto the record, and a create naming no title is refused.** Two
+  defects on one surface, both found by using it: `basicly tracker write -- close <id> --reason
+  "..."` printed `recorded:` and the reason went nowhere, and `basicly tracker write -- create
+  --help` **minted a record** carrying nothing but its provenance.
+
+  The reason was dropped by `mirror._close_drafts`, whose docstring justified not mirroring it
+  *as a comment* - correct, since br records it as a field, and a comment row would be a
+  difference the mirror invented rather than found - and was silent on the field. The kit
+  already models it (`commands.CLOSE_REASON_FIELD`) and `commands.close` writes it, so the
+  route existed and nothing used it. **Measured on this ledger: 119 closed records carry no
+  reason and not one of them predates the field**, so every one is this defect rather than a
+  record closed before the rule existed. The record said 109; the delta of 10 is this session's
+  own closes going through the same seam and losing their reason each time.
+
+  The create refusal reuses the pattern its sibling twelve lines away already had:
+  `_close_drafts` raised on an argv naming no record, so the shape was in the same function
+  group and was not being reused. A titleless record is a `created` event that states nothing,
+  and `ledger_bodies` reads that event's *presence* rather than its content - so nothing
+  downstream reports it, which is why the empty record survived.
+
+  One agreement is pinned from the test side because nothing else can see both halves: the kit
+  module the mirror is handed is `differential`, which exposes `events` and `migrate` and not
+  `commands`, so the engine cannot read the kit's field name at runtime. A test loads
+  `commands.py` by path and asserts the two are equal, the same route
+  `labels.WRITER_LABELS` takes.
+
+  `mirror.py` had 24 tokens of headroom and neither refusal was smaller, so the nine
+  translations moved to `write_verbs.py` - 3976 to 845 and 3721. The seam was checked both ways
+  before cutting. **The density waiver taken here is inverted from the six before it:**
+  `mirror.py` did not get denser by gaining prose, it got denser by losing 3000 tokens of code,
+  so the contract stayed and the denominator fell (basicly-5m2xfd, basicly-1qi0sz).
+
+- A push no longer stashes the tracker ledger when it is the only unstaged change: `basicly hooks-build` now writes a ledger guard into the installed pre-push hook, so a hook killed mid-run can no longer drop ledger events appended while it ran. Unstaged files outside the ledger keep the previous behaviour. (basicly-6ajmrc)
+
+- **A tracker write naming a record the ledger does not hold is refused, naming the id, instead
+  of reported as recorded.** `basicly tracker write -- update <typo>` printed
+  `recorded: update <typo>` and exited zero, on the one surface an operator uses to check their
+  own work. Measured 2026-08-20 against a seeded ledger, the cost was worse than the report
+  said. Only the flagless form wrote nothing at all; `update <typo> -t bug` **landed**, and the
+  fold turned the mistyped id into a record no `create` ever minted, carrying whichever
+  half-fact the argv stated. All five write verbs that reach the owned append — `close`, `comments add`,
+  `dep add`, `gate report` and `update` — accepted an absent id and appended an event for it;
+  `dep remove` was the only one that refused, because `basicly-he6200` had made it check the
+  edge it was withdrawing. The append now reads the record set under the lock it is about to
+  write through and refuses the whole batch, quoting the argv and the id it could not find.
+  `create` is untouched and stays the exception: it mints its id in the same critical section
+  and never comes through the append at all.
+
+  Idempotence is unaffected, which is what makes this refusable at the seam rather than at each
+  caller: a record's existence only ever moves one way, since a delete leaves a tombstone and
+  the record stays in the fold, so no engine path that re-enters a state on every advance can
+  meet the refusal on a later pass having got past it on the first. An edge's *target* is still
+  unchecked — a dangling target is a different claim, and `merge` and `supervise` both add edges
+  best-effort. One fixture relied on the old tolerance: `tests/test_gate_source.py` reported
+  gates through the real seam against a record nothing had opened, and now opens it
+  (basicly-6oypkd).
+
+- **A lane a bound killed no longer reads as unmeterable.** A claude stream cut off before its result event is now metered off the per-turn usage it did report, as codex's always was, so one killed lane stops taking a granted session human-only. A halt that genuinely cannot be metered now names the dispatch and its model. (basicly-6y0tg5)
+
+- A lane waiting for a process-budget slot is no longer flagged "may be stuck": the slot
+  is granted before the stall watchdog starts, so the wait it measures is real work time. (basicly-7cdeyd)
+
+- **The `work-tracker` skill no longer tells its reader that labelling a record is
+  impossible.** The skill is projected into `.claude/skills/` and `.agents/skills/` and
+  vendored by `basicly install`, so its prose is the instruction a dispatched agent follows,
+  and three of its claims were false against the code in the same tree. Its refusals section
+  said *there is no owned label write* and that *any instruction to label a record, a lane or
+  a cut is therefore false*, while its own writes section showed the call working — and the
+  call does work: the seam resolves `--add-label`/`--remove-label` against the record's own
+  set under the ledger lock before translating, and the raise the bullet described is an inner
+  guard on the un-resolved entry point that a user never reaches. An agent obeying the false
+  half refuses `basicly loop supervise --label`, which is the multi-lane selection mechanism.
+  The corrected bullet states the constraint that is real instead: a label write names exactly
+  one record, so an `update` carrying a label flag and two ids is refused while every other
+  `update` flag still applies to as many ids as the argv names.
+
+  The second: the ready set was described as the records that are *open*, unblocked and not
+  deferred. It is every record that is neither closed nor deferred, has no unclosed blocking
+  dependency and has no children — **`in_progress` is in it**, because a claimed record is
+  still the work, and a reader who believed otherwise would skip exactly the record a lane is
+  holding. The third, that `create` without `--json` is refused, is gone. Nothing tests skill
+  prose, so no gate saw any of the three (basicly-7wlhlp).
+
+- `basicly install` validates `--technologies` before it writes anything, so a refused
+  value can no longer leave a half-installed target behind. (basicly-859cqk)
+
+- **The context window a dispatch is metered against is read off the adapter's own stream, so
+  a consumer stops inheriting a stale constant.** `runner.py` shipped `claude: 200_000` while
+  this repository's own `basicly.toml` raised it to 1_000_000, so a repo that installed the
+  harness and did not hand-write `[runner.context_windows]` metered against the very figure
+  whose staleness had put the finalize trigger at a fifth of its intended point here — lanes
+  recorded occupancies up to 223_221 against a declared 200_000, and the override hid that
+  from anyone measuring locally.
+
+  **The remedy is not a bigger number.** Probed against claude 2.1.233 on 2026-08-15, a single
+  dispatch reported *two* windows on its own stream — `claude-haiku-4-5` at 200_000 and
+  `claude-opus-5[1m]` at 1_000_000 — so the window is a property of the model, not of the
+  adapter, and no per-adapter constant can be right for both. `context_window.resolve` is now
+  an order of preference: a window you declared wins, because the record has to explain the
+  threshold the engine acted on; then the window the adapter reported for this dispatch,
+  resolved by the model of the final turn rather than the first or the largest; then a dated
+  shipped default; then a refusal. **`unmetered` is a real recorded answer**, not a fallback:
+  codex and copilot report no window at all — established against positive controls, codex's
+  `turn.completed` usage block is present and carries none, copilot's `modelMetrics` is
+  present on 6 of 6 local stores and carries none — so neither ships a figure, and a dispatch
+  on either records that it could not meter rather than assuming one.
+
+  Every shipped default now carries the probe that read it and the day it was read, and
+  `stale_declarations` fails a default that has neither, that disagrees with its own recorded
+  probe, or that is past a 180-day re-read bound. That is a calendar falsifier: the existing
+  one needed a lane to record a contradiction first, which means paying for it
+  (basicly-89hm).
+
+- **`basicly worktree cleanup` decides on content instead of ancestry, so it stops reporting
+  every correctly landed worktree as unmerged.** The check was `git branch -d`, which answers
+  ancestry, and ancestry is not what makes a branch safe to discard: a lane that queued behind
+  another is replayed onto the base it finds, so its commits arrive under new shas and the
+  original ref is not an ancestor even though base holds every line. Cleanup relayed git's
+  `not fully merged` as *unmerged — re-run with force to reclaim*, and **a check that is wrong
+  on every correct case teaches an operator to pass `--force` without reading it.** On
+  2026-08-20 that habit came within one command of discarding a commit base genuinely did not
+  hold. Worse, `git branch -d` also fails for reasons that have nothing to do with merging —
+  a branch still checked out in a worktree gives `cannot delete branch … used by worktree`,
+  and `-D` refuses that too, so the offered remedy could not have worked.
+
+  Cleanup now compares content: the paths the branch changed since the fork point, against
+  what base holds at those paths. Base holding all of them reclaims the session with no
+  `--force`. **Anything else refuses and says which**, in four distinct sentences rather than
+  one — base is missing named paths and force would discard them; the comparison could not be
+  made; no session record names the base; git refused the delete outright. Only the paths the
+  branch touched are compared, so a sibling lane's landings are not mistaken for missing work,
+  which would be the same wrong-every-time answer pointing the other way. `git branch -d`
+  stays as the fast path, so an ordinary merged branch still costs one git call, and
+  `--force` keeps its old meaning: delete regardless, no question asked (basicly-8g719r).
+
+- **The validator's verdict is read through the markdown an agent actually writes.**
+  `validate_gate.verdict_from_reply` stripped whitespace and a pair of enclosing backticks
+  and nothing else, so a reply reading `**VALIDATION: PASS**` parsed to no verdict at all —
+  and an unreadable verdict costs the whole dispatch, not just the line. Markdown decoration
+  is now removed anywhere on the line before the `VALIDATION:` prefix is matched, which
+  covers emphasis around the whole line, emphasis around the label alone
+  (`**VALIDATION:** PASS`, the shape that puts the markers *between* the prefix and the
+  answer, where stripping the ends cannot reach), a heading prefix and a list marker. The
+  forms come from agent-written text in this repo's own ledger; single `*` and `__` runs
+  around a label line are extrapolated from the same convention and are marked as such at
+  `validate_gate._MARKUP`.
+
+  **The refusal is unchanged, and is now pinned.** Only `PASS` or `FAIL` after the prefix is
+  a verdict, and only a line that says the prefix is a candidate, so a reply carrying no
+  verdict still returns `None` and still queues the decision `basicly-xd79u3` added instead
+  of the parse finding a verdict in anything. Two permissive mutations were run against the
+  suite to prove that guard is still reachable: dropping the prefix anchor, and accepting any
+  non-empty answer, each turn `tests/test_validate_gate.py` red. (basicly-8utmy8)
+
+- The rework-divergence signature no longer reads a finding set that grew past the
+  truncation limit as progress; a strict superset now compares as diverging. (basicly-95mp1k)
+
+- **The validate decision queue kind has one spelling.** `loop._hold_for_validate_decision`
+  passed the kind as a bare `"validate"` literal while `validate_gate.queue_unreadable_verdict`
+  — the other site that queues one — named `validate_gate.VALIDATE_DECISION_KIND`. Both now
+  name the symbol. No behaviour changes: the literal and the constant were the same string,
+  which is exactly why nothing a call could observe would have caught them diverging.
+  `decisions.enqueue` raises on a kind `decision_marker.KINDS` does not reserve, so a
+  divergence would have failed the advance outright rather than mis-filing the item — the cost
+  of a second spelling is that it is the one a later reader copies.
+  `test_the_two_queue_sites_give_the_decision_kind_one_spelling` reads both function bodies
+  and refuses one. (basicly-abv7v9)
+
+- **A landed unit's cost record carries the forecast it was priced against, and counts the
+  curator's dispatch.** Two defects in the `[harness-cost]` marker, measured over all 202 cost
+  records in this repository's ledger on 2026-08-17. `forecast.tokens` was null in 185 of them
+  and `scope_tokens` was null with it, so forecast against actual could not be computed for
+  that population at all: the rollup looked the frozen estimate up by the record's *ownership
+  scope* while the estimate had been priced over its *working set*, and a different glob set is
+  a different key, so the lookup missed and returned a null rather than a forecast. The rollup
+  now resolves through the same dispatch sizing the lane was priced by and falls back to the
+  frozen forecast; when neither answers it records **the reason the forecast is absent** in a
+  new `source` field instead of a bare null, and labels a forecast it computed itself `rollup`
+  rather than borrowing the dispatch label, because an unfrozen resolution prices with today's
+  factors and this runs after the merge.
+
+  Second, the curator's dispatch was never in the total for the units that had one:
+  `loop._on_ship` wrote the rollup and *then* dispatched curation, so the rollup preceded the
+  spend it was meant to count. 8 of 202 units disagreed with the run records they hold and
+  none over-counted — the worst reported one dispatch against three runs, 10.1% below two
+  independent instruments that agreed on the real figure. The two calls are swapped. The
+  rollup still precedes the tracker-state commit, because a marker written after it sits in
+  the local store only, and that is the constraint the ordering had to keep (basicly-agzx.4).
+
+- **A landing now states what it took: the branch tip and how many commits came with it.**
+  `basicly worktree merge` and every landing behind it reported only the merge commit it
+  produced — `merged harness/feat into main @ d605fb4` — which says nothing about the commits
+  that were merged. On 2026-08-20 an agent finished, reported its commit, was resumed by a
+  follow-up message, committed another 92 lines, and the landing took the moved tip; nothing
+  in the output said the tip had moved, and the commit was recovered only because a
+  `git diff <branch> main` was run by hand before cleanup. The report now reads
+  `merged harness/feat @ 1a2b3c4d5e6f (3 commit(s)) into main @ d605fb4`, so the one
+  irreversible step in the loop names the thing it consumed rather than only the thing it
+  produced.
+
+  The count is read **before** the merge, because afterwards it is zero for every branch, and
+  a count git cannot answer is reported as `an uncounted number of commits` rather than as
+  `0`: this exists so a landing can state what it took, and a number nothing measured is the
+  same false report the change closes (basicly-aim1qi).
+
+- **Every ledger write is attributed.** The event record carried an `actor` field and the
+  live writer never populated it: empty on all 1,078 events written since the flip, against
+  a positive control of 3,775 truthy actors across the whole log — every one of them from the
+  import. A write now records the dispatched agent, or the operator masked, so "every state
+  change is attributable" is a fact rather than a declared field (`basicly-at5tph`).
+
+- **The board no longer goes backwards the moment a supervisor starts, and `IN FLIGHT` finally
+  has a producer.** A live supervisor lock hands board production from `basicly board serve` to
+  the supervisor's own heartbeat - the server stops folding and serves the supervisor's file
+  instead - and the tick folded on the lock alone. Measured on this repository: with no
+  supervisor the board carried a phase on 234 of 234 units, a ready set and `backlog.ready` /
+  `backlog.blocked`; a supervised pass reverted every one of those to *not emitted by this
+  producer*, and `IN FLIGHT` had never had a producer on that path at all.
+
+  The tick now folds the same document `basicly board --out` folds, plus the in-flight lanes.
+  The phase per record comes from `loop_state.phase_map` - one fold of the log for the whole
+  population, measured at 84 ms over 1041 records, against the per-record read that priced the
+  section out when the old reasoning was written - and each lane card reuses the view
+  `loop session` already builds, so there is one answer to what a lane last ran rather than two.
+  The lane selector the pass was started with rides along, so a `--label` pass draws its own
+  lanes and not the root's children.
+
+  A fact the tick genuinely cannot gather still leaves its section **absent** rather than
+  zeroed: with no lock the `session` and `lanes` sections are omitted, and a session this
+  checkout cannot derive publishes no lane list at all. A failed emission still costs one
+  narrative line and never the pass.
+
+  One emission measures 1.50 s on this repository, and 7.11 s - 47% of the 15 s beat - once
+  run records exist, because the grant-spend walk behind `session.spent_tokens` costs 5.9 s of
+  that. It runs after the heartbeat write, so it delays the next beat and never a landing, and
+  clears the 60 s staleness horizon by 8x (`basicly-bd4epr`).
+
+- **A release commit no longer arrives at its own hook stale.** The version bump adds a
+  character to every projected header, and the `always-on-sizes` block states those sizes, so
+  the pre-commit fixer rewrote `architecture.md` mid-commit and the framework refused the
+  release. `basicly release` now applies the fast fixers after it rebuilds (basicly-cmc998).
+
+- **The board snapshot schema no longer warns readers off an edit that is safe.** Its
+  first line claimed `wired-or-deleted` indexes the file's prose as field references;
+  `basicly-r343` had already narrowed that scan to object keys plus the string values
+  under `required`, `enum`, `const` and `$ref`, so a `description` is never read. The
+  line now states what the gate does read, which makes the real hazard — a new key or
+  permitted value repeating a declared name — the one a reader is warned about
+  (`basicly-desr1v`).
+
+- **`basicly health` no longer scores a lane our own spend ceiling stopped as an agent
+  failure.** A run carrying `stopped_bound` leaves the failure rate and is counted under
+  its bound instead, on the whole-history score and inside each drift window — the same
+  population rule `decompose.unsized_lane_tokens` and `spend_accuracy` already apply. On
+  this repo's ledger that moves claude from 29 failures over 163 dispatches (18%) to 20
+  over 154 (13%), with the other 9 reported as `stopped by a bound (spend 9)`, and it
+  retires the `REGRESSED claude` flag the supervisor pass line raised over four lanes the
+  grant ceiling halted 96ms apart on 2026-08-13. The health payload is `schema_version`
+  2: `failed` now names a narrower population. The ceiling is unchanged, and the report
+  is still observability — it never refuses a lane (`basicly-e2mz.3`).
+
+- **A tracker `update` through the engine seam writes every field the store holds under its own
+  key, instead of refusing all but three.** The translator was three flags wide — `-t`,
+  `--type` and `--external-ref` — so a write of a description or of acceptance criteria was
+  refused outright, and a record filed through the seam could carry a type and an external ref
+  and nothing else. The refusal itself was right, because dropping the field silently is the
+  divergence that layer exists to prevent; the flag table was the defect. Fifteen flags now
+  translate, naming ten fields — title, description, design, acceptance criteria, notes, type,
+  priority, assignee, owner and external ref — with `--body`, `--acceptance` and `-d` taken as
+  the aliases the store itself accepts. The field *names* matter because the folded record
+  renders them straight back, and the plan gate reads `acceptance_criteria` off that record.
+
+  Priority goes through a converter rather than `int`, so `-p P1`, `-p p1` and `-p 1` are one
+  priority and the ledger holds the integer; the same table serves `create`, which used to
+  crash on `-p P1` with a bare `ValueError`. Four flag families stay refused, each for a
+  measured reason, and the message now states the precondition **before** naming the repair so
+  that following it cannot turn an append into a replace: the label flags accumulate against
+  the set a record already holds rather than replacing it, `--claim` carries no value, `--due`
+  and `--defer` are re-based against the host clock, and `--estimate` lands under a field no
+  record here holds (basicly-e2mz.30).
+
+- **A lane is no longer refused at landing for a generated file it is fenced out of repairing.**
+  A lane whose diff only *adds* a file leaves a declared-regenerable block counting a tree that
+  no longer exists, and the documents those blocks live in are outside every lane's scope by
+  design — so the landing verify failed the lane for a defect it may not touch, and the lane
+  spent its whole rework budget discovering that. Two lanes escalated on it in one day while a
+  third, which modified files and added none, landed cleanly on the same base at the same
+  moment.
+
+  `rebase.refresh_generated` now runs every command declared in
+  `[worktree.regenerate_commands]` against the rebased worktree before the landing verify and
+  commits what changed. Committed rather than left in the tree, because the landing merges the
+  branch and an uncommitted rebuild would pass verify and never reach the base. The existing
+  rebuild fired only on a merge *conflict* confined to those paths; staleness needs no
+  conflict, because the rebase changed the tree the artifact is derived from, and the two are
+  the same class.
+
+  When regeneration does not make the file current, the landing **names the path and the
+  command that rebuilds it** instead of reporting a plain verify failure. It reads that out of
+  the failing check's own captured output rather than rebuilding a second time to find out,
+  because probing by rebuild would dirty the lane's worktree on the way to refusing it, and it
+  reads the same declared map that `loop preflight` prints, not a second list beside it
+  (basicly-e2mz.35).
+
+- **The prose-share instrument refuses source it cannot parse, instead of reporting it as
+  0% prose.** `check_comment_density.prose_tokens` returned 0 on any fragment that did not
+  `ast.parse`, and documented the 0 in its own docstring. That is the most dangerous answer
+  the function had available, because the two size ratchets pull opposite ways: an extraction
+  is safe only when the extracted unit is prose-**heavier** than the module it leaves, so a
+  lane measuring a docstring section or a method lifted out of its class was told the exact
+  opposite of the truth, every time. Measured 2026-08-20, a lane derived 66% by a second path
+  sharing no step with the first, against this 0, and only then knew its first measurement was
+  an instrument fault rather than a result. It now raises `RatchetError` naming the reason and
+  the remedy - parse an extracted unit as the module it will become, not as a raw slice.
+
+  The whole-tree path keeps the tolerance it had, and keeps it for the reason the old test
+  gave: a tracked module with a syntax error is ruff's finding to report, and comment-density
+  adding a second failure for one cause helps nobody. `verify --mode full` runs every check
+  rather than stopping at the first, and ruff runs before this gate, so the tolerance is about
+  the report and not about the gate's ability to run. The refusal is for the other caller, a
+  lane measuring a fragment, which has no ruff run standing behind it. Both halves are pinned
+  by a test that was shown to fail when its half is reverted.
+
+  One test module had to move for this to land: `tests/test_check_comment_density.py` had
+  reached the 4000-token cap, and the waiver the gate offers as a remedy would have failed the
+  module's own `test_neither_the_gate_nor_this_test_carries_a_waiver`. The `basicly.d` fragment
+  delta route is now `tests/test_check_comment_density_fragments.py` - five helpers and five
+  tests, all of the subprocess half - and the boundary is the fragment route against
+  measurement and ratchet decisions. The split carries the sibling's no-waiver assertion into
+  the new file, which the original could no longer make on its behalf (basicly-e7rtjn).
+
+- **A wall row now names the feature it implements.** The operator's report was that
+  `P1  basicly-a4q3.10  Carry a ranked kill list and its discriminator on a change summary`
+  carries a priority, an id and a title, and nothing saying which feature it serves. The
+  fact was already on the wire, so the ready set is now grouped under the epic or feature
+  each row resolves to and no producer field was added: the parent edges are the `graph`
+  section and the titles are the `units` section, both folded from the document the tick
+  already carries.
+
+  Rows group under the **root** ancestor rather than the immediate parent, because the epic
+  is the name a reader recognises. Verified against the live document and not only against
+  the fixture, whose graph carries `blocks` edges and no `parent-child` edge at all: every
+  heading on the page is the title of that row's root in `graph.edges`, with
+  `basicly-0hxck3` resolving two levels up to `basicly-k6tpep`.
+
+  A heading counts the **whole ready set**, not the rows drawn beneath it. The unattached
+  heading reads 41 while six of its rows are drawn, and 41 is the orphan count derived
+  independently over the same snapshot — a quarter of the ready set attached to no feature
+  at all, which is the second finding the grouping makes visible and which a slice-derived
+  count would have hidden.
+
+  Two defects were found by exercising the change rather than by reading it. A unit that
+  merely *feeds* a cycle took the title of whichever member the walk halted on, filing it
+  under a feature the graph never claimed; the regression test was run against the pre-fix
+  walk to confirm that only that case discriminates, the two obvious cycle shapes passing
+  either way. And a heading is a drawn line, so it now spends a slot: six headings over
+  fourteen rows ran the ready region 137px past its box at 1440x900, which the same document
+  rendered through the previous template does not do. (basicly-eaw1dy)
+
+- **The harness board design no longer states a snapshot build time its own table refutes.**
+  Constraint C5 claimed 19.1 ms for a whole build and a 26x margin against the 500 ms
+  acceptance cap, while the per-source table directly above it listed 16.5 ms for the fold
+  alone - the figure had excluded the log read, which is the largest single cost in the
+  producer. Re-measured on the tree that ships `units` and `graph`: **103.8 ms**, median of
+  21, decomposed step by step so the whole can be checked against its parts. The reduction
+  against `observe()` is 59x rather than 320x, and the real headroom against the cap is
+  4.8x, which is recorded as a band rather than a loose bound (`basicly-ef953m`).
+
+- **The board snapshot now carries the fields a wall board is read for: a loop phase and a
+  readiness flag per unit, `ready`/`blocked` on `backlog`, the branch, head and dirty state of
+  the checkout, the age of every pending ask and the question behind it, and the run's grant
+  level, token budget and spend.** Measured on this repository before the fix, `phase` was null
+  on 233 of 233 units, `ready` was 0 on 233 of 233, `lanes` and `session` were absent, an ask
+  carried neither a question nor a waiting time, and `repo` was a name. Every panel a person
+  reads was therefore empty or a count.
+
+  **The fix is the caller, not the section.** `board_sections.units` was right to omit `phase`
+  and `ready`: the first is `loop_state.derive_phase` reading a required-gate set the file-only
+  producer does not open, and the second is the tracker's own walk over a status vocabulary and
+  the whole edge population. A second spelling of either inside a display producer is how two
+  derivations come to disagree, and the schema has no field marking a value as derived, so a
+  guess would render identically to a read. So they join the lane facts and the lock facts on
+  `board_snapshot.Facts`, and whatever a caller withholds stays **absent** - `basicly board`
+  supplies them, and `tests/test_board_snapshot.py` pins both directions.
+
+  `repo.branch`/`head`/`dirty` travel the same way for a different reason: `dirty` is
+  `git status` and the producer spawns no subprocess, which a spy in
+  `tests/test_board_snapshot.py` pins. `asks[].waiting_s` is the one value derived in the
+  producer, and it is arithmetic on the injected `now` the document is already dated with
+  rather than a clock reading - the shape `board_render`'s freshness age was already exempted
+  for. `asks[].question` cannot be derived at all: `policy.record_wait_request` writes an id, a
+  kind and the word `requested`, so the wording exists only on the decision queue and is paired
+  back to its wait on the checkpoint name appearing in the question, which is
+  `decisions.settle_checkpoint`'s own rule.
+
+  **Two facts are bounded by cost, and the bound is published rather than hidden.**
+  `loop_state.read_node_state` is the only route to `derive_phase` and it reads the whole event
+  log seven times per record - 591 ms over 20 records on this repo's log - so a phase for all
+  234 active records is 138 s against a 171 ms build. `basicly board` derived phases for the
+  ranked ready front only, and every unit outside it kept `phase` absent; `basicly-s1vqq2`
+  removed that cap. `session.spent_tokens` sits behind `policy.session_issue_ids` at 13.1 s and
+  behind a run-record file this checkout may not have, so it is emitted only where both hold:
+  the figure
+  is spend *under the active grant*, never the lifetime one, because publishing the lifetime
+  figure beside a ceiling is how a display comes to draw 177970761/4000000 with nothing spent
+  under that grant (`basicly-f3tked`).
+
+- **The board's reclaimed ready list now fits the actual wall.** `basicly board --out` drew a
+  fixed 14 rows even on a screen 26 fit, because the cap ignored the viewport. `--height` and
+  `--width` let an operator state the wall's own size; the row count is measured from it and
+  stays at the old safe default when neither is given. (basicly-ffm2yp)
+
+- **A gate that refuses a harness git command now names the check and the reason that check
+  printed, instead of the argv and the exit code.** Three code paths reported a hook refusal on
+  2026-08-21 and none of them named a check. `commit.salvage` reported the *last line of the hook
+  chain*, which belongs to whichever hook ran last - in this repository
+  `protect-generated-commit`, which had passed - so the one message a reader got pointed at a
+  check that did not fail. Two lane closes printed `command failed (1): git commit -m ...` because
+  `checkout.run` read `stderr or stdout`: pre-commit writes the whole chain to stdout while `uv`
+  writes a `VIRTUAL_ENV` warning to stderr on every run in this tree, so the report was discarded
+  and the warning was the entire diagnosis.
+
+  Both streams are now joined and read by structure. A failing hook is located by its verdict
+  line, and its reason is taken from *its own* block, so a passing hook's line can no longer be
+  quoted as a rejection. Within that block the reason is chosen by what a line claims rather than
+  by where it sits: the first design took the block's tail, and real output refuted it, because
+  this repository's `pre-commit-script` hook wraps the whole verify suite and its block ends on a
+  list of the checks it ran while the answer - `checks failed: 28/32 passed ... (failed: ...)` -
+  sits six lines earlier. A failure with no hook chain in it keeps the old wording, since
+  `git rev-parse` has no check to name.
+
+  A landing that fails `release-notes` now carries the remedy that gate already printed - the
+  exact `changelog.d/<id>.<category>.md` to write - which was being captured and thrown away. When
+  a chain did run but names no failing check, the message says so and names
+  `.basicly/usage/gate-output.txt`, where the full output is written, rather than implying a cause
+  it cannot support. (basicly-fi1i7z)
+
+- **Two live code citations now point at documents that exist and sections that define what
+  the citing line claims.** Both were inside the `code-citations` gate's frozen debt on the
+  day it landed, so they were recorded rather than blocking, and both were real stale
+  pointers. `tests/test_policy.py` cited `gates-and-rework-design.md` sections 1 and 2 — the
+  gate taxonomy and the rule that a pre-flight gate is read-only — and **that document was
+  absorbed and deleted on 2026-08-08**, which no reader would notice without trying to open
+  it. Its content went to `factory-loop.md` §5.1, which says so in its own first line, and
+  `policy.preflight_gate` already cited that section for the same rule; the test now cites it
+  too. The second citation named §1.1 and §4.1, whose mappings landed in the same section —
+  and the rubric split that §4.1 argued has no document of its own, which the docstring now
+  states rather than implying a section number for it.
+
+  The shipped tracker kit's `events.py` cited sections 32.10, 32.3 and 32.3.2 while its module
+  header binds the kit to `work-tracker.md`, whose highest section is 16: it named one document
+  and meant another, which is exactly the ambiguity the gate exists to expose. Those three are
+  **architecture** sections — the per-event size cap, the event vocabulary, and the reader's
+  alias table — and each citing line now names `architecture.md`. Naming the document per line
+  is the repair rather than a path binding, which would have re-attributed every one of that
+  module's bare marks to the architecture when most of them really do mean `work-tracker.md`.
+
+  Neither reference was deleted to pass: an unresolved mark is a pointer whose target moved,
+  and the pointer is the evidence of what the code was reasoning about. Both modules reached
+  zero unresolved marks and **both frozen entries were deleted in the same diff**, so the
+  closed list now refuses a single new one in either file (basicly-fsuhg3).
+
+- **The board snapshot schema no longer publishes a spend figure nothing here can re-derive.**
+  The `spend` description stated 953.82 USD over 357 dispatches, measured 2026-08-14. Not the
+  deleted store's number, so it fell outside the record that repaired those - and not
+  re-derivable at all: `.basicly/usage/` is git-ignored and **nothing under it is tracked by
+  git**, so no gate could ever notice the figure drifting. Proved rather than asserted, and the
+  proof produced a third number: the design document says 431 dispatches, the schema said 357,
+  and this checkout holds 321 records. One quantity, three figures, none checkable, changing
+  per machine and per moment. The description now says what the field is and why it carries no
+  figure, and points at `docs/requirements/harness-board.md` where the motivating measurement
+  is dated and attributed.
+
+  **The record's first criterion sent me looking for the others, and they were stale too.** A
+  scan of every description in the schema found five more measurement-shaped spans. Those are a
+  different case - the ledger *is* tracked, so they are checkable - and they had drifted: the
+  event log read 5,890,340 B against an actual 6,396,125 B, **+8.6% in six days**. Re-derived
+  and re-dated rather than removed, because a derivable figure satisfies the criterion's first
+  branch. The field-selection ratio moved 132.5x to **156.2x**, so the claim was stale in the
+  direction that made the argument weaker than the truth, and both figures now carry the date
+  they were derived on plus the previous reading, so the next drift is visible as a delta
+  rather than as a surprise.
+
+  One correction along the way, and it is the same shape as the defect: my first count of the
+  active rows said 237 against the schema's 236, because I counted `snapshot.jsonl`'s header
+  line as a record. The schema was right and my instrument was wrong (basicly-fxdrcf).
+
+- **The pipe-status guard pairs a `$?` with the pipeline it actually terminates, instead of
+  with any pipe anywhere in the same invocation.** `$?` holds the status of the command
+  immediately before it, so a command running in between claims it - but the guard scanned
+  every segment after a filter and fired if a `$?` appeared in any of them. The refused shape
+  was therefore the ordinary multi-step block: run a filter, then run a redirected gate, then
+  read *that* gate's status. Worse, the guard's own advice text recommends the redirect half of
+  exactly that block, so the check refused the habit it was installed to teach.
+
+  Two commands were refused verbatim while this fix was being written, and both are now
+  fixtures rather than paraphrases: `... | head -5; <gate> > out.txt 2>&1; echo "exit=$?"` and
+  `sed ... | head -20; npx markdownlint ...; echo $?`. The earlier session's commands stay
+  unreconstructed for the reason the test module already gives - a guard written against a
+  paraphrase is a guard against the paraphrase.
+
+  **One refusal recorded as a false positive was not one, and the record now says so.** A
+  `jq ... | sed ... | sort > out.tsv && echo done` was refused for `sort`, and that is correct:
+  `&&` branches on the pipeline's status, which is `sort`'s, so a failing `jq` upstream leaves
+  the chain proceeding on a lie. It is pinned as a true positive with the redirect sitting
+  between the filter and the operator, because that is where a parser would plausibly lose it.
+  The measured tally on the record was corrected from 5 false against 1 true down to the cases
+  a verbatim command can be re-run for.
+
+  The five fire conditions are otherwise unchanged, each shown to fail its own test when
+  reverted: `$?` immediately after, `&&`/`||` after, an `if`/`while`/`until` condition, and
+  `run_in_background`. Both directions were also exercised against the live hook rather than
+  only in tests: the false-positive shape now runs, and `<gate> | tail -2; echo $?` is still
+  refused (basicly-g8jxj3).
+
+- **The board's lane card no longer clips the model id, and the page no longer leaves most of
+  its height black.** Both were one CSS decision. `board_page.html.j2` declared a grid whose
+  right column was a fixed `470px` while the running row was `minmax(0, 1fr)`, so at 1920x2400
+  roughly 70% of the page was black and `claude · claude-opu…` clipped at *every* width - a
+  lane card was about 390px inside that column, and `_lane_cells` puts the agent and the model
+  in one cell, so the model id had no room to have.
+
+  The fixed column is gone and the page flows. A full-width identity line at 1280 is about
+  590px of text in a 1248px box, so the model id reads with roughly two times headroom, and at
+  1600 two cards per row still leave about 760px each.
+
+  The card also gains the field with no substitute - the line saying what a lane is doing,
+  which is the only thing that tells a working lane from a wedged one - and drops the rows it
+  had nothing to put in. The fixed-height slot arithmetic retires with the fixed layout:
+  `READY_SLOTS`, `READY_SLOTS_WIDE` and `BAND_ASKS` existed to promise a rendered height
+  against a fixed viewport, which a page that flows does not need, and that is what lets the
+  alarm band show more than one waiting ask. (basicly-gnpgf8)
+
+- **The worktree concurrency cap counts checkouts instead of records, so a session whose
+  directory is gone stops holding a slot.** Both routes to a record outliving its checkout
+  were hit on 2026-08-20: `basicly worktree cleanup` without `--force` keeps the record when
+  the branch survives, and a plain `git worktree remove` tells the engine nothing at all. The
+  refusal then read `worktree concurrency cap reached (5/5)` with **three** worktrees on disk,
+  and `basicly worktree list` marked the other two `(stale: dir missing)` while they went on
+  blocking every provision. A stale record occupies no checkout and contends for no gate, so
+  it now counts for nothing.
+
+  **The refusal also names what to reclaim.** The old message named only the cap, which makes
+  raising the cap the cheapest reading — and that is what an operator did instead of freeing a
+  slot. It now reads `cap reached (1/1 live)` followed by the records whose checkout is
+  already gone and the `basicly worktree cleanup <name> --force` that clears them. That
+  message had been hand-written separately at both places the cap is evaluated, `basicly
+  worktree create` and the loop's build advance; both now compose it from one place, so the
+  two cannot drift again and neither can disagree with the count (basicly-gtoqu9).
+
+- **A `change-summary` artifact records the commit the landing actually took.** The head
+  was read before the merge, which rebases the branch and can add a regeneration commit on
+  top of it, so the recorded `commit` named a sha that no longer existed: `basicly-gvlpxm`'s
+  own summary carried `d3422f81` while its branch stood two commits later at `634c125a`,
+  and the changed-path count and digest beside it described that stale tree. The head now
+  comes back from the landing itself, so it resolves in the base branch and the paths a
+  reader derives from it are the ones that landed. The changed-path set is still read
+  before the merge, where it is still the build's own (`basicly-gvlpxm`).
+
+- **The architecture layering section's tier and band counts are generated from the import
+  contract.** Section 34 stated how many tiers the engine has and how many modules they hold,
+  and **nothing read any of it** — no script, no test; `docs-claims` asserted CLI coverage
+  only, and `code-citations` checks that a citation reaches a heading, not that a number
+  inside a document matches a config file. Measured against `.importlinter` on 2026-08-20 the
+  document said 36 tiers where the contract had 37, and its band labels summed to 98 modules
+  where the contract had 102. A previous lane corrected the three numbers its own change
+  moved and deliberately left two band figures, because band boundaries are read off a
+  diagram nothing binds — so correcting them could itself be wrong.
+
+  Correcting a number is the repair that is wrong again on the next tier, so the whole block
+  is now a `docs-claims` generated block over `.importlinter`: the tier count, the module
+  count, every band's module count and the diagram's declared-exemption edges are all derived,
+  and a tier added to the contract fails the gate until the block is regenerated. **The band
+  boundaries are the declared half and the block says so where a reader meets the counts.**
+  Nine bands over 38 tiers is an editorial reading the contract does not carry, so each
+  boundary and each band's example modules are declared in `.scripts/docs_claim_layers.py` and
+  the counts are derived against them — a boundary the contract no longer declares, an example
+  module that moved band, or a tier below the bottom band all raise rather than render, because
+  a band count nobody can derive printed as though it were derived is worse than a wrong one.
+
+  The two figures the previous lane left are now derived rather than guessed: band 7 holds 13
+  modules and band 9 holds 26, and the labels sum to the contract's 104 — cross-derived
+  against the package's 103 top-level modules plus the `renderers` package (basicly-h7bknm).
+
+- The release-notes gate no longer refuses a commit in a checkout that merely predates a record's note. A fragment the base branch holds and the branch point did not is now reported as a rebase to make, not as debt to pay, so a lane seeded before a record closed can still commit. (basicly-h8dxhy)
+
+- **A tracker write that translates to no event at all is refused, instead of reported as
+  `recorded:`.** `cmd_write` printed its confirmation from the fact that no exception had been
+  raised rather than from what landed, and `mirror._update_drafts` returns an empty draft list
+  when an `update` carries no field flag. So `basicly tracker write -- update <id>` printed
+  `recorded: update <id>`, exited zero, and appended nothing - identically whether or not the
+  record existed, so the message did not discriminate either. Verified both ways.
+
+  **The refusal went one level up from the verb, and that is the point.** The record scoped it to
+  `mirror._update_drafts`; it lives in `owned_write.append`, which sees the drafts every one of
+  the seven translated verbs produces. The defect is the shape rather than the verb - any
+  translation yielding nothing is a confirmation about nothing - and `basicly-vkh0.50` already
+  owns that general claim. `init` and `sync` are exempt by construction: `mirror.UNMIRRORED_WRITES`
+  is the set of writes that legitimately state nothing about a record, and it is the same set the
+  untranslatable-write refusal already names, so it went from private to public rather than being
+  respelled.
+
+  The order of the two refusals is forced rather than chosen. `refuse_a_write_to_an_absent_record`
+  returns early on an empty draft list, by design, so it cannot speak for a flagless write at all;
+  the records-nothing check has to run first. A flagless update naming an id nothing holds
+  therefore reports what it would have changed rather than that the id is unknown. A flagged
+  update naming that id still gets the absent-record message, which is the case where the id is
+  the thing to fix.
+
+  This also corrects `basicly-6oypkd`'s premise, which that record already states: its
+  "nothing reaches the ledger for an absent record" was verified with a flagless probe, so the
+  zero came from this defect and not from the one being reported. Both halves are pinned by a
+  test shown to fail when its half is reverted, and the record's four-step reproduction was run
+  against the live CLI: flagless refuses, flagless on an unknown id refuses, and `update <id> -p 1`
+  still prints `recorded:` (basicly-holhk4).
+
+- **`basicly worktree create` records the binding it just earned.** The verb provisioned the
+  tree, the branch, the dependencies and the hooks and wrote no worktree binding, so
+  `loop_state.derive_phase` read the record as `intake` and no advance could land a merge that
+  had already happened. Three records in one session were closed by hand for it, each carrying
+  a prose close reason where a `release-record` artifact should be (`basicly-i8urje`).
+
+- The board's own footer cells (spend, gates, agents, dep edges, events, and the "not
+  drawn" roster) no longer spell an absent section as `not emitted by this producer` or a
+  withheld one as the bare word `withheld`; a withheld section now shows the schema's own
+  reason instead. (basicly-jbd80w)
+
+- The dispatch brief now names the skills a unit's own work declares (`covers:` on a
+  skill source, refused by `basicly catalog lint` when the engine cannot dispatch it),
+  and `basicly usage report` splits never-used skills into *delivered by a dispatch,
+  never self-invoked* and *unreachable* instead of calling them culling candidates. (basicly-jcl4rm)
+
+- **Planning guidance now says how to find the files a fix touches, not only how to declare
+  them honestly.** A scope is a claim about where a wrong value is *produced*, and the
+  tempting answer is where it is *displayed*. Those are usually different modules, and the
+  gap tends to be discovered only after an agent has spent a budget reaching it.
+
+  Four scopes were written wrong in a single session, all the same way: one named the loop
+  and the gate runner when the producers were the three modules that actually run `git`; two
+  named a renderer when the rows are built one call below it; one named two projected skill
+  surfaces when skills project to three. Three of the four were caught downstream - one at
+  the landing gate, which routed a correct and verified change to rework for touching eleven
+  files outside its declared four, and one by the projection check refusing the commit. Only
+  the two caught by probing before dispatch were cheap.
+
+  `decompose-plan` gains **Locate the producer, never the surface**, carrying those four
+  instances, the probe as a runnable command rather than an instruction to think harder, and
+  the follow-up question that catches the projection case: does this value reach more than
+  one surface? A projected artifact usually has several, and a renderer almost always sits
+  one call above the builder that owns the fact.
+
+  The existing honest-sizing section is untouched. The two answer different questions: that
+  one is about not shrinking a scope you already know, this one is about naming a confidently
+  wrong one. (basicly-k87ec4)
+
+- **The release commit no longer refuses itself over the notes it publishes.** Assembly deleted
+  the fragment filename that accounted for a record, so 43 of 149 records lost their note in the
+  commit publishing it. The assembler now writes `(<record-id>)` onto a fragment whose body lacks
+  it (basicly-k8b75o).
+
+- Concurrent confirm-code mints and consumes no longer lose each other's writes: the store's read-modify-write is serialised across processes, so two checkpoint approvals racing each other keep both codes. (basicly-kas8q7)
+
+- **`basicly loop supervise` seeds lanes from a root whose decompose checkpoint a live grant
+  delegates, instead of refusing and sending the operator back to `loop run` per child.**
+  A root with children derives `decompose` (`loop_state.derive_phase`), and its decompose
+  checkpoint gates the fan-out — so `loop supervise <epic>` answered `seed-blocked - no lane
+  could be provisioned from 12 open child(ren) - decompose checkpoint awaiting human approval`
+  and exited non-zero, under a live L3 grant that `policy.GRANT_COVERAGE` delegates exactly
+  that checkpoint to. The cause was the driver: seeding used `loop.run_until_blocked`, which
+  stops dead at a checkpoint and never reaches `policy.approve_checkpoint_guarded`, so no
+  grant was consulted at any point on the seeding path. The operator then hand-drove
+  `loop run` once per child, on the same root and the same grant, and every one delegated.
+
+  Seeding now drives `loop.run_ceremony`, the same command `basicly loop run` is built on,
+  naming the session's own root as the grant root. **Nothing is widened by the swap**: the
+  ceremony's only route to an approval is that same guarded predicate, so a checkpoint no
+  grant covers still stops the pass — and it now says which of the three things happened.
+  A refusal names the level that *would* delegate the checkpoint and the command to issue
+  one; a covering grant that declined repeats its own reason; a rejected confirm code reads
+  as a refusal. "Awaiting human approval" said none of those, which is why an operator
+  holding a covering grant could not tell it had never been asked.
+
+  `basicly loop preflight` stops calling that checkpoint a blocker when the live grant
+  delegates it, and prints the delegate-it remedy beside the approve-it one when nothing
+  does. Preflight refusing a pass that now runs would be the same defect inverted
+  (basicly-kjc5.62).
+
+- **Concurrent lane dispatch no longer loses three lanes out of four to the base-checkout
+  commit, and a lane that queues for it is told so in those words.** Every `basicly loop run`
+  publishes its claim by committing tracker state in the *base* checkout before it provisions
+  a worktree — one index and one HEAD, shared by every dispatch, and nothing guarded it.
+  Observed 2026-08-19: four dispatches started in the same second, one committed and three
+  exited non-zero having done nothing, two on `git commit`'s exit 1 (a peer had already
+  committed the same dirt, so nothing was staged) and one on exit 128 (a peer held
+  `.git/index.lock`). So the factory's fan-out width was bounded by an unguarded serial step
+  rather than by the isolation model it advertises. Reproduced against the pre-fix code path
+  with the interleaving injected rather than raced: three of four dispatches failed, with
+  exactly the message the incident recorded.
+
+  `merge.commit_tracker_state` is the single funnel every one of those dispatches goes through,
+  and it now holds a file lock (`basicly.base_lock`) across the whole read-then-commit window.
+  A loser **waits** for the holder instead of racing it, and because the status is read inside
+  the lock a loser finds the tree its peer left — its own claim already published — so it
+  declines rather than recording the claim twice. A dispatch still queued after the budget
+  fails with a message that names *contention*, the holding pid and how long it waited, because
+  half of this defect was that `Error: command failed (1): git commit` reads as a rejected
+  commit and sent an operator into the hook chain.
+
+  **Stated failure mode:** liveness is the lock file's mtime and nothing refreshes it, since
+  the critical section is one gated `git commit` with no thread to beat from. A commit slower
+  than the hold budget is declared crashed and its lock taken over — which costs that one lane
+  the pre-fix behaviour, loudly, on work it has not started yet (basicly-kjc5.63).
+
+- **The landing scope gate no longer faults a lane for the two files every lane writes.**
+  This repo's conventions have each lane record its ratchet delta as `basicly.d/<id>.toml` and
+  its release note as `changelog.d/<id>.<category>.md`, so neither appears in any bead's
+  `## Scope` and `loop._scope_block` reported both as out-of-scope edits. Observed on
+  `basicly-gvlpxm`: the two false entries arrived in the same message as one genuine
+  collision, under a closing line that offers `[policy] scope_collision = "warn"` as the way
+  to land — so the noise argued for turning the gate off.
+
+  Both are now in scope by construction, derived from the record id the engine already holds
+  (`config.lane_scope`). Derived and not a directory whitelist, which is the whole point:
+  `basicly.d/<other-id>.toml` is a real collision and this gate is still the only thing that
+  sees it, while `README.md` in either directory names no record and stays undeclared
+  (`basicly-kjc5.64`).
+
+- **An artifact recorded against a record the ledger does not hold is refused, naming the id,
+  instead of appended.** `basicly-6oypkd` landed the absent-record guard in
+  `owned_write.append`, which every argv-shaped write reaches. `tracker.add_artifact` does not
+  reach it: it hands the ledger an object rather than an argv, precisely so a JSON body is not
+  flattened into the free text the per-event cap cuts. So the guard covered six verbs and one
+  surface sat outside it, which is the shape where a control reads as complete and is not. The
+  guard is now one definition with two callers rather than a copy, and `add_artifact` holds the
+  ledger lock across the check and the append for the reason `append` already did: the record
+  set a write is refused against has to be the set the append lands on.
+
+  **The consequence was narrower than the record claimed, and the correction is worth having.**
+  The record said an artifact against a mistyped id is "evidence attached to nothing". Measured:
+  the fold *does* mint the id, as a record with no `created` event, so `ledger-bodies` reports it
+  at the next commit. The hole was covered downstream. Refusing at the seam is still the right
+  place, because an append-only log has no undelete and the event is already written by the time
+  that gate speaks - but a reader should know a gate would have shouted.
+
+  **26 existing tests depended on the tolerance**, across three modules, every one writing an
+  artifact against a record its fixture never created. Each is fixed by opening the record, the
+  way `basicly-6oypkd` fixed the same shape in `test_gate_source._repo`, rather than by loosening
+  an assertion. The two autouse fixtures key off `request.fixturenames` instead of taking
+  `work_repo`, so the tracked-tree copy is not built for the tests that only want `tmp_path`.
+
+  **One module had to give up tests for this to land, and the reason is the finding.**
+  `tests/test_handoff.py` needed 190 tokens and was frozen at 6302 having already been
+  rebaselined three times - 3986 to 4134 to 5124 to 6302, +58% - with all three fragments giving
+  the same reason and deferring the same extraction. That extraction has since landed:
+  `cut_violation` lives in `artifact_record`. The test-side home they named,
+  `test_handoff_schemas.py`, has the room and is the wrong responsibility: it validates schema
+  files, takes no repo fixture and never calls `handoff.record`. The corrupted-artifact section
+  moved instead to `test_handoff_states.py`, where the entry-refusal tests it joins already live.
+  `test_handoff.py` fell to 5784 for the first time across those three concessions
+  (basicly-kmqno2).
+
+- **A write the ledger already held no longer reports `recorded:`.** An event id is a digest
+  over the fact, so a fact the ledger already holds is skipped as an idempotent replay - but
+  `basicly tracker write` printed `recorded:` from no exception having been raised rather than
+  from what landed, so the skip read as success. `--add-label live-demo`, then
+  `--remove-label live-demo`, then the same add again confirmed a label write three times over
+  a field that never moved, and the third confirmation is what bought a wrong diagnosis. The
+  seam now says `already recorded, so nothing was appended` and adds that the record still
+  reads as it did.
+
+  The swallow itself is deliberately unchanged, so a genuine duplicate replay still appends
+  once and states nothing new. **Saying a re-record is meant is still not possible:** driving
+  one field to A, to B, and back to A leaves it at B, because the history `A, B` and a
+  deliberate re-record of `A` after `B` leave the ledger byte-identical and no rule reading it
+  can separate them. The intent has to come from the caller, which is what `Draft.generation`
+  is for and what no write verb yet reaches (`basicly-z9bggw`) (basicly-kn4rip).
+
+- `basicly board serve` no longer serves a stale model against a fresh template: a
+  long-lived server re-reads its inputs per fold instead of blanking a region in silence. (basicly-mcf2uh)
+
+- The session walk behind `basicly board` and the grant spend meter reads the tracker ledger once per walk instead of once per bead in the session: an 87-bead session cost 8.77 s over 87 folds of the whole log and now costs 0.20 s. Same ids, same figures. (basicly-mdv1qu)
+
+- **A ratchet gate can be rebaselined by the route its own remedy prescribes.** `[ratchet]` in
+  `CONFIG_SCHEMA` named three gates while five call `ratchet.compose_ratchet`, so a lane that
+  followed `code-citations`' or `release-notes`' printed remedy and wrote
+  `[ratchet.code_citations]` into its `basicly.d` fragment got `unknown section
+  'code_citations' in [ratchet]` from every command that reads the config — 166 tests the
+  moment one did. Both gates shipped green because nothing exercised their rebaseline route:
+  the section they compose from and the section the schema accepts were declared in different
+  files and agreed only by review.
+
+  The two missing names are registered, and the agreement is now derived rather than reviewed.
+  `test_ratchet_sections_register_every_gate_that_composes_one` parses every `.py` under
+  `.scripts/` and `src/basicly/` for a `compose_ratchet` call, resolves each call's gate
+  argument through the module-level constant the caller spells it as, and fails naming the gate,
+  the file that composes it and the declaration `src/basicly/config.py` is missing — so a sixth
+  gate cannot land without its section. The walk asserts it has found the three long-registered
+  gates before it reports a difference, because a probe that found nothing would pass for free,
+  and it excludes `tests/` so a suite's fixture gate name is not demanded of the schema
+  (basicly-nlouqg).
+
+- **A ratchet fragment can record the commit its measurements were taken at, and is refused
+  where that commit is not in the head's history.** A `basicly.d` delta composes in any order,
+  which is what the directory is for; the *headroom* a lane measures before choosing that delta
+  does not. Two lanes branched from one commit both measured `src/basicly/merge.py` at exactly
+  2 tokens of module-size headroom, each declared a rebaseline that fitted and spent that same
+  2, and the composed tree came out 2 over — green on both branches, red only on the merge, and
+  the operator saw a two-token overrun with nothing pointing at two independently correct
+  measurements.
+
+  `[ratchet] base_commit` is the commit a fragment's numbers were measured on, and
+  `dropin.compose` refuses the fragment when `HEAD` does not contain it, naming the fragment,
+  the gate and the sha. **Ancestry, not equality:** work landing on top of a measurement does
+  not stale it, so a fragment that has been rebased forward still applies. **Absence is not a
+  violation:** the field is hand-written, nothing in the tree writes a fragment to derive it
+  at, and every fragment that predates it composes exactly as before — the alternative would
+  have stopped every lane in flight. Nor is git's third answer a violation: where the head's
+  history is not there to read, a tree copied without its `.git` or a shallow clone, the check
+  has nothing to say (basicly-nwx4ku).
+
+- **The differential's fold reads an edge in either spelling the log holds, and says which one
+  it read.** `provenance.fold_edges` required `target`/`edge_type` while `migrate.py` writes
+  `from`/`to`/`type`; `basicly-svct4w` fixed that side and asserted the mirror in a test so it
+  could not be forgotten. `differential.views_from_events` had the defect the other way round:
+  it read the engine pair only. Measured before the fix, against a positive control - four
+  edges in the declared spelling read as **0**, the same four in the engine's as 4. The record
+  predicted 1, and 1 was right about the fixture it came from, which holds three declared edges
+  and one engine edge; 0 is what an all-declared fixture returns, because a reader matching
+  neither key returns nothing rather than something.
+
+  The pair table is read **out of `provenance`** rather than respelled here. A second copy of
+  it is exactly how the two folds came to read different populations of one log, so a new
+  by-path sibling loader was cheaper than the duplication. `edge_dialects` reports which
+  spellings a log carries, for `EdgeFold.dialects`' reason: an empty edge set is otherwise the
+  same answer for a log with no edges and a log whose every edge the reader could not parse,
+  and those are opposite facts. A payload in neither spelling is still dropped rather than
+  guessed into an edge.
+
+  **The test that pinned the defect is now the control that both folds agree.** It asserted the
+  1 deliberately and said in its docstring that the asymmetry belonged to the other module;
+  that assertion now reads `== len(edge_fold.edges)` and compares the dialect reports directly,
+  so a reader that *switched* spellings instead of accepting both still fails.
+
+  This needed the module split first: `differential.py` sat at 11,110 tokens, exactly its
+  frozen baseline, so not one line could be added. It is now three modules - the owned fold and
+  the audit at 8309, the pure derivation at 3597, and the five records both sides report in at
+  1236 - with the one-way direction of both seams checked by a cross-reference scan rather than
+  assumed. Every name a consumer reads is re-exported by alias, so `except DifferentialError`
+  and `kit.is_ready` are unchanged across fifteen call sites (basicly-oii83r).
+
+- **A lane whose work is already committed now lands instead of being dispatched again.** A
+  supervisor pass re-derives the landing-only set from git — commits ahead of base, a clean
+  tree, no repair brief — so work that outlived a crashed supervisor reaches the merge queue
+  rather than paying for a second implement run. (basicly-pjaudy)
+
+- **A handoff artifact is now a typed `artifact` event, so the transport no longer cuts the
+  body its consumer reads.** An artifact travelled as a `[harness-artifact]` comment marker,
+  which put the JSON body in a `text` payload key — free text the per-event cap cuts at 4096
+  bytes. JSON cut mid-token is not JSON, so the producer validated one payload and the
+  consumer was handed a different one: measured over this repository's ledger on 2026-08-18,
+  31 of the 54 artifacts ever written are stored cut, 337,353 bytes are gone, and all 23
+  surviving truncated record-and-kind pairs are refused by their own entry predicate, against
+  a control of intact ones that are admitted. `basicly.tracker.add_artifact` now appends one
+  `artifact` event carrying the kind as a typed field and the body under `body`, a key
+  `events.FOLD_READ_KEYS` names and the cap may never reach, and the read resolves that event
+  first. A 22,621-byte plan that came back as a cut string through the marker now reads back
+  byte-identical. **The retired marker stays readable**: its rows are on an append-only log
+  and the cut bodies cannot be recovered, so a unit carrying only a marker still resolves to
+  the artifact it holds and is refused naming the truncation and both byte counts rather than
+  read as carrying nothing (`basicly-pp7q4i`).
+
+- **A board snapshot's lock age is read by the supervisor's own reader.** The
+  snapshot reported a holder heartbeat age derived independently of the code that
+  decides liveness, so the board could disagree with the supervisor about whether a
+  lock was stale (`basicly-rn0o.14`).
+
+- **The curator is told the release-record field set, so a release record validates.** Its
+  output contract said only "each unsupported claim named" while the schema sets
+  `additionalProperties: false`, so the model invented a shape and two of three ship
+  advances refused the record with `'suggested_wording' was unexpected`. The contract now
+  names every field the schema requires and states that no other key is admitted
+  (`basicly-s07cgc`).
+
+- **`basicly board` now derives a loop phase for every record instead of eight, and the cap is
+  removed rather than raised.** Measured on this repository before the fix, the wall's loop
+  region read `intake 8 · classify 0 · decompose 0 · build 0 · verify 0 · validate 0 · ship 0`
+  over 234 active units - not an idle factory but `board_facts.PHASE_LIMIT`, and a reader could
+  not tell the two apart. `loop_state.read_node_state` is the only route to `derive_phase` and
+  it reads the whole event log seven times per record, so a phase for the whole population was
+  the 138 s the cap existed to avoid.
+
+  **One fold, then the same derivation over it.** `loop_state.phase_map` reads the log once and
+  folds it once, through a new `tracker.all_views` seam - one view already carries the status,
+  the `external_ref` binding, the markers, the gate rows and the edges that `derive_phase`
+  takes - so the population is one read and the phase is arithmetic over it. Measured on this
+  repository's own log: **1036 records in 0.125 s**, against **128.1 s** for the 236 active
+  ones through the per-record route, and the two paths agree on all 236. `basicly board` now
+  builds in **534-555 ms** over four runs, with a phase on **236 of 236 units** where the
+  region used to read `intake 8`. `PHASE_LIMIT` is gone, so no reader is left believing a
+  bound still applies.
+
+  **It calls the real derivation, and so do its inputs.** `policy.classify_gates` and
+  `validate_gate.required_in` are the pure halves of `policy.gate_status` and
+  `validate_gate.required_config`, split out so a caller holding folded rows classifies them
+  the same way rather than spelling the rule a second time. The kit ships a `derive_phase` of
+  its own and it is deliberately not the one used: it folds the ledger alone and cannot see the
+  integrity level a unit's validate gate hangs off, so it reads `verify` where the engine reads
+  `validate` - and renders identically. `tests/test_board_facts.py` pins the fold count at one
+  with a spy rather than a duration, and pins that L3 case against its L2 control
+  (`basicly-s1vqq2`).
+
+- The base-checkout lock survives two Windows races: a release retried past a waiter's
+  concurrent read (WinError 32), and a create refused by a peer's in-flight delete now
+  reads as busy instead of crashing the dispatch. (basicly-s2obqz)
+
+- **`basicly board serve` serves the same document `basicly board --out` writes.** The server
+  folded with the supervisor lock facts alone, so a served board carried a phase on **0 of 232**
+  units against the emitted board's 232, no `ready` flag at all, and a `repo` section holding
+  only a name — every region on a live wall read `not emitted by this producer`. `board_facts`
+  sits above the server's tier and cannot be imported there, so the caller now passes a builder
+  rather than the server reaching for one, and a test binds the two so a third producer cannot
+  diverge in silence (`basicly-sp8lce`).
+
+- **The tracker kit's provenance fold now reads the edge dialect the engine actually writes,
+  so `gating_edges` can see the population instead of answering for it with an empty set.**
+  `provenance.fold_edges` required an edge payload spelled `target`/`edge_type` while
+  `migrate.py` writes `from`/`to`/`type` and `differential.py` reads that spelling. Measured
+  on this repo's own ledger: of 1,083 committed `edge` events, the fold read **0** and filed
+  all 1,083 under `EdgeFold.malformed`, which nothing reads — so `gating_edges` returned an
+  empty tuple, and empty is also the correct answer for a ledger with no edges at all. That
+  is the fail-open shape, and it survived only because nothing in `src/` or `.scripts/` had
+  wired the fold yet; a reader who wired it later would have inherited a silent zero.
+
+  The engine's pair is now accepted on **read** and still never written, taken off
+  `migrate.py`'s own constants rather than respelled, and chosen only when it is complete and
+  the declared pair is not — so a payload in neither dialect is still refused, naming the
+  documented spelling instead of guessing which writer produced it. `EdgeFold.dialects`
+  reports how many events were read in each spelling, which is what makes an empty edge set
+  distinguishable from an unreadable one. On the same ledger the fold now reads 1,065 edges
+  with 0 malformed against `differential.views_from_events`'s 1,064 — they differ by the one
+  retracted edge, which that fold models and this one deliberately does not. Unifying the
+  spellings instead was rejected: `provenance.KEY_TARGET` is read by `fsck.EDGE_RECORD_KEYS`,
+  so moving it is a writer change reaching two modules this fix does not own (basicly-svct4w).
+
+- **The tracker kit's `fsck` now names a hole in a record's sequence chain, and it runs in the
+  verify set instead of only when somebody thinks to run it by hand.** `fsck` over this
+  repository's ledger reported one `broken` finding — `carried-totals` on a comment event of
+  `basicly-vkh0.30` — and that was the consequence, not the defect. The record holds sequences
+  1-8 and 10-34: **no event claims sequence 9**, so 33 events sit under a highest sequence of
+  34. The fold is right that 33 events are there; the carried total of 10 on the event at
+  sequence 10 is a faithful record of a writer that read a max of 9, so it was already wrong
+  when it was written. §4.1 has the writer assign max+1 and the log has one append path, which
+  makes the chain contiguous by construction — a hole means a line that was written is gone.
+
+  `fsck` had `forked-sequence` for two events claiming one number and nothing for a number no
+  event claims, so it reported the disagreement instead of the cause. §4.6 already voids a
+  *forked* item's carried totals so one root defect does not print as a page of findings; a gap
+  voids them for the same reason and was not handled. Measured on a seeded ledger: the old
+  checker printed **two** `carried-totals` findings for **one** missing event and never
+  mentioned the gap. It now prints one `sequence-gap` naming the missing number, and carries no
+  event ids — the events either side are sound, and pointing a reader at them is the wrong
+  report.
+
+  The event itself was not repaired and cannot be: an append-only log has no undelete, and no
+  commit in this repository's history ever contained a sequence 9 line for that record. So the
+  new `ledger-fsck` check declares it in `[tool.ledger_fsck.frozen]`, keyed `<record>/<kind>`
+  so an allowance for one defect cannot absorb a different one landing on the same record, and
+  binds on everything else — a new finding, a recorded one that grew, or a recorded one that
+  fell and was not banked. It costs 0.18s over 6,157 events and 1,005 records, so it runs in
+  both modes (basicly-t10ipy).
+
+- **A worktree's tracker redirect is resolved in exactly one place, so the read and the write
+  cannot reach different checkouts.** A lane's worktree carries a one-line `redirect` naming the
+  checkout that owns the tracker, and the rule for reading it was implemented four times inside
+  the package under three different rules, with the landing's own id check not resolving it at
+  all. Two of the four already disagreed: one honoured a redirect only when the target directory
+  carried the expected name, the others honoured any directory, so a redirect naming anything
+  else sent the tracker read to one checkout and the event-log write to another — the failure
+  that had already silently discarded every tracker call made from inside a lane.
+
+  Measured on a temporary repository whose redirect names a differently-named directory: two
+  readers answered `base/tracker` and `wt` before and both answer `base` after, and the
+  landing's id set answered the worktree's own ids in every redirected case, control included.
+  Two further defects the tests found on the way — an empty redirect file resolved to the
+  **process working directory**, because `Path("")` is `Path(".")` and reads as a directory, and
+  the one resolver refuses it; and a JSON array line in the tracker export crashed the id read
+  with `AttributeError` where another of the four copies had skipped it. The standalone hook
+  script keeps its own copy, which cannot import the package, and a parity test holds it to the
+  same rule (basicly-tcmy.19).
+
+- **A push that would race a landing is refused naming the contention, instead of dying on a
+  stash.** `pre-commit` stashes the unstaged tree before it runs the pre-push stage and
+  restores it after. A landing writing the ledger inside that window changes the tree under
+  the stash, so the restore conflicts and the push aborts with `Stashed changes conflicted
+  with hook auto-fixes`. The commits are intact, and the message names a git mechanism rather
+  than the fault, so an operator reads a local mistake instead of two engine operations
+  racing - the third surface of one class, after `basicly-kjc5.63` on the base checkout
+  commit. On every surface the text named git and never contention, so it was diagnosed
+  wrongly every time.
+
+  The refusal runs **before the stash exists**, so there is nothing to conflict, and it says
+  the three things the stash message withheld: which pid holds the tree, that the git text the
+  operator is about to see is about the stash and not the fault, and that their commits are
+  unaffected. The signal is deterministic rather than a guess: the ledger's lock is a file
+  whose existence is the lock, carrying its holder's pid, and both the lock's name and the
+  liveness rule are read from the kit's own `events.py` rather than respelled - a second
+  spelling of either is the drift that module documents as the defect this design keeps paying
+  for.
+
+  **It fails quiet in every ambiguous case, and that is deliberate.** No kit installed, no
+  lock file, a lock it cannot parse, a pid that is gone, and a pid the platform cannot judge -
+  Windows has no stdlib liveness probe, because `os.kill(pid, 0)` there calls
+  `TerminateProcess` and would kill the process it was asking about. Refusing on the hook's
+  own uncertainty would make it look like contention, and would block every push on that
+  platform for as long as a stale lock file sat on disk. Each of the three liveness answers is
+  injected as test data rather than raced, so the verdict is a property of the fixture and not
+  of whichever machine ran it.
+
+  Two defects in this change were caught only by running the real hook end to end rather than
+  by its unit tests: a parenthesised `except` clause the house form forbids where nothing
+  binds, and a dynamically loaded module typed as `object`, which broke pyright on every
+  attribute it reached (basicly-u3b65o).
+
+- **A gate run in a worktree no longer prints a `VIRTUAL_ENV` warning `uv` was already ignoring.**
+  The engine is launched with `uv run` from the base checkout, so every verify check and lane
+  dispatch it started in a worktree inherited that checkout's `VIRTUAL_ENV` and warned once per
+  `uv run` check. It is now dropped when the cwd is a different checkout, and kept when it is not. (basicly-uq3pki)
+
+- **A long gate name no longer paints over the check below it, and the measurement that missed
+  it now exists.** The footer's gate strip reserves a grid of one-line rows, but only the
+  *cell* was held to one line - the name inside it was free to wrap, and did:
+  `projection-permissions` and `declared-dependencies` each took a second line the row height
+  had already allotted to `noqa-debt` and `ledger-bodies` and were drawn across them. Measured
+  on this repository's own snapshot at six widths, the collision is present from 1200px to
+  1800px and absent at 1920px, which is why the layout passed review. Six columns hold the
+  tree's longest check name only at 1920px and no column count holds it at every width the
+  layout claims, so the name now declares its truncation the way every other text on the page
+  does rather than wrapping.
+
+  **The instrument is the more durable half.** `.scripts/check_render_overflow.py` reported
+  zero on the broken wall and was *right* to: an element painted across its neighbour does not
+  overflow - its content fits its own box, the box is simply in the same place as another box.
+  Overlap and overflow are different faults, so the script now measures both in one browser
+  pass and reports them as two independent signals under two prefixes, `render-overflow` and
+  `render-overlap`, with the exit code their disjunction and a refusal printed under both. The
+  overlap signal is a pairwise bounding-box intersection over the *outermost* elements that
+  carry their own text; that qualifier is a false-positive class, not a detail - an inline
+  box is its font's em box rather than its line box, so a monospace glyph inside a sans line
+  produced six spurious pairs on the live board against one real collision. Elements out of
+  normal flow, invisible elements, and an ancestor holding its own descendant are excluded for
+  the same reason.
+
+  Two committed fixtures prove the two signals discriminate, each being the positive control
+  for one and the negative control for the other: `tests/fixtures/render/clipped-and-not.html`
+  reports 1 clip and 0 collisions, and the new
+  `tests/fixtures/render/overlapping-and-not.html` reports 0 clips and 1 collision, alongside
+  three quiet controls - boxes that merely touch, a parent carrying text around a child
+  carrying text, and an absolutely positioned overlay. Both signals now report nothing on the
+  live board at 1920x1080 and at 1200x900, where before the fix the overlap signal named both
+  reported pairs and the clip signal named neither. A test binds the render fixture's longest
+  gate name to this repository's own `[[verify.checks]]`, so a longer check name landing fails
+  in the suite rather than on the wall (`basicly-uvpu6b`).
+
+- **`docs-citations` no longer passes over a citation it cannot read.** Two defects in one
+  gate, and the second is the one that matters. A citation whose path is backticked and whose
+  line number is not — `` `loop.py`:120 `` — matched nothing at all, so it was not counted,
+  not checked and not reported: the one outcome a presence-based gate cannot tell apart from
+  a document that carries no citations. The cause is not the lookbehind the report named,
+  which passes against an opening backtick, but the **closing** one, which sits between the
+  path and the colon whenever an author ticks the path and leaves the number outside. The
+  pattern now takes that tick as part of the boundary. Loosening it admits no prose: over all
+  304 tracked `.md` and `.yaml` files the old pattern and the new one both find 53 citations,
+  and a document writing a clock time, a ratio, a count after a backticked command and a bare
+  continuation reference yields none of them.
+
+  The second: the gate was **fail-open on every citation it could not verify**. Its symbol
+  rule only runs when the citing sentence names a top-level symbol of the module it cites,
+  and 32 of the 44 citations in `docs/` name none — so they were counted, reported as a
+  coverage share, and passed. Probed on real input, a sentence citing a real module at line 1
+  with a false claim about what is there was one of the 32, and the gate exited zero over it.
+  Each such citation is now a finding of its own kind, ratcheted per document in
+  `[tool.docs_citations.unverifiable]`: the 32 that existed are recorded debt that may only
+  fall, and a document absent from the list may carry none. The repair a reader is sent to
+  make is to name, in the citing sentence, the symbol the claim is actually about — which is
+  what makes the claim checkable, and what the symbol rule then holds it to (basicly-v5c8ob).
+
+- The board's alarm band now colours by how long an ask has waited, not by whether one exists: a wait past one hour turns orange, a shorter one stays amber. The detail line states the wait once, as an absolute since-when plus the offered action, instead of repeating the headline's duration in a second unit. (basicly-v8jwf0)
+
+- **The per-event size cap now bounds by event kind, not by the spelling of a payload key.**
+  The cap dispatched on a closed four-member list of key *names*, which was wrong in both
+  directions. `value` was on the list and the fold reads `value`, so a tracker field the fold
+  derives state from was being cut at 4096 bytes — one record's description is permanently
+  truncated in the store of record. And any key the list did not name was not capped at all, so
+  the bound a new event kind received was decided by the word its author happened to pick rather
+  than by a decision. Two spellings of the same description therefore carried two different
+  bounds: whole under `description` on a `created` event, cut under `value` on a `field` event.
+  Now `FOLD_READ_KEYS` names every key the fold and its delegates read and the cap may never cut
+  one; `KIND_TEXT_BYTES` declares the bound per kind; every other string is cut by default, so a
+  new key is bounded without anyone remembering to name it; and **a kind that declares no bound
+  is refused rather than stored unbounded**. This is the precondition for carrying a handoff
+  artifact as a typed event (basicly-vbl35a).
+
+- **A `create` carrying a bare word where a flag belongs is refused, naming the word and the
+  flags that would have carried it, instead of dropping it.** `basicly tracker write -- create
+  "<title>" bug 1 --description "..."` minted a record with `issue_type` and `priority` both
+  unset and printed `created:` — `--type` and `--priority` are flags, so `bug` and `1` landed as
+  extra positionals and `write_verbs._create_drafts` ignored them. It caught the operator twice
+  in one session, and the second time the untyped record was what the sizing path then
+  misreported.
+
+  **The silence is the defect, not the parsing.** A caller who wrote `bug 1` believed they had
+  typed the record; nothing said otherwise, and the next reader sees an untyped record with no
+  trace that a type was offered. `_create_drafts` twelve lines above already refused a create
+  naming no title, on the argument that a titleless record is a `created` event stating nothing
+  (basicly-1qi0sz) — an argument that covers an argument the seam cannot place just as well, and
+  was not being reused.
+
+  **Arity is not the discriminator, which is why the refusal is scoped to one verb.** br closes
+  `[IDS]...` and `update` takes the same, so a refusal keyed on "more than one positional" would
+  refuse every plural close in the log; the two `dep` verbs and `gate report` each check an exact
+  arity of their own already. `create` was the one verb with a fixed shape — `create <title>` —
+  and no check on it. For `close` and `update` the further words are record ids, which
+  `owned_write.refuse_a_write_to_an_absent_record` already speaks for, so nothing is silently
+  dropped there.
+
+  The flags the message names are read off `tracker_argv.CREATE_FIELD_FLAGS` rather than
+  respelled, long spellings only, so a flag added to that table joins the refusal's advice by
+  existing — and a caller who wrote a bare word wrote no flag at all, so the short forms would
+  only be noise. Both size ratchets were measured before the prose was written: the refusal is
+  in `write_verbs.py`, which had 170 tokens of working-set headroom and 636 of prose, and the
+  derived constant is in `tracker_argv.py`, which had 2668 of headroom and 41 of prose — the two
+  axes pull opposite ways and the first draft tripped both (basicly-ve0b7d).
+
+- **The suite's live-ledger guard no longer undoes the write it catches.** It read the
+  committed event log's bytes around every test and, on any difference, wrote the old
+  bytes back and failed the test in flight — a hand edit to an append-only log, racing a
+  writer holding the ledger lock the test process never takes. Measured 2026-08-19 in the
+  base checkout: twenty `basicly tracker write` calls issued while `pytest` ran produced
+  zero events, and the same twenty in a quiet tree landed twenty of twenty. The guard now
+  attributes a change through a PEP 578 `open` audit hook, which sees every route
+  including a kit loaded by path: a write from the test process fails that test and names
+  it, a change from another process is reported once per path as unattributed, and in
+  neither case is a byte restored (`basicly-vkh0.51`).
+
+- **The session spend the board shows now advances while a lane runs.** It read `0%` for a
+  whole pass because the recorded figure only moves when a run record lands; `spent_tokens_live`
+  adds each running lane's live-reported tokens, marked as an over-estimate against the recorded
+  spend, which the D3 grant gate still binds on unchanged. (basicly-wctp0g)
+
+- **The rebaseline count reports loosenings, not files, so accumulation on one file is
+  visible.** `dropin.compose` keyed `rebaselined` by entry and kept the last fragment that
+  declared it, so N fragments each loosening one file were reported as one. On this tree that
+  was **41 declarations reported as 19**: `tests/test_loop.py` carried four - 311, 146, 13 and
+  109 - reported as one, and `merge.py` three. The gate's summary line now reads
+  `41 rebaselined across 19 entries`, and names the two apart only when they differ.
+
+  Every entry always bound individually - a deliberately short delta fails the gate, which is
+  the positive control - so nothing was ever wrongly admitted. What was wrong is the number an
+  operator reads to judge how much debt a file has taken: **it was the count of files, and the
+  whole point of counting is to watch debt accumulate on a file.** Per-entry counting was
+  exactly blind to accumulation, which is the property `basicly.d/README.md` claimed it
+  guaranteed. That claim now states what the count really prevents - each loosening is
+  visible, one file taking several is not stopped - carries the 41-against-19 measurement, and
+  says that a file appearing in several fragments is the signal to split it.
+
+  The composed baseline is unchanged and asserted as the control: accumulating the *names* must
+  not move the *arithmetic*. `Baseline.rebaselined` is now entry to every declaring fragment
+  rather than to the last one, which is the only interface change.
+
+  **This finding explains three earlier ones in the same pass.** `tests/test_handoff.py` had
+  been rebaselined three times and `merge.py` three, and both were discovered by reading
+  `basicly.d/` by hand while the gate reported one apiece - so the instrument that would have
+  shown the accumulation was the one being fixed (basicly-wpqdag).
+
+- **A handoff artifact the event cap cut is reported as truncated, with both byte counts,
+  instead of as a malformed artifact.** The entry predicate refused a stored artifact that had
+  been cut at 4,096 bytes with a schema type violation on the top-level instance and a
+  300-character fragment of the cut JSON, so a transport that destroyed a valid artifact read as
+  a producer that wrote a broken one — and a blocked record's own status surface named a
+  different, coexisting cause, so nothing anywhere named the real one. The reason now names the
+  cut, the stored length, the original length, and re-recording from the producing state as the
+  remedy, because the body cannot be recovered from an append-only log.
+
+  Measured across the whole ledger when it landed [2026-08-18]: 23 record-and-kind pairs held
+  cut artifacts, 23 of 23 name truncation, 24 of 24 uncut pairs are still admitted, and nothing
+  is falsely called truncated — an artifact that is malformed but whole reports its schema
+  violations unchanged. The flag had never reached the reader: the row projection reduced every
+  payload to text and a stamp, discarding the two truncation keys one seam below the predicate.
+  They are now carried both-or-neither, which is a real constraint rather than tidiness, because
+  the naive carry emitted a flag with a null length.
+
+  **This does not stop the truncation**, only the misreporting of it (basicly-wug2o2).
+
+- **A unit parked in `validate` is advanced by a supervised pass instead of only counted by
+  the WIP bound.** `wip.DOWNSTREAM_PHASES` has counted `verify`, `validate` and `ship` since
+  the VALIDATE phase landed, while `supervise.advance_parked` drove `verify` and `ship` only.
+  A unit whose derived phase was `validate` was therefore charged against
+  `[policy] max_downstream_wip` and advanced by nothing, so five of them refused every further
+  dispatch and the queued decision told the operator to land lanes the pass could not land.
+
+  `advance_parked` now drives `wip.DOWNSTREAM_PHASES` itself — one definition, imported rather
+  than respelled — and both supervised drives (`advance_parked` and the post-ship drive in
+  `_land_green`) name the session as their grant root, so the validator those drives can now
+  spawn is refused by D3's spend halt before it starts rather than running unmetered inside a
+  landing pass (`basicly-xab3`).
+
+- **A validator whose reply carried no verdict no longer leaves the loop in exactly the
+  state it was in.** The `validate` advance dispatches a validator against the merged
+  change and reads its `VALIDATION: PASS`/`FAIL` line off the reply; when there is no such
+  line there is no verdict to record, and the advance used to return having written nothing
+  anywhere — no gate event, no queue item, no rework — so `loop status` reported the same
+  gate and `loop decisions` the same empty queue as before the dispatch, and the only
+  surface that showed the run at all was the spend. Measured on `basicly-gvlpxm`: one
+  advance dispatched a validator and two reviewers, all exiting 0, one of them alone
+  charging $1.13, and the ledger's gate-event count for the record did not move. The reply
+  is not stored and the run record carries usage rather than text, so nothing after the
+  fact could recover what the validator had said. It is now queued as a `validate` decision
+  carrying that reply, and the advance blocks on it — an unreadable verdict is a fact an
+  operator can dispose of, where silence is not. A verdict that *is* readable still records
+  the gate exactly as before, and an advance that dispatched no validator still records
+  nothing: a fix that wrote a gate event unconditionally would have turned a fail-silent
+  into a fail-open. The refusal a recorded `FAIL` prints also stops claiming that no result
+  was recorded, which was the same confusion in a second place (basicly-xd79u3).
+
+- `basicly loop supervise <leaf>` now seeds a childless root as its own single lane
+  instead of reading it as an exhausted epic and exiting 1 — the surface `preflight`
+  already priced as one lane. (basicly-xkaya9)
+
+- **The board producer is four modules where it was two, so a further board unit fits.**
+  `board_fields` had 18 tokens of size headroom and `board_snapshot` 23, and units C, D and E
+  of the board all consume them, so none of them could be built. The split line was already
+  nameable rather than arbitrary and it is the one the record named: what may cross the wire
+  against which rows a section is, and then which sources a section reads against the document
+  that assembles them.
+
+  | module | tokens | headroom | holds |
+  | --- | --- | --- | --- |
+  | `board_fields` | 1607 | 18 → 2393 | the bounds, and a marker as fields |
+  | `board_sections` | 2846 | new → 1154 | the six row reducers, and `LaneFacts` |
+  | `board_snapshot` | 2845 | 23 → 1155 | the ledger half, and `build_document` |
+  | `board_usage` | 1324 | new → 2676 | the `.basicly/usage/` sections |
+
+  Neither seam imports back: a reducer needs the bounds and the bounds need no reducer; the
+  assembler needs the usage sections and they need no assembler. Both new modules got their own
+  tier in `.importlinter` under the `exhaustive` contract, so a maintainer decided where each
+  sits rather than the gate inferring it, and `lint-imports` reports 2 kept and 0 broken. The
+  architecture's layering block is **regenerated** rather than edited, as the record required:
+  39 tiers to 41, 105 modules to 107. The test modules were split to match, which
+  `check_test_naming` then required rather than suggested - it refused `board_usage` for having
+  no test file named after it, which is the drift that gate exists to stop.
+
+  **One of this record's acceptance criteria is refuted, with the measurement.** It asked for no
+  new density waiver. Splitting a module raises the prose share of *both* halves by
+  construction: the code divides and the contract docstring does not. `board_snapshot` lost 630
+  tokens of code and 505 of prose in one edit, so it got smaller and denser at once - 3980 to
+  2845 tokens, 47% to 51.5%. Every cheaper reduction was taken first and measured at each step,
+  reaching 51.5% from 55.7% and 55.1%: prose moved to the module whose code it describes, two
+  stale cross-references the split itself created were repointed rather than kept, and two
+  restatements of what a test asserts were dropped. What remains is measurements - the 93-fold
+  6.1 s cost of `observe()`, the `supervise -> board_snapshot -> supervise` cycle, the 140/203/1
+  ask pairing - and a ruff `D`-mandated `Args:` block that is a third of what is left. Two
+  stated waivers were taken instead of deleting those, and no rebalancing avoids them: folding
+  `board_usage` back gives 4169 tokens against the 4000 cap, and extracting the three
+  caller-supplied facts records instead gives a module that is 89% prose (basicly-y754k2).
+
+- **A dispatched lane is told a working directory inside its own worktree, instead of being
+  left to pick a session-wide scratchpad two lanes share.** The dispatch brief already said
+  the lane sits in a dedicated worktree, and said nothing about where to put a script or a
+  measurement, so a lane used the session scratchpad — which is keyed by session and not by
+  lane. Measured on 2026-08-20 during a nine-lane pass: a sibling overwrote a lane's
+  measurement script between the write and the run, and the run **printed the sibling's files
+  and numbers under the first lane's command**, with no error. Six lanes' copies of files sat
+  in one shared backup directory, so a restore would have written another lane's content into
+  the wrong worktree.
+
+  The failure is silent substitution rather than loss, which is why no positive control on the
+  measured corpus catches it: the corpus was never wrong, the script was. The brief now names
+  `.basicly/usage/scratch` and the mechanism together, because a rule without its failure mode
+  reads as tidiness. The path is relative, which is what carries the isolation — it resolves
+  against the lane's own worktree, so two lanes handed the identical brief still write two
+  directories, and it sits under the already self-ignored `.basicly/usage/` so nothing a lane
+  scribbles can reach a commit. `needs_input.SENTINEL_FILE` was checked as a second site of the
+  same shape and is already relative. The close-out guidance names cross-lane substitution
+  beside the cleaning hazard, which landed separately (basicly-z9xvwa).
+
+- Board lane cards no longer report a provisioned-but-idle worktree as `live`; the board document's `live` now means an agent is actually running the lane, and the worktree fact travels separately as `provisioned`. (basicly-ze0po3)
+
+### Security
+
+- **A credential-shaped value is masked before it can reach the committed event log.** On
+  2026-08-16 a comment body was passed to a shell inside double quotes with backticks in it; the
+  shell ran them as command substitution and one expanded the whole environment into the write —
+  152 assignments, 40,325 characters, including a live 32-character session token. It went
+  through the write seam, so it reached the store, and running the existing redaction afterwards
+  changed nothing relevant. The ledger is append-only and ships in every clone, so this is the
+  one surface with no undo; nothing had been committed, which is the only reason the repair was
+  an edit to two working files rather than a history rewrite.
+
+  The three existing rule sets were blind to it by construction. The value was 32 characters of
+  hex with no prefix, so nothing about its *shape* identified it, it was not a path, and the
+  variable names were not the running user's. What identifies it is the name beside the equals
+  sign: an uppercase identifier ending in `TOKEN`, `SECRET`, `KEY`, `PASSWORD` or `PASSWD`
+  followed by a value, and separately a run of `NAME=value` lines, which is a dump whether or
+  not any single line looks like a credential. Both are now redacted to a labelled placeholder
+  at the write, and `redact_committed` is composed as environment, then secrets, then paths, then
+  identity.
+
+  **The larger hole was that second stage.** `redact_secrets` — the high-signal credential
+  shapes — had only ever run on surfaced runner output and never on the committed path, so a
+  hand-written credential in a recognised format went into permanent history verbatim. It runs
+  there now, and across this repository's docs, source, tests and catalog it matches zero lines,
+  so closing it cost nothing. Driven end to end through the real write seam into a throwaway
+  ledger with the previous redaction as the control, and the stored ledger was probed
+  separately, because a write-time guard says nothing about what is already on disk
+  (basicly-vkh0.33).
+
 ## v0.9.0 - 2026-08-14
 
 Delta: v0.8.0..v0.9.0

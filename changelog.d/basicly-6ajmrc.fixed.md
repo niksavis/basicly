@@ -1,1 +1,0 @@
-- A push no longer stashes the tracker ledger when it is the only unstaged change: `basicly hooks-build` now writes a ledger guard into the installed pre-push hook, so a hook killed mid-run can no longer drop ledger events appended while it ran. Unstaged files outside the ledger keep the previous behaviour.

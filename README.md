@@ -56,7 +56,7 @@ scripts that run inside your repo; older interpreters are not supported.
 Into any git repo, with [uv](https://docs.astral.sh/uv/) already on the machine:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.9.0 basicly install
+uvx --from git+https://github.com/niksavis/basicly@v0.10.0 basicly install
 ```
 
 No `uv` or Python yet? The bootstrap shim installs `uv` first, then runs the
@@ -72,9 +72,9 @@ Windows (PowerShell):
 powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.ps1 | iex"
 ```
 
-Pin `@v0.9.0` for reproducible installs, or track `@main` for the latest. To
-pin through the shim, append `-s -- --ref v0.9.0` (POSIX) or download the
-script and pass `-Ref v0.9.0` (PowerShell). Where `git` is unavailable
+Pin `@v0.10.0` for reproducible installs, or track `@main` for the latest. To
+pin through the shim, append `-s -- --ref v0.10.0` (POSIX) or download the
+script and pass `-Ref v0.10.0` (PowerShell). Where `git` is unavailable
 (proxied or air-gapped environments), every
 [release](https://github.com/niksavis/basicly/releases) attaches a built
 wheel: download it and run `uvx --from ./basicly-*.whl basicly install`.
@@ -91,7 +91,7 @@ One command removes everything basicly manages; your overlay and
 `basicly.toml` survive:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.9.0 basicly uninstall
+uvx --from git+https://github.com/niksavis/basicly@v0.10.0 basicly uninstall
 ```
 
 Add `--purge` to also remove the user overlay, `basicly.toml`, and the
@@ -199,8 +199,8 @@ tasks wrap the same pinned commands. To inspect or re-sync by hand, run these
 from the consumer repo root with the same pin used to install:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.9.0 basicly check   # exit non-zero when generated files drifted
-uvx --from git+https://github.com/niksavis/basicly@v0.9.0 basicly build   # regenerate agent instruction files
+uvx --from git+https://github.com/niksavis/basicly@v0.10.0 basicly check   # exit non-zero when generated files drifted
+uvx --from git+https://github.com/niksavis/basicly@v0.10.0 basicly build   # regenerate agent instruction files
 ```
 
 ## Roadmap

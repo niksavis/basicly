@@ -1,1 +1,0 @@
-- `basicly brief <id>` now names the ground the lane may not touch: the paths each still-open sibling of its root declares, the paths this landing admits from the lane itself, and `.basicly/usage/needs-input.json` with fact `scope` as the route when the work genuinely needs a sibling's path. A brief for a lane whose root has no open scoped sibling is unchanged.

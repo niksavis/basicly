@@ -1,1 +1,0 @@
-- Board lane cards no longer report a provisioned-but-idle worktree as `live`; the board document's `live` now means an agent is actually running the lane, and the worktree fact travels separately as `provisioned`.
