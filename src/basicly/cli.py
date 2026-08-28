@@ -780,6 +780,258 @@ def cmd_health(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- Session orientation (basicly-askx4j) ------------------------------------
+#
+# The replacement for a hand-written handover: every line is derived, so there is no
+# file to remember to update and none to distrust. D-42 records the analysis behind
+# what that can and cannot carry.
+
+# The document whose decision-record index (`architecture.md` §38) carries one status
+# cell per decision. Read rather than re-graded: `conventions.md` §3 makes a `[TARGET]`
+# passage the document's own statement that it specifies instead of reporting, and a
+# second grading in engine code would be a second answer to one question.
+DECISION_RECORDS_DOC = Path("docs") / "architecture" / "architecture.md"
+
+# One `architecture.md` §38 row: `| D-01 | Authority is asymmetric | accepted | ... |`.
+_DECISION_ROW = re.compile(r"^\| (D-\d+) \| (.+?) \| (.+?) \| (.+?) \|[ \t]*$", re.MULTILINE)
+
+# A decision the tree fully holds says exactly this. Every other cell — `**proposed**`,
+# `**superseded by D-36**`, `accepted, unbuilt` — names something the tree does not hold,
+# which is what a session about to change the tree needs in front of it.
+DECISION_IN_FORCE = "accepted"
+
+# Deliberately wider than either grant marker (`... grant level=L3`, `... grant revoked`):
+# this only chooses which records `policy.active_grant` is then asked about, so a filter
+# that is too wide costs one comment walk and one that is too narrow hides a live grant.
+_GRANT_MARKER = f"{policy.MARKER} grant"
+
+# The engine's own closed test, spelled as `policy._issue_is_closed` spells it. Used here
+# only to skip a walk `active_grant` would answer None for anyway — that function stays the
+# authority on whether a grant is live.
+_CLOSED_STATUS = "closed"
+
+# Rows per table before the report says how many more there are and which command prints
+# them. The ready set alone is 208 records [measured 2026-08-28, `basicly tracker ready`],
+# which is a backlog dump rather than an orientation.
+SESSION_ROWS = 10
+
+
+def _decision_targets(repo_root: Path) -> dict[str, Any]:
+    """The decision records whose `architecture.md` §38 status cell is not ``accepted``.
+
+    The one section not derived from the ledger, because a decision record is not a
+    tracker record: 41 of them live in the architecture document and 13 carry a status
+    that is not ``accepted`` [measured 2026-08-28]. The status cell travels verbatim, so
+    the reader gets the document's own words rather than this function's reading of them.
+    """
+    path = repo_root / DECISION_RECORDS_DOC
+    if not path.is_file():
+        return {"present": False, "document": DECISION_RECORDS_DOC.as_posix(), "records": []}
+    rows = _DECISION_ROW.findall(path.read_text(encoding="utf-8"))
+    targets = [
+        {"record": record, "title": title.strip(), "status": status.strip()}
+        for record, title, status, _governs in rows
+        if status.strip() != DECISION_IN_FORCE
+    ]
+    return {
+        "present": True,
+        "document": DECISION_RECORDS_DOC.as_posix(),
+        "decisions": len(rows),
+        "records": targets,
+    }
+
+
+def _live_grants(repo_root: Path, views: dict[str, Any]) -> dict[str, Any]:
+    """Every live autonomy grant, with what is left of it where this checkout can tell.
+
+    A grant is a marker on its root and dies when that root closes, so the population is
+    every open record carrying one — 18 of 1154 live records here [measured 2026-08-28,
+    `basicly session start --json`]. The marker scan is one whole-tracker read;
+    :func:`policy.active_grant` then answers which of those are live, because
+    last-marker-wins and the closed-root rule are its contract and not this function's.
+
+    ``remaining`` is ``None`` where the checkout cannot see the spend rather than the
+    budget: run records are per-checkout, so a fresh worktree that reported the full
+    budget left would be drawing a number it does not have (:func:`board_facts.grant_spend`).
+    """
+    texts = tracker.all_comment_texts(repo_root)
+    rows: list[dict[str, Any]] = []
+    for record in sorted(views):
+        if str(getattr(views[record], "status", "")) == _CLOSED_STATUS:
+            continue
+        if not any(text.strip().startswith(_GRANT_MARKER) for text in texts.get(record, ())):
+            continue
+        grant = policy.active_grant(repo_root, record)
+        if grant is None:
+            continue
+        spent = board_facts.grant_spend(repo_root, record, grant)
+        budget = grant.token_budget
+        remaining = None if spent is None or budget is None else budget - spent
+        rows.append({
+            "record": record,
+            "level": grant.level,
+            "budget": budget,
+            "spent": spent,
+            "remaining": remaining,
+        })
+    return {"count": len(rows), "records": rows}
+
+
+def _session_report(repo_root: Path) -> dict[str, Any]:
+    """The orientation snapshot, assembled from readers that all already exist.
+
+    Read-only by construction: every call below is a fold or a file read, and the
+    command's whole contract is that running it changes nothing.
+
+    ``tracker.present`` is False for a repository with no owned ledger — a consumer that
+    installed the harness and has not filed anything reaches this before it reaches an
+    empty ready set, and the two need different sentences.
+    """
+    report: dict[str, Any] = {"decisions": _decision_targets(repo_root)}
+    try:
+        views = tracker.all_views(repo_root)
+    except owned_store.TrackerDivergenceError, OSError, ValueError:
+        report["tracker"] = {"present": False, "records": 0}
+        return report
+    report["tracker"] = {"present": True, "records": len(views)}
+    if not views:
+        return report
+    ready = tracker_query.ready_report(repo_root)
+    blocked = tracker_query.blocked_report(repo_root)
+    report["ready"] = ready
+    report["blocked"] = blocked
+    report["grants"] = _live_grants(repo_root, views)
+    report["tracker"].update({"ready": ready["count"], "blocked": blocked["count"]})
+    return report
+
+
+def _say_session_ready(report: dict[str, Any], rows: int) -> None:
+    """The ranked ready set, with the ranking policy that produced it in the title."""
+    ready = report["ready"]
+    if not ready["count"]:
+        ui.say("ready: none - every open record is blocked or already in flight")
+        return
+    ui.table(
+        f"Ready ({ready['count']}, {ready['sort']})",
+        ["rank", "score", "record", "title"],
+        [
+            [str(row["rank"]), str(row["score"]), str(row["record"]), str(row["title"])]
+            for row in ready["records"][:rows]
+        ],
+    )
+    if ready["count"] > rows:
+        ui.say(f"        {ready['count'] - rows} more: `basicly tracker ready`")
+
+
+def _say_session_blocked(report: dict[str, Any], rows: int) -> None:
+    """What is not ready and what holds it — an empty blocker list means its children do."""
+    blocked = report["blocked"]
+    if not blocked["count"]:
+        ui.say("blocked: none - nothing dispatchable is waiting on another record")
+        return
+    ui.table(
+        f"Blocked ({blocked['count']})",
+        ["record", "status", "blocked by", "children"],
+        [
+            [
+                str(row["record"]),
+                str(row["status"]),
+                ", ".join(f"{held['record']} ({held['status']})" for held in row["blocked_by"]),
+                str(len(row["children"])) if row["children"] else "",
+            ]
+            for row in blocked["records"][:rows]
+        ],
+    )
+    if blocked["count"] > rows:
+        ui.say(f"        {blocked['count'] - rows} more: `basicly tracker blocked`")
+
+
+def _say_session_grants(report: dict[str, Any]) -> None:
+    """Live grants and their remaining budget, saying so where the spend is unknowable."""
+    grants = report["grants"]
+    if not grants["count"]:
+        ui.say("grants: none live - every dispatch needs `basicly policy grant` first")
+        return
+    ui.table(
+        f"Grants ({grants['count']} live)",
+        ["root", "level", "budget", "spent", "remaining"],
+        [
+            [
+                str(row["record"]),
+                str(row["level"]),
+                "-" if row["budget"] is None else f"{row['budget']:,}",
+                "unknown" if row["spent"] is None else f"{row['spent']:,}",
+                "unknown" if row["remaining"] is None else f"{row['remaining']:,}",
+            ]
+            for row in grants["records"]
+        ],
+    )
+    if any(row["spent"] is None for row in grants["records"]):
+        ui.say("        spend is unknown where this checkout holds no run records for the root")
+
+
+def _say_session_decisions(report: dict[str, Any]) -> None:
+    """Decision records the tree does not fully hold, each with the document's own status."""
+    decisions = report["decisions"]
+    if not decisions["present"]:
+        ui.say(f"decisions: no {decisions['document']} in this repository")
+        return
+    ui.table(
+        f"Decision targets ({len(decisions['records'])} of {decisions['decisions']}, "
+        f"status is not `{DECISION_IN_FORCE}`)",
+        ["record", "status", "title"],
+        [
+            [str(row["record"]), str(row["status"]), str(row["title"])]
+            for row in decisions["records"]
+        ],
+    )
+
+
+def cmd_session_start(args: argparse.Namespace) -> int:
+    """Print the read-only orientation a session starts from (D-42).
+
+    The command that makes a hand-written handover unnecessary: what is ready and why it
+    ranks there, what is blocked and by what, which grants are live and what is left of
+    them, and which decisions the tree does not yet hold. Nothing here is authored — a
+    line the ledger stops supporting stops being printed.
+
+    It costs one fold per reader plus two more per granted root, and those dominate: 5.9 s
+    over 1154 records and 18 grants [measured 2026-08-28, `cli.main(["session", "start"])`
+    under `time.monotonic`]. A once-a-session price for a report nothing else assembles,
+    and the way to lower it is a cached ledger fold under `tracker` — `active_grant` reads
+    the record and its comments per root, and no reader caches either today.
+    """
+    repo_root = _repo_root()
+    report = _session_report(repo_root)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+    if not report["tracker"]["present"]:
+        ui.say("ledger: none - this repository has no owned tracker, so no backlog to read")
+        _say_session_decisions(report)
+        return 0
+    if not report["tracker"]["records"]:
+        ui.say("ledger: empty - no records yet, so nothing is ready and nothing is blocked")
+        ui.say("        `basicly tracker write -- create ...` files the first one")
+        _say_session_decisions(report)
+        return 0
+    records = report["tracker"]["records"]
+    ui.say(
+        f"ledger: {records} record{'' if records == 1 else 's'}, "
+        f"{report['tracker']['ready']} ready, {report['tracker']['blocked']} blocked"
+    )
+    _say_session_ready(report, args.rows)
+    _say_session_blocked(report, args.rows)
+    _say_session_grants(report)
+    _say_session_decisions(report)
+    return 0
+
+
+def cmd_session(args: argparse.Namespace) -> int:
+    """Dispatch the `basicly session` verbs."""
+    return _dispatch(args, "session_command", {"start": cmd_session_start}, group="session")
+
+
 def _merge_directories(src: Path, dst: Path) -> tuple[int, int]:
     """Merge src into dst without overwriting existing files."""
     moved = 0
@@ -5118,6 +5370,28 @@ def _add_usage_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_session_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Register the `basicly session` command group — read-only session orientation."""
+    session_parser = subparsers.add_parser(
+        "session",
+        help="Prepare a session from the ledger: ready, blocked, grants, decision targets",
+    )
+    session_sub = session_parser.add_subparsers(dest="session_command", required=True)
+    start = session_sub.add_parser(
+        "start", help="Read-only orientation for a new session (never writes, always exits 0)"
+    )
+    start.add_argument(
+        "--json", action="store_true", help="Emit the orientation as JSON (stable schema)"
+    )
+    start.add_argument(
+        "--rows",
+        type=int,
+        default=SESSION_ROWS,
+        metavar="N",
+        help=f"Ready and blocked rows to print before the tail count (default: {SESSION_ROWS})",
+    )
+
+
 def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the `basicly tracker` command group — the owned tracker's cutover."""
     tracker_parser = subparsers.add_parser(
@@ -5200,6 +5474,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     _add_usage_parser(subparsers)
 
+    _add_session_parser(subparsers)
+
     brief_parser = subparsers.add_parser(
         "brief", help="Print the dispatch brief the loop would send for one issue"
     )
@@ -5261,7 +5537,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
     substitution dispatched. A dict built at import time captures the originals and
     silently ignores the swap.
 
-    The two registries are hand-maintained lists of the same 26 names and nothing
+    The two registries are hand-maintained lists of the same 29 names and nothing
     derives one from the other, so `test_every_registered_subcommand_has_a_handler`
     pins them equal and `main` fails loudly on a name that arrives with no handler
     (basicly-tcmy.4).
@@ -5295,6 +5571,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "brief": cmd_brief,
         "board": board_cli.cmd_board,
         "tracker": cmd_tracker,
+        "session": cmd_session,
     }
 
 

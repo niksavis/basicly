@@ -1287,7 +1287,7 @@ change. The other two tripwires bind on the fragment field table in
 [`conventions.md`](conventions.md) §7 records which gate binds where. Until the move
 lands, this section is a reference the gates keep true, in the wrong document.
 
-**28 top-level commands. Nine of them are subcommand groups** [measured 2026-08-16, count
+**29 top-level commands. Ten of them are subcommand groups** [measured 2026-08-28, count
 `subparsers(cli._build_parser()).choices`].
 
 They fall into three surfaces.
@@ -1296,7 +1296,7 @@ They fall into three surfaces.
 | --- | --- | --- |
 | lifecycle | a consumer repository | install, uninstall, status, health, brief |
 | catalog | an author of catalog sources | build, check, the four build/check pairs, usage, catalog, rubric |
-| harness | the development loop, in either repository | worktree, verify, policy, decompose, loop, commit, runner, tracker, board, release |
+| harness | the development loop, in either repository | session, worktree, verify, policy, decompose, loop, commit, runner, tracker, board, release |
 
 **Lifecycle.**
 
@@ -1340,6 +1340,7 @@ is `basicly catalog dump`.
 
 | Command | Behaviour |
 | --- | --- |
+| `basicly session start [--json] [--rows N]` | Read-only orientation for a session, with every line derived and none authored: the ranked ready set carrying the ranking policy that produced it, what is blocked and by what, every live grant with what is left of it where this checkout can see the spend, and the decision records whose status in [38. Decision records](#38-decision-records) is not `accepted`. An empty ledger says so rather than drawing an empty frame. Never writes, always exits zero |
 | `basicly worktree create\|list\|cleanup` | Sibling worktree lifecycle: create provisions dependencies and installs the gates; cleanup removes the worktree and its merged branch |
 | `basicly worktree merge\|merge-queue\|bg-isolation` | Land one finished worktree on its base; land several serially in a given topological order; turn off the host's own background isolation so the loop isolates itself |
 | `basicly verify [--mode fast\|full\|staged] [--issue ID] [--gate NAME] [--fix]` | Run the consumer's configured checks for a mode and optionally record a tracker gate; the fix flag applies mechanical repairs first |
@@ -4094,6 +4095,7 @@ decision keeps its record and gains a `superseded by` line.
 | D-39 | The plugin is a second distribution channel packaging the same projected output | accepted, unbuilt | §21 |
 | D-40 | A tier resolves by declared vendor order, verified at install | accepted, partly built | §17 |
 | D-41 | The authority order over design documents | **withdrawn** — both ranked documents are deleted | §1 |
+| D-42 | A session is prepared by a derived command, and the handover retires | accepted | §22 |
 
 ### D-01 · Authority is asymmetric
 
@@ -4833,6 +4835,43 @@ restated.
 **What survives.** The first clause only, and it is already this document's doctrine:
 measured evidence in this repository outranks any prose, and this document is the one
 permanent design surface ([1. What this is](#1-what-this-is-and-what-it-fixes), D-26).
+
+### D-42 · A session is prepared by a derived command, and the handover retires
+
+**Decision.** A session is prepared by running `basicly session start`, which derives every
+line it prints from the ledger, the run records and this document's own §38 index. The
+hand-written `HANDOVER.md` is retired rather than shrunk, and no gate replaces it.
+
+**Because.** The question this record had to answer first was which parts of a handover are
+derivable and which are irreducibly human. The 2026-08-19 handover was classified section by
+section against readers that already existed, and the answer is that almost all of it was
+derivable and already had one: branch, push state and tree cleanliness from git; record and
+event counts, the ranked ready set, the blocked set with its blockers, a parked lane's phase
+and its failed gate, and the owner decisions from the ledger; the live grant and its
+remaining budget from `policy`; release completeness from the release check.
+
+The section that reads most like human knowledge is the traps, and it is not. Measured over
+the 980-record ledger with a mid-frequency control at 95 hits and a negative control at 0,
+**seven of the eight traps that handover carried were already filed records**. What was
+missing was a query, not knowledge.
+
+**Exactly one class is irreducibly outside the ledger: a trap observed and never filed.** Its
+one positive instance — pushing during a landing — returned zero against the same probe and
+controls, and is now `basicly-u3b65o`. So the remedy is a rule and not a document section: a
+trap worth telling the next session is a trap worth filing. A trap that cannot be filed
+cannot be trusted either, because nothing dates it and nothing retires it.
+
+**Rejected — a smaller handover with a freshness gate.** It was the alternative this record
+was filed with, and the classification refuted its premise: a gate on a file whose content is
+one unfiled trap gates the wrong thing, and the file goes stale between the sessions it is
+supposed to serve. Retiring it costs the one class above, and filing that class is cheaper
+than keeping a document to hold it.
+
+**Consequence, and the part this decision leaves open.** The command owes one section it does
+not have: open defects that sit on the operator's own path. Nothing on a record distinguishes
+one from any other bug, and a gate bound on an absent marker cannot tell a defect from a
+record that predates the marker — so that query needs a discriminator its own producer
+writes, and it is unbuilt until one exists.
 
 ---
 

@@ -27,7 +27,16 @@ to the same log; a per-worktree ledger would lose every write a lane made at tea
 
 ## Reads
 
-**Start here.** These resolve the ledger's location themselves, so you never name a path:
+**Opening a session, start with the one report that takes no id.** It composes the
+reads below with the live grants and the architecture decisions the tree does not yet
+hold, every line derived — which is what retired the hand-written handover:
+
+```sh
+basicly session start                     # ready, blocked, live grants, decision targets
+```
+
+**Then the per-question reads.** These resolve the ledger's location themselves, so you
+never name a path:
 
 ```sh
 basicly tracker ready --limit 10          # the ranked ready set: what to work on now
