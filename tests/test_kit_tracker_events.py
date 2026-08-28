@@ -1697,3 +1697,272 @@ def test_a_typed_machine_event_missing_its_own_key_is_refused(tmp_path: Path) ->
         )
 
     assert not list(tmp_path.glob("events-*.jsonl"))
+
+
+# --- the one rewrite: withdrawal (basicly-vkh0.34) ----------------------------
+
+# A shape of the leak this record was filed for: an environment dump pasted into a comment.
+# Assembled rather than written whole, so the suite does not trip the secret scanner it is
+# describing.
+LEAKED = "AWS_SECRET_ACCESS_KEY=" + "wJalrXUtnFEMIK7MDENGbPxRfiCY"
+
+# `fsck` is run as a subprocess rather than imported: loading a sibling here would mint a
+# second `events` module and two `Event` classes that compare unequal, which is the trap
+# `test_no_kit_module_spells_a_kind_the_closed_set_does_not_hold` names. It is also the
+# surface a consumer has — one script, one argument, JSON on stdout.
+FSCK_SOURCE = KIT_DIR / "fsck.py"
+
+
+def _leaky(directory: Path) -> list[Any]:
+    """A ledger whose second event carries the leak, and a dispatch after it.
+
+    The leak sits on exactly one event, so a test that withdraws it can assert the whole log
+    is free of it: a withdrawal takes out one event's content and says nothing about a copy
+    somebody pasted elsewhere.
+    """
+    return events.append(
+        directory,
+        [
+            events.Draft(RECORD_A, "created", {"title": "the first"}),
+            events.Draft(RECORD_A, "comment", {"text": "env dump: " + LEAKED}),
+            events.Draft(
+                RECORD_A, "dispatch", {"spend_micros": 1_250_000, "output": "a run log, 40 lines"}
+            ),
+        ],
+        actor="lane:one",
+        clock=lambda: CLOCK_EARLY,
+    )
+
+
+def _fsck(ledger: Path) -> tuple[int, dict[str, Any]]:
+    """*ledger*'s report as ``(exit code, parsed JSON)``, from the shipped script."""
+    completed = subprocess.run(
+        [sys.executable, str(FSCK_SOURCE), str(ledger)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.stdout, completed.stderr
+    return completed.returncode, json.loads(completed.stdout)
+
+
+def _broken_kinds(report: dict[str, Any]) -> list[str]:
+    """Every broken finding class in *report*, sorted."""
+    return sorted({found["kind"] for found in report["findings"] if found["severity"] == "broken"})
+
+
+def test_a_withdrawal_takes_the_content_out_of_the_store_and_the_fold_says_why(
+    tmp_path: Path,
+) -> None:
+    """AC1, both halves in one assertion set: the bytes are gone and the fold reports it.
+
+    A corrective append could not do this. It would leave the dump readable in every clone
+    and add a line saying so, which is the difference between a wrong fact and a wrong
+    disclosure — the tension this record was filed to resolve rather than restate.
+    """
+    minted = _leaky(tmp_path)
+    log = tmp_path / events.INITIAL_LOG_NAME
+    assert LEAKED in log.read_text(encoding="utf-8")
+
+    trail = events.withdraw(
+        tmp_path,
+        minted[1].id,
+        reason="leaked environment dump",
+        actor="operator:owner",
+        clock=lambda: CLOCK_LATE,
+    )
+
+    assert LEAKED not in log.read_text(encoding="utf-8")
+    folded = events.fold(events.read_events(tmp_path)[0])
+    assert folded.withdrawals == [
+        events.Withdrawal(
+            record=RECORD_A,
+            target=trail.payload["target"],
+            reason="leaked environment dump",
+            at="2027-01-15T08:00:00Z",
+        )
+    ]
+    # The time is the trail event's own `ts` and moves with the injected clock, which is what
+    # keeps it out of the payload and therefore out of the id digest.
+    assert trail.ts == "2027-01-15T08:00:00Z" != minted[1].ts
+    # The withdrawn payload folds as the empty text it now holds, so a reader of the record
+    # sees a comment with nothing in it and the fold's report says why.
+    assert folded.records[RECORD_A].comments == [""]
+
+
+def test_a_withdrawal_keeps_every_value_the_fold_reads_by_name(tmp_path: Path) -> None:
+    """The rule that stops a withdrawal changing what the log *means*.
+
+    The dispatch carries both kinds of key at once: ``spend_micros``, which the accumulator
+    reads by name, and ``output``, which is free text. A withdrawal that took the first
+    would move this record's spend and make every later carried total a `fsck` finding, so
+    the two are asserted together — the leak gone, the aggregate untouched.
+    """
+    minted = _leaky(tmp_path)
+    before = events.fold(events.read_events(tmp_path)[0]).records[RECORD_A].totals
+
+    events.withdraw(tmp_path, minted[2].id, reason="leaked environment dump")
+
+    parsed = events.read_events(tmp_path)[0]
+    folded = events.fold(parsed)
+    state = folded.records[RECORD_A]
+    withdrawn = next(event for event in parsed if events.WITHDRAWN_FROM in event.payload)
+    assert withdrawn.payload["spend_micros"] == 1_250_000
+    assert withdrawn.payload["output"] == events.WITHDRAWN_PLACEHOLDER
+    assert withdrawn.payload["output" + events.WITHDRAWN_SUFFIX] is True
+    assert withdrawn.seq == minted[2].seq
+    # The trail is one more event on the record, so the count moves by one and nothing else.
+    assert state.totals.spend_micros == before.spend_micros
+    assert state.totals.attempts == before.attempts
+    assert state.totals.events == before.events + 1
+    assert folded.mismatched_totals == [] and folded.forked == []
+
+
+def test_fsck_reports_a_withdrawn_log_sound_and_a_hand_edited_one_broken(
+    tmp_path: Path,
+) -> None:
+    """AC2: the withdrawal path is the only rewriter, and that is checkable rather than said.
+
+    The hand edit is the positive control, and it is the whole reason the check exists: an
+    id digests its payload, so a line edited in place stops deriving the id on it. Before
+    this, `fsck` reported such a ledger clean — measured 2026-08-28 — which left "only the
+    withdrawal path rewrites the log" as a promise no file could refute.
+    """
+    minted = _leaky(tmp_path)
+    events.withdraw(tmp_path, minted[1].id, reason="leaked environment dump")
+
+    code, report = _fsck(tmp_path)
+
+    assert (code, report["clean"], _broken_kinds(report)) == (0, True, [])
+
+    log = tmp_path / events.INITIAL_LOG_NAME
+    lines = log.read_text(encoding="utf-8").splitlines()
+    edited = json.loads(lines[2])
+    edited["payload"] = {"spend_micros": 1_250_000, "output": "[redacted by hand]"}
+    lines[2] = json.dumps(edited, sort_keys=True, separators=(",", ":"))
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    code, report = _fsck(tmp_path)
+
+    assert _broken_kinds(report) == ["unminted-id"]
+    assert code == 2 and report["findings"][0]["subject"] == edited["id"]
+
+
+def test_fsck_reports_a_withdrawal_a_union_merge_put_back(tmp_path: Path) -> None:
+    """The retired line returning is the one way a withdrawal comes undone silently.
+
+    A union merge of a branch written before the withdrawal re-adds the old bytes, and both
+    lines then parse and fold — so nothing else in the report says the content is readable
+    again. The retired id sits on the surviving line for exactly this check.
+    """
+    minted = _leaky(tmp_path)
+    log = tmp_path / events.INITIAL_LOG_NAME
+    retired_line = log.read_text(encoding="utf-8").splitlines()[1]
+    events.withdraw(tmp_path, minted[1].id, reason="leaked environment dump")
+
+    with log.open("a", encoding="utf-8", newline="\n") as stream:
+        stream.write(retired_line + "\n")
+
+    code, report = _fsck(tmp_path)
+    resurrected = [
+        found for found in report["findings"] if found["kind"] == "withdrawal-resurrected"
+    ]
+
+    assert LEAKED in log.read_text(encoding="utf-8"), "the fixture must restore the content"
+    assert code == 2
+    assert [found["subject"] for found in resurrected] == [minted[1].id]
+
+
+@pytest.mark.parametrize(
+    ("target", "match"),
+    [
+        ("trail", "withdrawing that would leave the first one unaccounted for"),
+        ("twice", "has already been withdrawn"),
+        ("nothing to withdraw", "no free text to withdraw"),
+        ("absent", "no event in the log carries the id"),
+    ],
+)
+def test_a_withdrawal_refuses_what_it_could_not_audit(
+    tmp_path: Path, target: str, match: str
+) -> None:
+    """Four refusals, each one a way the trail would end up claiming something untrue.
+
+    The trail's own withdrawal is the sharpest: blanking a ``withdrawn`` event's reason
+    would leave the fold refusing the line it needs to report the first withdrawal, so the
+    log would stop being foldable to say why it was rewritten.
+    """
+    minted = _leaky(tmp_path)
+    trail = events.withdraw(tmp_path, minted[1].id, reason="leaked environment dump")
+    events.append(
+        tmp_path, [events.Draft(RECORD_A, "status", {"status": "open"})], clock=lambda: CLOCK_EARLY
+    )
+    withdrawn = next(
+        event for event in events.read_events(tmp_path)[0] if events.WITHDRAWN_FROM in event.payload
+    )
+    only_folded = next(event for event in events.read_events(tmp_path)[0] if event.kind == "status")
+    event_id = {
+        "trail": trail.id,
+        "twice": withdrawn.id,
+        "nothing to withdraw": only_folded.id,
+        "absent": RECORD_B + "#ev-0123456789",
+    }[target]
+    before = (tmp_path / events.INITIAL_LOG_NAME).read_text(encoding="utf-8")
+
+    with pytest.raises(events.InvalidEventError, match=match):
+        events.withdraw(tmp_path, event_id, reason="a second thought")
+
+    assert (tmp_path / events.INITIAL_LOG_NAME).read_text(encoding="utf-8") == before
+
+
+def test_a_withdrawal_takes_the_writer_lock_a_plain_append_takes(tmp_path: Path) -> None:
+    """A rewrite that skipped the lock would drop whatever landed between read and rename.
+
+    That defect is `basicly-cqu7i3`'s, found in the engine's own whole-file rewriter, and
+    this is the same shape arriving with the same remedy rather than after it.
+    """
+    minted = _leaky(tmp_path)
+    log = tmp_path / events.INITIAL_LOG_NAME
+    before = log.read_text(encoding="utf-8")
+    lock = events.LedgerLock(tmp_path, pid=os.getpid())
+    lock.acquire()
+
+    with pytest.raises(events.LockUnavailableError):
+        events.withdraw(
+            tmp_path, minted[1].id, reason="leaked environment dump", lock_timeout_s=0.0
+        )
+
+    assert log.read_text(encoding="utf-8") == before
+    assert LEAKED in before
+
+
+@pytest.mark.parametrize(
+    ("dropped", "expected"),
+    [
+        ("the trail", "withdrawal-unrecorded"),
+        ("the rewrite", "withdrawal-unapplied"),
+    ],
+)
+def test_fsck_reports_a_withdrawal_only_half_of_which_landed(
+    tmp_path: Path, dropped: str, expected: str
+) -> None:
+    """One withdrawal is two writes, and a crash between them leaves one of these.
+
+    Which half is missing decides the remedy, so they are separate classes: a rewrite with no
+    trail is repaired by appending the trail, and a trail with no rewrite means the content is
+    still out there. Both are the log's own defect, so neither is something `rebuild` touches.
+    """
+    minted = _leaky(tmp_path)
+    events.withdraw(tmp_path, minted[1].id, reason="leaked environment dump")
+    log = tmp_path / events.INITIAL_LOG_NAME
+    survives = (
+        (lambda line: '"kind":"withdrawn"' not in line)
+        if dropped == "the trail"
+        else (lambda line: events.WITHDRAWN_FROM not in line)
+    )
+    kept = [line for line in log.read_text(encoding="utf-8").splitlines() if survives(line)]
+    log.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+    code, report = _fsck(tmp_path)
+
+    assert code == 2
+    assert expected in _broken_kinds(report)
