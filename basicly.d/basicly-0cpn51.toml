@@ -1,0 +1,38 @@
+# A twelfth `fsck` finding class, and the label vocabulary it checks (basicly-0cpn51).
+#
+# What the change was: `label_shape.py`, a new kit sibling holding the one answer to *what
+# shape a record's labels are stored in and how a reader gets them back*, and a `split-label`
+# finding in `fsck.py` over a log whose label writes name a label of one character.
+#
+# ## comment_density: one cohesion waiver
+#
+# `.basicly/core/kit/tracker/label_shape.py` at 60.5% against the 50% cap. The same shape as
+# `labels.py` beside it: the module is one rule and the meaning of one rule, and
+# `len(label) <= 1` recovers none of what the rule is for — not that two storage shapes are
+# both legitimate, not that iterating the string shape is what produces the class, and not
+# the measurement that fixes the threshold (284 label-carrying events in this repository's
+# log, shortest label three characters). Cohesion rather than cost: correct and permanent,
+# with nothing to retire.
+#
+# Trimmed before it was waived, 62.9% -> 58.2% on prose that restated `commands.py`. The
+# granted figure is 60.5% and not 58.2% because the waiver comment is itself prose in the
+# module it waives; the remaining share is docstrings ruff `D` mandates over four short
+# functions.
+[ratchet.comment_density]
+count_delta = 1
+
+# ## module_size: one rebaseline, the cost of the finding class
+#
+# `fsck.py` sat at 9434 tokens — exactly its baseline, with nowhere to put anything. The
+# growth is a new finding class and nothing else: the constant and what `broken` means for
+# it, `_split_label_findings`, and one line in `check`. The detection itself is in the new
+# sibling and costs `fsck.py` a single `_load`.
+#
+# Banked rather than absorbed by cutting prose from `fsck.py`, which is the cheapest way to
+# clear this gate and the reason the comment rule exists. The module is far over the 4000
+# cap for reasons that predate this change and have a decomposition track of their own.
+[ratchet.module_size]
+rebaseline_reason = "a twelfth fsck finding class; the detection lives in the new label_shape.py sibling and fsck was already at its baseline"
+
+[ratchet.module_size.rebaselined]
+".basicly/core/kit/tracker/fsck.py" = 296

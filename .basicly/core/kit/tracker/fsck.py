@@ -114,6 +114,7 @@ def _load(file_name: str, module_name: str) -> Any:
 snapshot = _load("snapshot.py", "basicly_tracker_kit_snapshot")
 migrate = _load("migrate.py", "basicly_tracker_kit_migrate")
 provenance = _load("provenance.py", "basicly_tracker_kit_provenance")
+label_shape = _load("label_shape.py", "basicly_tracker_kit_label_shape")
 events = snapshot.events
 
 # --- what an edge points at ---------------------------------------------------
@@ -171,6 +172,10 @@ DERIVED_DISAGREES = "derived-disagrees"
 # A kind no module folds: a newer writer's, or a malformed one. A warning and not a failure,
 # because neither is corruption — but a finding, which a delegated kind is not.
 UNFOLDED_KIND = "unfolded-kind"
+# A label write naming a label of one character; `label_shape.py` holds why that is the
+# signature of a string iterated rather than split. :data:`BROKEN` on that constant's own
+# terms — the log is internally consistent, so only a corrective write can clear it.
+SPLIT_LABEL = "split-label"
 
 # How many carrying event ids one finding prints. Measured rather than guessed: the first run
 # against this repo's own 642-record ledger printed a clean report as 656 ids under a single
@@ -607,6 +612,27 @@ def _unfolded_kind_findings(folded: Any, ordered: Sequence[Any]) -> list[Finding
     ]
 
 
+def _split_label_findings(ordered: Sequence[Any]) -> list[Finding]:
+    """One finding per record whose label writes name a one-character label.
+
+    Over the events and not the fold, for `label_shape.labels_written_by`'s reason.
+    """
+    return [
+        Finding(
+            kind=SPLIT_LABEL,
+            severity=BROKEN,
+            subject=record,
+            detail=(
+                f"a label write names {len(labels)} label(s) of one character "
+                f"({', '.join(repr(label) for label in labels)}) — what a string iterated "
+                f"instead of split leaves behind. Clear it with a corrective write"
+            ),
+            event_ids=event_ids,
+        )
+        for record, labels, event_ids in label_shape.split_labels(ordered)
+    ]
+
+
 def _delegated_census(folded: Any) -> tuple[tuple[str, int, str], ...]:
     """Each delegated kind, its count, and the sibling fold `events.py` names for it.
 
@@ -733,6 +759,7 @@ def check(directory: Path | str) -> Report:
     findings += _reference_findings(ordered)
     findings += _totals_findings(folded, ordered, voided)
     findings += _unfolded_kind_findings(folded, ordered)
+    findings += _split_label_findings(ordered)
     if not malformed:
         # Every derivative is a fold of the log, so a log the fold refuses has no derivative
         # to be right or wrong against. Saying so beats reporting a cache for its source.
