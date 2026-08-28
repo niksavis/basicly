@@ -76,3 +76,92 @@ def at_the_generation_a_repeat_needs(
         taken.add(event_id)
         resolved.append(replace(draft, generation=generation))
     return resolved
+
+
+def _stored_payload(events: Any, draft: Any) -> dict[str, object]:
+    """*draft*'s payload in the form the ledger stores, which is what an id covers."""
+    return events.prepare_payload(draft.payload, kind=draft.kind, redact=redact.redact_committed)
+
+
+def at_the_generation_this_write_needs(
+    kit_module: Any, ledger: Path, drafts: Sequence[Any], *, repeat: bool
+) -> list[Any]:
+    """*drafts* at the generation this write needs, asked for or derived.
+
+    *repeat* is the caller's word that a second identical statement is deliberate, and it
+    holds for every kind; the derived half finds a state the record has moved off.
+    """
+    if repeat:
+        return at_the_generation_a_repeat_needs(kit_module, ledger, drafts)
+    return _at_the_generation_a_recurring_state_needs(kit_module, ledger, drafts)
+
+
+def _at_the_generation_a_recurring_state_needs(
+    kit_module: Any, ledger: Path, drafts: Sequence[Any]
+) -> list[Any]:
+    """*drafts* moved off a swallowed id when they state a record's state again.
+
+    The digest keys on content alone, so a value returning to one the record once held
+    re-mints the first event's id and is skipped: ``--status open`` after ``deferred`` left
+    the record at ``deferred`` while the command reported success. Measured the same on a
+    priority driven 2 -> 1 -> 2 and on a label added, removed and added back (basicly-bj8kks).
+
+    **A repeat is still a repeat**, so nothing moves while the record's newest event is one
+    this write states: that is one command run twice, which the digest is right to collapse.
+
+    Confined to the kinds that set the record's **own** state, and the cut is the fold's:
+    ``status`` and ``field`` are last-write-wins over ``RecordState.status`` and ``.fields``,
+    so one skipped leaves the record reading a value nobody asked for. A note accumulates,
+    and a gate, an edge or a checkpoint is a row a sibling folds — those keep the digest rule
+    and the explicit flag.
+    """
+    events = kit_module.events
+    existing = events.read_events(ledger)[0] if ledger.is_dir() else []
+    taken = {event.id for event in existing}
+    state_kinds = {events.KIND_STATUS, events.KIND_FIELD}
+    # One whole-ledger read, inside the caller's lock: 77 ms against the 93 ms `append`
+    # already pays there, measured on this repo's 7,885-event log. It buys the common
+    # answer "nothing recurs" — a draft whose id is free is new content either way.
+    if not any(
+        draft.kind in state_kinds
+        and events.event_id_for(
+            draft.record, draft.kind, _stored_payload(events, draft), generation=1
+        )
+        in taken
+        for draft in drafts
+    ):
+        return list(drafts)
+    repeated = _the_records_this_write_only_repeats(events, existing, drafts)
+    moving = [
+        index
+        for index, draft in enumerate(drafts)
+        if draft.kind in state_kinds and draft.record not in repeated
+    ]
+    resolved = list(drafts)
+    moved = at_the_generation_a_repeat_needs(kit_module, ledger, [drafts[i] for i in moving])
+    for index, draft in zip(moving, moved, strict=True):
+        resolved[index] = draft
+    return resolved
+
+
+def _the_records_this_write_only_repeats(
+    events: Any, existing: Sequence[Any], drafts: Sequence[Any]
+) -> set[str]:
+    """The records whose newest event is one this write states: nothing has happened since.
+
+    Against the whole write rather than its last draft, because a verb states more than one
+    fact and the ledger holds them in the order they *first* landed: ``-p 2 --status open``
+    on a record already reading both appended two events when the two were compared
+    pairwise, having landed in the other order.
+    """
+    stated: dict[str, set[str]] = {}
+    for draft in drafts:
+        stated.setdefault(draft.record, set()).add(
+            events.event_id_for(
+                draft.record, draft.kind, _stored_payload(events, draft), generation=1
+            )
+        )
+    newest: dict[str, str] = {}
+    for event in events.canonical_order(list(existing)):
+        newest[event.record] = event.id
+    return {record for record, ids in stated.items() if newest.get(record) in ids}

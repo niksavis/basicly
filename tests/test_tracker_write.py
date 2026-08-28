@@ -158,17 +158,16 @@ def test_the_read_only_guard_binds_this_surface_too(
     assert (tracker.read_record(repo, ROOT) or {})["status"] == "open"
 
 
-def test_a_field_driven_a_then_b_then_a_says_it_appended_nothing(
+def test_a_field_driven_a_then_b_then_a_records_the_third_write(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The seam may not report a write it did not make (basicly-kn4rip).
+    """A value returning to one it held is a fact about now, not a replay (basicly-bj8kks).
 
-    An event id is a digest over the fact, so driving one field to A, to B, and back to A
-    re-mints the first A's id and the append skips it as a replay. Three commands reported
-    ``recorded:`` and the field never moved, which cost a wrong diagnosis. What is pinned
-    here is that the *third* command says so — the swallow itself is
-    `events.append`'s documented property and is asserted in both directions in
-    `tests/test_kit_tracker_events.py`.
+    An event id is a digest over the fact, so driving one field to A, to B and back to A
+    re-minted the first A's id and the append skipped it: three commands reported
+    ``recorded:`` and the field never moved (basicly-kn4rip), and after that seam learned to
+    say so, the label simply stayed off. The record moved between the two A's, so the second
+    one is new however familiar its content.
     """
     assert cli.main(["tracker", "write", "--", "update", ROOT, "--add-label", "live-demo"]) == 0
     assert cli.main(["tracker", "write", "--", "update", ROOT, "--remove-label", "live-demo"]) == 0
@@ -176,25 +175,89 @@ def test_a_field_driven_a_then_b_then_a_says_it_appended_nothing(
 
     assert cli.main(["tracker", "write", "--", "update", ROOT, "--add-label", "live-demo"]) == 0
 
-    out = capsys.readouterr().out
-    assert "already recorded" in out
-    assert "recorded:" not in out
-    # The claim and the ledger agree: the seam says nothing landed, and nothing did.
-    assert (tracker.read_record(repo, ROOT) or {})["labels"] == []
+    assert "recorded:" in capsys.readouterr().out
+    # The claim and the ledger agree: the seam says it landed, and the record reads it.
+    assert (tracker.read_record(repo, ROOT) or {})["labels"] == ["live-demo"]
 
 
-def test_replaying_one_identical_write_is_reported_rather_than_reconfirmed(
+def test_a_status_the_record_left_is_written_again_and_reads_back(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The reported case, on a record minted the way the store mints one (basicly-bj8kks).
+
+    ``--status open`` after ``deferred`` re-mints the id of the ``open`` event every create
+    writes, so the write was swallowed and ``tracker show`` kept ``deferred``. The record is
+    created here rather than seeded because only the create path stamps the same provenance
+    the later write does — a seeded status event carries none, and the two would not collide.
+    """
+    argv = ["tracker", "write", "--", "create", "a child", "-t", "task", "--parent", ROOT]
+    assert cli.main([*argv, "--json"]) == 0
+    minted = json.loads(capsys.readouterr().out)["id"]
+
+    assert cli.main(["tracker", "write", "--", "update", minted, "--status", "deferred"]) == 0
+    assert (tracker.read_record(repo, minted) or {})["status"] == "deferred"
+    capsys.readouterr()
+
+    assert cli.main(["tracker", "write", "--", "update", minted, "--status", "open"]) == 0
+
+    assert "recorded:" in capsys.readouterr().out
+    assert (tracker.read_record(repo, minted) or {})["status"] == "open"
+
+
+def test_replaying_a_verb_that_writes_two_events_is_still_one_replay(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A repeat is judged over the whole write, not over its last event (basicly-bj8kks).
+
+    ``close --reason`` states two facts, the reason field and the status. Comparing only the
+    newest event would read the reason as new the second time — the status sits above it —
+    and append a duplicate beside a status the ledger rightly skipped.
+    """
+    argv = ["tracker", "write", "--", "close", ROOT, "--reason", "done"]
+    assert cli.main(argv) == 0
+    capsys.readouterr()
+    before = len(flipped_tracker.ledger_events(repo))
+
+    assert cli.main(argv) == 1
+
+    assert "already recorded" in capsys.readouterr().out
+    assert len(flipped_tracker.ledger_events(repo)) == before
+
+
+def test_a_write_stating_two_facts_the_record_already_reads_appends_nothing(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Nothing has happened since those facts landed, whatever order they landed in.
+
+    The ledger holds them in the order they *first* landed, so a pairwise comparison against
+    the tail read this pair as new and appended both again (basicly-bj8kks).
+    """
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "--status", "open"]) == 0
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "-p", "2"]) == 0
+    capsys.readouterr()
+    before = len(flipped_tracker.ledger_events(repo))
+
+    argv = ["tracker", "write", "--", "update", ROOT, "-p", "2", "--status", "open"]
+    assert cli.main(argv) == 1
+
+    assert "already recorded" in capsys.readouterr().out
+    assert len(flipped_tracker.ledger_events(repo)) == before
+
+
+def test_replaying_one_identical_write_is_reported_and_exits_non_zero(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The control: a true replay still appends once and still changes nothing.
 
     Idempotent replay is the property the content digest exists for, so the second command
-    must not append a second event — only stop claiming it did.
+    must not append a second event. It exits non-zero rather than 0 because a script reads
+    the status and not the prose, and a skipped write it read as success is the failure
+    `basicly-kn4rip` recorded from the other side.
     """
     assert cli.main(["tracker", "write", "--", "update", ROOT, "-p", "2"]) == 0
     assert "recorded:" in capsys.readouterr().out
 
-    assert cli.main(["tracker", "write", "--", "update", ROOT, "-p", "2"]) == 0
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "-p", "2"]) == 1
 
     assert "already recorded" in capsys.readouterr().out
     assert (tracker.read_record(repo, ROOT) or {})["priority"] == 2
