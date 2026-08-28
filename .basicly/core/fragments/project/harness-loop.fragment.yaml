@@ -12,4 +12,4 @@ tags:
 - workflow
 status: active
 body: |
-  - Drive non-trivial work through the basicly harness loop; `basicly tracker` is the source of truth.  The `harness-loop` skill is the runbook — the phases (intake → classify → decompose → build → verify → ship → teardown → retro), the `basicly loop status/run` commands, the multi-lane `loop preflight`/`loop supervise` path, the engine-enforced checkpoints and bounded rework, and the block-don't-guess `needs-input.json` protocol.
+  - Drive non-trivial work through the basicly harness loop; `basicly tracker` is the source of truth.  The `harness-loop` skill is the runbook — the phases (intake → classify → decompose → build → verify → validate → ship → done), the `basicly loop status/run` commands, the multi-lane `loop preflight`/`loop supervise` path, the engine-enforced checkpoints and bounded rework, and the block-don't-guess `needs-input.json` protocol.

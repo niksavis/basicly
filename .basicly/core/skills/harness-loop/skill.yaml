@@ -2,7 +2,7 @@
 schema_version: 1
 name: harness-loop
 invocation: model
-description: Drive a unit of work through the basicly harness loop end-to-end (intake → classify → decompose → build → verify → ship → done) with `basicly loop` over the owned tracker ledger, agent-agnostic across Claude/Codex/Copilot. Teardown is folded into the ship advance and the retro is a tracker comment; neither is a phase. Use when starting or resuming non-trivial development in a harness-enabled repo, when deciding what phase a tracked issue is in, or when coordinating the checkpoints, gates, and bounded rework the loop enforces.
+description: Drive a unit of work through the basicly harness loop end-to-end (intake → classify → decompose → build → verify → validate → ship → done) with `basicly loop` over the owned tracker ledger, agent-agnostic across Claude/Codex/Copilot. Teardown is folded into the ship advance and the retro is a tracker comment; neither is a phase. Use when starting or resuming non-trivial development in a harness-enabled repo, when deciding what phase a tracked issue is in, or when coordinating the checkpoints, gates, and bounded rework the loop enforces.
 instructions: |
   # Harness Loop
 
@@ -52,7 +52,7 @@ instructions: |
      committed before the worktree is created, so the claim is in git history
      from the moment work starts — a teammate who pulls sees it immediately.
   2. **At landing**, `loop advance` rolls the `.basicly/ledger/**` dirt accumulated
-     since (checkpoints, gate records) into one `chore(ledger)` commit before
+     since (checkpoints, gate records) into one `chore(beads)` commit before
      merging. A base that is dirty with anything *outside* the ledger still
      blocks — that is someone's uncommitted work.
   3. **At ship**, after the closing write, the engine commits the closing
@@ -191,7 +191,8 @@ instructions: |
   | **decompose** *(human checkpoint)* | approve before fan-out | relay the confirm code on the reprinted `basicly loop run <id> --confirm <code>`; `basicly policy checkpoint <id> decompose` is **inspection-only** (approving there parks the loop) |
   | **build** | fan out one worktree per dependency-unblocked child (ranked by the scheduler, concurrency-capped), do the work, **commit it on the branch**, then land through the serial merge queue | `basicly worktree list`; do the coding; record any user-facing change as **`changelog.d/<bead-id>.<category>.md`, never by editing `CHANGELOG.md`**, and any new verify check or ratchet delta as **`basicly.d/<bead-id>.toml`, never by editing `basicly.toml` or `pyproject.toml`** (both below); **`git commit` the work on the harness branch** (referencing the bead — `conventional-commits`); `basicly loop advance <id>` lands it |
   | **verify** | the landing already ran verify and recorded the required gate; inspect it, then approve ship | `basicly policy gate <id>` to inspect, then relay the ship code on the reprinted `basicly loop run <id> --confirm <code>` — not on a bare `basicly policy checkpoint <id> ship --approve`, which approves the checkpoint and leaves the loop parked. Re-run gates (e.g. after rework) with `basicly verify --mode full --issue <id>` — from the base checkout only |
-  | **ship** | tear down the worktree and close the record | `basicly loop advance <id>` (runs teardown + the closing write) |
+  | **validate** | the merged unit owes the consumer check its integrity level requires — every unit passes through this state and only an L3 unit owes the gate; the engine dispatches a validator against the *merged* checkout and blocks with `needs input: validation` until a verdict is recorded | `basicly policy gate <id>` to inspect. A recorded FAIL is repaired in the lane's own worktree and re-landed, not reworked from scratch (see `validate-as-consumer`, `repair-in-place`) |
+  | **ship** | tear down the worktree and close the record | `basicly loop advance <id>` (runs teardown + the closing write). Two guards run first and both block with no side effects — no close, teardown or tracker commit: the demonstration the bead recorded must still select something (`needs input: demonstration`), and the branch must already be merged |
 
   > **Never record the verify gate by hand during build.** The build→verify
   > `loop advance` is the *only* step that merges the worktree back to base
@@ -398,14 +399,17 @@ instructions: |
   `VERDICT`. Run it **from the base checkout**: `.basicly/usage/` is git-ignored, so a
   worktree sees no run records and the forecast loses its measured prior.
 
-  Two `VERDICT` lines mean "fix this first, the pass will not start": `not ready -
-  base checkout is dirty`, and `not ready - a metered runner needs a grant with a
-  token budget` (a metered runner needs `basicly policy grant <epic> --level L2/L3
-  --token-budget N`).
+  One `VERDICT: not ready - ...` line joins **every** blocker into a single
+  semicolon-separated list, so read all of it: a dirty base, a metered runner with no
+  token budget (`basicly policy grant <epic> --level L2/L3 --token-budget N`), a
+  grant spent or unmeterable, the root's own checkpoint blocking provisioning, no
+  open child left to provision from, every open child refused by the band. Two
+  cases return earlier with a verdict of their own: an unrecognised config name,
+  and a lane selector naming no bead.
 
   ### The band table — four verdicts, one of which refuses
 
-  Every open child is sized and gets exactly one verdict (`supervise.py:_band_verdict`):
+  Every open child is sized and gets exactly one verdict (`working_set.py:_band_verdict`):
 
   - `in band` — dispatches.
   - `in band, but its scope matched no file` — dispatches, but the scope globs matched

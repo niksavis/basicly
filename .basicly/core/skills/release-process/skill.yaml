@@ -17,9 +17,10 @@ instructions: |
 
   It bumps the single-sourced `__version__`, regenerates the version-stamped
   projections, rewrites the `vX.Y.Z` install pins in `README.md`,
-  `site/index.html` and both `.scripts/bootstrap.*` shims, assembles the
-  `changelog.d/` fragments into the dated `CHANGELOG.md` section, commits, and
-  creates the annotated tag.
+  `site/index.html`, both `.scripts/bootstrap.*` shims and every page under
+  `docs/how-to/` — a glob, because the enumeration left two pages four releases
+  stale — assembles the `changelog.d/` fragments into the dated `CHANGELOG.md`
+  section, commits, and creates the annotated tag.
 
   It refuses **before writing anything** on a dirty tree, a non-forward version,
   an existing tag, a bad date, an unknown `--issue`, a commit subject the
