@@ -801,8 +801,9 @@ def rebuild(directory: Path | str) -> Rebuild:
     there. A derivative that is corrupt, stale, missing or left over from a period the log no
     longer has all end in the same state, and a second run changes nothing.
 
-    Nothing is read from a derived file, including the ones being replaced: a rebuild that
-    resumed from a checkpoint would be seeding the repair from the thing under repair.
+    Nothing derived seeds the repair, including the files being replaced: a rebuild that
+    resumed from a checkpoint would be reading the thing under repair. A replaced file's
+    record count is read, and only that — it decides the refusal below, never a fold.
 
     Args:
         directory: The ledger directory. Left alone entirely when it does not exist.
@@ -814,18 +815,27 @@ def rebuild(directory: Path | str) -> Rebuild:
         events.InvalidEventError: from :func:`derive` — the log holds an event of a known
             kind that the fold refuses, so there is no correct derivative to write. `check`
             names the events; only a corrective event fixes it.
+        snapshot.SnapshotError: a derivative would hold fewer records than the file it
+            replaces. Both counts are in the message; nothing is removed and nothing written.
     """
     ledger = Path(directory)
     if not ledger.is_dir():
         return Rebuild(directory=ledger)
+    # Derived and compared before anything is deleted (basicly-dx2ngn). `write_snapshot`'s
+    # shrink guard compares against the file on disk and the unlink below guarantees there is
+    # none, so R9's refusal could never fire through this path. Taking it after the unlink
+    # would destroy the records it exists to keep, so a refused rebuild removes nothing.
+    produced = tuple((path, derive(covered)) for path, covered in derived_targets(ledger))
+    for path, proposed in produced:
+        loss = snapshot.shrinkage(path, proposed)
+        if loss.refused:
+            raise snapshot.SnapshotError(f"{path.name}: {loss.reason}")
     removed = tuple(snapshot.derived_paths(ledger))
     for path in removed:
         path.unlink()
-    written = []
-    for path, covered in derived_targets(ledger):
-        snapshot.write_snapshot(path, derive(covered))
-        written.append(path)
-    return Rebuild(directory=ledger, removed=removed, written=tuple(written))
+    for path, proposed in produced:
+        snapshot.write_snapshot(path, proposed)
+    return Rebuild(directory=ledger, removed=removed, written=tuple(path for path, _ in produced))
 
 
 # --- the entry point ----------------------------------------------------------
