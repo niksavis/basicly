@@ -1,0 +1,8 @@
+# The single point of truth epic (basicly-hnnmk9).
+#
+# Closing `basicly-uhiq` tripped `release-notes`: the epic declares a `## Scope` reaching
+# shipped paths, but every file under it was changed and announced by its four children.
+# The epic itself changed nothing a consumer can see, so it is declared invisible in
+# `[tool.release_notes.invisible]` and the declaration count moves by one here.
+[ratchet.release_notes]
+count_delta = 1
