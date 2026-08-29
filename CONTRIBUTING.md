@@ -91,8 +91,13 @@ Create the record first and use the id it prints — ids cannot be invented:
 uv run basicly tracker write -- create "Title" -t task --parent <parent-id> --json
 ```
 
-`basicly tracker ready` lists what is open and unblocked, if you are looking for a
-parent or for something to pick up.
+`uv run basicly session start` is where a session begins: it prints the newest
+`[session handover <date>]` note (where the last session stopped and what comes
+next), the ranked ready set, what is blocked and by what, the live grants, and the
+architecture decisions the tree does not hold yet. `basicly tracker ready` lists
+what is open and unblocked, if you are looking for a parent or for something to
+pick up. End a session by writing the next handover as a note on the root record
+you worked (`basicly tracker write -- comments add <root-id> "[session handover <date>] ..."`).
 
 ## Catalog authoring
 

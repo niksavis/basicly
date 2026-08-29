@@ -178,7 +178,7 @@ ratchets prose share (comments plus docstrings) per module. Needing a comment to
 
 ## Harness Loop
 
-- Drive non-trivial work through the basicly harness loop; `basicly tracker` is the source of truth.  The `harness-loop` skill is the runbook — the phases (intake → classify → decompose → build → verify → validate → ship → done), the `basicly loop status/run` commands, the multi-lane `loop preflight`/`loop supervise` path, the engine-enforced checkpoints and bounded rework, and the block-don't-guess `needs-input.json` protocol.
+- Open a session with `basicly session start`; end it with a `[session handover <date>]` note on the root record. The ledger is the source of truth. Drive non-trivial work through the harness loop; the `harness-loop` skill is the runbook: the phases, `basicly loop status/run`, multi-lane `loop preflight`/`loop supervise`, engine-enforced checkpoints, bounded rework, and the block-don't-guess `needs-input.json` protocol.
 
 ## Quality Gate
 
