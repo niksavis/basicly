@@ -1,5 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
+token_cost:
+  claude: 209
+  codex: 209
+  copilot: 208
 id: non-interactive-shell
 description: Avoid shell commands that hang waiting on interactive confirmation.
 category: tools

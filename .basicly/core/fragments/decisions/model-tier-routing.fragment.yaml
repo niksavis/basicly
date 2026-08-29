@@ -1,5 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
+token_cost:
+  claude: 0
+  codex: 218
+  copilot: 0
 id: model-tier-routing
 description: Choose a dispatch's model tier by reliability per landed change, not by per-dispatch price.
 category: decisions

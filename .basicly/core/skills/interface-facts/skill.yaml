@@ -1,5 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
+token_cost:
+  listing: 91
 name: interface-facts
 invocation: model
 description: Establish a fact about an external interface - a CLI flag, an API field, a model id, a price, a limit, a version - by fetching the vendor's current documentation instead of recalling it. Use before writing code, a design note, or any claim that depends on how a third-party tool behaves, and whenever a repo document already asserts such a behaviour.

@@ -1,5 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
+token_cost:
+  listing: 86
 name: session-finish
 invocation: model
 description: Close out a working session with a usage-statistics report, a self-improvement retro, and a pickup-clean handoff summary. Use when the user says the session is done ("wrap up", "finish the session", "close out"), before ending a long autonomous run, or whenever a summary of what changed and what the agent actually used is wanted.

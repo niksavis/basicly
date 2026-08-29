@@ -1,5 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
+token_cost:
+  listing: 139
 name: harness-loop
 invocation: model
 description: Drive a unit of work through the basicly harness loop end-to-end (intake → classify → decompose → build → verify → validate → ship → done) with `basicly loop` over the owned tracker ledger, agent-agnostic across Claude/Codex/Copilot. Teardown is folded into the ship advance and the retro is a tracker comment; neither is a phase. Use when starting or resuming non-trivial development in a harness-enabled repo, when deciding what phase a tracked issue is in, or when coordinating the checkpoints, gates, and bounded rework the loop enforces.

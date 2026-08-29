@@ -1,5 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
+token_cost:
+  claude: 150
+  codex: 150
+  copilot: 150
 id: core-rules
 description: Core rules that apply to all work in this repo.
 category: project

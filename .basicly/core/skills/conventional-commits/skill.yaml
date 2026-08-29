@@ -1,5 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
+token_cost:
+  listing: 88
 name: conventional-commits
 invocation: model
 description: Construct a valid Conventional Commits message for this repo before running `git commit`, covering type/scope, the "!" breaking-change marker, description rules, and the required trailing tracker record id. Use whenever writing or reviewing a commit message, or when a commit is rejected by the commit-msg/tracker-commit-msg hooks.

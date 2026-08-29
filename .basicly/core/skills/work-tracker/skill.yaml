@@ -1,5 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
+token_cost:
+  listing: 108
 name: work-tracker
 invocation: model
 description: Use the owned work tracker - the append-only event ledger under .basicly/ledger/ - as the primary task/issue tracker for this repo, reading it through the kit CLI and writing it through the engine seam, and know what it refuses. Trigger when planning work, creating or claiming an issue, checking what is ready to work on, counting or querying issues in bulk, or preparing a commit that must reference a tracker issue id.

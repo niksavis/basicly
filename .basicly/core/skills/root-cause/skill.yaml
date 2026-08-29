@@ -1,5 +1,7 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
+token_cost:
+  listing: 86
 name: root-cause
 invocation: model
 description: Establish why something actually happened by iterating why until the answer stops changing, with each link citing an observation - and know the two ways the method lies. Use before filing a bead off a failure, before proposing a rule or a gate to prevent a recurrence, when a fix addresses a symptom, or when a retro asks for a cause.

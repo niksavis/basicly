@@ -1,5 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
+token_cost:
+  claude: 0
+  codex: 366
+  copilot: 0
 id: platform-hermetic-tests
 description: Exercise a platform difference as test data rather than depending on the host OS.
 category: testing
