@@ -16,16 +16,17 @@ from basicly.skill_source import discover_skills
 
 REPO = Path(__file__).parent.parent
 VALID_SKILL = (
-    "schema_version: 1\nname: s\ninvocation: model\ndescription: d\ninstructions: |\n  body\n"
+    "schema_version: 1\nname: s\ninvocation: model\ndescription: d\n"
+    "token_cost:\n  listing: 6\ninstructions: |\n  body\n"
 )
 VALID_FRAGMENT = (
     "schema_version: 1\nid: f\ndescription: d\ncategory: project\n"
-    "applies_to: [all]\nbody: |\n  - x\n"
+    "token_cost: {claude: 0, codex: 0, copilot: 0}\napplies_to: [all]\nbody: |\n  - x\n"
 )
 
 
 def _catalog(tmp_path: Path) -> Path:
-    """Build a minimal catalog with real schemas and one valid skill + fragment."""
+    """A minimal catalog: real schemas, one valid skill and fragment."""
     schemas = tmp_path / ".basicly/core/schemas"
     schemas.mkdir(parents=True)
     for name in ("skill.schema.json", "fragment.schema.json", "agent.schema.json"):
@@ -113,11 +114,10 @@ def test_no_enforced_by_is_a_noop(tmp_path: Path) -> None:
 
 
 def test_valid_technologies_pass(tmp_path: Path) -> None:
-    """Vocabulary-conformant technologies on a skill and a fragment are clean."""
+    """Known technologies lint clean."""
     root = _catalog(tmp_path)
     (root / ".basicly/core/skills/s/skill.yaml").write_text(
-        "schema_version: 1\nname: s\ninvocation: model\ndescription: d\ntechnologies: [python]\n"
-        "instructions: |\n  body\n",
+        VALID_SKILL.replace("description: d\n", "description: d\ntechnologies: [python]\n"),
         encoding="utf-8",
     )
     (root / ".basicly/core/fragments/project/f.fragment.yaml").write_text(
@@ -179,17 +179,17 @@ def test_flags_invalid_skill_name(tmp_path: Path) -> None:
 
 
 def test_skill_body_over_limit_warns_but_does_not_fail(tmp_path: Path) -> None:
-    """An oversized SKILL.md body is a warning (advisory), not a hard lint violation."""
+    """An oversized body warns; it is not a violation."""
     root = _catalog(tmp_path)
     body = "\n".join(f"  line {n}" for n in range(600))
     skill = root / ".basicly/core/skills/big/skill.yaml"
     skill.parent.mkdir(parents=True)
     skill.write_text(
-        f"schema_version: 1\nname: big\n"
-        f"invocation: model\ndescription: d\ninstructions: |\n{body}\n",
+        f"schema_version: 1\nname: big\ninvocation: model\ndescription: d\n"
+        f"token_cost:\n  listing: 6\ninstructions: |\n{body}\n",
         encoding="utf-8",
     )
-    assert lint_catalog(root) == []  # not a hard failure
+    assert lint_catalog(root) == []
     assert any("keep it under" in w for w in skill_warnings(root))
 
 
@@ -229,7 +229,7 @@ def _skill_source(root: Path, slug: str, body: str) -> Path:
     return path
 
 
-_INSTRUCTIONS = "instructions: |\n  # x\n\n  text\n"
+_INSTRUCTIONS = "token_cost:\n  listing: 6\ninstructions: |\n  # x\n\n  text\n"
 
 
 def test_a_missing_invocation_declaration_fails_the_lint(tmp_path: Path) -> None:

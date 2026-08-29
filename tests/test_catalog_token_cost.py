@@ -187,8 +187,13 @@ def test_no_targets_means_nothing_to_measure(tmp_path: Path) -> None:
 
 
 def test_catalog_lint_collects_the_rule(catalog: Path) -> None:
-    """AC6: the finding reaches the named `catalog lint` check, on the right channel."""
-    assert any("no `token_cost:` declared" in w for w in skill_warnings(catalog))
+    """AC6: the finding reaches the named `catalog lint` check, on the right channel.
+
+    The channel follows the window, so the assertion reads it from the same rule rather
+    than from the version this tree happens to carry (basicly-ve1h0l).
+    """
+    channel = skill_warnings if ctc.window_open() else lint_catalog
+    assert any("no `token_cost:` declared" in w for w in channel(catalog))
     _declare(_fragment(catalog), "token_cost:\n  claude: 9000\n  codex: 9000\n  copilot: 9000\n")
     assert any("`token_cost.claude` declares 9000" in v for v in lint_catalog(catalog))
 
