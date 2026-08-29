@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING
 
 from docs_claim_sources import ARCHITECTURE_MD, ClaimError, load_yaml, read_text
 
+from basicly import tracker
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -46,7 +48,11 @@ _VOCABULARY_HEADER = ("State", "Means", "Evidence required to claim it")
 # document today: §38 heads its column `Status`, §37.3 heads its own `State`.
 _GRADING_HEADINGS = frozenset({"status", "state"})
 
-_HEADER = ["Capability", "Status", "Note"]
+_HEADER = ["Capability", "Status", "Record", "Note"]
+# A row in one of these states names no work: `shipped` is done and `deferred` is a decision
+# not to do it, which its note must state. Every other state is a promise, and a promise with
+# no record in the ledger is the roadmap and the tracker disagreeing (basicly-r8civ7).
+_STATES_WITHOUT_WORK = frozenset({"shipped", "deferred"})
 _FENCE = re.compile(r"^(```|~~~)")
 
 
@@ -129,6 +135,7 @@ def _rows(root: Path) -> Iterator[tuple[str, list[list[str]]]]:
         raise ClaimError(f"{STATUS_SOURCE}: 'sections' must be a non-empty list")
 
     seen: set[str] = set()
+    views: dict[str, object] | None = None
     for section in sections:
         name = section.get("name")
         capabilities = section.get("capabilities")
@@ -148,8 +155,45 @@ def _rows(root: Path) -> Iterator[tuple[str, list[list[str]]]]:
             if title in seen:
                 raise ClaimError(f"{STATUS_SOURCE}: {title!r} is graded by two rows")
             seen.add(title)
-            rows.append([title, status, " ".join(str(capability.get("note") or "").split())])
+            if status not in _STATES_WITHOUT_WORK and views is None:
+                views = tracker.all_views(root)
+            record = _record_for(
+                views, title, status, capability.get("record"), capability.get("note")
+            )
+            rows.append([
+                title,
+                status,
+                record,
+                " ".join(str(capability.get("note") or "").split()),
+            ])
         yield name, rows
+
+
+def _record_for(
+    views: dict[str, object] | None, title: str, status: str, record: object, note: object
+) -> str:
+    """The open ledger record a promised row points at, or the reason none is needed.
+
+    *views* is the ledger folded once for the whole source: a fold per row cost 70 s.
+
+    Raises:
+        ClaimError: a row that promises work names no record, names one the ledger does not
+            hold, or names one that is closed - the last is a row the tree already holds.
+    """
+    if status in _STATES_WITHOUT_WORK:
+        if status == "deferred" and not str(note or "").strip():
+            raise ClaimError(f"{STATUS_SOURCE}: {title!r} is deferred with no note saying why")
+        return "" if record is None else str(record)
+    if not isinstance(record, str) or not record.strip():
+        raise ClaimError(f"{STATUS_SOURCE}: {title!r} is {status} and names no record")
+    view = (views or {}).get(record)
+    if view is None:
+        raise ClaimError(
+            f"{STATUS_SOURCE}: {title!r} names {record}, which the ledger does not hold"
+        )
+    if str(getattr(view, "status", "")) == "closed":
+        raise ClaimError(f"{STATUS_SOURCE}: {title!r} names {record}, which is closed")
+    return record
 
 
 def render_status_view(root: Path) -> list[str]:

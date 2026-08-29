@@ -113,7 +113,7 @@ def test_check_names_the_view_when_a_source_row_moves_and_fix_repairs_it(
     _edit_source(
         work_repo,
         "- name: Projection drift gate run by CI\n    status: shipped",
-        "- name: Projection drift gate run by CI\n    status: building",
+        "- name: Projection drift gate run by CI\n    status: building\n    record: basicly-a3ab",
     )
 
     assert _run(work_repo, "--check") == 1
@@ -122,9 +122,9 @@ def test_check_names_the_view_when_a_source_row_moves_and_fix_repairs_it(
     assert "[status-view]" in err
 
     assert _run(work_repo, "--fix") == 0
-    assert "| Projection drift gate run by CI | building |" in (work_repo / STATUS_MD).read_text(
-        encoding="utf-8"
-    )
+    assert "| Projection drift gate run by CI | building | basicly-a3ab |" in (
+        work_repo / STATUS_MD
+    ).read_text(encoding="utf-8")
     assert _run(work_repo, "--check") == 0
 
 
@@ -240,3 +240,26 @@ def test_a_decision_records_own_status_column_is_not_read_as_a_grading() -> None
     assert decisions, "the decision-record index no longer carries an Id/Title header"
     assert any("accepted" in row[2] for row in decisions[0])
     assert "Status" in next(header for _, header, _ in tables if header[:2] == ["Id", "Title"])
+
+
+# ------------------------------------------------------ a promised row names an open record
+
+
+def test_a_row_that_promises_work_and_names_no_record_is_refused(
+    work_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The roadmap and the tracker disagreeing is the defect, so it cannot render."""
+    _edit_source(work_repo, "    record: basicly-jt0dgi\n", "")
+
+    assert _run(work_repo, "--check") == 1
+    assert "Both skill roots written by every skills command" in capsys.readouterr().err
+
+
+def test_a_row_naming_a_closed_record_is_refused_as_already_held(
+    work_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A closed record under a promised row is a row the tree already holds and nobody moved."""
+    _edit_source(work_repo, "    record: basicly-jt0dgi\n", "    record: basicly-askx4j\n")
+
+    assert _run(work_repo, "--check") == 1
+    assert "basicly-askx4j, which is closed" in capsys.readouterr().err
