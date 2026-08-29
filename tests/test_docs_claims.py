@@ -33,7 +33,6 @@ REPO = Path(__file__).resolve().parents[1]
 ARCHITECTURE_MD = "docs/architecture/architecture.md"
 SKILLS_README = ".basicly/core/skills/README.md"
 HOOKS_README = ".basicly/core/hooks/README.md"
-IMPLEMENTATION_PLAN = "docs/plan/implementation-plan.md"
 
 
 def _load_module():
@@ -104,17 +103,19 @@ def test_fix_scoped_to_one_block_leaves_the_other_documents_untouched(work_repo:
     The merge queue runs this against a stopped rebase, so a run that also rewrote a
     second document would leave it modified outside the conflict it was resolving.
     """
-    plan = work_repo / IMPLEMENTATION_PLAN
     skills = work_repo / SKILLS_README
-    current = plan.read_text(encoding="utf-8")
-    plan.write_text(current.replace("| Test files |", "| Test files (stale) |"), encoding="utf-8")
-    drifted = skills.read_text(encoding="utf-8").replace("| `tool-jq` |", "| `tool-nope` |")
-    skills.write_text(drifted, encoding="utf-8")
+    hooks = work_repo / claims.HOOKS_README
+    current = skills.read_text(encoding="utf-8")
+    skills.write_text(current.replace("| `tool-jq` |", "| `tool-nope` |"), encoding="utf-8")
+    drifted = hooks.read_text(encoding="utf-8").replace(
+        "| `pre-push-script` |", "| `pre-push-nope` |"
+    )
+    hooks.write_text(drifted, encoding="utf-8")
 
-    assert claims.main(["--fix", "--block", "plan-current-state", "--root", str(work_repo)]) == 0
+    assert claims.main(["--fix", "--block", "catalog-skills", "--root", str(work_repo)]) == 0
 
-    assert plan.read_text(encoding="utf-8") == current
-    assert skills.read_text(encoding="utf-8") == drifted
+    assert skills.read_text(encoding="utf-8") == current
+    assert hooks.read_text(encoding="utf-8") == drifted
 
 
 def test_an_unknown_block_name_is_refused_rather_than_checking_nothing(work_repo: Path) -> None:

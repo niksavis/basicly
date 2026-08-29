@@ -917,7 +917,7 @@ class WorktreeConfig:
     # must not be folded into `append_only_paths`.
     #
     # Keyed by path and not one repo-wide argv (basicly-3w51): the second artifact is a
-    # marked block in `docs/plan/implementation-plan.md`, which `basicly build` cannot
+    # marked block in `docs/architecture/status.md`, which `basicly build` cannot
     # write, so one command rebuilt one artifact and was a no-op for the other.
     regenerate_commands: dict[str, tuple[str, ...]] = field(default_factory=dict)
 

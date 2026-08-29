@@ -122,11 +122,11 @@ append_only_paths = []
 # single repo-wide command would have been a silent no-op.
 #
 # `--block` scopes the rebuild to that one marked region. The rest of the file is
-# hand-authored ladder prose, and the merge queue refuses to stage a path the rebuild
+# hand-authored prose, and the merge queue refuses to stage a path the rebuild
 # left a conflict marker in, so a lane's prose edit is never discarded by this entry.
 [worktree.regenerate_commands]
 ".basicly/generated-manifest.json" = ["basicly", "build"]
-"docs/plan/implementation-plan.md" = [
+"docs/architecture/status.md" = [
   "uv",
   "run",
   "python",

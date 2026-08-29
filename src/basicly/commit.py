@@ -217,7 +217,7 @@ def scope_candidate(path: str) -> str | None:
     Package modules name themselves (``src/basicly/loop.py`` → ``loop``), a test
     names its subject (``tests/test_loop.py`` → ``loop``), catalog content names
     its kind (``.basicly/core/hooks/...`` → ``hooks``), and a doc names its file
-    (``docs/requirements/work-tracker.md`` → ``work-tracker``). The website names
+    (``docs/architecture/conventions.md`` → ``conventions``). The website names
     itself rather than its files, because ``index`` is not a scope anyone reads.
     Loose root files argue for nothing rather than for a made-up scope.
     """

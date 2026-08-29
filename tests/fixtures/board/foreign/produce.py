@@ -11,7 +11,7 @@ because a foreign producer runs on a stranger's interpreter: no syntax newer tha
 and **one exception class per handler** rather than the paren-free `except A, B:` form
 `python-guidelines` prescribes here.
 
-`docs/requirements/harness-board.md` is the design; `README.md` beside this file states the
+The design is basicly-k6tpep's record; `README.md` beside this file states the
 maintenance cost of keeping a second producer alive.
 """
 

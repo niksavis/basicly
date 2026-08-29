@@ -11,8 +11,8 @@ repository that grades a capability.
 
 The view is **derived**. A functional section of the architecture document describes every
 `shipped` row, and every other row names what is missing. The view carries **no date**. The
-project does not run to a schedule, so status is the only honest axis. `docs/plan/` holds
-the **order** in which the unshipped rows get built.
+project does not run to a schedule, so status is the only honest axis. The work tracker
+holds the **order** in which the unshipped rows get built: `basicly session start`.
 
 **The vocabulary is the one closed set defined in architecture §2**, which also states the
 evidence each state requires. It is not restated here: the renderer reads that table, and a

@@ -160,7 +160,7 @@ def test_the_store_is_reached_only_from_its_own_seam_modules() -> None:
     )
 
     assert branching == [
-        # The board's reference producer, and C12 of `docs/requirements/harness-board.md`
+        # The board's reference producer, and C12 of the board design (basicly-k6tpep)
         # names it the one permitted exception: every *consumer* reads a snapshot document
         # and nothing else, while the producer reads the store because that is its whole job
         # (basicly-rn0o.2).

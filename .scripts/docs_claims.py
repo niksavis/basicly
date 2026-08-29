@@ -52,7 +52,7 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
-from basicly import cli, config
+from basicly import cli
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # `.scripts` is deliberately not a package, so the sibling below is importable only
@@ -74,7 +74,6 @@ from docs_claim_sources import (  # noqa: E402
     subparsers,
 )
 
-IMPLEMENTATION_PLAN = "docs/plan/implementation-plan.md"
 SKILLS_README = ".basicly/core/skills/README.md"
 HOOKS_README = ".basicly/core/hooks/README.md"
 
@@ -213,49 +212,6 @@ def _catalog_hooks(root: Path) -> list[str]:
     return _table(["Hook", "Stage", "Manager", "Script", "Purpose"], rows)
 
 
-def _plan_current_state(root: Path) -> list[str]:
-    """The plan's "current state" figures, measured instead of typed.
-
-    Only facts that are **structural and slow-moving** belong here. A count of test
-    *functions* was tried and removed: it moves on every test commit, so it rewrote
-    this document from unrelated lanes for a figure the plan never reasons about.
-    Only **structural** facts belong here — things that move when the code moves, so
-    the block is stale exactly when the plan is. Tracker counts are deliberately
-    absent even though they are equally derivable: the committed ledger changes
-    several times per session, so generating them would rewrite this document during
-    unrelated lanes and dirty the base checkout a landing refuses on. ``br`` answers
-    those on demand, which is why the plan now asks rather than asserts.
-
-    The verify row is the one that proves the block is worth its weight: the count is
-    per-mode, so any single hand-written "an N-check verify" is wrong for at least one
-    mode. The plan claimed an 8-check ``full`` declaring nine; it is 15 declared.
-    """
-    # Through the engine's loader, not the raw array: a check a lane declared in its own
-    # `basicly.d` fragment is as declared as one in basicly.toml, and counting only the array
-    # would understate the row the moment the mechanism is used (basicly-ef7t).
-    checks = config.load_verify_config(root).checks
-    if not checks:
-        raise ClaimError("basicly.toml: [[verify.checks]] must be a non-empty list")
-
-    modes: dict[str, int] = {}
-    for check in checks:
-        for mode in check.modes:
-            modes[mode] = modes.get(mode, 0) + 1
-
-    test_files = sorted((root / "tests").glob("test_*.py"))
-
-    rows = [
-        ["Engine modules (`src/basicly/*.py`)", str(len(sorted((root / SRC_DIR).glob("*.py"))))],
-        ["Test files", str(len(test_files))],
-        ["`[[verify.checks]]` declared", str(len(checks))],
-        *(
-            [f"…of which run in `--mode {mode}`", str(count)]
-            for mode, count in sorted(modes.items())
-        ),
-    ]
-    return _table(["Measure", "Value"], rows)
-
-
 # ------------------------------------------------------------------- assertions
 
 
@@ -391,7 +347,6 @@ BLOCKS: tuple[Block, ...] = (
     Block("always-on-sizes", ARCHITECTURE_MD, _always_on_sizes),
     Block("catalog-skills", SKILLS_README, _catalog_skills),
     Block("catalog-hooks", HOOKS_README, _catalog_hooks),
-    Block("plan-current-state", IMPLEMENTATION_PLAN, _plan_current_state),
     Block("status-view", status_view.STATUS_MD, status_view.render_status_view),
     Block("layering-contract", ARCHITECTURE_MD, layers.render_layering_contract),
 )

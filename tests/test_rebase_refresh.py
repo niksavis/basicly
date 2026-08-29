@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     import pytest
 
 _BEAD = "basicly-e2mz.35"
-_PATH = "docs/plan/implementation-plan.md"
+_PATH = "docs/architecture/status.md"
 
 
 class _Proc:

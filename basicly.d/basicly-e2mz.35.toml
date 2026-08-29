@@ -1,6 +1,6 @@
 # The landing names the generated file a lane may not repair (basicly-e2mz.35). A lane
 # whose diff only *adds* a file leaves `plan-current-state` counting a tree that no longer
-# exists, and `docs/plan/implementation-plan.md` is outside every lane's scope, so the lane
+# exists, and the regenerated document is outside every lane's scope, so the lane
 # is refused for a defect it is fenced out of and spends its whole rework budget finding
 # out. `rebase.refresh_generated` (8cf8b1e0) already rebuilds it before the gate; what was
 # missing is the other half of the criteria — when the rebuild does *not* make the file

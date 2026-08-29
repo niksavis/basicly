@@ -133,7 +133,7 @@ def test_only_tracker_jsonl_paths_are_in_scope() -> None:
     """Paths are legitimate content everywhere else, so a wider scan would be noise."""
     assert scan._TRACKER_GLOB.match(".basicly/ledger/events-0001.jsonl")
     assert scan._TRACKER_GLOB.match(".basicly/ledger/events-2026q1.jsonl")
-    assert not scan._TRACKER_GLOB.match("docs/requirements/harness-board.md")
+    assert not scan._TRACKER_GLOB.match("docs/architecture/status.md")
     assert not scan._TRACKER_GLOB.match("tests/fixtures/issues.jsonl")
     # The derived folds are not scanned: they are rebuilt from the log and git-ignored,
     # so a hit in one is a hit the log already carries.

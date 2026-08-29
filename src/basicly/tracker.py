@@ -138,7 +138,7 @@ def _refuse_in_read_only(fault: str) -> None:
 
 # --- The owned tracker: dual write, then the flip (basicly-vkh0.19) ----------
 #
-# Steps 3 and 4 of the cutover in `docs/requirements/work-tracker.md` §5. *Where* the
+# Steps 3 and 4 of the cutover the kit's `SPEC.md` records. *Where* the
 # owned store is and *what* a write becomes in it are :mod:`basicly.owned_store`
 # and :mod:`basicly.mirror`; what stays here is *when* either applies, because
 # this module is the one place the engine spawns br and therefore the only place
@@ -726,7 +726,7 @@ def dependency_edge(dep: object) -> tuple[str, str] | None:
 
     One reader for both spellings, so a new call site cannot re-acquire the bug by
     picking a spelling. Carried as a requirement on the replacement, which must
-    emit exactly one spelling (`docs/requirements/work-tracker.md` R2, basicly-vkh0.6).
+    emit exactly one spelling (the kit's `SPEC.md`, basicly-vkh0.6).
     """
     if not isinstance(dep, dict):
         return None

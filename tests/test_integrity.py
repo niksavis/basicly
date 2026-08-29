@@ -36,7 +36,7 @@ PATH_LEVELS = (
     ("src/basicly/integrity.py", "L2", "engine-internal"),
     (".scripts/wired_or_deleted.py", "L2", "engine-internal"),
     # Prose and tests.
-    ("docs/requirements/harness-board.md", "L1", "docs-and-tests"),
+    ("docs/architecture/status.md", "L1", "docs-and-tests"),
     ("tests/test_integrity.py", "L1", "docs-and-tests"),
     ("README.md", "L1", "docs-and-tests"),
     ("site/index.html", "L1", "docs-and-tests"),
@@ -68,7 +68,7 @@ def test_path_spelling_does_not_change_the_level(spelling: str) -> None:
 
 def test_scope_takes_the_highest_level_any_declared_path_holds() -> None:
     """One consumer surface in the scope makes the whole package a consumer change."""
-    assignment = integrity.assign(["docs/plan/implementation-plan.md", "src/basicly/cli.py"])
+    assignment = integrity.assign(["docs/architecture/conventions.md", "src/basicly/cli.py"])
     assert assignment.level == "L3"
     assert assignment.rule == "cli-surface"
     assert "src/basicly/cli.py" in assignment.reason

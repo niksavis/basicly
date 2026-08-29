@@ -768,7 +768,7 @@ def test_preflight_reports_the_artifacts_a_landing_rebuilds_instead_of_bouncing(
             children=(("c.1", "open"), ("c.2", "open")),
             generated={
                 ".basicly/generated-manifest.json": ("basicly", "build"),
-                "docs/plan/implementation-plan.md": ("docs_claims.py", "--fix"),
+                "docs/architecture/status.md": ("docs_claims.py", "--fix"),
             },
         ),
     )
@@ -781,7 +781,7 @@ def test_preflight_reports_the_artifacts_a_landing_rebuilds_instead_of_bouncing(
     # One line per path with its own rebuild: a repo-wide command would have read as
     # if it rebuilt both, and for one of them it rebuilt nothing (basicly-3w51).
     assert "`.basicly/generated-manifest.json` <- `basicly build`" in out
-    assert "`docs/plan/implementation-plan.md` <- `docs_claims.py --fix`" in out
+    assert "`docs/architecture/status.md` <- `docs_claims.py --fix`" in out
 
 
 def test_preflight_says_the_rebuild_check_is_inert_when_nothing_is_declared(

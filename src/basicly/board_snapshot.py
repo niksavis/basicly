@@ -2,8 +2,8 @@
 
 **This is basicly's reference producer, not *the* producer.** The contract is
 `.basicly/core/schemas/board-snapshot.schema.json`, and a foreign harness that writes three
-keys into a file is as conformant as this module. `docs/requirements/harness-board.md` is the
-design; what follows is only what a reader of *this* module has to know.
+keys into a file is as conformant as this module. The design is basicly-k6tpep's record;
+what follows is only what a reader of *this* module has to know.
 
 **Why this exists rather than ``supervise.observe()``, measured.** One ``observe()`` folds the
 whole event log **93 times** and parses 554,280 events to answer one question, at 6.1 s. That

@@ -3741,7 +3741,7 @@ purpose.
 are a cited surface](#3-section-numbers-are-a-cited-surface) makes a number stable for as
 long as its subject exists, and retiring §37 leaves a gap rather than renumbering §38 to §40
 — which is the right end state. What blocks it is not this document: `status.md`,
-`backlog.md`, `docs/plan/implementation-plan.md` and four modules under `src/` cite §37 or
+`backlog.md` and four modules under `src/` cite §37 or
 the removed requirements document by name, and the sweep that clears them is
 `basicly-vkh0.42.6`'s remainder. Removing the section before them would leave a set of
 citations resolving to nothing.
@@ -4423,8 +4423,8 @@ the home for a new requirement (`01-solution-design.md` on the branch). Measured
 the loop: teardown deletes that branch, observed live on `basicly-vkh0.30`, and the one
 requirement that lived on a branch decayed 283 commits behind main before it was rescued
 (the harness-board document records its own move). So the branch-home clause is superseded
-by measurement, not restated: `docs/requirements/` survives as the gated home for a
-requirement not yet built, and `basicly-vkh0.42.12` owns its format.
+by measurement, not restated: `docs/requirements/` is deleted as well (basicly-jebd22), a
+requirement not yet built is a ledger record, and `basicly-vkh0.42.12` owns its format.
 
 ### D-27 · Everything is a plain, git-tracked file
 

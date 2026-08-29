@@ -437,8 +437,6 @@ waiver_count = 2
 # the same diff, for the reason [tool.module_size.frozen] states: leaving the higher number
 # licenses regrowth back to it for free.
 [tool.docs_citations.unverifiable]
-"docs/plan/implementation-plan.md" = 6
-"docs/requirements/harness-board.md" = 9
 
 [tool.code_citations]
 binding_count = 3
@@ -519,7 +517,7 @@ binding_count = 3
 "src/basicly/skill_source.py" = 2
 "src/basicly/skills.py" = 2
 "src/basicly/supervise.py" = 1
-"src/basicly/tracker.py" = 2
+"src/basicly/tracker.py" = 1
 "tests/test_artifact_record.py" = 1
 "tests/test_capability_proof.py" = 1
 "tests/test_catalog_source.py" = 1

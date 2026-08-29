@@ -233,12 +233,11 @@ orchestrator in control of the tracker, an agent-writable catalog, a maintained 
 an external database or daemon, and agent-to-agent messaging. The reasons are in
 [architecture — non-goals](docs/architecture/architecture.md#non-goals).
 
-The authoritative copy of this table — with the evidence each status requires and a
-pointer per row — is
-[architecture — status](docs/architecture/architecture.md#status-built-partial-designed).
-The order the unbuilt rows get built in, with dependencies and exit criteria, is
-[`docs/plan/implementation-plan.md`](docs/plan/implementation-plan.md). Both are
-updated as features land.
+The authoritative copy of this table — with the evidence each status requires — is
+[`docs/architecture/status.md`](docs/architecture/status.md), and it is updated in the
+change that lands a capability. The order the unbuilt rows get built in is the work
+tracker: `uv run basicly session start` prints it, and the ledger it reads is committed
+with the code.
 
 ## Contributing
 

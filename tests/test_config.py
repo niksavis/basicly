@@ -216,7 +216,7 @@ def test_worktree_config_reads_each_generated_path_with_its_own_rebuild(tmp_path
     (tmp_path / CONFIG_FILE).write_text(
         "[worktree.regenerate_commands]\n"
         '".basicly/generated-manifest.json" = ["basicly", "build"]\n'
-        '"docs/plan/implementation-plan.md" = ["docs_claims.py", "--fix"]\n',
+        '"docs/architecture/status.md" = ["docs_claims.py", "--fix"]\n',
         encoding="utf-8",
     )
 
@@ -224,7 +224,7 @@ def test_worktree_config_reads_each_generated_path_with_its_own_rebuild(tmp_path
 
     assert config.regenerate_commands == {
         ".basicly/generated-manifest.json": ("basicly", "build"),
-        "docs/plan/implementation-plan.md": ("docs_claims.py", "--fix"),
+        "docs/architecture/status.md": ("docs_claims.py", "--fix"),
     }
 
 
