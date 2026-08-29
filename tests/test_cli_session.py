@@ -224,7 +224,7 @@ def test_the_json_payload_carries_every_section_the_tables_print(
     assert _run(repo, monkeypatch, "--json") == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert sorted(payload) == ["blocked", "decisions", "grants", "ready", "tracker"]
+    assert sorted(payload) == ["blocked", "decisions", "grants", "handover", "ready", "tracker"]
     assert payload["tracker"] == {"present": True, "records": 3, "ready": 2, "blocked": 1}
     assert payload["ready"]["records"][0]["record"] == "basicly-aaa"
     assert payload["blocked"]["records"][0]["record"] == "basicly-bbb"
@@ -262,3 +262,52 @@ def test_a_section_with_nothing_in_it_says_so_rather_than_drawing_an_empty_table
     assert "ledger: 1 record," in out
     assert "ready: none" in out and "blocked: none" in out
     assert "Ready (" not in out and "Blocked (" not in out
+
+
+def _note(repo: Path, record: str, text: str, at: float) -> None:
+    """Append one prose note stamped *at*, the clock injected so the order is the test's."""
+    kit = tracker.kit(repo)
+    kit.events.append(
+        tracker.ledger_dir(repo),
+        [kit.events.Draft(record, kit.events.KIND_NOTE, {"text": text})],
+        clock=lambda: at,
+    )
+
+
+def test_the_newest_handover_note_is_printed_first_whichever_root_carries_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The line the file existed to carry: where the last session stopped (D-42).
+
+    Newest by the event stamp, so the note on the alphabetically earlier record wins here
+    and a reader that took canonical order or the text's own date would print the other.
+    """
+    repo = _seeded(tmp_path)
+    _with_decisions(repo)
+    _note(repo, "basicly-ccc", f"{cli.HANDOVER_MARKER} 2026-08-27] stopped on ccc", at=1000.0)
+    _note(repo, "basicly-aaa", "a plain note, not a handover", at=3000.0)
+    _note(repo, "basicly-aaa", f"{cli.HANDOVER_MARKER} 2026-08-28] stopped on aaa", at=2000.0)
+
+    assert _run(repo, monkeypatch, "--json") == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["handover"]["note"]["record"] == "basicly-aaa"
+    assert payload["handover"]["note"]["text"].endswith("stopped on aaa")
+
+    assert _run(repo, monkeypatch) == 0
+    out = capsys.readouterr().out
+    assert out.index("Handover (basicly-aaa,") < out.index("Ready (")
+    assert "stopped on ccc" not in out
+
+
+def test_a_ledger_with_no_handover_note_says_so_and_names_the_skill_that_writes_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Absence is a finding with a remedy, not a blank the reader fills from memory."""
+    repo = _seeded(tmp_path)
+    _with_decisions(repo)
+
+    assert _run(repo, monkeypatch) == 0
+
+    out = capsys.readouterr().out
+    assert "handover: none" in out and "session-finish" in out
+    assert "Handover (" not in out

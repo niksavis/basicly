@@ -548,11 +548,21 @@ def all_comment_texts(repo_root: Path) -> dict[str, list[str]]:
     Best-effort, matching :func:`all_records`: every consumer here is evidence or
     telemetry, never a gate.
     """
+    rows = all_comment_rows(repo_root)
+    return {record: [str(row[COMMENT_TEXT_KEY]) for row in found] for record, found in rows.items()}
+
+
+def all_comment_rows(repo_root: Path) -> dict[str, list[dict]]:
+    """:func:`all_comment_texts` with the stamp kept: rows of ``text`` and ``created_at``.
+
+    For the reader that must order prose across records rather than within one — the
+    newest session handover (`cli._latest_handover`) is wherever it was written, and the
+    stamp is the only thing that says which of two roots' notes came later.
+    """
     try:
-        rows = _owned_comment_rows(repo_root)
+        return _owned_comment_rows(repo_root)
     except TrackerDivergenceError, OSError, ValueError:
         return {}
-    return {record: [str(row[COMMENT_TEXT_KEY]) for row in found] for record, found in rows.items()}
 
 
 # --- Handoff artifacts, as the typed event that carries them (D-36) ---------

@@ -29,10 +29,12 @@ to the same log; a per-worktree ledger would lose every write a lane made at tea
 
 **Opening a session, start with the one report that takes no id.** It composes the
 reads below with the live grants and the architecture decisions the tree does not yet
-hold, every line derived — which is what retired the hand-written handover:
+hold, every line derived — which is what retired the hand-written handover. Its first
+line is the newest note tagged `[session handover <date>]`, on whichever root the last
+session closed on (the `session-finish` skill writes it):
 
 ```sh
-basicly session start                     # ready, blocked, live grants, decision targets
+basicly session start                     # last handover, ready, blocked, live grants, decision targets
 ```
 
 **Then the per-question reads.** These resolve the ledger's location themselves, so you

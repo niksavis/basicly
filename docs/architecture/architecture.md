@@ -1340,7 +1340,7 @@ is `basicly catalog dump`.
 
 | Command | Behaviour |
 | --- | --- |
-| `basicly session start [--json] [--rows N]` | Read-only orientation for a session, with every line derived and none authored: the ranked ready set carrying the ranking policy that produced it, what is blocked and by what, every live grant with what is left of it where this checkout can see the spend, and the decision records whose status in [38. Decision records](#38-decision-records) is not `accepted`. An empty ledger says so rather than drawing an empty frame. Never writes, always exits zero |
+| `basicly session start [--json] [--rows N]` | Read-only orientation for a session, with every line derived and none authored: the newest note tagged `[session handover <date>]` on whichever record carries it (where the last session stopped, or that no session said), the ranked ready set carrying the ranking policy that produced it, what is blocked and by what, every live grant with what is left of it where this checkout can see the spend, and the decision records whose status in [38. Decision records](#38-decision-records) is not `accepted`. An empty ledger says so rather than drawing an empty frame. Never writes, always exits zero |
 | `basicly worktree create\|list\|cleanup` | Sibling worktree lifecycle: create provisions dependencies and installs the gates; cleanup removes the worktree and its merged branch |
 | `basicly worktree merge\|merge-queue\|bg-isolation` | Land one finished worktree on its base; land several serially in a given topological order; turn off the host's own background isolation so the loop isolates itself |
 | `basicly verify [--mode fast\|full\|staged] [--issue ID] [--gate NAME] [--fix]` | Run the consumer's configured checks for a mode and optionally record a tracker gate; the fix flag applies mechanical repairs first |
@@ -4840,7 +4840,7 @@ permanent design surface ([1. What this is](#1-what-this-is-and-what-it-fixes), 
 
 **Decision.** A session is prepared by running `basicly session start`, which derives every
 line it prints from the ledger, the run records and this document's own §38 index. The
-hand-written `HANDOVER.md` is retired rather than shrunk, and no gate replaces it.
+hand-written handover file is retired rather than shrunk, and no gate replaces it.
 
 **Because.** The question this record had to answer first was which parts of a handover are
 derivable and which are irreducibly human. The 2026-08-19 handover was classified section by

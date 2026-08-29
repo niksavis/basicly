@@ -27,6 +27,7 @@ from . import (
     catalog_lint,
     catalog_verify,
     claude_settings,
+    comment_rows,
     commit,
     contention,
     decisions,
@@ -810,6 +811,13 @@ _GRANT_MARKER = f"{policy.MARKER} grant"
 # authority on whether a grant is live.
 _CLOSED_STATUS = "closed"
 
+# The tag a session writes at the head of its closing note on the root it worked, and the
+# discriminator `_latest_handover` reads. The producer writes it (`session-finish`), so an
+# untagged note is a note and not a handover that the report missed. D-42's rule made
+# concrete: what the next session needs is written to the ledger, on a record, stamped by
+# the event that carries it — never to a file beside the repository.
+HANDOVER_MARKER = "[session handover"
+
 # Rows per table before the report says how many more there are and which command prints
 # them. The ready set alone is 208 records [measured 2026-08-28, `basicly tracker ready`],
 # which is a backlog dump rather than an orientation.
@@ -839,6 +847,26 @@ def _decision_targets(repo_root: Path) -> dict[str, Any]:
         "decisions": len(rows),
         "records": targets,
     }
+
+
+def _latest_handover(repo_root: Path) -> dict[str, Any]:
+    """The newest note tagged :data:`HANDOVER_MARKER`, on whichever record carries it.
+
+    Where the last session stopped: the one line the derived report could not print, and
+    the reason a hand-written file survived D-42 as a pointer at this note. Newest by the
+    event's own stamp rather than by any date the text claims, so a session that closed
+    on a different root than the one before still wins.
+    """
+    latest: dict[str, Any] | None = None
+    for record, rows in tracker.all_comment_rows(repo_root).items():
+        for row in rows:
+            text = str(row[tracker.COMMENT_TEXT_KEY])
+            if not text.startswith(HANDOVER_MARKER):
+                continue
+            stamp = str(row[comment_rows.STAMP_KEY])
+            if latest is None or stamp > latest["at"]:
+                latest = {"record": record, "at": stamp, "text": text}
+    return {"present": latest is not None, "marker": HANDOVER_MARKER, "note": latest}
 
 
 def _live_grants(repo_root: Path, views: dict[str, Any]) -> dict[str, Any]:
@@ -898,11 +926,26 @@ def _session_report(repo_root: Path) -> dict[str, Any]:
         return report
     ready = tracker_query.ready_report(repo_root)
     blocked = tracker_query.blocked_report(repo_root)
+    report["handover"] = _latest_handover(repo_root)
     report["ready"] = ready
     report["blocked"] = blocked
     report["grants"] = _live_grants(repo_root, views)
     report["tracker"].update({"ready": ready["count"], "blocked": blocked["count"]})
     return report
+
+
+def _say_session_handover(report: dict[str, Any]) -> None:
+    """Where the last session stopped, before anything ranked — or that no session said."""
+    handover = report["handover"]
+    note = handover["note"]
+    if note is None:
+        ui.say(
+            f"handover: none - no note starts with `{handover['marker']}`; "
+            "the `session-finish` skill writes one on the root the session worked"
+        )
+        return
+    ui.say(f"Handover ({note['record']}, {note['at']}) - `basicly tracker show {note['record']}`")
+    ui.say(f"        {note['text']}")
 
 
 def _say_session_ready(report: dict[str, Any], rows: int) -> None:
@@ -1020,6 +1063,7 @@ def cmd_session_start(args: argparse.Namespace) -> int:
         f"ledger: {records} record{'' if records == 1 else 's'}, "
         f"{report['tracker']['ready']} ready, {report['tracker']['blocked']} blocked"
     )
+    _say_session_handover(report)
     _say_session_ready(report, args.rows)
     _say_session_blocked(report, args.rows)
     _say_session_grants(report)
