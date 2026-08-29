@@ -63,7 +63,9 @@ def repo(tmp_path: Path) -> Path:
     (root / "docs" / "how-to" / "upgrade.md").write_text(
         f"Run `uvx --from git+https://x/basicly@v{CURRENT} basicly install`.\n", encoding="utf-8"
     )
-    (root / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n", encoding="utf-8")
+    (root / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [Unreleased]\n\nSummary.\n", encoding="utf-8"
+    )
     # A stand-in generator: the real one has its own suite (test_release_changelog),
     # so what matters here is that release invokes it with the tag and date.
     (root / release.CHANGELOG_SCRIPT).write_text(
@@ -240,9 +242,8 @@ def test_every_refusal_is_reported_from_one_run(repo: Path) -> None:
 def real_generator(repo: Path) -> Path:
     """Swap the stand-in generator for the real one and commit it.
 
-    Assembly is judged end to end here: what a consumer reads is the *dated* section,
-    and the fragments only reach it through the generator's promotion of
-    ``[Unreleased]``. A stand-in that skips the promotion would let a broken fold pass.
+    What a consumer reads is the *dated* section, reached only through the generator's
+    promotion of ``[Unreleased]``; a stand-in that skips it lets a broken fold pass.
     """
     source = Path(__file__).resolve().parents[1] / release.CHANGELOG_SCRIPT
     (repo / release.CHANGELOG_SCRIPT).write_text(
@@ -314,7 +315,7 @@ def test_a_curated_unreleased_body_publishes_alongside_the_fragments(
     """The transition promise: editing the changelog by hand is never broken."""
     repo = real_generator
     (repo / release.CHANGELOG_FILE).write_text(
-        "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- what a human wrote by hand\n",
+        "# Changelog\n\n## [Unreleased]\n\nSummary.\n\n### Fixed\n\n- what a human wrote by hand\n",
         encoding="utf-8",
     )
     _write_fragments(repo, {"lane-9.fixed.md": "- what a lane recorded\n"})
@@ -495,7 +496,7 @@ def test_three_lanes_each_recording_a_changelog_entry_all_land_without_a_conflic
 
 def test_the_shared_anchor_the_fragments_replace_does_still_conflict(repo: Path) -> None:
     """The positive control: a harness that never conflicts proves nothing about the fix."""
-    anchor = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- an existing entry\n"
+    anchor = "# Changelog\n\n## [Unreleased]\n\nSummary.\n\n### Fixed\n\n- an existing entry\n"
     (repo / release.CHANGELOG_FILE).write_text(anchor, encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "chore: seed the anchor")

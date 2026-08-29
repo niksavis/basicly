@@ -126,31 +126,20 @@ instructions: |
   git push origin vX.Y.Z
   ```
 
-  The tag push triggers `.github/workflows/release.yml`, which extracts the tag's
-  `CHANGELOG.md` section, appends the pinned `uvx` install line, and creates the
-  GitHub release. Confirm the run went green and the release body matches that
-  section.
+  The tag push triggers `.github/workflows/release.yml`, which builds the page from
+  the tag's `CHANGELOG.md` section - the summary, the counts, the link, the
+  `BREAKING` entries, the pinned `uvx` install line - and creates the GitHub release.
+  Confirm the run went green and the page reads under 6,000 characters.
 
-  ### 3. Replace the release page with the highlights
+  ### 3. Nothing - the page is built from the summary you wrote before the cut
 
-  The workflow publishes the whole section, and a section assembled from a hundred
-  fragments is a wall nobody reads: v0.10.0 published 124,999 characters where
-  v0.9.0's page, rewritten by hand, is 3,050. The changelog is the record; the
-  release page is the summary of it. Until `basicly-xsdvp6` makes the workflow do
-  this, write the page yourself once the run is green, and keep the `## Install`
-  block the workflow appended:
-
-  ```sh
-  gh release view vX.Y.Z --json body --jq .body > /tmp/page.md   # keep its ## Install block
-  gh release edit vX.Y.Z --notes-file /tmp/page.md               # after rewriting the rest
-  ```
-
-  The shape, from v0.9.0 and v0.10.0: the heading, one paragraph saying what the
-  release is, one line with the entry counts per category and a link to the
-  section in `CHANGELOG.md` at the tag, a `### Breaking` list carrying every entry
-  whose bold lead says `BREAKING`, then three to five themed `###` sections of bold
-  one-line highlights. Under 6,000 characters. Nothing from `### Fixed` unless it
-  changes what a consumer must do.
-
-  This step is not in a gate, so it is the one most often forgotten: the v0.10.0
-  page went out as the wall first. Do it in the same session as the push.
+  The workflow publishes the **summary**, never the section: the prose under
+  `## [Unreleased]` above its first `###` heading, the entry counts per category, a
+  link to the section at the tag, every entry whose bold lead starts with `BREAKING`,
+  and the pinned install line (`.scripts/generate_release_notes.py`, basicly-xsdvp6).
+  So the summary is written **before** `basicly release`, and the command refuses a
+  cut whose `[Unreleased]` carries none. Write it as v0.9.0's page reads: one
+  paragraph on what this release changes for a consumer, then themed bullets, under
+  ~6,000 characters, every highlight naming a fragment's record id. Never edit the
+  page afterwards with `gh release edit`; a page that disagrees with its changelog
+  section is the defect this step replaced.

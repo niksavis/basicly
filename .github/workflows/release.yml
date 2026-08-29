@@ -101,46 +101,14 @@ jobs:
         run: |
           tag_name='${{ steps.resolve_tag.outputs.tag_name }}'
 
-          if [ ! -f CHANGELOG.md ]; then
-            echo "CHANGELOG.md not found; cannot create release notes" >&2
-            exit 1
-          fi
-
-          awk -v tag="${tag_name}" '
-            BEGIN { in_section=0; found=0 }
-            $1 == "##" && $2 == tag && $3 == "-" {
-              if ($4 !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
-                print "Release heading for " tag " must include ISO date: ## " tag " - YYYY-MM-DD" > "/dev/stderr"
-                exit 2
-              }
-              in_section=1
-              found=1
-            }
-            in_section && $1 == "##" && $2 != tag {
-              exit
-            }
-            in_section {
-              print
-            }
-            END {
-              if (!found) {
-                print "No changelog section found for " tag " in CHANGELOG.md" > "/dev/stderr"
-                exit 1
-              }
-            }
-          ' CHANGELOG.md > release-section.md
-
-          cp release-section.md release-notes.md
-
-          # Append a copy-paste install command pinned to this tag, so every
-          # release page shows how to install exactly this version (basicly-vwlm).
-          repo_url="https://github.com/${GITHUB_REPOSITORY}"
-          {
-            printf '\n## Install\n\n'
-            printf '```sh\n'
-            printf 'uvx --from git+%s@%s basicly install\n' "${repo_url}" "${tag_name}"
-            printf '```\n'
-          } >> release-notes.md
+          # The page is the summary, the changelog is the record (basicly-xsdvp6): the
+          # author's prose above the first category heading, the entry counts, a link to
+          # the section at the tag, every BREAKING entry, and the pinned install line
+          # (basicly-vwlm). Nothing else - v0.10.0 published the whole 2,326-line section.
+          # Stdlib only, so it runs on the runner's python3 before uv is set up.
+          python3 .scripts/generate_release_notes.py \
+            --tag "${tag_name}" \
+            --repo-url "https://github.com/${GITHUB_REPOSITORY}" > release-notes.md
 
       - uses: astral-sh/setup-uv@v7
 

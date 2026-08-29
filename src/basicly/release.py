@@ -561,6 +561,22 @@ def _release_note_reasons(repo_root: Path) -> tuple[str, ...]:
     )
 
 
+def _summary_missing(lines: list[str]) -> str | None:
+    """The refusal when nothing the author wrote sits above ``[Unreleased]``'s first ``###``."""
+    bounds = _unreleased_bounds(lines)
+    if bounds is None:
+        return None
+    for line in lines[bounds[0] + 1 : bounds[1]]:
+        if line.startswith("### "):
+            break
+        if line.strip() and not line.startswith("Delta: "):
+            return None
+    return (
+        f"{UNRELEASED_HEADING} carries no summary above its first `###` heading; write the "
+        "release highlights there - the release page publishes that summary, not the section"
+    )
+
+
 def _changelog_lines(repo_root: Path) -> list[str]:
     """The changelog's lines, or none at all when the file does not exist yet."""
     path = repo_root / CHANGELOG_FILE
@@ -621,6 +637,8 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
             "tracker-commit-msg gate would reject the release commit"
         )
     reasons.extend(_fragment_reasons(repo_root))
+    if (summary := _summary_missing(_changelog_lines(repo_root))) is not None:
+        reasons.append(summary)
     reasons.extend(_release_note_reasons(repo_root))
     reasons.extend(unexercised_capabilities(repo_root))
     return tuple(reasons)
