@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.11.0 - 2026-08-29
+
+Delta: v0.10.0..v0.11.0
+
 The ledger is the one store a session reads and writes. `basicly session start` derives the
 whole orientation - the newest handover note, the ranked ready set, what is blocked and by
 what, each live grant with what is left of it, and the architecture decisions the tree does
@@ -31,6 +35,111 @@ engine again (basicly-seu7rx).
 (basicly-xsdvp6); a spend forecast that missed can be banked as history instead of turning
 `main` red (basicly-helmej); a dispatch starts on Windows when the agent is an npm `.cmd`
 shim (basicly-dufmjm); the tracker kit ships its own specification (basicly-vkh0.42.13).
+
+### Added
+
+- **`ledger-fsck` now reports a label written one character at a time.** A record's `labels`
+  field is stored as a list or as a comma-joined string, and reading the second with a `for`
+  turns `phase-2` into seven labels no `--label` selection matches. The kit's split now lives
+  in one place and `fsck` reports a log carrying the class as `broken` (basicly-0cpn51).
+
+- **`basicly session start` prepares a session from the ledger.** A read-only report whose
+  every line is derived: the ranked ready set with the policy that ranked it, what is blocked
+  and by what, each live grant with what is left of its budget, and the architecture decisions
+  the tree does not yet hold. An empty ledger says so (basicly-askx4j).
+
+- **A spend forecast that missed by an order of magnitude can be banked as history.** The
+  live test over the whole ledger turned `main` red for every landing whenever one lane's
+  recorded forecast missed, three times. `spend-accuracy` is now a verify check with a
+  `[tool.spend_accuracy.frozen]` table that tracks, like release-notes (basicly-helmej).
+
+- **A leaked disclosure can be withdrawn from the tracker ledger, and only that path may rewrite
+  it.** `events.withdraw` takes one event's free text out, keeps every value the fold reads by
+  name, re-mints the id and appends a `withdrawn` event whose time and reason the fold reports.
+  `fsck` now reports any line edited in place by anything else (basicly-vkh0.34).
+
+- **The tracker kit ships its own specification.** `.basicly/core/kit/tracker/SPEC.md` states
+  what the store guarantees - ordering, the lock, forward compatibility, provenance,
+  portability - so a kit-only install no longer holds 126 section pointers into a document it
+  never received, and the `kit-boundary` refusal names a path the consumer has
+  (basicly-vkh0.42.13).
+
+- **The release page is the summary, and a cut without one is refused.** The workflow
+  publishes the prose above `[Unreleased]`'s first `###`, the entry counts, a link to the
+  section, every `BREAKING` entry and the install line (`.scripts/generate_release_notes.py`);
+  `basicly release` refuses a changelog with no summary (basicly-xsdvp6).
+
+### Changed
+
+- **The always-on layer names the session entry and exit.** Every projected agent file opens
+  a session with `basicly session start` and ends it with a `[session handover <date>]` note
+  on the root record, so a fresh agent on a fresh machine reads the ledger first.
+  `CONTRIBUTING.md` says the same to a human (basicly-1ciu6w).
+
+- **`basicly session start` prints the newest session handover first.** The note tagged
+  `[session handover <date>]` on whichever record carries it, newest by the event stamp, so
+  where the last session stopped is read from the ledger. The hand-written `HANDOVER.md` is
+  deleted and no longer ignored, and the `session-finish` skill writes the handover as that
+  note (basicly-mwccxi).
+
+- **Every catalog source declares its always-on token cost.** 64 sources (23 fragments, 41
+  skills) carry `token_cost:` with the figures `basicly catalog lint` measured, so the
+  declaration the schema requires from 0.11.0 is present before the window closes and drift
+  past tolerance now fails the lint (basicly-puohe0).
+
+- **Four operating traps move from one agent's memory into the skills.** The detached
+  supervisor launch and parallel-by-default (`harness-loop`), the scratch-clone release proof
+  (`release-process`), the 2x wall-clock rule (`test-discipline`), and ratchet headroom before
+  placement (`python`) (basicly-scmpfp).
+
+### Fixed
+
+- **A status or a field can be written back to a value it once held.** Event ids are content
+  digests, so `update <id> --status open` after `deferred` re-minted the id of the `open` event
+  every record is created with: the command reported success and the record still read
+  `deferred`. A write whose fact the record has moved off now records, and a skipped one exits
+  non-zero (basicly-bj8kks).
+
+- **A concurrent tracker write is no longer lost to the identity scrub.** `scrub_ledger`
+  rewrote an event log whole - read, temp file, rename - holding no lock, so an event appended
+  in that window vanished silently: the rename succeeded and the log still parsed. It now takes
+  the same `LedgerLock` an append takes (basicly-cqu7i3).
+
+- **A dispatch starts on Windows when the agent is a `.cmd` shim.** `runner.run` handed a
+  bare command name to `Popen`, and Windows resolves that only to `.exe`, so `claude.cmd` as
+  npm installs it raised `WinError 2`. The runner now resolves the command through
+  `shutil.which` against the dispatch environment's `PATH` before it spawns (basicly-dufmjm, basicly-xyx556).
+
+- **A tracker `fsck --rebuild` that would lose records is refused, not reported clean.** The
+  shrink guard could not fire through `fsck.rebuild`, which unlinks every derived file before
+  writing, so a ledger whose logs had vanished rebuilt to a 0-record snapshot over a 2-record
+  one and exited 0. It now compares before it deletes, and a refusal removes nothing. (basicly-dx2ngn)
+
+- **The projected loop guidance now matches the engine.** The always-on phase list called
+  `teardown` and `retro` phases and omitted `validate`; eleven claims across five loop skills
+  were corrected against the code - the board's default POST route, `--all-default-roots`,
+  `chore(beads)`, and the one preflight `VERDICT` line that joins every blocker (basicly-seu7rx).
+
+- **The catalog lint tests no longer depend on the version in the tree.** Nine tests built a
+  catalog with no `token_cost:` and expected a clean lint, which held only while the 0.11.0
+  window was open; every clean-lint fixture now declares a cost and the window test reads its
+  channel from the rule (basicly-ve1h0l).
+
+- **`basicly tracker write` no longer says `recorded:` for a write the ledger did not keep.**
+  The seam now answers which facts landed, the command names those instead of echoing the argv,
+  and a write the log does not hold on a re-read - or one that could not take the lock - fails
+  saying what was not recorded (basicly-vkh0.50).
+
+- **A tracker write the ledger already held is reported, not crashed or claimed as recorded.**
+  The kit CLI subscripted an empty append list and raised `IndexError`; it now reports
+  `"appended": false` with the record it named. `basicly verify --issue` and the rubric gate
+  discarded the seam's return and printed `recorded` either way; both now say the held result
+  stands (basicly-wu4w8v).
+
+- **`basicly tracker write` can now say a re-record is deliberate.** A field driven to A, to B
+  and back to A folded to B: the third write digested to the first write's event id and was
+  skipped. `--again` records it a second time - not idempotent, so every run appends. Four
+  verbs that silently dropped an unreadable flag now refuse it (basicly-z9bggw).
 
 ## v0.10.0 - 2026-08-28
 
