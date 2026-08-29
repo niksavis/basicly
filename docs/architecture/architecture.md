@@ -197,13 +197,11 @@ Two terms of that contract.
    exists.
 2. **A citation from code names a number this document currently defines.**
 
-`[TARGET]` **A check should hold the second term.** `.scripts/check_docs_citations.py`
-walks `docs/**/*.md` for `file:line` references into code, and exits non-zero on a stale
-one. Nothing walks code for `§N` references into a document. That asymmetry is why a
-stale `§` citation sits in the tree with every gate green, and why every citation the
-probe above returns has to move in the same change that moves a heading number.
-`.scripts/check_code_citations.py` now walks code for those references (`code-citations` in
-`basicly verify`), and `.scripts/check_docs_citations.py` walks the documents.
+**A check holds both terms.** `.scripts/check_docs_citations.py` walks `docs/**/*.md` for
+`file:line` references into code and exits non-zero on a stale one; `.scripts/check_code_citations.py`
+walks code for `§N` references into this document (`code-citations` in `basicly verify`),
+with the unresolved population frozen so it may only fall. Every citation the probe above
+returns still has to move in the same change that moves a heading number.
 
 ## 4. System context
 
@@ -762,7 +760,8 @@ advertises it.
 | `.agents/skills/` | the open-standard root the other families discover |
 
 `[TARGET]` **Both roots are mandatory, and every command that writes one writes both.** A
-root that only some commands write is how a second root drifts unnoticed.
+root that only some commands write is how a second root drifts unnoticed. Filed as
+basicly-jt0dgi.
 
 The tree does not do this today. `skills.resolve_skill_roots` writes
 `DEFAULT_SKILL_ROOTS[0]` alone unless the caller passes `--all-default-roots` or an
@@ -1278,7 +1277,8 @@ is the offline staleness gate.
 
 ## 22. The CLI surface
 
-`[TARGET]` **This section belongs in a CLI reference, not in an architecture document.**
+`[TARGET]` **This section belongs in a CLI reference, not in an architecture document**
+(basicly-mfavrh).
 It is the largest single section here, it is a per-command behaviour table, and it goes
 stale on every landing. It stays only because two `docs_claims` assertions
 (`cli-commands`, `cli-subcommands`) and two of the four `tests/test_docs_drift.py`
@@ -1979,7 +1979,7 @@ An adapter is one `RunnerSpec` record. The table below is the whole contract. Th
 built-in adapters are constructed in code and carry every field.
 
 `[TARGET]` **A consumer adds a fourth agent family from configuration alone, without a
-code change.** Configuration does not reach that yet. A `[[runner.agents]]` entry accepts
+code change** (basicly-uhfmcq). Configuration does not reach that yet. A `[[runner.agents]]` entry accepts
 thirteen of these keys, and [20. Configuration](#20-configuration) refuses an
 unrecognised key outright, so a consumer who copies a field the entry does not accept
 loses the whole file. The **From** column says which is which
@@ -2512,7 +2512,7 @@ Three rules hold it.
    caller's state untouched rather than guessing.
 
 `[TARGET]` **Every kit module carries a declared surface, and the kit is inside the scope
-of this specification.** The tree exempts it today. That exemption was written as prose,
+of this specification** (basicly-pohtvt). The tree exempts it today. That exemption was written as prose,
 nothing read it, and an issue that closed somewhere else discharged it. **A gate written
 as prose is not a gate.** Audit scheduling and specification coverage are different
 things, and a specification may not exempt part of the system from being specified.
@@ -2562,7 +2562,7 @@ number, a kind, an actor, a timestamp, a payload, and a carried totals cache.
 this project's own, never a foreign tool's payload shape. See
 [D-22](#d-22--the-tracker-vocabulary-is-this-projects-own).
 
-`[TARGET]` **The vocabulary below is the specification, and the tree holds ten of its eighteen kinds.** `note`, `checkpoint` and `artifact` landed with `basicly-vkh0.30`, which also made `comment` a permanent alias of `note`; `decision`, `scope`, `binding`, `wait`, `grant`, `rework`, `sizing` and `classification` are unbuilt, and the marker-body alias of [32.3.2](#3232-the-readers-alias-table-and-the-marker-family-it-must-not-derive) is a reader change nothing has made.
+`[TARGET]` **The vocabulary below is the specification, and the tree holds ten of its eighteen kinds** (basicly-q7etjd builds the rest). `note`, `checkpoint` and `artifact` landed with `basicly-vkh0.30`, which also made `comment` a permanent alias of `note`; `decision`, `scope`, `binding`, `wait`, `grant`, `rework`, `sizing` and `classification` are unbuilt, and the marker-body alias of [32.3.2](#3232-the-readers-alias-table-and-the-marker-family-it-must-not-derive) is a reader change nothing has made.
 
 **One kind per consumer that selects on it.** That is the rule which closes the set, and it
 is the rule that decides every argument about whether two markers are one kind. Two markers
@@ -2848,7 +2848,7 @@ disposition, because the tolerant direction for a gate is the restrictive one.
 ### 32.7 Redaction
 
 `[TARGET]` **No committed artifact carries a machine-specific path, username or hostname.**
-Three rule sets enforce it. The identity half does not hold today, and
+Three rule sets enforce it. The identity half does not hold today (basicly-vkh0.44), and
 [32.7.1](#3271-the-identity-rule-covers-one-person-and-the-ledger-carries-another) is the
 measurement.
 
@@ -2935,7 +2935,8 @@ one prior exception was taken by an explicit owner decision.
 
 ### 32.8 How a kind rename lands on a log nothing may rewrite
 
-`[TARGET]` **This subsection specifies the migration. The tree has none of it.**
+`[TARGET]` **This subsection specifies the migration. The tree has none of it, and none is
+planned: no kind is being renamed. It is the rule the first rename follows, not open work.**
 
 **A rename of an event kind is not a rename.** The log is append-only, it is committed to
 git, and a repair is a corrective append
@@ -3117,7 +3118,7 @@ multi-megabyte log puts it in every clone — compressed, and not removable, bec
 removal from an append-only log is the history rewrite
 [32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) forbids.
 
-`[TARGET]` **One payload is now outside all four.** The first rule below forbids the cap from
+`[TARGET]` **One payload is now outside all four** (basicly-8lrybo). The first rule below forbids the cap from
 cutting a field the fold reads, so once the bound became a property of the kind, `field`.`value`
 and every `created` payload key became stored **whole and bounded by nothing** — `value` was cut
 at 4096 bytes before, wrongly, and is cut at nothing now. That is exactly the growth this
@@ -3585,7 +3586,9 @@ The failure it was built for was measured: five issues closed in one session aga
 selector matching nothing, and every one of their real regressions existed under another
 name.
 
-`[TARGET]` **The gate is a floor and it is still incomplete.** A demonstration that names a
+`[TARGET]` **The gate is a floor and it is still incomplete, and completing it is deferred**
+(`status.yaml`, the plan gate row: running an admitted demonstration is not a bounded read).
+A demonstration that names a
 non-pytest command is admitted at every rung, because only pytest is rebuilt from the
 allowlist. A command that always succeeds therefore still passes. Shelling a free-form
 demonstration string is not a bounded read, which is why the current gate refuses to try; the
@@ -4088,7 +4091,7 @@ decision keeps its record and gains a `superseded by` line.
 | D-31 | The two ladders are named, not lettered | accepted | §9 |
 | D-32 | Pre-commit rather than a compiled hook runner | accepted, with four reopen triggers | §16 |
 | D-33 | An unknown configuration key is refused unconditionally | accepted | §20 |
-| D-34 | One kind for prose, and typed kinds for machine state | **proposed** | §32.3 |
+| D-34 | One kind for prose, and typed kinds for machine state | accepted, ten of eighteen kinds built | §32.3 |
 | D-35 | The external tracker binary is transitional, not a component | **discharged** at the flip | §37 |
 | D-36 | A handoff artifact is a typed ledger event, bounded by derivability rather than by a byte cap | accepted, supersedes D-28 | §33 |
 | D-37 | The factory has a light mode and a dark mode | accepted, light dispatch path unbuilt | §29 |
@@ -4493,7 +4496,7 @@ and the cloud agent keep only the root instructions file.
 ### D-30 · The status view is generated from one source
 
 **Status: accepted** 2026-08-17. Landed for one of the three surfaces; the other two are
-`[TARGET]`.
+`[TARGET]` (basicly-abcbng renders the two hand-kept copies).
 
 **Decision.** The capability status view has exactly one source, and a generated block
 renders it into every surface that shows it. No other document grades a capability.
@@ -4580,8 +4583,9 @@ The message names the engine's version and says that an upgrade is one of the tw
 
 ### D-34 · One kind for prose, and typed kinds for machine state
 
-**Status: proposed.** `[TARGET]` **This decision is not implemented.** Filed as
-`basicly-vkh0.30`.
+**Status: accepted; ten of the eighteen kinds are built.** `basicly-vkh0.30` landed `note`,
+`checkpoint` and `artifact` and the permanent `comment` alias; basicly-q7etjd builds the rest
+and basicly-vkh0.39 retires the folded record's `comments` key.
 
 **Decision.** The event log carries exactly one kind for prose a person wrote, named
 `note`, and a first-class typed kind for every machine marker the fold reads by name. The
@@ -4685,9 +4689,10 @@ recovery path for a corrupted store erases the ledger the phase derivation reads
 ### D-36 · A handoff artifact is a typed ledger event, bounded by derivability rather than by a byte cap
 
 **Supersedes [D-28](#d-28--a-handoff-artifact-travels-as-a-comment-marker-never-as-a-ledger-append).**
-`[TARGET]` **This decision is not implemented.** `basicly-pp7q4i` writes the typed event, and
-it is now the only open prerequisite: `basicly-vbl35a` discharged the cap's half on 2026-08-19
-at `6435977d`, and the `artifact` kind declares there that it stores its payload whole.
+**Implemented.** `basicly-pp7q4i` writes the typed `artifact` event and `basicly-vbl35a`
+discharged the cap's half on 2026-08-19 at `6435977d`; the kind declares that it stores its
+payload whole. What remains is [33](#33-handoff-artifacts-and-their-contracts)'s own finding —
+five of eight kinds have no consumer that can refuse them — and basicly-mmmrqd owns it.
 
 **Decision.** A handoff artifact is one `artifact` event in the owned ledger, carrying its
 kind as a typed field and its body under a payload key the per-event cap does not name. It
