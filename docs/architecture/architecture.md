@@ -202,7 +202,8 @@ walks `docs/**/*.md` for `file:line` references into code, and exits non-zero on
 one. Nothing walks code for `§N` references into a document. That asymmetry is why a
 stale `§` citation sits in the tree with every gate green, and why every citation the
 probe above returns has to move in the same change that moves a heading number.
-[`backlog.md`](backlog.md) B2 is the item that closes it.
+`.scripts/check_code_citations.py` now walks code for those references (`code-citations` in
+`basicly verify`), and `.scripts/check_docs_citations.py` walks the documents.
 
 ## 4. System context
 
@@ -490,7 +491,7 @@ breaks something a consumer's own code or configuration is pinned to.
 **The engine still writes `L0` to `L3`** in the classification marker, in the plan
 gate's vocabulary check, in `basicly.toml` and in every `--autonomy` flag value. Those
 spellings are a frozen consumer surface, so a rename needs a deprecation window. The
-rename is filed in [`backlog.md`](backlog.md).
+rename is filed as basicly-3iaw0x.
 
 [36.5](#365-integrity-assignment) covers the rule that assigns a level and how much of
 the assignment anything reads back.
@@ -3741,7 +3742,7 @@ purpose.
 are a cited surface](#3-section-numbers-are-a-cited-surface) makes a number stable for as
 long as its subject exists, and retiring §37 leaves a gap rather than renumbering §38 to §40
 — which is the right end state. What blocks it is not this document: `status.md`,
-`backlog.md` and four modules under `src/` cite §37 or
+four modules under `src/` cite §37 or
 the removed requirements document by name, and the sweep that clears them is
 `basicly-vkh0.42.6`'s remainder. Removing the section before them would leave a set of
 citations resolving to nothing.
@@ -4536,7 +4537,7 @@ Integrity levels are `docs-and-tests`, `engine`, `consumer-surface`.
 | `local` / `engine` / `contract` | integrity | `local` already names the per-machine overlay, `.basicly-local` and `basicly.local.toml` |
 
 **Consequence.** The engine still writes `L0` to `L3` on a frozen consumer surface, so the
-rename in code needs a deprecation window. It is filed in [`backlog.md`](backlog.md).
+rename in code needs a deprecation window. It is filed as basicly-3iaw0x.
 
 ### D-32 · Pre-commit rather than a compiled hook runner
 

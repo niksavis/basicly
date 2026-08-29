@@ -120,8 +120,8 @@ All three are long-stable.
 `sequenceDiagram` participant `Loop`, which collides with mermaid's `loop` keyword. A parser
 caught it; review did not.
 
-**No gate parses these blocks.** `backlog.md` B3 is the item that would close that, and it
-needs a dependency addition, so it is a human decision.
+**The `mermaid` check in `basicly verify` parses every block** (`.scripts/check_mermaid.py`),
+so a block that does not render refuses the commit.
 
 ### 6.1 Five diagram types have nothing to show here
 
@@ -198,13 +198,12 @@ first shipped unit. An attempt to make it both is what left that path missing.
 | Explanation | the decision records, `architecture.md` §38 | why one question was settled the way it was, with the measurement and its date; a research document is absorbed into a record and deleted, its last commit cited | anyone changing a decision |
 | Order | the work tracker: `basicly session start`, `basicly tracker ready` | which records get built next, and why in that order | whoever is planning the next release |
 
-**Four companion files sit beside the architecture document, and none is reference
+**Three companion files sit beside the architecture document, and none is reference
 material.**
 
 | File | What it holds | Why it is not in the document |
 | --- | --- | --- |
 | [`status.md`](status.md) | the capability status view | a status row changes on every landing. A specification must not go stale on a schedule it does not control |
-| [`backlog.md`](backlog.md) | defects found while writing the document | their real home is the tracker. The file is a holding pen, and each entry names the bead that should replace it |
 | this file | how the document is produced | it describes the document, not the system |
 | the rewrite changelog, if one is in flight | what a rewrite pass changed | it describes an edit, not the system |
 
