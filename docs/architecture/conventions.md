@@ -195,8 +195,8 @@ first shipped unit. An attempt to make it both is what left that path missing.
 | Tutorial | `docs/tutorial/` | one guaranteed-success path, install to shipped unit, no options offered | a consumer on day one |
 | How-to | `docs/how-to/` | the recurring operations, one page per task | a consumer with a job to do |
 | Reference | `architecture.md`, plus `CONTRIBUTING.md` | the system as specified | anyone implementing or debugging |
-| Explanation | `docs/requirements/`, `docs/research/` | why one question was settled the way it was | anyone changing a decision |
-| Order | `docs/plan/` | which unshipped rows get built next, and why in that order | whoever is planning the next release |
+| Explanation | the decision records, `architecture.md` §38 | why one question was settled the way it was, with the measurement and its date; a research document is absorbed into a record and deleted, its last commit cited | anyone changing a decision |
+| Order | the work tracker: `basicly session start`, `basicly tracker ready` | which records get built next, and why in that order | whoever is planning the next release |
 
 **Four companion files sit beside the architecture document, and none is reference
 material.**

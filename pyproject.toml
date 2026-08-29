@@ -439,15 +439,6 @@ waiver_count = 2
 [tool.docs_citations.unverifiable]
 "docs/plan/implementation-plan.md" = 6
 "docs/requirements/harness-board.md" = 9
-"docs/research/2026-07-26-sota-review.md" = 3
-# A dated design record imported from a harness branch that outlived the board it designed
-# (basicly-rn0o.6 cites it by name). Its 11 *stale* citations were repaired rather than banked,
-# because that table is closed: each `file:line` became the symbol it meant, which is what a
-# line number was standing in for and does not drift. These 9 name no symbol at all, so there
-# is nothing to repoint them to without rewriting sentences in a record of what was decided on
-# 2026-08-14. Banked at its arriving count, which may only fall.
-"docs/research/2026-08-14-harness-board-design.md" = 9
-"docs/research/2026-08-17-archify-visualization.md" = 2
 
 [tool.code_citations]
 binding_count = 3

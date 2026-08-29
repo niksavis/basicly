@@ -4096,6 +4096,8 @@ decision keeps its record and gains a `superseded by` line.
 | D-40 | A tier resolves by declared vendor order, verified at install | accepted, partly built | §17 |
 | D-41 | The authority order over design documents | **withdrawn** — both ranked documents are deleted | §1 |
 | D-42 | A session is prepared by a derived command, and the handover retires | accepted | §22 |
+| D-43 | The plugin paradigm: four refusals, one adoption, two lessons | accepted | §6, §19, §31, §34 |
+| D-44 | The field review of 2026-07-26: leads kept, one matched, eight gaps placed, rejections recorded | accepted | §7, §8 |
 
 ### D-01 · Authority is asymmetric
 
@@ -4872,6 +4874,111 @@ not have: open defects that sit on the operator's own path. Nothing on a record 
 one from any other bug, and a gate bound on an absent marker cannot tell a defect from a
 record that predates the marker — so that query needs a discriminator its own producer
 writes, and it is unbuilt until one exists.
+
+### D-43 · The plugin paradigm: four refusals, one adoption, two lessons
+
+**Decision.** Of the five proposals the DeepSeek harness (`dsh`) and the Cordis paradigm put
+to this design, one is adopted and four are refused. Adopted: a catalog source declares its
+always-on token cost and `basicly catalog lint` fails a declaration that drifts past its
+tolerance (P5; built as `catalog_token_cost`, mandatory from 0.11.0 — basicly-e2mz.48.3,
+basicly-puohe0). Refused: an effect-inverse or undo layer over git or the filesystem (P1); a
+dynamic component runtime mounted from configuration (P2); a `before`-content field on the
+change-summary artifact (P3); "no privileged core, every row replaceable from configuration"
+(P4). The narrow half of P4 that survives — a command printing the composed catalog selection
+with each item's origin, as `dsh --dump-config` prints the tree it boots — is basicly-8kqkxy.
+
+**Because, one measurement per refusal**, taken at `dsh-v0.1.1-rc.2` on 2026-08-22 and
+unchanged from rc.8:
+
+- P1: the reference implementation tracks no filesystem effect itself — 0 `.effect(` sites in
+  `fs-local` against 91 mutation syscalls, and `backup: null` on the one slot its platform
+  offers. The append-only log and the bounce-on-conflict landing ([27](#27-work-isolation-and-one-landing))
+  already give what a LIFO inverse gives Cordis, by withholding an irreversible emission
+  rather than compensating for it afterwards.
+- P2: a plugin is code mounted from configuration, which abandons [5](#5-the-two-planes-and-the-two-seams)'s
+  rule that `.basicly/` holds no engine code and breaks [34](#34-module-structure-and-the-layering-contract)'s
+  exhaustive layering contract. `vendor/` saw 0 commits in the measured range against 418 in
+  `packages/`: the dynamic core is not where the harness itself moves.
+- P3: `FsWriteOutcome.before` is presentation-only in `dsh`. A field with no consumer that can
+  refuse is the anti-pattern [33](#33-handoff-artifacts-and-their-contracts) names.
+- P4: measured false as an absolute — three bootstrap rows are privileged in the industrial
+  application.
+
+**Two lessons adopted from the same source.** A budget counter advances only on units
+attributable to the automatic work, and is derived from the durable log by validated replay —
+sequentiality checked, a malformed record failing rather than repaired — never incremented by
+the spender; that is [32](#32-the-work-tracker)'s independent-fold invariant applied to spend,
+and basicly-rhzr6d carries it. And every exemption list is machine-validated against the
+population it exempts from — an entry naming a member that no longer exists fails, an entry
+with a blank justification fails; `.scripts/check_waivers.py` does this for the size waivers
+and basicly-3enm1o audits the rest.
+
+**One instrument kept for a proposal not made.** If plugin loading is ever proposed, the
+eviction probe is a namespace-sentinel weakref; the two cheaper probes report success while
+the evicted module's body keeps executing.
+
+**What the harness does not offer.** It forecasts no cost: it caps a round count, and its
+token, currency and wall-time limits are declared deferrals with no consumer. Nothing in it
+would have caught this repository's 3-to-11x under-forecast (basicly-yjmxjz).
+
+**Source.** `docs/research/2026-08-17-deepseek-harness.md` at commit `78962968`, deleted by
+the absorption this record is (basicly-e2mz.46): `git show
+78962968:docs/research/2026-08-17-deepseek-harness.md`. It settled eight open questions over
+three passes (2026-08-19, -20, -22) and its figures reproduce from `git archive` of the pinned
+tags.
+
+### D-44 · The field review of 2026-07-26: leads kept, one matched, eight gaps placed, rejections recorded
+
+**Decision.** Eleven repositories were read at pinned revisions on 2026-07-26, and every pin
+was re-checked on 2026-08-22: eighteen of eighteen reachable, fourteen moved, none
+force-pushed, so every finding stays readable at its revision. Four leads are kept as design
+commitments, one is retired as matched, the eight ranked gaps each have a place, and the
+proposals below are rejected with a reason so they are not re-proposed.
+
+**Leads this design keeps.** Enforcement at commit time — a hook that refuses the commit is a
+different guarantee from a check that fails the build afterwards, so the claim is the stage,
+not the existence of gates (`oh-my-agent` has gates in CI and no hooks). Phase derived from
+the tracker and never remembered — a controller re-dispatching completed work after
+compaction, `superpowers`' most expensive observed failure, is structurally impossible here.
+The engine disposes and agents propose, autonomy grants included; only `gsd-core` has a
+comparable notion. An owned tracker ([32](#32-the-work-tracker), [37](#37-the-external-tracker-binary-and-its-removal)).
+
+**Retired as a lead.** Agent-agnostic projection from one catalog is table stakes:
+`oh-my-agent` projects `.agents/` into each runtime's layout with a CI drift check. What
+remains ours is narrower and named singly — the invocation axis, the path-scoped rules tier,
+and commit-time drift enforcement.
+
+**The eight gaps, and where each stands on 2026-08-29.**
+
+| Gap, review §6 | State |
+| --- | --- |
+| 6.1 no routing check | built: `catalog lint` routing evals with a rank-1 floor |
+| 6.2 always-on baseline past a cliff | measured (basicly-agzx.1): recall 98% claude, 93% copilot against 17% and 6% controls; the cliff is refuted, adherence during work is unmeasured |
+| 6.3 no path-scoped tier | built ([12](#12-targets-and-the-always-on-files)) |
+| 6.4 stall detection, gate taxonomy, severity | stall watchdog built (basicly-kjc5.25); gate types are a `status.yaml` row; a severity is required on every judged finding |
+| 6.5 reviewer and validator prompts not hardened | carried by the role definitions ([30](#30-roles-at-dispatch)) and the eleven records on the FORCE stance and doubt signal |
+| 6.6 no trend instrument | basicly-si89mh |
+| 6.7 no tutorial or how-to layer | built (basicly-imnu.2) |
+| 6.8 smaller | capability tier per family and provenance on edges: `status.yaml` rows; effort per skill: basicly-3j0hv7; prefix-stable dispatch bundles: basicly-ejdm; deliberate-shortcut convention: basicly-u4ifjh; atomic worktree teardown: basicly-vv0ixx; bare ids in human output and a refiner tier: not planned |
+
+**Rejected, beyond the non-goals in [8](#8-non-goals).** `<EXTREMELY-IMPORTANT>` shouting and
+"you have no choice" framing — the negation anti-pattern, unnecessary where a hook enforces
+the same thing. Adopting Dolt or `beads_rust` as the store — an unowned binary, and a
+clean-room boundary on the second. Copying prose or prompts from any reviewed repository —
+licence hygiene. The five claims the review made about this tree that the tree later
+falsified were retired in its Appendix B and are not carried here.
+
+**Three further research documents were deleted at the same commit**, each absorbed where its
+consumer is: the harness-board solution design of 2026-08-14 into basicly-k6tpep's approved
+design and the `harness-board/v1` contract in `board_schema`, with its seven open questions as
+a note on that record; the archify evaluation of 2026-08-17 as a disposition note on the same
+record — rejected for the board, because its JSON IR is a closed schema with no field for a
+status, count or state, and adopt-later narrowly for architecture illustration; the
+documentation-routes probe of 2026-08-19 into the `interface-facts` skill's route table.
+
+**Source.** `docs/research/2026-07-26-sota-review.md` at commit `78962968`: `git show
+78962968:docs/research/2026-07-26-sota-review.md`. Appendix A holds the provenance and licence
+of every source, Appendix B the 2026-08-22 re-measurement.
 
 ---
 
