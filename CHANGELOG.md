@@ -6,6 +6,32 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+The ledger is the one store a session reads and writes. `basicly session start` derives the
+whole orientation - the newest handover note, the ranked ready set, what is blocked and by
+what, each live grant with what is left of it, and the architecture decisions the tree does
+not hold yet - so the hand-written `HANDOVER.md` is deleted, and every projected agent
+surface opens a session with that command and closes it with a handover note on the root
+record. The tracker's write path is made honest along the way, and this release page is the
+first one built from its own summary.
+
+**The tracker tells the truth about a write.** `basicly tracker write` names the facts that
+landed and fails naming what did not (basicly-vkh0.50, basicly-wu4w8v); a value can return
+to one it once held, deliberately with `--again` (basicly-bj8kks, basicly-z9bggw); a
+concurrent append survives the identity scrub (basicly-cqu7i3); a leaked disclosure can be
+withdrawn, and `fsck` reports any other in-place edit, a rebuild that would lose records, and
+a label split into characters (basicly-vkh0.34, basicly-dx2ngn, basicly-0cpn51).
+
+**A session starts from the ledger.** `basicly session start` (basicly-askx4j) prints the
+newest `[session handover]` note first (basicly-mwccxi); the always-on layer and
+`CONTRIBUTING.md` name it as the entry (basicly-1ciu6w); four operating traps move from one
+agent's memory into the skills (basicly-scmpfp); the projected loop guidance matches the
+engine again (basicly-seu7rx).
+
+**Release and factory.** The release page is the summary and a cut without one is refused
+(basicly-xsdvp6); a spend forecast that missed can be banked as history instead of turning
+`main` red (basicly-helmej); a dispatch starts on Windows when the agent is an npm `.cmd`
+shim (basicly-dufmjm); the tracker kit ships its own specification (basicly-vkh0.42.13).
+
 ## v0.10.0 - 2026-08-28
 
 Delta: v0.9.0..v0.10.0
