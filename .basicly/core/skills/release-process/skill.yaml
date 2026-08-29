@@ -53,6 +53,18 @@ instructions: |
   uv run basicly release <next-version> --issue <record-id> --dry-run
   ```
 
+  **The dry run checks preconditions, not the commit** (basicly-vwh3aq, open). The
+  assembled tree differs from the working tree — fragments deleted, version bumped,
+  projections re-stamped — and only the commit gates see it; a dry run reported zero
+  blocking reasons twice on 2026-08-28 while the real commit was refused twice. Until
+  that record lands, prove the release in a scratch clone before handing anyone the
+  command: clone, `uv sync --group dev`, copy `node_modules` from base, apply the
+  release steps, `git add -A`, `uv run pre-commit run --hook-stage pre-commit`, then
+  `uv run pytest -q`. Zero modified files after the hooks is part of the pass: the
+  framework fails a hook that edits a file even at exit 0. The whole suite is part of
+  it too: the workflow checks out the tag, so a test fixed one commit later never
+  reaches it.
+
   Do **not** clear a refusal by running the named tool by hand: that mints a witness
   for a capability the gate never observed working, which is the defect the
   engine-side witness replaced. Fix it by running the mode that declares the check,

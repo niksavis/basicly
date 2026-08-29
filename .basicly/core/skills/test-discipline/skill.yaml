@@ -40,6 +40,11 @@ instructions: |
     test — fix or quarantine it, never mask it with a blind retry.
   - When you fix a bug, add the regression test that would have caught it first, and
     watch it fail before the fix so you know it exercises the defect.
+  - Wait for the condition, never for a duration: poll the predicate with a generous
+    timeout so the assertion says the thing happened, not when. Where elapsed time is
+    the claim, measure it on a monotonic clock, and set any wall-clock cap to clear the
+    slowest runner in the CI matrix by 2x — a 3.0 s cap measured 0.48 s locally and
+    3.1 s on windows-latest, and was a flake generator, not a flake (basicly-7aler3).
 
   ## Set up the condition the code actually reads
 

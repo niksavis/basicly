@@ -384,7 +384,12 @@ checkpoints still hold.
 ## Many lanes at once — `preflight` first, then `supervise`
 
 `loop run` drives one bead. The factory's multi-lane path is a different pair of
-commands over an epic, and it is what a parallel run actually uses:
+commands over an epic, and it is what a parallel run actually uses. **It is the
+default, not an option to ask about** (owner, 2026-08-18): there is no upper limit on
+lanes or agents, only a human may set one, and cost is bounded by sizing the work,
+never by running fewer lanes. The binding constraint is isolation — two or fewer
+agents in the base checkout, every further one in its own worktree, because the
+whole-tree ratchets refuse every commit once base carries two lanes' edits.
 
 ```sh
 basicly loop preflight <epic>    # read-only: would a pass start, and what would it cost
@@ -442,6 +447,20 @@ the ceiling to protect.
   `supervise` both exit non-zero at any checkpoint, which is not a failure.
 - Every grant, checkpoint and answer writes a tracker marker, which dirties the
   ledger and makes the next landing refuse on a dirty base. Commit it between steps.
+
+### Start it where no tool ceiling can reach it
+
+A round runs 20 to 40 minutes; an agent's shell tool kills a background job at its own
+ceiling (600 s on one host), and a supervisor killed mid-round takes its lanes with it
+(2026-08-28: three lanes, dirty worktrees, ~25M tokens). Start it detached, in a plain
+foreground call, and read the log — `^routed:`, `[merged]`, `^blocked:`, `supervise exit=`:
+
+```sh
+setsid nohup uv run basicly loop supervise <epic> --max-passes 3 > <log> 2>&1 < /dev/null & disown
+```
+
+Commit the ledger before any relaunch; a killed process committed nothing.
+`--detach` (basicly-uhrji9) retires this shell line when it lands.
 
 ### Ending a pass on purpose — `--max-passes`, or `stop`
 

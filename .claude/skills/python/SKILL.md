@@ -61,6 +61,22 @@ double *fills*:
   in `tests/test_decompose.py`, which is fed `_FakeBr`, `_FakeBrShow`, and a
   bare `lambda`.
 
+## Measure headroom before you place code
+
+Two ratchets gate every module and pull opposite ways: `module-size` refuses growth on
+a module at its frozen token baseline, and `comment-density` refuses a prose share
+over its cap, so trimming a docstring to pay one raises the other. Paying them after
+the code is written is the slowest order (four successive trims on one file, measured
+2026-08-16). Before writing a line, measure every file the change will touch:
+
+```sh
+uv run python .scripts/headroom.py <file> [<file> ...]   # tokens left, prose points left
+```
+
+A file with under ~200 tokens left wants the extraction decided now, not after the
+gate refuses. A new module is never free: it needs `tests/test_<module>.py` for the
+naming gate, a layer in `.importlinter`, and a `git add` before pytest can import it.
+
 ## Cross-platform shell-out (fails only on Windows CI)
 
 Two subprocess mistakes pass every local POSIX run and surface *only* on Windows
