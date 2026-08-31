@@ -7,10 +7,10 @@ which conflicts with the harness's own sibling ``<repo>.worktrees/`` isolation
 Code the guard must be ``none`` — the harness provides isolation itself.
 
 This module also projects the catalog's ``manager: claude`` hook specs into the
-``hooks`` section of the same file: Claude Code agent hooks gate at *tool time*
-(a PreToolUse command exiting 2 blocks the tool call), which is how the
-protect-generated guard stops an agent from hand-editing projected files before
-any commit-time gate could see the damage.
+``hooks`` section of the same file. Some gate at *tool time* (a PreToolUse command
+exiting 2 blocks the tool call), which is how the protect-generated guard stops an
+agent from hand-editing projected files before any commit-time gate could see the
+damage; a SessionStart one only adds context.
 
 Values are written to the *committed* ``.claude/settings.json`` (the team-wide
 default that ships with the repo). Per Claude's verified settings precedence
@@ -46,17 +46,18 @@ HOOKS_KEY = "hooks"
 # spellings of the same contract would drift.
 PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
 HOOK_INTERPRETER = "uv run --no-project --no-python-downloads python"
-PRE_TOOL_USE_KEY = "PreToolUse"
 # Settings event per manifest stage; a spec's `stage` picks its section.
 #
-# Two of the 31 events Claude Code documents at 2.1.226, and deliberately so [D37].
-# Widening to all 31 was refused on the argument this repo already makes about dead
-# definitions: an unconsumed stage is a surface to keep true against a vendor that
-# moves, bought for nothing. **A stage arrives with the catalog source that uses
-# it** — `test_every_declared_agent_hook_event_has_a_catalog_consumer` enforces that
-# and will fail on a key added ahead of its consumer.
+# Three of the events Claude Code documents, and deliberately so [D37]. Widening to all
+# of them was refused on the argument this repo already makes about dead definitions: an
+# unconsumed stage is a surface to keep true against a vendor that moves, bought for
+# nothing. **A stage arrives with the catalog source that uses it** —
+# `test_every_declared_agent_hook_event_has_a_catalog_consumer` enforces that and will
+# fail on a key added ahead of its consumer. `SessionStart` arrived that way with
+# `session-start.py` (basicly-yru8eu); `hooks.COPILOT_EVENTS` took `sessionStart` in the
+# same diff, so the two stay even.
 #
-# Two consumers are known and neither is ready, which is why this map has not moved:
+# Two further consumers are known and neither is ready:
 #   - `Stop` returning `decision: block` gives BUILD an in-dispatch termination gate.
 #     Probed reachable under our own `claude -p`, but it is capped at 8 consecutive
 #     blocks and that bound is unmeasured (basicly-u2hl.51) — designing a control on
@@ -64,11 +65,13 @@ PRE_TOOL_USE_KEY = "PreToolUse"
 #   - basicly-0p8n's enforcement at the tool-call boundary, which is where our gates
 #     do not reach at all today.
 #
-# Whatever lands next is claude-only: `hooks.COPILOT_EVENTS` accepts `preToolUse` and
-# `postToolUse` and nothing else, so a widened stage projects to one family. Declare
-# that gap at the point it is created rather than letting the two families drift
-# silently uneven.
-AGENT_HOOK_EVENTS = {"pretooluse": PRE_TOOL_USE_KEY, "posttooluse": "PostToolUse"}
+# A stage Copilot has no event for projects to one family only — declare that gap when it
+# is created rather than letting the two drift silently uneven.
+AGENT_HOOK_EVENTS = {
+    "pretooluse": "PreToolUse",
+    "posttooluse": "PostToolUse",
+    "sessionstart": "SessionStart",
+}
 # Default tool filter (the file-writing family); a spec's `matcher` overrides.
 # `MultiEdit` is intentionally absent: Claude Code no longer ships that tool.
 AGENT_HOOK_MATCHER = "Edit|Write|NotebookEdit"

@@ -14,7 +14,12 @@ import pytest
 import yaml
 
 from basicly import cli, dropin, policy, tracker, tracker_paths, usage, verify
-from basicly.config import VerifyCheck, VerifyConfig, load_verify_config
+from basicly.config import (
+    VerifyCheck,
+    VerifyConfig,
+    load_verify_config,
+    load_worktree_config,
+)
 from tests import flipped_tracker
 
 
@@ -843,6 +848,19 @@ def _projection_check_subcommands() -> set[str]:
     return {name for name in cli._handlers() if name == "check" or name.endswith("-check")}
 
 
+def _basicly_subcommand(command: tuple[str, ...]) -> str | None:
+    """The ``basicly`` subcommand *command* invokes, past a launcher prefix.
+
+    The projection checks run through ``uv run`` (basicly-yru8eu), so the CLI is no
+    longer argv[0] and matching on it would silently find no projection gate at all —
+    which is the pass-by-empty-set shape the test below exists to refuse.
+    """
+    argv = list(command)
+    if argv[:2] == ["uv", "run"]:
+        argv = argv[2:]
+    return argv[1] if len(argv) > 1 and argv[0] == "basicly" else None
+
+
 def test_this_repos_fast_mode_runs_every_projection_gate() -> None:
     """A stale projection must fail before the change can reach the remote.
 
@@ -864,9 +882,9 @@ def test_this_repos_fast_mode_runs_every_projection_gate() -> None:
     """
     config = load_verify_config(_REPO_ROOT)
     fast = {
-        check.command[1]
+        sub
         for check in config.checks
-        if "fast" in check.modes and len(check.command) > 1 and check.command[0] == "basicly"
+        if "fast" in check.modes and (sub := _basicly_subcommand(check.command))
     }
 
     missing = _projection_check_subcommands() - fast
@@ -886,6 +904,35 @@ def test_the_always_on_commands_fragment_lists_every_projection_gate() -> None:
 
     missing = _projection_check_subcommands() - listed
     assert not missing, f"projection gates absent from the commands fragment: {sorted(missing)}"
+
+
+def test_no_repo_declared_argv_invokes_a_bare_basicly() -> None:
+    """A bare ``basicly`` reads the catalog of whichever checkout's venv is on PATH.
+
+    ``catalog.bundled_catalog_root()`` walks up from its own ``__file__``, so the *binary*
+    carries the catalog while the projected files are read from the command's cwd. During a
+    landing those are two different trees: the engine runs from the base checkout and the
+    tree under check is a lane worktree. basicly-yru8eu's own hook projection was therefore
+    compared against base's catalog and its new file reported as ``not in the catalog (stale
+    managed hook file)`` — a green tree failing the merge gate. ``uv run`` resolves the
+    project from cwd, putting both halves in one tree.
+
+    Both populations, because the write side does the same thing with a worse outcome: a
+    regenerate command would project base's catalog over the lane's own edit and commit it.
+    """
+    checks = {
+        f"[[verify.checks]] {check.name}": check.command
+        for check in load_verify_config(_REPO_ROOT).checks
+    }
+    regenerate = {
+        f"[worktree.regenerate_commands] {path}": command
+        for path, command in load_worktree_config(_REPO_ROOT).regenerate_commands.items()
+    }
+
+    bare = sorted(
+        label for label, command in (checks | regenerate).items() if command[:1] == ("basicly",)
+    )
+    assert not bare, f"argv invoking the base checkout's basicly, not the tree's: {bare}"
 
 
 # --- A repo script runs on the project interpreter, not a bare one (basicly-tcmy.32) ---

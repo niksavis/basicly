@@ -124,8 +124,13 @@ append_only_paths = []
 # `--block` scopes the rebuild to that one marked region. The rest of the file is
 # hand-authored prose, and the merge queue refuses to stage a path the rebuild
 # left a conflict marker in, so a lane's prose edit is never discarded by this entry.
+#
+# `uv run`, not a bare `basicly`, for the reason the projection gates below carry
+# (basicly-yru8eu): this runs with the lane worktree as cwd while PATH resolves to the
+# base checkout's venv, and `basicly build` projects the catalog that its *binary* finds
+# — so base's fragments would be written over the lane's own and committed as a regen.
 [worktree.regenerate_commands]
-".basicly/generated-manifest.json" = ["basicly", "build"]
+".basicly/generated-manifest.json" = ["uv", "run", "basicly", "build"]
 "docs/architecture/status.md" = [
   "uv",
   "run",
@@ -406,29 +411,40 @@ modes = ["full"]
 # with every documented gate green — the same hole the other four closed, one pair
 # later. `tests/test_verify.py` now derives the required set from the CLI's own
 # handler registry, so a sixth pair cannot be omitted by hand the same way.
+#
+# **Through `uv run`, so the catalog read comes from the tree under check**
+# (basicly-yru8eu). These five are the only checks whose *binary* carries the thing being
+# compared: `catalog.bundled_catalog_root()` walks up from its own `__file__` to that
+# checkout's `.basicly/core`, while the projected files are read from the check's cwd. A
+# bare `basicly` resolves off PATH, which during a landing is the base checkout's venv —
+# so a lane worktree that added a catalog entry had its projection compared against
+# *base's* catalog, and its own new file read as `not in the catalog (stale managed hook
+# file)`. `uv run` resolves the project from cwd, so both halves come from one tree. The
+# other bare commands here (ruff, pyright, bandit, vulture, pytest) read the tree from
+# cwd and carry no catalog of their own.
 [[verify.checks]]
 name = "projection-check"
-command = ["basicly", "check"]
+command = ["uv", "run", "basicly", "check"]
 modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "projection-skills"
-command = ["basicly", "skills-check", "--all-default-roots"]
+command = ["uv", "run", "basicly", "skills-check", "--all-default-roots"]
 modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "projection-agents"
-command = ["basicly", "agents-check"]
+command = ["uv", "run", "basicly", "agents-check"]
 modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "projection-hooks"
-command = ["basicly", "hooks-check"]
+command = ["uv", "run", "basicly", "hooks-check"]
 modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "projection-permissions"
-command = ["basicly", "permissions-check"]
+command = ["uv", "run", "basicly", "permissions-check"]
 modes = ["fast", "full"]
 
 # Derivable documentation claims (basicly-tcmy.31). A document that restates a fact

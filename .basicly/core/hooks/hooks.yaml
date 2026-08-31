@@ -117,3 +117,18 @@ hooks:
     script: tool-usage.py
     stage: posttooluse
     manager: copilot
+  # The always-on layer asks an agent to open with `basicly session start`, so it runs only
+  # when the agent obeys that line or the human asks (basicly-1ciu6w). At session open the
+  # orientation reaches the context before the first turn instead. Two entries for one
+  # script: Claude's SessionStart matcher filters the session *source*, where `*` is the
+  # documented match-all and the default write-tools matcher would never fire, while
+  # Copilot's sessionStart takes no matcher at all.
+  - id: session-start
+    script: session-start.py
+    stage: sessionstart
+    manager: claude
+    matcher: "*"
+  - id: session-start-copilot
+    script: session-start.py
+    stage: sessionstart
+    manager: copilot

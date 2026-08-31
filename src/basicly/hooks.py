@@ -62,8 +62,16 @@ COPILOT_HOOKS_DIR = Path(".github/hooks")
 # no comment marker; ownership rides the name).
 COPILOT_MANAGED_PREFIX = "basicly-"
 
-# Copilot hook event names its .github/hooks schema accepts for `stage`.
-COPILOT_EVENTS = {"posttooluse": "postToolUse", "pretooluse": "preToolUse"}
+# Copilot hook event names its .github/hooks schema accepts for `stage`. Read from
+# docs.github.com/en/copilot/reference/hooks-reference on 2026-08-31 and observed firing in
+# a 1.0.82 session's own debug log, not recalled. camelCase is deliberate: it is the
+# spelling that selects the camelCase *input* payload, and the PascalCase alternative is
+# the VS Code-compatible format, whose payload carries `hook_event_name` like Claude's.
+COPILOT_EVENTS = {
+    "posttooluse": "postToolUse",
+    "pretooluse": "preToolUse",
+    "sessionstart": "sessionStart",
+}
 
 
 @dataclass(frozen=True)

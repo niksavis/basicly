@@ -233,11 +233,11 @@ def test_consumer_hook_with_same_basename_survives(tmp_path: Path) -> None:
 def test_every_declared_agent_hook_event_has_a_catalog_consumer() -> None:
     """D37's pairing rule, enforced: a stage lands with the source that uses it.
 
-    The vocabulary is deliberately 2 of the 31 events Claude Code documents, and
-    widening it to all 31 was refused on the argument this repo already makes
+    The vocabulary is deliberately three of the events Claude Code documents, and
+    widening it to all of them was refused on the argument this repo already makes
     about dead definitions — an unconsumed stage is a surface to keep true against
     a vendor that moves, for nothing. The rule that keeps it honest is that a stage
-    arrives with its consumer, and nothing enforced that until now.
+    arrives with its consumer: `SessionStart` did, with `session-start.py`.
 
     Runs over the real catalog, which is the only place the rule means anything.
     """
