@@ -277,6 +277,11 @@ def views_from_events(ledger_events: Iterable[Any]) -> dict[str, RecordView]:
     the other way round reads as present in the new direction with no cycle through the
     old one. `_apply_tombstone`'s shape for a record, one level down.
 
+    That identity key is also what makes a **count** off this fold a count of relations: nine
+    parent-child relations in this ledger are stated by two edge events each - an import that
+    carried `asserted_at` and one that did not - and holding them per event put five extra
+    children on one epic's `tracker show` (basicly-vkh0.52).
+
     It folds here and not in `provenance.py` because the two write the edge payload in
     different dialects (`fsck.EDGE_KINDS`); this reads the engine writer's.
     """
