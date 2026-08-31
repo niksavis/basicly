@@ -1358,7 +1358,7 @@ is `basicly catalog dump`.
 | `basicly tracker write` | One human tracker write through the engine seam, so it lands on the store the engine reads rather than beside it |
 | `basicly board --out FILE` | Write the harness board as one self-contained HTML page, with the `harness-board/v1` snapshot beside it as `board-snapshot.json`. The page references no external origin and every panel carries the snapshot's age, so a value is never drawn without it |
 | `basicly board validate` | Read a board snapshot and say whether this consumer can render it. A major-version mismatch refuses; an unknown key is reported and admitted |
-| `basicly board serve [--port N] [--refresh S]` | Serve the board on `127.0.0.1` only for a wall display, answering GET alone — a POST is 405, because the action surface is a separate unit. While a supervisor lock is fresh it serves that producer's snapshot bytes and folds nothing; otherwise it folds for itself on `--refresh` and keeps the result in memory. It takes no lock and writes no file, so it blocks no gate |
+| `basicly board serve [--port N] [--bind ADDR] [--refresh S] [--no-actions]` | Serve the board for a wall display. GET reads; **one POST route** runs a `basicly` command an operator submitted, behind a one-time confirm code the operator types and this server never holds. `--no-actions` registers no action route and every POST is then 405 — the recommended flag for an unattended wall. `--bind` takes a literal IPv4 interface address, refusing a wildcard or a hostname, and defaults to the loopback. While a supervisor lock is fresh it serves that producer's snapshot bytes and folds nothing; otherwise it folds for itself on `--refresh` and keeps the result in memory. It takes no lock and writes no file, so it blocks no gate |
 | `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Bump the single-sourced version, regenerate version-stamped projections in a fresh interpreter, rewrite install pins on the consumer surfaces, fold the per-lane changelog fragments into a dated section, commit, and create the annotated tag. **Never pushes** |
 
 **Two properties of the harness surface are decisions.** First, every fully deterministic
@@ -1517,9 +1517,13 @@ required heading present and a placeholder under each. Both refusal paths name t
 command, typed for this issue, instead of only listing what is missing.
 
 One composer is the single source. The engine composes every child body through it, so a
-bug-typed child carries the reproduction section too. The tracker compiles its per-type
-templates into its binary, and no read-only command reports them. The engine therefore
-states the set, and a test pins that set against the installed binary.
+bug-typed child carries the reproduction section too. **The per-type set is configuration.**
+`[policy.type_sections]` declares what each work type owes beyond the acceptance criteria
+every bead owes whatever its type, and `config.load_type_sections` reads it — falling back to
+the engine's `DEFAULT_TYPE_SECTIONS` and saying so, because a default nobody was told about
+is indistinguishable from a declaration the engine failed to read. A type the table omits
+owes nothing extra, so an empty table is a real answer. `tests/test_config.py` pins both
+halves.
 
 ## 24. Phase is derived, not stored
 
@@ -1741,9 +1745,11 @@ hook follows the same route.
 
 **Provisioning probes the new worktree rather than trusting it.** It aborts with guidance
 when the answer is not the base store. A checkout that silently ran its own store would
-diverge the loop's state from the branch it is landing onto. The mechanism used to be a
-redirect file the external binary read; that file went with the binary, and
-[37.2](#372-what-still-depends-on-it) records it once.
+diverge the loop's state from the branch it is landing onto. The mechanism is a git-ignored
+`redirect` file that provisioning writes into the new worktree's ledger directory, naming the
+base checkout. `tracker_paths.tracker_root` is the single resolver every reader and writer
+goes through, and it honours the file only when the directory it names exists — an absent or
+empty redirect resolves to the checkout itself rather than to nothing.
 
 **The engine owns the tracker commits at three points.**
 
@@ -1758,8 +1764,7 @@ An agent never stages tracker files for loop-tracked work.
 **Parallel build, serial merge.** Lanes build concurrently in their worktrees. They land one
 at a time, in dependency order. The engine re-verifies after each merge. The decomposer
 marks lanes parallel-safe only when it can predict **file-disjoint** scopes. Otherwise it
-emits a fixed serial order. The tracker's own three-way merge reconciles tracker state. No
-one edits a conflict marker in the export by hand.
+emits a fixed serial order.
 
 ### 27.2 One landing, drawn in order
 
@@ -1890,7 +1895,7 @@ one refuses on its own, and the refusal names the gate.
 flowchart LR
   g1["1 · readiness<br/>the five conditions"]
   g2["2 · grant spend status<br/>how much budget is left"]
-  g3["3 · grant coverage<br/>does the level delegate this"]
+  g3["3 · a metered runner's budget<br/>a metered runner needs a grant to meter against"]
   g4["4 · downstream WIP limit<br/>finished but unreviewed output"]
   g5["5 · per-lane band<br/>is this one lane sizeable"]
   g6["6 · forward forecast<br/>does the whole pass fit"]
@@ -1920,6 +1925,13 @@ difference matters. Concurrency bounds how many lanes run at once. The downstrea
 bounds how much finished work waits for review. A pass can exhaust the downstream limit and
 stay well inside the concurrency cap. A lower downstream limit makes review the binding
 constraint, instead of slots or tokens.
+
+**Gate 3 asks for a budget, not for delegation coverage.** It refuses a pass whose configured
+runner meters spend while the session's grant carries no token budget, because both halves of
+the spend ceiling are keyed on that budget and with none there is no bound at all. Whether the
+grant's *level* delegates a given decision is asked at checkpoint approval and at decider
+delegation, never here. Sources: `supervise.metered_without_a_budget` against
+`policy.GRANT_COVERAGE` [verified 2026-08-31].
 
 **Gate 4 counts work that already stands downstream, not the pass's own admissions.** Below
 the limit, every ready lane is admitted and the concurrency cap decides how many run at
@@ -2196,7 +2208,7 @@ treat it as persuadable.
 
 ```mermaid
 flowchart LR
-  csrc["11 agent.yaml sources<br/>plus 4 shared blocks<br/>every source declares a tier"]
+  csrc["11 agent.yaml sources<br/>plus 5 shared blocks<br/>every source declares a tier"]
   abuild["basicly agents-build"]
   pcl[".claude/agents<br/>declared skills ride<br/>the frontmatter"]
   pco[".github/agents<br/>the skills are dropped<br/>for this family · no bead"]
@@ -3421,7 +3433,7 @@ flowchart TB
 | --- | --- | --- |
 | base checkout | the repository root | every advance that writes the base branch, and every landing |
 | sibling worktrees | `<repo>.worktrees/<name>`, outside the repository | one lane each, on `harness/<name>` |
-| the work tracker | one store, in the base checkout only | every checkout. A lane worktree never holds a store of its own. A redirect file carries that, and §37.2 names it. The store is now **one** store - the flip ran, and §37.3 records it |
+| the work tracker | one store, in the base checkout only | every checkout. A lane worktree never holds a store of its own. A git-ignored `redirect` file in the worktree's ledger directory carries that, and §27.1 names it. The store is now **one** store - the flip ran, and §37.3 records it |
 | the log files | `.basicly/ledger/` in the base checkout only | one append at a time, behind a file whose existence is the lock |
 | the supervisor lock | `.basicly/usage/supervisor.lock` | one supervisor process, refreshed by a heartbeat thread |
 | agent processes | subprocesses of the worker pool | one per lane. Nothing interrupts a running one |
@@ -3449,7 +3461,10 @@ can be skipped. The order is strictly linear.
 | 3 · the verify runner | at the loop's verify step | one command, recorded as a tracker gate |
 | 4 · continuous integration | on push and on a tag | the same checks on three platforms, plus a fresh-consumer smoke install at a tag |
 
-Layer 3 runs the same checks as layer 2, so a green loop step predicts a green build.
+Layer 3 runs the same `full` mode as layer 2's **pre-push** stage, so a green loop step
+predicts a green build. Layer 2's **pre-commit** stage runs the narrower `fast` mode, so a
+clean commit predicts less than a clean push does. [36.2](#362-the-verify-pipeline) carries
+the per-mode counts.
 
 **Layer 1 is structurally different from the three below it, and that is the point.** Every
 gate below it judges an artifact *after* it exists. Layer 1 is the only one that can refuse
@@ -3475,20 +3490,26 @@ The gates below hang off layer 3 rather than sitting in the stack.
 
 ### 36.2 The verify pipeline
 
-**Three modes, and the check counts differ per mode** [measured 2026-08-16,
+**Three modes, and the check counts differ per mode** [measured 2026-08-31,
 `config.load_verify_config`]. Re-derive from the assembled configuration rather than by
-counting the file, because the drop-in layer contributes.
+counting the file, because the drop-in layer contributes: a `basicly.d` fragment's entries are
+appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 22 | pre-commit |
-| full | 26 | pre-push, continuous integration, and the loop's verify step |
+| fast | 35 | pre-commit |
+| full | 39 | pre-push, continuous integration, and the loop's verify step |
 | staged | 3 | a staged-files-only subset |
 
-The configuration declares 27 checks in total. They cover lint, format, three
+The configuration declares 40 checks in total. They cover lint, format, three
 platform-specific type-check passes, a security scan, dead code, a wiring gate, the kit
 boundary, the layering contract, the test suite, all five projection drift checks, the
 documentation claim gates, and the ratchets.
+
+**The four counts above are a tripwire, not a reading.** `tests/test_docs_drift.py` re-derives
+them from `config.load_verify_config` and fails when this table drifts from the configuration,
+so a check added to `basicly.toml` or to a `basicly.d` fragment moves the table in the same
+change.
 
 **A check whose repair is purely mechanical and lossless declares a fix command.** The
 pre-commit hook applies that command to the staged files, and re-stages them. The commit
@@ -3661,6 +3682,7 @@ measures therefore cannot get worse in silence.
 | suppression debt | count of lint suppressions per rule code | a frozen per-code table that must **equal** the tree, not merely not exceed it |
 | corpus drift | unaccounted context bullets per open parent issue | a frozen per-issue count |
 | stale citations | `file:line` references in a document that no longer point at what the sentence claims | a frozen per-document count |
+| unresolved section citations | `§N` references from code into this document that name no heading it defines | a frozen per-module table, closed: a module absent from it may carry none |
 | tree growth | net tokens added tree-wide over a rolling window | **none: it reports and never fails** |
 
 **The size ratchet is an agent-context gate, not a code-quality gate.** The distinction
@@ -3691,11 +3713,11 @@ and every agent that plans from a document reads it as fact.
 | --- | --- | --- |
 | generated block | renders a region wholly from the tree, between paired markers | a fix run repairs the drift |
 | assertion | checks a claim it cannot write | names the edit a human must make |
-| citation ratchet | checks every `file:line` in a document against the code | refuses |
+| citation ratchet | checks a document's `file:line` references against the code, and code's `§N` references against this document's headings | refuses |
 | pytest tripwire | asserts a documented list against a code constant | fails the suite |
 
-`uv run python .scripts/docs_claims.py --check` reports `6 generated blocks current,
-6 assertions current` [verified 2026-08-20]. Which blocks, assertions and tripwires bind on
+`uv run python .scripts/docs_claims.py --check` reports `5 generated blocks current,
+6 assertions current` [verified 2026-08-31]. Which blocks, assertions and tripwires bind on
 which document is a fact about the documentation set, and
 [`conventions.md`](conventions.md) records it.
 
@@ -3708,10 +3730,13 @@ the symbol its own sentence names**. The second rule pins a citation to somethin
 stable under an edit. The gate is a ratchet with a closed list, and the list is empty, so no
 document may carry one stale citation.
 
-**The gate runs document to code, and nothing runs code to document.**
-[3. Section numbers are a cited surface](#3-section-numbers-are-a-cited-surface) carries the
-target for the missing direction, the probe that counts the citations, and the stale ones
-that asymmetry allows.
+**Both directions run.** `check_docs_citations.py` walks a document's `file:line` references
+into the code; `check_code_citations.py` walks code's `§N` references into this document's
+headings, wired as the `code-citations` check in `basicly verify`. The second direction is a
+ratchet over a frozen per-module population rather than a clean sheet, so the unresolved
+citations it inherited may only fall.
+[3. Section numbers are a cited surface](#3-section-numbers-are-a-cited-surface) states the
+contract both hold.
 
 ### 36.8 CI
 

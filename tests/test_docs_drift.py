@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import cli, schema
+from basicly import agents, cli, config, schema, tracker_paths
 
 ARCHITECTURE_MD = Path(__file__).parent.parent / "docs" / "architecture" / "architecture.md"
 CLI_SECTION = "## 22. The CLI surface"
@@ -105,3 +105,92 @@ def test_section_5_field_rows_exist_on_fragment(architecture: str) -> None:
 
     unknown = sorted(name for name in field_names if name.replace(".", "_") not in fragment_fields)
     assert not unknown, f"the architecture fragment table names unknown Fragment fields: {unknown}"
+
+
+def _subsection(text: str, heading: str) -> str:
+    """The body of one ``### `` subsection, up to the next ``### `` or ``## `` heading."""
+    start = text.index(heading)
+    rest = text[start + len(heading) :]
+    ends = [offset for offset in (rest.find("\n### "), rest.find("\n## ")) if offset != -1]
+    return heading + (rest[: min(ends)] if ends else rest)
+
+
+def test_section_36_2_check_counts_match_the_verify_configuration(architecture: str) -> None:
+    """The per-mode table and the total are re-derived, never read (basicly-byvpvx).
+
+    They were 22/26/27 against a configuration holding 35/39/40: every number in the
+    table was wrong, because a check lands in a `basicly.d` fragment and nothing here
+    was tied to the assembled result.
+    """
+    section = _subsection(architecture, "### 36.2 The verify pipeline")
+    verify = config.load_verify_config(Path(__file__).parent.parent)
+    documented = {
+        match.group(1): int(match.group(2))
+        for match in re.finditer(r"^\| (fast|full|staged) \| (\d+) \|", section, re.MULTILINE)
+    }
+    total = re.search(r"declares (\d+) checks in total", section)
+    assert total is not None, "the verify-pipeline subsection states no check total"
+
+    assert documented == {mode: len(verify.for_mode(mode)) for mode in config.VERIFY_MODES}
+    assert int(total.group(1)) == len(verify.checks)
+
+
+def test_section_36_1_names_the_mode_each_hook_stage_runs(architecture: str) -> None:
+    """Layer 3 runs pre-push's mode, not pre-commit's — the two differ by four checks."""
+    hooks = Path(__file__).parent.parent / ".basicly" / "core" / "hooks"
+    modes: dict[str, str] = {}
+    for stage in ("pre-commit", "pre-push"):
+        source = (hooks / f"{stage}.py").read_text(encoding="utf-8")
+        found = re.search(r"run_checks\(\w+, \"(\w+)\"", source)
+        assert found is not None, f"{stage}.py makes no run_checks call to read a mode from"
+        modes[stage] = found.group(1)
+    section = _subsection(architecture, "### 36.1 The four layers")
+
+    assert f"`{modes['pre-push']}` mode as layer 2's **pre-push**" in section
+    assert f"**pre-commit** stage runs the narrower `{modes['pre-commit']}`" in section
+
+
+def test_section_30_counts_the_agent_sources_and_the_shared_blocks(architecture: str) -> None:
+    """The diagram said four shared blocks against a catalog holding five."""
+    core = Path(__file__).parent.parent / agents.CORE_AGENTS_DIR
+    sources = len(list(core.glob(f"*/{agents.AGENT_SOURCE_FILE}")))
+    blocks = len(list((core / agents.BLOCKS_DIR_NAME).glob(agents.BLOCK_SOURCE_GLOB)))
+    section = _section(architecture, "## 30. Roles at dispatch")
+
+    assert f"{sources} agent.yaml sources" in section
+    assert f"plus {blocks} shared blocks" in section
+
+
+def test_section_22_board_serve_row_names_every_serve_flag(architecture: str) -> None:
+    """A flag absent from the row is a surface a reader cannot know about.
+
+    The row claimed `board serve` answered GET alone while `do_POST` has run an action
+    route since it landed; `--bind` and `--no-actions` were undocumented with it.
+    """
+    parser = cli._build_parser()
+    top = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    board_sub = next(
+        a for a in top.choices["board"]._actions if isinstance(a, argparse._SubParsersAction)
+    )
+    flags = {
+        option
+        for action in board_sub.choices["serve"]._actions
+        for option in action.option_strings
+        if option.startswith("--") and option != "--help"
+    }
+    row = next(
+        line for line in architecture.splitlines() if line.startswith("| `basicly board serve")
+    )
+
+    missing = sorted(flag for flag in flags if flag not in row)
+    assert not missing, f"the board serve row names no {missing}"
+
+
+def test_section_27_1_names_the_live_redirect_file_and_its_resolver(architecture: str) -> None:
+    """It said the redirect went with the external binary; both symbols are live."""
+    section = _subsection(architecture, "### 27.1 The worktree")
+
+    module = tracker_paths.__name__.split(".")[-1]
+
+    assert f"`{tracker_paths.REDIRECT_NAME}` file" in section
+    assert f"`{module}.{tracker_paths.tracker_root.__name__}`" in section
