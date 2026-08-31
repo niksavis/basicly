@@ -1526,6 +1526,8 @@ def _executed_outcome(issue_id: str, *, returncode: int | None = 0, **kw) -> sup
         overrun=False,
         salvaged=kw.pop("salvaged", False),
         detail=kw.pop("detail", "finished; ready to land"),
+        provider_refusal=kw.pop("provider_refusal", ""),
+        spend=kw.pop("spend", None),
     )
 
 

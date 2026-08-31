@@ -173,6 +173,26 @@ def claude_result_event(stdout: str) -> str:
     return ""
 
 
+def claude_turn_text(message: dict) -> str:
+    """The prose in one claude ``message``'s content blocks, joined and stripped.
+
+    Thinking blocks are excluded: each arrives with a signature blob many times the
+    length of its prose. "" when the turn carried none, which is the common case — a
+    tool-calling turn's content is a ``tool_use`` block with nothing to read.
+    """
+    content = message.get("content")
+    if not isinstance(content, list):
+        return ""
+    parts = [
+        block["text"]
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+    ]
+    return "\n".join(parts).strip()
+
+
 def forwarded(event: dict) -> bool:
     """Whether *event* is a nested subagent's turn rather than the lane agent's own.
 
