@@ -291,3 +291,45 @@ def test_the_kit_and_the_engine_render_one_edge_shape(backlog: Path) -> None:
             assert {"id": "tq-ghost", "dependency_type": "blocks", "status": "unknown"} in engine[
                 "dependencies"
             ]
+
+
+def test_one_relation_stated_by_two_events_shows_as_one_row(
+    backlog: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A count off this surface counts relations, not events (basicly-vkh0.52).
+
+    `show basicly-vkh0` reported 65 parent-child rows for 60 distinct ids. The second event
+    differs from the first only in the importer's `asserted_at`/`asserted_by` — the shape
+    nine duplicated parent-child relations in this repo's own ledger carry — so its
+    content-derived id differs and `events.append`'s replay skip cannot collapse them. That
+    it landed is asserted, because a swallowed append would leave nothing to deduplicate.
+    """
+    ledger = tracker.ledger_dir(backlog)
+    kit = tracker.kit(backlog)
+    child = f"{ROOT}.1"
+
+    landed = kit.events.append(
+        ledger,
+        [
+            kit.events.Draft(
+                child,
+                kit.migrate.KIND_EDGE,
+                {
+                    kit.migrate.EDGE_FROM: child,
+                    kit.migrate.EDGE_TO: ROOT,
+                    kit.migrate.EDGE_TYPE: "parent-child",
+                    kit.migrate.ASSERTED_AT_KEY: "2026-08-16T15:27:37.836780869Z",
+                    kit.migrate.ASSERTED_BY_KEY: "an-importer",
+                },
+            )
+        ],
+    )
+    assert len(landed) == 1
+
+    assert cli.main(["tracker", "show", ROOT]) == 0
+    shown = [row for row in _json_out(capsys)["dependents"] if row["id"] == child]
+    assert cli.main(["tracker", "show", child]) == 0
+    held = _json_out(capsys)["dependencies"]
+
+    assert len(shown) == 1
+    assert held == [{"id": ROOT, "dependency_type": "parent-child", "status": "open"}]
