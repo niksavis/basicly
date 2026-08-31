@@ -302,11 +302,13 @@ flowchart LR
 | Role | Where it lives | What it is |
 | --- | --- | --- |
 | engine | `src/basicly/` | normal installable Python |
-| catalog | `.basicly/core/` | data, never code |
+| catalog | `.basicly/core/` | authored data, plus the portable hook and kit scripts; never an engine module |
 | consumer | any repository that ran the install | the tree everything is projected into |
 
-Neither tree depends on the other's location. `.basicly/` never holds engine code.
-`src/basicly/` never holds catalog data.
+Neither tree depends on the other's location. `.basicly/` never holds a `basicly`
+engine module: the hook scripts and the deployed kit there are standalone Python that
+imports nothing from the engine, and the `kit-boundary` hook is what binds that
+direction for the kit tree. `src/basicly/` never holds catalog data.
 
 ---
 
@@ -347,7 +349,8 @@ backstop defend the one-way street. Convention does not.
 third mechanism and no last-one-wins. An unexplained conflict is an error.
 
 **No committed artifact carries a machine-specific path, username or hostname.**
-Redaction runs at the write seam of both stores. A pre-commit hook is the floor under it.
+Redaction runs at the tracker's write seam, which is the only store there is —
+`owned_store.TRACKER_MODES` holds one mode. A pre-commit hook is the floor under it.
 
 **Evidence over assertion.** A claim in a specification, in a release note or on a README
 is backed by something a reader can re-run. An unmeasured claim about behaviour buys
@@ -733,15 +736,13 @@ a command enforces its rule must cite that command in its body. `catalog lint` r
 fragment that does not. The rule "point at enforcement instead of restating it" is
 therefore a check and not advice.
 
-**On disk today** [measured 2026-08-16, `basicly catalog list fragment`]:
-
-| Measure | Count |
-| --- | --- |
-| core fragments | 21 |
-| overlay fragments | 3 |
-| category directories in use, of 13 declared | 8 |
-| path-scoped fragments, each becoming its own rules file | 4 |
-| target-specific defaults, one per family that takes them | 2 |
+**What is on disk is not counted here.** `basicly catalog list fragment` prints every
+source over core and overlay together, with its category, its `scope.paths` and its
+status. A count typed into this document is wrong on the next fragment, and it was: the
+rows this paragraph replaces claimed 21 core fragments against 23 sources, 22 of them
+active, and 4 path-scoped ones against 6. Each path-scoped fragment becomes its own
+rules file for the families that can scope, which [12.2](#122-the-always-on-files)
+prices.
 
 **The category `hooks` labels a fragment that *describes* hook usage.** It is not the
 mechanism that ships a hook script. [16. Hooks](#16-hooks) is that mechanism.
@@ -840,12 +841,11 @@ consecutive hyphen. Lint warns when a body runs long. It also warns when a file 
 reaches more than one level deep. Both warnings follow the specification's
 progressive-disclosure guidance.
 
-**On disk today** [measured 2026-08-16]:
-
-| Measure | Count |
-| --- | --- |
-| skill sources | 41 |
-| projected into each of the two roots, after the technology filter | 36 |
+**What is on disk is not counted here.** The generated `catalog-skills` block in
+`.basicly/core/skills/README.md` carries one row per skill source with its invocation
+and its technologies, rendered from the sources and gated by
+`.scripts/docs_claims.py`. A source whose technologies no target declares is filtered
+out of that target's root, so fewer skills are projected than authored.
 
 ## 15. Subagent definitions
 
@@ -854,7 +854,10 @@ hand-edited.
 
 **Composition.** Every agent fills five ordered body slots. They are role, startup,
 process, output contract and constraints. Each slot holds a list of references to shared
-building blocks, or inline Markdown. Four shared blocks exist, under a reserved slug.
+building blocks, or inline Markdown. The shared blocks live under a reserved slug, and
+[30. Roles at dispatch](#30-roles-at-dispatch) is where they are counted — from the
+catalog, under a tripwire in `tests/test_docs_drift.py`, because the count typed here
+said four against a catalog holding five.
 
 **The description is authored as four fields.** They are purpose, triggers, returns and
 posture. The projector joins them, so no part of a delegation-quality description can be
@@ -914,14 +917,6 @@ reported its live tools as the pre-change set. A definition change therefore tak
 at the next process start. A consumer reaches for a conversation reset first, and that is
 the wrong lever.
 
-**On disk today** [measured 2026-08-16]:
-
-| Measure | Count |
-| --- | --- |
-| agent sources | 11 |
-| shared blocks | 4 |
-| files projected into each root | 11 |
-
 ## 16. Hooks
 
 Hook scripts are first-class catalog artifacts. They are the deterministic, gating
@@ -933,23 +928,18 @@ different runner without a script changing.
 are passed, whether it always runs, its technologies, a matcher and a manager. The manager
 routes the hook to one of three surfaces.
 
-| Manager | Surface it writes | Stages in use | Hooks today |
-| --- | --- | --- | --- |
-| git | a managed local block in the pre-commit configuration, foreign hooks preserved | pre-commit, commit-msg, pre-push | 11 |
-| claude | the agent-hook section of `.claude/settings.json` | pre-tool-use, post-tool-use, session-start | 5 |
-| copilot | one managed JSON file per hook under Copilot's hooks directory | post-tool-use, session-start | 2 |
-
-**What ships today** [measured 2026-08-31, `.basicly/core/hooks/hooks.yaml`]: 18 declared
-specs.
-
-| Stage | Count | Hooks |
+| Manager | Surface it writes | Stages in use |
 | --- | --- | --- |
-| pre-commit | 8 | identity guard · fast-check runner · catalog lint · secret scanner · tracker path scanner · internal-info scanner · kit boundary check · generated-file backstop |
-| commit-msg | 2 | conventional-commit check · tracker-id check |
-| pre-push | 1 | full-check runner |
-| pre-tool-use | 3 | generated-file guard · shell-footgun guard · pipe-status guard |
-| post-tool-use | 2 | tool-usage counter, which rides both agent managers |
-| session-start | 2 | orientation injector, which rides both agent managers |
+| git | a managed local block in the pre-commit configuration, foreign hooks preserved | pre-commit, commit-msg, pre-push |
+| claude | the agent-hook section of `.claude/settings.json` | pre-tool-use, post-tool-use, session-start |
+| copilot | one managed JSON file per hook under Copilot's hooks directory | post-tool-use, session-start |
+
+**What ships is not counted here.** The generated `catalog-hooks` block in
+`.basicly/core/hooks/README.md` carries one row per declared spec — its id, stage,
+manager, script and the purpose read from the script's own module docstring — rendered
+from `hooks.yaml` and gated by `.scripts/docs_claims.py`. The tables this paragraph
+replaces carried three numbers that stood wrong from 2026-08-16 until a hand
+correction on 2026-08-31, with no gate on any of them.
 
 **A gate that is shipped but never installed is inert.** That is the exact failure that
 once let unguarded commits through. So `basicly hooks-build` projects the manifest **and
@@ -1687,7 +1677,9 @@ first mechanism in the loop that decides to suppress work.**
 **One arithmetic trap is fixed in the implementation, and the naive form looks right.** A
 c-chart's control limit falls below one at a low mean failure count. Raw arithmetic
 therefore flags every isolated failure, at roughly thirty-six times the rate a three-sigma
-tail admits. The limit is floored at two.
+tail admits. So a point carrying fewer than two failures can never signal, whatever
+the limit says (`retrospective.MIN_SPECIAL_COUNT`). The limit itself carries no floor:
+`retrospective.chart` returns `centre + 3 * sqrt(centre)` as it stands.
 
 **The output contract is not the why-chain.** It is four things.
 
@@ -3061,12 +3053,12 @@ history: the owned fold reports `missing=('verify',)` where `br` reports `passed
 on record after record, and the baseline excuses all of them. So the shadow's `clean: yes`
 today is a statement about the baseline's coverage and not about agreement on gate state.
 **A kind split cannot make that verdict worse, and it must not be read as making it better.**
-The translator keeps turning a `comments add` write into a `comment` event until the flip
-(`basicly-vkh0.27`, `basicly-vkh0.29`), so `br`'s word survives on the seam by design; the
-alias makes the owned side derive the same state from those events, which is precisely the
-condition for the verdict to stay unchanged. **The check that the split preserved the fold is
-a differential against a snapshot taken before it**, not the `clean` line, which the baseline
-can hold green through a regression.
+The translator still turns a `comments add` write into a `comment` event
+(`basicly-vkh0.27`, `basicly-vkh0.29`), so the external binary's word survives on the
+seam by design; the alias makes the owned side derive the same state from those events,
+which is precisely the condition for the verdict to stay unchanged. **The check that the
+split preserved the fold is a differential against a snapshot taken before it**, not the
+`clean` line, which the baseline can hold green through a regression.
 
 ### 32.9 The nine properties bought with the external binary's defects
 
@@ -3343,9 +3335,12 @@ flowchart TB
 
 <!-- docs-claims:end layering-contract -->
 
-An arrow reads "may import". The two dashed self-edges are the only exceptions to the
-sibling rule, and both are function-level imports declared in the contract. When one cycle
-goes, the contract turns red until the exemption goes with it.
+An arrow reads "may import". A dashed self-edge is the only exception to the sibling
+rule: a cycle the contract declares under `ignore_imports`, imported inside a function
+rather than at module scope. The diagram draws one edge per declared exemption, so how
+many there are is never typed here — the sentence this replaces said two against a
+contract declaring one. When a cycle goes, the contract turns red until the exemption
+goes with it.
 
 `integrity` sits in the bottom band on purpose. It imports nothing from `basicly`. It
 therefore stays testable with no repository, no tracker and no configuration file, and every
@@ -5051,9 +5046,10 @@ Use `lane`, or `unit` where the count is what matters.
 because a comment was the only extensible field that binary offered, and it came to carry both
 human prose and every machine marker the loop derives state from. Use `note` for the prose and
 the typed kind for the state. **The word remains correct in exactly two places**, and neither
-is a definition: the `comments add` write the translator turns into an event, until the flip removes
-it, and the `comment` events already on disk, which are permanent and which the reader's alias
-resolves. See [32.3](#323-the-event-vocabulary) and
+is a definition: the `comments add` write the translator still turns into a `comment`
+event — `write_verbs` mints the kind and the flip did not remove it — and the `comment`
+events already on disk, which are permanent and which the reader's alias resolves.
+See [32.3](#323-the-event-vocabulary) and
 [D-34](#d-34--one-kind-for-prose-and-typed-kinds-for-machine-state).
 
 **Retired.** `record` as a candidate name for an event or an event kind. It names the **work

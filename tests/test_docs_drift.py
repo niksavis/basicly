@@ -194,3 +194,27 @@ def test_section_27_1_names_the_live_redirect_file_and_its_resolver(architecture
 
     assert f"`{tracker_paths.REDIRECT_NAME}` file" in section
     assert f"`{module}.{tracker_paths.tracker_root.__name__}`" in section
+
+
+# docs/architecture/architecture.md §14 and §16 point at a gated block instead of typing an
+# inventory. The pointer is the block's name, then the file holding it — read as a pattern
+# rather than as two literals, so a third pointer is covered by the test landing with it.
+_BLOCK_POINTER = re.compile(r"generated `([a-z-]+)` block in\s+`([^`]+)`")
+
+
+def test_a_generated_block_the_document_points_at_exists(architecture: str) -> None:
+    """A pointer at a block that no longer exists is the stale count in a new shape.
+
+    Two hand-typed inventories were replaced by a pointer at the gated block that renders
+    them (basicly-728lzf). That trades a number nothing read for a path nothing read, unless
+    the path is checked: a renamed or deleted block would leave those two sections sending a
+    reader to a table that is not there, and reading as correct.
+    """
+    pointers = _BLOCK_POINTER.findall(architecture)
+    assert pointers, "the architecture document names no generated block to point at"
+
+    for name, path in pointers:
+        text = (Path(__file__).parent.parent / path).read_text(encoding="utf-8")
+        assert f"<!-- docs-claims:begin {name} -->" in text, (
+            f"the document points at a `{name}` block in {path}, which holds no such marker"
+        )
