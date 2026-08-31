@@ -81,6 +81,28 @@ TARGETS_DIR = ".basicly/core/targets"
 HOOKS_DIR = ".basicly/core/hooks"
 SRC_DIR = "src/basicly"
 
+TUTORIAL_DIR = "docs/tutorial"
+CHANGELOG_MD = "CHANGELOG.md"
+
+# The changelog's released-section heading, newest first under `## [Unreleased]` —
+# `.scripts/generate_release_changelog.py` writes each new one directly below it, so the
+# first match in document order is the release a consumer can actually install.
+_RELEASE_HEADING = re.compile(
+    r"^## v(?P<version>\d+\.\d+\.\d+) - \d{4}-\d{2}-\d{2}[ \t]*$", re.MULTILINE
+)
+# The two ways the tutorial names a version, each with how a stale one reads: the install
+# pin a reader copies, and the engine version its recorded transcripts quote back.
+_TUTORIAL_VERSIONS = (
+    (
+        re.compile(r"@v(?P<version>\d+\.\d+\.\d+)"),
+        "install pin @v{found} is not the released v{released}",
+    ),
+    (
+        re.compile(r"basicly (?P<version>\d+\.\d+\.\d+)"),
+        "transcript quotes basicly {found}, not the released {released}",
+    ),
+)
+
 # `uv run python`, not a bare `python`: on Windows the bare form resolves to a system
 # interpreter that cannot import this script's dependencies (basicly-tcmy.32), so the
 # printed repair has to be the one a contributor on any platform can paste.
@@ -322,6 +344,49 @@ def _cli_subcommands_covered(root: Path) -> list[str]:
     return problems
 
 
+def _released_version(root: Path) -> str:
+    """The newest released version in ``CHANGELOG.md``, without its ``v``."""
+    found = _RELEASE_HEADING.search(read_text(root / CHANGELOG_MD))
+    if found is None:
+        raise ClaimError(f"{CHANGELOG_MD}: no `## vX.Y.Z - YYYY-MM-DD` release heading found")
+    return found.group("version")
+
+
+def _tutorial_versions_current(root: Path) -> list[str]:
+    """Every version the tutorial names must be the released one, by file and line.
+
+    The tutorial is deliberately outside ``release.PIN_FILES`` because its transcripts
+    quote the engine version they were recorded against, so a mechanical pin bump would
+    leave the page claiming an execution that never happened. That exemption left it
+    three releases behind with nothing to notice (`basicly-c7nvs2`: `@v0.8.0` against a
+    released v0.11.0). So the pin and the quoted versions are checked *together*: a page
+    whose install line and transcripts disagree is the very failure the exemption exists to
+    prevent, and one whose pin merely lags is the failure it caused.
+
+    So the remedy for a failure here is a **re-recording**, not an edit: re-execute the
+    page against the release and paste what it printed. A release that bumps the version
+    without one goes red here, which is the point.
+
+    The limit, stated rather than discovered: any `basicly X.Y.Z` under
+    ``docs/tutorial/`` is read as a quoted transcript, so prose that must name an older
+    release deliberately has nowhere to live on these pages.
+    """
+    version = _released_version(root)
+    problems: list[str] = []
+    for path in sorted((root / TUTORIAL_DIR).glob("*.md")):
+        name = path.relative_to(root).as_posix()
+        for number, line in enumerate(read_text(path).splitlines(), start=1):
+            for pattern, shape in _TUTORIAL_VERSIONS:
+                problems.extend(
+                    f"{name}:{number}: "
+                    f"{shape.format(found=found.group('version'), released=version)}"
+                    " — re-record the page against it"
+                    for found in pattern.finditer(line)
+                    if found.group("version") != version
+                )
+    return problems
+
+
 # ----------------------------------------------------------------------- claims
 
 
@@ -354,6 +419,7 @@ BLOCKS: tuple[Block, ...] = (
 ASSERTIONS: tuple[Assertion, ...] = (
     Assertion("cli-commands", ARCHITECTURE_MD, _cli_commands_covered),
     Assertion("cli-subcommands", ARCHITECTURE_MD, _cli_subcommands_covered),
+    Assertion("tutorial-versions", TUTORIAL_DIR, _tutorial_versions_current),
     Assertion("skill-work-types", SKILLS_DIR, work_types.skill_work_types),
     Assertion(
         "architecture-grading", ARCHITECTURE_MD, status_view.architecture_grades_no_capability
