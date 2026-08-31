@@ -1,0 +1,36 @@
+# The projection gates now run through `uv run` so the catalog they read comes from the tree
+# under check (basicly-yru8eu's merge gate). `tests/test_verify.py` grew 498 tokens on this
+# gate's own measure (15663 -> 16161) against a frozen 15681, and neither half of that can be
+# left out:
+#
+# - 132 tokens are obligatory. `test_this_repos_fast_mode_runs_every_projection_gate` derived
+#   the gate set by matching `command[0] == "basicly"`, which the fix makes `"uv"` — so the
+#   set goes empty and the test fails. `_basicly_subcommand` strips the launcher prefix, and
+#   returning None for a non-basicly argv is what keeps the empty set a failure rather than a
+#   pass.
+# - 366 tokens are the regression test. It asserts the wiring for both populations that
+#   declare an argv the engine runs in a lane worktree — `[[verify.checks]]` and
+#   `[worktree.regenerate_commands]` — because a bare `basicly` reads whichever checkout's
+#   venv is on PATH, and the write side would project base's catalog over the lane's own edit
+#   and commit it as a regen. Verified against the pre-fix argv: 7 labels reported.
+#
+# Splitting the file was measured and refused: the two sibling tests this one belongs beside
+# assert the same class of fact (`m4zv.11`, `tcmy.23`) and read `_REPO_ROOT` and
+# `_projection_check_subcommands` with them, so a `test_verify_projection.py` moves three
+# tests and their shared preamble — a decomposition of this suite, not this repair's scope.
+#
+# The delta is 480, not the 498 measured: the frozen number sat 18 tokens above the file, and
+# banking that slack here leaves the baseline exactly at what landed rather than licensing 18
+# tokens of free regrowth.
+#
+# `base_commit` is the branch point rather than this lane's own tip, because the landing
+# rebases these commits and the guard refuses a sha HEAD no longer contains (basicly-nwx4ku
+# recorded its own commit and was refused for exactly that).
+[ratchet]
+base_commit = "26642a9bfcda7dfa24e347f4db8a3d9ccb899517"
+
+[ratchet.module_size]
+rebaseline_reason = "the gate's own derivation of the projection-check set breaks when the checks gain a `uv run` prefix, and the regression test covers both argv populations a landing runs in a lane worktree; the file's siblings for both facts are in it, so a split moves three tests and their preamble"
+
+[ratchet.module_size.rebaselined]
+"tests/test_verify.py" = 480
