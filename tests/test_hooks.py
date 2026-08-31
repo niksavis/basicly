@@ -10,19 +10,23 @@ from pathlib import Path
 import pytest
 import yaml
 
+from basicly import claude_settings
 from basicly import hooks as hooks_module
 from basicly.hooks import (
+    COPILOT_EVENTS,
     HookSpec,
     agent_hook_surface_present,
     check_copilot_hooks,
     check_hooks,
     claude_hook_specs,
+    copilot_hook_specs,
     git_hook_specs,
     hook_stages,
     install_hooks,
     load_hook_specs,
     missing_hook_installations,
     remove_copilot_hooks,
+    render_copilot_hook,
     selected_hook_specs,
     sync_copilot_hooks,
     sync_hooks,
@@ -101,6 +105,8 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "pipe-status-guard",
         "tool-usage",
         "tool-usage-copilot",
+        "session-start",
+        "session-start-copilot",
     }
 
 
@@ -172,10 +178,10 @@ def test_copilot_hooks_sync_check_and_remove_roundtrip(tmp_path: Path) -> None:
     sync_copilot_hooks(tmp_path, CORE_HOOKS_DIR)
     assert not stray.exists()
 
-    # A consumer's own hook file survives uninstall; managed files do not.
+    # A consumer's own hook file survives uninstall; every managed file goes.
     foreign = tmp_path / ".github/hooks/my-own.json"
     foreign.write_text("{}\n", encoding="utf-8")
-    assert remove_copilot_hooks(tmp_path) == 1
+    assert remove_copilot_hooks(tmp_path) == len(copilot_hook_specs(load_hook_specs()))
     assert foreign.exists() and not hook_file.exists()
 
 
@@ -187,6 +193,28 @@ def test_manifest_ships_tool_usage_for_both_agent_managers() -> None:
     copilot = next(spec for spec in specs if spec.id == "tool-usage-copilot")
     assert (copilot.manager, copilot.stage) == ("copilot", "posttooluse")
     assert copilot.script == claude.script == "tool-usage.py"
+
+
+def test_manifest_ships_session_start_for_both_agent_managers() -> None:
+    """The orientation runs at session open on both hosts that have the event.
+
+    `*` on the claude side because SessionStart's matcher filters the session *source*,
+    where the default write-tools matcher would never fire; none on the copilot side,
+    whose sessionStart takes no matcher at all (basicly-yru8eu).
+    """
+    specs = load_hook_specs()
+    claude = next(spec for spec in specs if spec.id == "session-start")
+    assert (claude.manager, claude.stage, claude.matcher) == ("claude", "sessionstart", "*")
+    copilot = next(spec for spec in specs if spec.id == "session-start-copilot")
+    assert (copilot.manager, copilot.stage, copilot.matcher) == ("copilot", "sessionstart", "")
+    assert copilot.script == claude.script == "session-start.py"
+
+    # The event names each host documents, projected from that one stage.
+    assert claude_settings.AGENT_HOOK_EVENTS["sessionstart"] == "SessionStart"
+    assert COPILOT_EVENTS["sessionstart"] == "sessionStart"
+    rendered = json.loads(render_copilot_hook(copilot, ".basicly/core/hooks"))
+    assert list(rendered["hooks"]) == ["sessionStart"]
+    assert "matcher" not in rendered["hooks"]["sessionStart"][0]
 
 
 def test_load_rejects_unknown_manager(tmp_path: Path) -> None:

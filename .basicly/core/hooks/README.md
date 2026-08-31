@@ -34,6 +34,8 @@ module docstring, and gated by `.scripts/docs_claims.py`.
 | `protect-generated-commit` | `pre-commit` | `git` | [`protect-generated-commit.py`](protect-generated-commit.py) | Block a commit that stages a hand-edited basicly-generated file (git backstop). |
 | `tool-usage` | `posttooluse` | `claude` | [`tool-usage.py`](tool-usage.py) | Count which terminal tools and skills the agent actually invokes (PostToolUse hook). |
 | `tool-usage-copilot` | `posttooluse` | `copilot` | [`tool-usage.py`](tool-usage.py) | Count which terminal tools and skills the agent actually invokes (PostToolUse hook). |
+| `session-start` | `sessionstart` | `claude` | [`session-start.py`](session-start.py) | Put the ledger's orientation in an agent's context at session open (basicly-yru8eu). |
+| `session-start-copilot` | `sessionstart` | `copilot` | [`session-start.py`](session-start.py) | Put the ledger's orientation in an agent's context at session open (basicly-yru8eu). |
 
 <!-- docs-claims:end catalog-hooks -->
 

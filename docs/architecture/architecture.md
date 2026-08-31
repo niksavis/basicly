@@ -936,10 +936,10 @@ routes the hook to one of three surfaces.
 | Manager | Surface it writes | Stages in use | Hooks today |
 | --- | --- | --- | --- |
 | git | a managed local block in the pre-commit configuration, foreign hooks preserved | pre-commit, commit-msg, pre-push | 11 |
-| claude | the agent-hook section of `.claude/settings.json` | pre-tool-use, post-tool-use | 3 |
-| copilot | one managed JSON file per hook under Copilot's hooks directory | post-tool-use | 1 |
+| claude | the agent-hook section of `.claude/settings.json` | pre-tool-use, post-tool-use, session-start | 5 |
+| copilot | one managed JSON file per hook under Copilot's hooks directory | post-tool-use, session-start | 2 |
 
-**What ships today** [measured 2026-08-16, `.basicly/core/hooks/hooks.yaml`]: 15 declared
+**What ships today** [measured 2026-08-31, `.basicly/core/hooks/hooks.yaml`]: 18 declared
 specs.
 
 | Stage | Count | Hooks |
@@ -947,8 +947,9 @@ specs.
 | pre-commit | 8 | identity guard · fast-check runner · catalog lint · secret scanner · tracker path scanner · internal-info scanner · kit boundary check · generated-file backstop |
 | commit-msg | 2 | conventional-commit check · tracker-id check |
 | pre-push | 1 | full-check runner |
-| pre-tool-use | 2 | generated-file guard · shell-footgun guard |
+| pre-tool-use | 3 | generated-file guard · shell-footgun guard · pipe-status guard |
 | post-tool-use | 2 | tool-usage counter, which rides both agent managers |
+| session-start | 2 | orientation injector, which rides both agent managers |
 
 **A gate that is shipped but never installed is inert.** That is the exact failure that
 once let unguarded commits through. So `basicly hooks-build` projects the manifest **and
