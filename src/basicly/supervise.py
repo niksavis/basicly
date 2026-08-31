@@ -79,6 +79,7 @@ from . import (
     merge,
     needs_input,
     policy,
+    provider_limit,
     repair_brief,
     roles,
     run_record,
@@ -1502,6 +1503,27 @@ class LaneOutcome:
     model_source: str | None = None
     observed_models: tuple[str, ...] = ()
     tier_honoured: bool | None = None
+    # What the *provider's* own allowance said when it refused this dispatch, empty for
+    # every other outcome (basicly-jr0l.10). Its own field rather than a flag, because
+    # the text carries the reset time and nothing else on the pass can derive it.
+    provider_refusal: str = ""
+    # What the run record will meter this dispatch at. The adapter's whole measurement
+    # rather than a token count, because `estimated` travels with it: a chars/4 floor and
+    # an adapter's own count are different measurements, and a summary that spelled them
+    # the same way would invite an operator to add them up.
+    spend: runner.Usage | None = None
+
+    @property
+    def spend_note(self) -> str:
+        """What this dispatch cost, or "" when nothing measured it.
+
+        The floor is labelled rather than folded away, for the reason
+        :func:`runner.extract_usage` flags it: a measurement that could not be made must
+        never read as one that was.
+        """
+        if self.spend is None:
+            return ""
+        return f", {self.spend.tokens} tokens{' (estimated)' if self.spend.estimated else ''}"
 
     @property
     def model_note(self) -> str:
@@ -1549,6 +1571,44 @@ class Unstarted(Enum):
     CARRIED = "carried"
 
 
+class ProviderGate:
+    """The pass's latch: once the provider refuses one lane, no further lane starts.
+
+    Pass-scoped rather than module state, and that is the whole design: a seat allowance
+    is a fact about *now*, so the next pass has to be free to find it reset. Lanes
+    already running are never touched, exactly as the spend ceiling leaves them
+    (basicly-jr0l.10) — this only declines to start one that is still waiting for a slot.
+
+    Written from the pool's worker threads and read from them too, which is why the latch
+    is an :class:`threading.Event` rather than a bool.
+    """
+
+    def __init__(self) -> None:
+        """An open gate: nothing has been refused yet."""
+        self._shut = threading.Event()
+
+    def latch(self, outcome: LaneOutcome) -> LaneOutcome:
+        """Pass *outcome* through, shutting the gate when it names a provider refusal."""
+        if outcome.provider_refusal:
+            self._shut.set()
+        return outcome
+
+    def declined(self, issue_id: str, runner_name: str) -> LaneOutcome | None:
+        """The unstarted outcome for a lane the shut gate refuses, or None to start it.
+
+        REFUSED, not STOPPED: nothing spawned and the verdict is not about this lane's
+        work, so it reaches the queue rather than the bounded rework counter.
+        """
+        if not self._shut.is_set():
+            return None
+        return _unstarted(
+            issue_id,
+            runner_name,
+            f"not started: {provider_limit.LIMIT_QUESTION}",
+            Unstarted.REFUSED,
+        )
+
+
 def _unstarted(issue_id: str, runner_name: str, detail: str, why: Unstarted) -> LaneOutcome:
     """The outcome of a lane no runner ran: every measured field is None, not 0.
 
@@ -1568,6 +1628,36 @@ def _unstarted(issue_id: str, runner_name: str, detail: str, why: Unstarted) -> 
         refused=why is Unstarted.REFUSED,
         transient=why is Unstarted.TRANSIENT,
     )
+
+
+def _declined_start(
+    issue_id: str, runner_name: str, live: policy.SpendStatus, gate: ProviderGate
+) -> LaneOutcome | None:
+    """Why a lane waiting on a slot must not start after all, or None to start it.
+
+    Two bounds, and neither is about the lane's work: the provider has stopped taking
+    dispatches at all, or the grant can no longer pay for one. A lane already running is
+    never interrupted by either — this only declines to *start* one.
+    """
+    refused = gate.declined(issue_id, runner_name)
+    return refused if refused is not None else _outspent(issue_id, runner_name, live)
+
+
+def _outspent(issue_id: str, runner_name: str, live: policy.SpendStatus) -> LaneOutcome | None:
+    """The unstarted outcome for a lane the grant can no longer pay for, or None.
+
+    Recorded spend first, then what the running lanes have reported and no record
+    carries yet (basicly-rupz): the grant that was overshot was overshot by lanes still
+    in flight when this check ran.
+    """
+    exhausted = (
+        "the grant was exhausted while this lane waited for a slot"
+        if live.halted
+        else inflight_halt(live)
+    )
+    if not exhausted:
+        return None
+    return _unstarted(issue_id, runner_name, f"not started: {exhausted}", Unstarted.STOPPED)
 
 
 def ready_lanes(
@@ -1832,14 +1922,22 @@ def say_dispatch(
         say(f"halted:   {admission.detail}")
     elif not outcomes and not carried:
         say("dispatch: (no ready build-phase lanes)")
+    spent = 0
     for outcome in outcomes:
         occupancy = f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
         # The adapter name alone said nothing about which model ran (basicly-e5a6).
         note = f" [{outcome.model_note}]" if outcome.model_note else ""
         say(
             f"dispatch: {outcome.issue_id} via {outcome.runner_name}{note} - "
-            f"{outcome.detail}{occupancy}"
+            f"{outcome.detail}{outcome.spend_note}{occupancy}"
         )
+        spent += outcome.spend.tokens if outcome.spend is not None else 0
+    # The pass total, so the operator driving it sees the session's spend accrue without
+    # attaching a second client to read the run records back (basicly-jr0l.10). Only when
+    # something was metered: a pass of carried and refused lanes has no spend to report,
+    # and a printed 0 would read as a measurement.
+    if spent:
+        say(f"spent:    {spent} tokens this pass, over {len(outcomes)} dispatch(es)")
 
 
 def _ungranted_detail(
@@ -1994,47 +2092,40 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     # the cap, the extras sit in the pool queue, and counting that wait as run time
     # would report an elapsed figure for a lane that has not started (basicly-vu6u).
     started: dict[str, float] = {}
+    gate = ProviderGate()
 
     def guarded(lane: AdoptedLane) -> LaneOutcome:
-        # Re-read the ceiling at the moment this lane actually starts, not when the
-        # pass was admitted. Lanes past the concurrency cap wait in the pool queue,
-        # and the spend that exhausted the grant can accrue while they wait — the one
-        # pass-entry verdict could not see it (basicly-jr0l.59). A lane already running
-        # is never interrupted; this only declines to *start* one.
+        # Both bounds re-read at the moment this lane actually starts, not when the pass
+        # was admitted: lanes past the concurrency cap wait in the pool queue, and the
+        # grant can be exhausted or the provider can stop taking dispatches while they
+        # wait — neither is visible to the one pass-entry verdict (basicly-jr0l.59,
+        # basicly-jr0l.10).
         live = policy.spend_status(repo_root, session.root_issue)
-        # Recorded spend first, then what the running lanes have reported and no
-        # record carries yet (basicly-rupz): the grant that was overshot was
-        # overshot by lanes that were still in flight when this check ran.
-        exhausted = (
-            "the grant was exhausted while this lane waited for a slot"
-            if live.halted
-            else inflight_halt(live)
-        )
-        if exhausted:
-            return _unstarted(
-                lane.issue_id, spec.name, f"not started: {exhausted}", Unstarted.STOPPED
-            )
+        if (declined := _declined_start(lane.issue_id, spec.name, live, gate)) is not None:
+            return declined
         started[lane.issue_id] = time.monotonic()
         # Per-lane containment: a transient br failure (e.g. a locked tracker
         # DB under this very concurrency) or an OS hiccup in one lane must not
         # discard every other lane's outcome at collection time.
         try:
-            return _dispatch_lane(
-                repo_root,
-                session,
-                lane,
-                spec,
-                sizing,
-                ordering=DispatchOrdering(
-                    dispatch_rank=dispatch_ranks.get(lane.issue_id),
-                    node=ranked.get(lane.issue_id),
-                    policy=ranking.schema,
-                ),
-                working_set=banded.get(lane.issue_id),
-                # The remainder this lane's spend bound runs against, read just
-                # above rather than walked again: `spend_status` costs a whole
-                # ledger read, and this is the freshest one there is.
-                spend=live,
+            return gate.latch(
+                _dispatch_lane(
+                    repo_root,
+                    session,
+                    lane,
+                    spec,
+                    sizing,
+                    ordering=DispatchOrdering(
+                        dispatch_rank=dispatch_ranks.get(lane.issue_id),
+                        node=ranked.get(lane.issue_id),
+                        policy=ranking.schema,
+                    ),
+                    working_set=banded.get(lane.issue_id),
+                    # The remainder this lane's spend bound runs against, read just
+                    # above rather than walked again: `spend_status` costs a whole
+                    # ledger read, and this is the freshest one there is.
+                    spend=live,
+                )
             )
         except (RuntimeError, OSError, ValueError) as exc:
             # `transient` is classified here rather than at the routing layer because
@@ -2644,6 +2735,32 @@ def _keep_lane_seed(
         )
 
 
+def _finished_detail(
+    result: runner.RunResult,
+    refused: provider_limit.LimitRefusal | None,
+    needs: needs_input.NeedsInput | None,
+    verdict: context_meter.CeilingVerdict,
+) -> str:
+    """The one line a dispatch that reached its own exit reports itself as.
+
+    The provider's refusal outranks the exit code because it *explains* it: the account's
+    allowance turned the dispatch away and the agent never ran, so "runner exited 1" would
+    describe the symptom and hide the cause (basicly-jr0l.10).
+
+    The occupancy is appended to whichever outcome the run had rather than replacing it:
+    it is an observation about the run, not a verdict on it (D23).
+    """
+    if refused is not None:
+        detail = refused.detail
+    elif result.returncode != 0:
+        detail = f"runner exited {result.returncode}"
+    elif needs is not None:
+        detail = f"needs input: {needs.detail or needs.fact}"
+    else:
+        detail = "finished; ready to land"
+    return f"{detail}; {verdict.observation}" if verdict.overrun else detail
+
+
 def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane input
     repo_root: Path,
     session: SessionState,
@@ -2873,16 +2990,8 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         # And one decision-queue item (basicly-kjc5.4) for `loop answer`.
         decisions.enqueue(repo_root, lane.issue_id, "needs-input", needs.fact, needs.detail)
     verdict = context_meter.meter_context_ceiling(spec, result, sizing)
-    if result.returncode != 0:
-        detail = f"runner exited {result.returncode}"
-    elif needs is not None:
-        detail = f"needs input: {needs.detail or needs.fact}"
-    else:
-        detail = "finished; ready to land"
-    # Appended to whichever outcome the run had rather than replacing it: the occupancy
-    # is an observation about the run, not a verdict on it (D23).
-    if verdict.overrun:
-        detail = f"{detail}; {verdict.observation}"
+    refused = provider_limit.refusal(spec.usage_format, result.stdout)
+    detail = _finished_detail(result, refused, needs, verdict)
     # Read off the result rather than re-resolved, for the same reason the run record
     # does it that way (basicly-kjc5.59): a second read of the map could answer
     # differently from the dispatch that actually happened.
@@ -2900,6 +3009,8 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         model_source=resolution.source if resolution is not None else None,
         observed_models=runner.observed_models(spec, result),
         tier_honoured=resolution.honoured if resolution is not None else None,
+        provider_refusal=refused.said if refused is not None else "",
+        spend=runner.extract_usage(spec, result),
     )
 
 
@@ -3908,7 +4019,15 @@ def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> Route
     a problem — has no claim on it. Spending it here is what parked a lane that
     never started an agent on the 2026-08-02 five-lane pass, while br reported the
     contention as ``retryable: false`` and the supervisor believed it.
+
+    A dispatch the *provider's own allowance* refused spends nothing at all and holds
+    the lane for a human (basicly-jr0l.10). Not a merit failure and not retriable: the
+    agent never ran, so there is no work to re-attempt, and every retry before the
+    reset reaches the identical verdict — 70 of them across 7 lanes in 20 minutes on
+    2026-08-28, one rework charged per lane and nothing learned.
     """
+    if outcome.provider_refusal:
+        return _route_provider_limit(repo_root, issue_id, outcome)
     if outcome.transient:
         return _capped_dispatch(
             repo_root,
@@ -3925,6 +4044,29 @@ def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> Route
         detail=outcome.detail,
         question="dispatch failed at the rework cap: retry, re-dispatch, or park?",
     )
+
+
+def _route_provider_limit(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> RoutedOutcome:
+    """Hold *issue_id* on the queue after the provider refused its dispatch.
+
+    "decision" rather than "retry" is what stops the pass: the route is outside
+    :data:`RETRIABLE_ROUTES`, so :func:`should_continue` ends the standing loop unless
+    something else progressed, and the queue item keeps :func:`ready_lanes` off the lane
+    until a human answers it. No :func:`policy.record_rework` call, which is the whole
+    point — the refusal is the provider's, and the lane's budget is for its work.
+
+    Idempotent per lane by :func:`decisions.enqueue`'s own key, so the refusals a pass
+    already in flight collects collapse onto one item; what the provider *said*, reset
+    time and all, rides in the detail where the key cannot see it.
+    """
+    item = decisions.enqueue(
+        repo_root,
+        issue_id,
+        "escalation",
+        provider_limit.LIMIT_QUESTION,
+        outcome.detail,
+    )
+    return RoutedOutcome(issue_id, "decision", f"{outcome.detail}; held by {item.decision_id}")
 
 
 def _capped_dispatch(  # noqa: PLR0913 — route, detail and question vary independently

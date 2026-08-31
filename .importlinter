@@ -47,7 +47,7 @@ layers =
     context_window
     agents | catalog_verify | copilot_store | fleet | hooks | loader | models | permissions | planner | renderers | skills | state
     skill_pairing
-    runner_usage
+    provider_limit | runner_usage
     decider_contract
     corpus_drift | decision_marker
     artifact_record | lens_review | run_record | skill_source

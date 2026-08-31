@@ -57,6 +57,7 @@ from .runner_envelope import (
     claude_last_turn_usage,
     claude_result_event,
     claude_result_field,
+    claude_turn_text,
     codex_agent_message,
     codex_turn_usages,
     forwarded,
@@ -1895,25 +1896,16 @@ def event_text(spec: RunnerSpec, event: dict) -> str | None:
     """The prose *event* carries, for a sink to show as a progress line.
 
     Claude only: codex reports its reply as one terminal ``agent_message`` that
-    :func:`codex_agent_message` already reads. Thinking blocks are excluded —
-    each arrives with a signature blob many times the length of its prose. None
-    when the turn carried no text, the common case: a tool-calling turn's content
-    is a ``tool_use`` block with nothing to show beyond having happened.
+    :func:`codex_agent_message` already reads. Which blocks count and how they join is
+    :func:`runner_envelope.claude_turn_text`, shared with the refusal reader that asks
+    the same question of the same turns.
     """
     if spec.usage_format != CLAUDE_STREAM_JSON:
         return None
     message = event.get("message")
-    content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, list):
+    if not isinstance(message, dict):
         return None
-    parts = [
-        block["text"]
-        for block in content
-        if isinstance(block, dict)
-        and block.get("type") == "text"
-        and isinstance(block.get("text"), str)
-    ]
-    return "\n".join(parts).strip() or None
+    return claude_turn_text(message) or None
 
 
 def event_tools(spec: RunnerSpec, event: dict) -> tuple[str, ...]:

@@ -1,0 +1,92 @@
+# Detect a provider usage-limit refusal instead of reworking it (basicly-jr0l.10).
+#
+# A dispatch the account's own seat allowance turns away exits 1 with an empty diff in
+# about 3 seconds, and the routing layer had no way to tell that from an agent that tried
+# and failed: it charged a dispatch rework attempt and re-dispatched. Measured on this
+# repo's own `run-records.json` - 110 of 702 runs carry `<synthetic>` in `observed_models`,
+# every one `failed` at returncode 1 with 0 tokens in 2.0-3.7s, across four separate days -
+# and on the 2026-08-28 incident the record was filed from, 70 refusals across 7 lanes in
+# 20 minutes with a rework charged per lane and nothing learned.
+#
+# ## module_size: one rebaseline, `src/basicly/supervise.py` 47817 -> 49554
+#
+# What the +1737 is, measured per unit with the gate's own tokenizer
+# (`.basicly/usage/scratch/measure_units.py`, not committed):
+#
+#   +388  `ProviderGate`             the pass's latch: what shuts it, and what it refuses
+#   +320  `_declined_start`/`_outspent`  why a lane waiting on a slot must not start
+#   +276  `_route_provider_limit`    the queue item that holds the lane, charging no rework
+#   +262  `_finished_detail`         the one line a run that reached its own exit reports as
+#   +149  `LaneOutcome.spend_note`   what a dispatch cost, and whether that figure is a floor
+#   -372  the two blocks those last two lifted out of `guarded` and `_dispatch_lane`
+#
+# The remainder is the two `LaneOutcome` fields, the per-pass spend total in
+# `say_dispatch`, and the wiring in `_dispatch_lane`.
+#
+# **Three of those five are extractions the complexity gates required, not decoration.**
+# `dispatch_lanes` was at C901 15/15 and `_dispatch_lane` at PLR0912 12/12 before this
+# change, so one branch each put both over. Each extraction is along a nameable
+# responsibility rather than a `_part1`/`_part2` split: "why this lane must not start", "the
+# one line a finished run reports itself as". Extraction adds a signature and a docstring
+# per unit, which is where roughly 450 of the 1737 went.
+#
+# **No cheaper placement exists for any of it.** Every unit reaches `LaneOutcome`,
+# `_unstarted` or `Unstarted`, all of which live in this module, and `supervise` already
+# imports the new `provider_limit` - so moving any of them there inverts the import. The
+# placeable half *was* placed: recognising the refusal is `src/basicly/provider_limit.py`
+# (new, 1207 tokens), and the claude turn-text join it needed was hoisted into
+# `runner_envelope.claude_turn_text` and shared with `runner.event_text`, which took
+# `runner.py` *down* 30280 -> 30189. Moving `LaneOutcome` out of `supervise` is the
+# decomposition track this gate's own remedy says is not this change's obligation.
+#
+# No test module is rebaselined. `tests/test_supervise.py` had 102 tokens of headroom and
+# keeps 61: only `_executed_outcome` grew, by the three keyword defaults the new fields
+# need. The six behaviour tests went to `tests/test_supervise_provider_limit.py` on the
+# sibling convention `test_supervise_parked.py` and `test_supervise_stall_budget.py`
+# already follow.
+# ## wired-or-deleted: one baseline entry, uncommented like its two neighbours
+#
+# `record-field:basicly.supervise.LaneOutcome.provider_refusal`. Both its readers are the
+# pass that collected the outcome — the gate that stops further lanes starting, and the
+# routing that holds the lane instead of charging it rework — and both are in `supervise`,
+# which is the same position `LaneOutcome.needs_fact` and `.transient` already sit in.
+# Parked so the gate keeps binding, not adjudicated: the open call is whether `LaneOutcome`
+# belongs outside the module that produces it, which is `basicly-tcmy.21`'s track.
+#
+# The entry carries no comment of its own because the file sits at 49.9% against
+# comment-density's 50% cap: two lines of rationale there took it to 50.6%, and the bare
+# block of twenty entries it joins is that file's own convention for an unremarkable one.
+#
+# The sibling field `LaneOutcome.spend` is *not* baselined, and the reason is worth naming:
+# the surface matches bare names, so the word `spend` elsewhere in `src/` credits it as
+# wired. That is the masking hazard the module's own docstring documents, not a wiring this
+# change made.
+
+[ratchet]
+base_commit = "129fdbe5dd51256257042d0c231885cd543ba48f"
+
+[ratchet.module_size]
+rebaseline_reason = "the routing layer is where an outcome is judged, and every unit added reaches LaneOutcome/_unstarted, which live in this module; three of the five are extractions the C901 and PLR0912 gates required because both functions sat exactly on their limit, and the placeable half went to the new provider_limit.py, which took runner.py down 91 tokens on the way"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/supervise.py" = 1737
+
+# ## comment_density: one waiver, bought on cohesion
+#
+# `src/basicly/provider_limit.py` at 66.4% against the 50% cap, on 380 tokens of code -
+# four short total functions. What the module *is* is a discriminator plus the provenance
+# that fixes it: which vendor sentence was captured and how often ("You've hit your session
+# limit · resets 5:50pm (Europe/Vienna)", 35 events over 7 lanes), which of its two marks is
+# derived from a record rather than observed in one, and why the `rate_limit_event` this
+# record was filed against discriminates nothing - a healthy dispatch emits one too,
+# carrying `{"status": "allowed"}`, pinned that way in this suite's own live-probe fixture.
+#
+# Cutting to 50% means deleting the half a reader needs to re-check the rule against a
+# future CLI, which is what the cap exists to protect rather than to charge for. Cohesion,
+# so nothing is owed back: the prose is the contract, and there is no follow-up that would
+# make it smaller without making it wrong.
+#
+# Trimmed before it was waived, 69.8% -> 64.6% (the waiver comment itself is prose in the
+# module it waives, which is why the granted figure reads 66.4%).
+[ratchet.comment_density]
+count_delta = 1
