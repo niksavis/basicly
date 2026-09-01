@@ -14,6 +14,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from basicly import cli, decompose, loop, loop_state, supervise, working_set
@@ -868,7 +869,11 @@ def test_preflight_forecasts_a_full_fan_out_when_no_lane_is_dispatchable_yet(
 
     out = capsys.readouterr().out
     assert "forecast:" in out
-    assert "if all" in out and "lanes start" in out
+    # 1000 per-lane (pinned) x the one default child, and the line says out loud that
+    # the figure is the unsizeable bound rather than a reading of the child's scope.
+    assert "forecast:  1000 tokens forecast" in out
+    assert "assumed at the unsizeable-lane bound (measured): c.1" in out
+    assert "(1 of 1 open, cap 5)" in out
 
 
 def test_preflight_says_the_forecast_is_still_on_seeds(
@@ -1244,7 +1249,51 @@ def test_preflight_forecast_never_prices_more_lanes_than_there_are_children(
 
     out = capsys.readouterr().out
     # 1000 per-lane (pinned in the fixture) x 2 open children, whatever the cap is.
-    assert "forecast:  ~2000 tokens if all 2 lanes start" in out
+    assert "forecast:  2000 tokens forecast" in out
+    assert "(2 of 2 open, cap 5)" in out
+
+
+def test_preflight_prices_a_sized_candidate_at_its_own_estimate_not_the_bound(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The cold forecast is the figure the gate will use, not the unsizeable bound.
+
+    The control for the two assumed-bound cases above. With no lane dispatchable the
+    forecast was ``per_lane x lane count`` whatever the candidates' scopes said, while
+    the band table three lines below read those same scopes. On basicly-atrqcd that
+    printed 93153836 where :func:`supervise.admit_pass_spend` returned 87214845 over
+    the same four lanes, and it named all four as assumptions — which reads as evidence
+    that their scopes do not parse (basicly-apox1y). A budget is minted from this line,
+    so it has to carry the number the gate will refuse or admit the pass on.
+    """
+    _preflight_fixture(
+        monkeypatch,
+        _Preflight(
+            grant=Grant(level="L3", token_budget=100_000),
+            children=(("c.1", "open"), ("c.2", "open")),
+            admissions={
+                "c.1": _sized("c.1", 9_000, refused=False),
+                "c.2": _sized("c.2", 11_000, refused=False),
+            },
+        ),
+    )
+    # Pinned for the reason the band verdicts are: the real call walks the tracker
+    # export and the local record file. `admit_pass_spend` reads only `.tokens`.
+    monkeypatch.setattr(
+        cli.decompose,
+        "dispatch_spend_forecasts",
+        lambda _r, sizings, _s: tuple(
+            SimpleNamespace(tokens=7_000 + index) for index, _ in enumerate(sizings)
+        ),
+    )
+
+    cli._cmd_loop_preflight(_preflight_args())
+
+    out = capsys.readouterr().out
+    # 7000 + 7001, not the pinned 1000 per-lane bound x 2.
+    assert "forecast:  14001 tokens forecast" in out
+    assert "sized: c.1, c.2" in out
+    assert "unsizeable-lane bound" not in out.split("band:")[0]
 
 
 # --- improve ----------------------------------------------------------------

@@ -3248,22 +3248,39 @@ def _print_preflight_spend(
     # the single lane (``loop._start_build_leaf``), so price one rather than none.
     open_count = len(state.open_children) or (0 if state.children else 1)
     priced = min(cap, open_count)
-    if priced:
-        # Bounded by what exists, not by the cap alone. Unbounded, the same output said
-        # "0 open child(ren)" on one line and priced five lanes on the next, and a
-        # budget minted from that number funds a pass that cannot start (basicly-cdhq).
-        print(
-            f"forecast:  ~{per_lane * priced} tokens if all {priced} lanes start "
-            f"(per-lane x min(cap {cap}, {open_count} open))"
-        )
-    # That forecast is the unsizeable-lane assumption times the cap whenever the
-    # candidates declare no readable scope — a number describing none of them, which
-    # reads exactly like one that does. So size the candidates here too: before a budget
-    # is minted is the only point where the operator can still act on it (basicly-prnm).
+    # The candidates are sized *before* the forecast is printed rather than after it.
+    # The band table below always read their real scopes; this line did not. It printed
+    # the unsizeable-lane bound times the lane count whatever those scopes said — on
+    # basicly-atrqcd, 93153836 against the gate's own 87214845, and it named four
+    # sizeable lanes as assumptions, which read as evidence that a scope rewrite had
+    # failed (basicly-apox1y). Before a budget is minted is the only point where an
+    # operator can act on the figure (basicly-prnm), so the figure has to be the one the
+    # gate will use: ``admit_pass_spend``, the same call the dispatchable branch makes.
     candidates = tuple(
         working_set.admit_working_set(repo_root, issue_id, sizing)
         for issue_id in state.open_children
     )
+    # A band-refused candidate does not start, so it does not take one of the cap's
+    # slots either — filtered before the slice rather than after it.
+    startable = tuple(item for item in candidates if not item.refused)[:priced]
+    if startable:
+        # Bounded by what exists, not by the cap alone. Unbounded, the same output said
+        # "0 open child(ren)" on one line and priced five lanes on the next, and a
+        # budget minted from that number funds a pass that cannot start (basicly-cdhq).
+        forecast = supervise.admit_pass_spend(repo_root, startable, status, sizing)
+        print(f"forecast:  {forecast.coverage} ({len(startable)} of {open_count} open, cap {cap})")
+    elif candidates:
+        print(
+            f"forecast:  no lane can start - the working-set band refuses all "
+            f"{len(candidates)} candidate(s)"
+        )
+    elif priced:
+        # The leaf case: there is no child to size, so the root's own lane is priced at
+        # the bound, which is what a lane whose scope nothing has read costs.
+        print(
+            f"forecast:  ~{per_lane * priced} tokens if all {priced} lanes start "
+            f"(per-lane x min(cap {cap}, {open_count} open))"
+        )
     _print_band_report(candidates, sizing)
     return _provisioning_blockers(state, candidates)
 
