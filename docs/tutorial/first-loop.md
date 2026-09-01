@@ -36,6 +36,12 @@ you always get the version you chose:
 uvx --from git+https://github.com/niksavis/basicly@v0.11.0 basicly <args>
 ```
 
+`uvx` is one of three ways to reach the same verb, not the command itself:
+`uv run basicly install` works inside a checkout of basicly itself, and a bare
+`basicly install` works once the executable is on `PATH` (put it there with
+`uv tool install`). Install syncs the catalog into your repo; it never puts
+`basicly` on `PATH`.
+
 ## Step 1 — install the harness
 
 From the repo root:

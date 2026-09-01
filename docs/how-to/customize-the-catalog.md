@@ -118,6 +118,12 @@ are skipped at projection time when they fall outside your stack:
 uvx --from git+https://github.com/niksavis/basicly@v0.11.0 basicly install --technologies python,zsh
 ```
 
+`uvx` is one of three ways to reach the same verb, not the command itself:
+`uv run basicly install` works inside a checkout of basicly itself, and a bare
+`basicly install` works once the executable is on `PATH` (put it there with
+`uv tool install`). Install syncs the catalog into your repo; it never puts
+`basicly` on `PATH`.
+
 The selection is recorded in `basicly.toml` under `[catalog] technologies`, so
 later installs keep it. Untagged sources are universal and always ship.
 
