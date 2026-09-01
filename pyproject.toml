@@ -778,5 +778,13 @@ frozen_count = 1
 # one median spend-per-working-set ratio (282 over 155 lanes) to a working set 8x the median;
 # the largest lane in the ledger ran at 32. basicly-yjmxjz owns the estimator; when it lands and
 # the pair re-derives in band, this entry graduates.
+# basicly-rv7q88: forecast 11,610,753 against 1,025,735 spent (0.088x). The other direction of
+# the same defect. Its scope read 12,598 tokens - five documentation files - and the `task`
+# build factor of 3.0 carried it to 11.6M; that factor is a declared seed and has never been
+# measured, which `basicly loop preflight` prints on every pass as `factors: all seeds`. The
+# same seed priced basicly-3iaw0x at 36,324,238 against the 54,205,369 it burned before timing
+# out, so it is wrong high on a small lane and low on a large one. basicly-yjmxjz owns the
+# estimator; when it lands and the pair re-derives in band, this entry graduates.
 [tool.spend_accuracy.frozen]
 "basicly-0cpn51" = 1
+"basicly-rv7q88" = 1
