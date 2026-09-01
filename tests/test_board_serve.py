@@ -381,7 +381,11 @@ def test_a_live_supervisor_serves_no_less_than_the_viewer_folded_for_itself(
     assert supervised.refresh() is False, "a live holder owns the tick"
     served: dict[str, Any] = json.loads(supervised.payload() or b"{}")
 
-    assert set(unsupervised) <= set(served)
+    # `lanes` carved out for the reason test_supervise_board records: this fixture's root
+    # is not a record id, so the tick withholds the section while the viewer earns `[]`
+    # from the absent lock (basicly-u6eeag).
+    assert set(unsupervised) - {"lanes"} <= set(served)
+    assert "lanes" not in served, "the fixture's root is not a record id, so no session derives"
     phased = [unit for unit in served["units"] if unit.get("phase")]
     assert phased, "the corpus must carry a phase for this comparison to discriminate"
     assert len(phased) == len([unit for unit in unsupervised["units"] if unit.get("phase")])

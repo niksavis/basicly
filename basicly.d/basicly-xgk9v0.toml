@@ -1,0 +1,13 @@
+# The board sections a fresh clone loses (basicly-xgk9v0).
+#
+# Filed against five missing sections and closed against one. `lanes` was the defect and
+# shipped under basicly-u6eeag with its own note. `gates`, `health` and `spend` read
+# `.basicly/usage/`, which `board_usage` documents as git-ignored and worktree-local and
+# which basicly-y754k2 already records; `session` is absent because no pass ran there. The
+# proposed repair, a ledger-derived spend section, cannot be honest yet: 4 committed
+# dispatch events against 398 local records, each carrying only `tokens` and `spend_micros`.
+#
+# So the record declares a scope reaching `src/basicly/board_usage.py` and changed none of
+# it. Declared invisible in `[tool.release_notes.invisible]`, delta recorded here.
+[ratchet.release_notes]
+count_delta = 1

@@ -160,6 +160,27 @@ def test_a_held_lock_supplies_the_session_facts_the_producer_may_not_derive(tmp_
     assert facts.stale is False
 
 
+def test_no_live_lock_emits_an_empty_lane_section_rather_than_no_section(tmp_path: Path) -> None:
+    """`[]` is a pass with nothing running; absent is a producer that cannot see lanes.
+
+    Without it no one-shot producer emitted `lanes` at all, so `running now` read
+    `not emitted by this producer` on every unsupervised repo (basicly-u6eeag).
+    """
+    assert board_facts.document(tmp_path)["lanes"] == []
+
+
+def test_a_live_lock_keeps_the_lane_section_absent(tmp_path: Path) -> None:
+    """The control: a pass runs whose selector this producer does not know.
+
+    Naming the root's children here would draw beads a labelled pass is not running.
+    """
+    lock = tmp_path / supervise.LOCK_FILE
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(json.dumps({"pid": 1, "session_id": "abc", "root_issue": "x-1"}))
+
+    assert "lanes" not in board_facts.document(tmp_path)
+
+
 def test_live_grant_spend_is_absent_then_advances_and_rides_named_apart(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

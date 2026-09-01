@@ -537,6 +537,14 @@ def document(
         lanes=(
             lane_facts(repo_root, session.root_issue, phase_map, lane_label=lane_label)
             if in_flight and session is not None
+            # `()` is "no pass is running", which a checkout with no live lock can see and
+            # which `board_sections.lanes` already separates from absent. Without it no
+            # one-shot producer emitted the section at all, so `running now` read `not
+            # emitted by this producer` on every unsupervised repo and could say nothing
+            # else (basicly-u6eeag). None stays for the case the parameter guards: a lock
+            # is live, so a pass exists whose selector this producer cannot know.
+            else ()
+            if board_serve.live_holder(repo_root) is None
             else None
         ),
     )

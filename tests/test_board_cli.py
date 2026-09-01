@@ -243,7 +243,11 @@ def test_the_caller_supplies_every_derivation_the_producer_refuses(tmp_path: Pat
 def test_a_checkout_with_no_tracker_costs_the_derivations_and_not_the_page(
     tmp_path: Path,
 ) -> None:
-    """Every fact-gathering read is best-effort in the same direction the document is."""
+    """Every fact-gathering read is best-effort in the same direction the document is.
+
+    `lanes` is the one section a bare directory still earns: no lock is held, so no pass is
+    running, and that is checked rather than derived (basicly-u6eeag).
+    """
     assert board_facts.readiness(tmp_path) is None
     assert board_facts.phases(tmp_path) == {}
     assert board_facts.questions(tmp_path, {"asks": "not a list"}) == {}
@@ -253,4 +257,5 @@ def test_a_checkout_with_no_tracker_costs_the_derivations_and_not_the_page(
         "freshness",
         "generator",
         "repo",
+        "lanes",
     }

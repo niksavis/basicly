@@ -241,7 +241,12 @@ def test_the_tick_carries_every_derivation_the_idle_board_carries(work_repo: Pat
     supervise.acquire(work_repo, _SESSION, _ROOT)
     ticked = json.loads(board_facts.emit_tick(work_repo, TICK_S).read_text(encoding="utf-8"))
 
-    assert set(idle) <= set(ticked)
+    # `lanes` is carved out, and only here: `_ROOT` is not a record id, so this fixture's
+    # session will not derive and the tick withholds the section by design, while the idle
+    # fold earns `[]` from the absent lock alone (basicly-u6eeag). The second assertion
+    # keeps the carve-out from going silent if the tick ever starts deriving here.
+    assert set(idle) - {"lanes"} <= set(ticked)
+    assert "lanes" not in ticked, "the fixture's root is not a record id, so no session derives"
     phased = [unit for unit in ticked["units"] if unit.get("phase")]
     assert len(phased) == len([unit for unit in idle["units"] if unit.get("phase")])
     assert phased, "the corpus must carry a phase for the comparison to discriminate"
@@ -286,14 +291,16 @@ def test_in_flight_carries_one_card_per_adopted_lane(
     assert card["phase"] == loop_state.phase_map(work_repo)["basicly-0jiq"]
 
 
-def test_the_session_and_lane_sections_are_omitted_once_the_lock_is_gone(
+def test_the_session_section_is_omitted_once_the_lock_is_gone_and_lanes_reads_empty(
     work_repo: Path,
 ) -> None:
     """A taken-over beat names no root: a guessed one is the false claim on a wall.
 
-    `lanes` goes with it, and absent rather than `[]`: an empty list is the claim that lanes
-    are visible and there are none, which a producer with no root has not earned.
+    `lanes` parts from it here. The rule used to be that `[]` is unearned without a root, and
+    it cost every unsupervised checkout the only reading `running now` could ever have
+    (basicly-u6eeag). No live lock is no pass, which is a fact this beat checks rather than
+    guesses, so `[]` is the honest claim and absent stays for a pass it cannot see into.
     """
     document = json.loads(board_facts.emit_tick(work_repo, TICK_S).read_text(encoding="utf-8"))
     assert "session" not in document
-    assert "lanes" not in document
+    assert document["lanes"] == []
