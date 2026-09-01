@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from basicly import context_meter, run_record, runner
+from basicly import context_meter, run_record, runner, tracker
 from basicly.config import load_sizing_config
 from basicly.run_record import (
     EXECUTED,
@@ -555,6 +555,67 @@ def test_spend_sample_reads_a_pre_flag_entry_as_measured() -> None:
     assert run_record.spend_sample({"tokens": 90, "estimated": True}) == (90, run_record.UNMETERED)
     assert run_record.spend_sample({"tokens": True}) is None
     assert run_record.spend_sample({"cost": 1.0}) is None
+
+
+def _dispatch_payload(repo: Path, bead_id: str, entry: RunRecord) -> dict:
+    """*entry* recorded on *bead_id* in a real ledger, as the `dispatch` event's payload."""
+    run_record.record_dispatch_event(repo, bead_id, entry)
+    events = [e for e in flipped_tracker.ledger_events(repo) if e.kind == "dispatch"]
+    return dict(events[-1].payload)
+
+
+def test_a_recorded_dispatch_carries_only_measured_tokens_as_spend(tmp_path: Path) -> None:
+    """The ledger's spend means what the grant's ceiling means by spent (basicly-jr0l.35).
+
+    A chars/4 floor is structurally below what its dispatch really cost, so summing one into
+    the carried total would publish a session's spend as a number that is not it. The floor
+    is not hidden either: `tokens` and `estimated` ride beside the zero, which is what lets
+    a reader tell an unmetered dispatch from one that spent nothing.
+    """
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    for bead in ("b-1", "b-2", "b-3"):
+        flipped_tracker.seed(repo, bead)
+
+    measured = _dispatch_payload(repo, "b-1", _entry(tokens=1234, estimated=False, phase="build"))
+    floored = _dispatch_payload(repo, "b-2", _entry(tokens=900, estimated=True, phase="build"))
+    handoff = _dispatch_payload(
+        repo,
+        "b-3",
+        run_record.build_record(
+            agent="claude", handoff=True, returncode=None, duration_s=None, command=()
+        ),
+    )
+
+    assert measured["spend_micros"] == 1234
+    assert (floored["spend_micros"], floored["tokens"], floored["estimated"]) == (0, 900, True)
+    # A handoff ran nothing, and recording it is still what keeps the attempt count honest.
+    assert (handoff["spend_micros"], handoff["outcome"]) == (0, HANDOFF)
+    assert "tokens" not in handoff
+
+
+def test_two_dispatches_of_one_lane_are_told_apart_by_their_reading(tmp_path: Path) -> None:
+    """The event id is a digest over the payload, so a reading has to carry the difference.
+
+    Two dispatches agreeing in every recorded field would be one event and the second one's
+    spend would never be counted. The stamps are stated rather than clocked twice:
+    `datetime.now` resolves to under a millisecond on Linux and not always on Windows, so a
+    test racing the clock for its difference would be the flake rather than the assertion.
+    """
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(repo, "b-1")
+    entry = _entry(tokens=10, phase="build")
+
+    first = _dispatch_payload(repo, "b-1", replace(entry, timestamp="2026-08-07T00:00:00+00:00"))
+    second = _dispatch_payload(repo, "b-1", replace(entry, timestamp="2026-08-07T00:05:00+00:00"))
+
+    assert first["at"] != second["at"]
+    assert {key: value for key, value in first.items() if key != "at"} == {
+        key: value for key, value in second.items() if key != "at"
+    }
+    kit = tracker.kit(repo)
+    assert kit.events.fold(flipped_tracker.ledger_events(repo)).records["b-1"].totals == (
+        kit.events.Totals(events=3, attempts=2, spend_micros=20, status="open")
+    )
 
 
 def test_dispatch_label_falls_back_to_the_agent_when_no_model_was_pinned() -> None:

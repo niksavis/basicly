@@ -21,6 +21,7 @@ bead id, so a re-dispatched (reworked) node keeps its run history.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -507,6 +508,42 @@ def _recorded_marker_ids(repo_root: Path, bead_id: str, marker: str = MARKER) ->
     return found
 
 
+def record_dispatch_event(repo_root: Path, bead_id: str, run_record: RunRecord) -> None:
+    """Append *run_record*'s spend to *bead_id* as one typed ``dispatch`` event.
+
+    The half of a dispatch record that **travels**: `.basicly/usage/` is self-ignored, so
+    :func:`record`'s figure never leaves this machine and a clone reads every grant's spend
+    as unknown. This lands in the committed ledger, where the fold sums it (D-11).
+
+    **Spend is the measured tokens and nothing else**, classed by :func:`spend_sample`, so
+    the carried total means what ``policy.spend_status`` means by spent: a chars/4 floor is
+    far below what its dispatch cost, and summing one in publishes a figure that is not the
+    session's spend. It stays visible under ``tokens`` and ``estimated``, and ``at`` is what
+    tells two dispatches apart (:func:`basicly.tracker.add_dispatch`).
+
+    Best-effort for :func:`record_marker`'s reason; the read-only refusal is deliberately
+    not caught.
+    """
+    sample = spend_sample(asdict(run_record))
+    measured = sample[0] if sample is not None and sample[1] == MEASURED else 0
+    beside = {
+        "tokens": run_record.tokens,
+        "estimated": run_record.estimated,
+        "model": run_record.model,
+    }
+    reading = {
+        tracker.DISPATCH_SPEND_KEY: measured,
+        "outcome": run_record.outcome,
+        "at": run_record.timestamp,
+        "agent": run_record.agent,
+        "phase": run_record.phase or "dispatch",
+        # Omitted rather than stored null: a missing key says `None` as well as a key does.
+        **{name: value for name, value in beside.items() if value is not None},
+    }
+    with contextlib.suppress(tracker.TrackerDivergenceError, OSError):
+        tracker.add_dispatch(repo_root, bead_id, reading)
+
+
 def record_marker(repo_root: Path, bead_id: str, run_record: RunRecord) -> str | None:
     """Persist *run_record* as a ``[harness-run]`` marker on *bead_id*.
 
@@ -516,7 +553,12 @@ def record_marker(repo_root: Path, bead_id: str, run_record: RunRecord) -> str |
 
     A handoff is recorded too — that nothing executed is itself evidence, and
     omitting it would make the dispatch count understate the attempts.
+
+    The typed ``dispatch`` event goes with it, written first because a dispatch with no
+    prompt digest has no marker id and still has a spend — one fact in two forms while
+    D-34's migration runs, and only the event folds.
     """
+    record_dispatch_event(repo_root, bead_id, run_record)
     if not run_record.prompt_sha256:
         return None
     phase = run_record.phase or "dispatch"

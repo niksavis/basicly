@@ -361,8 +361,8 @@ class Totals:
     Attributes:
         events: Events on this item up to and including the one carrying these totals.
         attempts: ``dispatch`` events among them.
-        spend_micros: Sum of the ``spend_micros`` payload field, in millionths of a
-            currency unit. Integer so the sum is exact and independent of summation order.
+        spend_micros: Sum of the ``spend_micros`` payload field, in the deployment's spend
+            unit; basicly's is tokens. Integer, so the sum is order-independent.
         status: The item's status as of this event, or ``None`` before its first.
     """
 
