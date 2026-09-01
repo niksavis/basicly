@@ -1177,6 +1177,71 @@ def test_session_spend_sums_the_children_too(
     assert policy.session_spend(tmp_path, "root").measured_tokens == 100
 
 
+def test_the_meter_reads_the_history_it_is_handed_and_defaults_to_the_local_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One metering rule, two stores: the caller says which, and the default is D3's.
+
+    The default is the assertion that matters. A display reports the committed markers so a
+    clone can see the spend (`board_facts.grant_split`), and the ceiling keeps metering the
+    machine-local file — a source swapped under `spend_status` by accident would halt every
+    grant already over the travelling figure without anyone choosing it.
+    """
+    fake = _FakeBr(
+        dependents=[{"id": "root.1", "dependency_type": "parent-child", "status": "open"}]
+    )
+    _install(monkeypatch, fake)
+    entry = run_record.build_record(
+        agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=40
+    )
+    run_record.record(tmp_path, "root", entry)
+    handed = {"root.1": [{"tokens": 60, "estimated": False}], "unrelated": [{"tokens": 999}]}
+
+    assert policy.session_spend(tmp_path, "root").measured_tokens == 40
+    assert policy.session_spend(tmp_path, "root", history=handed).measured_tokens == 60
+    assert policy.spend_status(tmp_path, "root").spent_tokens == 40
+
+
+def test_the_meter_counts_dispatches_so_a_reader_can_tell_none_from_free(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A zero token count is two facts, and a display must not guess which it has."""
+    _install(monkeypatch, _FakeBr())
+
+    empty = policy.session_spend(tmp_path, "root", history={})
+    free = policy.session_spend(tmp_path, "root", history={"root": [{"tokens": 0}]})
+
+    assert (empty.dispatches_seen, empty.measured_tokens) == (0, 0)
+    assert (free.dispatches_seen, free.measured_tokens) == (1, 0)
+
+
+def test_the_session_walk_takes_a_population_the_caller_already_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Hoisted rather than cached: the same ids, and the read happens where it is paid for.
+
+    Eighteen roots re-reading the whole population is 5.18 s of the 6.14 s
+    `basicly session start` took [measured 2026-09-01], and a cache keyed on the repository
+    would be a second answer to what the ledger holds.
+    """
+    _install(monkeypatch, _FakeBr())
+    monkeypatch.setattr(
+        policy.tracker,
+        "all_records",
+        lambda _root: pytest.fail("the walk re-read a population it was handed"),
+    )
+    population = {
+        "root": {
+            "id": "root",
+            "dependents": [{"id": "root.1", "dependency_type": "parent-child"}],
+            "dependencies": [],
+        },
+        "root.1": {"id": "root.1", "dependents": [], "dependencies": []},
+    }
+
+    assert policy.session_issue_ids(tmp_path, "root", population=population) == ("root", "root.1")
+
+
 def test_l3_ship_delegates_only_when_preconditions_hold(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -1,0 +1,33 @@
+# Spend a clone can read (basicly-7hebuh).
+#
+# `board_facts.grant_spend` read only the self-ignored `.basicly/usage/run-records.json`, so
+# every grant printed `spend unknown` on a checkout that had never dispatched - which is
+# every clone, and this repository itself. The same dispatches are already in the committed
+# ledger as `[harness-run]` markers, so the read now takes both stores and keeps each one's
+# own figure for the display to name where they differ.
+#
+# ## module_size: two rebaselines, no slack in either
+#
+# `src/basicly/policy.py` +418 tokens. The source and the population became arguments —
+# `session_spend(history=...)` so one metering rule serves the ceiling and the display
+# without a second copy of it, `session_issue_ids(population=...)` because eighteen roots
+# re-reading the whole population cost 5.18 s of the 6.14 s `basicly session start` took
+# [measured 2026-09-01, 1190 records]. Prose was cut first, 58 tokens out of three comments,
+# and stopped where the remainder was the measurement and the reason the default source is
+# the local file — the content the cap protects. The rest is parameters, one accumulator
+# field and the counter behind it.
+#
+# `tests/test_policy.py` +662 tokens, three tests, frozen at 35610 and therefore admitting
+# none. They belong beside their siblings: two assert `session_spend`'s meter, which every
+# other spend test in that module asserts, and the third asserts the walk those tests hop
+# over. The module's prose share is unchanged at its frozen figure, which is the check that
+# separates a real addition from a comment budget spent on a baseline.
+#
+# `tests/test_board_facts.py` is not rebaselined: it crossed the 4000-token cap and was
+# split instead, into `tests/test_board_facts_spend.py`.
+[ratchet.module_size]
+rebaseline_reason = "the spend read takes both stores, and the population read is hoisted out of eighteen per-root walks"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/policy.py" = 418
+"tests/test_policy.py" = 662
