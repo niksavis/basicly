@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 import re
 import shlex
 import shutil
@@ -26,6 +27,7 @@ from . import (
     board_facts,
     catalog_lint,
     catalog_verify,
+    checkout,
     claude_settings,
     comment_rows,
     commit,
@@ -3777,6 +3779,131 @@ def _print_supervise_header(
     )
 
 
+# Where a detached launch's console output is kept: one file per launch, under the
+# self-ignored usage tree the lane transcripts already live in, so it can never enter a
+# commit. The narrative the session writes for itself is still `lane_log`'s `pass.log`;
+# this file additionally holds what the process printed before that log existed — the
+# refusals, which are the launches an operator most needs to read.
+DETACHED_LOGS_DIR = run_record.USAGE_DIR / "detached"
+
+# Windows' "this child gets no console at all" flag, read the way
+# :data:`runner.CREATE_NEW_PROCESS_GROUP` is: ``subprocess`` defines it only on Windows,
+# and the documented value is inert on a platform that has no attribute for it.
+DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+
+# The supervise options a detached launch hands to its child, ``dest`` to flag. Argparse
+# keeps no such map, so this one is hand-written and pinned equal to the parser by
+# `test_every_supervise_flag_reaches_the_detached_process`: a flag added later and missed
+# here would be accepted by the launching process and silently never applied by the
+# process that does the work — the failure mode of a forwarding table nobody checks.
+SUPERVISE_FORWARDED_FLAGS = {
+    "label": "--label",
+    "max_passes": "--max-passes",
+    "runner": "--runner",
+    "autonomy": "--autonomy",
+    "tier": "--tier",
+}
+
+
+def _detach_isolation(os_name: str) -> tuple[bool, int]:
+    """``(start_new_session, creationflags)`` that cut a supervisor loose from its caller.
+
+    POSIX gets a new session, so the process leaves the caller's process group and
+    controlling terminal: neither the SIGHUP a closing terminal sends nor the group kill
+    an agent tool uses at its ceiling reaches it. Windows has no sessions; the pair of
+    flags is the equivalent — ``DETACHED_PROCESS`` withholds the console, so there is no
+    console to send the child a CTRL_CLOSE_EVENT, and the new process group keeps a
+    stray Ctrl-C from crossing over.
+
+    The platform arrives as an argument rather than being read here, so both branches are
+    asserted without patching ``os.name`` — that patch is global and flips ``pathlib``'s
+    flavour for the whole process (basicly-xyx556). Same shape as
+    :func:`runner._process_isolation`, which answers the neighbouring question for a
+    dispatch that must stay killable as a tree.
+    """
+    if os_name == "nt":
+        return False, DETACHED_PROCESS | runner.CREATE_NEW_PROCESS_GROUP
+    return True, 0
+
+
+def _detach_argv(args: argparse.Namespace) -> list[str]:
+    """The detached child's command line: this same invocation, minus ``--detach``.
+
+    ``sys.executable -m basicly.cli`` rather than the ``basicly`` console script, for the
+    reason the shipped hooks invoke it that way: the interpreter running this process is
+    known to have the package importable, while a console script on PATH may belong to a
+    different checkout or not exist at all.
+    """
+    argv = [sys.executable, "-m", "basicly.cli", "loop", "supervise", args.issue]
+    for dest, flag in SUPERVISE_FORWARDED_FLAGS.items():
+        value = getattr(args, dest, None)
+        if value is not None:
+            argv += [flag, str(value)]
+    return argv
+
+
+def _detach_log(repo_root: Path, issue: str) -> Path:
+    """The file one detached launch's output is appended to, its directory made.
+
+    Named for the root and the launch minute, and opened for append rather than truncate:
+    the lock admits one supervisor per root, so a second launch inside the same second is
+    a relaunch that will refuse, and its refusal belongs in the file the operator was just
+    told to read rather than in a second file nobody was told about.
+    """
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    safe = "".join(char if char.isalnum() or char in "._-" else "-" for char in issue)
+    path = repo_root / DETACHED_LOGS_DIR / f"{safe.strip('.') or 'session'}-{stamp}.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _spawn_detached(argv: list[str], log: Path, *, cwd: Path) -> int:
+    """Start *argv* detached from this terminal with its output in *log*; the child's pid.
+
+    ``stdin`` is the null device on purpose: a background process that keeps the
+    terminal's stdin is stopped by SIGTTIN the moment it reads, which is the state the
+    hand-written incantation's ``< /dev/null`` avoided. The colour-forcing variables go
+    for the reason a dispatched lane drops them (:data:`checkout.COLOUR_ENV_FORCING`) —
+    the destination here is a file, where ANSI escapes are noise a reader has to strip.
+    """
+    new_session, creationflags = _detach_isolation(os.name)
+    with log.open("ab") as sink:
+        # Popen and not run: the whole point is to *not* wait for this process.
+        proc = subprocess.Popen(  # noqa: S603 — argv built above from parsed args, no shell
+            argv,
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=sink,
+            stderr=subprocess.STDOUT,
+            env=checkout.sanitised_colour_env(os.environ),
+            start_new_session=new_session,
+            creationflags=creationflags,
+        )
+    return proc.pid
+
+
+def _detach_supervisor(repo_root: Path, args: argparse.Namespace) -> int:
+    """Launch this supervise invocation in its own session and return immediately.
+
+    The engine owning this is the point (basicly-uhrji9). A round runs 20 to 40 minutes
+    and an agent tool kills a background job at its own ceiling (600 s on one host); on
+    2026-08-28 that took three lanes with it, dirty worktrees and ten uncommitted ledger
+    events. The remedy was a per-platform shell incantation carried in a skill bullet,
+    which is knowledge every operator had to hold and no consumer inherited.
+
+    Returning 0 says the supervisor *started*, never that its session will succeed —
+    that answer takes 20 minutes and is in the log this prints. A launch that refuses
+    (another supervisor holds the lock, an empty lane selection) refuses in the child,
+    so its reason is on the last line of that file.
+    """
+    log = _detach_log(repo_root, args.issue)
+    pid = _spawn_detached(_detach_argv(args), log, cwd=repo_root)
+    print(f"detached: pid {pid}")
+    print(f"log:      {log}")
+    print(f"watch:    basicly loop session {args.issue}")
+    return 0
+
+
 def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     """The standing supervisor loop: derive, dispatch, route, land — until done.
 
@@ -3789,6 +3916,11 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     — everything remaining waits on a human (see ``loop decisions``).
     """
     repo_root = _repo_root()
+    # Before anything this process would hold: the lock, the pass log and the session
+    # overrides all belong to the process that runs the rounds, and taking them here
+    # would leave the child refused by its own parent.
+    if getattr(args, "detach", False):
+        return _detach_supervisor(repo_root, args)
     try:
         overrides = _apply_session_overrides(repo_root, args)
     except ValueError as exc:
@@ -5178,6 +5310,34 @@ def _add_runner_parser(subparsers: argparse._SubParsersAction) -> None:
     r_run.add_argument("--cwd", help="Working directory to run in (default: repo root)")
 
 
+def _add_loop_decision_parsers(loop_sub: argparse._SubParsersAction) -> None:
+    """Register the four verbs over the session's decision queue.
+
+    List it, answer one item, delegate one to the decider agent, poll for new ones —
+    one responsibility, and the surface `tests/test_cli_loop_session.py` calls the
+    client's. Split out of :func:`_add_loop_parser` when that function crossed its
+    statement cap; the seam is the queue, not an arbitrary halfway point.
+    """
+    l_dec = loop_sub.add_parser(
+        "decisions", help="List the session's pending decisions (pure read over br)"
+    )
+    l_dec.add_argument("issue", help="Session root issue")
+    l_dec.add_argument("--json", action="store_true", help="Machine-readable output")
+    l_ans = loop_sub.add_parser("answer", help="Record a human answer on a queued decision")
+    l_ans.add_argument("decision_id", help="Decision id as printed by loop decisions")
+    l_ans.add_argument("text", help="The answer")
+    l_ans.add_argument("--by", metavar="NAME", help="Answerer attribution (default: human)")
+    l_dcd = loop_sub.add_parser(
+        "decide", help="Invoke the decider agent on one decision (corpus-bounded)"
+    )
+    l_dcd.add_argument("decision_id", help="Decision id as printed by loop decisions")
+    l_dcd.add_argument("--root", required=True, help="Session root issue (the intake corpus)")
+    l_watch = loop_sub.add_parser("watch", help="Poll and print newly pending decisions")
+    l_watch.add_argument("issue", help="Session root issue")
+    l_watch.add_argument("--interval", type=float, default=15.0, help="Poll seconds")
+    l_watch.add_argument("--once", action="store_true", help="One pass, then exit")
+
+
 def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     loop_parser = subparsers.add_parser(
         "loop",
@@ -5231,6 +5391,13 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Return after N rounds even with open children left, bounding a "
         "launch's spend up front instead of needing an operator to intervene",
     )
+    l_supervise.add_argument(
+        "--detach",
+        action="store_true",
+        help="Start the supervisor in its own session, print its log path and pid, "
+        "and return at once - so no terminal that closes and no agent tool that "
+        "kills a background job at its own ceiling can take a round with it",
+    )
     l_stop = loop_sub.add_parser(
         "stop",
         help="Ask the running supervisor to finish its round and return: every "
@@ -5260,20 +5427,7 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     l_sess.add_argument("issue", help="Session root issue")
     _add_lane_selector_arg(l_sess)
     l_sess.add_argument("--json", action="store_true", help="Machine-readable output")
-    l_dec = loop_sub.add_parser(
-        "decisions", help="List the session's pending decisions (pure read over br)"
-    )
-    l_dec.add_argument("issue", help="Session root issue")
-    l_dec.add_argument("--json", action="store_true", help="Machine-readable output")
-    l_ans = loop_sub.add_parser("answer", help="Record a human answer on a queued decision")
-    l_ans.add_argument("decision_id", help="Decision id as printed by loop decisions")
-    l_ans.add_argument("text", help="The answer")
-    l_ans.add_argument("--by", metavar="NAME", help="Answerer attribution (default: human)")
-    l_dcd = loop_sub.add_parser(
-        "decide", help="Invoke the decider agent on one decision (corpus-bounded)"
-    )
-    l_dcd.add_argument("decision_id", help="Decision id as printed by loop decisions")
-    l_dcd.add_argument("--root", required=True, help="Session root issue (the intake corpus)")
+    _add_loop_decision_parsers(loop_sub)
     l_kill = loop_sub.add_parser(
         "kill",
         help="Kill a lane: close it won't-do-this-way with a recorded reason and "
@@ -5294,10 +5448,6 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Also discard the lane's uncommitted changes and delete its unmerged "
         "branch; without this the teardown keeps both",
     )
-    l_watch = loop_sub.add_parser("watch", help="Poll and print newly pending decisions")
-    l_watch.add_argument("issue", help="Session root issue")
-    l_watch.add_argument("--interval", type=float, default=15.0, help="Poll seconds")
-    l_watch.add_argument("--once", action="store_true", help="One pass, then exit")
     l_improve = loop_sub.add_parser(
         "improve",
         help="Run the repo's improvement controller: measure one declared property, "

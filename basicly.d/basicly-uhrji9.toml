@@ -1,0 +1,8 @@
+# `loop supervise --detach` spawns the supervisor as a detached process, and a spawn is a
+# `subprocess.Popen` with a built argv, which is what `S603` flags. The alternative rejected
+# was reusing one of the three spawn sites that already carry this suppression
+# (`runner.run`, `checkout.run`, `board_actions._spawn`): every one of them *waits* for the
+# child, and not waiting is the entire feature. The argv is built from parsed arguments in
+# `_detach_argv`, `shell=False`, so no operator string reaches a shell.
+[ratchet.noqa_debt.frozen]
+S603 = 1
