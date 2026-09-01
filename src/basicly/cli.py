@@ -881,10 +881,16 @@ def _live_grants(repo_root: Path, views: dict[str, Any]) -> dict[str, Any]:
     last-marker-wins and the closed-root rule are its contract and not this function's.
 
     ``remaining`` is ``None`` where the checkout cannot see the spend rather than the
-    budget: run records are per-checkout, so a fresh worktree that reported the full
-    budget left would be drawing a number it does not have (:func:`board_facts.grant_spend`).
+    budget: no dispatch under the root is a spend nobody can report, where a full budget
+    left would be a number this checkout does not have (:func:`board_facts.grant_split`).
+
+    The two spend stores are read once for the whole table rather than once per grant,
+    which is 5.18 s of the 6.14 s this command took over eighteen of them [measured
+    2026-09-01]. Each row carries what each store says as well as the figure drawn from
+    both, because a checkout whose file and ledger disagree must not be shown one of them.
     """
     texts = tracker.all_comment_texts(repo_root)
+    sources = board_facts.spend_sources(repo_root)
     rows: list[dict[str, Any]] = []
     for record in sorted(views):
         if str(getattr(views[record], "status", "")) == _CLOSED_STATUS:
@@ -894,7 +900,8 @@ def _live_grants(repo_root: Path, views: dict[str, Any]) -> dict[str, Any]:
         grant = policy.active_grant(repo_root, record)
         if grant is None:
             continue
-        spent = board_facts.grant_spend(repo_root, record, grant)
+        split = board_facts.grant_split(repo_root, record, grant, sources=sources)
+        spent = None if split is None else split.tokens
         budget = grant.token_budget
         remaining = None if spent is None or budget is None else budget - spent
         rows.append({
@@ -903,6 +910,8 @@ def _live_grants(repo_root: Path, views: dict[str, Any]) -> dict[str, Any]:
             "budget": budget,
             "spent": spent,
             "remaining": remaining,
+            "spent_local": None if split is None else split.local,
+            "spent_ledger": None if split is None else split.ledger,
         })
     return {"count": len(rows), "records": rows}
 
@@ -1012,7 +1021,16 @@ def _say_session_grants(report: dict[str, Any]) -> None:
         ],
     )
     if any(row["spent"] is None for row in grants["records"]):
-        ui.say("        spend is unknown where this checkout holds no run records for the root")
+        ui.say("        spend is unknown where this checkout holds no dispatch for the root")
+    for row in grants["records"]:
+        # Both figures, never the one this checkout happens to prefer: the file holds
+        # dispatches not yet committed and the ledger holds what other machines ran, and a
+        # single number would make one of those invisible.
+        if row["spent_local"] is not None and row["spent_local"] != row["spent_ledger"]:
+            ui.say(
+                f"        {row['record']}: run records say {row['spent_local']:,} and the "
+                f"committed ledger says {row['spent_ledger']:,}; spent counts both once"
+            )
 
 
 def _say_session_decisions(report: dict[str, Any]) -> None:

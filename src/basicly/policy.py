@@ -1885,7 +1885,18 @@ def proposal_delegated(repo_root: Path, issue_id: str, kind: str, root_issue: st
 # --- Session accounting for grants: spend, needs-input, preconditions --------
 
 
-def session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
+def records_by_id(repo_root: Path) -> dict[str, dict]:
+    """Every record the ledger holds, keyed by id — the population a session walk hops over.
+
+    Named so a caller walking several roots can read it once and hand it to each
+    :func:`session_issue_ids`; the walk reads it itself when nobody does.
+    """
+    return {row["id"]: row for row in tracker.all_records(repo_root)}
+
+
+def session_issue_ids(
+    repo_root: Path, root_issue: str, *, population: Mapping[str, dict] | None = None
+) -> tuple[str, ...]:
     """The session's bead ids: the root plus the track it is organised around.
 
     A track is assembled from two kinds of edge, so the walk follows both.
@@ -1920,14 +1931,17 @@ def session_issue_ids(repo_root: Path, root_issue: str) -> tuple[str, ...]:
     # log per call and this walk hops once per bead, so 87 ids cost 8.77 s over 87 reads
     # against 0.20 s here (basicly-mdv1qu). An id the population does not hold — a
     # dangling edge, a tombstone — still goes to the seam, so coverage is unmoved.
-    population = {row["id"]: row for row in tracker.all_records(repo_root)}
+    # *population* is that read, hoisted so a caller walking several roots pays it once:
+    # eighteen roots re-reading it cost 5.18 s of the 6.14 s `basicly session start` took
+    # [measured 2026-09-01, 1190 records].
+    held = population if population is not None else records_by_id(repo_root)
     # (record key, dependency type) pairs: the edges that lead into the session.
     edges = (("dependents", "parent-child"), ("dependencies", "blocks"))
     seen: dict[str, None] = {root_issue: None}  # insertion-ordered BFS
     queue = [root_issue]
     while queue:
-        held = queue.pop(0)
-        record = population.get(held) or tracker.read_record(repo_root, held)
+        walked = queue.pop(0)
+        record = held.get(walked) or tracker.read_record(repo_root, walked)
         if record is None:
             continue
         for key, wanted in edges:
@@ -1979,6 +1993,12 @@ class SpendMeter:
     # Which ones, each with its model: a count leaves the operator guessing which
     # runner to fix (basicly-6y0tg5).
     unmetered_labels: tuple[str, ...] = ()
+    # Every dispatch the walk saw, whatever class it fell in: it is how a reader tells "no
+    # dispatch for this root" from "dispatches that cost nothing", which one zero cannot say.
+    # Not spelled `dispatches`, which `vulture` and `wired-or-deleted` match by bare name:
+    # that spelling retires `run_record.CostRollup.dispatches`'s genuine suppression, and
+    # `tuning.TuningReport.dispatches_read` avoided it the same way.
+    dispatches_seen: int = 0
 
 
 def tokens_under_grant(spent_tokens: int, grant: Grant) -> int:
@@ -2153,7 +2173,11 @@ def spend_status(
 
 
 def session_spend(
-    repo_root: Path, root_issue: str, *, ids: tuple[str, ...] | None = None
+    repo_root: Path,
+    root_issue: str,
+    *,
+    ids: tuple[str, ...] | None = None,
+    history: Mapping[str, list] | None = None,
 ) -> SpendMeter:
     """Run-record spend across the session's beads, split by how it was known.
 
@@ -2162,22 +2186,31 @@ def session_spend(
     the halt can say which runner to fix (basicly-6y0tg5). *ids* skips re-walking the
     session tree when the caller already has it.
 
+    *history* is the dispatch source, defaulting to the machine-local run records because
+    that is the store D3 words its ceiling in. A caller reporting spend rather than
+    enforcing it hands over ``run_record.dispatch_history``, which adds the ``[harness-run]``
+    markers the ledger commits — the only copy a clone can see (`board_facts.grant_split`).
+
     An ``unstarted`` floor is the one estimate that is not an unmeasurable dispatch
     (basicly-jr0l.64): what makes a floor dangerous is the agent run hiding behind it,
     and there was none — the captured error text *is* the whole transcript. Counting
     it halted a 60000000-token grant with 43438526 unspent over a tracker read that
     spawned no process (the 2026-08-02 basicly-tcmy pass).
     """
-    records = run_record.load_run_records(repo_root) or {}
+    records = history if history is not None else run_record.load_run_records(repo_root) or {}
     measured = 0
     estimated = 0
+    seen = 0
     unmetered: list[str] = []
     for issue_id in ids if ids is not None else session_issue_ids(repo_root, root_issue):
-        history = records.get(issue_id)
-        if not isinstance(history, list):
+        entries = records.get(issue_id)
+        if not isinstance(entries, list):
             continue
-        for entry in history:
-            sample = run_record.spend_sample(entry) if isinstance(entry, dict) else None
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            seen += 1
+            sample = run_record.spend_sample(entry)
             if sample is None:
                 continue
             tokens, kind = sample
@@ -2192,6 +2225,7 @@ def session_spend(
         estimated_tokens=estimated,
         unmetered_dispatches=len(unmetered),
         unmetered_labels=tuple(unmetered),
+        dispatches_seen=seen,
     )
 
 

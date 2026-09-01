@@ -26,7 +26,7 @@ says the producer did not emit it, which is true.
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -94,26 +94,120 @@ def active_grant(repo_root: Path, root_issue: str) -> policy.Grant | None:
         return None
 
 
-def grant_spend(repo_root: Path, root_issue: str, grant: policy.Grant | None) -> int | None:
-    """Spend under *grant* - the only figure its `token_budget` bounds - or None.
+@dataclass(frozen=True)
+class SpendSources:
+    """The stores a spend figure can come from, each read once for the whole tracker.
+
+    Read together because a caller metering several roots pays each read once rather than
+    once per root: re-reading cost 5.18 s of the 6.14 s `basicly session start` took over
+    eighteen live grants [measured 2026-09-01, 1190 records].
+    """
+
+    population: dict[str, dict]
+    # The machine-local run records, or None where this checkout has no file at all. None
+    # and `{}` are different facts: no file is a checkout that cannot see its own spend,
+    # and an empty file is one that has spent nothing.
+    local: dict[str, list] | None
+    # The `[harness-run]` markers the ledger commits - the only copy that travels, and
+    # therefore the one a clone reads.
+    ledger: dict[str, list]
+    # Both, deduplicated per dispatch by `run_record.dispatch_history` rather than here: a
+    # second copy of that rule would be a second answer to what one dispatch is.
+    union: dict[str, list]
+
+
+@dataclass(frozen=True)
+class SpendSplit:
+    """One root's spend under its grant, and what each store says on its own.
+
+    Both, because they disagree for a reason worth seeing rather than resolving: the local
+    file holds dispatches not yet committed, and the ledger holds dispatches other machines
+    ran. `tokens` is the union and is never below either.
+    """
+
+    tokens: int
+    # None where this checkout has no run-record file, which is not the same fact as a file
+    # holding nothing: the stores can only be said to disagree where both of them answered.
+    local: int | None
+    ledger: int
+    # `policy.SpendMeter.dispatches_seen`'s spelling, and for its reason: the bare name
+    # `dispatches` retires a suppression that is still genuine.
+    dispatches_seen: int
+
+
+def spend_sources(repo_root: Path) -> SpendSources:
+    """Both spend stores and the record population, read once."""
+    return SpendSources(
+        population=policy.records_by_id(repo_root),
+        local=run_record.load_run_records(repo_root),
+        ledger=run_record.tracker_history(repo_root),
+        union=run_record.dispatch_history(repo_root),
+    )
+
+
+def grant_split(
+    repo_root: Path,
+    root_issue: str,
+    grant: policy.Grant | None,
+    *,
+    sources: SpendSources | None = None,
+) -> SpendSplit | None:
+    """Spend under *grant* per store, or None where this checkout can see no dispatch.
 
     **The window is the whole point.** Publishing lifetime spend beside a grant's ceiling is how
     a display comes to draw 177970761/4000000 with nothing spent under that grant
     (basicly-e2mz.13); `policy.tokens_under_grant` is the subtraction that makes the pair
     comparable.
 
-    Two guards, each omitting the key rather than reporting a zero: no grant is no window, and
-    no run-record file means this checkout cannot see the spend at all - a fresh worktree has
-    none - where `spend_status` answers 0 and renders as a session that spent nothing. Behind
-    both sits `policy.session_issue_ids` at 13.1 s, so the walk runs only where it is worth it.
+    None on two facts and never on a third: no grant is no window, and no dispatch under the
+    root is a spend this checkout cannot see, where a zero would render as a session that
+    spent nothing. A root whose dispatches really did cost nothing reports 0, which is why
+    the guard counts dispatches rather than tokens.
+
+    The reported figure is the union, so this checkout and a clone of it answer alike once
+    the markers are committed. It is deliberately **not** what D3 halts on: `spend_status`
+    still meters the local file, and 6 of this repository's 18 live grants are over budget
+    on the travelling figure [measured 2026-09-01], so moving the ceiling onto it halts them
+    and is a decision to take knowingly rather than as a side effect of a display.
     """
-    if grant is None or not run_record.load_run_records(repo_root):
+    if grant is None:
         return None
+    held = sources if sources is not None else spend_sources(repo_root)
     try:
-        status = policy.spend_status(repo_root, root_issue, grant=grant)
+        ids = policy.session_issue_ids(repo_root, root_issue, population=held.population)
+        union = policy.session_spend(repo_root, root_issue, ids=ids, history=held.union)
+        ledger = policy.session_spend(repo_root, root_issue, ids=ids, history=held.ledger)
+        local = (
+            None
+            if held.local is None
+            else policy.session_spend(repo_root, root_issue, ids=ids, history=held.local)
+        )
     except UNREADABLE:
         return None
-    return policy.tokens_under_grant(status.spent_tokens, grant)
+    if not union.dispatches_seen:
+        return None
+    under = policy.tokens_under_grant
+    return SpendSplit(
+        tokens=under(union.measured_tokens, grant),
+        local=None if local is None else under(local.measured_tokens, grant),
+        ledger=under(ledger.measured_tokens, grant),
+        dispatches_seen=union.dispatches_seen,
+    )
+
+
+def grant_spend(
+    repo_root: Path,
+    root_issue: str,
+    grant: policy.Grant | None,
+    *,
+    sources: SpendSources | None = None,
+) -> int | None:
+    """Spend under *grant* - the only figure its `token_budget` bounds - or None.
+
+    :func:`grant_split` without the split, for the callers that report one number.
+    """
+    split = grant_split(repo_root, root_issue, grant, sources=sources)
+    return None if split is None else split.tokens
 
 
 def live_grant_spend(session: board_snapshot.SessionFacts) -> int | None:

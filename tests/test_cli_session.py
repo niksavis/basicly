@@ -172,7 +172,11 @@ def test_a_grant_on_a_closed_root_is_not_live(
 def test_the_remaining_budget_is_the_budget_less_what_this_checkout_recorded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The figure the grant bounds, and the one a handover restated by hand."""
+    """The figure the grant bounds, and the one a handover restated by hand.
+
+    Each store's own figure rides beside it: this checkout has a run record the ledger has
+    no marker for, which is the disagreement a display may not resolve silently.
+    """
     repo = _seeded(tmp_path)
     run_record.record(
         repo,
@@ -198,20 +202,27 @@ def test_the_remaining_budget_is_the_budget_less_what_this_checkout_recorded(
         "budget": 1_000_000,
         "spent": 250_000,
         "remaining": 750_000,
+        "spent_local": 250_000,
+        "spent_ledger": 0,
     }
 
 
-def test_a_checkout_with_no_run_records_reports_the_spend_unknown_not_zero(
+def test_a_checkout_that_holds_no_dispatch_reports_the_spend_unknown_not_zero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Run records are per-checkout: a fresh worktree drawing the full budget lies."""
+    """A checkout drawing the full budget left would be claiming a spend it cannot see.
+
+    It is no dispatch rather than no run-record file that makes the figure unknown: the
+    file is per-checkout and the ledger's `[harness-run]` markers are not, so a clone with
+    neither is the only checkout that genuinely cannot tell (basicly-7hebuh).
+    """
     repo = _seeded(tmp_path)
 
     assert _run(repo, monkeypatch) == 0
 
     out = capsys.readouterr().out
     assert "unknown" in out
-    assert "spend is unknown where this checkout holds no run records" in out
+    assert "spend is unknown where this checkout holds no dispatch for the root" in out
 
 
 def test_the_json_payload_carries_every_section_the_tables_print(
