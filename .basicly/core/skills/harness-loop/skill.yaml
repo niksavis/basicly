@@ -454,15 +454,18 @@ instructions: |
 
   A round runs 20 to 40 minutes; an agent's shell tool kills a background job at its own
   ceiling (600 s on one host), and a supervisor killed mid-round takes its lanes with it
-  (2026-08-28: three lanes, dirty worktrees, ~25M tokens). Start it detached, in a plain
-  foreground call, and read the log — `^routed:`, `[merged]`, `^blocked:`, `supervise exit=`:
+  (2026-08-28: three lanes, dirty worktrees, ~25M tokens). `--detach` is the engine's
+  answer (basicly-uhrji9): its own session on all three platforms, a pid and a log path
+  printed, and a return at once — so the launching shell may close, or be killed with its
+  whole process group, and the round still lands.
 
   ```sh
-  setsid nohup uv run basicly loop supervise <epic> --max-passes 3 > <log> 2>&1 < /dev/null & disown
+  basicly loop supervise <epic> --max-passes 3 --detach
   ```
 
-  Commit the ledger before any relaunch; a killed process committed nothing.
-  `--detach` (basicly-uhrji9) retires this shell line when it lands.
+  Read the log it printed — `^routed:`, `[merged]`, `^blocked:`, `supervise exit=`; a
+  launch that refuses (lock held, empty lane selection) refuses *there*, on that file's
+  last line. Commit the ledger before any relaunch; a killed process committed nothing.
 
   ### Ending a pass on purpose — `--max-passes`, or `stop`
 

@@ -8,9 +8,12 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import textwrap
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -1780,3 +1783,187 @@ def test_a_registered_subcommand_with_no_handler_fails_loudly(
         "the parser but has no handler — this is a bug in basicly, not in your invocation"
     )
     assert out == ""
+
+
+# --- Detached supervise (basicly-uhrji9) -----------------------------------
+
+
+def test_the_detached_argv_carries_every_flag_the_launch_was_given() -> None:
+    """The child does the work, so a flag that stops here is a flag silently ignored."""
+    args = argparse.Namespace(
+        issue="basicly-hnnmk9",
+        label="truth",
+        max_passes=3,
+        runner="claude",
+        autonomy="L3",
+        tier="high",
+    )
+
+    argv = cli._detach_argv(args)
+
+    assert argv[0] == sys.executable
+    assert " ".join(argv[1:]) == (
+        "-m basicly.cli loop supervise basicly-hnnmk9 --label truth --max-passes 3 "
+        "--runner claude --autonomy L3 --tier high"
+    )
+    assert "--detach" not in argv, "the child must not detach again"
+
+
+def test_a_launch_with_no_flags_forwards_none_of_them() -> None:
+    """The control: an omitted flag must not reach the child as a default."""
+    args = argparse.Namespace(
+        issue="i", label=None, max_passes=None, runner=None, autonomy=None, tier=None
+    )
+
+    assert cli._detach_argv(args)[-3:] == ["loop", "supervise", "i"]
+
+
+def test_the_forwarding_table_is_every_supervise_flag_but_detach() -> None:
+    """Pinned to the parser, because argparse keeps no such map and nothing else would.
+
+    A flag added to `loop supervise` tomorrow and missed by the table would be accepted
+    by the launching process and never applied by the one that runs the rounds — a
+    detached pass quietly running at the wrong tier, with no error anywhere.
+    """
+    parser = _parser_at(cli._build_parser(), ("loop", "supervise"))
+
+    declared = {
+        action.dest: action.option_strings[0]
+        for action in parser._actions
+        if action.option_strings and action.dest not in {"help", "detach"}
+    }
+
+    assert declared == cli.SUPERVISE_FORWARDED_FLAGS
+
+
+def test_detach_isolation_is_a_new_session_on_posix_and_no_console_on_windows() -> None:
+    """Both branches asserted by argument: patching `os.name` is global (basicly-xyx556)."""
+    assert cli._detach_isolation("posix") == (True, 0)
+    assert cli._detach_isolation("nt") == (
+        False,
+        cli.DETACHED_PROCESS | cli.runner.CREATE_NEW_PROCESS_GROUP,
+    )
+
+
+def test_supervise_detach_prints_the_pid_and_log_and_takes_no_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The launching process must hold nothing the child needs: the lock is the child's."""
+    monkeypatch.chdir(tmp_path)
+
+    def never(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("the launcher took the lock the child needs")
+
+    monkeypatch.setattr(cli.supervise, "acquire", never)
+    spawned: dict[str, object] = {}
+
+    def fake_spawn(argv: list[str], log: Path, *, cwd: Path) -> int:
+        spawned.update(argv=argv, log=log, cwd=cwd)
+        return 4242
+
+    monkeypatch.setattr(cli, "_spawn_detached", fake_spawn)
+    args = argparse.Namespace(
+        issue="basicly-hnnmk9", label=None, max_passes=None, runner=None, autonomy=None, tier=None
+    )
+
+    code = cli.main(["loop", "supervise", args.issue, "--detach", "--max-passes", "1"])
+
+    out = capsys.readouterr().out
+    log = spawned["log"]
+    assert code == 0
+    assert isinstance(log, Path)
+    assert log.parent == tmp_path / cli.DETACHED_LOGS_DIR
+    assert "detached: pid 4242" in out
+    assert str(log) in out
+    assert spawned["argv"] == [*cli._detach_argv(args), "--max-passes", "1"]
+
+
+def _child_source(tmp_path: Path) -> str:
+    """A child that reports it started, waits to be released, then reports it survived."""
+    return textwrap.dedent(f"""
+        import pathlib, time
+        release = pathlib.Path({str(tmp_path / "release")!r})
+        pathlib.Path({str(tmp_path / "started")!r}).write_text("up")
+        for _ in range(600):
+            if release.exists():
+                print("survived", flush=True)
+                break
+            time.sleep(0.1)
+    """)
+
+
+def _launcher_source(tmp_path: Path, log: Path, *, then: str) -> str:
+    """A process that detaches `_child_source` through the real spawn, prints its pid, *then*."""
+    return textwrap.dedent(f"""
+        import pathlib, sys, time
+        from basicly import cli
+        print(cli._spawn_detached([sys.executable, "-c", {_child_source(tmp_path)!r}],
+              pathlib.Path({str(log)!r}), cwd=pathlib.Path({str(tmp_path)!r})), flush=True)
+        {then}
+    """)
+
+
+def _await(path: Path, why: str, *, contains: str = "", deadline: float = 30.0) -> None:
+    """Poll until *path* exists (and holds *contains*), or fail with *why*.
+
+    Polled to a generous deadline rather than slept: a slow runner costs seconds here,
+    never a red build (the 2x rule, basicly-7aler3).
+    """
+    end = time.monotonic() + deadline
+    while time.monotonic() < end:
+        if path.exists() and contains in path.read_text(encoding="utf-8"):
+            return
+        time.sleep(0.05)
+    pytest.fail(f"{why} within {deadline}s")
+
+
+def _repo_env() -> dict[str, str]:
+    """The environment a spawned interpreter needs to import this checkout's basicly."""
+    return {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
+
+
+def test_a_detached_child_outlives_the_process_that_launched_it(tmp_path: Path) -> None:
+    """The spawn itself, on whatever platform is running: the launcher goes, the work stays."""
+    log = tmp_path / "detached.log"
+    launcher = _launcher_source(tmp_path, log, then="")
+
+    parent = subprocess.run(
+        [sys.executable, "-c", launcher],
+        env=_repo_env(),
+        text=True,
+        check=True,
+        timeout=60,
+        capture_output=True,
+    )
+
+    _await(tmp_path / "started", "the detached child never started")
+    assert parent.stdout.strip().isdigit()
+    (tmp_path / "release").write_text("go")
+    _await(log, "the detached child left no output", contains="survived")
+
+
+def test_a_detached_child_survives_the_kill_of_its_launcher_group(tmp_path: Path) -> None:
+    """The defect: an agent tool kills its background job's whole group at its ceiling.
+
+    That is what took three lanes down on 2026-08-28, and an orphan test cannot see it —
+    a child that merely outlives a launcher's clean exit would die here. So the launcher
+    is put in its own session, held alive, and that session is killed out from under the
+    child.
+    """
+    if os.name == "nt":
+        pytest.skip("process groups and killpg are POSIX")
+    log = tmp_path / "detached.log"
+    launcher = _launcher_source(tmp_path, log, then="time.sleep(300)")
+    proc = subprocess.Popen(
+        [sys.executable, "-c", launcher], env=_repo_env(), start_new_session=True
+    )
+    try:
+        _await(tmp_path / "started", "the detached child never started")
+
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+
+        proc.wait(timeout=30)
+        (tmp_path / "release").write_text("go")
+        _await(log, "the group kill took the detached child with it", contains="survived")
+    finally:
+        proc.kill()
