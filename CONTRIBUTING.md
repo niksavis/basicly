@@ -24,9 +24,15 @@ All commands run through [uv](https://docs.astral.sh/uv/) in a checkout; the
 is needed:
 
 ```sh
-uv sync --group dev   # one-time: create the dev environment
-uv run pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push   # activate the git gates for all three stages
+uv sync --group dev        # one-time: create the dev environment
+uv run basicly hooks-build # activate the git gates for all three stages
 ```
+
+Use `basicly hooks-build`, not `pre-commit install`. A bare `pre-commit install`
+rewrites the pre-push hook without the ledger guard `hooks-build` writes, and
+`basicly hooks-check` then still reports pre-push as not installed. Run
+`basicly hooks-check` after setup: a clone starts with no active git hook at
+all, and that command names any stage still missing.
 
 Note: the markdownlint hook runs on Node.js; have a Linux/macOS-native `node`
 on `PATH` (on WSL, a Windows Node install will not work for hooks).

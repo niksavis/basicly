@@ -87,6 +87,12 @@ def _spend_accuracy_report(repo_root: Path) -> None:
             f"ceiling: {', '.join(accuracy.incomparable)}.",
             style="muted",
         )
+    if accuracy.unfinished:
+        ui.say(
+            "Not scored yet, the ledger still holds them open so their fold is a part "
+            f"of the lane: {', '.join(accuracy.unfinished)}.",
+            style="muted",
+        )
 
 
 def cmd_forecast(_args: argparse.Namespace) -> int:

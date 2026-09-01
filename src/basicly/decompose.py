@@ -1553,6 +1553,10 @@ class SpendAccuracy:
     # `supervise.PassSpendAdmission.assumed` is already baselined, so reusing it made
     # that finding read as fixed. The gate caught it on the first full run.
     unscoped: tuple[str, ...] = ()
+    # Beads the ledger still holds open: their fold is a part of the lane, so a whole-lane
+    # forecast does not denominate it (basicly-m4hrqr). Named, not counted - the operator's
+    # next question is which lane is still running.
+    unfinished: tuple[str, ...] = ()
 
     @property
     def median_ratio(self) -> float | None:
@@ -1600,6 +1604,31 @@ def _fold_lane(attempts: tuple[SpendPair, ...]) -> SpendPair:
         actual_tokens=sum(attempt.actual_tokens for attempt in attempts),
         attempts=len(attempts),
     )
+
+
+# Spelled here rather than imported: `board_footer` and `corpus_drift` each hold their own,
+# and reaching across a tier for this literal buys a dependency the contracts would refuse.
+_CLOSED_STATUS = "closed"
+
+
+def _unfinished_beads(repo_root: Path, lane_folds: list[SpendPair]) -> tuple[str, ...]:
+    """Which of *lane_folds* denominate a bead the ledger still holds open.
+
+    A forecast denominates the whole lane, so a bead that will be dispatched again folds
+    to a part of the work. `basicly-rv7q88` refused a commit at 0.088x mid-pass, and
+    freezing it - one of the two remedies the gate prints - banks that partial number as
+    history (basicly-m4hrqr). Keyed on ``id``, where an `all_records` row spells the record
+    id. A bead the ledger does not hold is scored as before and `all_records` answers empty
+    on an unreadable one, so both degrade to the previous population, not to an inert gate.
+    """
+    status = {
+        str(record.get("id")): str(record.get("status"))
+        for record in tracker.all_records(repo_root)
+    }
+    held = {
+        fold.bead for fold in lane_folds if status.get(fold.bead, _CLOSED_STATUS) != _CLOSED_STATUS
+    }
+    return tuple(sorted(held))
 
 
 def spend_accuracy(repo_root: Path, sizing: SizingConfig) -> SpendAccuracy:
@@ -1702,18 +1731,19 @@ def spend_accuracy(repo_root: Path, sizing: SizingConfig) -> SpendAccuracy:
     lanes: dict[str, list[SpendPair]] = {}
     for pair in sorted(pairs, key=lambda pair: (pair.timestamp, pair.bead)):
         lanes.setdefault(pair.bead, []).append(pair)
+    lane_folds = sorted(
+        (_fold_lane(tuple(attempts)) for attempts in lanes.values()),
+        key=lambda pair: (pair.timestamp, pair.bead),
+    )
+    unfinished = _unfinished_beads(repo_root, lane_folds)
     return SpendAccuracy(
-        pairs=tuple(
-            sorted(
-                (_fold_lane(tuple(attempts)) for attempts in lanes.values()),
-                key=lambda pair: (pair.timestamp, pair.bead),
-            )
-        ),
+        pairs=tuple(pair for pair in lane_folds if pair.bead not in frozenset(unfinished)),
         unsized=unsized,
         incomparable=tuple(sorted(set(incomparable))),
         unmetered=unmetered,
         aborted=aborted,
         unscoped=tuple(sorted(set(unscoped))),
+        unfinished=unfinished,
     )
 
 

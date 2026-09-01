@@ -116,7 +116,7 @@ def summary(accuracy: decompose.SpendAccuracy, ratchet: Ratchet[int]) -> str:
         f"{LABEL}: {len(accuracy.pairs)} pair(s) measured, {len(accuracy.violations)} outside "
         f"the {decompose.SPEND_RATIO_BAND:.0f}x band, {len(ratchet.frozen)} frozen; "
         f"{len(accuracy.unscoped)} unscoped, {len(accuracy.incomparable)} incomparable, "
-        f"{accuracy.aborted} aborted"
+        f"{accuracy.aborted} aborted, {len(accuracy.unfinished)} still open"
     )
 
 

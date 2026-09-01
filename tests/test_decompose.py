@@ -2426,6 +2426,32 @@ def test_an_over_forecast_is_reported_too(tmp_path: Path) -> None:
     assert "0.010x" in accuracy.violations[0]
 
 
+def test_a_bead_the_ledger_still_holds_open_is_held_back_rather_than_scored(
+    tmp_path: Path,
+) -> None:
+    """A lane that will be dispatched again folds to a part of the work (basicly-m4hrqr)."""
+    _record_spend_pair(tmp_path, "b-1", tokens=100_000, forecast_spend_tokens=10_000_000)
+    _export(tmp_path, {"id": "b-1", "status": "open"})
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert accuracy.pairs == ()
+    assert accuracy.unfinished == ("b-1",)
+    assert accuracy.violations == ()
+
+
+def test_a_closed_bead_with_the_same_miss_is_still_scored(tmp_path: Path) -> None:
+    """The control above, differing only by status: excluding all leaves an unfailable gate."""
+    _record_spend_pair(tmp_path, "b-1", tokens=100_000, forecast_spend_tokens=10_000_000)
+    _export(tmp_path, {"id": "b-1", "status": "closed"})
+
+    accuracy = decompose.spend_accuracy(tmp_path, _sizing())
+
+    assert accuracy.unfinished == ()
+    assert len(accuracy.violations) == 1
+    assert "0.010x" in accuracy.violations[0]
+
+
 def test_a_forecast_within_the_band_is_no_violation(tmp_path: Path) -> None:
     """The band admits an honest miss: 2x is a forecast, not a defect."""
     _record_spend_pair(tmp_path, "b-1", tokens=20_000_000, forecast_spend_tokens=10_000_000)

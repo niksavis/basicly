@@ -1,0 +1,26 @@
+# The spend-accuracy gate stops scoring a lane that has not finished (basicly-m4hrqr).
+#
+# What the change was: `_unfinished_beads`, one read of the ledger's statuses, and an
+# `unfinished` field on `SpendAccuracy` carrying the beads it holds back. A forecast
+# denominates a whole lane, so a bead that will be dispatched again folds to a part of the
+# work; scoring that fold measures how far through the lane the pass has got. Measured
+# during a live pass: `basicly-rv7q88` refused a commit at 0.088x on one finished attempt
+# of 1,025,735 tokens against its lane's 11,610,753 forecast, and both remedies the gate
+# printed were wrong there - the estimator did not produce that ratio, and freezing banks
+# a partial measurement as history.
+#
+# ## module_size: one rebaseline, the cost of the discriminator
+#
+# `src/basicly/decompose.py` at 24806 tokens against a frozen 24498. The growth is the
+# helper, the field and the two lines that call them, and nothing else; the module is far
+# over the 4000 cap for reasons that predate this change.
+#
+# Prose was cut first, 97 tokens out of the helper docstring and the field comment, and
+# stopped where the remainder was the measurement that fixes the rule - which is the
+# content the cap exists to protect, not narration. The sibling test module absorbed its
+# own 114 tokens the same way and needs no entry here.
+[ratchet.module_size]
+rebaseline_reason = "the unfinished-lane discriminator: one ledger read, one field, and the two lines that call them, on a module already far over the cap"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/decompose.py" = 308
