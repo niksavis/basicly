@@ -786,7 +786,14 @@ default = "auto"
 # The kill costs the run nothing either way: the harness commits whatever the
 # worktree holds on the way out and the landing judges that diff, because a clock
 # is not evidence against a change (basicly-yvx9).
-runner_timeout = 3600
+#
+# Raised 3600 -> 7200 by the owner 2026-09-01, on the same argument that took it 1800 -> 3600.
+# `basicly usage tuning` recommends 7202s, measured over n=50 (22 executed, 28 failed at 3600).
+# basicly-3iaw0x streamed events for the full 3600s, so `quiet_after` never fired: the clock
+# killed a lane that was working, which is the one thing this bound must not do. It spent
+# 54,205,369 tokens and left an empty worktree. The spend ceiling and `quiet_after` still bind
+# first and both read the event stream, so what a runaway costs stays bounded by the grant.
+runner_timeout = 7200
 # Terminal quiet bound: seconds of a *silent* event stream before a lane is killed
 # as wedged. Left at the engine default (1800s), stated here because it is the
 # bound that replaced the wall clock and a reader of this file should see all three

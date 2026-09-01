@@ -13,6 +13,7 @@ import shutil
 from pathlib import Path
 
 from basicly import tracker_paths
+from basicly.config import load_runner_config
 from tests.test_cli import run_basicly
 
 
@@ -212,7 +213,10 @@ def test_cli_usage_tuning_advises_each_governed_parameter(work_repo: Path) -> No
     assert result.returncode == 0, result.stderr
     # 10 samples, the longest run is 1900s, and the backstop doubles it.
     advice = _advice(result.stdout, "runner.runner_timeout")
-    assert "3600 s in force" in advice
+    # Read the value in force rather than pinning it: it is deliberately tunable and was
+    # raised 3600 -> 7200 on 2026-09-01, which turned a retune into a failure here.
+    in_force = int(load_runner_config(work_repo).runner_timeout)
+    assert f"{in_force} s in force" in advice
     assert "advised 3800 s from 10 sample(s) (measured)" in advice
     assert "10 local" in result.stdout
 

@@ -80,6 +80,16 @@ instructions: |
   or stash another session's files to unblock your merge; the branch waits, the
   other session's work does not survive being cleared.
 
+  **The other side of that rule: while a pass holds the lock, the base is read-only to
+  you.** The paragraph above tells a blocked lane what to do about someone else's dirt;
+  this is how not to be that someone. Editing the base during a pass cost two things on
+  2026-09-01: `basicly-mfavrh` recorded a verify failure produced by two uncommitted
+  files it had never heard of and spent a round asking a human who may clear them, and
+  every `git push` was refused with `files were modified by this hook`, because the
+  128-second pre-push suite cannot outrun the supervisor's 15-second ledger beat. Read
+  in the base, write in a worktree of your own, and do not push until `loop stop`
+  returns.
+
   **Push cadence** — tracker-only pushes are CI-free by design (`paths-ignore
   .basicly/ledger/**`; the local commit-msg hooks are the deterministic floor), so the
   choice is purely about who is watching the remote:

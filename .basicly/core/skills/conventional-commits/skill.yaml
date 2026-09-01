@@ -115,8 +115,16 @@ instructions: |
     charset, no trailing punctuation). Passing plain CC is necessary but not sufficient.
   - The same `commit-msg.py` and `tracker-commit-msg.py` run as your local git hook **and**
     in CI, so a subject that passes locally passes CI — but only if the hooks are actually
-    installed. Run `pre-commit install -t pre-commit -t commit-msg -t pre-push` once per
-    clone/worktree; an uninstalled hook silently lets a bad message through to CI.
+    installed. Run `basicly hooks-build` once per clone/worktree — **not** `pre-commit
+    install`, which rewrites the pre-push hook without the ledger guard and leaves
+    `basicly hooks-check` still naming pre-push as missing (basicly-7owkkz, measured on
+    a fresh clone: guard count 0 after `pre-commit install`, 5 after `hooks-build`). An
+    uninstalled hook silently lets a bad message through to CI.
+  - **`git commit` takes the whole index, not the paths you just added.** A file staged
+    by an earlier attempt that a hook then refused is still staged, and it rides into
+    the next commit under a subject that does not mention it. Read column 1 of
+    `git status --short` immediately before committing, or name the paths on the commit
+    itself (`git commit -F - -- <paths>`).
   - Never bypass the hooks (`--no-verify`) to force a non-conforming message through.
   - Never invent a record id the tracker does not hold; the hook builds its id set from
     `.basicly/ledger/events-*.jsonl`.
