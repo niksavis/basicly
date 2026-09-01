@@ -144,30 +144,37 @@ argument for mermaid, the vendor comparison and the declines above stay here.
 
 ## 7. Which gates bind on which document
 
-**Two `docs_claims` assertions bind on the architecture document** [verified 2026-08-16,
+**Two `docs_claims` assertions bind on the CLI reference** [verified 2026-09-01,
 `.scripts/docs_claims.py`, the `ASSERTIONS` tuple].
-`uv run python .scripts/docs_claims.py --check` reports `4 generated blocks current,
-5 assertions current`; the other three assertions bind on other files.
+`uv run python .scripts/docs_claims.py --check` reports `5 generated blocks current,
+7 assertions current`; the count is over every gated file, not this one.
 
-1. `cli-commands` — every subcommand the CLI ships must appear in the CLI section's tables.
+1. `cli-commands` — every subcommand the CLI ships must appear in
+   [`docs/reference/cli.md`](../reference/cli.md)'s tables.
 2. `cli-subcommands` — every subcommand of a *group* must appear in that group's own rows.
    This assertion exists because a single group row satisfies the first one. That is how
    several worktree subcommands stayed undocumented while every gate passed.
 
-**One generated block binds on it**: the always-on size table, between paired
-`docs-claims` markers. Never hand-edit inside the markers.
+**One assertion binds on the architecture document**, `architecture-grading`, and **two
+generated blocks** do: the always-on size table and the layering contract, each between
+paired `docs-claims` markers. Never hand-edit inside the markers.
 
-**Four pytest tripwires bind on it**, in `tests/test_docs_drift.py`. Two cover the CLI
-section and two cover the fragment field table. Editing either section can turn the suite
-red.
+**Ten pytest tripwires bind, in `tests/test_docs_drift.py`.** Three read the CLI reference
+and seven read the architecture document, so editing either can turn the suite red. The
+three are why the CLI reference could leave this document at all (basicly-mfavrh): a
+reference nothing checks is a second, competing account of the system.
 
-1. every registered subcommand appears in the CLI section;
-2. the CLI section documents no unregistered subcommand — the reverse direction the
+1. every registered subcommand appears in the CLI reference;
+2. the CLI reference documents no unregistered subcommand — the reverse direction the
    `cli-commands` assertion cannot check;
-3. the fragment table's `category` row equals `schema.CATEGORIES`;
-4. every field the fragment table names is a real `Fragment` field.
+3. the `basicly board serve` row names every flag that command registers;
+4. the fragment table's `category` row equals `schema.CATEGORIES`;
+5. every field the fragment table names is a real `Fragment` field;
+6. five more on the architecture document: the verify-mode counts, the mode each hook stage
+   runs, the agent-source and shared-block counts, the worktree redirect file and its
+   resolver, and that a generated block the document points at exists.
 
-**Tripwires 3 and 4 are the reason the fragment field table exists at all.** Deleting it in
+**Tripwires 4 and 5 are the reason the fragment field table exists at all.** Deleting it in
 favour of a citation to the schema file would blind both. `schema_version` is a source-file
 key with no dataclass field, so the document states it in prose rather than as a table row.
 
@@ -175,14 +182,10 @@ key with no dataclass field, so the document states it in prose rather than as a
 or a command to a line number everywhere. That preference is deliberate: a line number goes
 stale on an unrelated edit, and a symbol name does not.
 
-**Three literals locate a section by heading text**, and a heading rename must move all
-three in the same commit.
-
-| File | Constant |
-| --- | --- |
-| `.scripts/docs_claims.py`, in `_cli_section` | the CLI section heading |
-| `tests/test_docs_drift.py` | `CLI_SECTION` |
-| `tests/test_docs_drift.py` | `FRAGMENT_SECTION` |
+**Heading text locates a section, so renaming a heading in this document is a code
+change.** The literals are all in `tests/test_docs_drift.py`: the `FRAGMENT_SECTION`
+constant, and the four headings its `_section` and `_subsection` calls name inline (§36.2,
+§36.1, §30, §27.1). The CLI reference needs none, because it is gated whole.
 
 ## 8. The documentation set
 
@@ -190,11 +193,17 @@ The architecture document is the **reference** quadrant and nothing else. A refe
 "what is it, and how is it specified". It cannot also take a new consumer from install to a
 first shipped unit. An attempt to make it both is what left that path missing.
 
+**The quadrant holds two documents, not one.** `docs/reference/cli.md` is the per-command
+surface, and it lives beside the specification rather than inside it because the two go
+stale on different schedules: a flag changes a command's row on any landing and changes
+nothing the architecture asserts (basicly-mfavrh). A page belongs there when a gate can
+re-derive it from the tree — the CLI reference has five, listed in §7.
+
 | Quadrant | Where | Job | Written for |
 | --- | --- | --- | --- |
 | Tutorial | `docs/tutorial/` | one guaranteed-success path, install to shipped unit, no options offered | a consumer on day one |
 | How-to | `docs/how-to/` | the recurring operations, one page per task | a consumer with a job to do |
-| Reference | `architecture.md`, plus `CONTRIBUTING.md` | the system as specified | anyone implementing or debugging |
+| Reference | `architecture.md`, `docs/reference/`, plus `CONTRIBUTING.md` | the system as specified | anyone implementing or debugging |
 | Explanation | the decision records, `architecture.md` §38 | why one question was settled the way it was, with the measurement and its date; a research document is absorbed into a record and deleted, its last commit cited | anyone changing a decision |
 | Order | the work tracker: `basicly session start`, `basicly tracker ready` | which records get built next, and why in that order | whoever is planning the next release |
 

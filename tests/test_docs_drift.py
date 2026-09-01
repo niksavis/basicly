@@ -1,12 +1,14 @@
-"""Tripwires tying docs/architecture/architecture.md to the code it documents.
+"""Tripwires tying two documents to the code they document.
 
-The CLI section's tables must cover exactly the registered subcommands, and the
-fragment section's schema table must match ``schema.py`` — so doc drift fails CI
-instead of accumulating (basicly-kd8).
+``docs/reference/cli.md``'s tables must cover exactly the registered subcommands, and
+``docs/architecture/architecture.md``'s fragment table must match ``schema.py`` — so doc
+drift fails CI instead of accumulating (basicly-kd8).
 
-The document has no section numbers, so each anchor is the heading text; renaming
-a heading must move the constant here in the same change, or ``_section`` raises
-rather than silently asserting nothing.
+The two are read differently, and that is the CLI reference being its own document
+(basicly-mfavrh): it is gated whole, so nothing keys on a heading in it. The
+architecture document is sliced by heading text, and renaming a heading must move the
+constant here in the same change, or ``_section`` raises rather than silently asserting
+nothing.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ import pytest
 from basicly import agents, cli, config, schema, tracker_paths
 
 ARCHITECTURE_MD = Path(__file__).parent.parent / "docs" / "architecture" / "architecture.md"
-CLI_SECTION = "## 22. The CLI surface"
+CLI_MD = Path(__file__).parent.parent / "docs" / "reference" / "cli.md"
 FRAGMENT_SECTION = "## 13. The fragment model"
 
 
@@ -39,6 +41,12 @@ def architecture() -> str:
 
 
 @pytest.fixture(scope="module")
+def cli_reference() -> str:
+    """The CLI reference text, whole: every table in it tabulates commands."""
+    return CLI_MD.read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
 def registered_commands() -> set[str]:
     """Every top-level subcommand the CLI parser registers."""
     parser = cli._build_parser()
@@ -46,30 +54,28 @@ def registered_commands() -> set[str]:
     return set(action.choices)
 
 
-def test_section_8_lists_every_registered_command(
-    architecture: str, registered_commands: set[str]
+def test_the_cli_reference_lists_every_registered_command(
+    cli_reference: str, registered_commands: set[str]
 ) -> None:
-    """A new subcommand must gain a CLI-section row before it ships."""
-    section = _section(architecture, CLI_SECTION)
-    spans = re.findall(r"`([^`]+)`", section)
+    """A new subcommand must gain a reference row before it ships."""
+    spans = re.findall(r"`([^`]+)`", cli_reference)
     documented_words = {word for span in spans for word in re.findall(r"[a-z][a-z-]+", span)}
 
     missing = sorted(registered_commands - documented_words)
-    assert not missing, f"registered commands absent from the architecture CLI section: {missing}"
+    assert not missing, f"registered commands absent from the CLI reference: {missing}"
 
 
-def test_section_8_documents_only_registered_commands(
-    architecture: str, registered_commands: set[str]
+def test_the_cli_reference_documents_only_registered_commands(
+    cli_reference: str, registered_commands: set[str]
 ) -> None:
-    """A removed or renamed subcommand must leave the CLI section's tables."""
-    section = _section(architecture, CLI_SECTION)
-    table_rows = [line for line in section.splitlines() if line.startswith("|")]
+    """A removed or renamed subcommand must leave the CLI reference's tables."""
+    table_rows = [line for line in cli_reference.splitlines() if line.startswith("|")]
     documented = {
         match.group(1) for row in table_rows for match in re.finditer(r"`basicly ([a-z-]+)", row)
     }
 
     stale = sorted(documented - registered_commands)
-    assert not stale, f"the architecture CLI section documents unregistered commands: {stale}"
+    assert not stale, f"the CLI reference documents unregistered commands: {stale}"
 
 
 def test_section_5_categories_match_schema(architecture: str) -> None:
@@ -161,7 +167,7 @@ def test_section_30_counts_the_agent_sources_and_the_shared_blocks(architecture:
     assert f"plus {blocks} shared blocks" in section
 
 
-def test_section_22_board_serve_row_names_every_serve_flag(architecture: str) -> None:
+def test_the_board_serve_row_names_every_serve_flag(cli_reference: str) -> None:
     """A flag absent from the row is a surface a reader cannot know about.
 
     The row claimed `board serve` answered GET alone while `do_POST` has run an action
@@ -179,7 +185,7 @@ def test_section_22_board_serve_row_names_every_serve_flag(architecture: str) ->
         if option.startswith("--") and option != "--help"
     }
     row = next(
-        line for line in architecture.splitlines() if line.startswith("| `basicly board serve")
+        line for line in cli_reference.splitlines() if line.startswith("| `basicly board serve")
     )
 
     missing = sorted(flag for flag in flags if flag not in row)

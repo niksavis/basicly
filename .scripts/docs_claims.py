@@ -82,6 +82,9 @@ HOOKS_DIR = ".basicly/core/hooks"
 SRC_DIR = "src/basicly"
 
 TUTORIAL_DIR = "docs/tutorial"
+# The per-command reference, gated whole rather than by section: it left the architecture
+# document as its own file (basicly-mfavrh), so there is no sibling prose to slice away.
+CLI_MD = "docs/reference/cli.md"
 CHANGELOG_MD = "CHANGELOG.md"
 
 # The changelog's released-section heading, newest first under `## [Unreleased]` —
@@ -247,17 +250,18 @@ def _cells(row: str) -> list[str]:
     return re.split(r"(?<!\\)\|", row)
 
 
-def _cli_section(root: Path) -> str:
-    """The architecture document's CLI section, where every command is tabulated."""
-    text = read_text(root / ARCHITECTURE_MD)
-    # No section numbers to key on, so renaming that heading must change this literal.
-    start = text.index("## 22. The CLI surface")
-    end = text.find("\n## ", start)
-    return text[start:end] if end != -1 else text[start:]
+def _cli_reference(root: Path) -> str:
+    """The CLI reference, whole: every table in it tabulates commands.
+
+    A section slice out of a larger document used to be needed here and no longer is,
+    which is the point of the move: nothing keys on a heading, so renaming one cannot
+    silently reduce this claim to checking an empty string.
+    """
+    return read_text(root / CLI_MD)
 
 
 def _documented_commands(section: str) -> set[str]:
-    """Subcommand names declared in the *first* cell of each CLI-section table row.
+    """Subcommand names declared in the *first* cell of each reference table row.
 
     Only the command cell, never the behavior prose beside it: that column is full
     of incidental backticked words (``basicly.toml``, ``check``, ``build``) which
@@ -283,12 +287,12 @@ def _documented_commands(section: str) -> set[str]:
 
 
 def _cli_commands_covered(root: Path) -> list[str]:
-    """Every subcommand the CLI ships must appear in the CLI section's tables."""
+    """Every subcommand the CLI ships must appear in the CLI reference's tables."""
     top = subparsers(cli._build_parser())
     if top is None:  # pragma: no cover - the CLI is a subcommand parser by construction
         raise ClaimError("the CLI parser declares no subcommands")
 
-    missing = sorted(set(top.choices) - _documented_commands(_cli_section(root)))
+    missing = sorted(set(top.choices) - _documented_commands(_cli_reference(root)))
     if missing:
         return [f"subcommands missing from the CLI tables: {', '.join(missing)}"]
     return []
@@ -314,7 +318,7 @@ def _cli_subcommands_covered(root: Path) -> list[str]:
     top = subparsers(cli._build_parser())
     if top is None:  # pragma: no cover - the CLI is a subcommand parser by construction
         raise ClaimError("the CLI parser declares no subcommands")
-    rows = [row for row in _cli_section(root).splitlines() if row.startswith("|")]
+    rows = [row for row in _cli_reference(root).splitlines() if row.startswith("|")]
 
     problems: list[str] = []
     for parent, parser in sorted(top.choices.items()):
@@ -417,8 +421,8 @@ BLOCKS: tuple[Block, ...] = (
 )
 
 ASSERTIONS: tuple[Assertion, ...] = (
-    Assertion("cli-commands", ARCHITECTURE_MD, _cli_commands_covered),
-    Assertion("cli-subcommands", ARCHITECTURE_MD, _cli_subcommands_covered),
+    Assertion("cli-commands", CLI_MD, _cli_commands_covered),
+    Assertion("cli-subcommands", CLI_MD, _cli_subcommands_covered),
     Assertion("tutorial-versions", TUTORIAL_DIR, _tutorial_versions_current),
     Assertion("skill-work-types", SKILLS_DIR, work_types.skill_work_types),
     Assertion(
