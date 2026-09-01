@@ -648,6 +648,69 @@ def read_artifacts(repo_root: Path, issue_id: str) -> dict[str, object]:
     return dict(state.artifacts)
 
 
+# --- A dispatch's spend, as the typed event that carries it (D-34) ----------
+#
+# `add_artifact`'s reason, turned around. An artifact is its own kind because its body is
+# too large for the free-text cap; a dispatch is its own kind because its spend is a
+# **number the fold sums**. `events.accumulate` adds `spend_micros` off a `dispatch`
+# payload into the record's carried totals, so a figure recorded here travels in the
+# committed ledger — while `.basicly/usage/run-records.json`, which every spend reader
+# used to have as its only source, is gitignored and never leaves the machine that wrote
+# it (D-11: the ledger is the travelling read).
+
+
+# The payload key the accumulator sums by name, and the one it counts an attempt by.
+# Spelled here for :data:`ARTIFACT_BODY_KEY`'s reason: `events.accumulate` reads the key
+# as a literal and exports no constant to alias. `tests/test_tracker_dispatch.py` binds the
+# pair by folding a real ledger, so a kit that renamed it fails there rather than storing a
+# number nothing sums.
+DISPATCH_SPEND_KEY = "spend_micros"
+
+
+def add_dispatch(repo_root: Path, issue_id: str, reading: Mapping[str, object]) -> None:
+    """Record one completed dispatch on *issue_id* as the ledger's `dispatch` event.
+
+    *reading* is the dispatch's telemetry, and it carries its spend under
+    :data:`DISPATCH_SPEND_KEY` as a whole number — a float would make the running sum
+    depend on the order it was taken in, and `events.accumulate` refuses one.
+
+    Not stated as an argv, for :func:`add_artifact`'s reason: the argv vocabulary is what a
+    write looked like while it was a subprocess, and no external surface ever appended a
+    telemetry reading.
+
+    Idempotent with no read first: the event id is a digest over the kind and the payload,
+    so re-recording one dispatch completion appends nothing the second time. The corollary
+    is the caller's to know — two genuinely distinct dispatches must differ somewhere in
+    *reading*, or the second collapses into the first and its spend is never counted.
+
+    Raises:
+        TrackerWriteRefusedError: a :func:`read_only` section is active.
+        TrackerDivergenceError: the ledger holds no such record, so the reading would be
+            telemetry attached to nothing; or the event did not reach the ledger.
+    """
+    _refuse_in_read_only(f"recording {issue_id}'s dispatch spend writes")
+    kit_module = kit(repo_root)
+    events = kit_module.events
+    draft = events.Draft(
+        issue_id,
+        events.KIND_DISPATCH,
+        {kit_module.migrate.PROVENANCE_KEY: owned_write.OWNED_PROVENANCE, **reading},
+    )
+    ledger = ledger_dir(repo_root)
+    try:
+        # The lock spans the check and the append for `owned_write.append`'s reason: the
+        # record set a write is refused against has to be the set the append lands on.
+        with events.LedgerLock(ledger) as lock:
+            owned_write.refuse_a_write_to_an_absent_record(
+                kit_module, ledger, f"the dispatch spend for {issue_id}", [draft]
+            )
+            events.append(ledger, [draft], redact=redact.redact_committed, held_lock=lock)
+    except (events.LedgerError, OSError, ValueError) as exc:
+        raise TrackerDivergenceError(
+            f"the dispatch spend for {issue_id} did not reach the owned ledger: {exc}"
+        ) from exc
+
+
 # --- Export scrubbing (basicly-vkh0.5) --------------------------------------
 
 
