@@ -59,6 +59,12 @@ Into any git repo, with [uv](https://docs.astral.sh/uv/) already on the machine:
 uvx --from git+https://github.com/niksavis/basicly@v0.11.0 basicly install
 ```
 
+`uvx` is one of three ways to reach the same verb, not the command itself:
+`uv run basicly install` works inside a checkout of basicly itself, and a bare
+`basicly install` works once the executable is on `PATH` (put it there with
+`uv tool install`). Install syncs the catalog into your repo; it never puts
+`basicly` on `PATH`.
+
 No `uv` or Python yet? The bootstrap shim installs `uv` first, then runs the
 same command:
 
