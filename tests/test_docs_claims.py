@@ -31,6 +31,7 @@ from tests.doc_blocks import block_body, cells
 
 REPO = Path(__file__).resolve().parents[1]
 ARCHITECTURE_MD = "docs/architecture/architecture.md"
+CLI_MD = "docs/reference/cli.md"
 SKILLS_README = ".basicly/core/skills/README.md"
 HOOKS_README = ".basicly/core/hooks/README.md"
 
@@ -205,7 +206,7 @@ def test_check_fails_when_a_shipped_subcommand_leaves_the_command_tables(
     work_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An omitted subcommand fails the gate and is named in the failure."""
-    path = work_repo / ARCHITECTURE_MD
+    path = work_repo / CLI_MD
     text = path.read_text(encoding="utf-8")
     row = next(line for line in text.splitlines() if line.startswith("| `basicly decompose`"))
     path.write_text(text.replace(f"{row}\n", ""), encoding="utf-8")
@@ -261,7 +262,7 @@ def test_check_fails_when_a_group_stops_documenting_one_of_its_subcommands(
     dropped: str,
 ) -> None:
     """A known-bad control per case, so a green sweep cannot be an empty one."""
-    path = work_repo / ARCHITECTURE_MD
+    path = work_repo / CLI_MD
     text = path.read_text(encoding="utf-8")
     assert fragment in text, "the fixture no longer matches the document it mutates"
     path.write_text(text.replace(fragment, "", 1), encoding="utf-8")
@@ -279,7 +280,7 @@ def test_fix_cannot_repair_a_missing_subcommand_and_says_so(work_repo: Path) -> 
     A ``fix_command`` that exited 0 here would leave the pre-commit fast set green
     on a real omission — a fail-open gate built by the gate that closes one.
     """
-    path = work_repo / ARCHITECTURE_MD
+    path = work_repo / CLI_MD
     text = path.read_text(encoding="utf-8")
     path.write_text(text.replace(r"\|bg-isolation", "", 1), encoding="utf-8")
 
