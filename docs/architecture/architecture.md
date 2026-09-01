@@ -668,9 +668,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | chars | cap | headroom |
 | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 8768 | 9000 | 232 |
-| `AGENTS.md` (codex) | 15984 | 16000 | 16 |
-| `.github/copilot-instructions.md` (copilot) | 8867 | 9000 | 133 |
+| `.claude/CLAUDE.md` (claude) | 8748 | 9000 | 252 |
+| `AGENTS.md` (codex) | 15964 | 16000 | 36 |
+| `.github/copilot-instructions.md` (copilot) | 8847 | 9000 | 153 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -760,19 +760,17 @@ advertises it.
 | `.claude/skills/` | Claude's only project skill root |
 | `.agents/skills/` | the open-standard root the other families discover |
 
-`[TARGET]` **Both roots are mandatory, and every command that writes one writes both.** A
-root that only some commands write is how a second root drifts unnoticed. Filed as
-basicly-jt0dgi.
+**Both roots are mandatory, and every command that writes one writes both.** A root
+that only some commands write is how a second root drifts unnoticed.
 
-The tree does not do this today. `skills.resolve_skill_roots` writes
-`DEFAULT_SKILL_ROOTS[0]` alone unless the caller passes `--all-default-roots` or an
-explicit `--root`, so a bare `basicly skills-build` or `basicly skills-check` touches one
-root [verified 2026-08-16, `uv run basicly skills-check --help`]. `basicly install` passes
-`all_default_roots=True`, so an install is correct and a bare check is not. This
-repository's own `CLAUDE.md` compensates by prescribing the flag, which is guidance
-standing in for a default. The default should change, and the flag should become
-redundant. The agent roots already behave this way: `basicly agents-build` and
-`agents-check` take no root flag and always write both.
+`skills.resolve_skill_roots` resolves every entry of `DEFAULT_SKILL_ROOTS` unless the
+caller names one explicitly with `--root`, so a bare `basicly skills-build` or `basicly
+skills-check` covers both roots, and the check names the roots it inspected in its
+success line [verified 2026-09-01, `uv run basicly skills-check`]. `--all-default-roots`
+survives as an accepted no-op that prints a deprecation note, because `basicly install`
+already wrote the flag into CI workflows and editor tasks in consumer repos and failing
+those on an upgrade would be the worse answer. The agent roots have always behaved this
+way: `basicly agents-build` and `agents-check` take no root flag and always write both.
 
 **A skill source directory projects whole.** A skill may bundle references, scripts and
 assets beside `skill.yaml`. The projector renders the discoverable `SKILL.md` with a

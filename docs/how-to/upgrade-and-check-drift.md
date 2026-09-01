@@ -68,7 +68,7 @@ basicly permissions-check
 ```
 
 ```text
-Projected skills are up to date.
+Projected skills are up to date in .claude/skills, .agents/skills.
 Projected agents are up to date.
 Projected hooks are up to date.
 Projected permissions deny-list is up to date.

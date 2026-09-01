@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+from basicly import cli
 from basicly.schema import ValidationError
 from basicly.skill_source import discover_skills
 from basicly.skills import (
+    DEFAULT_SKILL_ROOTS,
     GENERATED_MARKER,
     SKILLS_SOURCE_DIR,
     UNMANAGED_REASON_PREFIX,
@@ -64,7 +66,7 @@ def test_render_skill_md_frontmatter_marker_and_body() -> None:
 def test_sync_and_check_skills(tmp_path: Path) -> None:
     """sync_skills renders SKILL.md (with marker) to roots and check validates parity."""
     _write_skill(tmp_path, "tool-ripgrep", "tool-ripgrep", "Use ripgrep for fast code search.")
-    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"])
 
     result, _pruned = sync_skills(tmp_path, roots)
 
@@ -81,7 +83,7 @@ def test_sync_skills_filters_and_prunes_by_selection(tmp_path: Path) -> None:
     """A tagged skill outside the selection is skipped and its projection pruned."""
     _write_skill(tmp_path, "tool-uv", "tool-uv", "Python tooling.", technologies="[python]")
     _write_skill(tmp_path, "tool-git", "tool-git", "Git usage.")
-    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"])
     excluded = roots[0] / "tool-uv" / "SKILL.md"
 
     # Full projection first (no selection recorded): both skills ship.
@@ -124,9 +126,7 @@ def test_sync_projects_full_skill_directory(tmp_path: Path) -> None:
     _write_resource(tmp_path, "pdf", "assets/logo.bin", b"\x00\x01\x02")
     _write_resource(tmp_path, "pdf", "NOTES.txt", b"extra top-level file\n")
     _write_resource(tmp_path, "pdf", "extra/nested/deep.dat", b"deep\n")
-    roots = resolve_skill_roots(
-        tmp_path, roots=[".claude/skills", ".agents/skills"], use_default_roots=False
-    )
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills", ".agents/skills"])
 
     sync_skills(tmp_path, roots)
 
@@ -166,7 +166,7 @@ def test_optional_frontmatter_round_trips(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"])
 
     sync_skills(tmp_path, roots)
 
@@ -190,7 +190,7 @@ def test_deselect_prunes_whole_skill_directory(tmp_path: Path) -> None:
     """Deselecting a tagged skill prunes its whole projected dir, resources and all."""
     _write_skill(tmp_path, "tool-uv", "tool-uv", "Python tooling.", technologies="[python]")
     _write_resource(tmp_path, "tool-uv", "references/REF.md", b"ref\n")
-    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"])
     skill_dir = roots[0] / "tool-uv"
 
     sync_skills(tmp_path, roots)
@@ -207,7 +207,7 @@ def test_check_detects_resource_drift_and_orphans(tmp_path: Path) -> None:
     """A hand-edited resource is flagged stale; an added projected file is flagged orphan."""
     _write_skill(tmp_path, "pdf", "pdf", "Work with PDFs.")
     _write_resource(tmp_path, "pdf", "references/REF.md", b"# Reference\n")
-    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"])
     skill_dir = roots[0] / "pdf"
 
     sync_skills(tmp_path, roots)
@@ -236,7 +236,7 @@ def test_check_reports_a_hand_authored_skill_with_no_source(tmp_path: Path) -> N
     every gate — it reached one agent, never the other, and nothing said so.
     """
     _write_skill(tmp_path, "pdf", "pdf", "Work with PDFs.")
-    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"])
     sync_skills(tmp_path, roots)
     assert check_synced_skills(tmp_path, roots) == []
 
@@ -260,7 +260,7 @@ def test_check_reports_a_hand_authored_skill_with_no_source(tmp_path: Path) -> N
 def test_build_reports_but_never_deletes_an_unmanaged_skill(tmp_path: Path) -> None:
     """The gate reports what no source describes; only a human deletes it."""
     _write_skill(tmp_path, "pdf", "pdf", "Work with PDFs.")
-    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"])
     hand_authored = roots[0] / "release-process" / "SKILL.md"
     hand_authored.parent.mkdir(parents=True)
     hand_authored.write_text("---\nname: release-process\n---\n\nbody\n", encoding="utf-8")
@@ -275,7 +275,7 @@ def test_build_reports_but_never_deletes_an_unmanaged_skill(tmp_path: Path) -> N
 def test_check_reports_a_loose_file_at_a_projected_root(tmp_path: Path) -> None:
     """A README sitting beside the skill dirs is reported (it teaches the wrong model)."""
     _write_skill(tmp_path, "pdf", "pdf", "Work with PDFs.")
-    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"])
     sync_skills(tmp_path, roots)
 
     readme = roots[0] / "README.md"
@@ -289,7 +289,7 @@ def test_check_reports_a_loose_file_at_a_projected_root(tmp_path: Path) -> None:
 def test_a_deselected_skill_is_not_reported_as_unmanaged(tmp_path: Path) -> None:
     """A skill excluded by technology keeps its own targeted reason, not the unmanaged one."""
     _write_skill(tmp_path, "tool-uv", "tool-uv", "Python tooling.", technologies="[python]")
-    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"], use_default_roots=False)
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"])
     sync_skills(tmp_path, roots)
     excluded = roots[0] / "tool-uv" / "SKILL.md"
 
@@ -476,3 +476,48 @@ def test_the_claude_fence_may_not_shadow_a_rendered_key(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="may not shadow"):
         discover_skills(tmp_path)
+
+
+def test_no_root_flag_resolves_every_default_root(tmp_path: Path) -> None:
+    """A bare skills-build/skills-check reaches both roots (basicly-jt0dgi).
+
+    The regression this pins: `resolve_skill_roots` used to return
+    `DEFAULT_SKILL_ROOTS[0]` alone unless a caller opted in, so an install wrote
+    `.agents/skills` and a bare check never looked at it — the open-standard root
+    could go stale while every local gate stayed green.
+    """
+    assert resolve_skill_roots(tmp_path, roots=None) == [
+        tmp_path / root for root in DEFAULT_SKILL_ROOTS
+    ]
+
+
+def test_an_explicit_root_narrows_to_that_root_alone(tmp_path: Path) -> None:
+    """`--root` still means only that root, which is what makes the new default safe."""
+    assert resolve_skill_roots(tmp_path, roots=[".agents/skills"]) == [tmp_path / ".agents/skills"]
+
+
+def test_a_bare_build_writes_the_open_standard_root(tmp_path: Path) -> None:
+    """End of the criterion, at the file level: no flag, and both roots hold the skill."""
+    _write_skill(tmp_path, "tool-git", "tool-git", "Git usage.")
+
+    sync_skills(tmp_path, resolve_skill_roots(tmp_path, roots=None))
+
+    for root in DEFAULT_SKILL_ROOTS:
+        assert (tmp_path / root / "tool-git" / "SKILL.md").is_file()
+
+
+def test_the_retired_flag_still_parses_and_says_it_does_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--all-default-roots` survives as a no-op, because consumer repos already run it.
+
+    Scaffolded CI workflows and editor tasks on disk in other repos spell the flag
+    out; rejecting it on upgrade would break them for no gain. It resolves the same
+    roots as a bare run and says on stderr that it is redundant.
+    """
+    args = cli._build_parser().parse_args(["skills-check", "--all-default-roots"])
+
+    roots = cli._resolve_skill_output_roots(args, tmp_path)
+
+    assert roots == [tmp_path / root for root in DEFAULT_SKILL_ROOTS]
+    assert "deprecated" in capsys.readouterr().err

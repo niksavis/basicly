@@ -429,7 +429,7 @@ modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "projection-skills"
-command = ["uv", "run", "basicly", "skills-check", "--all-default-roots"]
+command = ["uv", "run", "basicly", "skills-check"]
 modes = ["fast", "full"]
 
 [[verify.checks]]

@@ -44,7 +44,7 @@ They fall into three surfaces.
 | --- | --- |
 | `basicly build [--target NAME] [--verify]` | Render enabled targets, write only changed bytes, update the manifest, warn on cap overrun. The verify flag runs the content checks first and writes nothing on failure |
 | `basicly check` | Byte-for-byte staleness check of generated files and the manifest; exit 1 on mismatch, no auto-fix |
-| `basicly skills-build [--root ...\|--all-default-roots]` / `skills-check` | The same build and check contract for the skill catalog, mirrored per root. Without a flag it writes one root only, which [14. Skills](../architecture/architecture.md#14-skills) marks as a target to fix |
+| `basicly skills-build [--root ...]` / `skills-check` | The same build and check contract for the skill catalog, mirrored per root. With no `--root` it covers every default root ([14. Skills](../architecture/architecture.md#14-skills)); `--all-default-roots` is a deprecated no-op |
 | `basicly agents-build` / `agents-check` | The same contract for the agent catalog, always both roots, with no root-selection flag |
 | `basicly hooks-build [--no-install]` / `hooks-check` | Materialize hook scripts, merge a managed block into the hook config preserving foreign hooks, then install the git hooks so the gates are active. The check reports projection drift and warns when the git hooks are not installed |
 | `basicly permissions-build` / `permissions-check` | Project the agent-permissions deny-list into the co-owned settings file: ensure-present, consumer entries preserved, nothing pruned, with a semantic subset drift check |

@@ -35,7 +35,7 @@ VSCODE_TASKS_JSON = """\
       "label": "basicly: skills-build",
       "detail": "Re-project skills into every agent root",
       "type": "shell",
-      "command": "@UVX@ skills-build --all-default-roots",
+      "command": "@UVX@ skills-build",
       "problemMatcher": []
     },
     {
@@ -136,7 +136,7 @@ jobs:
       - name: Projection drift check
         run: @UVX@ check
       - name: Skill projection drift check
-        run: @UVX@ skills-check --all-default-roots
+        run: @UVX@ skills-check
       - name: Hook wiring drift check
         run: @UVX@ hooks-check
       - name: Configured verify checks
