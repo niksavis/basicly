@@ -1942,7 +1942,6 @@ def test_a_detached_child_outlives_the_process_that_launched_it(tmp_path: Path) 
     _await(log, "the detached child left no output", contains="survived")
 
 
-@pytest.mark.skipif(os.name == "nt", reason="process groups and killpg are POSIX")
 def test_a_detached_child_survives_the_kill_of_its_launcher_group(tmp_path: Path) -> None:
     """The defect: an agent tool kills its background job's whole group at its ceiling.
 
@@ -1951,6 +1950,8 @@ def test_a_detached_child_survives_the_kill_of_its_launcher_group(tmp_path: Path
     is put in its own session, held alive, and that session is killed out from under the
     child.
     """
+    if os.name == "nt":
+        pytest.skip("process groups and killpg are POSIX")
     log = tmp_path / "detached.log"
     launcher = _launcher_source(tmp_path, log, then="time.sleep(300)")
     proc = subprocess.Popen(
