@@ -62,6 +62,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -2273,8 +2274,21 @@ class LaneStream:
     access takes the lock.
     """
 
-    def __init__(self) -> None:
-        """An unstarted meter: no events, nothing spent, nothing said."""
+    def __init__(self, *, agent: str = "", model: str = "") -> None:
+        """An unstarted meter for a dispatch of *agent* on *model*.
+
+        **The dispatch's own facts, held while it runs.** The run record carrying them is
+        written after the process stops, so a first dispatch had none to read and its card
+        drew no agent, model or start time for the whole of it (basicly-1bsfx3). Empty
+        defaults: a caller that cannot name what it meters publishes nothing.
+
+        Two clocks, because :attr:`elapsed_s` subtracts the monotonic one: a wall clock
+        stepping mid-dispatch would otherwise age a running lane backwards.
+        """
+        self.agent = agent
+        self.model = model
+        self.started_at = datetime.now(UTC).isoformat()
+        self._start = time.monotonic()
         self._lock = threading.Lock()
         self._events = 0
         self._tokens = 0
@@ -2307,6 +2321,11 @@ class LaneStream:
         """The last thing this dispatch said, or empty before it has said anything."""
         with self._lock:
             return self._doing
+
+    @property
+    def elapsed_s(self) -> float:
+        """Seconds this dispatch has been running, on the monotonic clock."""
+        return max(0.0, time.monotonic() - self._start)
 
     def fingerprint(self) -> str:
         """A reading that changes on every event, for :class:`runner.StallWatchdog`.
@@ -2404,6 +2423,17 @@ def inflight_activity() -> dict[str, str]:
     with _LIVE_LOCK:
         live = tuple(_LIVE_LANES.items())
     return {issue_id: stream.doing for issue_id, stream in live if stream.doing}
+
+
+def inflight_dispatch() -> dict[str, LaneStream]:
+    """Each currently-running lane's meter, for the facts its dispatch was issued with.
+
+    The meter rather than a figure per field: its key set is the same "registered right
+    now" the two accessors above answer, and a third spelling of that membership would be
+    a third answer to which lanes are live.
+    """
+    with _LIVE_LOCK:
+        return dict(_LIVE_LANES)
 
 
 def retired_spend() -> int:
@@ -2857,7 +2887,12 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         # call. An adapter with no stream to read contributes a constant, which
         # leaves the probe exactly the git reading it was.
         seed = _lane_seed(repo_root, session.root_issue, spec)
-        stream = LaneStream()
+        # Resolved here as well as inside ``runner.run`` so the meter can name the model
+        # while the lane runs: a config read with no side effect, whose refusal is the
+        # one the enclosing guard already records.
+        stream = LaneStream(
+            agent=spec.name, model=runner.resolve_model(spec, repo_root=cwd).model or ""
+        )
         watchdog = runner.StallWatchdog(
             runner_config.stall_after,
             probe=lambda: f"{stream.fingerprint()} {lane_activity(cwd)}",

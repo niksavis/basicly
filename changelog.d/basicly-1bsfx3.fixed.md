@@ -1,0 +1,1 @@
+- The board snapshot now carries a running lane's `agent`, `model`, `started_at` and `elapsed_s`, taken from the dispatch the supervisor issued rather than from a run record that is only written once the lane stops - so a lane's first dispatch names its runner instead of drawing a card with just a title, a phase and a token count.

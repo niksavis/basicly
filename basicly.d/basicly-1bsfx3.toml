@@ -1,0 +1,41 @@
+# The live snapshot names the dispatch a lane is running (basicly-1bsfx3).
+#
+# Measured 109 s into a live pass, a running lane row carried `branch, id, live, note,
+# phase, provisioned, status, tokens` and none of `agent`, `model`, `started_at` or
+# `elapsed_s` - all four of which the supervisor holds when it spawns the process. The
+# card `basicly-0xtzf1` shipped therefore drew the title, the phase and the tokens alone
+# on every first dispatch, because the only producer of those four was a run record that
+# is written after the process stops.
+#
+# ## module_size: supervise.py rebaselined by 301
+#
+# What the 301 buys: `LaneStream` takes the agent, the model and both clocks at the spawn,
+# `elapsed_s` subtracts the monotonic one, `inflight_dispatch` publishes the registry the
+# two spend accessors already key on, and the dispatch site resolves the model it was
+# going to resolve anyway. `board_facts` pays for the consumer half out of its own waived
+# ceiling and `tests/test_supervise_board.py` paid for both tests out of headroom, after
+# the existing `IN FLIGHT` case was folded onto the two helpers the new ones needed.
+#
+# Rebaselined rather than waived: a waiver would delete supervise.py's 49554-token
+# ceiling - 12x the cap - to buy 301 tokens. No prose was cut to pay for it; the module's
+# comment share is unchanged at its frozen 56.6%, so the gate that guards narration is
+# still binding at exactly the number it was.
+[ratchet]
+base_commit = "1687bc87d8aeef5b5a5d836292403ff107332185"
+
+# ## noqa_debt: PLR0913 rises by one
+#
+# `board_facts._lane_fact` draws one figure per tier and now draws from a fourth - the
+# live meter, beside the tracker's binding, the phase map and the run record. The
+# alternative rejected is folding the dispatch mapping into `spending`: its key set is the
+# same registry, but the merge changes the meaning of a positional argument that
+# `tests/test_board_facts_lanes.py` passes at ten call sites, and that file is outside
+# this record's declared scope.
+[ratchet.noqa_debt.frozen]
+PLR0913 = 1
+
+[ratchet.module_size]
+rebaseline_reason = "the three facts a running lane's card could not name: LaneStream takes the agent, the model and both clocks at the spawn, elapsed_s subtracts the monotonic one, and inflight_dispatch publishes the registry the spend accessors already key on. supervise.py is 12x the cap, so a waiver would delete its 49554-token ceiling to buy 301 tokens; no prose was cut and its comment share is unchanged at 56.6%."
+
+[ratchet.module_size.rebaselined]
+"src/basicly/supervise.py" = 301

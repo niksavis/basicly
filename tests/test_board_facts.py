@@ -313,3 +313,71 @@ def test_hide_unanswerable_reads_the_grant_and_the_units_off_the_document() -> N
     board_facts._hide_unanswerable(built)
     assert [a["issue"] for a in built["asks"]] == ["bd-2"]
     assert board_facts._hide_unanswerable({"units": []}) == {"units": []}
+
+
+# The lane-card half lives in `test_board_facts_lanes.py`; these three stay here because
+# basicly-1bsfx3's declared scope names this file and not that one.
+_DISPATCHED = {
+    "agent": "codex",
+    "model": "gpt-6",
+    "cost": 12.5,
+    "duration_s": 900.0,
+}
+
+
+def _running(issue_id: str) -> supervise.LaneView:
+    """A lane the tracker binds, with one finished dispatch behind the running one."""
+    return supervise.LaneView(
+        issue_id=issue_id,
+        status="in_progress",
+        worktree=issue_id,
+        branch=f"harness/{issue_id}",
+        live=True,
+        last_agent="codex",
+        last_run_at="2026-08-26T17:00:00Z",
+    )
+
+
+def test_a_running_lane_names_the_dispatch_it_is_running_not_the_one_before_it() -> None:
+    """basicly-1bsfx3 AC1-2: the meter minted at the spawn outranks the last run record.
+
+    The previous dispatch is present and says something different for every field, which is
+    what discriminates: `started_at` used to be `view.last_run_at` unconditionally, so a
+    second dispatch published the first one's stamp as the running lane's start.
+    """
+    meter = supervise.LaneStream(agent="claude", model="claude-opus-5")
+    fact = board_facts._lane_fact(
+        _running("a"), {"a": "build"}, {"a": 7}, {}, [_DISPATCHED], dispatch={"a": meter}
+    )
+    assert (fact.agent, fact.model) == ("claude", "claude-opus-5")
+    assert fact.started_at == meter.started_at != "2026-08-26T17:00:00Z"
+    assert fact.elapsed_s is not None
+    assert fact.elapsed_s < 900.0, "the last run's duration is not this dispatch's elapsed"
+
+
+def test_a_running_lane_with_no_run_record_at_all_still_names_its_dispatch() -> None:
+    """The reported condition: a first dispatch has no record, so nothing else can answer."""
+    fact = board_facts._lane_fact(
+        supervise.LaneView("a", "in_progress", "a", "harness/a", True),
+        {"a": "build"},
+        {"a": 0},
+        {},
+        [],
+        dispatch={"a": supervise.LaneStream(agent="claude", model="claude-opus-5")},
+    )
+    assert (fact.agent, fact.model) == ("claude", "claude-opus-5")
+    assert fact.started_at and fact.elapsed_s is not None
+    assert (fact.cost_usd, fact.context_used) == (None, None)
+
+
+def test_a_meter_naming_no_runner_publishes_nothing_rather_than_an_empty_string() -> None:
+    """Omit, never estimate - and never a blank either: the record still answers if it can."""
+    fact = board_facts._lane_fact(
+        _running("a"),
+        {"a": "build"},
+        {"a": 7},
+        {},
+        [_DISPATCHED],
+        dispatch={"a": supervise.LaneStream()},
+    )
+    assert (fact.agent, fact.model) == ("codex", "gpt-6")
