@@ -61,6 +61,28 @@ def _wait_for(predicate: Any, *, timeout: float = 10.0) -> bool:
     return False
 
 
+def _adopted(issue_id: str) -> supervise.AdoptedLane:
+    """One lane the pass has adopted, with its worktree binding on disk."""
+    return supervise.AdoptedLane(
+        issue_id=issue_id,
+        status="in_progress",
+        binding=loop_state.WorktreeBinding(issue_id, f"harness/{issue_id}"),
+        live=True,
+    )
+
+
+def _ticked_card(work_repo: Path, monkeypatch: pytest.MonkeyPatch, lane: str) -> dict[str, Any]:
+    """The card the tick draws for *lane*, with the session derivation pinned."""
+    monkeypatch.setattr(
+        board_facts.supervise,
+        "derive_session",
+        lambda *_a, **_k: supervise.SessionState(_ROOT, "open", (), (_adopted(lane),)),
+    )
+    supervise.acquire(work_repo, _SESSION, _ROOT)
+    ticked = json.loads(board_facts.emit_tick(work_repo, TICK_S).read_text(encoding="utf-8"))
+    return ticked["lanes"][0]
+
+
 @pytest.fixture
 def beating(work_repo: Path) -> Iterator[tuple[Path, list[str]]]:
     """A held lock with a live beater emitting the board, and the lines it reported."""
@@ -268,22 +290,9 @@ def test_in_flight_carries_one_card_per_adopted_lane(
     ze0po3): no `live_lane` stream is registered for it here, so the card reports it
     `provisioned` and not `live` - a worktree on disk is not a running agent.
     """
-    adopted = supervise.AdoptedLane(
-        issue_id="basicly-0jiq",
-        status="in_progress",
-        binding=loop_state.WorktreeBinding("basicly-0jiq", "harness/basicly-0jiq"),
-        live=True,
-    )
-    monkeypatch.setattr(
-        board_facts.supervise,
-        "derive_session",
-        lambda *_a, **_k: supervise.SessionState(_ROOT, "open", (), (adopted,)),
-    )
-    supervise.acquire(work_repo, _SESSION, _ROOT)
-    ticked = json.loads(board_facts.emit_tick(work_repo, TICK_S).read_text(encoding="utf-8"))
+    card = _ticked_card(work_repo, monkeypatch, "basicly-0jiq")
 
-    assert [lane["id"] for lane in ticked["lanes"]] == ["basicly-0jiq"]
-    card = ticked["lanes"][0]
+    assert [lane["id"] for lane in _document(work_repo)["lanes"]] == ["basicly-0jiq"]
     assert card["status"] == "in_progress"
     assert card["branch"] == "harness/basicly-0jiq"
     assert card["live"] is False
@@ -304,3 +313,51 @@ def test_the_session_section_is_omitted_once_the_lock_is_gone_and_lanes_reads_em
     document = json.loads(board_facts.emit_tick(work_repo, TICK_S).read_text(encoding="utf-8"))
     assert "session" not in document
     assert document["lanes"] == []
+
+
+def test_a_running_lane_carries_the_agent_model_and_start_of_the_dispatch_that_spawned_it(
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """basicly-1bsfx3: the live window, where no run record exists to read them off.
+
+    Measured 109 s into a live pass, a running lane row carried `branch, id, live, note,
+    phase, provisioned, status, tokens` and none of these four - so the card `basicly-0xtzf1`
+    shipped drew the title, the phase and the tokens alone. The supervisor held all four at
+    the spawn; this lane has no run record at all, which is the condition that made the
+    omission unrecoverable rather than merely late.
+
+    `cost_usd` and `context_used` stay absent on purpose: the stream reports neither
+    (`runner.claude_turn_usage` returns no per-turn cost), and the rule is omit, never
+    estimate.
+    """
+    with supervise.live_lane("basicly-0jiq", supervise.LaneStream(agent="claude", model="opus")):
+        card = _ticked_card(work_repo, monkeypatch, "basicly-0jiq")
+
+    assert card["live"] is True
+    assert card["agent"] == "claude"
+    assert card["model"] == "opus"
+    assert board_schema.verdict(work_repo, _document(work_repo)).exit_code == 0
+    assert datetime.fromisoformat(card["started_at"]).tzinfo is not None
+    assert card["elapsed_s"] >= 0
+    assert "cost_usd" not in card
+    assert "context_used" not in card
+
+
+def test_a_finished_lane_keeps_no_live_value_from_the_dispatch_that_ended(
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC 4: leaving `live_lane` retires the meter, so the next tick draws none of it.
+
+    The control for the test above. A meter left registered would keep drawing the ended
+    dispatch's start and a still-advancing `elapsed_s` under a row the same document says is
+    not running.
+    """
+    with supervise.live_lane("basicly-0jiq", supervise.LaneStream(agent="claude", model="opus")):
+        pass
+    card = _ticked_card(work_repo, monkeypatch, "basicly-0jiq")
+
+    assert card["live"] is False
+    assert "started_at" not in card
+    assert "elapsed_s" not in card
+    assert "agent" not in card
+    assert "model" not in card

@@ -382,19 +382,29 @@ def lane_facts(
         return None
     spending = supervise.inflight_spend()
     doing = supervise.inflight_activity()
+    issued = supervise.inflight_dispatch()
     runs = run_record.load_run_records(repo_root) or {}
     return tuple(
-        _lane_fact(view, phase_map, spending, doing, runs.get(view.issue_id) or [])
+        _lane_fact(
+            view,
+            phase_map,
+            spending,
+            doing,
+            runs.get(view.issue_id) or [],
+            dispatch=issued,
+        )
         for view in views
     )
 
 
-def _lane_fact(
+def _lane_fact(  # noqa: PLR0913 - one parameter per tier the card draws a figure from
     view: supervise.LaneView,
     phase_map: Mapping[str, str],
     spending: Mapping[str, int],
     doing: Mapping[str, str],
     runs: Sequence[Mapping[str, Any]],
+    *,
+    dispatch: Mapping[str, supervise.LaneStream] | None = None,
 ) -> board_sections.LaneFacts:
     """One lane's card, each figure from the tier that holds it.
 
@@ -417,6 +427,19 @@ def _lane_fact(
     per-dispatch, so carrying them forward prints last run's spend as this run's under a
     heading saying the lane runs now. `agent` and `model` do carry: a lane keeps its runner.
 
+    **The running dispatch answers for itself where it can (basicly-1bsfx3).** *dispatch* is
+    :func:`supervise.inflight_dispatch`, whose meter was minted at the spawn, so a lane's
+    *first* dispatch names its agent, its model and its own start - the run record that
+    carried those is written after the process stops, and until then the card drew none of
+    them. `started_at` and `elapsed_s` therefore change source rather than merely gaining
+    one: a running lane took the previous dispatch's stamp as this run's, which is the same
+    defect the cost and occupancy rules above already refuse.
+
+    `cost_usd` and `context_used` stay absent while a lane runs, and that is the omit-never-
+    estimate rule rather than an omission: `runner.claude_turn_usage` reports no per-turn
+    cost - `total_cost_usd` is on the terminating result event alone - and nothing in the
+    stream reports occupancy at all, so the meter holds neither to publish.
+
     `tokens` obeys the same rule as cost and occupancy rather than an exception to it: a
     **running lane never shows a figure from a previous dispatch.** While a lane runs the live
     stream is the only admissible source, and where it has nothing to say the card says
@@ -433,20 +456,23 @@ def _lane_fact(
     running = view.issue_id in spending
     last = runs[-1] if runs else {}
     spent = spending.get(view.issue_id)
+    meter = (dispatch or {}).get(view.issue_id) if running else None
     return board_sections.LaneFacts(
         id=view.issue_id,
         phase=phase_map.get(view.issue_id, ""),
         status=view.status,
-        agent=view.last_agent or _text(last.get("agent")),
+        agent=(meter.agent if meter else "") or view.last_agent or _text(last.get("agent")),
         live=running,
         provisioned=view.live,
-        started_at=view.last_run_at or "",
+        started_at=meter.started_at if meter else (view.last_run_at or ""),
         tokens=(spent or None) if running else view.last_tokens,
         branch=view.branch,
-        model=_text(last.get("model")),
+        model=(meter.model if meter else "") or _text(last.get("model")),
         note=doing.get(view.issue_id, ""),
         cost_usd=None if running else _number(last.get("cost")),
-        elapsed_s=None if running else _number(last.get("duration_s")),
+        elapsed_s=meter.elapsed_s
+        if meter
+        else (None if running else _number(last.get("duration_s"))),
         context_used=None if running else _whole(last.get("context_tokens")),
         context_window=None if running else _whole(last.get("context_window")),
     )
