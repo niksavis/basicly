@@ -1,0 +1,36 @@
+# Where a landing's 3-8 minutes go, measured instead of guessed (basicly-tjhjmk). The owner
+# retro of 2026-08-23 clocked six landings and named three candidate cuts, none of which
+# could be chosen because nothing timed a landing's stages.
+#
+# Measured before the first edit: `merge.py` had **0** tokens of module-size headroom and
+# 0.7 points of comment-density headroom, `verify.py` 343 and 0.7. Deleting prose would have
+# paid for the whole change and no claim in either module is wrong, so nothing was cut but
+# the narration this change itself added — `merge.py`'s prose share **fell**, 60.0 -> 58.8.
+#
+# `merge.py` +1579: `_Landing` (the per-stage clock, the verify stage's slowest checks, and
+# the headline a merged landing carries on its report line), `_write_landing_timing`, and
+# seven `mark` calls through `merge_worktree`. Two of those tokens are load-bearing against
+# the alternative: the total is read from its own clock rather than summed from the spans,
+# so the residual is *measured* and a breakdown that fails to account for the wall clock can
+# say so. A version that summed the spans would be smaller and would prove nothing.
+#
+# The extraction was **not** taken. `_write_landing_timing` is a `landing_artifact.py`
+# waiting to happen, on exactly the grounds `verify_artifact.py` was split out of
+# `verify.py` — but that is a new module and a new test module outside this record's
+# declared scope (`merge.py`, `verify.py`), and doing it here would land a structural change
+# nobody reviewed beside a measurement. It is named in the change summary instead.
+#
+# `verify.py` +180 is inside its 343 and is not declared: `CheckResult.duration_s`, measured
+# around the one `subprocess.run` in `_run`. It is the field that makes the verify stage
+# decomposable — 132.4s of full verify is 84.4s of `pytest` and 32.2s of the three
+# `pyright-*` platform passes, and a stage that names neither names nothing a cut can aim at.
+#
+# `tests/test_merge_timing.py` (1809) and `tests/test_verify_timing.py` (686) are new files
+# under the 4,000-token cap, so neither takes an entry. Both are separate files because
+# `test_merge.py` and `test_verify.py` sit at their baselines (0 and 18 tokens) and may only
+# shrink.
+[ratchet.module_size]
+rebaseline_reason = "the landing's per-stage clock and the log it appends to, in a module that had 0 tokens of headroom and is the only place a landing's stages can be timed from"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/merge.py" = 1579

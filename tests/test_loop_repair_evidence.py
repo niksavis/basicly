@@ -108,7 +108,7 @@ def test_a_landing_briefs_its_repair_with_the_output_the_gate_captured(
         merge,
         "merge_worktree",
         lambda root, name, *, bead, verify_mode, **_k: merge._verify_for_landing(
-            root, name, cwd, verify_mode, bead
+            name, cwd, verify_mode, merge._Landing(root, bead)
         ),
     )
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -94,6 +95,11 @@ class CheckResult:
     # reproduce it: a landing briefed a repair with the whole-suite command because the
     # per-check argv lived in a config the brief could not read (basicly-3oxf0d).
     command: tuple[str, ...] = ()
+    # Wall clock for this check's own subprocess; the run keeps none, so `verify: 132s`
+    # could not name which of 38 checks it was. Measured 2026-08-27: `pytest` 84.4s of a
+    # 132.4s full run, the three `pyright-*` passes 32.2s, 88% in four (basicly-tjhjmk).
+    # Zero for a check that never spawned, which is not a fast check.
+    duration_s: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -258,6 +264,7 @@ def _run(
         if not files:
             return CheckResult(name, "skip", 0)
         command += files
+    started = time.perf_counter()
     try:
         # `command` is the repo's own `[[verify.checks]]` argv plus staged filenames —
         # both inside the trust boundary, since running a repo's declared checks *is* the
@@ -298,6 +305,7 @@ def _run(
         proc.returncode,
         output=output,
         command=tuple(command),
+        duration_s=round(time.perf_counter() - started, 3),
     )
 
 
@@ -368,18 +376,16 @@ def rerun_failures(
 # Failure signatures a dependency emits and the work under test cannot cause
 # (basicly-kjc5.56). Each entry is (substrings that must all appear on ONE line,
 # why forgiving it is safe). An entry earns its place only on proof that no change
-# to this repo can produce it — otherwise this launders a real failure, which is
-# worse than the flake it excuses. Keep it short and keep the reason with it.
+# to this repo can produce it — otherwise this launders a real failure. Keep the
+# reason with the entry.
 #
 # Matching is per-line and conjunctive: requiring the store's own error class on the
 # same line proves the failure came out of the ledger, not out of a test's fixture.
 #
-# **The register lost an entry to the deletion, not to a fix** (basicly-vkh0.42.7): the
-# external tracker refused its own write on a backwards clock step, and there is no such
-# process left, so the entry would launder whatever else produced that text.
-#
-# The lock entry stays because the property did — one lock per append, lanes run
-# concurrently. Anchored on `events.LedgerLock.__enter__`'s own wording.
+# One entry left with the external tracker's deletion rather than with a fix
+# (basicly-vkh0.42.7); no such process remains, so it would launder whatever else
+# produced that text. The lock entry stays because the property did — one lock per
+# append, lanes run concurrently. Anchored on `events.LedgerLock.__enter__`'s wording.
 DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[tuple[str, ...], str], ...] = (
     (
         ("LockUnavailableError", "another writer holds"),

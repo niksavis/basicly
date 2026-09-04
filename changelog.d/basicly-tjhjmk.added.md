@@ -1,0 +1,1 @@
+- Each landing now records a per-stage wall clock — preflight, tracker-commit, rebase, regenerate, verify, probe, merge — to `.basicly/usage/landing-timings.json`, with the residual against the landing's own clock named rather than assumed, the verify stage's slowest checks beside it, and the totals on a merged landing's report line.

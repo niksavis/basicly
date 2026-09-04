@@ -58,8 +58,11 @@ br's export is written by br itself, so a landing publishes what it finds.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+import os
+import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import (
@@ -295,7 +298,7 @@ def _unrebuilt_generated(repo_root: Path, report: verify.VerifyReport) -> tuple[
 
 
 def _verify_for_landing(
-    repo_root: Path, name: str, worktree_path: Path, verify_mode: str, bead: str
+    name: str, worktree_path: Path, verify_mode: str, clock: _Landing
 ) -> MergeResult | None:
     """Re-verify the rebased worktree: a blocking result, or None when it may land.
 
@@ -324,10 +327,15 @@ def _verify_for_landing(
 
     A green suite is not the whole verdict: the debt no closed-record gate can see from here
     is the lane's own release note (:func:`verify.release_note_debt`).
+
+    The base checkout and the bead are read off *clock* rather than passed beside it. They
+    are the same landing's, one spelling each, and the second spelling is what would take
+    this over `PLR0913`.
     """
     report = verify.run_verify(worktree_path, verify_mode)
+    clock.note_checks(report)
     if report.passed:
-        owed = verify.release_note_debt(repo_root, worktree_path, verify_mode, bead)
+        owed = verify.release_note_debt(clock.repo_root, worktree_path, verify_mode, clock.bead)
         detail = f"{verify.RELEASE_NOTES_CHECK} refuses this landing: {owed}"
         return MergeResult(name, "verify-failed", detail) if owed else None
     failures = ", ".join(report.failures)
@@ -344,7 +352,7 @@ def _verify_for_landing(
             VERIFY_UNRELIABLE,
             f"verify {verify_mode} failed on {failures} — known dependency defect, {defect}",
         )
-    if (shared := _shared_tracker_failure(repo_root, rerun, bead)) is not None:
+    if (shared := _shared_tracker_failure(clock.repo_root, rerun, clock.bead)) is not None:
         return MergeResult(
             name,
             VERIFY_FOREIGN,
@@ -353,7 +361,7 @@ def _verify_for_landing(
             f"{shared.reason}",
             culprits=shared.culprits,
         )
-    if unrebuilt := _unrebuilt_generated(repo_root, rerun):
+    if unrebuilt := _unrebuilt_generated(clock.repo_root, rerun):
         return MergeResult(
             name,
             "verify-failed",
@@ -808,6 +816,122 @@ def _merge_and_prove(
     )
 
 
+# Untracked for the reason `verify_artifact.RUN_ARTIFACT` is: a landing refuses to merge
+# while the checkout carries dirt outside the tracker. Appended per bead rather than
+# overwritten, because "which slice dominates" is a question about a population and one
+# landing is a sample (basicly-tjhjmk).
+LANDING_TIMINGS_FILE = Path(".basicly/usage/landing-timings.json")
+
+# Four, because the measurement says four is the answer: `pytest` and the three `pyright-*`
+# platform passes are 88% of a 132.4s full run on this tree (2026-08-27), and a list holding
+# all 38 would weight the 30 that are collectively 12% like the one that is 64%.
+_SLOWEST_CHECKS = 4
+
+
+class _Landing:
+    """One landing's wall clock, split by stage, and where that split is written.
+
+    **Two clocks, not one derived from the other.** ``total_s`` is measured from the top of
+    :func:`merge_worktree` and the spans are measured between :meth:`mark` calls, so the
+    residual between them is *unattributed* time rather than zero by construction. A
+    breakdown that sums to its own total by arithmetic proves nothing about the landing;
+    this one can disagree with the wall clock, and that disagreement is the finding.
+
+    ``perf_counter``, so a clock step mid-landing cannot produce a negative stage; a
+    parameter, so a test asserts the arithmetic on exact numbers rather than on a sleep.
+    """
+
+    def __init__(
+        self, repo_root: Path, bead: str, clock: Callable[[], float] = time.perf_counter
+    ) -> None:
+        self.repo_root = repo_root
+        self.bead = bead
+        self.clock = clock
+        self.started = clock()
+        self._at = self.started
+        self.stages: list[tuple[str, float]] = []
+        self.checks: tuple[tuple[str, float], ...] = ()
+
+    def mark(self, stage: str) -> None:
+        """Close *stage*, which ran from the previous mark until now.
+
+        Called straight after the stage's work and before any branch on its result, so a
+        landing that stops early still leaves its own stage closed.
+        """
+        now = self.clock()
+        self.stages.append((stage, round(now - self._at, 3)))
+        self._at = now
+
+    def note_checks(self, report: verify.VerifyReport) -> None:
+        """Keep the verify stage's :data:`_SLOWEST_CHECKS` own checks, slowest first."""
+        ranked = sorted(((r.name, r.duration_s) for r in report.results), key=lambda c: -c[1])
+        self.checks = tuple(ranked[:_SLOWEST_CHECKS])
+
+    def close(self, result: MergeResult) -> MergeResult:
+        """Record the breakdown for *result*; a merged one also carries the headline.
+
+        Every status is recorded — a landing that spent two minutes in verify and then
+        bounced is exactly the sample the question needs — but only a merged result's
+        ``detail`` is written to. The two details are different objects: a merged one is
+        the narrative line the supervisor prints, while a failed one is the remedy a human
+        or the lane's next dispatch is handed, and this repo has already lost the
+        load-bearing *tail* of one of those to a length cap (basicly-fi1i7z). Telemetry
+        does not get to push a remedy out of the frame.
+        """
+        total = round(self.clock() - self.started, 3)
+        attributed = round(sum(seconds for _, seconds in self.stages), 3)
+        _write_landing_timing(
+            self.repo_root,
+            self.bead,
+            {
+                "recorded_at": datetime.now(UTC).isoformat(),
+                "status": result.status,
+                "total_s": total,
+                "attributed_s": attributed,
+                "unattributed_s": round(total - attributed, 3),
+                "stages": [list(span) for span in self.stages],
+                "slowest_checks": [list(check) for check in self.checks],
+            },
+        )
+        if not result.merged:
+            return result
+        return replace(result, detail=f"{result.detail}; {self._headline(total)}")
+
+    def _headline(self, total: float) -> str:
+        """The breakdown as the operator reads it on the pass line: total, then the top stages."""
+        top = sorted(self.stages, key=lambda span: -span[1])[:3]
+        named = ", ".join(f"{stage} {seconds:.1f}s" for stage, seconds in top if seconds >= 0.05)
+        return f"landing {total:.1f}s ({named})" if named else f"landing {total:.1f}s"
+
+
+def _write_landing_timing(repo_root: Path, bead: str, entry: dict[str, object]) -> None:
+    """Append *entry* to :data:`LANDING_TIMINGS_FILE` under *bead*; never raises.
+
+    Never raises for the reason :func:`basicly.verify_artifact.write_run_artifact` does not:
+    the landing is what the caller asked for, and losing a merged result to a full disk
+    would be a far worse failure than losing a measurement. An unreadable or non-dict file
+    is replaced rather than merged into — it is telemetry, and refusing to record because
+    an old file is corrupt would make the corruption permanent.
+    """
+    path = repo_root / LANDING_TIMINGS_FILE
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except OSError, ValueError:
+        loaded = {}
+    try:
+        records: dict[str, list] = loaded if isinstance(loaded, dict) else {}
+        records.setdefault(bead, []).append(entry)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        gitignore = path.parent / ".gitignore"
+        if not gitignore.exists():
+            gitignore.write_text("*\n", encoding="utf-8")
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(path)
+    except OSError, ValueError:
+        return
+
+
 def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing input
     repo_root: Path,
     name: str,
@@ -845,6 +969,7 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
         raise SystemExit(
             "merge needs a bead id for the merge commit (the commit-msg hook requires one)"
         )
+    clock = _Landing(repo_root, bead)
     known = known_bead_ids(repo_root)
     if known is not None and bead not in known:
         raise SystemExit(
@@ -860,8 +985,9 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     # Both pre-merge refusals are states, not merit failures, and both are checked
     # before base is touched.
     blocked = _pre_merge_state(repo_root, session, expected_head)
+    clock.mark("preflight")
     if blocked is not None:
-        return blocked
+        return clock.close(blocked)
 
     # Tracker-only dirt in base is the loop's own state (claim, checkpoints,
     # gate records) — roll it up before the clean-tree check instead of
@@ -869,37 +995,47 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     if current_branch(repo_root) == base:
         commit_tracker_state(repo_root, bead)
     _assert_base_ready(repo_root, base)
+    clock.mark("tracker-commit")
 
     # 1. Replay onto the *current* base so serialized merges stay conflict-free.
     replayed = rebase.replay(repo_root, worktree_path, base, branch)
+    clock.mark("rebase")
     if not replayed.ok:
-        return MergeResult(name, replayed.status, replayed.detail, conflicts=replayed.conflicts)
+        return clock.close(
+            MergeResult(name, replayed.status, replayed.detail, conflicts=replayed.conflicts)
+        )
     regenerated = replayed.regenerated + rebase.refresh_generated(repo_root, worktree_path, bead)
+    clock.mark("regenerate")
 
     # 2. Re-verify in the worktree after the rebase.
     if not override_gate:
-        gate = _verify_for_landing(repo_root, name, worktree_path, verify_mode, bead)
+        gate = _verify_for_landing(name, worktree_path, verify_mode, clock)
+        clock.mark("verify")
         if gate is not None:
-            return gate
+            return clock.close(gate)
 
     # 3. Non-destructive conflict probe before touching the base tree.
     probe = probe_merge(repo_root, base, branch)
+    clock.mark("probe")
     if not probe.safe:
-        return MergeResult(
-            name,
-            "merge-conflicts",
-            f"conflicts in: {', '.join(probe.conflicts)}",
-            conflicts=probe.conflicts,
+        return clock.close(
+            MergeResult(
+                name,
+                "merge-conflicts",
+                f"conflicts in: {', '.join(probe.conflicts)}",
+                conflicts=probe.conflicts,
+            )
         )
 
     # 4/5. Merge, then prove the merge — a "merged" status is unreachable without it.
     landed = _merge_and_prove(repo_root, name, base=base, branch=branch, bead=bead)
+    clock.mark("merge")
     if landed.merged and regenerated:
         # Say it out loud wherever the landing is reported. This is the one place the
         # queue resolves a conflict rather than bouncing it, and a resolution nobody
         # is told about is indistinguishable from a rebase that never conflicted.
-        return replace(landed, detail=f"{landed.detail} (regenerated {', '.join(regenerated)})")
-    return landed
+        landed = replace(landed, detail=f"{landed.detail} (regenerated {', '.join(regenerated)})")
+    return clock.close(landed)
 
 
 @dataclass(frozen=True)
