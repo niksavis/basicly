@@ -404,8 +404,14 @@
         font-weight: 600;
         min-width: 0;
       }
+      /* The headline leads with the lane's pass state (`waits to land`, `landing`,
+         `refused`), so it takes the card's own state colour instead of one fixed hue -
+         that is the third channel basicly-ncday7's AC5 asks for beside the word and the
+         border, and a card wears no glyph. A fixed indigo here meant the border was the
+         only channel the state reached, and a dashed grey border was what a finished lane,
+         a landing lane and a refused lane all looked like. */
       .card .phase-name {
-        color: var(--indigo);
+        color: inherit;
         flex: none;
         font-size: 17px;
         font-weight: 700;

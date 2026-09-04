@@ -18,6 +18,11 @@ adopted, and 7.11 s on the same tree once 333 run records turn on the grant-spen
 fixture reaches none of that, so :data:`EMIT_CAP_S` bounds the fixture and says so.
 """
 
+# module-size-waiver: cost(basicly-k6tpep.2): 4618 of 4000 tokens. Three end-to-end cases
+# for `lanes[].state` added 711 to a module that stood 93 under the cap. They are here and
+# not in a producer test because the defect was that the fact reached no consumer, so the
+# assertion has to run the whole path - supervisor registry, producer, wire, schema.
+
 from __future__ import annotations
 
 import json
@@ -361,3 +366,66 @@ def test_a_finished_lane_keeps_no_live_value_from_the_dispatch_that_ended(
     assert "elapsed_s" not in card
     assert "agent" not in card
     assert "model" not in card
+
+
+@pytest.fixture(autouse=True)
+def _no_standings() -> Iterator[None]:
+    """No test inherits another's standings: the registry is process-wide by design."""
+    supervise.clear_standings()
+    yield
+    supervise.clear_standings()
+
+
+def test_a_standing_the_pass_published_reaches_the_card_and_still_validates(
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """basicly-ncday7 AC1 and AC5, end to end: producer, wire, schema.
+
+    Written against the whole path rather than the mapping, because the defect was that the
+    fact existed in one frame of the supervisor and reached no consumer: the operator read
+    `build` and `not confirmed live` on a lane whose agent had exited with work committed
+    and which sat behind a 3-8 minute landing.
+    """
+    supervise.note_standing(
+        supervise.LANE_WAITS_TO_LAND, "2 of 3 in the landing queue", "basicly-0jiq"
+    )
+    card = _ticked_card(work_repo, monkeypatch, "basicly-0jiq")
+
+    assert card["state"] == "waits-to-land"
+    assert card["state_detail"] == "2 of 3 in the landing queue"
+    assert datetime.fromisoformat(card["state_since"]).tzinfo is not None
+    ruling = board_schema.verdict(work_repo, _document(work_repo))
+    assert ruling.exit_code == 0, ruling.summary
+    assert ruling.unknown == (), ruling.summary
+
+
+def test_the_landing_lane_is_published_before_the_call_that_takes_minutes(
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC2, at the granularity the declared scope reaches: which lane, and for how long.
+
+    The stage inside the landing (rebase, verify, merge, tracker commit) is **not** named,
+    and that is a scope finding rather than an omission: `supervise._land_green` lands a
+    lane with one opaque `loop.advance` call, which takes no progress callback, so naming
+    the stage means instrumenting `loop.py` and `merge.py` - neither in this record's
+    `## Scope`, and `merge.py` declared by two live lanes. Omitted, never guessed.
+    """
+    supervise.note_standing(
+        supervise.LANE_LANDING, "the supervisor is landing this lane", "basicly-0jiq"
+    )
+    card = _ticked_card(work_repo, monkeypatch, "basicly-0jiq")
+
+    assert card["state"] == "landing"
+    assert "state_since" in card, "a landing with no stamp cannot be timed on the wall"
+
+
+def test_a_state_the_schema_does_not_permit_is_dropped_rather_than_published(
+    work_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A closed set refused costs the whole `lanes` section, so the wire layer bounds it."""
+    supervise.note_standing("mid-landing", "a word no consumer has shipped", "basicly-0jiq")
+    card = _ticked_card(work_repo, monkeypatch, "basicly-0jiq")
+
+    assert "state" not in card
+    assert "state_detail" not in card
+    assert board_schema.verdict(work_repo, _document(work_repo)).exit_code == 0

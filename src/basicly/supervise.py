@@ -59,7 +59,7 @@ import secrets
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -1440,7 +1440,12 @@ def record_pass_refusal(
     would read it as "no ready lanes". Idempotent per (issue, kind, question), so a
     pass that keeps refusing re-enqueues the one item rather than piling up
     notifications — the numbers live in the *detail*, which is not part of the id.
+
+    The refusal reaches the board here too: every lane the pass was about to start is now
+    refused on the ceiling rather than queued for a slot, and AC3 of basicly-ncday7 names
+    the spend ceiling beside the WIP bound.
     """
+    note_standing(LANE_REFUSED, admission.violation or "", *admission.counted)
     return decisions.enqueue(
         repo_root,
         root_issue,
@@ -1641,7 +1646,10 @@ def _declined_start(
     never interrupted by either — this only declines to *start* one.
     """
     refused = gate.declined(issue_id, runner_name)
-    return refused if refused is not None else _outspent(issue_id, runner_name, live)
+    declined = refused if refused is not None else _outspent(issue_id, runner_name, live)
+    if declined is not None:
+        note_standing(LANE_REFUSED, declined.detail, issue_id)
+    return declined
 
 
 def _outspent(issue_id: str, runner_name: str, live: policy.SpendStatus) -> LaneOutcome | None:
@@ -1963,6 +1971,19 @@ def _ungranted_detail(
     return record_ungranted_refusal(repo_root, session.root_issue, spec.name, lanes)
 
 
+def _pass_lanes(
+    repo_root: Path, session: SessionState, skip: frozenset[str]
+) -> tuple[AdoptedLane, ...]:
+    """The pass's ready lanes, with the previous pass's standings forgotten first.
+
+    The clear belongs ahead of the empty-ready return rather than inside `dispatch_lanes`:
+    a pass with nothing ready would otherwise keep publishing the shape of the pass before
+    it, and a board is read between passes (basicly-ncday7).
+    """
+    clear_standings()
+    return ready_lanes(repo_root, session, skip=skip)
+
+
 def _admit_wip(
     repo_root: Path,
     session: SessionState,
@@ -1982,6 +2003,15 @@ def _admit_wip(
     wip.record_refusal(repo_root, session.root_issue, bound)
     # Which units to land is this frame's half of the message (see `wip.reason`).
     land = f"; land or review {', '.join(bound.downstream)}" if bound.downstream else ""
+    # And onto the board, because `record_refusal` above is silent for exactly the pass an
+    # operator is watching: it enqueues only when the pass starts nothing, so a bound that
+    # held one of six left the held lane rendering as an idle build (basicly-ncday7).
+    # Every admitted lane is queued until a runner slot frees, which is the third verdict
+    # this frame reaches and the one the extras past the concurrency cap sit in.
+    note_standing(LANE_REFUSED, bound.reason, *(lane.issue_id for lane in bound.refused))
+    note_standing(LANE_PARKED, "unlanded work the bound is counting", *bound.downstream)
+    admitted = (lane.issue_id for lane in bound.admitted)
+    note_standing(LANE_QUEUED, "admitted, waiting for a runner slot", *admitted)
     held = tuple(
         _unstarted(
             lane.issue_id, runner_name, f"not started: {bound.reason}{land}", Unstarted.REFUSED
@@ -2037,7 +2067,7 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     (basicly-vz78). It then receives the runners' own health and drift
     (:func:`health_coverage`), which report and never refuse.
     """
-    lanes = ready_lanes(repo_root, session, skip=skip)
+    lanes = _pass_lanes(repo_root, session, skip)
     if not lanes:
         return ()
     # Readiness first, then admission: the queue item records a *refusal*, so a
@@ -2400,6 +2430,10 @@ def live_lane(issue_id: str, stream: LaneStream) -> Iterator[LaneStream]:
     """
     with _LIVE_LOCK:
         _LIVE_LANES[issue_id] = stream
+        # The one moment `queued` stops being true: this registration *is* the lane
+        # starting, so the standing that said it was waiting for a slot is dropped in the
+        # same critical section rather than by whichever caller remembers (basicly-ncday7).
+        _STANDING.pop(issue_id, None)
     try:
         yield stream
     finally:
@@ -2440,6 +2474,62 @@ def retired_spend() -> int:
     """Live spend from lanes that have ended, as a monotonic running total."""
     with _LIVE_LOCK:
         return _RETIRED.tokens
+
+
+# Where a lane stands in the pass, as `board-snapshot.schema.json` closes the set. Named
+# here rather than spelled at each site because the producer above this module writes them
+# onto a document, and a second spelling of one is a document a shipped consumer refuses.
+LANE_QUEUED = "queued"
+LANE_RUNNING = "running"
+LANE_WAITS_TO_LAND = "waits-to-land"
+LANE_LANDING = "landing"
+LANE_REFUSED = "refused"
+LANE_PARKED = "parked"
+
+
+@dataclass(frozen=True)
+class LaneStanding:
+    """Where one lane stands in the pass, why, and since when."""
+
+    state: str
+    detail: str = ""
+    since: str = ""
+
+
+# The pass's own standings, keyed by issue id. Process-local for the same reason
+# :data:`_LIVE_LANES` is, and that is basicly-ncday7's finding: every one of these facts
+# lives in one frame of one pass and reaches no store, so `wip.record_refusal` - which
+# enqueues only when a pass starts *nothing* - recorded a bound that held one of six
+# nowhere at all. Guarded by :data:`_LIVE_LOCK`: nothing takes both, so a second lock buys
+# no concurrency and adds an ordering rule a reader would have to know.
+_STANDING: dict[str, LaneStanding] = {}
+
+
+def note_standing(state: str, detail: str, *issue_ids: str) -> None:
+    """Publish *state* for each of *issue_ids*, stamped now."""
+    standing = LaneStanding(state, detail, datetime.now(UTC).isoformat())
+    with _LIVE_LOCK:
+        for issue_id in issue_ids:
+            _STANDING[issue_id] = standing
+
+
+def forget_standing(*issue_ids: str) -> None:
+    """Drop *issue_ids* from the standings, for a state that has stopped being true."""
+    with _LIVE_LOCK:
+        for issue_id in issue_ids:
+            _STANDING.pop(issue_id, None)
+
+
+def clear_standings() -> None:
+    """Forget every standing, so no pass publishes the shape of the one before it."""
+    with _LIVE_LOCK:
+        _STANDING.clear()
+
+
+def lane_standings() -> dict[str, LaneStanding]:
+    """Where each lane of the pass running now stands, keyed by issue id."""
+    with _LIVE_LOCK:
+        return dict(_STANDING)
 
 
 # How far the live per-turn sum over-reports the run record it is compared against
@@ -3250,6 +3340,44 @@ def route_outcomes(
     are returned in the order they were processed (landing order), not in the
     order they came in.
     """
+    pass_outcomes = _carried_outcomes(repo_root, session, carried, outcomes) + outcomes
+    ordered = _landing_order(repo_root, pass_outcomes)
+    queue = _note_landing_queue(ordered)
+    try:
+        return _land_in_order(repo_root, session, ordered, beat)
+    finally:
+        # The queue stops existing when this frame returns, so no standing may outlive it.
+        forget_standing(*queue)
+
+
+def _note_landing_queue(ordered: Sequence[LaneOutcome]) -> tuple[str, ...]:
+    """Publish each landable lane's place in the serial landing queue; the ids published.
+
+    **This frame is the only one that knows the queue.** Landings are serial and in
+    dependency order, so a lane whose agent exited with work committed waits behind the 3-8
+    minutes each landing ahead of it takes, and published nothing (basicly-ncday7). The
+    position is what a duration cannot replace: how many landings stand before its own.
+    """
+    waiting = [one.issue_id for one in ordered if _is_green(one) or one.salvaged]
+    for position, issue_id in enumerate(waiting, start=1):
+        note_standing(
+            LANE_WAITS_TO_LAND, f"{position} of {len(waiting)} in the landing queue", issue_id
+        )
+    return tuple(waiting)
+
+
+def _land_in_order(
+    repo_root: Path,
+    session: SessionState,
+    ordered: Sequence[LaneOutcome],
+    beat: Callable[[], None] | None,
+) -> tuple[RoutedOutcome, ...]:
+    """Route *ordered* one at a time, in the landing order the caller computed.
+
+    Split out of :func:`route_outcomes` so its queue standings are retired on every route
+    out of the loop, including a `LockLostError` from *beat*: that is raised outside each
+    outcome's own guard, and would leave a lane published as landing forever.
+    """
     routed: list[RoutedOutcome] = []
     landing_blocked = False
     # (bead, paths its landing added to the base) per landing this pass — the
@@ -3259,8 +3387,7 @@ def route_outcomes(
     # (bead, conflicting paths) per collision, attributed after the pass rather
     # than here: see _attribute_pass_couplings (D9, basicly-kjc5.32).
     collisions: list[tuple[str, tuple[str, ...]]] = []
-    pass_outcomes = _carried_outcomes(repo_root, session, carried, outcomes) + outcomes
-    for outcome in _landing_order(repo_root, pass_outcomes):
+    for outcome in ordered:
         if beat is not None:
             beat()
         # A salvaged timeout is not green — the run was killed — but it does try to
@@ -3278,6 +3405,11 @@ def route_outcomes(
             continue
         before = merge.head_sha(repo_root) if lands else ""
         try:
+            if lands:
+                # Which lane lands *now*, published before the call that takes minutes and
+                # reports nothing while it runs. The heartbeat's own board emission reads
+                # this on every tick, so the stamp is what makes the duration move.
+                note_standing(LANE_LANDING, "the supervisor is landing this lane", outcome.issue_id)
             one = _route_one(repo_root, session, outcome, landed, collisions)
         except (RuntimeError, OSError, ValueError) as exc:
             # Contained like dispatch's guarded(): the lane re-routes next

@@ -1,0 +1,55 @@
+# The board names where a lane stands in the pass (basicly-ncday7).
+#
+# The snapshot had `live` true or false and nothing between, so a lane whose agent had
+# exited with work committed, a lane the supervisor was landing, and a lane the WIP bound
+# had refused all rendered as an idle build. The operator's reading of a pass doing four
+# things was "i see no indicator on the board that something is happening".
+#
+# Every one of those facts lives in one frame of one pass and reaches no store, which is
+# the finding: `wip.record_refusal` enqueues only when a pass starts *nothing*, so a bound
+# that held one of six recorded the refusal nowhere at all. So the producer is a
+# process-local registry beside `_LIVE_LANES`, written by the frame that knows each fact
+# and read by the heartbeat's own board emission.
+#
+# NOT DONE, and it is a scope finding rather than an omission: AC2 asks for the stage
+# inside a landing (rebase, verify, merge, tracker commit). `supervise._land_green` lands
+# a lane with one opaque `loop.advance` call, which takes no progress callback, so naming
+# the stage means instrumenting `loop.py` and `merge.py` - neither in this record's
+# `## Scope`, and `merge.py` declared right now by two live lanes. The lane that is
+# landing and how long it has been landing are published; the stage is omitted, never
+# guessed.
+#
+# ## module_size: supervise.py rebaselined by 1510, three waivers taken
+#
+# What the 1510 buys in `supervise.py`: the six state words the schema closes on, the
+# `LaneStanding` record, the registry and its four accessors, and the five write sites
+# that publish it - the WIP bound's refusals and parked work, the pass-spend ceiling's
+# refusals, the runner queue, the provider gate's declines, and the serial landing loop's
+# queue positions and current landing. `_land_in_order` is split out of `route_outcomes`
+# so the queue standings retire on every route out of the loop, including a `LockLostError`
+# from the beat.
+#
+# Rebaselined rather than waived: a waiver would delete supervise.py's 49855-token ceiling,
+# 12x the cap, to buy 1510. No prose was cut to pay for it - the module's comment share is
+# unchanged at its frozen 56.6%, so the gate that guards narration still binds at exactly
+# the number it did.
+#
+# The three waivers are `count_delta = +3` and each names an open record that retires it,
+# filed with this change: `basicly-k6tpep.1` for `board_sections.py` (4416 of 4000 - the
+# `board_lane.py` cut its two neighbours' waivers already name, blocked on `.importlinter`)
+# and `basicly-k6tpep.2` for both test modules (4796 and 4618 of 4000 - each stood under
+# 100 tokens from the cap before this record and could take no test at all; the aspect
+# module for one of them exists and is outside this record's declared scope).
+#
+# `board_facts.py` (+520) and `board_regions.py` (+1159) are paid out of waivers they
+# already carry, and `tests/test_board_regions_flight.py` (+1217, now 3274) out of
+# headroom. `comment-density` needs nothing: it passes on every file this record touches.
+[ratchet]
+base_commit = "c45df6e04bef66a8662e879f003843389f109121"
+
+[ratchet.module_size]
+count_delta = 3
+rebaseline_reason = "where a lane stands in the pass, published by the frames that are the only holders of it: six state words the schema closes on, the LaneStanding record, the registry and its accessors, and five write sites - the WIP bound, the spend ceiling, the runner queue, the provider gate and the serial landing loop. supervise.py is 12x the cap, so a waiver would delete its 49855-token ceiling to buy 1510; no prose was cut and its comment share is unchanged at 56.6%."
+
+[ratchet.module_size.rebaselined]
+"src/basicly/supervise.py" = 1510

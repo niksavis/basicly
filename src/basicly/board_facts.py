@@ -383,6 +383,7 @@ def lane_facts(
     spending = supervise.inflight_spend()
     doing = supervise.inflight_activity()
     issued = supervise.inflight_dispatch()
+    standings = supervise.lane_standings()
     runs = run_record.load_run_records(repo_root) or {}
     return tuple(
         _lane_fact(
@@ -392,6 +393,7 @@ def lane_facts(
             doing,
             runs.get(view.issue_id) or [],
             dispatch=issued,
+            standing=standings.get(view.issue_id),
         )
         for view in views
     )
@@ -405,6 +407,7 @@ def _lane_fact(  # noqa: PLR0913 - one parameter per tier the card draws a figur
     runs: Sequence[Mapping[str, Any]],
     *,
     dispatch: Mapping[str, supervise.LaneStream] | None = None,
+    standing: supervise.LaneStanding | None = None,
 ) -> board_sections.LaneFacts:
     """One lane's card, each figure from the tier that holds it.
 
@@ -452,15 +455,29 @@ def _lane_fact(  # noqa: PLR0913 - one parameter per tier the card draws a figur
     Where the live figure does speak, it over-reports the record it becomes by a factor
     :mod:`supervise` measures, so it rises toward a known-larger number - the safe direction
     for a reader watching a budget.
+
+    **`state` is where the lane stands in the pass, and the live stream outranks the
+    standing (basicly-ncday7).** *standing* is `supervise.lane_standings`, published by the
+    frame that knows each fact: the WIP bound names its refusals, the pool names the lanes
+    queued behind the cap, and the serial landing loop names the queue and the one landing
+    it is running. None of those reaches a store, so a pass doing four things published
+    `live` true-or-false and a reader saw one bit. `running` is derived here instead of
+    published, because a live stream registered *is* the lane running and a second writer
+    would be a second answer - a lane that started while a `queued` standing still stood
+    would otherwise read as waiting for the slot it is already inside.
     """
     running = view.issue_id in spending
     last = runs[-1] if runs else {}
     spent = spending.get(view.issue_id)
     meter = (dispatch or {}).get(view.issue_id) if running else None
+    state = _standing_state(standing, running=running)
     return board_sections.LaneFacts(
         id=view.issue_id,
         phase=phase_map.get(view.issue_id, ""),
         status=view.status,
+        state=state[0],
+        state_detail=state[1],
+        state_since=state[2],
         agent=(meter.agent if meter else "") or view.last_agent or _text(last.get("agent")),
         live=running,
         provisioned=view.live,
@@ -476,6 +493,26 @@ def _lane_fact(  # noqa: PLR0913 - one parameter per tier the card draws a figur
         context_used=None if running else _whole(last.get("context_tokens")),
         context_window=None if running else _whole(last.get("context_window")),
     )
+
+
+def _standing_state(
+    standing: supervise.LaneStanding | None, *, running: bool
+) -> tuple[str, str, str]:
+    """A lane's pass state, its reason and when it entered it - each empty where unknown.
+
+    A live stream outranks any standing: it is the running lane's own registration, so a
+    `queued` standing the pool has not retired yet, or a `landing` one from a route that
+    lost its lock, cannot state the opposite of what the supervisor is holding open. With
+    no stream and no standing the three stay empty and the row omits all of them, which is
+    a producer that cannot place this lane rather than one placing it in `queued`.
+    """
+    if running:
+        # No stamp: `live_lane` retires the `queued` standing as it registers the stream, so
+        # the only stamp left would be the dispatch's own, which `started_at` already is.
+        return supervise.LANE_RUNNING, "", ""
+    if standing is None:
+        return "", "", ""
+    return standing.state, standing.detail, standing.since
 
 
 def _text(held: object) -> str:
