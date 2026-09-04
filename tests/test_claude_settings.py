@@ -309,9 +309,13 @@ def test_projected_agent_hook_fires_and_its_refusal_reaches_the_agent(tmp_path: 
     generated.write_text(GENERATED_MARKER + "# Baseline\n", encoding="utf-8")
 
     argvs = _as_the_host_would_run(_read_settings(tmp_path), "PreToolUse", "Edit", tmp_path)
-    # One, not two: the Bash-only guard sharing this event must not be selected.
-    assert len(argvs) == 1
-    blocked = _fire_agent_hook(argvs[0], tmp_path, generated)
+    # The write-tools guards only: a Bash-only guard sharing this event must not be
+    # selected, which is what this count is really asserting (basicly-zq9i2m.4 added the
+    # second write-tools hook and turned the old bare `== 1` into a false negative).
+    selected = {Path(argv[-1]).name for argv in argvs}
+    assert selected == {"protect-generated.py", "headroom-guard.py"}
+    guard = next(argv for argv in argvs if argv[-1].endswith("protect-generated.py"))
+    blocked = _fire_agent_hook(guard, tmp_path, generated)
     # The exit code alone does not discriminate — `python <missing>.py` also exits 2, so a
     # projection pointing at nothing would satisfy it. The refusal text is what binds.
     assert blocked.returncode == 2, blocked.stderr
@@ -321,4 +325,4 @@ def test_projected_agent_hook_fires_and_its_refusal_reaches_the_agent(tmp_path: 
     # simply failed to run: the same argv lets an ordinary file through.
     plain = tmp_path / "notes.md"
     plain.write_text("# notes\n", encoding="utf-8")
-    assert _fire_agent_hook(argvs[0], tmp_path, plain).returncode == 0
+    assert _fire_agent_hook(guard, tmp_path, plain).returncode == 0

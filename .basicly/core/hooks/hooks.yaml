@@ -96,6 +96,18 @@ hooks:
     stage: pretooluse
     manager: claude
     matcher: Bash
+  # `module-size` and `comment-density` are budgets, not rules: prose can say the gate
+  # exists and cannot say a module has 456 tokens left. `.scripts/headroom.py` is the read
+  # that answers it before the code is written, and the `python` skill gives the command -
+  # skipped three times on 2026-08-14 (basicly-co64) and three more on 2026-09-04, every
+  # time paid for by trimming prose after the gate refused. Allows every call and injects
+  # the figures, which the vendor docs make the only non-blocking outcome the model sees;
+  # silent on a module with room, so it earns its place on the write path
+  # (basicly-zq9i2m.4). Empty matcher = the manager's default write-tools set.
+  - id: headroom-guard
+    script: headroom-guard.py
+    stage: pretooluse
+    manager: claude
   # Deterministic, agent-independent commit-time backstop for the fail-open,
   # Claude-only protect-generated PreToolUse guard (basicly-yw28): blocks a
   # commit that stages a generated output whose content diverges from the

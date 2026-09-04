@@ -1,0 +1,1 @@
+- A `headroom-guard` PreToolUse hook reports a Python module's remaining `module-size` and `comment-density` room before an agent edits it, so a change is sized before it is written rather than after a gate refuses. Silent on modules with room; never blocks.

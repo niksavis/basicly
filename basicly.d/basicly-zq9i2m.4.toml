@@ -1,0 +1,24 @@
+# A hook puts a module's ratchet headroom in context before it is edited
+# (basicly-zq9i2m.4).
+#
+# `module-size` and `comment-density` are budgets, not rules. Prose can say the gate exists;
+# it cannot say `supervise.py` has 456 tokens left. `.scripts/headroom.py` answers that
+# before the code is written and the `python` skill gives the command - skipped three times
+# on 2026-08-14 (basicly-co64) and three more on 2026-09-04, each paid for by trimming prose
+# after a gate refused. Six occurrences after the rule was written down, so it becomes a
+# hook, per `hooks.yaml`'s own precedent for `unsplit-loop-guard`.
+#
+# ## noqa_debt: BLE001 +1
+#
+# `BLE001` - the guard must fail open, because a bug in it would otherwise stop an agent
+# editing. The alternative rejected: naming the exception types. The error most likely to
+# fire is an unreadable baseline, which raises `ratchet.RatchetError`; that subclasses
+# `Exception` directly and lives in a module only reachable once `headroom.py` has been
+# loaded by path, which is the call the except clause guards. A named tuple cannot
+# reference it without importing the thing that may not import.
+#
+# No `module_size` or `comment_density` delta is taken. Both new files were measured before
+# they were written, which is the point of the change: the hook lands at 1008/4000 tokens
+# and 43.2/50.0% prose, its test at 831/4000 and 32.1/50.0%.
+[ratchet.noqa_debt.frozen]
+BLE001 = 1
