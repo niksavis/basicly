@@ -1045,25 +1045,36 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     _assert_base_ready(repo_root, session.base)
     clock.mark("tracker-commit")
 
-    base, branch, worktree_path = session.base, session.branch, session.path
+    landed = _replay_verify_merge(
+        session, verify_mode=verify_mode, override_gate=override_gate, clock=clock
+    )
+    # Folded before `close`, which writes only to a *merged* detail: that is what keeps
+    # the refused-and-retried note on a failure, where the remedy is read (basicly-85cadb).
+    if retried:
+        landed = replace(landed, detail=f"{landed.detail}; {retried[0]}")
+    return clock.close(landed)
 
-    def close(result: MergeResult) -> MergeResult:
-        """Fold the tracker-sync note in, then record the breakdown.
 
-        The single fold point a split function was going to provide (basicly-85cadb).
-        `clock.close` writes only to a *merged* detail, so a note folded after it would
-        be lost on exactly the refusal whose remedy needs it.
-        """
-        noted = replace(result, detail=f"{result.detail}; {retried[0]}") if retried else result
-        return clock.close(noted)
+def _replay_verify_merge(
+    session: Session, *, verify_mode: str, override_gate: bool, clock: _Landing
+) -> MergeResult:
+    """Steps 1-5 of :func:`merge_worktree`, with base already clean and up to date.
+
+    Split from the pre-flight so the caller has one result to fold its tracker-sync note
+    into, rather than six early returns to remember (basicly-85cadb). *repo_root* and
+    *bead* are read off *clock*, which already holds both as one fact: passing them
+    beside it is the second spelling that would take this over `PLR0913`. The stages are
+    marked here, where they run, and the clock is closed by the caller (basicly-tjhjmk).
+    """
+    repo_root, bead = clock.repo_root, clock.bead
+    name, base, branch = session.name, session.base, session.branch
+    worktree_path = session.path
 
     # 1. Replay onto the *current* base so serialized merges stay conflict-free.
     replayed = rebase.replay(repo_root, worktree_path, base, branch)
     clock.mark("rebase")
     if not replayed.ok:
-        return close(
-            MergeResult(name, replayed.status, replayed.detail, conflicts=replayed.conflicts)
-        )
+        return MergeResult(name, replayed.status, replayed.detail, conflicts=replayed.conflicts)
     regenerated = replayed.regenerated + rebase.refresh_generated(repo_root, worktree_path, bead)
     clock.mark("regenerate")
 
@@ -1072,19 +1083,17 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
         gate = _verify_for_landing(name, worktree_path, verify_mode, clock)
         clock.mark("verify")
         if gate is not None:
-            return close(gate)
+            return gate
 
     # 3. Non-destructive conflict probe before touching the base tree.
     probe = probe_merge(repo_root, base, branch)
     clock.mark("probe")
     if not probe.safe:
-        return close(
-            MergeResult(
-                name,
-                "merge-conflicts",
-                f"conflicts in: {', '.join(probe.conflicts)}",
-                conflicts=probe.conflicts,
-            )
+        return MergeResult(
+            name,
+            "merge-conflicts",
+            f"conflicts in: {', '.join(probe.conflicts)}",
+            conflicts=probe.conflicts,
         )
 
     # 4/5. Merge, then prove the merge — a "merged" status is unreachable without it.
@@ -1095,7 +1104,7 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
         # queue resolves a conflict rather than bouncing it, and a resolution nobody
         # is told about is indistinguishable from a rebase that never conflicted.
         landed = replace(landed, detail=f"{landed.detail} (regenerated {', '.join(regenerated)})")
-    return close(landed)
+    return landed
 
 
 @dataclass(frozen=True)

@@ -26,14 +26,39 @@
 # early returns. The extraction pays for itself twice: it also drops the redundant `name`
 # parameter, so no `PLR0913` suppression is added. Comment-density fell, 60.0 -> 59.9.
 #
-# `supervise.py` +296 fits inside its 456 and is not declared; its prose share is unchanged
-# at 56.6 because the routing comment was cut to fit rather than paid for out of the
-# ratchet. `tests/test_supervise.py` grew +605 for the two routing tests, of which 488 was
-# headroom, so 117 is declared.
+# `tests/test_supervise.py` grew +605 for the two routing tests, of which 488 was headroom.
+#
+# ## Re-measured 2026-09-04 after a rebase that consumed the headroom this fragment assumed
+#
+# The three numbers below grew, and the cause is recorded rather than absorbed: this lane
+# sat unlanded while `basicly-ncday7` and `basicly-tjhjmk` landed into the same two modules,
+# so the headroom the paragraphs above were measured against is gone. The comment above
+# predicted the exact failure - "`supervise.py` +296 fits inside its 456 and is not
+# declared" - and that 456 is now spent by ncday7's standing registry.
+#
+# `supervise.py` +297, newly declared: the `READY_TO_LAND` route, its entry in
+# `RETRIABLE_ROUTES`, the second carry in `carried_forward`, the
+# `TrackerCommitRefusedError` handler in `_land_in_order`, and the branch that keeps a
+# carried route reading `waits-to-land` instead of `refused` - a defect only visible once
+# this lane meets ncday7's retirement block, which published `refused` for every
+# non-progressing route. Net 19 lines, 9 of them code, so it cannot be trimmed to fit.
+#
+# `merge.py` 725 -> 787: `tjhjmk`'s landing clock now runs through `merge_worktree`, so
+# `_replay_verify_merge` reads `repo_root` and `bead` off the clock rather than beside it -
+# which is what keeps it under `PLR0913` after gaining the clock, and is the same trick the
+# paragraph above used to drop `name`.
+#
+# `tests/test_supervise.py` 117 -> 526: the same rebase moved the module under it.
+#
+# Rebaselined rather than waived, for the reason ncday7's fragment gives: a waiver replaces
+# the frozen entry, so it would delete `supervise.py`'s ceiling at 12x the cap to buy 297.
+# Only this change's own narration was cut to pay down the total; no existing claim in any
+# of these modules was deleted.
 [ratchet.module_size]
-rebaseline_reason = "the gate-name reader, the bounded tracker-sync retry and the landing split that carries its note, in three modules holding 0, 15 and 456 tokens of headroom between them"
+rebaseline_reason = "the gate-name reader, the bounded tracker-sync retry and the landing split that carries its note; re-measured after a rebase in which ncday7 and tjhjmk landed into the same two modules and spent the headroom the first measurement assumed"
 
 [ratchet.module_size.rebaselined]
 "src/basicly/checkout.py" = 4232
-"src/basicly/merge.py" = 725
-"tests/test_supervise.py" = 117
+"src/basicly/merge.py" = 787
+"src/basicly/supervise.py" = 297
+"tests/test_supervise.py" = 526

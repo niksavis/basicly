@@ -3159,9 +3159,9 @@ DISPATCH_GATE = "dispatch"
 TRACKER_GATE = "tracker-storage"
 
 
-# Route for a landing killed by `merge.TrackerCommitRefusedError`. Not ``held``, which the
-# rest of the pass stops behind — this says nothing about the base the later lanes stack on
-# — and not ``error``, which is non-retriable and ended the session (basicly-85cadb).
+# Route for a landing killed by `merge.TrackerCommitRefusedError`: not ``held``, which the
+# rest of the pass stops behind, and not ``error``, which is non-retriable and ended the
+# session (basicly-85cadb).
 READY_TO_LAND = "ready-to-land"
 
 # Routes that keep the standing loop iterating even without a landing: the
@@ -3229,11 +3229,10 @@ def carried_forward(routed: tuple[RoutedOutcome, ...]) -> frozenset[str]:
     """The lanes whose landing this pass deferred, for the next pass to land first.
 
     Two routes carry, for one reason: the lane is green and committed and no evidence
-    faults it. ``held`` ran out of a landable base after an earlier failure;
-    :data:`READY_TO_LAND` had the engine's own tracker-sync commit refused, which examined
-    the lane's diff not at all. Every other route either progressed or means the lane's own
-    work needs changing (rework, bounced, retry), which is exactly when a fresh dispatch
-    *is* the right move — so the carry lapses and the lane re-enters dispatch normally.
+    faults it. ``held`` ran out of a landable base; :data:`READY_TO_LAND` had the engine's
+    own tracker-sync commit refused, which examined the lane's diff not at all. Every other
+    route either progressed or means the lane's work needs changing, which is when a fresh
+    dispatch *is* right — so the carry lapses and the lane re-enters dispatch.
 
     This half of the carry is in-process only, so a supervisor that crashed
     mid-session remembers nothing; :func:`committed_lanes` re-derives the same
@@ -3423,9 +3422,8 @@ def _land_in_order(
                 note_standing(LANE_LANDING, "the supervisor is landing this lane", outcome.issue_id)
             one = _route_one(repo_root, session, outcome, landed, collisions)
         except merge.TrackerCommitRefusedError as exc:
-            # The landing never reached the lane's diff, so this is not the lane's
-            # failure and not a verdict on the base either: keep the committed work
-            # ready to land and let the later lanes try (basicly-85cadb).
+            # The landing never reached the lane's diff, so it faults neither the lane nor
+            # the base: keep the work ready to land and let later lanes try (basicly-85cadb).
             one = RoutedOutcome(
                 outcome.issue_id,
                 READY_TO_LAND,
@@ -3437,9 +3435,12 @@ def _land_in_order(
             # ends the loop instead of spinning on it.
             one = RoutedOutcome(outcome.issue_id, "error", f"routing failed: {exc}")
         if lands:
-            # Retired per route: a `bounced` left this lane `landing` under the next.
+            # Retired per route: a `bounced` left this lane `landing` under the next. A
+            # route that carries forward is still landable, so it says so.
             if one.progressed:
                 forget_standing(outcome.issue_id)
+            elif one.route in ("held", READY_TO_LAND):
+                note_standing(LANE_WAITS_TO_LAND, one.detail, outcome.issue_id)
             else:
                 note_standing(LANE_REFUSED, one.detail or one.route, outcome.issue_id)
         routed.append(one)
