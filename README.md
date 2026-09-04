@@ -31,10 +31,11 @@ Four pillars:
   agent hooks and a verify pipeline. **Enforcement is at commit time, not only in
   CI**: a hook that refuses the commit is a different guarantee from a check that
   fails the build afterwards.
-- **03 The loop** — a development process shipped as commands: intake, classify,
-  decompose, build, verify, ship, teardown, retro — driven the same way under
-  Claude, Codex or Copilot. Work builds in an isolated worktree; run one track at
-  a time, or fan out parallel lanes behind a serial merge queue.
+- **03 The loop** — one way to drive work, shipped as commands: intake, classify,
+  decompose, build, verify, validate, ship — driven the same way under Claude,
+  Codex or Copilot, and not the only way work gets done here. Work builds in an
+  isolated worktree; run one track at a time, or fan out parallel lanes behind a
+  serial merge queue.
 - **04 The work graph** — issues, dependencies, gate results, checkpoints and
   evidence live in a tracked graph. The loop keeps no side-state: the phase a
   track sits in is *derived* from that graph, so a session can crash, compact, or
