@@ -1427,6 +1427,7 @@ def record_ungranted_refusal(
         "[runner] default to the manual handoff"
     )
     decisions.enqueue(repo_root, root_issue, "escalation", UNGRANTED_QUESTION, detail)
+    note_standing(LANE_REFUSED, detail, *(lane.issue_id for lane in lanes))
     return detail
 
 
@@ -1435,17 +1436,14 @@ def record_pass_refusal(
 ) -> decisions.DecisionItem:
     """Surface a forecast-refused pass to the human as a queue item on the root.
 
-    The same shape :func:`record_dispatch_halt` gives the retrospective halt, and
-    for the same reason: the pass would otherwise just stop dispatching and a client
-    would read it as "no ready lanes". Idempotent per (issue, kind, question), so a
-    pass that keeps refusing re-enqueues the one item rather than piling up
-    notifications — the numbers live in the *detail*, which is not part of the id.
+    The same shape and reason as :func:`record_dispatch_halt`, idempotence included:
+    the numbers live in the *detail*, which is not part of the item's id.
 
-    The refusal reaches the board here too: every lane the pass was about to start is now
-    refused on the ceiling rather than queued for a slot, and AC3 of basicly-ncday7 names
-    the spend ceiling beside the WIP bound.
+    Published onto every lane the pass was to start: `counted` alone is empty whenever
+    the forecast walk failed (basicly-ncday7).
     """
-    note_standing(LANE_REFUSED, admission.violation or "", *admission.counted)
+    every_lane = (*admission.counted, *admission.unforecast, *admission.assumed)
+    note_standing(LANE_REFUSED, admission.violation or "", *every_lane)
     return decisions.enqueue(
         repo_root,
         root_issue,
@@ -1750,7 +1748,11 @@ def configure_budget(repo_root: Path) -> runner.ProcessBudget:
 
 
 def record_dispatch_halt(
-    repo_root: Path, root_issue: str, admission: policy.SpendStatus
+    repo_root: Path,
+    root_issue: str,
+    admission: policy.SpendStatus,
+    *,
+    lanes: tuple[AdoptedLane, ...] = (),
 ) -> decisions.DecisionItem:
     """Surface a spend halt to the human as a queue item on the session root.
 
@@ -1765,6 +1767,7 @@ def record_dispatch_halt(
     both behind "the budget is spent" would send the operator to re-grant a budget
     that was never the problem.
     """
+    note_standing(LANE_REFUSED, admission.detail, *(lane.issue_id for lane in lanes))
     question = (
         UNMETERED_QUESTION
         if admission.unmetered_dispatches
@@ -2003,11 +2006,8 @@ def _admit_wip(
     wip.record_refusal(repo_root, session.root_issue, bound)
     # Which units to land is this frame's half of the message (see `wip.reason`).
     land = f"; land or review {', '.join(bound.downstream)}" if bound.downstream else ""
-    # And onto the board, because `record_refusal` above is silent for exactly the pass an
-    # operator is watching: it enqueues only when the pass starts nothing, so a bound that
-    # held one of six left the held lane rendering as an idle build (basicly-ncday7).
-    # Every admitted lane is queued until a runner slot frees, which is the third verdict
-    # this frame reaches and the one the extras past the concurrency cap sit in.
+    # And onto the board: `record_refusal` above enqueues only for a pass that starts
+    # nothing, so a bound holding one of six published nowhere (basicly-ncday7).
     note_standing(LANE_REFUSED, bound.reason, *(lane.issue_id for lane in bound.refused))
     note_standing(LANE_PARKED, "unlanded work the bound is counting", *bound.downstream)
     admitted = (lane.issue_id for lane in bound.admitted)
@@ -2076,7 +2076,7 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     if admission is None:
         admission = policy.spend_status(repo_root, session.root_issue)
     if admission.halted:
-        record_dispatch_halt(repo_root, session.root_issue, admission)
+        record_dispatch_halt(repo_root, session.root_issue, admission, lanes=lanes)
         return ()
     if cap is None:
         cap = load_worktree_config(repo_root).concurrency
@@ -2903,6 +2903,9 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     """
     record = worktree.load_session(lane.binding.name, repo_root)
     if record is None:
+        note_standing(
+            LANE_REFUSED, f"worktree {lane.binding.name!r} has no session record", lane.issue_id
+        )
         return _unstarted(
             lane.issue_id,
             spec.name,
@@ -2920,6 +2923,8 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     queued = escalate_working_set(repo_root, admission)
     if admission.refused:
         held = f"; held by {queued.decision_id}" if queued is not None else ""
+        # `live_lane` is the only site that pops `queued`, and this returns before it.
+        note_standing(LANE_REFUSED, f"{admission.violation}{held}", lane.issue_id)
         return _unstarted(
             lane.issue_id,
             spec.name,
@@ -3353,10 +3358,8 @@ def route_outcomes(
 def _note_landing_queue(ordered: Sequence[LaneOutcome]) -> tuple[str, ...]:
     """Publish each landable lane's place in the serial landing queue; the ids published.
 
-    **This frame is the only one that knows the queue.** Landings are serial and in
-    dependency order, so a lane whose agent exited with work committed waits behind the 3-8
-    minutes each landing ahead of it takes, and published nothing (basicly-ncday7). The
-    position is what a duration cannot replace: how many landings stand before its own.
+    **This frame is the only one that knows the queue.** Landings are serial, so the
+    position is what a duration cannot replace: how many stand before this one.
     """
     waiting = [one.issue_id for one in ordered if _is_green(one) or one.salvaged]
     for position, issue_id in enumerate(waiting, start=1):
@@ -3374,9 +3377,8 @@ def _land_in_order(
 ) -> tuple[RoutedOutcome, ...]:
     """Route *ordered* one at a time, in the landing order the caller computed.
 
-    Split out of :func:`route_outcomes` so its queue standings are retired on every route
-    out of the loop, including a `LockLostError` from *beat*: that is raised outside each
-    outcome's own guard, and would leave a lane published as landing forever.
+    Split out of :func:`route_outcomes` so a `LockLostError` from *beat*, raised outside
+    each outcome's own guard, still retires the queue standings.
     """
     routed: list[RoutedOutcome] = []
     landing_blocked = False
@@ -3416,6 +3418,12 @@ def _land_in_order(
             # pass; "error" is non-retriable so a persistent infra failure
             # ends the loop instead of spinning on it.
             one = RoutedOutcome(outcome.issue_id, "error", f"routing failed: {exc}")
+        if lands:
+            # Retired per route: a `bounced` left this lane `landing` under the next.
+            if one.progressed:
+                forget_standing(outcome.issue_id)
+            else:
+                note_standing(LANE_REFUSED, one.detail or one.route, outcome.issue_id)
         routed.append(one)
         if one.progressed:
             landed.append((outcome.issue_id, merge.changed_paths(repo_root, before)))
