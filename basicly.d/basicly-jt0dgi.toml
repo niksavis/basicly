@@ -1,0 +1,27 @@
+# Every skills command covers both default roots without a flag (basicly-jt0dgi).
+#
+# `skills.resolve_skill_roots` returned `DEFAULT_SKILL_ROOTS[0]` alone unless a caller opted
+# in, so `basicly install` wrote `.agents/skills` and a bare `skills-check` never looked at
+# it: the open-standard root could go stale while every local gate stayed green. The default
+# is now every root, `--root` still narrows, and `--all-default-roots` is an accepted no-op
+# that says so — it is spelled out in CI workflows and editor tasks already on disk in
+# consumer repos, and failing those on an upgrade would be the worse answer.
+#
+# ## module_size: one rebaseline, no slack in it
+#
+# `tests/test_skills.py` +378 tokens, four tests, frozen at 5067 and therefore admitting
+# none. They belong beside their siblings: three assert what `resolve_skill_roots` returns,
+# which is the function every other test in this module calls to get its roots, and the
+# fourth pins the retired flag against the same resolver. No prose was cut to make the
+# number move and none was padded either — the module's prose share rises 21.8 -> 23.8 on
+# four test docstrings and stays far inside the 50.0% cap, which is the check that separates
+# an addition from a comment budget spent on a baseline.
+#
+# No split: the nameable cut exists but the module was already 1067 tokens over the cap
+# before this record touched it, and refactoring a test module to admit a four-test addition
+# is a larger claim than the change makes.
+[ratchet.module_size]
+rebaseline_reason = "the root resolver's default changed, and its tests belong with the projection tests that call it"
+
+[ratchet.module_size.rebaselined]
+"tests/test_skills.py" = 378

@@ -1543,7 +1543,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         (
             "skills-build",
             cmd_skills_build,
-            argparse.Namespace(roots=None, all_default_roots=True),
+            argparse.Namespace(roots=None),
         ),
         ("agents-build", cmd_agents_build, argparse.Namespace()),
         ("hooks-build", cmd_hooks_build, argparse.Namespace(no_install=False)),
@@ -1962,14 +1962,22 @@ def cmd_permissions_check(_args: argparse.Namespace) -> int:
     return 0
 
 
+ALL_DEFAULT_ROOTS_DEPRECATED = (
+    "`--all-default-roots` is deprecated and does nothing: every default skills root "
+    "is written and checked without it. Drop the flag."
+)
+
+
 def _resolve_skill_output_roots(args: argparse.Namespace, repo_root: Path) -> list[Path]:
-    roots_arg = getattr(args, "roots", None)
-    use_default_roots = bool(getattr(args, "all_default_roots", False))
-    return resolve_skill_roots(
-        repo_root=repo_root,
-        roots=roots_arg,
-        use_default_roots=use_default_roots,
-    )
+    """Roots for a skills build/check, warning once on the flag that became a no-op.
+
+    The flag stays accepted rather than removed: it is spelled out in scaffolded CI
+    workflows and editor tasks that a consumer repo already has on disk, and failing
+    those on an upgrade would be a worse answer than a line on stderr.
+    """
+    if getattr(args, "all_default_roots", False):
+        ui.warn(ALL_DEFAULT_ROOTS_DEPRECATED)
+    return resolve_skill_roots(repo_root=repo_root, roots=getattr(args, "roots", None))
 
 
 def _cmd_usage_lane_split(_args: argparse.Namespace) -> int:
@@ -2108,7 +2116,8 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     if _report_mismatches(mismatches, repo_root, stale_message=_skills_stale_message(mismatches)):
         return 1
 
-    ui.say("Projected skills are up to date.", style="ok")
+    checked = ", ".join(_format_path(root, repo_root) for root in roots)
+    ui.say(f"Projected skills are up to date in {checked}.", style="ok")
     return 0
 
 
@@ -4932,7 +4941,7 @@ def _add_skill_root_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--all-default-roots",
         action="store_true",
-        help="Use .claude/skills and .agents/skills.",
+        help="Deprecated no-op: every default root is used already.",
     )
 
 

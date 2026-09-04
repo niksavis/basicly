@@ -168,19 +168,9 @@ def render_skill_md(
     return f"{header}{body_marker}{skill.instructions}"
 
 
-def resolve_skill_roots(
-    repo_root: Path,
-    roots: list[str] | None,
-    use_default_roots: bool,
-) -> list[Path]:
-    """Resolve output roots for projected skills."""
-    if roots:
-        candidates = [Path(item) for item in roots]
-    elif use_default_roots:
-        candidates = list(DEFAULT_SKILL_ROOTS)
-    else:
-        # Keep default behavior minimal for this repo, but allow expansion with --all-default-roots.
-        candidates = [DEFAULT_SKILL_ROOTS[0]]
+def resolve_skill_roots(repo_root: Path, roots: list[str] | None) -> list[Path]:
+    """Resolve output roots for projected skills; no ``--root`` means every default root."""
+    candidates = [Path(item) for item in roots] if roots else list(DEFAULT_SKILL_ROOTS)
 
     resolved: list[Path] = []
     seen: set[str] = set()

@@ -81,8 +81,8 @@ instructions: |
 
   Then ask the question that catches the rest: **does this value have more than
   one consumer, and does it reach more than one surface?** A projected artifact
-  usually has several — `basicly skills-build --all-default-roots` writes two
-  roots, and a scope naming one of them fails the projection gate. A renderer
+  usually has several — `basicly skills-build` writes two roots, and a scope
+  naming one of them fails the projection gate. A renderer
   almost always sits one call above a builder that owns the fact.
 
   A scope that names a file the fix never touches is not a smaller claim than the

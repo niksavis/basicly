@@ -68,7 +68,7 @@ Projection gates (after editing catalog sources):
 
 ```sh
 uv run basicly check
-uv run basicly skills-check --all-default-roots
+uv run basicly skills-check
 uv run basicly agents-check
 uv run basicly hooks-check
 uv run basicly permissions-check

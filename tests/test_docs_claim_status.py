@@ -249,17 +249,17 @@ def test_a_row_that_promises_work_and_names_no_record_is_refused(
     work_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The roadmap and the tracker disagreeing is the defect, so it cannot render."""
-    _edit_source(work_repo, "    record: basicly-jt0dgi\n", "")
+    _edit_source(work_repo, "    record: basicly-imnu.13\n", "")
 
     assert _run(work_repo, "--check") == 1
-    assert "Both skill roots written by every skills command" in capsys.readouterr().err
+    assert "Behavioural efficacy evals" in capsys.readouterr().err
 
 
 def test_a_row_naming_a_closed_record_is_refused_as_already_held(
     work_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A closed record under a promised row is a row the tree already holds and nobody moved."""
-    _edit_source(work_repo, "    record: basicly-jt0dgi\n", "    record: basicly-askx4j\n")
+    _edit_source(work_repo, "    record: basicly-imnu.13\n", "    record: basicly-askx4j\n")
 
     assert _run(work_repo, "--check") == 1
     assert "basicly-askx4j, which is closed" in capsys.readouterr().err

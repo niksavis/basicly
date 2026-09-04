@@ -33,11 +33,10 @@ sections:
     status: shipped
     note: ''
   - name: Both skill roots written by every skills command
-    status: partial
+    status: shipped
     record: basicly-jt0dgi
-    note: '`basicly install` writes both. A bare `skills-build` or `skills-check` writes one,
-      and needs `--all-default-roots` for the second. Architecture §14 marks the fix as a
-      target'
+    note: 'A bare `skills-build` or `skills-check` covers every default root, and the check
+      names them. `--root` still narrows to one; `--all-default-roots` is a deprecated no-op'
   - name: An eval case file per catalog entry, enforced as a structural failure
     status: building
     record: basicly-m4zv.3

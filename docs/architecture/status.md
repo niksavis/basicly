@@ -29,7 +29,7 @@ evidence each state requires. It is not restated here: the renderer reads that t
 | Path-scoped rules tier | shipped |  | Engine built; four fragments and one skill glob use it. Cost falls for two families and rises for the one that inlines |
 | Invocation axis per entry | shipped |  | Declared on skill sources; not yet on fragments |
 | Deterministic lexical routing evals with a ratcheting rank-1 floor | shipped |  |  |
-| Both skill roots written by every skills command | partial | basicly-jt0dgi | `basicly install` writes both. A bare `skills-build` or `skills-check` writes one, and needs `--all-default-roots` for the second. Architecture §14 marks the fix as a target |
+| Both skill roots written by every skills command | shipped | basicly-jt0dgi | A bare `skills-build` or `skills-check` covers every default root, and the check names them. `--root` still narrows to one; `--all-default-roots` is a deprecated no-op |
 | An eval case file per catalog entry, enforced as a structural failure | building | basicly-m4zv.3 | Model-invoked skills carry one by convention; fragments carry none |
 | Relieve the always-on baseline by scoping what is conditional | building | basicly-a3ab | Authoring work, not engine work |
 | Tutorial and how-to layer | shipped |  | The tutorial was executed end to end on a fresh repository before it was written |
