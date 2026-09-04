@@ -36,6 +36,7 @@ from basicly import (
     board_schema,
     board_serve,
     board_snapshot,
+    board_wall,
     cli,
     owned_store,
     projection,
@@ -466,3 +467,56 @@ def test_rows_the_model_computed_that_never_reached_the_page_are_named_a_fault(
 
     assert page is not None
     assert board_serve.DROPPED_ROWS_FAULT in page.decode("utf-8")
+
+
+def _drawn(board: board_serve.Board) -> str:
+    """One rendered page from *board*, refreshed first, as text."""
+    assert board.refresh() is True
+    page = board.page(datetime.now(UTC))
+    assert page is not None
+    return page.decode("utf-8")
+
+
+def test_the_producers_own_note_lands_inside_the_grid_and_never_after_it(
+    board_repo: Path,
+) -> None:
+    """basicly-qwqd35: the note used to be appended past `</main>`, below a page that never scrolls.
+
+    The body is `100vh` with `overflow: hidden`, so an appended note was drawn 9px outside the
+    viewport - measured with `.scripts/check_render_overflow.py` at 1440, 1600 and 1920 alike.
+    The assertion is positional rather than textual, because the old page carried the same
+    words and no reader ever saw them.
+    """
+    text = _drawn(board_serve.Board(board_repo, build=_ready_document))
+    tick = text.index('<section class="region tick">')
+
+    assert board_serve.NOTES_SLOT not in text, "the slot was left empty, so no note was filled in"
+    assert tick < text.index("producer age") < text.index("</section>", tick)
+    closed = [line.strip() for line in text[text.rindex("</main>") :].strip().splitlines()]
+    assert closed == ["</main>", "</body>", "</html>"], "the grid is no longer the last thing drawn"
+
+
+def test_a_fault_takes_the_line_above_the_events_and_the_state_colour(board_repo: Path) -> None:
+    """AC 2: a note saying the page is lying must not read as one more dim line under it."""
+    board = board_serve.Board(
+        board_repo, build=_ready_document, template_mtime=lambda: time.time() + 3600
+    )
+    text = _drawn(board)
+
+    assert '<div class="notes fault">' in text
+    assert f"state-{board_wall.STALE}" in text
+    assert text.index("the template changed") < text.index('<span class="label">events')
+
+
+def test_a_page_whose_template_left_no_slot_still_carries_the_note(
+    board_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A note in the wrong place beats a note dropped in silence, which is the older failure."""
+    real_page = board_render.page
+    monkeypatch.setattr(
+        board_render,
+        "page",
+        lambda *a, **k: real_page(*a, **k).replace(board_serve.NOTES_SLOT, ""),
+    )
+
+    assert "producer age" in _drawn(board_serve.Board(board_repo, build=_ready_document))

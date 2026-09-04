@@ -27,7 +27,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
-from . import board_actions, board_render, board_schema, board_snapshot, catalog, supervise, ui
+from . import (
+    board_actions,
+    board_render,
+    board_schema,
+    board_snapshot,
+    board_wall,
+    catalog,
+    supervise,
+    ui,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -81,6 +90,12 @@ DROPPED_ROWS_FAULT = (
     "page. Restart the board."
 )
 
+# The empty element the page template leaves in its `tick` row for this tier's notes. Filled
+# by string rather than by a template context key, because a key would have to be threaded
+# through `board_render.page`, and `basicly-qwqd35` did not declare that module. A key is the
+# better seam: the anchor is pinned by a test here so it cannot go missing in silence.
+NOTES_SLOT = '<div class="notes"></div>'
+
 
 def _template_mtime() -> float | None:
     """The board page template's mtime, or None where it is unreadable (neither is staleness)."""
@@ -99,6 +114,20 @@ def _rows_dropped(ready: object, drawn: str) -> bool:
         if isinstance(ident := getattr(row, "ident", None), str)
     ]
     return bool(idents) and not any(ident in drawn for ident in idents)
+
+
+def _banner(notes: list[tuple[str, str]]) -> str:
+    """*notes* as the `tick` row's filled slot: one paragraph each, the faults colour-coded.
+
+    The container carries `fault` where any note does, which is what takes the whole banner
+    onto the line above the events instead of the gap beside them. `state-<key>` is the
+    template's own colour channel, so a fault reads amber here exactly as it does elsewhere.
+    """
+    lines = "".join(
+        f'<p class="note{f" state-{state}" if state else ""}">{note}</p>' for note, state in notes
+    )
+    faulted = " fault" if any(state for _, state in notes) else ""
+    return f'<div class="notes{faulted}">{lines}</div>'
 
 
 def session_facts(repo_root: Path) -> board_snapshot.SessionFacts | None:
@@ -254,21 +283,35 @@ class Board:
         return board_actions.inject(drawn, self.actions).encode("utf-8")
 
     def _name_self_faults(self, drawn: str, ready: object, now: datetime) -> str:
-        """*drawn* with this process's own age, and any self-staleness fault, before `</body>`.
+        """*drawn* with this process's own age, and any self-staleness fault, in the `tick` row.
 
         Neither `board_schema.verdict` nor `board_render` can see whether this process is
         the code the on-disk template was built for; that is this tier's own to report.
+
+        **Into the template's slot, never after `</main>` (basicly-qwqd35).** The body is
+        `100vh` with `overflow: hidden` and the grid's eight rows fill it, so an appended
+        note is drawn past the fold: measured at 9px of clipped `body` at 1440, 1600 and
+        1920 alike, on a page that never scrolls. A page holding no slot keeps the append,
+        because a note drawn in the wrong place still beats a note dropped in silence.
         """
         started = self._started_at.timestamp()
         age_s = now.timestamp() - started
-        notes = [SELF_AGE.format(age=age_s, loaded=self._started_at.isoformat(timespec="seconds"))]
+        notes = [
+            (SELF_AGE.format(age=age_s, loaded=self._started_at.isoformat(timespec="seconds")), "")
+        ]
         mtime = self._template_mtime()
         if mtime is not None and mtime > started:
-            notes.append(STALE_TEMPLATE_FAULT.format(age=now.timestamp() - started))
+            notes.append((
+                STALE_TEMPLATE_FAULT.format(age=now.timestamp() - started),
+                board_wall.STALE,
+            ))
         if _rows_dropped(ready, drawn):
-            notes.append(DROPPED_ROWS_FAULT)
-        banner = "".join(f'<p class="note">{note}</p>' for note in notes)
-        return drawn.replace("</body>", banner + "</body>", 1)
+            notes.append((DROPPED_ROWS_FAULT, board_wall.FAIL))
+        return (
+            drawn.replace(NOTES_SLOT, _banner(notes), 1)
+            if NOTES_SLOT in drawn
+            else drawn.replace("</body>", _banner(notes) + "</body>", 1)
+        )
 
     def producer(self) -> str:
         """The transcript's `producer` line: which process writes the document being served."""
