@@ -1,0 +1,1 @@
+- `basicly board serve` now draws its own notes inside the page grid instead of after it. The producer age and the two self-fault notes were appended past the grid on a body that is `100vh` and never scrolls, so they rendered 9px below the fold and no reader ever saw them. A fault now takes the line above the events row in its state colour.

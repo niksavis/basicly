@@ -552,6 +552,9 @@
       .tick {
         align-items: baseline;
         display: flex;
+        /* The server's own notes wrap onto their own line when they carry a fault, and ride
+           the events line when they do not. Both need this. */
+        flex-wrap: wrap;
         gap: 14px;
         grid-area: tick;
       }
@@ -560,6 +563,25 @@
         font-family: var(--mono);
         font-size: 14px;
         min-width: 0;
+      }
+      /* The producer's own notes, filled by `board_serve` and empty in every page rendered
+         without a server behind it. Inside this row rather than after the grid: the body is
+         `100vh; overflow: hidden`, so anything appended past the grid was drawn 9px below the
+         fold and no reader ever saw it (basicly-qwqd35). */
+      .tick .notes:empty {
+        display: none;
+      }
+      /* First in the row, and deliberately not pushed right. `margin-left: auto` on a *first*
+         flex item absorbs the free space to its left, so on a page with room to spare it would
+         shift the whole events row off the left margin. First also means the notes can never
+         wrap below the events line, at any width, which is what a fault needs. */
+      .tick .notes {
+        min-width: 0;
+      }
+      /* A fault says the page is lying, so it takes the whole line above the events rather
+         than the gap beside them. The 100% basis is what makes the row wrap. */
+      .tick .notes.fault {
+        flex: 1 0 100%;
       }
 
       /* --- inv: the verdict's whole section roster, so nothing is silently dropped ----- */
@@ -857,6 +879,7 @@
       </section>
 
       <section class="region tick">
+        <div class="notes"></div>
         <span class="label">events{% if events_more %} — {{ events_more }}{% endif %}</span>
         <div class="lines">
 {%- for line in events %}
