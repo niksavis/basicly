@@ -5967,3 +5967,64 @@ def test_a_family_that_cannot_fork_is_never_handed_a_seed(tmp_path: Path) -> Non
     codex = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "codex")
 
     assert supervise._lane_seed(tmp_path, "basicly-2kh170", codex) is None
+
+
+def _refused_tracker_sync(issue_id: str):
+    """``loop.advance`` for a lane whose landing died on the engine's own commit."""
+
+    def advance(_r: Path, lane: str, **_k: object) -> loop.AdvanceResult:
+        if lane == issue_id:
+            raise supervise.merge.TrackerCommitRefusedError(
+                "`pre-commit-script` refused: FAILED: release-notes (0.06s) "
+                "· checks failed: 32/33 passed"
+            )
+        return _advance_result(lane, "merged", "verify", "landed")
+
+    return advance
+
+
+def test_a_refused_tracker_sync_leaves_the_lane_ready_to_land(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """basicly-85cadb: the lane was committed and clean and got a fresh agent anyway.
+
+    Its diff was never examined — the refusal was on the loop's own chore commit — so
+    there is nothing for an implementer to do and the route must carry it, not dispatch
+    it. The check has to survive into the detail or the operator diagnoses it twice.
+    """
+    monkeypatch.setattr(supervise.loop, "advance", _refused_tracker_sync("epic.1"))
+
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
+
+    assert [r.route for r in routed] == [supervise.READY_TO_LAND]
+    assert "FAILED: release-notes" in routed[0].detail
+    assert supervise.carried_forward(routed) == frozenset({"epic.1"})
+    assert supervise.should_continue(routed) is True
+
+
+def test_a_refused_tracker_sync_does_not_hold_the_later_lanes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The held rule is for a signal about the base; this one is about neither lane."""
+    monkeypatch.setattr(supervise.loop, "advance", _refused_tracker_sync("epic.1"))
+    monkeypatch.setattr(
+        supervise.policy,
+        "approve_checkpoint_guarded",
+        lambda *_a, **_k: policy.ApprovalResult("challenge", code="abc"),
+    )
+    monkeypatch.setattr(
+        supervise.decisions,
+        "enqueue",
+        lambda _r, issue, kind, *_a, **_k: decisions_item(issue, kind),
+    )
+    monkeypatch.setattr(supervise.merge, "landing_order", lambda _r, items: items)
+
+    routed = supervise.route_outcomes(
+        tmp_path,
+        _session(_lane("epic.1"), _lane("epic.2")),
+        (_executed_outcome("epic.1"), _executed_outcome("epic.2")),
+    )
+
+    assert [r.route for r in routed] == [supervise.READY_TO_LAND, "merged"]

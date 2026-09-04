@@ -3159,6 +3159,11 @@ DISPATCH_GATE = "dispatch"
 TRACKER_GATE = "tracker-storage"
 
 
+# Route for a landing killed by `merge.TrackerCommitRefusedError`: not ``held``, which the
+# rest of the pass stops behind, and not ``error``, which is non-retriable and ended the
+# session (basicly-85cadb).
+READY_TO_LAND = "ready-to-land"
+
 # Routes that keep the standing loop iterating even without a landing: the
 # lane will be re-tried and its termination is bounded elsewhere (the dispatch
 # and verify rework caps both escalate into the decision queue, which then
@@ -3181,6 +3186,9 @@ RETRIABLE_ROUTES = (
     # (basicly-1koh). Termination is not at risk: the binding is gone, so the same
     # lane cannot be repaired twice.
     "repaired",
+    # Bounded by the landing that re-runs the refusing gate next pass; a gate that refuses
+    # forever fails every lane's landing identically rather than spinning this one.
+    READY_TO_LAND,
     # Newly provisioned lanes exist but are not dispatched until the next derivation
     # reads them (basicly-t73d). Bounded by the worktree cap and by `seed_lanes`
     # returning `seed-blocked` — which is *not* retriable — the moment a root stops
@@ -3196,7 +3204,7 @@ class RoutedOutcome:
     issue_id: str
     # "shipped" | "merged" | "retry" | "rework" | "held" | "decision"
     # | "handoff" | "lane-step" | "lane-blocked" | "bounced" | "re-dispatch"
-    # | "repaired" | "error"
+    # | "repaired" | "ready-to-land" | "error"
     route: str
     detail: str
 
@@ -3220,18 +3228,18 @@ def should_continue(routed: tuple[RoutedOutcome, ...]) -> bool:
 def carried_forward(routed: tuple[RoutedOutcome, ...]) -> frozenset[str]:
     """The lanes whose landing this pass deferred, for the next pass to land first.
 
-    Only the ``held`` route carries: that lane is green and committed, and the
-    pass simply ran out of a landable base after an earlier failure. Every other
-    route either progressed or means the lane's own work needs changing (rework,
-    bounced, retry), which is exactly when a fresh dispatch *is* the right move —
-    so the carry lapses and the lane re-enters dispatch normally.
+    Two routes carry, for one reason: the lane is green and committed and no evidence
+    faults it. ``held`` ran out of a landable base; :data:`READY_TO_LAND` had the engine's
+    own tracker-sync commit refused, which examined the lane's diff not at all. Every other
+    route either progressed or means the lane's work needs changing, which is when a fresh
+    dispatch *is* right — so the carry lapses and the lane re-enters dispatch.
 
     This half of the carry is in-process only, so a supervisor that crashed
     mid-session remembers nothing; :func:`committed_lanes` re-derives the same
     set from git at the next pass, which is what keeps the carry across a
     restart (basicly-pjaudy).
     """
-    return frozenset(r.issue_id for r in routed if r.route == "held")
+    return frozenset(r.issue_id for r in routed if r.route in ("held", READY_TO_LAND))
 
 
 def _awaits_landing(repo_root: Path, lane: AdoptedLane) -> bool:
@@ -3413,21 +3421,32 @@ def _land_in_order(
                 # this on every tick, so the stamp is what makes the duration move.
                 note_standing(LANE_LANDING, "the supervisor is landing this lane", outcome.issue_id)
             one = _route_one(repo_root, session, outcome, landed, collisions)
+        except merge.TrackerCommitRefusedError as exc:
+            # The landing never reached the lane's diff, so it faults neither the lane nor
+            # the base: keep the work ready to land and let later lanes try (basicly-85cadb).
+            one = RoutedOutcome(
+                outcome.issue_id,
+                READY_TO_LAND,
+                f"landing deferred: the engine's own tracker-sync commit was refused: {exc}",
+            )
         except (RuntimeError, OSError, ValueError) as exc:
             # Contained like dispatch's guarded(): the lane re-routes next
             # pass; "error" is non-retriable so a persistent infra failure
             # ends the loop instead of spinning on it.
             one = RoutedOutcome(outcome.issue_id, "error", f"routing failed: {exc}")
         if lands:
-            # Retired per route: a `bounced` left this lane `landing` under the next.
+            # Retired per route: a `bounced` left this lane `landing` under the next. A
+            # route that carries forward is still landable, so it says so.
             if one.progressed:
                 forget_standing(outcome.issue_id)
+            elif one.route in ("held", READY_TO_LAND):
+                note_standing(LANE_WAITS_TO_LAND, one.detail, outcome.issue_id)
             else:
                 note_standing(LANE_REFUSED, one.detail or one.route, outcome.issue_id)
         routed.append(one)
         if one.progressed:
             landed.append((outcome.issue_id, merge.changed_paths(repo_root, before)))
-        elif lands and one.route not in ("bounced", "re-dispatch"):
+        elif lands and one.route not in ("bounced", "re-dispatch", READY_TO_LAND):
             landing_blocked = True
     return _attribute_pass_couplings(repo_root, tuple(routed), collisions, landed)
 

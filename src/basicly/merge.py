@@ -631,12 +631,23 @@ def skipped_tracker_commit_warning(repo_root: Path) -> str:
     )
 
 
+class TrackerCommitRefusedError(RuntimeError):
+    """A gate refused the engine's own tracker-sync commit, twice running.
+
+    Named apart from every other landing failure because *what was rejected is not the
+    lane's diff*: the commit holds only :data:`ENGINE_TRACKER_PATHS` state the loop wrote
+    itself, so neither re-dispatching an agent nor stopping the pass is warranted by it
+    (`supervise.READY_TO_LAND`, basicly-85cadb).
+    """
+
+
 def commit_tracker_state(
     repo_root: Path,
     bead: str,
     *,
     action: str = "sync tracker state for the harness loop",
     wait_s: float = base_lock.WAIT_S,
+    on_retry: Callable[[str], None] | None = None,
 ) -> bool:
     """Commit the base checkout's dirt when it is tracker-only; False when it is not.
 
@@ -658,12 +669,21 @@ def commit_tracker_state(
     codes. :func:`base_lock.hold` queues them, for *wait_s* before it says so. Reading
     the status *inside* that lock is what keeps a loser idempotent — whichever peer
     committed first published its claim too, so it finds a clean tree and declines.
+
+    *on_retry* is handed the note when the commit was refused once and taken on an
+    immediate re-run — see :func:`_commit_staged_tracker_state`. A caller with no
+    narrative to put it in omits it; the retry still happens.
+
+    Raises:
+        TrackerCommitRefusedError: The commit was refused twice.
     """
     with base_lock.hold(repo_root, wait_s=wait_s):
-        return _commit_tracker_state(repo_root, bead, action=action)
+        return _commit_tracker_state(repo_root, bead, action=action, on_retry=on_retry)
 
 
-def _commit_tracker_state(repo_root: Path, bead: str, *, action: str) -> bool:
+def _commit_tracker_state(
+    repo_root: Path, bead: str, *, action: str, on_retry: Callable[[str], None] | None = None
+) -> bool:
     """:func:`commit_tracker_state`'s body, with the base checkout already held."""
     lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
     paths = [line[3:] for line in lines if line.strip()]
@@ -678,8 +698,36 @@ def _commit_tracker_state(repo_root: Path, bead: str, *, action: str) -> bool:
     # than from disk so the decision stays a function of what git reported.
     dirty = [tree for tree in ENGINE_TRACKER_PATHS if any(_under(path, tree) for path in paths)]
     git(["add", *dirty], cwd=repo_root)
-    git(["commit", "-m", f"chore(beads): {action} ({bead})"], cwd=repo_root)
+    _commit_staged_tracker_state(repo_root, f"chore(beads): {action} ({bead})", on_retry)
     return True
+
+
+def _commit_staged_tracker_state(
+    repo_root: Path, message: str, on_retry: Callable[[str], None] | None
+) -> None:
+    """Commit the staged tracker dirt, retried once when a gate refuses it.
+
+    One retry, not a loop: a check refusing twice on the same staged bytes is refusing the
+    *content*. What one buys is the other population, and basicly-j7spdb proved it real —
+    the chain that refused its chore commit passed unchanged 20 minutes later, having cost
+    a re-dispatch and stopped two green lanes (basicly-85cadb). Nothing is re-staged
+    between the attempts, so the second offers git the tree the first was refused on.
+
+    Raises:
+        TrackerCommitRefusedError: Both attempts were refused.
+    """
+    try:
+        git(["commit", "-m", message], cwd=repo_root)
+    except RuntimeError as first:
+        refused = str(first)
+    else:
+        return
+    try:
+        git(["commit", "-m", message], cwd=repo_root)
+    except RuntimeError as again:
+        raise TrackerCommitRefusedError(str(again)) from again
+    if on_retry is not None:
+        on_retry(f"tracker-sync commit refused once and taken on a retry ({refused})")
 
 
 def known_bead_ids(repo_root: Path) -> set[str] | None:
@@ -980,7 +1028,6 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     session = load_session(name, repo_root)
     if session is None:
         raise SystemExit(f"no worktree session named {name!r}")
-    base, branch, worktree_path = session.base, session.branch, session.path
 
     # Both pre-merge refusals are states, not merit failures, and both are checked
     # before base is touched.
@@ -992,18 +1039,42 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     # Tracker-only dirt in base is the loop's own state (claim, checkpoints,
     # gate records) — roll it up before the clean-tree check instead of
     # bouncing the landing back to the agent.
-    if current_branch(repo_root) == base:
-        commit_tracker_state(repo_root, bead)
-    _assert_base_ready(repo_root, base)
+    retried: list[str] = []
+    if current_branch(repo_root) == session.base:
+        commit_tracker_state(repo_root, bead, on_retry=retried.append)
+    _assert_base_ready(repo_root, session.base)
     clock.mark("tracker-commit")
+
+    landed = _replay_verify_merge(
+        session, verify_mode=verify_mode, override_gate=override_gate, clock=clock
+    )
+    # Folded before `close`, which writes only to a *merged* detail: that is what keeps
+    # the refused-and-retried note on a failure, where the remedy is read (basicly-85cadb).
+    if retried:
+        landed = replace(landed, detail=f"{landed.detail}; {retried[0]}")
+    return clock.close(landed)
+
+
+def _replay_verify_merge(
+    session: Session, *, verify_mode: str, override_gate: bool, clock: _Landing
+) -> MergeResult:
+    """Steps 1-5 of :func:`merge_worktree`, with base already clean and up to date.
+
+    Split from the pre-flight so the caller has one result to fold its tracker-sync note
+    into, rather than six early returns to remember (basicly-85cadb). *repo_root* and
+    *bead* are read off *clock*, which already holds both as one fact: passing them
+    beside it is the second spelling that would take this over `PLR0913`. The stages are
+    marked here, where they run, and the clock is closed by the caller (basicly-tjhjmk).
+    """
+    repo_root, bead = clock.repo_root, clock.bead
+    name, base, branch = session.name, session.base, session.branch
+    worktree_path = session.path
 
     # 1. Replay onto the *current* base so serialized merges stay conflict-free.
     replayed = rebase.replay(repo_root, worktree_path, base, branch)
     clock.mark("rebase")
     if not replayed.ok:
-        return clock.close(
-            MergeResult(name, replayed.status, replayed.detail, conflicts=replayed.conflicts)
-        )
+        return MergeResult(name, replayed.status, replayed.detail, conflicts=replayed.conflicts)
     regenerated = replayed.regenerated + rebase.refresh_generated(repo_root, worktree_path, bead)
     clock.mark("regenerate")
 
@@ -1012,19 +1083,17 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
         gate = _verify_for_landing(name, worktree_path, verify_mode, clock)
         clock.mark("verify")
         if gate is not None:
-            return clock.close(gate)
+            return gate
 
     # 3. Non-destructive conflict probe before touching the base tree.
     probe = probe_merge(repo_root, base, branch)
     clock.mark("probe")
     if not probe.safe:
-        return clock.close(
-            MergeResult(
-                name,
-                "merge-conflicts",
-                f"conflicts in: {', '.join(probe.conflicts)}",
-                conflicts=probe.conflicts,
-            )
+        return MergeResult(
+            name,
+            "merge-conflicts",
+            f"conflicts in: {', '.join(probe.conflicts)}",
+            conflicts=probe.conflicts,
         )
 
     # 4/5. Merge, then prove the merge — a "merged" status is unreachable without it.
@@ -1035,7 +1104,7 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
         # queue resolves a conflict rather than bouncing it, and a resolution nobody
         # is told about is indistinguishable from a rebase that never conflicted.
         landed = replace(landed, detail=f"{landed.detail} (regenerated {', '.join(regenerated)})")
-    return clock.close(landed)
+    return landed
 
 
 @dataclass(frozen=True)

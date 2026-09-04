@@ -1,0 +1,64 @@
+# A refused tracker-sync commit lost the gate name, turned a committed lane into a
+# re-dispatch and the rest of the pass into holds (basicly-85cadb). One chain, three
+# repairs, each in a module that was already at or over its size baseline.
+#
+# Measured before the first edit, and that measurement is why this fragment exists rather
+# than a smaller diff: `merge.py` had **0** tokens of module-size headroom, `checkout.py`
+# **15**, `supervise.py` **456** with **0.0** points of comment-density headroom, and
+# `tests/test_supervise.py` **488**. Deleting existing prose would have paid for all of it
+# and no claim in these modules is wrong, so nothing was cut but the narration this change
+# itself added.
+#
+# `checkout.py` +247, and it crosses the 4,000-token cap for the first time (3,985 ->
+# 4,232) rather than raising a frozen baseline. `_runner_verdicts` reads
+# `check_runner.py`'s own `FAILED: <check>` and `checks failed: N/M` lines off the whole
+# output and `gate_refusal` appends whichever the block reader missed. The block reader is
+# left alone deliberately: it is right about third-party hooks, and what it cannot be right
+# about is *which block* those lines land in, because the runner writes them on its stderr
+# while its `==> <check>` progress lines sit on block-buffered stdout and flush after them.
+# Not split along the run/refusal-reader seam the module docstring already names: that is a
+# new module, a new test module and a decomposition track of its own, where the defect here
+# is 6 lines. Comment-density **fell**, 54.1 -> 54.0.
+#
+# `merge.py` +725: `TrackerCommitRefusedError`, one bounded retry of the engine's own chore
+# commit in `_commit_staged_tracker_state`, and `_replay_verify_merge` — steps 1-5 of
+# `merge_worktree` extracted so the retry note has one result to fold into instead of six
+# early returns. The extraction pays for itself twice: it also drops the redundant `name`
+# parameter, so no `PLR0913` suppression is added. Comment-density fell, 60.0 -> 59.9.
+#
+# `tests/test_supervise.py` grew +605 for the two routing tests, of which 488 was headroom.
+#
+# ## Re-measured 2026-09-04 after a rebase that consumed the headroom this fragment assumed
+#
+# The three numbers below grew, and the cause is recorded rather than absorbed: this lane
+# sat unlanded while `basicly-ncday7` and `basicly-tjhjmk` landed into the same two modules,
+# so the headroom the paragraphs above were measured against is gone. The comment above
+# predicted the exact failure - "`supervise.py` +296 fits inside its 456 and is not
+# declared" - and that 456 is now spent by ncday7's standing registry.
+#
+# `supervise.py` +297, newly declared: the `READY_TO_LAND` route, its entry in
+# `RETRIABLE_ROUTES`, the second carry in `carried_forward`, the
+# `TrackerCommitRefusedError` handler in `_land_in_order`, and the branch that keeps a
+# carried route reading `waits-to-land` instead of `refused` - a defect only visible once
+# this lane meets ncday7's retirement block, which published `refused` for every
+# non-progressing route. Net 19 lines, 9 of them code, so it cannot be trimmed to fit.
+#
+# `merge.py` 725 -> 787: `tjhjmk`'s landing clock now runs through `merge_worktree`, so
+# `_replay_verify_merge` reads `repo_root` and `bead` off the clock rather than beside it -
+# which is what keeps it under `PLR0913` after gaining the clock, and is the same trick the
+# paragraph above used to drop `name`.
+#
+# `tests/test_supervise.py` 117 -> 526: the same rebase moved the module under it.
+#
+# Rebaselined rather than waived, for the reason ncday7's fragment gives: a waiver replaces
+# the frozen entry, so it would delete `supervise.py`'s ceiling at 12x the cap to buy 297.
+# Only this change's own narration was cut to pay down the total; no existing claim in any
+# of these modules was deleted.
+[ratchet.module_size]
+rebaseline_reason = "the gate-name reader, the bounded tracker-sync retry and the landing split that carries its note; re-measured after a rebase in which ncday7 and tjhjmk landed into the same two modules and spent the headroom the first measurement assumed"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/checkout.py" = 4232
+"src/basicly/merge.py" = 787
+"src/basicly/supervise.py" = 297
+"tests/test_supervise.py" = 526
