@@ -25,8 +25,22 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
     from datetime import datetime
 
+# module-size-waiver: cost(basicly-k6tpep.1): 4416 of 4000 tokens. `lanes[].state` and the
+# two keys that date and explain it added 432: the closed set this layer bounds the wire
+# with, three fields, and `_standing`. The nameable cut is the one `board_facts` and
+# `board_regions` already name in their own waivers - `LaneFacts`, `lanes` and `_standing`
+# into `board_lane.py` - and it needs a line in `.importlinter`, whose entries leave no
+# module unlisted. No prose was cut to pay for this; the density share is waived already.
+
 # The separator a wait id uses to carry its subject, read only by :func:`asks`.
 _SUBJECT_SEP = "#wait-"
+
+# The closed set `board-snapshot.schema.json` permits on `lanes[].state`, spelled here
+# because this layer bounds what reaches the wire and a value outside a closed set costs the
+# whole `lanes` section rather than one key. `supervise.LANE_*` are the writers and the
+# schema is the contract; `tests/test_board_facts.py` asserts the three agree, because three
+# spellings of one closed set is exactly the drift a shipped consumer refuses a document for.
+LANE_STATES = frozenset({"queued", "running", "waits-to-land", "landing", "refused", "parked"})
 
 
 @dataclass(frozen=True)
@@ -52,11 +66,18 @@ class LaneFacts:
 
     `live` and `provisioned` used to share one key (basicly-ze0po3): `live` is an agent inside
     the lane now, `provisioned` is only its worktree existing. `board_facts._lane_fact` says why.
+
+    `state` is where the lane stands in the *pass*, which `live` true-or-false had nothing
+    between: a finished lane waiting for the merge queue, a lane being landed and one the WIP
+    bound refused all read as an idle build (basicly-ncday7). Bounded to :data:`LANE_STATES`.
     """
 
     id: str
     phase: str
     status: str = ""
+    state: str = ""
+    state_detail: str = ""
+    state_since: str = ""
     agent: str = ""
     live: bool | None = None
     provisioned: bool | None = None
@@ -176,6 +197,23 @@ def asks(
     return pending
 
 
+def _standing(lane: LaneFacts) -> dict[str, object]:
+    """*lane*'s pass-state keys, or nothing where its state is outside the closed set.
+
+    The three travel together under one guard: a state with no stamp cannot be aged, and a
+    detail with no state has nothing to explain. A value the schema does not permit is
+    dropped rather than clipped, because a closed set refused costs the whole section.
+    """
+    if lane.state not in LANE_STATES:
+        return {}
+    held: dict[str, object] = {"state": lane.state}
+    if lane.state_detail:
+        held["state_detail"] = board_fields.text(lane.state_detail, board_fields.TEXT_MAX)
+    if (entered := board_fields.instant(lane.state_since)) is not None:
+        held["state_since"] = board_fields.stamp(entered)
+    return held
+
+
 def lanes(facts: Iterable[LaneFacts]) -> list[dict[str, object]]:
     """*facts* as bounded lane rows, one per lane, in the order the caller supplied.
 
@@ -196,6 +234,7 @@ def lanes(facts: Iterable[LaneFacts]) -> list[dict[str, object]]:
         }
         if lane.status:
             row["status"] = board_fields.text(lane.status, board_fields.KIND_MAX)
+        row.update(_standing(lane))
         if lane.agent:
             row["agent"] = board_fields.text(lane.agent, board_fields.AGENT_MAX)
         row.update(

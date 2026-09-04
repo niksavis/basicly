@@ -45,10 +45,18 @@ def test_no_lane_dispatched_draws_no_card_and_says_which_of_its_two_silences_it_
     The note is what the collapsed row prints in place of the cards, so it has to carry the
     difference: a producer that omitted `lanes` said nothing about what is running, while one
     that emitted an empty list said nothing is.
+
+    The empty-list case now names *what the pass waits for* rather than stopping at the
+    absence (basicly-ncday7, AC4), so it is driven twice - once with the fixture's own
+    pending asks, once with none - and only the second reaches the bare absence.
     """
     reads = _reads("wall-v1.json")
     for empty, expected in (
-        (_reads("wall-v1.json", lanes=[]), "no lane is dispatched"),
+        (_reads("wall-v1.json", lanes=[]), "waits on a person - 3 checkpoint or decision pending"),
+        (
+            _reads("wall-v1.json", lanes=[], asks=[], backlog={}),
+            "no lane is dispatched",
+        ),
         (_absent("lanes", reads), board_wall.ABSENT_TEXT),
     ):
         cards, dropped, note = board_regions.flight(empty)
@@ -157,3 +165,96 @@ def test_a_lane_nobody_confirms_is_live_says_so_instead_of_looking_busy() -> Non
     assert card.phase == "ship", "no duration is owed to a lane nobody confirms is live"
     assert card.note == f"not confirmed live{board_wall.DOT}old"
     assert card.working is False
+
+
+def _lane(state: str, **extra: object) -> dict[str, object]:
+    """One lane row in *state*, entered two minutes and ten seconds before `STAMPED`."""
+    return {
+        "id": "basicly-oqspon",
+        "phase": "build",
+        "state": state,
+        "state_since": "2026-08-21T16:40:42Z",
+        **extra,
+    }
+
+
+def _one(state: str, **extra: object) -> board_wall.Card:
+    """The card the region draws for a single lane in *state*."""
+    reads = _reads("wall-v1.json", lanes=[_lane(state, **extra)])
+    return board_regions.flight(reads, now=STAMPED)[0][0]
+
+
+def test_each_pass_state_leads_the_headline_with_its_own_word_and_no_glyph() -> None:
+    """basicly-ncday7 AC5: the word, the colour and the border, and never a glyph.
+
+    Every one of these read `build` before, with `live` true or false as the only other
+    channel - so a lane whose agent had exited, a lane the supervisor was landing and a
+    lane the WIP bound had refused were one rendering. The phase is still there and still
+    behind the state: it answers a different question and it did not become wrong.
+    """
+    drawn = {state: _one(state) for state in board_regions.LANE_MARKS}
+    assert [card.phase for card in drawn.values()] == [
+        "running \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
+        "landing \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
+        "waits to land \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
+        "queued \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
+        "refused \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
+        "parked \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
+    ]
+    assert drawn["landing"].state.colour != drawn["refused"].state.colour
+    assert drawn["waits-to-land"].state.border_style == "solid"
+    assert drawn["refused"].state.border_style == "double"
+
+
+def test_a_finished_lane_says_where_it_is_in_the_landing_queue_not_that_it_is_idle() -> None:
+    """AC1: `waits to land` with its position, never `build` and `not confirmed live`.
+
+    The position is the fact a duration cannot replace - it says how many landings, each of
+    them 3 to 8 minutes, stand between this lane and its own.
+    """
+    card = _one("waits-to-land", state_detail="2 of 3 in the landing queue")
+    assert card.phase.startswith("waits to land")
+    assert card.note == "2 of 3 in the landing queue"
+    assert "not confirmed live" not in card.note
+
+
+def test_a_refused_lane_carries_the_bound_that_refused_it_in_place() -> None:
+    """AC3: the refusal and its reason on the card, and not as an idle build."""
+    card = _one("refused", state_detail="downstream WIP bound 5 reached; 0 units past build")
+    assert card.phase.startswith("refused")
+    assert card.note == "downstream WIP bound 5 reached; 0 units past build"
+
+
+def test_a_lane_naming_no_state_renders_exactly_as_it_did_before_the_key_existed() -> None:
+    """The compatibility half: a producer that omits `state` loses nothing it had.
+
+    The schema admits a new key within a major, so every snapshot written before this one
+    still has to draw - and `not confirmed live` was always reporting an absence rather
+    than an idle lane, which is why it survives here and nowhere else.
+    """
+    quiet = board_regions.flight(
+        _reads("wall-v1.json", lanes=[{"id": "a", "phase": "build", "note": "reading the gate"}]),
+        now=STAMPED,
+    )[0][0]
+    assert quiet.phase == "build"
+    assert quiet.note == "not confirmed live \N{MIDDLE DOT} reading the gate"
+    assert quiet.state.key == board_wall.ABSENT
+
+
+def test_the_region_says_what_the_pass_waits_for_and_stays_silent_while_it_moves() -> None:
+    """AC4: one sentence, ordered by what a reader can do, and none while work is running.
+
+    A running or landing lane needs no sentence at all: the cards are the answer, and a
+    line above them would be a second one.
+    """
+
+    def note(**over: object) -> str:
+        return board_regions.flight(_reads("wall-v1.json", **over), now=STAMPED)[2]
+
+    assert note(lanes=[_lane("landing")]) == ""
+    assert note(lanes=[_lane("running")]) == ""
+    assert note(lanes=[_lane("refused")]).startswith("waits on a person")
+    held = note(lanes=[_lane("refused"), _lane("waits-to-land")], asks=[], backlog={})
+    assert held == "waits for the next pass - 2 lane(s) waits to land, refused"
+    only_blocked = note(lanes=[], asks=[], backlog={"blocked": 61})
+    assert only_blocked == "waits on a blocker - 61 record(s) have an unmet dependency"

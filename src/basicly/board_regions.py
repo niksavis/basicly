@@ -91,6 +91,23 @@ PHASES: tuple[str, ...] = (
     "ship",
 )
 
+# What each `lanes[].state` is drawn as: a palette key carrying the colour and the border
+# style, and the word the card leads with. No glyph on a card. The **word** is the
+# discriminator and the pair is the alarm, which is why two pairs are shared: `board_wall`
+# ships nine states, and adding one is that module's own file rather than this one's.
+LANE_MARKS: Mapping[str, tuple[str, str]] = {
+    "running": (LIVE, "running"),
+    "landing": (LIVE, "landing"),
+    "waits-to-land": (WAITING, "waits to land"),
+    "queued": (WAITING, "queued"),
+    "refused": (STUCK, "refused"),
+    "parked": (WITHHELD, "parked"),
+}
+
+# The states that mean the pass is moving without a person. When none of the lanes is in
+# one of these, the region owes the sentence :func:`_waiting_on` writes.
+LANE_MOVING = frozenset({"running", "landing"})
+
 # How many items a capped region draws before it reports the rest. The running row no longer
 # reserves empty frames: a dashed placeholder announcing nothing three times is 40% of a wall
 # spent on the state that costs one token, so an empty row collapses to a line and the ready
@@ -401,28 +418,61 @@ def _started_ago(lane: Mapping[str, Any], moment: datetime) -> str:
     return f"started {elapsed(waited)} ago" if waited is not None else ""
 
 
+def _lane_mark(lane: Mapping[str, Any]) -> tuple[State, str]:
+    """The card's colour-and-border pair and the word it leads with (basicly-ncday7).
+
+    Falls back to the liveness bit for a producer that names no state, which is every
+    snapshot written before the key existed: the card then reads exactly as it did.
+    """
+    key, word = LANE_MARKS.get(str(lane.get("state") or ""), ("", ""))
+    if not key:
+        return (BY_KEY[LIVE] if lane.get("live") else BY_KEY[ABSENT]), ""
+    return BY_KEY[key], word
+
+
+def _in_state_for(lane: Mapping[str, Any], moment: datetime) -> str:
+    """How long the lane has held its current state, from `state_since`, or "".
+
+    The duration a reader wants is of the *state*: a landing eight minutes in and one ten
+    seconds in are the same word and a different thing to watch.
+    """
+    waited = since(lane.get("state_since"), moment)
+    return elapsed(waited) if waited is not None else ""
+
+
 def _primary_state(lane: Mapping[str, Any], moment: datetime) -> str:
-    """The card's headline: the phase, plus how long ago a *confirmed-live* lane started.
+    """The card's headline: what the lane is doing, since when, and its phase behind that.
 
     Never the tracker's own status, which does not move while a lane runs and read six
-    working lanes as six idle ones (basicly-0xtzf1). No duration for a lane nobody confirms
-    is live: its stamp would belong to whichever dispatch last ended, not one running now.
+    working lanes as six idle ones (basicly-0xtzf1). Never the phase alone either: `build`
+    was what a finished lane waiting for the merge queue, a lane being landed and a lane
+    the WIP bound refused all read as (basicly-ncday7), so the pass state leads and the
+    phase follows it. No duration for a lane nobody confirms is live and that names no
+    state: its stamp would belong to whichever dispatch last ended.
     """
     phase = _phase_of(lane) or UNKNOWN
-    if not lane.get("live"):
-        return phase
-    ago = _started_ago(lane, moment)
-    return f"{phase}{DOT}{ago}" if ago else phase
+    word = _lane_mark(lane)[1]
+    if not word:
+        ago = _started_ago(lane, moment) if lane.get("live") else ""
+        return f"{phase}{DOT}{ago}" if ago else phase
+    held = _in_state_for(lane, moment) or (_started_ago(lane, moment) if lane.get("live") else "")
+    return DOT.join(part for part in (word, held, phase) if part)
 
 
 def _note_line(lane: Mapping[str, Any]) -> str:
-    """The card's activity line: what a live stream last said, in full.
+    """The card's activity line: why the lane is where it is, then what it last said.
 
     Unclipped (basicly-0xtzf1): the producer already bounds it, and a second, tighter clip
-    here left a card with nothing more to expand to. A lane nobody confirms is live says so
-    plainly rather than showing a stale excerpt as if it were still happening.
+    here left a card with nothing more to expand to. `state_detail` leads because it is the
+    answer - the bound that refused the lane, its place in the landing queue - and the two
+    have different authors, so a reader has to be able to tell a refusal from a progress
+    line. `not confirmed live` survives only for a producer that names no state at all,
+    which is what it was always reporting: an absence, not an idle lane.
     """
-    said = lane.get("note") or ""
+    said = str(lane.get("note") or "")
+    detail = str(lane.get("state_detail") or "")
+    if detail or lane.get("state"):
+        return DOT.join(part for part in (detail, said) if part)
     if lane.get("live"):
         return said
     return f"not confirmed live{DOT}{said}" if said else "not confirmed live"
@@ -439,7 +489,7 @@ def _card(lane: Mapping[str, Any], titles: Mapping[str, str], moment: datetime) 
     return Card(
         clip(titles.get(lane_id, "") or lane_id, TITLE_MAX),
         _primary_state(lane, moment),
-        BY_KEY[LIVE] if live else BY_KEY[ABSENT],
+        _lane_mark(lane)[0],
         _note_line(lane),
         _lane_cells(lane),
         working=live and bool(lane.get("note") or lane.get("tokens")),
@@ -465,8 +515,47 @@ def flight(
     titles = _unit_titles(reads)
     moment = now or datetime.now(UTC)
     cards = tuple(_card(lane, titles, moment) for lane in lanes[:FLIGHT_SLOTS])
-    note = read.note if not read.drawn else "" if lanes else "no lane is dispatched"
+    note = read.note if not read.drawn else _waiting_on(reads, lanes)
     return cards, more(len(lanes) - FLIGHT_SLOTS, "lanes"), note
+
+
+def _waiting_on(reads: Mapping[str, Reading], lanes: Sequence[Mapping[str, Any]]) -> str:
+    """What the pass waits for, in one sentence, or "" while it is moving on its own.
+
+    **The reading the operator reported was "nothing is happening"** (basicly-ncday7): with
+    no lane running the region said "no lane is dispatched" and stopped, which is true and
+    is not what a person in the room has to know. Four answers, ordered by what a reader can
+    do about them, and each read off a section the document already carries so the sentence
+    costs no producer field of its own. A lane running or landing needs no sentence: the
+    cards are the answer, and a line above them would be a second one.
+    """
+    if any(_moving(lane) for lane in lanes):
+        return ""
+    asks = reads["asks"]
+    if asks.drawn and asks.dicts:
+        return f"waits on a person - {len(asks.dicts)} checkpoint or decision pending"
+    held = [str(lane.get("state") or "") for lane in lanes]
+    stopped = [state for state in held if state in LANE_MARKS]
+    if stopped:
+        words = ", ".join(LANE_MARKS[key][1] for key in LANE_MARKS if key in set(stopped))
+        return f"waits for the next pass - {len(stopped)} lane(s) {words}"
+    blocked = numeric(reads["backlog"].fields.get("blocked"))
+    if blocked:
+        return f"waits on a blocker - {number(int(blocked))} record(s) have an unmet dependency"
+    if lanes:
+        return "no lane of this pass is running or landing"
+    return "no lane is dispatched"
+
+
+def _moving(lane: Mapping[str, Any]) -> bool:
+    """True when the pass is working this lane without waiting on anybody.
+
+    A lane that names no state falls back to its liveness bit, so every snapshot written
+    before the key existed draws exactly as it did: the producer said nothing about the
+    pass, and reading that silence as "stopped" would be the same overclaim in reverse.
+    """
+    state = str(lane.get("state") or "")
+    return state in LANE_MOVING or (not state and bool(lane.get("live")))
 
 
 def _rank(unit: Mapping[str, Any]) -> tuple[str, str]:

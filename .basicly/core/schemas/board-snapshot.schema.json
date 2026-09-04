@@ -197,6 +197,27 @@
             "type": "string",
             "maxLength": 40
           },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "waits-to-land",
+              "landing",
+              "refused",
+              "parked"
+            ],
+            "description": "Where the lane stands in the pass, as against `phase` (where its unit stands in the harness lifecycle) and `live` (whether an agent is inside it right now). Closed at six because the consumer colours it, and the failure this key exists for is that `live` true-or-false had nothing between: a lane whose agent had exited with work committed, one the supervisor was landing, and one the WIP bound had refused all rendered as an idle build, so a pass doing four things read as nothing happening. A producer that cannot place a lane omits the key rather than guessing `queued`, which would state the one thing every absent lane is not."
+          },
+          "state_detail": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Why the lane is in that state, in the producer's own words and bounded: the bound that refused it, its position in the landing queue. Separate from `note`, which is what the lane's own agent last said - the two have different authors and a reader has to be able to tell a refusal from a progress line."
+          },
+          "state_since": {
+            "$ref": "#/$defs/instant",
+            "description": "When the lane entered `state`. The duration a reader wants is of the *state*, not of the dispatch: a landing that has run eight minutes and a landing that started ten seconds ago are the same `landing` and a different thing to watch. Derived by the consumer from this stamp rather than published as a number, on the rule `generated_at` already sets - no figure may be shown without its age."
+          },
           "agent": {
             "type": "string",
             "maxLength": 60
@@ -208,6 +229,10 @@
           "live": {
             "type": "boolean",
             "description": "Whether the lane was still running when the snapshot was folded, as against last known to have been."
+          },
+          "provisioned": {
+            "type": "boolean",
+            "description": "Whether the lane's worktree exists, which is a different fact from `live` and was the two of them sharing one key (basicly-ze0po3): a lane whose agent exited hours ago and whose worktree nobody cleaned up was drawn as work in flight. A lane waiting for its next dispatch is a real, distinct state, so the worktree fact travels apart. Declared late - the producer emitted it from basicly-ze0po3 and this file did not name it, which `board_schema` counted as an undeclared key on every document carrying a lane row; found by the first test to validate one (basicly-ncday7)."
           },
           "started_at": {
             "$ref": "#/$defs/instant"

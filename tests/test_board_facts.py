@@ -9,6 +9,12 @@ becomes a report on whatever the tracker holds today, and any lane editing a `##
 the suite red.
 """
 
+# module-size-waiver: cost(basicly-k6tpep.2): 4796 of 4000 tokens. Four cases for the pass
+# state added 885 to a module that stood 89 tokens under the cap, so any test at all
+# breached it. Their aspect module exists - `tests/test_board_facts_lanes.py` holds the
+# `_lane_fact` cases - and it is outside basicly-ncday7's declared `## Scope` and inside
+# basicly-hymq99's, so moving them there is that record's job and not a deletion here.
+
 from __future__ import annotations
 
 import json
@@ -20,6 +26,9 @@ import pytest
 
 from basicly import (
     board_facts,
+    board_regions,
+    board_schema,
+    board_sections,
     board_snapshot,
     integrity,
     loop_state,
@@ -381,3 +390,86 @@ def test_a_meter_naming_no_runner_publishes_nothing_rather_than_an_empty_string(
         dispatch={"a": supervise.LaneStream()},
     )
     assert (fact.agent, fact.model) == ("codex", "gpt-6")
+
+
+def _standing(state: str, detail: str = "") -> supervise.LaneStanding:
+    """One published standing, stamped at a fixed instant so the row is comparable."""
+    return supervise.LaneStanding(state, detail, "2026-08-26T17:00:00Z")
+
+
+def _bound(issue_id: str) -> supervise.LaneView:
+    """A lane the tracker binds, with one finished dispatch behind it."""
+    return supervise.LaneView(
+        issue_id=issue_id,
+        status="in_progress",
+        worktree=issue_id,
+        branch=f"harness/{issue_id}",
+        live=True,
+        last_agent="claude",
+    )
+
+
+def test_the_closed_state_set_is_spelled_the_same_in_all_three_places() -> None:
+    """The anti-drift device for a closed set that three files have to agree on.
+
+    `supervise` writes the words, `board_sections` bounds what reaches the wire, and the
+    schema refuses a value outside the set - and a refused closed set costs the whole
+    `lanes` section, not one key. Three spellings is how that becomes a document a shipped
+    consumer rejects, so the test is the reconciliation the code cannot state.
+    """
+    schema = json.loads(
+        (REPO_ROOT / ".basicly" / "core" / "schemas" / board_schema.SCHEMA_FILE).read_text(
+            encoding="utf-8"
+        )
+    )
+    declared = set(schema["properties"]["lanes"]["items"]["properties"]["state"]["enum"])
+    written = {
+        supervise.LANE_QUEUED,
+        supervise.LANE_RUNNING,
+        supervise.LANE_WAITS_TO_LAND,
+        supervise.LANE_LANDING,
+        supervise.LANE_REFUSED,
+        supervise.LANE_PARKED,
+    }
+    assert declared == board_sections.LANE_STATES
+    assert declared == written
+    assert declared == set(board_regions.LANE_MARKS), "a state the wall cannot draw"
+
+
+def test_a_published_standing_reaches_the_row_with_its_reason_and_its_stamp() -> None:
+    """basicly-ncday7: the pass state, the reason and since-when, from the pass's own frame.
+
+    None of these three is in a store: `wip.record_refusal` enqueues only when a pass
+    starts *nothing*, so a bound that held one of six recorded the refusal nowhere at all.
+    """
+    fact = board_facts._lane_fact(
+        _bound("a"),
+        {"a": "build"},
+        {},
+        {},
+        [],
+        standing=_standing("refused", "downstream WIP bound 5 reached"),
+    )
+    assert (fact.state, fact.state_detail) == ("refused", "downstream WIP bound 5 reached")
+    assert fact.state_since == "2026-08-26T17:00:00Z"
+    assert board_sections.lanes([fact])[0]["state"] == "refused"
+
+
+def test_a_live_stream_outranks_a_standing_the_pass_has_not_retired() -> None:
+    """`running` is derived, never published, so a stale `queued` cannot contradict it.
+
+    `live_lane` retires the queued standing as it registers the stream, so the two agree in
+    practice; the rule is here because a second writer of `running` would be a second
+    answer to whether a lane is inside an agent, which is the defect basicly-ze0po3 fixed.
+    """
+    fact = board_facts._lane_fact(
+        _bound("a"), {"a": "build"}, {"a": 7}, {}, [], standing=_standing("queued", "waiting")
+    )
+    assert (fact.state, fact.state_detail, fact.state_since) == ("running", "", "")
+
+
+def test_a_lane_with_no_standing_and_no_stream_names_no_state_at_all() -> None:
+    """Omit, never estimate: `queued` is the one thing every unplaced lane is not."""
+    fact = board_facts._lane_fact(_bound("a"), {"a": "build"}, {}, {}, [])
+    assert (fact.state, fact.state_detail, fact.state_since) == ("", "", "")
+    assert "state" not in board_sections.lanes([fact])[0]
