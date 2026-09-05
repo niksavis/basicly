@@ -288,6 +288,11 @@ def test_the_callers_derivations_reach_every_section_that_needs_one(board_repo: 
     assert "ready" not in rows["fx-root"]
     assert document["asks"][0]["question"] == "ship it?"
     assert document["asks"][0]["waiting_s"] > 0
+    # And the verb that answers it, which nothing wrote until basicly-3qstvw: the consumer
+    # reads this key to build a form, so without it the board drew none for a real ask.
+    assert document["asks"][0]["actions"] == [
+        {"offer": "Approve it", "basicly": "checkpoint-approve"}
+    ]
     assert document["session"]["token_budget"] == 80000000
     assert (document["session"]["grant_level"], document["session"]["spent_tokens"]) == ("L3", 12)
     assert board_schema.verdict(board_repo, document).exit_code == 0

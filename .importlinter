@@ -23,6 +23,7 @@ layers =
     cli
     board_cli
     board_facts
+    board_advance
     board_serve
     board_asks
     board_actions

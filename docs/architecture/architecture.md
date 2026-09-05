@@ -3234,7 +3234,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 52 tiers hold 124 modules and group into 9 bands. Every band may import every band below
+The 53 tiers hold 125 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3243,7 +3243,7 @@ against them.
 ```mermaid
 flowchart TB
   b1["1 · entry — 1 module<br/>cli"]
-  b2["2 · drivers — 9<br/>supervise · loop · release · usage_report"]
+  b2["2 · drivers — 10<br/>supervise · loop · release · usage_report"]
   b3["3 · loop mechanics — 35<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
   b4["4 · configuration and isolation — 2<br/>config · worktree"]
   b5["5 · agent runtime — 5<br/>runner · lane_log · lane_split · context_window · claude_settings"]

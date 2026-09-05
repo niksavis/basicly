@@ -240,6 +240,18 @@ def phase_map(repo_root: Path, config: PolicyConfig | None = None) -> dict[str, 
     deliberately not it: that one folds the ledger alone and cannot see the level a unit's
     validate gate hangs off.
     """
+    return {record: held[0] for record, held in state_map(repo_root, config).items()}
+
+
+def state_map(
+    repo_root: Path, config: PolicyConfig | None = None
+) -> dict[str, tuple[str, bool, str]]:
+    """Every live record's `(phase, can_advance, status)`, from **one** fold of the log.
+
+    One map, because both answers come out of one `classify_gates` call on one view: a second
+    fold would be a second spelling of every reader below. :class:`NodeState` carries the same
+    two and more, but only off the per-record read this exists to avoid.
+    """
     config = config or load_policy_config(repo_root)
     live = tracker.all_views(repo_root)
     parents = {
@@ -248,21 +260,28 @@ def phase_map(repo_root: Path, config: PolicyConfig | None = None) -> dict[str, 
         for edge in view.dependencies
         if edge.type == PARENT_CHILD
     }
-    return {
-        record: derive_phase(
-            view.status,
-            tuple(
-                name for name in CHECKPOINTS if policy.checkpoint_approved_in(view.comments, name)
-            ),
-            parse_worktree_ref(view.external_ref),
-            policy.classify_gates(
-                [policy.GateVerdict(row.gate, row.provider, row.passed) for row in view.gates],
-                validate_gate.required_in(view.comments, config),
-            ),
-            record in parents,
+    built: dict[str, tuple[str, bool, str]] = {}
+    for record, view in live.items():
+        gates = policy.classify_gates(
+            [policy.GateVerdict(row.gate, row.provider, row.passed) for row in view.gates],
+            validate_gate.required_in(view.comments, config),
         )
-        for record, view in live.items()
-    }
+        built[record] = (
+            derive_phase(
+                view.status,
+                tuple(
+                    name
+                    for name in CHECKPOINTS
+                    if policy.checkpoint_approved_in(view.comments, name)
+                ),
+                parse_worktree_ref(view.external_ref),
+                gates,
+                record in parents,
+            ),
+            gates.can_advance,
+            view.status,
+        )
+    return built
 
 
 # --- Ready / blocked sets ---------------------------------------------------

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from basicly import board_regions, board_wall
+from basicly import board_advance, board_regions, board_wall
 from tests.test_board_wall import STAMPED, document, readings
 
 
@@ -183,6 +183,31 @@ def test_the_reclaimed_width_leaves_the_top_ready_titles_untruncated() -> None:
     assert [row.title for row in wide.rows[:3]] == [long] * 3
     assert len(wide.rows) > len(narrow.rows), "the reclaimed height drew no more rows"
     assert len(wide.rows) + len(wide.groups) == board_regions.READY_SLOTS_WIDE
+
+
+def test_an_advance_ask_stops_the_band_reading_nothing_is_waiting() -> None:
+    """basicly-2no50w: the owner asked why one sat in ship while the band said nothing.
+
+    The band needed no change for this - it reads any ask kind - so this is the assertion
+    that keeps it that way. A future `kind` the band special-cased would fail here.
+    """
+    stalled = board_advance.asks(
+        {"basicly-b2n2": ("ship", True, "in_progress")},
+        lanes=None,
+        supervised=False,
+        last_event={"basicly-b2n2": "2026-08-10T16:42:52Z"},
+    )
+    quiet = board_regions.band(_reads("wall-v1.json", asks=[]), _age("wall-v1.json"), STAMPED)
+    assert quiet.state.key == board_wall.CALM
+    assert quiet.headline == "NOTHING IS WAITING"
+
+    loud = board_regions.band(_reads("wall-v1.json", asks=stalled), _age("wall-v1.json"), STAMPED)
+    assert loud.state.key == board_wall.STUCK, "an eleven-day stall did not reach the alarm"
+    assert loud.headline == "11 DAYS"
+    assert "1 waiting on a person" in loud.kicker
+    (line,) = loud.lines
+    assert "basicly-b2n2" in line and "advance" in line and "ship" in line
+    assert "do: basicly loop advance basicly-b2n2" in line
 
 
 def test_ready_capacity_is_derived_from_the_viewport_actually_given_not_a_constant() -> None:
