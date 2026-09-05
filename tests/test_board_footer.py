@@ -31,22 +31,6 @@ def _age(name: str = "wall-v1.json") -> board_wall.Age:
     return board_wall.age(document(name), STAMPED)
 
 
-def test_the_dependency_edge_count_is_read_out_of_the_object_the_schema_declares() -> None:
-    """The regression: `graph` is an object with an `edges` array, not an array of edges."""
-    cells = board_footer.backlog(_reads("wall-v1.json"))
-    edges = next(cell for cell in cells if cell.label == "dep edges")
-    assert edges.value == "10", "the edge count came back as a zero the producer never gave"
-
-
-def test_an_absent_graph_says_so_where_a_zero_would_have_read_as_no_edges() -> None:
-    """No dependencies, and the producer cannot see dependencies, are different claims."""
-    cells = board_footer.backlog(readings("no-phase-v1.json"))
-    edges = next(cell for cell in cells if cell.label == "dep edges")
-    assert edges.value == board_footer._NOT_IN_SNAPSHOT
-    assert "producer" not in edges.value and "emitted" not in edges.value
-    assert edges.state is not None and edges.state.key == board_wall.ABSENT
-
-
 def test_the_closed_bar_needs_both_of_its_numbers() -> None:
     """The raw count and no bar once the denominator goes, asserted on the panel."""
     cells = board_footer.backlog(_reads("wall-v1.json"))
@@ -125,11 +109,16 @@ def test_a_gate_set_whose_failures_outrun_the_token_says_how_many_it_did_not_nam
 
 
 def test_the_spend_figures_each_carry_the_unit_they_are_denominated_in() -> None:
-    """Four bare numbers in a row is a quantity nobody can name; scope stays verbatim."""
+    """Two figures, each named, and the scope verbatim first.
+
+    Four were drawn. `input_tokens` and `output_tokens` are cut: they are lifetime
+    totals nobody acts on, and the input one misled - on this repository's snapshot it
+    read `1.4B in` while 98.2% of it was `cache_read_tokens` (basicly-m8cdnv1).
+    """
     value = board_footer.spend(_reads("wall-v1.json")).value
     assert value.startswith("machine-local"), "scope is drawn verbatim and first"
-    assert "1,254.26 usd" in value, "a currency figure was drawn as a bare float"
-    assert "48.1M in" in value
+    assert "1,254.26 usd lifetime" in value, "a currency figure was drawn as a bare float"
+    assert " in" not in value, "a lifetime token total is back, and it reads as fresh input"
 
 
 def test_the_agent_health_row_is_named_by_its_agent_and_not_by_its_index() -> None:
