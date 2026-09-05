@@ -6,9 +6,8 @@ token; an exception expands** - :func:`gates` is the sharpest case, where a pass
 overlap it replaces cannot recur: there is no grid of names left to collide.
 
 :func:`inventory` is why the regions above are safe to write. It names every section that did
-not draw, with the word for why, so a section no region reads still reports itself and a
-change of layout cannot silently drop one the schema declares. Only the exceptions: naming the
-twelve that drew spent a standing row saying twelve things are normal.
+not draw, so a change of layout cannot silently drop one the schema declares. Only the
+exceptions: naming the twelve that drew spent a row saying twelve things are normal.
 
 A sibling of :mod:`basicly.board_regions`: the two share :mod:`basicly.board_wall`'s
 vocabulary and neither reads the other.
@@ -73,11 +72,10 @@ CLOSED_STATUS = "closed"
 _BACKLOG_KEYS = ("total", "active", "ready", "blocked", "in_progress", "closed")
 # Each spend figure and its unit: four bare numbers in a row is a quantity nobody can name.
 # `scope` is not here, because it is drawn first and verbatim.
+# The token totals were cut: `1.4B in` was 98.2% cache reads (basicly-m8cdnv1).
 _SPEND_UNITS = {
-    "lifetime_usd": "usd",
-    "largest_dispatch_usd": "usd largest",
-    "input_tokens": "in",
-    "output_tokens": "out",
+    "lifetime_usd": "usd lifetime",
+    "largest_dispatch_usd": "usd largest lane",
 }
 _HEALTH_KEYS = ("runs", "score", "failure_rate", "drift")
 # The producer's word for a check result, per state. One direction only: the token names the
@@ -103,14 +101,12 @@ def _say(read: Reading) -> str:
 
 
 def backlog(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
-    """The backlog counts on one line, the closed bar, and the edge count beside them.
+    """The backlog counts on one line, with the closed bar among them.
 
-    ``graph`` is read here rather than given a region because the schema says what it is for:
-    edges are "the answer to why an item is not ready - the one question a count of blocked
-    items raises and cannot settle". A section that could not be read is one cell carrying its
-    own note, the shape :func:`spend` and :func:`health` also take.
+    A bare ``dep edges`` count was cut: `the queue` draws that population as a shape
+    (basicly-m8cdnv1).
     """
-    read, edges = reads["backlog"], reads["graph"]
+    read = reads["backlog"]
     if not read.drawn:
         return (Cell("backlog", _say(read), read.state),)
     held = read.fields
@@ -119,9 +115,6 @@ def backlog(reads: Mapping[str, Reading]) -> tuple[Cell, ...]:
         Cell(key.replace("_", " "), number(held.get(key)), bar=closed if key == "closed" else None)
         for key in _BACKLOG_KEYS
     ]
-    held_edges = edges.fields.get("edges")
-    counted = number(len(held_edges)) if isinstance(held_edges, list) else UNKNOWN
-    cells.append(Cell("dep edges", counted if edges.drawn else _say(edges), edges.state))
     return tuple(cells)
 
 
@@ -268,9 +261,8 @@ def throughput(reads: Mapping[str, Reading], today: str) -> Cell:
     Distinct records, not rows: a unit closed twice is one unit closed.
 
     **:data:`COUNTED_KEY` first, the tail behind it.** No basicly document can put a status row
-    in that tail, so the tail alone read `not measured` on a day twenty records closed
-    (:func:`board_sections.events` says why). It stays for a foreign producer that does write
-    one.
+    in that tail, so the tail alone read `not measured` on a day twenty records closed. It
+    stays for a foreign producer that does write one.
 
     **Absent, never nought.** A producer supplying neither has not measured this and the cell
     says so; one that closed nothing today reports a measured zero. An undateable row is in no

@@ -415,15 +415,24 @@ def _ready_document() -> dict[str, Any]:
     }
 
 
-def test_the_page_always_names_this_producers_own_age(board_repo: Path) -> None:
-    """AC 3: the page already reports the document's freshness; it must report its own too."""
+def test_a_healthy_page_does_not_spend_a_line_on_this_producers_own_age(
+    board_repo: Path,
+) -> None:
+    """It named its own age on every render, and that is debug output on a wall.
+
+    AC 3 asked the page to report its own freshness as well as the document's, and it did -
+    permanently, in `producer age 7603s - this process loaded its code at ...`. A display
+    whose one question is whether the factory needs a person does not answer it with the
+    board author's process uptime, so the age is now a *fault detail* and the fault tests
+    below are what hold it (basicly-m8cdnv1).
+    """
     board = board_serve.Board(board_repo, build=_ready_document)
 
     assert board.refresh() is True
     page = board.page(datetime.now(UTC))
 
     assert page is not None
-    assert "producer age" in page.decode("utf-8")
+    assert "producer age" not in page.decode("utf-8")
 
 
 def test_a_template_newer_than_this_process_is_named_a_fault_not_a_blank(board_repo: Path) -> None:
@@ -489,7 +498,13 @@ def test_the_producers_own_note_lands_inside_the_grid_and_never_after_it(
     The assertion is positional rather than textual, because the old page carried the same
     words and no reader ever saw them.
     """
-    text = _drawn(board_serve.Board(board_repo, build=_ready_document))
+    # A fault, because a healthy page now spends no line on itself (basicly-m8cdnv1) and
+    # the placement this asserts is only observable when there is something to place.
+    text = _drawn(
+        board_serve.Board(
+            board_repo, build=_ready_document, template_mtime=lambda: time.time() + 3600
+        )
+    )
     tick = text.index('<section class="region tick">')
 
     assert board_serve.NOTES_SLOT not in text, "the slot was left empty, so no note was filled in"
@@ -521,4 +536,7 @@ def test_a_page_whose_template_left_no_slot_still_carries_the_note(
         lambda *a, **k: real_page(*a, **k).replace(board_serve.NOTES_SLOT, ""),
     )
 
-    assert "producer age" in _drawn(board_serve.Board(board_repo, build=_ready_document))
+    faulted = board_serve.Board(
+        board_repo, build=_ready_document, template_mtime=lambda: time.time() + 3600
+    )
+    assert "producer age" in _drawn(faulted)

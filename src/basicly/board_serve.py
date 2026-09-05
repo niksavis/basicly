@@ -312,14 +312,22 @@ class Board:
         """
         started = self._started_at.timestamp()
         age_s = now.timestamp() - started
-        notes = [
-            (SELF_AGE.format(age=age_s, loaded=self._started_at.isoformat(timespec="seconds")), "")
-        ]
+        # Only where something is wrong. It was unconditional, so a wall carried
+        # `producer age 7603s - this process loaded its code at ...` for as long as the
+        # board ran: debug output for whoever wrote the board, on a display whose one
+        # question is whether the factory needs a person (basicly-m8cdnv1). The faults
+        # below still carry it, which is the case it was ever diagnostic for.
+        notes: list[tuple[str, str]] = []
         mtime = self._template_mtime()
         if mtime is not None and mtime > started:
             notes.append((
                 STALE_TEMPLATE_FAULT.format(age=now.timestamp() - started),
                 board_wall.STALE,
+            ))
+        if notes:
+            notes.append((
+                SELF_AGE.format(age=age_s, loaded=self._started_at.isoformat(timespec="seconds")),
+                "",
             ))
         if _rows_dropped(ready, drawn):
             notes.append((DROPPED_ROWS_FAULT, board_wall.FAIL))
