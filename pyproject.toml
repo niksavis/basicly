@@ -124,10 +124,14 @@ ignore_names = [
   "clear_overrides",
   "config_overrides",
   "copilot",
-  # Three `board_diagram` fields the board template reads and vulture cannot: it does not
-  # parse Jinja. `wired-or-deleted` does, and passes on all three, which is what proves they
-  # are wired rather than dead - the same class as `border_style`, `kicker` and `working`.
+  # `board_diagram` fields the board template reads and vulture cannot: it does not parse
+  # Jinja. `wired-or-deleted` does, and passes on all of them, which is what proves they are
+  # wired rather than dead - the same class as `border_style`, `kicker` and `working`.
+  # `label_x` and `label_y` joined the list when the fold went: they were locals a single
+  # `_flow` branch read, and one row of eight assigns them straight into the field
+  # (basicly-ubwp49).
   "crew",
+  "crew_row",
   "dispatches",
   "do_GET",
   "do_POST",
@@ -135,6 +139,8 @@ ignore_names = [
   "fallback_sort",
   "hopper",
   "kicker",
+  "label_x",
+  "label_y",
   "landed_package_cost",
   "load_fragments",
   "log_message",

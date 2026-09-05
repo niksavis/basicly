@@ -62,7 +62,8 @@ def context(
     reads = board_wall.readings(document, verdict)
     drawn = board_wall.age(document, now)
     _, loop_note, pass_running = board_loop.loop(reads, now)
-    backlog_phases, backlog_phases_note = board_loop.backlog_phases(reads)
+    # The row is dropped: the strip drawing it repeated the diagram's own digits (ubwp49).
+    _, backlog_phases_note = board_loop.backlog_phases(reads)
     cards, flight_more, flight_note = board_regions.flight(reads, now=now)
     claimed_rows, claimed_more = board_regions.claimed(reads)
     lines, events_more = board_footer.events(reads)
@@ -85,16 +86,12 @@ def context(
         # `overflow: hidden`, so the old panel sat 274px past the fold (basicly-ua9o5g).
         "acts": tuple(acts[0]),
         "acts_more": more(acts[1], "asks"),
-        # The loop region draws the workflow and the backlog census draws the backlog,
-        # and the two are separate keys because they are separate populations: binning
-        # one under the other made the region total equal `backlog.active`
-        # (basicly-a68ggd). The pass row that replaced the first histogram is itself now
-        # replaced by the drawn diagram (basicly-6c97zx) - `board_loop.loop` is still
-        # called for its note and its verdict, which no other region carries.
+        # The workflow drawn, which replaced first a histogram and then a pass row
+        # (basicly-6c97zx). `board_loop.loop` is still called for its note and verdict,
+        # which no other region carries.
         "diagram": board_diagram.diagram(reads, now),
         "loop_note": loop_note,
         "pass_running": pass_running,
-        "backlog_phases": backlog_phases,
         "backlog_phases_note": backlog_phases_note,
         "cards": cards,
         "flight_more": flight_more,
@@ -129,11 +126,8 @@ def context(
         "events_more": events_more,
         "inventory": board_footer.inventory(reads),
         "states": board_wall.STATES,
-        # Named rather than indexed out of `states`: the loop row marks its current phase and
-        # its unmeasured ones with a glyph, and a template reaching in by position would pick
-        # up whatever a later state landed at that index.
+        # Named and not indexed out of `states`: a position picks up whatever landed there.
         "here_glyph": board_wall.BY_KEY[board_wall.LIVE].glyph,
-        "none_glyph": board_wall.BY_KEY[board_wall.ABSENT].glyph,
         "schema": document.get("schema", board_wall.UNKNOWN),
     }
 

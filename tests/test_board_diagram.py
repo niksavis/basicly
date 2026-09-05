@@ -180,12 +180,25 @@ def test_a_lane_that_moved_this_beat_is_marked_and_a_wedged_one_is_marked_apart(
     ]
 
 
-def test_a_station_reports_the_lanes_it_had_no_room_to_draw() -> None:
-    """Three dots read at six metres and a fourth is a smudge, so the rest is a count."""
+def test_a_station_counts_the_crew_it_cannot_name() -> None:
+    """One line of 130 units holds one agent, so two are a count and never a truncation."""
     lanes = [_lane(f"l-{n}", "build") for n in range(board_diagram.LANE_MARKS + 2)]
     build = next(s for s in _drawn(lanes=lanes).stations if s.name == "build")
-    assert len(build.lanes) == board_diagram.LANE_MARKS
-    assert build.dropped == 2
+    assert len(build.lanes) == board_diagram.LANE_MARKS, "the dots are still bounded"
+    assert build.crew == "5 agents", "every lane is counted, not the three that got a dot"
+    alone = next(s for s in _drawn(lanes=[_lane("solo", "build")]).stations if s.name == "build")
+    assert alone.crew.startswith("claude"), "one lane is named rather than counted as one"
+    assert len(alone.crew) <= board_diagram.AGENT_MAX, "and the name fits the box it sits under"
+
+
+def test_the_crew_gives_its_row_to_a_person_who_is_waiting() -> None:
+    """Two lines fit under a box. A template choosing between them would guess."""
+    quiet = {s.name: s for s in _drawn(lanes=[_lane("solo", "build")]).stations}
+    assert quiet["build"].crew_row == 0
+    both = _drawn(lanes=[_lane("solo", "build")], asks=[_ask("build", 60.0)])
+    stations = {s.name: s for s in both.stations}
+    assert stations["build"].waiting, "the ask still reaches the station it names"
+    assert stations["build"].crew_row == 1, "the wait takes the first line and says so"
 
 
 def test_a_person_blocking_a_station_is_drawn_on_it_with_an_age() -> None:
@@ -236,6 +249,21 @@ def test_the_drawing_always_says_it_cannot_track_an_artifact() -> None:
     assert "the contract carries no artifact state" in _drawn().note
 
 
+def test_a_terminal_detail_cannot_reach_past_the_surface() -> None:
+    """Centred under the last node, an unbounded detail is drawn off the edge in silence.
+
+    Text outside a `viewBox` is not an element holding more than it shows, so neither of
+    `check_render_overflow.py`'s two signals reports it - it was found by looking at a
+    screenshot, cut mid-commit (basicly-ubwp49). The bound is half a slot each side.
+    """
+    drawn = _drawn()
+    for end in (drawn.hopper, drawn.sink):
+        assert len(end.detail) <= board_diagram.DETAIL_MAX, f"{end.name} runs off the surface"
+    assert board_diagram.DETAIL_MAX * 5.5 <= board_diagram.SLOT, (
+        "the bound itself is wider than the surface a centred detail is given"
+    )
+
+
 def test_every_placement_is_inside_the_drawing_surface() -> None:
     """A station centred past the viewBox is clipped in silence; there is no scrollbar."""
     drawn = _drawn()
@@ -253,3 +281,14 @@ def test_every_placement_is_inside_the_drawing_surface() -> None:
     )
     assert (drawn.sink.x, drawn.sink.y) == board_diagram._place(len(board_diagram.CHAIN) - 1)
     assert (drawn.hopper.x, drawn.hopper.y) == board_diagram._place(0)
+
+
+def test_a_station_bar_is_measured_against_the_loop_and_not_the_backlog() -> None:
+    """`intake` holds most of the records, so a share counting it draws every station flat."""
+    units = [{"id": f"u-{n}", "phase": "intake"} for n in range(200)]
+    units.append({"id": "u-build", "phase": "build"})
+    stations = {s.name: s for s in _drawn(units=units).stations}
+    assert stations["build"].fill == board_diagram.BOX_W - board_diagram.BAR_INSET * 2, (
+        "the only unit inside the loop fills its bar, whatever the hopper holds"
+    )
+    assert all(s.fill == 0.0 for s in stations.values() if s.name != "build")

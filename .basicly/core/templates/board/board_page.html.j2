@@ -364,80 +364,39 @@
         width: 100%;
       }
 
-      /* --- loop: the workflow drawn, and the backlog census below it ------------------ */
+      /* --- loop: the workflow drawn as a single row of eight nodes -------------------- */
       .loop {
         grid-area: loop;
-      }
-      .phases {
-        display: flex;
-        gap: 6px;
-        margin-top: 2px;
-      }
-      .phase {
-        background: var(--bg-sunk);
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        flex: 1 1 0;
-        min-width: 0;
-        padding: 1px 7px 4px;
-        text-align: center;
-      }
-      .phase .count {
-        display: block;
-        font-family: var(--mono);
-        font-size: 26px;
-        font-weight: 700;
-        line-height: 1.1;
-      }
-      .phase .none {
-        color: var(--text-dim);
-        display: block;
-        font-family: var(--mono);
-        font-size: 16px;
-      }
-      /* The bar is what makes 213 against 1 visible: seven counts in seven identical boxes
-         rank by nothing, and a digit read at six metres is a magnitude nobody can compare. */
-      .phase .track {
-        display: block;
-        margin: 2px auto 0;
-        width: 100%;
       }
       /* --- the drawn loop: stations, edges, artifacts, and the two human marks ---------
          Every mark here is a `path`, `rect` or `circle` and never a codepoint. That is the
          owner's tofu report answered at the root: a glyph renders as a box wherever the wall
          display's font lacks the character, and a shape has no font to lack it. */
-      /* The surface scales with the page, so its aspect ratio is what it costs the wall.
-         `max-height` is the ceiling for a width the ratio was not chosen against: the drawing
-         letterboxes rather than pushing the ready list off a 1080px screen, which is what the
-         first draft did and only `check_render_overflow.py` could see. */
+      /* No `max-height`, and that absence is the fix. A clamp is what letterboxed the
+         drawing: `preserveAspectRatio` fits it to whichever axis binds, so a ceiling shorter
+         than the region's own aspect ratio scaled every figure down and left the width empty
+         - 43% of it at 1920, with the station labels at 13.6px under a 17px ready row. At
+         9.7:1 the width binds instead, so the height is simply the width over the ratio:
+         196px at 1920, 147px at 1440. Both are less than the 260px clamp they replace, which
+         is what let the three clamps below go rather than be re-tuned (basicly-ubwp49). */
       .flow {
         display: block;
         height: auto;
-        margin-top: 4px;
-        max-height: 260px;
         width: 100%;
       }
-      /* A pass is running, so the lane cards below are drawing the detail and the diagram
-         only owes the shape. It gives the height back rather than pushing the ready list off
-         a 1080px screen - the same signal the layout already reshapes on, and the only way
-         a diagram, six cards and a ready list all fit. */
-      .loop:not(.quiet) .flow {
-        max-height: 112px;
-      }
-      /* And the same when a person is being asked something. The `acts` region precedes the
-         loop, so this is a sibling selector and not a state the model has to carry. A
-         pending decision outranks a picture of the workflow it is holding up - without this
-         a 1440x900 wall with two asks pending has no room for either (basicly-ua9o5g). */
-      .acts ~ .loop .flow {
-        max-height: 112px;
-      }
-      /* A wall shorter than 1080 with a pass running has no room for a picture of the
-         workflow: the lane cards carry the same state in words and they carry the figures
-         too. The census below the diagram still draws, so the phases are not lost - only
-         the drawing is. Measured rather than chosen: without this, 1440x900 with four lanes
-         clips, and this record must not leave that case worse than it found it. */
+      /* The one state that still cannot afford a picture: a wall shorter than 1080 while a
+         pass runs or a person is being asked something. There the lane cards take 488px of
+         1440x900 on their own and the page is already 285px past its box, so the drawing is
+         withheld rather than shrunk - a letterboxing clamp is the defect this record exists
+         to remove, and reintroducing it in one state reintroduces it. Withheld and not
+         re-tuned: hiding it puts this case 81px *below* where it was found, where a 147px
+         drawing would have put it 70px above (basicly-ubwp49, measured on `dense-v1`).
+         What is lost here that the retired census used to keep is the phase counts. The
+         lane cards carry each running phase by name, and `the queue` carries the shape of
+         what is waiting, so the loss is the resting counts alone. */
       @media (max-height: 1000px) {
-        .loop:not(.quiet) .flow {
+        .loop:not(.quiet) .flow,
+        .acts ~ .loop .flow {
           display: none;
         }
       }
@@ -460,13 +419,24 @@
       .flow .station .count {
         fill: var(--text-bright);
         font-family: var(--mono);
-        font-size: 26px;
+        font-size: 22px;
         font-weight: 700;
+        text-anchor: middle;
       }
+      /* 15 units, and the scale turns that into 17.8px at 1440 and 23.8px at 1920 - at or
+         above the 17px of a `next up` row, which is the whole of basicly-ubwp49. */
       .flow .station .name {
         fill: var(--text);
         font-size: 15px;
         letter-spacing: 0.04em;
+        text-anchor: middle;
+      }
+      /* The magnitude, inside the box it belongs to. It is the one channel the census strip
+         had that the drawing did not, and it is why that strip could go rather than simply
+         be deleted: seven digits drawn twice said nothing twice. The denominator is the
+         units *inside* the loop, so `intake` holding 91% of them cannot flatten it. */
+      .flow .mag {
+        fill: var(--indigo);
       }
       .flow .agent {
         fill: var(--text-dim);
@@ -495,7 +465,7 @@
       .flow .waits-age {
         fill: var(--amber);
         font-family: var(--mono);
-        font-size: 12px;
+        font-size: 11px;
       }
       .flow .terminal path {
         fill: none;
@@ -536,14 +506,11 @@
         font-size: 11px;
         text-anchor: middle;
       }
-      .flow .flow-edge.merge .artifact,
-      .flow .verdict {
-        text-anchor: start;
-      }
       .flow .verdict {
         fill: var(--text-dim);
         font-family: var(--mono);
         font-size: 12px;
+        text-anchor: middle;
       }
       .flow .flow-edge.failing .verdict {
         fill: var(--amber);
@@ -553,26 +520,6 @@
          decompose and ship (`config.CHECKPOINTS`). */
       .flow .checkpoint {
         fill: var(--amber);
-      }
-      /* The backlog census: the same shape, deliberately quieter, and under its own heading.
-         It is a second population and never this row's denominator - drawing it as the loop
-         made the region's total equal `backlog.active` by construction (basicly-a68ggd). */
-      .census-head {
-        color: var(--text-dim);
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        margin: 8px 0 0;
-        text-transform: uppercase;
-      }
-      .phases.census .phase {
-        padding: 0 6px 3px;
-      }
-      .phases.census .count {
-        font-size: 15px;
-      }
-      .phases.census .name {
-        color: var(--text-dim);
       }
 
       /* --- claimed: taken by somebody, driven by no lane -------------------------------
@@ -1025,12 +972,6 @@
           margin-left: 0;
           text-align: left;
         }
-        .phases {
-          flex-wrap: wrap;
-        }
-        .phase {
-          flex: 1 1 120px;
-        }
       }
     </style>
   </head>
@@ -1192,17 +1133,20 @@
             >
 {%- endif %}
 {%- if flow.verdict %}
-            <text class="verdict" x="{{ flow.label_x }}" y="{{ flow.label_y + 16 }}"
+            <text class="verdict" x="{{ flow.label_x }}" y="{{ flow.label_y - 15 }}"
               >gate {{ flow.verdict }}</text
             >
 {%- endif %}
 {#- A checkpoint is a drawn diamond and never a codepoint: the tofu the owner reported is a
     font-coverage failure, and a shape has no font. #}
+{#- On the edge line and not beside it: one row leaves a 20-unit gap between boxes, and a
+    diamond centred in that gap is unambiguously on the transition it gates. `label_y + 28`
+    puts its apex 7 units above `ROW_Y`, so the shape's centre is the line. #}
 {%- if flow.checkpoint %}
             <path
               class="checkpoint"
-              d="M {{ flow.label_x }} {{ flow.label_y + 26 }}
-                 l 7 7 l -7 7 l -7 -7 z"
+              d="M {{ flow.label_x }} {{ flow.label_y + 28 }}
+                 l 6 7 l -6 7 l -6 -7 z"
             />
 {%- endif %}
           </g>
@@ -1212,14 +1156,14 @@
 {%- for end in [diagram.hopper, diagram.sink] %}
           <g class="terminal">
             <path
-              d="M {{ end.x - 90 }} {{ end.y - 26 }} h 180 l -20 52 h -140 z"
+              d="M {{ end.x - 65 }} {{ end.y - 28 }} h 130 l -14 56 h -102 z"
             />
-            <text class="count" x="{{ end.x }}" y="{{ end.y - 1 }}"
+            <text class="count" x="{{ end.x }}" y="{{ end.y - 4 }}"
               >{% if end.count is none %}—{% else %}{{ end.count }}{% endif %}</text
             >
-            <text class="name" x="{{ end.x }}" y="{{ end.y + 17 }}">{{ end.name }}</text>
+            <text class="name" x="{{ end.x }}" y="{{ end.y + 15 }}">{{ end.name }}</text>
 {%- if end.detail %}
-            <text class="detail" x="{{ end.x }}" y="{{ end.y + 80 }}">{{ end.detail }}</text>
+            <text class="detail" x="{{ end.x }}" y="{{ end.y + 41 }}">{{ end.detail }}</text>
 {%- endif %}
           </g>
 {%- endfor %}
@@ -1229,41 +1173,51 @@
             aria-label="{{ station.name }}"
           >
             <rect
-              x="{{ station.x - 105 }}" y="{{ station.y - 30 }}"
-              width="210" height="60" rx="6"
+              x="{{ station.x - 65 }}" y="{{ station.y - 28 }}"
+              width="130" height="56" rx="5"
             />
-{#- The count and the phase share one baseline. Stacked, they left 60 units of box for two
-    text lines and the taller one painted over the shorter - which `check_render_overflow.py`
-    reported and no assertion in the suite could see. #}
-            <text class="count" x="{{ station.x - 92 }}" y="{{ station.y + 8 }}"
+{#- Stacked and centred. The two shared one baseline while the box was 210 units wide; at 130
+    a three-digit count beside `decompose` overruns it, so the count takes the upper line and
+    the phase the lower. `check_render_overflow.py` at three widths is what settles this. #}
+            <text class="count" x="{{ station.x }}" y="{{ station.y - 9 }}"
               >{% if station.count is none %}—{% else %}{{ station.count }}{% endif %}</text
             >
-            <text class="name" x="{{ station.x - 50 }}" y="{{ station.y + 7 }}"
+            <text class="name" x="{{ station.x }}" y="{{ station.y + 15 }}"
               >{{ station.name }}</text
             >
+{#- The magnitude, over the units inside the loop and never over the backlog: `intake` holds
+    91% of the records, so a share counting it draws every station flat. #}
+{%- if station.fill %}
+            <rect class="mag"
+              x="{{ station.x - 61 }}" y="{{ station.y + 20 }}"
+              width="{{ station.fill }}" height="3"
+            />
+{%- endif %}
 {#- A lane an agent is inside: a dot in the box, its crew named beneath. A unit merely
     resting at this phase is in the count and has no dot, which is the distinction the
-    record asks for. The names sit outside because 210 units of box do not hold an agent
+    record asks for. The name sits outside because 130 units of box do not hold an agent
     and its model beside a count. #}
 {%- for lane in station.lanes %}
             <circle
               class="lane{% if lane.moved %} moved{% endif %}{% if lane.stuck %} stuck{% endif %}"
-              cx="{{ station.x + 88 }}" cy="{{ station.y - 16 + loop.index0 * 16 }}" r="5"
+              cx="{{ station.x + 54 }}" cy="{{ station.y - 18 + loop.index0 * 15 }}" r="4.5"
             />
 {%- endfor %}
-{%- for name in station.crew %}
-            <text class="agent" x="{{ station.x - 105 }}"
-              y="{{ station.y + 44 + loop.index0 * 15 }}">{{ name }}</text
+{#- Two lines beneath the box, and a station with neither draws neither: the wait takes the
+    first, so the model gives the crew its row rather than the template guessing it. #}
+{%- if station.crew %}
+            <text class="agent" x="{{ station.x - 61 }}"
+              y="{{ station.y + 41 + station.crew_row * 14 }}">{{ station.crew }}</text
             >
-{%- endfor %}
+{%- endif %}
 {#- A person is the blocker: a drawn triangle carrying the age, on the node they block. #}
 {%- if station.waiting %}
             <path
               class="waits"
-              d="M {{ station.x + 22 }} {{ station.y + 8 }}
-                 l 7 -12 l 7 12 z"
+              d="M {{ station.x - 61 }} {{ station.y + 41 }}
+                 l 6 -10 l 6 10 z"
             />
-            <text class="waits-age" x="{{ station.x + 42 }}" y="{{ station.y + 8 }}"
+            <text class="waits-age" x="{{ station.x - 45 }}" y="{{ station.y + 41 }}"
               >{{ station.waiting }}</text
             >
 {%- endif %}
@@ -1276,24 +1230,12 @@
 {%- if loop_note %}
         <p class="note clip">{{ loop_note }}</p>
 {%- endif %}
-        <h3 class="census-head">the backlog, by where each record stopped</h3>
-        <div class="phases census">
-{%- for phase in backlog_phases %}
-          <div class="phase">
-{%- if phase.count is none %}
-            <span class="none">{{ none_glyph }}</span>
-{%- else %}
-            <span class="count">{{ phase.count }}</span>
-{%- endif %}
-            <span class="label name clip">{{ phase.name }}</span>
-{%- if phase.share %}
-            <span class="track"
-              ><span class="fill" style="width: {{ phase.share.width }}%"></span
-            ></span>
-{%- endif %}
-          </div>
-{%- endfor %}
-        </div>
+{#- The census strip that stood here drew the diagram's own seven digits verbatim - `263 1
+    26 0 0 0 0` in both, because `backlog_phases` and the diagram's `_counts` differ only by
+    the units a lane holds and the drawing marks those with a dot instead. Its one unique
+    channel was the magnitude bar, which is now inside each station box, so the strip is
+    gone rather than merely quieter (basicly-ubwp49). Its note stays: the parked and the
+    unphased are a population caveat the drawing does not carry. #}
 {%- if backlog_phases_note %}
         <p class="note clip">{{ backlog_phases_note }}</p>
 {%- endif %}
