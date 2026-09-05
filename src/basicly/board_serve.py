@@ -29,6 +29,7 @@ from urllib.parse import urlsplit
 
 from . import (
     board_actions,
+    board_asks,
     board_render,
     board_schema,
     board_snapshot,
@@ -277,10 +278,16 @@ class Board:
         verdict = board_schema.verdict(self.repo_root, document)
         if not verdict.readable:
             return None
-        drawn = board_render.page(document, verdict, now=now)
-        ready = board_render.context(document, verdict, now).get("ready")
-        drawn = self._name_self_faults(drawn, ready, now)
-        return board_actions.inject(drawn, self.actions).encode("utf-8")
+        # One context, drawn once. It carries the prefilled action rows, which only this
+        # tier can build: the token is this process's and the asks are the document's
+        # (basicly-ua9o5g). `--no-actions` passes no token, so the rows still name the exact
+        # command and the template draws no form.
+        token = self.actions.token if self.actions is not None else None
+        filled = board_render.context(
+            document, verdict, now, acts=board_asks.pending(document.get("asks"), token)
+        )
+        drawn = board_render.render(filled)
+        return self._name_self_faults(drawn, filled.get("ready"), now).encode("utf-8")
 
     def _name_self_faults(self, drawn: str, ready: object, now: datetime) -> str:
         """*drawn* with this process's own age, and any self-staleness fault, in the `tick` row.

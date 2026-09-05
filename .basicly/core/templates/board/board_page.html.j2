@@ -60,6 +60,7 @@
         grid-template-areas:
           "head"
           "band"
+          "acts"
           "loop"
           "flight"
           "ready"
@@ -70,7 +71,7 @@
            tallest content of the day. A hand-tuned row is one line short the moment a
            producer emits one more of anything, so the row is bounded by its content and the
            content is bounded by the model's own slot counts. `flight` takes the slack. */
-        grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto;
+        grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto auto auto;
         min-height: 100%;
       }
       /* No lane dispatched: the running row is one line and the ready list takes the whole
@@ -261,6 +262,108 @@
         text-align: right;
       }
 
+      /* --- acts: what a person is being asked for, prefilled ---------------------------
+         The only interactive region. It draws only when something is pending, so it costs
+         the wall nothing the rest of the time - and when it draws, it takes its height from
+         the `1fr` ready row, which is correct: a human decision the factory is stopped on
+         outranks a list of what could be started next. */
+      .acts {
+        background: var(--bg-sunk);
+        border: 1px solid var(--amber);
+        border-radius: 5px;
+        grid-area: acts;
+        padding: 5px 9px 7px;
+      }
+      .acts h2 {
+        color: var(--amber);
+      }
+      .act {
+        align-items: baseline;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+        padding: 3px 0;
+      }
+      .act + .act {
+        border-top: 1px solid var(--border);
+      }
+      .act .who {
+        align-items: baseline;
+        display: flex;
+        flex: 1 1 100%;
+        gap: 8px;
+        min-width: 0;
+      }
+      .act .subject {
+        color: var(--text-bright);
+        font-weight: 600;
+      }
+      .act .issue {
+        color: var(--indigo);
+        font-family: var(--mono);
+      }
+      .act .question {
+        color: var(--text-dim);
+        min-width: 0;
+      }
+      /* The command, always drawn. A board with no server behind it still owes the line. */
+      .act .command {
+        color: var(--text-dim);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .act form {
+        align-items: baseline;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .act label {
+        color: var(--text-dim);
+        font-size: 11px;
+      }
+      .act input {
+        background: var(--bg);
+        border: 1px solid var(--border-lit);
+        border-radius: 3px;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 13px;
+        padding: 2px 5px;
+      }
+      /* What the board already knew against what the operator still owes. Two channels, the
+         label's colour and the input's border, because a form whose filled and empty inputs
+         look alike is one an operator has to read field by field. */
+      .act label.known input {
+        color: var(--text-dim);
+      }
+      .act label.typed {
+        color: var(--amber);
+      }
+      .act label.typed input {
+        border-color: var(--amber);
+      }
+      .act button {
+        background: var(--indigo-deep);
+        border: 1px solid var(--indigo);
+        border-radius: 3px;
+        color: var(--text-bright);
+        cursor: pointer;
+        font-family: var(--sans);
+        font-size: 13px;
+        font-weight: 600;
+        padding: 3px 12px;
+      }
+      /* Where the CLI's own output lands, so a submission never navigates the wall away. */
+      .acts iframe {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        height: 46px;
+        margin-top: 4px;
+        width: 100%;
+      }
+
       /* --- loop: the workflow drawn, and the backlog census below it ------------------ */
       .loop {
         grid-area: loop;
@@ -320,6 +423,23 @@
          a diagram, six cards and a ready list all fit. */
       .loop:not(.quiet) .flow {
         max-height: 112px;
+      }
+      /* And the same when a person is being asked something. The `acts` region precedes the
+         loop, so this is a sibling selector and not a state the model has to carry. A
+         pending decision outranks a picture of the workflow it is holding up - without this
+         a 1440x900 wall with two asks pending has no room for either (basicly-ua9o5g). */
+      .acts ~ .loop .flow {
+        max-height: 112px;
+      }
+      /* A wall shorter than 1080 with a pass running has no room for a picture of the
+         workflow: the lane cards carry the same state in words and they carry the figures
+         too. The census below the diagram still draws, so the phases are not lost - only
+         the drawing is. Measured rather than chosen: without this, 1440x900 with four lanes
+         clips, and this record must not leave that case worse than it found it. */
+      @media (max-height: 1000px) {
+        .loop:not(.quiet) .flow {
+          display: none;
+        }
       }
       .flow text {
         font-family: var(--sans);
@@ -879,6 +999,64 @@
         <div class="stale">{{ band.stale }}</div>
 {%- endif %}
       </section>
+
+{#- What a person is being asked for, each row prefilled and one button from done. A region
+    in the grid and never an append after `</main>`: the body is `100vh` with
+    `overflow: hidden`, so the panel this replaces sat 274px past the fold on a page that
+    never scrolls (basicly-ua9o5g; basicly-qwqd35 ruled the same append a defect for the
+    tick notes). Drawn only when there is something to act on - a standing form on a wall
+    whose question is "does it need me?" answers it wrongly every hour nothing is pending. #}
+{%- if acts %}
+      <section class="region acts">
+        <h2>needs a person{% if acts_more %} — {{ acts_more }}{% endif %}</h2>
+{%- for act in acts %}
+        <div class="act">
+          <div class="who">
+            <span class="label">{{ act.kind }}</span>
+            <span class="subject">{{ act.subject }}</span>
+            <span class="issue">{{ act.issue }}</span>
+{%- if act.question %}
+            <span class="question clip">{{ act.question }}</span>
+{%- endif %}
+          </div>
+{#- The exact command, always, whether or not a form is reachable. An operator who would
+    rather use a terminal is owed the line to type, and it is built through the action's own
+    argv so it can never name a different command from the one the button runs. #}
+          <code class="command">{{ act.command }}</code>
+{%- if act.token %}
+          <form method="post" action="{{ act.route }}" target="{{ act.frame }}">
+            <input type="hidden" name="token" value="{{ act.token }}">
+            <input type="hidden" name="action" value="{{ act.action }}">
+{%- for field in act.fields %}
+            <label class="{% if field.typed %}typed{% else %}known{% endif %}"
+              >{{ field.label }}
+{#- No `value` attribute at all where the field is unfilled, rather than an empty one.
+    `value=""` and a missing attribute render identically, and only the absence says no code
+    path could have put a confirm code there - which is what `test_board_actions` asserts. #}
+              <input
+                name="{{ field.name }}"
+{%- if field.value %}
+                value="{{ field.value }}"
+{%- endif %}
+                size="{{ field.size }}"
+                autocomplete="off"
+                required
+              ></label
+            >
+{%- endfor %}
+            <button type="submit">{{ act.offer }}</button>
+          </form>
+{%- if act.confirmed %}
+          <p class="note clip">a one-time code is typed here and never read by the board — get it from a terminal</p>
+{%- endif %}
+{%- else %}
+          <p class="note clip">this board answers GET only, so run the line above</p>
+{%- endif %}
+        </div>
+{%- endfor %}
+        <iframe name="{{ acts[0].frame }}" title="what the last action printed"></iframe>
+      </section>
+{%- endif %}
 
       <section class="region loop{% if not pass_running %} quiet{% endif %}">
         <h2>the loop{% if pass_running %} — this pass{% endif %}</h2>

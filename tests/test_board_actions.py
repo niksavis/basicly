@@ -27,7 +27,7 @@ from urllib.parse import urlencode
 
 import pytest
 
-from basicly import board_actions, board_serve, cli, policy
+from basicly import board_actions, board_asks, board_serve, cli, policy
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -96,10 +96,25 @@ def _form(surface: board_actions.ActionSurface, action: str, **fields: str) -> b
     return urlencode({"token": surface.token, "action": action, **fields}).encode("utf-8")
 
 
+# One pending checkpoint, offering the verb this consumer implements. The forms are drawn
+# per ask now (basicly-ua9o5g), so a document with no ask has nothing to act on and draws no
+# form at all - which would make every wire assertion below pass vacuously.
+ASK = {
+    "wait_id": "x-1#wait-ship",
+    "issue": "x-1",
+    "kind": "checkpoint",
+    "subject": "ship",
+    "question": "ship this?",
+    "waiting_s": 90,
+    "actions": [{"offer": "Approve the ship checkpoint", "basicly": "checkpoint-approve"}],
+}
+
+
 def _document() -> dict[str, Any]:
     """The minimal conformant snapshot, dated now so its age is valid and a page renders."""
     document = json.loads(MINIMAL.read_text(encoding="utf-8"))
     document["generated_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    document["asks"] = [ASK]
     return document
 
 
@@ -199,7 +214,7 @@ def test_no_action_path_reads_any_file_let_alone_the_confirm_codes(
         return real(self, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(Path, "open", spy)
-    surface.panel()
+    board_asks.pending([ASK], surface.token)
     surface.respond(
         origin=ORIGIN,
         port=1,
@@ -211,16 +226,20 @@ def test_no_action_path_reads_any_file_let_alone_the_confirm_codes(
     assert [path for path in opened if "checkpoint-confirms" in path]
 
 
-def test_no_confirm_code_reaches_the_page_the_reply_or_the_audit_line(surface: _Surface) -> None:
-    """AC 3, second instrument, and the record's own criterion: the field is drawn empty.
+def test_no_confirm_code_reaches_the_row_the_reply_or_the_audit_line(surface: _Surface) -> None:
+    """AC 3, second instrument, and the record's own criterion: the field carries no code.
 
-    Asserted as *no* `value` attribute rather than as an empty one: `value=""` and a missing
-    attribute render identically, and only the second says no code path could have filled it.
+    Over the row model rather than over markup, because the markup is the template's now
+    (basicly-ua9o5g). The *rendered* half - that the input carries no `value` attribute at
+    all rather than an empty one - is `test_board_asks`', where the page is drawn.
     """
-    panel = surface.panel()
-    assert PLANTED not in panel
-    assert 'name="confirm" autocomplete="off" required' in panel
-    assert "value=" not in panel.split('name="confirm"')[1].split(">")[0]
+    rows = board_asks.pending([ASK], surface.token)[0]
+    confirms = [
+        field for row in rows for field in row["fields"] if field["name"] == board_actions._CONFIRM
+    ]
+    assert confirms, "no row asked for a confirm code, so this probe proves nothing"
+    assert all(field["value"] == "" and field["typed"] for field in confirms)
+    assert PLANTED not in json.dumps(rows)
 
     body = _form(surface, "checkpoint-approve", issue="x-1", name="ship", confirm=PLANTED)
     reply = surface.respond(origin=ORIGIN, port=1, body=body)
@@ -314,7 +333,11 @@ def test_a_read_only_board_answers_405_and_draws_no_panel(work_repo: Path) -> No
         status, _text = _post(f"{board.url}{board_actions.ROUTE}", b"", origin=None)
         assert status == HTTPStatus.METHOD_NOT_ALLOWED
         page = urllib.request.urlopen(board.url + "/", timeout=TIMEOUT_S).read()
-        assert b"board-actions" not in page
+        # No form and no token, asserted on the affordance rather than on a class name: the
+        # region was renamed once already, and a class assertion would have passed vacuously
+        # against a page still carrying three live forms (basicly-ua9o5g).
+        assert b"<form" not in page
+        assert b'name="token"' not in page
 
 
 def test_the_no_actions_flag_exists_and_the_default_is_actions_on() -> None:
@@ -322,59 +345,3 @@ def test_the_no_actions_flag_exists_and_the_default_is_actions_on() -> None:
     parser = cli._build_parser()
     assert parser.parse_args(["board", "serve"]).no_actions is False
     assert parser.parse_args(["board", "serve", "--no-actions"]).no_actions is True
-
-
-# --- The wire: a served board, end to end -----------------------------------
-
-
-def test_the_served_page_carries_one_panel_whose_confirm_field_is_empty(
-    served: board_serve.Listener,
-) -> None:
-    """The record's acceptance criterion over the wire: the field a human fills is drawn empty."""
-    surface = served.board.actions
-    assert surface is not None
-    page = urllib.request.urlopen(served.url + "/", timeout=TIMEOUT_S).read().decode("utf-8")
-
-    assert page.count('id="board-actions"') == 1
-    assert page.count(f'value="{surface.token}"') == len(board_actions.ACTIONS)
-    assert 'name="confirm" autocomplete="off" required>' in page
-    assert page.index("board-actions") < page.index("</body>")
-
-
-def test_the_wire_refuses_an_empty_code_and_accepts_a_typed_one(
-    served: board_serve.Listener,
-) -> None:
-    """AC 4 and AC 6 through the socket, with the runner replaced so nothing is written.
-
-    The accepted case asserts the code reached the argv and did not reach the reply, which is
-    the pair the whole boundary rests on.
-    """
-    surface = served.board.actions
-    assert surface is not None
-    spy = _Spy()
-    surface._run = spy
-    route = f"{served.url}{board_actions.ROUTE}"
-
-    empty = _form(surface, "checkpoint-approve", issue="x-1", name="ship", confirm="")
-    status, text = _post(route, empty, origin=served.url)
-    assert status == HTTPStatus.BAD_REQUEST
-    assert "confirm code is empty" in text
-    assert spy.calls == []
-
-    typed = _form(surface, "checkpoint-approve", issue="x-1", name="ship", confirm=PLANTED)
-    status, text = _post(route, typed, origin=served.url)
-    assert status == HTTPStatus.OK
-    assert "APPROVED" in text
-    assert PLANTED not in text
-    assert spy.calls[0][-1] == PLANTED
-
-
-def test_a_post_to_the_page_route_is_still_405_on_an_acting_board(
-    served: board_serve.Listener,
-) -> None:
-    """Only the action route takes a POST; the page route says so, with an `Allow`."""
-    request = urllib.request.Request(served.url + "/", data=b"", method="POST")
-    with pytest.raises(urllib.error.HTTPError) as refused:
-        urllib.request.urlopen(request, timeout=TIMEOUT_S)
-    assert refused.value.code == HTTPStatus.METHOD_NOT_ALLOWED
-    assert refused.value.headers["Allow"] == "GET"

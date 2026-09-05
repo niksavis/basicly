@@ -33,7 +33,6 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from html import escape
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -48,10 +47,6 @@ if TYPE_CHECKING:
 # The one route that takes a POST. A board with actions disabled never registers it, which is
 # what makes a read-only board a structural refusal rather than a check someone can miss.
 ROUTE = "/action"
-
-# The frame a reply lands in, so a submission never navigates the wall away from the board. A
-# display with a back button is a display someone has left on the wrong page.
-RESULT_FRAME = "board-action-result"
 
 # Long enough for a kill reason or a decision answer, short enough that a form post is not a
 # way to hand the CLI an argument no terminal would ever have typed.
@@ -73,20 +68,27 @@ _CONFIRM = "confirm"
 
 
 @dataclass(frozen=True)
-class _Field:
-    """One input on an action's form: its form name, its label, whether it is free text."""
+class Field:
+    """One input on an action's form: its name, its label, and where a value comes from.
+
+    ``from_ask`` is the key of the ask this field is answered *about* - the id, the issue, the
+    checkpoint's name. Those the board already knows, so it fills them in and the operator is
+    left with the one thing only a person holds: the answer, or the confirm code. A field with
+    no ``from_ask`` is that thing, and is never prefilled.
+    """
 
     name: str
     label: str
     free: bool = False
+    from_ask: str = ""
 
 
 @dataclass(frozen=True)
-class _Action:
+class Action:
     """One entry of the closed table: what it is called, what it asks for, what it runs."""
 
     label: str
-    fields: tuple[_Field, ...]
+    fields: tuple[Field, ...]
     build: Callable[[Mapping[str, str]], tuple[str, ...]]
     confirmed: bool = False
 
@@ -108,11 +110,17 @@ def _refused(status: HTTPStatus, reason: str) -> Outcome:
     return Outcome(status, f"refused: {reason}\n")
 
 
-def _asked(action: _Action) -> list[_Field]:
-    """*action*'s fields, with the confirm code appended where the action needs one."""
+def asked(action: Action) -> list[Field]:
+    """*action*'s fields, with the confirm code appended where the action needs one.
+
+    Public, with :class:`Action` and :class:`Field`, because :mod:`basicly.board_asks` builds
+    the prefilled form and must ask this module what an action wants. The alternative was that
+    module spelling the field list a second time, which is how a form and the argv behind it
+    drift apart.
+    """
     asked = [*action.fields]
     if action.confirmed:
-        asked.append(_Field(_CONFIRM, "confirm code"))
+        asked.append(Field(_CONFIRM, "confirm code"))
     return asked
 
 
@@ -150,21 +158,30 @@ def _kill(form: Mapping[str, str]) -> tuple[str, ...]:
 # consumer has no mechanism to execute an action it does not already know. `test_board_actions`
 # asserts the length as well as the contents - a fourth verb reaching the wall is the failure
 # this table exists to make loud.
-ACTIONS: dict[str, _Action] = {
-    "loop-answer": _Action(
+ACTIONS: dict[str, Action] = {
+    "loop-answer": Action(
         label="Answer a queued decision",
-        fields=(_Field("decision_id", "decision id"), _Field("text", "the answer", free=True)),
+        fields=(
+            Field("decision_id", "decision id", from_ask="wait_id"),
+            Field("text", "the answer", free=True),
+        ),
         build=_answer,
     ),
-    "checkpoint-approve": _Action(
+    "checkpoint-approve": Action(
         label="Approve a checkpoint",
-        fields=(_Field("issue", "issue"), _Field("name", "checkpoint")),
+        fields=(
+            Field("issue", "issue", from_ask="issue"),
+            Field("name", "checkpoint", from_ask="subject"),
+        ),
         build=_approve,
         confirmed=True,
     ),
-    "lane-kill": _Action(
+    "lane-kill": Action(
         label="Kill a lane",
-        fields=(_Field("issue", "lane"), _Field("reason", "why", free=True)),
+        fields=(
+            Field("issue", "lane", from_ask="issue"),
+            Field("reason", "why", free=True),
+        ),
         build=_kill,
         confirmed=True,
     ),
@@ -203,10 +220,10 @@ def _spawn(argv: tuple[str, ...], cwd: Path) -> tuple[int, str]:
     return completed.returncode, (completed.stdout + completed.stderr).strip()
 
 
-def _validated(action: _Action, form: Mapping[str, list[str]]) -> dict[str, str] | Outcome:
+def _validated(action: Action, form: Mapping[str, list[str]]) -> dict[str, str] | Outcome:
     """*action*'s fields read out of a posted form, or the first reason to refuse them."""
     values: dict[str, str] = {}
-    for field in _asked(action):
+    for field in asked(action):
         raw = (form.get(field.name) or [""])[0].strip()
         if not raw:
             return _refused(HTTPStatus.BAD_REQUEST, f"{field.label} is empty; nothing was run")
@@ -247,40 +264,6 @@ class ActionSurface:
         self._run = run
         self._echo = echo
 
-    def panel(self) -> str:
-        """One form per table entry, every field empty, and a frame for the replies.
-
-        Every interpolated string is an :data:`ACTIONS` literal or this process's token, so
-        nothing untrusted reaches the markup; the escaping guards a later non-literal label.
-        """
-        forms = "".join(self._form(name, action) for name, action in ACTIONS.items())
-        return (
-            '<section class="board-actions" id="board-actions">'
-            "<h2>Act</h2>"
-            "<p>Every button here runs the <code>basicly</code> CLI and nothing else. "
-            "A checkpoint or a kill needs a one-time code a human types: the board never "
-            "reads it, so get it from a terminal and fill the empty field.</p>"
-            f"{forms}"
-            f'<iframe name="{RESULT_FRAME}" title="what the last action printed"></iframe>'
-            "</section>"
-        )
-
-    def _form(self, name: str, action: _Action) -> str:
-        """*action*'s form: hidden token, hidden name, an empty input per field, one button."""
-        inputs = "".join(
-            f"<label>{escape(field.label)} "
-            f'<input name="{escape(field.name)}" autocomplete="off" required></label>'
-            for field in _asked(action)
-        )
-        return (
-            f'<form method="post" action="{ROUTE}" target="{RESULT_FRAME}">'
-            f'<input type="hidden" name="token" value="{escape(self.token)}">'
-            f'<input type="hidden" name="action" value="{escape(name)}">'
-            f"{inputs}"
-            f'<button type="submit">{escape(action.label)}</button>'
-            "</form>"
-        )
-
     def plan(self, origin: str | None, port: int, body: bytes) -> tuple[str, ...] | Outcome:
         """The argv this submission would run, or the reason it will not run at all.
 
@@ -318,17 +301,6 @@ class ActionSurface:
         code, output = self._run(planned, self.repo_root)
         self._echo(f"board: action   exit {code} from {shown}")
         return Outcome(HTTPStatus.OK, f"$ {shown}\nexit {code}\n\n{output}\n")
-
-
-def inject(page: str, surface: ActionSurface | None) -> str:
-    """*page* with *surface*'s panel before `</body>`, or *page* untouched where none is given.
-
-    At this tier rather than in the template: Mode A's page is a file with no server behind it,
-    so a form drawn into it would post into nothing.
-    """
-    if surface is None:
-        return page
-    return page.replace("</body>", surface.panel() + "</body>", 1)
 
 
 def transcript(surface: ActionSurface | None) -> str:
