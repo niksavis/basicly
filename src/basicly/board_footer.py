@@ -72,8 +72,7 @@ CLOSED_STATUS = "closed"
 _BACKLOG_KEYS = ("total", "active", "ready", "blocked", "in_progress", "closed")
 # Each spend figure and its unit: four bare numbers in a row is a quantity nobody can name.
 # `scope` is not here, because it is drawn first and verbatim.
-# The token totals were cut: `1.4B in` was 98.2% `cache_read_tokens`, so it read as fresh
-# input and was not (basicly-m8cdnv1).
+# The token totals were cut: `1.4B in` was 98.2% cache reads (basicly-m8cdnv1).
 _SPEND_UNITS = {
     "lifetime_usd": "usd lifetime",
     "largest_dispatch_usd": "usd largest lane",
@@ -262,9 +261,8 @@ def throughput(reads: Mapping[str, Reading], today: str) -> Cell:
     Distinct records, not rows: a unit closed twice is one unit closed.
 
     **:data:`COUNTED_KEY` first, the tail behind it.** No basicly document can put a status row
-    in that tail, so the tail alone read `not measured` on a day twenty records closed
-    (:func:`board_sections.events` says why). It stays for a foreign producer that does write
-    one.
+    in that tail, so the tail alone read `not measured` on a day twenty records closed. It
+    stays for a foreign producer that does write one.
 
     **Absent, never nought.** A producer supplying neither has not measured this and the cell
     says so; one that closed nothing today reports a measured zero. An undateable row is in no
