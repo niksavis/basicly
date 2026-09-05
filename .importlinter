@@ -66,7 +66,7 @@ layers =
     runner_envelope
     board_sections
     board_render
-    board_diagram | board_footer | board_regions
+    board_diagram | board_footer | board_graph | board_regions
     board_loop
     board_wall
     board_fields | board_schema
@@ -114,6 +114,7 @@ source_modules =
     basicly.board_asks
     basicly.board_diagram
     basicly.board_footer
+    basicly.board_graph
     basicly.board_loop
     basicly.board_regions
     basicly.board_render

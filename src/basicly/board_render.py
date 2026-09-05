@@ -20,7 +20,15 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader
 
-from . import board_diagram, board_footer, board_loop, board_regions, board_wall, catalog
+from . import (
+    board_diagram,
+    board_footer,
+    board_graph,
+    board_loop,
+    board_regions,
+    board_wall,
+    catalog,
+)
 from .board_wall import more
 
 if TYPE_CHECKING:
@@ -106,9 +114,13 @@ def context(
             viewport_height=viewport[0],
             viewport_width=viewport[1],
             reserved=board_regions.acts_reserve(len(acts[0]))
-            + board_regions.claimed_reserve(len(claimed_rows)),
+            + board_regions.claimed_reserve(len(claimed_rows))
+            + board_regions.QUEUE_PX,
         ),
         "backlog": board_footer.backlog(reads),
+        # Whether the next work is parallel or a queue, off the edges the footer used to draw
+        # as one number. `DEP EDGES 846` beside `BLOCKED 56` settled nothing (basicly-pck9fx).
+        "queue": board_graph.queue(reads),
         "priorities": hist,
         "priorities_more": priorities_more,
         "agents": agents,

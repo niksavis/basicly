@@ -163,6 +163,17 @@ CLAIMED_CHROME_PX = 24.0
 CLAIMED_ROW_PX = 30.0
 
 
+# What the queue block costs the footer. Always drawn - the shape of what is waiting is not a
+# conditional fact - so unlike the two above it is a flat figure and not a per-row one.
+#
+# **A reserve buys whole rows, so the figure is not the block's height.** The block measured
+# ~84px and the page still clipped 5px at 1440x900, because 78 and 90 both leave the same two
+# rows standing - the capacity divides by the 24.09px pitch. 110 is the first figure that
+# drops a row, and dropping one is what clears the 5px. Rounding down to the measured height
+# is what leaves a page short by less than a row and clipping anyway.
+QUEUE_PX = 110.0
+
+
 def claimed_reserve(rows: int) -> float:
     """The height *rows* claimed records take out of the page, or 0.0 where there are none."""
     return CLAIMED_CHROME_PX + rows * CLAIMED_ROW_PX if rows else 0.0
