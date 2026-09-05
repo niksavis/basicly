@@ -288,7 +288,12 @@ class Board:
             document,
             verdict,
             now,
-            acts=(rows, dropped, board_asks.killable(document.get("lanes"), token)),
+            acts=(
+                rows,
+                dropped,
+                board_asks.killable(document.get("lanes"), token),
+                board_asks.parking(document.get("units"), token),
+            ),
         )
         drawn = board_render.render(filled)
         return self._name_self_faults(drawn, filled.get("ready"), now).encode("utf-8")

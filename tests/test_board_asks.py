@@ -71,7 +71,12 @@ def _page(asks: Sequence[dict[str, Any]], token: str | None = TOKEN) -> str:
         doc,
         board_schema.verdict(REPO_ROOT, doc),
         now,
-        acts=(rows, dropped, board_asks.killable(doc.get("lanes"), token)),
+        acts=(
+            rows,
+            dropped,
+            board_asks.killable(doc.get("lanes"), token),
+            board_asks.parking(doc.get("units"), token),
+        ),
     )
     return board_render.render(filled, TEMPLATES)
 

@@ -162,6 +162,45 @@ def killable(
     return forms
 
 
+# What a record's status lets a person do to it. A closed record is offered nothing: the
+# board has no verb that reopens one, and drawing a control the CLI would refuse is worse
+# than drawing none (basicly-arxhshr).
+PARK = "record-park"
+RESUME = "record-resume"
+PARKABLE = frozenset({"open", "in_progress"})
+
+
+def parking(
+    units: Sequence[Mapping[str, Any]] | None, token: str | None
+) -> dict[str, dict[str, Any]]:
+    """One park-or-resume form per record, keyed by record id, for the row that draws it.
+
+    The verb is chosen by status and never offered as a pair: a record is either parked or
+    it is not, and two buttons where one applies is a question the board can answer itself.
+
+    Keyed by id for the same reason :func:`killable` is - the rows that draw these are
+    bounded slices of `units[]`, so a positional join arms one row with another record's id.
+    """
+    if not units:
+        return {}
+    forms: dict[str, dict[str, Any]] = {}
+    for unit in units:
+        if not isinstance(unit, dict):
+            continue
+        ident, state = str(unit.get("id") or ""), str(unit.get("status") or "")
+        verb = PARK if state in PARKABLE else RESUME if state == "deferred" else ""
+        action = ACTIONS.get(verb)
+        if not ident or action is None:
+            continue
+        forms[ident] = {
+            **_form(action, {"issue": ident}, token or ""),
+            "action": verb,
+            "offer": action.label,
+            "issue": ident,
+        }
+    return forms
+
+
 def pending(
     asks: Sequence[Mapping[str, Any]] | None, token: str | None
 ) -> tuple[tuple[dict[str, Any], ...], int]:

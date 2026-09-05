@@ -47,11 +47,15 @@ SUBMISSIONS = {
     "loop-answer": {"decision_id": "x-1#abc", "text": "-do it"},
     "checkpoint-approve": {"issue": "x-1", "name": "ship", "confirm": "abc123"},
     "lane-kill": {"issue": "x-1", "reason": "-wrong shape", "confirm": "abc123"},
+    "record-park": {"issue": "x-1"},
+    "record-resume": {"issue": "x-1"},
 }
 VERBS = {
     "loop-answer": ("loop", "answer"),
     "checkpoint-approve": ("policy", "checkpoint"),
     "lane-kill": ("loop", "kill"),
+    "record-park": ("tracker", "write"),
+    "record-resume": ("tracker", "write"),
 }
 ORIGIN = "http://127.0.0.1:1"
 
@@ -152,13 +156,13 @@ def _post(url: str, body: bytes, *, origin: str | None) -> tuple[int, str]:
 # --- AC 1: the closed table ------------------------------------------------
 
 
-def test_the_action_table_holds_exactly_three_entries_and_names_them() -> None:
+def test_the_action_table_holds_exactly_five_entries_and_names_them() -> None:
     """AC 1, asserted as a length as well as a membership.
 
-    A fourth verb reaching the wall is the failure this table exists to make loud, and a
+    A sixth verb reaching the wall is the failure this table exists to make loud, and a
     membership check alone waves it through.
     """
-    assert len(board_actions.ACTIONS) == 3
+    assert len(board_actions.ACTIONS) == 5
     assert set(board_actions.ACTIONS) == set(SUBMISSIONS) == set(VERBS)
 
 

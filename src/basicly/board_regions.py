@@ -179,6 +179,24 @@ def claimed_reserve(rows: int) -> float:
     return CLAIMED_CHROME_PX + rows * CLAIMED_ROW_PX if rows else 0.0
 
 
+# The parked strip: one wrapping line, measured at 18px with four entries at 1440x900, plus
+# its 5px margin. Flat rather than per-row because :data:`PARKED_SLOTS` bounds it at four and
+# four entries are ~520px of a 1400px region, so it cannot reach a second line.
+#
+# It was a row apiece first. That measured 104px and took five titles off the ready list,
+# which is a bad trade: five ready titles are worth more to a reader than four parked ones.
+PARKED_STRIP_PX = 28.0
+
+
+def parked_reserve(rows: int) -> float:
+    """The height the parked strip takes out of the page, or 0.0 where nothing is parked.
+
+    Without this the strip drew under a list already sized to the whole viewport and the
+    board clipped 65px at 1440x900 - on a page that had been clean at all three widths.
+    """
+    return PARKED_STRIP_PX if rows else 0.0
+
+
 def _chrome_px(viewport_width: float | None) -> float:
     """The calibrated chrome height at *viewport_width*, interpolated between measured points.
 
@@ -545,6 +563,38 @@ def claimed(reads: Mapping[str, Reading]) -> tuple[tuple[dict[str, str], ...], s
         if str(row.get("status") or "") == CLAIMED_STATUS and str(row.get("id") or "") not in held
     ]
     return tuple(rows[:CLAIMED_SLOTS]), more(len(rows) - CLAIMED_SLOTS, "claimed")
+
+
+# A parked record and how many are drawn. Four, as the claimed row draws: both are a strip
+# under the ready list and a fifth of either pushes a ready row off the wall.
+PARKED_STATUS = "deferred"
+PARKED_SLOTS = 4
+
+
+def parked(reads: Mapping[str, Reading]) -> tuple[tuple[dict[str, str], ...], str]:
+    """Records somebody parked, and how many were not drawn.
+
+    **Nothing on the board drew one.** A deferred record is excluded from the phase counts,
+    from the claimed rows and from the ready set, and the only trace it left was the loop
+    note's `4 parked, not counted at a phase` - a number with no member named, which is the
+    same defect `basicly-5jkxqk` fixed one region over. So a person could park work from a
+    terminal and the wall would never show it again (basicly-arxhshr).
+
+    That also gives `record-resume` somewhere to be pressed. A verb whose surface does not
+    exist is the state `lane-kill` was in for a month.
+    """
+    units = reads["units"]
+    rows = [
+        {
+            "id": clip(str(row.get("id") or UNKNOWN), TITLE_MAX),
+            "phase": phase_of(row) or UNKNOWN,
+            "priority": str(row.get("priority") or UNKNOWN),
+            "title": clip(str(row.get("title") or UNKNOWN), READY_TITLE_WIDE),
+        }
+        for row in units.dicts
+        if str(row.get("status") or "") == PARKED_STATUS
+    ]
+    return tuple(rows[:PARKED_SLOTS]), more(len(rows) - PARKED_SLOTS, "parked")
 
 
 def _waiting_on(reads: Mapping[str, Reading], lanes: Sequence[Mapping[str, Any]]) -> str:
