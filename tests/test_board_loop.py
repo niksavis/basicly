@@ -150,11 +150,11 @@ def test_the_beat_is_the_producers_cadence_and_is_capped() -> None:
     bounded above whatever the document says, and an absent or null cadence falls back
     rather than guessing a number of its own.
     """
-    assert board_loop._beat(_reads("wall-v1.json", freshness={"cadence_s": 3.0})) == 3.0
+    assert board_loop.beat(_reads("wall-v1.json", freshness={"cadence_s": 3.0})) == 3.0
     capped = _reads("wall-v1.json", freshness={"cadence_s": 86400})
-    assert board_loop._beat(capped) == board_loop.BEAT_CAP_S
+    assert board_loop.beat(capped) == board_loop.BEAT_CAP_S
     for absent in ({"cadence_s": None}, {}, {"cadence_s": 0}):
-        assert board_loop._beat(_reads("wall-v1.json", freshness=absent)) == (
+        assert board_loop.beat(_reads("wall-v1.json", freshness=absent)) == (
             board_loop.BEAT_FALLBACK_S
         )
 
