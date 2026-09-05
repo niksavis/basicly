@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import (
+    board_advance,
     board_sections,
     board_serve,
     board_snapshot,
@@ -592,8 +593,18 @@ def document(
     """
     phase_map = phases(repo_root)
     session = session_facts(repo_root)
+    # A supervisor advances what its own selector picked, and this layer cannot know that
+    # selector - so its presence refuses the whole advance population rather than filtering
+    # it. The same read `lanes` below turns on (basicly-2no50w).
+    supervised = board_serve.live_holder(repo_root) is not None
     facts = board_snapshot.Facts(
         session=session,
+        advances=lambda markers: board_advance.asks(
+            loop_state.state_map(repo_root),
+            lanes=None,
+            supervised=supervised,
+            last_event=board_advance.newest(markers),
+        ),
         repo=repo_facts(repo_root),
         phases=phase_map,
         readiness=readiness(repo_root),

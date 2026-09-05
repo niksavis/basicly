@@ -54,7 +54,7 @@ from . import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
 SCHEMA = board_schema.VERSION
 
@@ -152,6 +152,10 @@ class Facts:
     phases: Mapping[str, str] | None = None
     readiness: board_sections.Readiness | None = None
     questions: Mapping[str, str] | None = None
+    # Called with the newest ledger stamp per record, and returning asks to append. Inverted
+    # because the two halves sit on opposite sides of C11: the stamps are this producer's own
+    # markers, and the advance decision needs the engine (basicly-2no50w).
+    advances: Callable[[Sequence[Any]], Sequence[Mapping[str, object]]] | None = None
 
 
 def _read_and_fold(repo_root: Path) -> tuple[Mapping[str, Any], list[Any], list[tuple]] | None:
@@ -300,6 +304,8 @@ def build_document(
             edge for edge in edges if edge[0] in drawn or edge[2] in drawn
         )
         document["asks"] = board_sections.asks(markers, now=moment, questions=known.questions)
+        if known.advances is not None:
+            document["asks"] = [*document["asks"], *known.advances(markers)]
         document["events"] = board_sections.events(markers, event_limit)
         if known.session is not None:
             document["session"] = _session(known.session, records)
