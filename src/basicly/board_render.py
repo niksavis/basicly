@@ -59,7 +59,7 @@ def context(
     lines, events_more = board_footer.events(reads)
     hist, priorities_more = board_footer.priorities(reads)
     agents, health_more = board_footer.health(reads)
-    gates, gates_note = board_footer.gates(reads)
+    gates, gates_note = board_footer.gates(reads, drawn)
     return {
         "age": drawn,
         "producer": board_wall.cell(reads["generator"], "producer", ("tool", "version")),

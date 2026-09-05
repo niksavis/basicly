@@ -19,7 +19,16 @@ from __future__ import annotations
 
 from basicly import board_footer, board_wall, config
 from tests.test_board_regions import _reads
-from tests.test_board_wall import REPO_ROOT, document, readings
+from tests.test_board_wall import REPO_ROOT, STAMPED, document, readings
+
+
+def _age(name: str = "wall-v1.json") -> board_wall.Age:
+    """The fixture's own age, so the gate lag is taken against the document not a clock.
+
+    `gates` reads `Age.generated_at` to say how far its verdict lags the page
+    (basicly-tyobdb); a clock read here would make the number move between runs.
+    """
+    return board_wall.age(document(name), STAMPED)
 
 
 def test_the_dependency_edge_count_is_read_out_of_the_object_the_schema_declares() -> None:
@@ -76,17 +85,20 @@ def test_a_failing_gate_set_names_the_failures_and_only_the_failures() -> None:
     Asserted as an exclusion as well as an inclusion, because the defect being deleted is the
     36 names - a token that named the passes too would satisfy an assertion about `pytest`.
     """
-    cell, caption = board_footer.gates(_reads("wall-v1.json"))
+    cell, caption = board_footer.gates(_reads("wall-v1.json"), _age())
     assert cell.value == "1 FAILING: pytest"
     assert cell.state is not None and cell.state.key == board_wall.FAIL
     assert "ruff" not in cell.value, "a passing check named itself on a wall"
-    assert caption == "mode full \N{MIDDLE DOT} recorded 2026-08-21T16:42:12Z"
+    assert caption == (
+        "mode full \N{MIDDLE DOT} recorded 2026-08-21T16:42:12Z"
+        " \N{MIDDLE DOT} taken 40s before this snapshot"
+    )
 
 
 def test_a_gate_set_that_wholly_passes_costs_one_word() -> None:
     """The principle, at the one place it reclaims 15% of the screen."""
     passing = {"passed": True, "checks": [{"name": "ruff", "status": "pass"}]}
-    cell, _ = board_footer.gates(_reads("wall-v1.json", gates=passing))
+    cell, _ = board_footer.gates(_reads("wall-v1.json", gates=passing), _age())
     assert cell.value == "GREEN"
     assert cell.state is not None and cell.state.key == board_wall.RENDERABLE
 
@@ -94,7 +106,9 @@ def test_a_gate_set_that_wholly_passes_costs_one_word() -> None:
 def test_a_check_that_did_not_run_is_its_own_exception_and_names_itself() -> None:
     """Not-run is not passing, and a green token over an unrun suite is the fail-open read."""
     checks = [{"name": "ruff", "status": "pass"}, {"name": "pytest", "status": "not_run"}]
-    cell, _ = board_footer.gates(_reads("wall-v1.json", gates={"passed": True, "checks": checks}))
+    cell, _ = board_footer.gates(
+        _reads("wall-v1.json", gates={"passed": True, "checks": checks}), _age()
+    )
     assert cell.value == "1 NOT RUN: pytest"
     assert cell.state is not None and cell.state.key == board_wall.ABSENT
 
@@ -102,7 +116,9 @@ def test_a_check_that_did_not_run_is_its_own_exception_and_names_itself() -> Non
 def test_a_gate_set_whose_failures_outrun_the_token_says_how_many_it_did_not_name() -> None:
     """The one arrangement that would put every name back on the wall: everything failed."""
     checks = [{"name": f"check-{n}", "status": "fail"} for n in range(9)]
-    cell, _ = board_footer.gates(_reads("wall-v1.json", gates={"passed": False, "checks": checks}))
+    cell, _ = board_footer.gates(
+        _reads("wall-v1.json", gates={"passed": False, "checks": checks}), _age()
+    )
     assert cell.value.startswith("9 FAILING: check-0")
     assert cell.value.endswith("+5 more checks")
     assert "check-4" not in cell.value
@@ -127,7 +143,7 @@ def test_a_section_the_producer_did_not_emit_reads_absent_rather_than_an_empty_r
     """Three readings, three absences, and each says so in a reader's own vocabulary."""
     reads = readings("no-phase-v1.json")
     absent = board_footer._NOT_IN_SNAPSHOT
-    assert board_footer.gates(reads)[0].value != absent, "the fixture emits gates"
+    assert board_footer.gates(reads, _age())[0].value != absent, "the fixture emits gates"
     assert board_footer.spend(reads).value == absent
     assert board_footer.health(reads)[0][0].value == absent
     for word in ("producer", "emitted", "section", "withheld"):
@@ -150,8 +166,8 @@ def test_the_gate_token_does_not_grow_with_the_check_count_at_all() -> None:
     why no check name can be painted over another one again. The tree's own longest name is the
     control - a token that still named a passing check would grow with it.
     """
-    few, _ = board_footer.gates(_reads("wall-v1.json"))
-    many, _ = board_footer.gates(readings("dense-v1.json"))
+    few, _ = board_footer.gates(_reads("wall-v1.json"), _age())
+    many, _ = board_footer.gates(readings("dense-v1.json"), _age("dense-v1.json"))
     assert len(document("dense-v1.json")["gates"]["checks"]) == 40, "the probe is blunt"
     assert few.value == many.value == "1 FAILING: pytest"
     longest = max((check.name for check in config.load_verify_config(REPO_ROOT).checks), key=len)

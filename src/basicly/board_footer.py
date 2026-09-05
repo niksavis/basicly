@@ -18,27 +18,31 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from . import board_fields
 from .board_wall import (
     ABSENT,
     BY_KEY,
     DOT,
     FAIL,
     RENDERABLE,
+    STALE,
     UNKNOWN,
     Cell,
     bar,
     clip,
     day,
+    elapsed,
     joined,
     more,
     number,
     numeric,
+    since,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from .board_wall import Reading
+    from .board_wall import Age, Reading
 
 # One line. A wall answers "is anything happening" and the newest event answers it; the two
 # behind it were a scrolling log at six metres, and the dropped count still says they exist.
@@ -78,6 +82,12 @@ _HEALTH_KEYS = ("runs", "score", "failure_rate", "drift")
 _STATUS_WORD = {FAIL: "fail", ABSENT: "not_run"}
 # What the gate token's caption spells, and the word it spells each key as.
 _GATE_CAPTION = {"mode": "mode", "recorded_at": "recorded"}
+
+# How far the verdict may lag the document before it stops standing for the tree in front of
+# the reader; a verify run is one to four minutes. Age is a proxy - what a reader wants is
+# whether it was taken at the head the page shows, and the artifact records no head
+# (basicly-1y9hb5).
+VERDICT_STALE_AFTER_S = 900.0
 
 # board_wall.ABSENT_TEXT names the schema's vocabulary; this module's own reading stays
 # reachable at board-snapshot.json, the sidecar `basicly board` writes beside the page.
@@ -159,13 +169,13 @@ def _verdict(rows: Sequence[Mapping[str, Any]], passed: object) -> tuple[str, st
     return ("GREEN", RENDERABLE) if passed is not False else ("FAILING", FAIL)
 
 
-def gates(reads: Mapping[str, Reading]) -> tuple[Cell, str]:
+def gates(reads: Mapping[str, Reading], drawn: Age) -> tuple[Cell, str]:
     """The whole gate set as one token, and the run that produced it beneath.
 
-    The caption is the mode and the stamp, because a token saying `GREEN` is worth nothing
-    without which suite said so and when. `gates` is an object carrying a `checks` array, not
-    an array section, so the list comes out of the fields: reading it as
-    :attr:`board_wall.Reading.rows` is how the edge count came back a zero.
+    The caption carries the mode, the stamp and **how far the verdict lags the document**: a
+    reader given `1 FAILING` beside `as of 5s ago` reads a 46-minute-old verdict as current
+    (basicly-tyobdb). `gates` is an object carrying a `checks` array, so the list comes out of
+    the fields; reading it as :attr:`board_wall.Reading.rows` is how the edge count read zero.
     """
     read = reads["gates"]
     if not read.drawn:
@@ -176,10 +186,26 @@ def gates(reads: Mapping[str, Reading]) -> tuple[Cell, str]:
         check for check in (checks if isinstance(checks, list) else []) if isinstance(check, dict)
     ]
     token, state = _verdict(rows, held.get("passed"))
-    caption = DOT.join(
-        f"{word} {held[key]}" for key, word in _GATE_CAPTION.items() if held.get(key)
-    )
+    # An unparseable document stamp yields no lag, never one off this reader's clock.
+    moment = board_fields.instant(drawn.generated_at)
+    lag = since(held.get("recorded_at"), moment) if moment is not None else None
+    if lag is not None and lag > VERDICT_STALE_AFTER_S:
+        # Out of the failing vocabulary into the stale one: this far behind, a live failure
+        # is a false alarm.
+        state = STALE
+    caption = DOT.join([
+        *(f"{word} {held[key]}" for key, word in _GATE_CAPTION.items() if held.get(key)),
+        *([_lag_phrase(lag)] if lag is not None else []),
+    ])
     return Cell("gates", token, BY_KEY[state]), clip(caption, LINE_MAX) if caption else UNKNOWN
+
+
+def _lag_phrase(lag: float) -> str:
+    """How far the verdict lags the document, taken against its own `generated_at`.
+
+    Never negative and not by a branch: `board_wall.since` clamps at zero.
+    """
+    return f"taken {elapsed(lag)} before this snapshot"
 
 
 def compact(value: object) -> str:
