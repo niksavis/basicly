@@ -599,6 +599,7 @@ declared_count = 1
 "basicly-uhiq" = "epic anchor: each of its four children shipped its own change and note; the epic itself changed no file and closed 2026-08-28 as complete, its rule carried forward by basicly-hnnmk9"
 "basicly-ibzr0f" = "test-only: the lane found basicly-gnpgf8 had already removed the labelled empty rows from a lane card, and added one regression test; no consumer surface changed"
 "basicly-xgk9v0" = "investigation only: the one defect it named, the absent lanes section, shipped under basicly-u6eeag with its own note; the remaining sections read a git-ignored store by a design basicly-y754k2 records, so no file of its declared scope changed"
+"basicly-vowpbar" = "duplicate, closed with no work: basicly-62h3x9 had carried a superset of its criteria since 2026-08-28, and this record closed the hour it was filed with no commit in its worktree"
 
 # The 145 closed records that declared a scope reaching a shipped surface and produced no
 # release note when the gate landed (2026-08-20). Measured over the whole tracker: 984

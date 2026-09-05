@@ -1,0 +1,9 @@
+# A duplicate, closed with no work (basicly-vowpbar).
+#
+# The record declared `src/basicly/board_actions.py` and three neighbours as its scope, so
+# `release-notes` judged it as owing a note once it closed. It shipped nothing: it duplicated
+# basicly-62h3x9, which had been open since 2026-08-28 with a superset of the same criteria,
+# and closed the hour it was filed. Its worktree was torn down with no commit in it.
+# Declared invisible in `[tool.release_notes.invisible]`, delta recorded here.
+[ratchet.release_notes]
+count_delta = 1
