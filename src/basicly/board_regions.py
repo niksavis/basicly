@@ -483,6 +483,7 @@ def _card(lane: Mapping[str, Any], titles: Mapping[str, str], moment: datetime) 
         _note_line(lane),
         _lane_cells(lane),
         working=live and bool(lane.get("note") or lane.get("tokens")),
+        ident=str(lane.get("id") or ""),
     )
 
 

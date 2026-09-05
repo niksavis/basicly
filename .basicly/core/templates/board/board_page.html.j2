@@ -354,6 +354,58 @@
         font-weight: 600;
         padding: 3px 12px;
       }
+      /* The kill form on a lane card. It borrows the `.act` input and button rules by
+         repeating only what differs: it sits at the card's foot, it is amber rather than
+         indigo because stopping work is not the ordinary action on a running lane, and its
+         one typed field is the reason, which the ledger keeps (basicly-x1h1dl5). */
+      .card .kill {
+        margin-top: 3px;
+      }
+      .card .kill summary {
+        color: var(--amber);
+        cursor: pointer;
+        font-size: 11px;
+      }
+      .card .kill form {
+        align-items: baseline;
+        display: flex;
+        gap: 6px;
+        margin-top: 3px;
+      }
+      .card .kill label {
+        color: var(--amber);
+        font-size: 11px;
+      }
+      .card .kill input {
+        background: var(--bg);
+        border: 1px solid var(--amber);
+        border-radius: 3px;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+        min-width: 0;
+        padding: 1px 4px;
+      }
+      .card .kill button {
+        background: var(--bg-sunk);
+        border: 1px solid var(--amber);
+        border-radius: 3px;
+        color: var(--amber);
+        cursor: pointer;
+        flex: 0 0 auto;
+        font-family: var(--sans);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 2px 9px;
+      }
+      /* No server to post to, so the operator is owed the line to type. */
+      .card .command {
+        color: var(--text-dim);
+        display: block;
+        font-family: var(--mono);
+        font-size: 11px;
+        margin-top: 4px;
+      }
       /* Where the CLI's own output lands, so a submission never navigates the wall away. */
       .acts iframe {
         background: var(--bg);
@@ -1293,6 +1345,44 @@
             <summary class="clip">{{ card.note }}</summary>
             <div class="full">{{ card.note }}</div>
           </details>
+{%- endif %}
+{#- The one verb a running lane offers, on the lane it stops. `lane-kill` was in the action
+    table from the start and had no surface: `board_asks.pending` draws a row per *ask*, so
+    it was pressable exactly when something else happened to be waiting (basicly-x1h1dl5).
+    Looked up by `card.ident` rather than by position - the cards are a bounded slice of the
+    lanes and a positional join would arm the wrong card. #}
+{%- set kill = kills.get(card.ident) %}
+{%- if kill and kill.token %}
+{#- Behind a summary, and that is geometry rather than taste. Drawn open, a form row per card
+    cost 52px to 104px on a page already 300px to 570px past its box with asks pending
+    (`check_render_overflow.py`, both lane fixtures, three widths). Collapsed, an idle card
+    pays one line; a card an operator is acting on pays the rest, which is the moment height
+    is worth spending. #}
+          <details class="kill">
+            <summary>stop this lane</summary>
+          <form method="post" action="{{ kill.route }}" target="{{ kill.frame }}">
+            <input type="hidden" name="token" value="{{ kill.token }}">
+            <input type="hidden" name="action" value="{{ kill.action }}">
+{%- for field in kill.fields %}
+{%- if field.typed %}
+            <label class="typed"
+              >{{ field.label }}
+              <input
+                name="{{ field.name }}"
+                size="{{ field.size }}"
+                autocomplete="off"
+                required
+              ></label
+            >
+{%- else %}
+            <input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
+{%- endif %}
+{%- endfor %}
+            <button type="submit">{{ kill.offer }}</button>
+          </form>
+          </details>
+{%- elif kill %}
+          <code class="command clip">{{ kill.command }}</code>
 {%- endif %}
         </div>
 {%- endfor %}

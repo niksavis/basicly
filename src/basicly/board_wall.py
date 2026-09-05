@@ -128,6 +128,7 @@ class Card:
     cells: tuple[Cell, ...] = ()
     # A live stream this beat; `state` answers only the worktree binding.
     working: bool = False
+    ident: str = ""
 
 
 @dataclass(frozen=True)
