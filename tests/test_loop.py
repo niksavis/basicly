@@ -291,19 +291,25 @@ def _never_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_a_halted_grant_refuses_the_interactive_dispatch(
+def test_a_halted_grant_does_not_refuse_the_interactive_dispatch(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The money defect: an exhausted grant still dispatched a metered agent.
+    """An exhausted grant dispatches, on purpose (basicly-hnnmk9.1).
 
     `policy.spend_status` is D3's one halt predicate, enforced at delegated approval, the
     supervised lane admission and decider delegation — and this path reached `runner.run`
     past all three. Observed live: basicly-jr0l's grant was spent 43599830/21000000 and a
-    `loop run` dispatched anyway (basicly-1th1).
+    It asserted the opposite under D3; the budget measures and never blocks now.
     """
     _ready_leaf(at, monkeypatch)
     _pin_runner(monkeypatch, "claude")
-    _never_runs(monkeypatch)
+    spawned: list[str] = []
+
+    def _run(spec, *_a, **_k):
+        spawned.append(spec.name)
+        return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
+
+    monkeypatch.setattr(runner, "run", _run)
     monkeypatch.setattr(
         loop.policy,
         "spend_status",
@@ -317,10 +323,9 @@ def test_a_halted_grant_refuses_the_interactive_dispatch(
 
     result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
 
-    assert result.blocked
-    assert result.needs_input == "grant"
-    assert "refused before it started" in result.detail
-    assert "500/100 tokens" in result.detail, "the halt's own numbers must reach the operator"
+    assert spawned == ["claude"], "a spent budget still refused the dispatch"
+    assert result.needs_input != "grant"
+    assert "refused before it started" not in result.detail
 
 
 def test_a_dispatch_with_no_session_root_is_ungated_as_before(
@@ -2324,7 +2329,7 @@ def test_a_failed_validation_repairs_against_the_brief_then_re_lands_the_commit(
     monkeypatch.setattr(loop.merge, "is_ancestor", lambda *_a: False)  # the repair committed
     reland = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
 
-    assert roots == ["root", "root"]
+    assert roots == [], "spend is consulted on the repair path again"
     assert [call["cwd"] for call in seen] == [tmp_path / "wt", tmp_path]
     assert "off-by-one" in seen[0]["prompt"] and "shell injection" in seen[0]["prompt"]
     assert seen[1]["prompt"] == dispatch_brief.validate_prompt("i")
@@ -3860,10 +3865,13 @@ def test_a_session_that_named_no_root_reads_no_ledger(
     assert seen == []
 
 
-def test_a_halted_grant_pays_for_no_retrospective(
+def test_a_halted_grant_still_pays_for_a_retrospective(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """D3's spend halt, asked before the claim so the signal survives for the next pass."""
+    """The retrospective is not a spend decision (basicly-hnnmk9.1).
+
+    D3 held the signal for a pass that never came; it is acted on now.
+    """
     at(_state("validate", gates=_validate_gates(failed=True)))
     seen = _retro_dispatch(monkeypatch, tmp_path)
     _ledger(monkeypatch, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3)
@@ -3877,4 +3885,5 @@ def test_a_halted_grant_pays_for_no_retrospective(
 
     loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
 
-    assert seen == [] and claimed == []
+    assert claimed, "a spent budget still held the retrospective back"
+    assert seen, "and the signal was never dispatched"

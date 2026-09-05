@@ -180,8 +180,7 @@ def record_refusal[T: Unit](
     visibly done work and the held ones follow on a later pass with no human involved,
     so queuing there would page an operator about a bound working as designed. A pass
     that starts nothing is the one an attached client would otherwise read as "no ready
-    lanes", which is the silent shape ``record_dispatch_halt`` and
-    ``record_pass_refusal`` exist to prevent.
+    lanes", which is the silent shape ``record_dispatch_halt`` exists to prevent.
 
     Idempotent per (issue, kind, question), so a session that keeps refusing re-enqueues
     the one item; the counts live in the detail, which is not part of the id.

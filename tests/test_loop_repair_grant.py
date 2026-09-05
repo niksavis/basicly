@@ -1,4 +1,4 @@
-"""Whether a repair is allowed to spawn at all (basicly-dbbh).
+"""A repair spawns whatever the grant has spent (basicly-dbbh, basicly-hnnmk9.1).
 
 The third split of the repair tests, along the responsibility the module-size gate asked
 for rather than a `_part2`:
@@ -6,7 +6,12 @@ for rather than a `_part2`:
 - `test_loop_repair.py` — what a failed gate briefs, and what the repair does with it.
 - `test_loop_repair_spend.py` — the rework-count arithmetic underneath the per-gate
   ceiling, asserted without driving the engine.
-- this module — D3's grant halt admitting or refusing the dispatch, which does drive it.
+- this module — that spend does *not* admit or refuse the dispatch, which does drive it.
+
+It asserted the opposite until 2026-09-05. D3 halted a repair on the grant's ceiling, and
+the owner ruled that the budget measures and never blocks: the harm measured on
+basicly-ncday7 was a lane stopped mid-work whose unreviewed diff then landed. Inverted
+rather than deleted, so the gate cannot come back unnoticed.
 
 `at` and the tracker stub are redeclared because an autouse fixture does not reach another
 module and `at` is module-local; the rest is imported from the sibling.
@@ -62,13 +67,13 @@ def _status(*, halted: bool) -> policy.SpendStatus:
     )
 
 
-def test_a_repair_is_refused_when_the_grant_cannot_cover_it(
+def test_a_repair_dispatches_even_when_the_grant_is_spent(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A repair is a metered dispatch, so D3's halt binds on it (observed on basicly-ef7t).
+    """A spent grant used to refuse this, and a refused repair is work left unfinished.
 
-    The brief is consumed on read, so a refusal that ate it would turn "no budget" into
-    "the failure is forgotten" — hence the last assertion.
+    The brief is consumed on read, so the last assertion still holds: whatever happens,
+    the failure must not be forgotten.
     """
     cwd = _worktree(tmp_path, monkeypatch)
     at(_state(has_children=True))
@@ -84,16 +89,15 @@ def test_a_repair_is_refused_when_the_grant_cannot_cover_it(
 
     second = loop.advance(tmp_path, "i", config=CONFIG, grant_root="epic")
 
-    assert seen == [], "no runner may be spawned once the grant is spent"
-    assert second.blocked and second.needs_input == "grant"
-    assert "315547342/300000000" in second.detail
-    assert (cwd / repair_brief.REPAIR_BRIEF_FILE).is_file(), "the brief survives a refusal"
+    assert seen, "a spent grant still refused to spawn the repair"
+    assert second.needs_input != "grant"
+    assert "repaired i.1 in place" in second.detail
 
 
 def test_a_repair_dispatches_normally_while_the_grant_covers_it(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The false-positive case, with `grant_root` set so the guard really runs.
+    """The covered case, unchanged: a repair under a live budget dispatches as it always did.
 
     A refusal that never fires looks identical to one correctly silent, and this one also
     caught a first attempt that reused the composite refusal and so re-admitted a repair

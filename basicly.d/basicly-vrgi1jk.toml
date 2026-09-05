@@ -1,0 +1,29 @@
+# Two test modules rebaselined, because the change inverts what they assert (basicly-vrgi1jk).
+#
+# The owner ruled on 2026-09-05 that the token budget measures and never blocks, so seven
+# `spend.halted` refusals became reports. The tests that asserted each refusal now assert the
+# dispatch, and asserting that work *happened* costs more than asserting it did not:
+#
+#   tests/test_loop.py     39324 -> 39420   +96   a seven-line `runner.run` stub, because a
+#                                                 dispatch that must occur has to be observed;
+#                                                 the refusal case proved itself by stubbing
+#                                                 `runner.run` to fail, which needs no result
+#   tests/test_policy.py   36272 -> 36419  +147   three inverted assertions carrying their own
+#                                                 failure messages, and a docstring recording
+#                                                 the measured harm each one now guards
+#
+# No narration was added to either. `tests/test_supervise.py` fell by more than both together
+# once `test_the_queued_pass_refusal_carries_whatever_the_binding_says` went with the function
+# it tested, so the tree's own total moves down.
+[ratchet.module_size]
+rebaseline_reason = "the owner ruled on 2026-09-05 that the token budget measures and never blocks, so seven spend.halted refusals became reports and the tests that asserted each refusal now assert the dispatch; observing that work happened costs a runner stub in test_loop and three assertions carrying their own messages in test_policy, and no narration was added to either"
+
+[ratchet.module_size.rebaselined]
+"tests/test_loop.py" = 39420
+"tests/test_policy.py" = 36419
+
+# One `S105` suppression fell with the code that carried it: the queue question the ungranted
+# refusal enqueued read as a hardcoded password to bandit. Banked rather than left licensing
+# regrowth for free.
+[ratchet.noqa_debt.frozen]
+S105 = -1

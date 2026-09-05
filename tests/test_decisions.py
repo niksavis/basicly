@@ -780,13 +780,13 @@ def test_decider_dispatches_a_confined_spec_not_the_selected_one(
     assert dispatched[0].deny_tools, "the decider was dispatched unconfined"
 
 
-def test_decider_abstains_when_the_grant_budget_is_spent(
+def test_the_decider_still_decides_when_the_grant_budget_is_spent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """D3 halts delegated decisions on the same ceiling as dispatch (basicly-kjc5.23).
+    """A budget running out is not an answer (basicly-hnnmk9.1).
 
-    The halt lives at this entry point rather than at each caller, so a human's
-    ``loop decide`` and the supervisor's autonomous pass are bound by one rule.
+    It abstained here, so an exhausted budget sent every queued decision back to a human -
+    which is a spend fact deciding a work question. The owner ruled that out on 2026-09-05.
     """
     fake, item = _decider_setup(monkeypatch, tmp_path, '{"decision": "postgres", "abstain": false}')
     fake.comments.setdefault("b-epic", []).append("[harness-policy] grant level=L2 budget=100")
@@ -797,19 +797,12 @@ def test_decider_abstains_when_the_grant_budget_is_spent(
             agent="t", handoff=False, returncode=0, duration_s=1.0, command=("t",), tokens=100
         ),
     )
-    monkeypatch.setattr(
-        decisions.runner,
-        "run",
-        lambda *_a, **_k: pytest.fail("must not delegate past the spend ceiling"),
-    )
-
     outcome = decisions.invoke_decider(tmp_path, item.decision_id, "b-epic")
 
-    assert isinstance(outcome, decisions.DeciderVerdict)
-    assert outcome.abstain is True
-    assert "token_budget spent" in outcome.rationale
-    stored = decisions.get(tmp_path, item.decision_id)
-    assert stored is not None and stored.pending  # still the human's to answer
+    assert isinstance(outcome, decisions.DecisionItem), (
+        "a spent budget abstained and sent the decision back to a human"
+    )
+    assert outcome.answer == "postgres", "the decider's own answer is what comes back"
 
 
 def test_decider_runs_while_the_grant_is_inside_its_budget(

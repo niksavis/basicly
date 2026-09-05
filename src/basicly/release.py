@@ -672,9 +672,8 @@ def autonomy_refusal(
         return f"no active autonomy grant on {root_issue}; a release needs L3"
     if grant.level != "L3":
         return f"grant on {root_issue} is {grant.level}; a release needs L3"
-    spend = policy.spend_status(repo_root, root_issue, grant=grant)
-    if spend.halted:
-        return f"grant on {root_issue} is past its spend ceiling: {spend.detail}"
+    # No spend term: a release is refused for its level and its lights-out preconditions,
+    # never for what the session cost (basicly-hnnmk9.1).
     violations = policy.lights_out_violations(
         repo_root,
         root_issue,

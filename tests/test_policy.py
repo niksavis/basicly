@@ -1037,10 +1037,14 @@ def test_no_grant_originates_nothing(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     assert not verdict.allowed and "no active grant on root" in verdict.reason
 
 
-def test_a_spend_halted_grant_originates_nothing(
+def test_a_spend_halted_grant_still_originates_a_proposal(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """D3's one halt predicate reaches the proposer too — a proposal costs real tokens."""
+    """Spend is not a term in a proposal any more (basicly-hnnmk9.1).
+
+    It refused here, so a spent budget stopped the loop originating a work type or a
+    child plan - a spend fact deciding a work question.
+    """
     fake = _FakeBr()
     _install(monkeypatch, fake)
     fake.comments.append("[harness-policy] grant level=L2 budget=100")
@@ -1051,8 +1055,8 @@ def test_a_spend_halted_grant_originates_nothing(
 
     verdict = policy.proposal_delegated(tmp_path, "root", "children", "root")
 
-    assert not verdict.allowed
-    assert "150/100 tokens" in verdict.reason
+    assert verdict.allowed, "a spent budget no longer stops a proposal being originated"
+    assert verdict.level == "L2", "and it is still attributed to the grant that allowed it"
 
 
 def test_a_grant_originates_nothing_outside_its_own_session(
@@ -1077,10 +1081,14 @@ def test_an_unknown_proposal_kind_is_loud(monkeypatch: pytest.MonkeyPatch, tmp_p
         policy.proposal_delegated(tmp_path, "i", "work-type", "i")
 
 
-def test_grant_spend_halt_drops_delegation_to_human(
+def test_a_spent_budget_still_approves_a_checkpoint_its_level_covers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Run-record spend at the budget refuses delegation (human-only until re-granted)."""
+    """The measured harm this change exists to retire (basicly-hnnmk9.1, harm 2).
+
+    A spent budget revoked the delegation, and two ships jammed on merged code.
+    The level still governs; what it cost does not.
+    """
     fake = _FakeBr()
     _install(monkeypatch, fake)
     fake.comments.append("[harness-policy] grant level=L2 budget=100")
@@ -1093,8 +1101,9 @@ def test_grant_spend_halt_drops_delegation_to_human(
     result = policy.approve_checkpoint_guarded(
         tmp_path, "root", "classify", interactive=False, grant_root="root"
     )
-    assert result.status == "challenge"
-    assert not policy.checkpoint_approved(tmp_path, "root", "classify")
+    assert result.status == "approved", "a spent budget returned the checkpoint to a human"
+    assert policy.checkpoint_approved(tmp_path, "root", "classify")
+    assert "150/100 tokens" in result.detail, "and the figure is reported rather than dropped"
 
 
 def test_spend_status_is_the_one_halt_predicate(
@@ -1602,7 +1611,7 @@ def test_a_challenge_with_no_grant_carries_no_reason(
     assert result.detail == ""
 
 
-def test_a_spend_halted_grant_says_so_on_the_challenge(
+def test_a_spend_halted_grant_says_so_on_the_approval(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A halt is the other silent decline: it quotes spend_status's own wording."""
@@ -1621,8 +1630,8 @@ def test_a_spend_halted_grant_says_so_on_the_challenge(
         tmp_path, "root", "classify", interactive=False, grant_root="root"
     )
 
-    assert result.status == "challenge"
-    assert "the active L2 grant covers classify but declined it" in result.detail
+    assert result.status == "approved", "spend no longer declines a covered checkpoint"
+    assert "150/100 tokens" in result.detail, "the figure travels on the approval instead"
     assert "token_budget spent (150/100 tokens" in result.detail
 
 
