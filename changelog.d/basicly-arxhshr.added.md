@@ -1,0 +1,1 @@
+- A record can be parked and brought back from the board. Every ready row carries a `park it` control that runs `basicly tracker write -- update <id> --status deferred`, and a new `parked` strip names the deferred records the page previously reported only as a count, each with a `resume it` control beside it. The board still cannot create or reopen a record.

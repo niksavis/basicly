@@ -840,6 +840,52 @@
       .ready col.id {
         width: 158px;
       }
+      .ready col.act {
+        width: 62px;
+      }
+      /* Quiet on purpose. Twenty of these down a column must not outrank the titles beside
+         them, so the control is text-weight until a pointer is on it. */
+      .ready td.act {
+        text-align: right;
+      }
+      .ready td.act button,
+      .parked button {
+        background: none;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        color: var(--text-dim);
+        cursor: pointer;
+        font-family: var(--sans);
+        font-size: 12px;
+        padding: 0 5px;
+      }
+      .ready td.act button:hover,
+      .parked button:hover {
+        border-color: var(--border-lit);
+        color: var(--text);
+      }
+      .parked {
+        align-items: baseline;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 14px;
+        margin-top: 5px;
+      }
+      .parked .one {
+        font-family: var(--mono);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .parked .ident {
+        color: var(--indigo);
+      }
+      .parked .pri,
+      .parked .at {
+        color: var(--text-dim);
+      }
+      .parked form {
+        display: inline;
+      }
       .ready .pri {
         color: var(--amber);
       }
@@ -1391,10 +1437,13 @@
       <section class="region ready framed">
         <h2>next up{% if ready.more %} — {{ ready.more }}{% endif %}</h2>
         <table>
-          <colgroup><col class="pri" /><col class="id" /><col /></colgroup>
+{#- A fourth column, and that is the whole reason this control fits: the ready list runs to
+    twenty rows at 1920, so a row *under* each one would cost twenty lines on a page already
+    past its box. A column costs width, which this table has (basicly-arxhshr). #}
+          <colgroup><col class="pri" /><col class="id" /><col /><col class="act" /></colgroup>
 {%- for group in ready.groups %}
           <tr class="feature">
-            <td colspan="3">
+            <td colspan="4">
               <div class="heading">
                 <span class="name clip">{{ group.name }}</span>
                 <span class="count">{{ group.count }} ready</span>
@@ -1406,10 +1455,53 @@
             <td class="pri">{{ item.priority }}</td>
             <td class="id clip">{{ item.ident }}</td>
             <td class="clip">{{ item.title }}</td>
+            <td class="act">
+{%- set park = parking.get(item.ident) %}
+{%- if park and park.token %}
+              <form method="post" action="{{ park.route }}" target="{{ park.frame }}">
+                <input type="hidden" name="token" value="{{ park.token }}">
+                <input type="hidden" name="action" value="{{ park.action }}">
+{%- for field in park.fields %}
+                <input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
+{%- endfor %}
+                <button type="submit">{{ park.offer }}</button>
+              </form>
+{%- endif %}
+            </td>
           </tr>
 {%- endfor %}
 {%- endfor %}
         </table>
+{#- Parked work. Nothing on this page drew a deferred record: it is out of the phase counts,
+    out of the claimed rows and out of the ready set, so the only trace was a bare number in
+    the loop note. A count with no member named is a count nobody can act on - the same
+    finding as basicly-5jkxqk one region over (basicly-arxhshr). #}
+{%- if parked %}
+        <div class="parked">
+{#- A wrapping line and not a row apiece. Four block rows cost 104px and took five rows off
+    the ready list at 1440x900 - measured - and five ready titles are worth more to a reader
+    than four parked ones. The id, the phase and the way back are what a person acts on. #}
+          <span class="label">parked{% if parked_more %} — {{ parked_more }}{% endif %}</span>
+{%- for row in parked %}
+          <span class="one">
+            <span class="pri">{{ row.priority }}</span>
+            <span class="ident">{{ row.id }}</span>
+            <span class="at">{{ row.phase }}</span>
+{%- set back = parking.get(row.id) %}
+{%- if back and back.token %}
+            <form method="post" action="{{ back.route }}" target="{{ back.frame }}">
+              <input type="hidden" name="token" value="{{ back.token }}">
+              <input type="hidden" name="action" value="{{ back.action }}">
+{%- for field in back.fields %}
+              <input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
+{%- endfor %}
+              <button type="submit">{{ back.offer }}</button>
+            </form>
+{%- endif %}
+          </span>
+{%- endfor %}
+        </div>
+{%- endif %}
 {%- if ready.note %}
         <p class="note state-{{ ready.state.key }}">
           {{ ready.note }}

@@ -48,18 +48,20 @@ def context(
     now: datetime,
     *,
     viewport: tuple[float | None, float | None] = (None, None),
-    acts: tuple[Sequence[Mapping[str, Any]], int, Mapping[str, Mapping[str, Any]]] = (
-        (),
-        0,
-        {},
-    ),
+    acts: tuple[
+        Sequence[Mapping[str, Any]],
+        int,
+        Mapping[str, Mapping[str, Any]],
+        Mapping[str, Mapping[str, Any]],
+    ] = ((), 0, {}, {}),
 ) -> dict[str, Any]:
     """Every region of the wall, keyed as the template names it.
 
     The readings are derived once and handed to every region, so the verdict's inventory is
     the only inventory a region can draw from. *viewport* is board_regions.next_up's own
     (height, width) and *acts* is :mod:`basicly.board_asks`' whole output - its rows, what
-    it dropped, and a kill form per running lane keyed by lane id. This layer neither reads
+    it dropped, a kill form per running lane and a park-or-resume form per record, the last
+    two keyed by the id of what they act on. This layer neither reads
     nor guesses either, it carries what its caller gave it (basicly-ffm2yp). Each arrives as
     one tuple because the arity ratchet counts arguments, and the forms arrive as data so
     every string of them is drawn through the autoescape.
@@ -71,6 +73,7 @@ def context(
     _, backlog_phases_note = board_loop.backlog_phases(reads)
     cards, flight_more, flight_note = board_regions.flight(reads, now=now)
     claimed_rows, claimed_more = board_regions.claimed(reads)
+    parked_rows, parked_more = board_regions.parked(reads)
     lines, events_more = board_footer.events(reads)
     hist, priorities_more = board_footer.priorities(reads)
     agents, health_more = board_footer.health(reads)
@@ -93,6 +96,7 @@ def context(
         "acts_more": more(acts[1], "asks"),
         # Keyed by lane id, so the card that draws a lane finds its own form and no other.
         "kills": acts[2],
+        "parking": acts[3],
         # The workflow drawn, which replaced first a histogram and then a pass row
         # (basicly-6c97zx). `board_loop.loop` is still called for its note and verdict,
         # which no other region carries.
@@ -108,6 +112,10 @@ def context(
         # record it meant (basicly-5jkxqk).
         "claimed": claimed_rows,
         "claimed_more": claimed_more,
+        # Parked work, which no region drew at all: a deferred record is out of the phase
+        # counts, the claimed rows and the ready set (basicly-arxhshr).
+        "parked": parked_rows,
+        "parked_more": parked_more,
         # The ready list is handed the shape the running row left it, which is the one place
         # the layout's two states have to agree with the model's two capacities.
         # The list gives up rows to the `acts` region: a decision the factory is stopped
@@ -119,6 +127,7 @@ def context(
             viewport_width=viewport[1],
             reserved=board_regions.acts_reserve(len(acts[0]))
             + board_regions.claimed_reserve(len(claimed_rows))
+            + board_regions.parked_reserve(len(parked_rows))
             + board_regions.QUEUE_PX,
         ),
         "backlog": board_footer.backlog(reads),
