@@ -214,6 +214,7 @@ def test_the_backlog_and_the_ask_pin_the_frozen_corpus(board_repo: Path) -> None
         "active": FIXTURE_TOTAL - FIXTURE_CLOSED,
         "in_progress": FIXTURE_IN_PROGRESS,
         "closed": FIXTURE_CLOSED,
+        "closed_today": 0,
         "by_priority": {"P0": 1, "P1": 2, "P2": 2, "P3": 1},
     }
     assert not {"ready", "blocked"} & set(document["backlog"])

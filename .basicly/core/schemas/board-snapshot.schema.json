@@ -514,6 +514,11 @@
           "type": "integer",
           "minimum": 0
         },
+        "closed_today": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Distinct items the producer closed on the day this document is dated, which is the one figure that answers whether the work is moving rather than how big the pile is. A counted figure and never an event row: the events tail is capped at 50, a day's closes can exceed that cap, and the cap is the contract. Dated against this document's own generated_at, so a page opened after midnight does not read the producer's yesterday as an empty today. Absent means the producer does not measure it, which a consumer must not draw as nought; present and 0 is a measured day on which nothing closed. Never above closed, because an item must still be closed to be counted."
+        },
         "by_priority": {
           "type": "object",
           "description": "Count per priority label, the producer's own labels as keys. A map rather than fixed properties because priority vocabularies differ between harnesses and a fixed set would silently drop a label.",

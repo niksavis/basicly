@@ -17,6 +17,7 @@ that rule is enforced in one place and consumed in seven (basicly-y754k2).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
 from . import board_fields
@@ -25,12 +26,16 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
     from datetime import datetime
 
-# module-size-waiver: cost(basicly-k6tpep.1): 4416 of 4000 tokens. `lanes[].state` and the
-# two keys that date and explain it added 432: the closed set this layer bounds the wire
-# with, three fields, and `_standing`. The nameable cut is the one `board_facts` and
-# `board_regions` already name in their own waivers - `LaneFacts`, `lanes` and `_standing`
-# into `board_lane.py` - and it needs a line in `.importlinter`, whose entries leave no
-# module unlisted. No prose was cut to pay for this; the density share is waived already.
+# module-size-waiver: cost(basicly-k6tpep.1): 6217 of 4000 tokens. It was 4416 when
+# `lanes[].state` and the two keys that date and explain it added 432: the closed set this
+# layer bounds the wire with, three fields, and `_standing`. basicly-w6vbw61 added the rest -
+# `backlog`, which `board_snapshot` held while this module's own docstring claimed every
+# section reducer, plus the two the throughput figure needs. That move is what kept
+# `board_snapshot` under its own cap and it belongs here on the docstring's own rule. The
+# nameable cut is still the one `board_facts` and `board_regions` name in their waivers -
+# `LaneFacts`, `lanes` and `_standing` into `board_lane.py` - and it needs a line in
+# `.importlinter`, whose entries leave no module unlisted. No prose was cut to pay for either;
+# the density share is waived already.
 
 # The separator a wait id uses to carry its subject, read only by :func:`asks`.
 _SUBJECT_SEP = "#wait-"
@@ -41,6 +46,15 @@ _SUBJECT_SEP = "#wait-"
 # schema is the contract; `tests/test_board_facts.py` asserts the three agree, because three
 # spellings of one closed set is exactly the drift a shipped consumer refuses a document for.
 LANE_STATES = frozenset({"queued", "running", "waits-to-land", "landing", "refused", "parked"})
+
+# The status a record reaches when its work is done. The kit's vocabulary, spelled here
+# because this layer counts records by it and `board_snapshot` cuts the active population
+# with it, and two spellings of one status are how two counts come to disagree.
+CLOSED_STATUS = "closed"
+
+# The status a record holds while somebody is working it. Counted apart from the rest
+# because "how much is moving" and "how much is left" are different questions.
+ACTIVE_STATUS = "in_progress"
 
 
 @dataclass(frozen=True)
@@ -329,6 +343,100 @@ def units(
     return rows
 
 
+def backlog(
+    live: Sequence[Any],
+    readiness: Readiness | None,
+    closings: Mapping[str, str],
+    moment: datetime,
+) -> dict[str, object]:
+    """The status tally, a count per priority label, the caller's two set sizes, and today's.
+
+    ``ready`` and ``blocked`` are ``len`` over the sets *readiness* carries, which is counting
+    a supplied answer rather than deriving one - the tracker's ready walk stays the only walk.
+
+    ``closed_today`` is dated against *moment*, the instant this document is stamped with, so
+    a page opened after midnight reports the producer's day and never the reader's.
+    """
+    counts: dict[str, int] = {}
+    priorities: dict[str, int] = {}
+    for state in live:
+        counts[state.status or ""] = counts.get(state.status or "", 0) + 1
+        priority = state.fields.get("priority")
+        if isinstance(priority, int) and not isinstance(priority, bool):
+            priorities[f"P{priority}"] = priorities.get(f"P{priority}", 0) + 1
+    closed = counts.get(CLOSED_STATUS, 0)
+    section: dict[str, object] = {
+        "total": len(live),
+        "active": len(live) - closed,
+        "in_progress": counts.get(ACTIVE_STATUS, 0),
+        "closed": closed,
+        "closed_today": closed_on(live, closings, moment),
+        "by_priority": priorities,
+    }
+    if readiness is not None:
+        section["ready"] = len(readiness.ready)
+        section["blocked"] = len(readiness.blocked)
+    return section
+
+
+def _day(moment: datetime) -> str:
+    """*moment* as its UTC calendar day, the one date rule this module counts by.
+
+    Normalised to UTC before the date is taken, which is `board_fields.stamp`'s own rule: a
+    stamp carrying a numeric offset names a different day in its own zone, and a figure that
+    changed meaning with the writer's zone would be uncountable.
+    """
+    return moment.astimezone(UTC).date().isoformat()
+
+
+def closing_days(kit: Any, collected: Iterable[Any]) -> dict[str, str]:
+    """Each record's UTC day of the most recent event that closed it, keyed by record.
+
+    **A pass over the caller's already-read events, never a read of its own**, which is
+    :func:`edge_triples`' rule and the whole distance between this producer and `observe()`'s
+    93 folds. It answers the one question the fold cannot: :class:`RecordState` carries a
+    status and no date for it, so a folded record says a unit is closed and never when.
+
+    ``ts`` is the only source there is. The tracker's own ``closed_at`` field looks like one
+    and is not: it was imported from the external tracker, and on this ledger 663 closed
+    records carry it while **0 of the 20 closed on 2026-09-05** do, so a figure read off it
+    would report the harness era as a factory that closes nothing [measured 2026-09-05].
+
+    Dated per record and not counted here, because the day to count against is the
+    document's own ``generated_at`` and only :func:`basicly.board_snapshot.build_document`
+    holds that instant. A close whose stamp will not parse is in no day at all.
+    """
+    days: dict[str, str] = {}
+    for event in kit.events.canonical_order(collected):
+        if event.kind != kit.events.KIND_STATUS:
+            continue
+        if event.payload.get("status") != CLOSED_STATUS:
+            continue
+        at = board_fields.instant(str(event.ts))
+        if at is not None:
+            days[event.record] = _day(at)
+    return days
+
+
+def closed_on(live: Iterable[Any], days: Mapping[str, str], moment: datetime) -> int:
+    """How many of *live* the log closed on *moment*'s UTC day.
+
+    **The throughput figure, and it is a count rather than an event row.** The events tail is
+    capped at 50 by contract - "an unbounded event list is how a derived, disposable document
+    turns into the second source of truth this design refuses" - and a day's closes can
+    exceed that cap, so lengthening the tail could never carry this (basicly-w6vbw61).
+
+    Both halves are required, and that is what keeps the figure at or below ``closed``. A
+    record must still *be* closed, so one closed this morning and reopened this afternoon is
+    not counted; and its latest close must fall on the day, so a record closed last week is
+    not. A tombstoned record reaches neither, because *live* has already dropped it.
+    """
+    day = _day(moment)
+    return sum(
+        1 for state in live if state.status == CLOSED_STATUS and days.get(state.record) == day
+    )
+
+
 def edge_triples(kit: Any, collected: Iterable[Any]) -> list[tuple[str, str, str]]:
     """Every edge the log still asserts, as ``(source, kind, target)``, last statement wins.
 
@@ -379,6 +487,13 @@ def events(markers: Sequence[board_fields.Marker], limit: int) -> list[dict[str,
 
     The family is the event kind, which is where the whole roster is used and why all 12 are
     parsed. ``text`` is the header's fields re-rendered, never the body.
+
+    **So no row here can ever report a lifecycle change.** ``kind`` is a marker family, and a
+    status change writes no marker - it is a ledger event. A consumer reading this tail for
+    throughput therefore found nothing on a day twenty records closed [measured 2026-09-05];
+    :func:`closed_on` is
+    the figure that answers it, and it is counted rather than listed because this tail is
+    capped at 50 and a day's closes can exceed the cap (basicly-w6vbw61).
     """
     rows = []
     for row in markers[-limit:]:
