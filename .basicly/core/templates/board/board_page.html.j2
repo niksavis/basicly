@@ -617,6 +617,69 @@
         min-width: 0;
       }
 
+      /* --- the queue: parallel or sequential, off the edges the footer counted ---------
+         Three lines where a bare `DEP EDGES 846` was. The bands answer the owner's own
+         question at a glance - 261 with nothing behind them against 32 that wait is a
+         different plan from the one `BLOCKED 56` suggests. */
+      .queue .bands {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+      }
+      .queue .band {
+        align-items: baseline;
+        display: flex;
+        gap: 6px;
+      }
+      .queue .n {
+        color: var(--text-bright);
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 700;
+      }
+      .queue .what {
+        color: var(--text-dim);
+        font-size: 12px;
+      }
+      .queue .track {
+        width: 60px;
+      }
+      .queue .unblocks,
+      .queue .chain {
+        align-items: baseline;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+        margin-top: 2px;
+      }
+      /* An id and, where it has one, the count of what waits on it. `--indigo` because every
+         other id on this page is that colour and a reader follows them by hue. */
+      .queue .who {
+        color: var(--indigo);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+      .queue .who .n {
+        color: var(--amber);
+        font-size: 13px;
+        margin-left: 4px;
+      }
+      /* The chain reads as a sequence, so each hop but the first is announced. */
+      .queue .chain .who + .who::before {
+        color: var(--text-dim);
+        content: "\2192 ";
+        margin-right: 3px;
+      }
+      /* On a wall shorter than 1080 the chain line goes and the note keeps its figure: the
+         ready list is already at its one-row floor there, so the height has to come from a
+         line rather than from a row. The chain is the least actionable of the three - `the
+         chain runs 4 deep` in the note is the part a reader acts on. */
+      @media (max-height: 1000px) {
+        .queue .chain {
+          display: none;
+        }
+      }
+
       /* --- flight: one card per running lane, and one line when there are none --------- */
       /* A card is the height of what it says and the rows stack from the top. Rows that shared
          the region's height stretched a 90px card over 350px, which is the dead space this
@@ -1356,6 +1419,52 @@
           </div>
 {%- endfor %}
         </div>
+{#- The shape of what is waiting. `DEP EDGES 846` beside `BLOCKED 56` was on this page and
+    settled nothing; these three lines answer "is the work parallel or sequential", "what
+    unblocks the most" and "how long is the worst chain" (basicly-pck9fx). #}
+        <div class="strip queue">
+          <span class="label">the queue</span>
+{%- if queue.bands %}
+          <div class="bands">
+{%- for band in queue.bands %}
+            <span class="band" title="{{ band.detail }}"
+              ><span class="n">{{ band.count }}</span
+              ><span class="what">{{ band.label }}</span
+{%- if band.share %}
+              ><span class="track"
+                ><span class="fill" style="width: {{ band.share.width }}%"></span
+              ></span
+{%- endif %}
+            ></span>
+{%- endfor %}
+          </div>
+{%- endif %}
+{%- if queue.blockers %}
+          <div class="unblocks">
+            <span class="what">unblocks most</span>
+{%- for blocker in queue.blockers %}
+            <span class="who"
+              >{{ blocker.ident }}<span class="n">{{ blocker.blocking }}</span></span
+            >
+{%- endfor %}
+{%- if queue.dropped %}
+            <span class="what">{{ queue.dropped }}</span>
+{%- endif %}
+          </div>
+{%- endif %}
+{%- if queue.chain|length > 1 %}
+          <div class="chain">
+            <span class="what">longest</span>
+{%- for node in queue.chain %}
+            <span class="who">{{ node }}</span>
+{%- endfor %}
+          </div>
+{%- endif %}
+{%- if queue.note %}
+          <span class="note clip">{{ queue.note }}</span>
+{%- endif %}
+        </div>
+
         <div class="strip agents">
           <span class="label">agents{% if health_more %} — {{ health_more }}{% endif %}</span>
 {%- for cell in agents %}

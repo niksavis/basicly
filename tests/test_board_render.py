@@ -37,14 +37,12 @@ from tests.test_board_wall import REPO_ROOT, STAMPED, document
 
 TEMPLATES = REPO_ROOT / ".basicly" / "core" / "templates" / "board"
 SITE = REPO_ROOT / "site" / "index.html"
+# fmt: off
 SOURCES = (
-    "board_render",
-    "board_regions",
-    "board_diagram",
-    "board_loop",
-    "board_footer",
-    "board_wall",
+    "board_render", "board_regions", "board_diagram", "board_graph",
+    "board_loop", "board_footer", "board_wall",
 )
+# fmt: on
 
 # The eight fixed rows of the wall, in the order the grid declares them.
 # The rows every page draws. `inv` is deliberately not among them: the roster carries only
@@ -318,13 +316,21 @@ def test_the_renderer_imports_nothing_that_could_read_engine_state() -> None:
     """The structural half is `.importlinter`'s forbidden contract; this is the narrow half.
 
     A module reachable only through a function-level import would satisfy the tier stack and
-    still let a consumer read the ledger, so the import block itself is asserted - on every
-    one, because the extraction that produced them is exactly how such an import hides.
+    still let a consumer read the ledger, so the import block itself is asserted on every one.
+
+    Through the AST: the regex form captured `(` once that import wrapped, and a probe that
+    stops matching is an assertion that stops holding.
     """
+    allowed = {*SOURCES, "board_fields", "catalog"}
     for name in SOURCES:
         source = (REPO_ROOT / "src" / "basicly" / f"{name}.py").read_text(encoding="utf-8")
-        for imported in re.findall(r"^from \. import (.+)$", source, re.MULTILINE):
-            assert set(imported.split(", ")) <= {*SOURCES, "board_fields", "catalog"}
+        imported = {
+            alias.name
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.ImportFrom) and node.level == 1 and node.module is None
+            for alias in node.names
+        }
+        assert imported <= allowed, f"{name} imports {sorted(imported - allowed)}"
         # Literals only. A module's own prose names the directories it refuses, so a text scan
         # finds its docstring and reports the refusal as the violation.
         for literal in _literals(ast.parse(source)):
