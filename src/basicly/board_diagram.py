@@ -350,8 +350,12 @@ def diagram(reads: Mapping[str, Reading], now: datetime) -> Diagram:
     flows = tuple(_flow(index, verdict) for index in range(len(CHAIN) - 1))
     backlog = reads["backlog"]
     repo = reads["repo"]
-    hopper_x, hopper_y = _place(0)
-    sink_x, sink_y = _place(len(STATIONS))
+    # Both ends indexed into `CHAIN` rather than counted off `STATIONS`: `len(STATIONS)` is
+    # the *last station*, so the sink was drawn at `ship`'s centre and the station box painted
+    # over it (basicly-tfelrt). Nothing reported it - the two text runs miss each other, and
+    # an element drawn underneath an opaque one is neither clipped nor overlapping.
+    hopper_x, hopper_y = _place(CHAIN.index(HOPPER))
+    sink_x, sink_y = _place(CHAIN.index(SINK))
     return Diagram(
         hopper=Terminal(
             HOPPER,

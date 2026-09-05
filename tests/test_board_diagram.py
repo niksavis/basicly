@@ -243,6 +243,13 @@ def test_every_placement_is_inside_the_drawing_surface() -> None:
     for node in (*drawn.stations, drawn.hopper, drawn.sink):
         assert half_w <= node.x <= drawn.width - half_w, f"{node.name} is off the surface"
         assert half_h <= node.y <= drawn.height - half_h, f"{node.name} is off the surface"
-    assert len({(node.x, node.y) for node in drawn.stations}) == len(drawn.stations), (
-        "two stations share a centre, so one is drawn over the other"
+    # Terminals included, and that is the whole point: the sink was drawn at `ship`'s centre
+    # and the station box painted over it (basicly-tfelrt). Comparing stations to each other
+    # passed all the way through review, because the pair that collided was not a pair of
+    # stations - and no geometry instrument reports a shape hidden under an opaque one.
+    nodes = (*drawn.stations, drawn.hopper, drawn.sink)
+    assert len({(node.x, node.y) for node in nodes}) == len(nodes), (
+        "two drawn nodes share a centre, so one is painted over the other"
     )
+    assert (drawn.sink.x, drawn.sink.y) == board_diagram._place(len(board_diagram.CHAIN) - 1)
+    assert (drawn.hopper.x, drawn.hopper.y) == board_diagram._place(0)
