@@ -1261,9 +1261,6 @@ class StopReason:
 
 
 # Consulted while a streaming dispatch runs; a reason stops it, None lets it run.
-StopCheck = Callable[[], "StopReason | None"]
-
-
 @dataclass(frozen=True)
 class DispatchBounds:
     """The terminal bounds a streaming dispatch is stopped on, ahead of the wall clock.
@@ -1279,25 +1276,26 @@ class DispatchBounds:
     * *quiet_after* — seconds of a silent stream before the dispatch is stopped
       as wedged. An event is proof of life whether or not any file changed, which
       is what the git-state probe behind :class:`StallWatchdog` could never say.
-    * *stop_when* — an arbitrary predicate, re-read every :meth:`interval` while
-      the dispatch runs. What the supervisor puts here is the D3 spend ceiling:
-      tokens accrue monotonically and are the resource that actually matters, so
-      a spend bound is strictly better than any clock. Its input only ever moves
-      when a usage event lands, so the bound is reached within one interval of
-      the event that reached it — the predicate is polled, the *quantity* it
-      reads is event-driven.
+    * *token_ceiling* — tokens this **one dispatch** may report before it is stopped.
+      It replaced a `stop_when` predicate the supervisor filled with the grant's
+      remainder, which killed a lane on a *session* fact and is basicly-hnnmk9.1's
+      harm 1. This is the lane's own spend, summed off its own event stream: no
+      tracker read, no ledger walk, nothing to raise, and nothing another lane can
+      move. The figure over-reports against the run record by 1.67x to 3.04x, median
+      2.31 (:data:`supervise.LIVE_OVERREPORT_BOUND`), and erring high is the safe
+      direction for a ceiling - it stops early rather than late.
 
-    Both are optional and a bounds object with neither set is inert, which leaves
-    the dispatch on the wall clock alone exactly as before.
+    Both are optional and a bounds object with neither is inert, which leaves the
+    dispatch on the wall clock alone exactly as before.
     """
 
     quiet_after: float | None = None
-    stop_when: StopCheck | None = None
+    token_ceiling: int | None = None
 
     @property
     def armed(self) -> bool:
         """Whether anything here can stop a dispatch."""
-        return self.quiet_after is not None or self.stop_when is not None
+        return self.quiet_after is not None or self.token_ceiling is not None
 
     def interval(self) -> float:
         """How long to wait between bound checks.
@@ -1329,7 +1327,7 @@ def _streaming(spec: RunnerSpec, *, capture_usage: bool) -> bool:
     return capture_usage and spec.usage_format in STREAMING_FORMATS
 
 
-def _emit(spec: RunnerSpec, line: str, on_event: EventSink) -> None:
+def _emit(spec: RunnerSpec, line: str, on_event: EventSink) -> int:
     """Redact one stdout line, parse it, and hand the event to *on_event*.
 
     Redacted *before* parsing, so nothing a sink can reach — neither the raw text
@@ -1345,6 +1343,9 @@ def _emit(spec: RunnerSpec, line: str, on_event: EventSink) -> None:
     Contained: a sink that raises must not take down the reader thread and leave
     the rest of the dispatch unobserved, the same stance :class:`StallWatchdog`
     takes on its notifier.
+
+    Returns the turn's reported tokens, 0 where the line carried none, so the caller
+    bounds the dispatch on the same numbers the sink was handed.
     """
     text = redact_secrets(line.rstrip("\n"))
     data = stream_object(text)
@@ -1367,6 +1368,7 @@ def _emit(spec: RunnerSpec, line: str, on_event: EventSink) -> None:
     )
     with contextlib.suppress(Exception):
         on_event(event)
+    return event.usage.tokens if event.usage is not None else 0
 
 
 def _pump(stream: IO[str], on_line: Callable[[str], object]) -> None:
@@ -1399,7 +1401,7 @@ class _Streamed:
 
 
 class _Liveness:
-    """When this dispatch last emitted, for the quiet bound to measure against.
+    """When this dispatch last emitted and what it has reported, for the bounds to read.
 
     Stamped on the runner's stdout reader thread and read from the thread waiting
     on the process, so both ends take the lock. Monotonic, for the reason
@@ -1411,11 +1413,18 @@ class _Liveness:
         """Start the quiet window at the moment the dispatch was handed over."""
         self._lock = threading.Lock()
         self._at = time.monotonic()
+        self._tokens = 0
 
-    def stamp(self) -> None:
-        """Record an event having just arrived."""
+    def stamp(self, tokens: int = 0) -> None:
+        """Record an event having just arrived, carrying *tokens* of reported usage."""
         with self._lock:
             self._at = time.monotonic()
+            self._tokens += tokens
+
+    def tokens(self) -> int:
+        """What this dispatch has reported so far, summed off its own stream."""
+        with self._lock:
+            return self._tokens
 
     def quiet_for(self) -> float:
         """Seconds since the last event, or since the dispatch started."""
@@ -1426,20 +1435,17 @@ class _Liveness:
 def _bound_reached(bounds: DispatchBounds, liveness: _Liveness) -> StopReason | None:
     """Which of *bounds* this dispatch has reached, or None while it is inside them.
 
-    Quiet first, because a wedged dispatch reports no usage and would otherwise be
-    attributed to whichever bound happened to be checked first. A *stop_when* that
-    raises is treated as "no reason": the predicate reads a tracker and a run-record
-    file, and a transient failure there must not become a kill — the wall-clock
-    backstop is still underneath, which is the whole point of keeping it.
+    Quiet first, because a wedged dispatch reports no usage at all and would otherwise be
+    attributed to whichever bound happened to be checked first.
     """
     if bounds.quiet_after is not None and liveness.quiet_for() >= bounds.quiet_after:
         return StopReason(QUIET_BOUND, f"no stream events for {bounds.quiet_after:g}s")
-    if bounds.stop_when is None:
-        return None
-    try:
-        return bounds.stop_when()
-    except OSError, RuntimeError, ValueError:
-        return None
+    spent = liveness.tokens()
+    if bounds.token_ceiling is not None and spent >= bounds.token_ceiling:
+        return StopReason(
+            SPEND_BOUND, f"{spent} tokens reported against a {bounds.token_ceiling} lane ceiling"
+        )
+    return None
 
 
 def _read_streaming(  # noqa: PLR0913 — one parameter per independent read input
@@ -1476,8 +1482,9 @@ def _read_streaming(  # noqa: PLR0913 — one parameter per independent read inp
 
     def observe(line: str) -> None:
         out_lines.append(line)
-        liveness.stamp()
-        _emit(spec, line, on_event)
+        # The stamp carries the turn's tokens, so the ceiling reads the same numbers the
+        # sink sees rather than a second parse of the same line (basicly-tkbmndn).
+        liveness.stamp(_emit(spec, line, on_event))
 
     readers = (
         threading.Thread(target=_pump, args=(proc.stdout, observe), daemon=True),

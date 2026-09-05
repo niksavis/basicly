@@ -12,7 +12,6 @@ spins an idempotent follow-up bead when a run crosses the context ceiling.
 from __future__ import annotations
 
 import ast
-import contextlib
 import dataclasses
 import json
 import os
@@ -3481,19 +3480,6 @@ def test_delegate_decisions_needs_any_grant_at_all(monkeypatch: pytest.MonkeyPat
     assert offered == []
 
 
-def test_delegate_decisions_stops_at_the_spend_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
-    """D3 halts delegated decisions on the same ceiling as dispatch (basicly-kjc5.23)."""
-    offered = _delegation_env(monkeypatch, pending=(_item("epic.1#a", "needs-input"),), outcomes={})
-
-    assert (
-        supervise.delegate_decisions(
-            Path(), _session(_lane("epic.1")), admission=_granted("L2", 100, 100)
-        )
-        == ()
-    )
-    assert offered == []
-
-
 def test_delegate_decisions_reports_an_abstention_as_still_the_humans(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4380,43 +4366,6 @@ def test_pass_is_admitted_when_its_forecast_fits_the_remainder(
 
     assert sorted(o.issue_id for o in outcomes) == ["epic.1", "epic.2"]
     assert queued == []
-
-
-def test_a_lane_queued_behind_the_cap_does_not_start_once_the_budget_is_gone(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The acceptance criterion: a fan-out that exhausts its grant starts no further lanes.
-
-    Admission was a pass-entry verdict, so lanes waiting behind the concurrency cap
-    were cleared to run on a reading taken before any of them had spent anything, and
-    nothing re-checked once the runners were live. Measured: a pass admitted at a
-    16316972 forecast ran to 43599830 against a 21000000 grant, and the halt printed
-    only after the last lane exited (basicly-jr0l.59).
-
-    ``cap=1`` is what makes the second lane *queued* rather than concurrent, which is
-    the only shape this guard can bound - a lane already running is never interrupted.
-    """
-    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
-    _pass_fixture(
-        monkeypatch,
-        sizings={"epic.1": _dispatch_sizing(20_000), "epic.2": _dispatch_sizing(20_000)},
-        forecasts={"epic.1": 1_000, "epic.2": 1_000},
-    )
-    # The grant is intact when the first lane starts and gone by the second's turn.
-    readings = iter([_granted("L3", 10_000, 0), _granted("L3", 10_000, 10_000)])
-    monkeypatch.setattr(supervise.policy, "spend_status", lambda *_a, **_k: next(readings))
-
-    outcomes = supervise.dispatch_lanes(
-        Path(),
-        _session(_lane("epic.1"), _lane("epic.2")),
-        cap=1,
-        admission=_granted("L3", 10_000, 0),
-    )
-
-    assert [outcome.issue_id for outcome in outcomes] == ["epic.1", "epic.2"]
-    assert outcomes[0].detail == "test"  # dispatched, because the budget still covered it
-    assert "not started" in outcomes[1].detail
-    assert outcomes[1].result is None  # and it really did not run
 
 
 def test_pass_forecast_ignores_a_lane_the_band_already_refuses(
@@ -5430,90 +5379,6 @@ def _capture_stall_probe(monkeypatch: pytest.MonkeyPatch) -> Callable[[], str]:
     return lambda: str(captured["probe"]())
 
 
-def test_inflight_halt_refuses_a_start_against_what_the_running_lanes_reported() -> None:
-    """The live half of D3: a lane must not start on a remainder already in flight.
-
-    The gap is on the record — a 20000000-token grant was overshot to 22164783
-    because `spend_status` is read before a pass and written after it, with nothing
-    in between. The lanes that overshot it were still running when this check ran.
-    """
-    running = supervise.LaneStream()
-    running(_turn(4_500))
-
-    with supervise.live_lane("epic.1", running):
-        # 4000 recorded of a 5000 budget leaves 1000, and one running lane has
-        # already reported 4500 that no record carries yet.
-        halt = supervise.inflight_halt(_granted("L3", 5_000, 4_000))
-        # A comfortable remainder is still admitted, or the ceiling would refuse
-        # every pass that has a lane in flight.
-        assert supervise.inflight_halt(_granted("L3", 5_000_000, 4_000)) is None
-
-    assert halt is not None
-    assert "4500" in halt and "1000" in halt and "epic.1" in halt
-    # And a finished lane no longer counts: its record is the source now.
-    assert supervise.inflight_halt(_granted("L3", 5_000, 4_000)) is None
-
-
-def test_inflight_halt_is_silent_where_there_is_no_ceiling() -> None:
-    """An ungranted or L1 session has no budget to bind, exactly as check_pass_spend has none."""
-    running = supervise.LaneStream()
-    running(_turn(10_000_000))
-
-    with supervise.live_lane("epic.1", running):
-        assert supervise.inflight_halt(_UNGRANTED) is None
-        assert supervise.inflight_halt(_granted("L1", None, 0)) is None
-
-
-def test_dispatch_lanes_declines_to_start_a_lane_the_running_lanes_outspent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The refusal is a *start*, and the queued lane is the one that pays it.
-
-    Cost is bounded by sizing the work, never by interrupting a working agent — so
-    the in-flight reading may only stop a lane that has not begun. Two lanes under a
-    cap of one: the first runs to completion untouched, and the second finds the
-    grant spent by a meter no run record carries.
-
-    The first lane's meter is held open past its return rather than raced against a
-    concurrent one, because the ordering is what has to be deterministic here: what
-    is under test is that a lane's admission consults in-flight spend at all, not
-    that the pool overlaps lanes — which ``dispatch_lanes`` pins separately.
-    """
-    lanes = (_lane("epic.1"), _lane("epic.2"))
-    _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
-    monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
-    monkeypatch.setattr(supervise.decompose, "unsized_lane_tokens", lambda *_a: (10, "measured"))
-    monkeypatch.setattr(
-        supervise.policy, "spend_status", lambda *_a, **_k: _granted("L3", 5_000, 0)
-    )
-    held = contextlib.ExitStack()
-
-    def fake_dispatch(
-        _repo: object, _session: object, lane: supervise.AdoptedLane, *_a: object, **_kw: object
-    ) -> supervise.LaneOutcome:
-        # The first lane reports past the whole grant while it runs — the state no
-        # run record describes yet, and the one the real overshoot happened in.
-        stream = supervise.LaneStream()
-        stream(_turn(6_000))
-        held.enter_context(supervise.live_lane(lane.issue_id, stream))
-        return _outcome(lane.issue_id)
-
-    monkeypatch.setattr(supervise, "_dispatch_lane", fake_dispatch)
-
-    with held:
-        outcomes = supervise.dispatch_lanes(
-            Path(), _session(*lanes), admission=_granted("L3", 5_000, 0), cap=1
-        )
-
-    first, second = outcomes
-    assert first.issue_id == "epic.1" and first.detail == "test"  # ran, uninterrupted
-    assert second.issue_id == "epic.2"
-    assert second.result is None
-    assert "not started" in second.detail and "6000" in second.detail
-    # Nothing leaks past the pass: the meters are gone once the stack closes.
-    assert supervise.inflight_spend() == {}
-
-
 def test_inflight_note_reports_the_tokens_a_running_lane_has_reported() -> None:
     """Surfacing it: the operator's other half of "is this lane worth its slot?".
 
@@ -5558,67 +5423,6 @@ def test_inflight_note_says_what_a_running_lane_is_doing() -> None:
 # --- The terminal spend bound: D3 binding *during* a dispatch (basicly-lpsf) --
 
 
-def test_the_spend_bound_stops_a_running_lane_at_the_grant_remainder() -> None:
-    """AC: spend reaching the ceiling mid-run stops the dispatch on the spend bound.
-
-    The narrow exception to "cost is bounded by sizing the work, never by killing a
-    working agent": a grant's `token_budget` is the authorization ceiling a human
-    set, and honouring it only after the fact is not honouring it. Every other spend
-    gate here still refuses to *start* and leaves running lanes alone.
-    """
-    running = supervise.LaneStream()
-
-    with supervise.live_lane("epic.1", running):
-        # 4000 recorded of a 5000 budget leaves 1000, and nothing reported yet.
-        bound = supervise.SpendBound(lambda: _granted("L3", 5_000, 4_000))
-        assert bound() is None
-
-        # A turn inside the remainder is not a reason to kill a working lane.
-        running(_turn(400))
-        assert bound() is None
-
-        # Crossing the remainder at face value is no longer enough (basicly-jr0l.67):
-        # the live figure over-reports, so 1100 live may still be inside 1000 recorded.
-        running(_turn(700))
-        assert bound() is None
-
-        # Past the scaled bound, the *recorded* spend has genuinely gone over.
-        running(_turn(1_000))
-        reason = bound()
-
-    assert reason is not None
-    assert reason.bound == runner.SPEND_BOUND
-    assert "2100" in reason.detail and "1000" in reason.detail and "epic.1" in reason.detail
-
-
-def test_a_live_figure_over_the_remainder_refuses_a_start_but_never_kills_a_lane() -> None:
-    """The two halves of the live ceiling must disagree, because they fail in opposite ways.
-
-    Regression for basicly-jr0l.67, reproduced from the lane it cost. The live per-turn sum
-    over-reports the run record it is compared against by 1.46x-1.79x measured, and both
-    halves used to share one face-value comparison. So a lane inside its budget was killed:
-    basicly-vkh0.11 stopped having reported 18120420 live against 18109328 remaining while
-    its recorded cost was 11431736, a third of the grant unspent. Its work survived only
-    because it happened to be finished — a kill 200s earlier would have shipped a partial
-    event log as the foundation three later lanes build on.
-
-    The asymmetry is the fix. On one live figure sitting between the remainder and the
-    scaled bound, the refusal fires (costing throughput, which is recoverable) and the kill
-    does not (which would cost work, which is not).
-    """
-    running = supervise.LaneStream()
-    status = _granted("L3", 5_000, 4_000)  # 1000 recorded remaining
-    running(_turn(1_500))  # over the remainder at face value, inside it once scaled
-
-    with supervise.live_lane("epic.1", running):
-        refusal = supervise.inflight_halt(status)
-        kill = supervise.SpendBound(lambda: status)()
-
-    assert refusal is not None, "the refusal to start reads the live figure at face value"
-    assert "1500" in refusal and "1000" in refusal
-    assert kill is None, "a lane inside its recorded budget must not be killed"
-
-
 def test_the_over_report_bound_sits_above_every_measured_ratio() -> None:
     """The bound is empirical, so it has to stay above the samples it was derived from.
 
@@ -5638,75 +5442,43 @@ def test_the_over_report_bound_sits_above_every_measured_ratio() -> None:
     assert min(measured.values()) > 1.0, "every sample must show live over recorded"
 
 
-def test_the_spend_bound_is_silent_where_there_is_no_ceiling_to_enforce() -> None:
-    """An ungranted or L1 session has no budget to bind, so nothing may be killed over one."""
-    running = supervise.LaneStream()
-    running(_turn(10_000_000))
-
-    with supervise.live_lane("epic.1", running):
-        assert supervise.SpendBound(lambda: _UNGRANTED)() is None
-        assert supervise.SpendBound(lambda: _granted("L1", None, 0))() is None
-
-
-def test_the_spend_bound_counts_a_lane_that_retired_into_the_records() -> None:
-    """The snapshot has to survive its siblings finishing, or it goes lax under fan-out.
-
-    `spend_status` costs a whole ledger walk (~800ms here), so the remainder is read
-    once and not re-read. A sibling that ends mid-dispatch moves its spend out of
-    `inflight_spend` and into a run record the snapshot predates — counted nowhere,
-    the ceiling would drift up by exactly the amount a concurrent pass spends, which
-    is the pass shape that produced the overshoot this bead exists for.
-    """
-    mine = supervise.LaneStream()
-    mine(_turn(300))
-    sibling = supervise.LaneStream()
-    sibling(_turn(800))
-
-    with supervise.live_lane("epic.1", mine):
-        with supervise.live_lane("epic.2", sibling):
-            # 2000 left of a 6000 budget, 1100 in flight across the two lanes.
-            bound = supervise.SpendBound(lambda: _granted("L3", 6_000, 4_000))
-            assert bound.remaining() == 2_000
-            assert bound() is None
-
-        # The sibling has ended: its 800 is now a run record the snapshot predates,
-        # so the remainder this works from comes down by exactly that much. Without
-        # it the 800 would be counted nowhere and the ceiling would drift up.
-        assert bound.remaining() == 1_200
-        assert bound() is None
-
-        mine(_turn(900))  # 1200 in flight against 1200 left — inside the scaled bound
-        assert bound() is None
-
-        mine(_turn(1_300))  # 2500 in flight, past 1200 scaled by the over-report bound
-        stopped = bound()
-
-    assert stopped is not None and stopped.bound == runner.SPEND_BOUND
-    assert "1200" in stopped.detail
-
-
-def test_the_spend_bound_reads_the_ledger_only_once_a_check_actually_runs() -> None:
-    """A dispatch that ends before its first poll must not pay for a ledger walk."""
-    reads = {"count": 0}
-
-    def status() -> policy.SpendStatus:
-        reads["count"] += 1
-        return _granted("L3", 5_000, 4_000)
-
-    bound = supervise.SpendBound(status)
-    assert reads["count"] == 0
-
-    bound()
-    bound()
-    # Snapshotted, not re-read: the remainder is a fixed point the live counters move
-    # against, and re-reading it per poll is the cost this design exists to avoid.
-    assert reads["count"] == 1
-
-
-def test_dispatch_lane_bounds_the_run_on_its_stream_before_the_wall_clock(
+def test_a_lane_ceiling_reaches_the_dispatch_from_the_runner_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """AC: the lane dispatch hands the runner both bounds, with the clock underneath.
+    """The bound that replaces the grant's, and the one thing it must not read.
+
+    `SpendBound` bounded a lane on the *grant's* remainder - a session fact every other
+    lane moves, so a lane was killed mid-work for spend that was not its own, and its
+    unreviewed diff then landed (basicly-hnnmk9.1, harm 1). This is the lane's own
+    reported tokens, set by `[runner] lane_token_ceiling`, and off unless chosen.
+    """
+    codex = _codex()
+    _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(50_000))
+    seen: dict[str, object] = {}
+
+    def fake_run(spec: runner.RunnerSpec, *_a: object, **kw: object) -> runner.RunResult:
+        seen.update(kw)
+        return runner.RunResult(spec.name, (spec.name,), executed=True, returncode=0, stdout="")
+
+    monkeypatch.setattr(supervise.runner, "run", fake_run)
+    base = supervise.load_runner_config(tmp_path)
+    monkeypatch.setattr(
+        supervise,
+        "load_runner_config",
+        lambda _r: dataclasses.replace(base, lane_token_ceiling=25_000),
+    )
+
+    supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
+
+    bounds = seen["bounds"]
+    assert isinstance(bounds, runner.DispatchBounds)
+    assert bounds.token_ceiling == 25_000, "the runner setting never reached the dispatch"
+
+
+def test_dispatch_lane_bounds_the_run_on_its_quiet_stream_and_not_on_spend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """AC: the lane dispatch hands the runner its stream bound, with the clock underneath.
 
     The wiring assertion, and it is the one that decides whether any of the rest is
     reachable: a `runner.run` called without `bounds` is a lane back on the wall clock
@@ -5729,16 +5501,18 @@ def test_dispatch_lane_bounds_the_run_on_its_stream_before_the_wall_clock(
         _lane("epic.1"),
         codex,
         _sizing(),
-        spend=_granted("L3", 5_000, 4_000),
     )
 
     bounds = seen["bounds"]
     assert isinstance(bounds, runner.DispatchBounds)
     assert bounds.quiet_after == runner.DEFAULT_QUIET_AFTER
-    assert isinstance(bounds.stop_when, supervise.SpendBound)
-    # Handed down rather than re-walked: the caller admitting the lane has just read
-    # this, and `spend_status` is the most expensive read in the dispatch path.
-    assert bounds.stop_when.remaining() == 1_000
+    # No `stop_when`. It was `SpendBound`, which killed a running dispatch at the grant's
+    # remainder - basicly-hnnmk9.1's harm 1, and the reason the owner ruled the budget
+    # must measure and never block. `quiet_after` still ends a wedged dispatch and the
+    # runner timeout is still the backstop; neither is a spend fact.
+    assert bounds.token_ceiling is None, (
+        "a lane ceiling is a runner setting; this pass declares none"
+    )
     # The backstop is still passed and still terminal.
     assert seen["timeout"] == supervise.load_runner_config(tmp_path).runner_timeout
 
@@ -5757,7 +5531,7 @@ def test_a_lane_stopped_on_a_bound_records_which_bound_and_names_it_once(
     """
     codex = _codex()
     _worker_fixture(monkeypatch, tmp_path, stdout="")
-    stopped = runner.StopReason(runner.SPEND_BOUND, "1100 tokens against 1000 remaining")
+    stopped = runner.StopReason(runner.QUIET_BOUND, "no stream events for 900s")
 
     monkeypatch.setattr(
         supervise.runner,
@@ -5788,14 +5562,14 @@ def test_a_lane_stopped_on_a_bound_records_which_bound_and_names_it_once(
     monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: recorded.append(kw))
 
     outcome = supervise._dispatch_lane(
-        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing(), spend=_UNGRANTED
+        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
     )
 
-    label = "spend bound: 1100 tokens against 1000 remaining"
+    label = "quiet bound: no stream events for 900s"
     assert salvaged == [label]
     assert queued == [("stall", f"runner codex stopped on {label}: retry, re-dispatch, or park?")]
     assert label in outcome.detail
-    assert recorded[0]["stopped_bound"] == runner.SPEND_BOUND
+    assert recorded[0]["stopped_bound"] == runner.QUIET_BOUND
 
 
 def test_a_wall_clock_kill_records_no_bound_because_the_outcome_already_says_so(
@@ -5819,9 +5593,7 @@ def test_a_wall_clock_kill_records_no_bound_because_the_outcome_already_says_so(
     recorded: list[dict] = []
     monkeypatch.setattr(supervise.loop, "record_run", lambda *_a, **kw: recorded.append(kw))
 
-    supervise._dispatch_lane(
-        tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing(), spend=_UNGRANTED
-    )
+    supervise._dispatch_lane(tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing())
 
     assert recorded[0]["stopped_bound"] is None
 

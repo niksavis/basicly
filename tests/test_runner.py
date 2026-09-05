@@ -3037,14 +3037,6 @@ def test_a_dispatch_is_stopped_on_the_spend_bound_not_on_its_wall_clock(tmp_path
     """
     seen: list[runner.StreamEvent] = []
 
-    def stop_when() -> runner.StopReason | None:
-        # Snapshotted: `seen` is appended from the runner's reader thread while
-        # this runs on the one waiting on the process.
-        spent = sum(event.usage.tokens for event in tuple(seen) if event.usage is not None)
-        if spent < 10:
-            return None
-        return runner.StopReason(runner.SPEND_BOUND, f"{spent} tokens against 10 remaining")
-
     result = runner.run(
         _streaming_spec(_spending_child()),
         "go",
@@ -3052,10 +3044,12 @@ def test_a_dispatch_is_stopped_on_the_spend_bound_not_on_its_wall_clock(tmp_path
         capture_usage=True,
         on_event=seen.append,
         timeout=60.0,
-        bounds=runner.DispatchBounds(stop_when=stop_when),
+        bounds=runner.DispatchBounds(token_ceiling=10),
     )
 
-    assert result.stopped == runner.StopReason(runner.SPEND_BOUND, "10 tokens against 10 remaining")
+    assert result.stopped == runner.StopReason(
+        runner.SPEND_BOUND, "10 tokens reported against a 10 lane ceiling"
+    )
     # A bound stop *is* a hard kill: same tree kill, same absent returncode, so every
     # routing path that keys on `timed_out` treats it as one.
     assert result.timed_out is True
@@ -3118,40 +3112,13 @@ def test_a_lane_emitting_events_inside_its_budget_outlives_the_bound(tmp_path: P
         capture_usage=True,
         on_event=seen.append,
         timeout=60.0,
-        bounds=runner.DispatchBounds(quiet_after=0.3, stop_when=lambda: None),
+        bounds=runner.DispatchBounds(quiet_after=0.3, token_ceiling=10_000_000),
     )
 
     assert result.returncode == 0
     assert result.stopped is None
     assert result.timed_out is False
     assert len(seen) == 11
-
-
-def test_a_bound_whose_predicate_raises_leaves_the_dispatch_to_the_backstop(
-    tmp_path: Path,
-) -> None:
-    """A `stop_when` that fails is not a kill — the wall clock is still underneath.
-
-    `SpendBound` reads a tracker and a run-record file, and a transient failure there
-    must never become a terminal verdict on a working lane. Contained rather than
-    propagated for the same reason the stall notifier is: the predicate only observes.
-    """
-
-    def angry() -> runner.StopReason | None:
-        raise RuntimeError("the ledger was locked")
-
-    result = runner.run(
-        _streaming_spec("time.sleep(0.05)\n"),
-        "go",
-        tmp_path,
-        capture_usage=True,
-        on_event=lambda _e: None,
-        timeout=60.0,
-        bounds=runner.DispatchBounds(stop_when=angry),
-    )
-
-    assert result.returncode == 0
-    assert result.stopped is None
 
 
 def test_the_wall_clock_stays_terminal_underneath_both_bounds(tmp_path: Path) -> None:
@@ -3168,7 +3135,7 @@ def test_the_wall_clock_stays_terminal_underneath_both_bounds(tmp_path: Path) ->
         capture_usage=True,
         on_event=lambda _e: None,
         timeout=0.3,
-        bounds=runner.DispatchBounds(stop_when=lambda: None),
+        bounds=runner.DispatchBounds(token_ceiling=10_000_000),
     )
 
     assert result.timed_out is True
