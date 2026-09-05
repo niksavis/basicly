@@ -1,0 +1,12 @@
+# Built inside another record's lane (basicly-tkbmndn).
+#
+# The record declares `src/basicly/runner.py` and `src/basicly/supervise.py` as its scope,
+# so `release-notes` judged it as owing a note once it closed. Its change shipped under
+# `basicly-igqm86l`, whose fragment names the ceiling in the same sentence as the bound it
+# replaces - which is the only way the pair reads correctly: removing the mid-lane kill and
+# putting a real per-lane ceiling at the runner is one change, and two notes describing the
+# halves separately would tell a consumer they got two.
+#
+# Declared invisible in `[tool.release_notes.invisible]`, delta recorded here.
+[ratchet.release_notes]
+count_delta = 1
