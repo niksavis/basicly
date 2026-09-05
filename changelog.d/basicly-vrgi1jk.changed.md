@@ -1,0 +1,1 @@
+- A grant's token budget measures spend and no longer blocks work. Passing it once refused checkpoint approval, proposal origination, interactive and repair dispatch, delegated decisions, releases, and any pass whose forecast exceeded the remainder; each now reports the figure and continues. The autonomy level still governs checkpoints, and every spend figure is still produced.

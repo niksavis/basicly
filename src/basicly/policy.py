@@ -1766,8 +1766,6 @@ def _grant_approval(
         )
     config = load_policy_config(repo_root)
     spend = spend_status(repo_root, root_issue, grant=grant, ids=session_ids)
-    if spend.halted:
-        return None, _grant_declined(grant, name, (spend.detail,)), ""
     if name == "ship":
         # Gates are checked on the node being shipped, not on the grant root
         # (basicly-kjc5.39): an epic's verify gate cannot exist until the epic
@@ -1795,11 +1793,14 @@ def _grant_approval(
     _add_comment(repo_root, issue_id, marker)
     # Nothing to close on the first ask — the grant approves before any challenge
     # is minted, which is exactly the wait it exists to remove. It does close one
-    # when the grant only became able to approve later (a spend halt lifted by a
-    # re-grant), and that wait is the harness's, not the human's.
+    # when the grant only became able to approve later, and that wait is the
+    # harness's, not the human's.
     record_checkpoint_wait(repo_root, issue_id, name, by=f"grant:{grant.level}", delegated=True)
+    # Past the ceiling the figure is said and the approval still lands: spend was a term
+    # here, so a spent budget revoked the delegation (basicly-hnnmk9.1).
+    over = f"; {spend.detail}" if spend.halted else ""
     return (
-        ApprovalResult("approved", detail=f"delegated under {grant.level} grant"),
+        ApprovalResult("approved", detail=f"delegated under {grant.level} grant{over}"),
         "",
         f"grant:{grant.level}",
     )
@@ -1876,9 +1877,7 @@ def proposal_delegated(repo_root: Path, issue_id: str, kind: str, root_issue: st
             f"the active {grant.level} grant on {root_issue} does not cover {issue_id}: "
             "it is not in that session's issue tree",
         )
-    spend = spend_status(repo_root, root_issue, grant=grant, ids=session_ids)
-    if spend.halted:
-        return ProposalGrant(False, _grant_declined(grant, f"the {kind} proposal", (spend.detail,)))
+    # No spend term (basicly-hnnmk9.1); the figure is reported by the surfaces that show one.
     return ProposalGrant(True, level=grant.level)
 
 
@@ -2058,7 +2057,7 @@ class SpendStatus:
 
 
 def check_pass_spend(forecast_tokens: int, status: SpendStatus) -> str | None:
-    """D3 looking forward: why a pass will not fit the remainder, or None when it does.
+    """Why a pass does not fit the remainder, or None when it does. A warning, not a gate.
 
     :func:`spend_status` compares spend *already recorded* against the budget, so a
     pass is admitted whenever the previous ones happened to fit and the overspend is
@@ -2067,11 +2066,10 @@ def check_pass_spend(forecast_tokens: int, status: SpendStatus) -> str | None:
     spent 46026602. With concurrent lanes a single pass can spend an unbounded
     multiple of the budget, because nothing sums what it is about to start.
 
-    This is the missing half, and it is deliberately the *only* new thing: the
-    remedy for an over-budget pass is to start nothing, never to interrupt a lane
-    that is already running. Cost is bounded by sizing the work, never by killing a
-    working agent — so this runs before dispatch, and in-flight lanes still land
-    through the routing layer untouched.
+    It refused the pass until basicly-hnnmk9.1. Its own argument then was that cost is
+    bounded by sizing the work and never by killing a working agent; the owner extended
+    that to the start of a pass too, on the measurement above - a gate that both blocks
+    and admits 9x over is the worst of both. So this is read and printed, never obeyed.
 
     Returns None when there is no ceiling to enforce, which is the ungranted and L1
     case that :attr:`SpendStatus.remaining_tokens` already collapses to None.
@@ -2090,8 +2088,8 @@ def check_pass_spend(forecast_tokens: int, status: SpendStatus) -> str | None:
         )
     return (
         f"this pass forecasts {forecast_tokens} tokens against {remaining} remaining "
-        f"under the {level} grant: re-scope the lanes into smaller packages, or "
-        "re-grant with a budget that covers them"
+        f"under the {level} grant; it starts anyway. Re-scope the lanes or re-grant "
+        "if that figure is not the one you meant to spend"
     )
 
 

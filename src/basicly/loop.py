@@ -526,9 +526,6 @@ def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
     """
     if not ctx.repair_dispatch or validate_gate.has_foreign_result(ctx.state.gates):
         return None
-    refused = _spend_refused(ctx)
-    if refused is not None:
-        return refused
     dispatch = _run_agent(
         ctx,
         ctx.issue_id,
@@ -688,8 +685,6 @@ def _dispatch_curation(ctx: _Ctx) -> str:
     """
     if not ctx.repair_dispatch or not handoff.adopted(ctx.repo_root, handoff.RELEASE_RECORD):
         return ""
-    if _spend_refused(ctx) is not None:
-        return "; the grant refused the curator"
     run = _run_agent(
         ctx,
         ctx.issue_id,
@@ -791,22 +786,6 @@ def _observe_context_ceiling(ctx: _Ctx, dispatch: _Dispatch) -> str:
     return f"; {verdict.observation}" if verdict.overrun else ""
 
 
-def _spend_refused(ctx: _Ctx) -> AdvanceResult | None:
-    """Refuse a dispatch the grant can no longer pay for — D3's halt, and only that.
-
-    Split out of :func:`_dispatch_refused` so the repair path can bind on the spend
-    ceiling without also inheriting the plan gate and the working-set band, neither of
-    which a repair is admitted against: it is a second attempt at work already planned
-    and already sized (basicly-dbbh).
-    """
-    if ctx.grant_root is None:
-        return None
-    spend = policy.spend_status(ctx.repo_root, ctx.grant_root)
-    if not spend.halted:
-        return None
-    return _blocked(ctx, f"dispatch refused before it started: {spend.detail}", needs_input="grant")
-
-
 def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
     """Why this dispatch must not start, or None to go ahead (basicly-1th1).
 
@@ -826,9 +805,6 @@ def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
     """
     if ctx.grant_root is None:
         return None
-    halted = _spend_refused(ctx)
-    if halted is not None:
-        return halted
     # The plan gate, on entry to BUILD rather than on exit from DECOMPOSE: inspection
     # belongs before the expensive stage, and BUILD is where nearly all the tokens go.
     #
@@ -1695,19 +1671,6 @@ def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceR
         _add_comment(ctx.repo_root, ctx.issue_id, f"{stale} ({where})")
     if brief is None or stale:
         return None
-    # The fourth site D3's halt predicate has to bind at, and the one basicly-1th1 left:
-    # a repair is a full metered dispatch, and a landing that just failed a gate is
-    # exactly when a grant is most likely to be spent (basicly-dbbh).
-    refused = _spend_refused(ctx)
-    if refused is not None:
-        if repair_brief.write_repair_brief(cwd, brief):
-            return refused
-        return _blocked(
-            ctx,
-            f"{refused.detail}; the repair brief for gate {brief.gate!r} could not be "
-            f"put back in {where} and is lost — re-run the landing to raise a fresh one",
-            needs_input="grant",
-        )
     return _repair_outcome(
         ctx,
         _run_agent(
@@ -2265,7 +2228,7 @@ def _retrospective(ctx: _Ctx) -> str:
     if root is None or not ctx.repair_dispatch:
         return ""
     signal = retrospective.evaluate(retrospective.read_ledger(ctx.repo_root, root))
-    if not signal.fires or _spend_refused(ctx) is not None:
+    if not signal.fires:
         return ""
     if not retrospective.claim(ctx.repo_root, root, signal):
         return ""

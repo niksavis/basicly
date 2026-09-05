@@ -376,13 +376,6 @@ def invoke_decider(  # noqa: PLR0911 — one return per distinct drop-to-human c
             0.0,
             abstain=True,
         )
-    # D3 halts *delegated decisions* on the same spend ceiling as dispatch
-    # (basicly-kjc5.23), and this is the delegation entry point for every caller —
-    # the human's `loop decide` and the supervisor's autonomous pass alike — so the
-    # check belongs here rather than being re-derived at each of them.
-    spend = policy.spend_status(repo_root, root_issue)
-    if spend.halted:
-        return DeciderVerdict("", spend.detail, 0.0, abstain=True)
     runner_config = load_runner_config(repo_root)
     selected = runner.select_runner(
         runner_config.specs, runner_config.decider or runner_config.default
@@ -407,8 +400,8 @@ def invoke_decider(  # noqa: PLR0911 — one return per distinct drop-to-human c
     # Metered means passing `capture_usage` (basicly-gczc). Writing the run-record was
     # never enough on its own: unflagged, the record carried the chars/4 estimate,
     # and `policy.session_spend` counts an estimated dispatch as an *unmeterable*
-    # one — which zeroes the remaining budget, so a single delegated decision halted
-    # the whole grant. The flag is what makes the number the adapter's own. It also
+    # one — which zeroes the remaining budget, and did halt the whole grant while spend
+    # still gated (basicly-hnnmk9.1). The flag makes the number the adapter's own. It also
     # wraps the reply in a usage envelope, so the verdict is read back through
     # `runner.result_text` below rather than off raw stdout.
     prompt = decider_prompt(item, intake_corpus(repo_root, root_issue))

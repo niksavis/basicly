@@ -3307,17 +3307,16 @@ def _granted(level: str, budget: int | None, spent: int) -> policy.SpendStatus:
     )
 
 
-def test_dispatch_lanes_halts_when_the_grant_budget_is_spent(
+def test_dispatch_lanes_still_starts_a_lane_when_the_grant_budget_is_spent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """D3: a spent budget starts no new lane runner, however ready the lanes are."""
+    """A spent budget still starts a lane and says what it spent (basicly-hnnmk9.1).
+
+    It refused here under D3, which is the harm the owner ruled on: a lane stopped
+    mid-work on basicly-ncday7 landed an unreviewed diff carrying three major defects.
+    """
     _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
     monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _MANUAL_SPEC)
-    monkeypatch.setattr(
-        supervise,
-        "_dispatch_lane",
-        lambda *_a, **_k: pytest.fail("must not dispatch past the spend ceiling"),
-    )
     queued: list[tuple[str, str]] = []
 
     def fake_enqueue(
@@ -3332,9 +3331,8 @@ def test_dispatch_lanes_halts_when_the_grant_budget_is_spent(
         Path(), _session(_lane("epic.1")), admission=_granted("L2", 5000, 5000)
     )
 
-    assert outcomes == ()
-    # And the halt is surfaced, or the pass reads as an ordinary idle one.
-    assert queued == [("epic", "escalation")]
+    assert outcomes, "a spent budget still refused to start the lane"
+    assert queued == [], "and it still enqueued an escalation nobody has to answer"
 
 
 def test_dispatch_lanes_admits_a_grant_still_inside_its_budget(
@@ -3375,62 +3373,11 @@ def test_dispatch_lanes_reads_the_ceiling_when_no_admission_is_passed(
     monkeypatch.setattr(
         supervise.policy, "spend_status", lambda *_a, **_k: _granted("L3", 100, 100)
     )
-    monkeypatch.setattr(
-        supervise,
-        "_dispatch_lane",
-        lambda *_a, **_k: pytest.fail("must not dispatch past the spend ceiling"),
-    )
     monkeypatch.setattr(supervise.decisions, "enqueue", lambda *_a, **_k: None)
 
-    assert supervise.dispatch_lanes(Path(), _session(_lane("epic.1"))) == ()
-
-
-def test_dispatch_halt_is_one_idempotent_queue_item(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Every halted pass re-surfaces the same item, not a fresh notification each time."""
-    fake = _FakeBr({"epic": _issue("epic")})
-    fake_tracker.install(monkeypatch, fake)
-    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
-    admission = _granted("L2", 5000, 6000)
-
-    first = supervise.record_dispatch_halt(tmp_path, "epic", admission)
-    second = supervise.record_dispatch_halt(tmp_path, "epic", admission)
-
-    assert first.decision_id == second.decision_id
-    assert first.kind == "escalation"
-    assert len(fake.comments["epic"]) == 1
-
-
-def test_an_unmeterable_halt_asks_its_own_question(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A ceiling that cannot bind is a different ask from one that is spent (jr0l.35).
-
-    Items are keyed by (issue, kind, question), so sharing the budget wording would
-    also fold the two halts into one item and hide whichever arrived second.
-    """
-    fake = _FakeBr({"epic": _issue("epic")})
-    fake_tracker.install(monkeypatch, fake)
-    monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
-    spent = _granted("L2", 5000, 6000)
-    unmetered = policy.SpendStatus(
-        grant=policy.Grant(level="L2", token_budget=5000),
-        spent_tokens=0,
-        halted=True,
-        detail="L2 grant cannot be metered: 1 dispatch(es) under it reported no measurable usage",
-        unmetered_dispatches=1,
-    )
-
-    budget_item = supervise.record_dispatch_halt(tmp_path, "epic", spent)
-    unmetered_item = supervise.record_dispatch_halt(tmp_path, "epic", unmetered)
-
-    assert budget_item.decision_id != unmetered_item.decision_id
-    assert "no measurable usage" in unmetered_item.question
-    assert len(fake.comments["epic"]) == 2
-
-
-# --- Autonomous delegation: the decider in the pass (basicly-kjc5.40) ---------
+    # Reading the ceiling is what this asserts; refusing on it is what stopped
+    # (basicly-hnnmk9.1), so the lane starts and the read still happens.
+    assert supervise.dispatch_lanes(Path(), _session(_lane("epic.1")))
 
 
 def _delegation_env(
@@ -4345,10 +4292,10 @@ def _pass_fixture(
     return queued
 
 
-def test_pass_is_refused_when_its_forecast_exceeds_the_remaining_budget(
+def test_pass_warns_when_its_forecast_exceeds_the_remaining_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The acceptance criterion: nothing dispatches, and the message carries both numbers.
+    """The pass dispatches, and the message carries both numbers (basicly-hnnmk9.1).
 
     Two lanes forecast 4000 tokens each against 5000 remaining. Neither alone
     overruns — that is exactly the shape the retrospective gate admitted, because it
@@ -4359,19 +4306,19 @@ def test_pass_is_refused_when_its_forecast_exceeds_the_remaining_budget(
         monkeypatch,
         sizings={"epic.1": _dispatch_sizing(20_000), "epic.2": _dispatch_sizing(30_000)},
         forecasts={"epic.1": 4_000, "epic.2": 4_000},
-        dispatch_is_a_failure=True,
     )
+    said: list[str] = []
 
     outcomes = supervise.dispatch_lanes(
         Path(),
         _session(_lane("epic.1"), _lane("epic.2")),
         admission=_granted("L3", 10_000, 5_000),
+        report=said.append,
     )
 
-    assert outcomes == ()  # no lane started, so no money was spent
-    assert len(queued) == 1
-    question, detail = queued[0]
-    assert question == supervise.PASS_SPEND_QUESTION
+    assert outcomes, "an over-forecast pass was still refused"
+    assert queued == [], "and it still enqueued a refusal"
+    detail = "\n".join(said)
     assert "8000" in detail  # the combined forecast...
     assert "5000" in detail  # ...and the remainder it will not fit
     assert "epic.1" in detail and "epic.2" in detail
@@ -4408,32 +4355,6 @@ def test_no_module_level_name_in_supervise_is_bound_twice() -> None:
                 bound[target.id] = bound.get(target.id, 0) + 1
 
     assert [name for name, count in bound.items() if count > 1] == []
-
-
-def test_the_queued_pass_refusal_carries_whatever_the_binding_says(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The consumer reads the live binding, so editing it changes what is enqueued.
-
-    The other half of the guard: one binding is only worth having if the enqueue path
-    actually reads it. A sentinel proves the question is not a third hardcoded copy of
-    the same sentence sitting at the call site.
-    """
-    asked: list[str] = []
-    monkeypatch.setattr(
-        supervise.decisions,
-        "enqueue",
-        lambda _r, _i, _k, question, _d=None: asked.append(question),
-    )
-    monkeypatch.setattr(supervise, "PASS_SPEND_QUESTION", "sentinel question")
-
-    supervise.record_pass_refusal(
-        Path(),
-        "epic",
-        supervise.PassSpendAdmission(8_000, 5_000, ("epic.1",), (), "8000 over 5000"),
-    )
-
-    assert asked == ["sentinel question"]
 
 
 def test_pass_is_admitted_when_its_forecast_fits_the_remainder(
@@ -4536,23 +4457,23 @@ def test_pass_names_the_lanes_it_could_not_forecast(
     basicly-jr0l.21 built into the forecast.
     """
     _patch_readiness(monkeypatch, ranked=((1, "epic.1"), (2, "epic.2")))
-    queued = _pass_fixture(
+    _pass_fixture(
         monkeypatch,
         sizings={"epic.1": _dispatch_sizing(20_000), "epic.2": None},
         forecasts={"epic.1": 9_000},
-        dispatch_is_a_failure=True,
+    )
+    said: list[str] = []
+
+    supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1"), _lane("epic.2")),
+        admission=_granted("L3", 10_000, 5_000),
+        report=said.append,
     )
 
-    assert (
-        supervise.dispatch_lanes(
-            Path(),
-            _session(_lane("epic.1"), _lane("epic.2")),
-            admission=_granted("L3", 10_000, 5_000),
-        )
-        == ()
-    )
-
-    _question, detail = queued[0]
+    # Reported rather than enqueued since basicly-hnnmk9.1: the pass dispatches, and the
+    # coverage an operator has to see is the same coverage the refusal used to carry.
+    detail = "\n".join(said)
     # 9000 measured for epic.1 plus the 1000 bound assumed for epic.2.
     assert "10000 tokens forecast" in detail
     assert "sized: epic.1" in detail
@@ -4570,23 +4491,24 @@ def test_an_unsizeable_lane_is_bounded_rather_than_waved_through(
     ceiling (basicly-vz78). An assumed bound can be wrong; no bound cannot be right.
     """
     _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
-    queued = _pass_fixture(
+    _pass_fixture(
         monkeypatch,
         sizings={"epic.1": None},
         forecasts={},
-        dispatch_is_a_failure=True,
         unsized_tokens=5_000,
     )
+    said: list[str] = []
 
-    assert (
-        supervise.dispatch_lanes(
-            Path(), _session(_lane("epic.1")), admission=_granted("L3", 10_000, 9_999)
-        )
-        == ()
+    supervise.dispatch_lanes(
+        Path(),
+        _session(_lane("epic.1")),
+        admission=_granted("L3", 10_000, 9_999),
+        report=said.append,
     )
 
-    _question, detail = queued[0]
-    assert "assumed at the unsizeable-lane bound (measured): epic.1" in detail
+    # The bound is still counted and still said; it no longer stops the pass
+    # (basicly-hnnmk9.1). An assumed bound can be wrong; no bound cannot be right.
+    assert "assumed at the unsizeable-lane bound (measured): epic.1" in "\n".join(said)
 
 
 def test_an_unsizeable_lane_still_dispatches_when_the_budget_covers_its_bound(
@@ -5140,7 +5062,7 @@ def _ungranted() -> policy.SpendStatus:
     return policy.SpendStatus(grant=None, spent_tokens=0, halted=False)
 
 
-def test_a_metered_dispatch_is_refused_without_a_covering_budget(
+def test_a_metered_dispatch_runs_and_says_no_budget_covers_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """With no grant there is no ceiling at all, not merely a loose one (basicly-kkux).
@@ -5151,11 +5073,6 @@ def test_a_metered_dispatch_is_refused_without_a_covering_budget(
     """
     _patch_readiness(monkeypatch, ranked=((1, "epic.1"),))
     monkeypatch.setattr(supervise.runner, "select_runner", lambda *_a, **_k: _HEADLESS_SPEC)
-    monkeypatch.setattr(
-        supervise,
-        "_dispatch_lane",
-        lambda *_a, **_k: pytest.fail("an unbudgeted metered dispatch must not start"),
-    )
     queued: list[tuple[str, str]] = []
     monkeypatch.setattr(
         supervise.decisions,
@@ -5168,10 +5085,11 @@ def test_a_metered_dispatch_is_refused_without_a_covering_budget(
         tmp_path, _session(_lane("epic.1")), admission=_ungranted(), report=lines.append
     )
 
-    assert outcomes == ()
-    assert queued, "the refusal must reach the decision queue, not just stdout"
-    assert "no grant with a token budget" in queued[0][1]
-    assert any("refused" in line for line in lines)
+    assert outcomes, "an ungranted metered pass was still refused"
+    assert queued == [], "and it still queued a refusal nobody has to answer"
+    # It says what it cannot bound and runs anyway (basicly-hnnmk9.1); the bound that
+    # would work is basicly-tkbmndn, enforced by the runner rather than by a permission.
+    assert any("metered and no budget covers it" in line for line in lines)
 
 
 def test_a_handoff_dispatch_needs_no_budget_because_it_spends_nothing(

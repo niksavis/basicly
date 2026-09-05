@@ -1161,9 +1161,6 @@ def _already_coupled(repo_root: Path, bead: str, coupled_to: str) -> bool:
 # `PASS` here is the supervisor *pass* over the lanes, not a credential — S105 keys on
 # the substring. Renaming to dodge the heuristic was rejected: the name is the domain
 # term used by `PassSpendAdmission` and every pass-scoped constant beside it.
-PASS_SPEND_QUESTION = (
-    "re-scope this pass or re-grant: its forecast spend exceeds the remaining budget"  # noqa: S105 — supervisor pass, not a credential
-)
 
 
 @dataclass(frozen=True)
@@ -1180,7 +1177,8 @@ class PassSpendAdmission:
     # present an assumption as a measurement.
     counted: tuple[str, ...]
     unforecast: tuple[str, ...]
-    violation: str | None
+    # A warning and no longer a verdict: nothing refuses on it (basicly-hnnmk9.1).
+    warning: str | None
     # Lanes with no readable scope, counted at `decompose.unsized_lane_tokens` rather
     # than skipped. Skipping them is what left a pass unbounded (basicly-vz78).
     assumed: tuple[str, ...] = ()
@@ -1188,16 +1186,11 @@ class PassSpendAdmission:
     assumed_source: str = ""
 
     @property
-    def refused(self) -> bool:
-        """True when this pass must dispatch nothing."""
-        return self.violation is not None
-
-    @property
     def coverage(self) -> str:
         """How this pass's total was arrived at — reported whether or not it refused.
 
         Printed on every pass, because the failure mode this closes was *silent*: a
-        pass with no forecast at all returned ``violation=None``, which is
+        pass with no forecast at all returned ``warning=None``, which is
         indistinguishable at the surface from a pass that was checked and fitted
         (basicly-vz78). An operator has to be able to see that a number is an
         assumption before it is the only thing standing between them and the bill.
@@ -1220,13 +1213,6 @@ class PassSpendAdmission:
             parts.append(f"UNBOUNDED, no figure at all: {', '.join(self.unforecast)}")
         return "; ".join(parts)
 
-    @property
-    def detail(self) -> str:
-        """The violation with its forecast coverage spelled out, for the queue item."""
-        if self.violation is None:
-            return ""
-        return f"{self.violation} ({self.coverage})"
-
 
 def admit_pass_spend(
     repo_root: Path,
@@ -1242,7 +1228,7 @@ def admit_pass_spend(
 
     A lane whose scope cannot be read is counted at :func:`decompose.unsized_lane_tokens`
     instead of being dropped. Dropping it is what made the gate inert for most of a
-    real tracker: with nothing counted the function returned ``violation=None``, which
+    real tracker: with nothing counted the function returned ``warning=None``, which
     ``refused`` reads as "admit", so a pass of unsizeable lanes had no forward bound at
     all (basicly-vz78). An assumed bound can be wrong; no bound cannot be right.
 
@@ -1288,7 +1274,7 @@ def admit_pass_spend(
         # still wants to distinguish "no bound" and for the message to stay honest if
         # a future path reintroduces one.
         unforecast=(),
-        violation=policy.check_pass_spend(total, status),
+        warning=policy.check_pass_spend(total, status),
         assumed=assumed,
         assumed_source=assumed_source,
     )
@@ -1384,12 +1370,6 @@ PARKED_LANE_QUESTION = (
 )
 
 
-UNGRANTED_QUESTION = (
-    "this session dispatches a metered agent but carries no grant with a token budget: "
-    "issue one, or set [runner] default to the manual handoff?"
-)
-
-
 def metered_without_a_budget(repo_root: Path, admission: policy.SpendStatus) -> str | None:
     """The configured runner's name when it meters spend under no budget, else None.
 
@@ -1403,57 +1383,6 @@ def metered_without_a_budget(repo_root: Path, admission: policy.SpendStatus) -> 
     config = load_runner_config(repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     return spec.name if spec.kind == runner.HEADLESS else None
-
-
-def record_ungranted_refusal(
-    repo_root: Path, root_issue: str, runner_name: str, lanes: tuple[AdoptedLane, ...]
-) -> str:
-    """Refuse a metered pass that no budget covers; the detail reported and queued.
-
-    Both halves of D3's ceiling are keyed on the grant, so with none there is no bound
-    at all rather than a loose one — ``spend_status`` reports ``halted=False`` and
-    ``check_pass_spend`` admits any forecast against a ``None`` remainder
-    (basicly-kkux). The grant is also the authorization: it is the one human confirm
-    that permits delegated spend, so dispatching a metered runner without it spends
-    money nobody approved.
-
-    Queued as well as reported, like every other spend refusal, so a client that only
-    reads the decision queue does not see this as an idle pass.
-    """
-    detail = (
-        f"no grant with a token budget covers {root_issue}, so the {runner_name!r} runner "
-        f"has no ceiling to meter {len(lanes)} ready lane(s) against; issue one with "
-        f"`basicly policy grant {root_issue} --level L1 --token-budget N` or switch "
-        "[runner] default to the manual handoff"
-    )
-    decisions.enqueue(repo_root, root_issue, "escalation", UNGRANTED_QUESTION, detail)
-    note_standing(LANE_REFUSED, detail, *(lane.issue_id for lane in lanes))
-    return detail
-
-
-def record_pass_refusal(
-    repo_root: Path, root_issue: str, admission: PassSpendAdmission
-) -> decisions.DecisionItem:
-    """Surface a forecast-refused pass to the human as a queue item on the root.
-
-    The same shape and reason as :func:`record_dispatch_halt`, idempotence included:
-    the numbers live in the *detail*, which is not part of the item's id.
-
-    Published onto every lane the pass was to start: `counted` alone is empty whenever
-    the forecast walk failed (basicly-ncday7).
-    """
-    every_lane = (*admission.counted, *admission.unforecast, *admission.assumed)
-    note_standing(LANE_REFUSED, admission.violation or "", *every_lane)
-    return decisions.enqueue(
-        repo_root,
-        root_issue,
-        "escalation",
-        PASS_SPEND_QUESTION,
-        admission.detail,
-    )
-
-
-# --- Concurrent dispatch: fan ready lanes out up to the cap ------------------
 
 
 @dataclass(frozen=True)
@@ -1747,45 +1676,6 @@ def configure_budget(repo_root: Path) -> runner.ProcessBudget:
     )
 
 
-def record_dispatch_halt(
-    repo_root: Path,
-    root_issue: str,
-    admission: policy.SpendStatus,
-    *,
-    lanes: tuple[AdoptedLane, ...] = (),
-) -> decisions.DecisionItem:
-    """Surface a spend halt to the human as a queue item on the session root.
-
-    D3's halt is silent otherwise: the pass would simply stop dispatching and a
-    client would read it as "no ready lanes". The item is idempotent per
-    (issue, kind, question), so every subsequent halted pass re-enqueues the
-    same one rather than piling up notifications.
-
-    The two halts ask different questions, so they are different queue items
-    (basicly-jr0l.35): a spent budget is answered by deciding whether the work is
-    worth more money, an unmeterable one by fixing what the harness can see. Putting
-    both behind "the budget is spent" would send the operator to re-grant a budget
-    that was never the problem.
-    """
-    note_standing(LANE_REFUSED, admission.detail, *(lane.issue_id for lane in lanes))
-    question = (
-        UNMETERED_QUESTION
-        if admission.unmetered_dispatches
-        else "re-grant autonomy or continue by hand: the session's token budget is spent"
-    )
-    return decisions.enqueue(repo_root, root_issue, "escalation", question, admission.detail)
-
-
-UNMETERED_QUESTION = (
-    "the runner reported no measurable usage for a dispatch under this grant, so the spend "
-    "ceiling cannot bind: configure a runner whose usage basicly can read, or re-grant to "
-    "accept the unmetered spend"
-)
-
-
-# --- Autonomous delegation: the decider in the pass (D3 L2+, design 7.1) -----
-
-
 # Decision kinds the decider may take at L2+ (design 7.1: "approve delegable
 # checkpoints, triage escalations, and answer needs-input questions"). The three
 # excluded kinds are excluded on purpose:
@@ -1952,28 +1842,6 @@ def say_dispatch(
         say(f"spent:    {spent} tokens this pass, over {len(outcomes)} dispatch(es)")
 
 
-def _ungranted_detail(
-    repo_root: Path,
-    session: SessionState,
-    spec: runner.RunnerSpec,
-    admission: policy.SpendStatus,
-    lanes: tuple[AdoptedLane, ...],
-) -> str | None:
-    """The refusal detail when a metered runner has no budget to meter against.
-
-    Both halves of D3's ceiling key on the grant — `spend_status` reports
-    `halted=False` and `remaining_tokens=None` when there is none, and
-    `check_pass_spend` admits anything against a None remainder — so an ungranted
-    session had no bound at all (basicly-kkux). Latent while the supervisor could not
-    seed its own lanes, and one command deep once basicly-t73d let it. A handoff spends
-    nothing, so it proceeds and this returns None.
-    """
-    granted = admission.grant is not None and admission.grant.token_budget is not None
-    if spec.kind != runner.HEADLESS or granted:
-        return None
-    return record_ungranted_refusal(repo_root, session.root_issue, spec.name, lanes)
-
-
 def _pass_lanes(
     repo_root: Path, session: SessionState, skip: frozenset[str]
 ) -> tuple[AdoptedLane, ...]:
@@ -2075,20 +1943,21 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     # on the first pass where the ceiling actually stops ready work.
     if admission is None:
         admission = policy.spend_status(repo_root, session.root_issue)
+    # Three spend refusals stood here - this halt, the ungranted runner and the pass-spend
+    # gate. All three report now: the budget measures and never blocks (basicly-hnnmk9.1).
     if admission.halted:
-        record_dispatch_halt(repo_root, session.root_issue, admission, lanes=lanes)
-        return ()
+        _say(report, f"spend:    {admission.detail}")
     if cap is None:
         cap = load_worktree_config(repo_root).concurrency
     config = load_runner_config(repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     sizing = load_sizing_config(repo_root)
 
-    # A metered runner needs a budget to be metered against (:func:`_ungranted_detail`).
-    ungranted = _ungranted_detail(repo_root, session, spec, admission, lanes)
-    if ungranted is not None:
-        _say(report, f"refused:  {ungranted}")
-        return ()
+    # Refused outright until basicly-hnnmk9.1; the bound that works is basicly-tkbmndn.
+    if spec.kind == runner.HEADLESS and (
+        admission.grant is None or admission.grant.token_budget is None
+    ):
+        _say(report, f"spend:    the {spec.name} runner is metered and no budget covers it")
 
     # BUILD's other entry predicate — the downstream WIP bound. Read before sizing,
     # so nothing forecasts a lane the bound holds.
@@ -2104,9 +1973,8 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     working_sets = tuple(admit_working_set(repo_root, lane.issue_id, sizing) for lane in lanes)
     pass_spend = admit_pass_spend(repo_root, working_sets, admission, sizing)
     _report_coverage(report, repo_root, working_sets, pass_spend)
-    if pass_spend.refused:
-        record_pass_refusal(repo_root, session.root_issue, pass_spend)
-        return held
+    if pass_spend.warning is not None:
+        _say(report, f"spend:    {pass_spend.warning} ({pass_spend.coverage})")
     banded = {item.issue_id: item for item in working_sets}
 
     # Read once for the whole pass, not per lane: every lane must be recorded

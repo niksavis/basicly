@@ -120,31 +120,6 @@ def test_a_bounced_landing_leaves_the_lane_refused_rather_than_landing(
     assert hold.detail == "the rebase conflicted"
 
 
-def test_the_pass_spend_refusal_reaches_a_lane_carrying_no_forecast(
-    work_repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """AC3: the ceiling that stopped the pass reaches every lane the pass was to start.
-
-    The gap this covers: the refusal published for `counted` alone, which holds only the
-    lanes with a real forecast. When the forecast walk fails it is suppressed and `counted`
-    is empty, so nothing was published at all and every lane kept the `queued` standing
-    `_admit_wip` gave it - "admitted, waiting for a runner slot" for a pass starting nothing.
-    """
-    admission = supervise.PassSpendAdmission(
-        forecast_tokens=90,
-        remaining_tokens=10,
-        counted=(),
-        unforecast=(),
-        violation="the pass would spend 90 against 10 remaining",
-        assumed=("basicly-aaa", "basicly-bbb"),
-    )
-    monkeypatch.setattr(supervise.decisions, "enqueue", lambda *_a, **_k: None)
-
-    supervise.record_pass_refusal(work_repo, "basicly-root", admission)
-
-    assert _states() == {"basicly-aaa": "refused", "basicly-bbb": "refused"}
-
-
 def test_a_lane_whose_worktree_record_is_gone_publishes_the_refusal(
     work_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
