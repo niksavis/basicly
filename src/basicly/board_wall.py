@@ -132,17 +132,19 @@ class Card:
 
 @dataclass(frozen=True)
 class Phase:
-    """One loop phase: its name, its count, its share, and whether work sits here now.
+    """One loop phase: its name, its count, its share, and its two marks.
 
     ``share`` is what makes 213 against 1 visible at six metres: seven numbers in seven
     identical boxes rank by nothing, so the bar carries the magnitude and the digits carry
-    the value. It is None wherever :func:`bar` refuses one.
+    the value. It is None wherever :func:`bar` refuses one. ``here`` is work sitting here
+    and ``moved`` is work that arrived this beat; :mod:`basicly.board_loop` says why two.
     """
 
     name: str
     count: int | None
     here: bool
     share: Bar | None = None
+    moved: bool = False
 
 
 @dataclass(frozen=True)

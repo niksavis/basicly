@@ -1,32 +1,37 @@
 """One region per question, because the layout is the acceptance criterion.
 
 The board answers four questions from across a room and each has a region of its own: the
-**watch band** says whether anybody is waiting on a person and for how long, the **loop row**
-says where the work is phase by phase and where it is now, **in flight** and **next up** say
-what is running and what is next, and the **footer** says whether we are making progress,
-whether the tree is green, and what it cost.
+**watch band** says whether anybody waits on a person, **in flight** and **next up** say
+what runs and what is next, and the **footer** says whether we are making progress. The
+**loop row** is :mod:`basicly.board_loop`'s, one layer down, because both need
+:func:`~basicly.board_loop.phase_of` and siblings here may not import each other.
 
 Every region is a **fixed-height row that truncates with a visible marker**, which is the
-defect this module was written against: the render it replaces gave each schema key a box of
-its own that its content overflowed, so all four answers sat below a scrollbar nobody on a
-wall display can reach. A region therefore caps what it draws at a slot count, says
-``+N more`` naming what it dropped, and clips a string with an ellipsis of its own rather
-than letting CSS hide the end of it.
+defect this module was written against: the render it replaces gave each schema key a box
+its content overflowed, so all four answers sat below a scrollbar nobody on a wall can
+reach. A region caps what it draws at a slot count, says ``+N more`` naming what it
+dropped, and clips a string itself rather than letting CSS hide the end.
 
-**A layout count is not a section count.** One region may read several sections - the footer
-reads five - or none of the twelve. :func:`inventory` is what makes that safe: it draws the
-verdict's whole roster, so a section no region reads still reports itself and nothing the
-schema declares can be dropped by a change of layout.
+**A layout count is not a section count.** One region may read several sections, or none.
+:func:`inventory` draws the verdict's whole roster, so a section no region reads still
+reports itself.
 
 The vocabulary, the honesty rules and the shapes are :mod:`basicly.board_wall`'s;
 :mod:`basicly.board_render` draws what this module returns.
 """
 
+# comment-density-waiver: cost(basicly-a68ggd): 50.3% of 6483 against the 50% cap, and the
+# mechanism is inverted - this module did not gain prose, it LOST code. `loop`, `PHASES` and
+# `phase_of` left for `board_loop`: prose fell 372 tokens and code fell 426, because the
+# extracted region was denser than the module average. What is left is measurement rationale
+# three records cite - the 24.09px row pitch, the three calibration widths, the 41-against-6
+# count. Retired by `basicly-0bj8q1`, which takes `flight` and `_lane_cells`, the prose-heavy
+# half; a cut of narration here would delete evidence instead.
 # module-size-waiver: cost(basicly-bb98v4): 4056 of 4000. The layout rewrite grew the lane
-# card - a row per figure the producer holds, a working mark, and the note that says whether
-# a lane is stuck. The nameable cut is `flight`, `_lane_cells` and `_phase_of` into `board_flight`,
-# and the test split already proves the seam; it needs a line in `.importlinter`, whose 116
-# entries leave no module unlisted, and that file is unlanded scope of `basicly-rn0o.6`.
+# card - a row per figure the producer holds, a working mark, and a stuck note. Half the
+# named cut is taken: `loop`, `PHASES` and `phase_of` left for `board_loop` with
+# basicly-a68ggd. What remains nameable is `flight` and `_lane_cells`, held by
+# `basicly-0bj8q1`.
 
 from __future__ import annotations
 
@@ -36,6 +41,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from . import board_fields
+from .board_loop import phase_of
 from .board_wall import (
     ABSENT,
     ABSENT_TEXT,
@@ -58,7 +64,6 @@ from .board_wall import (
     Group,
     Item,
     Listing,
-    Phase,
     bar,
     cell,
     clip,
@@ -77,19 +82,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from .board_wall import Age, Reading, State
-
-# The harness's own lifecycle, in order, and the order is the load-bearing part: the palette
-# ships four hues and there are seven phases, so a phase is carried by its **position** in
-# this row and by its label rather than by a colour that would have to repeat.
-PHASES: tuple[str, ...] = (
-    "intake",
-    "classify",
-    "decompose",
-    "build",
-    "verify",
-    "validate",
-    "ship",
-)
 
 # What each `lanes[].state` is drawn as: a palette key carrying the colour and the border
 # style, and the word the card leads with. No glyph on a card. The **word** is the
@@ -309,62 +301,6 @@ def band(reads: Mapping[str, Reading], drawn: Age, now: datetime) -> Band:
     )
 
 
-def _phase_of(row: Mapping[str, Any]) -> str:
-    """The phase *row* declares, or an empty string where it declares none."""
-    phase = row.get("phase")
-    return phase if isinstance(phase, str) and phase else ""
-
-
-def _loop_note(units: Reading, lanes: Reading, counts: Mapping[str, int], unphased: int) -> str:
-    """Why the row is not fully populated, in the producer's terms rather than as a zero."""
-    parts = []
-    if not units.drawn:
-        parts.append(f"units {units.note}")
-    elif not counts:
-        parts.append(f"phase {ABSENT_TEXT} on any of the {len(units.dicts)} units")
-    elif unphased:
-        parts.append(f"{unphased} of {len(units.dicts)} units carry no phase")
-    if not lanes.drawn:
-        parts.append(f"current position: lanes {lanes.note}")
-    return DOT.join(parts)
-
-
-def loop(reads: Mapping[str, Reading]) -> tuple[tuple[Phase, ...], str]:
-    """The loop row: a count per phase, and a mark where work currently sits.
-
-    The counts are the units section's and the mark is the lanes section's, because the
-    schema separates those two facts on purpose - ``units.phase`` says where a unit stopped,
-    ``lanes.phase`` says where one is running. Either being absent costs its own half of the
-    row and never the row, and an absent count is None rather than a nought.
-    """
-    units, lanes = reads["units"], reads["lanes"]
-    counts: dict[str, int] = {}
-    unphased = 0
-    for row in units.dicts:
-        name = _phase_of(row)
-        if name:
-            counts[name] = counts.get(name, 0) + 1
-        else:
-            unphased += 1
-    here = {_phase_of(row) for row in lanes.dicts} - {""}
-    measured = units.drawn and bool(counts)
-    # The whole this row is a share *of* is the phased population and never the units section's
-    # length: an unphased unit is in no phase, so counting it would make every bar short of its
-    # own row by the same wrong amount. Both terms come from the one map, so `bar` refuses the
-    # ratio exactly when the count is unmeasured.
-    population = sum(counts.values())
-    row = tuple(
-        _phase(name, counts.get(name, 0) if measured else None, name in here, population)
-        for name in list(PHASES) + sorted(set(counts) - set(PHASES))
-    )
-    return row, _loop_note(units, lanes, counts, unphased)
-
-
-def _phase(name: str, count: int | None, here: bool, population: int) -> Phase:
-    """One phase box: its count, its mark, and its share of the phased population."""
-    return Phase(name, count, here, bar(count, population))
-
-
 def _lane_cells(lane: Mapping[str, Any]) -> tuple[Cell, ...]:
     """The figures a lane card carries, each drawn only where the producer held one.
 
@@ -450,7 +386,7 @@ def _primary_state(lane: Mapping[str, Any], moment: datetime) -> str:
     phase follows it. No duration for a lane nobody confirms is live and that names no
     state: its stamp would belong to whichever dispatch last ended.
     """
-    phase = _phase_of(lane) or UNKNOWN
+    phase = phase_of(lane) or UNKNOWN
     word = _lane_mark(lane)[1]
     if not word:
         ago = _started_ago(lane, moment) if lane.get("live") else ""

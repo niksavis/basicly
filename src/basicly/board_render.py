@@ -9,9 +9,10 @@ reaches past the snapshot only ever works against basicly's own producer.
 suppression reads "nothing here is served to a browser". This output is HTML, a snapshot may
 carry a foreign producer's strings, and so that env cannot be reused.
 
-The regions are :mod:`basicly.board_regions`' and :mod:`basicly.board_footer`'s, and this
-module composes them into one context and renders it - which is why the page's age is a
-single reading, taken here rather than once per region.
+The regions are :mod:`basicly.board_regions`', :mod:`basicly.board_loop`'s and
+:mod:`basicly.board_footer`'s, and this module composes them into one context and renders
+it - which is why the page's age is a single reading, taken here rather than once per
+region.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader
 
-from . import board_footer, board_regions, board_wall, catalog
+from . import board_footer, board_loop, board_regions, board_wall, catalog
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -50,7 +51,8 @@ def context(
     """
     reads = board_wall.readings(document, verdict)
     drawn = board_wall.age(document, now)
-    phases, loop_note = board_regions.loop(reads)
+    phases, loop_note, pass_running = board_loop.loop(reads, now)
+    backlog_phases, backlog_phases_note = board_loop.backlog_phases(reads)
     cards, flight_more, flight_note = board_regions.flight(reads, now=now)
     lines, events_more = board_footer.events(reads)
     hist, priorities_more = board_footer.priorities(reads)
@@ -70,6 +72,12 @@ def context(
         "band": board_regions.band(reads, drawn, now),
         "phases": phases,
         "loop_note": loop_note,
+        # The loop region draws the pass and the backlog census draws the backlog, and
+        # the two are separate keys because they are separate populations: binning one
+        # under the other made the region total equal `backlog.active` (basicly-a68ggd).
+        "pass_running": pass_running,
+        "backlog_phases": backlog_phases,
+        "backlog_phases_note": backlog_phases_note,
         "cards": cards,
         "flight_more": flight_more,
         "flight_note": flight_note,

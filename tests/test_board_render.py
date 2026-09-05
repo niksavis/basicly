@@ -37,7 +37,7 @@ from tests.test_board_wall import REPO_ROOT, STAMPED, document
 
 TEMPLATES = REPO_ROOT / ".basicly" / "core" / "templates" / "board"
 SITE = REPO_ROOT / "site" / "index.html"
-SOURCES = ("board_render", "board_regions", "board_footer", "board_wall")
+SOURCES = ("board_render", "board_regions", "board_loop", "board_footer", "board_wall")
 
 # The eight fixed rows of the wall, in the order the grid declares them.
 # The rows every page draws. `inv` is deliberately not among them: the roster carries only
@@ -311,8 +311,8 @@ def test_the_renderer_imports_nothing_that_could_read_engine_state() -> None:
     """The structural half is `.importlinter`'s forbidden contract; this is the narrow half.
 
     A module reachable only through a function-level import would satisfy the tier stack and
-    still let a consumer read the ledger, so the import block itself is asserted - on all four
-    modules, because the extraction that produced them is exactly how such an import hides.
+    still let a consumer read the ledger, so the import block itself is asserted - on every
+    one, because the extraction that produced them is exactly how such an import hides.
     """
     for name in SOURCES:
         source = (REPO_ROOT / "src" / "basicly" / f"{name}.py").read_text(encoding="utf-8")
