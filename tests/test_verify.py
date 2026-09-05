@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 import shutil
 import subprocess
@@ -32,6 +33,28 @@ class _Proc:
         self.stderr = stderr
 
 
+def _as_spawn(fake_run):
+    """Adapt a ``subprocess.run`` stand-in to the seam ``run_check`` now goes through.
+
+    The streamed path tees - it forwards each line and keeps it, so a failing check's own
+    words survive the terminal (basicly-zlqn7e) - which needs `Popen` and therefore cannot
+    be `subprocess.run`. These stubs were written against that call, so the adapter keeps
+    every one of them, and passes the kwargs they assert on unchanged.
+    """
+
+    def spawn(command, repo_root, *, capture):
+        return fake_run(
+            command,
+            cwd=repo_root,
+            env=verify.sanitised_project_env(os.environ, repo_root),
+            check=False,
+            capture_output=capture,
+            text=capture or None,
+        )
+
+    return spawn
+
+
 def _check(name: str, modes: tuple[str, ...], staged_suffix: str | None = None) -> VerifyCheck:
     return VerifyCheck(
         name=name, command=(name,), modes=frozenset(modes), staged_suffix=staged_suffix
@@ -48,7 +71,7 @@ def test_run_check_maps_returncode_to_status(
         seen.append(command)
         return _Proc(0 if command == ["ok"] else 1)
 
-    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(fake_run))
 
     assert verify.run_check(_check("ok", ("full",)), tmp_path, "full").status == "pass"
     assert verify.run_check(_check("bad", ("full",)), tmp_path, "full").status == "fail"
@@ -74,7 +97,7 @@ def test_run_check_drops_a_base_virtual_env_for_a_worktree_cwd(
         seen.append(kw["env"])
         return _Proc(0)
 
-    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(fake_run))
 
     verify.run_check(_check("ok", ("full",)), lane, "full")
     verify.run_check(_check("ok", ("full",)), base, "full")
@@ -157,7 +180,7 @@ def test_run_check_staged_skips_when_no_files(
         ran = True
         return _Proc(0)
 
-    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(fake_run))
 
     result = verify.run_check(_check("ruff", ("staged",), ".py"), tmp_path, "staged")
     assert result.status == "skip"
@@ -175,7 +198,7 @@ def test_run_check_staged_appends_matching_files(
         captured.extend(command)
         return _Proc(0)
 
-    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(fake_run))
 
     verify.run_check(_check("ruff", ("staged",), ".py"), tmp_path, "staged")
     assert captured == ["ruff", "a.py", "b.py"]
@@ -193,7 +216,7 @@ def test_run_check_records_a_passing_check_as_an_execution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A pass is the evidence the release gate reads, keyed by the check's name."""
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_k: _Proc(0))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_k: _Proc(0)))
 
     verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
     verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
@@ -212,7 +235,7 @@ def test_the_recorded_ledger_never_dirties_the_tree(
     was run for, is unsatisfiable in a different way — the shape this bead removed.
     """
     subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_k: _Proc(0))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_k: _Proc(0)))
 
     verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
 
@@ -231,7 +254,7 @@ def test_run_check_records_nothing_for_a_failure_or_a_skip(
     A `fail` covers the two states in which it demonstrably did not run at all —
     command not found (127) and not executable (126) — and a skip ran nothing.
     """
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_k: _Proc(1))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_k: _Proc(1)))
     verify.run_check(_check("failing", ("full",)), tmp_path, "full")
 
     monkeypatch.setattr(verify, "staged_files", lambda _root, _suffix: [])
@@ -244,7 +267,7 @@ def test_a_fix_run_is_not_an_execution_of_the_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The fixer is not the gate: `ruff format` passing says nothing about `--check`."""
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_k: _Proc(0))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_k: _Proc(0)))
     check = VerifyCheck(
         name="ruff-format",
         command=("ruff", "format", "--check"),
@@ -264,7 +287,7 @@ def test_recording_can_never_fail_the_check_it_records(
     blocked = tmp_path / usage.VERIFY_CHECKS_FILE.parent
     blocked.parent.mkdir(parents=True, exist_ok=True)
     blocked.write_text("not a directory\n", encoding="utf-8")
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_k: _Proc(0))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_k: _Proc(0)))
 
     assert verify.run_check(_check("vulture", ("full",)), tmp_path, "full").status == "pass"
 
@@ -274,7 +297,7 @@ def test_run_verify_filters_by_mode_and_aggregates(
 ) -> None:
     """Only mode-matching checks run; the report reflects each verdict."""
     monkeypatch.setattr(
-        verify.subprocess, "run", lambda command, **_kw: _Proc(0 if command == ["a"] else 1)
+        verify, "_spawn", _as_spawn(lambda command, **_kw: _Proc(0 if command == ["a"] else 1))
     )
     config = VerifyConfig((_check("a", ("full",)), _check("b", ("full",)), _check("c", ("fast",))))
 
@@ -289,7 +312,7 @@ def test_run_fix_skips_a_check_without_a_fix_command(
 ) -> None:
     """Only checks that declare a mechanical repair are ever fixed."""
     monkeypatch.setattr(
-        verify.subprocess, "run", lambda *_a, **_k: pytest.fail("no fixer is configured")
+        verify, "_spawn", _as_spawn(lambda *_a, **_k: pytest.fail("no fixer is configured"))
     )
     assert verify.run_fix(_check("ruff", ("full",)), tmp_path, "full").status == "skip"
 
@@ -300,7 +323,7 @@ def test_apply_fixes_runs_the_fix_commands_not_the_checks(
     """apply_fixes invokes each declared fix_command and nothing else."""
     seen: list[list[str]] = []
     monkeypatch.setattr(
-        verify.subprocess, "run", lambda command, **_kw: (seen.append(command), _Proc(0))[1]
+        verify, "_spawn", _as_spawn(lambda command, **_kw: (seen.append(command), _Proc(0))[1])
     )
     config = VerifyConfig((
         _check("pytest", ("full",)),
@@ -328,7 +351,7 @@ def test_apply_fixes_scopes_to_staged_files_in_staged_mode(
     monkeypatch.setattr(verify, "staged_files", lambda _root, _suffix: ["a.py"])
     captured: list[str] = []
     monkeypatch.setattr(
-        verify.subprocess, "run", lambda command, **_kw: (captured.extend(command), _Proc(0))[1]
+        verify, "_spawn", _as_spawn(lambda command, **_kw: (captured.extend(command), _Proc(0))[1])
     )
     check = VerifyCheck(
         name="ruff-format",
@@ -643,7 +666,7 @@ def test_rerun_failures_reruns_only_the_checks_that_failed(
         seen.append(command)
         return _Proc(1 if command == ["bad"] else 0)
 
-    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(fake_run))
     config = VerifyConfig((_check("ok", ("full",)), _check("bad", ("full",))))
     report = verify.run_verify(tmp_path, "full", config)
     seen.clear()
@@ -657,7 +680,7 @@ def test_rerun_failures_passes_when_the_failure_does_not_reproduce(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The whole point: a check that fails once and then passes is not a merit failure."""
-    monkeypatch.setattr(verify.subprocess, "run", _flaky_run({"pytest"}))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(_flaky_run({"pytest"})))
     config = VerifyConfig((_check("pytest", ("full",)),))
     report = verify.run_verify(tmp_path, "full", config)
     assert report.passed is False
@@ -675,7 +698,7 @@ def test_rerun_failures_returns_a_green_report_untouched(
         seen.append(command)
         return _Proc(0)
 
-    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(fake_run))
     config = VerifyConfig((_check("ok", ("full",)),))
     report = verify.run_verify(tmp_path, "full", config)
     seen.clear()
@@ -692,7 +715,7 @@ def test_rerun_failures_keeps_the_verdict_when_no_check_matches(
     An empty VerifyReport reads as passing, so re-running nothing must return the
     failed report rather than an empty one, or a real failure would be forgiven.
     """
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_kw: _Proc(1)))
     config = VerifyConfig((_check("gone", ("full",)),))
     report = verify.run_verify(tmp_path, "full", config)
 
@@ -710,7 +733,7 @@ def test_a_streamed_run_captures_no_output_so_nothing_is_forgiven(
     ``dependency_defect`` has nothing to match and the original verdict stands
     (basicly-kjc5.56).
     """
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, _LOCK_TIMEOUT))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_kw: _Proc(1, _LOCK_TIMEOUT)))
     config = VerifyConfig((_check("pytest", ("full",)),))
 
     report = verify.run_verify(tmp_path, "full", config)
@@ -723,7 +746,7 @@ def test_capture_collects_output_for_the_signature_test(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Both streams, because a dependency may report on either."""
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, "out-", "err"))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_kw: _Proc(1, "out-", "err")))
 
     result = verify.run_check(_check("pytest", ("full",)), tmp_path, "full", capture=True)
 
@@ -734,7 +757,7 @@ def test_dependency_defect_names_the_check_and_why_forgiving_is_safe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A forgiven failure must say which dependency and on what grounds."""
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(1, _LOCK_TIMEOUT))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_kw: _Proc(1, _LOCK_TIMEOUT)))
     config = VerifyConfig((_check("pytest", ("full",)),))
     report = verify.run_verify(tmp_path, "full", config)
     captured = verify.rerun_failures(report, tmp_path, "full", config, capture=True)
