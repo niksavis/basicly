@@ -22,7 +22,14 @@ import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from basicly import board_actions, board_asks, board_render, board_schema
+from basicly import (
+    board_actions,
+    board_asks,
+    board_fields,
+    board_render,
+    board_schema,
+    board_sections,
+)
 from tests.test_board_wall import REPO_ROOT, document
 
 if TYPE_CHECKING:
@@ -232,3 +239,64 @@ def test_the_rows_are_json_serialisable_so_the_seam_is_data_and_not_markup() -> 
     # `"<"`, because the command's placeholders are `<confirm code>` and are meant to be.
     flat = json.dumps(rows)
     assert not any(tag in flat for tag in ("<form", "<input", "<button", "<section"))
+
+
+# --- the producer side of the same seam -------------------------------------
+# Here rather than in `tests/test_board_sections.py`, and the reason is the defect: the
+# consumer shipped reading `actions[].basicly` while the producer never wrote the key, and
+# every test on either side passed. A seam asserted from one end only is how that happens
+# (basicly-3qstvw). These assert the pair.
+
+
+def _marker(kind: str, wait_id: str = "basicly-x#wait-ship") -> Any:
+    """One pending wait marker of *kind*, the shape `board_fields.read_markers` yields."""
+    return board_fields.Marker(
+        family=board_fields.WAIT_FAMILY,
+        record="basicly-x",
+        at="2026-09-05T10:00:00Z",
+        fields={"id": wait_id, "kind": kind},
+        flags=frozenset(),
+    )
+
+
+def _produced(kind: str) -> dict[str, Any]:
+    """What the producer writes for one pending ask of *kind*."""
+    now = datetime(2026, 9, 5, 10, 5, tzinfo=UTC)
+    (ask,) = board_sections.asks([_marker(kind)], now=now)
+    return ask
+
+
+def test_the_producer_names_a_verb_for_every_kind_the_engine_writes() -> None:
+    """`checkpoint` and `decision` are the only two, from `policy` and `decisions`."""
+    assert _produced("checkpoint")["actions"] == [
+        {"offer": "Approve it", "basicly": "checkpoint-approve"}
+    ]
+    assert _produced("decision")["actions"] == [{"offer": "Answer it", "basicly": "loop-answer"}]
+
+
+def test_every_verb_the_producer_offers_is_one_this_consumer_can_run() -> None:
+    """The seam, asserted from the side that executes it.
+
+    The schema's enum is the contract and neither module imports the other, so nothing but
+    this pins them: a verb the producer invents would draw an ask with a button that refuses.
+    """
+    offered = {verb for _label, verb in board_sections._OFFERS.values()}
+    assert offered, "the positive control is empty, so this proves nothing"
+    assert offered <= set(board_actions.ACTIONS), f"unrunnable verbs offered: {offered}"
+
+
+def test_a_kind_the_table_does_not_name_gets_no_actions_key_at_all() -> None:
+    """Absent rather than empty, and never a default: a wrong verb is worse than none."""
+    produced = _produced("advance")
+    assert "actions" not in produced
+    assert board_asks.pending([produced], TOKEN) == ((), 0)
+    # The control: the ask itself is still well formed, so the band still draws it.
+    assert produced["issue"] == "basicly-x" and produced["kind"] == "advance"
+
+
+def test_a_real_produced_ask_reaches_the_page_as_a_prefilled_form() -> None:
+    """End to end over the producer's own output, which is what nothing asserted before."""
+    page = _page([_produced("checkpoint")])
+    assert page.count("<form") == 1
+    assert 'value="basicly-x"' in page and 'value="ship"' in page
+    assert "basicly policy checkpoint basicly-x ship --approve --confirm" in page

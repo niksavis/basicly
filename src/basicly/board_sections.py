@@ -149,6 +149,21 @@ class Readiness:
         return False if record in self.blocked else None
 
 
+# What a viewer may offer to do about an ask, by the kind the engine wrote. The two kinds are
+# `policy.record_wait_request`'s `checkpoint` and `decisions`' `decision`, and nothing else
+# writes one. The verb strings are literals rather than an import: `board_actions` is nine
+# tiers above this producer, and the schema's own closed enum is the contract between them -
+# `tests/test_board_asks.py` pins these against that table, from the side that executes them.
+#
+# **A kind this table does not name gets no `actions` key at all**, which is the schema's rule
+# that such an offer is "drawn without a button rather than refused". Never a default: a board
+# offering a verb that does not fit the ask is worse than one offering none (basicly-3qstvw).
+_OFFERS: Mapping[str, tuple[str, str]] = {
+    "checkpoint": ("Approve it", "checkpoint-approve"),
+    "decision": ("Answer it", "loop-answer"),
+}
+
+
 def asks(
     markers: Sequence[board_fields.Marker],
     *,
@@ -168,6 +183,10 @@ def asks(
     can never disagree. ``question`` is caller-supplied and keyed by wait id: a request marker
     carries no prose at all (``policy.record_wait_request`` writes id, kind and ``requested``),
     so the wording exists only on the decision queue and a wait with none keeps the key absent.
+
+    ``actions`` names the verb that answers the ask, from :data:`_OFFERS`. Without it the
+    board drew no form for a real pending checkpoint at all - the consumer reads this key to
+    know what a button would run, and this producer never wrote it (basicly-3qstvw).
     """
     waits = [row for row in markers if row.family == board_fields.WAIT_FAMILY]
     answered = {
@@ -193,6 +212,8 @@ def asks(
             ask["subject"] = board_fields.text(subject, board_fields.TEXT_MAX)
         if question := (questions or {}).get(wait_id, ""):
             ask["question"] = board_fields.text(question, board_fields.QUESTION_MAX)
+        if offered := _OFFERS.get(kind):
+            ask["actions"] = [{"offer": offered[0], "basicly": offered[1]}]
         pending.append(ask)
     return pending
 
