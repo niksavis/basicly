@@ -121,10 +121,16 @@ READY_ROW_PITCH_PX = 24.09
 # three widths this layout claims, found by binary search with `.scripts/check_render_overflow.py`
 # on the real document. A fixture-measured constant clipped 54px live, because live content
 # wraps more at 1440; chrome falls as width grows, so three points interpolate. Sorted by width.
+#
+# Re-measured for the drawn loop (basicly-6c97zx), which is the whole of the rise from
+# 514/429/381: a diagram is taller than the seven counted boxes it replaced, and this constant
+# is the page's only account of what sits above the list. It is not derived from the region's
+# own height - the instrument is run against the rendered document and the figure is whatever
+# makes `body` stop overflowing, because a computed chrome is what the 54px clip already was.
 READY_CHROME_CALIBRATION: tuple[tuple[float, float], ...] = (
-    (1440.0, 514.0),
-    (1600.0, 429.0),
-    (1920.0, 381.0),
+    (1440.0, 726.0),
+    (1600.0, 735.0),
+    (1920.0, 690.0),
 )
 
 # One row of headroom over the measured chrome: tomorrow's longer branch name wraps a little

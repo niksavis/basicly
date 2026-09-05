@@ -261,7 +261,7 @@
         text-align: right;
       }
 
-      /* --- loop: the running pass over seven phases, and the backlog census below it -- */
+      /* --- loop: the workflow drawn, and the backlog census below it ------------------ */
       .loop {
         grid-area: loop;
       }
@@ -299,27 +299,140 @@
         margin: 2px auto 0;
         width: 100%;
       }
-      /* Where the work is now, on three channels: the glyph, the indigo border, and the
-         fill. Position in the ordered row is the fourth. */
-      .phase.here {
-        background: var(--indigo-deep);
-        border-color: var(--indigo);
-        border-style: solid;
+      /* --- the drawn loop: stations, edges, artifacts, and the two human marks ---------
+         Every mark here is a `path`, `rect` or `circle` and never a codepoint. That is the
+         owner's tofu report answered at the root: a glyph renders as a box wherever the wall
+         display's font lacks the character, and a shape has no font to lack it. */
+      /* The surface scales with the page, so its aspect ratio is what it costs the wall.
+         `max-height` is the ceiling for a width the ratio was not chosen against: the drawing
+         letterboxes rather than pushing the ready list off a 1080px screen, which is what the
+         first draft did and only `check_render_overflow.py` could see. */
+      .flow {
+        display: block;
+        height: auto;
+        margin-top: 4px;
+        max-height: 260px;
+        width: 100%;
       }
-      .phase.here .name,
-      .phase.here .count {
-        color: var(--text-bright);
+      /* A pass is running, so the lane cards below are drawing the detail and the diagram
+         only owes the shape. It gives the height back rather than pushing the ready list off
+         a 1080px screen - the same signal the layout already reshapes on, and the only way
+         a diagram, six cards and a ready list all fit. */
+      .loop:not(.quiet) .flow {
+        max-height: 112px;
       }
-      /* Movement, which `here` cannot carry: a phase holding three lanes that have not moved
-         all afternoon is the wedge a wall exists to show, and a still picture of positions
-         cannot tell it from one that is working. The mark is a lane that entered its state
-         within the document's own beat, so it decays on its own and needs no animation. */
-      .phase.moved {
-        border-color: var(--green);
-        border-style: solid;
+      .flow text {
+        font-family: var(--sans);
       }
-      .phase.moved .name::after {
-        content: " \2192";
+      .flow .station rect {
+        fill: var(--bg-sunk);
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+      .flow .station.working rect {
+        fill: var(--indigo-deep);
+        stroke: var(--indigo);
+      }
+      .flow .station.waiting rect {
+        stroke: var(--amber);
+        stroke-width: 2;
+      }
+      .flow .station .count {
+        fill: var(--text-bright);
+        font-family: var(--mono);
+        font-size: 26px;
+        font-weight: 700;
+      }
+      .flow .station .name {
+        fill: var(--text);
+        font-size: 15px;
+        letter-spacing: 0.04em;
+      }
+      .flow .agent {
+        fill: var(--text-dim);
+        font-size: 11px;
+      }
+      .flow .lane {
+        fill: var(--text-dim);
+      }
+      /* This lane moved within the document's own beat. It is the one mark that separates a
+         working factory from a wedged one, because a still picture of positions cannot. */
+      .flow .lane.moved {
+        fill: var(--green);
+      }
+      /* A lane nobody is moving. Hollow rather than a second hue: the palette's four are
+         spent, and a ring against a disc reads at six metres where two greens do not. Amber
+         and never `--orange` - the alarm hue has exactly one site, the watch band, and a
+         wall carrying it in five places has no alarm (`test_board_render` pins this). */
+      .flow .lane.stuck {
+        fill: none;
+        stroke: var(--amber);
+        stroke-width: 2;
+      }
+      .flow .waits {
+        fill: var(--amber);
+      }
+      .flow .waits-age {
+        fill: var(--amber);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .flow .terminal path {
+        fill: none;
+        stroke: var(--border-lit);
+        stroke-dasharray: 4 3;
+        stroke-width: 1;
+      }
+      .flow .terminal .count {
+        fill: var(--text-dim);
+        font-family: var(--mono);
+        font-size: 20px;
+        text-anchor: middle;
+      }
+      .flow .terminal .name,
+      .flow .terminal .detail {
+        fill: var(--text-dim);
+        font-size: 12px;
+        text-anchor: middle;
+      }
+      .flow .flow-edge .line {
+        fill: none;
+        stroke: var(--border-lit);
+        stroke-width: 2;
+      }
+      /* The loop's one merge, `build -> verify`, where children land into their parent and
+         where the landing gate binds. Thicker because it is the edge that fails. */
+      .flow .flow-edge.merge .line {
+        stroke: var(--text-dim);
+        stroke-width: 4;
+      }
+      /* Amber for the same reason the wedged lane is: this edge failing is the next thing
+         that will go wrong, which wants attention, and it is not a person waiting. */
+      .flow .flow-edge.failing .line {
+        stroke: var(--amber);
+      }
+      .flow .artifact {
+        fill: var(--text-dim);
+        font-size: 11px;
+        text-anchor: middle;
+      }
+      .flow .flow-edge.merge .artifact,
+      .flow .verdict {
+        text-anchor: start;
+      }
+      .flow .verdict {
+        fill: var(--text-dim);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .flow .flow-edge.failing .verdict {
+        fill: var(--amber);
+        font-weight: 700;
+      }
+      /* A human approval, drawn as a diamond on the edge it gates. Three exist: classify,
+         decompose and ship (`config.CHECKPOINTS`). */
+      .flow .checkpoint {
+        fill: var(--amber);
       }
       /* The backlog census: the same shape, deliberately quieter, and under its own heading.
          It is a second population and never this row's denominator - drawing it as the loop
@@ -769,30 +882,113 @@
 
       <section class="region loop{% if not pass_running %} quiet{% endif %}">
         <h2>the loop{% if pass_running %} — this pass{% endif %}</h2>
-{#- Two rows over two populations. The region used to bin the whole backlog under this
-    heading, which made its total equal `backlog.active` by construction (basicly-a68ggd),
-    so the pass row draws `lanes[]` and the census below draws `units[]` under its own
-    label and its own denominator. Neither is ever the other's numerator. #}
-{%- if phases %}
-        <div class="phases">
-{%- for phase in phases %}
-          <div class="phase{% if phase.here %} here{% endif %}{% if phase.moved %} moved{% endif %}">
-{%- if phase.count is none %}
-            <span class="none">{{ none_glyph }}</span>
-{%- else %}
-            <span class="count">{{ phase.count }}</span>
-{%- endif %}
-            <span class="label name clip"
-              >{% if phase.here %}{{ here_glyph }} {% endif %}{{ phase.name }}</span
+{#- The workflow, drawn (basicly-6c97zx). The owner asked for a diagram of the factory and
+    got seven counted boxes, which say how many units sit somewhere and nothing about what
+    the loop IS. Every element below is emitted from `board_diagram`'s model and never from
+    a string that module assembled: autoescape is on, and a producer's `agent` reaches this
+    page the same way every other producer string does. No `|safe` appears in this file. #}
+        <svg
+          class="flow"
+          viewBox="0 0 {{ diagram.width }} {{ diagram.height }}"
+          preserveAspectRatio="xMidYMid meet"
+          role="img"
+          aria-label="the factory loop: {{ diagram.hopper.name }} through
+            {% for station in diagram.stations %}{{ station.name }} {% endfor %}to
+            {{ diagram.sink.name }}"
+        >
+{#- Edges first, so a station box paints over the line that reaches it. #}
+{%- for flow in diagram.flows %}
+          <g
+            class="flow-edge{% if flow.merge %} merge{% endif %}{% if flow.verdict and flow.verdict != 'green' %} failing{% endif %}"
+            aria-label="{{ flow.frm }} to {{ flow.to }}{% if flow.artifact %}, producing {{ flow.artifact }}{% endif %}"
+          >
+            <path class="line" d="{{ flow.path }}" />
+{%- if flow.artifact %}
+            <text class="artifact" x="{{ flow.label_x }}" y="{{ flow.label_y }}"
+              >{{ flow.artifact }}</text
             >
-{%- if phase.share %}
-            <span class="track"
-              ><span class="fill" style="width: {{ phase.share.width }}%"></span
-            ></span>
 {%- endif %}
-          </div>
+{%- if flow.verdict %}
+            <text class="verdict" x="{{ flow.label_x }}" y="{{ flow.label_y + 16 }}"
+              >gate {{ flow.verdict }}</text
+            >
+{%- endif %}
+{#- A checkpoint is a drawn diamond and never a codepoint: the tofu the owner reported is a
+    font-coverage failure, and a shape has no font. #}
+{%- if flow.checkpoint %}
+            <path
+              class="checkpoint"
+              d="M {{ flow.label_x }} {{ flow.label_y + 26 }}
+                 l 7 7 l -7 7 l -7 -7 z"
+            />
+{%- endif %}
+          </g>
 {%- endfor %}
-        </div>
+{#- The hopper and the sink, drawn as open shapes because neither is a phase: `intake` is
+    the derivation's default rung and `done` is terminal. #}
+{%- for end in [diagram.hopper, diagram.sink] %}
+          <g class="terminal">
+            <path
+              d="M {{ end.x - 90 }} {{ end.y - 26 }} h 180 l -20 52 h -140 z"
+            />
+            <text class="count" x="{{ end.x }}" y="{{ end.y - 1 }}"
+              >{% if end.count is none %}—{% else %}{{ end.count }}{% endif %}</text
+            >
+            <text class="name" x="{{ end.x }}" y="{{ end.y + 17 }}">{{ end.name }}</text>
+{%- if end.detail %}
+            <text class="detail" x="{{ end.x }}" y="{{ end.y + 80 }}">{{ end.detail }}</text>
+{%- endif %}
+          </g>
+{%- endfor %}
+{%- for station in diagram.stations %}
+          <g
+            class="station{% if station.lanes %} working{% endif %}{% if station.waiting %} waiting{% endif %}"
+            aria-label="{{ station.name }}"
+          >
+            <rect
+              x="{{ station.x - 105 }}" y="{{ station.y - 30 }}"
+              width="210" height="60" rx="6"
+            />
+{#- The count and the phase share one baseline. Stacked, they left 60 units of box for two
+    text lines and the taller one painted over the shorter - which `check_render_overflow.py`
+    reported and no assertion in the suite could see. #}
+            <text class="count" x="{{ station.x - 92 }}" y="{{ station.y + 8 }}"
+              >{% if station.count is none %}—{% else %}{{ station.count }}{% endif %}</text
+            >
+            <text class="name" x="{{ station.x - 50 }}" y="{{ station.y + 7 }}"
+              >{{ station.name }}</text
+            >
+{#- A lane an agent is inside: a dot in the box, its crew named beneath. A unit merely
+    resting at this phase is in the count and has no dot, which is the distinction the
+    record asks for. The names sit outside because 210 units of box do not hold an agent
+    and its model beside a count. #}
+{%- for lane in station.lanes %}
+            <circle
+              class="lane{% if lane.moved %} moved{% endif %}{% if lane.stuck %} stuck{% endif %}"
+              cx="{{ station.x + 88 }}" cy="{{ station.y - 16 + loop.index0 * 16 }}" r="5"
+            />
+{%- endfor %}
+{%- for name in station.crew %}
+            <text class="agent" x="{{ station.x - 105 }}"
+              y="{{ station.y + 44 + loop.index0 * 15 }}">{{ name }}</text
+            >
+{%- endfor %}
+{#- A person is the blocker: a drawn triangle carrying the age, on the node they block. #}
+{%- if station.waiting %}
+            <path
+              class="waits"
+              d="M {{ station.x + 22 }} {{ station.y + 8 }}
+                 l 7 -12 l 7 12 z"
+            />
+            <text class="waits-age" x="{{ station.x + 42 }}" y="{{ station.y + 8 }}"
+              >{{ station.waiting }}</text
+            >
+{%- endif %}
+          </g>
+{%- endfor %}
+        </svg>
+{%- if diagram.note %}
+        <p class="note clip">{{ diagram.note }}</p>
 {%- endif %}
 {%- if loop_note %}
         <p class="note clip">{{ loop_note }}</p>

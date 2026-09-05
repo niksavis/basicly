@@ -189,14 +189,20 @@ def test_ready_capacity_is_derived_from_the_viewport_actually_given_not_a_consta
     """basicly-ffm2yp: 14 rows drawn where 26 fit, because the cap ignored the viewport.
 
     `.scripts/check_render_overflow.py`'s own answer, found by binary search against the
-    *live* repo document (`.basicly/usage/scratch/find_capacity_live.py`) rather than a
-    fixture: the true ceiling was 16 rows at 1440x900, 32 at 1600x1200 and 29 at 1920x1080.
-    The formula lands one row under each - the margin `READY_CHROME_SAFETY_MARGIN_PX` is meant
-    to spend - and it is derived from the viewport rather than a single guessed count.
+    *live* repo document rather than a fixture: patch the capacity, render, and ask the
+    instrument whether the body still fits. The formula lands one row under each ceiling -
+    the margin `READY_CHROME_SAFETY_MARGIN_PX` is meant to spend - and it is derived from the
+    viewport rather than a single guessed count.
+
+    **Re-measured for the drawn loop (basicly-6c97zx).** The ceilings were 16, 32 and 29 when
+    the region above this list was seven counted boxes; a diagram is taller, and they are now
+    7, 19 and 16. The numbers below are that measurement and not an adjustment of the old
+    ones - a capacity edited to make a gate pass is the fixture-measured constant that
+    clipped 54px live.
     """
-    assert board_regions.ready_capacity(900, 1440) == 15
-    assert board_regions.ready_capacity(1200, 1600) == 31
-    assert board_regions.ready_capacity(1080, 1920) == 28
+    assert board_regions.ready_capacity(900, 1440) == 6
+    assert board_regions.ready_capacity(1200, 1600) == 18
+    assert board_regions.ready_capacity(1080, 1920) == 15
     assert board_regions.ready_capacity(1200, 1600) > board_regions.ready_capacity(900, 1440), (
         "a taller wall must fit more rows, not the same guessed count"
     )

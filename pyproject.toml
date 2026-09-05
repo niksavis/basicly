@@ -124,11 +124,16 @@ ignore_names = [
   "clear_overrides",
   "config_overrides",
   "copilot",
+  # Three `board_diagram` fields the board template reads and vulture cannot: it does not
+  # parse Jinja. `wired-or-deleted` does, and passes on all three, which is what proves they
+  # are wired rather than dead - the same class as `border_style`, `kicker` and `working`.
+  "crew",
   "dispatches",
   "do_GET",
   "do_POST",
   "error_tokens",
   "fallback_sort",
+  "hopper",
   "kicker",
   "landed_package_cost",
   "load_fragments",
@@ -141,6 +146,7 @@ ignore_names = [
   "reset_process_budget",
   "stale_declarations",
   "stale_sessions",
+  "stuck",
   "tagged",
   "tags",
   "tone",

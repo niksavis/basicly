@@ -37,7 +37,14 @@ from tests.test_board_wall import REPO_ROOT, STAMPED, document
 
 TEMPLATES = REPO_ROOT / ".basicly" / "core" / "templates" / "board"
 SITE = REPO_ROOT / "site" / "index.html"
-SOURCES = ("board_render", "board_regions", "board_loop", "board_footer", "board_wall")
+SOURCES = (
+    "board_render",
+    "board_regions",
+    "board_diagram",
+    "board_loop",
+    "board_footer",
+    "board_wall",
+)
 
 # The eight fixed rows of the wall, in the order the grid declares them.
 # The rows every page draws. `inv` is deliberately not among them: the roster carries only

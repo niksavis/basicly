@@ -74,18 +74,27 @@ def running(reads: Mapping[str, Reading]) -> bool:
     return lanes.drawn and bool(lanes.dicts)
 
 
-def _beat(reads: Mapping[str, Reading]) -> float:
-    """The window a `moved` mark is taken over: the producer's cadence, bounded."""
+def beat(reads: Mapping[str, Reading]) -> float:
+    """The window a `moved` mark is taken over: the producer's cadence, bounded.
+
+    Public because :mod:`basicly.board_diagram` marks the same movement on its lane dots,
+    and two regions disagreeing about how long a beat is would be two answers to one
+    question a reader compares across the page.
+    """
     cadence = reads["freshness"].fields.get("cadence_s")
     if not isinstance(cadence, int | float) or cadence <= 0:
         return BEAT_FALLBACK_S
     return min(float(cadence), BEAT_CAP_S)
 
 
-def _moved(lane: Mapping[str, Any], now: datetime, beat: float) -> bool:
-    """Whether *lane* entered its current state within the last *beat* seconds."""
+def moved_within(lane: Mapping[str, Any], now: datetime, window: float) -> bool:
+    """Whether *lane* entered its current state within the last *window* seconds.
+
+    The stamp is the lane's *state* and not its phase, so this is a proxy for movement
+    rather than a phase transition; `basicly-jxemn3` holds the producer-side stamp.
+    """
     waited = since(lane.get("state_since"), now)
-    return waited is not None and waited <= beat
+    return waited is not None and waited <= window
 
 
 def _note(lanes: Reading, unphased: int, marks: int) -> str:
@@ -113,7 +122,7 @@ def loop(reads: Mapping[str, Reading], now: datetime) -> tuple[tuple[Phase, ...]
     lanes = reads["lanes"]
     if not running(reads):
         return (), "no pass is running", False
-    beat = _beat(reads)
+    window = beat(reads)
     counts: dict[str, int] = {}
     marks: set[str] = set()
     unphased = 0
@@ -123,7 +132,7 @@ def loop(reads: Mapping[str, Reading], now: datetime) -> tuple[tuple[Phase, ...]
             unphased += 1
             continue
         counts[name] = counts.get(name, 0) + 1
-        if _moved(row, now, beat):
+        if moved_within(row, now, window):
             marks.add(name)
     # An empty phase of a pass that *has* lanes is a measured nought; a pass that selected
     # nothing has measured nothing, and seven noughts would claim seven empty stages.
