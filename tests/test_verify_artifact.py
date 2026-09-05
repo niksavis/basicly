@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,28 @@ class _Proc:
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
+
+
+def _as_spawn(fake_run):
+    """Adapt a ``subprocess.run`` stand-in to the seam ``run_check`` now goes through.
+
+    The streamed path tees - it forwards each line and keeps it, so a failing check's own
+    words survive the terminal (basicly-zlqn7e) - which needs `Popen` and therefore cannot
+    be `subprocess.run`. These stubs were written against that call, so the adapter keeps
+    every one of them, and passes the kwargs they assert on unchanged.
+    """
+
+    def spawn(command, repo_root, *, capture):
+        return fake_run(
+            command,
+            cwd=repo_root,
+            env=verify.sanitised_project_env(os.environ, repo_root),
+            check=False,
+            capture_output=capture,
+            text=capture or None,
+        )
+
+    return spawn
 
 
 def _check(name: str, modes: tuple[str, ...], staged_suffix: str | None = None) -> VerifyCheck:
@@ -69,7 +92,7 @@ def test_a_passing_run_writes_a_non_empty_run_artifact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The producer m4zv.13 deliberately left out: a passing run now records itself."""
-    monkeypatch.setattr(verify.subprocess, "run", _passing_run())
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(_passing_run()))
     config = VerifyConfig((_check("ruff", ("full",)),))
 
     report = verify.run_verify(tmp_path, "full", config)
@@ -93,7 +116,7 @@ def test_the_run_artifact_satisfies_a_declared_evidence_gate(
     the answer this gate gives whenever a phase declares nothing — so a check that
     only looked at the after state would pass with no producer at all.
     """
-    monkeypatch.setattr(verify.subprocess, "run", _passing_run())
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(_passing_run()))
     config = _evidence_config()
 
     before = policy.evidence_status(tmp_path, config, "verify")
@@ -117,7 +140,7 @@ def test_the_run_artifact_never_holds_a_checks_output(
     no stdout here to leak into a file the redaction rule keeps metadata-only.
     """
     seen: list[dict] = []
-    monkeypatch.setattr(verify.subprocess, "run", _passing_run(seen))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(_passing_run(seen)))
 
     verify.run_verify(tmp_path, "full", VerifyConfig((_check("ruff", ("full",)),)))
 
@@ -135,7 +158,7 @@ def test_the_run_artifact_records_a_failing_run_too(
     basicly-3oxf0d: a landing recorded a blank one for the check that refused it and the
     session that picked the failure up re-ran the gate by hand to learn what it said.
     """
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(2))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_kw: _Proc(2)))
 
     verify.run_verify(tmp_path, "full", VerifyConfig((_check("pytest", ("full",)),)))
 
@@ -153,7 +176,7 @@ def test_a_passing_check_records_no_derived_detail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The false-positive half: only a failure gets a stand-in, so a pass stays silent."""
-    monkeypatch.setattr(verify.subprocess, "run", lambda *_a, **_kw: _Proc(0))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_kw: _Proc(0)))
 
     verify.run_verify(tmp_path, "full", VerifyConfig((_check("ruff", ("full",)),)))
 
@@ -197,7 +220,7 @@ def test_an_unwritable_artifact_path_never_costs_the_verdict(
     """
     (tmp_path / ".basicly").mkdir()
     (tmp_path / ".basicly" / "usage").write_text("not a directory\n", encoding="utf-8")
-    monkeypatch.setattr(verify.subprocess, "run", _passing_run())
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(_passing_run()))
 
     report = verify.run_verify(tmp_path, "full", VerifyConfig((_check("ruff", ("full",)),)))
 
@@ -216,7 +239,7 @@ def test_rerun_failures_leaves_the_runs_own_artifact_standing(
     that subset rewrote the artifact, the evidence for a two-check run would be a
     record of one check — a run that never happened.
     """
-    monkeypatch.setattr(verify.subprocess, "run", _flaky_run({"pytest"}))
+    monkeypatch.setattr(verify, "_spawn", _as_spawn(_flaky_run({"pytest"})))
     config = VerifyConfig((_check("pytest", ("full",)), _check("ruff", ("full",))))
     report = verify.run_verify(tmp_path, "full", config)
     assert report.passed is False

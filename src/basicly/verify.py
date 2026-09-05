@@ -27,14 +27,19 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from . import tracker, tracker_paths, usage, worktree
+from . import tracker, tracker_paths, usage, verify_log, worktree
 from .config import VERIFY_GATE_PROVIDER, VerifyCheck, VerifyConfig, load_verify_config
 from .runner import sanitised_project_env
 from .verify_artifact import write_run_artifact
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 DEFAULT_GATE = "verify"
 # Single-sourced in config so policy.gate_status can recognise it as engine-owned
@@ -269,14 +274,7 @@ def _run(
         # `command` is the repo's own `[[verify.checks]]` argv plus staged filenames —
         # both inside the trust boundary, since running a repo's declared checks *is* the
         # feature. `shell=False` keeps a filename with a space or a `;` one argv element.
-        proc = subprocess.run(  # noqa: S603 — repo-declared argv, list form, no shell
-            command,
-            cwd=repo_root,
-            env=sanitised_project_env(os.environ, repo_root),
-            check=False,
-            capture_output=capture,
-            text=capture or None,
-        )
+        proc = _spawn(command, repo_root, capture=capture)
     except FileNotFoundError:
         return CheckResult(
             name,
@@ -298,15 +296,67 @@ def _run(
             f"[[verify.checks]] in basicly.toml",
             command=tuple(command),
         )
-    output = f"{proc.stdout or ''}{proc.stderr or ''}" if capture else ""
+    output = f"{proc.stdout or ''}{proc.stderr or ''}"
+    failed = proc.returncode != 0
+    # A failing check's own words, kept where the terminal cannot take them away. Only on
+    # failure, and only from the streamed run: `rerun_failures` captures too but runs after
+    # the fact, so a flake passes there and leaves nothing (basicly-zlqn7e).
+    detail = (
+        verify_log.pointer(verify_log.write(repo_root, name, output), repo_root)
+        if failed and not capture
+        else ""
+    )
     return CheckResult(
         name,
-        "pass" if proc.returncode == 0 else "fail",
+        "fail" if failed else "pass",
         proc.returncode,
-        output=output,
+        detail=detail,
+        output=output if capture else "",
         command=tuple(command),
         duration_s=round(time.perf_counter() - started, 3),
     )
+
+
+def _spawn(
+    command: Sequence[str], repo_root: Path, *, capture: bool
+) -> subprocess.CompletedProcess[str]:
+    """Run *command*, streaming its output unless *capture* diverts it, and return both.
+
+    **A tee rather than a choice.** Streaming is the contract an operator watching a long
+    gate depends on, and a failure that exists only on their terminal is a failure nobody
+    can diagnose afterwards - a `pytest` gate flaked once and its identity was simply gone
+    (basicly-zlqn7e). So the streamed path now forwards each line *and* keeps it.
+
+    `capture=True` is the diagnostic re-run's, and it stays silent: that caller reads the
+    text itself and a second copy on the terminal would double a transcript the operator
+    has already seen.
+    """
+    # `command` is the repo's own `[[verify.checks]]` argv plus staged filenames — both
+    # inside the trust boundary, since running a repo's declared checks *is* the feature.
+    # `shell=False` keeps a filename with a space or a `;` one argv element.
+    env = sanitised_project_env(os.environ, repo_root)
+    if capture:
+        return subprocess.run(  # noqa: S603 — repo-declared argv, list form, no shell
+            command, cwd=repo_root, env=env, check=False, capture_output=True, text=True
+        )
+    with subprocess.Popen(  # noqa: S603 — same argv, same trust boundary
+        command,
+        cwd=repo_root,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    ) as proc:
+        kept: list[str] = []
+        # Line by line rather than `communicate()`, which would hold the whole transcript
+        # until exit and stop the streaming this branch exists to preserve. Iterating the
+        # pipe is the one shape that works the same on every platform this ships to.
+        for line in proc.stdout or ():
+            sys.stdout.write(line)
+            kept.append(line)
+        sys.stdout.flush()
+    return subprocess.CompletedProcess(list(command), proc.returncode, "".join(kept), "")
 
 
 def run_verify(repo_root: Path, mode: str, config: VerifyConfig | None = None) -> VerifyReport:

@@ -1,0 +1,51 @@
+# A failing check's own words now survive the terminal (basicly-zlqn7e). A `pytest` gate
+# failed once, the artifact recorded only "output streamed rather than captured", six later
+# runs of that command were green, and the flake's identity was gone. `run_check` now tees -
+# it forwards each line exactly as before AND keeps it - and on failure writes the redacted
+# tail to `.basicly/usage/verify-fail-<check>.log`, which the `detail` then names.
+#
+# ## module_size: two rebaselines
+#
+#   src/basicly/verify.py    5436 -> 6008   +572
+#   tests/test_verify.py    15681 -> 16371  +690
+#
+# `verify.py` grew by one function. `subprocess.run` cannot tee, so the streamed path is a
+# `Popen` line loop; the capture path stays `subprocess.run`. `_spawn` holds both, with the
+# trust-boundary comment that was inline before, so the growth is the second branch and its
+# reason and nothing else.
+#
+# `tests/test_verify.py` grew by an adapter and 16 rewritten patch sites. The tests stubbed
+# `verify.subprocess.run`, which the tee no longer calls, so they now inject at the `_spawn`
+# seam through `_as_spawn` - one helper, and it passes the kwargs they assert on unchanged.
+# 27 sites were named before editing and 27 were rewritten, with zero `verify.subprocess`
+# references left; the count reconciles.
+#
+# Banked rather than absorbed by cutting prose from `verify.py`, which is 56.6% narration
+# about failure semantics that three other modules cite. Both entries are over the 4000 cap
+# for reasons that predate this change.
+[ratchet.module_size]
+rebaseline_reason = "verify.run_check now tees so a failing check's output survives the terminal; subprocess.run cannot stream and capture at once, and the tests follow the new seam"
+
+[ratchet.module_size.rebaselined]
+"src/basicly/verify.py" = 572
+"tests/test_verify.py" = 690
+
+# ## comment_density: one cohesion waiver on the new module
+#
+# `src/basicly/verify_log.py` at 56.5% of 668 tokens, trimmed twice first (71.4% -> 62.0% ->
+# 56.5%). Nine statements of code; the payload is the two reasons this file exists beside the
+# run artifact rather than inside it. Cohesion rather than cost: correct and permanent, with
+# nothing to retire - a reader without them folds it into `verify_artifact` and reintroduces
+# the secret hazard that module states.
+[ratchet.comment_density]
+count_delta = 1
+
+# ## noqa_debt: one S603
+#
+# The `Popen` in `_spawn`, beside the `subprocess.run` whose S603 was already frozen. Same
+# argv, same trust boundary - a repo's own `[[verify.checks]]` command, list form, no shell -
+# and the suppression names it. One call became two because one cannot both stream and
+# capture; the alternative rejected was capturing and echoing at the end, which loses the
+# live output a 132-second gate is watched for.
+[ratchet.noqa_debt.frozen]
+S603 = 1
