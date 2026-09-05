@@ -70,9 +70,10 @@ def _dispatch(repo: Path, body: str, issue_id: str = "basicly-u2hl.18") -> Path:
             capture_usage=True,
             on_event=lane_log.fanout(transcript, seen.append),
             timeout=60.0,
-            bounds=runner.DispatchBounds(
-                stop_when=lambda: runner.StopReason("test", "one event recorded") if seen else None
-            ),
+            # Killed on the lane's own reported tokens, which is still an *event* and not
+            # a clock: the ceiling is 1, so the first turn carrying usage ends the
+            # dispatch (basicly-tkbmndn replaced the predicate this used).
+            bounds=runner.DispatchBounds(token_ceiling=1),
         )
     assert result.stopped is not None, "the dispatch must be killed, not left to exit"
     return repo / lane_log.LANE_LOGS_DIR / "basicly-u2hl-bc7cc925" / f"{issue_id}.jsonl"
@@ -157,7 +158,9 @@ def test_a_transcript_records_a_plain_line_the_stream_interleaved(tmp_path: Path
     event has no ``text`` field to read, so the transcript falls back to the line
     itself rather than filing a record that says an event happened and nothing else.
     """
-    body = "sys.stdout.write('warming up the cache\\n'); sys.stdout.flush()\ntime.sleep(60)\n"
+    # The plain line first, then a turn carrying usage: a plain line reports no tokens,
+    # so the ceiling that ends this dispatch has nothing to fire on until the turn lands.
+    body = "sys.stdout.write('warming up the cache\\n'); sys.stdout.flush()\n" + _turn("done")
     path = _dispatch(tmp_path, body)
 
     record = _lines(path)[0]

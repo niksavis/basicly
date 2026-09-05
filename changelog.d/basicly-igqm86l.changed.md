@@ -1,0 +1,1 @@
+- The spend ceiling no longer stops work anywhere. Five refusals survived the first sweep, including the one that killed a running dispatch when the grant ran out. In its place `[runner] lane_token_ceiling` bounds one dispatch on its own reported tokens, read off its own event stream, off unless set.

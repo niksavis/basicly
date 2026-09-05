@@ -842,17 +842,21 @@ def test_preflight_does_not_count_the_trees_the_landing_sweeps(
     assert "base checkout is dirty" not in out
 
 
-def test_preflight_refuses_a_metered_runner_with_no_budget(
+def test_preflight_names_a_metered_runner_with_no_budget_and_still_reads_ready(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The `kkux` hazard, surfaced before the run instead of during it."""
+    """The `kkux` hazard, surfaced before the run and no longer refusing it.
+
+    It refused until basicly-hnnmk9.1: the budget measures and never blocks, so the
+    line is printed and the verdict is the operator's to act on.
+    """
     _preflight_fixture(monkeypatch, _Preflight(metered="claude"))
 
     code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
-    assert code == 1
-    assert "budget:    MISSING" in out
+    assert "budget:    MISSING" in out, "the hazard is no longer named"
+    assert code == 0, "a metered runner with no budget still refuses the pass"
 
 
 def test_preflight_forecasts_a_full_fan_out_when_no_lane_is_dispatchable_yet(

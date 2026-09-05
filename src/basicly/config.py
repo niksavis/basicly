@@ -620,6 +620,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
             "max_agent_processes",
             "stall_after",
             "quiet_after",
+            "lane_token_ceiling",
             "lane_log_sessions",
             "default_tier",
             "copilot_session_store",
@@ -1582,6 +1583,11 @@ class RunnerConfig:
     # (basicly-rupz): an event is proof of life whether or not a file changed,
     # which is the question the git-state probe behind `stall_after` cannot answer.
     quiet_after: float = DEFAULT_QUIET_AFTER
+    # Tokens one dispatch may report before it is stopped, 0 for no ceiling. A runner
+    # setting and never a grant field: bounding a lane on the grant's remainder is a
+    # session fact another lane moves, and it killed a lane mid-work (basicly-tkbmndn,
+    # basicly-hnnmk9.1). Off by default - a ceiling nobody chose is a kill nobody expects.
+    lane_token_ceiling: int = 0
     # Sessions of lane transcripts kept on disk before the oldest rotate away
     # (basicly-rrah). A bound rather than unbounded growth, because the directory
     # is the audit surface an operator greps and every pass adds a lane file per
@@ -1649,6 +1655,7 @@ def load_runner_config(repo_root: Path) -> RunnerConfig:
         ),
         stall_after=_positive_float(section.get("stall_after"), DEFAULT_STALL_AFTER),
         quiet_after=_positive_float(section.get("quiet_after"), DEFAULT_QUIET_AFTER),
+        lane_token_ceiling=max(0, _positive_int(section.get("lane_token_ceiling"), 0)),
         lane_log_sessions=_positive_int(
             section.get("lane_log_sessions"), DEFAULT_RETAINED_SESSIONS
         ),

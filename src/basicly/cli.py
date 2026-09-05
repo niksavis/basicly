@@ -3593,18 +3593,19 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
             "no ceiling" if status.remaining_tokens is None else f"{status.remaining_tokens}"
         )
         print(f"grant:     {grant.level}, spent {spent} under it, remaining {remaining}")
+    # Both lines are printed and neither is a blocker: the budget measures and never
+    # blocks (basicly-hnnmk9.1). Named, not counted, because the operator's next move is
+    # to fix that runner's usage format and a bare count sends them looking
+    # (basicly-6y0tg5).
     if status.halted:
-        print(f"halted:    {status.detail}")
-        blockers.append(
-            # Named, not counted: the operator's next move is to fix that runner's
-            # usage format, and a bare count sends them looking (basicly-6y0tg5).
-            f"could not be metered: {', '.join(status.unmetered_labels)}"
+        unmetered = (
+            f"; could not be metered: {', '.join(status.unmetered_labels)}"
             if status.unmetered_dispatches
-            else "the grant's budget is spent"
+            else ""
         )
+        print(f"halted:    {status.detail}{unmetered}")
     if (metered := supervise.metered_without_a_budget(repo_root, status)) is not None:
         print(f"budget:    MISSING - the {metered!r} runner meters spend and no budget covers it")
-        blockers.append("a metered runner needs a grant with a token budget")
 
     _print_preflight_coverage(repo_root, state, grant)
     blockers += _print_preflight_checkpoints(
