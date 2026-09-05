@@ -1,0 +1,26 @@
+# The loop region binned the whole backlog instead of the running pass (basicly-a68ggd).
+# `src/basicly/board_loop.py` is new: `loop` over `lanes[]`, `backlog_phases` over `units[]`,
+# and `phase_of`, which `board_regions` still needs - so the new module sits a layer below it
+# rather than beside it, where siblings may not import each other.
+#
+# ## comment_density: one cost waiver on board_regions.py
+#
+# 50.3% against the 50% cap, and the mechanism is the inverted one basicly-5m2xfd already
+# recorded: the module did not gain prose, it lost code.
+#
+#   board_regions.py   HEAD  49.90% of 7281   prose 3633   code 3648
+#   board_regions.py   now   50.30% of 6483   prose 3261   code 3222
+#   board_loop.py      new   45.60% of 1860   prose  848   code 1012
+#
+# Prose fell 372 tokens and code fell 426, because the region that left was denser than the
+# module average. Trimmed before it was waived, 51.0% -> 50.3% on the module docstring and
+# the size-waiver note, both of which this change had to touch anyway. The remaining share is
+# measurement rationale the gate's own docstring calls evidence rather than narration - the
+# 24.09px row pitch confirmed against a live render, the three calibration widths found by
+# binary search, the 41-against-6 counting argument in `grouped`.
+#
+# Cost rather than cohesion, and the retirement is named: `basicly-0bj8q1` takes `flight` and
+# `_lane_cells`, which is the prose-heavy half. This module's `module-size` waiver already
+# names that record as the rest of its own cut.
+[ratchet.comment_density]
+count_delta = 1

@@ -1,16 +1,14 @@
-"""The four question regions, asserted against the four questions rather than their markup.
+"""The question regions this module owns, asserted against the answer each owes.
 
 The owner's verdict on the render this replaces was that the page did not answer *what is
 being implemented, where the loop is, what state it is in, or what is in the backlog*. So each
-region is asserted on the answer it owes:
+region is asserted on the answer it owes. The loop row's own answer is
+`tests/test_board_loop.py`'s, with the module it moved to:
 
 * **the alarm** must say whether a person is waiting, in all six of its spellings, must lead
   with the *age* in the coarsest unit that is still true and stated once, must escalate to its
   alarm colour only past a declared wait and never on existence alone, and must never report an
   unreadable `asks` section as a quiet room;
-* **the loop** must count per phase, carry each count's share of the population as a bar, and
-  mark where work sits - and when no unit carries a phase, must say so rather than draw seven
-  noughts;
 * **running now** must draw one card per lane and *nothing* when there is no lane, because a
   reserved frame announcing nothing is the dead space this layout was redrawn to remove;
 * **next up** must rank the ready set in two shapes - the narrow column beside the lanes, and
@@ -151,55 +149,6 @@ def test_the_alarm_colour_steps_at_the_declared_threshold_and_no_earlier() -> No
     at = board_regions.band(_reads("wall-v1.json", asks=[_ask(boundary)]), fresh, STAMPED)
     assert under.state.key == board_wall.WAITING, "a wait short of the boundary already alarms"
     assert at.state.key == board_wall.STUCK, "a wait at the boundary still reads as normal"
-
-
-def test_the_loop_counts_a_phase_per_unit_and_marks_where_the_lanes_are() -> None:
-    """`units.phase` is where a unit stopped; `lanes.phase` is where one is running."""
-    phases, note = board_regions.loop(_reads("wall-v1.json"))
-    assert [phase.name for phase in phases] == list(board_regions.PHASES)
-    assert [phase.count for phase in phases] == [4, 2, 3, 5, 2, 1, 2]
-    assert {phase.name for phase in phases if phase.here} == {"build", "verify", "ship"}
-    assert not note
-
-
-def test_every_phase_carries_its_share_of_the_phased_population_as_a_bar() -> None:
-    """Seven counts in seven identical boxes rank by nothing; the bar makes 213 against 1 read.
-
-    The share is of the *phased* population and not the units section's length: an unphased
-    unit is in no phase, so counting it would make every bar short of its row by the same wrong
-    amount. Driven with a population the digits cannot rank at six metres.
-    """
-    lopsided = [{"id": f"u-{n}", "phase": "intake"} for n in range(213)]
-    lopsided.append({"id": "u-late", "phase": "ship"})
-    lopsided.append({"id": "u-none"})
-    phases, _ = board_regions.loop(_reads("wall-v1.json", units=lopsided))
-    shares = {phase.name: phase.share for phase in phases}
-    assert shares["intake"] is not None and shares["intake"].label == "100%"
-    assert shares["ship"] is not None and shares["ship"].label == "0%"
-    assert shares["intake"].width > shares["ship"].width * 50, "the bar does not rank the counts"
-    assert shares["build"] is not None and shares["build"].width == 0.0
-
-    # A count nobody measured has no ratio at all, which is `bar`'s rule and not a second one.
-    unmeasured, _ = board_regions.loop(readings("no-phase-v1.json"))
-    assert all(phase.share is None for phase in unmeasured)
-
-
-def test_a_units_section_carrying_no_phase_says_so_rather_than_showing_noughts() -> None:
-    """The producer's state at the time this was written, and a nought would have lied."""
-    phases, note = board_regions.loop(readings("no-phase-v1.json"))
-    assert [phase.count for phase in phases] == [None] * len(board_regions.PHASES)
-    assert not any(phase.here for phase in phases)
-    assert f"phase {board_wall.ABSENT_TEXT}" in note
-    assert "12 units" in note, "the note does not say how many units it looked at"
-    assert f"lanes {board_wall.ABSENT_TEXT}" in note
-
-
-def test_a_phase_the_harness_does_not_declare_is_appended_rather_than_dropped() -> None:
-    """The schema leaves `phase` an open string because a foreign harness names its own."""
-    foreign = [{"id": "x-1", "phase": "triage"}, {"id": "x-2", "phase": "build"}]
-    phases, _ = board_regions.loop(_reads("wall-v1.json", units=foreign))
-    assert [phase.name for phase in phases][-1] == "triage"
-    assert next(phase.count for phase in phases if phase.name == "build") == 1
 
 
 def test_the_ready_set_is_ranked_with_priority_and_id_and_title() -> None:

@@ -261,7 +261,7 @@
         text-align: right;
       }
 
-      /* --- loop: seven phases in order, counted, barred, current one marked ------------ */
+      /* --- loop: the running pass over seven phases, and the backlog census below it -- */
       .loop {
         grid-area: loop;
       }
@@ -309,6 +309,37 @@
       .phase.here .name,
       .phase.here .count {
         color: var(--text-bright);
+      }
+      /* Movement, which `here` cannot carry: a phase holding three lanes that have not moved
+         all afternoon is the wedge a wall exists to show, and a still picture of positions
+         cannot tell it from one that is working. The mark is a lane that entered its state
+         within the document's own beat, so it decays on its own and needs no animation. */
+      .phase.moved {
+        border-color: var(--green);
+        border-style: solid;
+      }
+      .phase.moved .name::after {
+        content: " \2192";
+      }
+      /* The backlog census: the same shape, deliberately quieter, and under its own heading.
+         It is a second population and never this row's denominator - drawing it as the loop
+         made the region's total equal `backlog.active` by construction (basicly-a68ggd). */
+      .census-head {
+        color: var(--text-dim);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        margin: 8px 0 0;
+        text-transform: uppercase;
+      }
+      .phases.census .phase {
+        padding: 0 6px 3px;
+      }
+      .phases.census .count {
+        font-size: 15px;
+      }
+      .phases.census .name {
+        color: var(--text-dim);
       }
 
       /* --- flight: one card per running lane, and one line when there are none --------- */
@@ -736,11 +767,16 @@
 {%- endif %}
       </section>
 
-      <section class="region loop">
-        <h2>the loop</h2>
+      <section class="region loop{% if not pass_running %} quiet{% endif %}">
+        <h2>the loop{% if pass_running %} — this pass{% endif %}</h2>
+{#- Two rows over two populations. The region used to bin the whole backlog under this
+    heading, which made its total equal `backlog.active` by construction (basicly-a68ggd),
+    so the pass row draws `lanes[]` and the census below draws `units[]` under its own
+    label and its own denominator. Neither is ever the other's numerator. #}
+{%- if phases %}
         <div class="phases">
 {%- for phase in phases %}
-          <div class="phase{% if phase.here %} here{% endif %}">
+          <div class="phase{% if phase.here %} here{% endif %}{% if phase.moved %} moved{% endif %}">
 {%- if phase.count is none %}
             <span class="none">{{ none_glyph }}</span>
 {%- else %}
@@ -757,8 +793,30 @@
           </div>
 {%- endfor %}
         </div>
+{%- endif %}
 {%- if loop_note %}
         <p class="note clip">{{ loop_note }}</p>
+{%- endif %}
+        <h3 class="census-head">the backlog, by where each record stopped</h3>
+        <div class="phases census">
+{%- for phase in backlog_phases %}
+          <div class="phase">
+{%- if phase.count is none %}
+            <span class="none">{{ none_glyph }}</span>
+{%- else %}
+            <span class="count">{{ phase.count }}</span>
+{%- endif %}
+            <span class="label name clip">{{ phase.name }}</span>
+{%- if phase.share %}
+            <span class="track"
+              ><span class="fill" style="width: {{ phase.share.width }}%"></span
+            ></span>
+{%- endif %}
+          </div>
+{%- endfor %}
+        </div>
+{%- if backlog_phases_note %}
+        <p class="note clip">{{ backlog_phases_note }}</p>
 {%- endif %}
       </section>
 
