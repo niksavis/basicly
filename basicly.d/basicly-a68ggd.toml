@@ -19,8 +19,8 @@
 # 24.09px row pitch confirmed against a live render, the three calibration widths found by
 # binary search, the 41-against-6 counting argument in `grouped`.
 #
-# Cost rather than cohesion, and the retirement is named: `basicly-0bj8q1` takes `flight` and
-# `_lane_cells`, which is the prose-heavy half. This module's `module-size` waiver already
-# names that record as the rest of its own cut.
+# Cost rather than cohesion, and the marker names the record that RETIRES it rather than the
+# one that took it: `basicly-0bj8q1` takes `flight` and `_lane_cells`, the prose-heavy half.
+# This module's `module-size` waiver already names that record as the rest of its own cut.
 [ratchet.comment_density]
 count_delta = 1

@@ -20,7 +20,7 @@ The vocabulary, the honesty rules and the shapes are :mod:`basicly.board_wall`'s
 :mod:`basicly.board_render` draws what this module returns.
 """
 
-# comment-density-waiver: cost(basicly-a68ggd): 50.3% of 6483 against the 50% cap, and the
+# comment-density-waiver: cost(basicly-0bj8q1): 50.3% of 6483 against the 50% cap, and the
 # mechanism is inverted - this module did not gain prose, it LOST code. `loop`, `PHASES` and
 # `phase_of` left for `board_loop`: prose fell 372 tokens and code fell 426, because the
 # extracted region was denser than the module average. What is left is measurement rationale
