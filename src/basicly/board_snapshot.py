@@ -22,16 +22,19 @@ above ``supervise`` or *is* it, so every caller already holds the facts: they ar
 same reason: each is a derivation whose authority is a layer above this one, and a second
 spelling of one in a display producer is how the two come to disagree. Whichever the caller
 withholds is **omitted**. The sections whose source is ``.basicly/usage/`` are
-:mod:`basicly.board_usage`; the row reducers are :mod:`basicly.board_sections`.
+:mod:`basicly.board_usage`; every section reducer, ``backlog`` among them, is
+:mod:`basicly.board_sections`.
 """
 
-# comment-density-waiver: cohesion: 51.5% after basicly-y754k2 moved the usage sections and the row
-# reducers out. The module lost 630 tokens of code and 505 of prose, so the share rose while
-# the file got smaller - the two ratchets pulling opposite ways, measured. Every paragraph
-# left is a measurement or a refuted alternative: the 93-fold 6.1 s cost of `observe()`, the
-# `supervise -> board_snapshot -> supervise` cycle that makes the lock facts an argument, and
-# why `backlog` refuses to respell the tracker's own derivations. The `Args:` block on
-# `build_document` is mandated by ruff `D` and is a third of the remaining prose.
+# comment-density-waiver: cohesion: 57.9%, and both steps up were code leaving. basicly-y754k2
+# moved the usage sections and the row reducers out and read 51.5%; basicly-w6vbw61 moved
+# `backlog` to the module whose docstring already claimed every section reducer, and read this.
+# Each time the file got smaller while the share rose - the two ratchets pulling opposite ways,
+# measured. Every paragraph left is a measurement or a refuted alternative: the 93-fold 6.1 s cost
+# of `observe()`, the `supervise -> board_snapshot -> supervise` cycle that makes the lock facts
+# an argument, and why `backlog`'s two set sizes refuse to respell the tracker's own derivations.
+# The `Args:` block on `build_document` is mandated by ruff `D` and is a third of the remaining
+# prose.
 
 from __future__ import annotations
 
@@ -96,9 +99,6 @@ board_usage.MACHINE_LOCAL = "machine-local"
 # is refused outright by an already-shipped consumer of this major.
 board_usage.CHECK_STATUS = {"pass": "pass", "fail": "fail", "skip": "not_run", "not_run": "not_run"}
 
-_ACTIVE_STATUS = "in_progress"
-_CLOSED_STATUS = "closed"
-
 
 @dataclass(frozen=True)
 class SessionFacts:
@@ -158,13 +158,15 @@ class Facts:
     advances: Callable[[Sequence[Any]], Sequence[Mapping[str, object]]] | None = None
 
 
-def _read_and_fold(repo_root: Path) -> tuple[Mapping[str, Any], list[Any], list[tuple]] | None:
-    """*repo_root*'s folded records, its marker rows and its asserted edges, or None.
+def _read_and_fold(
+    repo_root: Path,
+) -> tuple[Mapping[str, Any], list[Any], list[tuple], Mapping[str, str]] | None:
+    """*repo_root*'s folded records, markers, asserted edges and closing days, or None.
 
     **One read of the log and one fold over it, and everything the document says about the
-    tracker comes out of these three.** The markers and the edges are further passes over the
-    same in-memory list rather than reads of their own, which is the whole distance between
-    this producer and `observe()`'s 93 folds.
+    tracker comes out of these four.** The markers, the edges and the closing days are further
+    passes over the same in-memory list rather than reads of their own, which is the whole
+    distance between this producer and `observe()`'s 93 folds.
 
     The ledger is resolved through the redirect, so a worktree reads the base checkout's one
     store rather than a copy of it. Best-effort in the direction the whole document is: an
@@ -179,6 +181,7 @@ def _read_and_fold(repo_root: Path) -> tuple[Mapping[str, Any], list[Any], list[
         kit.events.fold(events).records,
         board_fields.read_markers(events),
         board_sections.edge_triples(kit, events),
+        board_sections.closing_days(kit, events),
     )
 
 
@@ -189,33 +192,6 @@ def _live(records: Mapping[str, Any]) -> list[Any]:
     the seam :func:`basicly.tracker.owned_record` states.
     """
     return [records[name] for name in sorted(records) if not records[name].tombstoned]
-
-
-def _backlog(live: Sequence[Any], readiness: board_sections.Readiness | None) -> dict[str, object]:
-    """The status tally, a count per priority label, and the caller's two set sizes.
-
-    ``ready`` and ``blocked`` are ``len`` over the sets *readiness* carries, which is counting
-    a supplied answer rather than deriving one - the tracker's ready walk stays the only walk.
-    """
-    counts: dict[str, int] = {}
-    priorities: dict[str, int] = {}
-    for state in live:
-        counts[state.status or ""] = counts.get(state.status or "", 0) + 1
-        priority = state.fields.get("priority")
-        if isinstance(priority, int) and not isinstance(priority, bool):
-            priorities[f"P{priority}"] = priorities.get(f"P{priority}", 0) + 1
-    closed = counts.get(_CLOSED_STATUS, 0)
-    section: dict[str, object] = {
-        "total": len(live),
-        "active": len(live) - closed,
-        "in_progress": counts.get(_ACTIVE_STATUS, 0),
-        "closed": closed,
-        "by_priority": priorities,
-    }
-    if readiness is not None:
-        section["ready"] = len(readiness.ready)
-        section["blocked"] = len(readiness.blocked)
-    return section
 
 
 def _session(facts: SessionFacts, records: Mapping[str, Any]) -> dict[str, object]:
@@ -292,13 +268,13 @@ def build_document(
     }
     read = _read_and_fold(repo_root)
     if read is not None:
-        records, markers, edges = read
+        records, markers, edges, closings = read
         live = _live(records)
         # The active population, not every record: `units` and `graph` are what a board draws
         # rather than what the log holds, and C6 priced the payload on exactly this cut.
-        active = [state for state in live if state.status != _CLOSED_STATUS]
+        active = [state for state in live if state.status != board_sections.CLOSED_STATUS]
         drawn = {state.record for state in active}
-        document["backlog"] = _backlog(live, known.readiness)
+        document["backlog"] = board_sections.backlog(live, known.readiness, closings, moment)
         document["units"] = board_sections.units(active, phases=known.phases, ready=known.readiness)
         document["graph"] = board_sections.graph(
             edge for edge in edges if edge[0] in drawn or edge[2] in drawn

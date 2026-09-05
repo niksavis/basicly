@@ -211,6 +211,45 @@ def test_a_producer_that_records_no_status_event_reports_no_throughput_rather_th
     assert measured.value == "0", "a producer that measured nothing closed did measure"
 
 
+def _counted(held: object) -> dict[str, board_wall.Reading]:
+    """`wall-v1.json`'s readings with *held* under the backlog's `closed_today`."""
+    return _reads(
+        "wall-v1.json",
+        backlog={**_reads("wall-v1.json")["backlog"].fields, board_footer.COUNTED_KEY: held},
+    )
+
+
+def test_the_count_the_producer_folded_is_read_before_the_events_tail() -> None:
+    """basicly-w6vbw61: the tail could never answer this, so the counted key comes first.
+
+    The tail is loaded with a contradicting figure, which is the only way to show which of the
+    two the cell reports. On a real basicly document the tail holds no status row at all -
+    `board_sections.events` keys `kind` off marker families - and the cell read `not measured`
+    on a day the ledger closed twenty records.
+    """
+    rows = [{"at": "2026-08-21T09:00:00Z", "issue": "a", "kind": "status", "text": "closed"}]
+    reads = _counted(20)
+    reads["events"] = _reads("wall-v1.json", events=rows)["events"]
+
+    assert board_footer.throughput(reads, "2026-08-21").value == "20"
+
+
+def test_a_counted_day_with_no_close_draws_a_measured_zero() -> None:
+    """AC 2 and 3 as one pair: `0` is a day that closed nothing, absent is an unmeasured one."""
+    measured = board_footer.throughput(_counted(0), "2026-08-21")
+    assert measured.value == "0"
+    assert measured.state is not None and measured.state.key == board_wall.RENDERABLE
+
+    unmeasured = board_footer.throughput(_reads("wall-v1.json"), "2026-08-21")
+    assert unmeasured.value == board_wall.UNKNOWN
+
+
+def test_a_count_that_is_not_a_whole_number_falls_through_to_the_tail() -> None:
+    """The schema says integer, and `True` is one in Python: a flag is not a day's work."""
+    for held in (True, "20", 20.5, None):
+        assert board_footer.throughput(_counted(held), "2026-08-21").value == board_wall.UNKNOWN
+
+
 def test_the_priority_histogram_caps_a_vocabulary_the_schema_declines_to_close() -> None:
     """`by_priority` is keyed by the producer's own labels, so ten of them is a legal document."""
     cells, dropped = board_footer.priorities(readings("dense-v1.json"))
