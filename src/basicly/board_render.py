@@ -48,15 +48,20 @@ def context(
     now: datetime,
     *,
     viewport: tuple[float | None, float | None] = (None, None),
-    acts: tuple[Sequence[Mapping[str, Any]], int] = ((), 0),
+    acts: tuple[Sequence[Mapping[str, Any]], int, Mapping[str, Mapping[str, Any]]] = (
+        (),
+        0,
+        {},
+    ),
 ) -> dict[str, Any]:
     """Every region of the wall, keyed as the template names it.
 
     The readings are derived once and handed to every region, so the verdict's inventory is
     the only inventory a region can draw from. *viewport* is board_regions.next_up's own
-    (height, width) and *acts* is :mod:`basicly.board_asks`': this layer neither reads nor
-    guesses either, it carries what its caller gave it (basicly-ffm2yp). Each is one pair
-    because the arity ratchet counts arguments, and `board_asks`' forms arrive as data so
+    (height, width) and *acts* is :mod:`basicly.board_asks`' whole output - its rows, what
+    it dropped, and a kill form per running lane keyed by lane id. This layer neither reads
+    nor guesses either, it carries what its caller gave it (basicly-ffm2yp). Each arrives as
+    one tuple because the arity ratchet counts arguments, and the forms arrive as data so
     every string of them is drawn through the autoescape.
     """
     reads = board_wall.readings(document, verdict)
@@ -86,6 +91,8 @@ def context(
         # `overflow: hidden`, so the old panel sat 274px past the fold (basicly-ua9o5g).
         "acts": tuple(acts[0]),
         "acts_more": more(acts[1], "asks"),
+        # Keyed by lane id, so the card that draws a lane finds its own form and no other.
+        "kills": acts[2],
         # The workflow drawn, which replaced first a histogram and then a pass row
         # (basicly-6c97zx). `board_loop.loop` is still called for its note and verdict,
         # which no other region carries.

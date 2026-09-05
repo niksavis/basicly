@@ -45,11 +45,14 @@ def _offers(ask: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [offer for offer in held if isinstance(offer, dict)] if isinstance(held, list) else []
 
 
-def _prefill(ask: Mapping[str, Any], field: Field) -> str:
-    """What the board already knows for *field*, or "" where only a person holds it."""
+def _prefill(source: Mapping[str, Any], field: Field) -> str:
+    """What the board already knows for *field*, or "" where only a person holds it.
+
+    *source* is an ask, or a lane rendered as one by :func:`killable`.
+    """
     if not field.from_ask:
         return ""
-    held = ask.get(field.from_ask)
+    held = source.get(field.from_ask)
     return str(held) if isinstance(held, str) else ""
 
 
@@ -70,43 +73,93 @@ def _command(action: Action, fields: Sequence[Mapping[str, Any]]) -> str:
     return " ".join(("basicly", *action.build(values)))
 
 
+def _form(action: Action, source: Mapping[str, Any], token: str) -> dict[str, Any]:
+    """The parts of a row that are the same wherever the offer came from.
+
+    Shared with :func:`killable`: the printed command must come from `build` at every site,
+    or a second surface grows its own idea of the argv.
+    """
+    fields = _fields(action, source)
+    return {
+        "token": token,
+        "route": ROUTE,
+        "frame": RESULT_FRAME,
+        "command": _command(action, fields),
+        # Per row and not once for the region: two of the four actions need a code.
+        "confirmed": action.confirmed,
+        "fields": fields,
+    }
+
+
 def _row(ask: Mapping[str, Any], offer: Mapping[str, Any], token: str) -> dict[str, Any] | None:
     """One prefilled form for *offer* on *ask*, or None where this board cannot run it."""
     action = ACTIONS.get(str(offer.get("basicly") or ""))
     if action is None:
         return None
-    fields = [
-        {
-            "name": field.name,
-            "label": field.label,
-            "value": _prefill(ask, field),
-            # What the operator still owes; a form whose filled and empty inputs look
-            # alike is one read field by field.
-            "typed": not _prefill(ask, field),
-            # Prose, so the input draws wide. The flag the validator bounds by length.
-            "free": field.free,
-            "size": _size(field, _prefill(ask, field)),
-        }
-        for field in asked(action)
-    ]
     return {
+        **_form(action, ask, token),
         "action": str(offer.get("basicly")),
         "offer": str(offer.get("offer") or action.label),
-        "token": token,
-        "route": ROUTE,
-        "frame": RESULT_FRAME,
         "issue": str(ask.get("issue") or ""),
         "kind": str(ask.get("kind") or ""),
         "subject": str(ask.get("subject") or ""),
         "question": str(ask.get("question") or ""),
         "waiting_s": ask.get("waiting_s"),
         "requested_at": ask.get("requested_at"),
-        "command": _command(action, fields),
-        # Per row rather than once for the region: two of the three actions need a code and
-        # one does not, and a note that is always there is a note nobody reads.
-        "confirmed": action.confirmed,
-        "fields": fields,
     }
+
+
+def _fields(action: Action, source: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """*action*'s inputs, prefilled from *source*, each sized for what it will hold."""
+    return [
+        {
+            "name": field.name,
+            "label": field.label,
+            "value": _prefill(source, field),
+            # What the operator still owes; a form whose filled and empty inputs look
+            # alike is one read field by field.
+            "typed": not _prefill(source, field),
+            # Prose, so the input draws wide. The flag the validator bounds by length.
+            "free": field.free,
+            "size": _size(field, _prefill(source, field)),
+        }
+        for field in asked(action)
+    ]
+
+
+# The verb a running lane offers, spelled at the one site that uses it.
+KILL = "lane-kill"
+
+
+def killable(
+    lanes: Sequence[Mapping[str, Any]] | None, token: str | None
+) -> dict[str, dict[str, Any]]:
+    """A kill form per running lane, keyed by lane id, for the card that draws that lane.
+
+    `lane-kill` was in `ACTIONS` from the start while `pending` builds rows from `asks[]`
+    only, so it was reachable exactly when something *else* waited (basicly-x1h1dl5).
+
+    Keyed by id and not by order: the cards are `lanes[:FLIGHT_SLOTS]` while this is every
+    lane, so a positional join pairs a form with the wrong card once that bound bites.
+    `board_wall.Card.ident` is the key's other half. Empty yields nothing.
+    """
+    action = ACTIONS.get(KILL)
+    if not lanes or action is None:
+        return {}
+    forms: dict[str, dict[str, Any]] = {}
+    for lane in lanes:
+        if not isinstance(lane, dict):
+            continue
+        # `from_ask` names ask keys, so the lane is presented under them.
+        ident = str(lane.get("id") or "")
+        if ident:
+            forms[ident] = {
+                **_form(action, {"issue": ident}, token or ""),
+                "action": KILL,
+                "offer": action.label,
+                "issue": ident,
+            }
+    return forms
 
 
 def pending(

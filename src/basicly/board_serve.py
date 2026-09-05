@@ -283,8 +283,12 @@ class Board:
         # (basicly-ua9o5g). `--no-actions` passes no token, so the rows still name the exact
         # command and the template draws no form.
         token = self.actions.token if self.actions is not None else None
+        rows, dropped = board_asks.pending(document.get("asks"), token)
         filled = board_render.context(
-            document, verdict, now, acts=board_asks.pending(document.get("asks"), token)
+            document,
+            verdict,
+            now,
+            acts=(rows, dropped, board_asks.killable(document.get("lanes"), token)),
         )
         drawn = board_render.render(filled)
         return self._name_self_faults(drawn, filled.get("ready"), now).encode("utf-8")

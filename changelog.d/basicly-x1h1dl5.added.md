@@ -1,0 +1,1 @@
+- A running lane can be stopped from the board. Each lane card carries a `stop this lane` control that runs `basicly loop kill <id> --reason=<why>`, prefilled with that lane's own id and asking only for the reason. The verb was already in the action table and had no surface: it was reachable only when an unrelated ask happened to prefill it.

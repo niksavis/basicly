@@ -64,10 +64,29 @@ def _page(asks: Sequence[dict[str, Any]], token: str | None = TOKEN) -> str:
     doc["asks"] = list(asks)
     now = datetime.now(UTC)
     doc["generated_at"] = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows, dropped = board_asks.pending(asks, token)
+    # The kills too, exactly as `board_serve` assembles them: a helper that drew a narrower
+    # page than the server does is how a region ships unfed (basicly-3qstvw).
     filled = board_render.context(
-        doc, board_schema.verdict(REPO_ROOT, doc), now, acts=board_asks.pending(asks, token)
+        doc,
+        board_schema.verdict(REPO_ROOT, doc),
+        now,
+        acts=(rows, dropped, board_asks.killable(doc.get("lanes"), token)),
     )
     return board_render.render(filled, TEMPLATES)
+
+
+def _acts(page: str) -> str:
+    """Just the `needs a person` region of *page*, or "" where it was not drawn.
+
+    Scoped rather than counting `<form` over the whole document: a lane card now carries a
+    kill form of its own, and an assertion about this region that counts every form on the
+    page fails on a change it was never about (basicly-x1h1dl5).
+    """
+    mark = '<section class="region acts">'
+    return (
+        page[page.index(mark) : page.index("</section>", page.index(mark))] if mark in page else ""
+    )
 
 
 def test_the_board_fills_in_what_it_already_knows_and_asks_only_for_the_rest() -> None:
@@ -146,8 +165,9 @@ def test_nothing_pending_draws_nothing_at_all() -> None:
     """A standing form on a wall whose question is "does it need me?" answers it wrongly."""
     for empty in ([], None):
         assert board_asks.pending(empty, TOKEN) == ((), 0)
-    assert "<form" not in _page([])
-    assert "needs a person" not in _page([])
+    page = _page([])
+    assert _acts(page) == "", "the region is drawn with nothing pending"
+    assert "needs a person" not in page
 
 
 def test_a_board_with_no_server_still_names_the_line_to_type() -> None:
@@ -297,6 +317,6 @@ def test_a_kind_the_table_does_not_name_gets_no_actions_key_at_all() -> None:
 def test_a_real_produced_ask_reaches_the_page_as_a_prefilled_form() -> None:
     """End to end over the producer's own output, which is what nothing asserted before."""
     page = _page([_produced("checkpoint")])
-    assert page.count("<form") == 1
+    assert _acts(page).count("<form") == 1
     assert 'value="basicly-x"' in page and 'value="ship"' in page
     assert "basicly policy checkpoint basicly-x ship --approve --confirm" in page
