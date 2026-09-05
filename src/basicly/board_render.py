@@ -56,6 +56,7 @@ def context(
     _, loop_note, pass_running = board_loop.loop(reads, now)
     backlog_phases, backlog_phases_note = board_loop.backlog_phases(reads)
     cards, flight_more, flight_note = board_regions.flight(reads, now=now)
+    claimed_rows, claimed_more = board_regions.claimed(reads)
     lines, events_more = board_footer.events(reads)
     hist, priorities_more = board_footer.priorities(reads)
     agents, health_more = board_footer.health(reads)
@@ -90,6 +91,11 @@ def context(
         "cards": cards,
         "flight_more": flight_more,
         "flight_note": flight_note,
+        # Somebody has taken these and no lane holds them. Named rather than counted: the
+        # page printed `IN PROGRESS 1` three times over and a reader could not learn which
+        # record it meant (basicly-5jkxqk).
+        "claimed": claimed_rows,
+        "claimed_more": claimed_more,
         # The ready list is handed the shape the running row left it, which is the one place
         # the layout's two states have to agree with the model's two capacities.
         # The list gives up rows to the `acts` region: a decision the factory is stopped
@@ -99,7 +105,8 @@ def context(
             wide=not cards,
             viewport_height=viewport[0],
             viewport_width=viewport[1],
-            reserved=board_regions.acts_reserve(len(acts[0])),
+            reserved=board_regions.acts_reserve(len(acts[0]))
+            + board_regions.claimed_reserve(len(claimed_rows)),
         ),
         "backlog": board_footer.backlog(reads),
         "priorities": hist,

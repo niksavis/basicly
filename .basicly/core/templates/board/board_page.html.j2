@@ -575,6 +575,48 @@
         color: var(--text-dim);
       }
 
+      /* --- claimed: taken by somebody, driven by no lane -------------------------------
+         Rows rather than cards, and above them: a claimed record has no agent, no branch and
+         no spend, and it is the population the page counted three times and never named. */
+      .claimed {
+        margin-bottom: 5px;
+      }
+      .claimed h3 {
+        color: var(--amber);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .claim {
+        align-items: baseline;
+        border-left: 2px solid var(--amber);
+        display: flex;
+        gap: 10px;
+        min-width: 0;
+        padding: 1px 0 1px 7px;
+      }
+      .claim .pri {
+        color: var(--text-dim);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+      .claim .ident {
+        color: var(--indigo);
+        font-family: var(--mono);
+        font-size: 15px;
+      }
+      .claim .at {
+        color: var(--text-bright);
+        font-size: 14px;
+        letter-spacing: 0.04em;
+      }
+      .claim .what {
+        color: var(--text);
+        font-size: 15px;
+        min-width: 0;
+      }
+
       /* --- flight: one card per running lane, and one line when there are none --------- */
       /* A card is the height of what it says and the rows stack from the top. Rows that shared
          the region's height stretched a 90px card over 350px, which is the dead space this
@@ -1198,6 +1240,23 @@
         <h2>running now{% if flight_more %} — {{ flight_more }}{% endif %}</h2>
 {%- if flight_note %}
         <p class="note clip">{{ flight_note }}</p>
+{%- endif %}
+{#- Claimed and unheld: a record somebody took that no lane is driving. Rows, not cards -
+    it has no agent, no branch and no spend, so a card's frame would promise figures that do
+    not exist. Drawn above the cards because it is the thing the page could not say
+    (basicly-5jkxqk). #}
+{%- if claimed %}
+        <div class="claimed">
+          <h3>claimed, no lane{% if claimed_more %} — {{ claimed_more }}{% endif %}</h3>
+{%- for row in claimed %}
+          <div class="claim">
+            <span class="pri">{{ row.priority }}</span>
+            <span class="ident">{{ row.id }}</span>
+            <span class="at">{{ row.phase }}</span>
+            <span class="what clip">{{ row.title }}</span>
+          </div>
+{%- endfor %}
+        </div>
 {%- endif %}
 {%- for card in cards %}
         <div class="card state-{{ card.state.key }}{% if card.working %} working{% endif %}">

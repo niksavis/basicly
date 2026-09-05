@@ -54,10 +54,25 @@ BEAT_FALLBACK_S = 15.0
 BEAT_CAP_S = 300.0
 
 
+# A status that means nobody is coming. A deferred record keeps whatever phase its worktree
+# binding derives, so `basicly-3iaw0x` - parked, holding a live worktree - was drawn as work
+# at `build` and read as activity (basicly-5jkxqk).
+PARKED = frozenset({"deferred"})
+
+
 def phase_of(row: Mapping[str, Any]) -> str:
     """The phase *row* declares, or an empty string where it declares none."""
     phase = row.get("phase")
     return phase if isinstance(phase, str) and phase else ""
+
+
+def working_phase(row: Mapping[str, Any]) -> str:
+    """*row*'s phase where its status means work could move, else "".
+
+    Here rather than twice: two populations disagreeing about whether `deferred` counts is
+    how one number on a page contradicts another.
+    """
+    return "" if str(row.get("status") or "") in PARKED else phase_of(row)
 
 
 def running(reads: Mapping[str, Reading]) -> bool:
@@ -151,15 +166,21 @@ def _phase(name: str, count: int | None, population: int, moved: bool) -> Phase:
     return Phase(name, count, held > 0, bar(count, population), moved=moved)
 
 
-def _backlog_note(units: Reading, counts: Mapping[str, int], unphased: int) -> str:
-    """Why the backlog row is not fully populated, in the producer's own terms."""
+def _backlog_note(units: Reading, counts: Mapping[str, int], missing: int, parked: int) -> str:
+    """Why the backlog row is not fully populated, in the producer's own terms.
+
+    *missing* and *parked* are different facts. Folded together, the note said `4 units carry
+    no phase` about four records that each carry one.
+    """
     parts = []
     if not units.drawn:
         parts.append(f"units {units.note}")
     elif not counts:
         parts.append(f"phase {ABSENT_TEXT} on any of the {len(units.dicts)} units")
-    elif unphased:
-        parts.append(f"{unphased} of {len(units.dicts)} units carry no phase")
+    elif missing:
+        parts.append(f"{missing} of {len(units.dicts)} units carry no phase")
+    if parked:
+        parts.append(f"{parked} parked, not counted at a phase")
     return DOT.join(parts)
 
 
@@ -172,13 +193,15 @@ def backlog_phases(reads: Mapping[str, Reading]) -> tuple[tuple[Phase, ...], str
     """
     units = reads["units"]
     counts: dict[str, int] = {}
-    unphased = 0
+    missing = 0
+    parked = 0
     for row in units.dicts:
-        name = phase_of(row)
-        if name:
+        if str(row.get("status") or "") in PARKED:
+            parked += 1
+        elif name := phase_of(row):
             counts[name] = counts.get(name, 0) + 1
         else:
-            unphased += 1
+            missing += 1
     measured = units.drawn and bool(counts)
     # The share is of the *phased* population and never the section's length: an unphased
     # unit is in no phase, and counting it shortens every bar by the same wrong amount.
@@ -192,4 +215,4 @@ def backlog_phases(reads: Mapping[str, Reading]) -> tuple[tuple[Phase, ...], str
         )
         for name in list(PHASES) + sorted(set(counts) - set(PHASES))
     )
-    return row, _backlog_note(units, counts, unphased)
+    return row, _backlog_note(units, counts, missing, parked)

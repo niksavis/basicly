@@ -33,7 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .board_loop import PHASES, beat, moved_within, phase_of
+from .board_loop import PHASES, beat, moved_within, phase_of, working_phase
 from .board_wall import DOT, clip, elapsed, joined, number, numeric, since
 
 if TYPE_CHECKING:
@@ -200,7 +200,9 @@ def _counts(units: Reading, dispatched: frozenset[str]) -> dict[str, int]:
     """
     counts: dict[str, int] = {}
     for row in units.dicts:
-        name = phase_of(row)
+        # `working_phase`, so a parked record is not drawn as work at a phase: a deferred
+        # one keeps the phase its worktree binding derives (basicly-5jkxqk).
+        name = working_phase(row)
         if name and str(row.get("id") or "") not in dispatched:
             counts[name] = counts.get(name, 0) + 1
     return counts
