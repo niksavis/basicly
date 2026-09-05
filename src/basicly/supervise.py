@@ -1563,37 +1563,21 @@ def _unstarted(issue_id: str, runner_name: str, detail: str, why: Unstarted) -> 
     )
 
 
-def _declined_start(
-    issue_id: str, runner_name: str, live: policy.SpendStatus, gate: ProviderGate
-) -> LaneOutcome | None:
+def _declined_start(issue_id: str, runner_name: str, gate: ProviderGate) -> LaneOutcome | None:
     """Why a lane waiting on a slot must not start after all, or None to start it.
 
-    Two bounds, and neither is about the lane's work: the provider has stopped taking
-    dispatches at all, or the grant can no longer pay for one. A lane already running is
-    never interrupted by either — this only declines to *start* one.
+    One bound, and it is not about the lane's work: the provider has stopped taking
+    dispatches at all. A lane already running is never interrupted by it - this only
+    declines to *start* one.
+
+    Spend was the second bound and is gone (basicly-hnnmk9.1). It refused a lane that had
+    reached the front of the queue, and the pass then routed that lane to `retry`, so an
+    exhausted grant span the same lane against its rework budget without ever starting it.
     """
-    refused = gate.declined(issue_id, runner_name)
-    declined = refused if refused is not None else _outspent(issue_id, runner_name, live)
+    declined = gate.declined(issue_id, runner_name)
     if declined is not None:
         note_standing(LANE_REFUSED, declined.detail, issue_id)
     return declined
-
-
-def _outspent(issue_id: str, runner_name: str, live: policy.SpendStatus) -> LaneOutcome | None:
-    """The unstarted outcome for a lane the grant can no longer pay for, or None.
-
-    Recorded spend first, then what the running lanes have reported and no record
-    carries yet (basicly-rupz): the grant that was overshot was overshot by lanes still
-    in flight when this check ran.
-    """
-    exhausted = (
-        "the grant was exhausted while this lane waited for a slot"
-        if live.halted
-        else inflight_halt(live)
-    )
-    if not exhausted:
-        return None
-    return _unstarted(issue_id, runner_name, f"not started: {exhausted}", Unstarted.STOPPED)
 
 
 def ready_lanes(
@@ -1742,10 +1726,9 @@ def delegate_decisions(
     """
     if admission is None:
         admission = policy.spend_status(repo_root, session.root_issue)
-    # No delegation without a covering grant, and none past D3's spend ceiling —
-    # invoke_decider re-checks the ceiling, but stopping here skips a tracker walk
-    # per item on a session that can no longer delegate anything.
-    if admission.halted or not _delegation_allowed(admission.grant):
+    # No delegation without a covering grant. Spend was the other half of this condition
+    # and is gone: a budget running out is not an answer (basicly-hnnmk9.1).
+    if not _delegation_allowed(admission.grant):
         return ()
     delegated: list[DelegatedDecision] = []
     for item in decisions.pending(repo_root, session.root_issue):
@@ -1994,13 +1977,12 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     gate = ProviderGate()
 
     def guarded(lane: AdoptedLane) -> LaneOutcome:
-        # Both bounds re-read at the moment this lane actually starts, not when the pass
-        # was admitted: lanes past the concurrency cap wait in the pool queue, and the
-        # grant can be exhausted or the provider can stop taking dispatches while they
-        # wait — neither is visible to the one pass-entry verdict (basicly-jr0l.59,
-        # basicly-jr0l.10).
-        live = policy.spend_status(repo_root, session.root_issue)
-        if (declined := _declined_start(lane.issue_id, spec.name, live, gate)) is not None:
+        # Re-read at the moment this lane actually starts, not when the pass was admitted:
+        # lanes past the concurrency cap wait in the pool queue and the provider can stop
+        # taking dispatches while they wait, which the one pass-entry verdict cannot see
+        # (basicly-jr0l.10). The grant's remainder was the second bound here and is gone,
+        # so the ledger walk that read it goes with it (basicly-hnnmk9.1).
+        if (declined := _declined_start(lane.issue_id, spec.name, gate)) is not None:
             return declined
         started[lane.issue_id] = time.monotonic()
         # Per-lane containment: a transient br failure (e.g. a locked tracker
@@ -2020,10 +2002,6 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
                         policy=ranking.schema,
                     ),
                     working_set=banded.get(lane.issue_id),
-                    # The remainder this lane's spend bound runs against, read just
-                    # above rather than walked again: `spend_status` costs a whole
-                    # ledger read, and this is the freshest one there is.
-                    spend=live,
                 )
             )
         except (RuntimeError, OSError, ValueError) as exc:
@@ -2338,15 +2316,6 @@ def inflight_dispatch() -> dict[str, LaneStream]:
         return dict(_LIVE_LANES)
 
 
-def retired_spend() -> int:
-    """Live spend from lanes that have ended, as a monotonic running total."""
-    with _LIVE_LOCK:
-        return _RETIRED.tokens
-
-
-# Where a lane stands in the pass, as `board-snapshot.schema.json` closes the set. Named
-# here rather than spelled at each site because the producer above this module writes them
-# onto a document, and a second spelling of one is a document a shipped consumer refuses.
 LANE_QUEUED = "queued"
 LANE_RUNNING = "running"
 LANE_WAITS_TO_LAND = "waits-to-land"
@@ -2418,163 +2387,6 @@ def lane_standings() -> dict[str, LaneStanding]:
 LIVE_OVERREPORT_BOUND = 2.0
 
 
-def inflight_overrun(
-    remaining: int | None, *, over_report: float = 1.0
-) -> tuple[int, dict[str, int]] | None:
-    """The live spend that has met *remaining*, and the lanes holding it, or None.
-
-    *over_report* scales *remaining* into the live figure's denomination before the
-    comparison. It defaults to 1.0 — comparing the two directly — which is only sound
-    where reading the live figure as larger than it is fails **safely**.
-
-    That is the distinction this argument exists to make (basicly-jr0l.67). Both halves
-    of the live ceiling used to share one comparison, on the stated grounds that they
-    "cannot come to different verdicts about the same grant". They must: the halves have
-    opposite safety directions, so one shared predicate guarantees one of them is wrong.
-
-    * :func:`inflight_halt` declines to *start* a lane. An over-estimate there starts
-      fewer lanes than the grant would allow — conservative, and it costs throughput
-      only. It keeps the direct comparison.
-    * :class:`SpendBound` *kills a lane that is already running*. An over-estimate there
-      destroys work inside its own budget, and did: ``basicly-vkh0.11`` was killed having
-      reported 18120420 live against 18109328 remaining while its recorded cost was
-      11431736 — 6677592 tokens, a third of its allowance, still unspent. It passes
-      :data:`LIVE_OVERREPORT_BOUND` so a kill means the *recorded* spend has genuinely
-      passed the remainder.
-
-    None whenever there is no ceiling to enforce, which is the ungranted and L1 case
-    :attr:`policy.SpendStatus.remaining_tokens` collapses to None, and None when
-    nothing in flight has reported anything: with no live figure at all this can only
-    repeat what the recorded-spend half of D3 has already decided.
-    """
-    if remaining is None:
-        return None
-    live = inflight_spend()
-    reported = sum(live.values())
-    if not reported or reported < remaining * over_report:
-        return None
-    return reported, live
-
-
-def _grant_level(status: policy.SpendStatus) -> str:
-    """The grant's level for a message, or ``active`` when the status carries none."""
-    return status.grant.level if status.grant is not None else "active"
-
-
-def inflight_halt(status: policy.SpendStatus) -> str | None:
-    """Why the lanes already running have used up the grant's remainder, or None.
-
-    The live half of D3, and the half that was missing. ``spend_status`` compares
-    *recorded* spend against the budget, and a lane's record is written when it
-    ends — so a pass whose running lanes have already reported more than the grant
-    had left is admitted by a status that cannot see them.
-
-    A refusal to *start*, and the cheap half of the ceiling: *status* is read fresh
-    at each call site, so the recorded number it subtracts from is current.
-    :class:`SpendBound` is the other half, for a lane that is already running.
-
-    Compares the live figure against the remainder directly, without
-    :data:`LIVE_OVERREPORT_BOUND`, and that asymmetry is deliberate: the live figure
-    over-reports (basicly-jr0l.67), so reading it at face value here declines to start a
-    lane the grant might still have covered. That costs a lane's worth of throughput and
-    nothing else, which is the safe direction for a refusal — unlike the kill half, where
-    the same over-estimate destroys committed work.
-    """
-    overrun = inflight_overrun(status.remaining_tokens)
-    if overrun is None:
-        return None
-    reported, live = overrun
-    lanes = ", ".join(f"{issue_id} {tokens}" for issue_id, tokens in sorted(live.items()))
-    return (
-        f"the lanes already running have reported {reported} tokens against "
-        f"{status.remaining_tokens} remaining under the {_grant_level(status)} grant ({lanes})"
-    )
-
-
-class SpendBound:
-    """Stops a running dispatch once live spend reaches the grant's remainder.
-
-    The terminal half of D3, and the bead's headline: a spend bound is strictly
-    better than a clock because tokens accrue monotonically and are the resource the
-    grant is actually denominated in, where wall-clock seconds say nothing about
-    whether work is happening (basicly-lpsf). It is what lets ``runner_timeout`` stop
-    being the working bound.
-
-    **Snapshot, not a re-read.** ``policy.spend_status`` walks the whole run-record
-    ledger — measured at ~800ms on this repo's own 232KB of it — so consulting it
-    every half second, per lane, would cost more than the dispatch it watches. The
-    remainder is therefore taken once and the two quantities that move underneath it
-    are both tracked without touching a file:
-
-    * lanes still running report through :func:`inflight_spend`;
-    * lanes that have *ended* since the snapshot wrote run records the snapshot's
-      remainder does not reflect, so their live figure is subtracted from it
-      (:func:`retired_spend`), which is what keeps the bound honest in the
-      concurrent pass that produced the overshoot in the first place.
-
-    Where it still errs it errs **late**: a retiring lane's live figure is a lower
-    bound on its recorded one (the turn in progress when it ended is not in it), so
-    the remainder this works from is never smaller than the true one. Which is also
-    why the snapshot reads the status *before* the retired counter — the other order
-    double-counts a lane retiring between the two reads, and that direction of error
-    kills a lane over budget the grant still had.
-
-    The residual overshoot is therefore **one turn**, not zero: usage arrives per
-    turn, so the earliest this can fire is on the turn that crossed the line, with
-    that turn already spent. Measured against what it replaces — a ceiling consulted
-    before a pass and recorded after it, which let a 20000000-token grant reach
-    22164783 — the quantity being traded is 2164783 tokens for the size of one turn.
-
-    *status* is a callable, resolved on the first check rather than at construction,
-    for the same reason the remainder is snapshotted at all: a dispatch that ends
-    before its first poll must not have paid for a ledger walk to bound it. The pair
-    of readings is still taken at one instant, which is what the ordering above needs.
-    """
-
-    def __init__(self, status: Callable[[], policy.SpendStatus]) -> None:
-        """Bound a dispatch against the grant *status* reports, read on first check."""
-        self._status = status
-        self._snapshot: tuple[int | None, str, int] | None = None
-
-    def _resolve(self) -> tuple[int | None, str, int]:
-        """The (remainder, grant level, retired-at-start) triple, taken once."""
-        if self._snapshot is None:
-            status = self._status()
-            self._snapshot = (status.remaining_tokens, _grant_level(status), retired_spend())
-        return self._snapshot
-
-    def remaining(self) -> int | None:
-        """The snapshot remainder less what has retired into the records since."""
-        snapshot, _level, retired_at_start = self._resolve()
-        if snapshot is None:
-            return None
-        return max(0, snapshot - (retired_spend() - retired_at_start))
-
-    def __call__(self) -> runner.StopReason | None:
-        """Why this dispatch must stop now, or None while the grant still covers it."""
-        remaining = self.remaining()
-        # Scaled into the live figure's denomination, because this half *kills*
-        # (basicly-jr0l.67). Firing at face value killed basicly-vkh0.11 with a third of
-        # its grant unspent; the salvage saved that lane's work only because it happened
-        # to be finished, and a kill 200s earlier would have shipped a partial event log
-        # as the foundation three later lanes build on.
-        overrun = inflight_overrun(remaining, over_report=LIVE_OVERREPORT_BOUND)
-        if overrun is None:
-            return None
-        reported, live = overrun
-        _snapshot, level, _retired = self._resolve()
-        lanes = ", ".join(f"{issue_id} {tokens}" for issue_id, tokens in sorted(live.items()))
-        return runner.StopReason(
-            runner.SPEND_BOUND,
-            f"the lanes in flight have reported {reported} tokens against {remaining} "
-            f"remaining under the {level} grant ({lanes})",
-        )
-
-
-# The mid-run stall flag's question, named once so :func:`resolve_stall_flag` can
-# find the item :func:`flag_stalled_lane` queued. The two must agree exactly — the
-# queue keys items by (issue, kind, question) — and a copy of this string in two
-# places is a silent leak of pending items (basicly-jr0l.52).
 STALL_FLAG_QUESTION = "lane may be stuck: intervene now or let the hard kill arrive?"
 
 
@@ -2757,7 +2569,6 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     sizing: SizingConfig,
     ordering: DispatchOrdering | None = None,
     working_set: WorkingSetAdmission | None = None,
-    spend: policy.SpendStatus | None = None,
 ) -> LaneOutcome:
     """Run one lane: assemble its bundle now, dispatch, record, and meter.
 
@@ -2765,9 +2576,8 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     sum the pass forecast (basicly-jr0l.22); omitting it re-estimates here, so a
     caller that forgets cannot dispatch an unsized lane past the band.
 
-    *spend* is the same hand-down for the grant standing the caller has already read
-    (:class:`SpendBound`, basicly-lpsf). Omitting it re-reads, which is correct but
-    costs a whole ledger walk — the caller that admits the lane has just done one.
+    It took a *spend* hand-down for the bound that killed a running dispatch at the
+    grant's remainder. That bound is gone (basicly-hnnmk9.1) and so is the argument.
     """
     record = worktree.load_session(lane.binding.name, repo_root)
     if record is None:
@@ -2869,15 +2679,17 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         # remainder is the ceiling D3 declares. `runner_timeout` is still passed and
         # is still terminal, but it now sits underneath both as the backstop for what
         # neither can see — a process holding the pipe open with nothing behind it.
+        # No `stop_when`. `SpendBound` killed a running dispatch at the grant's remainder,
+        # which is basicly-hnnmk9.1's harm 1: a lane stopped mid-work on basicly-ncday7 whose
+        # unreviewed diff then landed with three major defects, and basicly-vkh0.11 killed
+        # with a third of its grant unspent. `quiet_after` still ends a wedged dispatch and
+        # `runner_timeout` is still the backstop; neither is a spend fact.
         bounds = runner.DispatchBounds(
             quiet_after=runner_config.quiet_after,
-            stop_when=SpendBound(
-                lambda: (
-                    spend
-                    if spend is not None
-                    else policy.spend_status(repo_root, session.root_issue)
-                )
-            ),
+            # The lane's own ceiling, off unless `[runner] lane_token_ceiling` sets one.
+            # `SpendBound` stood here and killed on the *grant's* remainder, which is a
+            # session fact another lane can move (basicly-hnnmk9.1, basicly-tkbmndn).
+            token_ceiling=runner_config.lane_token_ceiling or None,
         )
         # The same events, kept (basicly-rrah). The meter above forgets them; the
         # transcript is what leaves a claim about what this lane *did* evidenceable
