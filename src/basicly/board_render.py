@@ -6,13 +6,12 @@ contract is the structural half of that and this signature is the other. A consu
 reaches past the snapshot only ever works against basicly's own producer.
 
 **Autoescaping is on**, unlike :func:`basicly.renderers.common.make_env`, whose ``S701``
-suppression reads "nothing here is served to a browser". This output is HTML, a snapshot may
-carry a foreign producer's strings, and so that env cannot be reused.
+suppression reads "nothing here is served to a browser". This output is HTML and a snapshot
+carries a foreign producer's strings, so that env cannot be reused.
 
 The regions are :mod:`basicly.board_regions`', :mod:`basicly.board_diagram`'s,
-:mod:`basicly.board_loop`'s and :mod:`basicly.board_footer`'s, and this module composes
-them into one context and renders it - which is why the page's age is a single reading,
-taken here rather than once per region.
+:mod:`basicly.board_loop`'s and :mod:`basicly.board_footer`'s; this module composes them
+into one context and draws it, which is why the page's age is a single reading.
 """
 
 from __future__ import annotations
@@ -22,9 +21,10 @@ from typing import TYPE_CHECKING, Any
 from jinja2 import Environment, FileSystemLoader
 
 from . import board_diagram, board_footer, board_loop, board_regions, board_wall, catalog
+from .board_wall import more
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
     from datetime import datetime
     from pathlib import Path
 
@@ -39,15 +39,17 @@ def context(
     verdict: SnapshotVerdict,
     now: datetime,
     *,
-    viewport_height: float | None = None,
-    viewport_width: float | None = None,
+    viewport: tuple[float | None, float | None] = (None, None),
+    acts: tuple[Sequence[Mapping[str, Any]], int] = ((), 0),
 ) -> dict[str, Any]:
     """Every region of the wall, keyed as the template names it.
 
     The readings are derived once and handed to every region, so the verdict's inventory is
-    the only inventory a region can draw from. *viewport_height* and *viewport_width* are
-    board_regions.next_up's own arguments: this layer neither reads nor guesses either, it
-    only carries what its caller gave it (basicly-ffm2yp).
+    the only inventory a region can draw from. *viewport* is board_regions.next_up's own
+    (height, width) and *acts* is :mod:`basicly.board_asks`': this layer neither reads nor
+    guesses either, it carries what its caller gave it (basicly-ffm2yp). Each is one pair
+    because the arity ratchet counts arguments, and `board_asks`' forms arrive as data so
+    every string of them is drawn through the autoescape.
     """
     reads = board_wall.readings(document, verdict)
     drawn = board_wall.age(document, now)
@@ -70,6 +72,10 @@ def context(
         # empty today.
         "throughput": board_footer.throughput(reads, board_wall.day(drawn.generated_at)),
         "band": board_regions.band(reads, drawn, now),
+        # A region, not an append after `</main>`: the body is `100vh` with
+        # `overflow: hidden`, so the old panel sat 274px past the fold (basicly-ua9o5g).
+        "acts": tuple(acts[0]),
+        "acts_more": more(acts[1], "asks"),
         # The loop region draws the workflow and the backlog census draws the backlog,
         # and the two are separate keys because they are separate populations: binning
         # one under the other made the region total equal `backlog.active`
@@ -86,8 +92,14 @@ def context(
         "flight_note": flight_note,
         # The ready list is handed the shape the running row left it, which is the one place
         # the layout's two states have to agree with the model's two capacities.
+        # The list gives up rows to the `acts` region: a decision the factory is stopped
+        # on outranks what could be started next, and without this the page clips (210px).
         "ready": board_regions.next_up(
-            reads, wide=not cards, viewport_height=viewport_height, viewport_width=viewport_width
+            reads,
+            wide=not cards,
+            viewport_height=viewport[0],
+            viewport_width=viewport[1],
+            reserved=board_regions.acts_reserve(len(acts[0])),
         ),
         "backlog": board_footer.backlog(reads),
         "priorities": hist,
@@ -126,18 +138,23 @@ def page(
     """One self-contained HTML page for *document*, referencing no external origin.
 
     Args:
-        document: A parsed ``harness-board/v1`` snapshot. The only source of every value.
-        verdict: :func:`basicly.board_schema.verdict`'s ruling on it, which carries the
-            section inventory every region follows.
-        now: The instant the age is computed against. Passed rather than read so a page is a
-            function of its inputs.
-        templates_dir: The directory holding :data:`TEMPLATE`. Defaults to the bundled
-            catalog's, which resolves in a source checkout and in an installed wheel alike.
-        viewport: The wall's own (height, width) in CSS pixels, where a caller has one to
-            give (basicly-ffm2yp) - one pair rather than two arguments, so `page` still
-            fits under the arity ratchet. None renders the reclaimed ready list at the
-            conservative default rather than a guess, because this layer cannot see a screen.
+        document: A parsed ``harness-board/v1`` snapshot, the only source of every value.
+        verdict: :func:`basicly.board_schema.verdict`'s ruling, carrying the inventory.
+        now: The instant the age is taken against, passed so a page is a function of its
+            inputs.
+        templates_dir: Where :data:`TEMPLATE` lives; the bundled catalog's by default, which
+            resolves in a checkout and in a wheel alike.
+        viewport: The wall's own (height, width) in CSS pixels (basicly-ffm2yp). None draws
+            the reclaimed list at the safe default rather than a guess.
     """
-    height, width = viewport if viewport is not None else (None, None)
-    filled = context(document, verdict, now, viewport_height=height, viewport_width=width)
+    seen = viewport if viewport is not None else (None, None)
+    return render(context(document, verdict, now, viewport=seen), templates_dir)
+
+
+def render(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
+    """Draw an already-built :func:`context`, for a caller with something to add to it.
+
+    Split from :func:`page` for the action rows (basicly-ua9o5g): a server holds a token and
+    a set of pending asks the static artifact has not.
+    """
     return _env(templates_dir).get_template(TEMPLATE).render(filled)

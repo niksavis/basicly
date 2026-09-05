@@ -450,16 +450,18 @@ def test_rows_the_model_computed_that_never_reached_the_page_are_named_a_fault(
 ) -> None:
     """AC 2: `ready.rows` non-empty but `ready.groups` drew nothing is exactly `f7788bb7`.
 
-    `board_render.page` is replaced with a version that renders as an old template would
+    `board_render.render` is replaced with a version that draws as an old template would
     have - dropping the one row's id - while the unpatched `board_render.context` still
     reports the row this process actually computed, which is the mismatch this guards.
+    `render` rather than `page`: the server builds its context once and draws it, because
+    the context carries action rows the static artifact has none of (basicly-ua9o5g).
     """
-    real_page = board_render.page
+    real_render = board_render.render
 
     def outdated(*args: Any, **kwargs: Any) -> str:
-        return real_page(*args, **kwargs).replace("demo-1", "")
+        return real_render(*args, **kwargs).replace("demo-1", "")
 
-    monkeypatch.setattr(board_render, "page", outdated)
+    monkeypatch.setattr(board_render, "render", outdated)
     board = board_serve.Board(board_repo, build=_ready_document)
     assert board.refresh() is True
 

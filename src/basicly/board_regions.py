@@ -137,6 +137,24 @@ READY_CHROME_CALIBRATION: tuple[tuple[float, float], ...] = (
 # further, and losing a row to the margin is cheaper than losing one to a clip.
 READY_CHROME_SAFETY_MARGIN_PX = READY_ROW_PITCH_PX
 
+# What the `acts` region costs the page when a person is being asked something: its heading
+# and reply frame, and each row. Measured on the rendered document the way the chrome above
+# was, at the three calibrated widths and at 900 as well as 1080 - a row's command and its
+# form wrap onto separate lines at 1440, which is where the first pair of figures came out
+# 108px short and the instrument said so (basicly-ua9o5g).
+#
+# **A conditional region has to be subtracted, not calibrated.** The chrome figures above are
+# per width and constant per width, which is exactly what an always-drawn region is. This one
+# draws only when something is pending, so folding it into those numbers would shorten the
+# ready list all day to pay for a region that is absent all day.
+ACTS_CHROME_PX = 150.0
+ACTS_ROW_PX = 90.0
+
+
+def acts_reserve(rows: int) -> float:
+    """The height *rows* actionable asks take out of the page, or 0.0 where there are none."""
+    return ACTS_CHROME_PX + rows * ACTS_ROW_PX if rows else 0.0
+
 
 def _chrome_px(viewport_width: float | None) -> float:
     """The calibrated chrome height at *viewport_width*, interpolated between measured points.
@@ -156,7 +174,9 @@ def _chrome_px(viewport_width: float | None) -> float:
     return points[-1][1]  # pragma: no cover - unreachable, the loop above covers the range
 
 
-def ready_capacity(viewport_height: float | None, viewport_width: float | None = None) -> int:
+def ready_capacity(
+    viewport_height: float | None, viewport_width: float | None = None, reserved: float = 0.0
+) -> int:
     """How many reclaimed-row slots fit at this viewport, or :data:`READY_SLOTS_WIDE`.
 
     A height of None means the caller does not know the viewport at all - basicly-ffm2yp's
@@ -164,10 +184,15 @@ def ready_capacity(viewport_height: float | None, viewport_width: float | None =
     guessed: the caller that knows a wall's own height is the one that must pass it, and
     until one does this returns the figure the layout has always been safe at instead of a
     computed one.
+
+    *reserved* is height a region above this list is taking on *this* render and not on
+    every one - :func:`acts_reserve`'s figure. It is subtracted rather than calibrated into
+    the chrome because the region it pays for is conditional, and a list permanently short by
+    a region that is usually absent is the cost this argument exists to avoid.
     """
     if viewport_height is None:
         return READY_SLOTS_WIDE
-    chrome = _chrome_px(viewport_width) + READY_CHROME_SAFETY_MARGIN_PX
+    chrome = _chrome_px(viewport_width) + READY_CHROME_SAFETY_MARGIN_PX + reserved
     return max(1, int((viewport_height - chrome) // READY_ROW_PITCH_PX))
 
 
@@ -553,6 +578,7 @@ def next_up(
     wide: bool = False,
     viewport_height: float | None = None,
     viewport_width: float | None = None,
+    reserved: float = 0.0,
 ) -> Listing:
     """The ready set, ranked, with priority, id and title on each row.
 
@@ -562,10 +588,10 @@ def next_up(
 
     *wide* is the shape the list takes when no lane is dispatched and the running row gave it
     the width: more rows, and a title bound that fits them. Two shapes rather than one because
-    a cap is a promise about a rendered width, and the list has two. *viewport_height* and
-    *viewport_width* are :func:`ready_capacity`'s own arguments, threaded through rather than
-    read here, because a caller that knows the wall's actual size is the one with the fact
-    to give.
+    a cap is a promise about a rendered width, and the list has two. *viewport_height*,
+    *viewport_width* and *reserved* are :func:`ready_capacity`'s own arguments, threaded
+    through rather than read here, because a caller that knows the wall's actual size - and
+    what else is being drawn on it this time - is the one with the fact to give.
     """
     read = reads["units"]
     if not read.drawn:
@@ -574,7 +600,14 @@ def next_up(
     flagged = [unit for unit in units if isinstance(unit.get("ready"), bool)]
     if not flagged:
         return Listing(BY_KEY[ABSENT], note=f"ready {ABSENT_TEXT} on any of the {len(units)} units")
-    slots = ready_capacity(viewport_height, viewport_width) if wide else READY_SLOTS
+    fits = ready_capacity(viewport_height, viewport_width, reserved)
+    # The narrow column is bounded by the viewport too, and not only by its own cap. It was
+    # the half of basicly-ffm2yp that never landed: the wide list learned to read the wall
+    # and this one kept a fixed eight, so a short wall with lanes running clipped in silence
+    # - 116px at 1440x900 on `main` before any of this (basicly-c9crxu). `min`, because the
+    # cap is a promise about a rendered *width* and the capacity is one about height; the
+    # column owes both.
+    slots = fits if wide else min(READY_SLOTS, fits)
     bound = READY_TITLE_WIDE if wide else TITLE_MAX
     ready = sorted((unit for unit in flagged if unit["ready"]), key=_rank)
     names = _feature_names(reads, units, ready)

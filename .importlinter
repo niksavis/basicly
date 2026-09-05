@@ -24,6 +24,7 @@ layers =
     board_cli
     board_facts
     board_serve
+    board_asks
     board_actions
     supervise | usage_report
     loop | release
@@ -108,6 +109,7 @@ name = A board consumer reads the snapshot document, never engine state
 type = forbidden
 source_modules =
     basicly.board_actions
+    basicly.board_asks
     basicly.board_diagram
     basicly.board_footer
     basicly.board_loop
