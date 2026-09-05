@@ -61,6 +61,9 @@ GATE_NAMES = 4
 HEALTH_SLOTS = 4
 PRIORITY_SLOTS = 8
 
+# The counted figure a producer folds for itself, read before the tail.
+COUNTED_KEY = "closed_today"
+
 # The event kind a producer writes a lifecycle change under, and the status counted. Both are
 # the producer's vocabulary: `events[].kind` is an open string, so a producer that records no
 # status change supplies no throughput and the figure is absent rather than nought.
@@ -264,10 +267,19 @@ def throughput(reads: Mapping[str, Reading], today: str) -> Cell:
     The one figure that answers "is the factory improving" rather than "how big is the pile".
     Distinct records, not rows: a unit closed twice is one unit closed.
 
-    **Absent, never nought.** A producer that records no :data:`STATUS_KIND` row at all has not
-    measured this and the cell says so; one that records them and closed nothing today is a
-    measured zero. An undateable row is in no day, so it cannot fall into this one.
+    **:data:`COUNTED_KEY` first, the tail behind it.** No basicly document can put a status row
+    in that tail, so the tail alone read `not measured` on a day twenty records closed
+    (:func:`board_sections.events` says why). It stays for a foreign producer that does write
+    one.
+
+    **Absent, never nought.** A producer supplying neither has not measured this and the cell
+    says so; one that closed nothing today reports a measured zero. An undateable row is in no
+    day, so it cannot fall into this one.
     """
+    counted = reads["backlog"]
+    held = counted.fields.get(COUNTED_KEY) if counted.drawn else None
+    if isinstance(held, int) and not isinstance(held, bool):
+        return Cell("closed today", number(held), counted.state)
     read = reads["events"]
     rows = [row for row in read.dicts if str(row.get("kind")) == STATUS_KIND] if read.drawn else []
     if not rows or not today:
