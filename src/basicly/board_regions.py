@@ -156,6 +156,18 @@ def acts_reserve(rows: int) -> float:
     return ACTS_CHROME_PX + rows * ACTS_ROW_PX if rows else 0.0
 
 
+# What a claimed row costs, measured the same way and for the same reason: the region draws
+# only when something is claimed, so its height is subtracted on the render that draws it and
+# never folded into the width-keyed chrome. One row and its heading measured 47px at 1440x900.
+CLAIMED_CHROME_PX = 24.0
+CLAIMED_ROW_PX = 30.0
+
+
+def claimed_reserve(rows: int) -> float:
+    """The height *rows* claimed records take out of the page, or 0.0 where there are none."""
+    return CLAIMED_CHROME_PX + rows * CLAIMED_ROW_PX if rows else 0.0
+
+
 def _chrome_px(viewport_width: float | None) -> float:
     """The calibrated chrome height at *viewport_width*, interpolated between measured points.
 
@@ -486,15 +498,57 @@ def flight(
     return cards, more(len(lanes) - FLIGHT_SLOTS, "lanes"), note
 
 
+# What a status means when somebody has taken a record but no lane holds it. The page counted
+# `IN PROGRESS 1` three times over and named nothing, so the owner could not tell what was
+# being worked on - and the record it counted was not even the one at `build` (basicly-5jkxqk).
+CLAIMED_STATUS = "in_progress"
+
+# How many claimed rows are drawn. A claim with no lane is a person working by hand or a pass
+# that ended without teardown; more than a few is a filing problem, not a busy factory.
+CLAIMED_SLOTS = 4
+
+
+def claimed(reads: Mapping[str, Reading]) -> tuple[tuple[dict[str, str], ...], str]:
+    """Records somebody has claimed that no lane holds, and how many were not drawn.
+
+    **A count with no member named is a count a reader cannot act on.** `IN PROGRESS 1`,
+    `BUILD 1` and the diagram's `build 1` were three different populations of size one, and
+    the page named none of them: the first was a record resting at `intake`, the second a
+    *deferred* record holding a stale worktree, and no lane existed at all (basicly-5jkxqk).
+
+    Rows and not cards. A claimed record has no agent, no branch and no spend, so giving it a
+    lane's frame would promise figures that do not exist - which is the distinction
+    `basicly-9guj21` asks for in the other direction.
+    """
+    units, lanes = reads["units"], reads["lanes"]
+    held = {str(row.get("id")) for row in lanes.dicts if row.get("id")}
+    rows = [
+        {
+            "id": clip(str(row.get("id") or UNKNOWN), TITLE_MAX),
+            "phase": phase_of(row) or UNKNOWN,
+            "priority": str(row.get("priority") or UNKNOWN),
+            "title": clip(str(row.get("title") or UNKNOWN), READY_TITLE_WIDE),
+        }
+        for row in units.dicts
+        if str(row.get("status") or "") == CLAIMED_STATUS and str(row.get("id") or "") not in held
+    ]
+    return tuple(rows[:CLAIMED_SLOTS]), more(len(rows) - CLAIMED_SLOTS, "claimed")
+
+
 def _waiting_on(reads: Mapping[str, Reading], lanes: Sequence[Mapping[str, Any]]) -> str:
     """What the pass waits for, in one sentence, or "" while it is moving on its own.
 
     **The reading the operator reported was "nothing is happening"** (basicly-ncday7): with
     no lane running the region said "no lane is dispatched" and stopped, which is true and
-    is not what a person in the room has to know. Four answers, ordered by what a reader can
-    do about them, and each read off a section the document already carries so the sentence
-    costs no producer field of its own. A lane running or landing needs no sentence: the
-    cards are the answer, and a line above them would be a second one.
+    is not what a person in the room has to know. The answers are ordered by what a reader
+    can do about them, and each is read off a section the document already carries so the
+    sentence costs no producer field of its own. A lane running or landing needs no sentence:
+    the cards are the answer, and a line above them would be a second one.
+
+    **A rung must not answer a question it cannot.** The blocked count fired whenever it was
+    non-zero, so an idle factory with a ready set of 231 read `waits on a blocker`, and the
+    true answer sat under the diagram in the smallest type on the page (basicly-9guj21).
+    Blockers are a cause only when there is nothing else to start.
     """
     if any(_moving(lane) for lane in lanes):
         return ""
@@ -506,12 +560,22 @@ def _waiting_on(reads: Mapping[str, Reading], lanes: Sequence[Mapping[str, Any]]
     if stopped:
         words = ", ".join(LANE_MARKS[key][1] for key in LANE_MARKS if key in set(stopped))
         return f"waits for the next pass - {len(stopped)} lane(s) {words}"
-    blocked = numeric(reads["backlog"].fields.get("blocked"))
-    if blocked:
+    backlog = reads["backlog"].fields
+    ready = numeric(backlog.get("ready")) or 0
+    blocked = numeric(backlog.get("blocked"))
+    # Only a cause when there is nothing else to start. With 231 ready the blocked count has
+    # no bearing on why nothing runs, and naming it read as a dependency-starved factory that
+    # was merely idle - the owner's report, and the note was the reason (basicly-9guj21).
+    if blocked and not ready:
         return f"waits on a blocker - {number(int(blocked))} record(s) have an unmet dependency"
     if lanes:
         return "no lane of this pass is running or landing"
-    return "no lane is dispatched"
+    # One expression rather than a seventh return: the arity of this ladder is itself gated.
+    return (
+        f"no pass is running - {number(int(ready))} record(s) are ready to start"
+        if ready
+        else "no lane is dispatched"
+    )
 
 
 def _moving(lane: Mapping[str, Any]) -> bool:

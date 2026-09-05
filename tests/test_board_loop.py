@@ -244,3 +244,40 @@ def test_every_declared_phase_draws_a_box_even_at_nought() -> None:
     phases, _, _ = board_loop.loop(_reads("wall-v1.json", lanes=[_lane("ship")]), STAMPED)
     assert [phase.name for phase in phases] == list(board_loop.PHASES)
     assert [phase.count for phase in phases] == [0, 0, 0, 0, 0, 0, 1]
+
+
+# --- a parked record is not work at a phase (basicly-5jkxqk) ----------------
+
+
+def test_a_deferred_record_is_not_counted_as_work_at_a_phase() -> None:
+    """A parked record keeps the phase its worktree binding derives, and is not at it.
+
+    `basicly-3iaw0x` was parked on 2026-09-01 and held a live worktree, so its phase derived
+    to `build` and the census drew it as activity. The owner read `build 1` as work.
+    """
+    units = [
+        {"id": "basicly-3iaw0x", "phase": "build", "status": "deferred"},
+        {"id": "basicly-live", "phase": "build", "status": "open"},
+    ]
+    census, _note = board_loop.backlog_phases(_reads("wall-v1.json", units=units))
+    assert next(p.count for p in census if p.name == "build") == 1
+    assert board_loop.working_phase(units[0]) == ""
+    assert board_loop.working_phase(units[1]) == "build"
+
+
+def test_the_parked_set_is_named_rather_than_a_literal_in_two_places() -> None:
+    """The census and the diagram both bin by phase; one spelling, so they cannot disagree."""
+    assert "deferred" in board_loop.PARKED
+    # A status the table does not name is work: `blocked` still sits at its phase, because a
+    # blocked record is waiting on something rather than parked by a person.
+    assert board_loop.working_phase({"phase": "build", "status": "blocked"}) == "build"
+    assert board_loop.working_phase({"phase": "build"}) == "build"
+
+
+def test_phase_of_still_answers_for_a_row_that_carries_no_status() -> None:
+    """A row with no status is not parked, so the rule must not swallow a lane.
+
+    `lanes[]` rows carry no status and `board_regions` reads their phase off the same helper.
+    """
+    assert board_loop.phase_of({"phase": "build"}) == "build"
+    assert board_loop.working_phase({"phase": "build", "status": ""}) == "build"
