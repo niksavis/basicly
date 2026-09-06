@@ -1,0 +1,1 @@
+- The board's marks are now inline bootstrap-icons paths: a person on each human checkpoint, an hourglass where a person blocks a station, an arrow between chained records, and a state mark on the watch band. Seven icons are vendored under the board templates with their licence, so the page still opens from disk with no network and references no font, stylesheet or sprite URL.

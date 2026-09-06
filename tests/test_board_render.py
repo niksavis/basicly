@@ -40,7 +40,7 @@ SITE = REPO_ROOT / "site" / "index.html"
 # fmt: off
 SOURCES = (
     "board_render", "board_regions", "board_diagram", "board_graph",
-    "board_loop", "board_footer", "board_record", "board_wall",
+    "board_loop", "board_footer", "board_record", "board_wall", "board_icons",
 )
 # fmt: on
 

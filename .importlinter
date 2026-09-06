@@ -70,6 +70,7 @@ layers =
     board_record
     board_diagram | board_footer | board_graph | board_regions
     board_loop
+    board_icons
     board_wall
     board_fields | board_schema
     verify_log
@@ -117,6 +118,7 @@ source_modules =
     basicly.board_diagram
     basicly.board_footer
     basicly.board_graph
+    basicly.board_icons
     basicly.board_loop
     basicly.board_record
     basicly.board_regions
