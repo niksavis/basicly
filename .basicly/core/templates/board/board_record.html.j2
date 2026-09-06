@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ record }} — basicly board</title>
+    <style>
+      /* The wall's palette, which site/index.html holds first. Copied rather than included:
+         board_serve dates its own staleness off board_page.html.j2 alone, so a shared
+         partial would change under a running process without that check seeing it. */
+      :root {
+        --bg: #0f1117;
+        --bg-raise: #171a23;
+        --bg-sunk: #0b0d12;
+        --border: #262b38;
+        --text: #d7dce6;
+        --text-bright: #f2f5fa;
+        --text-dim: #8b93a7;
+        --indigo: #818cf8;
+        --amber: #f59e0b;
+        --green: #34d399;
+        --mono:
+          ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      /* This page scrolls, unlike the wall: it is read at a desk and answers one record,
+         so a clipped section here would hide the field somebody opened it for. */
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 15px;
+        line-height: 1.5;
+        padding: 24px;
+      }
+      main {
+        margin: 0 auto;
+        max-width: 900px;
+      }
+      a {
+        color: var(--indigo);
+      }
+      h1 {
+        color: var(--text-bright);
+        font-family: var(--mono);
+        font-size: 22px;
+      }
+      h2 {
+        border-bottom: 1px solid var(--border);
+        color: var(--text-dim);
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        margin: 24px 0 8px;
+        padding-bottom: 4px;
+        text-transform: uppercase;
+      }
+      .title {
+        color: var(--text-bright);
+        font-size: 17px;
+        margin-top: 4px;
+      }
+      .age {
+        color: var(--text-dim);
+        font-size: 13px;
+      }
+      dl {
+        display: grid;
+        gap: 4px 16px;
+        grid-template-columns: 160px 1fr;
+      }
+      dt {
+        color: var(--text-dim);
+      }
+      dd {
+        color: var(--text-bright);
+        font-family: var(--mono);
+      }
+      /* Absence is on the glyph and on the colour, never on the colour alone: the wall's
+         own three-channel rule, so a monochrome print still tells the two apart. */
+      .absent {
+        color: var(--text-dim);
+        font-family: var(--sans);
+        font-style: italic;
+      }
+      .note {
+        color: var(--amber);
+      }
+      .held {
+        color: var(--green);
+      }
+      .missing {
+        color: var(--text-dim);
+      }
+      code {
+        background: var(--bg-sunk);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text-bright);
+        display: inline-block;
+        font-family: var(--mono);
+        padding: 4px 8px;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+      }
+      li {
+        font-family: var(--mono);
+      }
+      .glyph {
+        font-family: var(--mono);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p><a href="{{ back }}">&larr; the board</a></p>
+      <h1>{{ record }}</h1>
+      <p class="title{% if title == absent_text %} absent{% endif %}">{{ title }}</p>
+      <p class="age">
+        snapshot {{ age.generated_at }} — {{ age.phrase }} — {{ schema }}
+      </p>
+
+      <h2>the record</h2>
+      <dl>
+{%- for cell in facts %}
+        <dt>{{ cell.label }}</dt>
+        <dd class="{% if cell.value == absent_text %}absent{% endif %}">
+          <span class="glyph">{{ cell.state.glyph }}</span> {{ cell.value }}
+        </dd>
+{%- endfor %}
+{%- if detail_note %}
+        <dt>worktree</dt>
+        <dd class="absent">{{ detail_note }}</dd>
+{%- else %}
+{%- for cell in binding %}
+        <dt>{{ cell.label }}</dt>
+        <dd class="{% if not cell.value %}absent{% endif %}">
+          {{ cell.value or "none bound" }}
+        </dd>
+{%- endfor %}
+{%- endif %}
+      </dl>
+
+      <h2>checkpoints</h2>
+{%- if checkpoints %}
+      <ul>
+{%- for name, held in checkpoints %}
+        <li class="{% if held %}held{% else %}missing{% endif %}">
+          {{ "held" if held else "not approved" }} — {{ name }}
+        </li>
+{%- endfor %}
+      </ul>
+{%- else %}
+      <p class="absent">{{ detail_note or absent_text }}</p>
+{%- endif %}
+
+      <h2>rework</h2>
+{%- if rework %}
+      <dl>
+{%- for cell in rework %}
+        <dt>{{ cell.label }}</dt>
+        <dd>{{ cell.value }}</dd>
+{%- endfor %}
+      </dl>
+{%- else %}
+      <p class="absent">{{ detail_note or absent_text }}</p>
+{%- endif %}
+
+      <h2>the lane</h2>
+{%- if lane %}
+      <dl>
+{%- for cell in lane %}
+        <dt>{{ cell.label }}</dt>
+        <dd class="{% if cell.value == absent_text %}absent{% endif %}">
+          <span class="glyph">{{ cell.state.glyph }}</span> {{ cell.value }}
+        </dd>
+{%- endfor %}
+      </dl>
+{%- if lane_progress %}
+      <p>{{ lane_progress }}</p>
+{%- endif %}
+{%- else %}
+      <p class="note">{{ lane_note }}</p>
+{#- The command the producer's engine named, printed verbatim. A board that composed one
+    would be a second answer to what the harness does next. #}
+{%- if next_command %}
+      <p>next: <code>{{ next_command }}</code></p>
+{%- else %}
+      <p class="absent">no next command — {{ detail_note or absent_text }}</p>
+{%- endif %}
+{%- endif %}
+
+      <h2>blocked by</h2>
+{%- if blockers %}
+      <ul>
+{%- for ident in blockers %}
+        <li><a href="{{ ident }}{{ href_suffix }}">{{ ident }}</a></li>
+{%- endfor %}
+      </ul>
+{%- else %}
+      <p class="absent">nothing open blocks this record</p>
+{%- endif %}
+
+      <h2>blocking</h2>
+{%- if dependents %}
+      <ul>
+{%- for ident in dependents %}
+        <li><a href="{{ ident }}{{ href_suffix }}">{{ ident }}</a></li>
+{%- endfor %}
+      </ul>
+{%- else %}
+      <p class="absent">no open record waits on this one</p>
+{%- endif %}
+    </main>
+  </body>
+</html>

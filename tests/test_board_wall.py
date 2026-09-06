@@ -113,7 +113,7 @@ def test_every_section_the_verdict_named_gets_a_reading() -> None:
 
 
 def test_a_section_the_producer_did_not_emit_reads_absent_rather_than_empty() -> None:
-    """The foreign case: six sections absent, each saying it was never measured."""
+    """The foreign case: seven sections absent, each saying it was never measured."""
     reads = readings("no-phase-v1.json")
     absent = [read for read in reads.values() if read.state.key == board_wall.ABSENT]
     assert {read.name for read in absent} == {
@@ -122,6 +122,7 @@ def test_a_section_the_producer_did_not_emit_reads_absent_rather_than_empty() ->
         "asks",
         "spend",
         "health",
+        "detail",
         "graph",
     }
     assert all(read.note == board_wall.ABSENT_TEXT for read in absent)

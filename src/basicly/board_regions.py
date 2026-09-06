@@ -402,8 +402,11 @@ def _lane_cells(lane: Mapping[str, Any]) -> tuple[Cell, ...]:
     return tuple(cell for cell in drawn if cell.value != UNKNOWN)
 
 
-def _unit_titles(reads: Mapping[str, Reading]) -> dict[str, str]:
+def unit_titles(reads: Mapping[str, Reading]) -> dict[str, str]:
     """Every unit's title, keyed by id - the join `lanes[].id` makes to `units[].title`.
+
+    Public because the page draws the untruncated title as each clipped row's `title`
+    attribute, and a second map built beside this one would clip differently.
 
     Both sections ride on every snapshot already, so the join costs no extra read
     (basicly-k6tpep's design of record), on the same rule :func:`_feature_names` reads `graph`.
@@ -521,7 +524,7 @@ def flight(
     """
     read = reads["lanes"]
     lanes = read.dicts if read.drawn else []
-    titles = _unit_titles(reads)
+    titles = unit_titles(reads)
     moment = now or datetime.now(UTC)
     cards = tuple(_card(lane, titles, moment) for lane in lanes[:FLIGHT_SLOTS])
     note = read.note if not read.drawn else _waiting_on(reads, lanes)

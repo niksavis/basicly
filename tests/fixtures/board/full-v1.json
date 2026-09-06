@@ -6,13 +6,25 @@
     "cadence_s": 15,
     "stale_after_s": 60
   },
-  "generator": { "tool": "basicly", "version": "0.9.0" },
-  "repo": { "name": "basicly", "branch": "main", "head": "256f8d0", "dirty": false },
+  "generator": {
+    "tool": "basicly",
+    "version": "0.9.0"
+  },
+  "repo": {
+    "name": "basicly",
+    "branch": "main",
+    "head": "256f8d0",
+    "dirty": false
+  },
   "session": {
     "root": "basicly-kjc5",
     "root_status": "open",
     "supervised": true,
-    "holder": { "id": "bc7cc925", "heartbeat_age_s": 6, "stale": false },
+    "holder": {
+      "id": "bc7cc925",
+      "heartbeat_age_s": 6,
+      "stale": false
+    },
     "grant_level": "L3",
     "token_budget": 4000000,
     "spent_tokens": 177970761,
@@ -49,7 +61,12 @@
       "requested_at": "2026-08-14T16:38:41Z",
       "waiting_s": 251,
       "question": "approve the plan?",
-      "actions": [{ "offer": "approve the plan", "basicly": "checkpoint-approve" }]
+      "actions": [
+        {
+          "offer": "approve the plan",
+          "basicly": "checkpoint-approve"
+        }
+      ]
     }
   ],
   "gates": {
@@ -57,8 +74,15 @@
     "recorded_at": "2026-08-14T16:42:52Z",
     "passed": true,
     "checks": [
-      { "name": "ruff", "status": "pass" },
-      { "name": "docs-claims", "status": "not_run", "detail": "not run this pass" }
+      {
+        "name": "ruff",
+        "status": "pass"
+      },
+      {
+        "name": "docs-claims",
+        "status": "not_run",
+        "detail": "not run this pass"
+      }
     ]
   },
   "spend": {
@@ -71,7 +95,13 @@
     "cache_write_tokens": 0
   },
   "health": [
-    { "agent": "claude", "runs": 163, "score": 0.825, "failure_rate": 0.178, "drift": -0.04 }
+    {
+      "agent": "claude",
+      "runs": 163,
+      "score": 0.825,
+      "failure_rate": 0.178,
+      "drift": -0.04
+    }
   ],
   "backlog": {
     "total": 821,
@@ -80,7 +110,12 @@
     "blocked": 2,
     "in_progress": 3,
     "closed": 650,
-    "by_priority": { "P0": 4, "P1": 96, "P2": 58, "P3": 13 }
+    "by_priority": {
+      "P0": 4,
+      "P1": 96,
+      "P2": 58,
+      "P3": 13
+    }
   },
   "units": [
     {
@@ -95,8 +130,16 @@
   ],
   "graph": {
     "edges": [
-      { "from": "basicly-rn0o.2", "to": "basicly-rn0o.1", "kind": "blocks" },
-      { "from": "basicly-rn0o.1", "to": "basicly-rn0o", "kind": "parent-child" }
+      {
+        "from": "basicly-rn0o.2",
+        "to": "basicly-rn0o.1",
+        "kind": "blocks"
+      },
+      {
+        "from": "basicly-rn0o.1",
+        "to": "basicly-rn0o",
+        "kind": "parent-child"
+      }
     ]
   },
   "events": [
@@ -105,6 +148,24 @@
       "issue": "basicly-kjc5.57",
       "kind": "dispatched",
       "text": "build claude-opus-5"
+    }
+  ],
+  "detail": [
+    {
+      "id": "basicly-rn0o.2",
+      "worktree": "basicly-rn0o.2",
+      "branch": "harness/basicly-rn0o.2",
+      "checkpoints_held": [
+        "classify"
+      ],
+      "checkpoints_missing": [
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 1
+      },
+      "next_command": "basicly loop advance basicly-rn0o.2"
     }
   ]
 }

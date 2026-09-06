@@ -15,6 +15,7 @@ vocabulary and neither reads the other.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from . import board_fields
@@ -284,7 +285,19 @@ def throughput(reads: Mapping[str, Reading], today: str) -> Cell:
     return Cell("closed today", number(len(closed)), read.state)
 
 
-def events(reads: Mapping[str, Reading]) -> tuple[tuple[str, ...], str]:
+@dataclass(frozen=True)
+class EventLine:
+    """One ticker row: the record it names, and the rest of the line.
+
+    Apart, because the page links every id it prints and finding one by pattern inside a
+    line links the wrong substring.
+    """
+
+    ident: str
+    text: str
+
+
+def events(reads: Mapping[str, Reading]) -> tuple[tuple[EventLine, ...], str]:
     """The newest events, and how many older ones were not drawn.
 
     The only region that reads as prose, and the dropped count is returned beside the lines
@@ -293,12 +306,12 @@ def events(reads: Mapping[str, Reading]) -> tuple[tuple[str, ...], str]:
     """
     read = reads["events"]
     if not read.drawn:
-        return (f"events {_say(read)}",), ""
+        return (EventLine("", f"events {_say(read)}"),), ""
     rows = read.dicts
     if not rows:
-        return ("no event recorded",), ""
+        return (EventLine("", "no event recorded"),), ""
     lines = tuple(
-        joined(row, ("at", "issue", "kind", "text"), LINE_MAX)
+        EventLine(str(row.get("issue") or ""), joined(row, ("at", "kind", "text"), LINE_MAX))
         for row in reversed(rows[-EVENT_LINES:])
     )
     return lines, more(len(rows) - EVENT_LINES, "events")

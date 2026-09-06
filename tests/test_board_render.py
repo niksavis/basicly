@@ -40,7 +40,7 @@ SITE = REPO_ROOT / "site" / "index.html"
 # fmt: off
 SOURCES = (
     "board_render", "board_regions", "board_diagram", "board_graph",
-    "board_loop", "board_footer", "board_wall",
+    "board_loop", "board_footer", "board_record", "board_wall",
 )
 # fmt: on
 
@@ -295,20 +295,20 @@ def test_the_roster_follows_the_schema_rather_than_the_layout(tmp_path: Path) ->
     agree with the first assertion and fail only these two.
     """
     control = _root_with_schema(tmp_path / "control", _unchanged)
-    assert len(_ROSTER.findall(render("minimal-v1.json", root=control))) == 12
+    assert len(_ROSTER.findall(render("minimal-v1.json", root=control))) == 13
 
     added = _root_with_schema(
         tmp_path / "added", lambda schema: schema["properties"].update(invented={"type": "object"})
     )
     page = render("minimal-v1.json", root=added)
     assert _ROSTER.findall(page).count("invented") == 1
-    assert len(_ROSTER.findall(page)) == 13
+    assert len(_ROSTER.findall(page)) == 14
 
     dropped = _root_with_schema(
         tmp_path / "dropped", lambda schema: schema["properties"].pop("events")
     )
     page = render("minimal-v1.json", root=dropped)
-    assert len(_ROSTER.findall(page)) == 11
+    assert len(_ROSTER.findall(page)) == 12
     assert "events" not in _ROSTER.findall(page)
 
 

@@ -1,0 +1,29 @@
+# A page per record, reachable from every id the wall prints (basicly-62h3x9).
+#
+# What the change was: `board_record.py` and its template, a `detail` section on the
+# `harness-board/v1` contract carrying the loop state a page needs, a `/record/<id>` route
+# on the server, and one page per unit written beside `board --out`.
+#
+# ## module_size: one rebaseline, four tokens on a test roster
+#
+# `tests/test_board_render.py` measured 3998 of the 4000-token cap at 63ed7003 and now
+# measures 4002. The whole growth is the name `board_record` joining `SOURCES`, the tuple
+# `test_the_renderer_imports_nothing_that_could_read_engine_state` walks: the new module is a
+# board consumer, so leaving it out of that roster would be an assertion silently not made
+# about the one module this record adds.
+#
+# Rebaselined rather than paid for by cutting prose from that file, which is the cheapest way
+# to clear this gate and the reason the comment rule exists. No split is available for four
+# tokens, and the file is a suite over one module rather than two responsibilities.
+#
+# Nothing else moved: `comment-density` passes on every module this record touches, and the
+# prose that first took `board_advance`, `board_footer` and `board_render` over the 50% cap
+# was this lane's own and was cut back rather than waived.
+[ratchet]
+base_commit = "63ed70036b53ff79bab01715643f8750837b3150"
+
+[ratchet.module_size]
+rebaseline_reason = "the new board consumer joins the import roster in tests/test_board_render.py, four tokens over a cap that file sat two under"
+
+[ratchet.module_size.rebaselined]
+"tests/test_board_render.py" = 4002

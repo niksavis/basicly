@@ -25,6 +25,7 @@ from . import (
     board_footer,
     board_graph,
     board_loop,
+    board_record,
     board_regions,
     board_wall,
     catalog,
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
 
 TEMPLATE_DIR = "templates/board"
 TEMPLATE = "board_page.html.j2"
+TEMPLATE_RECORD = "board_record.html.j2"
 
 
 def context(
@@ -145,6 +147,15 @@ def context(
         # Named and not indexed out of `states`: a position picks up whatever landed there.
         "here_glyph": board_wall.BY_KEY[board_wall.LIVE].glyph,
         "schema": document.get("schema", board_wall.UNKNOWN),
+        # `board_record`'s own href halves: relative, so one spelling resolves beside a
+        # `--out` file and under the server's root alike.
+        "record_dir": board_record.HREF_DIR,
+        "record_ext": board_record.HREF_SUFFIX,
+        # Which ids have a page: a page is drawn from a `units` row, and the event strip can
+        # name a record that has since closed.
+        "linkable": frozenset(board_record.ids(document)),
+        # The untruncated title behind each clipped row, so a reader recovers it in place.
+        "titles": board_regions.unit_titles(reads),
     }
 
 
@@ -178,6 +189,15 @@ def page(
     """
     seen = viewport if viewport is not None else (None, None)
     return render(context(document, verdict, now, viewport=seen), templates_dir)
+
+
+def render_record(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
+    """Draw one record's page from :func:`basicly.board_record.context`'s output.
+
+    Here rather than in that module so one Jinja environment, and so one autoescape setting,
+    draws every page this package serves.
+    """
+    return _env(templates_dir).get_template(TEMPLATE_RECORD).render(filled)
 
 
 def render(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:

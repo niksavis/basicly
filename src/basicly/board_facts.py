@@ -32,21 +32,25 @@ from typing import TYPE_CHECKING
 
 from . import (
     board_advance,
+    board_fields,
     board_sections,
     board_serve,
     board_snapshot,
     checkout,
+    config,
     decisions,
     loop_state,
     owned_store,
     policy,
     run_record,
     supervise,
+    tracker,
     tracker_query,
+    validate_gate,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
     from typing import Any
 
 # What every fact-gathering read below treats as "no answer": no kit installed, an unreadable
@@ -319,6 +323,71 @@ def phases(repo_root: Path) -> dict[str, str]:
         return loop_state.phase_map(repo_root)
     except UNREADABLE:
         return {}
+
+
+# The rework marker's own header, past the family `policy.MARKER` already names: the flag
+# token and the field that carries the gate. Counted off parsed markers rather than through
+# `policy.rework_attempts`, which reads the log once per record per gate - 295 records is a
+# read per gate per record against the one fold below. `tests/test_board_record_page.py`
+# binds the two counts on a real repository, because that reader is the engine's own.
+_REWORK_FLAG = "rework"
+_GATE_FIELD = "gate"
+
+
+def _rework_counts(record: str, comments: Iterable[str]) -> dict[str, int]:
+    """Attempts recorded per gate on *record*, from its own comments."""
+    counts: dict[str, int] = {}
+    for text in comments:
+        row = board_fields.marker(record, "", text)
+        if row is None or row.family != policy.MARKER or _REWORK_FLAG not in row.flags:
+            continue
+        # `rework-allowance` is a different token, so it never enters this count.
+        if gate := row.fields.get(_GATE_FIELD, ""):
+            counts[gate] = counts.get(gate, 0) + 1
+    return counts
+
+
+def _detail_fact(
+    record: str, view: Any, defaults: config.PolicyConfig
+) -> board_sections.DetailFacts:
+    """One record's detail row, each fact through the engine's own reader.
+
+    The required gate set is per record: a unit that recorded L3 owes the validate gate too,
+    and a rework tally against the default set would silently drop that gate's attempts.
+    """
+    binding = loop_state.parse_worktree_ref(view.external_ref)
+    held = tuple(
+        name for name in config.CHECKPOINTS if policy.checkpoint_approved_in(view.comments, name)
+    )
+    counted = _rework_counts(record, view.comments)
+    return board_sections.DetailFacts(
+        id=record,
+        worktree=binding.name if binding is not None else "",
+        branch=binding.branch if binding is not None else "",
+        checkpoints_held=held,
+        checkpoints_missing=tuple(name for name in config.CHECKPOINTS if name not in held),
+        rework={
+            gate: counted.get(gate, 0)
+            for gate in validate_gate.required_in(view.comments, defaults).required_gates
+        },
+        next_command=board_advance.remedy(record),
+    )
+
+
+def details(repo_root: Path) -> tuple[board_sections.DetailFacts, ...] | None:
+    """A detail row for every live record, from one fold of the log, or None on no answer.
+
+    `tracker.all_views` is the same whole-population read `loop_state.phase_map` folds - 0.125 s
+    over 1036 records, measured in its own docstring - and every value here comes off the view
+    it already carries. A per-record `loop_state.read_node_state` would answer identically at
+    seven log reads each, which is the 128 s that capped `phase_map` before basicly-s1vqq2.
+    """
+    try:
+        defaults = config.load_policy_config(repo_root)
+        views = tracker.all_views(repo_root)
+    except UNREADABLE:
+        return None
+    return tuple(_detail_fact(record, views[record], defaults) for record in sorted(views))
 
 
 def questions(repo_root: Path, document: dict[str, object]) -> dict[str, str]:
@@ -606,6 +675,7 @@ def document(
             last_event=board_advance.newest(markers),
         ),
         repo=repo_facts(repo_root),
+        details=details(repo_root),
         phases=phase_map,
         readiness=readiness(repo_root),
         lanes=(

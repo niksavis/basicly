@@ -86,6 +86,7 @@ def test_every_section_beyond_the_three_is_optional() -> None:
         "health",
         "backlog",
         "units",
+        "detail",
         "graph",
         "events",
     }

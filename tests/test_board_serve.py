@@ -156,6 +156,29 @@ def test_the_two_get_routes_answer_and_a_post_is_405(board_repo: Path) -> None:
         assert missing.value.code == 404
 
 
+def test_the_record_route_answers_with_and_without_the_suffix(board_repo: Path) -> None:
+    """One page behind both spellings of the route (basicly-62h3x9).
+
+    `/record/<id>` is the route the acceptance names and `/record/<id>.html` is the wall's
+    own relative href resolved against the origin. Both spellings must reach one page, or the
+    link on the wall and the route in the acceptance are two surfaces. An id the document does
+    not list is 404 and never a page of absent fields.
+    """
+    with _running(board_serve.bind(board_repo, port=0)) as listener:
+        document = json.loads(_get(f"{listener.url}{board_serve.SNAPSHOT_ROUTE}")[1])
+        ident = document["units"][0]["id"]
+
+        plain = _get(f"{listener.url}/record/{ident}")
+        suffixed = _get(f"{listener.url}/record/{ident}.html")
+        assert plain[0] == 200
+        assert ident in plain[1].decode("utf-8")
+        assert plain[1] == suffixed[1], "the two spellings answer with different pages"
+
+        with pytest.raises(urllib.error.HTTPError) as missing:
+            urllib.request.urlopen(f"{listener.url}/record/no-such-record", timeout=TIMEOUT_S)
+        assert missing.value.code == 404
+
+
 def test_the_served_snapshot_validates_and_is_fresher_than_the_cadence_it_declares(
     board_repo: Path,
 ) -> None:

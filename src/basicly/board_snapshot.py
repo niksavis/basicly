@@ -148,6 +148,10 @@ class Facts:
 
     session: SessionFacts | None = None
     lanes: Sequence[board_sections.LaneFacts] | None = None
+    # One row per record a reader can open: the binding, the checkpoints, the rework and the
+    # command that moves it. Every one of them is `loop_state`'s or `policy`'s own reading,
+    # which is why they arrive here rather than being folded out of the log below.
+    details: Sequence[board_sections.DetailFacts] | None = None
     repo: board_sections.RepoFacts | None = None
     phases: Mapping[str, str] | None = None
     readiness: board_sections.Readiness | None = None
@@ -283,6 +287,10 @@ def build_document(
         if known.advances is not None:
             document["asks"] = [*document["asks"], *known.advances(markers)]
         document["events"] = board_sections.events(markers, event_limit)
+        if known.details is not None:
+            document["detail"] = board_sections.detail(
+                held for held in known.details if held.id in drawn
+            )
         if known.session is not None:
             document["session"] = _session(known.session, records)
     if known.lanes is not None:
