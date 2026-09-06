@@ -3728,6 +3728,18 @@ def _cmd_loop_run(args: argparse.Namespace) -> int:
     collapses the ceremony without widening what may be self-approved.
     """
     repo_root = _repo_root()
+    # Before anything this process would hold: the session overrides are process-local, so
+    # applying them here would set them on the launcher and never on the child that works.
+    if getattr(args, "detach", False):
+        if args.confirm:
+            print(
+                "run: refused - --confirm cannot be combined with --detach; a one-time "
+                "code answers a challenge, and relaying it into a process the operator "
+                "cannot watch defeats the challenge",
+                file=sys.stderr,
+            )
+            return 1
+        return _detach_launch(repo_root, args, "run")
     try:
         overrides = _apply_session_overrides(repo_root, args)
     except ValueError as exc:
@@ -3849,6 +3861,28 @@ SUPERVISE_FORWARDED_FLAGS = {
     "tier": "--tier",
 }
 
+# The same map for `loop run`, pinned to its parser by
+# `test_the_run_forwarding_table_is_every_run_flag_but_detach_and_confirm`. `--confirm` is
+# absent on purpose and is not an omission the pinning test forgives: a detached launch
+# carrying a code is refused before the spawn, so there is nothing to forward.
+RUN_FORWARDED_FLAGS = {
+    "work_type": "--work-type",
+    "children": "--children",
+    "mode": "--mode",
+    "root": "--root",
+    "runner": "--runner",
+    "autonomy": "--autonomy",
+    "tier": "--tier",
+}
+
+# Per detachable verb: what the child forwards, and what the operator watches it with.
+# `supervise` runs rounds under a live session an operator can attach to; `run` drives one
+# phase boundary and leaves its answer in the loop state.
+DETACHABLE_VERBS = {
+    "supervise": (SUPERVISE_FORWARDED_FLAGS, "loop session"),
+    "run": (RUN_FORWARDED_FLAGS, "loop status"),
+}
+
 
 def _detach_isolation(os_name: str) -> tuple[bool, int]:
     """``(start_new_session, creationflags)`` that cut a supervisor loose from its caller.
@@ -3871,16 +3905,20 @@ def _detach_isolation(os_name: str) -> tuple[bool, int]:
     return True, 0
 
 
-def _detach_argv(args: argparse.Namespace) -> list[str]:
-    """The detached child's command line: this same invocation, minus ``--detach``.
+def _detach_argv(args: argparse.Namespace, verb: str) -> list[str]:
+    """The detached child's command line: this same ``loop <verb>``, minus ``--detach``.
 
     ``sys.executable -m basicly.cli`` rather than the ``basicly`` console script, for the
     reason the shipped hooks invoke it that way: the interpreter running this process is
     known to have the package importable, while a console script on PATH may belong to a
     different checkout or not exist at all.
+
+    *verb* is passed rather than read off ``args.loop_command``, so a caller cannot reach
+    a default that silently launches the wrong subcommand.
     """
-    argv = [sys.executable, "-m", "basicly.cli", "loop", "supervise", args.issue]
-    for dest, flag in SUPERVISE_FORWARDED_FLAGS.items():
+    forwarded, _watch = DETACHABLE_VERBS[verb]
+    argv = [sys.executable, "-m", "basicly.cli", "loop", verb, args.issue]
+    for dest, flag in forwarded.items():
         value = getattr(args, dest, None)
         if value is not None:
             argv += [flag, str(value)]
@@ -3927,8 +3965,8 @@ def _spawn_detached(argv: list[str], log: Path, *, cwd: Path) -> int:
     return proc.pid
 
 
-def _detach_supervisor(repo_root: Path, args: argparse.Namespace) -> int:
-    """Launch this supervise invocation in its own session and return immediately.
+def _detach_launch(repo_root: Path, args: argparse.Namespace, verb: str) -> int:
+    """Launch this ``loop <verb>`` invocation in its own session and return immediately.
 
     The engine owning this is the point (basicly-uhrji9). A round runs 20 to 40 minutes
     and an agent tool kills a background job at its own ceiling (600 s on one host); on
@@ -3936,16 +3974,22 @@ def _detach_supervisor(repo_root: Path, args: argparse.Namespace) -> int:
     events. The remedy was a per-platform shell incantation carried in a skill bullet,
     which is knowledge every operator had to hold and no consumer inherited.
 
-    Returning 0 says the supervisor *started*, never that its session will succeed —
-    that answer takes 20 minutes and is in the log this prints. A launch that refuses
-    (another supervisor holds the lock, an empty lane selection) refuses in the child,
-    so its reason is on the last line of that file.
+    Returning 0 says the child *started*, never that its work will succeed — that answer
+    takes 20 minutes and is in the log this prints. A launch that refuses (another
+    supervisor holds the lock, an empty lane selection, a phase already past) refuses in
+    the child, so its reason is on the last line of that file.
+
+    The child's stdin is the null device, so ``sys.stdin.isatty()`` is false in it: a
+    checkpoint it reaches resolves by a covering grant or not at all. That is the same
+    answer a piped invocation already gets, and it is why ``--confirm`` is refused
+    alongside ``--detach`` rather than forwarded.
     """
     log = _detach_log(repo_root, args.issue)
-    pid = _spawn_detached(_detach_argv(args), log, cwd=repo_root)
+    pid = _spawn_detached(_detach_argv(args, verb), log, cwd=repo_root)
+    _forwarded, watch = DETACHABLE_VERBS[verb]
     print(f"detached: pid {pid}")
     print(f"log:      {log}")
-    print(f"watch:    basicly loop session {args.issue}")
+    print(f"watch:    basicly {watch} {args.issue}")
     return 0
 
 
@@ -3965,7 +4009,7 @@ def _cmd_loop_supervise(args: argparse.Namespace) -> int:
     # overrides all belong to the process that runs the rounds, and taking them here
     # would leave the child refused by its own parent.
     if getattr(args, "detach", False):
-        return _detach_supervisor(repo_root, args)
+        return _detach_launch(repo_root, args, "supervise")
     try:
         overrides = _apply_session_overrides(repo_root, args)
     except ValueError as exc:
@@ -5311,6 +5355,22 @@ def _add_lane_selector_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_detach_arg(parser: argparse.ArgumentParser) -> None:
+    """Add ``--detach`` to a loop verb that takes minutes to answer (basicly-zq9i2m.6).
+
+    Shared by ``supervise`` and ``run`` because the hazard is the same for both, and
+    because a second hand-written flag would drift from :data:`DETACHABLE_VERBS`, which
+    is what decides whether the flag does anything.
+    """
+    parser.add_argument(
+        "--detach",
+        action="store_true",
+        help="Start the command in its own session, print its pid and log path, "
+        "and return at once - so no terminal that closes and no agent tool that "
+        "kills a background job at its own ceiling can take a round with it",
+    )
+
+
 def _add_loop_input_args(parser: argparse.ArgumentParser) -> None:
     """Add the shared agent-input flags that map onto a ``loop.Inputs``."""
     parser.add_argument(
@@ -5422,6 +5482,7 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Session root issue whose autonomy grant may cover the checkpoints "
         "(default: the issue itself)",
     )
+    _add_detach_arg(l_run)
     l_supervise = loop_sub.add_parser(
         "supervise",
         help="Run the standing supervisor loop: dispatch ready lanes, route "
@@ -5436,13 +5497,7 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Return after N rounds even with open children left, bounding a "
         "launch's spend up front instead of needing an operator to intervene",
     )
-    l_supervise.add_argument(
-        "--detach",
-        action="store_true",
-        help="Start the supervisor in its own session, print its log path and pid, "
-        "and return at once - so no terminal that closes and no agent tool that "
-        "kills a background job at its own ceiling can take a round with it",
-    )
+    _add_detach_arg(l_supervise)
     l_stop = loop_sub.add_parser(
         "stop",
         help="Ask the running supervisor to finish its round and return: every "

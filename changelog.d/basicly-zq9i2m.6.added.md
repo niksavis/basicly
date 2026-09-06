@@ -1,0 +1,1 @@
+- `basicly loop run <id> --detach` starts the phase boundary in its own session, prints the child pid and its log path, and returns at once, so a closing terminal or an agent tool's background-job ceiling cannot take the run with it. `--confirm` is refused beside `--detach`, because a one-time code answers a challenge only an operator who is watching can answer.

@@ -1799,7 +1799,7 @@ def test_the_detached_argv_carries_every_flag_the_launch_was_given() -> None:
         tier="high",
     )
 
-    argv = cli._detach_argv(args)
+    argv = cli._detach_argv(args, "supervise")
 
     assert argv[0] == sys.executable
     assert " ".join(argv[1:]) == (
@@ -1815,7 +1815,7 @@ def test_a_launch_with_no_flags_forwards_none_of_them() -> None:
         issue="i", label=None, max_passes=None, runner=None, autonomy=None, tier=None
     )
 
-    assert cli._detach_argv(args)[-3:] == ["loop", "supervise", "i"]
+    assert cli._detach_argv(args, "supervise")[-3:] == ["loop", "supervise", "i"]
 
 
 def test_the_forwarding_table_is_every_supervise_flag_but_detach() -> None:
@@ -1875,7 +1875,7 @@ def test_supervise_detach_prints_the_pid_and_log_and_takes_no_lock(
     assert log.parent == tmp_path / cli.DETACHED_LOGS_DIR
     assert "detached: pid 4242" in out
     assert str(log) in out
-    assert spawned["argv"] == [*cli._detach_argv(args), "--max-passes", "1"]
+    assert spawned["argv"] == [*cli._detach_argv(args, "supervise"), "--max-passes", "1"]
 
 
 def _child_source(tmp_path: Path) -> str:

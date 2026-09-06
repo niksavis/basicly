@@ -1,0 +1,38 @@
+# `loop run --detach`, so one ready leaf starts without holding the terminal
+# (basicly-zq9i2m.6).
+#
+# `loop supervise` already detached; `loop run` did not, and `board_actions.TIMEOUT_S` is
+# 300 s against a boundary that dispatches a lane for twenty minutes. The launch machinery
+# was already generic apart from one hardcoded verb, so what landed is a verb-aware
+# `_detach_argv`, a second forwarding table pinned to the `loop run` parser, and a refusal
+# for `--detach` beside `--confirm`.
+#
+# ## module_size: two test modules rebaselined
+#
+#   tests/test_cli_loop.py  13355 -> 14802  +1447  six tests: the argv, the omitted-flag
+#                                                  control, the parser pinning test, the
+#                                                  launch, the confirm refusal, and the
+#                                                  append-not-truncate log. Plus two
+#                                                  helpers - a parser walk and a poller.
+#   tests/test_cli.py       20699 -> 20705     +6  three call sites of `_detach_argv`,
+#                                                  which now takes the verb.
+#
+# The +6 is not optional and not narration: `_detach_argv` gained a required `verb`
+# argument, and a default of `"supervise"` would have kept those three lines byte-identical
+# by giving every future caller a way to launch the wrong subcommand silently. The three
+# existing supervise tests name the verb instead.
+#
+# No prose was cut to pay for either, and `comment-density` is the proof: it passes with no
+# entry for either module and no rebaseline here. Rebaselined rather than waived, because a
+# waiver replaces a frozen entry outright and would delete a 20699-token ceiling to buy 6
+# tokens. No split: `tests/test_cli_loop.py` is 3.7x the cap for reasons that predate this
+# change, and the gate's graduated remedy above 2x asks only that a module not grow.
+[ratchet]
+base_commit = "620a31cbb4bd65b7f2a25eee9487f1820c4c0a94"
+
+[ratchet.module_size]
+rebaseline_reason = "the acceptance criteria for `loop run --detach` are four testable claims and a control: the forwarded argv, the flag table pinned to the parser, the launch that drives no ceremony, the refusal beside --confirm, and a log that appends rather than truncates. tests/test_cli.py moves 6 tokens because _detach_argv now takes its verb rather than defaulting to one."
+
+[ratchet.module_size.rebaselined]
+"tests/test_cli_loop.py" = 1447
+"tests/test_cli.py" = 6
