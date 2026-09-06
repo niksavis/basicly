@@ -195,6 +195,22 @@
 {%- endif %}
 {%- endif %}
 
+      <h2>the tree</h2>
+{%- if parent %}
+      <p>parent: <a href="{{ parent }}{{ href_suffix }}">{{ parent }}</a></p>
+{%- else %}
+      <p class="absent">this record has no open parent</p>
+{%- endif %}
+{%- if children %}
+      <ul>
+{%- for ident in children %}
+        <li><a href="{{ ident }}{{ href_suffix }}">{{ ident }}</a></li>
+{%- endfor %}
+      </ul>
+{%- else %}
+      <p class="absent">no open record belongs to this one</p>
+{%- endif %}
+
       <h2>blocked by</h2>
 {%- if blockers %}
       <ul>

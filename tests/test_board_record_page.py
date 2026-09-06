@@ -149,6 +149,32 @@ def test_the_edges_are_split_by_direction_and_keep_only_open_records(doc: dict[s
     assert board_record._edges(doc, QUIET)[0] == ()
 
 
+def test_the_tree_is_drawn_because_a_blocks_only_page_stranded_every_epic(
+    doc: dict[str, Any],
+) -> None:
+    """The parent a record belongs to, and the children that belong to it.
+
+    The fixture carries no `parent-child` edge at all, which is why a page reading only
+    `blocks` looked complete here: the real snapshot is mostly parent-child, and against it an
+    epic's page said nothing open waited on it while fourteen children were open. The edges
+    are added rather than assumed so the assertion has a population to fail against.
+    """
+    doc["graph"]["edges"] += [
+        {"from": QUIET, "kind": board_record.PARENT_CHILD, "to": BLOCKER},
+        {"from": "basicly-rn0o.3", "kind": board_record.PARENT_CHILD, "to": QUIET},
+    ]
+    assert board_record._family(doc, QUIET) == (BLOCKER, ("basicly-rn0o.3",))
+
+    drawn = shown(doc, QUIET)
+    assert "the tree" in drawn
+    assert f'href="{BLOCKER}' in drawn, "a child cannot reach the parent that explains it"
+    assert 'href="basicly-rn0o.3' in drawn, "a parent cannot reach the child that implements it"
+
+    # A closed child is a debt already paid, the cut `_edges` makes on a blocker.
+    doc["units"] = [row for row in doc["units"] if row["id"] != "basicly-rn0o.3"]
+    assert board_record._family(doc, QUIET)[1] == ()
+
+
 def test_a_record_with_no_lane_says_so_and_prints_the_producers_own_command(
     doc: dict[str, Any],
 ) -> None:

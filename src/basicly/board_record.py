@@ -46,6 +46,11 @@ SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 # frontier count, and the schema leaves the vocabulary open.
 BLOCKS = "blocks"
 
+# The edge kind that means "belongs to", spelled `from` the child `to` the parent. A page that
+# rendered only `BLOCKS` left an epic saying nothing open waited on it while fourteen children
+# were open, and gave a child no way back to the epic that explains it.
+PARENT_CHILD = "parent-child"
+
 NO_LANE = "no lane holds this record"
 NO_EDGES = "nothing waits on this record and it waits on nothing"
 
@@ -188,6 +193,29 @@ def _edges(document: Mapping[str, Any], record_id: str) -> tuple[tuple[str, ...]
     return tuple(sorted(set(blockers))), tuple(sorted(set(dependents)))
 
 
+def _family(document: Mapping[str, Any], record_id: str) -> tuple[str, tuple[str, ...]]:
+    """The parent this record belongs to, and the children still listed under it.
+
+    Kept to records ``units`` still lists, the cut :func:`_edges` makes for the same reason:
+    the page is the active population, so a closed child is a debt already paid. The parent
+    is a single edge by construction - a record has one - so it is returned as one id rather
+    than a tuple, and is empty where the record is a root or its parent has closed.
+    """
+    graph = document.get("graph")
+    edges = graph.get("edges") if isinstance(graph, dict) else None
+    live = frozenset(ids(document))
+    parent, children = "", []
+    for edge in edges if isinstance(edges, list) else []:
+        if not isinstance(edge, dict) or edge.get("kind") != PARENT_CHILD:
+            continue
+        child, owner = str(edge.get("from") or ""), str(edge.get("to") or "")
+        if child == record_id and owner in live:
+            parent = owner
+        if owner == record_id and child in live:
+            children.append(child)
+    return parent, tuple(sorted(set(children)))
+
+
 def context(
     document: Mapping[str, Any],
     verdict: SnapshotVerdict,
@@ -211,6 +239,7 @@ def context(
     detail = _find(_rows(document, "detail"), record_id)
     lane = _find(_rows(document, "lanes"), record_id)
     blockers, dependents = _edges(document, record_id)
+    parent, children = _family(document, record_id)
     return {
         "record": record_id,
         "back": back,
@@ -231,6 +260,8 @@ def context(
         "lane_note": "" if lane is not None else (reads["lanes"].note or NO_LANE),
         "lane_absent": lane is None,
         "lane_progress": str((lane or {}).get("note", "")),
+        "parent": parent,
+        "children": children,
         "blockers": blockers,
         "dependents": dependents,
         "edges_note": NO_EDGES if not blockers and not dependents else "",
