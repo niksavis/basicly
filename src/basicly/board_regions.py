@@ -101,6 +101,13 @@ LANE_MARKS: Mapping[str, tuple[str, str]] = {
 # one of these, the region owes the sentence :func:`_waiting_on` writes.
 LANE_MOVING = frozenset({"running", "landing"})
 
+# The stopped states a pass will come back to. `parked` and `landed` are not among them: a
+# parked worktree is deferred or abandoned and no pass will adopt it, and a landed one is
+# finished. Counting either as waiting made a board holding two dead worktrees say "waits for
+# the next pass - 2 lane(s) parked", which the owner read as everything waiting while the band
+# above it said nothing was (basicly-k6tpep.6).
+LANE_RESUMABLE = frozenset({"queued", "waits-to-land", "refused"})
+
 # How many items a capped region draws before it reports the rest. The running row no longer
 # reserves empty frames: a dashed placeholder announcing nothing three times is 40% of a wall
 # spent on the state that costs one token, so an empty row collapses to a line and the ready
@@ -622,7 +629,7 @@ def _waiting_on(reads: Mapping[str, Reading], lanes: Sequence[Mapping[str, Any]]
     if asks.drawn and asks.dicts:
         return f"waits on a person - {len(asks.dicts)} checkpoint or decision pending"
     held = [str(lane.get("state") or "") for lane in lanes]
-    stopped = [state for state in held if state in LANE_MARKS]
+    stopped = [state for state in held if state in LANE_RESUMABLE]
     if stopped:
         words = ", ".join(LANE_MARKS[key][1] for key in LANE_MARKS if key in set(stopped))
         return f"waits for the next pass - {len(stopped)} lane(s) {words}"
@@ -634,7 +641,10 @@ def _waiting_on(reads: Mapping[str, Reading], lanes: Sequence[Mapping[str, Any]]
     # was merely idle - the owner's report, and the note was the reason (basicly-9guj21).
     if blocked and not ready:
         return f"waits on a blocker - {number(int(blocked))} record(s) have an unmet dependency"
-    if lanes:
+    # Only lanes a pass could still act on. A board holding nothing but parked and landed
+    # worktrees has no pass to speak of, and must fall through to the ready count below rather
+    # than describe a pass that does not exist.
+    if [state for state in held if state in LANE_MOVING or state in LANE_RESUMABLE]:
         return "no lane of this pass is running or landing"
     # One expression rather than a seventh return: the arity of this ladder is itself gated.
     return (

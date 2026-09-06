@@ -259,3 +259,24 @@ def test_the_region_says_what_the_pass_waits_for_and_stays_silent_while_it_moves
     assert held == "waits for the next pass - 2 lane(s) waits to land, refused"
     only_blocked = note(lanes=[], asks=[], backlog={"blocked": 61})
     assert only_blocked == "waits on a blocker - 61 record(s) have an unmet dependency"
+
+
+def test_a_board_of_only_parked_lanes_does_not_claim_a_pass_waits_for_them() -> None:
+    """The owner read two parked cards as "everything is waiting" (basicly-k6tpep.6).
+
+    `parked` is in `LANE_MARKS`, so the third rung fired on it and promised a pass that was
+    never coming - one worktree deferred by decision, one abandoned. The banner above said
+    nothing was waiting, so the page contradicted itself in its two largest type sizes.
+    """
+    # No asks: a person waiting outranks the ready count and would mask what this asserts.
+    reads = _reads("wall-v1.json", lanes=[_lane("parked"), _lane("landed")], asks=[])
+    line = board_regions._waiting_on(reads, list(reads["lanes"].dicts))
+    assert "waits for the next pass" not in line
+    assert "ready to start" in line, "a reader is owed what they can start instead"
+
+    # The control: a state a pass really does come back to still reports as waiting, so the
+    # assertion above is about `parked` and not about the rung being dead.
+    queued = _reads("wall-v1.json", lanes=[_lane("queued")], asks=[])
+    assert "waits for the next pass" in board_regions._waiting_on(
+        queued, list(queued["lanes"].dicts)
+    )
