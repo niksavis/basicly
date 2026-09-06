@@ -1,0 +1,41 @@
+# Vendored bootstrap icons, so the board draws marks a reader recognises (basicly-e1c4pct).
+#
+# What the change was: seven bootstrap-icons SVG files committed under
+# `.basicly/core/templates/board/icons/` with their licence and provenance, a
+# `src/basicly/board_icons.py` that reads them and pins each against a recorded digest, and
+# four sites on `board_page.html.j2` that now draw a path where they drew a diamond, a
+# triangle, a CSS `content` escape, or nothing.
+#
+# ## module_size: one rebaseline, four tokens on a test roster
+#
+# `tests/test_board_render.py` measured 4002 of the 4000-token cap and now measures 4006.
+# The whole growth is the name `board_icons` joining `SOURCES`, the tuple
+# `test_the_renderer_imports_nothing_that_could_read_engine_state` walks. The new module is a
+# board consumer that `board_render` imports, so leaving it off that roster would leave the
+# assertion silently unmade about the one module this record adds.
+#
+# The delta is 4 and not 4006, and the difference is the whole point. `basicly-62h3x9` took
+# the same rebaseline on the same file, and its entry was the total only because the table
+# named the file nowhere and the base was 0. Copying that shape here composes 4002 + 4006 =
+# 8008, so the gate passes while licensing this file to grow to twice the cap - measured on
+# this tree with `dropin.compose` before the correction.
+#
+# The second instance is the finding: a roster that every new board consumer must join sits
+# in a file already at its ceiling, so each such record pays four tokens. Filed as an
+# adjacent defect rather than fixed here - extracting the import assertion into its own file
+# is a change to that suite's shape, not to this lane's scope.
+#
+# Rebaselined rather than paid for by cutting prose from that file, which is the cheapest way
+# to clear this gate and the reason the comment rule exists. No split is available for four
+# tokens.
+#
+# Nothing else moved: `comment-density` passes on every module this record touches, including
+# the new one at 49.7%, and no waiver was taken.
+[ratchet]
+base_commit = "9ae7dce9f755bb8b5c75285250b395dfe45701cd"
+
+[ratchet.module_size]
+rebaseline_reason = "the new board consumer joins the import roster in tests/test_board_render.py, four tokens over a cap that file already sat at"
+
+[ratchet.module_size.rebaselined]
+"tests/test_board_render.py" = 4

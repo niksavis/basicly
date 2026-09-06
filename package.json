@@ -2,6 +2,7 @@
   "name": "basicly",
   "private": true,
   "devDependencies": {
+    "bootstrap-icons": "1.13.1",
     "jsdom": "30.0.1",
     "markdownlint-cli2": "^0.23.0",
     "mermaid": "11.16.1"

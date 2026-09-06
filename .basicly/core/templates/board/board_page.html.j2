@@ -258,6 +258,16 @@
         line-height: 1.05;
         white-space: nowrap;
       }
+      /* The alarm's state as a shape, sized in `em` so it keeps its proportion against both
+         headline sizes - 44px for an age, 30px for the three quiet states below. Filled with
+         `currentColor`, which is what puts it on the state's own hue without a rule per
+         state and carries it through the `state-stuck` inversion. */
+      .band .headline .mark {
+        fill: currentColor;
+        height: 0.82em;
+        vertical-align: -0.1em;
+        width: 0.82em;
+      }
       .band.state-calm .headline,
       .band.state-withheld .headline,
       .band.state-absent .headline {
@@ -589,8 +599,11 @@
         fill: var(--amber);
         font-weight: 700;
       }
-      /* A human approval, drawn as a diamond on the edge it gates. Three exist: classify,
-         decompose and ship (`config.CHECKPOINTS`). */
+      /* A human approval, drawn as a person on the edge it gates. Three exist: classify,
+         decompose and ship (`config.CHECKPOINTS`). It was a diamond, and a diamond named no
+         actor - the reader's question at a checkpoint is *who* is expected to act, which a
+         rotated square cannot answer and a person shape can (basicly-e1c4pct). `fill` is
+         inherited in SVG, so this reaches the path inside the group. */
       .flow .checkpoint {
         fill: var(--amber);
       }
@@ -684,11 +697,20 @@
         font-size: 13px;
         margin-left: 4px;
       }
-      /* The chain reads as a sequence, so each hop but the first is announced. */
-      .queue .chain .who + .who::before {
-        color: var(--text-dim);
-        content: "\2192 ";
-        margin-right: 3px;
+      /* The chain reads as a sequence, so each hop but the first is announced. Drawn as a
+         path and not as `content: "\2192"`: that was a codepoint spelled as a CSS escape,
+         so it was the one tofu site a search of the rendered bytes could not find, and the
+         page's own no-codepoint rule had already missed it (basicly-e1c4pct). */
+      /* Centred rather than baseline-aligned, and no taller than the 13px ids it separates.
+         An SVG has no baseline, so a browser sits its bottom edge on one: at 15px in this
+         `align-items: baseline` row the arrow stood 3px above the line and grew the page by
+         exactly that, measured on `dense-v1` at 1920x1080. */
+      .queue .chain .hop {
+        align-self: center;
+        fill: var(--text-dim);
+        flex: none;
+        height: 13px;
+        width: 13px;
       }
       /* On a wall shorter than 1080 the chain line goes and the note keeps its figure: the
          ready list is already at its one-row floor there, so the height has to come from a
@@ -1150,6 +1172,11 @@
 
       <section class="region band framed state-{{ band.state.key }}">
         <div class="headline state-{{ band.state.key }}">
+{#- `aria-hidden`, because the headline beside it states the same fact in words and a
+    screen reader announcing both reads the alarm twice. #}
+          <svg class="mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+            ><path d="{{ icons[band.state.key].path }}" /></svg
+          >
           {{ band.headline }}
         </div>
         <div class="lines">
@@ -1256,17 +1283,20 @@
               >gate {{ flow.verdict }}</text
             >
 {%- endif %}
-{#- A checkpoint is a drawn diamond and never a codepoint: the tofu the owner reported is a
-    font-coverage failure, and a shape has no font. #}
-{#- On the edge line and not beside it: one row leaves a 20-unit gap between boxes, and a
-    diamond centred in that gap is unambiguously on the transition it gates. `label_y + 28`
-    puts its apex 7 units above `ROW_Y`, so the shape's centre is the line. #}
+{#- A checkpoint is a drawn path and never a codepoint: the tofu the owner reported is a
+    font-coverage failure, and a shape has no font. The path is bootstrap-icons' `person-fill`
+    read off the vendored file beside this template, so nothing is fetched to draw it. #}
+{#- On the edge line and not beside it: one row leaves a 20-unit gap between boxes, and a mark
+    centred in that gap is unambiguously on the transition it gates. The icon is 16 units on
+    a side, so translating to `label_y + 27` centres it on `label_y + 35` - where the diamond
+    it replaces was centred - and it still clears the 20-unit gap. #}
 {%- if flow.checkpoint %}
-            <path
+            <g
               class="checkpoint"
-              d="M {{ flow.label_x }} {{ flow.label_y + 28 }}
-                 l 6 7 l -6 7 l -6 -7 z"
-            />
+              transform="translate({{ flow.label_x - 8 }} {{ flow.label_y + 27 }})"
+            >
+              <path d="{{ icons.checkpoint.path }}" />
+            </g>
 {%- endif %}
           </g>
 {%- endfor %}
@@ -1329,13 +1359,18 @@
               y="{{ station.y + 41 + station.crew_row * 14 }}">{{ station.crew }}</text
             >
 {%- endif %}
-{#- A person is the blocker: a drawn triangle carrying the age, on the node they block. #}
+{#- A person is the blocker: an hourglass carrying the age, on the node they block. It was a
+    triangle, and a triangle says only "something"; an hourglass says the factory is stopped
+    and that time is running, which is what the age beside it counts (basicly-e1c4pct). 12
+    units on a side - `scale(0.75)` of the icon's 16 - so it occupies the same box as the
+    triangle and its foot sits on the age's baseline. #}
 {%- if station.waiting %}
-            <path
+            <g
               class="waits"
-              d="M {{ station.x - 61 }} {{ station.y + 41 }}
-                 l 6 -10 l 6 10 z"
-            />
+              transform="translate({{ station.x - 61 }} {{ station.y + 29 }}) scale(0.75)"
+            >
+              <path d="{{ icons.waiting.path }}" />
+            </g>
             <text class="waits-age" x="{{ station.x - 45 }}" y="{{ station.y + 41 }}"
               >{{ station.waiting }}</text
             >
@@ -1601,6 +1636,12 @@
           <div class="chain">
             <span class="what">longest</span>
 {%- for node in queue.chain %}
+{%- if not loop.first %}
+            <svg class="hop" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+              ><path d="{{ icons.chain.path }}"
+{%- if icons.chain.even_odd %} fill-rule="evenodd"{% endif %} /></svg
+            >
+{%- endif %}
             <span class="who">{{ node }}</span>
 {%- endfor %}
           </div>

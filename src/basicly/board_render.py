@@ -24,6 +24,7 @@ from . import (
     board_diagram,
     board_footer,
     board_graph,
+    board_icons,
     board_loop,
     board_record,
     board_regions,
@@ -159,11 +160,17 @@ def context(
     }
 
 
+def _root(templates_dir: Path | None) -> Path:
+    """Where the board's templates and its vendored icons both live."""
+    return templates_dir or catalog.bundled_catalog_root() / TEMPLATE_DIR
+
+
 def _env(templates_dir: Path | None = None) -> Environment:
     """The page's own Jinja environment, autoescaping because the output is HTML."""
-    root = templates_dir or catalog.bundled_catalog_root() / TEMPLATE_DIR
     return Environment(
-        loader=FileSystemLoader(str(root)), autoescape=True, keep_trailing_newline=True
+        loader=FileSystemLoader(str(_root(templates_dir))),
+        autoescape=True,
+        keep_trailing_newline=True,
     )
 
 
@@ -205,5 +212,9 @@ def render(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
 
     Split from :func:`page` for the action rows (basicly-ua9o5g): a server holds a token and
     a set of pending asks the static artifact has not.
+
+    The marks are added here rather than in :func:`context`, which never learns which
+    template directory it is drawn from and so cannot find the icons beside it.
     """
-    return _env(templates_dir).get_template(TEMPLATE).render(filled)
+    drawn = {**filled, "icons": board_icons.marks(_root(templates_dir))}
+    return _env(templates_dir).get_template(TEMPLATE).render(drawn)
