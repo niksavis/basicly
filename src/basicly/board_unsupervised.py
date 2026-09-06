@@ -110,9 +110,8 @@ def state_for(
     changes left cold mean a worktree standing open, which `basicly-ze0po3` bars from reading
     as a running pass. Commits on a clean tree wait on the merge queue.
 
-    *phase* separates the two lanes `ahead == 0` answers for: past build the work is already
-    in base, before it the worktree has done nothing. The state stays `queued` for both -
-    widening the schema's closed set is a contract change for every consumer (basicly-ncday7).
+    *phase* separates the two lanes `ahead == 0` answers for. They get different states, not
+    one badge and two details: three cards reading `QUEUED` made finished work look stalled.
     """
     if status in PARKED_STATUSES:
         return supervise.LANE_PARKED, "the record is deferred"
@@ -127,7 +126,7 @@ def state_for(
         return supervise.LANE_WAITS_TO_LAND, LANDING_UNOBSERVABLE
     # `ahead is None` is git refusing to answer, not a count of zero, so it claims nothing.
     if ahead == 0 and phase in PAST_BUILD_PHASES:
-        return supervise.LANE_QUEUED, MERGED_AWAITING_TEARDOWN
+        return supervise.LANE_LANDED, MERGED_AWAITING_TEARDOWN
     return supervise.LANE_QUEUED, "a worktree with no commits and no changes"
 
 

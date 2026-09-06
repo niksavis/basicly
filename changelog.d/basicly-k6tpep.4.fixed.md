@@ -1,1 +1,4 @@
-- The board no longer draws a merged lane as an empty worktree. A card whose branch holds no commits base lacks now reads "the work merged and the worktree awaits teardown" when its loop phase is past build, and keeps the old "no commits and no changes" wording at or before build.
+- **A merged lane no longer reads as an empty worktree.** `landed` joins the lane states: a
+  branch whose commits base already holds now says the work merged and the worktree awaits
+  teardown, instead of sharing `queued` with a worktree that has done nothing
+  (basicly-k6tpep.4).

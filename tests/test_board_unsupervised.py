@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from basicly import board_sections, board_unsupervised, supervise
+from basicly import board_regions, board_sections, board_unsupervised, supervise
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -117,14 +117,20 @@ def test_zero_commits_reads_differently_past_build_than_before_it() -> None:
 
     Both cards read `QUEUED - VERIFY` and `a worktree with no commits and no changes` while
     their code was already on main (basicly-k6tpep.4). Only the phase separates them, so both
-    go through one call and the two details must not be the same sentence.
+    go through one call, and they must differ in the **state** and not only in the detail: the
+    badge is what a reader takes in, and three cards saying `QUEUED` made a wall of finished
+    work read as a factory that had not started.
     """
     merged_state, merged_why = board_unsupervised.state_for((), False, 0, "open", "verify")
     fresh_state, fresh_why = board_unsupervised.state_for((), False, 0, "open", "build")
     assert merged_why != fresh_why
     assert merged_why == board_unsupervised.MERGED_AWAITING_TEARDOWN
     assert "no commits" in fresh_why, "a worktree before build really has done nothing yet"
-    assert merged_state == fresh_state == supervise.LANE_QUEUED, "the closed set is unwidened"
+    assert merged_state == supervise.LANE_LANDED
+    assert fresh_state == supervise.LANE_QUEUED
+    assert merged_state != fresh_state, (
+        "a detail under one badge is not a distinction a reader sees"
+    )
 
 
 @pytest.mark.parametrize("phase", ["", "intake", "classify", "decompose", "build"])
@@ -250,4 +256,20 @@ def test_a_directory_that_is_not_a_repository_reports_no_lanes(tmp_path: Path) -
     """
     assert (
         board_unsupervised.lanes(tmp_path, [_detail("basicly-a", "lane-one")], {}, {}, MOMENT) == ()
+    )
+
+
+def test_the_landed_state_is_in_the_closed_set_and_the_consumer_can_colour_it() -> None:
+    """A state the schema does not list renders as nothing at all.
+
+    `basicly-ncday7` closed this set at six and the schema says so in its own description. This
+    is the seventh, so all three spellings - the constant, the set the producer is bounded to,
+    and the consumer's palette - have to move together or a landed lane draws blank.
+    """
+    assert supervise.LANE_LANDED in board_sections.LANE_STATES
+    assert supervise.LANE_LANDED in board_regions.LANE_MARKS
+    palette, word = board_regions.LANE_MARKS[supervise.LANE_LANDED]
+    assert word == "landed"
+    assert palette != board_regions.LANE_MARKS[supervise.LANE_QUEUED][0], (
+        "landed and queued sharing a colour is the defect this state was added to end"
     )
