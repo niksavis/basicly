@@ -1,0 +1,1 @@
+- The board no longer draws a merged lane as an empty worktree. A card whose branch holds no commits base lacks now reads "the work merged and the worktree awaits teardown" when its loop phase is past build, and keeps the old "no commits and no changes" wording at or before build.

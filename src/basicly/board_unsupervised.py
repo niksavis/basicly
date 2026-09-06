@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import board_sections, checkout, supervise
+from basicly import board_sections, checkout, loop_state, supervise
 
 # What `checkout.git` raises when git refuses or is absent: a RuntimeError carrying the failed
 # command, or an OSError from the spawn. Named rather than caught broadly, so a bug in this
@@ -32,6 +32,14 @@ LANDING_UNOBSERVABLE = "a landing holds no lock, so this row cannot tell landing
 # The branch a harness worktree is measured ahead of.
 BASE_BRANCH = "main"
 
+# Two cards read `QUEUED - VERIFY` with their code already on main (basicly-k6tpep.4).
+MERGED_AWAITING_TEARDOWN = (
+    "base holds every commit on this branch - the work merged and the worktree awaits teardown"
+)
+
+# Cut from `loop_state.PHASES`, not spelled, so a phase inserted there needs no edit here.
+PAST_BUILD_PHASES = frozenset(loop_state.PHASES[loop_state.PHASES.index("build") + 1 :])
+
 # The record statuses that mean nobody is coming back to this worktree.
 PARKED_STATUSES = frozenset({"deferred"})
 
@@ -44,7 +52,8 @@ FRESH_AFTER_S = 900.0
 def _ahead(path: Path, base: str) -> int | None:
     """Commits on *path*'s HEAD that *base* does not hold, or None where git will not answer.
 
-    A merged branch answers 0, as does one that did nothing; neither is work in flight.
+    A merged branch answers 0, as does one that did nothing; neither is work in flight, and
+    this number cannot separate them. :func:`state_for` reads the phase for that.
     """
     try:
         out = checkout.git(["rev-list", "--count", f"{base}..HEAD"], cwd=path).stdout
@@ -93,13 +102,17 @@ def _tracked(repo_root: Path) -> dict[str, Path]:
 
 
 def state_for(
-    changed: Sequence[str] | None, fresh: bool, ahead: int | None, status: str
+    changed: Sequence[str] | None, fresh: bool, ahead: int | None, status: str, phase: str
 ) -> tuple[str, str]:
     """The lane state for one worktree, and the detail that explains it.
 
     A parked record outranks its tree. Recent changes mean an agent is inside; the same
     changes left cold mean a worktree standing open, which `basicly-ze0po3` bars from reading
     as a running pass. Commits on a clean tree wait on the merge queue.
+
+    *phase* separates the two lanes `ahead == 0` answers for: past build the work is already
+    in base, before it the worktree has done nothing. The state stays `queued` for both -
+    widening the schema's closed set is a contract change for every consumer (basicly-ncday7).
     """
     if status in PARKED_STATUSES:
         return supervise.LANE_PARKED, "the record is deferred"
@@ -112,6 +125,9 @@ def state_for(
         )
     if ahead:
         return supervise.LANE_WAITS_TO_LAND, LANDING_UNOBSERVABLE
+    # `ahead is None` is git refusing to answer, not a count of zero, so it claims nothing.
+    if ahead == 0 and phase in PAST_BUILD_PHASES:
+        return supervise.LANE_QUEUED, MERGED_AWAITING_TEARDOWN
     return supervise.LANE_QUEUED, "a worktree with no commits and no changes"
 
 
@@ -141,7 +157,9 @@ def lanes(
             continue
         changed, ahead = _changed(path), _ahead(path, BASE_BRANCH)
         fresh = touched_within(path, changed or (), now, FRESH_AFTER_S)
-        state, why = state_for(changed, fresh, ahead, statuses.get(detail.id, ""))
+        state, why = state_for(
+            changed, fresh, ahead, statuses.get(detail.id, ""), phase_map.get(detail.id, "")
+        )
         rows.append(
             board_sections.LaneFacts(
                 id=detail.id,
