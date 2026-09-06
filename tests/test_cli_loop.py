@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -260,6 +261,176 @@ def test_loop_run_bare_confirm_code_is_offered_to_every_checkpoint(
 
     cli.main(["loop", "run", "basicly-x", "--confirm", "c0ffee"])
     assert seen["confirms"] == dict.fromkeys(CHECKPOINTS, "c0ffee")
+
+
+# --- run --detach (basicly-zq9i2m.6) ----------------------------------------
+
+
+def _loop_subparser(name: str) -> argparse.ArgumentParser:
+    """The parser for ``basicly loop <name>``, walked down from the root parser."""
+    parser = cli._build_parser()
+    for step in ("loop", name):
+        action = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+        parser = action.choices[step]
+    return parser
+
+
+def _await_text(path: Path, text: str, *, deadline: float = 30.0) -> str:
+    """Poll *path* until it holds *text*; its contents, or an AssertionError.
+
+    Polled to a generous deadline rather than slept: a slow runner costs seconds here,
+    never a red build (the 2x rule, basicly-7aler3).
+    """
+    end = time.monotonic() + deadline
+    while time.monotonic() < end:
+        content = path.read_text(encoding="utf-8") if path.exists() else ""
+        if text in content:
+            return content
+        time.sleep(0.05)
+    raise AssertionError(f"{path} never held {text!r} within {deadline}s")
+
+
+def test_the_detached_run_argv_carries_every_flag_the_launch_was_given() -> None:
+    """The child does the boundary, so a flag that stops here is a flag silently ignored."""
+    args = argparse.Namespace(
+        issue="basicly-hnnmk9",
+        work_type="task",
+        children="plan.toml",
+        mode="quick",
+        root="basicly-epic",
+        runner="claude",
+        autonomy="L3",
+        tier="high",
+    )
+
+    argv = cli._detach_argv(args, "run")
+
+    assert argv[0] == sys.executable
+    assert " ".join(argv[1:]) == (
+        "-m basicly.cli loop run basicly-hnnmk9 --work-type task --children plan.toml "
+        "--mode quick --root basicly-epic --runner claude --autonomy L3 --tier high"
+    )
+    assert "--detach" not in argv, "the child must not detach again"
+
+
+def test_a_detached_run_forwards_the_mode_default_and_no_omitted_flag() -> None:
+    """The control: an omitted flag must not reach the child, and ``--mode`` always does.
+
+    ``--mode`` is forwarded even at its default because the parser gives it one, so the
+    effective value is never absent and forwarding it cannot drift from what this
+    process resolved.
+    """
+    args = argparse.Namespace(
+        issue="i",
+        work_type=None,
+        children=None,
+        mode="full",
+        root=None,
+        runner=None,
+        autonomy=None,
+        tier=None,
+    )
+
+    assert cli._detach_argv(args, "run")[-5:] == ["loop", "run", "i", "--mode", "full"]
+
+
+def test_the_run_forwarding_table_is_every_run_flag_but_detach_and_confirm() -> None:
+    """Pinned to the parser, because argparse keeps no such map and nothing else would.
+
+    A flag added to `loop run` tomorrow and missed by the table would be accepted by the
+    launching process and never applied by the one that does the boundary — a detached
+    run quietly at the wrong tier, with no error anywhere. ``--confirm`` is excluded
+    because the command refuses it beside ``--detach``; the test below is what makes
+    that exclusion true rather than a hole in this one.
+    """
+    declared = {
+        action.dest: action.option_strings[0]
+        for action in _loop_subparser("run")._actions
+        if action.option_strings and action.dest not in {"help", "detach", "confirm"}
+    }
+
+    assert declared == cli.RUN_FORWARDED_FLAGS
+
+
+def test_loop_run_detach_prints_the_pid_and_log_and_drives_no_ceremony(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The launching process must do none of the work: the boundary is the child's."""
+    monkeypatch.chdir(tmp_path)
+
+    def never(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("the launcher drove the ceremony the child was spawned for")
+
+    monkeypatch.setattr(loop, "run_ceremony", never)
+    spawned: dict[str, object] = {}
+
+    def fake_spawn(argv: list[str], log: Path, *, cwd: Path) -> int:
+        spawned.update(argv=argv, log=log, cwd=cwd)
+        return 4242
+
+    monkeypatch.setattr(cli, "_spawn_detached", fake_spawn)
+
+    code = cli.main(["loop", "run", "basicly-x", "--detach", "--tier", "high"])
+
+    out = capsys.readouterr().out
+    log, argv = spawned["log"], spawned["argv"]
+    assert code == 0
+    assert isinstance(log, Path)
+    assert isinstance(argv, list)
+    assert log.parent == tmp_path / cli.DETACHED_LOGS_DIR
+    assert "detached: pid 4242" in out
+    assert str(log) in out
+    assert "watch:    basicly loop status basicly-x" in out
+    assert argv[-7:] == [
+        "loop",
+        "run",
+        "basicly-x",
+        "--mode",
+        "full",
+        "--tier",
+        "high",
+    ]
+    assert spawned["cwd"] == tmp_path
+
+
+def test_loop_run_refuses_detach_beside_a_confirm_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A one-time code answers a challenge, and a challenge needs a watcher.
+
+    Relaying the code into a process whose output goes to a file the operator has not
+    read yet approves the checkpoint with nobody present, which is the whole thing the
+    challenge exists to prevent.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    def never(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("the refused launch spawned a child anyway")
+
+    monkeypatch.setattr(cli, "_spawn_detached", never)
+    monkeypatch.setattr(loop, "run_ceremony", never)
+
+    code = cli.main(["loop", "run", "basicly-x", "--detach", "--confirm", "c0ffee"])
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "run: refused - --confirm cannot be combined with --detach" in err
+
+
+def test_a_detached_launch_appends_to_its_log_instead_of_truncating_it(tmp_path: Path) -> None:
+    """A relaunch inside the same second shares the log file named for that second.
+
+    It is a relaunch that will refuse — the supervisor lock admits one holder per root —
+    and the refusal belongs in the file the operator was just told to read, so the second
+    launch must append rather than truncate the first one's output away.
+    """
+    log = tmp_path / "detached.log"
+    log.write_text("first launch\n", encoding="utf-8")
+
+    cli._spawn_detached([sys.executable, "-c", "print('second launch')"], log, cwd=tmp_path)
+
+    content = _await_text(log, "second launch")
+    assert content.splitlines() == ["first launch", "second launch"]
 
 
 # --- status -----------------------------------------------------------------
