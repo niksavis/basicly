@@ -799,6 +799,15 @@ frozen_count = 1
 # same seed priced basicly-3iaw0x at 36,324,238 against the 54,205,369 it burned before timing
 # out, so it is wrong high on a small lane and low on a large one. basicly-yjmxjz owns the
 # estimator; when it lands and the pair re-derives in band, this entry graduates.
+# basicly-e1c4pct: 8,779,815 spent against a forecast of 793,059 (11.071x). A third instance of
+# the same estimator defect, in the greenfield direction neither entry above covers: the lane's
+# scope named `src/basicly/board_icons.py` and `tests/test_board_icons.py`, and neither existed
+# when it was sized, so `scope_read_cost` measured 4,105 tokens for a lane that went on to write
+# 557 lines. `basicly loop preflight` printed the tell and it was read as a size judgment rather
+# than as a missing measurement: `under the floor - dispatches, but merge it with a sibling`.
+# basicly-yjmxjz owns the estimator; when it lands and the pair re-derives in band, this entry
+# graduates.
 [tool.spend_accuracy.frozen]
 "basicly-0cpn51" = 1
+"basicly-e1c4pct" = 1
 "basicly-rv7q88" = 1

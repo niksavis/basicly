@@ -39,3 +39,9 @@ rebaseline_reason = "the new board consumer joins the import roster in tests/tes
 
 [ratchet.module_size.rebaselined]
 "tests/test_board_render.py" = 4
+
+# The lane's own spend banked as history, not a band change. The gate's instruction is "fix the
+# estimator, never the band", and the estimator has an owner: basicly-yjmxjz. The comment beside
+# the frozen entry in pyproject.toml names the defect.
+[ratchet.spend_accuracy]
+count_delta = 1
