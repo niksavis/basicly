@@ -29,6 +29,7 @@ import pytest
 
 from basicly import board_asks, board_render, board_schema, tracker
 from tests.test_board_asks import TOKEN, _ask
+from tests.test_board_record_page import page as record_page
 from tests.test_board_render import TEMPLATES
 from tests.test_board_wall import REPO_ROOT, document
 
@@ -36,7 +37,6 @@ from tests.test_board_wall import REPO_ROOT, document
 # Bound to the ledger below, so closing one of these without moving its question here is a
 # failure rather than a quiet inconsistency.
 UNANSWERED = {
-    "what one record actually says": "basicly-62h3x9",
     "how to start a record": "basicly-fiow1sr",
     "when the work will be done": "basicly-hymq99",
 }
@@ -75,7 +75,7 @@ def test_1_what_work_is_available() -> None:
     """A ranked list of records a reader can name, not a total."""
     drawn = page()
     assert "next up" in drawn.lower()
-    assert re.search(r'<td class="id clip">basicly-[\w.]+</td>', drawn), "no record is named"
+    assert re.search(r'<td class="id clip">.*basicly-[\w.]+.*</td>', drawn), "no record is named"
 
 
 def test_2_what_can_start_now() -> None:
@@ -98,14 +98,22 @@ def test_4_what_is_blocked_and_by_what() -> None:
     assert "waits on a chain" in drawn, "the queue reports no depth"
 
 
-@pytest.mark.xfail(strict=True, reason=f"open: {UNANSWERED['what one record actually says']}")
 def test_5_what_one_record_actually_says() -> None:
     """The owner's *"the info written in the record in a structured way"*.
 
-    `units[]` carries `id, phase, priority, ready, status, title, type` and no body, so a
-    reader gets a title and stops. basicly-62h3x9 specifies the `/record/<id>` surface.
+    Two halves, and the second is the one that was missing: the wall has to offer a way in,
+    and the page behind it has to say more than the seven fields `units[]` carries.
+    basicly-62h3x9 built the `/record/<id>` surface; the wall's own href is the relative
+    form of that route, so it resolves beside a `--out` file too.
     """
-    assert "/record/" in page(), "no record can be opened from the board"
+    drawn = page()
+    found = re.search(r'href="record/(basicly-[\w.]+)\.html"', drawn)
+    assert found, "no record can be opened from the board"
+
+    opened = record_page(document("wall-v1.json"), found[1])
+    assert opened is not None, f"the board links to {found[1]}, which draws no page"
+    for said in ("checkpoints", "rework", "blocked by", "the lane"):
+        assert said in opened, f"the record page says nothing about {said!r}"
 
 
 @pytest.mark.xfail(strict=True, reason=f"open: {UNANSWERED['how to start a record']}")
@@ -148,11 +156,11 @@ def test_every_unanswered_question_still_names_an_open_record() -> None:
         )
 
 
-def test_the_board_answers_six_of_the_nine_questions_today() -> None:
+def test_the_board_answers_seven_of_the_nine_questions_today() -> None:
     """One number, so a reader of this file sees the score without counting tests."""
     asked = len([name for name in globals() if re.fullmatch(r"test_[1-9]_\w+", name)])
     assert asked == 9, "a question was added or lost without the count moving"
-    assert len(UNANSWERED) == 3, (
+    assert len(UNANSWERED) == 2, (
         f"{9 - len(UNANSWERED)} of 9 answerable; update this figure in the same change "
         "that moves a question, so the score is never stale"
     )

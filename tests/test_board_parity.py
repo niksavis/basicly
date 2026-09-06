@@ -57,6 +57,10 @@ DECLARED_ASYMMETRY = {
     "health": "same source as `spend`, and omitted for the same reason",
     "graph": "the export carries no dependency edges, so any edge would be invented",
     "events": "basicly marker rows folded out of its own event log",
+    "detail": (
+        "loop state per record - the worktree binding, the checkpoints, the rework tally and "
+        "the command that moves it - none of which a tracker that drives no loop holds"
+    ),
 }
 
 

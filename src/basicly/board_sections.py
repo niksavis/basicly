@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from . import board_fields
@@ -106,6 +107,26 @@ class LaneFacts:
     rework_attempt: int | None = None
     rework_allowance: int | None = None
     note: str = ""
+
+
+@dataclass(frozen=True)
+class DetailFacts:
+    """One record's loop detail, supplied by a caller that may read the engine.
+
+    Every field here is a derivation this producer may not make, on the rule
+    :class:`LaneFacts` states: the checkpoint roster is `config.CHECKPOINTS`, the binding is
+    `loop_state.parse_worktree_ref`, the required gate set is `validate_gate.required_in`
+    and the command is the engine's own remedy. A second spelling of any of them renders
+    identically to the engine's and disagrees with it.
+    """
+
+    id: str
+    worktree: str = ""
+    branch: str = ""
+    checkpoints_held: tuple[str, ...] = ()
+    checkpoints_missing: tuple[str, ...] = ()
+    rework: Mapping[str, int] = MappingProxyType({})
+    next_command: str = ""
 
 
 @dataclass(frozen=True)
@@ -297,6 +318,41 @@ def lanes(facts: Iterable[LaneFacts]) -> list[dict[str, object]]:
         ):
             if held is not None:
                 row[name] = max(0, held)
+        rows.append(row)
+    return rows
+
+
+def detail(facts: Iterable[DetailFacts]) -> list[dict[str, object]]:
+    """One row per record a reader can open, at the fields :func:`units` leaves out.
+
+    The two sections split on who reads them: a wall draws every unit and pays for every
+    key, and these are read one record at a time. `checkpoints_*`, `rework` and the two
+    binding keys are emitted even when empty, because a caller that built a row at all knows
+    them - an empty `worktree` is no binding, and omitting it would render as unreported.
+    `next_command` is omitted where the caller held none, on the rule the rest of this module
+    follows.
+    """
+    rows = []
+    for held in facts:
+        if not held.id:
+            continue
+        row: dict[str, object] = {
+            "id": board_fields.text(held.id, board_fields.ID_MAX),
+            "worktree": board_fields.text(held.worktree, board_fields.NAME_MAX),
+            "branch": board_fields.text(held.branch, board_fields.TEXT_MAX),
+            "checkpoints_held": [
+                board_fields.text(name, board_fields.KIND_MAX) for name in held.checkpoints_held
+            ],
+            "checkpoints_missing": [
+                board_fields.text(name, board_fields.KIND_MAX) for name in held.checkpoints_missing
+            ],
+            "rework": {
+                board_fields.text(gate, board_fields.KIND_MAX): max(0, count)
+                for gate, count in held.rework.items()
+            },
+        }
+        if held.next_command:
+            row["next_command"] = board_fields.text(held.next_command, board_fields.TEXT_MAX)
         rows.append(row)
     return rows
 

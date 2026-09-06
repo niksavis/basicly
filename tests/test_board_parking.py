@@ -84,7 +84,9 @@ def test_the_park_control_lands_on_the_ready_row_that_names_its_own_record() -> 
     """
     page = _page([])
     body = page[page.index('class="region ready') :]
-    rows = re.findall(r'<td class="id clip">(basicly-[\w.]+)</td>.*?</tr>', body, re.DOTALL)
+    # The cell holds an anchor since basicly-62h3x9: every id the wall prints is a link.
+    cell = r'<td class="id clip">(?:<a[^>]*>)?(basicly-[\w.]+)(?:</a>)?</td>.*?</tr>'
+    rows = re.findall(cell, body, re.DOTALL)
     # Pinned to the park action, not to any `issue` input on the page. The first spelling
     # wanted `</form>` straight after the input; the submit button sits between, so it matched
     # nothing - and a `zip` over the two lists reported that as a pass.

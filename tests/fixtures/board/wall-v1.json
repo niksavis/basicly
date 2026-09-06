@@ -501,5 +501,294 @@
       "kind": "gates",
       "text": "full mode recorded, pytest failed"
     }
+  ],
+  "detail": [
+    {
+      "id": "basicly-rn0o.1",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [
+        "classify",
+        "decompose"
+      ],
+      "checkpoints_missing": [
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.1"
+    },
+    {
+      "id": "basicly-rn0o.2",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [
+        "classify"
+      ],
+      "checkpoints_missing": [
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 2
+      },
+      "next_command": "basicly loop advance basicly-rn0o.2"
+    },
+    {
+      "id": "basicly-rn0o.3",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.3"
+    },
+    {
+      "id": "basicly-rn0o.4",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.4"
+    },
+    {
+      "id": "basicly-rn0o.5",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.5"
+    },
+    {
+      "id": "basicly-rn0o.6",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.6"
+    },
+    {
+      "id": "basicly-rn0o.7",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.7"
+    },
+    {
+      "id": "basicly-rn0o.8",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.8"
+    },
+    {
+      "id": "basicly-rn0o.9",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.9"
+    },
+    {
+      "id": "basicly-rn0o.10",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.10"
+    },
+    {
+      "id": "basicly-rn0o.11",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.11"
+    },
+    {
+      "id": "basicly-rn0o.12",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.12"
+    },
+    {
+      "id": "basicly-rn0o.13",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.13"
+    },
+    {
+      "id": "basicly-rn0o.14",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.14"
+    },
+    {
+      "id": "basicly-rn0o.15",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.15"
+    },
+    {
+      "id": "basicly-rn0o.16",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.16"
+    },
+    {
+      "id": "basicly-rn0o.17",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.17"
+    },
+    {
+      "id": "basicly-rn0o.18",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.18"
+    },
+    {
+      "id": "basicly-rn0o.19",
+      "worktree": "",
+      "branch": "",
+      "checkpoints_held": [],
+      "checkpoints_missing": [
+        "classify",
+        "decompose",
+        "ship"
+      ],
+      "rework": {
+        "verify": 0
+      },
+      "next_command": "basicly loop advance basicly-rn0o.19"
+    }
   ]
 }

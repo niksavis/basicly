@@ -25,11 +25,12 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING, cast
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from . import (
     board_actions,
     board_asks,
+    board_record,
     board_render,
     board_schema,
     board_snapshot,
@@ -76,6 +77,14 @@ DEFAULT_REFRESH_S = supervise.HEARTBEAT_INTERVAL_S
 
 SNAPSHOT_ROUTE = "/snapshot.json"
 PAGE_ROUTES = ("/", "/index.html")
+
+# One record's page. The wall's own href is relative (`record/<id>.html`) and resolves here;
+# the suffix is optional on the way in, so the route the acceptance names - `/record/<id>` -
+# answers too. Nothing under it reaches the filesystem: the id is looked up in the document
+# being served, so a path this process would refuse to open cannot be asked for.
+RECORD_ROUTE = f"/{board_record.HREF_DIR}/"
+
+NO_RECORD = "no such record in the snapshot this board holds"
 
 STOPPED = "board: stopped. {refreshes} refreshes, {failures} failed. No state was written."
 
@@ -263,8 +272,8 @@ class Board:
         except OSError:
             return None
 
-    def page(self, now: datetime) -> bytes | None:
-        """The board as one HTML page, or None where no readable document is available.
+    def _readable(self) -> tuple[dict, board_schema.SnapshotVerdict] | None:
+        """The document being served and the verdict on it, or None where neither is drawable.
 
         A document the contract refuses is not drawn, for Mode A's reason.
         """
@@ -276,8 +285,26 @@ class Board:
         except json.JSONDecodeError:
             return None
         verdict = board_schema.verdict(self.repo_root, document)
-        if not verdict.readable:
+        return (document, verdict) if verdict.readable else None
+
+    def record(self, record_id: str, now: datetime) -> bytes | None:
+        """One record's page, or None where this document lists no such record.
+
+        The back link is the origin's root rather than the wall's file name, which is the one
+        thing this mode knows and Mode A does not.
+        """
+        held = self._readable()
+        if held is None:
             return None
+        filled = board_record.context(held[0], held[1], record_id, now, back="/")
+        return None if filled is None else board_render.render_record(filled).encode("utf-8")
+
+    def page(self, now: datetime) -> bytes | None:
+        """The board as one HTML page, or None where no readable document is available."""
+        held = self._readable()
+        if held is None:
+            return None
+        document, verdict = held
         # One context, drawn once. It carries the prefilled action rows, which only this
         # tier can build: the token is this process's and the asks are the document's
         # (basicly-ua9o5g). `--no-actions` passes no token, so the rows still name the exact
@@ -370,8 +397,23 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(self.board.payload(), "application/json")
         elif route in PAGE_ROUTES:
             self._send(self.board.page(datetime.now(UTC)), "text/html; charset=utf-8", reload=True)
+        elif route.startswith(RECORD_ROUTE):
+            self._record(route)
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
+
+    def _record(self, route: str) -> None:
+        """Answer one record's page, or 404 naming what this board could not find.
+
+        404 rather than 503 even before the first fold: the reader asked for a record, and
+        "this board holds no snapshot with that record in it" covers both cases truthfully.
+        """
+        ident = unquote(route[len(RECORD_ROUTE) :]).removesuffix(board_record.HREF_SUFFIX)
+        body = self.board.record(ident, datetime.now(UTC))
+        if body is None:
+            self.send_error(HTTPStatus.NOT_FOUND, NO_RECORD)
+            return
+        self._send(body, "text/html; charset=utf-8", reload=True)
 
     def do_POST(self) -> None:
         """Whatever the action surface answers, or 405 where this board registered none."""

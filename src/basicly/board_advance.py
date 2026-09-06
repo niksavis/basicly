@@ -41,7 +41,7 @@ def newest(markers: Sequence[Any]) -> dict[str, str]:
     return latest
 
 
-def _remedy(record: str) -> str:
+def remedy(record: str) -> str:
     """The exact command that moves *record*, which is the row's whole point."""
     return f"basicly loop advance {record}"
 
@@ -95,6 +95,6 @@ def asks(
         stamp = board_fields.instant((last_event or {}).get(record, ""))
         if stamp is not None:
             ask["requested_at"] = board_fields.stamp(stamp)
-        ask["actions"] = [{"offer": _remedy(record)}]
+        ask["actions"] = [{"offer": remedy(record)}]
         built.append(ask)
     return built

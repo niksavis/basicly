@@ -143,8 +143,12 @@ def test_the_event_ticker_reads_newest_first_and_reports_what_it_did_not_draw() 
     """The dropped count comes back beside the lines, because the row height is fixed."""
     lines, dropped = board_footer.events(_reads("wall-v1.json"))
     assert len(lines) == board_footer.EVENT_LINES
-    assert "pytest failed" in lines[0], "the ticker is not newest first"
+    assert "pytest failed" in lines[0].text, "the ticker is not newest first"
     assert dropped == "+4 more events"
+    # The id is its own field so the page can link it; joined into the text, a consumer
+    # would have to find a record id inside a line by pattern.
+    assert lines[0].ident.startswith("basicly-"), "the ticker names no record"
+    assert lines[0].ident not in lines[0].text, "the id is drawn twice"
 
 
 def test_the_gate_token_does_not_grow_with_the_check_count_at_all() -> None:
@@ -258,7 +262,7 @@ def test_the_roster_covers_every_section_the_verdict_named_and_the_key_spells_ab
     """
     reads = readings("no-phase-v1.json")
     roster = board_footer.inventory(reads)
-    absent = ["session", "lanes", "asks", "spend", "health", "graph"]
+    absent = ["session", "lanes", "asks", "spend", "health", "detail", "graph"]
     assert [cell.label for cell in roster] == absent
     assert all(cell.value for cell in roster), "a named section carries no word for why"
     assert board_footer._NOT_IN_SNAPSHOT in [cell.value for cell in roster]

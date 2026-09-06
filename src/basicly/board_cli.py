@@ -25,6 +25,7 @@ from pathlib import Path
 
 from . import (
     board_facts,
+    board_record,
     board_render,
     board_schema,
     board_serve,
@@ -71,6 +72,33 @@ def _kb(path: Path) -> str:
     return f"{path.stat().st_size / _BYTES_PER_KB:.0f} KB"
 
 
+def _write_records(
+    document: dict[str, object], verdict: board_schema.SnapshotVerdict, out: Path, now: datetime
+) -> tuple[int, int]:
+    """Write one page per record under *out*'s directory; how many landed and how many were refused.
+
+    A refused id is one that may not become a file name - the ids are a producer's and this
+    writer will not take one that names a path outside the directory. Nothing is deleted: a
+    record that has since closed keeps the page its last run wrote, which is a stale file and
+    not a wrong one, since every page carries the age of the snapshot it was drawn from.
+    """
+    written = refused = 0
+    for ident in board_record.ids(document):
+        if not board_record.writable(ident):
+            refused += 1
+            continue
+        filled = board_record.context(document, verdict, ident, now, back=f"../{out.name}")
+        if filled is None:
+            continue
+        # `board_record.href` and nothing else: the wall prints that link, so a second
+        # spelling of the path here is how the file and the link come to disagree.
+        landing = out.parent / board_record.href(ident)
+        landing.parent.mkdir(parents=True, exist_ok=True)
+        landing.write_text(board_render.render_record(filled), encoding="utf-8")
+        written += 1
+    return written, refused
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     """Report whether one snapshot is readable by this consumer, and exit on the answer.
 
@@ -100,9 +128,8 @@ def cmd_emit(args: argparse.Namespace) -> int:
     if not verdict.readable:
         ui.say(verdict.summary)
         return verdict.exit_code
-    page = board_render.page(
-        document, verdict, now=datetime.now(UTC), viewport=(args.height, args.width)
-    )
+    now = datetime.now(UTC)
+    page = board_render.page(document, verdict, now=now, viewport=(args.height, args.width))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(page, encoding="utf-8")
     sidecar = args.out.parent / SNAPSHOT_NAME
@@ -114,6 +141,12 @@ def cmd_emit(args: argparse.Namespace) -> int:
     )
     ui.say(f"board: wrote {args.out} (self-contained, {_kb(args.out)}) - open it in a browser")
     ui.say(f"board: wrote {sidecar} ({_kb(sidecar)}) - the contract, for any other consumer")
+    written, refused = _write_records(document, verdict, args.out, now)
+    denied = f", {refused} id(s) refused as a file name" if refused else ""
+    ui.say(
+        f"board: wrote {written} record pages under "
+        f"{args.out.parent / board_record.HREF_DIR}{denied} - every id on the page links to one"
+    )
     return verdict.exit_code
 
 

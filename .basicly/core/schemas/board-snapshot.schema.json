@@ -572,6 +572,65 @@
         }
       }
     },
+    "detail": {
+      "type": "array",
+      "description": "The per-item facts a reader opens one item to see, which units deliberately leaves out: units is the row a wall draws for the whole population and is field-selected against a 132.5x payload, while these are read one item at a time. A separate section rather than more properties on a units row, so a producer that draws only a wall pays nothing for them. A producer that reports a row at all knows its checkpoints, its rework and whether a working copy is bound, so those keys are emitted even when empty - an empty worktree is no binding and an empty missing list is nothing outstanding. A key absent from a row is a producer that does not hold that fact, and a consumer renders it as absent rather than as a default.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "The item this row details, joining it to a units row of the same id."
+          },
+          "worktree": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "The working copy the item is being built in, where the harness binds one."
+          },
+          "branch": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The branch that working copy holds, which is what stands between the item and the trunk."
+          },
+          "checkpoints_held": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "description": "The human approvals recorded on the item."
+          },
+          "checkpoints_missing": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "description": "The approvals the producer's own checkpoint roster still asks of the item. Emitted beside the held list rather than left to be subtracted, because a consumer cannot know the producer's roster."
+          },
+          "rework": {
+            "type": "object",
+            "description": "Attempts recorded per gate, keyed by gate name. A gate with no attempt is emitted as 0 where the producer knows the gate is required of this item, and omitted where it does not.",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "next_command": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The command the producer's own engine names as the one that moves this item. A consumer prints it and never composes one: a board that spells a command itself is a second answer to what the harness does next."
+          }
+        }
+      }
+    },
     "graph": {
       "type": "object",
       "description": "The dependency edges among the items, as triples. Separate from units so that a producer can emit rows without a graph, and because edges are the answer to why an item is not ready - the one question a count of blocked items raises and cannot settle.",
