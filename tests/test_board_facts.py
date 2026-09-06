@@ -428,6 +428,7 @@ def test_the_closed_state_set_is_spelled_the_same_in_all_three_places() -> None:
         supervise.LANE_RUNNING,
         supervise.LANE_WAITS_TO_LAND,
         supervise.LANE_LANDING,
+        supervise.LANE_LANDED,
         supervise.LANE_REFUSED,
         supervise.LANE_PARKED,
     }

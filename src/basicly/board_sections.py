@@ -46,7 +46,15 @@ _SUBJECT_SEP = "#wait-"
 # whole `lanes` section rather than one key. `supervise.LANE_*` are the writers and the
 # schema is the contract; `tests/test_board_facts.py` asserts the three agree, because three
 # spellings of one closed set is exactly the drift a shipped consumer refuses a document for.
-LANE_STATES = frozenset({"queued", "running", "waits-to-land", "landing", "refused", "parked"})
+LANE_STATES = frozenset({
+    "queued",
+    "running",
+    "waits-to-land",
+    "landing",
+    "landed",
+    "refused",
+    "parked",
+})
 
 # The status a record reaches when its work is done. The kit's vocabulary, spelled here
 # because this layer counts records by it and `board_snapshot` cuts the active population

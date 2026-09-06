@@ -197,6 +197,7 @@ def test_each_pass_state_leads_the_headline_with_its_own_word_and_no_glyph() -> 
         "running \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
         "landing \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
         "waits to land \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
+        "landed \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
         "queued \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
         "refused \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",
         "parked \N{MIDDLE DOT} 2m 10s \N{MIDDLE DOT} build",

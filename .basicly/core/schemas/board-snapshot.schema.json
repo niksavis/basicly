@@ -204,10 +204,11 @@
               "running",
               "waits-to-land",
               "landing",
+              "landed",
               "refused",
               "parked"
             ],
-            "description": "Where the lane stands in the pass, as against `phase` (where its unit stands in the harness lifecycle) and `live` (whether an agent is inside it right now). Closed at six because the consumer colours it, and the failure this key exists for is that `live` true-or-false had nothing between: a lane whose agent had exited with work committed, one the supervisor was landing, and one the WIP bound had refused all rendered as an idle build, so a pass doing four things read as nothing happening. A producer that cannot place a lane omits the key rather than guessing `queued`, which would state the one thing every absent lane is not."
+            "description": "Where the lane stands in the pass, as against `phase` (where its unit stands in the harness lifecycle) and `live` (whether an agent is inside it right now). Closed at seven because the consumer colours it, and the failure this key exists for is that `live` true-or-false had nothing between: a lane whose agent had exited with work committed, one the supervisor was landing, and one the WIP bound had refused all rendered as an idle build, so a pass doing four things read as nothing happening. `landed` was the seventh: a worktree whose commits base already holds answers the same commits-ahead count as one that has done nothing, and drawing both `queued` made a wall of finished work read as a factory waiting to start. A producer that cannot place a lane omits the key rather than guessing `queued`, which would state the one thing every absent lane is not."
           },
           "state_detail": {
             "type": "string",

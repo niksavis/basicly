@@ -91,6 +91,7 @@ LANE_MARKS: Mapping[str, tuple[str, str]] = {
     "running": (LIVE, "running"),
     "landing": (LIVE, "landing"),
     "waits-to-land": (WAITING, "waits to land"),
+    "landed": (CALM, "landed"),
     "queued": (WAITING, "queued"),
     "refused": (STUCK, "refused"),
     "parked": (WITHHELD, "parked"),

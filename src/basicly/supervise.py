@@ -2316,6 +2316,7 @@ def inflight_dispatch() -> dict[str, LaneStream]:
         return dict(_LIVE_LANES)
 
 
+LANE_LANDED = "landed"
 LANE_QUEUED = "queued"
 LANE_RUNNING = "running"
 LANE_WAITS_TO_LAND = "waits-to-land"
