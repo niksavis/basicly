@@ -27,6 +27,7 @@ says the producer did not emit it, which is true.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,6 +37,7 @@ from . import (
     board_sections,
     board_serve,
     board_snapshot,
+    board_unsupervised,
     checkout,
     config,
     decisions,
@@ -641,6 +643,21 @@ def _hide_unanswerable(built: dict[str, object]) -> dict[str, object]:
     return built
 
 
+def statuses(repo_root: Path) -> dict[str, str]:
+    """Every live record's tracker status, or an empty map where the log will not answer.
+
+    A second fold of `tracker.all_views` beside the one :func:`details` makes, and paid only on
+    the unsupervised path: `board_unsupervised` needs a status to tell a parked worktree from a
+    working one, and `DetailFacts` carries no status field to widen. It costs 0.125 s over a
+    thousand records - measured in `all_views`' own docstring - and there is no pass in flight
+    to slow down when it runs, because its caller only runs where no lock is held.
+    """
+    try:
+        return {record: str(view.status) for record, view in tracker.all_views(repo_root).items()}
+    except UNREADABLE:
+        return {}
+
+
 def document(
     repo_root: Path, *, lane_label: str | None = None, in_flight: bool = False
 ) -> dict[str, object]:
@@ -661,6 +678,13 @@ def document(
     or the reworded second one - so neither exit publishes a wait nobody can act on.
     """
     phase_map = phases(repo_root)
+    # Folded once and passed to both readers: `board_unsupervised` needs the same worktree
+    # bindings the detail section carries, and a second `details()` would double the fold.
+    detail_rows = details(repo_root)
+    # One instant for the whole document: the lane freshness below and the date the snapshot
+    # carries are the same reading, so a row cannot call a lane fresh against a clock the page
+    # never states.
+    moment = datetime.now(UTC)
     session = session_facts(repo_root)
     # A supervisor advances what its own selector picked, and this layer cannot know that
     # selector - so its presence refuses the whole advance population rather than filtering
@@ -675,27 +699,33 @@ def document(
             last_event=board_advance.newest(markers),
         ),
         repo=repo_facts(repo_root),
-        details=details(repo_root),
+        details=detail_rows,
         phases=phase_map,
         readiness=readiness(repo_root),
         lanes=(
             lane_facts(repo_root, session.root_issue, phase_map, lane_label=lane_label)
             if in_flight and session is not None
-            # `()` is "no pass is running", which a checkout with no live lock can see and
-            # which `board_sections.lanes` already separates from absent. Without it no
-            # one-shot producer emitted the section at all, so `running now` read `not
-            # emitted by this producer` on every unsupervised repo and could say nothing
-            # else (basicly-u6eeag). None stays for the case the parameter guards: a lock
-            # is live, so a pass exists whose selector this producer cannot know.
-            else ()
+            # No lock, so no pass - but work does not need a pass to exist. `()` here used to
+            # mean "no pass is running", and it was read as "nothing is happening" while four
+            # worktrees stood on disk with agents writing in two of them (basicly-kqh9dj8).
+            # `board_unsupervised.lanes` supplies what git can observe without a supervisor;
+            # it returns `()` itself when no binding names a tracked worktree, which is the
+            # same claim the old literal made and the only case it was ever right about.
+            # None stays for the case the parameter guards: a lock is live, so a pass exists
+            # whose selector this producer cannot know.
+            else board_unsupervised.lanes(
+                repo_root, detail_rows or (), phase_map, statuses(repo_root), moment
+            )
             if board_serve.live_holder(repo_root) is None
             else None
         ),
     )
-    built = board_snapshot.build_document(repo_root, facts=facts)
+    built = board_snapshot.build_document(repo_root, facts=facts, now=moment)
     asked = questions(repo_root, built)
     if asked:
-        built = board_snapshot.build_document(repo_root, facts=replace(facts, questions=asked))
+        built = board_snapshot.build_document(
+            repo_root, facts=replace(facts, questions=asked), now=moment
+        )
     return _with_live_spend(_hide_unanswerable(built), session)
 
 
