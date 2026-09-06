@@ -21,6 +21,7 @@ values (:data:`basicly.board_wall.ABSENT_TEXT`).
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from . import board_wall
@@ -216,13 +217,55 @@ def _family(document: Mapping[str, Any], record_id: str) -> tuple[str, tuple[str
     return parent, tuple(sorted(set(children)))
 
 
+@dataclass(frozen=True)
+class PageFacts:
+    """What only the caller knows about a record page: where it sits, and what starts it.
+
+    Two fields rather than two parameters, because both come from the tier above this one and
+    neither is derivable here. `back` is the path to the wall, which differs between the
+    written directory and the served root. `start_command` is built by
+    `board_actions.ACTIONS`, which this module sits below and may not reach.
+    """
+
+    back: str = ".."
+    start_command: str = ""
+
+
+def start_form(document: Mapping[str, Any], record_id: str) -> dict[str, str]:
+    """The fields `board_actions`' start action needs, read off the document.
+
+    The record's own type and the parent whose grant covers it. Pressed without them the
+    detached child reached intake and stopped - `classify needs an agent-proposed work type;
+    no active grant on <id> to delegate it under` - so a start that carries only the id starts
+    a process that halts one step in. Measured by pressing it (basicly-fiow1sr).
+
+    Neither value is decided here: `type` is the producer's own field and the parent is a
+    `parent-child` edge the graph already carries. A missing one is omitted, never guessed.
+    """
+    unit = _find(_rows(document, "units"), record_id) or {}
+    parent, _children = _family(document, record_id)
+    return {"issue": record_id, "work_type": str(unit.get("type") or ""), "root": parent}
+
+
+def startable(unit: Mapping[str, Any], lane: Mapping[str, Any] | None) -> bool:
+    """Whether this record may be offered a start, on the acceptance's two conditions.
+
+    Ready and unheld. `ready` is the producer's own field - the tracker's answer to whether
+    anything blocks it - and a lane row means a worktree already exists for it, whatever
+    state that lane is in. Offering a start on either would begin a second lane on work
+    already in flight, which is the guard this action carries in place of a confirm code
+    (basicly-fiow1sr).
+    """
+    return bool(unit.get("ready")) and lane is None
+
+
 def context(
     document: Mapping[str, Any],
     verdict: SnapshotVerdict,
     record_id: str,
     now: datetime,
     *,
-    back: str = "..",
+    page: PageFacts | None = None,
 ) -> dict[str, Any] | None:
     """Everything the record template draws, or None where this document has no such record.
 
@@ -232,6 +275,7 @@ def context(
     because only the caller knows what the wall is called - a file beside this one under
     ``--out``, and the origin's root under the server.
     """
+    page = page or PageFacts()
     reads = board_wall.readings(document, verdict)
     unit = _find(_rows(document, "units"), record_id)
     if unit is None:
@@ -242,7 +286,7 @@ def context(
     parent, children = _family(document, record_id)
     return {
         "record": record_id,
-        "back": back,
+        "back": page.back,
         # The template marks a value absent by comparing against this rather than by a second
         # spelling of it: the wording is `board_wall`'s and one page may not reword it.
         "absent_text": ABSENT_TEXT,
@@ -262,6 +306,11 @@ def context(
         "lane_progress": str((lane or {}).get("note", "")),
         "parent": parent,
         "children": children,
+        # Supplied by a caller that may reach `board_actions`, and shown only where the
+        # record is startable. This module sits below that table in the tier contract, and
+        # spelling the argv here instead would be a second answer to what the button runs -
+        # which is exactly how the refused version of this shipped (basicly-fiow1sr).
+        "start_command": page.start_command if startable(unit, lane) else "",
         "blockers": blockers,
         "dependents": dependents,
         "edges_note": NO_EDGES if not blockers and not dependents else "",

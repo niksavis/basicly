@@ -221,6 +221,27 @@
         white-space: nowrap;
       }
 
+      /* The age reads first and the stamp beneath it reads second, which the old cell had the
+         other way round, opening with a three-word preamble before the figure. */
+      .fresh-age {
+        align-items: center;
+        display: inline-flex;
+        font-size: 17px;
+        gap: 6px;
+      }
+
+      .fresh .note {
+        font-size: 12px;
+      }
+
+      /* `.mark` is sized where it is used: the band's rule is scoped to its headline, and a
+         `.facts .mark` rule above styles a *text* glyph, so an svg here inherits neither a
+         fill nor a height and draws nothing at all. Same two properties as the band's. */
+      .fresh .mark {
+        fill: currentColor;
+        height: 0.82em;
+      }
+
       /* --- band: the alarm, and the only orange on the page ---------------------------- */
       /* `site/index.html` ships no red, so orange is this page's alarm channel and the band
          is its only site - and only once a wait has outlasted normal attended turnaround
@@ -1160,13 +1181,31 @@
           </div>
         </div>
         </div>
-        <p class="fresh state-{{ age.state.key }}">
-          as of {{ age.phrase }}<br />
-          <span class="note"
-            >{{ age.generated_at }} · stale after {{ age.stale_after }} ·
-            <span class="state-{{ producer.state.key }}">{{ producer.state.glyph }}</span>
-            {{ producer.label }} {{ producer.value }}</span
-          >
+{#- The corner an operator glances at, cut to the two facts they act on: is this fresh, and
+    how old. The mark carries the first so the age does not have to be read to learn it, and
+    it replaces a bare bullet that meant nothing on its own. The absolute stamp stays beneath
+    because a wall photographed at a distance needs it; the staleness threshold appears only
+    once it is crossed, since a bound nobody is near is not news; and the producer and its
+    version move to the title, recoverable by hover and by every consumer of the snapshot,
+    without spending the page's most valuable cell on two facts nobody acts on
+    (basicly-a8jy77 defect 7). #}
+        <p
+          class="fresh state-{{ age.state.key }}"
+          title="{{ producer.label }} {{ producer.value }} · stale after {{ age.stale_after }}"
+        >
+{#- `age.state.key` is a freshness state and `icons` is keyed by mark, so the two are joined
+    here rather than a "live" icon being vendored for one site: a fresh snapshot is the same
+    fact `calm` already draws, and a stale one is the same fact `waiting` draws. #}
+{%- set age_mark = "calm" if age.state.key == "live" else "waiting" %}
+          <span class="fresh-age"
+            ><svg class="mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+              ><path d="{{ icons[age_mark].path }}" /></svg
+            >{{ age.phrase }}</span
+          ><br />
+          <span class="note">{{ age.generated_at }}</span>
+{%- if age.state.key != "live" %}
+          <span class="note">· stale after {{ age.stale_after }}</span>
+{%- endif %}
         </p>
       </section>
 

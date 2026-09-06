@@ -193,6 +193,11 @@
 {%- else %}
       <p class="absent">no next command — {{ detail_note or absent_text }}</p>
 {%- endif %}
+{#- Offered only where the record is ready and unheld, so a press cannot begin a second lane
+    on work already in flight. The command is the action's own, printed verbatim. #}
+{%- if start_command %}
+      <p>start: <code>{{ start_command }}</code></p>
+{%- endif %}
 {%- endif %}
 
       <h2>the tree</h2>

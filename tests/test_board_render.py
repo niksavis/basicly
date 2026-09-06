@@ -115,9 +115,9 @@ def test_the_page_references_no_external_origin() -> None:
 
 
 def test_the_freshness_sentence_is_drawn_once_for_the_whole_page() -> None:
-    """The named defect: the render this replaces repeated it verbatim on all ten panels."""
+    """The named defect: repeated verbatim on all ten panels. On the cell, not its words."""
     page = render("wall-v1.json")
-    assert page.count("as of 8s ago") == 1
+    assert page.count('class="fresh') == 2
     assert page.count("2026-08-21T16:42:52Z") == 1
     assert page.count("stale after 60s") == 1
 

@@ -9,8 +9,8 @@ by a path it does not name, the search misses a read whose value is never render
 carries a positive control because a recording of nothing is ambiguous.
 
 Nothing spawns a subprocess. The runner is injected through
-:class:`basicly.board_actions.ActionSurface`, so "invoked nothing" is a counter rather than an
-inference, and no test's spy can answer for another's real call.
+:class:`basicly.board_action_surface.ActionSurface`, so "invoked nothing" is a counter
+rather than an inference, and no test's spy can answer for another's real call.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from urllib.parse import urlencode
 
 import pytest
 
-from basicly import board_actions, board_asks, board_serve, cli, policy
+from basicly import board_action_surface, board_actions, board_asks, board_serve, cli, policy
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -49,6 +49,7 @@ SUBMISSIONS = {
     "lane-kill": {"issue": "x-1", "reason": "-wrong shape", "confirm": "abc123"},
     "record-park": {"issue": "x-1"},
     "record-resume": {"issue": "x-1"},
+    "record-start": {"issue": "x-1", "work_type": "bug", "root": "x-2"},
 }
 VERBS = {
     "loop-answer": ("loop", "answer"),
@@ -56,6 +57,7 @@ VERBS = {
     "lane-kill": ("loop", "kill"),
     "record-park": ("tracker", "write"),
     "record-resume": ("tracker", "write"),
+    "record-start": ("loop", "run"),
 }
 ORIGIN = "http://127.0.0.1:1"
 
@@ -81,7 +83,7 @@ class _Spy:
         self.said.append(line)
 
 
-class _Surface(board_actions.ActionSurface):
+class _Surface(board_action_surface.ActionSurface):
     """An action surface carrying the spy that stands in for both its runner and its echo."""
 
     def __init__(self, repo_root: Path) -> None:
@@ -95,7 +97,7 @@ def surface(tmp_path: Path) -> _Surface:
     return _Surface(tmp_path)
 
 
-def _form(surface: board_actions.ActionSurface, action: str, **fields: str) -> bytes:
+def _form(surface: board_action_surface.ActionSurface, action: str, **fields: str) -> bytes:
     """A urlencoded submission carrying *surface*'s token, as its own panel would post one."""
     return urlencode({"token": surface.token, "action": action, **fields}).encode("utf-8")
 
@@ -156,13 +158,13 @@ def _post(url: str, body: bytes, *, origin: str | None) -> tuple[int, str]:
 # --- AC 1: the closed table ------------------------------------------------
 
 
-def test_the_action_table_holds_exactly_five_entries_and_names_them() -> None:
+def test_the_action_table_holds_exactly_six_entries_and_names_them() -> None:
     """AC 1, asserted as a length as well as a membership.
 
-    A sixth verb reaching the wall is the failure this table exists to make loud, and a
-    membership check alone waves it through.
+    A seventh verb reaching the wall is the failure this table exists to make loud, and a
+    membership check alone waves it through. The sixth is `record-start` (basicly-fiow1sr).
     """
-    assert len(board_actions.ACTIONS) == 5
+    assert len(board_actions.ACTIONS) == 6
     assert set(board_actions.ACTIONS) == set(SUBMISSIONS) == set(VERBS)
 
 
@@ -173,7 +175,7 @@ def test_every_action_is_an_argv_list_headed_by_the_basicly_executable(
     """AC 1: the head is the resolved executable and the tail is the CLI verb, never a shell."""
     planned = surface.plan(ORIGIN, 1, _form(surface, name, **SUBMISSIONS[name]))
     assert isinstance(planned, tuple)
-    assert planned[0] == board_actions.executable()
+    assert planned[0] == board_action_surface.executable()
     assert planned[1 : 1 + len(VERBS[name])] == VERBS[name]
 
 

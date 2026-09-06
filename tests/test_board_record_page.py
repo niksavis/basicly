@@ -49,7 +49,9 @@ def _verdict(doc: dict[str, Any]) -> board_schema.SnapshotVerdict:
 
 def page(doc: dict[str, Any], record_id: str, *, back: str = "..") -> str | None:
     """One record's page as a reader receives it, or None where the document lists no such id."""
-    filled = board_record.context(doc, _verdict(doc), record_id, STAMPED, back=back)
+    filled = board_record.context(
+        doc, _verdict(doc), record_id, STAMPED, page=board_record.PageFacts(back=back)
+    )
     return None if filled is None else board_render.render_record(filled, TEMPLATES)
 
 

@@ -2,7 +2,7 @@
 
 Split from `tests/test_board_actions.py` when the prefilled rows landed (basicly-ua9o5g),
 along the seam that file already drew for itself: everything above the wire section asserts
-:class:`basicly.board_actions.ActionSurface` in process - the closed table, the confirm-code
+:class:`basicly.board_action_surface.ActionSurface` in process - the closed table, the confirm-code
 boundary, the origin and token refusals, the audit line. These assert a served board, which
 is a different instrument and the only one that can answer whether a form is *reachable*.
 

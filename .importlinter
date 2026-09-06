@@ -26,6 +26,7 @@ layers =
     board_advance
     board_serve
     board_asks
+    board_action_surface
     board_actions
     board_unsupervised
     supervise | usage_report

@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import (
+    board_actions,
     board_facts,
     board_record,
     board_render,
@@ -87,7 +88,16 @@ def _write_records(
         if not board_record.writable(ident):
             refused += 1
             continue
-        filled = board_record.context(document, verdict, ident, now, back=f"../{out.name}")
+        filled = board_record.context(
+            document,
+            verdict,
+            ident,
+            now,
+            page=board_record.PageFacts(
+                back=f"../{out.name}",
+                start_command=board_actions.start_command(board_record.start_form(document, ident)),
+            ),
+        )
         if filled is None:
             continue
         # `board_record.href` and nothing else: the wall prints that link, so a second

@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, cast
 from urllib.parse import unquote, urlsplit
 
 from . import (
+    board_action_surface,
     board_actions,
     board_asks,
     board_record,
@@ -188,7 +189,7 @@ class Board:
         *,
         refresh_s: float = DEFAULT_REFRESH_S,
         build: Callable[[], dict[str, object]] | None = None,
-        actions: board_actions.ActionSurface | None = None,
+        actions: board_action_surface.ActionSurface | None = None,
         template_mtime: Callable[[], float | None] = _template_mtime,
     ) -> None:
         """Hold *repo_root*, the cadence, how to build and what may be acted on.
@@ -296,7 +297,18 @@ class Board:
         held = self._readable()
         if held is None:
             return None
-        filled = board_record.context(held[0], held[1], record_id, now, back="/")
+        filled = board_record.context(
+            held[0],
+            held[1],
+            record_id,
+            now,
+            page=board_record.PageFacts(
+                back="/",
+                start_command=board_actions.start_command(
+                    board_record.start_form(held[0], record_id)
+                ),
+            ),
+        )
         return None if filled is None else board_render.render_record(filled).encode("utf-8")
 
     def page(self, now: datetime) -> bytes | None:
@@ -417,7 +429,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """Whatever the action surface answers, or 405 where this board registered none."""
-        board_actions.handle_post(self, self.board.actions)
+        board_action_surface.handle_post(self, self.board.actions)
 
     def _send(self, body: bytes | None, content_type: str, *, reload: bool = False) -> None:
         """One response, or 503 while the producer has not landed a document yet.
@@ -517,7 +529,7 @@ def bind(  # noqa: PLR0913 — mirrors the CLI surface
     arrive: `--port 0` is the documented way to run a second board or a test, and polling a
     fixed port until it opens is exactly the flake that avoids.
     """
-    surface = board_actions.ActionSurface(repo_root) if actions else None
+    surface = board_action_surface.ActionSurface(repo_root) if actions else None
     board = Board(repo_root, refresh_s=refresh_s, build=build, actions=surface)
     board.refresh()
     return Listener(_httpd=_Server((admitted_host(host), port), board), board=board)
@@ -563,7 +575,7 @@ def serve(  # noqa: PLR0913 — mirrors the CLI surface
         reach = "code-gated actions" if actions else "no action route"
         ui.say(f"board: {host} is reachable beyond this machine - {reach}")
     ui.say(listener.board.producer())
-    ui.say(board_actions.transcript(listener.board.actions))
+    ui.say(board_action_surface.transcript(listener.board.actions))
     ui.say("board: press Ctrl-C to stop. This process holds no lock and blocks no gate.")
     stop = threading.Event()
     threading.Thread(target=_tick, args=(listener.board, stop), daemon=True).start()
