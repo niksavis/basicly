@@ -1290,7 +1290,10 @@
 {%- endif %}
 
       <section class="region loop{% if not pass_running %} quiet{% endif %}">
-        <h2>the loop{% if pass_running %} — this pass{% endif %}</h2>
+{#- The diagram says what the loop is; it cannot say which records sit in a phase. That is
+    the second surface, and a heading nobody can click leaves it unreachable from the wall
+    that names it (basicly-lc2bd3v.6). #}
+        <h2>the loop{% if pass_running %} — this pass{% endif %} <a class="rec" href="{{ kanban_href }}">columns &rarr;</a></h2>
 {#- The workflow, drawn (basicly-6c97zx). The owner asked for a diagram of the factory and
     got seven counted boxes, which say how many units sit somewhere and nothing about what
     the loop IS. Every element below is emitted from `board_diagram`'s model and never from

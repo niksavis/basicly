@@ -43,6 +43,8 @@ if TYPE_CHECKING:
 TEMPLATE_DIR = "templates/board"
 TEMPLATE = "board_page.html.j2"
 TEMPLATE_RECORD = "board_record.html.j2"
+TEMPLATE_KANBAN = "board_kanban.html.j2"
+KANBAN_HREF = "loop.html"
 
 
 def context(
@@ -64,10 +66,10 @@ def context(
     The readings are derived once and handed to every region, so the verdict's inventory is
     the only inventory a region can draw from. *viewport* is board_regions.next_up's own
     (height, width) and *acts* is :mod:`basicly.board_asks`' whole output - its rows, what
-    it dropped, a kill form per running lane and a park-or-resume form per record, the last
-    two keyed by the id of what they act on. This layer neither reads
-    nor guesses either, it carries what its caller gave it (basicly-ffm2yp). Each arrives as
-    one tuple because the arity ratchet counts arguments, and the forms arrive as data so
+    it dropped, a kill form per running lane, a park-or-resume form per record and a start
+    form per startable record, the last three keyed by the id of what they act on. This layer
+    neither reads nor guesses either, it carries what its caller gave it (basicly-ffm2yp).
+    Each arrives as one tuple because the arity ratchet counts arguments, and forms as data so
     every string of them is drawn through the autoescape.
     """
     reads = board_wall.readings(document, verdict)
@@ -152,6 +154,9 @@ def context(
         # Named and not indexed out of `states`: a position picks up whatever landed there.
         "here_glyph": board_wall.BY_KEY[board_wall.LIVE].glyph,
         "schema": document.get("schema", board_wall.UNKNOWN),
+        # The second surface: `board_cli` writes the page under this name and `board_serve`
+        # answers it as a route, so one relative spelling reaches both.
+        "kanban_href": KANBAN_HREF,
         # `board_record`'s own href halves: relative, so one spelling resolves beside a
         # `--out` file and under the server's root alike.
         "record_dir": board_record.HREF_DIR,
@@ -209,6 +214,11 @@ def render_record(filled: Mapping[str, Any], templates_dir: Path | None = None) 
     draws every page this package serves.
     """
     return _env(templates_dir).get_template(TEMPLATE_RECORD).render(filled)
+
+
+def render_kanban(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
+    """Draw the loop surface from :func:`basicly.board_kanban.context`'s output."""
+    return _env(templates_dir).get_template(TEMPLATE_KANBAN).render(filled)
 
 
 def render(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:

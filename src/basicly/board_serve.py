@@ -31,6 +31,7 @@ from . import (
     board_action_surface,
     board_actions,
     board_asks,
+    board_kanban,
     board_record,
     board_render,
     board_schema,
@@ -78,6 +79,12 @@ DEFAULT_REFRESH_S = supervise.HEARTBEAT_INTERVAL_S
 
 SNAPSHOT_ROUTE = "/snapshot.json"
 PAGE_ROUTES = ("/", "/index.html")
+
+# The loop as a column per phase, on its own page rather than as a ninth region on the wall.
+# The owner asked for two surfaces: what is happening now, and what is planned. Both spellings
+# answer for the reason `RECORD_ROUTE` takes a suffix - a link written for the `--out` file
+# resolves here unchanged (basicly-lc2bd3v.6).
+KANBAN_ROUTES = ("/loop", "/loop.html")
 
 # One record's page. The wall's own href is relative (`record/<id>.html`) and resolves here;
 # the suffix is optional on the way in, so the route the acceptance names - `/record/<id>` -
@@ -311,6 +318,18 @@ class Board:
         )
         return None if filled is None else board_render.render_record(filled).encode("utf-8")
 
+    def kanban(self, now: datetime) -> bytes | None:
+        """The loop surface, or None where no readable document is available.
+
+        The back link is the origin's root, which is the one thing this mode knows and the
+        `--out` mode does not.
+        """
+        held = self._readable()
+        if held is None:
+            return None
+        filled = board_kanban.context(held[0], held[1], now, back="/")
+        return board_render.render_kanban(filled).encode("utf-8")
+
     def page(self, now: datetime) -> bytes | None:
         """The board as one HTML page, or None where no readable document is available."""
         held = self._readable()
@@ -410,6 +429,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(self.board.payload(), "application/json")
         elif route in PAGE_ROUTES:
             self._send(self.board.page(datetime.now(UTC)), "text/html; charset=utf-8", reload=True)
+        elif route in KANBAN_ROUTES:
+            self._send(
+                self.board.kanban(datetime.now(UTC)), "text/html; charset=utf-8", reload=True
+            )
         elif route.startswith(RECORD_ROUTE):
             self._record(route)
         else:

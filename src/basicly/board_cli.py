@@ -26,6 +26,7 @@ from pathlib import Path
 from . import (
     board_actions,
     board_facts,
+    board_kanban,
     board_record,
     board_render,
     board_schema,
@@ -66,6 +67,11 @@ MISS = (
     "internal error: subcommand {name!r} is registered on the parser but has no handler "
     "\N{EM DASH} this is a bug in basicly, not in your invocation"
 )
+
+
+# The loop surface beside the wall, named so the served route (`/loop`) and the written file
+# read the same in a bookmark (basicly-lc2bd3v.6).
+KANBAN_NAME = "loop.html"
 
 
 def _kb(path: Path) -> str:
@@ -151,6 +157,14 @@ def cmd_emit(args: argparse.Namespace) -> int:
     )
     ui.say(f"board: wrote {args.out} (self-contained, {_kb(args.out)}) - open it in a browser")
     ui.say(f"board: wrote {sidecar} ({_kb(sidecar)}) - the contract, for any other consumer")
+    loop_page = args.out.parent / KANBAN_NAME
+    loop_page.write_text(
+        board_render.render_kanban(
+            board_kanban.context(document, verdict, now, back=args.out.name)
+        ),
+        encoding="utf-8",
+    )
+    ui.say(f"board: wrote {loop_page} ({_kb(loop_page)}) - a column per phase, naming its records")
     written, refused = _write_records(document, verdict, args.out, now)
     denied = f", {refused} id(s) refused as a file name" if refused else ""
     ui.say(

@@ -37,7 +37,6 @@ from tests.test_board_wall import REPO_ROOT, document
 # Bound to the ledger below, so closing one of these without moving its question here is a
 # failure rather than a quiet inconsistency.
 UNANSWERED = {
-    "how to start a record": "basicly-fiow1sr",
     "when the work will be done": "basicly-hymq99",
 }
 
@@ -117,10 +116,16 @@ def test_5_what_one_record_actually_says() -> None:
         assert said in opened, f"the record page says nothing about {said!r}"
 
 
-@pytest.mark.xfail(strict=True, reason=f"open: {UNANSWERED['how to start a record']}")
 def test_6_how_to_start_a_record() -> None:
-    """No CLI verb starts one ready leaf detached, which is what blocks basicly-fiow1sr."""
-    assert 'value="lane-start"' in page(), "no ready row offers to start"
+    """Answered 2026-09-07. `record-start`, and the name matters: the probe read `lane-start`.
+
+    That spelling names no action, so this xfailed while it was unanswerable *and* would have
+    kept xfailing after the control shipped. A question's probe is only evidence where a
+    positive control shows it can pass - `record-park` beside it is that (basicly-fiow1sr).
+    """
+    drawn = page()
+    assert 'value="record-park"' in drawn, "no control at all here, so this proves nothing"
+    assert 'value="record-start"' in drawn, "no ready row offers to start"
 
 
 def test_7_how_to_stop_a_lane() -> None:
@@ -157,11 +162,11 @@ def test_every_unanswered_question_still_names_an_open_record() -> None:
         )
 
 
-def test_the_board_answers_seven_of_the_nine_questions_today() -> None:
+def test_the_board_answers_eight_of_the_nine_questions_today() -> None:
     """One number, so a reader of this file sees the score without counting tests."""
     asked = len([name for name in globals() if re.fullmatch(r"test_[1-9]_\w+", name)])
     assert asked == 9, "a question was added or lost without the count moving"
-    assert len(UNANSWERED) == 2, (
+    assert len(UNANSWERED) == 1, (
         f"{9 - len(UNANSWERED)} of 9 answerable; update this figure in the same change "
         "that moves a question, so the score is never stale"
     )
