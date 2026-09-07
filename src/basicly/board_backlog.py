@@ -31,6 +31,10 @@ NO_FEATURE = "not attached to any feature"
 # Where a record carrying no priority sorts: after every ranked one, never silently first.
 UNRANKED = 99
 
+# The status the producer leaves out of its `blocked` figure. One spelling, so this page and
+# the wall's footer cannot come to disagree about what a parked record is.
+PARKED = frozenset({"deferred"})
+
 
 @dataclass(frozen=True)
 class Row:
@@ -160,12 +164,16 @@ def totals(drawn: tuple[Group, ...]) -> dict[str, int]:
     return {
         "records": len(rows),
         "ready": sum(1 for row in rows if row.ready),
-        # Two figures, because they are two populations and one word for both is a lie a
-        # planner would act on. Measured on this repo: 63 records are not ready and only 34
-        # carry a `blocks` edge, so 29 are unstartable for a reason no edge names - a parent
-        # not decomposed, a Definition-of-Ready unmet. `unready` is what a reader cannot
-        # start; `waiting` is the subset whose obstacle this page can point at.
-        "unready": sum(1 for row in rows if not row.ready),
+        # `blocked` is the producer's own population and not a fourth reading of it: the wall
+        # prints `BLOCKED 57` and links here, so a page answering `61 not ready` sends a reader
+        # from one number to another with no way to reconcile them. Measured on this repo, the
+        # producer's figure is *not ready and not parked*, so the two are stated apart and
+        # `ready + blocked + parked` sums to the record count a reader can check by eye.
+        "blocked": sum(1 for row in rows if not row.ready and row.status not in PARKED),
+        "parked": sum(1 for row in rows if row.status in PARKED),
+        # A subset of `blocked`, never a synonym: only 32 of the 57 carry a `blocks` edge, so
+        # the rest are unstartable for a reason no edge names - a parent not decomposed, a
+        # Definition-of-Ready unmet. This is the part whose obstacle the page can point at.
         "waiting": sum(1 for row in rows if row.blockers),
         "features": sum(1 for group in drawn if group.ident),
     }

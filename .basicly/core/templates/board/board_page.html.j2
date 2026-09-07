@@ -139,6 +139,15 @@
         color: inherit;
         text-decoration: none;
       }
+      /* A link inside an `h2` inherits its uppercase and its dim grey, so `columns` read as
+         the third word of the heading rather than as the way to another page. This is the
+         only channel left once colour and case are the heading's: the second surface has to
+         announce itself (basicly-lc2bd3v.6). */
+      a.rec.way {
+        color: var(--indigo);
+        letter-spacing: normal;
+        text-transform: none;
+      }
       a.rec:hover,
       a.rec:focus {
         color: var(--indigo);
@@ -1293,7 +1302,7 @@
 {#- The diagram says what the loop is; it cannot say which records sit in a phase. That is
     the second surface, and a heading nobody can click leaves it unreachable from the wall
     that names it (basicly-lc2bd3v.6). #}
-        <h2>the loop{% if pass_running %} — this pass{% endif %} <a class="rec" href="{{ kanban_href }}">columns &rarr;</a></h2>
+        <h2>the loop{% if pass_running %} — this pass{% endif %} <a class="rec way" href="{{ kanban_href }}">columns &rarr;</a></h2>
 {#- The workflow, drawn (basicly-6c97zx). The owner asked for a diagram of the factory and
     got seven counted boxes, which say how many units sit somewhere and nothing about what
     the loop IS. Every element below is emitted from `board_diagram`'s model and never from

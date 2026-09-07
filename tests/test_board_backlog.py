@@ -120,7 +120,32 @@ def test_the_header_counts_are_summed_over_the_rows_the_page_drew(doc: dict[str,
     assert filled["totals"]["records"] == len(rows)
     assert filled["totals"]["ready"] == sum(1 for row in rows if row.ready)
     assert filled["totals"]["waiting"] == sum(1 for row in rows if row.blockers)
-    assert filled["totals"]["unready"] == sum(1 for row in rows if not row.ready)
+    assert (
+        filled["totals"]["ready"] + filled["totals"]["blocked"] + filled["totals"]["parked"]
+        == filled["totals"]["records"]
+    ), "the three states do not sum to the record count a reader can check by eye"
+
+
+def test_blocked_counts_the_population_the_wall_links_here_with() -> None:
+    """The wall printed `BLOCKED 57` and linked to a page answering `61 not ready`.
+
+    Both were true - the producer's figure is *not ready and not parked* and mine counted the
+    four parked records too - and a reader who clicks one number and reads another has no way
+    to reconcile them. The rule is pinned here rather than the figures: `wall-v1` carries 19
+    units against a `backlog.active` of 242, so that fixture cannot bind the two populations.
+    Checked once against the live fold on 2026-09-07, where both read 57.
+    """
+    drawn = board_backlog.groups(
+        _doc([
+            _unit("basicly-ready", ready=True),
+            _unit("basicly-stuck"),
+            _unit("basicly-parked", status="deferred"),
+        ])
+    )
+    counted = board_backlog.totals(drawn)
+    assert counted["blocked"] == 1, "a parked record was counted as blocked"
+    assert counted["parked"] == 1
+    assert counted["ready"] + counted["blocked"] + counted["parked"] == counted["records"]
 
 
 def test_not_ready_and_waiting_on_a_blocker_are_reported_as_two_figures() -> None:
@@ -137,7 +162,7 @@ def test_not_ready_and_waiting_on_a_blocker_are_reported_as_two_figures() -> Non
         )
     )
     counted = board_backlog.totals(drawn)
-    assert counted["unready"] == 2, "basicly-dor is not ready and no edge says why"
+    assert counted["blocked"] == 2, "basicly-dor cannot be started and no edge says why"
     assert counted["waiting"] == 1, "only one record has a blocker this page can name"
 
 
