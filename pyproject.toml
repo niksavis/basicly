@@ -9,6 +9,9 @@ classifiers = [
 ]
 dependencies = [
   "jinja2>=3.1.6",
+  # Already in the tree under `rich`; declared because the board renders a record's
+  # description with it, and a direct use of a transitive dependency is one nobody pins.
+  "markdown-it-py>=3.0.0",
   "jsonschema>=4.26.0",
   "pyyaml>=6.0",
   "rich>=13.9.0",

@@ -29,6 +29,7 @@ layers =
     board_action_surface
     board_actions
     board_unsupervised
+    board_bodies
     supervise | usage_report
     loop | release
     board_snapshot

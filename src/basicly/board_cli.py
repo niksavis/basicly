@@ -26,6 +26,7 @@ from pathlib import Path
 from . import (
     board_actions,
     board_backlog,
+    board_bodies,
     board_facts,
     board_kanban,
     board_record,
@@ -84,7 +85,11 @@ def _kb(path: Path) -> str:
 
 
 def _write_records(
-    document: dict[str, object], verdict: board_schema.SnapshotVerdict, out: Path, now: datetime
+    document: dict[str, object],
+    verdict: board_schema.SnapshotVerdict,
+    out: Path,
+    now: datetime,
+    bodies: dict[str, str],
 ) -> tuple[int, int]:
     """Write one page per record under *out*'s directory; how many landed and how many were refused.
 
@@ -106,6 +111,7 @@ def _write_records(
             page=board_record.PageFacts(
                 back=f"../{out.name}",
                 start_command=board_actions.start_command(board_record.start_form(document, ident)),
+                body=bodies.get(ident, ""),
             ),
         )
         if filled is None:
@@ -177,7 +183,11 @@ def cmd_emit(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     ui.say(f"board: wrote {plan_page} ({_kb(plan_page)}) - every record, grouped by feature")
-    written, refused = _write_records(document, verdict, args.out, now)
+    # One fold for every page, never one apiece: 304 pages against a per-page read is 304
+    # folds of the same log (basicly-lc2bd3v.2).
+    written, refused = _write_records(
+        document, verdict, args.out, now, board_bodies.bodies(repo_root)
+    )
     denied = f", {refused} id(s) refused as a file name" if refused else ""
     ui.say(
         f"board: wrote {written} record pages under "

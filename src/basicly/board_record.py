@@ -229,6 +229,9 @@ class PageFacts:
 
     back: str = ".."
     start_command: str = ""
+    # The record's own description. Beside the document rather than inside it: 304 bodies is a
+    # snapshot nobody can serve, and a record page is one record (basicly-lc2bd3v.2).
+    body: str = ""
 
 
 def start_form(document: Mapping[str, Any], record_id: str) -> dict[str, str]:
@@ -311,6 +314,15 @@ def context(
         # spelling the argv here instead would be a second answer to what the button runs -
         # which is exactly how the refused version of this shipped (basicly-fiow1sr).
         "start_command": page.start_command if startable(unit, lane) else "",
+        "body": page.body,
+        # Every id this page prints, so the tree and the edge lists name a record rather than
+        # address one. The owner's standing rule, and the ready list already keeps it - this
+        # page was the surface that did not (basicly-lc2bd3v.2, basicly-lc2bd3v.8).
+        "titles": {
+            str(row["id"]): str(row["title"])
+            for row in _rows(document, "units")
+            if row.get("id") and row.get("title")
+        },
         "blockers": blockers,
         "dependents": dependents,
         "edges_note": NO_EDGES if not blockers and not dependents else "",

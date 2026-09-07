@@ -32,6 +32,7 @@ source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
     { name = "jsonschema" },
+    { name = "markdown-it-py" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "ruamel-yaml" },
@@ -56,6 +57,7 @@ dev = [
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "jsonschema", specifier = ">=4.26.0" },
+    { name = "markdown-it-py", specifier = ">=3.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.9.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.0" },

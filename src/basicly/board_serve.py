@@ -32,6 +32,7 @@ from . import (
     board_actions,
     board_asks,
     board_backlog,
+    board_bodies,
     board_kanban,
     board_record,
     board_render,
@@ -318,6 +319,7 @@ class Board:
                 start_command=board_actions.start_command(
                     board_record.start_form(held[0], record_id)
                 ),
+                body=board_bodies.bodies(self.repo_root).get(record_id, ""),
             ),
         )
         return None if filled is None else board_render.render_record(filled).encode("utf-8")

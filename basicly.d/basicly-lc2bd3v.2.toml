@@ -1,0 +1,10 @@
+# The record page's own description (basicly-lc2bd3v.2), and the two ratchets it moved.
+#
+# `S704` is markupsafe.Markup on a non-literal, in `board_render.markdown`. The suppression is
+# the whole point of that function: it renders CommonMark with `html=False`, so the input's own
+# markup is escaped before the result is marked safe. Removing it would mean either escaping
+# the renderer's output - which prints the tags instead of drawing them - or dropping the
+# feature. It is the first S704 in this tree, which is why it has to be declared rather than
+# assumed.
+[ratchet.noqa_debt.frozen]
+S704 = 1

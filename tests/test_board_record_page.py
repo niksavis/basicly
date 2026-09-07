@@ -311,7 +311,7 @@ def test_mode_a_writes_a_page_the_walls_own_link_resolves_to(tmp_path: Path) -> 
     doc = document("wall-v1.json")
     out = tmp_path / "board.html"
     out.write_text(wall(doc), encoding="utf-8")
-    written, refused = board_cli._write_records(doc, _verdict(doc), out, STAMPED)
+    written, refused = board_cli._write_records(doc, _verdict(doc), out, STAMPED, {})
     assert written == len(doc["units"])
     assert refused == 0
     landed = out.parent / board_record.href(QUIET)

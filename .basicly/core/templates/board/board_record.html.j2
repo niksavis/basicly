@@ -1,3 +1,9 @@
+{#- A record named by its title, addressed by its id. Four sites print another record's id -
+    the parent line and three lists - and one macro is what stops them becoming four spellings
+    of the rule (basicly-lc2bd3v.2, gated by tests/test_board_titles.py). #}
+{%- macro named(ident) -%}
+<a href="{{ ident }}{{ href_suffix }}">{{ ident }}</a>{% if titles.get(ident) %} <span class="what">{{ titles[ident] }}</span>{% endif %}
+{%- endmacro -%}
 <!doctype html>
 <html lang="en">
   <head>
@@ -114,6 +120,79 @@
       .glyph {
         font-family: var(--mono);
       }
+      /* The record's own words, rendered. This page scrolls, so the body is not capped: a
+         reader who opened one record wants all of it, and the Definition of Ready's headings
+         only read as headings if they are drawn as headings (basicly-lc2bd3v.2). */
+      .body {
+        max-width: 92ch;
+      }
+      .body h2 {
+        color: var(--text-bright);
+        font-size: 15px;
+        margin: 18px 0 6px;
+      }
+      .body h3 {
+        color: var(--text-bright);
+        font-size: 14px;
+        margin: 14px 0 4px;
+      }
+      .body p,
+      .body li {
+        line-height: 1.5;
+        margin-bottom: 6px;
+      }
+      /* The page's bare `ul`/`li` rules are the tree and the edge lists: monospace ids with
+         no marker. A rendered body is prose and needs both back (basicly-lc2bd3v.2). */
+      .body ul,
+      .body ol {
+        list-style: disc;
+        padding-left: 22px;
+      }
+      .body ol {
+        list-style: decimal;
+      }
+      .body li {
+        font-family: var(--sans);
+      }
+      .body code {
+        background: var(--bg-sunk);
+        border-radius: 3px;
+        font-family: var(--mono);
+        font-size: 12px;
+        padding: 1px 4px;
+      }
+      .body pre {
+        background: var(--bg-sunk);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        overflow-x: auto;
+        padding: 8px 10px;
+      }
+      .body pre code {
+        background: none;
+        padding: 0;
+      }
+      .body table {
+        border-collapse: collapse;
+        margin: 8px 0;
+      }
+      .body th,
+      .body td {
+        border: 1px solid var(--border);
+        padding: 3px 8px;
+        text-align: left;
+      }
+      .body blockquote {
+        border-left: 3px solid var(--indigo);
+        color: var(--text-dim);
+        margin: 8px 0;
+        padding-left: 12px;
+      }
+      /* The title beside an id in the tree and the edge lists. Dimmer than the link, because
+         the link is the way in and the title is what tells a reader whether to take it. */
+      .what {
+        color: var(--text-dim);
+      }
     </style>
   </head>
   <body>
@@ -124,6 +203,13 @@
       <p class="age">
         snapshot {{ age.generated_at }} — {{ age.phrase }} — {{ schema }}
       </p>
+
+      <h2>what this record says</h2>
+{%- if body %}
+      <div class="body">{{ body | markdown }}</div>
+{%- else %}
+      <p class="absent">this record carries no description</p>
+{%- endif %}
 
       <h2>the record</h2>
       <dl>
@@ -202,14 +288,14 @@
 
       <h2>the tree</h2>
 {%- if parent %}
-      <p>parent: <a href="{{ parent }}{{ href_suffix }}">{{ parent }}</a></p>
+      <p>parent: {{ named(parent) }}</p>
 {%- else %}
       <p class="absent">this record has no open parent</p>
 {%- endif %}
 {%- if children %}
       <ul>
 {%- for ident in children %}
-        <li><a href="{{ ident }}{{ href_suffix }}">{{ ident }}</a></li>
+        <li>{{ named(ident) }}</li>
 {%- endfor %}
       </ul>
 {%- else %}
@@ -220,7 +306,7 @@
 {%- if blockers %}
       <ul>
 {%- for ident in blockers %}
-        <li><a href="{{ ident }}{{ href_suffix }}">{{ ident }}</a></li>
+        <li>{{ named(ident) }}</li>
 {%- endfor %}
       </ul>
 {%- else %}
@@ -231,7 +317,7 @@
 {%- if dependents %}
       <ul>
 {%- for ident in dependents %}
-        <li><a href="{{ ident }}{{ href_suffix }}">{{ ident }}</a></li>
+        <li>{{ named(ident) }}</li>
 {%- endfor %}
       </ul>
 {%- else %}

@@ -19,6 +19,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader
+from markdown_it import MarkdownIt
+from markupsafe import Markup
 
 from . import (
     board_diagram,
@@ -178,13 +180,27 @@ def _root(templates_dir: Path | None) -> Path:
     return templates_dir or catalog.bundled_catalog_root() / TEMPLATE_DIR
 
 
+def markdown(text: object) -> Markup:
+    """*text* as HTML, with raw HTML in the source escaped rather than passed through.
+
+    `html=False` is the security boundary, not a formatting choice: a record body is a
+    producer's string and this page autoescapes every other one, so a renderer that emitted
+    embedded markup would be the one hole in that. CommonMark rather than a dialect, because
+    the Definition of Ready's headings and tables are all a body needs to read as written.
+    """
+    rendered = MarkdownIt("commonmark", {"html": False}).enable("table").render(str(text))
+    return Markup(rendered)  # noqa: S704 — the renderer above escaped its input's markup
+
+
 def _env(templates_dir: Path | None = None) -> Environment:
     """The page's own Jinja environment, autoescaping because the output is HTML."""
-    return Environment(
+    env = Environment(
         loader=FileSystemLoader(str(_root(templates_dir))),
         autoescape=True,
         keep_trailing_newline=True,
     )
+    env.filters["markdown"] = markdown
+    return env
 
 
 def page(
