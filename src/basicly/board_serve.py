@@ -332,6 +332,7 @@ class Board:
                 dropped,
                 board_asks.killable(document.get("lanes"), token),
                 board_asks.parking(document.get("units"), token),
+                board_asks.starting(document, token),
             ),
         )
         drawn = board_render.render(filled)

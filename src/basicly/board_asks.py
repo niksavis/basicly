@@ -19,7 +19,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .board_actions import ACTIONS, ROUTE, Action, Field, asked
+from . import board_record
+from .board_actions import ACTIONS, ROUTE, START_ACTION, Action, Field, asked, start_command
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -195,6 +196,59 @@ def parking(
         forms[ident] = {
             **_form(action, {"issue": ident}, token or ""),
             "action": verb,
+            "offer": action.label,
+            "issue": ident,
+        }
+    return forms
+
+
+START = START_ACTION
+
+
+def _as_ask(action: Action, built: Mapping[str, str]) -> dict[str, str]:
+    """*built*, keyed by field **name**, re-keyed to the **ask** keys `_prefill` reads.
+
+    Conflating the two key spaces is silent: `start_form` spells `work_type`, whose field
+    declares `from_ask="type"`, so unmapped it prefills empty - and a start carrying no work
+    type is this action's measured defect, the child reaching intake and stopping.
+    """
+    return {field.from_ask: built[field.name] for field in action.fields if built.get(field.name)}
+
+
+def starting(document: Mapping[str, Any] | None, token: str | None) -> dict[str, dict[str, Any]]:
+    """One start form per startable record, keyed by record id, for the row that draws it.
+
+    The offer as a control, not only a line to copy: the page printed the command and drew no
+    button, so the registered action was reachable by nothing rendered (basicly-fiow1sr).
+
+    :func:`board_record.startable` decides, not a second reading of `ready` here - two answers
+    to "may this be started" is how the line and the button come to disagree. Keyed by id for
+    :func:`parking`'s reason: the rows are bounded slices, so a positional join misarms one.
+    """
+    action = ACTIONS.get(START)
+    if not document or action is None:
+        return {}
+    lanes = {
+        str(lane.get("id") or ""): lane
+        for lane in document.get("lanes") or []
+        if isinstance(lane, dict)
+    }
+    forms: dict[str, dict[str, Any]] = {}
+    for unit in document.get("units") or []:
+        if not isinstance(unit, dict):
+            continue
+        ident = str(unit.get("id") or "")
+        if not ident or not board_record.startable(unit, lanes.get(ident)):
+            continue
+        built = board_record.start_form(document, ident)
+        forms[ident] = {
+            **_form(action, _as_ask(action, built), token or ""),
+            # `_command`'s `<label>` placeholder assumes an input a person can still fill.
+            # Every field here is hidden, and a record with no parent carries no root at
+            # all, so the placeholder would name a flag the submitted argv omits. The record
+            # page's own builder instead, so one record has one printed line.
+            "command": start_command(built),
+            "action": START,
             "offer": action.label,
             "issue": ident,
         }

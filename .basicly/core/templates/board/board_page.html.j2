@@ -1551,6 +1551,20 @@
             <td class="id clip">{{ rec(item.ident) }}</td>
             <td class="clip" title="{{ titles.get(item.ident, item.title) }}">{{ item.title }}</td>
             <td class="act">
+{#- Start before park, because this is the ready list and starting is what a reader came to
+    do. Drawn only where `starting` holds the row: that map is `board_record.startable`'s
+    answer, so a record a lane already holds is offered nothing (basicly-fiow1sr). #}
+{%- set begin = starting.get(item.ident) %}
+{%- if begin and begin.token %}
+              <form method="post" action="{{ begin.route }}" target="{{ begin.frame }}">
+                <input type="hidden" name="token" value="{{ begin.token }}">
+                <input type="hidden" name="action" value="{{ begin.action }}">
+{%- for field in begin.fields %}
+                <input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
+{%- endfor %}
+                <button type="submit" title="{{ begin.command }}">{{ begin.offer }}</button>
+              </form>
+{%- endif %}
 {%- set park = parking.get(item.ident) %}
 {%- if park and park.token %}
               <form method="post" action="{{ park.route }}" target="{{ park.frame }}">

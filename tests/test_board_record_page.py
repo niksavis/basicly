@@ -78,6 +78,7 @@ def wall(doc: dict[str, Any]) -> str:
             dropped,
             board_asks.killable(doc.get("lanes"), TOKEN),
             board_asks.parking(doc.get("units"), TOKEN),
+            board_asks.starting(doc, TOKEN),
         ),
     )
     return board_render.render(filled, TEMPLATES)

@@ -76,6 +76,7 @@ def _page(asks: Sequence[dict[str, Any]], token: str | None = TOKEN) -> str:
             dropped,
             board_asks.killable(doc.get("lanes"), token),
             board_asks.parking(doc.get("units"), token),
+            board_asks.starting(doc, token),
         ),
     )
     return board_render.render(filled, TEMPLATES)

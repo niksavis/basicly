@@ -56,7 +56,8 @@ def context(
         int,
         Mapping[str, Mapping[str, Any]],
         Mapping[str, Mapping[str, Any]],
-    ] = ((), 0, {}, {}),
+        Mapping[str, Mapping[str, Any]],
+    ] = ((), 0, {}, {}, {}),
 ) -> dict[str, Any]:
     """Every region of the wall, keyed as the template names it.
 
@@ -100,6 +101,9 @@ def context(
         # Keyed by lane id, so the card that draws a lane finds its own form and no other.
         "kills": acts[2],
         "parking": acts[3],
+        # Keyed the same way, and empty wherever no token exists: the static artifact draws
+        # the ready rows with no button, which is the mode that has no server to post to.
+        "starting": acts[4],
         # The workflow drawn, which replaced first a histogram and then a pass row
         # (basicly-6c97zx). `board_loop.loop` is still called for its note and verdict,
         # which no other region carries.
