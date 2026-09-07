@@ -1,4 +1,4 @@
-- **A ready record can be started from the board.** Its page offers `start it`, which runs
-  `basicly loop run <id> --detach` and carries the record's work type and grant root, so the
-  lane starts instead of stopping at intake. The action route moved to its own module
-  (basicly-fiow1sr).
+- **A startable record's page prints the command that starts it.** The line is
+  `basicly loop run <id> --detach` carrying the record's work type and grant root, and it is
+  built through the start action's own builder, so what a reader copies cannot diverge from
+  what the action runs (basicly-fiow1sr).
