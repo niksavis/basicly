@@ -31,6 +31,7 @@ from . import (
     board_action_surface,
     board_actions,
     board_asks,
+    board_backlog,
     board_kanban,
     board_record,
     board_render,
@@ -85,6 +86,9 @@ PAGE_ROUTES = ("/", "/index.html")
 # answer for the reason `RECORD_ROUTE` takes a suffix - a link written for the `--out` file
 # resolves here unchanged (basicly-lc2bd3v.6).
 KANBAN_ROUTES = ("/loop", "/loop.html")
+
+# The backlog, uncapped: the wall plans from four of 237 ready and this is the whole set.
+BACKLOG_ROUTES = ("/backlog", "/backlog.html")
 
 # One record's page. The wall's own href is relative (`record/<id>.html`) and resolves here;
 # the suffix is optional on the way in, so the route the acceptance names - `/record/<id>` -
@@ -318,6 +322,14 @@ class Board:
         )
         return None if filled is None else board_render.render_record(filled).encode("utf-8")
 
+    def backlog(self, now: datetime) -> bytes | None:
+        """The uncapped backlog page, or None where no readable document is available."""
+        held = self._readable()
+        if held is None:
+            return None
+        filled = board_backlog.context(held[0], held[1], now, back="/")
+        return board_render.render_backlog(filled).encode("utf-8")
+
     def kanban(self, now: datetime) -> bytes | None:
         """The loop surface, or None where no readable document is available.
 
@@ -429,6 +441,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(self.board.payload(), "application/json")
         elif route in PAGE_ROUTES:
             self._send(self.board.page(datetime.now(UTC)), "text/html; charset=utf-8", reload=True)
+        elif route in BACKLOG_ROUTES:
+            self._send(
+                self.board.backlog(datetime.now(UTC)), "text/html; charset=utf-8", reload=True
+            )
         elif route in KANBAN_ROUTES:
             self._send(
                 self.board.kanban(datetime.now(UTC)), "text/html; charset=utf-8", reload=True

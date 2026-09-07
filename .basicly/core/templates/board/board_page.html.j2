@@ -1533,7 +1533,9 @@
       </section>
 
       <section class="region ready framed">
-        <h2>next up{% if ready.more %} — {{ ready.more }}{% endif %}</h2>
+{#- The capped count is the way into the uncapped page: this list draws four of 237 and the
+    reader looking for the other 233 is already looking here (basicly-lc2bd3v.4). #}
+        <h2>next up{% if ready.more %} — <a class="rec" href="{{ backlog_href }}">{{ ready.more }}</a>{% endif %}</h2>
         <table>
 {#- A fourth column, and that is the whole reason this control fits: the ready list runs to
     twenty rows at 1920, so a row *under* each one would cost twenty lines on a page already
@@ -1622,7 +1624,7 @@
       </section>
 
       <section class="region foot">
-        <span class="label">backlog{% if priorities_more %} — {{ priorities_more }}{% endif %}</span>
+        <span class="label"><a class="rec" href="{{ backlog_href }}">backlog</a>{% if priorities_more %} — {{ priorities_more }}{% endif %}</span>
         <div class="strip">
 {%- for cell in backlog %}
           <div class="cell">
@@ -1659,7 +1661,7 @@
     settled nothing; these three lines answer "is the work parallel or sequential", "what
     unblocks the most" and "how long is the worst chain" (basicly-pck9fx). #}
         <div class="strip queue">
-          <span class="label">the queue</span>
+          <span class="label"><a class="rec" href="{{ backlog_href }}">the queue</a></span>
 {%- if queue.bands %}
           <div class="bands">
 {%- for band in queue.bands %}

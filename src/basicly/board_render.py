@@ -44,7 +44,9 @@ TEMPLATE_DIR = "templates/board"
 TEMPLATE = "board_page.html.j2"
 TEMPLATE_RECORD = "board_record.html.j2"
 TEMPLATE_KANBAN = "board_kanban.html.j2"
+TEMPLATE_BACKLOG = "board_backlog.html.j2"
 KANBAN_HREF = "loop.html"
+BACKLOG_HREF = "backlog.html"
 
 
 def context(
@@ -157,6 +159,8 @@ def context(
         # The second surface: `board_cli` writes the page under this name and `board_serve`
         # answers it as a route, so one relative spelling reaches both.
         "kanban_href": KANBAN_HREF,
+        # Every count the wall caps is the way into the uncapped page (basicly-lc2bd3v.4).
+        "backlog_href": BACKLOG_HREF,
         # `board_record`'s own href halves: relative, so one spelling resolves beside a
         # `--out` file and under the server's root alike.
         "record_dir": board_record.HREF_DIR,
@@ -219,6 +223,11 @@ def render_record(filled: Mapping[str, Any], templates_dir: Path | None = None) 
 def render_kanban(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
     """Draw the loop surface from :func:`basicly.board_kanban.context`'s output."""
     return _env(templates_dir).get_template(TEMPLATE_KANBAN).render(filled)
+
+
+def render_backlog(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
+    """Draw the backlog page from :func:`basicly.board_backlog.context`'s output."""
+    return _env(templates_dir).get_template(TEMPLATE_BACKLOG).render(filled)
 
 
 def render(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:

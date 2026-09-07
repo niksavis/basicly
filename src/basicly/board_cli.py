@@ -25,6 +25,7 @@ from pathlib import Path
 
 from . import (
     board_actions,
+    board_backlog,
     board_facts,
     board_kanban,
     board_record,
@@ -72,6 +73,9 @@ MISS = (
 # The loop surface beside the wall, named so the served route (`/loop`) and the written file
 # read the same in a bookmark (basicly-lc2bd3v.6).
 KANBAN_NAME = "loop.html"
+
+# The uncapped backlog beside them, under the name the wall's own links already spell.
+BACKLOG_NAME = "backlog.html"
 
 
 def _kb(path: Path) -> str:
@@ -165,6 +169,14 @@ def cmd_emit(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     ui.say(f"board: wrote {loop_page} ({_kb(loop_page)}) - a column per phase, naming its records")
+    plan_page = args.out.parent / BACKLOG_NAME
+    plan_page.write_text(
+        board_render.render_backlog(
+            board_backlog.context(document, verdict, now, back=args.out.name)
+        ),
+        encoding="utf-8",
+    )
+    ui.say(f"board: wrote {plan_page} ({_kb(plan_page)}) - every record, grouped by feature")
     written, refused = _write_records(document, verdict, args.out, now)
     denied = f", {refused} id(s) refused as a file name" if refused else ""
     ui.say(

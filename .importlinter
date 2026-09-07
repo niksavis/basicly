@@ -68,7 +68,7 @@ layers =
     runner_envelope
     board_sections
     board_render
-    board_kanban
+    board_backlog | board_kanban
     board_record
     board_diagram | board_footer | board_graph | board_regions
     board_loop
@@ -117,6 +117,7 @@ type = forbidden
 source_modules =
     basicly.board_actions
     basicly.board_asks
+    basicly.board_backlog
     basicly.board_diagram
     basicly.board_footer
     basicly.board_graph
