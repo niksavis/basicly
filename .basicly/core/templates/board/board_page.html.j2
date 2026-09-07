@@ -722,6 +722,14 @@
         font-family: var(--mono);
         font-size: 13px;
       }
+      /* The unblocks-most row names three records by title on one line, so each is bounded
+         and the whole title rides on the `title` attribute (basicly-lc2bd3v.8). The chain's
+         own `.who` carries a bare id by declared exemption and needs no bound. */
+      .queue .unblocks .who {
+        display: inline-block;
+        max-width: 26ch;
+        vertical-align: bottom;
+      }
       .queue .who .n {
         color: var(--amber);
         font-size: 13px;
@@ -913,6 +921,14 @@
       .ready col.id {
         width: 158px;
       }
+      /* One size down, because `overflow: hidden` on a `td` does not reliably clip and an
+         18-character id at 17px needs 173px of a 158px column - measured as an 11x20px overlap
+         of the id over the title on two rows by `check_render_overflow.py`. Taken out of the id
+         rather than out of the title: the id is the address and the title is the name
+         (basicly-lc2bd3v.8). */
+      .ready td.id {
+        font-size: 15px;
+      }
       .ready col.act {
         width: 62px;
       }
@@ -955,6 +971,12 @@
       .parked .pri,
       .parked .at {
         color: var(--text-dim);
+      }
+      /* Bounded here rather than by a shorter clip in the producer: the strip reserves a
+         fixed height (`board_regions.PARKED_STRIP_PX`) and a long title that wrapped the line
+         would spend a ready row. The untruncated title stays on the row's `title` attribute. */
+      .parked .what {
+        max-width: 22ch;
       }
       .parked form {
         display: inline;
@@ -1610,6 +1632,7 @@
             <span class="pri">{{ row.priority }}</span>
             <span class="ident">{{ rec(row.id) }}</span>
             <span class="at">{{ row.phase }}</span>
+            <span class="what clip" title="{{ titles.get(row.id, row.title) }}">{{ row.title }}</span>
 {%- set back = parking.get(row.id) %}
 {%- if back and back.token %}
             <form method="post" action="{{ back.route }}" target="{{ back.frame }}">
@@ -1690,8 +1713,8 @@
           <div class="unblocks">
             <span class="what">unblocks most</span>
 {%- for blocker in queue.blockers %}
-            <span class="who"
-              >{{ blocker.ident }}<span class="n">{{ blocker.blocking }}</span></span
+            <span class="who clip" title="{{ titles.get(blocker.ident, blocker.ident) }}"
+              >{{ titles.get(blocker.ident, blocker.ident) }}<span class="n">{{ blocker.blocking }}</span></span
             >
 {%- endfor %}
 {%- if queue.dropped %}
@@ -1736,7 +1759,7 @@
         <span class="label">events{% if events_more %} — {{ events_more }}{% endif %}</span>
         <div class="lines">
 {%- for line in events %}
-          <div class="clip">{% if line.ident %}{{ rec(line.ident) }} · {% endif %}{{ line.text }}</div>
+          <div class="clip">{% if line.ident %}{{ rec_text(line.ident, titles.get(line.ident, line.ident)) }} · {% endif %}{{ line.text }}</div>
 {%- endfor %}
         </div>
       </section>

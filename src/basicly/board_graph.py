@@ -65,6 +65,11 @@ CHAIN_DEPTH = 2
 
 ID_MAX = 24
 
+# Elements allowed to print a bare id: they draw a shape, not members. `a -> b -> c -> d`
+# cannot carry four titles and stay one line. Enumerable so the exemption is reviewable, and
+# `tests/test_board_titles.py` fails on any site outside it (basicly-lc2bd3v.8).
+SHAPE_ELEMENTS: tuple[str, ...] = ("chain",)
+
 
 @dataclass(frozen=True)
 class Depth:

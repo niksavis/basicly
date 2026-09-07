@@ -112,6 +112,10 @@ skips = ["B101"]
 [tool.vulture]
 ignore_names = [
   "PERMISSION_TARGETS",
+  # The board's declared list of elements that draw a shape and may print a bare id. Its only
+  # reader is `tests/test_board_titles.py`, which is the point: the exemption exists to be
+  # enumerable and reviewed, and a gate's allow-list is held by the gate (basicly-lc2bd3v.8).
+  "SHAPE_ELEMENTS",
   # A fourth kind: read by a stdlib base class vulture does not traverse.
   # `socketserver.TCPServer.server_bind` reads `allow_reuse_address`, so `board_serve._Server`
   # setting it False is what stops `SO_REUSEADDR` being asked for; the value is asserted in
