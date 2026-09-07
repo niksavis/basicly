@@ -187,13 +187,17 @@ def claimed_reserve(rows: int) -> float:
     return CLAIMED_CHROME_PX + rows * CLAIMED_ROW_PX if rows else 0.0
 
 
-# The parked strip: one wrapping line, measured at 18px with four entries at 1440x900, plus
-# its 5px margin. Flat rather than per-row because :data:`PARKED_SLOTS` bounds it at four and
-# four entries are ~520px of a 1400px region, so it cannot reach a second line.
+# The parked strip, plus its 5px margin. Flat rather than per-row, and set to the widest
+# measurement rather than the common one: an entry now carries its record's title
+# (basicly-lc2bd3v.8), so four of them are one 19px line at 1920 and 1600 and two lines at
+# 1440 - 41px measured on the served page. Reserving the 19px case clipped 126px of the wall
+# at 1600x1000, because the reserve is what the ready list is sized against.
 #
 # It was a row apiece first. That measured 104px and took five titles off the ready list,
 # which is a bad trade: five ready titles are worth more to a reader than four parked ones.
-PARKED_STRIP_PX = 28.0
+# The title is bounded at 14ch by `.parked .what` for the same reason - unbounded it measured
+# 86px at 1440x900, and the strip would be back to costing five rows.
+PARKED_STRIP_PX = 46.0
 
 
 def parked_reserve(rows: int) -> float:

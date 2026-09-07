@@ -27,6 +27,24 @@ instructions: |
   to the same log; a per-worktree ledger would lose every write a lane made at teardown
   (`basicly-vkh0.8`).
 
+  ## Reporting a record to a person
+
+  **A bare id is unreadable, so never report one alone.** Name the record by its title and
+  carry the id as the address. Owner, on four separate occasions: *"the real titles of features
+  and tasks are more important than IDs"*.
+
+  **Where a board is serving, make the id a link.** `board serve` answers `/record/<id>` and
+  `board --out` writes `record/<id>.html` beside the page, so an id in a report costs one click
+  instead of a second lookup:
+
+  ```markdown
+  [basicly-e2mz.38](http://127.0.0.1:8787/record/basicly-e2mz.38) - open records with no
+  acceptance criteria
+  ```
+
+  Check the board is actually up before linking, and name the port. A link to a dead port is
+  worse than the bare id it replaced.
+
   ## Reads
 
   **Opening a session, start with the one report that takes no id.** It composes the

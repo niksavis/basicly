@@ -976,7 +976,9 @@
          fixed height (`board_regions.PARKED_STRIP_PX`) and a long title that wrapped the line
          would spend a ready row. The untruncated title stays on the row's `title` attribute. */
       .parked .what {
-        max-width: 22ch;
+        display: inline-block;
+        max-width: 14ch;
+        vertical-align: bottom;
       }
       .parked form {
         display: inline;
@@ -1069,6 +1071,12 @@
       }
       .tick .lines {
         color: var(--text-dim);
+        /* Takes the row's remaining width instead of its own content's. `min-width: 0` was
+           already here for this, but with no basis the box still grew to fit and wrapped the
+           notes beside it onto further rows - 18px became 49px the moment an event line
+           carried a title instead of an id (basicly-lc2bd3v.8). Its `.clip` child can only
+           clip against a bounded parent. */
+        flex: 1 1 0;
         font-family: var(--mono);
         font-size: 14px;
         min-width: 0;
