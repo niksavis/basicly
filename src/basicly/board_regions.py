@@ -767,6 +767,14 @@ def next_up(
         )
         for unit in ready[:slots]
     )
+    # Both counts, never one: the walk's `ready` answers what blocks a record and `owes`
+    # answers what a dispatch will refuse, and presenting the first as the second is what
+    # offered a start on 244 records the gate would refuse (basicly-lc2bd3v.9). The marker
+    # is a count here rather than a per-row suffix because this column is bounded by the
+    # wall's own height and already overruns it (basicly-zj36jf0).
+    startable = sum(1 for unit in ready if not unit.get("owes"))
     note = "" if ready else f"nothing is ready of the {len(flagged)} units emitted"
+    if ready and startable != len(ready):
+        note = f"{startable} of {len(ready)} unblocked can be dispatched; the rest owe a section"
     groups = grouped(rows, names)
     return Listing(BY_KEY[RENDERABLE], rows, more(len(ready) - slots, "ready"), note, groups)

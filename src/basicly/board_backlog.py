@@ -48,6 +48,9 @@ class Row:
     kind: str
     ready: bool
     blockers: tuple[str, ...]
+    # What a dispatch will refuse this record for, which `ready` does not answer: a
+    # record can have every dependency met and still owe a trigger (basicly-lc2bd3v.9).
+    owes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -138,6 +141,7 @@ def groups(document: Mapping[str, Any]) -> tuple[Group, ...]:
                 str(unit.get("type") or ""),
                 bool(unit.get("ready")),
                 tuple(sorted(waits.get(ident, ()))),
+                tuple(str(name) for name in unit.get("owes") or ()),
             )
         )
     built = [
@@ -164,6 +168,7 @@ def totals(drawn: tuple[Group, ...]) -> dict[str, int]:
     return {
         "records": len(rows),
         "ready": sum(1 for row in rows if row.ready),
+        "dispatchable": sum(1 for row in rows if row.ready and not row.owes),
         # `blocked` is the producer's own population and not a fourth reading of it: the wall
         # prints `BLOCKED 57` and links here, so a page answering `61 not ready` sends a reader
         # from one number to another with no way to reconcile them. Measured on this repo, the

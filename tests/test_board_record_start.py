@@ -12,11 +12,12 @@ tests passed because they checked the shape of a tuple.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
-from basicly import board_actions, board_asks, board_record, board_render
+from basicly import board_actions, board_asks, board_record, board_render, board_sections
 from tests.test_board_asks import _page
 from tests.test_board_record_page import QUIET, TEMPLATES, _verdict
 from tests.test_board_wall import STAMPED, document
@@ -127,3 +128,60 @@ def test_a_board_with_no_server_draws_no_start_control(doc: dict[str, Any]) -> N
     """The `--out` artifact has nothing to post to; it keeps the line and loses the button."""
     assert all(form["token"] == "" for form in board_asks.starting(doc, None).values())
     assert 'value="record-start"' not in _page([], token=None)
+
+
+@dataclass(frozen=True)
+class _FoldedState:
+    """The three attributes `board_sections.units` reads off a folded record."""
+
+    record: str
+    fields: dict[str, str]
+    status: str = "open"
+
+
+def test_a_record_owing_a_section_is_not_offered_a_start() -> None:
+    """The third condition, and the dependency walk cannot stand in for it.
+
+    On the commit that added the trigger gate the walk called 245 records ready and the
+    dispatch gate would refuse 244 of them, so a start drawn on `ready` alone is a control
+    that cannot work (basicly-lc2bd3v.9).
+    """
+    unblocked = {"id": QUIET, "ready": True}
+    assert board_record.startable(unblocked, None) is True, "the control: nothing owed"
+    assert board_record.startable({**unblocked, "owes": ["## Trigger"]}, None) is False
+    assert board_record.startable({**unblocked, "owes": []}, None) is True, "empty owes nothing"
+
+
+def test_a_row_with_no_verdict_is_not_offered_a_start() -> None:
+    """Absent is unknown, never satisfied: a producer that could not compute it fails closed."""
+    assert board_record.startable({"id": QUIET, "ready": True, "owes": None}, None) is True, (
+        "an absent verdict leaves the older two conditions deciding, as they did before"
+    )
+    assert board_record.startable({"id": QUIET, "ready": False, "owes": []}, None) is False
+
+
+def test_a_unit_row_names_the_owed_sections_and_carries_no_body() -> None:
+    """Section names cross the wire; a description never does.
+
+    `units` is field-selected against a 132.5x payload, so the verdict travels as the names
+    of what is missing rather than as the body a reader would have to judge.
+    """
+    body = "## Acceptance Criteria\n\n- given x then y\n" * 40
+
+    state = _FoldedState(
+        "basicly-x", {"title": "a record", "issue_type": "task", "description": body}
+    )
+
+    rows = board_sections.units([state], owes={"basicly-x": ("## Trigger",)})
+
+    assert rows[0]["owes"] == ["## Trigger"]
+    assert "description" not in rows[0]
+    assert body[:40] not in repr(rows[0]), "the body must not reach the wire by any key"
+
+
+def test_a_unit_row_left_out_of_the_verdict_is_left_unmarked() -> None:
+    """Absent means the producer did not compute it, which renders as absent, not as clean."""
+    state = _FoldedState("basicly-y", {"title": "a record", "issue_type": "task"})
+
+    assert "owes" not in board_sections.units([state], owes={})[0]
+    assert "owes" not in board_sections.units([state])[0]

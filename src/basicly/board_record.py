@@ -251,15 +251,19 @@ def start_form(document: Mapping[str, Any], record_id: str) -> dict[str, str]:
 
 
 def startable(unit: Mapping[str, Any], lane: Mapping[str, Any] | None) -> bool:
-    """Whether this record may be offered a start, on the acceptance's two conditions.
+    """Whether this record may be offered a start, on three conditions.
 
-    Ready and unheld. `ready` is the producer's own field - the tracker's answer to whether
-    anything blocks it - and a lane row means a worktree already exists for it, whatever
-    state that lane is in. Offering a start on either would begin a second lane on work
-    already in flight, which is the guard this action carries in place of a confirm code
-    (basicly-fiow1sr).
+    Ready, unheld, and owing nothing. `ready` is the producer's own field - the tracker's
+    answer to whether anything *blocks* it - and a lane row means a worktree already exists,
+    whatever state that lane is in. Offering a start on either would begin a second lane on
+    work already in flight (basicly-fiow1sr).
+
+    `owes` is the third, and the dependency walk cannot stand in for it: on the commit that
+    added the trigger gate the walk called 245 records ready and the gate would refuse 244
+    of them, so a start control drawn on `ready` alone is a control that cannot work
+    (basicly-lc2bd3v.9).
     """
-    return bool(unit.get("ready")) and lane is None
+    return bool(unit.get("ready")) and lane is None and not unit.get("owes")
 
 
 def context(

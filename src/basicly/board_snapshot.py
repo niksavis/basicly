@@ -50,6 +50,7 @@ from . import (
     board_schema,
     board_sections,
     board_usage,
+    invest,
     owned_store,
     projection,
     run_record,
@@ -279,7 +280,14 @@ def build_document(
         active = [state for state in live if state.status != board_sections.CLOSED_STATUS]
         drawn = {state.record for state in active}
         document["backlog"] = board_sections.backlog(live, known.readiness, closings, moment)
-        document["units"] = board_sections.units(active, phases=known.phases, ready=known.readiness)
+        # Folded here, never in `board_sections`: that module sits below `invest` in the
+        # layer contract, and only the owed section *names* may cross the wire.
+        document["units"] = board_sections.units(
+            active,
+            phases=known.phases,
+            ready=known.readiness,
+            owes=invest.owed(active, repo_root),
+        )
         document["graph"] = board_sections.graph(
             edge for edge in edges if edge[0] in drawn or edge[2] in drawn
         )

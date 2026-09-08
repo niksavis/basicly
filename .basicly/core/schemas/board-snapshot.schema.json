@@ -569,6 +569,14 @@
           "ready": {
             "type": "boolean",
             "description": "Whether every dependency of this item is met. A flag on the row and not a separate list, so the ready set cannot come to disagree with the rows it is drawn from."
+          },
+          "owes": {
+            "type": "array",
+            "description": "The required body sections this item does not state, by name. Distinct from ready, which answers only whether anything blocks it: an item can have every dependency met and still be refused at dispatch for owing a trigger, and reading ready as dispatchable is what drew a start control on 244 records the gate would refuse. Section names only - a body on a units row is the payload regression this section is field-selected against. Absent means the producer did not compute the verdict, and a consumer reads that as unknown rather than as nothing owed. Empty means nothing owed.",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            }
           }
         }
       }

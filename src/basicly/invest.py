@@ -20,8 +20,9 @@ gated author writes, so it is an escape hatch rather than a rule.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 from .config import DEFAULT_TYPE_SECTIONS, load_type_sections
 from .plan_record import ACCEPTANCE_HEADING, has_heading, section_entries
@@ -97,6 +98,27 @@ def required_conditions(work_type: str, repo_root: Path | None = None) -> tuple[
     """
     declared = DEFAULT_TYPE_SECTIONS if repo_root is None else load_type_sections(repo_root)
     return (TRIGGER_HEADING, *declared.get(work_type, ()), ACCEPTANCE_HEADING)
+
+
+def owed(states: Iterable[Any], repo_root: Path) -> dict[str, tuple[str, ...]]:
+    """What each state in *states* owes the Definition of Ready, keyed by record id.
+
+    The per-type map is read once for the whole population. Reading it per record put
+    307 config reads on a snapshot build and took it from under 0.5s to 1.93s, against a
+    budget an existing test holds.
+    """
+    declared = load_type_sections(repo_root)
+    return {
+        state.record: missing_sections(
+            state.fields,
+            (
+                TRIGGER_HEADING,
+                *declared.get(str(state.fields.get("issue_type") or ""), ()),
+                ACCEPTANCE_HEADING,
+            ),
+        )
+        for state in states
+    }
 
 
 def missing_sections(record: Mapping[str, object], required: Sequence[str]) -> tuple[str, ...]:

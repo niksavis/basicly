@@ -244,6 +244,10 @@ def test_the_units_and_graph_sections_pin_the_frozen_corpus(board_repo: Path) ->
         "status": "in_progress",
         "priority": "P1",
         "type": "task",
+        # Present where `ready` and `phase` below are absent, and the reason is the one
+        # stated there: `invest` is this verdict's single owner, so the producer folding
+        # it is not a second spelling that could come to disagree (basicly-lc2bd3v.9).
+        "owes": ["## Trigger", "## Acceptance Criteria"],
     }
     # The edge *rule* rather than a literal list: the row shape is pinned in
     # `test_board_fields`, and asserting the filter catches a wrong cut on any corpus.

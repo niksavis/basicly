@@ -370,6 +370,7 @@ def units(
     *,
     phases: Mapping[str, str] | None = None,
     ready: Readiness | None = None,
+    owes: Mapping[str, Sequence[str]] | None = None,
 ) -> list[dict[str, object]]:
     """One bounded row per folded record in *states*, at the fields a board draws.
 
@@ -378,6 +379,11 @@ def units(
     would put 1,472,207 tokens on the wire against 11,113 for the selection - the 132.5x this
     module exists for. `title` is the only prose admitted and it is bounded, so a description
     cannot arrive by being called a title.
+
+    `owes` is the third such map and obeys the same rule: this module sits below `invest`
+    in the layer contract, so the Definition-of-Ready verdict is computed above and passed
+    in. Only section *names* arrive, never a body - `owes` absent leaves the row unmarked,
+    which reads as unknown rather than as satisfied.
 
     `phase` and `ready` reach a row from *phases* and *ready* and from nowhere else, which is
     the same rule :class:`LaneFacts` states one section over: `phase`'s authority is
@@ -403,6 +409,8 @@ def units(
             row["phase"] = board_fields.text(phase, board_fields.KIND_MAX)
         if ready is not None and (flag := ready.flag(state.record)) is not None:
             row["ready"] = flag
+        if owes is not None and (sections := owes.get(state.record)) is not None:
+            row["owes"] = [board_fields.text(name, board_fields.KIND_MAX) for name in sections]
         rows.append(row)
     return rows
 
