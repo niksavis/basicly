@@ -203,7 +203,10 @@ def test_r4_multi_line_acceptance_criteria_satisfy_the_gate_from_the_body(
     survive, and to accept *either* carrier. This pins the body carrier: without
     it, multi-line criteria have nowhere to live.
     """
-    body = "## Acceptance Criteria\n\n- given a thing\n- when it happens\n- then a result\n"
+    body = (
+        "## Trigger\n\nWhen a record is gated, I want a trigger, so I can validate it.\n\n"
+        "## Acceptance Criteria\n\n- given a thing\n- when it happens\n- then a result\n"
+    )
     # The structured field is empty precisely because it cannot hold this.
     record = {"id": "basicly-x", "acceptance_criteria": "", "description": body}
     # The criteria read goes through `tracker.read_record`, the one reader every consumer in

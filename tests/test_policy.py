@@ -36,6 +36,13 @@ class _Proc:
 # fake's `comments add`) reads as.
 _EPOCH = "2026-01-01T00:00:00Z"
 
+# A trigger in the job story voice, which every work type now owes (basicly-q1ve1fn).
+# Stated with no persona on purpose: a fixture carrying one would let a gate that
+# demanded a persona pass this suite.
+_TRIGGER = (
+    "## Trigger\n\nWhen the gate refuses a dispatch, I want to read why, so I can fix the record.\n"
+)
+
 
 class _FakeBr:
     """Stateful stand-in for the br CLI, routed by subcommand.
@@ -135,13 +142,13 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
 
 def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """DoR is ready when the record carries every section its work type requires."""
-    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y"))
+    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y", description=_TRIGGER))
     assert policy.definition_of_ready(tmp_path, "i").ready is True
 
     _install(monkeypatch, _FakeBr())
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
-    assert result.missing == ("## Acceptance Criteria",)
+    assert result.missing == ("## Trigger", "## Acceptance Criteria")
 
 
 def test_dor_requires_acceptance_criteria_whatever_the_work_type(
@@ -156,7 +163,7 @@ def test_dor_requires_acceptance_criteria_whatever_the_work_type(
     _install(monkeypatch, _FakeBr(issue_type="chore", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
-    assert result.missing == ("## Acceptance Criteria",)
+    assert result.missing == ("## Trigger", "## Acceptance Criteria")
 
 
 def test_dor_accepts_criteria_from_the_description_body(
@@ -167,7 +174,7 @@ def test_dor_accepts_criteria_from_the_description_body(
         monkeypatch,
         _FakeBr(
             acceptance_criteria=None,
-            description="## Acceptance Criteria\n\n- given x then y\n",
+            description=_TRIGGER + "\n## Acceptance Criteria\n\n- given x then y\n",
         ),
     )
     assert policy.definition_of_ready(tmp_path, "i").ready is True
@@ -179,7 +186,7 @@ def test_dor_keeps_other_missing_sections_when_adding_the_requirement(
     """A work type's own template section blocks alongside the AC requirement."""
     _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
-    assert result.missing == ("## Steps to Reproduce", "## Acceptance Criteria")
+    assert result.missing == ("## Trigger", "## Steps to Reproduce", "## Acceptance Criteria")
 
 
 def test_dor_reads_the_required_sections_from_configuration(
@@ -191,7 +198,7 @@ def test_dor_reads_the_required_sections_from_configuration(
     )
     _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
-    assert result.missing == ("## Repro", "## Acceptance Criteria")
+    assert result.missing == ("## Trigger", "## Repro", "## Acceptance Criteria")
 
 
 def test_dor_structured_acceptance_field_satisfies_the_section(
@@ -200,7 +207,7 @@ def test_dor_structured_acceptance_field_satisfies_the_section(
     """A non-empty structured acceptance_criteria field clears the AC section (basicly-58iu)."""
     _install(
         monkeypatch,
-        _FakeBr(acceptance_criteria="the field is set"),
+        _FakeBr(acceptance_criteria="the field is set", description=_TRIGGER),
     )
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is True
@@ -217,7 +224,7 @@ def test_dor_structured_field_does_not_mask_other_missing_sections(
     )
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
-    assert result.missing == ("## Steps to Reproduce",)
+    assert result.missing == ("## Trigger", "## Steps to Reproduce")
 
 
 def test_dor_empty_or_absent_acceptance_field_still_requires_the_section(
@@ -232,29 +239,39 @@ def test_dor_empty_or_absent_acceptance_field_still_requires_the_section(
 
 def test_required_sections_derives_the_set_from_the_work_type() -> None:
     """Per-type template sections, plus the AC every bead owes (basicly-kjc5.44)."""
-    assert policy.required_sections("bug") == ("## Steps to Reproduce", "## Acceptance Criteria")
-    assert policy.required_sections("epic") == ("## Success Criteria", "## Acceptance Criteria")
+    assert policy.required_sections("bug") == (
+        "## Trigger",
+        "## Steps to Reproduce",
+        "## Acceptance Criteria",
+    )
+    assert policy.required_sections("epic") == (
+        "## Trigger",
+        "## Success Criteria",
+        "## Acceptance Criteria",
+    )
     for work_type in ("task", "chore", "feature"):
-        assert policy.required_sections(work_type) == ("## Acceptance Criteria",)
+        assert policy.required_sections(work_type) == ("## Trigger", "## Acceptance Criteria")
 
 
 def test_required_sections_of_an_unknown_type_still_owes_acceptance_criteria() -> None:
     """An unmapped type must not scaffold an empty body — the AC rule is type-blind."""
-    assert policy.required_sections("docs") == ("## Acceptance Criteria",)
+    assert policy.required_sections("docs") == ("## Trigger", "## Acceptance Criteria")
 
 
 def test_compose_body_emits_every_required_section_with_a_placeholder() -> None:
     """The scaffold names the structure; the TODO marks the judgment left to do."""
     body = policy.compose_body("bug")
-    assert body.startswith("## Steps to Reproduce\n\n")
+    assert body.startswith("## Trigger\n\n")
+    assert "## Steps to Reproduce\n\n" in body
     assert "## Acceptance Criteria\n\n" in body
-    assert body.count("TODO") == 2
+    assert body.count("TODO") == 3
 
 
 def test_compose_body_uses_supplied_content_instead_of_the_placeholder() -> None:
     """A caller with real content gets it under the heading, and no stray TODO."""
     body = policy.compose_body("task", {"## Acceptance Criteria": "- Given x when y then z"})
-    assert body == "## Acceptance Criteria\n\n- Given x when y then z\n"
+    assert body.endswith("## Acceptance Criteria\n\n- Given x when y then z\n")
+    assert body.count("TODO") == 1
 
 
 def test_compose_body_appends_a_non_required_section_rather_than_dropping_it() -> None:
@@ -265,7 +282,12 @@ def test_compose_body_appends_a_non_required_section_rather_than_dropping_it() -
     """
     body = policy.compose_body("bug", {"## Scope": "- `src/basicly/cli.py`"})
     headings = [line for line in body.splitlines() if line.startswith("## ")]
-    assert headings == ["## Steps to Reproduce", "## Acceptance Criteria", "## Scope"]
+    assert headings == [
+        "## Trigger",
+        "## Steps to Reproduce",
+        "## Acceptance Criteria",
+        "## Scope",
+    ]
     assert "- `src/basicly/cli.py`" in body
 
 
@@ -283,7 +305,12 @@ def test_scaffold_body_emits_scope_although_the_dor_never_requires_it() -> None:
     """
     body = policy.scaffold_body("bug")
     headings = [line for line in body.splitlines() if line.startswith("## ")]
-    assert headings == ["## Steps to Reproduce", "## Acceptance Criteria", "## Scope"]
+    assert headings == [
+        "## Trigger",
+        "## Steps to Reproduce",
+        "## Acceptance Criteria",
+        "## Scope",
+    ]
     assert "## Scope" not in policy.required_sections("bug")
 
 
@@ -295,7 +322,7 @@ def test_scaffold_body_shows_the_scope_line_format_rather_than_naming_it() -> No
 def test_compose_body_puts_a_preamble_above_the_first_heading() -> None:
     """An engine-composed body may carry context; it must not displace the structure."""
     body = policy.compose_body("task", preamble="Continues basicly-x: it overran.")
-    assert body.startswith("Continues basicly-x: it overran.\n\n## Acceptance Criteria\n\n")
+    assert body.startswith("Continues basicly-x: it overran.\n\n## Trigger\n\n")
 
 
 def test_gate_status_advances_when_required_pass(
@@ -3456,5 +3483,5 @@ def test_definition_of_ready_still_answers_under_the_ban(
     Without this, a ban that refused everything would pass the test above while
     making the Definition-of-Ready unanswerable.
     """
-    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y"))
+    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y", description=_TRIGGER))
     assert policy.definition_of_ready(tmp_path, "i").ready is True

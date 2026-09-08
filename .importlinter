@@ -45,6 +45,7 @@ layers =
     handoff
     plan_gate | policy | routing_evals | tuning | verify
     capability_proof
+    invest
     config | worktree
     lane_split
     lane_log

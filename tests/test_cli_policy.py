@@ -578,6 +578,10 @@ def test_dor_refusal_names_the_scaffold_command_for_the_issues_own_type(
     assert "basicly policy scaffold --type bug" in err
 
 
+# The trigger every work type now owes (basicly-q1ve1fn), stated with no persona.
+_TRIGGER = "## Trigger\n\nWhen gated, I want a trigger, so I can validate it.\n\n"
+
+
 def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_verdict(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -592,7 +596,7 @@ def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_ver
     # (basicly-tcmy.14) they resolve through one stub — so serving two different bodies
     # from two stubs would be describing a bead that cannot exist. The entry here is a
     # bare path, which is the defect: it parses to no globs.
-    body = "## Acceptance Criteria\n\nx\n\n## Scope\n\n- src/a.py\n"
+    body = _TRIGGER + "## Acceptance Criteria\n\n- x\n\n## Scope\n\n- src/a.py\n"
     record = _Proc(json.dumps([{"issue_type": "task", "description": body}]))
     fake_tracker.install(monkeypatch, lambda _root, _args: record)
 
@@ -608,7 +612,7 @@ def test_dor_stays_quiet_when_the_scope_parsed(
     """The control: a bead whose entries are backticked globs earns no warning."""
     # One record, both sections — see the sibling above. The only difference is the
     # scope entry, which is the backticked form here, so nothing warns.
-    body = f"## Acceptance Criteria\n\nx\n\n## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
+    body = _TRIGGER + f"## Acceptance Criteria\n\n- x\n\n## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
     record = _Proc(json.dumps([{"issue_type": "task", "description": body}]))
     fake_tracker.install(monkeypatch, lambda _root, _args: record)
 

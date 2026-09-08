@@ -40,16 +40,15 @@ from . import base_lock, gate_source, run_record, tracker
 from .config import (
     AUTONOMY_LEVELS,
     CHECKPOINTS,
-    DEFAULT_TYPE_SECTIONS,
     ENGINE_GATE_PROVIDERS,
     LOOP_PHASES,
     PolicyConfig,
     SizingConfig,
     load_policy_config,
-    load_type_sections,
 )
 from .integrity import VALIDATE_GATE
-from .plan_record import ACCEPTANCE_HEADING, has_heading
+from .invest import TRIGGER_HEADING, missing_sections, required_conditions, trigger_remedy
+from .plan_record import ACCEPTANCE_HEADING
 from .tracker import add_comment as _add_comment
 from .tracker import read_comments as _read_comments
 from .tracker import write as _write
@@ -168,27 +167,24 @@ class DoRResult:
 
 
 def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
-    """The DoR verdict for *issue_id*: the required body sections it does not carry.
+    """The DoR verdict for *issue_id*: the required body sections it does not state.
 
-    Acceptance criteria are required on **every** bead, whatever its work type.
-    They are the only thing validate can judge against: D4 makes the ``rubric``
-    gate required, and the shipped rubrics ask whether the change evidences the
-    criteria recorded on the bead — so a bead carrying none cannot be
-    meaningfully validated, and its gate reads green having proved nothing.
+    A trigger and acceptance criteria are required on **every** bead, whatever its work
+    type, and :mod:`basicly.invest` owns both rules and the two voices a trigger may be
+    stated in. They are what the two later phases judge against: validate exercises the
+    change against the trigger that asked for it, and D4's required ``rubric`` gate asks
+    whether the change evidences the criteria — so a bead carrying neither cannot be
+    meaningfully judged, and its gates read green having proved nothing.
 
-    The rule is owned in-process rather than read off ``br lint`` (basicly-wpc8.1), and
-    that is a deletion rather than a port: lint could never express the requirement on
-    its own — it derives its set from the per-type template compiled into the binary, so
-    a ``chore`` was never asked for acceptance criteria and a silent lint could not be
-    read as "the criteria exist", and it inspects the description *body* only, ignoring
-    ``br``'s structured ``acceptance_criteria`` field. Both halves were already
-    reconciled here, so what is left is :func:`required_sections` against the record,
-    with the per-type half read from *repo_root*'s own ``[policy.type_sections]``.
+    The rule is owned in-process rather than read off ``br lint`` (basicly-wpc8.1): lint
+    derived its set from the per-type template compiled into the binary, so a ``chore``
+    was never asked for acceptance criteria, and it inspected the description body only,
+    ignoring the structured ``acceptance_criteria`` field. What is left here is
+    :func:`required_sections` against the record, with the per-type half read from
+    *repo_root*'s own ``[policy.type_sections]``.
 
-    Either carrier satisfies the acceptance criteria — the structured field or the body
-    section — but never their absence, and every other required section stays
-    body-checked. A record the tracker cannot answer for reads as not-ready, which is the
-    fail-closed direction for a verdict that releases work.
+    A record the tracker cannot answer for reads as not-ready, which is the fail-closed
+    direction for a verdict that releases work.
 
     Runs under :func:`preflight_gate`, so the single read below is all it *can* do: this
     gate blocks the classify->decompose advance and creates nothing, and §2's rule is
@@ -196,26 +192,9 @@ def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
     """
     with preflight_gate(DOR_GATE):
         record = tracker.read_record(repo_root, issue_id) or {}
-        body = record.get("description")
-        missing = tuple(
-            section
-            for section in required_sections(str(record.get("issue_type") or ""), repo_root)
-            if not has_heading(body if isinstance(body, str) else "", section)
-        )
-        if _has_acceptance_criteria(record):
-            missing = tuple(m for m in missing if m != _ACCEPTANCE_CRITERIA_SECTION)
+        required = required_sections(str(record.get("issue_type") or ""), repo_root)
+        missing = missing_sections(record, required)
     return DoRResult(ready=not missing, missing=missing)
-
-
-def _has_acceptance_criteria(record: Mapping[str, object]) -> bool:
-    """True when *record* carries acceptance criteria in ``br``'s structured field.
-
-    The second carrier only. The body heading is checked with every other required
-    section, so a blank or absent field here is not a verdict — it leaves the section
-    to be found in the body or reported missing.
-    """
-    value = record.get("acceptance_criteria")
-    return isinstance(value, str) and bool(value.strip())
 
 
 # --- Body scaffolding (basicly-kjc5.44) -------------------------------------
@@ -241,6 +220,10 @@ _SCOPE_SECTION = "## Scope"
 SCOPE_LINE_EXAMPLE = "- `src/basicly/cli.py`"
 
 _SECTION_HINTS: dict[str, str] = {
+    # Both voices, in that order, and neither demanded. A hint showing the persona form
+    # alone is how a backlog fills with a fabricated `As a user` on work no person asked
+    # for. The placeholders are what keep the hint itself from satisfying the gate.
+    TRIGGER_HEADING: f"{_TODO}: {trigger_remedy()}",
     "## Steps to Reproduce": (
         f"{_TODO}: the exact commands run, the observed result, and the expected one."
     ),
@@ -261,19 +244,11 @@ _SECTION_HINTS: dict[str, str] = {
 def required_sections(work_type: str, repo_root: Path | None = None) -> tuple[str, ...]:
     """Every body section the Definition-of-Ready requires for *work_type*.
 
-    The set is fully derivable from the work type, so an agent never has to learn
-    it by having the classify gate refuse: it is *repo_root*'s declared per-type
-    sections (:func:`config.load_type_sections`) plus the acceptance criteria
-    :func:`definition_of_ready` requires of every bead whatever its type. The
-    per-type half is that repository's configuration, so a section set changes
-    without a code change; the acceptance criteria are this engine's and do not.
-
-    *repo_root* omitted asks for :data:`~basicly.config.DEFAULT_TYPE_SECTIONS`
-    instead — the answer for a caller holding no tree, which is what the scaffold
-    printer (``basicly policy scaffold``) still is.
+    The set is fully derivable from the work type, so an agent never has to learn it by
+    having the classify gate refuse. :func:`invest.required_conditions` composes it, and
+    this stays the name every consumer already asks through.
     """
-    declared = DEFAULT_TYPE_SECTIONS if repo_root is None else load_type_sections(repo_root)
-    return (*declared.get(work_type, ()), _ACCEPTANCE_CRITERIA_SECTION)
+    return required_conditions(work_type, repo_root)
 
 
 def scaffold_body(work_type: str) -> str:

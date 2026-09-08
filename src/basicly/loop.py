@@ -59,6 +59,7 @@ from . import (
     demonstration_proof,
     dispatch_brief,
     handoff,
+    invest,
     landing_gate,
     lens_review,
     loop_state,
@@ -313,11 +314,14 @@ def _on_classify(ctx: _Ctx) -> AdvanceResult:
         # agent used to *discover* the required sections — a read, an edit and a
         # re-check each time — even though the set is derivable from the work
         # type the engine already recorded (basicly-kjc5.44).
+        # Both voices inline: an author sent to a second command writes the one shape
+        # they already know, which is the persona.
+        voices = f". {invest.trigger_remedy()}" if invest.TRIGGER_HEADING in dor.missing else ""
         return _blocked(
             ctx,
             f"definition of ready incomplete: {', '.join(dor.missing)}"
             f" — emit the required structure with `basicly policy scaffold"
-            f" --type {ctx.state.issue_type}`",
+            f" --type {ctx.state.issue_type}`{voices}",
         )
     if ctx.state.issue_type in _LEAF_TYPES:
         return _start_build_leaf(ctx)

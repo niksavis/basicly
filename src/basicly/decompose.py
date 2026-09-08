@@ -61,6 +61,7 @@ from .config import (
     load_sizing_config,
     load_worktree_config,
 )
+from .invest import TRIGGER_HEADING, trigger_sentence
 from .read_cost import instruction_overhead, scope_read_cost
 
 DEFAULT_CHILD_TYPE = "task"
@@ -1879,7 +1880,7 @@ def govern_working_set(
 # --- Recording in br --------------------------------------------------------
 
 
-def _child_body(spec: ChildSpec) -> str:
+def _child_body(spec: ChildSpec, trigger: str = "") -> str:
     """Build a child issue body with the sections the DoR requires, plus ``## Scope``.
 
     Delegates the required-section set to :func:`policy.compose_body` rather than
@@ -1887,20 +1888,18 @@ def _child_body(spec: ChildSpec) -> str:
     also owes ``## Steps to Reproduce``. Hard-coding the ``task`` set here left a
     bug-typed child refused by its own classify gate (basicly-kjc5.44).
 
-    A plan carries no reproduction steps, so a ``bug`` child's section arrives as
-    a ``TODO`` for its lane agent to fill from the parent's context. That is the
-    deliberate trade: the placeholder satisfies the gate structurally, so the
-    fan-out proceeds and the bead says out loud what is still owed, where omitting
-    the heading would instead wedge the child before anyone could supply it.
+    A ``bug`` child's reproduction still arrives as a ``TODO``, which the DoR accepts
+    structurally so the fan-out proceeds. *trigger* cannot: the DoR reads it for what it
+    says, so an unfilled one wedges the child. It is the parent's own, inherited
+    (basicly-q1ve1fn).
 
-    The ``## Plan`` section records the fields the plan gate added, so a lane
-    dispatched later can be held to the plan it was decomposed under
-    (:func:`plan_entry.build_entry_verdict`). Without it the fields would live only in
-    the plan document, which nothing keeps once the children exist.
+    ``## Plan`` records the plan gate's fields, so a later lane is held to them
+    (:func:`plan_entry.build_entry_verdict`).
     """
     return policy.compose_body(
         spec.type,
         {
+            TRIGGER_HEADING: trigger,
             "## Acceptance Criteria": "\n".join(f"- {item}" for item in spec.acceptance),
             plan_record.SCOPE_HEADING: "\n".join(f"- `{glob}`" for glob in spec.scope),
             # :func:`decompose` gates before it records, so these are never absent on
@@ -1951,24 +1950,25 @@ class DecomposeResult:
         return len(self.groups)
 
 
-def feature_labels(repo_root: Path, feature_id: str) -> tuple[str, ...]:
-    """The labels on *feature_id*, to be inherited by each of its children.
+def feature_labels(record: dict) -> tuple[str, ...]:
+    """The labels on a parent *record*, to be inherited by each of its children.
 
-    Read once per decomposition rather than once per child: an external ``br``
-    invocation is ~175x an in-process read, and the answer cannot change
-    mid-decomposition.
-
-    Through the record seam, so a store that holds no such record yields no labels
-    rather than raising: an unlabelled parent is an ordinary state, and refusing the
-    decomposition over it would be the wrong direction to be wrong in.
+    Read once per decomposition, not once per child: an external ``br`` invocation is
+    ~175x an in-process read and the answer cannot change mid-decomposition. Through the
+    record seam, so a store holding no such record yields no labels rather than raising
+    - an unlabelled parent is ordinary, and refusing over it is the wrong way to be
+    wrong.
     """
-    record = tracker.read_record(repo_root, feature_id) or {}
     raw = record.get("labels") or []
     return tuple(str(label) for label in raw if str(label).strip())
 
 
 def _create_child(
-    repo_root: Path, feature_id: str, spec: ChildSpec, labels: tuple[str, ...] = ()
+    repo_root: Path,
+    feature_id: str,
+    spec: ChildSpec,
+    labels: tuple[str, ...] = (),
+    trigger: str = "",
 ) -> str:
     # A child inherits the parent's labels because phase membership is a label
     # rather than a re-parenting, so an unlabelled child is silently absent from
@@ -1980,7 +1980,7 @@ def _create_child(
     args = ["create", spec.title, "-t", spec.type, "--parent", feature_id]
     if labels:
         args += ["-l", ",".join(labels)]
-    args += ["-d", _child_body(spec), "--json"]
+    args += ["-d", _child_body(spec, trigger), "--json"]
     return tracker.create_record(repo_root, args)
 
 
@@ -2029,8 +2029,12 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
     groups = group_children(children, contended)
     predecessors = chain_predecessors(groups)
 
-    inherited = feature_labels(repo_root, feature_id)
-    issue_ids = [_create_child(repo_root, feature_id, spec, inherited) for spec in children]
+    parent = tracker.read_record(repo_root, feature_id) or {}
+    inherited = feature_labels(parent)
+    trigger = trigger_sentence(str(parent.get("description") or ""))
+    issue_ids = [
+        _create_child(repo_root, feature_id, spec, inherited, trigger) for spec in children
+    ]
     by_title = {spec.title: issue_ids[index] for index, spec in enumerate(children)}
 
     created: list[CreatedChild] = []

@@ -213,7 +213,8 @@ def test_a_real_heading_is_declared_to_both_readers(
 ) -> None:
     """The control: tightening the gate must not refuse a body that did declare them."""
     heading = plan_record.ACCEPTANCE_HEADING
-    body = f"{heading}\n\n- given a bead when it is gated then it is held to this\n"
+    trigger = "## Trigger\n\nWhen gated, I want a trigger, so I can validate it.\n\n"
+    body = f"{trigger}{heading}\n\n- given a bead when it is gated then it is held to this\n"
 
     assert plan_record.section_entries(body, heading) != ()
 

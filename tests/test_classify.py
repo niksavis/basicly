@@ -27,8 +27,11 @@ class _FakeBr:
     read to the policy engine) resolves entirely against this fake.
     """
 
-    def __init__(self, *, acceptance_criteria: str | None = None) -> None:
+    def __init__(
+        self, *, acceptance_criteria: str | None = None, description: str | None = None
+    ) -> None:
         self.acceptance_criteria = acceptance_criteria
+        self.description = description
         self.recorded_type: str | None = None
         self.calls: list[list[str]] = []
         self.comments: list[str] = []
@@ -47,7 +50,14 @@ class _FakeBr:
             self.recorded_type = args[args.index("-t") + 1]
             return _Proc("")
         if args[:1] == ["show"]:
-            return _Proc(json.dumps([{"acceptance_criteria": self.acceptance_criteria}]))
+            return _Proc(
+                json.dumps([
+                    {
+                        "acceptance_criteria": self.acceptance_criteria,
+                        "description": self.description,
+                    }
+                ])
+            )
         raise AssertionError(f"unexpected br call: {args}")
 
 
@@ -86,13 +96,22 @@ def test_classify_rejects_unknown_type_before_touching_br(
     assert fake.calls == []  # rejected before any br call
 
 
+_TRIGGER = "## Trigger\n\nWhen gated, I want a trigger, so I can validate it.\n\n"
+
+
 def test_classify_reports_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A ready issue can leave classify (DoR satisfied).
 
-    The criteria are set explicitly because DoR requires them on every bead
-    whatever its work type (basicly-kjc5.36).
+    The criteria and the trigger are set explicitly because DoR requires both on
+    every bead whatever its work type (basicly-kjc5.36, basicly-q1ve1fn).
     """
-    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y"))
+    _install(
+        monkeypatch,
+        _FakeBr(
+            acceptance_criteria="given x then y",
+            description=_TRIGGER,
+        ),
+    )
     result = classify.classify(tmp_path, "i", "feature")
     assert result.dor.ready is True
     assert result.can_leave_classify is True
@@ -104,7 +123,7 @@ def test_classify_reports_not_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_pat
     result = classify.classify(tmp_path, "i", "feature")
     assert result.work_type == "feature"  # type is still recorded
     assert result.can_leave_classify is False
-    assert result.dor.missing == ("## Acceptance Criteria",)
+    assert result.dor.missing == ("## Trigger", "## Acceptance Criteria")
 
 
 def test_classify_assigns_and_records_the_integrity_level(
@@ -165,7 +184,9 @@ def test_the_type_and_the_marker_land_in_the_owned_ledger_with_br_absent(
 ) -> None:
     """One classify advance, no spawn, and both of its writes readable afterwards."""
     repo = flipped_tracker.flipped_repo(tmp_path)
-    flipped_tracker.seed(repo, "seam-1", description="## Acceptance Criteria\n\n- given x\n")
+    flipped_tracker.seed(
+        repo, "seam-1", description=_TRIGGER + "## Acceptance Criteria\n\n- given x\n"
+    )
     flipped_tracker.refuse_spawn(monkeypatch)
 
     result = classify.classify(repo, "seam-1", "task", ("src/basicly/policy.py",))
@@ -189,7 +210,9 @@ def test_the_dor_verdict_comes_out_of_the_owned_record_with_br_absent(
     """
     repo = flipped_tracker.flipped_repo(tmp_path)
     for bead in ("ready-1", "bug-1"):
-        flipped_tracker.seed(repo, bead, description="## Acceptance Criteria\n\n- given x\n")
+        flipped_tracker.seed(
+            repo, bead, description=_TRIGGER + "## Acceptance Criteria\n\n- given x\n"
+        )
     flipped_tracker.refuse_spawn(monkeypatch)
 
     assert classify.classify(repo, "ready-1", "task").dor.ready is True

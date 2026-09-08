@@ -911,6 +911,7 @@ def test_child_body_carries_the_sections_the_childs_own_type_requires() -> None:
     body = decompose._child_body(bug)
     headings = [line for line in body.splitlines() if line.startswith("## ")]
     assert headings == [
+        "## Trigger",
         "## Steps to Reproduce",
         "## Acceptance Criteria",
         "## Scope",
