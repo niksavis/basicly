@@ -2,30 +2,14 @@
     the page behind one is drawn from that unit row, so any other id would print a link to a
     page nobody writes. #}
 <!doctype html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>the loop — basicly board</title>
+    <link rel="stylesheet" href="{{ stylesheet }}" />
     <style>
-      /* The wall's palette, copied rather than included for the reason the record page
-         copies it: `board_serve` dates its own staleness off `board_page.html.j2` alone, so
-         a shared partial would change under a running process without that check seeing it. */
-      :root {
-        --bg: #0f1117;
-        --bg-raise: #171a23;
-        --bg-sunk: #0b0d12;
-        --border: #262b38;
-        --text: #d7dce6;
-        --text-bright: #f2f5fa;
-        --text-dim: #8b93a7;
-        --indigo: #818cf8;
-        --amber: #f59e0b;
-        --green: #34d399;
-        --mono:
-          ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-        --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      }
+{% include "board_theme.css.j2" %}
       * {
         box-sizing: border-box;
         margin: 0;
@@ -70,7 +54,7 @@
         overflow-x: auto;
         padding-bottom: 8px;
       }
-      .col {
+      .phase {
         background: var(--bg-sunk);
         border: 1px solid var(--border);
         border-radius: 6px;
@@ -84,7 +68,7 @@
         gap: 8px;
         padding: 10px;
       }
-      .col > header {
+      .phase > header {
         align-items: baseline;
         border-bottom: 1px solid var(--border);
         display: flex;
@@ -92,22 +76,21 @@
         justify-content: space-between;
         padding-bottom: 6px;
       }
-      .col .name {
+      .phase .name {
         color: var(--text-bright);
         font-family: var(--mono);
         font-weight: 600;
         letter-spacing: 0.04em;
         text-transform: uppercase;
       }
-      .col .count {
+      .phase .count {
         color: var(--text-dim);
         font-family: var(--mono);
       }
+      /* Bootstrap's card on the raised surface, with the left edge as the held channel. */
       .card {
-        background: var(--bg-raise);
-        border: 1px solid var(--border);
-        border-left: 3px solid var(--border);
-        border-radius: 4px;
+        --bs-card-bg: var(--bg-raise);
+        border-left-width: 3px;
         display: block;
         padding: 7px 9px;
         text-decoration: none;
@@ -164,7 +147,7 @@
 {%- endif %}
     <div class="board">
 {%- for col in columns %}
-      <section class="col">
+      <section class="phase">
         <header>
           <span class="name">{{ col.name }}</span>
 {#- The ratio, not the total alone. A header reading `272` over twelve cards states the

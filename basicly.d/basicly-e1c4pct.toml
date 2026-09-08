@@ -34,11 +34,9 @@
 [ratchet]
 base_commit = "9ae7dce9f755bb8b5c75285250b395dfe45701cd"
 
-[ratchet.module_size]
-rebaseline_reason = "the new board consumer joins the import roster in tests/test_board_render.py, four tokens over a cap that file already sat at"
-
-[ratchet.module_size.rebaselined]
-"tests/test_board_render.py" = 4
+# The module-size rebaseline this fragment carried for tests/test_board_render.py graduated:
+# the palette test moved to tests/test_board_offline.py (basicly-lywzp71) and the file is back
+# under the cap, so the entry was deleted rather than left to license regrowth.
 
 # The lane's own spend banked as history, not a band change. The gate's instruction is "fix the
 # estimator, never the band", and the estimator has an owner: basicly-yjmxjz. The comment beside

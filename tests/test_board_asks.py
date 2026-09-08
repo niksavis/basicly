@@ -30,6 +30,7 @@ from basicly import (
     board_schema,
     board_sections,
 )
+from tests.board_offline import assert_offline
 from tests.test_board_wall import REPO_ROOT, document
 
 if TYPE_CHECKING:
@@ -89,7 +90,7 @@ def _acts(page: str) -> str:
     kill form of its own, and an assertion about this region that counts every form on the
     page fails on a change it was never about (basicly-x1h1dl5).
     """
-    mark = '<section class="region acts">'
+    mark = '<section class="region acts card">'
     return (
         page[page.index(mark) : page.index("</section>", page.index(mark))] if mark in page else ""
     )
@@ -243,17 +244,15 @@ def test_the_region_is_drawn_inside_the_page_and_above_the_loop() -> None:
     """
     page = _page([_ask()])
     assert page.index("<form") < page.index("</main>")
-    assert page.index('class="region acts"') < page.index('class="region loop')
-    assert page.index('class="region band ') < page.index('class="region acts"')
+    assert page.index('class="region acts card"') < page.index('class="region loop')
+    assert page.index('class="region band ') < page.index('class="region acts card"')
     assert '"acts"' in page, "the region has no grid area, so it is not in the layout"
 
 
 def test_the_page_still_fetches_nothing_with_a_form_on_it() -> None:
     """The form is the one interactive element, and it is plain HTML with no runtime."""
     page = _page([_ask()])
-    assert "<script" not in page
-    assert "<link" not in page
-    assert "src=" not in page
+    assert_offline(page)
     assert 'method="post"' in page
 
 

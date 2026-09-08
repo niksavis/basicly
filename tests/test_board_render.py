@@ -33,6 +33,7 @@ from typing import Any
 import pytest
 
 from basicly import board_regions, board_render, board_schema, catalog_source
+from tests.board_offline import assert_offline
 from tests.test_board_wall import REPO_ROOT, STAMPED, document
 
 TEMPLATES = REPO_ROOT / ".basicly" / "core" / "templates" / "board"
@@ -41,6 +42,7 @@ SITE = REPO_ROOT / "site" / "index.html"
 SOURCES = (
     "board_render", "board_regions", "board_diagram", "board_graph",
     "board_loop", "board_footer", "board_record", "board_wall", "board_icons",
+    "board_assets",
 )
 # fmt: on
 
@@ -101,17 +103,11 @@ def _literals(tree: ast.Module) -> list[str]:
 
 
 def test_the_page_references_no_external_origin() -> None:
-    """No fetch of any kind: not a script, not a stylesheet, not an image.
+    """No fetch of any kind: not a script, not an image, and no stylesheet but the vendored one.
 
-    Asserted on the raw text rather than by parsing, because the failure this guards is a
-    template gaining an attribute a parser would have to be taught about first.
+    The rule and its reason live in `tests/board_offline.py`, which every page test shares.
     """
-    page = render("wall-v1.json")
-    assert "<script" not in page
-    assert "<link" not in page
-    assert "src=" not in page
-    assert "http://" not in page
-    assert "https://" not in page
+    assert_offline(render("wall-v1.json"))
 
 
 def test_the_freshness_sentence_is_drawn_once_for_the_whole_page() -> None:
@@ -120,19 +116,6 @@ def test_the_freshness_sentence_is_drawn_once_for_the_whole_page() -> None:
     assert page.count('class="fresh') == 2
     assert page.count("2026-08-21T16:42:52Z") == 1
     assert page.count("stale after 60s") == 1
-
-
-def test_the_page_uses_only_the_palette_the_site_already_ships() -> None:
-    """The board looks like basicly because it lifts `site/index.html`, not because it tried.
-
-    Both directions: no custom property the site does not define, and no `var()` the page does
-    not define - an undefined `var()` renders as nothing and is invisible in review.
-    """
-    page = render("wall-v1.json")
-    site = set(_DEFINED.findall(SITE.read_text(encoding="utf-8")))
-    defined = set(_DEFINED.findall(page))
-    assert defined <= site, f"invented custom properties: {sorted(defined - site)}"
-    assert set(_USED.findall(page)) <= defined
 
 
 def test_the_alarm_colour_is_only_ever_the_watch_bands() -> None:

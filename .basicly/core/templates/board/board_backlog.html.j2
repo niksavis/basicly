@@ -5,30 +5,14 @@
 {%- if ident in linkable %}<a class="rec" href="{{ record_dir }}/{{ ident }}{{ record_ext }}">{{ text }}</a>{% else %}{{ text }}{% endif -%}
 {%- endmacro -%}
 <!doctype html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>the backlog — basicly board</title>
+    <link rel="stylesheet" href="{{ stylesheet }}" />
     <style>
-      /* The wall's palette, copied rather than included for the reason the record page copies
-         it: `board_serve` dates its own staleness off `board_page.html.j2` alone, so a shared
-         partial would change under a running process without that check seeing it. */
-      :root {
-        --bg: #0f1117;
-        --bg-raise: #171a23;
-        --bg-sunk: #0b0d12;
-        --border: #262b38;
-        --text: #d7dce6;
-        --text-bright: #f2f5fa;
-        --text-dim: #8b93a7;
-        --indigo: #818cf8;
-        --amber: #f59e0b;
-        --green: #34d399;
-        --mono:
-          ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-        --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      }
+{% include "board_theme.css.j2" %}
       * {
         box-sizing: border-box;
         margin: 0;
@@ -107,14 +91,12 @@
          literally 1% and its content paints over the next cell - measured at 66 to 80px of
          overlap on three rows by `check_render_overflow.py`, which is the only instrument
          that sees it. Auto sizes each column to its content and the title takes the slack. */
-      table {
-        border-collapse: collapse;
-        width: 100%;
+      .table {
+        --bs-table-border-color: var(--bg-raise);
       }
-      td {
-        border-bottom: 1px solid var(--bg-raise);
+      /* The plan's pitch: `.table-sm` pads 4px all round, and the left edge here is flush. */
+      .table > :not(caption) > * > * {
         padding: 4px 8px 4px 0;
-        vertical-align: top;
       }
       /* The title takes the slack. Every other column is the width of what it holds, because a
          plan is read down a column and a ragged one cannot be scanned. */
@@ -180,7 +162,7 @@
         <span>{% if group.ident %}{{ rec(group.ident, group.title) }}{% else %}{{ group.title }}{% endif %}</span>
         <span class="of">{{ group.ready }} ready of {{ group.rows | length }}</span>
       </h2>
-      <table>
+      <table class="table table-sm">
 {%- for row in group.rows %}
         <tr>
           <td class="pri">{{ row.priority }}</td>

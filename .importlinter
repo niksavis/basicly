@@ -74,7 +74,7 @@ layers =
     board_record
     board_diagram | board_footer | board_graph | board_regions
     board_loop
-    board_icons
+    board_assets | board_icons
     board_wall
     board_fields | board_schema
     verify_log

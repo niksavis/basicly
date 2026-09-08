@@ -23,6 +23,7 @@ from markdown_it import MarkdownIt
 from markupsafe import Markup
 
 from . import (
+    board_assets,
     board_diagram,
     board_footer,
     board_graph,
@@ -175,8 +176,8 @@ def context(
     }
 
 
-def _root(templates_dir: Path | None) -> Path:
-    """Where the board's templates and its vendored icons both live."""
+def root(templates_dir: Path | None = None) -> Path:
+    """Where the board's templates, its vendored icons and its vendored assets all live."""
     return templates_dir or catalog.bundled_catalog_root() / TEMPLATE_DIR
 
 
@@ -195,7 +196,7 @@ def markdown(text: object) -> Markup:
 def _env(templates_dir: Path | None = None) -> Environment:
     """The page's own Jinja environment, autoescaping because the output is HTML."""
     env = Environment(
-        loader=FileSystemLoader(str(_root(templates_dir))),
+        loader=FileSystemLoader(str(root(templates_dir))),
         autoescape=True,
         keep_trailing_newline=True,
     )
@@ -227,23 +228,32 @@ def page(
     return render(context(document, verdict, now, viewport=seen), templates_dir)
 
 
+def _styled(filled: Mapping[str, Any], *, nested: bool = False) -> dict[str, Any]:
+    """*filled* plus the one relative path every page writes for the vendored stylesheet.
+
+    Here and nowhere else: a template that spelled the path itself is how the file and the
+    link come to disagree, and `board_assets.href` is what both modes resolve.
+    """
+    return {**filled, "stylesheet": board_assets.href(board_assets.STYLESHEET, nested=nested)}
+
+
 def render_record(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
     """Draw one record's page from :func:`basicly.board_record.context`'s output.
 
     Here rather than in that module so one Jinja environment, and so one autoescape setting,
     draws every page this package serves.
     """
-    return _env(templates_dir).get_template(TEMPLATE_RECORD).render(filled)
+    return _env(templates_dir).get_template(TEMPLATE_RECORD).render(_styled(filled, nested=True))
 
 
 def render_kanban(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
     """Draw the loop surface from :func:`basicly.board_kanban.context`'s output."""
-    return _env(templates_dir).get_template(TEMPLATE_KANBAN).render(filled)
+    return _env(templates_dir).get_template(TEMPLATE_KANBAN).render(_styled(filled))
 
 
 def render_backlog(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
     """Draw the backlog page from :func:`basicly.board_backlog.context`'s output."""
-    return _env(templates_dir).get_template(TEMPLATE_BACKLOG).render(filled)
+    return _env(templates_dir).get_template(TEMPLATE_BACKLOG).render(_styled(filled))
 
 
 def render(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
@@ -255,5 +265,5 @@ def render(filled: Mapping[str, Any], templates_dir: Path | None = None) -> str:
     The marks are added here rather than in :func:`context`, which never learns which
     template directory it is drawn from and so cannot find the icons beside it.
     """
-    drawn = {**filled, "icons": board_icons.marks(_root(templates_dir))}
+    drawn = {**_styled(filled), "icons": board_icons.marks(root(templates_dir))}
     return _env(templates_dir).get_template(TEMPLATE).render(drawn)

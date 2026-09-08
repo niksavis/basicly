@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from basicly import (
+    board_assets,
     board_cli,
     board_facts,
     board_render,
@@ -154,6 +155,28 @@ def test_the_two_get_routes_answer_and_a_post_is_405(board_repo: Path) -> None:
         with pytest.raises(urllib.error.HTTPError) as missing:
             urllib.request.urlopen(f"{listener.url}/elsewhere", timeout=TIMEOUT_S)
         assert missing.value.code == 404
+
+
+def test_the_vendored_stylesheet_is_served_by_name_and_nothing_else_beside_it(
+    board_repo: Path,
+) -> None:
+    """The page's relative link resolves under the server's root, as it does beside a file.
+
+    The licence and the provenance note travel with the stylesheet and are not served: the
+    asset table, not the directory listing, decides what a name answers (basicly-lywzp71).
+    """
+    with _running(board_serve.bind(board_repo, port=0, actions=False)) as listener:
+        status, body, headers = _get(f"{listener.url}/{board_assets.href(board_assets.STYLESHEET)}")
+        assert status == 200
+        assert headers["Content-Type"] == board_assets.ASSETS[board_assets.STYLESHEET]
+        vendored = board_assets.read(board_render.root(), board_assets.STYLESHEET)
+        assert vendored is not None
+        assert body == vendored[0]
+        assert "Refresh" not in headers
+
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(f"{listener.url}{board_assets.ROUTE}LICENSE", timeout=TIMEOUT_S)
+        assert refused.value.code == 404
 
 
 def test_the_record_route_answers_with_and_without_the_suffix(board_repo: Path) -> None:

@@ -22,8 +22,6 @@
 [ratchet]
 base_commit = "b35947e52c1718715578e9d32f827ac09c796901"
 
-[ratchet.module_size]
-rebaseline_reason = "the new board consumer joins the import roster in tests/test_board_render.py, four tokens over a cap that file sat two under"
-
-[ratchet.module_size.rebaselined]
-"tests/test_board_render.py" = 4002
+# The module-size rebaseline this fragment carried for tests/test_board_render.py graduated:
+# the palette test moved to tests/test_board_offline.py (basicly-lywzp71) and the file is back
+# under the cap, so the entry was deleted rather than left to license regrowth.

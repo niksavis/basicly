@@ -11,32 +11,14 @@
 {%- if ident in linkable %}<a class="rec" href="{{ record_dir }}/{{ ident }}{{ record_ext }}">{{ text }}</a>{% else %}{{ text }}{% endif -%}
 {%- endmacro -%}
 <!doctype html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>basicly board — {{ schema }}</title>
+    <link rel="stylesheet" href="{{ stylesheet }}" />
     <style>
-      /* Every custom property below is already defined in site/index.html :root. The board
-         looks like basicly because it lifts that palette rather than inventing one. */
-      :root {
-        --bg: #0f1117;
-        --bg-raise: #171a23;
-        --bg-sunk: #0b0d12;
-        --border: #262b38;
-        --border-lit: #333a4d;
-        --text: #d7dce6;
-        --text-bright: #f2f5fa;
-        --text-dim: #8b93a7;
-        --indigo: #818cf8;
-        --indigo-deep: #6366f1;
-        --amber: #f59e0b;
-        --orange: #fb923c;
-        --green: #34d399;
-        --mono:
-          ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-        --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      }
+{% include "board_theme.css.j2" %}
       * {
         box-sizing: border-box;
         margin: 0;
@@ -101,9 +83,6 @@
         overflow: hidden;
       }
       .region.framed {
-        background: var(--bg-raise);
-        border: 2px solid var(--border);
-        border-radius: 6px;
         padding: 5px 10px;
       }
       h2 {
@@ -183,7 +162,7 @@
         gap: 2px 18px;
         min-width: 0;
       }
-      .facts .mark {
+      .facts .brand {
         color: var(--indigo);
         font-size: 22px;
         font-weight: 700;
@@ -243,10 +222,10 @@
         font-size: 12px;
       }
 
-      /* `.mark` is sized where it is used: the band's rule is scoped to its headline, and a
-         `.facts .mark` rule above styles a *text* glyph, so an svg here inherits neither a
+      /* `.icon` is sized where it is used: the band's rule is scoped to its headline, and the
+         `.facts .brand` rule above styles a *text* wordmark, so an svg here inherits neither a
          fill nor a height and draws nothing at all. Same two properties as the band's. */
-      .fresh .mark {
+      .fresh .icon {
         fill: currentColor;
         height: 0.82em;
       }
@@ -272,6 +251,8 @@
         align-items: center;
         border-width: 4px;
         display: flex;
+        /* Stated, because the card it now is lays its children out as a column. */
+        flex-direction: row;
         gap: 22px;
         grid-area: band;
         /* The one stated height on the page, and it is a floor rather than a fixture: the
@@ -292,7 +273,7 @@
          headline sizes - 44px for an age, 30px for the three quiet states below. Filled with
          `currentColor`, which is what puts it on the state's own hue without a rule per
          state and carries it through the `state-stuck` inversion. */
-      .band .headline .mark {
+      .band .headline .icon {
         fill: currentColor;
         height: 0.82em;
         vertical-align: -0.1em;
@@ -329,9 +310,7 @@
          the `1fr` ready row, which is correct: a human decision the factory is stopped on
          outranks a list of what could be started next. */
       .acts {
-        background: var(--bg-sunk);
-        border: 1px solid var(--amber);
-        border-radius: 5px;
+        --bs-card-border-color: var(--amber);
         grid-area: acts;
         padding: 5px 9px 7px;
       }
@@ -404,17 +383,6 @@
       .act label.typed input {
         border-color: var(--amber);
       }
-      .act button {
-        background: var(--indigo-deep);
-        border: 1px solid var(--indigo);
-        border-radius: 3px;
-        color: var(--text-bright);
-        cursor: pointer;
-        font-family: var(--sans);
-        font-size: 13px;
-        font-weight: 600;
-        padding: 3px 12px;
-      }
       /* The kill form on a lane card. It borrows the `.act` input and button rules by
          repeating only what differs: it sits at the card's foot, it is amber rather than
          indigo because stopping work is not the ordinary action on a running lane, and its
@@ -447,17 +415,8 @@
         min-width: 0;
         padding: 1px 4px;
       }
-      .card .kill button {
-        background: var(--bg-sunk);
-        border: 1px solid var(--amber);
-        border-radius: 3px;
-        color: var(--amber);
-        cursor: pointer;
+      .card .kill .btn {
         flex: 0 0 auto;
-        font-family: var(--sans);
-        font-size: 12px;
-        font-weight: 600;
-        padding: 2px 9px;
       }
       /* No server to post to, so the operator is owed the line to type. */
       .card .command {
@@ -782,11 +741,8 @@
         display: flex;
         gap: 14px;
       }
-      .card {
-        background: var(--bg-sunk);
-        border: 3px solid var(--border);
-        border-radius: 4px;
-        min-width: 0;
+      .flight .card {
+        border-width: 3px;
         padding: 9px 12px 10px;
       }
       /* The activity line is the field with no substitute (basicly-0xtzf1): the summary
@@ -896,14 +852,19 @@
         flex-direction: column;
         grid-area: ready;
       }
-      .ready table {
-        border-collapse: collapse;
+      .ready .table {
         table-layout: fixed;
-        width: 100%;
+      }
+      /* The wall's pitch, not the document's: `.table-sm` pads a cell 4px and the list would
+         lose three rows at 1440x900 to it. The row's own border is the feature rule below. */
+      .ready .table > :not(caption) > * > * {
+        border-bottom-width: 0;
+        box-shadow: none;
+        padding: 1px 0;
       }
       /* Only in the reclaimed row, where the height is the list's to use. Beside the lanes the
          same rule spread eight rows over 700px, which is the dead space one column over. */
-      .wall.calm .ready table {
+      .wall.calm .ready .table {
         flex: 1 1 auto;
       }
       .ready td {
@@ -932,26 +893,9 @@
       .ready col.act {
         width: 62px;
       }
-      /* Quiet on purpose. Twenty of these down a column must not outrank the titles beside
-         them, so the control is text-weight until a pointer is on it. */
+      /* The controls are `.btn-board`, quiet until pointed at (the theme says why). */
       .ready td.act {
         text-align: right;
-      }
-      .ready td.act button,
-      .parked button {
-        background: none;
-        border: 1px solid transparent;
-        border-radius: 3px;
-        color: var(--text-dim);
-        cursor: pointer;
-        font-family: var(--sans);
-        font-size: 12px;
-        padding: 0 5px;
-      }
-      .ready td.act button:hover,
-      .parked button:hover {
-        border-color: var(--border-lit);
-        color: var(--text);
       }
       .parked {
         align-items: baseline;
@@ -1180,7 +1124,7 @@
     <main class="wall{% if not cards %} calm{% endif %}">
       <section class="region head">
         <div class="facts">
-        <span class="mark">basicly</span>
+        <span class="brand">basicly</span>
 {%- for cell in head %}
         <div class="cell">
           <div class="label">{{ cell.label }}</div>
@@ -1237,7 +1181,7 @@
     fact `calm` already draws, and a stale one is the same fact `waiting` draws. #}
 {%- set age_mark = "calm" if age.state.key == "live" else "waiting" %}
           <span class="fresh-age"
-            ><svg class="mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+            ><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
               ><path d="{{ icons[age_mark].path }}" /></svg
             >{{ age.phrase }}</span
           ><br />
@@ -1248,11 +1192,11 @@
         </p>
       </section>
 
-      <section class="region band framed state-{{ band.state.key }}">
+      <section class="region band framed card raised state-{{ band.state.key }}">
         <div class="headline state-{{ band.state.key }}">
 {#- `aria-hidden`, because the headline beside it states the same fact in words and a
     screen reader announcing both reads the alarm twice. #}
-          <svg class="mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
             ><path d="{{ icons[band.state.key].path }}" /></svg
           >
           {{ band.headline }}
@@ -1277,7 +1221,7 @@
     tick notes). Drawn only when there is something to act on - a standing form on a wall
     whose question is "does it need me?" answers it wrongly every hour nothing is pending. #}
 {%- if acts %}
-      <section class="region acts">
+      <section class="region acts card">
         <h2>needs a person{% if acts_more %} — {{ acts_more }}{% endif %}</h2>
 {%- for act in acts %}
         <div class="act">
@@ -1314,7 +1258,7 @@
               ></label
             >
 {%- endfor %}
-            <button type="submit">{{ act.offer }}</button>
+            <button type="submit" class="btn btn-board btn-board-fill">{{ act.offer }}</button>
           </form>
 {%- if act.confirmed %}
           <p class="note clip">a one-time code is typed here and never read by the board — get it from a terminal</p>
@@ -1561,7 +1505,7 @@
             <input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
 {%- endif %}
 {%- endfor %}
-            <button type="submit">{{ kill.offer }}</button>
+            <button type="submit" class="btn btn-board btn-board-stop">{{ kill.offer }}</button>
           </form>
           </details>
 {%- elif kill %}
@@ -1571,11 +1515,11 @@
 {%- endfor %}
       </section>
 
-      <section class="region ready framed">
+      <section class="region ready framed card raised">
 {#- The capped count is the way into the uncapped page: this list draws four of 237 and the
     reader looking for the other 233 is already looking here (basicly-lc2bd3v.4). #}
         <h2>next up{% if ready.more %} — <a class="rec" href="{{ backlog_href }}">{{ ready.more }}</a>{% endif %}</h2>
-        <table>
+        <table class="table table-sm">
 {#- A fourth column, and that is the whole reason this control fits: the ready list runs to
     twenty rows at 1920, so a row *under* each one would cost twenty lines on a page already
     past its box. A column costs width, which this table has (basicly-arxhshr). #}
@@ -1606,7 +1550,7 @@
 {%- for field in begin.fields %}
                 <input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
 {%- endfor %}
-                <button type="submit" title="{{ begin.command }}">{{ begin.offer }}</button>
+                <button type="submit" class="btn btn-board" title="{{ begin.command }}">{{ begin.offer }}</button>
               </form>
 {%- endif %}
 {%- set park = parking.get(item.ident) %}
@@ -1617,7 +1561,7 @@
 {%- for field in park.fields %}
                 <input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
 {%- endfor %}
-                <button type="submit">{{ park.offer }}</button>
+                <button type="submit" class="btn btn-board">{{ park.offer }}</button>
               </form>
 {%- endif %}
             </td>
@@ -1649,7 +1593,7 @@
 {%- for field in back.fields %}
               <input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
 {%- endfor %}
-              <button type="submit">{{ back.offer }}</button>
+              <button type="submit" class="btn btn-board">{{ back.offer }}</button>
             </form>
 {%- endif %}
           </span>

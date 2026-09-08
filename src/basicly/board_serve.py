@@ -31,6 +31,7 @@ from . import (
     board_action_surface,
     board_actions,
     board_asks,
+    board_assets,
     board_backlog,
     board_bodies,
     board_kanban,
@@ -120,13 +121,24 @@ DROPPED_ROWS_FAULT = (
 NOTES_SLOT = '<div class="notes"></div>'
 
 
-def _template_mtime() -> float | None:
-    """The board page template's mtime, or None where it is unreadable (neither is staleness)."""
+def newest_template_mtime(templates_dir: Path) -> float | None:
+    """The newest mtime among the templates in *templates_dir*, or None where none is readable.
+
+    Every template and not the wall's alone: the pages share `board_theme.css.j2`, and the
+    loop, backlog and record pages are rendered by this same process, so an edit to any of
+    them changes what it serves (basicly-lywzp71). Before this widened, the palette was copied
+    into four templates because a shared partial would have changed unseen.
+    """
     try:
-        path = catalog.bundled_catalog_root() / board_render.TEMPLATE_DIR / board_render.TEMPLATE
-        return path.stat().st_mtime
+        stamps = [path.stat().st_mtime for path in templates_dir.glob("*.j2")]
     except OSError:
         return None
+    return max(stamps, default=None)
+
+
+def _template_mtime() -> float | None:
+    """The bundled templates' newest mtime, or None where unreadable (neither is staleness)."""
+    return newest_template_mtime(catalog.bundled_catalog_root() / board_render.TEMPLATE_DIR)
 
 
 def _rows_dropped(ready: object, drawn: str) -> bool:
@@ -453,6 +465,8 @@ class _Handler(BaseHTTPRequestHandler):
             )
         elif route.startswith(RECORD_ROUTE):
             self._record(route)
+        elif route.startswith(board_assets.ROUTE):
+            self._asset(route)
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -468,6 +482,19 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND, NO_RECORD)
             return
         self._send(body, "text/html; charset=utf-8", reload=True)
+
+    def _asset(self, route: str) -> None:
+        """Answer a vendored asset by name, or 404 for a name the asset table lacks.
+
+        The name is the tail of the route and is looked up in `board_assets.ASSETS` before any
+        file is touched, so the route cannot reach past the vendored directory.
+        """
+        held = board_assets.read(board_render.root(), unquote(route[len(board_assets.ROUTE) :]))
+        if held is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        body, content_type = held
+        self._send(body, content_type)
 
     def do_POST(self) -> None:
         """Whatever the action surface answers, or 405 where this board registered none."""

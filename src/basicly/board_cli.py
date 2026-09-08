@@ -25,6 +25,7 @@ from pathlib import Path
 
 from . import (
     board_actions,
+    board_assets,
     board_backlog,
     board_bodies,
     board_facts,
@@ -165,7 +166,7 @@ def cmd_emit(args: argparse.Namespace) -> int:
         f"board: sections  {len(verdict.renderable)} rendered, "
         f"{len(verdict.withheld)} withheld, {len(verdict.absent)} not emitted"
     )
-    ui.say(f"board: wrote {args.out} (self-contained, {_kb(args.out)}) - open it in a browser")
+    ui.say(f"board: wrote {args.out} ({_kb(args.out)}) - open it in a browser")
     ui.say(f"board: wrote {sidecar} ({_kb(sidecar)}) - the contract, for any other consumer")
     loop_page = args.out.parent / KANBAN_NAME
     loop_page.write_text(
@@ -183,6 +184,13 @@ def cmd_emit(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     ui.say(f"board: wrote {plan_page} ({_kb(plan_page)}) - every record, grouped by feature")
+    # The stylesheet every page links by a relative path; beside them, or a page opened from
+    # disk draws unstyled. One copy for all 300-odd pages is the point of it being a file.
+    for asset in board_assets.write_beside(board_render.root(), args.out.parent):
+        ui.say(
+            f"board: wrote {asset} ({_kb(asset)}) - bootstrap {board_assets.BOOTSTRAP_VERSION}, "
+            "the vendored stylesheet the pages link"
+        )
     # One fold for every page, never one apiece: 304 pages against a per-page read is 304
     # folds of the same log (basicly-lc2bd3v.2).
     written, refused = _write_records(
@@ -241,7 +249,7 @@ def add_parsers(subparsers: argparse._SubParsersAction) -> None:
     board = subparsers.add_parser(
         "board",
         help="The harness board: the factory and the tracker, on one page",
-        description=f"Write the harness board as one self-contained HTML file. {FRESHNESS}",
+        description=f"Write the harness board as HTML pages that fetch nothing. {FRESHNESS}",
     )
     board.add_argument(
         "--out",

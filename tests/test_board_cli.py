@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 
 from basicly import (
+    board_assets,
     board_cli,
     board_facts,
     board_schema,
@@ -31,6 +32,7 @@ from basicly import (
     supervise,
     tracker,
 )
+from tests.board_offline import assert_offline
 
 REPO_ROOT = Path(__file__).parent.parent
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "board"
@@ -169,7 +171,7 @@ def test_mode_a_writes_the_page_and_the_contract_beside_it(
 
     page = out.read_text(encoding="utf-8")
     assert board_schema.VERSION in page
-    assert "<script" not in page and "<link" not in page
+    assert_offline(page)
 
     sidecar = out.parent / board_cli.SNAPSHOT_NAME
     document = json.loads(sidecar.read_text(encoding="utf-8"))
@@ -178,7 +180,8 @@ def test_mode_a_writes_the_page_and_the_contract_beside_it(
 
     assert "snapshot built in" in printed
     assert str(out) in printed and str(sidecar) in printed
-    assert "self-contained" in printed
+    assert "vendored stylesheet" in printed
+    assert (out.parent / board_assets.DIRNAME / board_assets.STYLESHEET).is_file()
 
 
 def test_mode_a_refuses_to_write_a_page_with_no_destination(

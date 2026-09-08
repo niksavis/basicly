@@ -35,6 +35,7 @@ from xml.etree import ElementTree
 import pytest
 
 from basicly import board_icons, board_regions, board_render, board_schema
+from tests.board_offline import assert_offline
 from tests.test_board_wall import FIXTURES, REPO_ROOT, STAMPED
 
 TEMPLATES = REPO_ROOT / ".basicly" / "core" / "templates" / "board"
@@ -174,9 +175,7 @@ def test_the_page_references_no_origin_and_no_css_declaration_emits_a_codepoint(
     checked rather than that one arrow, because naming the arrow would pass the next escape.
     """
     page = _page(_document(state))
-    assert "<script" not in page
-    assert "<link" not in page
-    assert "src=" not in page
+    assert_offline(page)
     # The positive control, and it is not optional: the CSS comment recording *why* the
     # arrow went spells the declaration verbatim, so a probe that read prose reported the
     # comment and the same probe would have reported a clean page as dirty.
