@@ -5,21 +5,28 @@ cannot do themselves, and until this gate existed each said so **only in a docst
 the one place a gate cannot read (basicly-vkh0.21):
 
 ``events.py``
-    ``events-*.jsonl`` must be declared ``-text`` in ``.gitattributes``. Every ``open()``
-    in the kit passes ``newline="\n"``, which controls what *we* write and not what git
-    does on checkout; an event id is content-derived, so a byte git rewrote is an id
-    changed. Measured on git 2.43.0 with ``core.autocrlf=true``: a host whose only rule is
-    ``* text=auto`` returns an LF-only log as CRLF, and the same host carrying ``-text``
-    returns it unchanged. This repo's own ``* text=auto eol=lf`` already pinned the
-    working-tree ending, so the rule is not repairing live corruption *here* — it is what
-    makes byte-exactness a property of the log's rule rather than of a repo-wide ``eol``
-    setting, and what carries the requirement to a consumer whose ``*`` rule is bare.
+    ``events-*.jsonl`` must be declared ``-text merge=union`` in ``.gitattributes``.
+    ``-text``: every ``open()`` in the kit passes ``newline="\n"``, which controls what *we*
+    write and not what git does on checkout; an event id is content-derived, so a byte git
+    rewrote is an id changed. Measured on git 2.43.0 with ``core.autocrlf=true``: a host
+    whose only rule is ``* text=auto`` returns an LF-only log as CRLF, and the same host
+    carrying ``-text`` returns it unchanged. This repo's own ``* text=auto eol=lf`` already
+    pinned the working-tree ending, so the rule is not repairing live corruption *here* —
+    it is what makes byte-exactness a property of the log's rule rather than of a repo-wide
+    ``eol`` setting, and what carries the requirement to a consumer whose ``*`` rule is bare.
+    ``merge=union`` (basicly-aabirfj): two branches that each append one event both change
+    the log's last hunk, and the default driver reports a content conflict; measured on
+    git 2.55.0, the same history merges clean under the union driver and keeps both
+    events. The kit's fold is written for exactly that — a duplicated hunk folds once and
+    side-order does not change the result — so without the attribute the tracker's whole
+    reason to exist, a backlog two agents can append to in parallel, is not delivered.
 ``snapshot.py``
     ``snapshot.jsonl`` and every ``checkpoint-*.jsonl`` are derived — a projection of the
     log that anybody may delete. Committing one recreates the dual-store failure the event
     log exists to escape: two branches each rebuild it, and any record changed on both
     sides is a same-line conflict git cannot union-merge. So the ledger directory's ignore
-    rules must cover both patterns.
+    rules must cover both patterns, and the union attribute must **not** reach them: a
+    derived file is rewritten rather than appended, and a concatenation of two is corrupt.
 
 **The patterns are read off the kit, never spelled a second time here.**
 :data:`~snapshot.DERIVED_PATTERNS` and ``events.LOG_GLOB`` are loaded from the host's own
@@ -36,10 +43,10 @@ and be wrong in exactly the cases that matter.
 
 Where this stops, stated so it is not mistaken for more:
 
-* It checks the ``text`` attribute, which is the requirement ``events.py`` states. A
-  ``filter`` (clean/smudge) or ``working-tree-encoding`` attribute would also rewrite the
-  log's bytes and is **not** checked; neither is set anywhere in this tree, and adding one
-  to a ledger path would be a deliberate act.
+* It checks the ``text`` and ``merge`` attributes, which are the requirements ``events.py``
+  states. A ``filter`` (clean/smudge) or ``working-tree-encoding`` attribute would also
+  rewrite the log's bytes and is **not** checked; neither is set anywhere in this tree, and
+  adding one to a ledger path would be a deliberate act.
 * It asks about sample paths built from the globs, not about files on disk, so it holds
   before a ledger exists — which is the only useful time to answer, since the requirement
   becomes load-bearing the moment the first log is written.
@@ -165,17 +172,17 @@ def _fatal(completed: subprocess.CompletedProcess[str], question: str) -> None:
         raise DeploymentError(f"git could not answer {question}: {detail}")
 
 
-def text_attribute(repo: Path, path: str) -> str:
-    """What git reports the ``text`` attribute to be for ``path``.
+def attribute(repo: Path, path: str, name: str) -> str:
+    """What git reports the attribute ``name`` to be for ``path``.
 
-    ``-z`` output rather than the human form: the default is ``<path>: text: <value>`` and
-    a path containing ``: `` would be unparseable from it.
+    ``-z`` output rather than the human form: the default is ``<path>: <name>: <value>``
+    and a path containing ``: `` would be unparseable from it.
 
     Raises:
         DeploymentError: git refused the question, or answered in a shape this cannot read.
     """
-    completed = _git(repo, "check-attr", "-z", "text", "--", path)
-    _fatal(completed, f"the text attribute of {path}")
+    completed = _git(repo, "check-attr", "-z", name, "--", path)
+    _fatal(completed, f"the {name} attribute of {path}")
     fields = completed.stdout.split("\0")
     if len(fields) < 3:
         raise DeploymentError(f"git check-attr gave no answer for {path}")
@@ -203,21 +210,34 @@ def is_tracked(repo: Path, path: str) -> bool:
 
 
 def log_findings(repo: Path, ledger: Path, log_glob: str) -> list[Finding]:
-    """The host's failures to declare the event log ``-text``."""
-    rule = f"{log_glob} -text"
+    """The host's failures to declare the event log ``-text merge=union``."""
+    rule = f"{log_glob} -text merge=union"
+    remedy = f"add to .gitattributes, after any `*` rule:  {rule}"
     findings = []
     for name in samples(log_glob):
         relative = (ledger / name).as_posix()
-        value = text_attribute(repo, relative)
-        if value != "unset":
+        text = attribute(repo, relative, "text")
+        if text != "unset":
             findings.append(
                 Finding(
                     path=relative,
                     detail=(
-                        f"git reports text: {value}, so a checkout may rewrite the log's "
+                        f"git reports text: {text}, so a checkout may rewrite the log's "
                         f"bytes and an event id is content-derived"
                     ),
-                    remedy=f"add to .gitattributes, after any `*` rule:  {rule}",
+                    remedy=remedy,
+                )
+            )
+        merge = attribute(repo, relative, "merge")
+        if merge != "union":
+            findings.append(
+                Finding(
+                    path=relative,
+                    detail=(
+                        f"git reports merge: {merge}, so two branches that each append an "
+                        f"event conflict instead of keeping both"
+                    ),
+                    remedy=remedy,
                 )
             )
     return findings
@@ -250,6 +270,17 @@ def derived_findings(repo: Path, ledger: Path, patterns: Sequence[str]) -> list[
                             f"index, and an ignore rule does not un-commit a file"
                         ),
                         remedy=f"run:  git rm --cached {relative}",
+                    )
+                )
+            if attribute(repo, relative, "merge") == "union":
+                findings.append(
+                    Finding(
+                        path=relative,
+                        detail=(
+                            "git reports merge: union on a derived file, which is rewritten "
+                            "rather than appended, so a merge would concatenate two of them"
+                        ),
+                        remedy=f"narrow the merge=union rule in .gitattributes off  {rule}",
                     )
                 )
     return findings
@@ -312,7 +343,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if findings:
         report(findings)
         return 1
-    print(f"kit-deployment: {args.ledger.as_posix()} satisfies both kit requirements")
+    print(f"kit-deployment: {args.ledger.as_posix()} satisfies the kit's deployment requirements")
     return 0
 
 

@@ -24,7 +24,17 @@
 # the requirement and cannot enforce it. `.scripts/kit_deployment.py` reads that
 # constant, asks git what it does with a log path, and fails naming this rule — so the
 # second spelling here cannot drift from the kit's one silently.
-events-*.jsonl -text
+#
+# `merge=union` is what makes the log append-only *across branches* (basicly-aabirfj). Two
+# branches that each append one event both change the file's last hunk, and the default
+# driver reports that as a content conflict; the union driver concatenates both sides.
+# Every reader is already written for that: ids are content-derived, so a duplicated hunk
+# folds once, and the fold is order-independent, so the side git happens to put first is
+# not a fact about the backlog. The glob must stay this narrow: `snapshot.jsonl` and
+# `checkpoint-*.jsonl` are rewritten rather than appended, and a concatenation of two of
+# them is a corrupt checkpoint. `kit_deployment.py` checks both attributes, and checks
+# that the derived files carry no union.
+events-*.jsonl -text merge=union
 
 # Treat binary files as binary (no line-ending conversion).
 *.png binary

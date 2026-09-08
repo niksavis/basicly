@@ -92,10 +92,9 @@ lock's platform answers, the redactor — as an argument. It must also stay pars
 interpreter older than this repo's 3.14 floor, so: no syntax newer than 3.9, and one
 exception class per handler (`.basicly/core/kit/README.md`).
 
-**It needs one thing from its deployment that it cannot do itself**: `events-*.jsonl` must
-be declared ``-text`` in `.gitattributes`, or a Windows ``autocrlf`` checkout rewrites the
-ledger in place. Every ``open()`` here passes ``encoding="utf-8"`` and ``newline="\n"``,
-which controls what *we* write and not what git does on checkout.
+**It needs one line from its deployment that it cannot write itself**: `events-*.jsonl -text
+merge=union` in `.gitattributes`. Without ``-text`` a Windows ``autocrlf`` checkout rewrites
+the ledger in place; without ``merge=union`` two branches that each append conflict.
 """
 
 from __future__ import annotations

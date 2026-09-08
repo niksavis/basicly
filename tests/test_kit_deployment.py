@@ -24,176 +24,55 @@ change, and it is what carries the requirement to a consumer whose ``*`` rule is
 distinction is asserted rather than argued.
 
 Every host is built from **this repo's own rule files**, copied, and the negative controls
-are made by deleting the exact line under test. ``_drop_lines`` fails when the line it was
-asked to remove is not there, so deleting a rule from ``.gitattributes`` or ``.gitignore``
-breaks these tests at the fixture rather than quietly leaving them asserting nothing.
-
-The gate is driven as a subprocess throughout. It loads the host's kit by path, and
-``snapshot.py`` caches ``events`` under a fixed ``sys.modules`` name — so a test that
-edits a kit constant would be served the previous test's copy in-process, and the drift
-test is precisely the one that must not be.
+are made by deleting the exact line under test (``kit_deployment_helpers``). The gate is
+driven as a subprocess throughout. It loads the host's kit by path, and ``snapshot.py``
+caches ``events`` under a fixed ``sys.modules`` name — so a test that edits a kit constant
+would be served the previous test's copy in-process, and the drift test is precisely the
+one that must not be. The ``merge=union`` half of the log rule has its own module,
+``test_kit_deployment_union_merge.py``.
 """
 
 from __future__ import annotations
 
-import importlib.util
-import os
-import shutil
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
 from basicly import tracker_paths
-
-REPO_ROOT = Path(__file__).parent.parent
-SCRIPT = REPO_ROOT / ".scripts" / "kit_deployment.py"
-KIT_RELATIVE = Path(".basicly") / "core" / "kit" / "tracker"
-LEDGER_RELATIVE = Path(".basicly") / "ledger"
-
-TEXT_RULE = "events-*.jsonl -text"
-SNAPSHOT_RULE = ".basicly/ledger/snapshot.jsonl"
-CHECKPOINT_RULE = ".basicly/ledger/checkpoint-*.jsonl"
-
-# Injected rather than read, per this repo's platform-hermetic rule: the kit's only wall
-# clock is this argument, and a ledger written from the host's clock is a different file
-# on every run.
-CLOCK = 1_000_000_000.0
-
-
-def _load(path: Path, name: str) -> ModuleType:
-    """Load a standalone script by path, the way a consumer without basicly would."""
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-gate = _load(SCRIPT, "kit_deployment")
-snapshot = _load(REPO_ROOT / KIT_RELATIVE / "snapshot.py", "kit_deployment_test_snapshot")
-events = snapshot.events
-
-
-# --- git, made a property of the test rather than of the machine ---------------
-
-
-def _git_env(tmp_path: Path) -> dict[str, str]:
-    """An environment where git reads no global or system config.
-
-    A developer's ``core.autocrlf`` or ``core.excludesFile`` would otherwise be an input:
-    a global exclude file could make a negative control pass, which is the direction that
-    turns a broken gate green. Both variables point at a file that is never created —
-    git tolerates a missing config path, and this is portable in a way ``os.devnull`` is
-    not.
-    """
-    absent = str(tmp_path / "no-such-gitconfig")
-    return {**os.environ, "GIT_CONFIG_GLOBAL": absent, "GIT_CONFIG_SYSTEM": absent}
-
-
-def _git(repo: Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
-    """Run git in ``repo``, raising on failure so a broken fixture is never a silent pass."""
-    return subprocess.run(
-        ["git", "-C", str(repo), *args],
-        capture_output=True,
-        text=True,
-        check=True,
-        env=env,
-    )
-
-
-def _init(root: Path, env: dict[str, str]) -> None:
-    """Make ``root`` a git repository able to commit without touching the host's identity."""
-    root.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["git", "init", "-q", "-b", "main", str(root)], check=True, capture_output=True, env=env
-    )
-    _git(root, env, "config", "user.email", "test@example.invalid")
-    _git(root, env, "config", "user.name", "kit deployment test")
-    _git(root, env, "config", "commit.gpgsign", "false")
-    _git(root, env, "config", "core.autocrlf", "false")
-
-
-def _drop_lines(path: Path, *lines: str) -> None:
-    """Remove exact lines from a rules file, failing when one is not there to remove.
-
-    The failure is the point: this is how a deleted rule in the real ``.gitattributes`` or
-    ``.gitignore`` breaks the negative controls loudly instead of leaving them asserting
-    nothing about a host that never had the rule.
-    """
-    wanted = {line.strip() for line in lines}
-    kept = []
-    seen = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip() in wanted:
-            seen.add(line.strip())
-        else:
-            kept.append(line)
-    missing = sorted(wanted - seen)
-    assert not missing, f"{path.name} does not carry {missing} — nothing to remove"
-    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
-
-
-# --- a host repository, shaped the way a consumer's is -------------------------
+from tests.kit_deployment_helpers import (
+    CHECKPOINT_RULE,
+    KIT_RELATIVE,
+    LEDGER_RELATIVE,
+    LOG_RULE,
+    REPO_ROOT,
+    SCRIPT,
+    SNAPSHOT_RULE,
+    drop_lines,
+    events,
+    gate,
+    git,
+    git_env,
+    init,
+    make_host,
+    run_gate,
+    snapshot,
+    write_ledger,
+)
 
 
 @pytest.fixture
 def env(tmp_path: Path) -> dict[str, str]:
     """The hermetic git environment every call in this module runs under."""
-    return _git_env(tmp_path)
+    return git_env(tmp_path)
 
 
 @pytest.fixture
 def host(tmp_path: Path, env: dict[str, str]) -> Path:
-    """A git repository with the kit installed and this repo's own rule files.
-
-    The kit is copied rather than referenced: ``basicly install`` puts it inside the repo
-    it manages, so a host that reached back into this checkout would be an arrangement no
-    consumer has.
-    """
-    root = tmp_path / "host"
-    shutil.copytree(REPO_ROOT / KIT_RELATIVE, root / KIT_RELATIVE)
-    for name in (".gitattributes", ".gitignore"):
-        shutil.copy2(REPO_ROOT / name, root / name)
-    _init(root, env)
-    return root
-
-
-def _write_ledger(directory: Path) -> None:
-    """Write a real ledger: two logs across a rotation, a checkpoint, and a snapshot.
-
-    Driven through the kit's own API rather than by writing files with the expected names,
-    so the derived set under test is whatever the kit really produces.
-    """
-    events.append(
-        directory,
-        [events.Draft("basicly-aa11", events.KIND_CREATED, {"title": "a record"})],
-        actor="test",
-        clock=lambda: CLOCK,
-    )
-    snapshot.rotate(directory, "2026")
-    events.append(
-        directory,
-        [events.Draft("basicly-bb22", events.KIND_CREATED, {"title": "another record"})],
-        actor="test",
-        clock=lambda: CLOCK,
-    )
-    snapshot.rebuild(directory)
-
-
-def _run_gate(repo: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    """Run the gate against ``repo``, never raising: a non-zero exit is the answer."""
-    return subprocess.run(
-        [sys.executable, str(SCRIPT), "--repo", str(repo)],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    """A consumer-shaped host repository with the kit and this repo's rule files."""
+    return make_host(tmp_path / "host", env)
 
 
 # --- the log's bytes (first acceptance criterion) ------------------------------
@@ -208,9 +87,9 @@ def test_a_normalising_checkout_leaves_a_real_log_byte_identical(
     line endings, and compare bytes. Both logs are compared, so a rule that only reached
     the initial name would fail on the rotated one.
     """
-    _write_ledger(host / LEDGER_RELATIVE)
-    _git(host, env, "add", "-A")
-    _git(host, env, "commit", "-qm", "a ledger")
+    write_ledger(host / LEDGER_RELATIVE)
+    git(host, env, "add", "-A")
+    git(host, env, "commit", "-qm", "a ledger")
 
     work = tmp_path / "work"
     subprocess.run(
@@ -243,14 +122,14 @@ def test_the_text_rule_is_what_survives_a_host_without_a_repo_wide_eol_rule(
     written = {}
     for name, attributes in (
         ("bare", "* text=auto\n"),
-        ("ruled", f"* text=auto\n{TEXT_RULE}\n"),
+        ("ruled", f"* text=auto\n{LOG_RULE}\n"),
     ):
         source = tmp_path / name
-        _init(source, env)
+        init(source, env)
         (source / ".gitattributes").write_text(attributes, encoding="utf-8")
         (source / "events-0001.jsonl").write_bytes(b'{"a":1}\n{"b":2}\n')
-        _git(source, env, "add", "-A")
-        _git(source, env, "commit", "-qm", "a log")
+        git(source, env, "add", "-A")
+        git(source, env, "commit", "-qm", "a log")
         work = tmp_path / f"{name}-work"
         subprocess.run(
             ["git", "-c", "core.autocrlf=true", "clone", "-q", str(source), str(work)],
@@ -269,15 +148,15 @@ def test_the_text_rule_is_what_survives_a_host_without_a_repo_wide_eol_rule(
 
 def _ledger_status(repo: Path, env: dict[str, str]) -> set[str]:
     """Every ledger path git offers as untracked, read from ``git status``."""
-    listing = _git(repo, env, "status", "--porcelain", "--untracked-files=all").stdout
+    listing = git(repo, env, "status", "--porcelain", "--untracked-files=all").stdout
     prefix = LEDGER_RELATIVE.as_posix() + "/"
     return {line[3:] for line in listing.splitlines() if line[3:].startswith(prefix)}
 
 
 def _ledger_staged(repo: Path, env: dict[str, str]) -> set[str]:
     """Every ledger path that reaches the index when everything stageable is staged."""
-    _git(repo, env, "add", "-A")
-    staged = _git(repo, env, "diff", "--cached", "--name-only").stdout
+    git(repo, env, "add", "-A")
+    staged = git(repo, env, "diff", "--cached", "--name-only").stdout
     prefix = LEDGER_RELATIVE.as_posix() + "/"
     return {line for line in staged.splitlines() if line.startswith(prefix)}
 
@@ -292,7 +171,7 @@ def test_git_offers_neither_derived_file_from_a_real_ledger(
     documents that failure — deleting the truth to save a cache.
     """
     ledger = host / LEDGER_RELATIVE
-    _write_ledger(ledger)
+    write_ledger(ledger)
     derived = {path.name for path in snapshot.derived_paths(ledger)}
     assert derived == {"snapshot.jsonl", "checkpoint-0001.jsonl"}
 
@@ -311,9 +190,9 @@ def test_without_the_ignore_rules_git_offers_both_derived_files(
     host: Path, env: dict[str, str]
 ) -> None:
     """The control: the same ledger in the same repo, with the two rules removed."""
-    _drop_lines(host / ".gitignore", SNAPSHOT_RULE, CHECKPOINT_RULE)
+    drop_lines(host / ".gitignore", SNAPSHOT_RULE, CHECKPOINT_RULE)
     ledger = host / LEDGER_RELATIVE
-    _write_ledger(ledger)
+    write_ledger(ledger)
 
     offered = _ledger_status(host, env)
     staged = _ledger_staged(host, env)
@@ -337,7 +216,7 @@ def test_the_gate_passes_on_this_repository(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
-        env=_git_env(tmp_path),
+        env=git_env(tmp_path),
     )
     assert completed.returncode == 0, completed.stderr
     assert LEDGER_RELATIVE.as_posix() in completed.stdout
@@ -345,20 +224,20 @@ def test_the_gate_passes_on_this_repository(tmp_path: Path) -> None:
 
 def test_the_gate_names_the_text_rule_the_host_lacks(host: Path, env: dict[str, str]) -> None:
     """A host without the ``-text`` declaration fails, and is told the rule and the file."""
-    assert _run_gate(host, env).returncode == 0
+    assert run_gate(host, env).returncode == 0
 
-    _drop_lines(host / ".gitattributes", TEXT_RULE)
-    completed = _run_gate(host, env)
+    drop_lines(host / ".gitattributes", LOG_RULE)
+    completed = run_gate(host, env)
 
     assert completed.returncode == 1
-    assert TEXT_RULE in completed.stderr
+    assert LOG_RULE in completed.stderr
     assert ".gitattributes" in completed.stderr
 
 
 def test_the_gate_names_both_ignore_rules_the_host_lacks(host: Path, env: dict[str, str]) -> None:
     """A host without the derived-file rules fails, naming each pattern separately."""
-    _drop_lines(host / ".gitignore", SNAPSHOT_RULE, CHECKPOINT_RULE)
-    completed = _run_gate(host, env)
+    drop_lines(host / ".gitignore", SNAPSHOT_RULE, CHECKPOINT_RULE)
+    completed = run_gate(host, env)
 
     assert completed.returncode == 1
     assert SNAPSHOT_RULE in completed.stderr
@@ -376,11 +255,11 @@ def test_a_rule_naming_only_the_initial_log_does_not_satisfy_the_gate(
     the first rotation. This is why ``GLOB_FILLS`` carries two entries.
     """
     attributes = host / ".gitattributes"
-    _drop_lines(attributes, TEXT_RULE)
+    drop_lines(attributes, LOG_RULE)
     with attributes.open("a", encoding="utf-8") as handle:
-        handle.write(f"{events.INITIAL_LOG_NAME} -text\n")
+        handle.write(f"{events.INITIAL_LOG_NAME} -text merge=union\n")
 
-    completed = _run_gate(host, env)
+    completed = run_gate(host, env)
 
     assert completed.returncode == 1
     assert events.INITIAL_LOG_NAME not in completed.stderr
@@ -396,11 +275,11 @@ def test_the_gate_says_uncommit_when_a_derived_file_is_already_tracked(
     snapshot is told to add a rule it has and the message is a dead end.
     """
     ledger = host / LEDGER_RELATIVE
-    _write_ledger(ledger)
-    _git(host, env, "add", "-f", (LEDGER_RELATIVE / "snapshot.jsonl").as_posix())
-    _git(host, env, "commit", "-qm", "a derived file that should not be here")
+    write_ledger(ledger)
+    git(host, env, "add", "-f", (LEDGER_RELATIVE / "snapshot.jsonl").as_posix())
+    git(host, env, "commit", "-qm", "a derived file that should not be here")
 
-    completed = _run_gate(host, env)
+    completed = run_gate(host, env)
 
     assert completed.returncode == 1
     assert "already in the index" in completed.stderr
@@ -433,21 +312,21 @@ def test_the_gate_reads_the_kits_constants_rather_than_a_second_spelling(
         encoding="utf-8",
     )
 
-    completed = _run_gate(host, env)
+    completed = run_gate(host, env)
 
     assert completed.returncode == 1
-    assert "ledger-*.jsonl -text" in completed.stderr
+    assert "ledger-*.jsonl -text merge=union" in completed.stderr
     assert ".basicly/ledger/fold-*.jsonl" in completed.stderr
-    assert TEXT_RULE not in completed.stderr
+    assert LOG_RULE not in completed.stderr
     assert CHECKPOINT_RULE not in completed.stderr
 
 
 def test_the_gate_fails_when_the_host_has_no_kit(tmp_path: Path, env: dict[str, str]) -> None:
     """No kit is a failure, never a vacuous pass — the fail-open shape this repo distrusts."""
     root = tmp_path / "kitless"
-    _init(root, env)
+    init(root, env)
 
-    completed = _run_gate(root, env)
+    completed = run_gate(root, env)
 
     assert completed.returncode == 1
     assert KIT_RELATIVE.as_posix() in completed.stderr

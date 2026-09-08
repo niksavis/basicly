@@ -182,8 +182,10 @@ events by plain append, writes only from the base checkout. Contention is report
   extending it — reading the file, writing a temp file, renaming — destroyed a concurrent
   append *silently*. The rename succeeded, the log parsed, and the fold stayed consistent,
   because the lost line was never in the text that was re-emitted.
-- **Encoding and line endings.** Declare `events*.jsonl -text` in `.gitattributes` or a
-  Windows `autocrlf` checkout rewrites the ledger in place, and pass `encoding="utf-8"` to
+- **Encoding, line endings and merging.** Declare `events-*.jsonl -text merge=union` in
+  `.gitattributes`: without `-text` a Windows `autocrlf` checkout rewrites the ledger in
+  place, and without `merge=union` two branches that each append an event conflict instead
+  of concatenating (basicly-aabirfj). Pass `encoding="utf-8"` to
   **every** `open()` — the interpreter default is still locale-dependent, so an unmarked
   open on a cp1252 host corrupts on the first non-ASCII comment.
 - **`fsck` repairs only by appending corrective events**, never by editing lines, or it
