@@ -14,12 +14,30 @@ scaffolded CI workflow runs catalog-lint as the deterministic backstop.
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
-DIST_SOURCE = "git+https://github.com/niksavis/basicly@main"
+DIST_REPO = "git+https://github.com/niksavis/basicly"
+DIST_FALLBACK = f"{DIST_REPO}@main"
+INSTALL_STATE = Path(".basicly/state/install.json")
+
+
+def dist_source(repo_root: Path | None = None) -> str:
+    """The uvx source, pinned to the version whose catalog is on disk.
+
+    ``basicly install`` records that version in the install state. Reading it here is
+    what keeps a consumer's vendored catalog linted by its own engine instead of by
+    whatever ``main`` holds that morning. The branch is the last resort, not the default.
+    """
+    state = (repo_root or Path.cwd()) / INSTALL_STATE
+    try:
+        version = json.loads(state.read_text(encoding="utf-8"))["basicly_version"]
+    except OSError, ValueError, KeyError, TypeError:
+        return DIST_FALLBACK
+    return f"{DIST_REPO}@v{version}" if isinstance(version, str) and version else DIST_FALLBACK
 
 
 def _cli_command() -> list[str] | None:
@@ -31,7 +49,7 @@ def _cli_command() -> list[str] | None:
         return [sys.executable, "-m", "basicly.cli", "catalog", "lint"]
     uvx = shutil.which("uvx")
     if uvx:
-        return [uvx, "--from", DIST_SOURCE, "basicly", "catalog", "lint"]
+        return [uvx, "--from", dist_source(), "basicly", "catalog", "lint"]
     return None
 
 

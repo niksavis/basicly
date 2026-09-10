@@ -13,7 +13,31 @@ import json
 
 import yaml
 
-from basicly.scaffolds import CONSUMER_CI_WORKFLOW, VSCODE_TASKS_JSON
+from basicly import __version__
+from basicly.scaffolds import CONSUMER_CI_WORKFLOW, DIST_SOURCE, VSCODE_TASKS_JSON
+
+_SCAFFOLDS = {"tasks.json": VSCODE_TASKS_JSON, "basicly-gates.yml": CONSUMER_CI_WORKFLOW}
+
+
+def test_no_scaffold_resolves_the_engine_from_a_branch() -> None:
+    """A branch ref lets whatever `main` holds that morning gate a pinned consumer.
+
+    Both scaffolds shipped `@main` on every uvx line, so a repo that vendored one
+    version was linted by another — the schema field required upstream after the vendor
+    refused every source in the catalog the consumer actually had.
+    """
+    for name, body in _SCAFFOLDS.items():
+        assert "@main" not in body, f"{name} resolves the engine from a branch"
+
+
+def test_every_scaffolded_uvx_line_pins_the_scaffolding_version() -> None:
+    """The pin is the running version, so install and the gate it writes never disagree."""
+    assert DIST_SOURCE.endswith(f"@v{__version__}")
+    for name, body in _SCAFFOLDS.items():
+        uvx_lines = [line for line in body.splitlines() if "uvx --from" in line]
+        assert uvx_lines, f"{name} has no uvx line to pin"
+        for line in uvx_lines:
+            assert DIST_SOURCE in line, f"{name} carries an unpinned uvx line: {line.strip()}"
 
 
 def test_the_vscode_scaffold_parses_as_the_jsonc_vscode_reads() -> None:

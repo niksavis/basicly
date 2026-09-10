@@ -14,6 +14,14 @@ reader who wants to know what a key defaults to looks there.
 
 from __future__ import annotations
 
+from . import __version__
+
+# Pinned to the version doing the scaffolding, never a branch: a consumer whose catalog
+# is vendored at one version must be linted by that version's engine, or whatever `main`
+# holds that morning decides whether their commits pass.
+DIST_SOURCE = f"git+https://github.com/niksavis/basicly@v{__version__}"
+UVX_COMMAND = f"uvx --from {DIST_SOURCE} basicly"
+
 # Scaffolded into .vscode/tasks.json by `basicly install` when absent — one
 # single-command task per harness operation (no shell && chaining, so the
 # commands work in PowerShell 5, cmd, and POSIX shells alike). The file is the
@@ -61,7 +69,7 @@ VSCODE_TASKS_JSON = """\
     }
   ]
 }
-""".replace("@UVX@", "uvx --from git+https://github.com/niksavis/basicly@main basicly")
+""".replace("@UVX@", UVX_COMMAND)
 
 # Scaffolded into .github/workflows/basicly-gates.yml by `basicly install` when
 # absent — the consumer CI floor mirroring the local git-hook gates. Assumes no
@@ -141,7 +149,7 @@ jobs:
         run: @UVX@ hooks-check
       - name: Configured verify checks
         run: @UVX@ verify --mode full
-""".replace("@UVX@", "uvx --from git+https://github.com/niksavis/basicly@main basicly")
+""".replace("@UVX@", UVX_COMMAND)
 
 # Scaffolded into the user overlay by `basicly install` when absent — the two
 # highest-signal descriptive blocks an agent instruction file needs (project

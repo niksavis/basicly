@@ -5,10 +5,8 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import pytest
+import pytest
 
 
 def _load_hook():
@@ -50,11 +48,43 @@ def test_falls_back_to_uvx(monkeypatch: pytest.MonkeyPatch) -> None:
     assert module._cli_command() == [
         "/usr/bin/uvx",
         "--from",
-        module.DIST_SOURCE,
+        module.dist_source(),
         "basicly",
         "catalog",
         "lint",
     ]
+
+
+def test_dist_source_pins_the_installed_version(tmp_path: Path) -> None:
+    """The uvx source pins the version whose catalog install put on disk (basicly-7o8)."""
+    module = _load_hook()
+    state = tmp_path / module.INSTALL_STATE
+    state.parent.mkdir(parents=True)
+    state.write_text('{"basicly_version": "0.5.1"}', encoding="utf-8")
+
+    assert module.dist_source(tmp_path) == "git+https://github.com/niksavis/basicly@v0.5.1"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    ["", "{}", "not json", '{"basicly_version": ""}', '{"basicly_version": 7}'],
+    ids=["empty", "no-version", "malformed", "blank-version", "non-string"],
+)
+def test_dist_source_falls_back_to_the_branch(tmp_path: Path, payload: str) -> None:
+    """An unreadable or versionless state file falls back rather than emitting a bad ref."""
+    module = _load_hook()
+    state = tmp_path / module.INSTALL_STATE
+    state.parent.mkdir(parents=True)
+    state.write_text(payload, encoding="utf-8")
+
+    assert module.dist_source(tmp_path) == module.DIST_FALLBACK
+
+
+def test_dist_source_falls_back_without_a_state_file(tmp_path: Path) -> None:
+    """The authoring repo writes no install state, and always resolves an earlier rung."""
+    module = _load_hook()
+
+    assert module.dist_source(tmp_path) == module.DIST_FALLBACK
 
 
 def test_advisory_skip_when_no_channel(
