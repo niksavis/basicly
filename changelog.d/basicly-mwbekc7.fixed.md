@@ -1,1 +1,0 @@
-- **`catalog lint` no longer hides its own migration message.** Its advisory pass loads every skill and used to abort the command, so a catalog authored before the `invocation` axis failed with one raw `missing required field` naming a single file. The per-file migration now prints for every source, and an unavailable advisory says so instead of ending the run. (basicly-mwbekc7)

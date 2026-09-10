@@ -1,1 +1,0 @@
-- **`basicly tracker import` migrates another tracker's export into the ledger.** The kit has carried a tested importer with no command, so the only path was writing Python against a kit module. **Source ids are preserved**, so a commit message naming an old id still resolves. It is an upsert never a sync, absence is never a deletion, and a re-run is a replay. (basicly-fva0cvm)

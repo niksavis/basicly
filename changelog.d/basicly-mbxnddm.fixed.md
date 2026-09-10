@@ -1,1 +1,0 @@
-- **Scaffolded tooling now pins the engine version instead of a branch.** `basicly install` writes every `uvx --from` line in `basicly-gates.yml` and `.vscode/tasks.json` pinned to the version that scaffolded it, and the `catalog-lint` hook reads the version in `.basicly/state/install.json`. A vendored catalog is gated by its own engine. (basicly-mbxnddm)

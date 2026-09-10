@@ -1,1 +1,0 @@
-- **`basicly install --overwrite-scaffolds` replaces scaffolded files on a deliberate reinstall.** Written-once-then-yours is right for an upgrade and wrong from scratch: a consumer who wiped `.basicly/` kept scaffolds calling a renamed hook. Each previous copy is kept as a `.basicly-bak` sibling. (basicly-qhjmtqu)

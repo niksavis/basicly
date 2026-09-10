@@ -4,7 +4,7 @@ This is a walkthrough, not a reference. Follow it top to bottom on a **scratch
 git repo** and you will end with one unit of work filed, built in its own
 worktree, merged, and closed by the harness — one sitting, no agent spend.
 Every command and every quoted output below was executed against a fresh repo on
-basicly 0.11.0 in a real terminal, with that repo's generated bead-id prefix swapped for
+basicly 0.12.0 in a real terminal, with that repo's generated bead-id prefix swapped for
 `myrepo`, absolute paths written as `/path/to/...`, and `...` marking an elided line.
 
 When you want to look something up rather than learn the shape, stop here and
@@ -33,7 +33,7 @@ Every command below is written as bare `basicly`. Run it as the pinned form so
 you always get the version you chose:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.11.0 basicly <args>
+uvx --from git+https://github.com/niksavis/basicly@v0.12.0 basicly <args>
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -47,7 +47,7 @@ uvx --from git+https://github.com/niksavis/basicly@v0.11.0 basicly <args>
 From the repo root:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.11.0 basicly install
+uvx --from git+https://github.com/niksavis/basicly@v0.12.0 basicly install
 ```
 
 It ends with:
@@ -63,17 +63,17 @@ basicly status
 ```
 
 ```text
-engine: basicly 0.11.0
+engine: basicly 0.12.0
 repo: consumer
-catalog: installed by basicly 0.11.0 at ... (matches engine)
+catalog: installed by basicly 0.12.0 at ... (matches engine)
 drift: generated files up to date
 Hooks
 ┏━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┓
 ┃ manager ┃ specs ┃ projection ┃ activation ┃
 ┡━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━┩
 │ git     │ 11    │ in sync    │ installed  │
-│ claude  │ 4     │ in sync    │ active     │
-│ copilot │ 1     │ in sync    │ active     │
+│ claude  │ 6     │ in sync    │ active     │
+│ copilot │ 2     │ in sync    │ active     │
 └─────────┴───────┴────────────┴────────────┘
 agent hooks: active on claude, copilot; the git hooks stay the commit-time floor
 technologies: all (no selection recorded)
@@ -105,6 +105,7 @@ is measured for how often the right skill ranks first, and the hook refuses to
 guess what number you consider acceptable:
 
 ```text
+catalog lint: warning: .basicly/core/skills/harness-loop/skill.yaml: SKILL.md body is 536 lines; keep it under ~500 (move detail into references/)
 catalog lint: routing: rank-1 rate 41/46 = 89.1% (no floor declared)
 catalog lint: FAILED
   no rank-1 floor declared — set `[catalog] rank1_floor` in basicly.toml below the measured baseline (currently 89.1%)
@@ -140,6 +141,10 @@ basicly policy scaffold --type task
 ```
 
 ```text
+## Trigger
+
+TODO: state the trigger in either voice - a situation, 'When <situation>, I want to <motivation>, so I can <outcome>.', or a persona, 'As a <persona>, I want <goal>, so that <benefit>.'. A persona is never required: where a situation triggers the work and no person wants it, inventing a persona is the defect.
+
 ## Acceptance Criteria
 
 - TODO: Given <starting state> when <action> then <observable result>
@@ -149,12 +154,18 @@ basicly policy scaffold --type task
 - TODO: one entry per line in exactly this form: - `src/basicly/cli.py` — an entry that is not a backticked glob parses to nothing.
 ```
 
-Fill both sections in and file it. A `## Scope` entry must be a **backticked
-glob alone on its line** — a bare path parses to nothing, and everything
-downstream (sizing, parallel grouping) reads it:
+Fill all three sections in and file it. A `## Trigger` is owed by every work
+type, and a persona is never required — where a situation triggers the work and
+nobody in particular wants it, inventing a persona is the defect. A `## Scope`
+entry must be a **backticked glob alone on its line** — a bare path parses to
+nothing, and everything downstream (sizing, parallel grouping) reads it:
 
 ```sh
-basicly tracker write -- create "Add a getting started note" -t task -p 2 -d '## Acceptance Criteria
+basicly tracker write -- create "Add a getting started note" -t task -p 2 -d '## Trigger
+
+When a reader opens the repo, I want a one line getting started note, so I can run the harness without reading the whole tree.
+
+## Acceptance Criteria
 
 - Given a reader who opens the repo when they read NOTES.md then a one line getting started note is present
 
@@ -165,7 +176,7 @@ basicly tracker write -- create "Add a getting started note" -t task -p 2 -d '##
 ```
 
 ```text
-created: myrepo-hv33
+created: myrepo-rq9r
 ```
 
 A record with no `--parent` is a *root*, and a root id needs a namespace: set
@@ -176,22 +187,22 @@ prefix mints an id no later read finds again.
 Check the gate agrees:
 
 ```sh
-basicly policy dor myrepo-hv33
+basicly policy dor myrepo-rq9r
 ```
 
 ```text
-DoR: READY (myrepo-hv33)
+DoR: READY (myrepo-rq9r)
 ```
 
 If it says `NOT READY` it names the missing heading and repeats the scaffold
 command; fill that section in with
-`basicly tracker write -- update myrepo-hv33 -d '...'`.
+`basicly tracker write -- update myrepo-rq9r -d '...'`.
 
 Now the install output has an id to reference, so commit it:
 
 ```sh
 git add -A
-git commit -m "chore: install basicly (myrepo-hv33)"
+git commit -m "chore: install basicly (myrepo-rq9r)"
 ```
 
 Every hook should report `Passed`.
@@ -199,18 +210,18 @@ Every hook should report `Passed`.
 ## Step 4 — ask the loop where the bead stands
 
 ```sh
-basicly loop status myrepo-hv33
+basicly loop status myrepo-rq9r
 ```
 
 ```text
-issue:       myrepo-hv33 (task, open)
+issue:       myrepo-rq9r (task, open)
 phase:       intake
 worktree:    (none)
 gates:       advance BLOCKED
   missing:   verify
 checkpoints: (none)
 rework:      verify=0
-ready set:   myrepo-hv33
+ready set:   myrepo-rq9r
 blocked:     (none)
 ```
 
@@ -223,7 +234,7 @@ including one that starts after a crash or on a different machine.
 One command drives a whole phase *boundary*, resolving what it may on the way:
 
 ```sh
-basicly loop run myrepo-hv33 --work-type task --runner manual
+basicly loop run myrepo-rq9r --work-type task --runner manual
 ```
 
 `--work-type task` is your call, and it decides the shape of everything after:
@@ -240,15 +251,15 @@ answers it:
 
 ```text
 override: runner.default=manual
-Created worktree 'myrepo-hv33'
-  path:   /path/to/myrepo.worktrees/myrepo-hv33
-  branch: harness/myrepo-hv33  (base main @ 252ea7a)
+Created worktree 'myrepo-rq9r'
+  path:   /path/to/myrepo.worktrees/myrepo-rq9r
+  branch: harness/myrepo-rq9r  (base main @ a0545c0)
   .basicly/ledger/redirect: tracker shared with the base checkout
   hooks: pre-commit, commit-msg, pre-push — pre-commit installed at /path/to/myrepo/.git/hooks/pre-commit
   ...
 [blocked] intake -> intake: recorded work type 'task'; classify checkpoint awaiting approval
-checkpoint classify: APPROVED (myrepo-hv33)
-[blocked] classify -> classify: worktree 'myrepo-hv33' provisioned; awaiting the agent's work
+checkpoint classify: APPROVED (myrepo-rq9r)
+[blocked] classify -> classify: worktree 'myrepo-rq9r' provisioned; awaiting the agent's work
 ```
 
 A checkpoint is a *human* decision, and running the command yourself at a terminal **is**
@@ -273,10 +284,10 @@ Three things just happened that are worth understanding:
 ## Step 6 — do the work, and commit it on the branch
 
 ```sh
-cd ../myrepo.worktrees/myrepo-hv33
+cd ../myrepo.worktrees/myrepo-rq9r
 printf '# Notes\n\nRun `basicly status` to see what the harness installed.\n' > NOTES.md
 git add NOTES.md
-git commit -m "docs: add a getting started note (myrepo-hv33)"
+git commit -m "docs: add a getting started note (myrepo-rq9r)"
 ```
 
 **The loop never commits your work for you.** Landing rebases the branch, so an
@@ -290,16 +301,16 @@ worktree strands the merge:
 
 ```sh
 cd ../../myrepo
-basicly loop run myrepo-hv33 --runner manual
+basicly loop run myrepo-rq9r --runner manual
 ```
 
 ```text
 override: runner.default=manual
   ...
-Cleaned up worktree 'myrepo-hv33' (worktree + branch + metadata).
-[merged] build -> verify: merged harness/myrepo-hv33 @ 2a1782e156d6 (1 commit(s)) into main @ 8c9f695
+Cleaned up worktree 'myrepo-rq9r' (worktree + branch + metadata).
+[merged] build -> verify: merged harness/myrepo-rq9r @ 137700a49e08 (1 commit(s)) into main @ cfb6c60; landing 0.6s (tracker-commit 0.4s, merge 0.1s)
 [blocked] verify -> verify: ship checkpoint awaiting human approval
-checkpoint ship: APPROVED (myrepo-hv33)
+checkpoint ship: APPROVED (myrepo-rq9r)
 [tore-down] ship -> done: worktree torn down and issue closed; cost rollup recorded; the curator bound no claims; tracker state committed
 ```
 
@@ -327,12 +338,12 @@ git log --oneline -6
 ```
 
 ```text
-c68ba2c chore(beads): close the shipped track (myrepo-hv33)
-8c9f695 chore(worktree): merge a harness worktree back to its base
-2a1782e docs: add a getting started note (myrepo-hv33)
-c8ac268 chore(beads): sync tracker state for the harness loop (myrepo-hv33)
-252ea7a chore(beads): record the claim before provisioning (myrepo-hv33)
-14f8fbb chore: install basicly (myrepo-hv33)
+95cb292 chore(beads): close the shipped track (myrepo-rq9r)
+cfb6c60 chore(worktree): merge a harness worktree back to its base
+137700a docs: add a getting started note (myrepo-rq9r)
+5aad38f chore(beads): sync tracker state for the harness loop (myrepo-rq9r)
+a0545c0 chore(beads): record the claim before provisioning (myrepo-rq9r)
+eaca649 chore: install basicly (myrepo-rq9r)
 ```
 
 You wrote two of those six — the install commit and the change itself. The
@@ -341,15 +352,15 @@ landing, and the close, which is why you never `git add .basicly/ledger` yoursel
 loop-tracked work.
 
 ```sh
-basicly loop status myrepo-hv33
+basicly loop status myrepo-rq9r
 ```
 
 The fields that moved since Step 4:
 
 ```text
-issue:       myrepo-hv33 (task, closed)
+issue:       myrepo-rq9r (task, closed)
 phase:       done
-worktree:    myrepo-hv33 on harness/myrepo-hv33
+worktree:    myrepo-rq9r on harness/myrepo-rq9r
 gates:       advance ALLOWED
   passed:    verify
 checkpoints: classify, ship

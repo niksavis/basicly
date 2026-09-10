@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.12.0 - 2026-09-10
+
+Delta: v0.11.0..v0.12.0
+
 The board stops being a wall of counts and becomes the surface an operator works from: every
 id links to the record it names, three new pages answer what the wall could not, and the
 controls that were only reachable as typed commands are drawn where the work is. The token
@@ -127,6 +131,278 @@ file that needs it in one run. The engine also requires `markdown-it-py`, `jsons
 and `ruamel.yaml` beyond `jinja2` and `pyyaml`, and `beads-commit-msg.py` is now
 `tracker-commit-msg.py` - scaffolded files are never overwritten, so a consumer calling the old
 name from `.pre-commit-config.yaml` or `basicly-gates.yml` repairs those two by hand.
+
+### Added
+
+- **A completed dispatch now records its spend in the committed ledger**, as a typed
+  `dispatch` event whose `spend_micros` the fold sums into the record's totals. Spend used
+  to live only in the self-ignored `.basicly/usage/run-records.json`, so a clone read every
+  grant as `spend unknown`. Measured tokens only, deduplicated by content digest
+  (basicly-0eexh5).
+
+- **The board opens one record.** Every id the wall prints links to a page for it: status,
+  priority, phase, worktree, branch, checkpoints, rework, its parent and children, open blockers
+  and dependents, the running lane, and the next command when no lane holds it. `board --out`
+  writes a page per record; `board serve` answers `/record/<id>` (basicly-62h3x9).
+
+- A record can be parked and brought back from the board. Every ready row carries a `park it` control that runs `basicly tracker write -- update <id> --status deferred`, and a new `parked` strip names the deferred records the page previously reported only as a count, each with a `resume it` control beside it. The board still cannot create or reopen a record. (basicly-arxhshr)
+
+- **A ready record can be started from the board.** Every ready row nothing holds carries a
+  `start it` button that runs `basicly loop run <id> --detach` with the record's work type and
+  grant root, so the lane starts instead of stopping at intake. The button's argv and the line
+  the record page prints come from one builder (basicly-fiow1sr).
+
+- **`basicly tracker import` migrates another tracker's export into the ledger.** The kit has carried a tested importer with no command, so the only path was writing Python against a kit module. **Source ids are preserved**, so a commit message naming an old id still resolves. It is an upsert never a sync, absence is never a deletion, and a re-run is a replay. (basicly-fva0cvm)
+
+- **A record page shows what the record says.** Its description renders as markdown, so the
+  headings, tables and lists a Definition of Ready requires read as themselves, and the tree,
+  blocked-by and blocking sections name each record by title with the id as the link. A body is
+  fetched beside the snapshot, never inside it - 304 of them is a document nobody can serve
+  (basicly-lc2bd3v.2).
+
+- **A backlog page listing every record, not a capped sample.** `/backlog` beside the wall, and
+  `backlog.html` beside a `--out` board, groups all 304 open records under the feature that owns
+  them, names the unparented ones, prints what each waits on, and reports "not ready" and "waits
+  on a named blocker" as two figures because they are two populations (basicly-lc2bd3v.4).
+
+- **The loop is a page of phase columns naming their records.** `/loop` beside the wall, and
+  `loop.html` beside a `--out` board, draws one column per phase in the loop's own order. Each
+  card leads with the record's title, carries its id, priority and type, says when a worktree
+  is inside it, and is the link to that record's page (basicly-lc2bd3v.6).
+
+- **The board says whether the next work is parallel or a queue.** It carried `DEP EDGES 846`
+  beside `BLOCKED 56` and settled nothing. The footer now reads the blocking edges it already
+  had: how many records need nothing against how many wait, which record unblocks the most,
+  and the longest chain (basicly-pck9fx).
+
+- **A record now needs a stated trigger before it can be built**, in the job story voice
+  (`When <situation>, I want to <motivation>, so I can <outcome>.`) or the user story
+  voice. A persona is never required, and every work type owes a trigger. Acceptance
+  criteria are read for content, so a bare heading no longer passes (basicly-q1ve1fn).
+
+- **`basicly install --overwrite-scaffolds` replaces scaffolded files on a deliberate reinstall.** Written-once-then-yours is right for an upgrade and wrong from scratch: a consumer who wiped `.basicly/` kept scaffolds calling a renamed hook. Each previous copy is kept as a `.basicly-bak` sibling. (basicly-qhjmtqu)
+
+- Each landing now records a per-stage wall clock — preflight, tracker-commit, rebase, regenerate, verify, probe, merge — to `.basicly/usage/landing-timings.json`, with the residual against the landing's own clock named rather than assumed, the verify stage's slowest checks beside it, and the totals on a merged landing's report line. (basicly-tjhjmk)
+
+- **`basicly loop supervise --detach` starts the supervisor in its own session.** It prints the
+  pid and a log path and returns at once, so a closing terminal - or an agent tool killing its
+  background job's process group at its ceiling - no longer takes a 20-to-40-minute round and
+  its lanes with it. Replaces a per-platform shell incantation (basicly-uhrji9).
+
+- A running lane can be stopped from the board. Each lane card carries a `stop this lane` control that runs `basicly loop kill <id> --reason=<why>`, prefilled with that lane's own id and asking only for the reason. The verb was already in the action table and had no surface: it was reachable only when an unrelated ask happened to prefill it. (basicly-x1h1dl5)
+
+- **A session-start hook puts the ledger's orientation in the agent's context.** A new
+  `sessionstart` stage projects to Claude Code's `SessionStart` and Copilot's `sessionStart`,
+  running `basicly session start` before the first turn - plain text for Claude, an
+  `additionalContext` object for Copilot. Bounded at 10s, silent with no tracker, never a
+  gate (basicly-yru8eu).
+
+- A `headroom-guard` PreToolUse hook reports a Python module's remaining `module-size` and `comment-density` room before an agent edits it, so a change is sized before it is written rather than after a gate refuses. Silent on modules with room; never blocks. (basicly-zq9i2m.4)
+
+- `basicly loop run <id> --detach` starts the phase boundary in its own session, prints the child pid and its log path, and returns at once, so a closing terminal or an agent tool's background-job ceiling cannot take the run with it. `--confirm` is refused beside `--detach`, because a one-time code answers a challenge only an operator who is watching can answer. (basicly-zq9i2m.6)
+
+### Changed
+
+- **The board's largest region is a drawn diagram of the factory loop, not a histogram.**
+  Six stations between an `intake` hopper and a `done` sink, the artifact each transition
+  produces, the three human checkpoints, the merge carrying the landing verdict, and a dot
+  per running lane. Inline SVG, so the page still fetches nothing (basicly-6c97zx).
+
+- **A grant's spend is now read from the committed ledger as well as the local run-record
+  file**, so a clone reports the same `spent` as the machine that ran the dispatches instead
+  of `unknown`. Each store's own figure is printed where the two differ. The D3 ceiling is
+  unchanged and still meters the local file (basicly-7hebuh).
+
+- **The board's freshness corner states two facts, not four.** The age leads with a mark and the
+  figure; the absolute stamp sits beneath it; the staleness bound appears only once crossed, and
+  the producer and its version moved to the cell's title (basicly-a8jy77).
+
+- The board's marks are now inline bootstrap-icons paths: a person on each human checkpoint, an hourglass where a person blocks a station, an arrow between chained records, and a state mark on the watch band. Seven icons are vendored under the board templates with their licence, so the page still opens from disk with no network and references no font, stylesheet or sprite URL. (basicly-e1c4pct)
+
+- **`runner.runner_timeout` is raised from 3600s to 7200s.** `basicly usage tuning` advises
+  7202s over 50 measured dispatches, and one lane streamed events for the whole 3600s before
+  the clock killed it with an empty worktree - the failure that took the bound 1800 to 3600
+  once already. `quiet_after` and the spend ceiling still bind first (basicly-hnnmk9).
+
+- The spend ceiling no longer stops work anywhere. Five refusals survived the first sweep, including the one that killed a running dispatch when the grant ran out. In its place `[runner] lane_token_ceiling` bounds one dispatch on its own reported tokens, read off its own event stream, off unless set. (basicly-igqm86l)
+
+- **`basicly skills-build` and `skills-check` now cover every default skills root with no
+  flag.** A bare run writes and checks both `.claude/skills` and `.agents/skills`, and the
+  check names the roots it inspected. `--root` still narrows to one; `--all-default-roots` is
+  accepted as a no-op with a deprecation note (basicly-jt0dgi).
+
+- **A record the board names is named by its title, and a gate keeps it that way.** The parked
+  strip, the queue's unblocks-most list and the events ticker printed bare ids; all three now
+  draw the title with the id as the address. `tests/test_board_titles.py` renders the wall and
+  fails naming the region, so a sixth site cannot be added silently (basicly-lc2bd3v.8).
+
+- The board vendors bootstrap 5.3.8 from npm, with licence and provenance beside it, and every page links it by a relative path: no CDN, nothing fetched at runtime. Buttons are bootstrap `.btn` in one board variant with a focus ring and a disabled state; framed regions, lane cards and loop columns are bootstrap cards; tables are bootstrap tables. The palette stays basicly's, in one shared theme. (basicly-lywzp71)
+
+- The board's header and footer drop three lines nobody could act on: the lifetime token totals, whose `in` figure was 98% cache reads and read as fresh input; the bare dependency-edge count, which `the queue` already draws as a shape; and the producer's own process age, which is now a fault detail rather than a permanent line. The two spend figures that remain say which window they cover. (basicly-m8cdnv1)
+
+- **Every unshipped status row names an open ledger record, and the view shows it.** A row
+  that promises work without a record, or names a closed one, fails `docs-claims`; a deferred
+  row must say why. Four rows the tree already held (the board's snapshot, page and live modes,
+  the code-citations check) now read shipped with the command that proves each (basicly-r8civ7).
+
+- **The install docs name all three ways to reach the verb.** README, both install how-tos,
+  the tutorial and the site now say `uvx --from ...` is one of three ways to run the same
+  `basicly install` — alongside `uv run basicly install` and a bare `basicly install` once
+  the executable is on `PATH`, which install itself never puts there (basicly-rv7q88).
+
+- **A checkpoint waiting on a person is now actionable from the board.** The pending ask draws
+  in its own region with the exact `basicly` command and a form already filled with the id
+  and the checkpoint name — only the one-time code is left to type. The three blank forms it
+  replaces were appended past a fold that never scrolls (basicly-ua9o5g).
+
+- The board's loop diagram is one row of eight nodes rather than two folded rows, so it fills the width it is given instead of letterboxing inside it. A station label now renders at 17.8px at 1440 and 23.8px at 1920, at or above the `next up` rows below it. The backlog census strip is gone: it drew the diagram's own seven counts verbatim, and its magnitude bar is now inside each station box. (basicly-ubwp49)
+
+- A grant's token budget measures spend and no longer blocks work. Passing it once refused checkpoint approval, proposal origination, interactive and repair dispatch, delegated decisions, releases, and any pass whose forecast exceeded the remainder; each now reports the figure and continues. The autonomy level still governs checkpoints, and every spend figure is still produced. (basicly-vrgi1jk)
+
+- **Every architecture target names its record or the decision not to build it.** Five
+  targets that named nothing are filed; the code-citations check and the typed artifact event
+  read as built; D-34 reads accepted with ten of eighteen kinds built; the event-kind migration
+  is stated as a rule with no open work (basicly-yiijq0).
+
+### Removed
+
+- **The architecture backlog file is deleted.** Its six open entries are ledger records
+  (basicly-3iaw0x, basicly-rv7q88, basicly-jt0dgi, basicly-mfavrh, basicly-vkh0.30,
+  basicly-vkh0.39), the sentences that pointed at it name the record instead, and two entries
+  it still called open had landed as the `code-citations` and `mermaid` checks (basicly-48mzx2).
+
+- **The five research documents are absorbed and deleted.** The DeepSeek plugin-paradigm
+  dispositions are architecture D-43 and the 2026-07-26 field review is D-44, each citing the
+  last commit that held its source; the board design, the archify verdict and the documentation
+  routes moved to the records and the skill that consume them (basicly-e2mz.46).
+
+- **The plan and requirements folders are deleted.** `docs/plan/implementation-plan.md` and
+  `docs/requirements/harness-board.md` were the last two documents holding planned work
+  beside the ledger; the order now comes from `basicly session start`, the status view
+  keeps the capability rows, and every gate and citation that read them is repointed
+  (basicly-jebd22).
+
+### Fixed
+
+- The board snapshot now carries a running lane's `agent`, `model`, `started_at` and `elapsed_s`, taken from the dispatch the supervisor issued rather than from a run record that is only written once the lane stops - so a lane's first dispatch names its runner instead of drawing a card with just a title, a phase and a token count. (basicly-1bsfx3)
+
+- **The board no longer reads `NOTHING IS WAITING` while a record sits one step from closed.**
+  A unit whose next advance is allowed, with no lane and no supervisor, is now an ask of kind
+  `advance` naming its phase, its age and `basicly loop advance <id>`. One had sat eleven days
+  past an approved ship checkpoint under a calm alarm (basicly-2no50w).
+
+- **The board now draws a form for a real pending checkpoint.** It read `asks[].actions[]` to
+  know which verb answers an ask, and this producer never wrote that key — so the region
+  worked only against hand-authored fixtures. `checkpoint` now offers `checkpoint-approve` and
+  `decision` offers `loop-answer`; any other kind carries none (basicly-3qstvw).
+
+- **The board names the record somebody is working on, and stops implying work where there
+  is none.** It printed three counts of one — `build 1`, `BUILD 1`, `IN PROGRESS 1` — for
+  three different populations, named none, and one of them was a *parked* record. A parked
+  record is no longer drawn at a phase, and a claim no lane holds is named (basicly-5jkxqk).
+
+- **The contributor setup block now activates every git gate.** It named
+  `pre-commit install`, which rewrites the pre-push hook without the ledger guard, so a
+  fresh clone that followed it verbatim still had `basicly hooks-check` reporting
+  pre-push as not installed. It now names `basicly hooks-build` (basicly-7owkkz).
+
+- A hook that refuses an engine-run `git commit` is now reported by the check that failed and the `checks failed: N/M` summary, never by warning lines alone; the loop's own tracker-sync commit is retried once and says so, and a landing that fails on it leaves the lane ready to land instead of re-dispatching it and pausing the rest of the pass. (basicly-85cadb)
+
+- **The board region headed `the loop` now shows the running pass, not the whole backlog.**
+  It binned every active record by phase, so its total equalled `backlog.active` by
+  construction - 291 against 291 live. It now bins `lanes[]`, says `no pass is running`
+  when there is none, marks a lane that moved this beat, and keeps the backlog census
+  under its own label (basicly-a68ggd).
+
+- The tracker kit's event log now declares `merge=union` beside `-text`, so two branches that each append an event merge clean and keep both instead of conflicting - the kit's readers were already written for a union merge git was never told to perform. The `kit-deployment` gate fails a host without the attribute, and one whose union rule reaches a derived `snapshot.jsonl` or checkpoint. (basicly-aabirfj)
+
+- **`basicly loop preflight` now forecasts a cold pass from the candidates' own scopes**
+  rather than pricing every lane at the unsizeable-lane bound. On one epic that line
+  printed 93153836 tokens where the admission gate's own figure was 87214845, and named
+  four sizeable lanes as assumptions (basicly-apox1y).
+
+- **`catalog-lint` runs only when a catalog source changed.** It was `always_run`, so a validation bug in it blocked commits touching no catalog file at all. A managed hook can now declare a `files` scope, and this one covers `.basicly/core/`, the overlay and `basicly.toml`. A custom overlay root falls outside it; the scaffolded CI step stays the unconditional backstop. (basicly-f73ba05)
+
+- **An unpublished pin no longer blocks every commit.** With `catalog-lint` resolving the version in `.basicly/state/install.json`, a consumer whose version has no pushed tag got `couldn't find remote ref` as a hard failure. That is no engine to lint with, so it takes the hook's advisory path; a lint that ran and refused still refuses. (basicly-h49abre)
+
+- **A provider usage limit no longer burns a lane's rework budget.** A dispatch the account's
+  own allowance refused exits 1 in about 3 seconds having spent nothing, and the supervisor
+  read that as a failed run: 70 re-dispatches across 7 lanes in 20 minutes. It now holds the
+  lane for a human, starts no further lane that pass, and prints what each dispatch spent
+  (basicly-jr0l.10).
+
+- **A merged lane no longer reads as an empty worktree.** `landed` joins the lane states: a
+  branch whose commits base already holds now says the work merged and the worktree awaits
+  teardown, instead of sharing `queued` with a worktree that has done nothing
+  (basicly-k6tpep.4).
+
+- **A parked worktree no longer reads as a pass waiting.** `RUNNING NOW` said "waits for the
+  next pass" for lanes that are deferred, abandoned or already merged, contradicting the banner
+  above it; it now falls through to what a reader can start (basicly-k6tpep.6).
+
+- **The board names work no supervisor holds.** A lane started with `basicly loop run` now draws
+  a card with its record, branch, phase and state, instead of the board saying `no pass is
+  running` with worktrees on disk. State is observed from git, so a worktree nobody has touched
+  reads `parked`, not as a live agent (basicly-kqh9dj8).
+
+- **The backlog page counts the population the wall links to it with.** The wall printed
+  `BLOCKED 57` and the page it links to answered `61 not ready`; both were true of different
+  sets. The page now reports `blocked` and `parked` apart, so `ready + blocked + parked` equals
+  the record count, and a test pins the producer's rule (basicly-lc2bd3v.4).
+
+- **Drawing titles no longer costs the wall its bottom rows.** The parked strip's reserved
+  height was measured for a one-line strip of bare ids; with titles it reaches two lines at
+  1440x900, so the reserve is now the measured worst case and the title is bounded at 14ch. The
+  events line takes the row's remaining width instead of its content's (basicly-lc2bd3v.8).
+
+- **The board no longer offers a start on a record the dispatch gate will refuse.** A unit row
+  now carries what it owes the Definition of Ready, by section name, and the start control is
+  drawn only where nothing is owed. The ready region reports both counts, so the dependency
+  walk's figure is never presented as the dispatchable one (basicly-lc2bd3v.9).
+
+- **The spend-accuracy gate no longer scores a lane that has not finished.** A bead the
+  ledger still holds open is held back by name and counted on the pass line, instead of
+  being compared to the forecast for its whole lane. One live pass refused a commit at
+  0.088x on a lane still in build (basicly-m4hrqr).
+
+- **Scaffolded tooling now pins the engine version instead of a branch.** `basicly install` writes every `uvx --from` line in `basicly-gates.yml` and `.vscode/tasks.json` pinned to the version that scaffolded it, and the `catalog-lint` hook reads the version in `.basicly/state/install.json`. A vendored catalog is gated by its own engine. (basicly-mbxnddm)
+
+- **`catalog lint` no longer hides its own migration message.** Its advisory pass loads every skill and used to abort the command, so a catalog authored before the `invocation` axis failed with one raw `missing required field` naming a single file. The per-file migration now prints for every source, and an unavailable advisory says so instead of ending the run. (basicly-mwbekc7)
+
+- The board now names where each lane stands in the pass. A snapshot lane carries `state` (`queued`, `running`, `waits-to-land`, `landing`, `refused`, `parked`) with the reason and since-when, so a finished lane waiting for the merge queue, a lane being landed and a lane the WIP bound refused no longer all read as an idle `build`. With nothing running the page says what the pass waits for. (basicly-ncday7)
+
+- **`basicly release` can cut a release again.** The `tutorial-versions` assertion compares `docs/tutorial` against the newest changelog heading, which only the release commit moves, so a re-recorded page was refused before the cut and missing during it. The cut now tolerates a modified `docs/tutorial` and commits it; a page never re-recorded still goes red. (basicly-o13lxly)
+
+- **`basicly check` no longer reports another version's output as your drift.** It named the skew in a `Note:`, then compared this engine's templates against the installed version's files and printed `Run basicly build`, which fixes it under neither version. It now refuses at once, names both versions and says `basicly install`. The manifest row carries two real digests. (basicly-q2ohrhv)
+
+- `basicly board serve` now draws its own notes inside the page grid instead of after it. The producer age and the two self-fault notes were appended past the grid on a body that is `100vh` and never scrolls, so they rendered 9px below the fold and no reader ever saw them. A fault now takes the line above the events row in its state colour. (basicly-qwqd35)
+
+- **The board's `done` sink is visible.** It was placed at the last *station* rather than the
+  last node of the chain, so it was drawn at `ship`'s centre and the station box painted over
+  it - the closed count and the head were on the page and invisible (basicly-tfelrt).
+
+- **The board says how old its gate verdict is, in the same units as everything else.** It
+  drew `1 FAILING: pytest` beside `as of 5s ago` with the verdict's time as a bare stamp — 46
+  minutes old, on a green tree. The caption now reads `taken 46m 40s before this snapshot`,
+  and a verdict past the window leaves the failing vocabulary (basicly-tyobdb).
+
+- **The board's `running now` section now says when no pass is running.** A checkout with no
+  live supervisor emitted no `lanes` section at all, so the panel read `not emitted by this
+  producer` and could never say anything else. It now emits an empty section, which the page
+  renders as `no lane is dispatched` (basicly-u6eeag).
+
+- **A relation stated by two edge events is one row, not two.** `tracker show` counted an
+  imported duplicate twice - nine such parent-child relations sit in this repo's log. The
+  fold has answered one row since v0.10.0, as a side effect of edge retraction rather than
+  by design; the guarantee is now stated where the fold lives and tested over the committed
+  ledger (basicly-vkh0.52).
+
+- The board's `closed today` figure now reads the count the producer folds (`backlog.closed_today`) instead of an event row no basicly snapshot could ever carry, so the cell reports a day's throughput rather than `not measured`. It is dated against the document's own `generated_at`, and a day that closed nothing reads a measured zero. (basicly-w6vbw61)
+
+- **A failing check's own words now survive the terminal.** The gate streamed output and
+  captured none, so a `pytest` flake left only *"output streamed rather than captured"* and
+  its identity was gone. `run_check` now tees — it forwards each line exactly as before and
+  keeps it — and writes the redacted tail to `.basicly/usage/` (basicly-zlqn7e).
 
 ## v0.11.0 - 2026-08-29
 

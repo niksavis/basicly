@@ -1,1 +1,0 @@
-- The board's `closed today` figure now reads the count the producer folds (`backlog.closed_today`) instead of an event row no basicly snapshot could ever carry, so the cell reports a day's throughput rather than `not measured`. It is dated against the document's own `generated_at`, and a day that closed nothing reads a measured zero.
