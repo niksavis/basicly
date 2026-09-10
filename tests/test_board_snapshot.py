@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,10 +37,15 @@ REPO_ROOT = Path(__file__).parent.parent
 FIXTURE_LEDGER = REPO_ROOT / "tests" / "fixtures" / "board" / "ledger" / "events-0001.jsonl"
 MINIMAL = REPO_ROOT / "tests" / "fixtures" / "board" / "minimal-v1.json"
 
-# AC 4's cap. The build measures 103.8 ms on this corpus here (median of 21, 2026-08-20) and
-# a 0.64 s median on windows-latest (run 32601602015, 2026-08-22), so one cap cannot both bind
-# a regression here and pass that runner; each platform gets a bound sized to its own floor.
-BUILD_CAP_S = 1.5 if sys.platform == "win32" else 0.5
+# AC 4's cap, sized to the slowest runner that has to pass it. Sizing it against a developer
+# machine instead was the defect: 103.8 ms here (median of 21, 2026-08-20) set 0.5 s, while
+# ubuntu-latest measures 0.578 s (median of 5, run 34531591857, 2026-09-10) and had never
+# been sampled — so the bound sat *below* a runner's floor and made the release cut a coin
+# toss. windows-latest sampled 0.64 s (run 32601602015, 2026-08-22), which puts both runners
+# in one band and retires the per-platform split rather than adding a third number.
+# A shared runner is ~4x this machine, so this is a runaway detector and not a stopwatch:
+# `folds` above holds the fold-once invariant a real regression breaks first.
+BUILD_CAP_S = 1.5
 
 NOW = datetime(2026, 1, 2, tzinfo=UTC)
 
