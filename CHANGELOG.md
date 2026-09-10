@@ -6,6 +6,40 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+A consumer repository is now gated by the basicly version it actually vendored, and a
+catalog too old for the current engine is told how to migrate instead of being refused
+with a dead end. Both defects were reported from a live repository pinned at v0.5.1
+whose every commit was blocked, and neither had a test asserting the behaviour it broke.
+
+**Scaffolded tooling pins the engine instead of tracking a branch.** `basicly install`
+wrote ten `uvx --from ...@main` call sites - five CI steps in `basicly-gates.yml` and
+five VS Code tasks - and the `catalog-lint` hook resolved the same way, so whatever
+`main` held that morning decided whether a pinned consumer's commits passed. Every
+scaffolded line now carries the version that wrote it, and the hook reads
+`basicly_version` from `.basicly/state/install.json` (basicly-mbxnddm).
+
+**`catalog lint` stops hiding its own migration message.** Its advisory pass loads every
+skill, and a source the schema refuses raised there before the violation list was ever
+computed - so a catalog authored before the `invocation` axis failed with one bare
+`missing required field` naming a single file, while the actionable per-file migration
+the gate already produced never printed. Against a real v0.5.1 catalog the count goes
+from 0 messages to 31, one per file (basicly-mwbekc7).
+
+**Upgrading a catalog vendored before v0.9.0.** `invocation` has been required on every
+skill source since v0.9.0 and stays required; the field is declared, never inferred.
+Add `invocation: model` to each `skill.yaml` to preserve the behaviour of an entry that
+already carries a description, or `invocation: user` for one only a human types, which
+must then carry no description. `basicly catalog lint` now names every file that needs
+it in one run.
+
+**Also worth knowing before an upgrade.** The engine requires `markdown-it-py`,
+`jsonschema`, `rich` and `ruamel.yaml` beyond `jinja2` and `pyyaml` - four additions, and
+a missing one fails the build with `ModuleNotFoundError` rather than a readable message.
+`.basicly/core/hooks/beads-commit-msg.py` is
+now `tracker-commit-msg.py`; scaffolded files are never overwritten, so a consumer
+calling the old name from `.pre-commit-config.yaml` or `.github/workflows/basicly-gates.yml`
+repairs those two references by hand.
+
 ## v0.11.0 - 2026-08-29
 
 Delta: v0.10.0..v0.11.0
