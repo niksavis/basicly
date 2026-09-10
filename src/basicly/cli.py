@@ -2287,12 +2287,18 @@ def cmd_fragment_new(args: argparse.Namespace) -> int:
 def cmd_catalog_lint(_args: argparse.Namespace) -> int:
     """Lint catalog sources: schema-valid, no .md-named sources, single YAML extension."""
     repo_root = _repo_root()
-    for warning in catalog_lint.skill_warnings(repo_root):
-        print(f"catalog lint: warning: {warning}", file=sys.stderr)
-    # The Tier-2 CI metric, printed whether the gate passes or fails: a floor is
-    # only raisable by someone who can see how much headroom the catalog has.
-    print(f"catalog lint: {routing_evals.routing_outcome(repo_root).summary()}")
+    # Ordered ahead of the advisories, which load every skill through discover_skills: a
+    # source the schema refuses raises there, and that abort used to swallow the per-file
+    # migration message _check_invocation_axis exists to print (basicly-m4zv.9).
     violations = catalog_lint.lint_catalog(repo_root)
+    try:
+        for warning in catalog_lint.skill_warnings(repo_root):
+            print(f"catalog lint: warning: {warning}", file=sys.stderr)
+        # The Tier-2 CI metric, printed whether the gate passes or fails: a floor is
+        # only raisable by someone who can see how much headroom the catalog has.
+        print(f"catalog lint: {routing_evals.routing_outcome(repo_root).summary()}")
+    except ValidationError as exc:
+        print(f"catalog lint: advisories unavailable ({exc})", file=sys.stderr)
     if violations:
         print("catalog lint: FAILED", file=sys.stderr)
         for violation in violations:
