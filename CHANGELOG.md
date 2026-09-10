@@ -6,39 +6,97 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-A consumer repository is now gated by the basicly version it actually vendored, and a
-catalog too old for the current engine is told how to migrate instead of being refused
-with a dead end. Both defects were reported from a live repository pinned at v0.5.1
-whose every commit was blocked, and neither had a test asserting the behaviour it broke.
+The board stops being a wall of counts and becomes the surface an operator works from: every
+id links to the record it names, three new pages answer what the wall could not, and the
+controls that were only reachable as typed commands are drawn where the work is. The token
+grant stops refusing work and only measures it. And two defects reported from a live consumer
+repository pinned at v0.5.1 - whose every commit was blocked - are fixed, so a vendored
+catalog is gated by the version that produced it.
 
-**Scaffolded tooling pins the engine instead of tracking a branch.** `basicly install`
-wrote ten `uvx --from ...@main` call sites - five CI steps in `basicly-gates.yml` and
-five VS Code tasks - and the `catalog-lint` hook resolved the same way, so whatever
-`main` held that morning decided whether a pinned consumer's commits passed. Every
-scaffolded line now carries the version that wrote it, and the hook reads
-`basicly_version` from `.basicly/state/install.json` (basicly-mbxnddm).
+**A consumer repository is gated by the version it vendored.** `basicly install` wrote ten
+`uvx --from ...@main` call sites - five CI steps in `basicly-gates.yml`, five VS Code tasks -
+and the `catalog-lint` hook resolved the same way, so whatever `main` held that morning
+decided whether a pinned consumer's commits passed. Every scaffolded line now carries the
+version that wrote it, and the hook reads `basicly_version` from
+`.basicly/state/install.json` (basicly-mbxnddm). `catalog lint` also stops hiding its own
+migration message: its advisory pass loads every skill and raised on a source the schema
+refuses before the violation list was computed, so a catalog authored before the `invocation`
+axis failed with one bare `missing required field` naming a single file. On a real v0.5.1
+catalog the per-file migration goes from 0 messages to 31 (basicly-mwbekc7).
 
-**`catalog lint` stops hiding its own migration message.** Its advisory pass loads every
-skill, and a source the schema refuses raised there before the violation list was ever
-computed - so a catalog authored before the `invocation` axis failed with one bare
-`missing required field` naming a single file, while the actionable per-file migration
-the gate already produced never printed. Against a real v0.5.1 catalog the count goes
-from 0 messages to 31, one per file (basicly-mwbekc7).
+**The board opens a record, a backlog, and the loop.** Every id links to a page carrying that
+record's status, phase, worktree, checkpoints, rework, parents, children, blockers and
+dependents (basicly-62h3x9), description rendered as markdown (basicly-lc2bd3v.2). `/backlog`
+lists every open record grouped under the feature that owns it rather than a capped sample
+(basicly-lc2bd3v.4); `/loop` draws one column per phase naming the records inside it
+(basicly-lc2bd3v.6). A record is named by its title with the id as the address, and a gate
+keeps it that way (basicly-lc2bd3v.8).
 
-**Upgrading a catalog vendored before v0.9.0.** `invocation` has been required on every
-skill source since v0.9.0 and stays required; the field is declared, never inferred.
-Add `invocation: model` to each `skill.yaml` to preserve the behaviour of an entry that
-already carries a description, or `invocation: user` for one only a human types, which
-must then carry no description. `basicly catalog lint` now names every file that needs
-it in one run.
+**Its controls do the work.** A ready record owing nothing to the Definition of Ready carries a
+`start it` button that dispatches the lane (basicly-fiow1sr, basicly-lc2bd3v.9); a row can be
+parked and a deferred record resumed (basicly-arxhshr); a running lane stopped with only the
+reason left to type (basicly-x1h1dl5); a pending checkpoint draws a form already filled with
+the id and the checkpoint name (basicly-ua9o5g, basicly-3qstvw).
 
-**Also worth knowing before an upgrade.** The engine requires `markdown-it-py`,
-`jsonschema`, `rich` and `ruamel.yaml` beyond `jinja2` and `pyyaml` - four additions, and
-a missing one fails the build with `ModuleNotFoundError` rather than a readable message.
-`.basicly/core/hooks/beads-commit-msg.py` is
-now `tracker-commit-msg.py`; scaffolded files are never overwritten, so a consumer
-calling the old name from `.pre-commit-config.yaml` or `.github/workflows/basicly-gates.yml`
-repairs those two references by hand.
+**Its largest region is a drawn diagram of the factory loop** - six stations between an intake
+hopper and a done sink, the artifact each transition produces, the three human checkpoints and
+a dot per running lane, as inline SVG that fetches nothing (basicly-6c97zx, basicly-ubwp49).
+Bootstrap 5.3.8 and seven icons are vendored with their licences, so a page still opens from
+disk with no network (basicly-lywzp71, basicly-e1c4pct).
+
+**Every board count now says which population it covers.** Fourteen fixes, each a figure that
+was true of a set the reader was not looking at - the whole backlog binned by phase and called
+the running pass, three counts of one for three populations, a 46-minute-old gate verdict drawn
+as current, a `done` sink painted over by its own station box (basicly-a68ggd, basicly-5jkxqk, basicly-2no50w,
+basicly-tyobdb, basicly-tfelrt, basicly-ncday7, basicly-kqh9dj8, basicly-1bsfx3,
+basicly-k6tpep.4, basicly-k6tpep.6, basicly-qwqd35, basicly-w6vbw61, basicly-u6eeag,
+basicly-lc2bd3v.4). Three lines nobody could act on are gone (basicly-m8cdnv1,
+basicly-a8jy77), and the footer answers whether the next work is parallel or a queue
+(basicly-pck9fx).
+
+**A token grant measures spend and no longer stops work.** Passing the budget once refused
+checkpoint approval, proposal origination, interactive and repair dispatch, delegated
+decisions, releases, and any pass whose forecast exceeded the remainder; each now reports the
+figure and continues (basicly-vrgi1jk, basicly-igqm86l). `[runner] lane_token_ceiling` bounds
+one dispatch on its own reported tokens instead, off unless set. Spend moves into the committed
+ledger as a typed `dispatch` event, so a clone reports the same figure as the machine that ran
+it rather than `unknown` (basicly-0eexh5, basicly-7hebuh).
+
+**A long round survives a closing terminal.** `loop supervise --detach` and `loop run <id>
+--detach` start in their own session, print the pid and a log path and return at once
+(basicly-uhrji9, basicly-zq9i2m.6).
+
+**The loop reports failure honestly.** A provider usage limit holds a lane for a human instead
+of burning its rework budget on 70 re-dispatches (basicly-jr0l.10); a failing check's output is
+captured rather than only streamed (basicly-zlqn7e); a refused engine commit is named by the
+check that failed (basicly-85cadb); the spend-accuracy gate stops scoring an unfinished lane
+(basicly-m4hrqr); `loop preflight` forecasts from the candidates' own scopes (basicly-apox1y).
+`runner_timeout` rises to 7200s on 50 measured dispatches (basicly-hnnmk9), and each landing
+records a per-stage wall clock (basicly-tjhjmk).
+
+**The ledger is the only store of planned work.** The plan and requirements folders
+(basicly-jebd22), the architecture backlog (basicly-48mzx2) and five research documents
+(basicly-e2mz.46) are deleted, their open entries filed as records. A record needs a stated
+trigger in the job-story voice before it can be built (basicly-q1ve1fn), and every unshipped
+status row and architecture target names its record or the decision not to build it
+(basicly-r8civ7, basicly-yiijq0).
+
+**Also.** A `sessionstart` hook puts the ledger's orientation in the agent's context before the
+first turn, for Claude Code and Copilot (basicly-yru8eu); a `headroom-guard` hook reports a
+module's remaining size room before an edit (basicly-zq9i2m.4); `skills-build` and
+`skills-check` cover every default skills root with no flag (basicly-jt0dgi); the tracker kit's
+event log declares `merge=union` (basicly-aabirfj); two edge events for one relation fold to one
+row (basicly-vkh0.52); and the install docs name all three ways to reach the verb
+(basicly-rv7q88, basicly-7owkkz).
+
+**Upgrading a catalog vendored before v0.9.0.** `invocation` has been required on every skill
+source since v0.9.0 and stays required. Add `invocation: model` to each `skill.yaml` to
+preserve the behaviour of an entry that already carries a description, or `invocation: user`
+for one only a human types, which must then carry no description. `catalog lint` names every
+file that needs it in one run. The engine also requires `markdown-it-py`, `jsonschema`, `rich`
+and `ruamel.yaml` beyond `jinja2` and `pyyaml`, and `beads-commit-msg.py` is now
+`tracker-commit-msg.py` - scaffolded files are never overwritten, so a consumer calling the old
+name from `.pre-commit-config.yaml` or `basicly-gates.yml` repairs those two by hand.
 
 ## v0.11.0 - 2026-08-29
 
