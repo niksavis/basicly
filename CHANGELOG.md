@@ -9,9 +9,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The board stops being a wall of counts and becomes the surface an operator works from: every
 id links to the record it names, three new pages answer what the wall could not, and the
 controls that were only reachable as typed commands are drawn where the work is. The token
-grant stops refusing work and only measures it. And two defects reported from a live consumer
-repository pinned at v0.5.1 - whose every commit was blocked - are fixed, so a vendored
-catalog is gated by the version that produced it.
+grant stops refusing work and only measures it. And a repository vendored at v0.5.1 - whose
+every commit was blocked and whose CI was red with no commit of its own - reported nine
+defects in the consumer path; every one is answered here, so a vendored catalog is gated by
+the version that produced it and never by whatever `main` holds that morning.
 
 **A consumer repository is gated by the version it vendored.** `basicly install` wrote ten
 `uvx --from ...@main` call sites - five CI steps in `basicly-gates.yml`, five VS Code tasks -
@@ -22,7 +23,36 @@ version that wrote it, and the hook reads `basicly_version` from
 migration message: its advisory pass loads every skill and raised on a source the schema
 refuses before the violation list was computed, so a catalog authored before the `invocation`
 axis failed with one bare `missing required field` naming a single file. On a real v0.5.1
-catalog the per-file migration goes from 0 messages to 31 (basicly-mwbekc7).
+catalog the per-file migration goes from 0 messages to 31 (basicly-mwbekc7). A pin to a
+version whose tag was never pushed is advisory rather than a hard refusal, because that is
+no engine to lint with rather than a catalog defect (basicly-h49abre).
+
+**`basicly check` stops reporting another version's output as your drift.** It named the
+version skew in a `Note:`, then compared this engine's templates against the installed
+version's files and printed `Run basicly build` - which fixes it under neither version, while
+the hash list underneath read as the consumer's own drift. It now refuses at once, names both
+versions and says `basicly install`; the manifest row carries two real digests instead of the
+same literal twice (basicly-q2ohrhv).
+
+**A commit that touches no catalog file no longer runs the catalog gate.** `catalog-lint` was
+`always_run`, so one validation bug in it blocked a commit changing a template, two docs and a
+test. A managed hook can now declare a `files` scope, and this one covers the core catalog, the
+overlay and `basicly.toml` (basicly-f73ba05).
+
+**`basicly tracker import` migrates another tracker's export into the ledger.** The kit has
+carried a tested importer with no command, so the only supported path was writing Python
+against a kit module - which is why two consumers read the migration path as gone and planned
+to re-file live work by hand. Source ids are preserved, so a commit message naming an old id
+still resolves. It is an upsert and never a sync, absence is never a deletion, a refused id is
+named rather than renumbered, and a re-run is a replay (basicly-fva0cvm). `basicly install
+--overwrite-scaffolds` replaces scaffolded files on a deliberate reinstall, keeping each
+previous copy as a `.basicly-bak` sibling (basicly-qhjmtqu).
+
+**`basicly release` can cut a release again.** The `tutorial-versions` assertion compares the
+tutorial against the newest changelog heading, which only the release commit moves, so a
+re-recorded page was refused before the cut and missing during it - unsatisfiable in both
+directions since the gate landed after v0.11.0. The cut now carries the re-recording
+(basicly-o13lxly).
 
 **The board opens a record, a backlog, and the loop.** Every id links to a page carrying that
 record's status, phase, worktree, checkpoints, rework, parents, children, blockers and
