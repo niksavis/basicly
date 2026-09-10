@@ -74,10 +74,8 @@ SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # `--ref v...` / `-Ref v...` invocations, so missing them leaves the two halves of
 # one instruction disagreeing.
 #
-# The how-to pages are a **glob**, and the enumeration is what failed. Two of them
-# carried a pin four releases stale, because a page written after this tuple was
-# last edited is a page the release never rewrites, and nothing reads a list to
-# notice. A directory that may grow a pinned page is declared as the directory.
+# The how-to pages are a **glob** because the enumeration failed: two carried a pin four
+# releases stale, a page added after this tuple being one the release never rewrites.
 PIN_FILES = (
     Path("README.md"),
     Path("site") / "index.html",
@@ -90,6 +88,11 @@ PIN_GLOBS = ("docs/how-to/*.md",)
 # recorded transcripts, so bumping only its install command leaves the page internally
 # inconsistent — it needs re-execution against a fresh repo, which is `basicly-imnu.2`,
 # not a rewrite.
+
+# May start dirty: `docs-claims` compares the tutorial's quoted versions against the
+# newest changelog heading, which only this commit moves, so the re-recording fits in
+# no other commit. `add -A` stages it.
+RERECORDED_PATHS = ("docs/tutorial/",)
 # Word-boundary-ish: `v0.5.1` must not match inside `v0.5.10`, and a trailing
 # period is prose punctuation rather than part of the version, so it still counts.
 PIN_RE_TEMPLATE = r"(?<![\w.])v{version}(?!\w|\.\d)"
@@ -110,14 +113,10 @@ RELEASE_NOTES_SCRIPT = Path(".scripts") / "check_release_notes.py"
 CITATION = re.compile(r"\(([^()]*)\)")
 _ID_SUFFIX = r"-[a-z0-9]+(?:\.[0-9]+)*\b"
 
-# One file per lane, assembled here (basicly-4746). A lane records its user-facing
-# change as `changelog.d/<bead-id>.<category>.md` instead of editing CHANGELOG.md.
-# The filename carries the bead id, so it is unique by construction and two lanes
-# cannot write the same file — the collision becomes *impossible* rather than
-# detected. The answer it replaces declared CHANGELOG.md in `[worktree]
-# append_only_paths`, which serialized every lane that touched it and still trailed
-# the next unenumerated shared file: three of four unattended-run attempts failed on
-# two lanes at one anchor, each in a different file nobody had enumerated.
+# One file per lane, assembled here (basicly-4746). The filename carries the bead id,
+# so two lanes cannot write the same file — the collision is impossible rather than
+# detected. Declaring CHANGELOG.md in `[worktree] append_only_paths` instead serialized
+# every lane that touched it and still trailed the next unenumerated shared file.
 FRAGMENT_DIR = Path("changelog.d")
 
 # The directory's own documentation, not a lane's entry.
@@ -577,6 +576,12 @@ def _summary_missing(lines: list[str]) -> str | None:
     )
 
 
+def _is_rerecorded(porcelain_line: str) -> bool:
+    """Whether a ``status --porcelain`` line names a path this cut re-records."""
+    path = porcelain_line[3:].rsplit(" -> ", maxsplit=1)[-1].strip().strip('"')
+    return path.startswith(RERECORDED_PATHS)
+
+
 def _changelog_lines(repo_root: Path) -> list[str]:
     """The changelog's lines, or none at all when the file does not exist yet."""
     path = repo_root / CHANGELOG_FILE
@@ -604,13 +609,16 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
             f"refusing to release from a linked worktree ({worktree.current_branch(repo_root)}); "
             "tags are shared with the primary checkout, so run this from there on the base branch"
         )
-    dirty = _git(repo_root, ["status", "--porcelain"]).stdout.strip()
+    dirty = [
+        line
+        for line in _git(repo_root, ["status", "--porcelain"]).stdout.splitlines()
+        if line.strip() and not _is_rerecorded(line)
+    ]
     if dirty:
         # The release-process guardrail: never tag from a dirty tree, because the
         # tag would name a tree nobody can reconstruct from the commit.
-        first = dirty.splitlines()[0]
-        extra = f" (and {len(dirty.splitlines()) - 1} more)" if "\n" in dirty else ""
-        reasons.append(f"working tree is not clean: {first}{extra}")
+        extra = f" (and {len(dirty) - 1} more)" if len(dirty) > 1 else ""
+        reasons.append(f"working tree is not clean: {dirty[0]}{extra}")
     if _parse(plan.version) <= _parse(plan.current_version):
         reasons.append(
             f"version must move forward: {plan.version} is not greater than "

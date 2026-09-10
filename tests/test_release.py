@@ -1,10 +1,9 @@
 """Release automation tests (basicly-kjc5.12).
 
-The fixture is a **real** git repo — the whole feature is about git state (a clean
-tree, an existing tag, a commit, an annotated tag), and a stubbed git cannot
-disagree with itself about any of that. The two thin subprocess wrappers over
-already-tested tools (`basicly build`, the changelog generator) are substituted
-where a test is not about them, and exercised directly where it is.
+The fixture is a **real** git repo: the feature is about git state (a clean tree, an
+existing tag, an annotated tag) and a stubbed git cannot disagree with itself about it.
+The two wrappers over already-tested tools are substituted where a test is not about
+them and exercised directly where it is.
 """
 
 from __future__ import annotations
@@ -209,6 +208,21 @@ def test_a_dirty_tree_is_refused_before_anything_is_written(repo: Path) -> None:
 
     assert result.refused and any("not clean" in reason for reason in result.refusals)
     assert release.read_version(repo) == CURRENT
+
+
+def test_a_rerecorded_tutorial_does_not_refuse_the_cut(repo: Path) -> None:
+    """Only this commit moves the heading `docs-claims` checks the page against.
+
+    The stray-file test above is the control: one path is tolerated, not a blanket.
+    """
+    page = repo / "docs" / "tutorial" / "first-loop.md"
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text("engine: basicly 0.6.0\n", encoding="utf-8")
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    reasons = release.blocking_reasons(repo, plan, issue_id="fx-1")
+
+    assert not any("not clean" in reason for reason in reasons), reasons
 
 
 def test_an_existing_tag_is_refused(repo: Path) -> None:
@@ -464,12 +478,10 @@ def _land_serially(repo: Path, base: str, branches: list[str]) -> list[str]:
 def test_three_lanes_each_recording_a_changelog_entry_all_land_without_a_conflict(
     repo: Path,
 ) -> None:
-    """The direct inverse of the run that blocked: three lanes, three files, no anchor.
+    """The inverse of the run that blocked: three lanes, three files, no shared anchor.
 
-    Attempt 1 of the unattended pass put three lanes at one `### Fixed` anchor over
-    provably disjoint scopes; two landed and the third burned both rework retries on
-    the rebase. Here each lane's filename carries its own bead id, so there is no
-    shared file left to conflict on.
+    Three lanes at one `### Fixed` anchor burned a lane's rework retries on the rebase;
+    a filename carrying its own bead id leaves nothing to conflict on.
     """
     for lane in (1, 2, 3):
         _lane(
@@ -560,9 +572,8 @@ def _plant_counters(repo: Path, relative: Path, counts: dict[str, int]) -> None:
 def _commit_fixture(repo: Path) -> None:
     """Commit whatever a helper just planted.
 
-    The real `.basicly/usage/` self-ignores, so planting there never dirties this repo;
-    the fixture has no such ignore, and an uncommitted file would trip the clean-tree
-    refusal and mask the one under test.
+    The real `.basicly/usage/` self-ignores; the fixture has no such ignore, so an
+    uncommitted file would trip the clean-tree refusal and mask the one under test.
     """
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "chore: plant a capability")
@@ -601,10 +612,8 @@ def test_an_exercised_capability_does_not_block_the_tag(repo: Path) -> None:
 def test_a_check_the_engine_ran_and_passed_is_exercised(repo: Path) -> None:
     """The bug (basicly-3yi3): a check verify had just watched pass still blocked the tag.
 
-    End to end through the real runner rather than a planted ledger — the defect was
-    precisely that the component executing a check wrote no record anywhere, so a test
-    that plants the record cannot see it. `vulture` is declared here for the same reason
-    it broke the real release: it exists only as a check, so nothing ever types it.
+    End to end through the real runner: the defect was that the executing component
+    wrote no record, so a test planting one cannot see it.
     """
     interpreter = Path(sys.executable).as_posix()  # POSIX form: TOML would eat backslashes
     _declare_check(repo, "vulture", [interpreter, "-c", ""])
@@ -739,11 +748,7 @@ def test_a_release_refuses_before_writing_when_its_own_subject_would_be_rejected
 
 
 def test_an_unknown_bead_id_is_refused_before_writing(repo: Path) -> None:
-    """The commit-msg gate rejects an unknown id.
-
-    Finding that out at commit time strands the bump, the regeneration and the
-    changelog on disk.
-    """
+    """Finding out at commit time strands the bump, regeneration and changelog on disk."""
     plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
 
     result = release.run_release(repo, plan, issue_id="fx-nope")
@@ -929,10 +934,8 @@ def test_the_projection_rebuild_forces_the_target_repo_onto_pythonpath(
 ) -> None:
     """Otherwise the headers are stamped with the *installed* copy's version.
 
-    Found by exercising a release in a clone: the bump landed, every generated
-    header still named the previous release, and the run reported success. A fresh
-    interpreter is necessary (cli binds __version__ at import) but not sufficient —
-    it still imports whichever basicly is installed.
+    A fresh interpreter is necessary (cli binds __version__ at import) and not
+    sufficient: it still imports whichever basicly is installed.
     """
     seen: dict[str, object] = {}
 

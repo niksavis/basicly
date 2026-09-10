@@ -1,0 +1,1 @@
+- **`basicly release` can cut a release again.** The `tutorial-versions` assertion compares `docs/tutorial` against the newest changelog heading, which only the release commit moves, so a re-recorded page was refused before the cut and missing during it. The cut now tolerates a modified `docs/tutorial` and commits it; a page never re-recorded still goes red. (basicly-o13lxly)
