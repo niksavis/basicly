@@ -34,7 +34,7 @@ layers =
     loop | release
     board_snapshot
     board_usage
-    catalog_lint | contention | cost_rollup | curate | health | landing_gate | tracker_query | tracker_write
+    catalog_lint | contention | cost_rollup | curate | health | landing_gate | tracker_import | tracker_query | tracker_write
     commit | merge
     rebase | repair_brief | wip | working_set
     classify | context_meter | decompose | loop_state | plan_entry | retrospective | rubrics

@@ -83,6 +83,10 @@ class HookSpec:
     stage: str
     pass_filenames: bool = False
     always_run: bool = False
+    # pre-commit `files` regex: the hook runs only when a matching path changed. Scoping
+    # is what keeps a whole-tree check off an unrelated commit; `always_run` overrides it
+    # in pre-commit, so a spec declares one or the other.
+    files: str = ""
     manager: str = GIT_MANAGER
     technologies: tuple[str, ...] = ()
     # Agent-hook tool filter (claude manager only): regex the manager applies
@@ -130,6 +134,7 @@ def load_hook_specs(hooks_dir: Path | None = None) -> list[HookSpec]:
                 stage=str(entry["stage"]),
                 pass_filenames=bool(entry.get("pass_filenames", False)),
                 always_run=bool(entry.get("always_run", False)),
+                files=str(entry.get("files", "")),
                 manager=manager,
                 technologies=tuple(technologies),
                 matcher=str(entry.get("matcher", "")),

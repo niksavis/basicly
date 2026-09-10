@@ -63,6 +63,11 @@ class ManagedHook(Protocol):
         """Whether the hook runs even when no file it matches changed."""
         ...
 
+    @property
+    def files(self) -> str:
+        """Regex of paths that make the hook run; empty leaves pre-commit's default."""
+        ...
+
 
 def _hook_entry(spec: ManagedHook, hooks_relpath: str) -> dict:
     # pre-commit shell-splits `entry`, so the script path must be quoted to
@@ -77,6 +82,8 @@ def _hook_entry(spec: ManagedHook, hooks_relpath: str) -> dict:
     }
     if spec.always_run:
         entry["always_run"] = True
+    if spec.files:
+        entry["files"] = spec.files
     return entry
 
 

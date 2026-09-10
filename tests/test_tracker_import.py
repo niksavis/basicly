@@ -1,0 +1,121 @@
+"""`basicly tracker import` — the seam onto the kit's importer (basicly-lc2bd3v).
+
+The kit has carried a tested importer with no production caller and no command, so two
+consumers concluded the migration path was gone and planned to re-file live work by
+hand. These tests hold the property that made that conclusion expensive: source ids
+survive, so a commit message referencing one still resolves after the move.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+import pytest
+
+from basicly import owned_store, tracker_import
+from basicly.schema import ValidationError
+
+REPO = Path(__file__).parent.parent
+KIT = Path(".basicly") / "core" / "kit" / "tracker"
+
+_EXPORT = [
+    {
+        "id": "acme-99z",
+        "title": "Vendor the fix",
+        "status": "open",
+        "priority": 1,
+        "issue_type": "task",
+        "created_by": "someone",
+        "compaction_level": 0,
+    },
+    {
+        "id": "acme-o2u",
+        "title": "Lua template",
+        "status": "closed",
+        "priority": 2,
+        "issue_type": "chore",
+        "dependencies": [{"depends_on_id": "acme-99z", "type": "blocks", "issue_id": "acme-o2u"}],
+        "comments": [{"id": "c1", "text": "had to skip a hook", "created_at": "2026-09-10T09:00Z"}],
+    },
+]
+
+
+@pytest.fixture
+def host(tmp_path: Path) -> Path:
+    """A consumer-shaped repo with the kit copied in and an empty ledger."""
+    shutil.copytree(REPO / KIT, tmp_path / KIT)
+    (tmp_path / ".basicly" / "ledger").mkdir(parents=True)
+    return tmp_path
+
+
+def _export(root: Path, records: list[dict] | str) -> Path:
+    path = root / "issues.jsonl"
+    if isinstance(records, str):
+        path.write_text(records, encoding="utf-8")
+    else:
+        path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+    return path
+
+
+def test_a_dry_run_writes_nothing_and_names_what_would_be_refused(host: Path) -> None:
+    """A pre-flight that skipped the id rule would list an id the write then refuses."""
+    export = _export(host, [*_EXPORT, {"id": "not an id", "title": "bad"}])
+
+    code, lines = tracker_import.run_import(host, export, source_name="beads", dry_run=True)
+
+    report = "\n".join(lines)
+    assert code == 0
+    assert "nothing written" in report
+    assert "2 new record(s)" in report and "1 that would be refused" in report
+    assert not list((host / ".basicly" / "ledger").glob("events-*.jsonl")), "it wrote a ledger"
+
+
+def test_the_source_ids_survive_the_import(host: Path) -> None:
+    """Renumbering would strand every commit message that references an old id."""
+    export = _export(host, _EXPORT)
+
+    code, _ = tracker_import.run_import(host, export, source_name="beads")
+
+    kit = owned_store.kit(host)
+    ledger = owned_store.ledger_dir(host)
+    folded = kit.events.fold(kit.events.read_events(ledger)[0]).records
+    assert code == 0
+    assert set(folded) == {"acme-99z", "acme-o2u"}
+
+
+def test_a_rejection_sets_the_exit_code(host: Path) -> None:
+    """A partial import that reported success would lose records silently."""
+    export = _export(host, [*_EXPORT, {"id": "not an id", "title": "bad"}])
+
+    code, lines = tracker_import.run_import(host, export, source_name="beads")
+
+    assert code == 1
+    assert any("rejected" in line for line in lines)
+
+
+def test_a_re_run_appends_nothing(host: Path) -> None:
+    """An import torn off at the tail must complete on a re-run, not double the history."""
+    export = _export(host, _EXPORT)
+    tracker_import.run_import(host, export, source_name="beads")
+
+    _, lines = tracker_import.run_import(host, export, source_name="beads")
+
+    assert "0 record(s) created, 0 event(s) appended" in lines[0]
+
+
+def test_an_unparseable_line_is_reported_rather_than_tolerated(host: Path) -> None:
+    """Format drift in somebody else's export is expected, and must be seen."""
+    export = _export(host, '{"id": "acme-99z", "status": "open"}\nnot json\n')
+
+    code, lines = tracker_import.run_import(host, export, source_name="beads")
+
+    assert code == 1
+    assert any("unreadable" in line for line in lines)
+
+
+def test_a_missing_export_is_an_error_not_a_traceback(host: Path) -> None:
+    """The path is user input, so it is a trust boundary rather than an assertion."""
+    with pytest.raises(ValidationError):
+        tracker_import.run_import(host, host / "nope.jsonl", source_name="beads")

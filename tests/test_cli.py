@@ -647,8 +647,8 @@ def test_cli_check_reports_core_drift_note(tmp_path: Path) -> None:
     assert "hooks/pre-commit.py: modified" in result.stderr
 
 
-def test_cli_check_reports_version_mismatch_note(tmp_path: Path) -> None:
-    """An install recorded by another basicly version surfaces as a note, exit 0."""
+def test_cli_check_refuses_a_catalog_another_version_installed(tmp_path: Path) -> None:
+    """A `Note:` sat above a louder, wrong `Run basicly build` that fixes neither side."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -659,8 +659,10 @@ def test_cli_check_reports_version_mismatch_note(tmp_path: Path) -> None:
     state_path.write_text(json.dumps(payload), encoding="utf-8")
 
     result = run_basicly_consumer(consumer, "check")
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 1, result.stderr
     assert "installed by basicly 0.0.0" in result.stderr
+    assert "basicly install" in result.stderr
+    assert "Stale generated files detected" not in result.stderr
 
 
 def test_cli_uninstall_removes_everything_managed(tmp_path: Path) -> None:
@@ -1568,18 +1570,13 @@ def _child_env() -> dict[str, str]:
 def test_a_printed_line_is_observable_before_exit_when_stdout_is_a_pipe() -> None:
     """The defect: a piped supervised run showed nothing until the process exited.
 
-    The control for this is
-    :func:`test_line_buffer_stdout_sets_line_buffering_on_the_real_stream`, which
-    proves the stream is block-buffered without the call. Asserting the negative
-    *here* would mean waiting out a timeout to prove an absence, which costs
-    seconds of suite time to learn nothing the control does not already give.
+    The control is
+    :func:`test_line_buffer_stdout_sets_line_buffering_on_the_real_stream`; asserting the
+    negative here would mean waiting out a timeout to prove an absence.
 
-    The read is bounded by joining a reader thread rather than by ``selectors``:
-    ``DefaultSelector`` is ``SelectSelector`` on Windows and ``select()`` there
-    accepts only sockets, so registering a pipe raised ``WinError 10038`` on that
-    leg alone (basicly-jr0l.23). The thread is also the stronger assertion — it
-    proves the *line* arrived while the child was still blocked, not merely that
-    the descriptor had become readable.
+    A reader thread bounds the read rather than ``selectors``: ``DefaultSelector`` is
+    ``SelectSelector`` on Windows and accepts only sockets there (basicly-jr0l.23). It
+    also asserts the stronger thing — the line arrived while the child was still blocked.
     """
     proc = subprocess.Popen(  # nosec B603
         [sys.executable, "-c", _OBSERVABLE_CHILD],

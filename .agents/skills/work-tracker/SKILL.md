@@ -114,6 +114,29 @@ external process is not run and its *vocabulary* has not left. Spell a write the
 the list above spells it; a cleaner-looking command does not exist, and inventing one
 gets the argv refused.
 
+## Migrating from another tracker
+
+A repo arriving with an existing export imports it rather than re-filing by hand:
+
+```sh
+basicly tracker import .beads/issues.jsonl --source beads --dry-run   # writes nothing
+basicly tracker import .beads/issues.jsonl --source beads
+```
+
+**Source ids are preserved**, which is the property that matters: a commit message
+referencing an old id still resolves, and the `tracker-commit-msg` hook still accepts
+it. Unknown source fields carry over verbatim rather than being dropped, and every
+event records where it came from.
+
+Three refusals worth knowing before you run it. An **upsert, never a sync**: a record
+the ledger already holds is not re-created, and a field disagreement is *reported* and
+left alone. **Absence is never a deletion** — an export cannot express one, so a record
+the snapshot no longer holds is named, not tombstoned; pass `--deleted <id>` for one you
+confirmed out of band. And an id the commit gate would refuse is **rejected by name**
+rather than renumbered, with the rest of the export still landing — so read the report
+and the exit code, which is non-zero when anything was refused. A re-run is a replay, so
+an import torn off at the tail completes instead of doubling the history.
+
 ## Bulk queries: `jq` over the event log
 
 Counting or auditing the whole tracker means reading the events with `jq`. Three

@@ -55,6 +55,7 @@ from . import (
     state,
     supervise,
     tracker,
+    tracker_import,
     tracker_query,
     tracker_write,
     ui,
@@ -417,6 +418,11 @@ def cmd_check(_args: argparse.Namespace) -> int:
     """Check generated files and manifest are up to date."""
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
+    # Before rendering: this engine's templates against another version's output differ by
+    # construction, so the comparison carries no information and its `basicly build` remedy
+    # is wrong — build under either version leaves it red, and `install` is the fix.
+    if _report_provenance_notes(repo_root, paths):
+        return 1
     fragments, targets = _load_context(repo_root, paths)
     planned = plan_outputs(fragments, targets, repo_root)
 
@@ -459,10 +465,12 @@ def cmd_check(_args: argparse.Namespace) -> int:
     else:
         existing_manifest = {}
 
-    if existing_manifest.get("outputs") != expected_manifest_outputs:
-        mismatches.append((manifest_path, "manifest mismatch", "manifest mismatch"))
-
-    _report_provenance_notes(repo_root, paths)
+    if (recorded := existing_manifest.get("outputs")) != expected_manifest_outputs:
+        mismatches.append((
+            manifest_path,
+            _manifest_digest(expected_manifest_outputs),
+            _manifest_digest(recorded),
+        ))
 
     if mismatches:
         print("Stale generated files detected. Run `basicly build` to fix.", file=sys.stderr)
@@ -477,27 +485,39 @@ def cmd_check(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _report_provenance_notes(repo_root: Path, paths: ProjectPaths) -> None:
-    """Advisory (non-fatal) install-provenance notes for `basicly check` (§9).
+def _manifest_digest(outputs: object) -> str:
+    """A comparable digest of one manifest's outputs mapping.
 
-    Absent state (authoring repo, or an install predating provenance) reports
-    nothing; a corrupt state file and core drift are surfaced but never change
-    the exit code — the hard staleness contract stays byte-for-byte generated
-    files only.
+    Both sides were reported as the literal `manifest mismatch`, which named neither
+    side and read as a formatter bug rather than a diagnostic.
+    """
+    return sha256_of_text(json.dumps(outputs, sort_keys=True, default=str))
+
+
+def _report_provenance_notes(repo_root: Path, paths: ProjectPaths) -> bool:
+    """Install-provenance notes for `basicly check` (§9); True when the versions disagree.
+
+    Absent state (authoring repo, or an install predating provenance) reports nothing.
+    A corrupt state file and core drift stay advisory; only the version disagreement is
+    the caller's to refuse on, because it is the one that makes every later comparison
+    meaningless rather than merely suspect.
     """
     state_path = repo_root / paths.state_path
     try:
         install_state = state.read_install_state(state_path)
     except ValidationError as exc:
         print(f"Note: {exc}; re-run `basicly install` to rewrite it.", file=sys.stderr)
-        return
+        return False
     if install_state is None:
-        return
+        return False
 
-    if install_state.basicly_version != __version__:
+    skewed = install_state.basicly_version != __version__
+    if skewed:
         print(
-            f"Note: core catalog was installed by basicly {install_state.basicly_version}; "
-            f"this is basicly {__version__}. Run `basicly install` to upgrade.",
+            f"Version skew: the core catalog was installed by basicly "
+            f"{install_state.basicly_version} and this is basicly {__version__}. "
+            "Run `basicly install` to upgrade — `basicly build` cannot fix this, and a "
+            "cross-version file comparison would report drift that is not yours.",
             file=sys.stderr,
         )
 
@@ -510,6 +530,7 @@ def _report_provenance_notes(repo_root: Path, paths: ProjectPaths) -> None:
         )
         for rel_path, reason in drift:
             print(f"  {rel_path}: {reason}", file=sys.stderr)
+    return skewed
 
 
 # Bump only on breaking changes to the `basicly status --json` payload shape —
@@ -1346,34 +1367,54 @@ def _scaffold_overlay_stubs(repo_root: Path, paths: ProjectPaths) -> None:
         )
 
 
-def _scaffold_vscode_tasks(repo_root: Path) -> None:
-    """Write .vscode/tasks.json with the harness tasks when absent.
+def _write_scaffold(path: Path, content: str, label: str, *, force: bool) -> None:
+    """Write one scaffold, replacing an existing file only when *force* is set.
 
-    Same contract as the basicly.toml scaffold: written once, then the file is
-    the user's — install never overwrites it.
+    Written once and then the user's, which is the right default for an upgrade and the
+    wrong one for a deliberate reinstall: a consumer wiping `.basicly/` to install fresh
+    kept the stale copies that referenced a renamed hook, and had no supported way to ask
+    for the current ones. `force` replaces the file and keeps the old bytes beside it,
+    because a hand-edited CI workflow is not ours to discard silently.
     """
-    tasks_path = repo_root / ".vscode" / "tasks.json"
-    if tasks_path.exists():
-        print(".vscode/tasks.json already exists; left unchanged")
+    if path.exists():
+        if not force:
+            print(f"{label} already exists; left unchanged (--overwrite-scaffolds replaces it)")
+            return
+        existing = path.read_text(encoding="utf-8")
+        if existing == content:
+            print(f"{label} already current")
+            return
+        backup = path.with_suffix(path.suffix + ".basicly-bak")
+        backup.write_text(existing, encoding="utf-8")
+        path.write_text(content, encoding="utf-8")
+        print(f"Replaced {label}; your previous copy is at {backup.name}")
         return
-    tasks_path.parent.mkdir(parents=True, exist_ok=True)
-    tasks_path.write_text(VSCODE_TASKS_JSON, encoding="utf-8")
-    print("Wrote .vscode/tasks.json (basicly build/skills-build/hooks-build/update/uninstall)")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    print(f"Wrote {label}")
 
 
-def _scaffold_ci_workflow(repo_root: Path) -> None:
-    """Write the consumer CI gates workflow when absent.
+def _scaffold_vscode_tasks(repo_root: Path, *, force: bool = False) -> None:
+    """Write .vscode/tasks.json with the harness tasks."""
+    _write_scaffold(
+        repo_root / ".vscode" / "tasks.json", VSCODE_TASKS_JSON, ".vscode/tasks.json", force=force
+    )
 
-    Same contract as the other scaffolds: written once, then the file is the
-    user's — install never overwrites it.
-    """
-    workflow_path = repo_root / ".github" / "workflows" / "basicly-gates.yml"
-    if workflow_path.exists():
-        print(".github/workflows/basicly-gates.yml already exists; left unchanged")
-        return
-    workflow_path.parent.mkdir(parents=True, exist_ok=True)
-    workflow_path.write_text(CONSUMER_CI_WORKFLOW, encoding="utf-8")
-    print("Wrote .github/workflows/basicly-gates.yml (commit messages, drift, verify)")
+
+def _scaffold_ci_workflow(repo_root: Path, *, force: bool = False) -> None:
+    """Write the consumer CI gates workflow."""
+    _write_scaffold(
+        repo_root / ".github" / "workflows" / "basicly-gates.yml",
+        CONSUMER_CI_WORKFLOW,
+        ".github/workflows/basicly-gates.yml",
+        force=force,
+    )
+
+
+def _scaffold_consumer_files(repo_root: Path, *, force: bool) -> None:
+    """Write every scaffold whose contract is written-once-then-yours."""
+    _scaffold_vscode_tasks(repo_root, force=force)
+    _scaffold_ci_workflow(repo_root, force=force)
 
 
 def _report_missing_config_sections(repo_root: Path) -> None:
@@ -1535,8 +1576,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 1
 
     _setup_tracker(repo_root)
-    _scaffold_vscode_tasks(repo_root)
-    _scaffold_ci_workflow(repo_root)
+    _scaffold_consumer_files(repo_root, force=bool(getattr(args, "overwrite_scaffolds", False)))
 
     steps: list[tuple[str, Any, argparse.Namespace]] = [
         ("build", cmd_build, argparse.Namespace(target=None, verify=False)),
@@ -2050,9 +2090,31 @@ def cmd_usage(args: argparse.Namespace) -> int:
     return _dispatch(args, "usage_command", handlers, group="usage")
 
 
+def cmd_tracker_import(args: argparse.Namespace) -> int:
+    """Import a foreign tracker export into the owned ledger."""
+    try:
+        code, lines = tracker_import.run_import(
+            _repo_root(),
+            args.export,
+            source_name=args.source,
+            dry_run=args.dry_run,
+            deleted=tuple(args.deleted),
+        )
+    except ValidationError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    for line in lines:
+        print(line, file=sys.stderr if code else sys.stdout)
+    return code
+
+
 def cmd_tracker(args: argparse.Namespace) -> int:
     """Dispatch the owned tracker's read verbs and its cutover subcommands."""
-    handlers = {"write": tracker_write.cmd_write, **tracker_query.HANDLERS}
+    handlers = {
+        "write": tracker_write.cmd_write,
+        "import": cmd_tracker_import,
+        **tracker_query.HANDLERS,
+    }
     return _dispatch(args, "tracker_command", handlers, group="tracker")
 
 
@@ -4951,6 +5013,16 @@ def _add_lifecycle_parsers(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Overwrite hand-edited managed core files instead of keeping them",
     )
+    # Distinct from --force, which is about the managed core: a scaffold is the
+    # consumer's file by contract, so replacing one is their explicit ask.
+    install_parser.add_argument(
+        "--overwrite-scaffolds",
+        action="store_true",
+        help=(
+            "Replace scaffolded files (.vscode/tasks.json, basicly-gates.yml) with the "
+            "current templates, keeping each previous copy as a .basicly-bak sibling"
+        ),
+    )
     install_parser.add_argument(
         "--technologies",
         help=(
@@ -5702,6 +5774,19 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     tracker_query.add_parsers(tracker_sub)
     t_write = tracker_sub.add_parser("write", help="Make a tracker write through the engine seam")
     t_write.add_argument("argv", nargs=argparse.REMAINDER, help="The subcommand, after `--`")
+    t_import = tracker_sub.add_parser(
+        "import", help="Import a foreign tracker export (beads issues.jsonl) into the ledger"
+    )
+    t_import.add_argument("export", type=Path, help="Path to the export, one JSON object per line")
+    t_import.add_argument("--source", default=None, help="Portable label recorded on every event")
+    t_import.add_argument("--dry-run", action="store_true", help="Report and write nothing")
+    t_import.add_argument(
+        "--deleted",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="A record you confirmed deleted out of band; absence alone never means deleted",
+    )
 
 
 def _tolerate_narrow_consoles() -> None:

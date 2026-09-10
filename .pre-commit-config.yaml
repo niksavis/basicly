@@ -43,7 +43,7 @@ repos:
     stages:
     - pre-commit
     pass_filenames: false
-    always_run: true
+    files: ^(\.basicly/core/|\.basicly-local/|basicly\.toml$)
   - id: secret-scan
     name: secret-scan
     entry: uv run python .basicly/core/hooks/secret-scan.py

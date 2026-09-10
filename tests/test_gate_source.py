@@ -169,6 +169,9 @@ def test_the_store_is_reached_only_from_its_own_seam_modules() -> None:
         "gate_source.py",
         "label_source.py",
         "owned_write.py",
+        # The seam onto the kit's importer: it reaches `kit` for `migrate` and
+        # `ledger_dir` for the destination, which is the whole of what it does.
+        "tracker_import.py",
         # The read verbs `basicly tracker` prints, which resolve the ledger's location
         # from the engine so a consumer never retypes it (basicly-vkh0.42.7).
         "tracker_query.py",

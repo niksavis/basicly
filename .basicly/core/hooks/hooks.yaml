@@ -16,10 +16,14 @@ hooks:
     stage: pre-commit
     always_run: true
     pass_filenames: false
+  # Scoped, not always_run: it lints the whole catalog but only a change to a catalog
+  # source or to the config carrying its floors can alter the verdict. Unscoped, one
+  # validation bug blocked commits touching no catalog file at all. A custom overlay root
+  # is outside this regex; the CI step stays the unconditional backstop.
   - id: catalog-lint
     script: catalog-lint.py
     stage: pre-commit
-    always_run: true
+    files: ^(\.basicly/core/|\.basicly-local/|basicly\.toml$)
     pass_filenames: false
   - id: secret-scan
     script: secret-scan.py
