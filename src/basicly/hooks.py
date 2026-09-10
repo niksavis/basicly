@@ -31,6 +31,7 @@ from .precommit_config import (
     managed_hook_mismatches,
     parse_config,
     render_precommit_config,
+    retired_hooks_present,
 )
 from .projection import SyncResult, atomic_write_text, sync_file
 from .schema import ValidationError, technology_selected
@@ -304,14 +305,17 @@ def sync_hooks(
         sync_file(config_path, rendered.encode("utf-8"), result)
         return result
 
-    # The config is co-owned with the consumer: leave it untouched when the
-    # managed hooks are already semantically in sync (preserving their comments
-    # and formatting); rewrite only when a managed hook is missing, wrong, or
-    # stranded after a technology selection excluded it.
+    # The config is co-owned with the consumer: leave it untouched when the managed hooks
+    # are already semantically in sync (preserving their comments and formatting); rewrite
+    # when a managed hook is missing, wrong, stranded by a technology selection, or retired
+    # from the catalog — the last one is a reason nothing else reports, and it left a hook
+    # pointing at a deleted script that failed every commit (basicly-qdxxy0i).
     existing_text = config_path.read_text(encoding="utf-8")
     parsed = parse_config(config_path, existing_text)
-    if managed_hook_mismatches(parsed, specs, hooks_relpath) or excluded_hooks_present(
-        parsed, excluded_ids
+    if (
+        managed_hook_mismatches(parsed, specs, hooks_relpath)
+        or excluded_hooks_present(parsed, excluded_ids)
+        or retired_hooks_present(parsed, all_ids, hooks_relpath)
     ):
         rendered = render_precommit_config(existing_text, specs, hooks_relpath, all_ids)
         sync_file(config_path, rendered.encode("utf-8"), result)

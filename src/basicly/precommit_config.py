@@ -92,6 +92,22 @@ def _managed_local_block(specs: Sequence[ManagedHook], hooks_relpath: str) -> di
     return {"repo": "local", "hooks": [_hook_entry(spec, hooks_relpath) for spec in specs]}
 
 
+def _is_managed(hook: object, managed_ids: set[str], hooks_relpath: str) -> bool:
+    """Whether a local hook is basicly's, by id or by the entry path only this module writes.
+
+    Id alone stranded a hook the catalog retired: `beads-commit-msg-script` survived every
+    later install because its id is in no current spec, and then failed every commit on a
+    script that is no longer shipped. The entry path is the marker this module writes, so it
+    recognises our own hooks whatever their id, which is what makes the strip a prune.
+    """
+    if not isinstance(hook, dict):
+        return False
+    if hook.get("id") in managed_ids:
+        return True
+    entry = hook.get("entry")
+    return isinstance(entry, str) and f"{hooks_relpath}/" in entry
+
+
 def merge_precommit_config(
     existing: dict | None,
     specs: Sequence[ManagedHook],
@@ -115,7 +131,7 @@ def merge_precommit_config(
             hooks = [
                 hook
                 for hook in (repo.get("hooks") or [])
-                if not (isinstance(hook, dict) and hook.get("id") in managed_ids)
+                if not _is_managed(hook, managed_ids, hooks_relpath)
             ]
             if hooks:
                 kept.append({**repo, "hooks": hooks})
@@ -162,7 +178,7 @@ def _replace_managed_block(
         if isinstance(hooks, list):
             for hi in range(len(hooks) - 1, -1, -1):
                 hook = hooks[hi]
-                if isinstance(hook, dict) and hook.get("id") in managed_ids:
+                if _is_managed(hook, managed_ids, hooks_relpath):
                     del hooks[hi]
         # A local repo left with no hooks was fully basicly-managed; drop it.
         if not hooks:
@@ -239,6 +255,25 @@ def managed_hook_mismatches(
         elif any(actual.get(key) != value for key, value in expected.items()):
             mismatches.append(f"managed hook '{spec.id}' out of sync")
     return mismatches
+
+
+def retired_hooks_present(config: dict, known_ids: set[str], hooks_relpath: str) -> list[str]:
+    """Return a reason per basicly-managed hook whose id the catalog no longer defines.
+
+    Pruning them is not enough on its own: the rewrite only runs when the caller finds a
+    reason, and a retired hook is a reason nothing else reports. `beads-commit-msg-script`
+    survived a 0.5.1 to 0.12.0 install only because the *new* hooks were also missing; on a
+    tree where nothing else had moved it would have stayed and failed every commit.
+    """
+    reasons: list[str] = []
+    for repo in config.get("repos") or []:
+        if isinstance(repo, dict) and repo.get("repo") == "local":
+            reasons.extend(
+                f"managed hook '{hook.get('id')}' is no longer in the catalog"
+                for hook in repo.get("hooks") or []
+                if _is_managed(hook, set(), hooks_relpath) and hook.get("id") not in known_ids
+            )
+    return reasons
 
 
 def excluded_hooks_present(config: dict, excluded_ids: set[str]) -> list[str]:
