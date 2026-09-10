@@ -53,17 +53,34 @@ def _cli_command() -> list[str] | None:
     return None
 
 
+# uvx's own words when the pinned ref is not on the remote. A pin to a version whose tag
+# was never pushed leaves no engine to lint with, which is the advisory case below rather
+# than a catalog defect — reporting it as one blocks every commit over a missing tag.
+UNRESOLVABLE = ("couldn't find remote ref", "failed to fetch branch or tag")
+
+SKIPPED = (
+    "catalog-lint skipped: no basicly to lint with ({reason}); "
+    "CI (basicly-gates.yml) runs this check as the deterministic backstop."
+)
+
+
 def main() -> int:
     """Run ``basicly catalog lint`` from the repository root."""
     command = _cli_command()
     if command is None:
         print(
-            "catalog-lint skipped: basicly is not installed and uvx is unavailable; "
-            "CI (basicly-gates.yml) runs this check. Install uv to gate locally.",
+            SKIPPED.format(reason="not installed and uvx is unavailable"),
             file=sys.stderr,
         )
         return 0
-    proc = subprocess.run(command, cwd=Path.cwd(), check=False)  # nosec B603
+    proc = subprocess.run(  # nosec B603
+        command, cwd=Path.cwd(), check=False, capture_output=True, text=True
+    )
+    if proc.returncode != 0 and any(word in proc.stderr for word in UNRESOLVABLE):
+        print(SKIPPED.format(reason=f"{dist_source()} does not resolve"), file=sys.stderr)
+        return 0
+    print(proc.stdout, end="")
+    print(proc.stderr, end="", file=sys.stderr)
     return proc.returncode
 
 

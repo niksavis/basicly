@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -103,3 +104,48 @@ def test_advisory_skip_when_no_channel(
     err = capsys.readouterr().err
     assert "catalog-lint skipped" in err
     assert "basicly-gates.yml" in err
+
+
+def _stub_run(monkeypatch: pytest.MonkeyPatch, module, returncode: int, stderr: str) -> None:
+    """Canned CompletedProcess for the hook's one subprocess call.
+
+    Through monkeypatch, never a bare assignment: ``module.subprocess`` is the shared
+    module object, so assigning its ``run`` poisons every other test in the worker.
+    """
+    result = subprocess.CompletedProcess(["uvx"], returncode, stdout="", stderr=stderr)
+    monkeypatch.setattr(module.subprocess, "run", lambda *_a, **_kw: result)
+
+
+def test_a_pin_whose_tag_was_never_pushed_is_advisory(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pin is only useful if a missing tag cannot block every commit.
+
+    Observed live while re-recording the tutorial: a fresh consumer pinned to an
+    unreleased version failed the hook with `couldn't find remote ref`, which is no
+    engine to lint with rather than a catalog defect.
+    """
+    module = _load_hook()
+    monkeypatch.setattr(
+        module.shutil, "which", lambda name: "/usr/bin/uvx" if name == "uvx" else None
+    )
+    monkeypatch.setattr(module.importlib.util, "find_spec", lambda _name: None)
+    _stub_run(monkeypatch, module, 1, "fatal: couldn't find remote ref refs/tags/v9.9.9\n")
+
+    assert module.main() == 0
+    assert "does not resolve" in capsys.readouterr().err
+
+
+def test_a_real_catalog_violation_still_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: a lint that ran and refused must still refuse the commit."""
+    module = _load_hook()
+    monkeypatch.setattr(
+        module.shutil, "which", lambda name: "/usr/bin/uvx" if name == "uvx" else None
+    )
+    monkeypatch.setattr(module.importlib.util, "find_spec", lambda _name: None)
+    _stub_run(monkeypatch, module, 1, "catalog lint: FAILED\n  no 'invocation' declared\n")
+
+    assert module.main() == 1
+    assert "no 'invocation' declared" in capsys.readouterr().err

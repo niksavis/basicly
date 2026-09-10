@@ -1,0 +1,1 @@
+- **An unpublished pin no longer blocks every commit.** With `catalog-lint` resolving the version in `.basicly/state/install.json`, a consumer whose version has no pushed tag got `couldn't find remote ref` as a hard failure. That is no engine to lint with, so it takes the hook's advisory path; a lint that ran and refused still refuses. (basicly-h49abre)
