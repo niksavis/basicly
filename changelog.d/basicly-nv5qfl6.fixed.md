@@ -1,0 +1,1 @@
+- **`basicly install` no longer destroys a hand-authored instructions file.** With no manifest entry a first build could not tell its own output from 273 hand-written lines, and replaced them silently. The previous bytes now go to `<path>.basicly-bak` first. (basicly-nv5qfl6)

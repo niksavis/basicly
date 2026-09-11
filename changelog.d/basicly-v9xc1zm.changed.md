@@ -1,0 +1,1 @@
+- **The `release-process` skill states the precondition it assumes.** It projects into every repo that installs the catalog, including one that releases its own way, and opened with "never hand-run the steps it performs". It now opens with the check. (basicly-v9xc1zm)

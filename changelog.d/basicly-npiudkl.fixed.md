@@ -1,0 +1,1 @@
+- **A beads import no longer writes ledger state its own commit gate refuses.** The importer carried the export's `source_repo_path` and `created_by` in verbatim, so a 50-record migration landed 49 and then `tracker-path-scan` blocked the commit with 93 findings. (basicly-npiudkl)

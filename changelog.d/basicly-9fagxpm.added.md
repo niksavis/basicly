@@ -1,0 +1,1 @@
+- **`basicly tracker scrub` is a first-class verb.** The repair for a ledger carrying machine paths or a username had no reachable surface: the gate printed a `python -c` importing `basicly.br`, deleted long ago, and one consumer's sandbox refused a raw in-place rewrite. The verb rewrites the ledger and prints the count. (basicly-9fagxpm)

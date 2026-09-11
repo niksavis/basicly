@@ -6,6 +6,49 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Everything here came from two repositories installing v0.12.0 and reporting what broke, so
+this release is the consumer path and nothing else. The migration from the old tracker now
+completes with documented commands only, a first install stops destroying files it has never
+seen, and three refusals that used to be dead ends now name the fix. It also carries the two
+fixes that missed the v0.12.0 tag, one of which made every commit fail right after install.
+
+**The beads migration completes without a repair step.** The importer carried the export's
+`source_repo_path` and `created_by` straight into the ledger, so a real 50-record migration
+landed 49 records and then `tracker-path-scan` refused the commit with 93 findings. The
+importer now passes the redactor every other engine write already passed
+(basicly-npiudkl). For a ledger imported before that fix the repair is
+`basicly tracker scrub`, a first-class verb: the hook used to print a `python -c` that
+imported a module deleted long ago, and one consumer's sandbox would not run an in-place
+rewrite from a raw interpreter at all (basicly-9fagxpm). The import report also names the id
+prefix it brought in when the repository declares none — the runbook's last step retires the
+source tracker, whose config holds the only other copy of that string (basicly-mticqi7). And
+`--dry-run` exits with the code the real run gives, so a scripted preflight stops passing
+what the run refuses (basicly-1yychkj).
+
+**A first install stops destroying a file it has never seen.** With no manifest entry, build
+could not tell its own stale projection from 273 hand-written lines of
+`.github/copilot-instructions.md`, and replaced them with no warning and no way back. The
+previous bytes now go to `<path>.basicly-bak` first — for `AGENTS.md`, `CLAUDE.md` and
+`copilot-instructions.md` alike — and a repeat run writes no second copy (basicly-nv5qfl6).
+Those copies, and the ledger's two derived folds, are now covered by the `.gitignore` entries
+install scaffolds; before this an upgrade left untracked files behind, and
+`git add .basicly/ledger` after an import committed a fold the event log exists to replace
+(basicly-lpis2cb).
+
+**Two refusals stop being dead ends.** The shipped JSON schema accepts any string in
+`applies_to`, so a consumer authored six routing words, passed validation, committed, and met
+the refusal only inside `build`. The schema now states the constraint and the error names the
+registered targets and points at `tags` (basicly-a7g9sre). The `release-process` skill, which
+projects into every repo that installs the catalog and opens with "never hand-run the steps
+it performs", now opens instead with the check that says whether this repo uses
+`basicly release` at all (basicly-v9xc1zm).
+
+**Two fixes that missed the v0.12.0 tag.** Upgrading from 0.5.1 left a retired managed hook
+wired to a deleted script, so every commit failed right after install printed "repo
+converged" (basicly-qdxxy0i). And the board build-time cap was calibrated on a developer
+machine at 103.8ms while `ubuntu-latest` measures 0.578s, which is what stopped the v0.12.0
+release workflow reaching its publish step (basicly-p6iltkx).
+
 ## v0.12.0 - 2026-09-10
 
 Delta: v0.11.0..v0.12.0

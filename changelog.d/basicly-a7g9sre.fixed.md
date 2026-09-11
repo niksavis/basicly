@@ -1,0 +1,1 @@
+- **A refused `applies_to` value now names the registered targets and the field that wanted it.** The shipped schema accepts any string there, so a consumer authored six routing words, passed validation, and met the refusal only inside `build`. The error now points at `tags`. (basicly-a7g9sre)
