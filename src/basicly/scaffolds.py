@@ -14,7 +14,12 @@ reader who wants to know what a key defaults to looks there.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from . import __version__
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Pinned to the version doing the scaffolding, never a branch: a consumer whose catalog
 # is vendored at one version must be linted by that version's engine, or whatever `main`
@@ -237,3 +242,89 @@ body: |
   ```
 """,
 }
+
+
+# A consumer's own linter and formatter are driven by one of these, and the managed core
+# is an ordinary tracked directory — so tooling scoped to the repo root reaches into it.
+# One consumer's `ruff-check` reported 1192 E501 inside `.basicly/core/**` at their
+# 88-character limit, blocking every commit, and their `prettier` and `ruff-format`
+# rewrote 75 of our files on the way (basicly-8cd7wo5). Install cannot edit these — a
+# consumer's config is theirs — so it names the exclusion and leaves the edit to them.
+FOREIGN_TOOLING: tuple[tuple[str, str], ...] = (
+    (
+        ".pre-commit-config.yaml",
+        "add `exclude: ^\\.basicly/core/` to each hook that scans the repo",
+    ),
+    ("ruff.toml", 'add `extend-exclude = [".basicly/core"]`'),
+    (".ruff.toml", 'add `extend-exclude = [".basicly/core"]`'),
+    (".prettierignore", "add a `.basicly/core/` line"),
+    (".eslintignore", "add a `.basicly/core/` line"),
+)
+
+CORE_EXCLUDE_HEADING = (
+    "Your repo drives its own linters or formatters. The managed core is tracked, so "
+    "tooling scoped to the repo root will lint and rewrite it. Exclude `.basicly/core/`:"
+)
+
+# Claude Code loads `./CLAUDE.md` and `./.claude/CLAUDE.md` both, and only the second is
+# a projection target — so install neither overwrites nor mentions a root one, and the
+# consumer ends with two always-on instruction files and no notice (basicly-8cd7wo5
+# sibling). Naming it is the whole fix; merging them is the consumer's call.
+CLAUDE_SHADOW_NOTE = (
+    "You have a root CLAUDE.md and install just wrote .claude/CLAUDE.md. Claude Code "
+    "loads both, so they are now two always-on instruction files. Nothing overwrote "
+    "yours — decide what belongs in each, or move yours into the overlay."
+)
+
+
+# A secret scanner flags a 64-character hex string on entropy alone, and every `created`
+# event an import writes carries one: `payload.import_digest`, the sha256 of the export
+# it came from. A consumer's 702-record import gave them 702 flagged lines and a blocked
+# commit (basicly-nu3z2md sibling). A baseline is the wrong instrument — the digests are
+# regenerated on every import — so the answer is a path exclusion.
+SECRET_SCANNERS: tuple[tuple[str, str], ...] = (
+    (".secrets.baseline", "detect-secrets"),
+    (".gitleaks.toml", "gitleaks"),
+    ("gitleaks.toml", "gitleaks"),
+    (".trufflehogignore", "trufflehog"),
+)
+
+LEDGER_EXCLUDE_HEADING = (
+    "Your repo runs a secret scanner. The tracker ledger carries a sha256 provenance "
+    "digest on every imported record, which any scanner flags as high-entropy hex — one "
+    "hit per record. Exclude `.basicly/ledger/` rather than baselining it; the digests "
+    "are rewritten on every import. Detected:"
+)
+
+
+def _secret_scanners(repo_root: Path) -> list[str]:
+    """The secret scanners this repo is configured for, by name and by the file naming it."""
+    found = {name: path for path, name in SECRET_SCANNERS if (repo_root / path).is_file()}
+    precommit = repo_root / ".pre-commit-config.yaml"
+    if precommit.is_file():
+        text = precommit.read_text(encoding="utf-8")
+        for name in ("detect-secrets", "gitleaks", "trufflehog"):
+            if name in text:
+                found.setdefault(name, ".pre-commit-config.yaml")
+    return [f"  {path}: {name}" for name, path in sorted(found.items())]
+
+
+def install_notes(repo_root: Path) -> list[str]:
+    """What install noticed about this repo that it will not change on the repo's behalf."""
+    notes: list[str] = []
+    found = [(name, advice) for name, advice in FOREIGN_TOOLING if (repo_root / name).is_file()]
+    pyproject = repo_root / "pyproject.toml"
+    if pyproject.is_file() and "[tool.ruff]" in pyproject.read_text(encoding="utf-8"):
+        found.append((
+            "pyproject.toml",
+            'add `extend-exclude = [".basicly/core"]` under [tool.ruff]',
+        ))
+    if found:
+        notes.append(CORE_EXCLUDE_HEADING)
+        notes.extend(f"  {name}: {advice}" for name, advice in found)
+    if scanners := _secret_scanners(repo_root):
+        notes.append(LEDGER_EXCLUDE_HEADING)
+        notes.extend(scanners)
+    if (repo_root / "CLAUDE.md").is_file():
+        notes.append(CLAUDE_SHADOW_NOTE)
+    return notes

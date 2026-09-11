@@ -634,20 +634,24 @@ def test_cli_install_authoring_repo_writes_no_state(work_repo: Path) -> None:
     assert not (work_repo / ".basicly" / "state").exists()
 
 
-def test_cli_check_reports_core_drift_note(tmp_path: Path) -> None:
-    """A hand-edited managed core file surfaces as an advisory note, exit 0."""
+def test_cli_check_refuses_a_rewritten_managed_core(tmp_path: Path) -> None:
+    """It was a stderr note under an "up to date" headline and exit 0 (basicly-8cd7wo5).
+
+    A consumer's formatters rewrote 75 vendored files; `check` said up to date and they
+    committed the rewrite.
+    """
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
 
-    # Edit a managed file that does not feed the generated outputs, so the
-    # byte-for-byte staleness contract stays green while provenance drifts.
+    # A managed file no generated output reads, so only provenance drifts.
     hook = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
     hook.write_text(hook.read_text(encoding="utf-8") + "\n# hand edit\n", encoding="utf-8")
 
     result = run_basicly_consumer(consumer, "check")
-    assert result.returncode == 0, result.stderr
-    assert "differs from the installed snapshot" in result.stderr
+    assert result.returncode == 1
+    assert "up to date" not in result.stdout
+    assert "differs from the installed snapshot in 1 file(s)" in result.stderr
     assert "hooks/pre-commit.py: modified" in result.stderr
 
 

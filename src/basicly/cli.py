@@ -115,6 +115,7 @@ from .scaffolds import (
     GENERATED_IGNORES,
     OVERLAY_FRAGMENT_STUBS,
     VSCODE_TASKS_JSON,
+    install_notes,
 )
 from .schema import (
     CATEGORIES,
@@ -502,13 +503,22 @@ def _manifest_digest(outputs: object) -> str:
     return sha256_of_text(json.dumps(outputs, sort_keys=True, default=str))
 
 
-def _report_provenance_notes(repo_root: Path, paths: ProjectPaths) -> bool:
-    """Install-provenance notes for `basicly check` (§9); True when the versions disagree.
+# Enough to recognise which subtree a formatter reached into; the count above them is
+# the number that matters. A consumer's run listed 75.
+CORE_DRIFT_SHOWN = 10
 
-    Absent state (authoring repo, or an install predating provenance) reports nothing.
-    A corrupt state file and core drift stay advisory; only the version disagreement is
-    the caller's to refuse on, because it is the one that makes every later comparison
-    meaningless rather than merely suspect.
+
+def _report_provenance_notes(repo_root: Path, paths: ProjectPaths) -> bool:
+    """Install-provenance notes for `basicly check` (§9); True when the caller must refuse.
+
+    Absent state (authoring repo, or an install predating provenance) reports nothing. A
+    corrupt state file stays advisory.
+
+    **Core drift refuses.** It was a `Note:` on stderr under an "All generated files and
+    manifest are up to date" headline and an exit code of 0 — so a consumer whose
+    formatters rewrote 75 vendored catalog files ran `check`, read that it was up to
+    date, and committed the rewrite (basicly-8cd7wo5). A summary that contradicts the
+    line printed beside it is worse than no summary.
     """
     state_path = repo_root / paths.state_path
     try:
@@ -532,13 +542,17 @@ def _report_provenance_notes(repo_root: Path, paths: ProjectPaths) -> bool:
     drift = state.core_drift(install_state, repo_root / paths.core_root)
     if drift:
         print(
-            "Note: managed core differs from the installed snapshot "
-            "(hand-edits belong in the overlay, not the managed core):",
+            f"Managed core differs from the installed snapshot in {len(drift)} file(s). "
+            "Hand-edits belong in the overlay; a formatter or linter of your own that "
+            "reaches into the managed core will rewrite it on every run. Restore it with "
+            "`basicly install`, and exclude the core root from your own tooling:",
             file=sys.stderr,
         )
-        for rel_path, reason in drift:
+        for rel_path, reason in drift[:CORE_DRIFT_SHOWN]:
             print(f"  {rel_path}: {reason}", file=sys.stderr)
-    return skewed
+        if len(drift) > CORE_DRIFT_SHOWN:
+            print(f"  … and {len(drift) - CORE_DRIFT_SHOWN} more", file=sys.stderr)
+    return skewed or bool(drift)
 
 
 # Bump only on breaking changes to the `basicly status --json` payload shape —
@@ -1585,6 +1599,8 @@ def cmd_install(args: argparse.Namespace) -> int:
         config_path.write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
         print(f"Wrote {CONFIG_FILE}")
     _scaffold_generated_ignores(repo_root)
+    for note in install_notes(repo_root):
+        print(note, file=sys.stderr)
 
     if not _record_install_technologies(repo_root, technologies):
         return 1
