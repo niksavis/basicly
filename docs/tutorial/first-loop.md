@@ -4,7 +4,7 @@ This is a walkthrough, not a reference. Follow it top to bottom on a **scratch
 git repo** and you will end with one unit of work filed, built in its own
 worktree, merged, and closed by the harness — one sitting, no agent spend.
 Every command and every quoted output below was executed against a fresh repo on
-basicly 0.12.1 in a real terminal, with that repo's generated bead-id prefix swapped for
+basicly 0.12.2 in a real terminal, with that repo's generated bead-id prefix swapped for
 `myrepo`, absolute paths written as `/path/to/...`, and `...` marking an elided line.
 
 When you want to look something up rather than learn the shape, stop here and
@@ -33,7 +33,7 @@ Every command below is written as bare `basicly`. Run it as the pinned form so
 you always get the version you chose:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.12.1 basicly <args>
+uvx --from git+https://github.com/niksavis/basicly@v0.12.2 basicly <args>
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -47,7 +47,7 @@ uvx --from git+https://github.com/niksavis/basicly@v0.12.1 basicly <args>
 From the repo root:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.12.1 basicly install
+uvx --from git+https://github.com/niksavis/basicly@v0.12.2 basicly install
 ```
 
 It ends with:
@@ -63,15 +63,15 @@ basicly status
 ```
 
 ```text
-engine: basicly 0.12.1
+engine: basicly 0.12.2
 repo: consumer
-catalog: installed by basicly 0.12.1 at ... (matches engine)
+catalog: installed by basicly 0.12.2 at ... (matches engine)
 drift: generated files up to date
 Hooks
 ┏━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┓
 ┃ manager ┃ specs ┃ projection ┃ activation ┃
 ┡━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━┩
-│ git     │ 11    │ in sync    │ installed  │
+│ git     │ 12    │ in sync    │ installed  │
 │ claude  │ 6     │ in sync    │ active     │
 │ copilot │ 2     │ in sync    │ active     │
 └─────────┴───────┴────────────┴────────────┘
@@ -81,7 +81,7 @@ overlays: 2 fragment(s), 0 agent(s)
 ```
 
 `repo: consumer` means this repo *uses* the catalog rather than authoring it.
-`git 11 … installed` means eleven git hooks are now live — which is what the
+`git 12 … installed` means twelve git hooks are now live — which is what the
 next step is about.
 
 ## Step 2 — make the first commit possible

@@ -1,1 +1,0 @@
-- **An import refusal names its cause once instead of quoting every id.** A 702-record export refused every record and answered with 702 quoted ids and no constraint. It now states the rule, the source prefix it found, that a hyphenated prefix is not importable, and five examples. The dry run also emits the `[tracker] prefix` advice, which only the real run did. (basicly-iehbmvu)

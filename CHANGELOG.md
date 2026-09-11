@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.12.2 - 2026-09-11
+
+Delta: v0.12.1..v0.12.2
+
 Two repositories finished installing v0.12.1 and one of them completed a 702-record
 migration; everything here is what that turned up. The theme is the same as v0.12.1's and
 narrower: a consumer's own tooling and ours now stay out of each other's way, and three
@@ -39,6 +43,18 @@ green on a config `build` would change — so `markdownlint` disappeared on ever
 `hooks-build` and nothing said so. It is a declared spec now, gated to `node`, and where
 node or the linter is absent it skips with one actionable line instead of blocking the
 commit (basicly-vdlio8i).
+
+### Fixed
+
+- **`check` refuses a managed core your own formatter rewrote.** It printed a stderr note under an "up to date" headline and exited 0, so a consumer whose formatters rewrote 75 vendored files committed the rewrite. Install now also names the exclusion for a detected linter or secret scanner, and says when a root `CLAUDE.md` sits beside the projected one. (basicly-8cd7wo5)
+
+- **An import refusal names its cause once instead of quoting every id.** A 702-record export refused every record and answered with 702 quoted ids and no constraint. It now states the rule, the source prefix it found, that a hyphenated prefix is not importable, and five examples. The dry run also emits the `[tracker] prefix` advice, which only the real run did. (basicly-iehbmvu)
+
+- **The projected hooks stop writing a `uv.lock` into your repo root.** Every hook entry ran `uv run python`, and `uv run` treats any directory with a `pyproject.toml` as a uv project — so a consumer on pip got a 52-byte lock file no output named, and a hook then failed on the file that appeared mid-run. (basicly-nu3z2md)
+
+- **The rank-1 floor advice says which unit it wants.** It printed "below the measured baseline (currently 89.1%)" and the validator refuses 89.1. It now adds: a fraction between 0 and 1, write 0.87. (basicly-r0dovjf)
+
+- **`hooks-build` no longer deletes the `markdownlint` hook.** Any local hook whose entry names the catalog hooks directory is treated as ours and pruned, and `hooks-check` stayed green on a config `build` would change. It is now a declared spec, gated to `node`, and skips with one actionable line where node or the linter is absent rather than blocking the commit. (basicly-vdlio8i)
 
 ## v0.12.1 - 2026-09-11
 
