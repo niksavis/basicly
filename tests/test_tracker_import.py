@@ -61,16 +61,27 @@ def _export(root: Path, records: list[dict] | str) -> Path:
 
 
 def test_a_dry_run_writes_nothing_and_names_what_would_be_refused(host: Path) -> None:
-    """A pre-flight that skipped the id rule would list an id the write then refuses."""
+    """A pre-flight that skipped the id rule would list an id the write then refuses.
+
+    The code is the real run's, not 0 (basicly-1yychkj): a dry run that reports a
+    refusal and still exits 0 lets a scripted preflight pass before the real run fails.
+    """
     export = _export(host, [*_EXPORT, {"id": "not an id", "title": "bad"}])
 
     code, lines = tracker_import.run_import(host, export, source_name="beads", dry_run=True)
 
     report = "\n".join(lines)
-    assert code == 0
+    assert code == 1
     assert "nothing written" in report
     assert "2 new record(s)" in report and "1 that would be refused" in report
     assert not list((host / ".basicly" / "ledger").glob("events-*.jsonl")), "it wrote a ledger"
+
+
+def test_a_clean_dry_run_exits_zero(host: Path) -> None:
+    """The positive control: the code says refusal, not `--dry-run`."""
+    code, _ = tracker_import.run_import(host, _export(host, _EXPORT), dry_run=True)
+
+    assert code == 0
 
 
 def test_the_source_ids_survive_the_import(host: Path) -> None:

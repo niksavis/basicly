@@ -40,11 +40,15 @@ def _lines(report: Any, *, source: str) -> list[str]:
     return lines
 
 
-def preview(snapshot: Any, ledger: Path, kit: Any) -> list[str]:
-    """What an import would do, having written nothing.
+def preview(snapshot: Any, ledger: Path, kit: Any) -> tuple[int, list[str]]:
+    """What an import would do, having written nothing; the exit code the real run gives.
 
     Reads the ledger to separate records it already holds from new ones, so a consumer
     can see the id set before it is committed rather than after.
+
+    The code matches :func:`run_import`'s rather than being 0 always (basicly-1yychkj):
+    a dry run that reports a refusal and still exits 0 lets a scripted preflight pass
+    and the real run then fail, which is the one thing the preflight exists to prevent.
     """
     held = {event.record for event in kit.events.read_events(ledger)[0] if hasattr(event, "record")}
     # The same id rule the write applies. A preview that skipped it would list an id the
@@ -68,7 +72,7 @@ def preview(snapshot: Any, ledger: Path, kit: Any) -> list[str]:
         if ids:
             lines.append(f"  {label}: {', '.join(sorted(ids))}")
     lines.extend(f"  unreadable: {i.subject} — {i.reason}" for i in snapshot.unreadable)
-    return lines
+    return (1 if bad or snapshot.unreadable else 0), lines
 
 
 def run_import(
@@ -92,7 +96,7 @@ def run_import(
         raise ValidationError(str(exc), export) from exc
 
     if dry_run:
-        return 0, preview(snapshot, ledger, kit)
+        return preview(snapshot, ledger, kit)
 
     # The redactor every other engine write passes (`owned_write`). Without it the export's
     # own `source_repo_path` and `created_by` reach the committed ledger verbatim, and
