@@ -17,6 +17,7 @@ import pytest
 
 from basicly import cli, owned_store, redact, tracker_import
 from basicly.schema import ValidationError
+from basicly.tracker_import import _REFUSALS_SHOWN
 
 REPO = Path(__file__).parent.parent
 KIT = Path(".basicly") / "core" / "kit" / "tracker"
@@ -222,3 +223,40 @@ def test_the_import_stays_quiet_when_a_prefix_is_declared(host: Path) -> None:
     _, lines = tracker_import.run_import(host, _export(host, _EXPORT), source_name="beads")
 
     assert "[tracker] prefix" not in "\n".join(lines)
+
+
+HYPHENATED = [
+    {"id": f"burndown-chart-{index:03d}", "title": f"t{index}", "status": "open"}
+    for index in range(1, 9)
+]
+
+
+def test_a_refusal_names_its_cause_once_not_every_id(host: Path) -> None:
+    """702 records refused and the report answered with 702 quoted ids (basicly-iehbmvu).
+
+    The cause was one rule and the same for all of them, so the consumer got 40KB of
+    output naming no constraint and no remedy.
+    """
+    export = _export(host, [*HYPHENATED, {"id": "Not An Id", "title": "bad"}])
+
+    code, lines = tracker_import.run_import(host, export, source_name="beads", dry_run=True)
+
+    report = "\n".join(lines)
+    assert code == 1
+    assert "the prefix may not carry a hyphen" in report
+    assert "The source prefix is 'burndown-chart'" in report
+    assert report.count("burndown-chart-00") == _REFUSALS_SHOWN, "one line per id, not per cause"
+    assert "and 3 more" in report
+
+
+def test_a_dry_run_names_the_id_prefix_too(host: Path) -> None:
+    """The advice ran only on the real path (basicly-iehbmvu).
+
+    The dry run is the one a consumer is told to run first, and the point of the
+    advice is to land before the ledger is committed rather than after.
+    """
+    _, lines = tracker_import.run_import(
+        host, _export(host, _EXPORT), source_name="beads", dry_run=True
+    )
+
+    assert 'prefix = "acme"' in "\n".join(lines)
