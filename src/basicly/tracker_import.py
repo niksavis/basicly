@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from . import owned_store
+from . import owned_store, redact
 from .schema import ValidationError
 
 if TYPE_CHECKING:
@@ -94,7 +94,12 @@ def run_import(
     if dry_run:
         return 0, preview(snapshot, ledger, kit)
 
-    report = kit.migrate.import_snapshot(ledger, snapshot, deleted=deleted)
+    # The redactor every other engine write passes (`owned_write`). Without it the export's
+    # own `source_repo_path` and `created_by` reach the committed ledger verbatim, and
+    # `tracker-path-scan` then refuses the commit that would publish them (basicly-npiudkl).
+    report = kit.migrate.import_snapshot(
+        ledger, snapshot, deleted=deleted, redact=redact.redact_committed
+    )
     lines = _lines(report, source=snapshot.name)
     # Rejections are the finding this importer exists to surface rather than swallow, so
     # they set the exit code; a divergence does not, because nothing was written wrongly.

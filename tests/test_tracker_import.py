@@ -8,13 +8,14 @@ survive, so a commit message referencing one still resolves after the move.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 from pathlib import Path
 
 import pytest
 
-from basicly import owned_store, tracker_import
+from basicly import owned_store, redact, tracker_import
 from basicly.schema import ValidationError
 
 REPO = Path(__file__).parent.parent
@@ -119,3 +120,46 @@ def test_a_missing_export_is_an_error_not_a_traceback(host: Path) -> None:
     """The path is user input, so it is a trust boundary rather than an assertion."""
     with pytest.raises(ValidationError):
         tracker_import.run_import(host, host / "nope.jsonl", source_name="beads")
+
+
+def _hook():
+    """The `tracker-path-scan` gate, loaded the way `test_tracker_path_scan.py` loads it."""
+    script = REPO / ".basicly" / "core" / "hooks" / "tracker-path-scan.py"
+    spec = importlib.util.spec_from_file_location("tracker_path_scan", script)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_import_writes_a_ledger_its_own_commit_gate_accepts(host: Path) -> None:
+    """An import that leaks the source machine's paths cannot be committed (basicly-npiudkl).
+
+    A real consumer landed 49 of 50 records and then `tracker-path-scan` refused the
+    commit with 93 findings, because the export's `source_repo_path` and `created_by`
+    reached the ledger verbatim. The redactor every other engine write passes was the
+    one keyword this seam left off.
+    """
+    home = "/home" + "/someuser/development/acme"
+    export = _export(
+        host,
+        [
+            {
+                "id": "acme-99z",
+                "title": "Vendor the fix",
+                "status": "open",
+                "source_repo_path": home,
+                "created_by": redact.machine_identity() or "someuser",
+            }
+        ],
+    )
+
+    code, _ = tracker_import.run_import(host, export, source_name="beads")
+
+    written = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(owned_store.ledger_dir(host).glob("events-*.jsonl"))
+    )
+    assert code == 0
+    assert home not in written
+    assert _hook().findings(".basicly/ledger/events-0001.jsonl", written) == []
