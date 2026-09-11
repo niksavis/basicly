@@ -6,6 +6,40 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Two repositories finished installing v0.12.1 and one of them completed a 702-record
+migration; everything here is what that turned up. The theme is the same as v0.12.1's and
+narrower: a consumer's own tooling and ours now stay out of each other's way, and three
+refusals that gave a consumer nothing to act on now name the constraint and the fix.
+
+**We stop writing into a consumer's repo without saying so.** Every projected hook entry
+ran `uv run python`, and `uv run` treats any directory holding a `pyproject.toml` as a uv
+project — so a consumer on pip and `pip-compile` got a 52-byte `uv.lock` at their root that
+no install output named, and a hook then failed on the file that had appeared mid-run
+(basicly-nu3z2md). Install now also names, without editing anything, what it noticed: the
+exclusion line for a detected pre-commit, ruff, prettier or eslint config, the exclusion
+for a detected secret scanner — every imported record carries a sha256 provenance digest
+and every scanner flags 64-character hex — and a root `CLAUDE.md` now sitting beside the
+projected `.claude/CLAUDE.md`, which Claude Code loads as well (basicly-8cd7wo5).
+
+**`check` stops reporting a rewritten catalog as up to date.** A consumer's own formatters
+reached into `.basicly/core/**` and rewrote 75 of our files; `check` printed a stderr note,
+an "up to date" headline and an exit code of 0, so the rewrite was committed. Core drift
+now refuses (basicly-8cd7wo5).
+
+**Three refusals that were dead ends.** A 702-record import refused every record and
+answered with 702 quoted ids naming no constraint: it now states the rule once, the source
+prefix it found, that a hyphenated prefix is not importable, and five examples — and the
+dry run emits the `[tracker] prefix` advice that only the real run did (basicly-iehbmvu).
+The rank-1 floor advice printed a percentage the validator refuses, and now says it wants a
+fraction (basicly-r0dovjf).
+
+**A gate this repo runs was being deleted by our own build.** Any local hook whose entry
+names the catalog hooks directory is claimed as ours and pruned, and `hooks-check` stayed
+green on a config `build` would change — so `markdownlint` disappeared on every
+`hooks-build` and nothing said so. It is a declared spec now, gated to `node`, and where
+node or the linter is absent it skips with one actionable line instead of blocking the
+commit (basicly-vdlio8i).
+
 ## v0.12.1 - 2026-09-11
 
 Delta: v0.12.0..v0.12.1

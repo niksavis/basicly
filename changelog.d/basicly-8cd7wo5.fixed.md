@@ -1,0 +1,1 @@
+- **`check` refuses a managed core your own formatter rewrote.** It printed a stderr note under an "up to date" headline and exited 0, so a consumer whose formatters rewrote 75 vendored files committed the rewrite. Install now also names the exclusion for a detected linter or secret scanner, and says when a root `CLAUDE.md` sits beside the projected one. (basicly-8cd7wo5)

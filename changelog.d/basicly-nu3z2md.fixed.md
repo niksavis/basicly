@@ -1,0 +1,1 @@
+- **The projected hooks stop writing a `uv.lock` into your repo root.** Every hook entry ran `uv run python`, and `uv run` treats any directory with a `pyproject.toml` as a uv project — so a consumer on pip got a 52-byte lock file no output named, and a hook then failed on the file that appeared mid-run. (basicly-nu3z2md)

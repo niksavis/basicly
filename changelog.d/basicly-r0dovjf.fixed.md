@@ -1,0 +1,1 @@
+- **The rank-1 floor advice says which unit it wants.** It printed "below the measured baseline (currently 89.1%)" and the validator refuses 89.1. It now adds: a fraction between 0 and 1, write 0.87. (basicly-r0dovjf)
