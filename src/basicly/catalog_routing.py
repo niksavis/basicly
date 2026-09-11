@@ -293,7 +293,9 @@ def floor_violations(rate: float, floor: float | None, high_water: float | None)
     if floor is None:
         return [
             "no rank-1 floor declared — set `[catalog] rank1_floor` in basicly.toml "
-            f"below the measured baseline (currently {rate:.1%})"
+            f"below the measured baseline (currently {rate:.1%}). It is a fraction "
+            f"between 0 and 1, not a percentage: write {max(rate - 0.02, 0.0):.2f}, "
+            f"not {rate * 100:.1f}"
         ]
     violations: list[str] = []
     if high_water is not None and floor < high_water:

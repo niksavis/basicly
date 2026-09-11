@@ -186,3 +186,15 @@ def test_the_report_line_says_so_when_no_floor_is_declared() -> None:
     outcome = RoutingOutcome(report=report, floor=None, violations=(), warnings=())
 
     assert outcome.summary().endswith("(no floor declared)")
+
+
+def test_the_missing_floor_advice_states_the_unit_it_wants() -> None:
+    """It advised a percentage and the validator refuses one (basicly-r0dovjf).
+
+    A consumer read "below the measured baseline (currently 89.1%)", wrote 89.1, and
+    got `[catalog] rank1_floor must be between 0 and 1 (got 89.1)`.
+    """
+    advice = "\n".join(routing.floor_violations(0.891, None, None))
+
+    assert "fraction between 0 and 1, not a percentage" in advice
+    assert "write 0.87, not 89.1" in advice
