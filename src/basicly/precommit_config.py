@@ -69,13 +69,21 @@ class ManagedHook(Protocol):
         ...
 
 
+# `--no-project` because a hook script is stdlib-only and a consumer's repo root is not
+# ours to resolve. Without it `uv run` treats any repo carrying a pyproject.toml as a uv
+# project and writes a `uv.lock` beside it — a consumer on pip and pip-compile got a
+# 52-byte lock file no install output named, and `protect-generated-commit` then failed
+# on the file that appeared mid-run (basicly-nu3z2md).
+HOOK_PYTHON = "uv run --no-project python"
+
+
 def _hook_entry(spec: ManagedHook, hooks_relpath: str) -> dict:
     # pre-commit shell-splits `entry`, so the script path must be quoted to
     # survive spaces or shell metacharacters in a configured core path.
     entry: dict = {
         "id": spec.id,
         "name": spec.id,
-        "entry": f"uv run python {shlex.quote(f'{hooks_relpath}/{spec.script}')}",
+        "entry": f"{HOOK_PYTHON} {shlex.quote(f'{hooks_relpath}/{spec.script}')}",
         "language": "system",
         "stages": [spec.stage],
         "pass_filenames": spec.pass_filenames,

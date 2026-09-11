@@ -49,11 +49,11 @@ def test_hook_entry_quotes_paths_with_spaces() -> None:
     specs = [HookSpec(id="pre-commit-script", script="pre-commit.py", stage="pre-commit")]
     merged = merge_precommit_config(None, specs, "agent config/hooks")
     entry = merged["repos"][0]["hooks"][0]["entry"]
-    assert entry == "uv run python 'agent config/hooks/pre-commit.py'"
+    assert entry == "uv run --no-project python 'agent config/hooks/pre-commit.py'"
     # A plain path stays unquoted, keeping the dogfooded config stable.
     plain = merge_precommit_config(None, specs, CORE_HOOKS_DIR.as_posix())
     assert plain["repos"][0]["hooks"][0]["entry"] == (
-        "uv run python .basicly/core/hooks/pre-commit.py"
+        "uv run --no-project python .basicly/core/hooks/pre-commit.py"
     )
 
 

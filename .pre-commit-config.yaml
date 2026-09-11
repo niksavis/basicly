@@ -12,7 +12,7 @@ repos:
     # profile, so with nvm off PATH WSL interop resolved npx to the Windows
     # nodejs, which cannot express the worktree's UNC path. The launcher never
     # invokes npx and fails in one line when no usable node exists.
-    entry: uv run python .basicly/core/hooks/markdownlint.py
+    entry: uv run --no-project python .basicly/core/hooks/markdownlint.py
     language: system
     stages:
     - pre-commit
@@ -22,7 +22,7 @@ repos:
   hooks:
   - id: identity-guard
     name: identity-guard
-    entry: uv run python .basicly/core/hooks/identity-guard.py
+    entry: uv run --no-project python .basicly/core/hooks/identity-guard.py
     language: system
     stages:
     - pre-commit
@@ -30,7 +30,7 @@ repos:
     always_run: true
   - id: pre-commit-script
     name: pre-commit-script
-    entry: uv run python .basicly/core/hooks/pre-commit.py
+    entry: uv run --no-project python .basicly/core/hooks/pre-commit.py
     language: system
     stages:
     - pre-commit
@@ -38,7 +38,7 @@ repos:
     always_run: true
   - id: catalog-lint
     name: catalog-lint
-    entry: uv run python .basicly/core/hooks/catalog-lint.py
+    entry: uv run --no-project python .basicly/core/hooks/catalog-lint.py
     language: system
     stages:
     - pre-commit
@@ -46,7 +46,7 @@ repos:
     files: ^(\.basicly/core/|\.basicly-local/|basicly\.toml$)
   - id: secret-scan
     name: secret-scan
-    entry: uv run python .basicly/core/hooks/secret-scan.py
+    entry: uv run --no-project python .basicly/core/hooks/secret-scan.py
     language: system
     stages:
     - pre-commit
@@ -54,7 +54,7 @@ repos:
     always_run: true
   - id: tracker-path-scan
     name: tracker-path-scan
-    entry: uv run python .basicly/core/hooks/tracker-path-scan.py
+    entry: uv run --no-project python .basicly/core/hooks/tracker-path-scan.py
     language: system
     stages:
     - pre-commit
@@ -62,7 +62,7 @@ repos:
     always_run: true
   - id: internal-info-scan
     name: internal-info-scan
-    entry: uv run python .basicly/core/hooks/internal-info-scan.py
+    entry: uv run --no-project python .basicly/core/hooks/internal-info-scan.py
     language: system
     stages:
     - pre-commit
@@ -70,7 +70,7 @@ repos:
     always_run: true
   - id: kit-boundary
     name: kit-boundary
-    entry: uv run python .basicly/core/hooks/kit-boundary.py
+    entry: uv run --no-project python .basicly/core/hooks/kit-boundary.py
     language: system
     stages:
     - pre-commit
@@ -78,21 +78,21 @@ repos:
     always_run: true
   - id: commit-msg-script
     name: commit-msg-script
-    entry: uv run python .basicly/core/hooks/commit-msg.py
+    entry: uv run --no-project python .basicly/core/hooks/commit-msg.py
     language: system
     stages:
     - commit-msg
     pass_filenames: true
   - id: tracker-commit-msg-script
     name: tracker-commit-msg-script
-    entry: uv run python .basicly/core/hooks/tracker-commit-msg.py
+    entry: uv run --no-project python .basicly/core/hooks/tracker-commit-msg.py
     language: system
     stages:
     - commit-msg
     pass_filenames: true
   - id: pre-push-script
     name: pre-push-script
-    entry: uv run python .basicly/core/hooks/pre-push.py
+    entry: uv run --no-project python .basicly/core/hooks/pre-push.py
     language: system
     stages:
     - pre-push
@@ -100,7 +100,7 @@ repos:
     always_run: true
   - id: protect-generated-commit
     name: protect-generated-commit
-    entry: uv run python .basicly/core/hooks/protect-generated-commit.py
+    entry: uv run --no-project python .basicly/core/hooks/protect-generated-commit.py
     language: system
     stages:
     - pre-commit

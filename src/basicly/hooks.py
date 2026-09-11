@@ -27,6 +27,7 @@ import yaml
 
 from .catalog import bundled_catalog_root, iter_catalog_files
 from .precommit_config import (
+    HOOK_PYTHON,
     excluded_hooks_present,
     managed_hook_mismatches,
     parse_config,
@@ -201,8 +202,8 @@ def render_copilot_hook(spec: HookSpec, hooks_relpath: str) -> str:
         "type": "command",
         # bash covers Linux/macOS (and the cloud agent sandbox); powershell
         # covers Windows. Both run the same interpreter-managed script.
-        "bash": f"uv run python {shlex.quote(script)}",
-        "powershell": f"uv run python '{script}'",
+        "bash": f"{HOOK_PYTHON} {shlex.quote(script)}",
+        "powershell": f"{HOOK_PYTHON} '{script}'",
     }
     if spec.matcher:
         entry["matcher"] = spec.matcher

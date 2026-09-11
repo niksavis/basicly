@@ -163,7 +163,7 @@ def test_copilot_hooks_sync_check_and_remove_roundtrip(tmp_path: Path) -> None:
     assert config["version"] == 1
     entry = config["hooks"]["postToolUse"][0]
     assert entry["type"] == "command"
-    assert entry["bash"] == "uv run python .basicly/core/hooks/tool-usage.py"
+    assert entry["bash"] == "uv run --no-project python .basicly/core/hooks/tool-usage.py"
     assert "tool-usage.py" in entry["powershell"]
 
     assert check_copilot_hooks(tmp_path, CORE_HOOKS_DIR) == []
