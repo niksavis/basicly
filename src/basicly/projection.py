@@ -55,3 +55,23 @@ def write_if_changed(path: Path, content: bytes) -> bool:
 def sync_file(path: Path, content: bytes, result: SyncResult) -> None:
     """Write ``content`` if changed and record ``path`` under written/unchanged."""
     (result.written if write_if_changed(path, content) else result.unchanged).append(path)
+
+
+BACKUP_SUFFIX = ".basicly-bak"
+
+
+def back_up_unrecognised(path: Path, content: bytes, *, tracked: bool) -> Path | None:
+    """Copy an untracked file aside before a projection overwrites it; return the copy.
+
+    A first build has no manifest entry, so it replaced 273 hand-written lines of
+    `.github/copilot-instructions.md` with its own output (basicly-nv5qfl6). Keeping
+    the bytes makes the distinction the manifest cannot draw stop mattering.
+    """
+    if tracked or not path.exists():
+        return None
+    previous = path.read_bytes()
+    if previous == content:
+        return None
+    backup = path.with_name(path.name + BACKUP_SUFFIX)
+    backup.write_bytes(previous)
+    return backup

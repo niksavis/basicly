@@ -386,16 +386,6 @@ def cmd_build(args: argparse.Namespace) -> int:
     rendered: dict[Path, str] = {}
     changed_count = 0
 
-    for item in planned:
-        content = _render_planned(repo_root, paths, item)
-        rendered[item.output_path] = content
-        changed = projection.write_if_changed(item.output_path, content.encode("utf-8"))
-        if changed:
-            changed_count += 1
-            ui.say(f"Wrote {item.output_path.relative_to(repo_root)}", style="ok")
-        for line in _budget_warnings(targets, item, content, repo_root):
-            print(line, file=sys.stderr)
-
     manifest_path = repo_root / paths.manifest_path
     existing_manifest: dict[str, Any] = {}
     if manifest_path.exists():
@@ -403,6 +393,23 @@ def cmd_build(args: argparse.Namespace) -> int:
             existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             existing_manifest = {}
+    recorded = existing_manifest.get("outputs")
+    tracked = set(recorded) if isinstance(recorded, dict) else set()
+
+    for item in planned:
+        content = _render_planned(repo_root, paths, item)
+        rendered[item.output_path] = content
+        encoded = content.encode("utf-8")
+        rel = item.output_path.relative_to(repo_root).as_posix()
+        backup = projection.back_up_unrecognised(item.output_path, encoded, tracked=rel in tracked)
+        if backup is not None:
+            ui.warn(f"{rel} was not ours to overwrite; your copy is at {backup.name}")
+        changed = projection.write_if_changed(item.output_path, encoded)
+        if changed:
+            changed_count += 1
+            ui.say(f"Wrote {item.output_path.relative_to(repo_root)}", style="ok")
+        for line in _budget_warnings(targets, item, content, repo_root):
+            print(line, file=sys.stderr)
 
     manifest = _build_manifest(rendered, planned, existing_manifest, bool(args.target))
     changed_count += _sweep_stale_outputs(repo_root, existing_manifest, manifest)
