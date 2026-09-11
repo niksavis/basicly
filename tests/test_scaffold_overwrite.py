@@ -11,8 +11,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from basicly import cli
-from basicly.scaffolds import CONSUMER_CI_WORKFLOW, VSCODE_TASKS_JSON
+from basicly import __version__, cli
+from basicly.scaffolds import (
+    CONSUMER_CI_WORKFLOW,
+    DIST_SOURCE,
+    VSCODE_TASKS_JSON,
+    repin,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -74,3 +79,59 @@ def test_the_ci_workflow_scaffold_honours_the_flag_too(tmp_path: Path) -> None:
 
     assert workflow.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW
     assert workflow.with_suffix(workflow.suffix + BACKUP).exists()
+
+
+# --- the pin moves without the flag (basicly-jdpzlwj) --------------------------
+
+OLD_PIN = DIST_SOURCE.replace(f"v{__version__}", "v0.0.1")
+
+
+def test_an_upgrade_moves_a_stale_pin_without_the_flag(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pin left at the old tag runs the old engine against the new catalog.
+
+    The version-skew guard then refuses four of the five CI steps, in a file the
+    consumer had no reason to look at and that install promised not to touch.
+    """
+    workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    cli._scaffold_ci_workflow(tmp_path)
+    workflow.write_text(CONSUMER_CI_WORKFLOW.replace(DIST_SOURCE, OLD_PIN), encoding="utf-8")
+
+    cli._scaffold_ci_workflow(tmp_path)
+
+    assert workflow.read_text(encoding="utf-8") == CONSUMER_CI_WORKFLOW
+    assert "Re-pinned 5 basicly reference(s)" in capsys.readouterr().out
+
+
+def test_the_repin_leaves_everything_but_the_pin_alone(tmp_path: Path) -> None:
+    """It is still the consumer's file: only the value that names our engine moves."""
+    workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    cli._scaffold_ci_workflow(tmp_path)
+    edited = CONSUMER_CI_WORKFLOW.replace(DIST_SOURCE, OLD_PIN) + "\n# my own step\n"
+    workflow.write_text(edited, encoding="utf-8")
+
+    cli._scaffold_ci_workflow(tmp_path)
+
+    after = workflow.read_text(encoding="utf-8")
+    assert after.endswith("# my own step\n"), "the consumer's edit did not survive"
+    assert OLD_PIN not in after
+
+
+def test_a_scaffold_already_at_this_version_is_left_alone(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: the re-pin reports what it moved, never that it ran."""
+    cli._scaffold_ci_workflow(tmp_path)
+    capsys.readouterr()
+
+    cli._scaffold_ci_workflow(tmp_path)
+
+    assert "left unchanged" in capsys.readouterr().out
+
+
+def test_a_pin_that_is_not_ours_is_never_rewritten() -> None:
+    """Built from `DIST_SOURCE`, so a consumer's other pinned tools cannot match."""
+    foreign = "uvx --from git+https://github.com/someone/other@v0.0.1 other run\n"
+
+    assert repin(foreign) == (foreign, 0)

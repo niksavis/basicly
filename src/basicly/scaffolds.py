@@ -14,6 +14,7 @@ reader who wants to know what a key defaults to looks there.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from . import __version__
@@ -47,6 +48,31 @@ GENERATED_IGNORES: tuple[tuple[str, str], ...] = (
         "Your copy of a file basicly replaced; delete it once you have merged what you want.",
     ),
 )
+
+
+# Every basicly pin a scaffold carries, at any version. Built from DIST_SOURCE so the URL
+# is written once: only our own `git+…/basicly@vX.Y.Z` matches, never a consumer's other
+# pins. An upgrade leaves a scaffolded workflow at the old tag, and CI then runs the old
+# engine against the catalog the new one installed — which the version-skew guard refuses,
+# correctly, in a file the consumer had no reason to look at (basicly-jdpzlwj).
+_PIN_PATTERN = re.compile(
+    re.escape(DIST_SOURCE).replace(re.escape(f"v{__version__}"), r"v\d+\.\d+\.\d+")
+)
+
+
+def repin(text: str) -> tuple[str, int]:
+    """*text* with every basicly install pin pointed at this engine, and how many moved.
+
+    The pin is the one thing in a written-once scaffold that was never the consumer's:
+    it names the engine that wrote the file, so an upgrade that leaves it behind is our
+    stale value in their tree, not their edit.
+    """
+    repinned = _PIN_PATTERN.sub(DIST_SOURCE, text)
+    if repinned == text:
+        return text, 0
+    moved = sum(1 for found in _PIN_PATTERN.finditer(text) if found.group() != DIST_SOURCE)
+    return repinned, moved
+
 
 # Scaffolded into .vscode/tasks.json by `basicly install` when absent — one
 # single-command task per harness operation (no shell && chaining, so the

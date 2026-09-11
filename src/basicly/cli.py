@@ -116,6 +116,7 @@ from .scaffolds import (
     OVERLAY_FRAGMENT_STUBS,
     VSCODE_TASKS_JSON,
     install_notes,
+    repin,
 )
 from .schema import (
     CATEGORIES,
@@ -1397,10 +1398,20 @@ def _write_scaffold(path: Path, content: str, label: str, *, force: bool) -> Non
     kept the stale copies that referenced a renamed hook, and had no supported way to ask
     for the current ones. `force` replaces the file and keeps the old bytes beside it,
     because a hand-edited CI workflow is not ours to discard silently.
+
+    **The version pin moves without `force`** (basicly-jdpzlwj). It names the engine that
+    wrote the file, so a pin left at the old tag is our stale value in their tree rather
+    than their edit — and CI then runs that engine against the catalog this one installed,
+    which the version-skew guard refuses. Only the pin substring is rewritten.
     """
     if path.exists():
         if not force:
-            print(f"{label} already exists; left unchanged (--overwrite-scaffolds replaces it)")
+            repinned, moved = repin(path.read_text(encoding="utf-8"))
+            if moved:
+                path.write_text(repinned, encoding="utf-8")
+                print(f"Re-pinned {moved} basicly reference(s) in {label} to v{__version__}")
+            else:
+                print(f"{label} already exists; left unchanged (--overwrite-scaffolds replaces it)")
             return
         existing = path.read_text(encoding="utf-8")
         if existing == content:
