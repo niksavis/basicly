@@ -67,6 +67,12 @@ node_modules/
 .basicly/ledger/snapshot.jsonl
 .basicly/ledger/checkpoint-*.jsonl
 
+# The copy a replace keeps: `install --overwrite-scaffolds` and the first `build` over a
+# file no manifest vouches for both write `<name>.basicly-bak` beside the original rather
+# than discard it. Nothing ignored them, so an upgrade left untracked files in a consumer
+# tree — and a landing refuses dirt outside the tracker.
+*.basicly-bak
+
 # The worktree redirect: one line naming the checkout that owns the tracker, written at
 # provisioning (`basicly.tracker_paths`). Machine-local by construction — it holds an
 # absolute path — and per-worktree, so committing it would point every clone at one

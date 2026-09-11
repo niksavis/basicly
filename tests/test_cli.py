@@ -27,7 +27,7 @@ from basicly.config import (
     LOCAL_CONFIG_FILE,
     load_project_paths,
 )
-from basicly.scaffolds import CONSUMER_CI_WORKFLOW, VSCODE_TASKS_JSON
+from basicly.scaffolds import CONSUMER_CI_WORKFLOW, GENERATED_IGNORES, VSCODE_TASKS_JSON
 from basicly.skills import GENERATED_MARKER
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -362,50 +362,54 @@ def test_scaffold_ci_workflow_writes_once_and_parses(
     assert "left unchanged" in capsys.readouterr().out
 
 
-def test_scaffold_local_config_ignore_appends_once(tmp_path: Path) -> None:
-    """The ignore entry is created, appended without clobbering, and idempotent."""
-    cli._scaffold_local_config_ignore(tmp_path)
+def test_scaffold_generated_ignores_appends_once(tmp_path: Path) -> None:
+    """Every generated entry is created, appended without clobbering, and idempotent."""
+    cli._scaffold_generated_ignores(tmp_path)
     ignore_path = tmp_path / ".gitignore"
-    assert LOCAL_CONFIG_FILE in ignore_path.read_text(encoding="utf-8").splitlines()
+    lines = ignore_path.read_text(encoding="utf-8").splitlines()
+    assert {pattern for pattern, _ in GENERATED_IGNORES} <= set(lines)
 
     ignore_path.write_text("node_modules/\n", encoding="utf-8")
-    cli._scaffold_local_config_ignore(tmp_path)
+    cli._scaffold_generated_ignores(tmp_path)
     lines = ignore_path.read_text(encoding="utf-8").splitlines()
     assert lines[0] == "node_modules/"  # existing content survives the append
     assert LOCAL_CONFIG_FILE in lines
 
     before = ignore_path.read_text(encoding="utf-8")
-    cli._scaffold_local_config_ignore(tmp_path)
+    cli._scaffold_generated_ignores(tmp_path)
     assert ignore_path.read_text(encoding="utf-8") == before  # second run is a no-op
 
 
-def test_scaffold_local_config_ignore_accepts_rooted_entry(tmp_path: Path) -> None:
-    """A user's /basicly.local.toml spelling counts as covered — no duplicate."""
+def test_scaffold_generated_ignores_adds_only_what_is_missing(tmp_path: Path) -> None:
+    """An upgrade meets a consumer carrying some entries, so the append is per pattern."""
     ignore_path = tmp_path / ".gitignore"
     ignore_path.write_text(f"/{LOCAL_CONFIG_FILE}\n", encoding="utf-8")
-    cli._scaffold_local_config_ignore(tmp_path)
-    assert ignore_path.read_text(encoding="utf-8") == f"/{LOCAL_CONFIG_FILE}\n"
+
+    cli._scaffold_generated_ignores(tmp_path)
+
+    lines = ignore_path.read_text(encoding="utf-8").splitlines()
+    assert lines.count(LOCAL_CONFIG_FILE) == 0, "re-added a rooted entry it already covers"
+    assert "*.basicly-bak" in lines
+    assert ".basicly/ledger/snapshot.jsonl" in lines
 
 
 def test_this_repo_satisfies_the_local_config_ignore_it_scaffolds() -> None:
-    """This repo carries the local-config ignore entry that `basicly install` scaffolds.
+    """This repo carries every ignore entry `basicly install` scaffolds.
 
-    The dual-use constraint (factory design §1) says every guarantee ships as
-    engine behaviour a consumer gets — so a property the harness scaffolds for
-    everyone else and does not hold for itself is a real gap, and this one bit:
-    basicly is never installed into basicly, so it was the only repo whose
-    local override file was still tracked. It is not cosmetic. A landing
-    refuses any dirt outside `.beads/`, so an untracked `basicly.local.toml`
-    blocks every landing in the very repo that ships the override mechanism.
+    The dual-use constraint (factory design §1): a guarantee the harness gives
+    consumers and not itself is a real gap, and this one bit — basicly is never
+    installed into basicly, so its own override file was the last one tracked. Not
+    cosmetic: a landing refuses dirt outside the tracker, so an untracked generated
+    file blocks every landing in the repo that ships the mechanism.
 
-    Asserted through the engine's own predicate rather than a copy of it, so
-    the check cannot drift from the scaffold it mirrors.
+    Asserted through the engine's own predicate, so it cannot drift from the scaffold.
     """
     repo_root = Path(__file__).resolve().parents[1]
     ignore_text = (repo_root / ".gitignore").read_text(encoding="utf-8")
-    assert cli.ignore_covers_local_config(ignore_text), (
-        f"this repo's .gitignore does not cover {LOCAL_CONFIG_FILE}; "
-        "an untracked local override would block every landing"
+    uncovered = [p for p, _ in GENERATED_IGNORES if not cli.ignore_covers(ignore_text, p)]
+    assert not uncovered, (
+        f"this repo's .gitignore does not cover {', '.join(uncovered)}; "
+        "an untracked generated file would block every landing"
     )
 
 

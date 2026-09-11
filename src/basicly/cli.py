@@ -112,6 +112,7 @@ from .planner import plan_outputs
 from .renderers.common import sha256_of_text
 from .scaffolds import (
     CONSUMER_CI_WORKFLOW,
+    GENERATED_IGNORES,
     OVERLAY_FRAGMENT_STUBS,
     VSCODE_TASKS_JSON,
 )
@@ -1443,31 +1444,37 @@ def _report_missing_config_sections(repo_root: Path) -> None:
     )
 
 
-def ignore_covers_local_config(ignore_text: str) -> bool:
-    """True when *ignore_text* already excludes the per-machine config overlay.
+def ignore_covers(ignore_text: str, pattern: str) -> bool:
+    """True when *ignore_text* already excludes *pattern*, rooted or not.
 
     Public because the property is dual-use: ``basicly install`` scaffolds it
     into a consumer, and basicly's own repo has to satisfy it too — a guarantee
     the harness gives consumers and not itself is exactly the gap dogfooding
     exists to catch (basicly-jr0l.7). One predicate, so the two cannot drift.
     """
-    return any(line.strip().lstrip("/") == LOCAL_CONFIG_FILE for line in ignore_text.splitlines())
+    return any(line.strip().lstrip("/") == pattern for line in ignore_text.splitlines())
 
 
-def _scaffold_local_config_ignore(repo_root: Path) -> None:
-    """Ensure .gitignore covers the per-machine config overlay (append-only).
+def _scaffold_generated_ignores(repo_root: Path) -> None:
+    """Ensure .gitignore covers every file basicly generates (append-only).
 
-    An existing ignore file gains the one entry when missing; nothing else in
-    it is touched.
+    An existing ignore file gains only the entries it lacks; nothing else in it is
+    touched. One entry at a time rather than a block, because the three classes
+    arrived at different versions and a consumer may already carry any of them.
     """
     ignore_path = repo_root / ".gitignore"
     text = ignore_path.read_text(encoding="utf-8") if ignore_path.exists() else ""
-    if ignore_covers_local_config(text):
+    added: list[str] = []
+    for pattern, why in GENERATED_IGNORES:
+        if ignore_covers(text, pattern):
+            continue
+        prefix = "" if not text or text.endswith("\n") else "\n"
+        text += prefix + (f"# {why}\n" if why else "") + pattern + "\n"
+        added.append(pattern)
+    if not added:
         return
-    prefix = "" if not text or text.endswith("\n") else "\n"
-    entry = f"# Per-machine basicly overrides; harness keys win over {CONFIG_FILE}.\n"
-    ignore_path.write_text(text + prefix + entry + LOCAL_CONFIG_FILE + "\n", encoding="utf-8")
-    print(f"Added {LOCAL_CONFIG_FILE} to .gitignore")
+    ignore_path.write_text(text, encoding="utf-8")
+    print(f"Added {', '.join(added)} to .gitignore")
 
 
 def _validate_install_technologies(raw: str | None) -> list[str] | None:
@@ -1577,7 +1584,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     else:
         config_path.write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
         print(f"Wrote {CONFIG_FILE}")
-    _scaffold_local_config_ignore(repo_root)
+    _scaffold_generated_ignores(repo_root)
 
     if not _record_install_technologies(repo_root, technologies):
         return 1

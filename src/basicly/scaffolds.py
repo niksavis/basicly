@@ -22,6 +22,27 @@ from . import __version__
 DIST_SOURCE = f"git+https://github.com/niksavis/basicly@v{__version__}"
 UVX_COMMAND = f"uvx --from {DIST_SOURCE} basicly"
 
+# What basicly generates into a consumer tree and must never reach a commit, with the
+# reason for each. `install` appends whichever the consumer's .gitignore is missing.
+# The ledger's two folds are rebuilt from the committed log; a committed fold recreates
+# the dual-store conflict the log exists to escape. A `.basicly-bak` is the copy an
+# overwrite keeps, and nothing ignored it, so an upgrade left untracked files behind.
+GENERATED_IGNORES: tuple[tuple[str, str], ...] = (
+    (
+        "basicly.local.toml",
+        "Per-machine basicly overrides; harness keys win over basicly.toml.",
+    ),
+    (
+        ".basicly/ledger/snapshot.jsonl",
+        "Derived folds of the committed event log. The log is the truth; never commit a fold.",
+    ),
+    (".basicly/ledger/checkpoint-*.jsonl", ""),
+    (
+        "*.basicly-bak",
+        "Your copy of a file basicly replaced; delete it once you have merged what you want.",
+    ),
+)
+
 # Scaffolded into .vscode/tasks.json by `basicly install` when absent — one
 # single-command task per harness operation (no shell && chaining, so the
 # commands work in PowerShell 5, cmd, and POSIX shells alike). The file is the
