@@ -22,10 +22,10 @@ guidance is the half that does not bind on the case that matters, because the ag
 that most needs it is the one least able to apply it. So the rule becomes a hook:
 resolve the interpreter here, deterministically, and never invoke ``npx`` at all.
 
-Two failure modes are deliberately loud rather than slow. No usable node, and no
-installed ``markdownlint-cli2``, each exit 1 with one line naming what to do — a
-consumer who has neither is told so in a second instead of learning it from a
-timeout.
+No usable node, and no installed ``markdownlint-cli2``, each exit 0 with one line
+naming what to do: since basicly-vdlio8i this ships to every ``node`` consumer, whose
+package.json carries no linter, so failing there blocked every markdown commit in a
+repo that never asked for it. A reported violation still fails.
 
 stdlib only, by the hooks convention: no dependency ships to consumers.
 """
@@ -113,24 +113,24 @@ def find_node() -> Path | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Lint with a resolved node; 1 with one actionable line when that is impossible."""
+    """Lint with a resolved node; name what is missing and exit 0 when it cannot run."""
     args = list(argv if argv is not None else sys.argv[1:])
     if not _CLI_ENTRY.is_file():
         print(
-            f"markdownlint: {_CLI_ENTRY} is missing — run `npm install` "
-            "(worktree provisioning does this for you)",
+            f"markdownlint: skipped — {_CLI_ENTRY} is missing. Run `npm install` to "
+            "enable the markdown gate (worktree provisioning does this for you)",
             file=sys.stderr,
         )
-        return 1
+        return 0
     node = find_node()
     if node is None:
         print(
-            "markdownlint: no usable node found on PATH, under nvm, or in "
-            "/usr/bin — install node (nvm install --lts) so the markdown gate "
-            "can run; a Windows node reached through /mnt is deliberately not used",
+            "markdownlint: skipped — no usable node found on PATH, under nvm, or in "
+            "/usr/bin. Install node (nvm install --lts) to enable the markdown gate; "
+            "a Windows node reached through /mnt is deliberately not used",
             file=sys.stderr,
         )
-        return 1
+        return 0
     return subprocess.run([str(node), str(_CLI_ENTRY), *args], check=False).returncode  # nosec B603
 
 

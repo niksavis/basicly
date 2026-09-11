@@ -89,6 +89,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
     specs = load_hook_specs()
     ids = {spec.id for spec in specs}
     assert ids == {
+        "markdownlint",
         "identity-guard",
         "pre-commit-script",
         "catalog-lint",

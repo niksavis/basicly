@@ -6,6 +6,23 @@
 # The fields stay tool-agnostic so another manager (e.g. lefthook) can be
 # projected later. See docs/architecture/architecture.md §10.2, §16.
 hooks:
+  # Repo-wide run through .markdownlint-cli2.yaml (globs + generated-file ignores)
+  # instead of staged filenames, so explicit paths cannot bypass the config's ignore
+  # list. Launched through a script that resolves node itself rather than `npx
+  # --no-install markdownlint-cli2` (basicly-jr0l.14): a hook shell has no profile, so
+  # with nvm off PATH WSL interop resolved npx to the Windows nodejs, which cannot
+  # express the worktree's UNC path. The launcher never invokes npx and fails in one
+  # line when no usable node exists.
+  #
+  # Declared here rather than left as a local block in the config (basicly-vdlio8i):
+  # `_is_managed` claims any local hook whose entry names this directory, so an
+  # undeclared one is pruned by every `hooks-build` while `hooks-check` stays green.
+  - id: markdownlint
+    script: markdownlint.py
+    stage: pre-commit
+    files: \.md$
+    pass_filenames: false
+    technologies: [node]
   - id: identity-guard
     script: identity-guard.py
     stage: pre-commit

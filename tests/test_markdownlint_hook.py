@@ -12,6 +12,7 @@ import ast
 import importlib.util
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -133,33 +134,53 @@ def test_nvm_versions_sort_numerically_not_lexically(
     assert [p.parent.parent.name for p in hook._nvm_nodes()] == ["v20.3.1", "v10.0.0", "v9.11.2"]
 
 
-# --- Failing loudly rather than slowly ---------------------------------------
+# --- Saying what is missing rather than blocking the commit -------------------
 
 
-def test_a_missing_cli_fails_with_the_install_command(
+def test_a_missing_cli_says_npm_install_and_does_not_block(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """No markdownlint-cli2 means npm install, said in one line."""
+    """The hook now ships to every consumer that selects `node` (basicly-vdlio8i).
+
+    Nothing in the catalog puts `markdownlint-cli2` in their package.json, so a hard
+    failure here blocks every markdown commit in a repo that never asked for the
+    linter. A gate that cannot execute is not one being relaxed.
+    """
     monkeypatch.chdir(tmp_path)
-    assert hook.main([]) == 1
+    assert hook.main([]) == 0
     err = capsys.readouterr().err
     assert "npm install" in err
+    assert "skipped" in err
 
 
-def test_no_usable_node_fails_with_one_actionable_line(
+def test_no_usable_node_says_what_to_install_and_does_not_block(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The other loud failure: what to install, and why a Windows node was not used."""
+    """The other unrunnable case: what to install, and why a Windows node was not used."""
     cli = tmp_path / hook._CLI_ENTRY
     cli.parent.mkdir(parents=True)
     cli.write_text("// entry\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(hook, "find_node", lambda: None)
 
-    assert hook.main([]) == 1
+    assert hook.main([]) == 0
     err = capsys.readouterr().err
     assert "nvm install" in err
     assert "/mnt" in err  # names why the Windows node was refused
+
+
+def test_a_violation_the_linter_reports_still_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The positive control for the two above: only the unrunnable cases changed."""
+    cli = tmp_path / hook._CLI_ENTRY
+    cli.parent.mkdir(parents=True)
+    cli.write_text("// entry\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(hook, "find_node", lambda: Path("node"))
+    monkeypatch.setattr(hook.subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=1))
+
+    assert hook.main([]) == 1
 
 
 def test_the_launcher_never_invokes_npx(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

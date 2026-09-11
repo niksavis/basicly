@@ -18,6 +18,7 @@ module docstring, and gated by `.scripts/docs_claims.py`.
 
 | Hook | Stage | Manager | Script | Purpose |
 | --- | --- | --- | --- | --- |
+| `markdownlint` | `pre-commit` | `git` | [`markdownlint.py`](markdownlint.py) | Run markdownlint-cli2 through a node this script resolves itself (basicly-jr0l.14). |
 | `identity-guard` | `pre-commit` | `git` | [`identity-guard.py`](identity-guard.py) | Block commits made with an unconfigured or auto-derived git identity. |
 | `pre-commit-script` | `pre-commit` | `git` | [`pre-commit.py`](pre-commit.py) | Run the configured fast checks before a commit. |
 | `catalog-lint` | `pre-commit` | `git` | [`catalog-lint.py`](catalog-lint.py) | Pre-commit hook: validate catalog YAML sources via ``basicly catalog lint``. |
