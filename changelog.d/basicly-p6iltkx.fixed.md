@@ -1,1 +1,0 @@
-- **The board build's time cap is sized to a CI runner rather than a developer machine.** It asserted a 0.5s median taken from 103.8ms measured locally, while `ubuntu-latest` measures 0.578s and had never been sampled — so the bound sat below a runner's floor and failed a release cut with no regression behind it. One bound now covers both sampled runners. (basicly-p6iltkx)

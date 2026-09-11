@@ -4,7 +4,7 @@ This is a walkthrough, not a reference. Follow it top to bottom on a **scratch
 git repo** and you will end with one unit of work filed, built in its own
 worktree, merged, and closed by the harness — one sitting, no agent spend.
 Every command and every quoted output below was executed against a fresh repo on
-basicly 0.12.0 in a real terminal, with that repo's generated bead-id prefix swapped for
+basicly 0.12.1 in a real terminal, with that repo's generated bead-id prefix swapped for
 `myrepo`, absolute paths written as `/path/to/...`, and `...` marking an elided line.
 
 When you want to look something up rather than learn the shape, stop here and
@@ -33,7 +33,7 @@ Every command below is written as bare `basicly`. Run it as the pinned form so
 you always get the version you chose:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.12.0 basicly <args>
+uvx --from git+https://github.com/niksavis/basicly@v0.12.1 basicly <args>
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -47,7 +47,7 @@ uvx --from git+https://github.com/niksavis/basicly@v0.12.0 basicly <args>
 From the repo root:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.12.0 basicly install
+uvx --from git+https://github.com/niksavis/basicly@v0.12.1 basicly install
 ```
 
 It ends with:
@@ -63,9 +63,9 @@ basicly status
 ```
 
 ```text
-engine: basicly 0.12.0
+engine: basicly 0.12.1
 repo: consumer
-catalog: installed by basicly 0.12.0 at ... (matches engine)
+catalog: installed by basicly 0.12.1 at ... (matches engine)
 drift: generated files up to date
 Hooks
 ┏━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┓
@@ -91,8 +91,8 @@ of them refuse a fresh repo, and both are one line to fix. Do it now rather
 than discovering it mid-commit.
 
 **The hook scripts leave `__pycache__` behind.** They are Python, they run from
-`.basicly/core/hooks/`, and the `.gitignore` basicly writes covers only
-`basicly.local.toml`. Commit the `.pyc` files by accident and every later commit
+`.basicly/core/hooks/`, and the `.gitignore` basicly writes covers only what
+basicly itself generates. Commit the `.pyc` files by accident and every later commit
 fails with `pre-commit-script … files were modified by this hook`. Add the line
 yourself:
 

@@ -1,1 +1,0 @@
-- **`tracker import --dry-run` exits with the code the real run gives.** It reported a refusal and still exited 0, so a scripted preflight passed and the run behind it failed. (basicly-1yychkj)

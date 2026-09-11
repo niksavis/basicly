@@ -1,1 +1,0 @@
-- **`install` ignores every file basicly generates, not just the config overlay.** Nothing covered the `*.basicly-bak` copies an overwrite keeps or the ledger's derived folds, so an upgrade left untracked files behind and `git add .basicly/ledger` committed a fold. (basicly-lpis2cb)

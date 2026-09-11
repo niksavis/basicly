@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.12.1 - 2026-09-11
+
+Delta: v0.12.0..v0.12.1
+
 Everything here came from two repositories installing v0.12.0 and reporting what broke, so
 this release is the consumer path and nothing else. The migration from the old tracker now
 completes with documented commands only, a first install stops destroying files it has never
@@ -48,6 +52,32 @@ wired to a deleted script, so every commit failed right after install printed "r
 converged" (basicly-qdxxy0i). And the board build-time cap was calibrated on a developer
 machine at 103.8ms while `ubuntu-latest` measures 0.578s, which is what stopped the v0.12.0
 release workflow reaching its publish step (basicly-p6iltkx).
+
+### Added
+
+- **`basicly tracker scrub` is a first-class verb.** The repair for a ledger carrying machine paths or a username had no reachable surface: the gate printed a `python -c` importing `basicly.br`, deleted long ago, and one consumer's sandbox refused a raw in-place rewrite. The verb rewrites the ledger and prints the count. (basicly-9fagxpm)
+
+- **An import names the id prefix it brings in when the repo declares none.** The source ids survive the import, but the declaration that mints the next root record does not — and the migration runbook's last step retires the source tracker, whose config holds the only other copy of the string. The import report now states the prefix and the line to add. (basicly-mticqi7)
+
+### Changed
+
+- **The `release-process` skill states the precondition it assumes.** It projects into every repo that installs the catalog, including one that releases its own way, and opened with "never hand-run the steps it performs". It now opens with the check. (basicly-v9xc1zm)
+
+### Fixed
+
+- **`tracker import --dry-run` exits with the code the real run gives.** It reported a refusal and still exited 0, so a scripted preflight passed and the run behind it failed. (basicly-1yychkj)
+
+- **A refused `applies_to` value now names the registered targets and the field that wanted it.** The shipped schema accepts any string there, so a consumer authored six routing words, passed validation, and met the refusal only inside `build`. The error now points at `tags`. (basicly-a7g9sre)
+
+- **`install` ignores every file basicly generates, not just the config overlay.** Nothing covered the `*.basicly-bak` copies an overwrite keeps or the ledger's derived folds, so an upgrade left untracked files behind and `git add .basicly/ledger` committed a fold. (basicly-lpis2cb)
+
+- **A beads import no longer writes ledger state its own commit gate refuses.** The importer carried the export's `source_repo_path` and `created_by` in verbatim, so a 50-record migration landed 49 and then `tracker-path-scan` blocked the commit with 93 findings. (basicly-npiudkl)
+
+- **`basicly install` no longer destroys a hand-authored instructions file.** With no manifest entry a first build could not tell its own output from 273 hand-written lines, and replaced them silently. The previous bytes now go to `<path>.basicly-bak` first. (basicly-nv5qfl6)
+
+- **The board build's time cap is sized to a CI runner rather than a developer machine.** It asserted a 0.5s median taken from 103.8ms measured locally, while `ubuntu-latest` measures 0.578s and had never been sampled — so the bound sat below a runner's floor and failed a release cut with no regression behind it. One bound now covers both sampled runners. (basicly-p6iltkx)
+
+- **install now removes a managed hook the catalog retired.** Upgrading from 0.5.1 left `beads-commit-msg-script` wired to a script this release deleted, so every commit failed with `No such file or directory` right after install printed "repo converged". The strip matched only current ids, and a stale hook was no rewrite reason at all. Your own local hooks are untouched. (basicly-qdxxy0i)
 
 ## v0.12.0 - 2026-09-10
 

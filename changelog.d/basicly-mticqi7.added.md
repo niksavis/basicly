@@ -1,1 +1,0 @@
-- **An import names the id prefix it brings in when the repo declares none.** The source ids survive the import, but the declaration that mints the next root record does not — and the migration runbook's last step retires the source tracker, whose config holds the only other copy of the string. The import report now states the prefix and the line to add. (basicly-mticqi7)
