@@ -248,8 +248,15 @@ def _validate_fragment(
 
     for target in fragment.applies_to:
         if target != "all" and target not in target_names:
+            # The registered set and the `tags` suggestion are in the message because the
+            # name reads as "which contexts does this apply to" and means "which rendering
+            # target". A consumer authored six routing words there, passed the JSON schema,
+            # and met this only inside `build` with nowhere to go (basicly-a7g9sre).
+            registered = ", ".join(["all", *sorted(target_names)])
             raise ValidationError(
-                f"applies_to value '{target}' is not a registered target",
+                f"applies_to value '{target}' is not a registered target "
+                f"(registered: {registered}). applies_to names rendering targets, not "
+                f"topics — for a routing word use tags: [{target}] and applies_to: [all]",
                 path,
             )
 

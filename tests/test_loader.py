@@ -77,6 +77,26 @@ def test_unknown_target_in_applies_to(tmp_path: Path) -> None:
         load_fragments(tmp_path, {"claude"})
 
 
+def test_the_unknown_target_error_names_the_set_and_the_field_that_wanted_it(
+    tmp_path: Path,
+) -> None:
+    """`applies_to` reads as "which contexts" and means "which rendering target".
+
+    A consumer authored six routing words there, passed the shipped JSON schema, and
+    met the refusal only inside `build` with nothing in the message to act on.
+    """
+    _wf(
+        tmp_path / "bad.fragment.yaml",
+        "id: bad\ndescription: x\ncategory: project\napplies_to: [rules]",
+    )
+    with pytest.raises(ValidationError) as caught:
+        load_fragments(tmp_path, {"claude", "copilot"})
+
+    message = str(caught.value)
+    assert "registered: all, claude, copilot" in message
+    assert "tags: [rules]" in message
+
+
 def test_load_targets() -> None:
     """All fixture target registries are loaded."""
     targets = load_targets(FIXTURES / "targets")
