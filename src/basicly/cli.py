@@ -2108,11 +2108,29 @@ def cmd_tracker_import(args: argparse.Namespace) -> int:
     return code
 
 
+def cmd_tracker_scrub(_args: argparse.Namespace) -> int:
+    """Strip machine identity and paths from the committed ledger.
+
+    A named verb because the repair had no reachable surface: an import necessarily
+    carries the source's `created_by` and `source_repo_path`, `tracker-path-scan` then
+    refused the commit, and the only working repair was a `python -c` into a library
+    function — which a consumer's own sandbox may well refuse to run (basicly-9fagxpm).
+    """
+    try:
+        changed = tracker.scrub_ledger(_repo_root())
+    except (owned_store.TrackerDivergenceError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Scrubbed {changed} event(s) in the ledger. Re-stage .basicly/ledger to commit them.")
+    return 0
+
+
 def cmd_tracker(args: argparse.Namespace) -> int:
     """Dispatch the owned tracker's read verbs and its cutover subcommands."""
     handlers = {
         "write": tracker_write.cmd_write,
         "import": cmd_tracker_import,
+        "scrub": cmd_tracker_scrub,
         **tracker_query.HANDLERS,
     }
     return _dispatch(args, "tracker_command", handlers, group="tracker")
@@ -5787,6 +5805,7 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="ID",
         help="A record you confirmed deleted out of band; absence alone never means deleted",
     )
+    tracker_sub.add_parser("scrub", help="Rewrite the ledger without machine paths or usernames")
 
 
 def _tolerate_narrow_consoles() -> None:

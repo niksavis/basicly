@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import owned_store, redact, tracker_import
+from basicly import cli, owned_store, redact, tracker_import
 from basicly.schema import ValidationError
 
 REPO = Path(__file__).parent.parent
@@ -163,3 +163,28 @@ def test_the_import_writes_a_ledger_its_own_commit_gate_accepts(host: Path) -> N
     assert code == 0
     assert home not in written
     assert _hook().findings(".basicly/ledger/events-0001.jsonl", written) == []
+
+
+def test_tracker_scrub_repairs_a_ledger_the_commit_gate_refuses(
+    host: Path, monkeypatch, capsys
+) -> None:
+    """The repair needs a named surface, not a `python -c` (basicly-9fagxpm).
+
+    A consumer whose sandbox refuses an in-place rewrite from a raw interpreter could
+    not apply the repair at all, so the documented adoption path could not complete.
+    """
+    leak = "/home" + "/someuser/dev/acme"
+    kit = owned_store.kit(host)
+    snapshot = kit.migrate.read_snapshot(
+        _export(host, [{"id": "acme-99z", "title": "t", "source_repo_path": leak}]),
+        name="beads",
+    )
+    kit.migrate.import_snapshot(owned_store.ledger_dir(host), snapshot)
+    monkeypatch.chdir(host)
+
+    code = cli.main(["tracker", "scrub"])
+
+    written = (owned_store.ledger_dir(host) / "events-0001.jsonl").read_text(encoding="utf-8")
+    assert code == 0
+    assert "Scrubbed 1 event(s)" in capsys.readouterr().out
+    assert leak not in written

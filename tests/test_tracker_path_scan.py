@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 
-from basicly import redact
+from basicly import cli, redact
 
 REPO_ROOT = Path(__file__).parent.parent
 SCRIPT = REPO_ROOT / ".basicly" / "core" / "hooks" / "tracker-path-scan.py"
@@ -171,3 +172,25 @@ def test_redact_machine_paths_is_idempotent() -> None:
     """Re-running on its own output must be a fixed point, or the export churns."""
     once = redact.redact_machine_paths(f"{POSIX_HOME} and {WINDOWS_DRIVE}")
     assert redact.redact_machine_paths(once) == once
+
+
+# --- the printed repair (basicly-9fagxpm) -----------------------------------
+
+
+def test_the_printed_repair_names_a_command_the_cli_accepts(monkeypatch, capsys) -> None:
+    """A remedy nobody runs is untested: this one named a module deleted long ago.
+
+    A consumer who hit the gate while finishing a beads import got ModuleNotFoundError,
+    reported the function as gone, and could not reach the repair at all — the only
+    working form was a `python -c` their own sandbox refused to run (basicly-9fagxpm).
+    """
+    monkeypatch.setattr(scan, "staged_tracker_files", lambda: [LEDGER])
+    monkeypatch.setattr(scan, "staged_content", lambda _path: _record(path=POSIX_HOME))
+
+    assert scan.main() == 1
+
+    remedy = capsys.readouterr().err
+    match = re.search(r"Repair it with:\s+basicly ([a-z-]+) ([a-z-]+)", remedy)
+    assert match, f"the remedy no longer names a `basicly` command:\n{remedy}"
+    parsed = cli._build_parser().parse_args(list(match.groups()))
+    assert (parsed.command, parsed.tracker_command) == match.groups()
