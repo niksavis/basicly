@@ -199,3 +199,26 @@ def test_tracker_scrub_repairs_a_ledger_the_commit_gate_refuses(
     assert code == 0
     assert "Scrubbed 1 event(s)" in capsys.readouterr().out
     assert leak not in written
+
+
+def test_the_import_names_the_id_prefix_when_the_repo_declares_none(host: Path) -> None:
+    """The ids arrive; the declaration that mints the next one does not (basicly-mticqi7).
+
+    The runbook's last step retires the source tracker, whose config holds the only
+    other copy of the prefix — so silence here loses the namespace, weeks before
+    anyone files a root record and finds out.
+    """
+    _, lines = tracker_import.run_import(host, _export(host, _EXPORT), source_name="beads")
+
+    report = "\n".join(lines)
+    assert "declares no [tracker] prefix" in report
+    assert 'prefix = "acme"' in report
+
+
+def test_the_import_stays_quiet_when_a_prefix_is_declared(host: Path) -> None:
+    """The positive control: the note is about the repo, not about every import."""
+    (host / "basicly.toml").write_text('[tracker]\nprefix = "acme"\n', encoding="utf-8")
+
+    _, lines = tracker_import.run_import(host, _export(host, _EXPORT), source_name="beads")
+
+    assert "[tracker] prefix" not in "\n".join(lines)

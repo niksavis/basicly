@@ -40,6 +40,28 @@ def _lines(report: Any, *, source: str) -> list[str]:
     return lines
 
 
+def _prefix_note(repo_root: Path, records: list[str]) -> list[str]:
+    """Name the id prefix the export uses when the repo declares none.
+
+    The export's ids are preserved verbatim, so the namespace arrives without the
+    declaration that mints the next root record in it. The source config is the only
+    other place the string exists, and the runbook's last step retires the source
+    tracker — so following the runbook deletes the sole record of your own namespace
+    and nothing says so until someone files a root record (basicly-mticqi7).
+    """
+    if not records or owned_store.tracker_prefix(repo_root):
+        return []
+    prefixes = {record.split("-", 1)[0] for record in records if "-" in record}
+    if len(prefixes) != 1:
+        return []
+    prefix = prefixes.pop()
+    return [
+        f"  this repository declares no [tracker] prefix and these ids use '{prefix}': add "
+        f'prefix = "{prefix}" under [tracker] in basicly.toml before retiring the source '
+        f"tracker, or no new root record can be minted in this namespace"
+    ]
+
+
 def preview(snapshot: Any, ledger: Path, kit: Any) -> tuple[int, list[str]]:
     """What an import would do, having written nothing; the exit code the real run gives.
 
@@ -105,6 +127,7 @@ def run_import(
         ledger, snapshot, deleted=deleted, redact=redact.redact_committed
     )
     lines = _lines(report, source=snapshot.name)
+    lines.extend(_prefix_note(repo_root, report.imported))
     # Rejections are the finding this importer exists to surface rather than swallow, so
     # they set the exit code; a divergence does not, because nothing was written wrongly.
     return (1 if report.rejected or report.unreadable else 0), lines
