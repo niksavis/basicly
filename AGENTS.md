@@ -28,11 +28,11 @@
 
 ## Secure Coding
 
-- Validate and sanitize external input at trust boundaries before it reaches business logic.
-- Parameterize shell commands and queries; never concatenate untrusted input into them.
-- Never commit secrets; use env vars or a secret manager and keep them out of logs.
-- Don't leak internal detail (stack traces, paths) in user-facing errors; log it, return a generic message.
-- Never commit user- or machine-specific paths, usernames, or hostnames; keep defaults portable.
+- Validate external input at the trust boundary; past it every caller assumes it is safe.
+- Parameterize shell commands and queries; concatenation lets input read as syntax, not data.
+- Keep secrets in env vars or a secret manager, out of the repo and logs; a commit outlives the fix.
+- Log internal detail, return a generic message; a stack trace or path maps the system.
+- Keep defaults portable; a committed path, username or hostname breaks the next clone.
 
 ## Commands
 
@@ -82,11 +82,11 @@ uv run basicly permissions-check
 
 ## Decision Protocol
 
-- Decide yourself when grounded in inspected code/docs and the choice is low-impact, reversible, and not on the confirmation list.
+- Decide yourself when grounded in code you read and the choice is low-impact, reversible, and off the confirmation list.
 - Stop and ask when a needed fact can't be found, sources conflict, or an unverifiable assumption would change the outcome.
-- State exactly what's missing and what answer would unblock you — don't present options just to look thorough.
+- State exactly what's missing and what answer unblocks you; an option you would not take costs a decision.
 - If rules conflict, prefer safety/security boundaries.
-- If repeated attempts at one approach fail, report the pattern and propose a different approach instead of retrying.
+- If repeated attempts at one approach fail, report the pattern and propose a different approach.
 
 ## External Facts
 
@@ -169,13 +169,13 @@ tracker record, a README. Needing prose to say *what* the code does is a defect 
 
 ## Core Rules
 
-- Minimal diffs; no unrelated refactors.
-- Solve the stated requirement only — no speculative abstractions, no unrequested config.
+- Minimal diffs; an unrelated refactor hides which change failed.
+- Solve the stated requirement only; a speculative abstraction or unrequested config is a guess you keep.
 - Reuse > reinvent: prove a capability absent before building it; the authority is the code that reads it, not the docs or `--help`.
 - Root cause, not symptom: check other call sites before calling a single-site patch complete.
 - Back claims with evidence: files read · commands run · tests.
-- No dead code, debug prints, or silent error swallowing.
-- Match the style + naming of touched files.
+- No dead code or debug prints; a swallowed error becomes a wrong answer.
+- Match the file's style and naming; a foreign diff reads as a rewrite.
 - Deterministic tests; a bug fix ships a regression test.
 
 ## Harness Loop
@@ -184,13 +184,13 @@ tracker record, a README. Needing prose to say *what* the code does is a defect 
 
 ## Quality Gate
 
-- Review the diff, then exercise the change as it will really be used — run it, read the output. Tests passing ≠ feature working.
-- Run the repo's checks on anything touched, re-run after the final edit — a later change breaks what passed. Point at gates, don't restate them.
+- Review the diff, then run the change as a consumer runs it and read the output; tests passing is not a working feature.
+- Run the repo's checks on anything touched and after the final edit; a later change breaks what passed. Point at a gate, don't restate it: a restatement goes stale.
 - Confirm success from the explicit pass/fail summary line; truncated output hides failures.
-- State only the scope actually exercised. Say what you did not run. Never "expected to work" → "works".
-- A coverage claim names the list the code iterates; the mechanism’s generality is no evidence about membership.
-- In a plan awaiting approval, mark parts resting on unread code as assumptions, not design — an approval spent on a false premise costs the checkpoint + the rework budget behind it.
-- Same for a capability claim on a consumer surface (README · release notes · repo description): exercise before publishing — `docs-claims` catches only an invented command.
+- State only the scope you exercised. Say what you did not run. Never "expected to work" → "works".
+- A coverage claim names the list the code iterates; a general mechanism proves nothing about membership.
+- In a plan awaiting approval, mark parts resting on unread code as assumptions, not design; an approval on a false premise costs the checkpoint and the rework behind it.
+- Same for a README, release note or repo description claim: exercise it before publishing; `docs-claims` catches only an invented command.
 
 ## Rendered Surfaces
 
@@ -256,7 +256,7 @@ fragment blocks the next commit on main.
 
 ## Self Improvement Retro
 
-- When a session hits a real rejection or user-corrected mistake, run the retro from the `session-finish` skill: find the root cause and propose the exact fragment/skill/hook change that would have prevented it — never a vague "be careful", never self-applied. Skip it when nothing concrete surfaced.
+- After a rejection or a user-corrected mistake, run the retro from the `session-finish` skill: name the root cause and propose the fragment, skill or hook change that would have refused it. A vague "be careful" changes nothing; a self-applied fix dies with the session. Skip it when nothing surfaced.
 
 ## Session Completion
 

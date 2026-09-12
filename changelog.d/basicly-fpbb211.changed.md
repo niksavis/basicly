@@ -1,0 +1,1 @@
+- Every prohibition in the `secure-coding` always-on fragment now states the reason it exists, so the rule generalises past the case it names.

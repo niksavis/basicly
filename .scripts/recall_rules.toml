@@ -43,37 +43,37 @@
 "project-overview.3" = { text = "Entry point: the basicly CLI", anchors = [[".basicly/core", ".basicly-local", "src/basicly/cli.py"]] }
 "project-overview.4" = { text = "Architecture: docs/architecture/architecture.md", anchors = [["architecture.md", "docs/architecture"]] }
 
-"secure-coding.1" = { text = "Validate and sanitize external input at trust boundaries", anchors = [["trust boundar", "sanitiz", "validate.*input"]] }
+"secure-coding.1" = { text = "Validate external input at the trust boundary", anchors = [["trust boundar", "sanitiz", "validate.*input"]] }
 "secure-coding.2" = { text = "Parameterize shell commands and queries", anchors = [["parameteriz", "never concatenat", "concatenat"]] }
-"secure-coding.3" = { text = "Never commit secrets", anchors = [["secret", "credential"]] }
-"secure-coding.4" = { text = "Don't leak internal detail (stack traces, paths)", anchors = [["stack trace", "internal detail", "generic message", "leak"]] }
-"secure-coding.5" = { text = "Never commit user- or machine-specific paths", anchors = [["machine-specific", "machine specific", "hostname", "username", "absolute path"]] }
+"secure-coding.3" = { text = "Keep secrets in env vars or a secret manager", anchors = [["secret", "credential"]] }
+"secure-coding.4" = { text = "Log internal detail, return a generic message", anchors = [["stack trace", "internal detail", "generic message", "leak"]] }
+"secure-coding.5" = { text = "Keep defaults portable", anchors = [["machine-specific", "machine specific", "hostname", "username", "absolute path"]] }
 
 "git-discipline.1" = { text = "Run git commit as its own command; never chain", anchors = [["own command", "never chain", "chain"], ["commit"]] }
 "git-discipline.2" = { text = "Commits are gated by commit-msg hooks (Conventional Commits", anchors = [["conventional commit"]] }
 "git-discipline.3" = { text = "When a hook rejects a commit, fix the reported cause", anchors = [["hook"], ["reject", "fail"]] }
 
-"decision-protocol.1" = { text = "Decide yourself when grounded in inspected code/docs", anchors = [["decide yourself", "low-impact", "reversible"]] }
+"decision-protocol.1" = { text = "Decide yourself when grounded in code you read", anchors = [["decide yourself", "low-impact", "reversible"]] }
 "decision-protocol.2" = { text = "Stop and ask when a needed fact can't be found", anchors = [["stop and ask", "ask when", "sources conflict"]] }
-"decision-protocol.3" = { text = "State exactly what's missing and what answer would unblock", anchors = [["unblock", "what is missing", "what's missing"]] }
+"decision-protocol.3" = { text = "State exactly what's missing and what answer unblocks you", anchors = [["unblock", "what is missing", "what's missing"]] }
 "decision-protocol.4" = { text = "If rules conflict, prefer safety/security boundaries", anchors = [["conflict"], ["safety", "security"]] }
 "decision-protocol.5" = { text = "If repeated attempts at one approach fail, report the pattern", anchors = [["repeated attempt", "different approach", "instead of retrying", "retry"]] }
 
-"core-rules.1" = { text = "Keep diffs minimal; avoid unrelated refactors", anchors = [["diff", "refactor"], ["minimal", "unrelated", "small"]] }
+"core-rules.1" = { text = "Minimal diffs; an unrelated refactor hides which change failed", anchors = [["diff", "refactor"], ["minimal", "unrelated", "small"]] }
 "core-rules.2" = { text = "Solve the stated requirement only", anchors = [["speculative", "unrequested", "stated requirement", "only what"]] }
 "core-rules.3" = { text = "Reuse before reinventing", anchors = [["reuse", "reinvent", "existing helper"]] }
 "core-rules.4" = { text = "Fix the root cause, not the symptom", anchors = [["root cause"]] }
 "core-rules.5" = { text = "Back claims with evidence", anchors = [["evidence"]] }
-"core-rules.6" = { text = "Keep code clean: no dead code, debug prints", anchors = [["dead code", "debug print", "swallow"]] }
-"core-rules.7" = { text = "Match existing style and naming conventions", anchors = [["existing style", "match.*convention", "naming convention", "surrounding code"]] }
+"core-rules.6" = { text = "No dead code or debug prints; a swallowed error", anchors = [["dead code", "debug print", "swallow"]] }
+"core-rules.7" = { text = "Match the file's style and naming", anchors = [["existing style", "match.*convention", "naming convention", "surrounding code"]] }
 "core-rules.8" = { text = "Use deterministic tests; add regression tests for bug fixes", anchors = [["regression test", "deterministic test"]] }
 
 "harness-loop.1" = { text = "Drive non-trivial work through the basicly harness loop", anchors = [["harness loop", "harness-loop", "loop"], ["tracker", "ledger", "single source of truth"]] }
 
-"quality-gate.1" = { text = "Review the diff before finishing, then exercise the change", anchors = [["exercise", "really be used", "run it"]] }
-"quality-gate.2" = { text = "Run the repo's existing checks on anything touched", anchors = [["re-run", "rerun", "after the final edit", "existing check"]] }
+"quality-gate.1" = { text = "Review the diff, then run the change as a consumer runs it", anchors = [["exercise", "really be used", "run it"]] }
+"quality-gate.2" = { text = "Run the repo's checks on anything touched and after the final edit", anchors = [["re-run", "rerun", "after the final edit", "existing check"]] }
 "quality-gate.3" = { text = "Confirm success from the explicit pass/fail summary line", anchors = [["summary line", "pass/fail", "truncat"]] }
-"quality-gate.4" = { text = "State only the verification scope actually exercised", anchors = [["did not run", "verification scope", "expected to work"]] }
+"quality-gate.4" = { text = "State only the scope you exercised", anchors = [["did not run", "verification scope", "expected to work"]] }
 
 "use.1" = { text = "Read this file before acting; re-read after context resets", anchors = [["context reset", "re-read", "reread"]] }
 "use.2" = { text = "User instructions in the current task override this file", anchors = [["user instruction"], ["override"]] }
@@ -92,7 +92,7 @@
 "copilot-specific-notes.3" = { text = "Put custom agents in .github/agents/", anchors = [[".github/agents"]] }
 "copilot-specific-notes.4" = { text = "Shared skills in .claude/skills/ are read by Claude and Copilot alike", anchors = [[".claude/skills"]] }
 
-"self-improvement-retro.1" = { text = "When a session hits a real rejection or user-corrected mistake", anchors = [["retro"]] }
+"self-improvement-retro.1" = { text = "After a rejection or a user-corrected mistake, run the retro", anchors = [["retro"]] }
 
 "session-completion.1" = { text = "Before ending, close out per the session-finish skill", anchors = [["pickup-clean", "pickup clean", "session-finish", "session finish"]] }
 

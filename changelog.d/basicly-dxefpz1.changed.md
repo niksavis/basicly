@@ -1,0 +1,1 @@
+- The `core-rules`, `quality-gate`, `self-improvement-retro` and `decision-protocol` always-on fragments now give a reason for each rule they state, at three characters less than before.
