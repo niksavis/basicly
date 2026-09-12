@@ -30,8 +30,8 @@ it with no `uvx`, no network and nothing on `PATH`. `update` re-vendors and repo
 changed, `status` says whether the installed copy matches, and `uninstall` removes exactly
 the files `init` wrote and nothing else.
 
-`init` also writes the kit's **skill** into `.claude/skills/comments/`, `.agents/skills/comments/`
-and `.github/skills/comments/`, so an agent in that repository knows the kit exists and when to
+`init` also writes the kit's **skill** into `.claude/skills/comments/` and `.agents/skills/comments/`,
+so an agent in that repository knows the kit exists and when to
 reach for it. That is the half a code-only install leaves out: a kit nothing calls is a kit
 nobody has.
 

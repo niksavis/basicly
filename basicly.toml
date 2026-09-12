@@ -227,6 +227,13 @@ modes = ["full"]
 # an agent spawn path, so it is the least acceptable one to miss. The targets are a list
 # a human maintains, so `tests/test_verify.py::test_bandit_scans_every_harness_python_directory`
 # fails when the next directory is added without being named here.
+#
+# `packages` was added on 2026-09-12 (basicly-4cy3b8t). Its four files - the three kit
+# shims and `kit_installer.py` - are force-included into every kit wheel and run inside a
+# consumer's repository, and no security scanner had ever read them. The sweep could not
+# notice: `_HARNESS_PYTHON_ROOTS` in `tests/test_verify.py` listed `.scripts` and
+# `.basicly/core`, so its coverage claim was bounded by the list it iterates. Bandit was
+# clean on the tree when the directory was added, so this buys the next edit, not this one.
 [[verify.checks]]
 name = "bandit"
 command = [
@@ -238,9 +245,16 @@ command = [
   ".scripts",
   ".basicly/core/hooks",
   ".basicly/core/kit",
+  "packages",
 ]
 modes = ["fast", "full"]
-inputs = [".scripts/**/*.py", ".basicly/core/**/*.py", "pyproject.toml", "uv.lock"]
+inputs = [
+  ".scripts/**/*.py",
+  ".basicly/core/**/*.py",
+  "packages/**/*.py",
+  "pyproject.toml",
+  "uv.lock",
+]
 
 # Dead code (basicly-uexy). `vulture` was declared at pyproject.toml:37 and called
 # from nowhere — not by a check, not by a script — so the dependency that finds

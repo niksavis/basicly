@@ -61,8 +61,8 @@ $ python3 .basicly/kit/tracker/cli.py ready .
 `update` re-vendors and reports what changed, `status` says whether the installed copy and
 its rules are current, and `uninstall` removes exactly what `init` wrote.
 
-`init` also writes the kit's **skill** into `.claude/skills/tracker/`, `.agents/skills/tracker/`
-and `.github/skills/tracker/`, so an agent in that repository knows the kit exists and when to
+`init` also writes the kit's **skill** into `.claude/skills/tracker/` and `.agents/skills/tracker/`,
+so an agent in that repository knows the kit exists and when to
 reach for it. That is the half a code-only install leaves out: a kit nothing calls is a kit
 nobody has.
 

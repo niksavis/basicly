@@ -1056,7 +1056,7 @@ def test_the_kit_is_not_a_referrer_because_it_cannot_import_basicly(tmp_path: Pa
     )
 
 
-_HARNESS_PYTHON_ROOTS = (".scripts", ".basicly/core")
+_HARNESS_PYTHON_ROOTS = (".scripts", ".basicly/core", "packages")
 
 _UNSAFE_MODULE = (
     "import subprocess\n\n\ndef spawn(command):\n    return subprocess.run(command, shell=True)\n"

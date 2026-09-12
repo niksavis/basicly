@@ -13,8 +13,9 @@ DEFAULT_ROOT = Path(".basicly") / "kit"
 SKILL_ROOTS = (
     Path(".claude") / "skills",
     Path(".agents") / "skills",
-    Path(".github") / "skills",
 )
+
+RETIRED_SKILL_ROOTS = (Path(".github") / "skills",)
 
 ALWAYS_ON_FILES = (
     Path("CLAUDE.md"),
@@ -38,12 +39,27 @@ def read_kit_constant(kit_dir: Path, module_file: str, name: str):
     return getattr(module, name)
 
 
-def skill_paths(target: Path, name: str) -> list:
-    return [target / root / name / "SKILL.md" for root in SKILL_ROOTS]
+def skill_paths(target: Path, name: str, roots=SKILL_ROOTS) -> list:
+    return [target / root / name / "SKILL.md" for root in roots]
 
 
 def marker(name: str) -> tuple:
     return (f"<!-- basicly-kit:{name} begin -->", f"<!-- basicly-kit:{name} end -->")
+
+
+def prune_retired_skill(target: Path, name: str, body: str, stream) -> int:
+    removed = 0
+    for path in skill_paths(target, name, RETIRED_SKILL_ROOTS):
+        if not path.is_file() or path.read_text(encoding="utf-8") != body:
+            continue
+        path.unlink()
+        removed += 1
+        _prune_empty(path.parent, target.resolve())
+        stream.write(
+            f"{name}: removed {path.relative_to(target)}; Copilot reads all three skill "
+            "roots with no documented dedup, so a third copy is discovered a third time\n"
+        )
+    return removed
 
 
 def write_skill(kit_dir: Path, target: Path, name: str, stream) -> int:
@@ -51,6 +67,7 @@ def write_skill(kit_dir: Path, target: Path, name: str, stream) -> int:
     if not source.is_file():
         return 0
     body = source.read_text(encoding="utf-8")
+    prune_retired_skill(target, name, body, stream)
     written = 0
     for path in skill_paths(target, name):
         if path.exists() and path.read_text(encoding="utf-8") == body:
@@ -64,7 +81,7 @@ def write_skill(kit_dir: Path, target: Path, name: str, stream) -> int:
 
 def drop_skill(target: Path, name: str, stream) -> int:
     removed = 0
-    for path in skill_paths(target, name):
+    for path in skill_paths(target, name, (*SKILL_ROOTS, *RETIRED_SKILL_ROOTS)):
         if not path.exists():
             continue
         path.unlink()

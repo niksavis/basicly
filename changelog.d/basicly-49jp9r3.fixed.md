@@ -1,0 +1,1 @@
+- **The security scan now reads the four Python files the kits ship.** `kit_installer.py` and the three shims are force-included into every wheel and run file operations in a consumer's repo, and bandit had never scanned `packages/`. The coverage sweep could not notice, because it derived its population from a list that named only two roots.

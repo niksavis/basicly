@@ -1,6 +1,6 @@
 [project]
 name = "basicly-comments"
-version = "0.2.0"
+version = "0.2.1"
 description = "Refuse prose comments in code files, and remove them when asked"
 readme = "README.md"
 requires-python = ">=3.9"

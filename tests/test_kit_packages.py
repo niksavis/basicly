@@ -249,12 +249,68 @@ def test_the_skill_description_says_when_to_use_it(kit: str) -> None:
 def test_init_writes_the_skill_into_every_root_an_agent_reads(kit: str, tmp_path: Path) -> None:
     installer.run(_kit(kit), ["init", "--into", str(tmp_path)])
 
-    for root in (".claude/skills", ".agents/skills", ".github/skills"):
+    for root in (".claude/skills", ".agents/skills"):
         path = tmp_path / root / kit / "SKILL.md"
         assert path.is_file(), f"{root} has no skill, so that agent family is never told"
         assert path.read_text(encoding="utf-8") == (CATALOG / kit / "GUIDANCE.md").read_text(
             encoding="utf-8"
         )
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_init_writes_no_third_copy_copilot_would_discover_again(kit: str, tmp_path: Path) -> None:
+    installer.run(_kit(kit), ["init", "--into", str(tmp_path)])
+
+    assert not (tmp_path / ".github/skills" / kit / "SKILL.md").exists(), (
+        "Copilot reads .github, .claude and .agents skill roots with no documented dedup, "
+        "so a third identical copy is discovered a third time (basicly-sqn dropped it from "
+        "the catalog; the kit installer kept writing it)"
+    )
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_init_removes_a_third_copy_an_earlier_version_wrote(kit: str, tmp_path: Path) -> None:
+    stale = tmp_path / ".github/skills" / kit / "SKILL.md"
+    stale.parent.mkdir(parents=True)
+    stale.write_text((CATALOG / kit / "GUIDANCE.md").read_text(encoding="utf-8"), encoding="utf-8")
+
+    installer.run(_kit(kit), ["init", "--into", str(tmp_path)])
+
+    assert not stale.exists(), "an upgrade must clean the copy the previous version left"
+
+
+def test_init_keeps_a_hand_authored_file_in_the_retired_root(tmp_path: Path) -> None:
+    mine = tmp_path / ".github/skills/mine/SKILL.md"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("# mine\n\nNot written by any kit.\n", encoding="utf-8")
+
+    installer.run(_kit("tier"), ["init", "--into", str(tmp_path)])
+
+    assert mine.read_text(encoding="utf-8") == "# mine\n\nNot written by any kit.\n"
+
+
+def test_init_keeps_a_third_copy_whose_body_is_not_ours(tmp_path: Path) -> None:
+    theirs = tmp_path / ".github/skills/tier/SKILL.md"
+    theirs.parent.mkdir(parents=True)
+    theirs.write_text("# tier\n\nA consumer's own edit.\n", encoding="utf-8")
+
+    installer.run(_kit("tier"), ["init", "--into", str(tmp_path)])
+
+    assert theirs.read_text(encoding="utf-8") == "# tier\n\nA consumer's own edit.\n", (
+        "only a byte-for-byte match with what we would write is ours to remove"
+    )
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_uninstall_still_cleans_the_retired_root(kit: str, tmp_path: Path) -> None:
+    installer.run(_kit(kit), ["init", "--into", str(tmp_path)])
+    stale = tmp_path / ".github/skills" / kit / "SKILL.md"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text((CATALOG / kit / "GUIDANCE.md").read_text(encoding="utf-8"), encoding="utf-8")
+
+    installer.run(_kit(kit), ["uninstall", "--into", str(tmp_path)])
+
+    assert not stale.exists()
 
 
 @pytest.mark.parametrize("kit", KITS)

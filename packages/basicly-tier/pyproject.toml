@@ -1,6 +1,6 @@
 [project]
 name = "basicly-tier"
-version = "0.2.0"
+version = "0.2.1"
 description = "Resolve a declared model tier into the model a host will actually spawn"
 readme = "README.md"
 requires-python = ">=3.9"

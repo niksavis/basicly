@@ -1,6 +1,6 @@
 [project]
 name = "basicly-tracker"
-version = "0.2.0"
+version = "0.2.1"
 description = "An append-only work tracker whose ledger merges cleanly under parallel work"
 readme = "README.md"
 requires-python = ">=3.9"

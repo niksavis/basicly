@@ -89,3 +89,10 @@ node_modules/
 # `git add .basicly/ledger`, which stages a transient lock into a `chore(beads)` commit
 # (basicly-6mfhjp).
 .basicly/ledger/.events.lock
+
+# A per-package lock uv writes as a side effect, never as a dependency record. Each kit
+# declares `dependencies = []`, so `uv run --project packages/basicly-tier` leaves a
+# ~135-byte `uv.lock` beside that package's pyproject that nothing reads and no build
+# consumes — three of them reached a commit before this rule existed (basicly-4cy3b8t).
+# The root `uv.lock` is the real one and stays tracked; only the per-package ones go.
+packages/*/uv.lock
