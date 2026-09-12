@@ -251,7 +251,9 @@ def upsert_release_section(
 
 def _parse_args() -> argparse.Namespace:
     """Parse CLI arguments."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Generate or update a dated changelog section for a semantic release tag."
+    )
     parser.add_argument("--tag", required=True, help="Semantic release tag, e.g. v0.1.0")
     parser.add_argument("--date", required=True, help="Release date in ISO format, e.g. 2026-07-12")
     parser.add_argument(

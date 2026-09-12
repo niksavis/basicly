@@ -274,7 +274,9 @@ def report(found: tuple[Finding, ...], failing: list[str], noun: str = "stale") 
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point: report every citation a reader would take as a fact about the code."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Fail when a document cites a `file.py:line` that no longer holds it."
+    )
     parser.add_argument("doc", nargs="*", help="Only check these documents")
     parser.add_argument(
         "--strict",

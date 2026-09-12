@@ -80,7 +80,9 @@ def list_identities() -> str:
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the CLI."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Scaffold per-remote git identities via conditional includes."
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     add = sub.add_parser("add", help="register a per-host identity")

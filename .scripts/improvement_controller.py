@@ -305,7 +305,9 @@ def _say(lines: list[str]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     """One run of the loop: measure, select one target, dispatch at most one lane."""
-    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    parser = argparse.ArgumentParser(
+        description="The codebase-improvement loop: one reading, one target, one lane per run."
+    )
     parser.add_argument("--dry-run", action="store_true", help="select and print, but file no lane")
     args = parser.parse_args(argv)
 

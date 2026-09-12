@@ -44,7 +44,6 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import ast
 import re
 import sys
 from collections.abc import Callable
@@ -200,12 +199,19 @@ def _catalog_skills(root: Path) -> list[str]:
     return _table(["Skill", "Invocation", "Technologies", "Description"], rows)
 
 
-def _script_purpose(script: Path) -> str:
-    """First line of *script*'s module docstring — the hook's one-line purpose."""
-    docstring = ast.get_docstring(ast.parse(read_text(script)))
-    if not docstring:
-        raise ClaimError(f"{script}: hook scripts need a module docstring for the README table")
-    return docstring.splitlines()[0].strip()
+def _script_purpose(entry: dict) -> str:
+    """The hook's one-line purpose, read off its manifest entry.
+
+    Read from `hooks.yaml` rather than from the script's module docstring: code files in
+    this repository carry no prose, so a docstring is not somewhere a fact can live
+    (basicly-phglc2x). A manifest is catalog data and keeps its own comments.
+    """
+    description = entry.get("description")
+    if not isinstance(description, str) or not description.strip():
+        raise ClaimError(
+            f"{HOOKS_DIR}/hooks.yaml: {entry.get('id')!r} needs a `description` for the table"
+        )
+    return " ".join(description.split())
 
 
 def _catalog_hooks(root: Path) -> list[str]:
@@ -232,7 +238,7 @@ def _catalog_hooks(root: Path) -> list[str]:
             f"`{stage}`",
             f"`{entry.get('manager', 'git')}`",
             f"[`{script}`]({script})",
-            _script_purpose(hooks_dir / script),
+            _script_purpose(entry),
         ])
     return _table(["Hook", "Stage", "Manager", "Script", "Purpose"], rows)
 
@@ -494,7 +500,9 @@ def _run_assertions(root: Path) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point: ``--check`` reports drift, ``--fix`` regenerates the stale blocks."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser = argparse.ArgumentParser(
+        description="Generate and gate the documentation claims derived from this repo itself."
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true", help="Report drift; write nothing")
     mode.add_argument("--fix", action="store_true", help="Regenerate every stale block")

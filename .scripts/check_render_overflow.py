@@ -240,7 +240,9 @@ def _measure_at_viewport(page: Path, browser: str, width: int, height: int) -> d
 
 def main(argv: list[str] | None = None) -> int:
     """Measure one page and report; non-zero when anything is clipped or unanswerable."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Report two geometry faults of a rendered page: clipping and overlap."
+    )
     parser.add_argument("page", type=Path, help="The rendered HTML file to measure")
     parser.add_argument("--width", type=int, default=1920)
     parser.add_argument("--height", type=int, default=1080)

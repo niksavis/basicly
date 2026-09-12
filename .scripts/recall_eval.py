@@ -280,7 +280,9 @@ def report(results: list[dict], rules_by_family: dict[str, list[Rule]]) -> str:
 
 def main() -> int:
     """Check the inventory, or build and dispatch every cell and report."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Measure always-on recall per agent family against a no-guidance control."
+    )
     parser.add_argument("--families", default="claude,copilot", help="comma-separated")
     parser.add_argument("--reps", type=int, default=3, help="samples per cell")
     parser.add_argument("--dry-run", action="store_true", help="print cells and argv only")

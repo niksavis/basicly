@@ -163,7 +163,9 @@ def report(found: tuple[corpus_drift.Finding, ...], verdict: list[Verdict]) -> s
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point: report every problem bullet a decider would read as current fact."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Fail when an epic states a problem as fact and carries no child."
+    )
     parser.add_argument("issue", nargs="*", help="Only check these parent ids")
     parser.add_argument(
         "--strict",

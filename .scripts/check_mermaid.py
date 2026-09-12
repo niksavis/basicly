@@ -195,7 +195,9 @@ def report(blocks: tuple[Block, ...], failures: dict[int, str], version: str) ->
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point: report every diagram a reader would see as a red error box."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Fail when a committed mermaid block is one the renderer refuses to draw."
+    )
     parser.add_argument("doc", nargs="*", help="Only check these documents")
     args = parser.parse_args(argv)
     try:

@@ -293,7 +293,9 @@ def _report_drift(map_path: Path, committed: Mapping[str, Any], resolved: dict) 
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser = argparse.ArgumentParser(
+        description="Generate and drift-check the tier by vendor by surface model map."
+    )
     parser.add_argument(
         "--check",
         action="store_true",
