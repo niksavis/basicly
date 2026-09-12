@@ -15,8 +15,8 @@ asserting things about itself and started measuring them.
 
 **Three kits ship standalone over `uvx`, and each one now teaches an agent to use it.** A
 standalone install used to leave working code that no agent knew to call: `init` writes the
-kit's skill into `.claude/skills/`, `.agents/skills/` and `.github/skills/`, and
-`--with-instructions` places a short always-on block in a marked region that `uninstall`
+kit's skill into `.claude/skills/` and `.agents/skills/`, and `--with-instructions`
+places a short always-on block in a marked region that `uninstall`
 removes byte for byte. The tracker install also writes the `merge=union` git attribute its
 whole parallel-append promise rests on — and refuses if it cannot — which the integrated
 `basicly install` had never done, making the bundled path the weaker of the two. The kits
@@ -68,7 +68,7 @@ OpenAI's tier collapse is removed. The tier kit ships the new map.
 
 - `basicly retention` scores a recall answer against an always-on instruction file and reports whether that file is in the session's context, with bands set from a measured 95%-with-file against 5%-without separation. The `retention-probe` skill is the runbook. It answers presence, never adherence. (basicly-wdg7hia)
 
-- **Each kit now ships the skill and the instruction that make an agent use it.** A standalone install used to leave working code no agent knew to call. `init` now writes the kit's skill into `.claude/skills/`, `.agents/skills/` and `.github/skills/`, and `--with-instructions` places a short always-on block in a marked region that `uninstall` removes byte for byte. (basicly-witw3qh)
+- **Each kit now ships the skill and the instruction that make an agent use it.** A standalone install used to leave working code no agent knew to call. `init` now writes the kit's skill into `.claude/skills/` and `.agents/skills/`, and `--with-instructions` places a short always-on block in a marked region that `uninstall` removes byte for byte. (basicly-witw3qh)
 
 - Output styles are now a catalog content type: author `.basicly/core/output-styles/<slug>/style.yaml`, project it with `basicly styles-build`, and the new `projection-styles` gate refuses a hand edit. `basicly install` delivers it, so a consumer gets the style the way it gets skills. (basicly-yhhmoqq)
 
