@@ -3,8 +3,7 @@
 **The code is the source of truth, so a code file carries no prose.** This kit reports
 every prose comment in a code file and removes them when asked. Seven Python files, with
 **no basicly**: no `import basicly`, nothing on `PATH`, no third-party package, no
-network, no subprocess. Copy them into a repository that has never heard of this harness
-and they work.
+network, no subprocess.
 
 | File | What it does |
 | --- | --- |
@@ -15,6 +14,29 @@ and they work.
 | `scan.py` | dispatch, and the subtraction that turns a comment into a finding |
 | `strip.py` | the edit, and the three proofs that it changed only prose |
 | `cli.py` | `check`, `fix`, `languages` |
+
+## Install
+
+**`uvx` is the way in.** The kit is published as its own package, so a repository that has
+never heard of this harness gets it in one command:
+
+```console
+$ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-comments basicly-comments init
+comments: 8 file(s) written, 0 unchanged, in .basicly/kit/comments
+```
+
+`init` **vendors** the kit into `.basicly/kit/comments`, so from then on plain `python3` runs
+it with no `uvx`, no network and nothing on `PATH`. `update` re-vendors and reports what
+changed, `status` says whether the installed copy matches, and `uninstall` removes exactly
+the files `init` wrote and nothing else.
+
+Running it without vendoring works too — `basicly-comments <subcommand>` passes straight through to
+the kit.
+
+**Copying the files by hand is the fallback, not the route.** It still works, because the
+kit imports nothing but the standard library, and it is the right answer when you are
+driving the kit from another harness rather than adopting it. The rest of this document
+describes the kit itself, which behaves identically however it arrived.
 
 ## Use
 

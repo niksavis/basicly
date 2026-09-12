@@ -15,6 +15,23 @@ module no gate is looking at. That is how the tier kit's three files went ungate
 | `tracker/` | the owned append-only work-tracker ledger: events, snapshot, `fsck`, import, ranking | [`tracker/SPEC.md`](tracker/SPEC.md) |
 | [`comments/`](comments/README.md) | reporting and removing prose comments from code files, so the code is the only source of truth | [`comments/README.md`](comments/README.md) |
 
+## How a consumer gets one
+
+Each kit is published as its own package under [`packages/`](../../../packages), built from
+the directory here so there is never a second copy to drift. A repository that will never
+run `basicly` installs one directly:
+
+```console
+$ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init
+tracker: added to .gitattributes: events-*.jsonl -text merge=union
+tracker: 18 file(s) written, 0 unchanged, in .basicly/kit/tracker
+```
+
+`init` vendors the kit into `.basicly/kit/<name>` and writes any git rule the kit's
+correctness depends on, refusing to install at all if it cannot. `uninstall` removes
+exactly what it wrote. Copying the files by hand still works and is the documented
+fallback, not the route.
+
 ## Constraints anything here must keep
 
 These bind **every** kit, and each one is cited from the modules it governs.

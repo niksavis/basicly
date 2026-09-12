@@ -20,6 +20,51 @@ Two rules govern what is written here, and the second is why this file is short:
 - A claim that merely **restated shipped code** was dropped rather than relocated. The
   code is the authority; this file is the contract it is held to.
 
+## 3. Install
+
+**`uvx` is the way in**, and it is not merely a convenience here: the tracker's central
+promise depends on a git attribute the host repository must declare, and the installer is
+what declares it.
+
+```console
+$ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init
+tracker: added to .gitattributes: events-*.jsonl -text merge=union
+tracker: added to .gitignore: .basicly/ledger/snapshot.jsonl
+tracker: added to .gitignore: .basicly/ledger/checkpoint-*.jsonl
+tracker: 18 file(s) written, 0 unchanged, in .basicly/kit/tracker
+```
+
+The attribute is written **before** the first kit file, and an install that cannot write it
+refuses and leaves nothing behind. Without `merge=union` two branches that each append an
+event conflict, and the reason this tracker exists is that they must not. The glob and the
+derived-file patterns are read off `events.LOG_GLOB` and `snapshot.DERIVED_PATTERNS`, never
+spelled a second time (§9.4, and the same rule `.scripts/kit_deployment.py` follows).
+
+Afterwards plain `python3` runs it — no `uvx`, no network, nothing on `PATH`. Every
+subcommand takes the repository directory as its first argument:
+
+```console
+$ python3 .basicly/kit/tracker/cli.py create . --prefix demo --title "try the tracker"
+{
+  "events": ["demo-hbms#ev-59a934da3f", "demo-hbms#ev-04bc122532"],
+  "record": "demo-hbms"
+}
+$ python3 .basicly/kit/tracker/cli.py ready .
+{
+  "count": 1,
+  "records": [{"rank": 1, "record": "demo-hbms", "score": 2000, "title": "try the tracker"}],
+  "schema": "basicly.scheduler.v1",
+  "sort": "priority ASC, dependents DESC, id ASC"
+}
+```
+
+`update` re-vendors and reports what changed, `status` says whether the installed copy and
+its rules are current, and `uninstall` removes exactly what `init` wrote.
+
+**Copying the files by hand is the fallback, not the route.** It still works — the kit
+imports nothing but the standard library — but a hand copy does not write the git
+attribute, so a repository installed that way keeps the conflicts this design removes.
+
 ## 4. The store: an append-only event log, and a one-way boundary
 
 **The event log is the truth; every other file is derived.** Every change is a new

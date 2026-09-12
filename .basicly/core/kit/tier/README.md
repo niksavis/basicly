@@ -3,8 +3,7 @@
 **A subagent declares a portable tier; this kit makes the spawn actually run on the
 model that tier resolves to.** Three Python files and one JSON map, with **no
 basicly**: no `import basicly`, nothing on `PATH`, no third-party package, no
-network. Copy them into a repository that has never heard of this harness and they
-work.
+network.
 
 | File | What it does |
 | --- | --- |
@@ -59,10 +58,34 @@ It exits **1**, so a script can branch on it without parsing the report.
 
 ## Install
 
+**`uvx` is the way in.** The kit is published as its own package, so a repository that has
+never heard of this harness gets it in one command:
+
+```console
+$ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tier basicly-tier init
+tier: 5 file(s) written, 0 unchanged, in .basicly/kit/tier
+```
+
+`init` **vendors** the kit into `.basicly/kit/tier`, so from then on plain `python3` runs
+it with no `uvx`, no network and nothing on `PATH`. `update` re-vendors and reports what
+changed, `status` says whether the installed copy matches, and `uninstall` removes exactly
+the files `init` wrote and nothing else.
+
+Running it without vendoring works too — `basicly-tier --host claude --tier low` passes
+straight through to the resolver. The model map travels with the kit, so a vendored copy
+resolves with nothing else on disk.
+
+**Copying the files by hand is the fallback, not the route.** It still works, because the
+kit imports nothing but the standard library, and it is the right answer when you are
+driving the kit from another harness rather than adopting it. The rest of this document
+describes the kit itself, which behaves identically however it arrived.
+
+## Install the spawn hook
+
 ```bash
-python3 .basicly/core/kit/tier/install_hook.py --dry-run   # print what it would write
-python3 .basicly/core/kit/tier/install_hook.py             # this repository
-python3 .basicly/core/kit/tier/install_hook.py --user      # every repository on this machine
+python3 .basicly/kit/tier/install_hook.py --dry-run   # print what it would write
+python3 .basicly/kit/tier/install_hook.py             # this repository
+python3 .basicly/kit/tier/install_hook.py --user      # every repository on this machine
 ```
 
 Re-running converges: it never duplicates the hook, and it matches hooks by the
@@ -137,7 +160,8 @@ $ echo $?
 
 ## Drive the map from another harness, with no basicly
 
-The kit is four files. Copy them anywhere, keep the two directories beside each
+The kit is four files, and `basicly-tier init` puts them where the resolver expects.
+You can also copy them anywhere by hand: keep the two directories beside each
 other or point `--map` wherever you put the map, and call it:
 
 ```console
