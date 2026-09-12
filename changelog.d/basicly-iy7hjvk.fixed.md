@@ -1,1 +1,0 @@
-- **The readmes match the code again.** The root readme now gives a copy-pasteable `uvx` line for each of the three kits, not just the tracker. `.basicly/README.md` had described an earlier project throughout — markdown fragment sources, `SKILL.md` catalog sources, three CLI verbs that no longer exist — and is rewritten against commands that were executed.

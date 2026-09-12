@@ -1,1 +1,0 @@
-- **The always-on size table states each target's own unit.** It measured every surface in characters while the codex cap is in bytes, so it under-reported `AGENTS.md` against `project_doc_max_bytes`. It now carries the line count and the line cap too, which is the instrument that binds.

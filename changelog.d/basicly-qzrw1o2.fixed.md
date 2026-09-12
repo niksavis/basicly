@@ -1,1 +1,0 @@
-- The tier kit goes to 0.2.2 so the corrected README in its wheel actually reaches a consumer. `uvx` caches by name and version, so a fix that ships inside a wheel without a version bump is undeliverable.

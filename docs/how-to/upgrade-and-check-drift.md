@@ -6,7 +6,7 @@ There is no `update` command. **Re-running install *is* the upgrade** — it is
 idempotent and converges the repo onto whatever version you pin:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.13.0 basicly install
+uvx --from git+https://github.com/niksavis/basicly@v0.13.1 basicly install
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -97,7 +97,7 @@ version to keep in step across a team.
 ## Uninstall
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.13.0 basicly uninstall
+uvx --from git+https://github.com/niksavis/basicly@v0.13.1 basicly uninstall
 ```
 
 This removes everything basicly manages — the managed core, install state,

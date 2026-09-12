@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.13.1 - 2026-09-12
+
+Delta: v0.13.0..v0.13.1
+
 A follow-up to v0.13.0. One skill that repositories asked for, and four corrections to
 things that release got wrong.
 
@@ -30,6 +34,20 @@ line count beside it, which is the cap that actually binds.
 **A fix inside a wheel needs a version to travel on.** The tier kit goes to 0.2.2, because
 `uvx` caches by name and version and a corrected file at an unchanged version reaches
 nobody.
+
+### Added
+
+- **A `plain-english` skill, and the landing page rewritten to obey it.** Five of nine section titles used the "X, not Y" construction, which props a claim on the thing it is not. The skill names the constructions to delete, and asks for ASD-STE100 simplified technical English so a reader does not need English as a first language. It ships to consumers with the catalog. (basicly-t6s4whq)
+
+### Fixed
+
+- The published page lists what the catalog projects, and now names output styles among them. The enumeration went out one short in v0.13.0, the release that added the type. (basicly-6zjswc1)
+
+- **The always-on size table states each target's own unit.** It measured every surface in characters while the codex cap is in bytes, so it under-reported `AGENTS.md` against `project_doc_max_bytes`. It now carries the line count and the line cap too, which is the instrument that binds. (basicly-bychsfc)
+
+- **The readmes match the code again.** The root readme now gives a copy-pasteable `uvx` line for each of the three kits, not just the tracker. `.basicly/README.md` had described an earlier project throughout — markdown fragment sources, `SKILL.md` catalog sources, three CLI verbs that no longer exist — and is rewritten against commands that were executed. (basicly-iy7hjvk)
+
+- The tier kit goes to 0.2.2 so the corrected README in its wheel actually reaches a consumer. `uvx` caches by name and version, so a fix that ships inside a wheel without a version bump is undeliverable. (basicly-qzrw1o2)
 
 ## v0.13.0 - 2026-09-12
 
