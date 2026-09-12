@@ -407,6 +407,46 @@ already-claimed lane, so a null rank must stay distinguishable from an unrecorde
 - **No slugs in ids.** A slug embeds hyphens that read as a prefix boundary, which breaks a
   commit-message gate that parses the prefix — a shipped defect, not a hypothetical.
 
+### 9.4.1 The declared collision budget, derived
+
+"Collision-checked" is a hand-wave: a mint can only check the ids *this* writer can see, and
+two branches minting from the same base collide invisibly and merge into one id. So the root
+length is sized from the birthday bound against a declared maximum probability instead:
+
+```text
+P(collision) ≈ 1 - e^(-n² / 2N),   N = RADIX ** length
+```
+
+where *n* is the number of **distinct roots** under one prefix, not the number of records —
+children share their root. The declared target is `MAX_COLLISION_PROBABILITY` = `1e-4`: one
+chance in ten thousand that any pair of all roots ever minted collides. It yields:
+
+| root length | id space N | max roots at P ≤ 1e-4 |
+| --- | --- | --- |
+| 4 | 1,679,616 | 18 |
+| 5 | 60,466,176 | 109 |
+| 6 | 2,176,782,336 | 659 |
+| 7 | 78,364,164,096 | 3,958 |
+
+That table is derived, not typed. `max_population` recomputes every row and
+`tests/test_kit_tracker_ids.py` parses **this section** and asserts the two agree, so the
+number a reader checks here cannot drift from the number a mint uses. The exact birthday
+probability, `1 - Π(1 - i/N)`, is lower than the approximation at every row above, so the
+approximation is the conservative side to be on — also asserted.
+
+Why `1e-4` rather than something tighter: a collision is not data loss (the local check
+retries, and a cross-branch collision is a visible fork rather than a silent overwrite), and
+ids are read and typed by people, so length is a real cost. For scale, this repo's own ledger
+held 311 roots across 636 records at 3-4 characters, measured 2026-08-06 — a 4-character root
+at that population carries P ≈ 2.8e-2, which is 284 times the target this module declares.
+Sizing from a stated bound is what turns that from an opinion into a check.
+
+**Adaptive length is safe because an existing id never changes.** Only a newly minted root
+gets longer; every id already handed out keeps the length it was minted at, and `mint_root_id`
+treats it as taken forever regardless. That is also why ids are never reused: the caller
+passes every id ever minted, a deleted record's id included, and a candidate matching any of
+them is discarded.
+
 ## 9.5 Time — a timestamp is evidence, never a constraint
 
 Ordering comes from the log, not from the clock. The fold reads events in sequence order

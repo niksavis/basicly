@@ -1,17 +1,3 @@
-"""Shared stand-ins for the plan gate, plan record and demonstration suites.
-
-All three need the same things: a ``br`` that records what the decomposer tried to
-create, and a child — or a recorded bead body — that *passes* the gate, so a test can
-remove exactly one thing from it. Two of them held a verbatim copy each until the gate
-grew its sixth field, at which point a copy that was not updated would have turned every
-test in that file red for a reason having nothing to do with what it asserts. One
-definition, so a field added to the gate is added once.
-
-Deliberately plain module-level helpers rather than ``conftest`` fixtures: they are
-constructors, not per-test state, and a test that builds two children wants to call
-them twice.
-"""
-
 from __future__ import annotations
 
 import json
@@ -26,39 +12,24 @@ from tests import fake_tracker
 if TYPE_CHECKING:
     import pytest
 
-# What a child says about how it is exercised end to end (D18). Backticked, because the
-# gate refuses a demonstration that names nothing runnable.
 DEMONSTRATION = "run `basicly decompose feat --plan plan.toml --dry-run`"
 
 
 class Proc:
-    """A ``subprocess.CompletedProcess`` stand-in with only what the readers touch."""
-
     def __init__(self, stdout: str = "", returncode: int = 0) -> None:
-        """Hold *stdout* and *returncode*; stderr is always empty."""
         self.stdout = stdout
         self.stderr = ""
         self.returncode = returncode
 
 
 class FakeBr:
-    """Stateful stand-in for the br CLI, routed by subcommand.
-
-    Hands out sequential child ids on create and records every dep-add edge, which is
-    what the declared-graph and "creates no issue" assertions read. Deliberately raises
-    on any call it was not taught, so a test cannot pass because the decomposer quietly
-    stopped calling br.
-    """
-
     def __init__(self, *, records: dict[str, dict] | None = None) -> None:
-        """Answer ``show`` from *records*; start with nothing created."""
         self.records = records or {}
-        self.created: list[tuple[str, str, str]] = []  # (id, title, body)
-        self.edges: list[tuple[str, str, str]] = []  # (issue, depends_on, type)
+        self.created: list[tuple[str, str, str]] = []
+        self.edges: list[tuple[str, str, str]] = []
         self._counter = 0
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> Proc:
-        """Serve one br invocation, or fail the test naming the unexpected call."""
         if args[:1] == ["create"]:
             self._counter += 1
             issue_id = f"feat.{self._counter}"
@@ -80,12 +51,10 @@ class FakeBr:
 
 
 def install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., Proc]) -> None:
-    """Route both funnels every decomposition seam reaches the external store through."""
     fake_tracker.install(monkeypatch, fake)
 
 
 def planned(title: str, *scope: str, **overrides: object) -> ChildSpec:
-    """A child that passes the gate, so a test can remove exactly one thing."""
     fields: dict[str, object] = {
         "title": title,
         "acceptance": ("given a plan when it is gated then it passes",),
@@ -100,12 +69,10 @@ def planned(title: str, *scope: str, **overrides: object) -> ChildSpec:
 
 
 def plan_payload(*children: dict) -> dict:
-    """A plan document wrapping *children*, as ``parse_children`` expects it."""
     return {"children": list(children)}
 
 
 def child_payload(title: str, **overrides: object) -> dict:
-    """The JSON form of :func:`planned`, for the plan-document entry parser."""
     payload: dict[str, object] = {
         "title": title,
         "acceptance": ["given a plan when it is gated then it passes"],
@@ -120,13 +87,7 @@ def child_payload(title: str, **overrides: object) -> dict:
 
 
 def recorded_body(**overrides: object) -> str:
-    """A bead body carrying every plan field, so a test can drop exactly one.
 
-    Every field the *entry predicate* reads, which is why there is no demonstration
-    line: this is the shape of a bead recorded before D18, and that it is still admitted
-    is the assertion in ``test_plan_demonstration.py``. Adding one here would delete
-    that test's subject.
-    """
     fields: dict[str, object] = {
         "acceptance": ("given the lane when it is dispatched then it is held to this",),
         "scope": ("src/a.py",),

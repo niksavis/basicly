@@ -1,32 +1,3 @@
-"""Fail when a harness marker family is written that the frozen list here does not carry.
-
-The reader's alias table (architecture §32.3.2) is keyed on the marker family, so the
-family list is a wire-format inventory. It has drifted three times, and one standing list
-was wrong in both directions at once: it named `harness-side`, a phrase from a `commit.py`
-sentence rather than a marker, and omitted the family `retrospective.py` declares. The
-roster the gate reads lives in architecture §32.3.2 beside that alias table; it lived in a
-requirements document until 2026-08-18, and moved because that document is scheduled for
-deletion and a gate cannot depend on a source that goes away.
-
-**The list is frozen here rather than derived, and one family is why.** `[harness-overrun]`
-carries 12 rows in this repository's log and has no producer anywhere in `src/`; the string
-survives only in two negative test assertions. A list derived from the live constants drops
-it, and those 12 rows then resolve to nothing. So the literal covers every family ever
-*written*, a retired one stays in it marked retired, and the gate compares the literal
-against two populations it measures: what the engine declares, and what the stores hold.
-
-**Prose is excluded by construction, which is the discriminator the hand count lacked.** A
-family is counted from a string constant in the AST — comments are not in the tree at all,
-and a docstring or any other bare string statement is skipped. In a store, a family counts
-only where it *leads* a comment body, which is where a writer puts it: over the whole event
-JSON the same probe returns 15 families, four of them bead prose quoting a marker.
-
-Run::
-
-    uv run python .scripts/check_marker_families.py
-    uv run python .scripts/check_marker_families.py --repo ../some-checkout
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -46,18 +17,11 @@ SELF = f"{SCRIPT_DIR.name}/{Path(__file__).name}"
 
 SRC_ROOT = "src/basicly"
 LOG_GLOB = ".basicly/ledger/events-*.jsonl"
-# The roster's home is the section that specifies the alias table it feeds, and it is
-# deliberately not a requirements document: the two the register schedules for deletion each
-# carried a gate input, and a gate whose only source can be deleted fails on the deletion.
 ROSTER_DOC = "docs/architecture/architecture.md"
 
-# A family is lowercase and hyphenated. The character class is what makes a malformed
-# marker fail to match rather than enter the census as a thirteenth family.
 _MARKER = re.compile(r"\[harness-[a-z][a-z-]*\]")
 _LEADING = re.compile(r"^\s*(\[harness-[a-z][a-z-]*\])")
 
-# The two claims the roster paragraph states about this list, bound so a reword fails
-# loudly instead of drifting a fourth time.
 _DECLARED_CLAIM = re.compile(r"\*\*([a-z]+)\*\* declared families")
 _RETIRED_CLAIM = re.compile(r"\*\*([a-z]+)\*\* retired")
 
@@ -87,21 +51,15 @@ _NUMBER_WORDS = (
 
 
 class FamilyError(Exception):
-    """A population could not be measured, so no verdict is available."""
+    pass
 
 
 @dataclass(frozen=True)
 class Family:
-    """One marker family, and why it has no producer if it has none."""
-
     marker: str
     retired: str | None = None
 
 
-# The frozen literal. Append-only in exactly the way the log is: a family whose producer is
-# deleted gains a `retired` reason and stays, because its rows stay on disk for the life of
-# the log. Declared counts derived 2026-08-17 by two independent AST rules that agreed at
-# eleven; the retired entry's row count agreed at 12 across the owned log and the export.
 FROZEN: tuple[Family, ...] = (
     Family("[harness-artifact]"),
     Family("[harness-classification]"),
@@ -126,8 +84,6 @@ FROZEN: tuple[Family, ...] = (
 
 @dataclass(frozen=True)
 class Finding:
-    """One disagreement between the literal and a population, with its repair."""
-
     key: str
     detail: str
     remedy: str
@@ -135,15 +91,12 @@ class Finding:
 
 @dataclass(frozen=True)
 class Census:
-    """The families found leading a comment body, and the population that was read."""
-
     rows: dict[str, int]
     comments: int
     stores: tuple[str, ...]
 
 
 def _prose_nodes(tree: ast.Module) -> set[int]:
-    """The `id()` of every string constant that is a bare statement — a docstring or prose."""
     return {
         id(node.value)
         for node in ast.walk(tree)
@@ -154,12 +107,7 @@ def _prose_nodes(tree: ast.Module) -> set[int]:
 
 
 def declared_families(repo: Path) -> dict[str, tuple[str, ...]]:
-    """Each family the engine declares, mapped to the modules declaring it.
 
-    Raises:
-        FamilyError: a module under the source root could not be read or parsed, which
-            would silently shrink the population.
-    """
     root = repo / SRC_ROOT
     if not root.is_dir():
         raise FamilyError(f"no source root at {SRC_ROOT}")
@@ -180,7 +128,6 @@ def declared_families(repo: Path) -> dict[str, tuple[str, ...]]:
 
 
 def _log_bodies(repo: Path) -> Iterator[tuple[str, str]]:
-    """Every comment body in the owned event log, as (store, text)."""
     for path in sorted(repo.glob(LOG_GLOB)):
         store = path.relative_to(repo).as_posix()
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -193,13 +140,7 @@ def _log_bodies(repo: Path) -> Iterator[tuple[str, str]]:
 
 
 def logged_families(repo: Path) -> Census:
-    """The families written to this checkout's store, counted at the head of a body.
 
-    Raises:
-        FamilyError: no store was found, or the log holds comment bodies and the probe
-            matched none of them — an empty result there belongs to the probe, not to the
-            tree, since this repository's log carries 2,297 such rows.
-    """
     rows: dict[str, int] = {}
     stores: set[str] = set()
     comments = 0
@@ -217,7 +158,6 @@ def logged_families(repo: Path) -> Census:
 
 
 def population_findings(declared: dict[str, tuple[str, ...]], census: Census) -> Iterator[Finding]:
-    """Each disagreement between the literal and the two measured populations."""
     frozen = {family.marker: family for family in FROZEN}
     for marker in sorted(set(declared) - set(frozen)):
         yield Finding(
@@ -247,12 +187,10 @@ def population_findings(declared: dict[str, tuple[str, ...]], census: Census) ->
 
 
 def _spelled(count: int) -> str:
-    """*count* as the document spells it, or as digits past the words we carry."""
     return _NUMBER_WORDS[count] if count < len(_NUMBER_WORDS) else str(count)
 
 
 def _claim_findings(claim: re.Pattern[str], text: str, count: int, what: str) -> Iterator[Finding]:
-    """The document's stated *what* count against the derived one."""
     stated = claim.findall(text)
     expected = _spelled(count)
     if len(stated) != 1:
@@ -270,7 +208,6 @@ def _claim_findings(claim: re.Pattern[str], text: str, count: int, what: str) ->
 
 
 def document_findings(repo: Path, declared: int, retired: int) -> Iterator[Finding]:
-    """Each family claim in the roster document that the derived sets refute."""
     path = repo / ROSTER_DOC
     if not path.is_file():
         yield Finding(
@@ -299,11 +236,7 @@ def document_findings(repo: Path, declared: int, retired: int) -> Iterator[Findi
 
 
 def collect(repo: Path) -> tuple[list[Finding], dict[str, tuple[str, ...]], Census]:
-    """Every finding, with the two populations they were derived from.
 
-    Raises:
-        FamilyError: a population could not be measured.
-    """
     declared = declared_families(repo)
     census = logged_families(repo)
     retired = sum(1 for family in FROZEN if family.retired is not None)
@@ -315,14 +248,12 @@ def collect(repo: Path) -> tuple[list[Finding], dict[str, tuple[str, ...]], Cens
 
 
 def report(findings: Iterable[Finding]) -> None:
-    """Print each finding as the disagreement, then its repair."""
     for finding in findings:
         print(f"{LABEL}: {finding.key}: {finding.detail}", file=sys.stderr)
         print(f"{LABEL}:   {finding.remedy}", file=sys.stderr)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Entry point: refuse a family the frozen list does not carry."""
     parser = argparse.ArgumentParser(
         description="Check the harness marker families against the frozen list."
     )

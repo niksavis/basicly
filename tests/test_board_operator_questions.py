@@ -1,24 +1,3 @@
-"""The nine questions an operator must be able to answer from the board and nothing else.
-
-The owner set this test themselves, on 2026-09-05: *"if you as an agent look at the board,
-and only have access to the board, would you be able to see what is going on? what work is
-available, what work can start, is in progress? start work, stop work, inspect work (the
-info written in the record in a structured way)? descope work, scope work?"*
-
-They also said they had given that requirement **many times**. A requirement a person has to
-repeat is a requirement with no gate behind it, and this is the gate (basicly-udunil8).
-
-**Against the rendered page, never the model or the snapshot.** Both have passed while the
-page drew nothing: `basicly-3qstvw` shipped an `asks` region whose producer never wrote
-`actions`, and `basicly-yj8hpjr` is the standing record for that whole class. A question is
-answerable when the *bytes a reader receives* answer it.
-
-**A question nobody can answer yet is `xfail(strict=True)`, not `skip`.** The record asked
-for a skip naming the open record; strict xfail is the same naming plus a ratchet, because
-the day that record lands the gate turns red and somebody has to move the question into the
-answered set. A skip would stay quiet forever and the count would never shrink.
-"""
-
 from __future__ import annotations
 
 import re
@@ -33,20 +12,13 @@ from tests.test_board_record_page import page as record_page
 from tests.test_board_render import TEMPLATES
 from tests.test_board_wall import REPO_ROOT, document
 
-# The questions no region answers yet, each against the open record that will answer it.
-# Bound to the ledger below, so closing one of these without moving its question here is a
-# failure rather than a quiet inconsistency.
 UNANSWERED = {
     "when the work will be done": "basicly-hymq99",
 }
 
 
 def page() -> str:
-    """The whole board as the server sends it, with every action surface assembled.
 
-    A deferred unit is added because no shipped fixture carries one, and half of *descope*
-    is the way back. The asks are the fixture's own.
-    """
     doc: dict[str, Any] = document("wall-v1.json")
     now = datetime.now(UTC)
     doc["generated_at"] = now.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -72,19 +44,16 @@ def page() -> str:
 
 
 def test_1_what_work_is_available() -> None:
-    """A ranked list of records a reader can name, not a total."""
     drawn = page()
     assert "next up" in drawn.lower()
     assert re.search(r'<td class="id clip">.*basicly-[\w.]+.*</td>', drawn), "no record is named"
 
 
 def test_2_what_can_start_now() -> None:
-    """The set with nothing behind it, which is the difference between a backlog and a queue."""
     assert "needs nothing" in page(), "the queue does not separate ready from blocked"
 
 
 def test_3_what_is_in_progress_and_who_holds_it() -> None:
-    """A count with no member named is a count nobody can act on (basicly-5jkxqk)."""
     drawn = page()
     assert "running now" in drawn.lower()
     assert "branch" in drawn, "a running lane names no branch"
@@ -92,20 +61,13 @@ def test_3_what_is_in_progress_and_who_holds_it() -> None:
 
 
 def test_4_what_is_blocked_and_by_what() -> None:
-    """Named blockers and the depth of the chain, not one `BLOCKED 56`."""
     drawn = page()
     assert "unblocks most" in drawn, "no blocker is named"
     assert "waits on a chain" in drawn, "the queue reports no depth"
 
 
 def test_5_what_one_record_actually_says() -> None:
-    """The owner's *"the info written in the record in a structured way"*.
 
-    Two halves, and the second is the one that was missing: the wall has to offer a way in,
-    and the page behind it has to say more than the seven fields `units[]` carries.
-    basicly-62h3x9 built the `/record/<id>` surface; the wall's own href is the relative
-    form of that route, so it resolves beside a `--out` file too.
-    """
     drawn = page()
     found = re.search(r'href="record/(basicly-[\w.]+)\.html"', drawn)
     assert found, "no record can be opened from the board"
@@ -117,24 +79,17 @@ def test_5_what_one_record_actually_says() -> None:
 
 
 def test_6_how_to_start_a_record() -> None:
-    """Answered 2026-09-07. `record-start`, and the name matters: the probe read `lane-start`.
 
-    That spelling names no action, so this xfailed while it was unanswerable *and* would have
-    kept xfailing after the control shipped. A question's probe is only evidence where a
-    positive control shows it can pass - `record-park` beside it is that (basicly-fiow1sr).
-    """
     drawn = page()
     assert 'value="record-park"' in drawn, "no control at all here, so this proves nothing"
     assert 'value="record-start"' in drawn, "no ready row offers to start"
 
 
 def test_7_how_to_stop_a_lane() -> None:
-    """`lane-kill` worked for a month with no surface to press it on (basicly-x1h1dl5)."""
     assert 'value="lane-kill"' in page(), "a running lane cannot be stopped from the board"
 
 
 def test_8_how_to_descope_and_scope_a_record() -> None:
-    """The owner's *"descope work, scope work"*: deferred, and the way back."""
     drawn = page()
     assert 'value="record-park"' in drawn, "no ready row can be parked"
     assert 'value="record-resume"' in drawn, "a parked record cannot be brought back"
@@ -142,17 +97,11 @@ def test_8_how_to_descope_and_scope_a_record() -> None:
 
 @pytest.mark.xfail(strict=True, reason=f"open: {UNANSWERED['when the work will be done']}")
 def test_9_when_the_work_will_be_done() -> None:
-    """basicly-hymq99 draws a lane against its sized forecast and the runner timeout."""
     assert "forecast" in page(), "no lane says which bound will end it"
 
 
 def test_every_unanswered_question_still_names_an_open_record() -> None:
-    """The ratchet, and the reason the count can only shrink.
 
-    Without this the map above is prose: a record could close, its question stay listed, and
-    the board look worse than it is forever. Read through the engine rather than by grepping
-    the log - a regex over ordered markers has reported the wrong answer here before.
-    """
     for question, record in UNANSWERED.items():
         held = tracker.read_record(REPO_ROOT, record)
         assert held is not None, f"{record} is not in the ledger, so {question!r} names nothing"
@@ -163,7 +112,6 @@ def test_every_unanswered_question_still_names_an_open_record() -> None:
 
 
 def test_the_board_answers_eight_of_the_nine_questions_today() -> None:
-    """One number, so a reader of this file sees the score without counting tests."""
     asked = len([name for name in globals() if re.fullmatch(r"test_[1-9]_\w+", name)])
     assert asked == 9, "a question was added or lost without the count moving"
     assert len(UNANSWERED) == 1, (

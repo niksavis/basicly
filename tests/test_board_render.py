@@ -1,25 +1,3 @@
-"""The page: what it may reference, what it must say about its own age, and what it refuses.
-
-The claim under test is not "a template rendered". These are the properties the whole design
-turns on, and each is asserted against a *refutation*:
-
-* **Self-contained.** A page that fetches anything is blank on the wall the day the network is
-  down, so the absence of an external reference is asserted, not the presence of a stylesheet.
-* **The freshness sentence appears once.** The render this replaces printed it on all ten
-  panels, so the count is the assertion - one reading for the page, not one per region.
-* **The inventory is the schema's.** Asserted by *moving the schema* - a property added to a
-  copy must move the roster, and one removed must move it back - which is the only assertion a
-  second hand-written section list could not also satisfy.
-* **The layout is fixed and reflows once.** Fixed rows at 1920x1080 and a single column below
-  1280px, both read off the rendered CSS.
-* **The producer's gaps do not break it.** Two fixtures render: one with `units[].phase` and
-  `ready` populated, one with neither. The second is what the reference producer emitted when
-  this was written, so the layout had to be correct before the producer caught up.
-
-What a **picture** shows and this file cannot is legibility, and the two screenshots the unit
-was reviewed against are the record of that. These assertions are what stops a regression.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -46,14 +24,8 @@ SOURCES = (
 )
 # fmt: on
 
-# The eight fixed rows of the wall, in the order the grid declares them.
-# The rows every page draws. `inv` is deliberately not among them: the roster carries only
-# the sections that did NOT draw, so a page with nothing withheld or absent has no roster to
-# draw and its absence is the statement. `_ALWAYS` is what a layout change must not drop.
 REGIONS = ("head", "band", "loop", "flight", "ready", "foot", "tick")
 
-# One roster chip, and the section it names. Only the roster matches: the key beneath it wraps
-# its glyph onto its own line, so a count taken with this pattern is the section count.
 _ROSTER = re.compile(r'<span class="miss state-\w+">([a-z_]+) —')
 
 _DEFINED = re.compile(r"^\s*(--[a-z-]+):", re.MULTILINE)
@@ -62,7 +34,6 @@ _RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
 
 
 def render(name: str, *, root: Path = REPO_ROOT, after_s: float = 8.0) -> str:
-    """One fixture drawn as the page, against an injected instant."""
     parsed = document(name)
     verdict = board_schema.verdict(root, parsed)
     return board_render.page(
@@ -71,11 +42,10 @@ def render(name: str, *, root: Path = REPO_ROOT, after_s: float = 8.0) -> str:
 
 
 def _unchanged(schema: dict[str, Any]) -> None:
-    """The control mutation: the shipped schema, copied and not touched."""
+    pass
 
 
 def _root_with_schema(tmp_path: Path, mutate: Any) -> Path:
-    """A repo root carrying a *copy* of the shipped schema, with *mutate* applied to it."""
     schemas = tmp_path / catalog_source.SCHEMAS_DIR
     shutil.copytree(REPO_ROOT / catalog_source.SCHEMAS_DIR, schemas)
     path = schemas / board_schema.SCHEMA_FILE
@@ -86,7 +56,6 @@ def _root_with_schema(tmp_path: Path, mutate: Any) -> Path:
 
 
 def _literals(tree: ast.Module) -> list[str]:
-    """Every string constant in *tree* that is not a docstring."""
     docstrings = {
         node.body[0].value
         for node in ast.walk(tree)
@@ -103,15 +72,11 @@ def _literals(tree: ast.Module) -> list[str]:
 
 
 def test_the_page_references_no_external_origin() -> None:
-    """No fetch of any kind: not a script, not an image, and no stylesheet but the vendored one.
 
-    The rule and its reason live in `tests/board_offline.py`, which every page test shares.
-    """
     assert_offline(render("wall-v1.json"))
 
 
 def test_the_freshness_sentence_is_drawn_once_for_the_whole_page() -> None:
-    """The named defect: repeated verbatim on all ten panels. On the cell, not its words."""
     page = render("wall-v1.json")
     assert page.count('class="fresh') == 2
     assert page.count("2026-08-21T16:42:52Z") == 1
@@ -119,11 +84,7 @@ def test_the_freshness_sentence_is_drawn_once_for_the_whole_page() -> None:
 
 
 def test_the_alarm_colour_is_only_ever_the_watch_bands() -> None:
-    """`site/index.html` ships no red, so orange is the alarm - and the band is its only site.
 
-    Read off the rendered CSS rather than off the palette, because the rule is about *where*
-    the hue is used. Every selector mentioning `--orange` must be a band selector.
-    """
     page = render("wall-v1.json")
     styles = page.split("<style>", 1)[1].split("</style>", 1)[0]
     users = [
@@ -139,12 +100,10 @@ def test_the_alarm_colour_is_only_ever_the_watch_bands() -> None:
 
 
 def test_the_page_honours_prefers_reduced_motion() -> None:
-    """Inherited from `site/index.html`, which already honours it."""
     assert "@media (prefers-reduced-motion: reduce)" in render("wall-v1.json")
 
 
 def test_the_css_names_every_state_the_code_declares() -> None:
-    """Generated from `board_wall.STATES`, so the CSS cannot fall behind the model."""
     page = render("wall-v1.json")
     for state in board_render.board_wall.STATES:
         assert f".state-{state.key} {{" in page
@@ -153,27 +112,12 @@ def test_the_css_names_every_state_the_code_declares() -> None:
 
 
 def test_no_row_of_the_wall_is_a_hand_tuned_pixel_and_one_column_below_1280px() -> None:
-    """The defect this file's row assertion could not see, asserted as its own property.
 
-    The row list used to be six stated pixel heights, measured against the tallest content of
-    the day. That catches a row *losing* its height and cannot catch a row going one line short
-    of its content, which is what happened when the gate strip went from 12 checks to 36: the
-    footer clipped `health` and the loop row cut its caption to a partial line. So what is
-    asserted is that no row states a length at all - each is the height of what it holds, and
-    what it holds is bounded by the capacities :func:`test_no_region_draws_past_its_capacity`
-    covers.
-
-    **Every row list the page states**, not the first: a check reading only one would let
-    another state whatever it liked. There is one now - a single column means `flight` and
-    `ready` are always separate rows, so the two shapes the wall used to have collapsed into
-    one - and the assertion is written over all of them so a second shape cannot reappear
-    unchecked.
-    """
     page = render("dense-v1.json")
     stated = re.findall(r"grid-template-rows: ([^;]+);", page)
     assert stated, "the wall states no row list at all"
     for shape in stated:
-        if shape.strip() == "none":  # the single-column query states no rows at all
+        if shape.strip() == "none":
             continue
         assert shape.count("minmax(0, 1fr)") == 1, "no region absorbs the slack"
         assert re.search(r"[\d.]+(px|em|%)", shape) is None, f"a wall row is hand-tuned: {shape}"
@@ -185,20 +129,7 @@ def test_no_row_of_the_wall_is_a_hand_tuned_pixel_and_one_column_below_1280px() 
 
 
 def test_no_region_draws_past_its_capacity_at_more_checks_than_the_tree_has() -> None:
-    """The other half of the fix: a bounded row is only safe over bounded content.
 
-    The fixture carries 40 gate checks against the tree's 36, six agents, ten priority labels,
-    seven lanes and five events, so every capped population on the page is over its cap at once
-    - which is the arrangement the hand-tuned rows were never rendered against. Each cap has to
-    report what it dropped, because a row that is the height of its content will happily be the
-    height of *all* of it and push the region below off the screen.
-
-    The gate set is the one population with no marker left, and its absence is the assertion:
-    it no longer has a capacity to run past, because 40 checks and 13 draw the same one token.
-
-    What a picture shows and this cannot is that the result fits 1080px; the screenshots the
-    unit was reviewed against are that record.
-    """
     page = render("dense-v1.json")
     for marker in (
         "+2 more agents",
@@ -217,29 +148,16 @@ def test_no_region_draws_past_its_capacity_at_more_checks_than_the_tree_has() ->
     "fixture", ["wall-v1.json", "no-phase-v1.json", "minimal-v1.json", "dense-v1.json"]
 )
 def test_the_page_draws_whether_or_not_the_producer_populated_its_phases(fixture: str) -> None:
-    """Built against the schema, not against one producer's current output.
 
-    `units[].phase` and `ready` were null on every row when this was written, and `lanes` and
-    `session` were not emitted at all. The layout had to be right before the producer caught
-    up, so all three fixtures draw the same seven regions.
-    """
     page = render(fixture)
     for region in REGIONS:
         assert f'class="region {region}' in page, f"the {region} row is not drawn"
-    # Exactly the seven, plus the roster only where the fixture withholds or omits something.
-    # A page that draws an eighth row for any other reason has grown one unaccounted for.
     expected = len(REGIONS) + (1 if _ROSTER.search(page) else 0)
     assert page.count('<section class="region') == expected
 
 
 def test_the_running_row_gives_its_width_to_the_ready_list_when_no_lane_is_dispatched() -> None:
-    """The page's two shapes, and the state the wall is in most of the day is the second.
 
-    Asserted on the class the grid switches on *and* on the row count that follows it, because
-    those are the two halves that have to agree: a page that reflowed the grid and still drew
-    eight rows would leave the reclaimed height blank, and one that drew fourteen without
-    reflowing would put them in the 470px column.
-    """
     busy = render("dense-v1.json")
     assert 'class="wall"' in busy, "the wall reflowed while seven lanes were running"
     assert busy.count('class="card ') == board_regions.FLIGHT_SLOTS
@@ -254,29 +172,21 @@ def test_the_running_row_gives_its_width_to_the_ready_list_when_no_lane_is_dispa
 
 
 def test_a_wall_with_more_than_it_can_draw_says_how_much_more() -> None:
-    """No content is cut without a marker naming what was dropped."""
     page = render("wall-v1.json")
     for marker in ("+2 more waiting", "+6 more ready", "+4 more events"):
         assert marker in page
 
 
 def test_an_absent_section_says_the_producer_did_not_emit_it() -> None:
-    """A zero or an empty box claims a measurement. The minimal fixture is the whole case."""
     page = render("minimal-v1.json")
     assert board_render.board_wall.ABSENT_TEXT in page
     assert "ASKS NOT EMITTED" in page
-    # Every section this fixture omits, named in words. The roster carries only what did not
-    # draw, so the twelve-chip row is gone and the naming it existed for is not.
     for section in ("session", "lanes", "asks", "gates", "spend", "health", "backlog", "units"):
         assert f'state-absent">{section} —' in page, f"{section} unnamed"
 
 
 def test_the_roster_follows_the_schema_rather_than_the_layout(tmp_path: Path) -> None:
-    """Move the schema and the page must move with it, in both directions.
 
-    The control is the unmodified copy: a roster that did not depend on the schema at all would
-    agree with the first assertion and fail only these two.
-    """
     control = _root_with_schema(tmp_path / "control", _unchanged)
     assert len(_ROSTER.findall(render("minimal-v1.json", root=control))) == 13
 
@@ -296,14 +206,7 @@ def test_the_roster_follows_the_schema_rather_than_the_layout(tmp_path: Path) ->
 
 
 def test_the_renderer_imports_nothing_that_could_read_engine_state() -> None:
-    """The structural half is `.importlinter`'s forbidden contract; this is the narrow half.
 
-    A module reachable only through a function-level import would satisfy the tier stack and
-    still let a consumer read the ledger, so the import block itself is asserted on every one.
-
-    Through the AST: the regex form captured `(` once that import wrapped, and a probe that
-    stops matching is an assertion that stops holding.
-    """
     allowed = {*SOURCES, "board_fields", "catalog"}
     for name in SOURCES:
         source = (REPO_ROOT / "src" / "basicly" / f"{name}.py").read_text(encoding="utf-8")
@@ -314,7 +217,5 @@ def test_the_renderer_imports_nothing_that_could_read_engine_state() -> None:
             for alias in node.names
         }
         assert imported <= allowed, f"{name} imports {sorted(imported - allowed)}"
-        # Literals only. A module's own prose names the directories it refuses, so a text scan
-        # finds its docstring and reports the refusal as the violation.
         for literal in _literals(ast.parse(source)):
             assert ".basicly/" not in literal, f"{name} carries an engine path: {literal}"

@@ -1,11 +1,3 @@
-"""Tests for the recorded-usage reports (`basicly usage ...`).
-
-Run through the real CLI against a copied repo rather than by calling the report
-functions: every one of these reports exists to be read by a human at a terminal, and
-the claim under test is what that human sees — a table, a bucket named rather than
-hidden, an advice line that survives a narrow console's cell folding.
-"""
-
 from __future__ import annotations
 
 import json
@@ -18,9 +10,7 @@ from tests.test_cli import run_basicly
 
 
 def test_cli_usage_report_tables_counters_and_flags_unused_skills(work_repo: Path) -> None:
-    """Usage report joins the counters against the catalog's skills."""
     usage_dir = work_repo / ".basicly" / "usage"
-    # The fixture copies the live repo, which may carry real telemetry.
     shutil.rmtree(usage_dir, ignore_errors=True)
     usage_dir.mkdir(parents=True)
     (usage_dir / "tool-usage.json").write_text(
@@ -38,16 +28,8 @@ def test_cli_usage_report_tables_counters_and_flags_unused_skills(work_repo: Pat
 
 
 def test_cli_usage_report_separates_unexercised_from_unwanted(work_repo: Path) -> None:
-    """A zero in the Skill counter is two claims, and the report must not merge them.
 
-    "Culling candidates" was the old wording and it is the reason six process skills
-    sat unexercised: the counter records `Skill` tool calls, and a body the dispatch
-    brief injects is not one, so a delivered skill reads as a dead one (basicly-jcl4rm).
-    `tool-jq` is the positive control — nothing routes to it, so it must land on the
-    other side of the split rather than the whole list landing on one.
-    """
     usage_dir = work_repo / ".basicly" / "usage"
-    # The fixture copies the live repo, which may carry real telemetry.
     shutil.rmtree(usage_dir, ignore_errors=True)
     usage_dir.mkdir(parents=True)
     (usage_dir / "tool-usage.json").write_text(
@@ -67,15 +49,8 @@ def test_cli_usage_report_separates_unexercised_from_unwanted(work_repo: Path) -
 
 
 def test_cli_usage_report_names_the_bucket_the_unparsed_heads_go_to(work_repo: Path) -> None:
-    """A head that names no command is reported as a parser miss, not as a tool.
 
-    The table is read as culling evidence, so `PYEOF` sitting in it at 33
-    executions is a fabricated tool — and the bucket has to be named on the
-    surface, because a reader who cannot see where those heads went reads their
-    absence as the parser having nothing to report (basicly-3ymj).
-    """
     usage_dir = work_repo / ".basicly" / "usage"
-    # The fixture copies the live repo, which may carry real telemetry.
     shutil.rmtree(usage_dir, ignore_errors=True)
     usage_dir.mkdir(parents=True)
     (usage_dir / "tool-usage.json").write_text(
@@ -94,7 +69,6 @@ def test_cli_usage_report_names_the_bucket_the_unparsed_heads_go_to(work_repo: P
 
 
 def test_cli_usage_report_notes_missing_data(work_repo: Path) -> None:
-    """A repo without the hook's counter file gets a note, not an error."""
     shutil.rmtree(work_repo / ".basicly" / "usage", ignore_errors=True)
     result = run_basicly(work_repo, "usage", "report")
     assert result.returncode == 0, result.stderr
@@ -102,27 +76,11 @@ def test_cli_usage_report_notes_missing_data(work_repo: Path) -> None:
 
 
 def _run_records(work_repo: Path, records: dict) -> None:
-    """Seed the whole dispatch history the report reads, and nothing else.
 
-    Every half is replaced: `dispatch_history` unions the local log with the committed
-    tracker markers (D11), and the fixture copies this repo's real export, so leaving
-    one in place would mix live dispatches into the counts.
-
-    **The emptiness is asked for here rather than inherited.** It used to come for free:
-    the external binary kept its data in a gitignored SQLite database, so `work_repo` —
-    which copies tracked files by design — never carried it. Since `[tracker] mode`
-    became `owned` the ledger is tracked and arrives with the copy, handing these tests
-    every record this repository has; `usage forecast` then reported a real error ratio
-    over real beads where the test asserts none is computable. `tracker.all_comment_texts`
-    folds `events-*.jsonl` on this rung, so those are what a blank tracker means.
-    """
     usage_dir = work_repo / ".basicly" / "usage"
     shutil.rmtree(usage_dir, ignore_errors=True)
     usage_dir.mkdir(parents=True)
     (usage_dir / "run-records.json").write_text(json.dumps(records), encoding="utf-8")
-    # The redirect is why blanking the log alone is not enough: every reader follows it
-    # to the base checkout, so a fixture copied out of a harness worktree would read the
-    # live repo's ~90 dispatches however empty its own log is.
     ledger = work_repo / tracker_paths.LEDGER_DIR_NAME
     (ledger / tracker_paths.REDIRECT_NAME).unlink(missing_ok=True)
     for log in ledger.glob("events-*.jsonl"):
@@ -130,7 +88,6 @@ def _run_records(work_repo: Path, records: dict) -> None:
 
 
 def test_cli_usage_forecast_reports_the_ratio_per_paired_dispatch(work_repo: Path) -> None:
-    """The forecast error report, over a dispatch that carries both halves (jr0l.34)."""
     _run_records(
         work_repo,
         {
@@ -151,13 +108,10 @@ def test_cli_usage_forecast_reports_the_ratio_per_paired_dispatch(work_repo: Pat
     assert result.returncode == 0, result.stderr
     assert "b-1" in result.stdout and "4.00x" in result.stdout
     assert "Median actual/forecast" in result.stdout
-    # The ratio must never be presented as pure estimator error: the actual is total
-    # spend and the forecast is a working set, so the turn multiplier is in there too.
     assert "turn multiplier" in result.stdout
 
 
 def test_cli_usage_forecast_explains_an_empty_report(work_repo: Path) -> None:
-    """An empty table alone would read as a healthy forecast; the counts say otherwise."""
     _run_records(
         work_repo,
         {
@@ -178,7 +132,6 @@ def test_cli_usage_forecast_explains_an_empty_report(work_repo: Path) -> None:
 
 
 def _lane_records(count: int) -> dict:
-    """*count* executed lane dispatches on one bead, each with a distinct duration."""
     return {
         "b-1": [
             {
@@ -194,12 +147,7 @@ def _lane_records(count: int) -> dict:
 
 
 def _advice(stdout: str, key: str) -> str:
-    """The unfolded advice line for *key*.
 
-    Asserted on rather than the table above it: rich folds a wide table's cells across
-    lines on a narrow terminal, so the table is scannable and the advice line is the
-    one a consumer can grep whole.
-    """
     for line in stdout.splitlines():
         if line.strip().startswith(f"{key}: "):
             return line
@@ -207,14 +155,10 @@ def _advice(stdout: str, key: str) -> str:
 
 
 def test_cli_usage_tuning_advises_each_governed_parameter(work_repo: Path) -> None:
-    """The report names the value in force, the sample size, and measured-or-seeded."""
     _run_records(work_repo, _lane_records(10))
     result = run_basicly(work_repo, "usage", "tuning")
     assert result.returncode == 0, result.stderr
-    # 10 samples, the longest run is 1900s, and the backstop doubles it.
     advice = _advice(result.stdout, "runner.runner_timeout")
-    # Read the value in force rather than pinning it: it is deliberately tunable and was
-    # raised 3600 -> 7200 on 2026-09-01, which turned a retune into a failure here.
     in_force = int(load_runner_config(work_repo).runner_timeout)
     assert f"{in_force} s in force" in advice
     assert "advised 3800 s from 10 sample(s) (measured)" in advice
@@ -222,7 +166,6 @@ def test_cli_usage_tuning_advises_each_governed_parameter(work_repo: Path) -> No
 
 
 def test_cli_usage_tuning_labels_a_thin_sample_as_seeded(work_repo: Path) -> None:
-    """Under the calibration minimum the declared prior stands, and says what it displaces."""
     _run_records(work_repo, _lane_records(3))
     result = run_basicly(work_repo, "usage", "tuning")
     assert result.returncode == 0, result.stderr
@@ -230,14 +173,10 @@ def test_cli_usage_tuning_labels_a_thin_sample_as_seeded(work_repo: Path) -> Non
         result.stdout, "runner.runner_timeout"
     )
     assert "it would displace the value in force" in result.stdout
-    # The three durations are 1000s, 1100s and 1200s, so the backstop statistic would
-    # have produced 2400. It must not appear anywhere: a number fitted to three samples
-    # and merely labelled "seeded" is still read as a measurement.
     assert "2400" not in result.stdout
 
 
 def test_cli_usage_tuning_lists_a_parameter_nothing_measures(work_repo: Path) -> None:
-    """A bound with no recorded signal prints with zero samples rather than vanishing."""
     _run_records(work_repo, _lane_records(10))
     result = run_basicly(work_repo, "usage", "tuning")
     assert result.returncode == 0, result.stderr
@@ -248,7 +187,6 @@ def test_cli_usage_tuning_lists_a_parameter_nothing_measures(work_repo: Path) ->
 
 
 def test_cli_usage_tuning_changes_no_configuration(work_repo: Path) -> None:
-    """Advisory, not self-modifying: every config file survives the run byte-identical."""
     _run_records(work_repo, _lane_records(10))
     configs = ["basicly.toml", "pyproject.toml", ".importlinter"]
     before = {name: (work_repo / name).read_bytes() for name in configs}

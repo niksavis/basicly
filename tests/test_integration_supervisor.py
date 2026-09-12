@@ -1,25 +1,3 @@
-"""A supervisor pass over two real lanes: what lands, in what order, and why.
-
-Split out of ``test_integration_loop.py``. A pass fans out over lanes that share
-one tracker and one base branch, so the properties here are the ones only a real
-pass can show: two lanes land in dependency order rather than in the order their
-outcomes arrived; a landing invents no coupling out of the tracker files every
-lane touches; and when one lane's landing bounces the other, the coupling is
-attributed to the same pair whichever of the two got there first.
-
-The couplings a pass *discovers* — cancellation, and teaching the graph — are next
-door in ``test_integration_supervisor_coupling.py``.
-
-The recipe is ``test_integration_loop.py``'s: a fixture repository with real
-git history and a real ``br`` workspace, driven through the engine with nothing
-between it and ``git``/``br``. The coding agent is the one substitution, and it is
-a real configuration rather than a stub — ``[runner] default = "manual"`` blocks
-for its driver and the test then plays the agent by committing on the harness
-branch. ``worktree.install_worktree_hooks`` is stubbed for the same reason it is
-there: provisioning a repo with ``pre-commit`` is a third-party tool, not the
-engine under test.
-"""
-
 from __future__ import annotations
 
 import subprocess
@@ -32,9 +10,6 @@ from basicly import loop, loop_state, merge, policy, runner, supervise, tracker,
 from basicly.config import load_policy_config
 from tests import flipped_tracker
 
-# A verify check the test can make fail on demand, so a red landing is a real
-# subprocess verdict rather than a patched return value. Uses the running
-# interpreter (as_posix so a Windows path survives TOML) and nothing else.
 SENTINEL = "BROKEN"
 _PROBE = f"import pathlib,sys; sys.exit(1 if pathlib.Path({SENTINEL!r}).exists() else 0)"
 
@@ -73,28 +48,17 @@ def _git(cwd: Path, *args: str) -> str:
     return proc.stdout
 
 
-# The fixture's root record. Every bead a test creates is a child of it, because a mint
-# with no parent needs a declared `[tracker] prefix` and the fixture's config is what the
-# test is *not* about (`owned_write.create`).
 _ROOT = "fx-1"
 
 
 def _seed_tracker(repo: Path) -> None:
-    """Give *repo* a ledger holding the root every created bead hangs off.
 
-    The kit is copied in rather than installed, because these tests run the loop and not
-    the installer; the root is opened through the kit for the same reason.
-    """
     flipped_tracker.flipped_repo(repo)
     flipped_tracker.seed(repo, _ROOT, title="the fixture root", issue_type="epic")
 
 
 def _tracker(cwd: Path, *args: str) -> None:
-    """One tracker write through the engine seam, failing loudly.
 
-    The fixture has no tracker to fake: these tests exercise the loop against a real
-    ledger, so a write that did not land has to stop the test rather than be absorbed.
-    """
     tracker.write(cwd, list(args))
 
 
@@ -105,12 +69,7 @@ def _commit(cwd: Path, path: str, body: str, message: str) -> None:
 
 
 def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: str = _ROOT) -> str:
-    """Create one bead carrying acceptance criteria, so the DoR gate passes.
 
-    *parent* is an argument rather than always the fixture root because the store mints a
-    child id *under its parent*: a test that then adds its own ``parent-child`` edge would
-    give the record two parents, and the fan-out reads the wrong one.
-    """
     return tracker.create_record(
         repo,
         [
@@ -133,7 +92,6 @@ def _show(repo: Path, issue_id: str) -> dict:
 
 
 def _seed_repo(tmp_path: Path, runner_config: str) -> Path:
-    """A consumer repo with real git history, a real br workspace, and a config."""
     repo = tmp_path / "consumer"
     repo.mkdir()
     _git(repo, "init", "-b", "main")
@@ -153,15 +111,11 @@ def _seed_repo(tmp_path: Path, runner_config: str) -> Path:
 
 @pytest.fixture
 def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """The fixture repo with the manual handoff runner: the test plays the agent."""
-    # pre-commit installing the bundled hook manifest into a repo that has no
-    # .pre-commit-config.yaml, over the network. Not the engine under test.
     monkeypatch.setattr(worktree, "install_worktree_hooks", lambda _wt: "hooks: stubbed")
     return _seed_repo(tmp_path, _MANUAL_RUNNER_CONFIG)
 
 
 def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
-    """Drive intake -> classify -> a provisioned worktree, approving the checkpoint."""
     intake = loop.advance(repo, issue_id, inputs=loop.Inputs(work_type="task"))
     assert intake.checkpoint == "classify", intake.detail
     policy.approve_checkpoint(repo, issue_id, "classify")
@@ -169,13 +123,7 @@ def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
 
 
 def _green(issue_id: str) -> supervise.LaneOutcome:
-    """The outcome a headless adapter produces when its dispatch succeeds.
 
-    The one thing this module synthesizes rather than performs: the fixture's
-    runner is the ``manual`` handoff, which by contract hands off instead of
-    writing code, so no real dispatch is ever green. Everything downstream of
-    it — the landing order, the merges, the gates, the tracker writes — is real.
-    """
     return supervise.LaneOutcome(
         issue_id=issue_id,
         runner_name="fixture",
@@ -188,19 +136,11 @@ def _green(issue_id: str) -> supervise.LaneOutcome:
 
 
 def test_a_supervisor_pass_lands_two_lanes_in_dependency_order(harness_repo: Path) -> None:
-    """Two green lanes land in ``br``'s dependency order, not in arrival order.
 
-    Pins the basicly-kjc5.10 shape: ``merge.landing_order`` reads dependencies
-    out of ``br show --json``, which spells them ``id``/``dependency_type``
-    while the ``dep add`` echo spells them ``depends_on_id``/``type``. Reading
-    the wrong shape leaves the order silently empty, which no stubbed tracker
-    can disagree with.
-    """
     repo = harness_repo
     root = _create_bead(repo, "the session root", issue_type="epic")
     first = _create_bead(repo, "the earlier lane", parent=root)
     second = _create_bead(repo, "the later lane", parent=root)
-    # The later lane genuinely depends on the earlier one.
     _tracker(repo, "dep", "add", second, first, "-t", "blocks")
 
     trees = {}
@@ -217,12 +157,10 @@ def test_a_supervisor_pass_lands_two_lanes_in_dependency_order(harness_repo: Pat
     assert {cid for cid, _ in session_state.children} == {first, second}
     assert {lane.issue_id for lane in session_state.adopted} == {first, second}
 
-    # Hand them over in the *wrong* order; the dependency edge must reorder them.
     routed = supervise.route_outcomes(repo, session_state, (_green(second), _green(first)))
     assert [r.issue_id for r in routed] == [first, second]
     assert [r.route for r in routed] == ["merged", "merged"], [r.detail for r in routed]
 
-    # Both landings are real merges in the base checkout, in that order.
     assert (repo / "first.txt").exists()
     assert (repo / "second.txt").exists()
     subjects = _git(repo, "log", "--format=%s", "--first-parent", "main").splitlines()
@@ -234,12 +172,7 @@ def test_a_supervisor_pass_lands_two_lanes_in_dependency_order(harness_repo: Pat
 
 
 def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo: Path) -> None:
-    """Every landing rewrites ``.beads/**``; that must not read as a scope collision.
 
-    Pins the second basicly-kjc5.10 shape: ``lstrip("./")`` ate the leading dot
-    of ``.beads/``, so the engine-path filter matched nothing and each landing
-    attributed a false ``blocks`` edge to the lane that landed before it.
-    """
     repo = harness_repo
     root = _create_bead(repo, "the coupling root", issue_type="epic")
     first = _create_bead(repo, "lane alpha", parent=root)
@@ -251,7 +184,6 @@ def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo
         assert state.worktree is not None
         session = worktree.load_session(state.worktree.name, repo)
         assert session is not None
-        # Disjoint files: the only path both landings touch is the tracker's.
         _commit(
             Path(session.worktree_path),
             f"{name}.txt",
@@ -263,7 +195,6 @@ def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo
     routed = supervise.route_outcomes(repo, session_state, (_green(first), _green(second)))
     assert [r.route for r in routed] == ["merged", "merged"], [r.detail for r in routed]
 
-    # No lane acquired a dependency it did not declare.
     for child in (first, second):
         blocking = {
             str(dep["id"])
@@ -276,14 +207,7 @@ def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo
 def test_a_pass_attributes_the_coupling_the_same_way_whichever_lane_bounced(
     harness_repo: Path,
 ) -> None:
-    """The coupling edge is a function of the declared scopes, not of landing order.
 
-    Pins basicly-kjc5.32 on the two things no stubbed tracker can decide: the
-    ``## Scope`` section really has to come back out of a real bead, and ``br``
-    really has to hold the resulting edge in one direction. So the same pass is
-    attributed twice with the two lanes' roles swapped — as reversing their
-    completion order does — and both must write the identical edge.
-    """
     repo = harness_repo
     root = _create_bead(repo, "the attribution root", issue_type="epic")
     alpha = _create_bead(repo, "lane declaring the shared file", parent=root)
@@ -301,14 +225,11 @@ def test_a_pass_attributes_the_coupling_the_same_way_whichever_lane_bounced(
         )
 
     conflicts = ("src/shared.py",)
-    # alpha bounced and beta landed, then the reverse — the same collision seen
-    # from each side of the pass.
     forward = merge.record_pass_couplings(repo, [(alpha, conflicts)], [beta])
     backward = merge.record_pass_couplings(repo, [(beta, conflicts)], [alpha])
 
     assert forward == {alpha: (beta,)}, "the declared scope did not come back out of br"
     assert backward == {beta: (alpha,)}
-    # One edge in the tracker, in the canonical direction, not two opposed ones.
     lower, higher = sorted((alpha, beta))
     for bead, expected in ((lower, {higher: merge.COUPLING_DEP_TYPE}), (higher, {})):
         coupled = {
@@ -319,31 +240,11 @@ def test_a_pass_attributes_the_coupling_the_same_way_whichever_lane_bounced(
         assert coupled == expected
 
 
-# --- Seeding a decomposed root under a covering grant (basicly-kjc5.62) --------
-
-
 @pytest.mark.parametrize("granted", [True, False], ids=["covered", "uncovered"])
 def test_a_decomposed_root_seeds_a_lane_only_under_a_covering_grant(
     harness_repo: Path, granted: bool
 ) -> None:
-    """Supervise seeded nothing from a root whose children already existed.
 
-    A root with children derives ``decompose`` (``loop_state.derive_phase``), and its
-    decompose checkpoint is what gates the fan-out — so ``loop supervise <epic>``
-    answered ``seed-blocked ... decompose checkpoint awaiting human approval`` and
-    exited non-zero, under a live L3 grant that ``policy.GRANT_COVERAGE`` says
-    delegates exactly that checkpoint. The operator then hand-drove ``loop run`` once
-    per child, on the same root and the same grant, and every one delegated.
-
-    Granted at **L1** rather than at the L3 of the incident, deliberately: L1 is the
-    lowest level ``GRANT_COVERAGE`` gives ``decompose``, so a fix that read the level
-    rather than the coverage table would pass at L3 and fail here.
-
-    The uncovered leg is the control, and it is what keeps the fix from being a
-    widening: with no grant on the root, nothing may be seeded, and the refusal has
-    to name the checkpoint and the level that would cover it rather than asking for a
-    human in the abstract.
-    """
     epic = _create_bead(harness_repo, "the decomposed epic", issue_type="epic")
     child = _create_bead(harness_repo, "the ready child", parent=epic)
     if granted:

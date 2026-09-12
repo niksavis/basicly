@@ -13,9 +13,3 @@
 # does not move.
 [ratchet.noqa_debt.frozen]
 E402 = 2
-
-# `.scripts/ratchet.py` states the mechanism the three gates share, which is why it measures
-# 58.4% prose against 1264 tokens of code. The waiver is in the file with its reason; this is
-# the count moving in the same diff, which is what makes it reviewable.
-[ratchet.comment_density]
-count_delta = 1

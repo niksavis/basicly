@@ -47,14 +47,5 @@ rebaseline_reason = "the withdrawal path, the two checks that bind it and their 
 ".basicly/core/kit/tracker/events.py" = 2838
 ".basicly/core/kit/tracker/fsck.py" = 1430
 "tests/test_kit_tracker_events.py" = 2843
-
-# `fsck.py` fell under the 50% cap, so its entry is retired rather than left licensing regrowth
-# back to 51.5. The delta lands the composed baseline on zero, which `dropin.compose` drops.
-[ratchet.comment_density.frozen]
-".basicly/core/kit/tracker/fsck.py" = -51.5
-
-# `withdraw` takes the six injected seams `append` takes plus which event and why. The
-# rejected alternative was a parameter object, which would put a second shape between a
-# caller and the one function it hands its clock and redactor to.
 [ratchet.noqa_debt.frozen]
 PLR0913 = 1

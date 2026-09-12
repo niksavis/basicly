@@ -1,5 +1,3 @@
-"""Tests for install provenance state (.basicly/state/install.json)."""
-
 from __future__ import annotations
 
 import json
@@ -26,7 +24,6 @@ def _make_core(root: Path) -> Path:
 
 
 def test_write_and_read_round_trip(tmp_path: Path) -> None:
-    """Write then read returns the same version, timestamp, and hash map."""
     core = _make_core(tmp_path)
     state_path = tmp_path / "state" / "install.json"
 
@@ -41,12 +38,10 @@ def test_write_and_read_round_trip(tmp_path: Path) -> None:
 
 
 def test_read_missing_state_returns_none(tmp_path: Path) -> None:
-    """An absent state file reads as None (pre-provenance install)."""
     assert read_install_state(tmp_path / "install.json") is None
 
 
 def test_read_corrupt_state_raises(tmp_path: Path) -> None:
-    """Unparseable JSON raises instead of being swallowed."""
     state_path = tmp_path / "install.json"
     state_path.write_text("{not json", encoding="utf-8")
     with pytest.raises(ValidationError):
@@ -54,7 +49,6 @@ def test_read_corrupt_state_raises(tmp_path: Path) -> None:
 
 
 def test_read_state_with_missing_keys_raises(tmp_path: Path) -> None:
-    """A state file missing required keys raises."""
     state_path = tmp_path / "install.json"
     state_path.write_text(json.dumps({"core": {}}), encoding="utf-8")
     with pytest.raises(ValidationError):
@@ -62,7 +56,6 @@ def test_read_state_with_missing_keys_raises(tmp_path: Path) -> None:
 
 
 def test_core_drift_reports_modified_and_removed(tmp_path: Path) -> None:
-    """Drift lists hand-edited and deleted core files with reasons."""
     core = _make_core(tmp_path)
     written = write_install_state(tmp_path / "state" / "install.json", "1.2.3", snapshot_core(core))
 
@@ -75,14 +68,12 @@ def test_core_drift_reports_modified_and_removed(tmp_path: Path) -> None:
 
 
 def test_core_drift_empty_when_untouched(tmp_path: Path) -> None:
-    """An untouched core reports no drift."""
     core = _make_core(tmp_path)
     written = write_install_state(tmp_path / "install.json", "1.2.3", snapshot_core(core))
     assert core_drift(written, core) == []
 
 
 def test_snapshot_skips_bytecode_caches(tmp_path: Path) -> None:
-    """The snapshot ignores __pycache__/pyc like the materializer does."""
     core = _make_core(tmp_path)
     (core / "hooks" / "__pycache__").mkdir()
     (core / "hooks" / "__pycache__" / "x.pyc").write_bytes(b"\x00")
@@ -90,7 +81,6 @@ def test_snapshot_skips_bytecode_caches(tmp_path: Path) -> None:
 
 
 def test_read_install_state_rejects_a_newer_schema(tmp_path: Path) -> None:
-    """A state file from a newer basicly fails with an upgrade hint."""
     state_path = tmp_path / "install.json"
     state_path.write_text(
         json.dumps({

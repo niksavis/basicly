@@ -1,12 +1,3 @@
-"""Tests for the replay half of a landing (basicly-5vu4, basicly-lyro).
-
-The integrity guards are exercised against a **real git repository**, deliberately. A
-stubbed git cannot skip a merge commit, so a fake can only assert that we called
-``rev-list --merges`` — never that the thing we are guarding against happens. Each guard
-therefore ships a positive control that reproduces the loss with the old code path, so a
-guard that stopped discriminating fails a test instead of passing silently.
-"""
-
 from __future__ import annotations
 
 import subprocess  # nosec B404
@@ -25,14 +16,6 @@ class _Proc:
 
 
 class _FakeGit:
-    """Routes git(...) calls to canned results, recording them.
-
-    Keys are matched most-specific first: the whole argument list joined by spaces, then
-    the subcommand alone. An unstubbed subcommand raises naming itself, because a
-    blanket success is a *positive* answer to "did the rebase work?" and would make
-    every assertion here vacuous (basicly-tcmy.22).
-    """
-
     def __init__(self, responses: dict[str, _Proc]) -> None:
         self.responses = responses
         self.calls: list[list[str]] = []
@@ -45,8 +28,6 @@ class _FakeGit:
         raise AssertionError(f"unstubbed git subcommand {args[0]!r}: git {' '.join(args)}")
 
 
-# A replay that reaches the rebase with nothing for either guard to report: no merge
-# commit on the branch, and identical trees either side.
 _CLEAN_PROBES = {
     "rev-list --merges main..harness/feat": _Proc(0, ""),
     "rev-parse harness/feat": _Proc(0, "abc123"),
@@ -57,7 +38,6 @@ _REBASE_RESUMED = "-c core.editor=true rebase --continue"
 
 
 def _fake(monkeypatch: pytest.MonkeyPatch, **responses: _Proc) -> _FakeGit:
-    """Patch ``rebase.git`` with a fake carrying the clean probes plus *responses*."""
     fake = _FakeGit({**_CLEAN_PROBES, **responses})
     monkeypatch.setattr(rebase, "git", fake)
     return fake
@@ -68,23 +48,15 @@ def _replay(repo_root: Path) -> rebase.ReplayOutcome:
 
 
 def _declare_generated(repo_root: Path, *paths: str, command: str = '["true"]') -> None:
-    """Write a `[worktree]` config declaring *paths* rebuildable by *command*."""
     entries = "".join(f'"{path}" = {command}\n' for path in paths)
     (repo_root / "basicly.toml").write_text(
         f"[worktree.regenerate_commands]\n{entries}", encoding="utf-8"
     )
 
 
-# --- A generated artifact is rebuilt, not bounced (basicly-lyro) --------------
-#
-# The bound is what keeps the queue's "never resolve a conflict here" rule intact for
-# source, so every test below is really a test of the bound.
-
-
 def test_a_conflict_confined_to_declared_generated_paths_is_rebuilt_and_continues(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The replay succeeds, and nothing about it is a bounce: no abort, and it says so."""
     _declare_generated(tmp_path, ".basicly/generated-manifest.json")
     fake = _fake(
         monkeypatch,
@@ -101,15 +73,12 @@ def test_a_conflict_confined_to_declared_generated_paths_is_rebuilt_and_continue
 
     assert outcome.ok is True
     assert ["rebase", "--abort"] not in fake.calls
-    # The one place the queue resolves rather than bouncing; a silent resolution is
-    # indistinguishable from a rebase that never conflicted.
     assert outcome.regenerated == (".basicly/generated-manifest.json",)
 
 
 def test_one_undeclared_path_in_the_set_bounces_the_whole_rebase_untouched(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A genuine source conflict is still the lane's, even when a generated file rode along."""
     _declare_generated(tmp_path, ".basicly/generated-manifest.json")
     conflicts = ".basicly/generated-manifest.json\nsrc/shared.py\n"
     fake = _fake(monkeypatch, **{**_REBASE_STOPPED, "diff": _Proc(0, conflicts)})
@@ -127,7 +96,6 @@ def test_one_undeclared_path_in_the_set_bounces_the_whole_rebase_untouched(
 def test_a_conflict_on_a_generated_path_bounces_while_nothing_is_declared(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Rebuilding is opt-in: an undeclared repo keeps the plain bounce it has today."""
     fake = _fake(
         monkeypatch,
         **{**_REBASE_STOPPED, "diff": _Proc(0, ".basicly/generated-manifest.json\n")},
@@ -145,7 +113,6 @@ def test_a_conflict_on_a_generated_path_bounces_while_nothing_is_declared(
 def test_a_conflict_marker_the_rebuild_left_bounces_rather_than_being_staged(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The conflict was in the prose, not the block the rebuild owns."""
     _declare_generated(tmp_path, "plan.md")
     (tmp_path / "plan.md").write_text("<<<<<<< HEAD\n", encoding="utf-8")
     stubs = {"diff": _Proc(0, "plan.md\n"), "add": _Proc(0), _REBASE_RESUMED: _Proc(0)}
@@ -161,7 +128,6 @@ def test_a_conflict_marker_the_rebuild_left_bounces_rather_than_being_staged(
 def test_a_failing_rebuild_bounces_rather_than_landing_a_half_resolved_rebase(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A regenerate command that fails leaves the conflict unresolved, so the lane keeps it."""
     _declare_generated(tmp_path, ".basicly/generated-manifest.json")
     fake = _fake(
         monkeypatch,
@@ -178,7 +144,6 @@ def test_a_failing_rebuild_bounces_rather_than_landing_a_half_resolved_rebase(
 def test_a_rebase_that_will_not_finish_is_aborted_rather_than_driven_forever(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A `--continue` that never completes is bounded, not looped on until the pass dies."""
     _declare_generated(tmp_path, ".basicly/generated-manifest.json")
     fake = _fake(
         monkeypatch,
@@ -198,9 +163,6 @@ def test_a_rebase_that_will_not_finish_is_aborted_rather_than_driven_forever(
     assert len(resumes) == rebase.MAX_REGENERATED_REBASE_STEPS
 
 
-# --- Replay integrity, against real git (basicly-5vu4) ------------------------
-
-
 def _git(cwd: Path, *args: str) -> str:
     proc = subprocess.run(  # nosec B603
         ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
@@ -210,18 +172,7 @@ def _git(cwd: Path, *args: str) -> str:
 
 @pytest.fixture
 def lane_with_a_merge(tmp_path: Path) -> Path:
-    """A repo whose branch carries content held only by a merge commit.
 
-    The shape both 2026-08-08 incidents had, and the reason the loss was silent: the
-    lane's *own* commits replay onto base cleanly, so the rebase succeeds and exits 0
-    — everything at risk lives in the merge commit, which the rebase drops. A lane whose
-    own commits conflict does not reproduce this at all; it just bounces, which is the
-    behaviour that already worked.
-
-    ``git merge --no-commit`` is what puts content into the merge itself: the resolution
-    written into ``shared.txt`` exists on neither parent, and ``only-in-the-merge.txt``
-    exists nowhere else at all.
-    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -257,12 +208,7 @@ def lane_with_a_merge(tmp_path: Path) -> Path:
 
 
 def test_a_plain_rebase_really_does_discard_the_resolution(lane_with_a_merge: Path) -> None:
-    """Positive control: without the guard the loss reproduces, and git reports success.
 
-    This is the assertion the whole module exists for. If git ever stops skipping merge
-    commits, this fails and the guards below become dead weight that should be deleted —
-    which is the only way anyone would find out.
-    """
     repo = lane_with_a_merge
     before = _git(repo, "rev-parse", "harness/feat")
     proc = subprocess.run(  # nosec B603
@@ -281,7 +227,6 @@ def test_a_plain_rebase_really_does_discard_the_resolution(lane_with_a_merge: Pa
 
 
 def test_merge_commits_names_the_commit_a_rebase_would_skip(lane_with_a_merge: Path) -> None:
-    """The probe finds the merge, and finds nothing on a branch that has none."""
     repo = lane_with_a_merge
     carried = rebase.merge_commits(repo, "main", "harness/feat")
 
@@ -293,7 +238,6 @@ def test_merge_commits_names_the_commit_a_rebase_would_skip(lane_with_a_merge: P
 def test_replay_refuses_the_branch_and_leaves_the_resolution_in_the_tree(
     lane_with_a_merge: Path,
 ) -> None:
-    """Refused before the rebase runs, so nothing is destroyed — asserted over the tree."""
     repo = lane_with_a_merge
     before = _git(repo, "rev-parse", "harness/feat")
 
@@ -309,7 +253,6 @@ def test_replay_refuses_the_branch_and_leaves_the_resolution_in_the_tree(
 
 
 def test_dropped_paths_names_what_a_replay_lost(lane_with_a_merge: Path) -> None:
-    """The backstop, run over the tree a plain rebase actually produced."""
     repo = lane_with_a_merge
     before = _git(repo, "rev-parse", "harness/feat")
     subprocess.run(  # nosec B603
@@ -320,11 +263,7 @@ def test_dropped_paths_names_what_a_replay_lost(lane_with_a_merge: Path) -> None
 
 
 def test_dropped_paths_ignores_a_file_base_deleted(tmp_path: Path) -> None:
-    """The one legitimate absence, and the subtraction that has to exist for it.
 
-    Without it every landing onto a base that deleted a file reports a false drop, which
-    would refuse honest lanes — a guard that cries wolf gets switched off.
-    """
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -349,7 +288,6 @@ def test_dropped_paths_ignores_a_file_base_deleted(tmp_path: Path) -> None:
         ["git", "rebase", "main", "harness/feat"], cwd=repo, check=False, capture_output=True
     )
 
-    # doomed.txt is genuinely gone from the replayed tree, and base is why.
     assert "doomed.txt" not in _git(repo, "ls-tree", "-r", "--name-only", "HEAD")
     assert rebase.dropped_paths(repo, before, "main") == ()
 
@@ -357,12 +295,7 @@ def test_dropped_paths_ignores_a_file_base_deleted(tmp_path: Path) -> None:
 def test_replay_restores_the_branch_when_the_backstop_fires(
     monkeypatch: pytest.MonkeyPatch, lane_with_a_merge: Path
 ) -> None:
-    """The second guard, reached by blinding the first — a cause nobody enumerated.
 
-    Injecting an empty merge-commit probe is how a *future* skip-shaped defect is
-    modelled: the replay runs, loses content, and the backstop has to both notice and
-    put the branch back.
-    """
     repo = lane_with_a_merge
     monkeypatch.setattr(rebase, "merge_commits", lambda *_a, **_k: ())
     before = _git(repo, "rev-parse", "harness/feat")
@@ -377,7 +310,6 @@ def test_replay_restores_the_branch_when_the_backstop_fires(
 
 
 def test_a_linear_branch_replays_with_nothing_to_report(tmp_path: Path) -> None:
-    """The ordinary landing still goes through, or the guards would refuse every lane."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")

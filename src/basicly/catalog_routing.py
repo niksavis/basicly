@@ -1,30 +1,3 @@
-"""Tier-2 routing evals — deterministic lexical ranking over entry descriptions.
-
-Where ``catalog_lint`` guards the source contract (Tier 1: is the entry
-well-formed?) this module answers Tier 2: *does the entry fire when it should,
-and only then?* It is pure
-computation over strings — the caller reads the catalog off disk and hands the
-descriptions and the eval cases in, so nothing here touches the filesystem and
-the whole tier is testable from a dict.
-
-Three properties are load-bearing, and one temptation is refused:
-
-* **Deterministic.** Same corpus in, same ranking out, on every host and every
-  run. Ties break on the slug, never on dict order, so a rank is a fact about
-  the catalog rather than about the insertion order of a mapping.
-* **Pure Python, no new runtime dependency.** A stemmer and a TF-IDF ranker are
-  a small amount of code we can own, and owning them is why this gate is free
-  and always runs.
-* **No embeddings.** They would make Tier 2 semantic, and therefore better at
-  judging relevance — and also non-deterministic, network-dependent and
-  unownable. Semantics are Tier 3's job.
-
-The vocabulary half — which words two texts are allowed to be compared on — is
-:mod:`basicly.stemmer`. The boundary is *scoring* against *conflation*: nothing
-here decides that "branches" and "branch" are the same word, and nothing there
-knows a corpus exists.
-"""
-
 from __future__ import annotations
 
 import math
@@ -34,13 +7,9 @@ from dataclasses import dataclass
 
 from .stemmer import tokenize
 
-# Collision ceilings (§3.1 assertion 3): a pair at or above the error ceiling is
-# a lint violation, a pair at or above the warning ceiling is an advisory.
 COLLISION_ERROR = 0.75
 COLLISION_WARN = 0.50
 
-# Default top-k for a positive routing assertion; an entry's signature ask
-# declares `top_k: 1` in its own case file.
 DEFAULT_TOP_K = 3
 
 
@@ -52,7 +21,6 @@ def _l2_normalize(vector: dict[str, float]) -> dict[str, float]:
 
 
 def _cosine(left: Mapping[str, float], right: Mapping[str, float]) -> float:
-    """Dot product of two already-L2-normalized sparse vectors."""
     if len(right) < len(left):
         left, right = right, left
     return sum(weight * right.get(term, 0.0) for term, weight in left.items())
@@ -60,25 +28,13 @@ def _cosine(left: Mapping[str, float], right: Mapping[str, float]) -> float:
 
 @dataclass(frozen=True)
 class Ranking:
-    """One entry's position in a ranking, and the score that put it there."""
-
     slug: str
     score: float
     rank: int
 
 
 class Ranker:
-    """Stemmed TF-IDF over a corpus of entry descriptions.
-
-    ``tf`` is sublinear (``1 + log(count)``) and ``idf`` is ``log(N / df)``, so a
-    term carried by *every* description contributes exactly nothing — which is
-    the property that keeps "Use ... when ..." boilerplate out of the ranking
-    without hand-maintaining a catalog-specific stop list. Both document and
-    query vectors are L2-normalized, so a score is a cosine in ``[0, 1]``.
-    """
-
     def __init__(self, descriptions: Mapping[str, str]) -> None:
-        """Index ``descriptions`` (slug -> description text) for ranking."""
         self.slugs: tuple[str, ...] = tuple(sorted(descriptions))
         counts = {slug: Counter(tokenize(descriptions[slug])) for slug in self.slugs}
         total = len(self.slugs)
@@ -101,13 +57,7 @@ class Ranker:
         })
 
     def rank(self, prompt: str) -> list[Ranking]:
-        """Rank every entry against ``prompt``, best first.
 
-        Ties break on the slug so the ordering is total and reproducible; a
-        score of exactly zero means the prompt shares no discriminating
-        vocabulary with the entry at all, which callers must treat as "no
-        evidence" rather than as a position.
-        """
         query = self._query_vector(prompt)
         scored = sorted(
             ((slug, _cosine(query, self._vectors[slug])) for slug in self.slugs),
@@ -116,11 +66,9 @@ class Ranker:
         return [Ranking(slug, score, index + 1) for index, (slug, score) in enumerate(scored)]
 
     def position(self, prompt: str) -> dict[str, Ranking]:
-        """``rank`` keyed by slug, for callers asking about specific entries."""
         return {entry.slug: entry for entry in self.rank(prompt)}
 
     def pairwise_similarities(self) -> list[tuple[str, str, float]]:
-        """Every description pair with its cosine similarity, most similar first."""
         pairs: list[tuple[str, str, float]] = []
         for i, left in enumerate(self.slugs):
             pairs.extend(
@@ -132,8 +80,6 @@ class Ranker:
 
 @dataclass(frozen=True)
 class PositiveCase:
-    """A realistic prompt whose owning entry must rank in the top ``top_k``."""
-
     owner: str
     prompt: str
     top_k: int = DEFAULT_TOP_K
@@ -141,13 +87,6 @@ class PositiveCase:
 
 @dataclass(frozen=True)
 class NegativeCase:
-    """A prompt belonging to ``owner``, asserted to outrank ``entry``.
-
-    The stronger pairwise form, and the reason it is stronger is decisive: a
-    bare "``entry`` must not rank first" passes vacuously whenever the prompt
-    matches nothing at all.
-    """
-
     entry: str
     prompt: str
     owner: str
@@ -155,8 +94,6 @@ class NegativeCase:
 
 @dataclass(frozen=True)
 class RoutingReport:
-    """The outcome of one Tier-2 run over a catalog."""
-
     failures: tuple[str, ...]
     collision_warnings: tuple[str, ...]
     rank1_hits: int
@@ -164,26 +101,16 @@ class RoutingReport:
 
     @property
     def rank1_rate(self) -> float:
-        """Share of positive prompts whose owner ranked *first*, not merely top-k.
 
-        Zero positives yields ``0.0``: an empty corpus has not demonstrated
-        routing, and reporting it as a perfect score would make the CI floor
-        pass on a catalog with no evidence in it at all.
-        """
         return self.rank1_hits / self.positives if self.positives else 0.0
 
 
 def _positive_failures(ranker: Ranker, case: PositiveCase) -> tuple[list[str], bool]:
-    """Failures for one positive case, plus whether its owner ranked first."""
     positions = ranker.position(case.prompt)
     owner = positions.get(case.owner)
     if owner is None:
         return ([f"{case.owner}: positive prompt names an entry outside the ranked catalog"], False)
     if owner.score == 0.0:
-        # Anti-vacuity: an entry can only be "ranked" by a prompt that shares
-        # vocabulary with it. Without this, an all-zero prompt hands rank 1 to
-        # whichever slug sorts first and the assertion passes having measured
-        # nothing.
         return (
             [
                 f"{case.owner}: prompt {case.prompt!r} shares no vocabulary with the "
@@ -207,7 +134,6 @@ def _positive_failures(ranker: Ranker, case: PositiveCase) -> tuple[list[str], b
 
 
 def _negative_failures(ranker: Ranker, case: NegativeCase) -> list[str]:
-    """Failures for one negative case: its owner must outrank the entry."""
     positions = ranker.position(case.prompt)
     owner = positions.get(case.owner)
     entry = positions.get(case.entry)
@@ -230,7 +156,6 @@ def _negative_failures(ranker: Ranker, case: NegativeCase) -> list[str]:
 
 
 def _collision_findings(ranker: Ranker) -> tuple[list[str], list[str]]:
-    """Split description pairs into over-ceiling failures and warnings."""
     failures: list[str] = []
     warnings: list[str] = []
     for left, right, score in ranker.pairwise_similarities():
@@ -253,12 +178,7 @@ def evaluate(
     positives: Iterable[PositiveCase],
     negatives: Iterable[NegativeCase],
 ) -> RoutingReport:
-    """Run the three Tier-2 assertions over ``descriptions`` and report rank-1 rate.
 
-    A Tier-2 failure means *fix the description, not the eval*. If a realistic
-    prompt cannot rank its entry, the description is missing vocabulary a user
-    actually says, and that is a real finding about a real defect.
-    """
     ranker = Ranker(descriptions)
     failures, warnings = _collision_findings(ranker)
 
@@ -281,15 +201,7 @@ def evaluate(
 
 
 def floor_violations(rate: float, floor: float | None, high_water: float | None) -> list[str]:
-    """Check the measured rank-1 ``rate`` against the declared CI floor.
 
-    Two rules, and the second is the one that matters. The rate must clear the
-    floor. And the floor must never be *lowered*: ``high_water`` records the
-    highest floor this repo has ever committed to, so relaxing the threshold to
-    make a regression pass has to relax the record too — which turns a change
-    that reads like maintenance into a diff that states what it is. Lowering a
-    floor is the same act as deleting the test.
-    """
     if floor is None:
         return [
             "no rank-1 floor declared — set `[catalog] rank1_floor` in basicly.toml "
@@ -316,11 +228,7 @@ def floor_violations(rate: float, floor: float | None, high_water: float | None)
 def entry_cases(
     slug: str, data: Mapping[str, object]
 ) -> tuple[list[PositiveCase], list[NegativeCase]]:
-    """Split one loaded ``evals.yaml`` document into its positive/negative cases.
 
-    Shape errors are not reported here — the JSON Schema owns that — so anything
-    malformed is skipped rather than crashing the gate that is about to name it.
-    """
     trigger = data.get("trigger")
     if not isinstance(trigger, Mapping):
         return [], []

@@ -1,5 +1,3 @@
-"""Tests for the declared always-on token cost gate."""
-
 from __future__ import annotations
 
 import shutil
@@ -37,7 +35,6 @@ SCOPED_FRAGMENT = (
 
 @pytest.fixture
 def catalog(tmp_path: Path) -> Path:
-    """A tmp catalog with the repo's real targets and templates, so renders are real."""
     core = tmp_path / ".basicly/core"
     (core / "schemas").mkdir(parents=True)
     for name in SCHEMAS:
@@ -64,7 +61,6 @@ def _measured(catalog: Path, path: Path) -> dict[str, int]:
 
 
 def test_every_source_is_measured(catalog: Path) -> None:
-    """Both source families report a per-surface cost, keyed by source path."""
     costs = ctc.measured_costs(catalog)
     assert costs[_fragment(catalog)].keys() == {"claude", "codex", "copilot"}
     skill = catalog / ".basicly/core/skills/s/skill.yaml"
@@ -73,7 +69,6 @@ def test_every_source_is_measured(catalog: Path) -> None:
 
 
 def test_absent_declaration_warns_inside_the_window(catalog: Path) -> None:
-    """AC1: in the warning window an undeclared source is named and does not fail."""
     violations, warnings = ctc.problems(catalog, version="0.9.0")
     assert violations == []
     assert any("fragments/project/f.fragment.yaml" in line for line in warnings)
@@ -81,14 +76,12 @@ def test_absent_declaration_warns_inside_the_window(catalog: Path) -> None:
 
 
 def test_absent_declaration_fails_once_the_window_closes(catalog: Path) -> None:
-    """AC2: past the window the same absence fails and names the source."""
     violations, warnings = ctc.problems(catalog, version=ctc.REQUIRED_FROM_VERSION)
     assert warnings == []
     assert any("fragments/project/f.fragment.yaml" in line for line in violations)
 
 
 def test_window_is_keyed_on_the_version_not_the_clock() -> None:
-    """The window closes at a release, so the verdict never depends on when CI ran."""
     assert ctc.window_open("0.9.0")
     assert ctc.window_open("0.10.99")
     assert not ctc.window_open(ctc.REQUIRED_FROM_VERSION)
@@ -97,7 +90,6 @@ def test_window_is_keyed_on_the_version_not_the_clock() -> None:
 
 
 def test_declaration_beyond_tolerance_is_reported(catalog: Path) -> None:
-    """AC3: a declared figure that no longer matches the projection fails."""
     path = _fragment(catalog)
     measured = _measured(catalog, path)
     _declare(path, "token_cost:\n  claude: 9000\n  codex: 9000\n  copilot: 9000\n")
@@ -107,7 +99,6 @@ def test_declaration_beyond_tolerance_is_reported(catalog: Path) -> None:
 
 
 def test_declaration_inside_tolerance_is_accepted(catalog: Path) -> None:
-    """A reworded sentence must not fail a declaration; only a real edit does."""
     path = _fragment(catalog)
     measured = _measured(catalog, path)
     drifted = {name: count + ctc.tolerance(count) for name, count in measured.items()}
@@ -118,7 +109,6 @@ def test_declaration_inside_tolerance_is_accepted(catalog: Path) -> None:
 
 
 def test_scoped_fragment_costs_agents_md_and_nothing_else(catalog: Path) -> None:
-    """AC4: a source projecting to nothing for a target declares that zero explicitly."""
     scoped = catalog / ".basicly/core/fragments/project/g.fragment.yaml"
     scoped.write_text(SCOPED_FRAGMENT, encoding="utf-8")
     measured = _measured(catalog, scoped)
@@ -128,7 +118,6 @@ def test_scoped_fragment_costs_agents_md_and_nothing_else(catalog: Path) -> None
 
 
 def test_declaring_one_number_for_a_split_cost_is_refused(catalog: Path) -> None:
-    """AC4: the declaration must name every surface, not collapse them into one."""
     path = _fragment(catalog)
     _declare(path, "token_cost:\n  codex: 20\n")
     violations, _ = ctc.problems(catalog, version="0.9.0")
@@ -136,7 +125,6 @@ def test_declaring_one_number_for_a_split_cost_is_refused(catalog: Path) -> None
 
 
 def test_a_malformed_declaration_is_reported(catalog: Path) -> None:
-    """A non-mapping or negative declaration fails rather than being normalised away."""
     path = _fragment(catalog)
     _declare(path, "token_cost: 40\n")
     violations, _ = ctc.problems(catalog, version="0.9.0")
@@ -148,14 +136,12 @@ def test_a_malformed_declaration_is_reported(catalog: Path) -> None:
 
 
 def test_a_wrong_declaration_fails_inside_the_window(catalog: Path) -> None:
-    """The window forgives silence, never a number nobody checked."""
     _declare(_fragment(catalog), "token_cost:\n  claude: 1\n  codex: 1\n  copilot: 1\n")
     violations, _ = ctc.problems(catalog, version="0.9.0")
     assert violations, "a rotted declaration must fail even while absence is a warning"
 
 
 def test_declaration_does_not_change_the_projection(catalog: Path) -> None:
-    """AC5: the field is authoring metadata, so the rendered bytes are identical."""
 
     def rendered() -> dict[str, str]:
         paths = load_project_paths(catalog)
@@ -178,7 +164,6 @@ def test_declaration_does_not_change_the_projection(catalog: Path) -> None:
 
 
 def test_no_targets_means_nothing_to_measure(tmp_path: Path) -> None:
-    """A catalog that projects nowhere has no always-on cost to rule on."""
     (tmp_path / ".basicly/core/fragments/project").mkdir(parents=True)
     (tmp_path / ".basicly/core/fragments/project/f.fragment.yaml").write_text(
         FRAGMENT, encoding="utf-8"
@@ -187,11 +172,7 @@ def test_no_targets_means_nothing_to_measure(tmp_path: Path) -> None:
 
 
 def test_catalog_lint_collects_the_rule(catalog: Path) -> None:
-    """AC6: the finding reaches the named `catalog lint` check, on the right channel.
 
-    The channel follows the window, so the assertion reads it from the same rule rather
-    than from the version this tree happens to carry (basicly-ve1h0l).
-    """
     channel = skill_warnings if ctc.window_open() else lint_catalog
     assert any("no `token_cost:` declared" in w for w in channel(catalog))
     _declare(_fragment(catalog), "token_cost:\n  claude: 9000\n  codex: 9000\n  copilot: 9000\n")
@@ -199,5 +180,4 @@ def test_catalog_lint_collects_the_rule(catalog: Path) -> None:
 
 
 def test_this_repo_declares_no_wrong_cost() -> None:
-    """The shipped catalog carries no rotted declaration, so the gate is green here."""
     assert ctc.violations(REPO) == []

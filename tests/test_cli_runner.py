@@ -1,10 +1,3 @@
-"""Tests for the ``basicly runner`` CLI wiring (onb.7).
-
-The CLI resolves a runner from --runner / the configured default, prints the
-exact command for a dry run, and streams captured output for a live run. These
-tests fake PATH detection and the runner.run call and assert only that wiring.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -14,23 +7,15 @@ from basicly import cli, runner
 
 @pytest.fixture(autouse=True)
 def _no_config(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    """Run in an empty dir so load_runner_config yields the built-in adapters."""
     monkeypatch.chdir(tmp_path)
 
 
 @pytest.fixture(autouse=True)
 def _no_help_probe(monkeypatch: pytest.MonkeyPatch):
-    """Never shell out to a real agent CLI for the dry-run guardrail check.
 
-    An unreadable probe is the "cannot tell" answer, so the check stays silent
-    and these tests assert CLI wiring only — on a machine with or without any
-    agent installed (basicly-jr0l.38).
-    """
     monkeypatch.setattr(runner, "_run_help", lambda _binary: None)
 
 
-# Enough of `codex --help` to carry the approval enum; the full fixture and the
-# parser's own cases live in test_runner.py.
 CODEX_APPROVAL_HELP = """\
 Options:
   -a, --ask-for-approval <APPROVAL_POLICY>
@@ -46,7 +31,6 @@ Options:
 def test_runner_dry_run_prints_exact_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """dry-run prints the exact argv the named runner would execute; exits 0."""
     assert cli.main(["runner", "dry-run", "--runner", "claude", "--prompt", "do it"]) == 0
     out = capsys.readouterr().out
     assert "claude -p" in out
@@ -56,7 +40,6 @@ def test_runner_dry_run_prints_exact_command(
 def test_runner_dry_run_handoff_when_none_available(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With no big-3 CLI on PATH, auto resolves to the manual handoff — no command."""
     monkeypatch.setattr(runner.shutil, "which", lambda _b: None)
     assert cli.main(["runner", "dry-run", "--runner", "auto", "--prompt", "do it"]) == 0
     out = capsys.readouterr().out
@@ -67,22 +50,20 @@ def test_runner_dry_run_handoff_when_none_available(
 def test_runner_list_shows_availability(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """List marks which adapters are on PATH and which runner auto would select."""
     monkeypatch.setattr(
         runner.shutil, "which", lambda b: "/usr/bin/codex" if b == "codex" else None
     )
-    monkeypatch.setattr(runner, "_run_help", lambda _b: "codex exec [options]")  # capable
+    monkeypatch.setattr(runner, "_run_help", lambda _b: "codex exec [options]")
     assert cli.main(["runner", "list"]) == 0
     out = capsys.readouterr().out
     assert "codex" in out and "available" in out
-    assert "not on PATH" in out  # claude/copilot absent
+    assert "not on PATH" in out
     assert "selected (auto): codex" in out
 
 
 def test_runner_list_surfaces_capability(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An on-PATH runner whose --help confirms its flag is marked capable (basicly-bveo)."""
     monkeypatch.setattr(
         runner.shutil, "which", lambda b: "/usr/bin/codex" if b == "codex" else None
     )
@@ -94,19 +75,17 @@ def test_runner_list_surfaces_capability(
 def test_runner_list_flags_a_dropped_headless_flag(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An on-PATH runner whose --help no longer mentions its flag is flagged unconfirmed."""
     monkeypatch.setattr(
         runner.shutil, "which", lambda b: "/usr/bin/codex" if b == "codex" else None
     )
-    monkeypatch.setattr(runner, "_run_help", lambda _b: "codex chat [options]")  # no 'exec'
+    monkeypatch.setattr(runner, "_run_help", lambda _b: "codex chat [options]")
     assert cli.main(["runner", "list"]) == 0
     out = capsys.readouterr().out
     assert "flag unconfirmed" in out
-    assert "selected (auto): manual" in out  # incapable codex is skipped
+    assert "selected (auto): manual" in out
 
 
 def test_runner_dry_run_surfaces_pinned_model(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
-    """A pinned model shows on the dry-run header and is injected into the argv."""
     (tmp_path / "basicly.toml").write_text(
         '[[runner.agents]]\nname = "claude"\n'
         'command = ["claude", "-p", "{prompt}"]\nmodel = "opus"\n',
@@ -121,7 +100,6 @@ def test_runner_dry_run_surfaces_pinned_model(tmp_path, capsys: pytest.CaptureFi
 def test_runner_dry_run_surfaces_codex_sandbox_and_approval(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The codex dry-run header and argv show the sandbox/approval guardrail defaults."""
     assert cli.main(["runner", "dry-run", "--runner", "codex", "--prompt", "do it"]) == 0
     out = capsys.readouterr().out
     assert "sandbox: workspace-write" in out
@@ -132,7 +110,6 @@ def test_runner_dry_run_surfaces_codex_sandbox_and_approval(
 def test_runner_dry_run_accepts_the_shipped_codex_guardrails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Checked against the CLI's real enum, the shipped adapter passes and exits 0."""
     monkeypatch.setattr(runner, "_run_help", lambda _binary: CODEX_APPROVAL_HELP)
     assert cli.main(["runner", "dry-run", "--runner", "codex", "--prompt", "do it"]) == 0
 
@@ -140,12 +117,7 @@ def test_runner_dry_run_accepts_the_shipped_codex_guardrails(
 def test_runner_dry_run_rejects_an_approval_the_cli_does_not_accept(
     monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The regression, at the surface meant to catch it (basicly-jr0l.38).
 
-    An approval outside the CLI's enum made every dispatch exit 2 with no output.
-    Dry-run now names the value and the accepted set, and exits non-zero so a
-    script or CI can branch on it, instead of printing an argv that cannot run.
-    """
     (tmp_path / "basicly.toml").write_text(
         '[[runner.agents]]\nname = "codex"\ncommand = ["codex", "exec", "{prompt}"]\n'
         'sandbox = "workspace-write"\napproval = "on-failure"\n'
@@ -160,7 +132,6 @@ def test_runner_dry_run_rejects_an_approval_the_cli_does_not_accept(
 def test_runner_list_surfaces_pinned_model(
     tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """List annotates an adapter that pins a model."""
     (tmp_path / "basicly.toml").write_text(
         '[[runner.agents]]\nname = "claude"\n'
         'command = ["claude", "-p", "{prompt}"]\nmodel = "opus"\n',
@@ -174,7 +145,6 @@ def test_runner_list_surfaces_pinned_model(
 def test_runner_run_streams_output_and_exit_code(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Run passes through the runner's captured stdout and exit code."""
 
     def fake_run(spec, prompt, _cwd, *, _dry_run=False):
         return runner.RunResult(
@@ -192,6 +162,5 @@ def test_runner_run_streams_output_and_exit_code(
 
 
 def test_runner_unknown_name_errors(capsys: pytest.CaptureFixture[str]) -> None:
-    """An unknown runner name is a clean error, exit 1."""
     assert cli.main(["runner", "dry-run", "--runner", "nope", "--prompt", "x"]) == 1
     assert "unknown runner" in capsys.readouterr().err

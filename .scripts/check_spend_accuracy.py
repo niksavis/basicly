@@ -1,20 +1,3 @@
-"""Fail when a lane's recorded spend forecast misses its actual past the band, unless frozen.
-
-`decompose.spend_accuracy` holds every bead's forecast against what its dispatches really
-spent, over the committed markers and the local run records. A pair outside
-`SPEND_RATIO_BAND` is a finding about the estimator, and the recorded forecast never
-changes, so the finding is permanent history. With nowhere to bank it, one pair turned
-main red for every landing on 2026-08-06, 2026-08-08 and 2026-08-28 (basicly-helmej).
-
-`[tool.spend_accuracy.frozen]` is that place, and it tracks rather than falls, as
-`release-notes` does: a frozen record must still violate, so a pair the estimator later
-brings in band graduates and its entry has to go in the same diff.
-
-Run::
-
-    uv run python .scripts/check_spend_accuracy.py
-"""
-
 from __future__ import annotations
 
 import sys
@@ -49,14 +32,12 @@ FROZEN_FRAGMENT = fragment(f"{_GATE}.frozen")
 
 
 def load_ratchet(repo: Path) -> Ratchet[int]:
-    """The frozen records, one each: a record is outside the band or it is not."""
     return compose_ratchet(
         repo, _GATE, count_key=COUNT_KEY, entry_type=int, may_only=MAY_ONLY_TRACK
     )
 
 
 def outside_band(accuracy: decompose.SpendAccuracy) -> dict[str, str]:
-    """Each violating record to the sentence :func:`decompose.spend_accuracy` states."""
     found: dict[str, str] = {}
     for line in accuracy.violations:
         bead = line.split(" ", 1)[0]
@@ -65,12 +46,7 @@ def outside_band(accuracy: decompose.SpendAccuracy) -> dict[str, str]:
 
 
 def collect(found: Mapping[str, str], ratchet: Ratchet[int]) -> list[Finding]:
-    """Every disagreement between the measured pairs and the frozen table, both ways.
 
-    The subjects are the union, so a frozen entry is visited whether or not the tree still
-    produces its violation: an entry satisfied by never being looked at is how a table
-    stops shrinking.
-    """
     findings: list[Finding] = []
     for subject in sorted(set(found) | set(ratchet.frozen)):
         if subject in found and subject not in ratchet.frozen:
@@ -111,7 +87,6 @@ def collect(found: Mapping[str, str], ratchet: Ratchet[int]) -> list[Finding]:
 
 
 def summary(accuracy: decompose.SpendAccuracy, ratchet: Ratchet[int]) -> str:
-    """The pass line: what was measured, what missed, and how much of that is banked."""
     return (
         f"{LABEL}: {len(accuracy.pairs)} pair(s) measured, {len(accuracy.violations)} outside "
         f"the {decompose.SPEND_RATIO_BAND:.0f}x band, {len(ratchet.frozen)} frozen; "
@@ -121,7 +96,6 @@ def summary(accuracy: decompose.SpendAccuracy, ratchet: Ratchet[int]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point: refuse a spend forecast that missed by an order of magnitude, unbanked."""
     del argv
     try:
         ratchet = load_ratchet(REPO_ROOT)

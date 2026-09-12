@@ -1,15 +1,3 @@
-"""A dispatch the provider refused, told apart from one that failed on its merits.
-
-Its own file rather than an addition to `test_supervise.py`, which is frozen with 61
-tokens of headroom left — the sibling convention `test_supervise_parked.py` and
-`test_supervise_stall_budget.py` already follow. The subject is one step of a pass: what
-routing owes an outcome no agent produced.
-
-The incident is on the record (basicly-jr0l.10): 70 re-dispatches across 7 lanes in 20
-minutes on 2026-08-28, one rework charged per lane, 0 tokens spent and nothing learned,
-until a human stopped the session.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -24,7 +12,6 @@ if TYPE_CHECKING:
 
 
 def _limited(issue_id: str) -> supervise.LaneOutcome:
-    """The outcome of a dispatch the account's seat allowance turned away."""
     said = "You've hit your session limit · resets 5:50pm (Europe/Vienna)"
     return _executed_outcome(
         issue_id,
@@ -37,11 +24,7 @@ def _limited(issue_id: str) -> supervise.LaneOutcome:
 def test_a_provider_limit_refusal_holds_the_lane_and_charges_no_rework(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The 2026-08-28 incident: 70 re-dispatches, one rework per lane, nothing learned.
 
-    A merit failure retries under the cap; this one never reaches it — the agent did not
-    run, so the lane's dispatch budget has no claim on the refusal.
-    """
     charged: list[str] = []
     monkeypatch.setattr(
         supervise.policy, "record_rework", lambda _r, _i, gate: charged.append(gate) or 1
@@ -67,7 +50,6 @@ def test_a_provider_limit_refusal_holds_the_lane_and_charges_no_rework(
 def test_a_pass_whose_only_outcome_is_a_provider_refusal_stops_dispatching(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The standing loop must end the session rather than re-dispatch into the same wall."""
     monkeypatch.setattr(supervise.policy, "record_rework", lambda _r, _i, _g: 1)
     monkeypatch.setattr(
         supervise.decisions, "enqueue", lambda _r, issue, kind, *_a: decisions_item(issue, kind)
@@ -79,7 +61,6 @@ def test_a_pass_whose_only_outcome_is_a_provider_refusal_stops_dispatching(
 
 
 def test_the_provider_gate_refuses_every_lane_still_waiting_for_a_slot() -> None:
-    """Lanes past the concurrency cap must not each spend their own refusal."""
     gate = supervise.ProviderGate()
 
     assert gate.declined("epic.2", "claude") is None
@@ -87,13 +68,11 @@ def test_the_provider_gate_refuses_every_lane_still_waiting_for_a_slot() -> None
     declined = gate.declined("epic.2", "claude")
 
     assert declined is not None
-    # Refused, not stopped: the queue holds it, the rework counter never sees it.
     assert declined.refused and declined.result is None
     assert supervise.provider_limit.LIMIT_QUESTION in declined.detail
 
 
 def test_the_gate_stays_open_for_a_lane_that_merely_failed() -> None:
-    """A merit failure is the lane's own; it must not stop the rest of the pass."""
     gate = supervise.ProviderGate()
 
     gate.latch(_executed_outcome("epic.1", returncode=3, detail="runner exited 3"))
@@ -102,7 +81,6 @@ def test_the_gate_stays_open_for_a_lane_that_merely_failed() -> None:
 
 
 def test_the_pass_summary_reports_what_each_dispatch_spent() -> None:
-    """AC2: the operator driving the pass is the one client that could not see the spend."""
     said: list[str] = []
     outcomes = (
         _executed_outcome("epic.1", spend=runner.Usage(4689345, cost=4.29, estimated=False)),
@@ -122,7 +100,6 @@ def test_the_pass_summary_reports_what_each_dispatch_spent() -> None:
 
 
 def test_a_pass_that_metered_nothing_prints_no_spend_line() -> None:
-    """A printed 0 would read as a measurement; an unmetered pass has none to report."""
     said: list[str] = []
 
     supervise.say_dispatch(

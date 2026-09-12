@@ -1,11 +1,3 @@
-"""`basicly tracker import` — the seam onto the kit's importer (basicly-lc2bd3v).
-
-The kit has carried a tested importer with no production caller and no command, so two
-consumers concluded the migration path was gone and planned to re-file live work by
-hand. These tests hold the property that made that conclusion expensive: source ids
-survive, so a commit message referencing one still resolves after the move.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -46,7 +38,6 @@ _EXPORT = [
 
 @pytest.fixture
 def host(tmp_path: Path) -> Path:
-    """A consumer-shaped repo with the kit copied in and an empty ledger."""
     shutil.copytree(REPO / KIT, tmp_path / KIT)
     (tmp_path / ".basicly" / "ledger").mkdir(parents=True)
     return tmp_path
@@ -62,11 +53,7 @@ def _export(root: Path, records: list[dict] | str) -> Path:
 
 
 def test_a_dry_run_writes_nothing_and_names_what_would_be_refused(host: Path) -> None:
-    """A pre-flight that skipped the id rule would list an id the write then refuses.
 
-    The code is the real run's, not 0 (basicly-1yychkj): a dry run that reports a
-    refusal and still exits 0 lets a scripted preflight pass before the real run fails.
-    """
     export = _export(host, [*_EXPORT, {"id": "not an id", "title": "bad"}])
 
     code, lines = tracker_import.run_import(host, export, source_name="beads", dry_run=True)
@@ -79,14 +66,12 @@ def test_a_dry_run_writes_nothing_and_names_what_would_be_refused(host: Path) ->
 
 
 def test_a_clean_dry_run_exits_zero(host: Path) -> None:
-    """The positive control: the code says refusal, not `--dry-run`."""
     code, _ = tracker_import.run_import(host, _export(host, _EXPORT), dry_run=True)
 
     assert code == 0
 
 
 def test_the_source_ids_survive_the_import(host: Path) -> None:
-    """Renumbering would strand every commit message that references an old id."""
     export = _export(host, _EXPORT)
 
     code, _ = tracker_import.run_import(host, export, source_name="beads")
@@ -99,7 +84,6 @@ def test_the_source_ids_survive_the_import(host: Path) -> None:
 
 
 def test_a_rejection_sets_the_exit_code(host: Path) -> None:
-    """A partial import that reported success would lose records silently."""
     export = _export(host, [*_EXPORT, {"id": "not an id", "title": "bad"}])
 
     code, lines = tracker_import.run_import(host, export, source_name="beads")
@@ -109,7 +93,6 @@ def test_a_rejection_sets_the_exit_code(host: Path) -> None:
 
 
 def test_a_re_run_appends_nothing(host: Path) -> None:
-    """An import torn off at the tail must complete on a re-run, not double the history."""
     export = _export(host, _EXPORT)
     tracker_import.run_import(host, export, source_name="beads")
 
@@ -119,7 +102,6 @@ def test_a_re_run_appends_nothing(host: Path) -> None:
 
 
 def test_an_unparseable_line_is_reported_rather_than_tolerated(host: Path) -> None:
-    """Format drift in somebody else's export is expected, and must be seen."""
     export = _export(host, '{"id": "acme-99z", "status": "open"}\nnot json\n')
 
     code, lines = tracker_import.run_import(host, export, source_name="beads")
@@ -129,13 +111,11 @@ def test_an_unparseable_line_is_reported_rather_than_tolerated(host: Path) -> No
 
 
 def test_a_missing_export_is_an_error_not_a_traceback(host: Path) -> None:
-    """The path is user input, so it is a trust boundary rather than an assertion."""
     with pytest.raises(ValidationError):
         tracker_import.run_import(host, host / "nope.jsonl", source_name="beads")
 
 
 def _hook():
-    """The `tracker-path-scan` gate, loaded the way `test_tracker_path_scan.py` loads it."""
     script = REPO / ".basicly" / "core" / "hooks" / "tracker-path-scan.py"
     spec = importlib.util.spec_from_file_location("tracker_path_scan", script)
     assert spec and spec.loader
@@ -145,13 +125,7 @@ def _hook():
 
 
 def test_the_import_writes_a_ledger_its_own_commit_gate_accepts(host: Path) -> None:
-    """An import that leaks the source machine's paths cannot be committed (basicly-npiudkl).
 
-    A real consumer landed 49 of 50 records and then `tracker-path-scan` refused the
-    commit with 93 findings, because the export's `source_repo_path` and `created_by`
-    reached the ledger verbatim. The redactor every other engine write passes was the
-    one keyword this seam left off.
-    """
     home = "/home" + "/someuser/development/acme"
     export = _export(
         host,
@@ -180,11 +154,7 @@ def test_the_import_writes_a_ledger_its_own_commit_gate_accepts(host: Path) -> N
 def test_tracker_scrub_repairs_a_ledger_the_commit_gate_refuses(
     host: Path, monkeypatch, capsys
 ) -> None:
-    """The repair needs a named surface, not a `python -c` (basicly-9fagxpm).
 
-    A consumer whose sandbox refuses an in-place rewrite from a raw interpreter could
-    not apply the repair at all, so the documented adoption path could not complete.
-    """
     leak = "/home" + "/someuser/dev/acme"
     kit = owned_store.kit(host)
     snapshot = kit.migrate.read_snapshot(
@@ -203,12 +173,7 @@ def test_tracker_scrub_repairs_a_ledger_the_commit_gate_refuses(
 
 
 def test_the_import_names_the_id_prefix_when_the_repo_declares_none(host: Path) -> None:
-    """The ids arrive; the declaration that mints the next one does not (basicly-mticqi7).
 
-    The runbook's last step retires the source tracker, whose config holds the only
-    other copy of the prefix — so silence here loses the namespace, weeks before
-    anyone files a root record and finds out.
-    """
     _, lines = tracker_import.run_import(host, _export(host, _EXPORT), source_name="beads")
 
     report = "\n".join(lines)
@@ -217,7 +182,6 @@ def test_the_import_names_the_id_prefix_when_the_repo_declares_none(host: Path) 
 
 
 def test_the_import_stays_quiet_when_a_prefix_is_declared(host: Path) -> None:
-    """The positive control: the note is about the repo, not about every import."""
     (host / "basicly.toml").write_text('[tracker]\nprefix = "acme"\n', encoding="utf-8")
 
     _, lines = tracker_import.run_import(host, _export(host, _EXPORT), source_name="beads")
@@ -232,11 +196,7 @@ HYPHENATED = [
 
 
 def test_a_refusal_names_its_cause_once_not_every_id(host: Path) -> None:
-    """702 records refused and the report answered with 702 quoted ids (basicly-iehbmvu).
 
-    The cause was one rule and the same for all of them, so the consumer got 40KB of
-    output naming no constraint and no remedy.
-    """
     export = _export(host, [*HYPHENATED, {"id": "Not An Id", "title": "bad"}])
 
     code, lines = tracker_import.run_import(host, export, source_name="beads", dry_run=True)
@@ -250,11 +210,7 @@ def test_a_refusal_names_its_cause_once_not_every_id(host: Path) -> None:
 
 
 def test_a_dry_run_names_the_id_prefix_too(host: Path) -> None:
-    """The advice ran only on the real path (basicly-iehbmvu).
 
-    The dry run is the one a consumer is told to run first, and the point of the
-    advice is to land before the ledger is committed rather than after.
-    """
     _, lines = tracker_import.run_import(
         host, _export(host, _EXPORT), source_name="beads", dry_run=True
     )

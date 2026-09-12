@@ -1,15 +1,3 @@
-"""Tests for the client-attach surfaces of ``basicly loop`` (basicly-kjc5.8).
-
-``loop session``, ``loop watch``, ``loop decisions`` and ``loop answer`` are what a
-*second* session sees of a run it is not driving, so every test here asserts on the
-rendered observation rather than on supervisor state: a client that reads the wrong
-lane count or misses a pending decision is wrong even when the supervisor is right.
-
-Split out of ``test_cli_loop`` when the module-size ratchet caught that file growing.
-The boundary is *attach* against *drive*: nothing here advances a node or runs a
-ceremony, which is what the tests left behind do.
-"""
-
 from __future__ import annotations
 
 import json
@@ -19,23 +7,15 @@ import pytest
 from basicly import cli, policy, supervise
 from basicly.decisions import DecisionItem
 
-# --- session (client attach, basicly-kjc5.8) ---------------------------------
-
-
-# The grant the ``_observation`` defaults are written against: issued once the session
-# had already spent 800 tokens, so lifetime spend and spend under the grant differ and
-# a test can tell which one a surface printed.
 _GRANT = policy.Grant(level="L2", token_budget=5000, spent_at_issue=800)
 
 
 @pytest.fixture(autouse=True)
 def _no_ambient_grant(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep the grant read off the real tracker; a test that needs one calls ``_grant``."""
     monkeypatch.setattr(policy, "active_grant", lambda *_a, **_k: None)
 
 
 def _grant(monkeypatch: pytest.MonkeyPatch, grant: policy.Grant | None = _GRANT) -> None:
-    """Answer ``loop session``'s grant read with *grant*."""
     monkeypatch.setattr(policy, "active_grant", lambda *_a, **_k: grant)
 
 
@@ -86,7 +66,6 @@ def _observation(**overrides: object) -> supervise.Observation:
 def test_loop_session_prints_the_attach_surface(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Attaching renders the holder, each lane's last run, the queue, and grant spend."""
     _grant(monkeypatch)
     monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
 
@@ -105,14 +84,7 @@ def test_loop_session_prints_the_attach_surface(
 def test_loop_session_never_offers_lifetime_spend_against_the_budget(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The two figures cover different windows, so the surface may not read as a ratio.
 
-    ``basicly loop session basicly-kjc5 --json`` reported 177970761 spent against a
-    4000000 budget — 44.5x — while kjc5's own decomposition had spent nothing at all
-    under that grant: the lifetime total counts every grant and every bead the
-    session's track reaches, including work other roots ran under their own ceilings
-    (basicly-e2mz.13).
-    """
     _grant(monkeypatch)
     monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
 
@@ -126,12 +98,7 @@ def test_loop_session_never_offers_lifetime_spend_against_the_budget(
 def test_loop_session_json_names_the_window_each_spend_figure_covers(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A machine client gets the comparable figure and the window every figure covers.
 
-    ``spent_tokens`` and ``token_budget`` stay where they were — a board reading them
-    (basicly-rn0o.3) must not break — so the payload carries what makes them
-    unmisreadable beside them rather than instead of them.
-    """
     _grant(monkeypatch)
     monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
 
@@ -146,7 +113,6 @@ def test_loop_session_json_names_the_window_each_spend_figure_covers(
 def test_loop_session_json_reports_no_grant_window_when_there_is_no_grant(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Without a grant there is no second window — null, never the lifetime total."""
     monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
 
     assert cli.main(["loop", "session", "basicly-epic", "--json"]) == 0
@@ -157,11 +123,7 @@ def test_loop_session_json_reports_no_grant_window_when_there_is_no_grant(
 def test_loop_session_reports_human_wait_apart_from_dispatch(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Wall clock is dominated by waiting on a human, so the rollup says so (kjc5.51).
 
-    Reported beside dispatch and never folded into it: one is the compute the
-    session bought, the other is the bottleneck a delivery forecast has to predict.
-    """
     monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
 
     assert cli.main(["loop", "session", "basicly-epic"]) == 0
@@ -171,12 +133,7 @@ def test_loop_session_reports_human_wait_apart_from_dispatch(
 def test_loop_session_observes_the_labelled_cut_it_was_given(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A client has to be able to attach to the session that is actually running.
 
-    A root can be supervised over its decomposition or over a labelled cut, and those
-    are different lane sets — so a client that could not name the selector would report
-    a running label pass as childless (basicly-1lpo).
-    """
     seen: list[str | None] = []
     monkeypatch.setattr(
         supervise,
@@ -194,7 +151,6 @@ def test_loop_session_observes_the_labelled_cut_it_was_given(
 def test_loop_session_names_an_unsupervised_root(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """No supervisor is a reportable state and still exits 0 — the read succeeded."""
     monkeypatch.setattr(
         supervise,
         "observe",
@@ -220,7 +176,6 @@ def test_loop_session_names_an_unsupervised_root(
 def test_loop_session_warns_that_a_stale_holder_may_be_taken_over(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A crashed holder must read as crashed, or a client waits on a dead session."""
     monkeypatch.setattr(
         supervise,
         "observe",
@@ -239,7 +194,6 @@ def test_loop_session_warns_that_a_stale_holder_may_be_taken_over(
 def test_loop_session_names_a_holder_on_another_root(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The lock is a repo singleton, so say whose session the holder actually runs."""
     monkeypatch.setattr(
         supervise,
         "observe",
@@ -259,7 +213,6 @@ def test_loop_session_names_a_holder_on_another_root(
 def test_loop_session_json_emits_the_whole_observation(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """--json is the client's machine surface: every field, nested lanes and queue."""
     monkeypatch.setattr(supervise, "observe", lambda *_a, **_k: _observation())
 
     assert cli.main(["loop", "session", "basicly-epic", "--json"]) == 0
@@ -279,5 +232,4 @@ def test_loop_session_json_emits_the_whole_observation(
         45,
         92.5,
     )
-    # A derived property asdict would drop, and the one flag a machine client acts on.
     assert payload["supervised"] is True

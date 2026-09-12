@@ -1,24 +1,3 @@
-"""What the recorded ledgers say was used, forecast and advised — read only.
-
-One responsibility, and it is the reading: every ``basicly usage`` report joins already
-recorded facts — the tool/skill counters, the tracker surface ledger, the dispatch
-records, the governed parameters — and prints them. Nothing here records anything,
-changes a configuration, or decides an exit code on anything but whether the data
-exists.
-
-That read-only posture is the design rather than an accident. :func:`cmd_tuning`
-advises a value for every governed parameter and applies none of them: a tuner
-proposes and a human or a gate disposes, so a recommendation reaches ``basicly.toml``
-only through an edit somebody made. Every parameter prints, including the ones nothing
-measures, because a report listing only what it could advise on would make "no evidence
-exists for this bound" look exactly like "this bound is fine".
-
-Split out of ``cli`` when the module-size ratchet caught that module growing. The
-boundary is *report* against *command surface*: the parser and the subcommand dispatch
-stay in :mod:`basicly.cli`, which hands each handler its parsed namespace, so nothing
-here needs an import back into the module it came from.
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -42,13 +21,7 @@ if TYPE_CHECKING:
 
 
 def _spend_accuracy_report(repo_root: Path) -> None:
-    """Say whether the *spend* forecast lands near what the lanes really spent.
 
-    The table above compares a working set against a whole-lane cost, and that ratio is
-    mostly the turn multiplier — an operator reading it as forecast error concludes the
-    sizing governor is broken. This is the same-unit comparison, which is the one that
-    answers whether a grant minted from a forecast will hold (basicly-tcmy.34).
-    """
     accuracy = decompose.spend_accuracy(repo_root, load_sizing_config(repo_root))
     if not accuracy.pairs:
         ui.say(
@@ -96,12 +69,7 @@ def _spend_accuracy_report(repo_root: Path) -> None:
 
 
 def cmd_forecast(_args: argparse.Namespace) -> int:
-    """Report the forecast error per dispatch, and what could not be paired.
 
-    The unpaired counts print even when there is nothing to pair: an empty table
-    alone would read as "the forecast is fine" where it means "no dispatch has ever
-    carried both halves", which is the state basicly-jr0l.34 was filed about.
-    """
     report = run_record.forecast_errors(Path.cwd())
     if report.errors:
         ui.table(
@@ -152,16 +120,11 @@ def cmd_forecast(_args: argparse.Namespace) -> int:
 
 
 def _census_text(counts: dict[str, int]) -> str:
-    """Render a name -> count map as ``3 local, 12 tracker``; ``-`` when empty."""
     return ", ".join(f"{count} {name}" for name, count in counts.items()) or "-"
 
 
 def _recommendation_cell(parameter: tuning.ParameterTuning) -> str:
-    """The advised value, its provenance and the sample size behind it.
 
-    All three in one cell on purpose: a number without its label reads as measured,
-    and a label without its sample size cannot be argued with.
-    """
     if parameter.recommendation is None:
         return f"- ({parameter.status})"
     advised = tuning.render_value(parameter.recommendation)
@@ -169,13 +132,7 @@ def _recommendation_cell(parameter: tuning.ParameterTuning) -> str:
 
 
 def _advice_line(parameter: tuning.ParameterTuning) -> str:
-    """One parameter's whole claim on a single soft-wrapped line.
 
-    The table above it is the scannable overview, and rich folds a wide table's cells
-    across lines on a narrow terminal — which is fine to read and impossible to grep.
-    So every fact the table carries is restated here, unfolded, where a consumer (and
-    the test that holds this command to its promises) can find it whole.
-    """
     unit = parameter.unit
     if parameter.recommendation is None:
         advice = f"no recommendation ({parameter.status})"
@@ -193,12 +150,7 @@ def _advice_line(parameter: tuning.ParameterTuning) -> str:
 
 
 def cmd_tuning(_args: argparse.Namespace) -> int:
-    """Advise every governed parameter from the recorded dispatches, and change nothing.
 
-    Every parameter prints, including the ones nothing measures: a report that listed
-    only what it could advise on would make "no evidence exists for this bound" look
-    exactly like "this bound is fine", which is the state the tuner exists to expose.
-    """
     report = tuning.tuning_report(Path.cwd())
     ui.table(
         f"Advisory parameter tuning ({report.dispatches_read} dispatch(es) read: "
@@ -245,12 +197,10 @@ def cmd_tuning(_args: argparse.Namespace) -> int:
     return 0
 
 
-# Rows of the unresolved-head bucket the report prints before truncating.
 _UNRESOLVED_ROWS = 15
 
 
 def cmd_report(_args: argparse.Namespace) -> int:
-    """Report which tools and skills the recorded usage shows were actually used."""
     repo_root = Path.cwd()
     skills = skill_source.discover_skills(repo_root)
     slugs = [skill.slug for skill in skills]
@@ -271,12 +221,6 @@ def cmd_report(_args: argparse.Namespace) -> int:
             [[e.name, str(e.count), e.last_used] for e in report.tools],
         )
     if report.unresolved:
-        # Shown, not hidden: most of these are parser misses, but a real tool this
-        # machine has not installed lands here too, and a bucket printed as a bare
-        # count would read as "all noise" for both. Truncated because years of
-        # accumulated misses run to hundreds of one-off words — the head of the list
-        # and the totals are what say whether the recorder is still missing today,
-        # and the count dropped is named rather than left to the reader to notice.
         shown = report.unresolved[:_UNRESOLVED_ROWS]
         dropped = len(report.unresolved) - len(shown)
         suffix = f", {dropped} lower-count rows not shown" if dropped else ""
@@ -302,10 +246,7 @@ def cmd_report(_args: argparse.Namespace) -> int:
 
 
 def _say_never_invoked(repo_root: Path, names: Sequence[str]) -> None:
-    """Print the never-Skill-invoked set as the two claims it really holds.
 
-    :func:`skill_coverage.partition_never_invoked` states why they are two.
-    """
     split = skill_coverage.partition_never_invoked(repo_root, names)
     ui.say(
         f"Never invoked through the Skill tool ({len(names)}). Not a culling list: the "
@@ -320,31 +261,15 @@ def _say_never_invoked(repo_root: Path, names: Sequence[str]) -> None:
             ui.say(f"  {label} ({len(group)}): " + ", ".join(group), style="muted")
 
 
-# Not an engine outcome: `run_record` writes one of its four constants, so a record
-# reaching this is malformed or predates the field. Counted under its own name rather
-# than dropped — a silently shorter total is a wrong denominator.
 UNLABELLED = "unlabelled"
 
 
 def cmd_outcomes(_args: argparse.Namespace) -> int:
-    """Report how every recorded dispatch ended, and the share that failed.
 
-    The kill rate is the number this exists for. A harness whose lanes mostly
-    return no-go is working correctly and looks, from any per-lane view, like a
-    string of failures; without the denominator there is no way to tell that
-    apart from a harness that is broken.
-
-    The boundary matters and is printed rather than left to the reader: these are
-    *dispatch* outcomes from :func:`run_record.outcome_of` — whether the agent
-    process finished — not lane verdicts. Nothing recorded here says whether the
-    work reached a result, so this cannot answer "how many lanes found nothing".
-    """
     records = run_record.load_run_records(Path.cwd()) or {}
     counts = Counter(
         entry.get("outcome") or UNLABELLED for runs in records.values() for entry in runs
     )
-    # Guarded on the record count, not on the file: a ledger holding a bead whose
-    # run list is empty is a file that exists, parses, and divides by zero.
     total = sum(counts.values())
     if not total:
         ui.say(

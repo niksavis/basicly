@@ -1,31 +1,3 @@
-"""Fail when an epic states a problem a machine reads as fact and no child accounts for.
-
-An epic's problem statement is the decider's intake corpus, so a bullet the epic's own
-closed children already fixed is read as current by an agent that has no other authority
-(basicly-b9ef). :mod:`basicly.corpus_drift` holds the rule and the measurement behind it —
-attribution is by *named child*, never by resemblance; this is the human-runnable half.
-
-Scope is the **committed tracker**, the owned event log, so the gate runs in a fresh
-clone with no tracker binary and reports what a reviewer can see in the same diff as the
-correction. It reads open parents only: a closed bead's statement is history and nothing
-dispatches a decider on it.
-
-**A ratchet, not a hard gate.** One bead was already unaccounted for when this landed
-(``basicly-u2hl``, four bullets), and its correction is a tracker write, which does not
-belong in a lane's worktree. So the go-live debt is recorded per bead in
-``[tool.corpus_drift.frozen]`` and may only fall — a bead not in that closed list may not
-have a single unaccounted bullet, and a bead whose count drops has to bank it in the same
-diff, because leaving the higher number licenses regrowth back to it.
-
-The corpus annotation is *not* ratcheted: a frozen bullet still reaches a decider marked
-unverified. The baseline says which debt blocks a commit, never which claim is a fact.
-
-Run over every open parent, or over named ones::
-
-    uv run python .scripts/check_corpus_drift.py
-    uv run python .scripts/check_corpus_drift.py basicly-u2hl
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -41,32 +13,23 @@ from basicly import config, corpus_drift, tracker  # noqa: E402 - reachable afte
 
 _LABEL = "corpus-drift"
 FROZEN_TABLE = "[tool.corpus_drift.frozen]"
-# Enough of a bullet to recognise it in the bead; the fix is made in the bead, not here.
 _BULLET_WIDTH = 96
 _NAMED_CHILDREN = 6
 
 
 class RatchetError(RuntimeError):
-    """The recorded baseline is missing or malformed."""
+    pass
 
 
 @dataclass(frozen=True)
 class Verdict:
-    """One bead's standing against its baseline, and what has to happen about it."""
-
     issue_id: str
     detail: str
     remedy: str
 
 
 def load_frozen(repo: Path) -> dict[str, int]:
-    """The recorded per-bead debt from ``pyproject.toml``.
 
-    Raises:
-        RatchetError: The table is absent or malformed — defaulting to an empty
-            baseline would fail every recorded bead at once, and defaulting to a
-            permissive one would pass everything, which is worse.
-    """
     try:
         data = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -81,14 +44,7 @@ def load_frozen(repo: Path) -> dict[str, int]:
 
 
 def findings(repo_root: Path, wanted: tuple[str, ...] = ()) -> tuple[corpus_drift.Finding, ...]:
-    """Every unaccounted problem bullet in *repo_root*'s open parents.
 
-    *wanted* narrows to named ids so an author can check one bead.
-    """
-    # Importing `config` is what installs the tracker mode reader `owned_store` refuses
-    # to answer without, and naming it here is what keeps that import from reading as
-    # unused. A script reaching the engine outside the CLI is exactly the caller that
-    # used to file its work against the wrong store (`owned_store.set_mode_reader`).
     config.load_tracker_mode(repo_root)
     records = tracker.all_records(repo_root)
     children = corpus_drift.children_by_parent(records)
@@ -107,7 +63,6 @@ def findings(repo_root: Path, wanted: tuple[str, ...] = ()) -> tuple[corpus_drif
 
 
 def verdicts(found: tuple[corpus_drift.Finding, ...], frozen: dict[str, int]) -> list[Verdict]:
-    """The ratchet's reading of *found*: what grew, what appeared, and what graduated."""
     counts = dict.fromkeys(frozen, 0)
     for finding in found:
         counts[finding.issue_id] = counts.get(finding.issue_id, 0) + 1
@@ -145,7 +100,6 @@ def verdicts(found: tuple[corpus_drift.Finding, ...], frozen: dict[str, int]) ->
 
 
 def report(found: tuple[corpus_drift.Finding, ...], verdict: list[Verdict]) -> str:
-    """The failing beads, each with its bullets and what its own statement does account for."""
     lines: list[str] = []
     for entry in verdict:
         group = [finding for finding in found if finding.issue_id == entry.issue_id]
@@ -162,7 +116,6 @@ def report(found: tuple[corpus_drift.Finding, ...], verdict: list[Verdict]) -> s
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point: report every problem bullet a decider would read as current fact."""
     parser = argparse.ArgumentParser(
         description="Fail when an epic states a problem as fact and carries no child."
     )

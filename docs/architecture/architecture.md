@@ -3419,11 +3419,11 @@ appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 35 | pre-commit |
-| full | 39 | pre-push, continuous integration, and the loop's verify step |
+| fast | 33 | pre-commit |
+| full | 37 | pre-push, continuous integration, and the loop's verify step |
 | staged | 3 | a staged-files-only subset |
 
-The configuration declares 40 checks in total. They cover lint, format, three
+The configuration declares 38 checks in total. They cover lint, format, three
 platform-specific type-check passes, a security scan, dead code, a wiring gate, the kit
 boundary, the layering contract, the test suite, all five projection drift checks, the
 documentation claim gates, and the ratchets.

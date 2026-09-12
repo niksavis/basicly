@@ -1,28 +1,3 @@
-r"""Scaffold per-remote git identities via conditional includes.
-
-Many developers commit to more than one forge with different identities (a
-personal GitHub account, a company Bitbucket/GitLab). This helper wires git's
-``includeIf "hasconfig:remote.*.url:..."`` mechanism so the right name/email is
-selected automatically by a repo's remote URL — without ever setting a global
-``user.email`` (leaving it unset keeps an unconfigured repo failing loudly rather
-than committing a hostname address).
-
-It carries NO identities of its own; you pass them in. Pair it with the
-``identity-guard`` pre-commit hook, which blocks commits made with a missing or
-auto-generated identity.
-
-Examples:
-    python setup_git_identity.py add --host github.com \
-        --name "Ada Lovelace" --email ada@personal.example
-    python setup_git_identity.py add --host git.acme.example \
-        --name "Lovelace,Ada" --email ada@acme.example --label acme
-    python setup_git_identity.py list
-
-Each ``add`` writes an include file ``~/.gitconfig-<label>`` and adds one
-``includeIf`` entry to the global config. Re-running the same ``add`` is
-idempotent.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -33,7 +8,6 @@ from pathlib import Path
 
 
 def sanitize_label(host: str) -> str:
-    """Turn a host into a filesystem-safe include-file label (e.g. github-com)."""
     label = re.sub(r"[^a-z0-9]+", "-", host.lower()).strip("-")
     if not label:
         raise ValueError(f"cannot derive a label from host {host!r}")
@@ -41,12 +15,10 @@ def sanitize_label(host: str) -> str:
 
 
 def host_url_glob(host: str) -> str:
-    """Return the https URL glob used to match a host's remotes."""
     return f"https://{host}/**"
 
 
 def includeif_condition(url_glob: str) -> str:
-    """Return the includeIf condition string for a remote-URL glob."""
     return f"hasconfig:remote.*.url:{url_glob}"
 
 
@@ -55,10 +27,9 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def add_identity(host: str, name: str, email: str, label: str | None = None) -> str:
-    """Create the include file and register a conditional include. Return the label."""
     label = label or sanitize_label(host)
     include_file = Path.home() / f".gitconfig-{label}"
-    include_ref = f"~/.gitconfig-{label}"  # stored portably; git expands the tilde
+    include_ref = f"~/.gitconfig-{label}"
 
     _run(["git", "config", "--file", str(include_file), "user.name", name])
     _run(["git", "config", "--file", str(include_file), "user.email", email])
@@ -73,13 +44,11 @@ def add_identity(host: str, name: str, email: str, label: str | None = None) -> 
 
 
 def list_identities() -> str:
-    """Return the configured includeIf path entries from the global config."""
     result = _run(["git", "config", "--global", "--get-regexp", r"^includeif\..*\.path$"])
     return result.stdout.strip()
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point for the CLI."""
     parser = argparse.ArgumentParser(
         description="Scaffold per-remote git identities via conditional includes."
     )

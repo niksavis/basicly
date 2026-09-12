@@ -1,14 +1,3 @@
-"""The start offer on a record page: when it is made, and what it runs (basicly-fiow1sr).
-
-Split out of `test_board_record_page` when that module crossed the size cap. The seam is the
-offer rather than the page: these drive the action table, the predicate that decides whether a
-press may begin a lane, and whether anything the board renders submits it.
-
-The predecessor is why the argv is asserted against the table rather than against a literal.
-It shipped `loop supervise <leaf> --max-passes 1 --detach`, which starts nothing, and its
-tests passed because they checked the shape of a tuple.
-"""
-
 from __future__ import annotations
 
 import re
@@ -25,19 +14,11 @@ from tests.test_board_wall import STAMPED, document
 
 @pytest.fixture
 def doc() -> dict[str, Any]:
-    """The wall fixture, parsed fresh so a mutating test cannot reach another one."""
     return document("wall-v1.json")
 
 
 def test_the_start_offer_is_the_actions_own_argv_and_not_a_second_spelling() -> None:
-    """The refused version shipped an argv that started nothing and its tests passed.
 
-    They asserted the shape of a tuple. This asserts the command the page prints is produced
-    by the table the button submits to, so the two cannot diverge - and that the verb is the
-    detached one, because `loop supervise` on a leaf fans out over children it does not have
-    and a bare `loop run` is synchronous against `board_actions.TIMEOUT_S` of 300 seconds
-    (basicly-fiow1sr, basicly-zq9i2m.6).
-    """
     argv = board_actions.ACTIONS["record-start"].build({"issue": "basicly-x"})
     assert argv == ("loop", "run", "basicly-x", "--detach")
     assert "supervise" not in argv, "supervise fans out over children a ready leaf has none of"
@@ -48,7 +29,6 @@ def test_the_start_offer_is_the_actions_own_argv_and_not_a_second_spelling() -> 
 
 
 def test_a_start_is_offered_only_where_a_press_cannot_begin_a_second_lane() -> None:
-    """Ready and unheld, the acceptance's two conditions, driven through one function."""
     ready = {"id": QUIET, "ready": True}
     assert board_record.startable(ready, None) is True
     assert board_record.startable(ready, {"id": QUIET}) is False, "a lane already holds it"
@@ -58,7 +38,6 @@ def test_a_start_is_offered_only_where_a_press_cannot_begin_a_second_lane() -> N
 def test_the_page_prints_the_start_command_only_when_the_caller_supplied_one(
     doc: dict[str, Any],
 ) -> None:
-    """Against the rendered bytes: a context key the template never draws has passed before."""
     filled = board_record.context(
         doc, _verdict(doc), QUIET, STAMPED, page=board_record.PageFacts(start_command="basicly go")
     )
@@ -67,14 +46,12 @@ def test_the_page_prints_the_start_command_only_when_the_caller_supplied_one(
     if unit.get("ready"):
         assert "basicly go" in board_render.render_record(filled, TEMPLATES)
 
-    # The control: no command supplied, nothing drawn, whatever the record's state.
     bare = board_record.context(doc, _verdict(doc), QUIET, STAMPED)
     assert bare is not None
     assert "start: " not in board_render.render_record(bare, TEMPLATES)
 
 
 def _startable_ids(doc: dict[str, Any]) -> set[str]:
-    """Every record in *doc* the predicate would offer a start on."""
     lanes = {str(lane.get("id") or ""): lane for lane in doc.get("lanes") or []}
     return {
         str(unit["id"])
@@ -84,14 +61,7 @@ def _startable_ids(doc: dict[str, Any]) -> set[str]:
 
 
 def test_the_offer_is_a_control_and_not_only_a_line_to_copy() -> None:
-    """A printed command satisfies every earlier test in this module and offers no press.
 
-    That is how the first half shipped: `record-start` was registered on the POST endpoint
-    while no template drew a form for it, so the acceptance's *offer* was a `<code>` block
-    and the record's own demonstration - press start, watch a worktree appear - could not be
-    performed. Park and resume are the positive control: the same probe finds them, so a
-    zero here is the surface's and not the probe's (basicly-fiow1sr).
-    """
     page = _page([])
     armed = set(
         re.findall(r'value="record-start">\s*<input[^>]*name="issue" value="([\w.-]+)"', page)
@@ -106,13 +76,7 @@ def test_the_offer_is_a_control_and_not_only_a_line_to_copy() -> None:
 
 
 def test_the_start_control_carries_the_work_type_and_the_grant_root(doc: dict[str, Any]) -> None:
-    """Pressed without them the child reaches intake and stops - measured, not reasoned.
 
-    The trap is that the two key spaces differ. `board_record.start_form` answers in field
-    names and spells `work_type`; the field of that name is prefilled from the ask key
-    `type`. Handed over unmapped the input draws empty and the button starts a lane that
-    halts one step in.
-    """
     forms = board_asks.starting(doc, "a-token")
     assert forms, "the wall fixture offers no start at all, so this proves nothing"
     ident = next(iter(forms))
@@ -125,27 +89,19 @@ def test_the_start_control_carries_the_work_type_and_the_grant_root(doc: dict[st
 
 
 def test_a_board_with_no_server_draws_no_start_control(doc: dict[str, Any]) -> None:
-    """The `--out` artifact has nothing to post to; it keeps the line and loses the button."""
     assert all(form["token"] == "" for form in board_asks.starting(doc, None).values())
     assert 'value="record-start"' not in _page([], token=None)
 
 
 @dataclass(frozen=True)
 class _FoldedState:
-    """The three attributes `board_sections.units` reads off a folded record."""
-
     record: str
     fields: dict[str, str]
     status: str = "open"
 
 
 def test_a_record_owing_a_section_is_not_offered_a_start() -> None:
-    """The third condition, and the dependency walk cannot stand in for it.
 
-    On the commit that added the trigger gate the walk called 245 records ready and the
-    dispatch gate would refuse 244 of them, so a start drawn on `ready` alone is a control
-    that cannot work (basicly-lc2bd3v.9).
-    """
     unblocked = {"id": QUIET, "ready": True}
     assert board_record.startable(unblocked, None) is True, "the control: nothing owed"
     assert board_record.startable({**unblocked, "owes": ["## Trigger"]}, None) is False
@@ -153,7 +109,6 @@ def test_a_record_owing_a_section_is_not_offered_a_start() -> None:
 
 
 def test_a_row_with_no_verdict_is_not_offered_a_start() -> None:
-    """Absent is unknown, never satisfied: a producer that could not compute it fails closed."""
     assert board_record.startable({"id": QUIET, "ready": True, "owes": None}, None) is True, (
         "an absent verdict leaves the older two conditions deciding, as they did before"
     )
@@ -161,11 +116,7 @@ def test_a_row_with_no_verdict_is_not_offered_a_start() -> None:
 
 
 def test_a_unit_row_names_the_owed_sections_and_carries_no_body() -> None:
-    """Section names cross the wire; a description never does.
 
-    `units` is field-selected against a 132.5x payload, so the verdict travels as the names
-    of what is missing rather than as the body a reader would have to judge.
-    """
     body = "## Acceptance Criteria\n\n- given x then y\n" * 40
 
     state = _FoldedState(
@@ -180,7 +131,6 @@ def test_a_unit_row_names_the_owed_sections_and_carries_no_body() -> None:
 
 
 def test_a_unit_row_left_out_of_the_verdict_is_left_unmarked() -> None:
-    """Absent means the producer did not compute it, which renders as absent, not as clean."""
     state = _FoldedState("basicly-y", {"title": "a record", "issue_type": "task"})
 
     assert "owes" not in board_sections.units([state], owes={})[0]

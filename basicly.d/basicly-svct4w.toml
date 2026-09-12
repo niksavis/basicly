@@ -32,5 +32,4 @@
 rebaseline_reason = "the second edge dialect accepted on read, and the two-fold equality control, in a kit module with 13 tokens of headroom and a test module with 16"
 
 [ratchet.module_size.rebaselined]
-".basicly/core/kit/tracker/provenance.py" = 753
 "tests/test_kit_tracker_provenance.py" = 1571

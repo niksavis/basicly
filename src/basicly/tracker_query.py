@@ -1,17 +1,3 @@
-"""``basicly tracker`` read verbs: what the backlog holds, and what to work on next.
-
-The engine's half of the kit's ``queries`` module. Its whole responsibility is *routing
-and printing*: the kit answers, and nothing here folds an event or ranks a record. The
-boundary against :mod:`basicly.tracker_cutover` is read against write — that module makes
-a write reach the store, and every verb here is read-only.
-
-**Why the engine carries it at all**, given the kit's own CLI answers the same questions:
-a consumer of this repository does not know where the ledger is, and reaching the kit by
-path is what the handover had to spell out at every use. ``basicly tracker ready`` reads
-the ledger through :func:`basicly.owned_store.ledger_dir`, so the location is a fact the
-engine already holds rather than an argument a human retypes.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -22,44 +8,28 @@ from typing import Any
 
 from basicly import owned_store, tracker, ui
 
-# The kit module answering every verb here. Named rather than reached through the
-# differential, for the reason `owned_store.SCHEDULER_KIT_MODULE` gives: it sits beside
-# that module rather than under it.
 QUERIES_KIT_MODULE = "queries"
 
 
 def _queries(repo_root: Path) -> Any:
-    """The installed kit's query module.
 
-    Raises:
-        TrackerDivergenceError: the kit is not installed. A hard failure: an empty answer
-            would read as an empty backlog.
-    """
     return owned_store.kit(repo_root, QUERIES_KIT_MODULE)
 
 
 def _report(payload: object) -> None:
-    """Print *payload* as the JSON a caller scripting this branches on."""
     print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
 
 
 def ready_report(repo_root: Path, limit: int | None = None) -> dict[str, Any]:
-    """The kit's ranked ready report for *repo_root* — what :func:`cmd_ready` prints.
 
-    The function rather than the print, for a caller that needs the answer as data: the board
-    producer's caller draws the ready set, and reaching the kit itself would put a second
-    module on the store's seam for a question this one already routes (basicly-f3tked).
-    """
     return _queries(repo_root).ready(owned_store.ledger_dir(repo_root), limit=limit)
 
 
 def blocked_report(repo_root: Path) -> dict[str, Any]:
-    """The kit's blocked report for *repo_root* — what :func:`cmd_blocked` prints."""
     return _queries(repo_root).blocked(owned_store.ledger_dir(repo_root))
 
 
 def cmd_ready(args: argparse.Namespace) -> int:
-    """Print the ranked ready set — what can be worked on now, best first."""
     report = ready_report(Path.cwd(), getattr(args, "limit", None))
     if getattr(args, "json", False):
         _report(report)
@@ -76,7 +46,6 @@ def cmd_ready(args: argparse.Namespace) -> int:
 
 
 def cmd_blocked(args: argparse.Namespace) -> int:
-    """Print each dispatchable record that is not ready, and what holds it."""
     report = blocked_report(Path.cwd())
     if getattr(args, "json", False):
         _report(report)
@@ -98,7 +67,6 @@ def cmd_blocked(args: argparse.Namespace) -> int:
 
 
 def cmd_stats(args: argparse.Namespace) -> int:
-    """Print the backlog's totals: records by status, and the ready and blocked counts."""
     repo_root = Path.cwd()
     report = _queries(repo_root).stats(owned_store.ledger_dir(repo_root))
     if getattr(args, "json", False):
@@ -116,15 +84,7 @@ def cmd_stats(args: argparse.Namespace) -> int:
 
 
 def cmd_show(args: argparse.Namespace) -> int:
-    """Print one record's folded state, with both directions of its dependency graph.
 
-    Returns 1 for a record the ledger does not hold, and says so: ``found: false`` reads
-    exactly like a record with no body when a caller keys on a field instead.
-
-    The edges come from the seam rather than from the kit's fold: they are the one thing
-    a record's own events do not carry — an edge is stored on the dependent — so the
-    inverse direction has to be inverted from the whole population (basicly-ztik9a).
-    """
     repo_root = Path.cwd()
     found = _queries(repo_root).read_record(owned_store.ledger_dir(repo_root), args.record)
     if found is None:
@@ -136,7 +96,6 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    """Print the records the ledger holds, optionally narrowed to one status."""
     repo_root = Path.cwd()
     records = _queries(repo_root).query_records(
         owned_store.ledger_dir(repo_root),
@@ -147,9 +106,6 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
-# The read verbs, as the handler each one takes. A table rather than a chain of branches,
-# the same shape as `mirror._MIRRORED_WRITES`: the read surface is what a reader checks
-# against the documented commands.
 HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
     "ready": cmd_ready,
     "blocked": cmd_blocked,
@@ -160,7 +116,6 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
 
 
 def add_parsers(tracker_sub: Any) -> None:
-    """Register every read verb on the ``basicly tracker`` subparser."""
     for name, helping in (
         ("ready", "The ranked ready set: what can be worked on now"),
         ("blocked", "Each dispatchable record that is not ready, and what holds it"),

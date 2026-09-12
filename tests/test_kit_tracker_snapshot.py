@@ -1,27 +1,3 @@
-"""Tests for the tracker kit's derived record snapshot (basicly-vkh0.14).
-
-Both acceptance criteria are properties of a *derived* file, so each is asserted in the one
-way that can fail rather than restated:
-
-- **The header dates the snapshot without folding.** The discriminating case is a snapshot
-  whose record lines are garbage: :func:`staleness` still has to answer, which it can only do
-  by reading the first line. A hand-edited record line then separates the two read paths —
-  a fresh read returns the file (edit and all), and the read after one more append returns
-  the log's answer instead, which is what "regenerated lazily on a stale read" means.
-- **The glob is a contract and the checkpoint bounds the steady state.** Rotation, then an
-  append, then a rebuild: an archive dropped by a narrowed glob loses a record the assertions
-  name. The checkpoint is proved to *replace* the archive rather than merely summarise it by
-  making the archive unreadable at an unchanged line count — the resumed fold still answers for
-  a record idle since before the boundary, while the full-history fold no longer can.
-
-Everything a host would otherwise decide is injected as test data, per this repo's
-platform-hermetic rule: the wall clock on every append, the rotation period (the kit reads no
-clock at all — asserted from its imports), and the lock holder's pid. The one contention test
-uses a zero timeout so it reaches its deadline without sleeping, and it holds the lock under
-*this* process's pid so the platform's liveness answer — ``True`` on POSIX, ``None`` on
-Windows — refuses the steal either way.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -46,7 +22,6 @@ IDS_SOURCE = KIT_DIR / "ids.py"
 
 
 def _load(path: Path, name: str) -> ModuleType:
-    """Load a standalone script by path, the way a consumer without basicly would."""
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -56,9 +31,6 @@ def _load(path: Path, name: str) -> ModuleType:
 
 
 snapshot = _load(SNAPSHOT_SOURCE, "tracker_snapshot")
-# The module object `snapshot.py` itself loaded, not a second copy: two loads mint two
-# `RecordState` classes and a dataclass compares unequal across them, so every state
-# comparison below would silently be an identity check instead.
 events = snapshot.events
 
 RECORD_A = "basicly-aa11"
@@ -70,7 +42,6 @@ NEXT_PERIOD = "2027"
 
 
 def _lifecycle() -> list[Any]:
-    """Drafts touching every folded field: fields, status, prose, typed state, a tombstone."""
     return [
         events.Draft(RECORD_A, "created", {"title": "a parent"}),
         events.Draft(RECORD_A, "status", {"status": "open"}),
@@ -85,24 +56,17 @@ def _lifecycle() -> list[Any]:
 
 
 def _build(directory: Path, drafts: list[Any] | None = None) -> list[Any]:
-    """Append *drafts* (the lifecycle by default) under a fixed injected clock."""
     return events.append(
         directory, _lifecycle() if drafts is None else drafts, actor="a-lane", clock=lambda: CLOCK
     )
 
 
 def _lines(path: Path) -> list[str]:
-    """The non-blank lines of a derived file."""
     return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def _code_string_literals(source: str) -> list[str]:
-    """Every string literal in *source* that is not a docstring.
 
-    The prose may name ``events-2027.jsonl`` as often as it helps; the *code* may not, because
-    a second spelling of the log's name is a second fact that drifts from
-    :data:`events.LOG_GLOB` without anything noticing.
-    """
     tree = ast.parse(source)
     documented = {
         ast.get_docstring(node, clean=False)
@@ -119,18 +83,13 @@ def _code_string_literals(source: str) -> list[str]:
 
 
 def _log_tip_id(directory: Path) -> str:
-    """The event id on the last line of the last log file — what a tail read would find."""
     logs = events.log_paths(directory)
     return json.loads(_lines(logs[-1])[-1])["id"]
-
-
-# --- AC1: the header dates the snapshot without folding ------------------------
 
 
 def test_the_first_line_carries_the_last_folded_events_id_and_the_event_count(
     tmp_path: Path,
 ) -> None:
-    """The staleness header, read as a reader reads it: line one, and nothing else."""
     minted = _build(tmp_path)
 
     snapshot.rebuild(tmp_path)
@@ -145,12 +104,7 @@ def test_the_first_line_carries_the_last_folded_events_id_and_the_event_count(
 def test_staleness_is_answered_from_the_header_alone_without_folding_the_records(
     tmp_path: Path,
 ) -> None:
-    """The discriminating case: a body no fold could read, and a question still answered.
 
-    A `staleness` that parsed the record lines would raise here. One that folded the log to
-    compare would be doing exactly the work the header exists to avoid, and the AC's
-    "without folding" would be untestable.
-    """
     _build(tmp_path)
     path = snapshot.rebuild(tmp_path) and snapshot.snapshot_path(tmp_path)
     header = _lines(path)[0]
@@ -164,11 +118,7 @@ def test_staleness_is_answered_from_the_header_alone_without_folding_the_records
 
 
 def test_every_append_after_a_snapshot_makes_it_stale_and_says_why(tmp_path: Path) -> None:
-    """Repeated rather than once: a check that only fires on the first divergence is worse.
 
-    The reason is asserted because a hook that prints "rebuilt" and nothing else leaves a
-    human unable to tell a merge from a corrupt derivative.
-    """
     _build(tmp_path)
     for index in range(3):
         snapshot.rebuild(tmp_path)
@@ -183,11 +133,7 @@ def test_every_append_after_a_snapshot_makes_it_stale_and_says_why(tmp_path: Pat
 
 
 def test_a_merge_that_appended_to_an_archive_is_detected_too(tmp_path: Path) -> None:
-    """A tally that only watched the current file would call a grown ledger unchanged.
 
-    A union merge lands another branch's events in the file whose period they belong to,
-    which can be an archive — so the scan covers every log the glob finds.
-    """
     _build(tmp_path)
     archive = events.log_paths(tmp_path)[0]
     snapshot.rotate(tmp_path, NEXT_PERIOD)
@@ -212,9 +158,6 @@ def test_a_merge_that_appended_to_an_archive_is_detected_too(tmp_path: Path) -> 
 
     assert snapshot.staleness(tmp_path).stale is True
 
-    # And the checkpoint must not be trusted here: it folded that archive at a smaller line
-    # count, so the shortcut has to give way to the full fold or the merged event is lost
-    # behind a header calling the snapshot current.
     grown = snapshot.fold_resumed(tmp_path)
 
     assert grown.resumed_from is None
@@ -224,12 +167,7 @@ def test_a_merge_that_appended_to_an_archive_is_detected_too(tmp_path: Path) -> 
 
 
 def test_a_fresh_read_returns_the_file_and_a_stale_read_refolds_the_log(tmp_path: Path) -> None:
-    """The two halves of laziness, separated by a value only the file can hold.
 
-    A comment edited into the snapshot is not in the log, so it survives exactly as long as
-    the header vouches for the file. One more append and the log's answer replaces it —
-    which is the regeneration, observed rather than counted with a spy.
-    """
     _build(tmp_path)
     snapshot.rebuild(tmp_path)
     path = snapshot.snapshot_path(tmp_path)
@@ -249,11 +187,7 @@ def test_a_fresh_read_returns_the_file_and_a_stale_read_refolds_the_log(tmp_path
 
 
 def test_a_snapshot_from_a_newer_format_version_is_refused_and_rebuilt(tmp_path: Path) -> None:
-    """A derived file's forward compatibility is refusal, not the log's tolerant preservation.
 
-    Half-reading a newer format would serve a field this reader misunderstood; refusing costs
-    one fold, because the log is still there.
-    """
     _build(tmp_path)
     snapshot.rebuild(tmp_path)
     path = snapshot.snapshot_path(tmp_path)
@@ -274,7 +208,6 @@ def test_a_snapshot_from_a_newer_format_version_is_refused_and_rebuilt(tmp_path:
 
 
 def test_a_first_line_with_no_format_version_is_not_taken_for_this_one(tmp_path: Path) -> None:
-    """A JSON object that happens to sit on line one is some other file, not version 1."""
     _build(tmp_path)
     path = snapshot.rebuild(tmp_path) and snapshot.snapshot_path(tmp_path)
     header = json.loads(_lines(path)[0])
@@ -289,7 +222,6 @@ def test_a_first_line_with_no_format_version_is_not_taken_for_this_one(tmp_path:
 
 
 def test_a_corrupt_snapshot_is_replaced_from_the_log_rather_than_repaired(tmp_path: Path) -> None:
-    """The rule that makes a derivative disposable: never repair, always regenerate."""
     _build(tmp_path)
     path = snapshot.rebuild(tmp_path) and snapshot.snapshot_path(tmp_path)
     path.write_text("this is not a snapshot\n", encoding="utf-8")
@@ -302,7 +234,6 @@ def test_a_corrupt_snapshot_is_replaced_from_the_log_rather_than_repaired(tmp_pa
 
 
 def test_two_rebuilds_of_one_log_are_byte_identical(tmp_path: Path) -> None:
-    """Fold determinism (§14), which is what lets one derivative be compared with another."""
     _build(tmp_path)
 
     snapshot.rebuild(tmp_path)
@@ -314,7 +245,6 @@ def test_two_rebuilds_of_one_log_are_byte_identical(tmp_path: Path) -> None:
 
 
 def test_every_folded_field_survives_the_snapshot_round_trip(tmp_path: Path) -> None:
-    """A snapshot that dropped `max_seq` would resume folding an item as if it were new."""
     _build(tmp_path)
     folded = events.fold(events.read_events(tmp_path)[0])
 
@@ -330,11 +260,7 @@ def test_every_folded_field_survives_the_snapshot_round_trip(tmp_path: Path) -> 
 
 
 def test_a_torn_trailing_line_never_makes_the_snapshot_permanently_stale(tmp_path: Path) -> None:
-    """The torn-write signature is a line no fold consumed, so no tally may count it.
 
-    Counting it would make every read report a stale snapshot forever and rebuild on each
-    one — the failure mode of a check that cannot ever be satisfied.
-    """
     _build(tmp_path)
     snapshot.rebuild(tmp_path)
     log = events.log_paths(tmp_path)[-1]
@@ -345,7 +271,6 @@ def test_a_torn_trailing_line_never_makes_the_snapshot_permanently_stale(tmp_pat
 
 
 def test_interior_garbage_is_counted_once_and_then_the_snapshot_settles(tmp_path: Path) -> None:
-    """A quarantined line is a line: the tally counts it so the ledger stops reading as stale."""
     _build(tmp_path)
     snapshot.rebuild(tmp_path)
     log = events.log_paths(tmp_path)[-1]
@@ -360,7 +285,6 @@ def test_interior_garbage_is_counted_once_and_then_the_snapshot_settles(tmp_path
 
 
 def test_publication_is_atomic_and_leaves_no_temporary_file(tmp_path: Path) -> None:
-    """A reader must never see a half-written derivative, and a rebuild must leave no litter."""
     _build(tmp_path)
 
     snapshot.rebuild(tmp_path)
@@ -374,7 +298,6 @@ def test_publication_is_atomic_and_leaves_no_temporary_file(tmp_path: Path) -> N
 
 
 def test_every_line_is_utf8_with_a_unix_ending_whatever_the_host_prefers(tmp_path: Path) -> None:
-    """Asserted on the bytes, so the Windows answer is checked here rather than by CI."""
     _build(tmp_path, [events.Draft(RECORD_A, "comment", {"text": "naïve — em dash"})])
 
     snapshot.rebuild(tmp_path)
@@ -385,13 +308,9 @@ def test_every_line_is_utf8_with_a_unix_ending_whatever_the_host_prefers(tmp_pat
     assert "naïve — em dash" in raw.decode("utf-8")
 
 
-# --- AC1: the hook entry point ------------------------------------------------
-
-
 def test_the_hook_entry_point_regenerates_a_stale_snapshot_and_is_quiet_when_fresh(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """What `post-merge` and `post-checkout` run: the case laziness cannot cover."""
     _build(tmp_path)
 
     assert snapshot.main([str(tmp_path)]) == 0
@@ -412,7 +331,6 @@ def test_the_hook_entry_point_regenerates_a_stale_snapshot_and_is_quiet_when_fre
 def test_check_mode_reports_a_stale_snapshot_and_writes_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """So a gate can assert freshness without producing it."""
     _build(tmp_path)
 
     assert snapshot.main([str(tmp_path), "--check"]) == 1
@@ -431,7 +349,6 @@ def test_check_mode_reports_a_stale_snapshot_and_writes_nothing(
 def test_the_full_flag_folds_the_whole_history_and_publishes_the_same_bytes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--full` is the escape hatch for a checkpoint nobody trusts, not a different answer."""
     _build(tmp_path)
     snapshot.rotate(tmp_path, NEXT_PERIOD)
     _build(tmp_path, [events.Draft(RECORD_B, "comment", {"text": "after the boundary"})])
@@ -448,7 +365,6 @@ def test_the_full_flag_folds_the_whole_history_and_publishes_the_same_bytes(
 def test_the_hook_is_inert_in_a_repository_with_no_ledger(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A hook is installed once and runs on every checkout, including before the ledger exists."""
     missing = tmp_path / "no-tracker-here"
 
     assert snapshot.main([str(missing)]) == 0
@@ -462,12 +378,7 @@ def test_the_hook_is_inert_in_a_repository_with_no_ledger(
 def test_an_unusable_header_is_reported_as_stale_rather_than_as_an_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The hook has exactly two outcomes, because every bad derivative is replaced.
 
-    A negative count cannot have come from any fold here, so the header parser refuses it —
-    and `staleness` turns that refusal into a *reason*, which is what keeps a corrupt cache
-    from becoming a failing hook.
-    """
     _build(tmp_path)
     snapshot.rebuild(tmp_path)
     path = snapshot.snapshot_path(tmp_path)
@@ -485,15 +396,8 @@ def test_an_unusable_header_is_reported_as_stale_rather_than_as_an_error(
     assert snapshot.staleness(tmp_path).stale is False
 
 
-# --- AC2: the glob is a contract, rotation archives, the checkpoint bounds -----
-
-
 def test_the_log_glob_is_the_contract_and_the_rotation_names_derive_from_it() -> None:
-    """A narrowed glob does not merely hide an archive — it renames what rotation creates.
 
-    Nothing in `snapshot.py` spells ``events-`` or ``.jsonl`` a second time, so this is one
-    fact with two readers rather than two facts that can drift.
-    """
     assert events.LOG_GLOB == "events-*.jsonl"
     assert snapshot.log_path(Path("ledger"), NEXT_PERIOD).name == "events-2027.jsonl"
     assert snapshot.checkpoint_path(Path("ledger"), NEXT_PERIOD).name == "checkpoint-2027.jsonl"
@@ -506,7 +410,6 @@ def test_the_log_glob_is_the_contract_and_the_rotation_names_derive_from_it() ->
 
 
 def test_a_rebuild_folds_a_rotated_archive_and_fails_if_the_glob_narrows(tmp_path: Path) -> None:
-    """The full-history fold, across a boundary. A narrowed glob loses `RECORD_A` outright."""
     _build(tmp_path)
     snapshot.rotate(tmp_path, NEXT_PERIOD)
     _build(tmp_path, [events.Draft(RECORD_B, "comment", {"text": "after the boundary"})])
@@ -526,7 +429,6 @@ def test_a_rebuild_folds_a_rotated_archive_and_fails_if_the_glob_narrows(tmp_pat
 def test_rotation_archives_every_earlier_file_byte_for_byte_and_prunes_nothing(
     tmp_path: Path,
 ) -> None:
-    """Archived and never pruned is a property of what rotation *omits*, so the bytes are it."""
     _build(tmp_path)
     before = {path.name: path.read_bytes() for path in events.log_paths(tmp_path)}
 
@@ -543,7 +445,6 @@ def test_rotation_archives_every_earlier_file_byte_for_byte_and_prunes_nothing(
 
 
 def test_rotation_switches_the_append_target_and_the_sequence_continues(tmp_path: Path) -> None:
-    """The switch is the new name sorting last, which is all `append_target` looks at."""
     _build(tmp_path)
 
     rotation = snapshot.rotate(tmp_path, NEXT_PERIOD)
@@ -557,7 +458,6 @@ def test_rotation_switches_the_append_target_and_the_sequence_continues(tmp_path
 def test_the_boundary_checkpoint_carries_every_items_totals_including_an_idle_one(
     tmp_path: Path,
 ) -> None:
-    """§4.6's bound is a requirement *on the checkpoint*, so it is asserted on the file."""
     _build(tmp_path)
     at_boundary = events.fold(events.read_events(tmp_path)[0])
 
@@ -573,14 +473,7 @@ def test_the_boundary_checkpoint_carries_every_items_totals_including_an_idle_on
 
 
 def test_steady_state_folds_the_checkpoint_and_the_current_file_only(tmp_path: Path) -> None:
-    """The bound, proved by making the archive unreadable at an unchanged line count.
 
-    Overwriting the archive's lines with garbage is a probe, not a supported operation — it
-    is how "never walks the whole archive" becomes an assertion rather than a claim about
-    performance. The line count is preserved on purpose, because that is the one thing the
-    resumed fold *does* check: this isolates "the archive's bytes are never parsed" from
-    "the archive has grown", which is the case the fallback exists for.
-    """
     _build(tmp_path)
     snapshot.rotate(tmp_path, NEXT_PERIOD)
     _build(tmp_path, [events.Draft(RECORD_B, "comment", {"text": "only b moves"})])
@@ -604,7 +497,6 @@ def test_steady_state_folds_the_checkpoint_and_the_current_file_only(tmp_path: P
 
 
 def test_the_resumed_fold_and_the_full_history_fold_agree(tmp_path: Path) -> None:
-    """The steady-state shortcut has to be the same answer, or it is a second source of truth."""
     _build(tmp_path)
     snapshot.rotate(tmp_path, "2028")
     _build(tmp_path, [events.Draft(RECORD_A, "status", {"status": "in_progress"})])
@@ -624,7 +516,6 @@ def test_the_resumed_fold_and_the_full_history_fold_agree(tmp_path: Path) -> Non
 
 
 def test_a_corrupt_checkpoint_costs_the_shortcut_and_not_correctness(tmp_path: Path) -> None:
-    """A derivative is disposable in both directions: a bad one is skipped, never repaired."""
     _build(tmp_path)
     rotation = snapshot.rotate(tmp_path, NEXT_PERIOD)
     _build(tmp_path, [events.Draft(RECORD_B, "comment", {"text": "after the boundary"})])
@@ -643,7 +534,6 @@ def test_a_corrupt_checkpoint_costs_the_shortcut_and_not_correctness(tmp_path: P
 
 
 def test_a_period_that_would_not_sort_after_the_current_file_is_refused(tmp_path: Path) -> None:
-    """A rotation whose name sorts earlier is a silent no-op: appends keep going to the old file."""
     _build(tmp_path)
     snapshot.rotate(tmp_path, NEXT_PERIOD)
 
@@ -657,7 +547,6 @@ def test_a_period_that_would_not_sort_after_the_current_file_is_refused(tmp_path
 def test_a_malformed_period_or_an_existing_file_is_refused_before_anything_is_written(
     tmp_path: Path,
 ) -> None:
-    """Refused, and nothing written: a half-rotation would leave two current files."""
     _build(tmp_path)
 
     with pytest.raises(snapshot.SnapshotError, match="must match"):
@@ -676,7 +565,6 @@ def test_a_malformed_period_or_an_existing_file_is_refused_before_anything_is_wr
 
 
 def test_rotating_a_ledger_with_no_history_writes_no_checkpoint(tmp_path: Path) -> None:
-    """A checkpoint of nothing would be a file whose only content is a claim to have folded."""
     rotation = snapshot.rotate(tmp_path / "fresh", "2026")
 
     assert rotation.checkpoint is None
@@ -687,13 +575,7 @@ def test_rotating_a_ledger_with_no_history_writes_no_checkpoint(tmp_path: Path) 
 def test_rotation_reports_contention_rather_than_writing_under_another_writer(
     tmp_path: Path,
 ) -> None:
-    """Rotation changes where an append lands, so it takes the writer's lock.
 
-    Hermetic by construction rather than by luck: the timeout is zero, so the acquire loop
-    reaches its deadline on the first pass with nothing slept, and the holder's pid is *this*
-    process — which POSIX reports alive and Windows reports unknown, and neither answer
-    permits a steal.
-    """
     _build(tmp_path)
     holder = events.LedgerLock(tmp_path, pid=os.getpid())
     holder.acquire()
@@ -712,11 +594,7 @@ def test_rotation_reports_contention_rather_than_writing_under_another_writer(
     assert rotation.log.exists()
 
 
-# --- the derived set, and the ignore rule it needs -----------------------------
-
-
 def test_derived_paths_names_every_derivative_and_never_a_log(tmp_path: Path) -> None:
-    """This list is handed to a delete, in a directory that also holds the only truth."""
     _build(tmp_path)
     snapshot.rotate(tmp_path, NEXT_PERIOD)
     snapshot.rebuild(tmp_path)
@@ -728,11 +606,7 @@ def test_derived_paths_names_every_derivative_and_never_a_log(tmp_path: Path) ->
 
 
 def test_the_ignore_patterns_can_never_match_a_log_name() -> None:
-    """The snapshot is gitignored, so the patterns a deployment ignores are load-bearing.
 
-    An ignore rule that also matched `events-*.jsonl` would leave the ledger untracked — the
-    truth dropped to keep a cache out of git.
-    """
     assert snapshot.DERIVED_PATTERNS == ("snapshot.jsonl", "checkpoint-*.jsonl")
     for pattern in snapshot.DERIVED_PATTERNS:
         assert not fnmatch(events.INITIAL_LOG_NAME, pattern)
@@ -740,15 +614,8 @@ def test_the_ignore_patterns_can_never_match_a_log_name() -> None:
         assert not fnmatch(".events.lock", pattern)
 
 
-# --- the seeded fold, which is the only fold ----------------------------------
-
-
 def test_a_seeded_fold_copies_the_checkpoint_it_resumes_from(tmp_path: Path) -> None:
-    """The seam exists so there is one fold, not a second way to apply an event to a state.
 
-    It must therefore not mutate the caller's records: a checkpoint read once and folded
-    twice would otherwise accumulate the tail twice.
-    """
     _build(tmp_path)
     rotation = snapshot.rotate(tmp_path, NEXT_PERIOD)
     _build(tmp_path, [events.Draft(RECORD_B, "comment", {"text": "after the boundary"})])
@@ -769,12 +636,7 @@ def test_a_seeded_fold_copies_the_checkpoint_it_resumes_from(tmp_path: Path) -> 
 def test_a_resumed_fold_carries_the_typed_machine_state_across_the_boundary(
     tmp_path: Path,
 ) -> None:
-    """A checkpoint that dropped `checkpoints` would read an approved item as never approved.
 
-    The item is idle after the boundary, which is the case §4.6 bounds the steady state on:
-    its approval is only in the checkpoint, so a resumed fold that did not carry it would
-    disagree with the full-history fold that `fsck` runs (basicly-vkh0.30).
-    """
     _build(tmp_path)
     rotation = snapshot.rotate(tmp_path, NEXT_PERIOD)
     _build(tmp_path, [events.Draft(RECORD_B, "note", {"text": "after the boundary"})])
@@ -789,12 +651,7 @@ def test_a_resumed_fold_carries_the_typed_machine_state_across_the_boundary(
 
 
 def test_a_snapshot_written_before_the_typed_kinds_reads_back_with_neither() -> None:
-    """Empty is the state such a file holds, not a default standing in for one.
 
-    No event of either kind could have been folded when it was written, so reading it back
-    empty is exact — and refusing it instead would make every consumer rebuild on the first
-    read after this change rather than on a staleness answer.
-    """
     older = {
         "record": RECORD_A,
         "status": "open",
@@ -812,7 +669,6 @@ def test_a_snapshot_written_before_the_typed_kinds_reads_back_with_neither() -> 
 
 
 def test_a_folded_records_typed_state_is_refused_when_it_cannot_be_read(tmp_path: Path) -> None:
-    """The file is regenerable, so a shape a consumer would have to guess at is refused."""
     _build(tmp_path)
     snapshot.rebuild(tmp_path)
     line = _lines(snapshot.snapshot_path(tmp_path))[1]
@@ -825,18 +681,13 @@ def test_a_folded_records_typed_state_is_refused_when_it_cannot_be_read(tmp_path
         snapshot.record_from_dict({**json.loads(line), "artifacts": ["plan"]})
 
 
-# --- R9: no store shrinks silently, the derived one included -------------------
-
-
 def _fewer(published: Any, keep: int) -> Any:
-    """*published* with only *keep* of its records — the shape the 187-record loss took."""
     return snapshot.Snapshot(
         header=published.header, records=dict(sorted(published.records.items())[:keep])
     )
 
 
 def test_a_shrinking_publish_is_refused_and_reports_both_counts(tmp_path: Path) -> None:
-    """The defect that bought R9 deleted 187 records, 47 of them open, and reported success."""
     _build(tmp_path)
     published = snapshot.rebuild(tmp_path)
     path = snapshot.snapshot_path(tmp_path)
@@ -852,7 +703,6 @@ def test_a_shrinking_publish_is_refused_and_reports_both_counts(tmp_path: Path) 
 
 
 def test_a_shrink_the_caller_declares_intentional_is_published(tmp_path: Path) -> None:
-    """An intended loss is a decision, not a corruption; the flag is the whole difference."""
     _build(tmp_path)
     published = snapshot.rebuild(tmp_path)
     path = snapshot.snapshot_path(tmp_path)
@@ -866,11 +716,7 @@ def test_a_shrink_the_caller_declares_intentional_is_published(tmp_path: Path) -
 def test_the_shrink_comparison_reads_records_and_never_a_timestamp(
     tmp_path: Path, mtime: float
 ) -> None:
-    """Injected as test data rather than raced: an ancient file and a future one answer alike.
 
-    The header is made to disagree with the record lines too, so a check taking the cheap
-    count — the one the fold being questioned wrote about itself — cannot pass here.
-    """
     _build(tmp_path)
     published = snapshot.rebuild(tmp_path)
     path = snapshot.snapshot_path(tmp_path)
@@ -888,7 +734,6 @@ def test_the_shrink_comparison_reads_records_and_never_a_timestamp(
 
 
 def test_a_shrink_check_with_no_usable_file_publishes_and_says_which(tmp_path: Path) -> None:
-    """Absent and unparseable are both "nothing to compare against", and are named apart."""
     _build(tmp_path)
     smaller = _fewer(snapshot.rebuild(tmp_path), 1)
     path = snapshot.snapshot_path(tmp_path)
@@ -909,7 +754,6 @@ def test_a_shrink_check_with_no_usable_file_publishes_and_says_which(tmp_path: P
 def test_a_rebuild_whose_log_vanished_shrinks_and_is_refused_rather_than_reported_clean(
     tmp_path: Path,
 ) -> None:
-    """The incident's own shape, through the surface a caller uses rather than the writer."""
     _build(tmp_path)
     snapshot.rebuild(tmp_path)
     for log in events.log_paths(tmp_path):
@@ -921,18 +765,8 @@ def test_a_rebuild_whose_log_vanished_shrinks_and_is_refused_rather_than_reporte
     assert len(_lines(snapshot.snapshot_path(tmp_path))) == 4
 
 
-# --- the kit boundary ---------------------------------------------------------
-
-
 def test_the_module_imports_nothing_outside_the_standard_library() -> None:
-    """The kit boundary, read off the source rather than trusted.
 
-    ``time`` and ``datetime`` are absent from the permitted set on purpose: the rotation
-    period is an argument (§9.5), so nothing here may ask what year it is. ``Path.replace``
-    rather than ``rename`` is asserted for the same reason a platform difference is made test
-    data — on Windows a rename onto an existing file fails, which would leave every rebuild
-    after the first silently unpublished.
-    """
     source = SNAPSHOT_SOURCE.read_text(encoding="utf-8")
     imported: set[str] = set()
     for node in ast.walk(ast.parse(source)):
@@ -992,12 +826,7 @@ print(json.dumps({
 
 
 def _pruned_env(tmp_path: Path) -> dict[str, str]:
-    """An environment with no basicly on PATH and nothing pointing at this repo.
 
-    Built from empty rather than filtered, so nothing inherited can smuggle the package back
-    in. The few names copied back are what an interpreter needs on its own platform, which
-    makes the platform difference test data.
-    """
     empty = tmp_path / "empty-path-dir"
     empty.mkdir(exist_ok=True)
     home = tmp_path / "scratch-home"
@@ -1011,7 +840,6 @@ def _pruned_env(tmp_path: Path) -> dict[str, str]:
 
 
 def _consumer_kit(tmp_path: Path) -> Path:
-    """The three kit files copied out, the way a consumer copies a directory."""
     consumer = tmp_path / "consumer" / "kit" / "tracker"
     consumer.mkdir(parents=True)
     for source in (SNAPSHOT_SOURCE, EVENTS_SOURCE, IDS_SOURCE):
@@ -1020,12 +848,7 @@ def _consumer_kit(tmp_path: Path) -> Path:
 
 
 def test_the_snapshot_is_derived_in_a_consumer_process_with_no_basicly(tmp_path: Path) -> None:
-    """The kit's hard constraint, exercised the way a consumer would exercise it.
 
-    ``-S`` drops site-packages, which is where this repo's own ``basicly`` lives, and ``-I``
-    drops ``PYTHONPATH``, the user site directory and the script's own directory. The ledger
-    is built here and rotated, folded and published *there*.
-    """
     ledger = tmp_path / "their-ledger"
     events.append(
         ledger,
@@ -1061,7 +884,6 @@ def test_the_snapshot_is_derived_in_a_consumer_process_with_no_basicly(tmp_path:
 
 
 def test_the_hook_command_runs_the_module_as_a_script_with_no_basicly(tmp_path: Path) -> None:
-    """The exact shape a `post-merge` hook uses: one interpreter, one path, one argument."""
     ledger = tmp_path / "their-ledger"
     events.append(
         ledger,

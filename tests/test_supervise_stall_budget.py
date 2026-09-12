@@ -1,12 +1,3 @@
-"""Regression: a lane queued for a process-budget slot is not a stall (basicly-7cdeyd).
-
-`_dispatch_lane`'s watchdog used to start counting before its own process-budget slot
-was granted, so a lane held in the queue behind a full budget — waiting by design —
-read as a silent, wedged dispatch. Kept in its own module because
-`tests/test_supervise.py` is already frozen at its module-size cap and cannot grow
-(basicly-u2hl.5).
-"""
-
 from __future__ import annotations
 
 import threading
@@ -35,7 +26,6 @@ if TYPE_CHECKING:
 def test_dispatch_lane_queued_for_a_process_slot_is_not_flagged_stalled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A lane waiting on a full process budget is queued by design, not stuck."""
     fake = _FakeBr({"epic.1": _issue("epic.1")})
     _install_br(monkeypatch, fake)
     monkeypatch.setattr(decisions, "_notify", lambda *_a, **_k: None)
@@ -72,8 +62,6 @@ def test_dispatch_lane_queued_for_a_process_slot_is_not_flagged_stalled(
     runner.reset_process_budget()
     outcome_box: dict = {}
     try:
-        # One lane slot total, held here for longer than stall_after: epic.1 must
-        # queue behind it rather than get one of its own.
         runner.configure_process_budget(runner.DECIDER_SLOTS + 1, 1)
         with runner.process_budget().slot(runner.LANE):
             thread = threading.Thread(
@@ -88,7 +76,7 @@ def test_dispatch_lane_queued_for_a_process_slot_is_not_flagged_stalled(
                 )
             )
             thread.start()
-            time.sleep(0.2)  # well past stall_after while epic.1 still waits for the slot
+            time.sleep(0.2)
             stalls_while_queued = [
                 i for i in decisions.items_on(tmp_path, "epic.1") if i.kind == "stall"
             ]
@@ -99,6 +87,4 @@ def test_dispatch_lane_queued_for_a_process_slot_is_not_flagged_stalled(
 
     assert outcome_box["outcome"].result is not None
     assert outcome_box["outcome"].result.returncode == 0
-    # Never flagged, not merely resolved by dispatch end: the dispatch itself ran
-    # too briefly for the watchdog it started with to ever cross stall_after.
     assert [i for i in decisions.items_on(tmp_path, "epic.1") if i.kind == "stall"] == []

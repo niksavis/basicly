@@ -1,11 +1,3 @@
-"""Tests for the session-start orientation hook (basicly-yru8eu).
-
-The engine is injected, never spawned from PATH: `cli_command` is replaced with a
-`python -c` argv, so the report, a slow fold and a failing exit are all test data instead
-of properties of whichever `basicly` the runner happened to resolve. The one end-to-end
-test runs the script as the hosts run it — as a file, with the real CLI.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -49,7 +41,6 @@ def _run(module, payload: object, monkeypatch: pytest.MonkeyPatch) -> int:
 def test_a_claude_payload_receives_the_report_as_plain_text(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Claude Code injects a SessionStart hook's plain stdout, so it is not JSON-wrapped."""
     module = _load_module()
     _stub_cli(module, f"print({REPORT!r})", monkeypatch)
 
@@ -63,7 +54,6 @@ def test_a_claude_payload_receives_the_report_as_plain_text(
 def test_a_copilot_payload_receives_the_report_as_additional_context(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Copilot parses stdout as one JSON object; plain text would be dropped unread."""
     module = _load_module()
     _stub_cli(module, f"print({REPORT!r})", monkeypatch)
 
@@ -75,7 +65,6 @@ def test_a_copilot_payload_receives_the_report_as_additional_context(
 def test_no_payload_at_all_takes_the_plain_shape(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A hand run has no stdin, and the readable form is the right default."""
     module = _load_module()
     _stub_cli(module, f"print({REPORT!r})", monkeypatch)
 
@@ -87,7 +76,6 @@ def test_no_payload_at_all_takes_the_plain_shape(
 def test_an_orientation_slower_than_the_bound_is_abandoned_in_one_line(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A session open waits on this hook, so the fold is bounded rather than awaited."""
     module = _load_module()
     monkeypatch.setattr(module, "CLI_TIMEOUT_S", 0.2)
     _stub_cli(module, "import time; time.sleep(30)", monkeypatch)
@@ -104,7 +92,6 @@ def test_an_orientation_slower_than_the_bound_is_abandoned_in_one_line(
 def test_a_failing_or_absent_engine_injects_nothing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Never a gate: a broken orientation costs the report, never the session."""
     module = _load_module()
     _stub_cli(module, "raise SystemExit(3)", monkeypatch)
 
@@ -119,12 +106,7 @@ def test_a_failing_or_absent_engine_injects_nothing(
 
 
 def test_a_repository_with_no_owned_tracker_is_silent_end_to_end(tmp_path: Path) -> None:
-    """The script as a host runs it: a file, the real CLI, and nothing to say.
 
-    The second assertion is the positive control this empty stdout needs — it reads the
-    line the command actually prints there and pins the hook's prefix against it, so the
-    silence cannot come from a probe that never reached the tracker.
-    """
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)  # nosec B603 B607
     hook = subprocess.run(  # nosec B603
         [sys.executable, str(SCRIPT_PATH)],

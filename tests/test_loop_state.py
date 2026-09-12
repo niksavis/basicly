@@ -1,5 +1,3 @@
-"""Tests for resumable loop-state reconstruction (onb.6.1)."""
-
 from __future__ import annotations
 
 import json
@@ -19,8 +17,6 @@ CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 REPO_ROOT = Path(__file__).parent.parent
 KIT_SOURCE = REPO_ROOT / tracker.KIT_TRACKER_DIR
 
-# Injected rather than read, per this repo's platform-hermetic rule: the ledger's only
-# wall clock is this argument, and the ranking under test must not read it at all.
 CLOCK = 1_000_000_000.0
 
 
@@ -32,13 +28,6 @@ class _Proc:
 
 
 class _FakeBr:
-    """Stateful stand-in for tracker, routed by subcommand.
-
-    Serves one issue record plus its gate list and comments, so read_node_state
-    (which delegates gate/checkpoint/rework reads to the policy engine) resolves
-    entirely against this fake when installed on both modules.
-    """
-
     def __init__(
         self,
         *,
@@ -49,8 +38,6 @@ class _FakeBr:
         scheduler_envelope: dict | None = None,
         **record: object,
     ) -> None:
-        # Any issue field can be overridden by keyword (status, external_ref,
-        # dependents, ...); a field not named here stays absent from the record.
         self.record: dict = {
             "id": "i",
             "status": "in_progress",
@@ -63,9 +50,6 @@ class _FakeBr:
         self.comments = comments or []
         self.ready = ready or []
         self.blocked = blocked or []
-        # br wraps its recommendations in a versioned envelope; a test that needs
-        # the policy fields supplies them, and omitting them exercises the
-        # degradation path against an older br.
         self.scheduler_envelope = scheduler_envelope or {}
 
     def __call__(self, _repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
@@ -84,9 +68,6 @@ class _FakeBr:
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     monkeypatch.setattr(policy, "_write", fake)
-    # Installed on the seams every consumer shares (basicly-tcmy.14, basicly-vkh0.20)
-    # rather than on each module's alias, which is what the seams exist for. The graph
-    # half is separate because most fixtures never reach it.
     fake_tracker.install(monkeypatch, fake)
     fake_tracker.install_graph(monkeypatch, fake)
 
@@ -97,49 +78,29 @@ def _gate_status(*, can_advance: bool) -> GateStatus:
     return GateStatus(False, (), (), ("verify",), ())
 
 
-# --- Worktree binding schema ------------------------------------------------
-
-
 def test_worktree_ref_roundtrips() -> None:
-    """A binding formatted onto external_ref parses back identically."""
     ref = loop_state.format_worktree_ref("loop-state", "harness/loop-state")
     assert loop_state.parse_worktree_ref(ref) == WorktreeBinding("loop-state", "harness/loop-state")
 
 
 @pytest.mark.parametrize("ref", [None, "", "some-other-ref", "worktree:", "worktree:only"])
 def test_worktree_ref_rejects_unset_or_foreign(ref: str | None) -> None:
-    """An unset, foreign, or malformed external_ref yields no binding."""
     assert loop_state.parse_worktree_ref(ref) is None
-
-
-# --- Dispatch candidacy (basicly-toj6) --------------------------------------
 
 
 @pytest.mark.parametrize("status", sorted(loop_state.DISPATCHABLE_STATUSES))
 def test_every_dispatchable_status_is_admitted(status: str) -> None:
-    """The rule admits exactly the set it names, so the constant is not decoration."""
     assert loop_state.is_dispatchable(status) is True
 
 
 @pytest.mark.parametrize("status", ["closed", "tombstone", "deferred"])
 def test_a_terminal_or_parked_status_is_not_dispatchable(status: str) -> None:
-    """The named refusals: the work is over, or a human parked it (basicly-toj6).
 
-    ``deferred`` is the one this bead is about. The rule it replaced read
-    ``status != "closed"``, so deferring a bead removed it from nothing: it stayed
-    a sizing, funding and dispatch candidate, and it held its parent open.
-    """
     assert loop_state.is_dispatchable(status) is False
 
 
 def test_the_named_sets_partition_the_known_vocabulary() -> None:
-    """Every status ``br schema`` declares is decided by name, none by omission.
 
-    This is what stops the rule from drifting the way its predecessor did: a
-    status added to :data:`loop_state.KNOWN_STATUSES` without a decision here
-    fails, instead of silently landing on whichever side the code happened to
-    default to.
-    """
     refused = {"closed", "tombstone", "deferred"}
     assert loop_state.DISPATCHABLE_STATUSES | refused == loop_state.KNOWN_STATUSES
     assert not loop_state.DISPATCHABLE_STATUSES & refused
@@ -147,47 +108,19 @@ def test_the_named_sets_partition_the_known_vocabulary() -> None:
 
 @pytest.mark.parametrize("status", ["rework", "in_review"])
 def test_a_project_defined_status_is_admitted_rather_than_dropped(status: str) -> None:
-    """A project may define its own statuses, so an unknown one must not be defunded.
 
-    ``workflow.status_groups.ready`` in ``.beads/policy.yaml`` can widen readiness
-    to a status this vocabulary has never heard of (br's own example is
-    ``rework``). Refusing it would be the mirror of the bug being fixed: the child
-    would be left out of the band table *and* its parent would fan in over it.
-    """
     assert status not in loop_state.KNOWN_STATUSES
     assert loop_state.is_dispatchable(status) is True
 
 
-# --- Phase derivation -------------------------------------------------------
-
-
-# Each case orders the derive_phase inputs then the expected phase:
-# status, checkpoints, worktree, can-advance, has-children, then expected.
 _PHASE_CASES = [
     ("closed", ("ship",), None, True, True, "done"),
-    # Torn down after a proven merge: no binding, but the landing left the
-    # required gate green. This is the case the never-built leaf below is
-    # indistinguishable from unless the gate is consulted.
     ("in_progress", ("ship",), None, True, False, "ship"),
-    # Ship approved but the node has not landed: the worktree is still bound and
-    # its verify gate is not green (e.g. the build->verify landing failed on a
-    # transient lock). Must derive as build so the next advance re-lands, not
-    # wedge at ship (basicly-k35r).
     ("in_progress", ("classify", "ship"), WorktreeBinding("n", "b"), False, False, "build"),
-    # Ship approved and verify green on a still-bound worktree: merged, pending
-    # teardown — legitimately ship.
     ("in_progress", ("ship",), WorktreeBinding("n", "b"), True, False, "ship"),
-    # Ship approved out of order on a node that never built (basicly-jr0l.49).
-    # It has no binding either, so `worktree is None` alone read as "torn down
-    # after the merge" and derived ship, and the advance then closed the bead
-    # with zero work done. Landed evidence is the green required gate, which
-    # only the build->verify landing records — so each of these derives the
-    # phase its own recorded evidence actually supports, never ship.
     ("open", ("ship",), None, False, False, "intake"),
     ("in_progress", ("classify", "ship"), None, False, False, "classify"),
     ("in_progress", ("classify", "decompose", "ship"), None, False, False, "decompose"),
-    # Same hole one rung up: a feature whose children exist but whose own gate is
-    # not green has not landed either.
     ("in_progress", ("ship",), None, False, True, "decompose"),
     ("in_progress", (), WorktreeBinding("n", "b"), True, False, "verify"),
     ("in_progress", (), WorktreeBinding("n", "b"), False, False, "build"),
@@ -200,7 +133,6 @@ _PHASE_CASES = [
 
 @pytest.mark.parametrize("case", _PHASE_CASES)
 def test_derive_phase_ladder(case: tuple) -> None:
-    """Each recorded-evidence combination maps to the furthest reached phase."""
     status, checkpoints, worktree, advance, children, expected = case
     phase = loop_state.derive_phase(
         status, checkpoints, worktree, _gate_status(can_advance=advance), children
@@ -208,16 +140,10 @@ def test_derive_phase_ladder(case: tuple) -> None:
     assert phase == expected
 
 
-# --- Node state reconstruction ----------------------------------------------
-
-
 def test_read_node_state_folds_all_signals(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A bound, green, checkpointed issue reconstructs into a verify-phase state."""
     fake = _FakeBr(
         status="in_progress",
         external_ref=loop_state.format_worktree_ref("feat", "harness/feat"),
-        # The engine's own provider — a required gate no longer counts a foreign
-        # one (basicly-jr0l.51).
         gates=[{"gate": "verify", "provider": VERIFY_GATE_PROVIDER, "passed": True}],
         comments=[
             "[harness-policy] checkpoint=classify approved",
@@ -238,7 +164,6 @@ def test_read_node_state_folds_all_signals(monkeypatch: pytest.MonkeyPatch, tmp_
 def test_read_node_state_intake_when_nothing_recorded(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A fresh issue with no binding, gates, or checkpoints reads as intake."""
     _install(monkeypatch, _FakeBr(status="open"))
     state = loop_state.read_node_state(tmp_path, "i", CONFIG)
     assert state.phase == "intake"
@@ -250,7 +175,6 @@ def test_read_node_state_intake_when_nothing_recorded(
 def test_read_node_state_decompose_phase_from_children(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """An issue with a parent-child dependent counts as decomposed."""
     _install(
         monkeypatch,
         _FakeBr(dependents=[{"dependency_type": "parent-child", "id": "i.1"}]),
@@ -260,28 +184,12 @@ def test_read_node_state_decompose_phase_from_children(
     assert state.phase == "decompose"
 
 
-# --- The one session walk (basicly-tcmy.28) ---------------------------------
-
-
 def test_loop_state_exposes_no_session_walk_of_its_own() -> None:
-    """There is one session walk, and it is ``policy.session_issue_ids``.
 
-    This module used to carry a second one that followed parent-child dependents
-    only. It disagreed with the real walk by 14 beads on ``basicly-kjc5``, and the
-    decision queue read the narrow one — so a delegated answer on a blocks-reachable
-    bead never counted against ``decider_max_decisions`` and an escalation on one was
-    invisible to loop status. basicly-jr0l.40 fixed the copy in ``policy`` and left
-    this one live, so the guard is against the *name* coming back: a re-export here
-    is how a consumer starts reading a walk that is nobody's job to keep correct.
-    """
     assert not hasattr(loop_state, "session_issue_ids")
 
 
-# --- Ready / blocked sets ---------------------------------------------------
-
-
 def test_ready_ranked_parses_scheduler(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """ready_ranked maps scheduler recommendations to ranked nodes in order."""
     _install(
         monkeypatch,
         _FakeBr(
@@ -301,12 +209,7 @@ def test_ready_ranked_parses_scheduler(monkeypatch: pytest.MonkeyPatch, tmp_path
 def test_ready_ranking_captures_the_policy_envelope(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A rank is uninterpretable without the policy that produced it (basicly-vkh0.3).
 
-    D9 wants dispatch inputs reproducible, and the score is an integer on a scale
-    br owns — so the schema version and the tie-break sort are part of the answer,
-    not decoration.
-    """
     _install(
         monkeypatch,
         _FakeBr(
@@ -323,8 +226,6 @@ def test_ready_ranking_captures_the_policy_envelope(
 
     assert ranking.schema == "tracker.scheduler.v1"
     assert ranking.fallback_sort == "priority ASC, created_at ASC, id ASC"
-    # Evidence weighting moved this node from 3rd to 1st; recording only the final
-    # rank would hide that the score is what did it.
     assert ranking.nodes[0].rank == 1
     assert ranking.nodes[0].fallback_rank == 3
     assert ranking.by_issue()["a"].score == 49
@@ -333,27 +234,20 @@ def test_ready_ranking_captures_the_policy_envelope(
 def test_ready_ranking_degrades_without_the_envelope(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """An older br emits no schema or fallback_rank; the ranks must still parse."""
     _install(monkeypatch, _FakeBr(ready=[{"rank": 2, "score": 5, "issue": {"id": "a"}}]))
     ranking = loop_state.ready_ranking(tmp_path)
 
     assert ranking.schema == ""
     assert ranking.fallback_sort == ""
-    # No fallback_rank reported: br's documented behaviour is to preserve the rank.
     assert ranking.nodes[0].fallback_rank == 2
 
 
 def test_blocked_ids_parses_blocked_list(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """blocked_ids returns just the ids of blocked issues."""
     _install(monkeypatch, _FakeBr(blocked=[{"id": "x"}, {"id": "y"}]))
     assert loop_state.blocked_ids(tmp_path) == ("x", "y")
 
 
-# --- the ranking read, flipped to the owned scorer (basicly-vkh0.20) --------
-
-
 def _owned_repo(tmp_path: Path) -> Path:
-    """A checkout with the tracker kit installed and ``[tracker] mode`` flipped to owned."""
     kit_dir = tmp_path / tracker.KIT_TRACKER_DIR
     kit_dir.mkdir(parents=True)
     for source in sorted(KIT_SOURCE.glob("*.py")):
@@ -365,11 +259,7 @@ def _owned_repo(tmp_path: Path) -> Path:
 
 
 def _seed_ledger(repo: Path) -> None:
-    """Three beads: a critical one blocking a second, and an ordinary third.
 
-    Enough graph for both ranking terms to move — the blocked bead is refused, and the
-    one it waits on leads on priority *and* on the dependent it releases.
-    """
     kit = tracker.kit(repo)
     events, edge = kit.events, kit.migrate
     kit.events.append(
@@ -392,11 +282,7 @@ def _seed_ledger(repo: Path) -> None:
 
 
 def test_ready_ranking_reads_the_owned_scorer_after_the_flip(tmp_path: Path) -> None:
-    """The bead's second criterion: the read site takes score *and* rank from the kit.
 
-    No br stand-in is installed, so a read that still spawned ``br scheduler`` would fail
-    outright rather than pass on a fake — which is the discrimination this test needs.
-    """
     repo = _owned_repo(tmp_path)
     _seed_ledger(repo)
     scheduler = tracker.kit(repo, tracker.SCHEDULER_KIT_MODULE)
@@ -405,17 +291,12 @@ def test_ready_ranking_reads_the_owned_scorer_after_the_flip(tmp_path: Path) -> 
 
     assert ranking.schema == scheduler.SCHEMA
     assert ranking.fallback_sort == scheduler.SORT
-    # `rank-bb02` waits on an open blocker, so it is not in the ready set at all.
     assert [node.issue_id for node in ranking.nodes] == ["rank-aa01", "rank-cc03"]
     assert [node.title for node in ranking.nodes] == ["critical", "ordinary"]
 
 
 def test_a_ranking_from_the_owned_scorer_stays_explainable(tmp_path: Path) -> None:
-    """A recorded score still decodes into the terms behind it — evidence, not an integer.
 
-    This is what `run_record`'s ``scheduler_score``/``scheduler_policy`` pair is for: the
-    schema names the scorer and the scorer turns the score back into "P0, one dependent".
-    """
     repo = _owned_repo(tmp_path)
     _seed_ledger(repo)
     scheduler = tracker.kit(repo, tracker.SCHEDULER_KIT_MODULE)
@@ -423,13 +304,10 @@ def test_a_ranking_from_the_owned_scorer_stays_explainable(tmp_path: Path) -> No
     leader = loop_state.ready_ranking(repo).nodes[0]
 
     assert scheduler.explain(leader.score) == scheduler.ScoreTerms(priority=0, dependents=1)
-    # The owned scorer has no evidence-weighted pass above its ordering, so the two ranks
-    # it reports are equal by construction rather than by coincidence.
     assert leader.fallback_rank == leader.rank == 1
 
 
 def test_the_owned_ranking_honours_a_limit(tmp_path: Path) -> None:
-    """The limit reaches the kit rather than being dropped at the seam."""
     repo = _owned_repo(tmp_path)
     _seed_ledger(repo)
 
@@ -439,11 +317,7 @@ def test_the_owned_ranking_honours_a_limit(tmp_path: Path) -> None:
 def test_a_flipped_repo_without_the_kit_stops_rather_than_reading_as_no_work(
     tmp_path: Path,
 ) -> None:
-    """An empty answer would read as "nothing is ready" and idle the loop silently.
 
-    The opposite call to `tracker.owned_record`'s, and deliberately so: an absent *record* is an
-    ordinary fact, while an absent *ranking* is indistinguishable from a quiet backlog.
-    """
     (tmp_path / "basicly.toml").write_text(
         f'[tracker]\nmode = "{tracker.MODE_OWNED}"\n', encoding="utf-8"
     )

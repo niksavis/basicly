@@ -1,13 +1,3 @@
-"""The advisory tuning report: recorded outcomes against the parameters in force.
-
-Every test here holds one of the report's promises. The two that matter most are the
-ones a plausible-looking report would quietly break: that a sample under the calibration
-minimum yields the declared prior labelled *seeded* rather than a number fitted to three
-dispatches, and that a parameter nothing measures still prints — with a sample size of
-zero and no recommendation — instead of vanishing into a table that then reads as
-"everything is fine".
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -23,19 +13,13 @@ MARKER = run_record.MARKER
 
 
 def _write_local(repo_root: Path, records: dict[str, list[dict]]) -> None:
-    """Seed ``.basicly/usage/run-records.json`` — the self-ignored, per-machine corpus."""
     usage_dir = repo_root / run_record.USAGE_DIR
     usage_dir.mkdir(parents=True, exist_ok=True)
     (repo_root / run_record.RUN_RECORDS_FILE).write_text(json.dumps(records), encoding="utf-8")
 
 
 def _write_tracker(repo_root: Path, records: dict[str, list[dict]]) -> None:
-    """Seed the committed tracker export with one ``[harness-run]`` marker per dispatch.
 
-    The travelling corpus: this is what a fresh clone has, and it is written as real
-    marker comments rather than injected further down so the report is exercised through
-    the same reader a teammate's clone would use.
-    """
     flipped_tracker.seed_records(
         repo_root,
         [
@@ -52,7 +36,6 @@ def _write_tracker(repo_root: Path, records: dict[str, list[dict]]) -> None:
 
 
 def _lane(stamp: str, **fields: object) -> dict:
-    """One executed write dispatch, with only the fields a test cares about set."""
     return {
         "agent": "claude",
         "outcome": run_record.EXECUTED,
@@ -63,7 +46,6 @@ def _lane(stamp: str, **fields: object) -> dict:
 
 
 def _parameter(report: tuning.TuningReport, key: str) -> tuning.ParameterTuning:
-    """The row for *key*, failing loudly when the report omits a governed parameter."""
     for parameter in report.parameters:
         if parameter.key == key:
             return parameter
@@ -71,11 +53,7 @@ def _parameter(report: tuning.TuningReport, key: str) -> tuning.ParameterTuning:
 
 
 def test_every_governed_parameter_is_listed_on_an_empty_corpus(tmp_path: Path) -> None:
-    """No dispatches at all: every parameter still prints its value in force (AC5).
 
-    The failure this forbids is the report that only lists what it can advise on — a
-    parameter dropped for want of evidence reads identically to one that is fine.
-    """
     report = tuning.tuning_report(tmp_path)
 
     assert report.dispatches_read == 0
@@ -91,7 +69,6 @@ def test_every_governed_parameter_is_listed_on_an_empty_corpus(tmp_path: Path) -
 
 
 def test_a_parameter_nothing_records_is_listed_beside_measured_ones(tmp_path: Path) -> None:
-    """`stall_after` has no ledger signal even when the corpus is full (AC5)."""
     _write_local(
         tmp_path,
         {
@@ -110,15 +87,12 @@ def test_a_parameter_nothing_records_is_listed_beside_measured_ones(tmp_path: Pa
     assert unobserved.samples == 0
     assert unobserved.recommendation is None
     assert unobserved.status == tuning.UNOBSERVED
-    # The row has to say *why* it cannot advise, or "no evidence" is indistinguishable
-    # from "no problem" — the state that let `quiet_after` be declared unchallenged.
     assert "no dispatch record carries a signal" in unobserved.basis
 
 
 def test_a_measured_recommendation_carries_its_statistic_and_sample_size(
     tmp_path: Path,
 ) -> None:
-    """Past the minimum, `runner_timeout` is the worst run with headroom (AC1)."""
     durations = [100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.0]
     _write_local(
         tmp_path,
@@ -136,17 +110,11 @@ def test_a_measured_recommendation_carries_its_statistic_and_sample_size(
     assert parameter.samples == len(durations)
     assert parameter.recommendation == max(durations) * tuning.BACKSTOP_HEADROOM
     assert parameter.outcomes == {run_record.EXECUTED: 10}
-    # The value that governed the dispatches, not just the one configured now.
     assert [cohort.in_force for cohort in parameter.cohorts] == ["3600"]
 
 
 def test_a_sample_under_the_minimum_is_seeded_from_the_prior(tmp_path: Path) -> None:
-    """Three dispatches is history, not evidence: the declared prior stands (AC2).
 
-    The number the statistic *would* have produced is asserted absent. A recommendation
-    fitted to three samples and merely labelled "seeded" is still read as a measurement
-    by anyone skimming the column, which is the whole failure mode.
-    """
     durations = [100.0, 200.0, 300.0]
     _write_local(
         tmp_path,
@@ -165,17 +133,11 @@ def test_a_sample_under_the_minimum_is_seeded_from_the_prior(tmp_path: Path) -> 
     assert parameter.status == tuning.SEEDED
     assert parameter.recommendation == parameter.prior
     assert parameter.recommendation != max(durations) * tuning.BACKSTOP_HEADROOM
-    # "the prior it would displace": the value in force is carried on the same row.
     assert parameter.in_force == 3600.0
 
 
 def test_both_corpora_are_read_and_each_sample_names_its_source(tmp_path: Path) -> None:
-    """Local-only, tracker-only and shared dispatches are all read, and labelled (AC4).
 
-    ``.basicly/usage/`` never leaves the machine that wrote it while a ``[harness-run]``
-    marker travels with a clone, so a reader deciding whether a recommendation is
-    shareable needs to know which side each sample came from.
-    """
     shared = _lane("2026-07-10T09:00:00+00:00", duration_s=100.0)
     _write_tracker(
         tmp_path,
@@ -194,7 +156,6 @@ def test_both_corpora_are_read_and_each_sample_names_its_source(tmp_path: Path) 
 
     report = tuning.tuning_report(tmp_path)
 
-    # Three dispatches, not four: the shared one is one sample, labelled `both`.
     assert report.dispatches_read == 3
     assert report.sources == {tuning.BOTH: 1, tuning.LOCAL: 1, tuning.TRACKER: 1}
     parameter = _parameter(report, "runner.runner_timeout")
@@ -207,12 +168,7 @@ def test_both_corpora_are_read_and_each_sample_names_its_source(tmp_path: Path) 
 
 
 def test_the_report_writes_nothing(tmp_path: Path) -> None:
-    """Advisory, not self-modifying: every file is byte-identical afterwards (AC3).
 
-    Hashed over the whole tree rather than over ``basicly.toml`` alone, so a tuner that
-    "helpfully" rewrote the local overlay, the usage file or the tracker export would
-    fail this too.
-    """
     (tmp_path / "basicly.toml").write_text(
         "[worktree]\nconcurrency = 3\n\n[policy.sizing]\nworking_set_max = 99000\n",
         encoding="utf-8",
@@ -231,7 +187,6 @@ def test_the_report_writes_nothing(tmp_path: Path) -> None:
 
 
 def _tree_digest(root: Path) -> dict[str, str]:
-    """Every file under *root* as path -> content digest, for a byte-identity check."""
     return {
         str(path.relative_to(root).as_posix()): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(root.rglob("*"))
@@ -240,7 +195,6 @@ def _tree_digest(root: Path) -> dict[str, str]:
 
 
 def test_the_configured_value_is_the_one_reported_in_force(tmp_path: Path) -> None:
-    """A repo that declares a value is reported against that value, not the default."""
     (tmp_path / "basicly.toml").write_text(
         "[worktree]\nconcurrency = 3\n\n[policy.sizing]\nworking_set_max = 99000\n",
         encoding="utf-8",
@@ -250,19 +204,12 @@ def test_the_configured_value_is_the_one_reported_in_force(tmp_path: Path) -> No
 
     concurrency = _parameter(report, "worktree.concurrency")
     assert concurrency.in_force == 3.0
-    # The prior stays the shipped default, so a reader can audit the declared value
-    # against the seed it displaced.
     assert concurrency.prior == float(config.DEFAULT_WORKTREE_CONCURRENCY)
     assert _parameter(report, "policy.sizing.working_set_max").in_force == 99000.0
 
 
 def test_a_session_override_makes_its_own_cohort(tmp_path: Path) -> None:
-    """Dispatches run under an override are not pooled with dispatches that were not.
 
-    An override changes what a dispatch is while every committed file stays identical,
-    so pooling would report an outcome distribution under a value that never governed
-    half of it.
-    """
     _write_local(
         tmp_path,
         {
@@ -293,11 +240,7 @@ def test_a_session_override_makes_its_own_cohort(tmp_path: Path) -> None:
     ids=["validate", "decide", "propose", "unrecorded"],
 )
 def test_a_helper_dispatch_is_not_a_lane_sample(tmp_path: Path, phase: str | None) -> None:
-    """A judge, a decider and a phase nobody recorded are all excluded.
 
-    Same rule the spend calibration keeps: a helper reads and answers, it does not do a
-    node's build, and unknown provenance fails closed rather than being assumed a lane.
-    """
     _write_local(
         tmp_path,
         {"b-1": [{**_lane("2026-07-10T09:00:00+00:00", duration_s=100.0), "phase": phase}]},
@@ -310,7 +253,6 @@ def test_a_helper_dispatch_is_not_a_lane_sample(tmp_path: Path, phase: str | Non
 
 
 def test_a_handoff_is_not_evidence_of_how_long_work_takes(tmp_path: Path) -> None:
-    """Nothing executed, so its duration is not an observation of a lane's runtime."""
     _write_local(
         tmp_path,
         {
@@ -328,7 +270,6 @@ def test_a_handoff_is_not_evidence_of_how_long_work_takes(tmp_path: Path) -> Non
 
 
 def test_rework_is_counted_from_attempts_per_bead(tmp_path: Path) -> None:
-    """`max_rework` is advised from write dispatches per bead, less the first attempt."""
     _write_local(
         tmp_path,
         {
@@ -344,13 +285,10 @@ def test_rework_is_counted_from_attempts_per_bead(tmp_path: Path) -> None:
     parameter = _parameter(tuning.tuning_report(tmp_path), "policy.max_rework")
 
     assert parameter.status == tuning.MEASURED
-    # b-1 numbers 1..3 and b-2 numbers 1..7; the 0.9 quantile of those ten attempt
-    # numbers is 6, and the first attempt is not rework.
     assert parameter.recommendation == 5.0
 
 
 def test_the_build_factor_is_fitted_to_measured_working_set(tmp_path: Path) -> None:
-    """The ratio is context_tokens over scope_tokens, per class, and never over spend."""
     _write_local(
         tmp_path,
         {
@@ -360,8 +298,6 @@ def test_the_build_factor_is_fitted_to_measured_working_set(tmp_path: Path) -> N
                     task_class="task",
                     scope_tokens=1_000,
                     context_tokens=4_000,
-                    # Spend on the same record, orders of magnitude larger. A factor
-                    # fitted to this instead is the 216x defect basicly-z2wi removed.
                     tokens=4_000_000,
                 )
                 for day in range(10, 20)
@@ -376,7 +312,6 @@ def test_the_build_factor_is_fitted_to_measured_working_set(tmp_path: Path) -> N
 
 
 def test_the_occupancy_recommendation_never_exceeds_the_whole_window(tmp_path: Path) -> None:
-    """A context ceiling above 1.0 is not a fraction; the backstop clamps."""
     _write_local(
         tmp_path,
         {
@@ -398,11 +333,7 @@ def test_the_occupancy_recommendation_never_exceeds_the_whole_window(tmp_path: P
 
 
 def test_a_dispatch_with_no_timestamp_is_dropped(tmp_path: Path) -> None:
-    """It can be neither deduplicated nor ordered, so it is not counted.
 
-    A sample that might be a duplicate is worse than a missing one in a report whose
-    whole claim is its sample size.
-    """
     _write_local(
         tmp_path,
         {
@@ -417,7 +348,6 @@ def test_a_dispatch_with_no_timestamp_is_dropped(tmp_path: Path) -> None:
 
 
 def test_a_corrupt_corpus_reads_as_no_evidence(tmp_path: Path) -> None:
-    """Telemetry is read best-effort everywhere; a bad file is never a crash."""
     usage_dir = tmp_path / run_record.USAGE_DIR
     usage_dir.mkdir(parents=True)
     (tmp_path / run_record.RUN_RECORDS_FILE).write_text("{not json", encoding="utf-8")
@@ -433,7 +363,6 @@ def test_a_corrupt_corpus_reads_as_no_evidence(tmp_path: Path) -> None:
 
 
 def test_render_value_prints_a_value_a_reader_can_paste() -> None:
-    """Whole numbers lose the decimal point; fractions keep four significant figures."""
     assert tuning.render_value(3600.0) == "3600"
     assert tuning.render_value(0.6) == "0.6"
     assert tuning.render_value(222_481.0) == "222481"

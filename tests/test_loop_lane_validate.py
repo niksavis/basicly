@@ -1,17 +1,3 @@
-"""The gate a lane's integration has to pass, and the dispute it can raise.
-
-Split out of ``test_loop.py`` alongside ``test_loop_lane.py``, which holds the lane
-mini-loop's sequencing. This half is the judgment attached to it: the validate gate
-that stands between a finished lane and its landing, what happens when a rubric
-answers ``no`` (a decision is queued and the lane is held, and no rework attempt is
-spent on a verdict that is not a defect), and the boundaries around both — an
-``unknown`` answer is not a dispute, a bead reference is a whole id and never a
-prefix, and a lane whose worktree session has gone blocks rather than improvising.
-
-``test_plain_leaf_build_is_unchanged_by_the_lane_path`` is the control: everything
-above must leave a leaf's build exactly where it was.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -54,7 +40,6 @@ def _state(
 
 @pytest.fixture
 def at(monkeypatch: pytest.MonkeyPatch):
-    """Return a helper that pins read_node_state to a given NodeState."""
 
     def _pin(state: NodeState) -> None:
         monkeypatch.setattr(loop.loop_state, "read_node_state", lambda *_a, **_k: state)
@@ -64,7 +49,6 @@ def at(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture(autouse=True)
 def tracker_commits(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
-    """Record engine tracker commits — loop tests run outside a git repo."""
     calls: list[tuple[str, str | None]] = []
 
     def _record(_repo_root, bead, **kwargs):
@@ -93,12 +77,7 @@ def _advance(tmp_path: Path, **kw) -> loop.AdvanceResult:
 def _pin_finding_sets(
     monkeypatch: pytest.MonkeyPatch, *verdicts: policy.Convergence
 ) -> list[tuple[str, str, tuple[str, ...]]]:
-    """Hand the loop scripted convergence verdicts; return each finding set it recorded.
 
-    The comparison itself is policy's and is tested there against a fake tracker.
-    What a test here asserts is the loop's half: which findings it hands over, and
-    what it does with the verdict it gets back. Rounds past *verdicts* progress.
-    """
     recorded: list[tuple[str, str, tuple[str, ...]]] = []
     scripted = list(verdicts)
 
@@ -114,7 +93,6 @@ def _pin_finding_sets(
 
 
 def _lane(has_children: bool = True) -> NodeState:
-    """A lane: a build-phase node bound to its own worktree, with sub-task beads."""
     return _state("build", worktree=WorktreeBinding("i", "harness/i"), has_children=has_children)
 
 
@@ -126,7 +104,6 @@ def _pin_lane(
     blocked: tuple[str, ...] = (),
     pending: tuple[str, ...] = (),
 ) -> dict:
-    """Pin a lane's worktree, sub-task states, and its git/decision/verify reads."""
     calls: dict[str, list] = {"closed": [], "gates": [], "verify": []}
     monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: _session("i"))
     monkeypatch.setattr(loop, "_child_states", lambda _ctx: list(subtasks))
@@ -158,7 +135,6 @@ def _pin_lane(
 def test_lane_validate_gate_blocks_the_landing_when_it_fails(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Validate is required at lane level: a failing rubric stops the merge (D4)."""
     at(_lane())
     _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
     rubric = rubrics.Rubric(
@@ -191,14 +167,12 @@ def test_lane_validate_gate_blocks_the_landing_when_it_fails(
     result = loop.advance(tmp_path, "i", config=CONFIG)
     assert recorded == ["i"]
     assert result.blocked and "lane validate failed: acceptance" in result.detail
-    # The failed checks are the rubric gate's finding set (basicly-m4zv.5).
     assert findings == [("i", rubrics.RUBRIC_GATE, ("acceptance",))]
 
 
 def test_lane_validate_evaluates_in_the_lane_worktree(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Validate judges the lane's own tree, before its work is merged anywhere."""
     at(_lane())
     _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
     rubric = rubrics.Rubric(
@@ -225,7 +199,6 @@ def test_lane_validate_evaluates_in_the_lane_worktree(
 
 
 def _judged_no_lane(monkeypatch: pytest.MonkeyPatch, answer: str = rubrics.NO) -> None:
-    """Pin a lane whose only rubric check is judged and answers *answer*."""
     rubric = rubrics.Rubric(
         id="r",
         description="d",
@@ -242,8 +215,6 @@ def _judged_no_lane(monkeypatch: pytest.MonkeyPatch, answer: str = rubrics.NO) -
                 rubrics.JUDGED,
                 answer,
                 "criterion 2 unevidenced",
-                # Only a judged NO is a finding, and only a finding carries a
-                # severity — the record refuses the other combinations outright.
                 rubrics.BLOCKER if answer == rubrics.NO else "",
             )
         ],
@@ -254,7 +225,6 @@ def _judged_no_lane(monkeypatch: pytest.MonkeyPatch, answer: str = rubrics.NO) -
 def test_judged_no_queues_a_decision_and_holds_the_lane(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A judged NO is a decision, not a test failure (D4 amended, roster R4)."""
     at(_lane())
     _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
     _judged_no_lane(monkeypatch)
@@ -276,11 +246,9 @@ def test_judged_no_queues_a_decision_and_holds_the_lane(
     assert len(queued) == 1
     issue, kind, question, detail = queued[0]
     assert (issue, kind) == ("i", "validate")
-    # The severity rides onto the queued item: a queue that renders a MINOR and a
-    # BLOCKER identically is a queue disposed of in arrival order.
     assert "acceptance (BLOCKER)" in question
     assert detail == "acceptance: criterion 2 unevidenced"
-    assert merged == []  # the lane holds: it neither lands nor bounces
+    assert merged == []
     assert result.blocked and result.action == "decision"
     assert "acceptance" in result.detail
 
@@ -288,7 +256,6 @@ def test_judged_no_queues_a_decision_and_holds_the_lane(
 def test_judged_no_does_not_spend_a_rework_attempt(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A false NO from a model must not consume the budget kept for real defects."""
     at(_lane())
     _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
     _judged_no_lane(monkeypatch)
@@ -302,7 +269,6 @@ def test_judged_no_does_not_spend_a_rework_attempt(
 def test_judged_unknown_is_not_a_dispute(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """An UNKNOWN verdict means no agent answered (handoff) — it must not hold the lane."""
     at(_lane())
     _pin_lane(monkeypatch, subtasks=[("i.1", "closed")])
     _judged_no_lane(monkeypatch, answer=rubrics.UNKNOWN)
@@ -317,7 +283,6 @@ def test_judged_unknown_is_not_a_dispute(
 
 
 def test_references_bead_requires_a_whole_id_not_a_prefix() -> None:
-    """A sibling id sharing a prefix is not proof of work (i.1 vs i.10)."""
     assert loop.references_bead("fix(loop): do it (basicly-i.1)", "basicly-i.1")
     assert loop.references_bead("basicly-i.1 leads the subject", "basicly-i.1")
     assert not loop.references_bead("fix(loop): do it (basicly-i.10)", "basicly-i.1")
@@ -327,7 +292,6 @@ def test_references_bead_requires_a_whole_id_not_a_prefix() -> None:
 def test_lane_blocks_when_its_worktree_session_is_gone(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A lane whose worktree record vanished is re-provisioned, not dispatched blind."""
     at(_lane())
     _pin_lane(monkeypatch, subtasks=[("i.1", "open")])
     monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: None)
@@ -338,7 +302,6 @@ def test_lane_blocks_when_its_worktree_session_is_gone(
 def test_plain_leaf_build_is_unchanged_by_the_lane_path(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A leaf with no sub-task beads still lands its own dispatch directly."""
     at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
     monkeypatch.setattr(loop, "_run_lane", lambda *_a: pytest.fail("a leaf has no lane mini-loop"))
     monkeypatch.setattr(

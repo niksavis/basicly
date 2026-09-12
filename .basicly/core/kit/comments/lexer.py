@@ -1,23 +1,3 @@
-"""Locate comment spans in a non-Python source file, without ever entering a string.
-
-One responsibility: given source text and a :class:`~languages.Language`, say where the
-comments are. It never edits, never reads a file, and never decides whether a comment may
-stay - `directives` owns that and `strip` owns the edit.
-
-The whole difficulty is that a comment opener is ordinary text inside a quoted string, so
-this walks the source once, tracking exactly one state: in a string, in a comment, or in
-code. Three families need more than that and each is handled where it is named below.
-
-**It fails closed.** An unterminated string or block comment raises
-:class:`LexError` rather than guessing where it ended, because a guess here deletes
-source. The caller reports the file and leaves it alone.
-
-Two boundaries are stated rather than hidden. A `${...}` substitution inside a JavaScript
-template literal is treated as string content, so a comment written in there survives -
-that leaves prose behind, which is a miss and not a corruption. A `<script>` or `<style>`
-block inside HTML is likewise not descended into.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, NamedTuple
@@ -31,32 +11,21 @@ _WORD_BOUNDARY_BEFORE = frozenset(" \t\n;|&(<")
 
 
 class LexError(Exception):
-    """Raised where the source cannot be lexed with certainty, so it must not be edited."""
+    pass
 
 
 class Span(NamedTuple):
-    """One comment, as an offset range into the source plus the line it opens on.
-
-    ``replacement`` is empty for all but the 57 measured cases where the prose is its
-    owner's only statement - a bare exception class, a stub - and removing it would leave
-    a body that does not parse. Those carry ``pass``.
-    """
-
     start: int
     end: int
     line: int
     replacement: str = ""
 
     def text(self, source: str) -> str:
-        """The comment's own characters, opener included."""
         return source[self.start : self.end]
 
 
 def comment_spans(source: str, language: Language) -> list[Span]:
-    """Every comment in *source*, in order, as offset ranges.
 
-    Raises LexError where a string or block comment never closes.
-    """
     protected = _heredoc_ranges(source) if language.heredocs else ()
     spans: list[Span] = []
     index = 0
@@ -136,7 +105,6 @@ def _string_at(source: str, index: int, language: Language):
 
 
 def _skip_string(source: str, index: int, rule, line: int) -> int:
-    """The offset just past the string opening at *index*; raises where it never closes."""
     cursor = index + len(rule.open)
     size = len(source)
     while cursor < size:
@@ -151,13 +119,7 @@ def _skip_string(source: str, index: int, rule, line: int) -> int:
 
 
 def _regex_here(previous: str) -> bool:
-    """True where a `/` at this point opens a regex literal rather than dividing.
 
-    The test is the last significant character: after a value - a name, a digit, a closing
-    bracket - a slash is division, and after an operator or an opening bracket it is a
-    regex. That is the rule every JavaScript tokenizer uses, and it is a heuristic rather
-    than a parse.
-    """
     return previous == "" or previous in _REGEX_PRECEDERS
 
 
@@ -183,7 +145,6 @@ def _skip_regex(source: str, index: int, line: int) -> int:
 
 
 def _heredoc_ranges(source: str) -> tuple[tuple[int, int], ...]:
-    """Offset ranges of every here-document body, which is data rather than code."""
     ranges: list[tuple[int, int]] = []
     offset = 0
     terminator = None

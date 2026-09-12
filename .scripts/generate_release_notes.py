@@ -1,25 +1,3 @@
-"""Render a release page from one tagged ``CHANGELOG.md`` section: summary, counts, breaking.
-
-The changelog is the record; the release page is the summary of it. v0.10.0 published its
-whole section as the page - 179,691 bytes, 2,326 lines [measured 2026-08-29, ``awk`` over
-the section] - and the owner's verdict was that nobody reads a wall of text. v0.9.0's page,
-rewritten by hand after publication, is 3,050 characters. This script produces that shape
-from the tagged section alone, so the workflow publishes it without a hand edit
-(basicly-xsdvp6).
-
-What the page carries, and nothing else: the prose the release author wrote above the first
-category heading, the entry count per category, a link to the section at the tag, every entry
-whose bold lead starts with ``BREAKING``, and the pinned install block. An absent summary is
-stated, never invented: ``basicly release`` refuses a cut without one, and this script runs
-after the tag exists, where a refusal would leave a release with no page at all.
-
-Stdlib-only, like every ``.scripts/`` gate: the workflow runs it on a bare ``python3``.
-
-Run::
-
-    python3 .scripts/generate_release_notes.py --tag v0.11.0 --repo-url https://github.com/o/r
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -31,20 +9,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 CHANGELOG = "CHANGELOG.md"
 
-# The generator's own heading shape: `## v0.10.0 - 2026-08-28`. The date is part of the
-# contract because the page repeats it and the workflow refused a heading without one.
 _HEADING = re.compile(r"^## (?P<tag>v\d+\.\d+\.\d+) - (?P<date>\d{4}-\d{2}-\d{2})[ \t]*$")
-# The categories `release.FRAGMENT_CATEGORIES` folds fragments under, capitalised as written.
 CATEGORIES = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
 _CATEGORY_HEADING = re.compile(r"^### (?P<name>" + "|".join(CATEGORIES) + r")[ \t]*$")
-# The one machine line the generator writes above the body; it is not the author's summary.
 _DELTA = "Delta: "
 BREAKING_LEAD = "- **BREAKING"
 NO_SUMMARY = "No summary was written for this release; the changelog section is the record."
 
 
 def section(lines: list[str], tag: str) -> tuple[str, list[str]]:
-    """The tag's heading date and body, or raise when the section is absent or undated."""
     for idx, line in enumerate(lines):
         if not line.startswith(f"## {tag}"):
             continue
@@ -61,7 +34,6 @@ def section(lines: list[str], tag: str) -> tuple[str, list[str]]:
 
 
 def summary(body: list[str]) -> list[str]:
-    """The author's prose above the first category heading, without the generator's line."""
     kept: list[str] = []
     for line in body:
         if _CATEGORY_HEADING.match(line):
@@ -76,7 +48,6 @@ def summary(body: list[str]) -> list[str]:
 
 
 def counts(body: list[str]) -> dict[str, int]:
-    """Top-level bullets under each category heading, in category order, zeros omitted."""
     found: dict[str, int] = {}
     current: str | None = None
     for line in body:
@@ -92,7 +63,6 @@ def counts(body: list[str]) -> dict[str, int]:
 
 
 def breaking(body: list[str]) -> list[list[str]]:
-    """Every entry whose bold lead starts with ``BREAKING``, each with its continuation lines."""
     entries: list[list[str]] = []
     current: list[str] | None = None
     for line in body:
@@ -107,13 +77,11 @@ def breaking(body: list[str]) -> list[list[str]]:
 
 
 def _anchor(tag: str, date: str) -> str:
-    """GitHub's heading anchor for `## vX.Y.Z - date`: lowercase, punctuation dropped."""
     text = f"{tag} - {date}".lower()
     return re.sub(r"[^a-z0-9 -]", "", text).replace(" ", "-")
 
 
 def render(tag: str, date: str, body: list[str], repo_url: str) -> str:
-    """The page, in the shape v0.9.0's hand-written page set."""
     prose = summary(body) or [NO_SUMMARY]
     tally = counts(body)
     total = sum(tally.values())
@@ -136,7 +104,6 @@ def render(tag: str, date: str, body: list[str], repo_url: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Print the page for ``--tag`` to stdout; a missing or undated section is exit 1."""
     parser = argparse.ArgumentParser(
         description="Render a release page from one tagged changelog section."
     )

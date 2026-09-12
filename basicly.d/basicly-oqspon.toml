@@ -24,5 +24,4 @@ base_commit = "e07359cc0a0a5f3053ac3a7b68e140ee0ef7cc3b"
 rebaseline_reason = "node_modules reuse and the tests that bind it, in two modules with 0 tokens of headroom each"
 
 [ratchet.module_size.rebaselined]
-"src/basicly/worktree.py" = 614
 "tests/test_worktree.py" = 1196

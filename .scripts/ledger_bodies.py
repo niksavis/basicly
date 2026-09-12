@@ -1,27 +1,3 @@
-r"""Fail when the owned ledger holds a record whose body it does not carry.
-
-``migrate._plan_record`` writes a record's title, description, type, priority and
-acceptance criteria onto its ``created`` event and nowhere else, and appends no second one.
-So a record the ledger holds status, comment, edge and gate events for but **no** ``created``
-event is one the owned store can log the work on and never say what the work *was* —
-deleting the external store destroys the only copy. Measured 2026-08-17: 920 records, nine
-of them bodyless (basicly-vkh0.41).
-
-**Why a check beside the differential rather than a fourth query.** ``differential.QUERIES``
-is ``(phase, ready, gates)``, and ``differential.RecordView`` omits a title and a
-description deliberately, so an incidental byte difference between the two stores cannot be
-reported as a disagreement about a verdict. That difference is real: ``tracker.scrub_ledger``
-redacts the committed export's text and the live tracker's is unredacted, so comparing body
-*content* across the two stores would manufacture disagreements. This defect is
-**presence** — answerable from the owned ledger alone, with no redaction false positive to
-rule out.
-
-Run::
-
-    uv run python .scripts/ledger_bodies.py
-    uv run python .scripts/ledger_bodies.py --repo ../some-consumer
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -34,48 +10,26 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Host layout rather than kit contract — the kit takes its directory as an argument and
-# names no path — so both are literals here with `--repo`/`--ledger` to override, exactly
-# as `kit_deployment.py` holds the same two.
 KIT_DIR = Path(".basicly") / "core" / "kit" / "tracker"
 LEDGER_DIR = Path(".basicly") / "ledger"
 
-# The kit's own `sys.modules` name, so this load and the kit's own are one module: two loads
-# mint two `Event` classes and an `isinstance` against the wrong one is false.
 _DIFFERENTIAL_MODULE_NAME = "basicly_tracker_kit_differential"
 
 _LABEL = "ledger-bodies"
 
 
 class LedgerBodyError(Exception):
-    """No kit to read the ledger with, so the check has no answer to give."""
+    pass
 
 
 @dataclass(frozen=True)
 class Bodies:
-    """What the ledger holds, and which of it has no body.
-
-    Attributes:
-        records: Every record the ledger holds an event for. Reported even on a pass: a
-            population of zero and a population that all passed give the same verdict, and
-            only one of them is evidence.
-        bodyless: The records with no ``created`` event, sorted.
-    """
-
     records: int
     bodyless: tuple[str, ...]
 
 
 def load_kit(kit_dir: Path) -> Any:
-    """Load the kit's ``differential.py`` by path, the way a consumer without basicly would.
 
-    The differential rather than ``events.py``: it exposes ``read_ledger`` and carries
-    ``events`` under it, so one load yields both the reader and the ``created`` kind rather
-    than this file spelling either a second time.
-
-    Raises:
-        LedgerBodyError: the kit is not there, or does not import.
-    """
     source = kit_dir / "differential.py"
     if not source.is_file():
         raise LedgerBodyError(f"no tracker kit at {kit_dir.as_posix()} — nothing to check")
@@ -92,15 +46,7 @@ def load_kit(kit_dir: Path) -> Any:
 
 
 def measure(kit: Any, ledger: Path) -> Bodies:
-    """Which records the ledger at *ledger* holds no ``created`` event for.
 
-    Read off the raw events rather than off ``events.fold``, and that is the whole point:
-    the fold carries a record's status and comments whether or not a body ever arrived, so
-    it is precisely the reader that cannot see this gap.
-
-    A ledger with no log files answers zero records rather than raising; :class:`Bodies`
-    carries the count so that cannot read as a pass.
-    """
     found = kit.read_ledger(ledger)
     held = {event.record for event in found}
     bodied = {event.record for event in found if event.kind == kit.events.KIND_CREATED}
@@ -108,13 +54,7 @@ def measure(kit: Any, ledger: Path) -> Bodies:
 
 
 def report(bodies: Bodies, ledger: Path) -> None:
-    """Name every bodyless record, then the only repair an append-only log allows.
 
-    The remedy names a mechanism rather than a command because no command reaches these
-    records: ``basicly tracker adopt`` selects ``live ids - ledger record ids``, which
-    subtracts a record the ledger holds events for however empty its body is (verified
-    2026-08-17).
-    """
     for record in bodies.bodyless:
         print(
             f"{_LABEL}: {record}: no created event, so the ledger carries none of its "
@@ -135,7 +75,6 @@ def report(bodies: Bodies, ledger: Path) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Entry point: report every record the owned ledger holds and cannot describe."""
     parser = argparse.ArgumentParser(
         description="Check that the owned ledger carries a body for every record it holds."
     )

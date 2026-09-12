@@ -1,12 +1,3 @@
-"""Tests for the `basicly catalog lint` command, as opposed to the lint function.
-
-The gate's own unit tests call ``lint_catalog`` and always passed. The command wraps it
-in an advisory pass that loads every skill, and a source the schema refuses raised there
-— so the command failed with a diagnostic the function never produced, and the
-per-file migration the function *did* produce was never printed. Reported live from a
-repo vendored at 0.5.1, whose catalog predates the invocation axis (basicly-m4zv.9).
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -26,7 +17,6 @@ _PRE_AXIS = f"schema_version: 1\nname: legacy\ndescription: d\n{_INSTRUCTIONS}"
 
 
 def _catalog(tmp_path: Path, skills: dict[str, str]) -> Path:
-    """A minimal catalog carrying the real schemas and the given skill sources."""
     schemas = tmp_path / ".basicly/core/schemas"
     schemas.mkdir(parents=True)
     for name in ("skill.schema.json", "fragment.schema.json", "agent.schema.json"):
@@ -43,7 +33,6 @@ def _catalog(tmp_path: Path, skills: dict[str, str]) -> Path:
 def test_a_clean_catalog_passes_the_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The positive control: without it, a command that always failed reads as a pass."""
     monkeypatch.chdir(_catalog(tmp_path, {"s": _VALID}))
 
     exit_code = cmd_catalog_lint(argparse.Namespace())
@@ -55,7 +44,6 @@ def test_a_clean_catalog_passes_the_command(
 def test_a_pre_axis_source_still_gets_its_migration_printed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The advisory raise must not take the violation list down with it."""
     monkeypatch.chdir(_catalog(tmp_path, {"s": _VALID, "legacy": _PRE_AXIS}))
 
     exit_code = cmd_catalog_lint(argparse.Namespace())
@@ -70,11 +58,7 @@ def test_a_pre_axis_source_still_gets_its_migration_printed(
 def test_the_command_names_every_pre_axis_source_not_just_the_first(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A whole-catalog break read as one bad file.
 
-    The raise stopped at the alphabetically first source, so the consumer had to count
-    all 31 by hand to learn the scope.
-    """
     skills = {f"legacy{index}": _PRE_AXIS for index in range(3)}
     monkeypatch.chdir(_catalog(tmp_path, {"s": _VALID, **skills}))
 
@@ -86,11 +70,7 @@ def test_the_command_names_every_pre_axis_source_not_just_the_first(
 
 
 def test_the_shipped_schema_agrees_with_the_validator_on_what_is_required() -> None:
-    """A field required by code but absent from the schema is invisible to a consumer.
 
-    The vendored schema is the only statement of the contract a pinned repo can read,
-    so the two must not disagree about `invocation`.
-    """
     schema = json.loads(
         (REPO / ".basicly/core/schemas/skill.schema.json").read_text(encoding="utf-8")
     )

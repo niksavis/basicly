@@ -1,5 +1,3 @@
-"""Tests for target renderers."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,7 +18,6 @@ FRAGMENT_ROOTS: list[tuple[Path, str | None]] = [
 
 
 def test_agents_md_contains_header() -> None:
-    """The generated AGENTS.md contains the generated header and expected sections."""
     targets = load_targets(REPO_ROOT / ".basicly" / "core" / "targets")
     target_names = {t.name for t in targets}
     fragments = load_fragments_from_roots(FRAGMENT_ROOTS, target_names)
@@ -34,14 +31,7 @@ def test_agents_md_contains_header() -> None:
 
 
 def test_copilot_plans_no_scoped_instruction_twins() -> None:
-    """A path-scoped fragment single-sources to .claude/rules only.
 
-    The copilot target keeps the root baseline but must not plan
-    .github/instructions/*.instructions.md twins — VS Code loads both roots
-    without dedup, double-loading every path-scoped rule. A synthetic scoped
-    fragment exercises the invariant regardless of what the live catalog ships
-    (all path-scoped guidance now lives in skills, so the catalog may have none).
-    """
     targets = load_targets(REPO_ROOT / ".basicly" / "core" / "targets")
     target_names = {t.name for t in targets}
     fragments = load_fragments_from_roots(FRAGMENT_ROOTS, target_names)
@@ -62,14 +52,7 @@ def test_copilot_plans_no_scoped_instruction_twins() -> None:
 
 
 def test_copilot_baseline_names_no_claude_only_config() -> None:
-    """The copilot baseline must not cite a Claude-only config as its mechanism.
 
-    `applies_to: [all]` fragments render verbatim into every baseline, so a
-    bullet that grounds a prohibition in `.claude/settings.json` tells a copilot
-    session its rule is enforced by a file that does not bind it — and Copilot
-    has no config-file deny at all (permissions.yaml header). Rules must stand
-    on their own wording on every surface (basicly-tcmy.10).
-    """
     targets = load_targets(REPO_ROOT / ".basicly" / "core" / "targets")
     target_names = {t.name for t in targets}
     fragments = load_fragments_from_roots(FRAGMENT_ROOTS, target_names)
@@ -83,7 +66,6 @@ def test_copilot_baseline_names_no_claude_only_config() -> None:
 
 
 def test_sha256_of_text() -> None:
-    """sha256_of_text returns a stable, prefixed hash."""
     assert sha256_of_text("hello").startswith("sha256:")
     assert sha256_of_text("hello") == sha256_of_text("hello")
     assert sha256_of_text("hello") != sha256_of_text("world")

@@ -1,42 +1,3 @@
-"""Fail when a document cites a `file.py:line` that no longer holds what it claims.
-
-A requirements document is read as fact by every human and agent that plans from it, and
-nothing checked it: `docs-claims` gates generated blocks and `corpus-drift` gates an epic's
-problem statement, so a `file:line` written on one day and refuted by the next day's commit
-kept asserting itself (basicly-miqr). Four such claims planned a P0 against a remedy the
-tree had already replaced.
-
-Two rules, both exact, because a natural-language claim is not checkable and a fuzzy gate
-that cries wolf gets waived:
-
-**A cited line must be live code.** Past end-of-file, or blank, is a citation that has
-certainly drifted — no reading of the prose can make it right.
-
-**A cited line must fall inside the symbol its own sentence names.** When the citing line
-also names a top-level `def`, `class` or assignment of the cited module — in backticks, or
-bare inside a fenced block — the two have to agree. That pins the citation to something
-stable under editing, rather than to a line number that every insertion above it moves.
-
-**A citation nothing can check is a finding, not a pass** (basicly-v5c8ob). When the citing
-sentence names no symbol of the cited file, the rule above cannot run — and reporting the
-checkable share while exiting zero is the fail-open shape this gate exists to refuse. Probed
-on real input, a sentence citing a real module at line 1 with a false claim about what is
-there was counted, unchecked, exit 0; 32 of 44 citations were in that state. Each is now
-reported and ratcheted, so the 32 are debt and a new one is refused.
-
-**Two ratchets, not a hard gate.** Debt is recorded per document and may only fall: stale
-citations in ``[tool.docs_citations.frozen]``, unverifiable ones in
-``[tool.docs_citations.unverifiable]``. A document absent from a list may not carry a single
-citation of that kind. The repair for an unverifiable citation is to name, in the citing
-sentence, a top-level symbol of the module it cites — which is what makes the claim checkable
-at all, and what the second rule then holds it to.
-
-Run over every document, or over named ones::
-
-    uv run python .scripts/check_docs_citations.py
-    uv run python .scripts/check_docs_citations.py docs/requirements/harness-board.md
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -53,21 +14,9 @@ _LABEL = "docs-citations"
 FROZEN_TABLE = "[tool.docs_citations.frozen]"
 UNVERIFIABLE_TABLE = "[tool.docs_citations.unverifiable]"
 DOC_GLOB = "docs/**/*.md"
-# Directories a cited basename must never resolve into: vendored or generated trees hold
-# copies of `src/` modules, and a citation matching two files is reported, not guessed.
 _SKIP_DIRS = frozenset({".git", ".venv", "node_modules", "site", "__pycache__"})
 
-# The `?` is the closing backtick of a backticked path, which a citation writes on the
-# outside of the tick when it writes the line number outside too (basicly-v5c8ob). Without
-# it, `` `loop.py`:120 `` matched nothing at all — not counted, not checked, not reported,
-# which is the one outcome a presence-based gate cannot tell from a document with no
-# citations. Loosening it is safe because the path and the line number are both still
-# required: measured over all 304 tracked `.md`/`.yaml` files, the old pattern and this one
-# both find 53 citations, so the tick admits no prose.
 _CITATION = re.compile(r"(?<![\w/])([\w./-]+\.py)`?:(\d+)")
-# What a citation nothing can check is reported as. Before basicly-v5c8ob this branch was a
-# bare `continue`: 32 of the 44 citations in `docs/` were counted, not verified, and the gate
-# exited zero over a sentence citing a real module at line 1 with a false claim about it.
 _UNVERIFIABLE = "names no symbol of the cited module, so nothing verifies the claim"
 _BACKTICKED = re.compile(r"`([^`]*)`")
 _DOTTED = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
@@ -75,13 +24,11 @@ _FENCE = "```"
 
 
 class RatchetError(RuntimeError):
-    """The recorded baseline is missing or malformed."""
+    pass
 
 
 @dataclass(frozen=True)
 class Finding:
-    """One citation that does not point at what the sentence around it claims."""
-
     doc: str
     doc_line: int
     citation: str
@@ -89,15 +36,7 @@ class Finding:
 
 
 def load_frozen(repo: Path, key: str = "frozen") -> dict[str, int]:
-    """The recorded per-document debt named by *key* in ``pyproject.toml``.
 
-    Two tables, one shape: ``frozen`` records citations that are wrong and
-    ``unverifiable`` records citations nothing checks.
-
-    Raises:
-        RatchetError: The table is absent or malformed — an empty default would fail
-            every recorded document at once and a permissive one would pass everything.
-    """
     named = f"[tool.docs_citations.{key}]"
     try:
         data = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
@@ -113,11 +52,7 @@ def load_frozen(repo: Path, key: str = "frozen") -> dict[str, int]:
 
 
 def top_level_spans(source: str) -> dict[str, list[tuple[int, int]]]:
-    """Line span of every module-level `def`, `class` and assignment, by name.
 
-    Module level only: a local named `reason` or `text` matches half the prose in this
-    repo, and admitting one turns the symbol rule from exact into a coin toss.
-    """
     spans: dict[str, list[tuple[int, int]]] = {}
 
     def record(name: str, node: ast.stmt) -> None:
@@ -136,7 +71,6 @@ def top_level_spans(source: str) -> dict[str, list[tuple[int, int]]]:
 
 
 def resolve(repo_root: Path, cited: str) -> Path | None:
-    """The file *cited* names, from a repo-relative path or an unambiguous basename."""
     direct = repo_root / cited
     if direct.is_file():
         return direct
@@ -149,11 +83,7 @@ def resolve(repo_root: Path, cited: str) -> Path | None:
 
 
 def named_symbols(line: str, spans: dict[str, list[tuple[int, int]]], stem: str) -> set[str]:
-    """Top-level symbols of the cited module that *line* names, in ticks or in a fence.
 
-    The module's own stem is excluded: `classify.py:43` beside the word `classify` names
-    the file a second time, not a function inside it.
-    """
     chunks = [line] if line.startswith(_FENCE) else _BACKTICKED.findall(line)
     return {
         segment
@@ -167,7 +97,6 @@ def named_symbols(line: str, spans: dict[str, list[tuple[int, int]]], stem: str)
 def _checked(
     repo_root: Path, doc: str, doc_line: int, line: str
 ) -> tuple[int, list[Finding], list[Finding]]:
-    """Every citation on one line of prose, as (checkable count, stale, unverifiable)."""
     checkable = 0
     found: list[Finding] = []
     unchecked: list[Finding] = []
@@ -199,7 +128,6 @@ def _checked(
 def scan(
     repo_root: Path, docs: tuple[Path, ...]
 ) -> tuple[int, int, tuple[Finding, ...], tuple[Finding, ...]]:
-    """Scan *docs* as (seen, checkable, stale, unverifiable)."""
     seen = 0
     checkable = 0
     found: list[Finding] = []
@@ -212,8 +140,6 @@ def scan(
                 in_fence = not in_fence
                 continue
             seen += len(_CITATION.findall(line))
-            # A fenced line has no backticks to mark a symbol, so the whole line is the
-            # chunk; `_FENCE` prefixed onto it is how `named_symbols` is told which.
             probe = f"{_FENCE}{line}" if in_fence else line
             one, hits, blind = _checked(repo_root, relative, number, probe)
             checkable += one
@@ -228,12 +154,7 @@ def verdicts(
     noun: str = "stale",
     table: str = FROZEN_TABLE,
 ) -> list[str]:
-    """The ratchet's reading of *found*: what grew, what appeared, and what graduated.
 
-    One reading for both populations. *noun* and *table* say which is being ratcheted,
-    because a stale citation and an unverifiable one need the same three verdicts and
-    differ only in the repair a reader is being sent to make.
-    """
     counts = dict.fromkeys(frozen, 0)
     for finding in found:
         counts[finding.doc] = counts.get(finding.doc, 0) + 1
@@ -256,7 +177,6 @@ def verdicts(
 
 
 def report(found: tuple[Finding, ...], failing: list[str], noun: str = "stale") -> str:
-    """The failing documents, each with the citations behind its count."""
     named = {line.split(":", 1)[0] for line in failing}
     lines: list[str] = []
     for entry in failing:
@@ -273,7 +193,6 @@ def report(found: tuple[Finding, ...], failing: list[str], noun: str = "stale") 
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point: report every citation a reader would take as a fact about the code."""
     parser = argparse.ArgumentParser(
         description="Fail when a document cites a `file.py:line` that no longer holds it."
     )

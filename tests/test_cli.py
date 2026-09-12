@@ -1,5 +1,3 @@
-"""Integration tests for the CLI."""
-
 from __future__ import annotations
 
 import argparse
@@ -34,10 +32,6 @@ REPO_ROOT = Path(__file__).parent.parent
 
 
 def run_basicly(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run the basicly CLI with the given arguments in the given working directory."""
-    # Inherit the real environment (PATH included) so the CLI's own subprocess
-    # calls — e.g. `git` in status — resolve; a bare env has no PATH fallback on
-    # Windows, only on POSIX.
     env = {**os.environ, "PYTHONPATH": str(cwd / "src")}
     return subprocess.run(
         [sys.executable, "-m", "basicly.cli", *args],
@@ -50,7 +44,6 @@ def run_basicly(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def run_basicly_consumer(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run the CLI in a consumer dir, importing basicly from the real repo's src."""
     env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
     return subprocess.run(
         [sys.executable, "-m", "basicly.cli", *args],
@@ -62,17 +55,8 @@ def run_basicly_consumer(cwd: Path, *args: str) -> subprocess.CompletedProcess[s
     )
 
 
-# --- the fixture the rest of this file rests on (basicly-tcmy.22) -------------
-
-
 def test_the_work_repo_fixture_copies_all_and_only_the_tracked_files(work_repo: Path) -> None:
-    """The copy has to be the repo as git records it — no more, and no less.
 
-    "No more" is the half that was broken: the old fixture excluded ``.git`` and
-    ``.venv`` and took everything else. "No less" is asserted here too, because a
-    fixture that quietly skipped a subtree would leave every other consumer of it
-    asserting against an incomplete repo and still looking green.
-    """
     listing = subprocess.run(  # nosec B603 B607
         ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
         capture_output=True,
@@ -85,34 +69,21 @@ def test_the_work_repo_fixture_copies_all_and_only_the_tracked_files(work_repo: 
     }
 
     assert copied == tracked
-    assert (work_repo / "src" / "basicly" / "cli.py").is_file()  # the copy is not empty
+    assert (work_repo / "src" / "basicly" / "cli.py").is_file()
 
 
 def test_the_work_repo_fixture_leaves_out_the_state_that_differed_per_machine(
     work_repo: Path,
 ) -> None:
-    """A developer's local state must never reach a test CI runs without it.
 
-    Each name here was measured inside the old copy: ``node_modules``, and — the ones
-    that actually change answers — the gitignored ``basicly.local.toml`` and any
-    untracked ``.basicly-local/`` content, which is this repo's documented per-machine
-    runner/model/policy overlay. Asserted unconditionally, so this still holds on a
-    machine that happens not to have them.
-
-    The tracker's own per-machine state is the ``redirect``: it names an absolute path
-    and is written per worktree, so a copy carrying one would read the developer's own
-    checkout instead of its own.
-    """
     for offender in ("node_modules", ".venv", "basicly.local.toml"):
         assert not (work_repo / offender).exists(), offender
     assert list(work_repo.rglob("__pycache__")) == []
     assert not (work_repo / cli.owned_store.LEDGER_DIR / "redirect").exists()
-    # The tracked event log survives: it is the tracker.
     assert list((work_repo / cli.owned_store.LEDGER_DIR).glob("events-*.jsonl"))
 
 
 def test_cli_install_converges_fresh_consumer(tmp_path: Path) -> None:
-    """One install produces catalog, overlay, config, and every projected artifact."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
 
@@ -124,8 +95,6 @@ def test_cli_install_converges_fresh_consumer(tmp_path: Path) -> None:
     assert list((consumer / ".basicly" / "core" / "fragments").rglob("*.fragment.yaml"))
     assert (consumer / ".basicly" / "core" / "targets" / "claude.yaml").is_file()
 
-    # The overview/commands overlay stubs are seeded as drafts: present as
-    # sources, absent from projections until the consumer activates them.
     overlay_user = consumer / ".basicly-local" / "fragments" / "user"
     overview = overlay_user / "project" / "project-overview.fragment.yaml"
     commands = overlay_user / "commands" / "commands.fragment.yaml"
@@ -134,7 +103,6 @@ def test_cli_install_converges_fresh_consumer(tmp_path: Path) -> None:
     claude_md = (consumer / ".claude" / "CLAUDE.md").read_text(encoding="utf-8")
     assert "Project Overview" not in claude_md
 
-    # A single command projects everything — no separate build/skills/hooks runs.
     assert (consumer / "AGENTS.md").is_file()
     assert (consumer / ".claude" / "CLAUDE.md").is_file()
     assert (consumer / ".github" / "copilot-instructions.md").is_file()
@@ -146,12 +114,7 @@ def test_cli_install_converges_fresh_consumer(tmp_path: Path) -> None:
 
 
 def test_cli_install_honors_custom_core_paths(tmp_path: Path) -> None:
-    """Install must materialize into the basicly.toml core root, not a hardcoded one.
 
-    Regression: init hardcoded .basicly/core while build read the configured
-    paths, so a custom-path consumer got a successful scaffold followed by a
-    build that silently generated nothing.
-    """
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     (consumer / "basicly.toml").write_text(
@@ -167,9 +130,6 @@ def test_cli_install_honors_custom_core_paths(tmp_path: Path) -> None:
     result = run_basicly_consumer(consumer, "install")
     assert result.returncode == 0, result.stderr
     assert (consumer / "conf" / "basicly" / "core" / "targets" / "claude.yaml").is_file()
-    # The catalog honours `[paths]`; the tracker's ledger does not, and that is the
-    # boundary rather than an oversight — `[paths]` relocates *managed core*, and the
-    # ledger is the repository's own data (`tracker_paths.LEDGER_DIR_NAME`).
     assert not (consumer / ".basicly" / "core").exists()
     assert (consumer / "AGENTS.md").is_file()
     config_text = (consumer / ".pre-commit-config.yaml").read_text(encoding="utf-8")
@@ -177,12 +137,10 @@ def test_cli_install_honors_custom_core_paths(tmp_path: Path) -> None:
 
 
 def test_cli_install_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
-    """A second install converges with no changes and never clobbers user content."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
 
-    # A user edit to the config must survive re-running install.
     config = consumer / "basicly.toml"
     marker = config.read_text(encoding="utf-8") + "\n# user note\n"
     config.write_text(marker, encoding="utf-8")
@@ -197,7 +155,6 @@ def test_cli_install_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
 
 
 def test_cli_help_groups_commands_by_audience(tmp_path: Path) -> None:
-    """--help carries the consumer/contributor/harness grouping (and no update)."""
     result = run_basicly_consumer(tmp_path, "--help")
     assert result.returncode == 0
     for marker in ("command groups:", "consumer (", "contributor (", "harness ("):
@@ -206,7 +163,6 @@ def test_cli_help_groups_commands_by_audience(tmp_path: Path) -> None:
 
 
 def test_cli_piped_output_stays_plain_text(work_repo: Path) -> None:
-    """Piped/CI output carries no ANSI styling and keeps the exact wording."""
     result = run_basicly(work_repo, "check")
     assert result.returncode == 0, result.stderr
     assert "\x1b" not in result.stdout
@@ -219,22 +175,18 @@ def test_cli_piped_output_stays_plain_text(work_repo: Path) -> None:
 
 
 def test_cli_install_technology_selection_filters_and_prunes(tmp_path: Path) -> None:
-    """A recorded selection keeps tagged sources out and re-narrowing prunes them."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
 
     result = run_basicly_consumer(consumer, "install", "--technologies", "zsh")
     assert result.returncode == 0, result.stderr
     assert 'technologies = ["zsh"]' in (consumer / "basicly.toml").read_text(encoding="utf-8")
-    # Universal skills ship; python/tmux-tagged skills are filtered out.
     assert (consumer / ".claude" / "skills" / "tool-git" / "SKILL.md").is_file()
     assert (consumer / ".claude" / "skills" / "tool-zsh" / "SKILL.md").is_file()
     assert not (consumer / ".claude" / "skills" / "tool-uv").exists()
     assert not (consumer / ".claude" / "skills" / "tool-tmux").exists()
-    # Core sync stays full: the filtered skill's source is still materialized.
     assert (consumer / ".basicly" / "core" / "skills" / "tool-uv" / "skill.yaml").is_file()
 
-    # Widening the selection ships the tagged skill; narrowing again prunes it.
     result = run_basicly_consumer(consumer, "install", "--technologies", "python")
     assert result.returncode == 0, result.stderr
     assert (consumer / ".claude" / "skills" / "tool-uv" / "SKILL.md").is_file()
@@ -242,7 +194,6 @@ def test_cli_install_technology_selection_filters_and_prunes(tmp_path: Path) -> 
     assert result.returncode == 0, result.stderr
     assert not (consumer / ".claude" / "skills" / "tool-uv").exists()
 
-    # An out-of-vocabulary flag value fails loudly before anything is recorded.
     result = run_basicly_consumer(consumer, "install", "--technologies", "pyton")
     assert result.returncode == 1
     assert "Unknown technology value" in result.stderr
@@ -251,7 +202,6 @@ def test_cli_install_technology_selection_filters_and_prunes(tmp_path: Path) -> 
 def test_validate_install_technologies_rejects_empty_selection(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A flag value that parses to nothing is an error, not an empty selection."""
     assert cli._validate_install_technologies(None) == []
     assert cli._validate_install_technologies(",") is None
     assert "at least one value" in capsys.readouterr().err
@@ -260,12 +210,7 @@ def test_validate_install_technologies_rejects_empty_selection(
 def test_cli_install_rejects_unknown_technology_before_writing_any_file(
     tmp_path: Path,
 ) -> None:
-    """An invalid --technologies value exits non-zero before install writes anything.
 
-    Regression for basicly-859cqk: cmd_install used to sync the catalog, write
-    install state, scaffold the overlay and config, and only then validate the
-    flag — leaving a half-installed repo behind a rejected command.
-    """
     consumer = tmp_path / "consumer"
     consumer.mkdir()
 
@@ -278,14 +223,7 @@ def test_cli_install_rejects_unknown_technology_before_writing_any_file(
 def test_setup_tracker_creates_the_ledger_and_reports_a_derived_prefix(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fresh repo gets a ledger directory and the prefix a root mint would need.
 
-    The directory is created rather than left to the first write: its presence is what
-    opts a repository in (`tracker_usage.is_enabled`), and a consumer needs something to
-    commit. The prefix is *reported*, never written — only a repository minting a root
-    record needs one, and guessing it into `basicly.toml` declares a namespace nobody
-    asked for.
-    """
     repo = tmp_path / "My-Terminal.2"
     repo.mkdir()
 
@@ -300,7 +238,6 @@ def test_setup_tracker_creates_the_ledger_and_reports_a_derived_prefix(
 def test_setup_tracker_leaves_an_existing_ledger_alone(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Idempotent, and it must never touch a log: the ledger is append-only."""
     ledger = tmp_path / cli.owned_store.LEDGER_DIR
     ledger.mkdir(parents=True)
     (ledger / "events-0001.jsonl").write_text('{"record":"kept-1"}\n', encoding="utf-8")
@@ -312,7 +249,6 @@ def test_setup_tracker_leaves_an_existing_ledger_alone(
 
 
 def test_tracker_prefix_enforces_leading_letter(tmp_path: Path) -> None:
-    """A digit-leading or empty name is padded to a letter-leading prefix."""
     assert cli._tracker_prefix(tmp_path / "42tools") == "repo42tools"
     assert cli._tracker_prefix(tmp_path / "---") == "repo"
 
@@ -320,7 +256,6 @@ def test_tracker_prefix_enforces_leading_letter(tmp_path: Path) -> None:
 def test_scaffold_vscode_tasks_never_overwrites(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The tasks scaffold is written once; an existing file is the user's."""
     cli._scaffold_vscode_tasks(tmp_path)
     tasks_path = tmp_path / ".vscode" / "tasks.json"
     assert tasks_path.read_text(encoding="utf-8") == VSCODE_TASKS_JSON
@@ -332,7 +267,6 @@ def test_scaffold_vscode_tasks_never_overwrites(
 
 
 def test_purge_removes_only_pristine_vscode_tasks(tmp_path: Path) -> None:
-    """--purge deletes tasks.json only while byte-identical to the scaffold."""
     paths = load_project_paths(tmp_path)
     tasks_path = tmp_path / ".vscode" / "tasks.json"
 
@@ -344,13 +278,12 @@ def test_purge_removes_only_pristine_vscode_tasks(tmp_path: Path) -> None:
     tasks_path.parent.mkdir(parents=True, exist_ok=True)
     tasks_path.write_text(VSCODE_TASKS_JSON + "// edited\n", encoding="utf-8")
     cli._purge_user_content(tmp_path, paths)
-    assert tasks_path.exists()  # user-modified file survives purge
+    assert tasks_path.exists()
 
 
 def test_scaffold_ci_workflow_writes_once_and_parses(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The CI workflow scaffold is valid YAML, written once, then the user's."""
     cli._scaffold_ci_workflow(tmp_path)
     workflow_path = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
     data = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
@@ -363,7 +296,6 @@ def test_scaffold_ci_workflow_writes_once_and_parses(
 
 
 def test_scaffold_generated_ignores_appends_once(tmp_path: Path) -> None:
-    """Every generated entry is created, appended without clobbering, and idempotent."""
     cli._scaffold_generated_ignores(tmp_path)
     ignore_path = tmp_path / ".gitignore"
     lines = ignore_path.read_text(encoding="utf-8").splitlines()
@@ -372,16 +304,15 @@ def test_scaffold_generated_ignores_appends_once(tmp_path: Path) -> None:
     ignore_path.write_text("node_modules/\n", encoding="utf-8")
     cli._scaffold_generated_ignores(tmp_path)
     lines = ignore_path.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "node_modules/"  # existing content survives the append
+    assert lines[0] == "node_modules/"
     assert LOCAL_CONFIG_FILE in lines
 
     before = ignore_path.read_text(encoding="utf-8")
     cli._scaffold_generated_ignores(tmp_path)
-    assert ignore_path.read_text(encoding="utf-8") == before  # second run is a no-op
+    assert ignore_path.read_text(encoding="utf-8") == before
 
 
 def test_scaffold_generated_ignores_adds_only_what_is_missing(tmp_path: Path) -> None:
-    """An upgrade meets a consumer carrying some entries, so the append is per pattern."""
     ignore_path = tmp_path / ".gitignore"
     ignore_path.write_text(f"/{LOCAL_CONFIG_FILE}\n", encoding="utf-8")
 
@@ -394,16 +325,7 @@ def test_scaffold_generated_ignores_adds_only_what_is_missing(tmp_path: Path) ->
 
 
 def test_this_repo_satisfies_the_local_config_ignore_it_scaffolds() -> None:
-    """This repo carries every ignore entry `basicly install` scaffolds.
 
-    The dual-use constraint (factory design §1): a guarantee the harness gives
-    consumers and not itself is a real gap, and this one bit — basicly is never
-    installed into basicly, so its own override file was the last one tracked. Not
-    cosmetic: a landing refuses dirt outside the tracker, so an untracked generated
-    file blocks every landing in the repo that ships the mechanism.
-
-    Asserted through the engine's own predicate, so it cannot drift from the scaffold.
-    """
     repo_root = Path(__file__).resolve().parents[1]
     ignore_text = (repo_root / ".gitignore").read_text(encoding="utf-8")
     uncovered = [p for p, _ in GENERATED_IGNORES if not cli.ignore_covers(ignore_text, p)]
@@ -416,7 +338,6 @@ def test_this_repo_satisfies_the_local_config_ignore_it_scaffolds() -> None:
 def test_install_hints_missing_config_sections_without_editing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An older basicly.toml gets its missing sections named, never edited."""
     original = "[worktree]\nconcurrency = 2\n"
     (tmp_path / CONFIG_FILE).write_text(original, encoding="utf-8")
 
@@ -433,18 +354,13 @@ def test_install_hints_missing_config_sections_without_editing(
 def test_install_hints_stay_quiet_for_a_current_config(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A config carrying every shipped section produces no hint."""
     (tmp_path / CONFIG_FILE).write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
     cli._report_missing_config_sections(tmp_path)
     assert capsys.readouterr().out == ""
 
 
 def test_ci_workflows_ignore_tracker_only_pushes() -> None:
-    """Tracker-only pushes must not trigger builds: the ledger path is ignored.
 
-    The harness loop necessarily makes tracker-only commits (basicly-flp), so
-    both the authoring workflows and the consumer scaffold skip CI for them.
-    """
     sources = [
         (REPO_ROOT / ".github" / "workflows" / "basicly.yml").read_text(encoding="utf-8"),
         (REPO_ROOT / ".github" / "workflows" / "quality-gates.yml").read_text(encoding="utf-8"),
@@ -452,13 +368,12 @@ def test_ci_workflows_ignore_tracker_only_pushes() -> None:
     ]
     for text in sources:
         data = yaml.safe_load(text)
-        triggers = data.get("on", data.get(True))  # bare `on:` parses as YAML boolean
+        triggers = data.get("on", data.get(True))
         for event in ("push", "pull_request"):
             assert triggers[event]["paths-ignore"] == [".basicly/ledger/**"], text[:200]
 
 
 def test_purge_removes_only_pristine_ci_workflow(tmp_path: Path) -> None:
-    """--purge deletes the workflow only while byte-identical to the scaffold."""
     paths = load_project_paths(tmp_path)
     workflow_path = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
 
@@ -470,11 +385,10 @@ def test_purge_removes_only_pristine_ci_workflow(tmp_path: Path) -> None:
     workflow_path.parent.mkdir(parents=True, exist_ok=True)
     workflow_path.write_text(CONSUMER_CI_WORKFLOW + "# edited\n", encoding="utf-8")
     cli._purge_user_content(tmp_path, paths)
-    assert workflow_path.exists()  # user-modified file survives purge
+    assert workflow_path.exists()
 
 
 def _record_in_state(consumer: Path, rel_path: str) -> None:
-    """Rewrite install.json so the on-disk core file at rel_path reads as installed."""
     state_path = consumer / ".basicly" / "state" / "install.json"
     payload = json.loads(state_path.read_text(encoding="utf-8"))
     digest = hashlib.sha256((consumer / ".basicly" / "core" / rel_path).read_bytes()).hexdigest()
@@ -483,13 +397,10 @@ def _record_in_state(consumer: Path, rel_path: str) -> None:
 
 
 def test_cli_install_upgrade_overwrites_upstream_changed_core_file(tmp_path: Path) -> None:
-    """A core file whose on-disk state matches the snapshot is synced to the bundle."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
 
-    # Simulate an older installed version: rewrite a core file AND record that
-    # content as installed, so the bundled catalog now differs from both.
     target = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
     bundled_content = target.read_text(encoding="utf-8")
     target.write_text("# older shipped version\n", encoding="utf-8")
@@ -502,7 +413,6 @@ def test_cli_install_upgrade_overwrites_upstream_changed_core_file(tmp_path: Pat
 
 
 def test_cli_install_upgrade_deletes_upstream_removed_core_file(tmp_path: Path) -> None:
-    """A snapshot-tracked core file the bundle no longer ships is deleted."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -519,7 +429,6 @@ def test_cli_install_upgrade_deletes_upstream_removed_core_file(tmp_path: Path) 
 
 
 def test_cli_install_keeps_hand_edited_core_file_unless_forced(tmp_path: Path) -> None:
-    """A hand-edited core file is warned about and kept; --force overwrites it."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -540,7 +449,6 @@ def test_cli_install_keeps_hand_edited_core_file_unless_forced(tmp_path: Path) -
 
 
 def test_cli_install_keeps_unknown_core_file_with_warning(tmp_path: Path) -> None:
-    """A file of unknown origin in the managed core is never deleted."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -555,7 +463,6 @@ def test_cli_install_keeps_unknown_core_file_with_warning(tmp_path: Path) -> Non
 
 
 def test_cli_install_upgrade_preserves_overlay_and_config(tmp_path: Path) -> None:
-    """An upgrade sync never touches the overlay or basicly.toml."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -575,7 +482,6 @@ def test_cli_install_upgrade_preserves_overlay_and_config(tmp_path: Path) -> Non
     config_content = config.read_text(encoding="utf-8") + "\n# my note\n"
     config.write_text(config_content, encoding="utf-8")
 
-    # Simulate an upstream change so the sync actually rewrites a core file.
     target = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
     target.write_text("# older shipped version\n", encoding="utf-8")
     _record_in_state(consumer, "hooks/pre-commit.py")
@@ -588,7 +494,6 @@ def test_cli_install_upgrade_preserves_overlay_and_config(tmp_path: Path) -> Non
 
 
 def test_cli_install_writes_provenance_state(tmp_path: Path) -> None:
-    """Install snapshots the materialized core into .basicly/state/install.json."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
 
@@ -610,7 +515,6 @@ def test_cli_install_writes_provenance_state(tmp_path: Path) -> None:
 
 
 def test_cli_install_refreshes_provenance_state(tmp_path: Path) -> None:
-    """A second install re-snapshots the state file."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -627,7 +531,6 @@ def test_cli_install_refreshes_provenance_state(tmp_path: Path) -> None:
 
 
 def test_cli_install_authoring_repo_writes_no_state(work_repo: Path) -> None:
-    """The authoring repo (core == bundled source) records no provenance."""
     result = run_basicly(work_repo, "install")
     assert result.returncode == 0, result.stderr
     assert "its own authoring source" in result.stdout
@@ -635,16 +538,11 @@ def test_cli_install_authoring_repo_writes_no_state(work_repo: Path) -> None:
 
 
 def test_cli_check_refuses_a_rewritten_managed_core(tmp_path: Path) -> None:
-    """It was a stderr note under an "up to date" headline and exit 0 (basicly-8cd7wo5).
 
-    A consumer's formatters rewrote 75 vendored files; `check` said up to date and they
-    committed the rewrite.
-    """
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
 
-    # A managed file no generated output reads, so only provenance drifts.
     hook = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
     hook.write_text(hook.read_text(encoding="utf-8") + "\n# hand edit\n", encoding="utf-8")
 
@@ -656,7 +554,6 @@ def test_cli_check_refuses_a_rewritten_managed_core(tmp_path: Path) -> None:
 
 
 def test_cli_check_refuses_a_catalog_another_version_installed(tmp_path: Path) -> None:
-    """A `Note:` sat above a louder, wrong `Run basicly build` that fixes neither side."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -674,7 +571,6 @@ def test_cli_check_refuses_a_catalog_another_version_installed(tmp_path: Path) -
 
 
 def test_cli_uninstall_removes_everything_managed(tmp_path: Path) -> None:
-    """After install then uninstall, no basicly-managed file remains."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -691,16 +587,12 @@ def test_cli_uninstall_removes_everything_managed(tmp_path: Path) -> None:
         assert not (list(base.rglob("SKILL.md")) if base.exists() else [])
     assert not (consumer / ".pre-commit-config.yaml").exists()
 
-    # User content survives — including the tracker, which holds the work records this
-    # tool never authored. Deleting a repository's own backlog on uninstall is the one
-    # unrecoverable thing an uninstall could do (basicly-vkh0.42.7).
     assert (consumer / "basicly.toml").is_file()
     assert (consumer / ".basicly-local" / "fragments" / "user").is_dir()
     assert (consumer / cli.owned_store.LEDGER_DIR).is_dir()
 
 
 def test_cli_uninstall_preserves_foreign_hooks(tmp_path: Path) -> None:
-    """Only the managed pre-commit block is removed; foreign hooks stay."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -727,7 +619,6 @@ def test_cli_uninstall_preserves_foreign_hooks(tmp_path: Path) -> None:
 
 
 def test_cli_uninstall_purge_removes_user_content_too(tmp_path: Path) -> None:
-    """--purge also removes the overlay and basicly.toml."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -739,7 +630,6 @@ def test_cli_uninstall_purge_removes_user_content_too(tmp_path: Path) -> None:
 
 
 def test_cli_uninstall_keeps_hand_written_skill(tmp_path: Path) -> None:
-    """A SKILL.md without the generated marker is user content and survives."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -758,7 +648,6 @@ def test_cli_uninstall_keeps_hand_written_skill(tmp_path: Path) -> None:
 
 
 def test_cli_uninstall_twice_is_a_noop(tmp_path: Path) -> None:
-    """A second uninstall reports nothing to remove and exits 0."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -770,7 +659,6 @@ def test_cli_uninstall_twice_is_a_noop(tmp_path: Path) -> None:
 
 
 def test_cli_uninstall_refuses_in_authoring_repo(work_repo: Path) -> None:
-    """The dogfood repo's catalog source must never be deletable by uninstall."""
     result = run_basicly(work_repo, "uninstall")
     assert result.returncode == 1
     assert "authoring source" in result.stderr
@@ -778,7 +666,6 @@ def test_cli_uninstall_refuses_in_authoring_repo(work_repo: Path) -> None:
 
 
 def test_cli_build_idempotent(work_repo: Path) -> None:
-    """Two build runs with no source changes should produce no diff."""
     result1 = run_basicly(work_repo, "build")
     assert result1.returncode == 0
     result2 = run_basicly(work_repo, "build")
@@ -787,7 +674,6 @@ def test_cli_build_idempotent(work_repo: Path) -> None:
 
 
 def test_cli_check_passes_after_build(work_repo: Path) -> None:
-    """Check should pass immediately after a build."""
     run_basicly(work_repo, "build")
     result = run_basicly(work_repo, "check")
     assert result.returncode == 0
@@ -795,7 +681,6 @@ def test_cli_check_passes_after_build(work_repo: Path) -> None:
 
 
 def test_cli_check_fails_after_manual_edit(work_repo: Path) -> None:
-    """Check should fail after a generated file is edited manually."""
     run_basicly(work_repo, "build")
     agents = work_repo / "AGENTS.md"
     agents.write_text(agents.read_text(encoding="utf-8") + "\n", encoding="utf-8")
@@ -805,13 +690,7 @@ def test_cli_check_fails_after_manual_edit(work_repo: Path) -> None:
 
 
 def _set_codex_size_cap(work_repo: Path, value: int) -> None:
-    """Rewrite codex's character cap to *value*, whatever it is set to today.
 
-    Keyed on the field name rather than on the committed number: the number is data and
-    moved once already (basicly-a3ab.1 raised it after measuring that the overrun came
-    from the inlined scoped tier, not from the baseline), which broke the two tests below
-    for a reason that had nothing to do with what they assert.
-    """
     codex = work_repo / ".basicly" / "core" / "targets" / "codex.yaml"
     text = codex.read_text(encoding="utf-8")
     rewritten = re.sub(
@@ -822,13 +701,7 @@ def _set_codex_size_cap(work_repo: Path, value: int) -> None:
 
 
 def test_cli_check_reports_the_always_on_budget_overrun_build_reports(work_repo: Path) -> None:
-    """Check emits the same budget warnings build does, on a tree it declares up to date.
 
-    The defect this pins: the warnings existed and were computed only on the writing
-    path, so `check` reported clean while `AGENTS.md` sat past both caps. Driven by
-    lowering the cap rather than by growing the file, because the cap is data and the
-    baseline's real size is not this test's business.
-    """
     run_basicly(work_repo, "build")
     agents_chars = len((work_repo / "AGENTS.md").read_text(encoding="utf-8"))
     _set_codex_size_cap(work_repo, agents_chars - 1)
@@ -841,11 +714,7 @@ def test_cli_check_reports_the_always_on_budget_overrun_build_reports(work_repo:
 
 
 def test_cli_check_is_silent_on_a_budget_it_meets(work_repo: Path) -> None:
-    """The positive control for the test above: no warning when the cap is not exceeded.
 
-    Without this, a check that printed the warning unconditionally would pass the
-    assertion above and discriminate nothing.
-    """
     run_basicly(work_repo, "build")
     agents_chars = len((work_repo / "AGENTS.md").read_text(encoding="utf-8"))
     _set_codex_size_cap(work_repo, agents_chars + 1)
@@ -857,23 +726,16 @@ def test_cli_check_is_silent_on_a_budget_it_meets(work_repo: Path) -> None:
 
 
 def test_cli_build_target_only(work_repo: Path) -> None:
-    """Build --target should only touch that target's outputs but preserve the manifest."""
     run_basicly(work_repo, "build")
     result = run_basicly(work_repo, "build", "--target", "claude")
     assert result.returncode == 0
     assert "copilot-instructions.md" not in result.stdout
-    # Manifest must still list outputs from other targets so check passes.
     result_check = run_basicly(work_repo, "check")
     assert result_check.returncode == 0
 
 
 def test_cli_build_sweeps_stale_manifest_outputs(work_repo: Path) -> None:
-    """A full build deletes manifest-tracked files no target plans anymore.
 
-    Regression for the retired .github/instructions twins: a consumer
-    re-running install must converge on the single-source layout instead of
-    keeping stale projections around.
-    """
     run_basicly(work_repo, "build")
     manifest_path = work_repo / ".basicly/generated-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -889,13 +751,12 @@ def test_cli_build_sweeps_stale_manifest_outputs(work_repo: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert f"Removed {stale_rel}" in result.stdout
     assert not stale_file.exists()
-    assert not stale_file.parent.exists()  # emptied directory is cleaned up too
+    assert not stale_file.parent.exists()
     manifest_after = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert stale_rel not in manifest_after["outputs"]
 
 
 def test_cli_build_target_keeps_other_targets_files(work_repo: Path) -> None:
-    """A partial --target build must not sweep other targets' manifest entries."""
     run_basicly(work_repo, "build")
     copilot_baseline = work_repo / ".github" / "copilot-instructions.md"
     assert copilot_baseline.is_file()
@@ -907,14 +768,12 @@ def test_cli_build_target_keeps_other_targets_files(work_repo: Path) -> None:
 
 
 def test_cli_unknown_target(work_repo: Path) -> None:
-    """Build --target with an unknown target should fail cleanly."""
     result = run_basicly(work_repo, "build", "--target", "unknown")
     assert result.returncode == 1
     assert "Unknown target" in result.stderr
 
 
 def _add_duplicate_fragments(work_repo: Path) -> None:
-    """Add two core fragments with identical bodies to trip catalog-verify."""
     frag_dir = work_repo / ".basicly/core/fragments/project"
     frag_dir.mkdir(parents=True, exist_ok=True)
     body = (
@@ -926,14 +785,12 @@ def _add_duplicate_fragments(work_repo: Path) -> None:
 
 
 def test_cli_catalog_verify_passes(work_repo: Path) -> None:
-    """The real catalog passes content verification."""
     result = run_basicly(work_repo, "catalog", "verify")
     assert result.returncode == 0, result.stderr
     assert "catalog verify: OK" in result.stdout
 
 
 def test_cli_catalog_verify_flags_duplicate_bodies(work_repo: Path) -> None:
-    """catalog-verify fails when two fragments share a body."""
     _add_duplicate_fragments(work_repo)
     result = run_basicly(work_repo, "catalog", "verify")
     assert result.returncode == 1
@@ -941,7 +798,6 @@ def test_cli_catalog_verify_flags_duplicate_bodies(work_repo: Path) -> None:
 
 
 def _write_overlay_fragment(work_repo: Path, fragment_id: str, extra: str = "") -> Path:
-    """Author one active overlay fragment: the .basicly-local half of a composed catalog."""
     path = work_repo / ".basicly-local/fragments/user" / f"{fragment_id}.fragment.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -955,7 +811,6 @@ def _write_overlay_fragment(work_repo: Path, fragment_id: str, extra: str = "") 
 def test_cli_catalog_dump_names_every_selected_item_with_its_origin_and_axes(
     work_repo: Path,
 ) -> None:
-    """Every selected item prints with its source file and the axis values that selected it."""
     _write_overlay_fragment(work_repo, "overlay-only")
 
     result = run_basicly(work_repo, "catalog", "dump")
@@ -978,11 +833,7 @@ def test_cli_catalog_dump_names_every_selected_item_with_its_origin_and_axes(
 def test_cli_catalog_dump_names_both_the_override_and_the_source_it_shadows(
     work_repo: Path,
 ) -> None:
-    """An overlay replacement prints beside the core source it removed from the projection.
 
-    The control runs first: asserting the shadowed item is gone says nothing unless the
-    same probe found it before the override was authored.
-    """
     control = run_basicly(work_repo, "catalog", "dump")
     assert "git-discipline applies_to=" in control.stdout, control.stderr
 
@@ -999,7 +850,6 @@ def test_cli_catalog_dump_names_both_the_override_and_the_source_it_shadows(
 
 
 def test_cli_build_verify_blocks_and_writes_nothing(work_repo: Path) -> None:
-    """Build --verify fails the gate before writing, leaving the manifest untouched."""
     manifest = work_repo / ".basicly/generated-manifest.json"
     manifest.unlink()
     _add_duplicate_fragments(work_repo)
@@ -1010,13 +860,11 @@ def test_cli_build_verify_blocks_and_writes_nothing(work_repo: Path) -> None:
 
 
 def test_cli_build_verify_passes_on_clean_catalog(work_repo: Path) -> None:
-    """Build --verify builds normally when the catalog is clean."""
     result = run_basicly(work_repo, "build", "--verify")
     assert result.returncode == 0, result.stderr
 
 
 def test_cli_review_dry_run_prints_prompt_without_agent(work_repo: Path) -> None:
-    """Review --dry-run assembles the prompt from the rendered files, no agent invoked."""
     result = run_basicly(work_repo, "catalog", "review", "--dry-run")
     assert result.returncode == 0, result.stderr
     assert "advisory semantic review" in result.stdout
@@ -1025,7 +873,6 @@ def test_cli_review_dry_run_prints_prompt_without_agent(work_repo: Path) -> None
 
 
 def test_cli_review_handoff_is_advisory(work_repo: Path) -> None:
-    """With the manual handoff runner, review reports the handoff and still exits 0."""
     result = run_basicly(work_repo, "catalog", "review", "--runner", "manual")
     assert result.returncode == 0, result.stderr
     assert "handoff" in result.stdout
@@ -1033,7 +880,6 @@ def test_cli_review_handoff_is_advisory(work_repo: Path) -> None:
 
 
 def test_cli_install_migrates_legacy_fragments(work_repo: Path) -> None:
-    """Install migrates legacy .basicly/fragments into core and overlay roots."""
     legacy_core = work_repo / ".basicly" / "fragments" / "project"
     legacy_core.mkdir(parents=True, exist_ok=True)
     legacy_overlay = work_repo / ".basicly" / "fragments" / "user"
@@ -1074,14 +920,12 @@ def test_cli_install_migrates_legacy_fragments(work_repo: Path) -> None:
 
 
 def test_cli_install_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
-    """Install removes pre-migration SKILL.md/*.fragment.md sources from the managed core."""
     consumer = tmp_path / "consumer"
     skill_dir = consumer / ".basicly" / "core" / "skills" / "tool-x"
     frag_dir = consumer / ".basicly" / "core" / "fragments" / "project"
     skill_dir.mkdir(parents=True)
     frag_dir.mkdir(parents=True)
 
-    # Pre-migration hand-copied sources (must be pruned).
     legacy_skill = skill_dir / "SKILL.md"
     legacy_skill.write_text(
         "---\nname: tool-x\ninvocation: model\ndescription: d\n---\n\nbody\n", encoding="utf-8"
@@ -1089,7 +933,6 @@ def test_cli_install_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
     legacy_frag = frag_dir / "y.fragment.md"
     legacy_frag.write_text("---\nid: y\n---\n\nbody\n", encoding="utf-8")
 
-    # New YAML sources (must survive).
     kept_skill = skill_dir / "skill.yaml"
     kept_skill.write_text(
         "schema_version: 1\nname: tool-x\ninvocation: model\n"
@@ -1097,7 +940,6 @@ def test_cli_install_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    # Overlay content — even a legacy-named .md here must be left untouched.
     overlay = consumer / ".basicly-local" / "fragments" / "user"
     overlay.mkdir(parents=True)
     kept_overlay = overlay / "keep.fragment.md"
@@ -1113,12 +955,7 @@ def test_cli_install_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
 
 
 def test_cli_install_removes_legacy_vendored_engine(tmp_path: Path) -> None:
-    """A pre-src-layout vendored engine tree in the core root is removed.
 
-    Regression (basicly-u9o): hand installs vendored the engine into
-    .basicly/basicly/; install migrated fragment/skill sources but left the
-    stale engine copy behind (observed in the terminal repo).
-    """
     consumer = tmp_path / "consumer"
     engine_dir = consumer / ".basicly" / "basicly"
     engine_dir.mkdir(parents=True)
@@ -1133,7 +970,6 @@ def test_cli_install_removes_legacy_vendored_engine(tmp_path: Path) -> None:
 
 
 def test_cli_skills_build_idempotent(work_repo: Path) -> None:
-    """Two skills-build runs with no source changes should produce no diff."""
     result1 = run_basicly(work_repo, "skills-build")
     assert result1.returncode == 0
     result2 = run_basicly(work_repo, "skills-build")
@@ -1142,7 +978,6 @@ def test_cli_skills_build_idempotent(work_repo: Path) -> None:
 
 
 def test_cli_skills_check_passes_after_build(work_repo: Path) -> None:
-    """skills-check should pass immediately after a skills-build run."""
     run_basicly(work_repo, "skills-build")
     result = run_basicly(work_repo, "skills-check")
     assert result.returncode == 0
@@ -1150,7 +985,6 @@ def test_cli_skills_check_passes_after_build(work_repo: Path) -> None:
 
 
 def test_cli_skills_check_fails_after_manual_edit(work_repo: Path) -> None:
-    """skills-check should fail after an edited projected skill file."""
     run_basicly(work_repo, "skills-build")
 
     projected_skill = work_repo / ".claude" / "skills" / "tool-ripgrep" / "SKILL.md"
@@ -1165,7 +999,6 @@ def test_cli_skills_check_fails_after_manual_edit(work_repo: Path) -> None:
 
 
 def test_cli_skills_check_fails_on_a_hand_authored_skill(work_repo: Path) -> None:
-    """A SKILL.md with no catalog source fails the gate with a remedy a rebuild cannot give."""
     run_basicly(work_repo, "skills-build")
 
     hand_authored = work_repo / ".claude" / "skills" / "no-such-source" / "SKILL.md"
@@ -1175,12 +1008,10 @@ def test_cli_skills_check_fails_on_a_hand_authored_skill(work_repo: Path) -> Non
     result = run_basicly(work_repo, "skills-check")
     assert result.returncode == 1
     assert "Unmanaged files under a projected skills root" in result.stderr
-    # The stale remedy would be wrong here: skills-build cannot fix an unmanaged file.
     assert "Stale skill projection detected" not in result.stderr
 
 
 def test_cli_agents_new_build_check_roundtrip(work_repo: Path) -> None:
-    """Scaffolding via `catalog new agent` yields a source that builds, then goes stale."""
     result = run_basicly(
         work_repo, "catalog", "new", "agent", "triage-bot", "--description", "Triages issues."
     )
@@ -1204,7 +1035,6 @@ def test_cli_agents_new_build_check_roundtrip(work_repo: Path) -> None:
 
 
 def test_cli_uninstall_sweeps_generated_agents_keeps_hand_written(tmp_path: Path) -> None:
-    """Uninstall removes marker-bearing agent files; hand-authored ones stay."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     run_basicly_consumer(consumer, "install")
@@ -1225,11 +1055,7 @@ def test_cli_uninstall_sweeps_generated_agents_keeps_hand_written(tmp_path: Path
 
 
 def test_cli_install_prunes_retired_github_skills_root(tmp_path: Path) -> None:
-    """Generated skills in the retired .github/skills root are pruned on install.
 
-    Copilot reads .claude/skills and .agents/skills too, so the .github copy
-    only tripled its discovery (basicly-sqn); user-authored skills there stay.
-    """
     consumer = tmp_path / "consumer"
     generated = consumer / ".github" / "skills" / "tool-x"
     generated.mkdir(parents=True)
@@ -1244,7 +1070,6 @@ def test_cli_install_prunes_retired_github_skills_root(tmp_path: Path) -> None:
     assert not (generated / "SKILL.md").exists()
     assert (user_skill / "SKILL.md").exists()
     assert not (consumer / ".github" / "skills" / "tool-x").exists()
-    # New projections land only in the two live roots.
     assert list((consumer / ".claude" / "skills").rglob("SKILL.md"))
     assert list((consumer / ".agents" / "skills").rglob("SKILL.md"))
     assert not list((consumer / ".github" / "skills").rglob("SKILL.md"))[1:]
@@ -1252,7 +1077,6 @@ def test_cli_install_prunes_retired_github_skills_root(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
 def test_cli_build_sweep_never_follows_symlinks_or_git_paths(work_repo: Path) -> None:
-    """A symlinked manifest entry unlinks the link only; .git entries are refused."""
     run_basicly(work_repo, "build")
     manifest_path = work_repo / ".basicly/generated-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -1271,14 +1095,13 @@ def test_cli_build_sweep_never_follows_symlinks_or_git_paths(work_repo: Path) ->
 
     result = run_basicly(work_repo, "build")
     assert result.returncode == 0, result.stderr
-    assert victim.exists()  # the symlink target survives
-    assert not (work_repo / link_rel).exists()  # the link itself is swept
-    assert (work_repo / git_rel).exists()  # .git/ is never sweepable
+    assert victim.exists()
+    assert not (work_repo / link_rel).exists()
+    assert (work_repo / git_rel).exists()
     assert "skipping unsafe manifest entry" in result.stderr
 
 
 def test_cli_check_sees_crlf_drift(work_repo: Path) -> None:
-    """A newline-only change to a generated file is drift, same as build sees it."""
     run_basicly(work_repo, "build")
     target = work_repo / "AGENTS.md"
     content = target.read_bytes()
@@ -1289,11 +1112,7 @@ def test_cli_check_sees_crlf_drift(work_repo: Path) -> None:
 
 
 def test_cli_survives_a_narrow_console_encoding(work_repo: Path) -> None:
-    """Unicode output degrades to ? instead of crashing under a legacy codepage.
 
-    Regression for the first windows-latest CI run: cp1252 stdout raised
-    UnicodeEncodeError on the catalog's arrows and failed every command.
-    """
     env = {**os.environ, "PYTHONPATH": str(work_repo / "src"), "PYTHONIOENCODING": "cp1252"}
     result = subprocess.run(
         [sys.executable, "-m", "basicly.cli", "catalog", "list", "skill"],
@@ -1309,7 +1128,6 @@ def test_cli_survives_a_narrow_console_encoding(work_repo: Path) -> None:
 
 
 def test_cli_status_reports_authoring_repo(work_repo: Path) -> None:
-    """In the authoring repo, status names the repo kind and skips install state."""
     result = run_basicly(work_repo, "status")
     assert result.returncode == 0, result.stderr
     assert "engine: basicly" in result.stdout
@@ -1318,17 +1136,13 @@ def test_cli_status_reports_authoring_repo(work_repo: Path) -> None:
 
 
 def test_cli_permissions_build_and_check_are_idempotent(work_repo: Path) -> None:
-    """permissions-build converges the deny-list; permissions-check then passes."""
     settings = json.loads((work_repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
-    # The authoring repo already carries its deny-list, so build is a no-op...
     build = run_basicly(work_repo, "permissions-build")
     assert build.returncode == 0, build.stderr
     assert "up to date" in build.stdout
-    # ...and check confirms every managed pattern is present.
     check = run_basicly(work_repo, "permissions-check")
     assert check.returncode == 0, check.stderr
 
-    # Drop a managed pattern: check must now fail, build must restore it.
     settings["permissions"]["deny"] = [
         p for p in settings["permissions"]["deny"] if p != "Bash(rm -rf*)"
     ]
@@ -1344,7 +1158,6 @@ def test_cli_permissions_build_and_check_are_idempotent(work_repo: Path) -> None
 
 
 def test_cli_install_projects_permissions_deny_list(tmp_path: Path) -> None:
-    """A fresh consumer install inherits the catalog deny-list, not just the repo."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     assert run_basicly_consumer(consumer, "install").returncode == 0
@@ -1353,7 +1166,6 @@ def test_cli_install_projects_permissions_deny_list(tmp_path: Path) -> None:
     deny = settings["permissions"]["deny"]
     assert "Bash(rm -rf*)" in deny
     assert "Read(.env)" in deny
-    # A consumer's own deny entry survives a re-projection.
     settings["permissions"]["deny"].append("Bash(sudo*)")
     (consumer / ".claude" / "settings.json").write_text(
         json.dumps(settings, indent=2) + "\n", encoding="utf-8"
@@ -1365,7 +1177,6 @@ def test_cli_install_projects_permissions_deny_list(tmp_path: Path) -> None:
 
 
 def test_cli_status_json_authoring_schema(work_repo: Path) -> None:
-    """The --json payload keeps its stable schema; authoring has no install state."""
     result = run_basicly(work_repo, "status", "--json")
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout)
@@ -1380,7 +1191,7 @@ def test_cli_status_json_authoring_schema(work_repo: Path) -> None:
         "technologies",
         "overlays",
     }
-    assert report["schema_version"] == 1  # additive "permissions" section is not breaking
+    assert report["schema_version"] == 1
     assert report["repo_kind"] == "authoring"
     assert report["catalog"] == {
         "installed_version": None,
@@ -1391,18 +1202,13 @@ def test_cli_status_json_authoring_schema(work_repo: Path) -> None:
     assert set(report["hooks"]) == {"git", "claude", "copilot"}
     for entry in report["hooks"].values():
         assert entry["mismatches"] == 0
-    # The authoring repo dogfoods its own deny-list, so it is fully in sync.
     assert report["permissions"]["claude"]["managed_patterns"] > 0
     assert report["permissions"]["claude"]["mismatches"] == 0
     assert set(report["overlays"]) == {"fragments", "agents"}
 
 
 def test_cli_status_fleet_rolls_up_the_workspace(work_repo: Path) -> None:
-    """`status --fleet` aggregates the housed repos under the workspace root as JSON.
 
-    The workspace is `work_repo`'s parent: the real authoring copy yields a proper
-    snapshot; an empty `.basicly` sibling is captured, not crashed — exit 0 either way.
-    """
     workspace = work_repo.parent
     (workspace / "other-repo" / ".basicly").mkdir(parents=True)
     result = run_basicly(work_repo, "status", "--fleet")
@@ -1412,15 +1218,12 @@ def test_cli_status_fleet_rolls_up_the_workspace(work_repo: Path) -> None:
     assert report["workspace_root"] == str(workspace)
     by_name = {r["name"]: r for r in report["repos"]}
     assert {work_repo.name, "other-repo"} <= set(by_name)
-    # The real repo produces a proper status snapshot...
     assert by_name[work_repo.name]["status"]["repo_kind"] == "authoring"
-    # ...and every entry carries a run-record summary and a status payload.
     assert "runs" in by_name["other-repo"] and "status" in by_name["other-repo"]
     assert report["totals"]["repos"] >= 2
 
 
 def test_cli_status_json_consumer_reports_install_and_drift(tmp_path: Path) -> None:
-    """In a consumer repo, status reports the install provenance and any drift."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     install = run_basicly_consumer(consumer, "install")
@@ -1453,7 +1256,6 @@ def test_cli_status_json_consumer_reports_install_and_drift(tmp_path: Path) -> N
 
 
 def test_cli_status_never_writes(tmp_path: Path) -> None:
-    """Both output modes leave every file in the repo byte-identical."""
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     install = run_basicly_consumer(consumer, "install")
@@ -1477,13 +1279,7 @@ def test_cli_hooks_check_names_the_command_that_can_fix_script_drift(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Script drift must not be blamed on `hooks-build`, which never copies scripts.
 
-    Regression (basicly-9o6s): the report told the reader to run `basicly hooks-build`,
-    which cannot fix a script mismatch at all — while the command that does,
-    `basicly install`, overwrites the local script and so silently destroys a
-    deliberate hook-script edit as it turns the gate green.
-    """
     monkeypatch.chdir(work_repo)
     script = work_repo / ".basicly/core/hooks/pre-commit.py"
     script.write_text("# drifted\n", encoding="utf-8")
@@ -1501,7 +1297,6 @@ def test_cli_hooks_check_still_points_wiring_drift_at_hooks_build(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Wiring drift keeps the remedy that actually fixes it."""
     monkeypatch.chdir(work_repo)
     config = work_repo / ".pre-commit-config.yaml"
     data = yaml.safe_load(config.read_text(encoding="utf-8"))
@@ -1521,7 +1316,6 @@ def test_cli_hooks_check_warns_when_uv_is_missing(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A committer machine without uv gets a diagnosis at check time, not commit time."""
     monkeypatch.chdir(work_repo)
     real_which = shutil.which
     monkeypatch.setattr(
@@ -1539,19 +1333,11 @@ def test_cli_hooks_check_stays_quiet_when_uv_is_present(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """With uv installed (the test environment), the diagnostic does not fire."""
     monkeypatch.chdir(work_repo)
     assert cli.main(["hooks-check"]) == 0
     assert "uv is not on PATH" not in capsys.readouterr().err
 
 
-# --- A long run stays observable through a pipe (basicly-8veb) ----------------
-
-# Printed by the child, which then blocks on stdin. Nothing sleeps: the child
-# cannot reach its own exit until the parent writes to it, so a line the parent
-# manages to read was provably observable *before* exit rather than just soon
-# after. That makes this a state check rather than a race against a duration —
-# the select below returns the moment the data lands.
 _OBSERVABLE_CHILD = (
     "import sys; from basicly import cli; "
     "cli._line_buffer_stdout(); "
@@ -1561,31 +1347,13 @@ _OBSERVABLE_CHILD = (
 
 
 def _child_env() -> dict[str, str]:
-    """Environment pinning the child to the same ``basicly`` this test imported.
 
-    A bare ``sys.executable -c "import basicly"`` resolves against whatever
-    interpreter runs pytest, which is not necessarily the source under test: the
-    harness lands a worktree by running verify with the *base* checkout's
-    interpreter, so these tests imported the installed package and failed on a
-    function that existed only on the branch. Pointing PYTHONPATH at the package
-    actually imported here makes the child hermetic wherever pytest is invoked
-    from.
-    """
     package_parent = Path(cli.__file__).resolve().parent.parent
     return {**os.environ, "PYTHONPATH": str(package_parent)}
 
 
 def test_a_printed_line_is_observable_before_exit_when_stdout_is_a_pipe() -> None:
-    """The defect: a piped supervised run showed nothing until the process exited.
 
-    The control is
-    :func:`test_line_buffer_stdout_sets_line_buffering_on_the_real_stream`; asserting the
-    negative here would mean waiting out a timeout to prove an absence.
-
-    A reader thread bounds the read rather than ``selectors``: ``DefaultSelector`` is
-    ``SelectSelector`` on Windows and accepts only sockets there (basicly-jr0l.23). It
-    also asserts the stronger thing — the line arrived while the child was still blocked.
-    """
     proc = subprocess.Popen(  # nosec B603
         [sys.executable, "-c", _OBSERVABLE_CHILD],
         stdin=subprocess.PIPE,
@@ -1609,7 +1377,6 @@ def test_a_printed_line_is_observable_before_exit_when_stdout_is_a_pipe() -> Non
 
 
 def test_line_buffer_stdout_sets_line_buffering_on_the_real_stream() -> None:
-    """The mechanism, and the control: piped stdout is block-buffered until the call."""
     proc = subprocess.run(  # nosec B603
         [
             sys.executable,
@@ -1623,19 +1390,17 @@ def test_line_buffer_stdout_sets_line_buffering_on_the_real_stream() -> None:
         check=True,
         env=_child_env(),
     )
-    assert proc.stderr == "False True"  # piped: block-buffered before, line after
+    assert proc.stderr == "False True"
 
 
 def test_line_buffer_stdout_tolerates_a_stream_without_reconfigure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A harness that replaced stdout collects output itself; skipping is safe."""
     monkeypatch.setattr(cli.sys, "stdout", object())
-    cli._line_buffer_stdout()  # must not raise
+    cli._line_buffer_stdout()
 
 
 def test_main_line_buffers_stdout_before_dispatching(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The setup runs in main(), so every subcommand benefits, not just supervise."""
     calls: list[str] = []
     monkeypatch.setattr(cli, "_line_buffer_stdout", lambda: calls.append("buffered"))
     monkeypatch.setattr(cli, "cmd_status", lambda _a: calls.append("dispatched") or 0)
@@ -1644,13 +1409,7 @@ def test_main_line_buffers_stdout_before_dispatching(monkeypatch: pytest.MonkeyP
 
 
 def test_the_ceremony_reprint_carries_the_session_overrides() -> None:
-    """The reprint is the command the operator relays, so it must be the one they ran.
 
-    `--runner` and `--autonomy` are process-local overrides. Dropping `--runner` was not
-    cosmetic: `[runner] default` is `auto`, which resolves to a headless agent, so
-    relaying the reprinted line verbatim turned a manual handoff into a live metered
-    dispatch — which is how basicly-1th1 was found, by it happening.
-    """
     args = argparse.Namespace(
         issue="basicly-1th1",
         work_type="bug",
@@ -1670,7 +1429,6 @@ def test_the_ceremony_reprint_carries_the_session_overrides() -> None:
 
 
 def test_the_ceremony_reprint_omits_overrides_that_were_not_given() -> None:
-    """The control: an operator who passed no override must not be handed one."""
     args = argparse.Namespace(
         issue="i", work_type=None, children=None, mode="full", root=None, runner=None, autonomy=None
     )
@@ -1678,15 +1436,8 @@ def test_the_ceremony_reprint_omits_overrides_that_were_not_given() -> None:
     assert cli._ceremony_rerun(args, "abc123") == "basicly loop run i --confirm abc123"
 
 
-# --- Parser and handler registries agree (basicly-tcmy.4, basicly-8ry8) -----
-
-
 def _subcommand_choices(parser: argparse.ArgumentParser) -> argparse._SubParsersAction:
-    """The subcommand action of *any* parser in the tree, for reading or extending it.
 
-    argparse allows `add_subparsers` once per parser, so "exactly one" holds at every
-    level — the assertion is a shape check, not a top-level-only restriction.
-    """
     actions = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
     assert len(actions) == 1, "expected exactly one subparser action on this parser"
     return actions[0]
@@ -1695,12 +1446,7 @@ def _subcommand_choices(parser: argparse.ArgumentParser) -> argparse._SubParsers
 def _dispatch_sites(
     parser: argparse.ArgumentParser, prefix: tuple[str, ...] = ()
 ) -> list[tuple[str, ...]]:
-    """Every argv prefix in the parser tree that selects a subcommand, root first.
 
-    Derived, never hand-listed: the original audit of this defect counted six sites
-    when there were seven, and the miss (`usage`) was the group added last. A group
-    added tomorrow shows up here without anyone editing this file (basicly-8ry8).
-    """
     sites = []
     for action in parser._actions:
         if not isinstance(action, argparse._SubParsersAction):
@@ -1712,7 +1458,6 @@ def _dispatch_sites(
 
 
 def _parser_at(parser: argparse.ArgumentParser, prefix: tuple[str, ...]) -> argparse.ArgumentParser:
-    """Walk `prefix` down the parser tree and return the parser it names."""
     for name in prefix:
         parser = _subcommand_choices(parser).choices[name]
     return parser
@@ -1722,13 +1467,7 @@ DISPATCH_SITES = _dispatch_sites(cli._build_parser())
 
 
 def test_the_dispatch_site_list_reaches_nested_groups() -> None:
-    """The positive control for the derivation, without which the sweep proves nothing.
 
-    A `_dispatch_sites` that failed to recurse would return `[()]`, the sweep below
-    would run one green case, and the nested groups would be as unguarded as they were
-    before — which is exactly how the previous version of this test missed them. So
-    check the recursion against an independent one-level expression of the same fact.
-    """
     parser = cli._build_parser()
     nested = {
         (name,)
@@ -1742,12 +1481,7 @@ def test_the_dispatch_site_list_reaches_nested_groups() -> None:
 
 
 def test_every_registered_subcommand_has_a_handler() -> None:
-    """The two registries are hand-maintained lists of the same names; pin them equal.
 
-    `_build_parser` registers the subcommands and `_HANDLERS` maps them to functions.
-    Nothing derives one from the other, so adding a parser and forgetting the map is
-    a one-line mistake with no compile-time or review-time signal.
-    """
     choices = set(_subcommand_choices(cli._build_parser()).choices)
 
     assert choices == set(cli._handlers())
@@ -1761,14 +1495,7 @@ def test_a_registered_subcommand_with_no_handler_fails_loudly(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The defect: an unhandled subcommand printed nothing and exited 0, at every site.
 
-    A command that succeeds silently is indistinguishable from one that worked, so the
-    mistake survives its own smoke test and reaches a consumer. Every subparser is
-    `required=True`, so a miss is never user error — it is always a registered name
-    nobody wired up. Asserting the whole message pins the group sites to the wording
-    the top-level site uses, since `<top level>` is one of the parametrised cases.
-    """
     build_parser = cli._build_parser
 
     def parser_with_an_orphan() -> argparse.ArgumentParser:
@@ -1790,11 +1517,7 @@ def test_a_registered_subcommand_with_no_handler_fails_loudly(
     assert out == ""
 
 
-# --- Detached supervise (basicly-uhrji9) -----------------------------------
-
-
 def test_the_detached_argv_carries_every_flag_the_launch_was_given() -> None:
-    """The child does the work, so a flag that stops here is a flag silently ignored."""
     args = argparse.Namespace(
         issue="basicly-hnnmk9",
         label="truth",
@@ -1815,7 +1538,6 @@ def test_the_detached_argv_carries_every_flag_the_launch_was_given() -> None:
 
 
 def test_a_launch_with_no_flags_forwards_none_of_them() -> None:
-    """The control: an omitted flag must not reach the child as a default."""
     args = argparse.Namespace(
         issue="i", label=None, max_passes=None, runner=None, autonomy=None, tier=None
     )
@@ -1824,12 +1546,7 @@ def test_a_launch_with_no_flags_forwards_none_of_them() -> None:
 
 
 def test_the_forwarding_table_is_every_supervise_flag_but_detach() -> None:
-    """Pinned to the parser, because argparse keeps no such map and nothing else would.
 
-    A flag added to `loop supervise` tomorrow and missed by the table would be accepted
-    by the launching process and never applied by the one that runs the rounds — a
-    detached pass quietly running at the wrong tier, with no error anywhere.
-    """
     parser = _parser_at(cli._build_parser(), ("loop", "supervise"))
 
     declared = {
@@ -1842,7 +1559,6 @@ def test_the_forwarding_table_is_every_supervise_flag_but_detach() -> None:
 
 
 def test_detach_isolation_is_a_new_session_on_posix_and_no_console_on_windows() -> None:
-    """Both branches asserted by argument: patching `os.name` is global (basicly-xyx556)."""
     assert cli._detach_isolation("posix") == (True, 0)
     assert cli._detach_isolation("nt") == (
         False,
@@ -1853,7 +1569,6 @@ def test_detach_isolation_is_a_new_session_on_posix_and_no_console_on_windows() 
 def test_supervise_detach_prints_the_pid_and_log_and_takes_no_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The launching process must hold nothing the child needs: the lock is the child's."""
     monkeypatch.chdir(tmp_path)
 
     def never(*_args: object, **_kwargs: object) -> None:
@@ -1884,7 +1599,6 @@ def test_supervise_detach_prints_the_pid_and_log_and_takes_no_lock(
 
 
 def _child_source(tmp_path: Path) -> str:
-    """A child that reports it started, waits to be released, then reports it survived."""
     return textwrap.dedent(f"""
         import pathlib, time
         release = pathlib.Path({str(tmp_path / "release")!r})
@@ -1898,7 +1612,6 @@ def _child_source(tmp_path: Path) -> str:
 
 
 def _launcher_source(tmp_path: Path, log: Path, *, then: str) -> str:
-    """A process that detaches `_child_source` through the real spawn, prints its pid, *then*."""
     return textwrap.dedent(f"""
         import pathlib, sys, time
         from basicly import cli
@@ -1909,11 +1622,7 @@ def _launcher_source(tmp_path: Path, log: Path, *, then: str) -> str:
 
 
 def _await(path: Path, why: str, *, contains: str = "", deadline: float = 30.0) -> None:
-    """Poll until *path* exists (and holds *contains*), or fail with *why*.
 
-    Polled to a generous deadline rather than slept: a slow runner costs seconds here,
-    never a red build (the 2x rule, basicly-7aler3).
-    """
     end = time.monotonic() + deadline
     while time.monotonic() < end:
         if path.exists() and contains in path.read_text(encoding="utf-8"):
@@ -1923,12 +1632,10 @@ def _await(path: Path, why: str, *, contains: str = "", deadline: float = 30.0) 
 
 
 def _repo_env() -> dict[str, str]:
-    """The environment a spawned interpreter needs to import this checkout's basicly."""
     return {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
 
 
 def test_a_detached_child_outlives_the_process_that_launched_it(tmp_path: Path) -> None:
-    """The spawn itself, on whatever platform is running: the launcher goes, the work stays."""
     log = tmp_path / "detached.log"
     launcher = _launcher_source(tmp_path, log, then="")
 
@@ -1948,13 +1655,7 @@ def test_a_detached_child_outlives_the_process_that_launched_it(tmp_path: Path) 
 
 
 def test_a_detached_child_survives_the_kill_of_its_launcher_group(tmp_path: Path) -> None:
-    """The defect: an agent tool kills its background job's whole group at its ceiling.
 
-    That is what took three lanes down on 2026-08-28, and an orphan test cannot see it —
-    a child that merely outlives a launcher's clean exit would die here. So the launcher
-    is put in its own session, held alive, and that session is killed out from under the
-    child.
-    """
     if os.name == "nt":
         pytest.skip("process groups and killpg are POSIX")
     log = tmp_path / "detached.log"

@@ -1,31 +1,3 @@
-"""Rule on whether one document is a ``harness-board`` snapshot this consumer may read.
-
-The boundary is *the ruling* against *the folding*: nothing here reads engine state or
-composes a snapshot, which is the producer's, and nothing here resolves or parses the
-schema file, which is :mod:`basicly.catalog_source`'s. What is left is the verdict, and
-the section inventory is part of it rather than a second job — "which panels can be
-drawn" is the answer a caller wants from a document it was told is readable.
-
-Deliberately unlike :mod:`basicly.handoff`, which shares the schema-resolution seam and
-inverts every tolerance around it. A handoff artifact is strict, so an undeclared key is
-a refusal; a board snapshot is a contract for producers that are not this harness, so an
-undeclared key is counted and named and the document still passes. Both directions are
-the versioning rule the ledger already fixes - only add keys and optional sections - read
-from the two ends of it.
-
-The ruling is per section rather than per document, and that is the whole reason the
-inventory lives here. A foreign producer's first honest attempt carries one over-long
-string, and a verdict that refused the document for it would blank the screen and leave a
-producer that emitted nothing better off than one that tried. So only the three required
-keys can refuse: a violation inside an optional section withholds that section and names
-its violations, and the sections that conform still draw.
-
-Absence of the schema is *not* inert here, and that is the one place this departs from
-``handoff`` on purpose. A gate inside the loop that cannot find its contract has to admit
-the unit or stop the harness; a caller that has explicitly asked whether a file conforms
-must be told it could not be answered, or the answer is a fail-open pass.
-"""
-
 from __future__ import annotations
 
 import json
@@ -44,8 +16,6 @@ if TYPE_CHECKING:
 SCHEMA_FILE = "board-snapshot.schema.json"
 CONTRACT = "harness-board"
 
-# The major this consumer speaks. A different one is a different contract, not a
-# newer version of this one.
 MAJOR = 1
 VERSION = f"{CONTRACT}/v{MAJOR}"
 
@@ -58,37 +28,23 @@ INVALID = "invalid"
 UNREADABLE = "unreadable"
 NOT_INSTALLED = "not-installed"
 
-# Reserved for the one refusal that is the contract speaking rather than a defect in the
-# file or in this install: the document is well formed and belongs to another major.
 REFUSED = 2
 
-# A document whose required part is sound and one of whose optional sections is not. Its own
-# code because a caller has to be able to tell "some panels drew" from "nothing drew", and
-# both from another major; a shell that treats every non-zero alike still sees a failure.
 PARTLY_RENDERABLE = 3
 
 
 @dataclass(frozen=True)
 class SectionVerdict:
-    """One present optional section's own verdict, which is the unit a board draws.
-
-    Carries its violations rather than only a flag: a panel reporting that it is not
-    conformant without saying why sends the producer back to the whole document.
-    """
-
     name: str
     violations: tuple[str, ...] = ()
 
     @property
     def conformant(self) -> bool:
-        """True when this section may be drawn."""
         return not self.violations
 
 
 @dataclass(frozen=True)
 class SnapshotVerdict:
-    """What one candidate snapshot turned out to be, and what a board could draw from it."""
-
     outcome: str
     declared: str | None = None
     present: tuple[str, ...] = ()
@@ -100,29 +56,21 @@ class SnapshotVerdict:
 
     @property
     def readable(self) -> bool:
-        """True when a board may draw this document: all of it, or the sections that conform."""
         return self.outcome in {OK, PARTIAL}
 
     @property
     def renderable(self) -> tuple[str, ...]:
-        """The sections a board may draw, and none at all where the document itself is refused.
 
-        Empty rather than "the conformant ones" for a refused document, because a caller that
-        reached for this list instead of :attr:`readable` would otherwise draw panels over a
-        document with no valid age on it.
-        """
         if not self.readable:
             return ()
         return tuple(section.name for section in self.sections if section.conformant)
 
     @property
     def withheld(self) -> tuple[str, ...]:
-        """The present sections that are not conformant, which a board draws as such."""
         return tuple(section.name for section in self.sections if not section.conformant)
 
     @property
     def exit_code(self) -> int:
-        """0 conformant, 3 partly renderable, :data:`REFUSED` for another major, else 1."""
         if self.outcome == OK:
             return 0
         if self.outcome == WRONG_MAJOR:
@@ -131,12 +79,7 @@ class SnapshotVerdict:
 
     @property
     def summary(self) -> str:
-        """The verdict as a caller prints it, the inventory and the unknown count included.
 
-        Rendered here rather than by the command, following ``handoff.ArtifactVerdict``:
-        the words a contract is refused in are part of the contract, and a second surface
-        wording them differently is how one refusal comes to read as two.
-        """
         return "\n".join(_summary_lines(self))
 
 
@@ -144,7 +87,6 @@ _HEADLINE = {OK: "ok", PARTIAL: "partly renderable"}
 
 
 def _summary_lines(verdict: SnapshotVerdict) -> Iterator[str]:
-    """The lines of :attr:`SnapshotVerdict.summary`."""
     if verdict.outcome == WRONG_MAJOR:
         yield (
             f'refused - snapshot declares schema "{verdict.declared}", '
@@ -171,7 +113,6 @@ def _summary_lines(verdict: SnapshotVerdict) -> Iterator[str]:
 
 
 def _validator(repo_root: Path) -> Draft202012Validator | None:
-    """The installed snapshot validator, or None where the contract is not installed."""
     try:
         return catalog_source.schema_validator(repo_root, SCHEMA_FILE)
     except OSError:
@@ -179,16 +120,11 @@ def _validator(repo_root: Path) -> Draft202012Validator | None:
 
 
 def adopted(repo_root: Path) -> bool:
-    """True when *repo_root* carries the snapshot contract."""
     return _validator(repo_root) is not None
 
 
 def declared_major(document: object) -> int | None:
-    """The major *document* declares, or None when it declares nothing parseable.
 
-    Read off the document rather than validated, because a consumer has to name the
-    version of a file it is about to refuse.
-    """
     if not isinstance(document, dict):
         return None
     declared = document.get("schema")
@@ -199,12 +135,7 @@ def declared_major(document: object) -> int | None:
 def _attributed(
     validator: Draft202012Validator, document: object, sections: tuple[str, ...]
 ) -> list[tuple[str | None, str]]:
-    """*document*'s violations as ``(owning section or None, <json path>: <message>)`` pairs.
 
-    The owner is read off the error's path rather than off its message, for the reason
-    ``_unknown_keys`` states. None means the violation is the document's own - the root, or
-    one of the three required keys - and those are the only ones that can refuse it.
-    """
     instance = cast("Any", document)
     errors = sorted(validator.iter_errors(instance), key=lambda err: list(err.path))
     owned = set(sections)
@@ -217,7 +148,6 @@ def _attributed(
 
 
 def _child(node: dict, key: str) -> dict | None:
-    """The subschema *key* is read under, or None when *node* declares no home for it."""
     declared = node.get("properties")
     if isinstance(declared, dict) and isinstance(declared.get(key), dict):
         return declared[key]
@@ -226,14 +156,7 @@ def _child(node: dict, key: str) -> dict | None:
 
 
 def _unknown_keys(node: object, instance: object, path: str) -> Iterator[str]:
-    """Paths of keys *node* does not define, at every depth.
 
-    Derived by diffing the instance against the declared properties rather than by
-    reading jsonschema's ``additionalProperties`` message, for the reason
-    ``catalog_source._missing_required`` states: a wording change upstream must not be
-    able to silently empty this list. Nothing here is an error - the count is the
-    contract's tolerance made visible, so an added key is reported and never dropped.
-    """
     if not isinstance(node, dict):
         return
     if isinstance(instance, dict):
@@ -250,38 +173,27 @@ def _unknown_keys(node: object, instance: object, path: str) -> Iterator[str]:
 
 
 def _sections(schema: dict) -> tuple[str, ...]:
-    """The optional top-level sections, taken from the schema so the two cannot drift."""
     properties = schema.get("properties", {})
     required = set(schema.get("required", ()))
     return tuple(name for name in properties if name not in required)
 
 
 def _outcome(pairs: list[tuple[str | None, str]], ruled: tuple[SectionVerdict, ...]) -> str:
-    """``OK``, ``PARTIAL`` where only sections broke, ``INVALID`` where the document itself did."""
     if any(owner is None for owner, _ in pairs):
         return INVALID
     return PARTIAL if any(not section.conformant for section in ruled) else OK
 
 
 def verdict(repo_root: Path, document: object) -> SnapshotVerdict:
-    """Rule on an already-decoded *document* against the contract installed in *repo_root*.
 
-    The major is checked before the body: a v2 document may well validate against the v1
-    schema field for field and still mean something else, so a structural pass on it
-    would be the guess the version rule exists to forbid.
-    """
     validator = _validator(repo_root)
     if validator is None:
-        # Repo-relative: this document is published the moment anyone commits it, and an
-        # absolute path is the shortest route for a machine username into one.
         missing = (catalog_source.SCHEMAS_DIR / SCHEMA_FILE).as_posix()
         return SnapshotVerdict(NOT_INSTALLED, detail=f"{missing} is not installed")
     declared = document.get("schema") if isinstance(document, dict) else None
     major = declared_major(document)
     if major is not None and major != MAJOR:
         return SnapshotVerdict(WRONG_MAJOR, declared=str(declared))
-    # jsonschema types a schema as `bool | Mapping`; a boolean schema would admit
-    # everything, and the installed one is the object this module ships.
     schema = cast("dict[str, Any]", validator.schema)
     sections = _sections(schema)
     held = set(document) if isinstance(document, dict) else set()
@@ -303,7 +215,6 @@ def verdict(repo_root: Path, document: object) -> SnapshotVerdict:
 
 
 def validate_file(repo_root: Path, path: Path) -> SnapshotVerdict:
-    """Rule on the snapshot at *path*; a file that will not decode is ``UNREADABLE``."""
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except OSError as err:

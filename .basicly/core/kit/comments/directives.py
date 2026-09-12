@@ -1,21 +1,3 @@
-"""Which comments a strip must leave behind, because a tool reads them.
-
-A comment is a directive when removing it changes what some other program does. That is
-the whole test, and it is why this list is not a matter of taste: strip `# noqa` and the
-linter fails; strip `// @ts-expect-error` and the compiler fails; strip a shebang and the
-file stops being executable.
-
-Measured over this repository on 2026-09-12: 332 of the 10258 `#` comments in the tracked
-Python tree are directives - `noqa` 122, `nosec` 108, `type: ignore` 48,
-`comment-density-waiver:` 25, `pragma: no` 14, `module-size-waiver:` 10, shebang 2 and
-`fmt:` 3. The rest of the table covers the other languages the kit claims, so a consumer
-does not discover the gap by having their build broken.
-
-Two entries are here for a reason other than tooling. `SPDX-License-Identifier` and a
-`/*!` banner carry licence text, and deleting someone's licence notice is not a
-formatting decision this kit gets to make.
-"""
-
 from __future__ import annotations
 
 import re
@@ -80,7 +62,6 @@ _OPENERS = ("#!", "#", "//", "/*", "<!--", "<#", "--", "'")
 
 
 def body(text: str) -> str:
-    """*text* with its comment opener and surrounding whitespace removed."""
     stripped = text.strip()
     for opener in _OPENERS:
         if stripped.startswith(opener):
@@ -89,12 +70,7 @@ def body(text: str) -> str:
 
 
 def is_directive(text: str) -> bool:
-    """True where *text* is a comment some tool reads, so a strip must keep it.
 
-    Two forms are answered before the table, because in each the opener is the whole
-    directive and a pattern for it would also match prose: a shebang, and the `/*!`
-    banner every minifier preserves because it holds a licence.
-    """
     lead = text.lstrip()
     if lead.startswith(("#!", "/*!", "//!")):
         return True

@@ -1,21 +1,3 @@
-"""Three lanes that each wire a verify check and move a ratchet must all land (basicly-ef7t).
-
-The acceptance criterion for the fragment split, and it is a merge-queue test rather than a
-unit test because the failure it pins was never in the composition: three of five lanes on
-the 2026-08-08 pass wrote *correct* config and bounced on the rebase, because they wrote it
-into the same two files. So the assertion has to be over real git — real branches, a real
-replay onto a moving base, a real ``git merge-tree`` probe — with the lanes landing one after
-another exactly as ``merge_queue`` orders them.
-
-The second test is the positive control, and this file is worth little without it: the same
-three lanes appending to ``basicly.toml`` and ``pyproject.toml`` directly still collide, so a
-regression that quietly stopped the fragments from being read would not pass both.
-
-Substituted: ``load_session`` (the queue's worktrees are provisioned by ``git worktree`` here,
-not by the harness), the tracker reconcile, and ``policy.record_rework`` — which is spied
-rather than stubbed away, because "zero rework recorded" is one of the things being asserted.
-"""
-
 from __future__ import annotations
 
 import subprocess
@@ -29,8 +11,6 @@ from basicly.worktree import Session
 
 LANES = ("one", "three", "two")
 
-# The interpreter running the tests, as a check command a fixture repo can really execute.
-# `as_posix` because a Windows path in TOML would eat its own backslashes.
 _PYTHON = Path(sys.executable).as_posix()
 
 _CONFIG = f"""\
@@ -70,7 +50,6 @@ def _check(name: str) -> str:
 
 
 def _fragment(lane: str) -> str:
-    """One lane's whole contribution: the check it wired, and the debt its change added."""
     return (
         f"{_check(f'gate-{lane}')}\n"
         "[ratchet.noqa_debt]\ncount_delta = 1\n\n"
@@ -85,7 +64,6 @@ def _commit(worktree: Path, message: str) -> None:
 
 @pytest.fixture
 def three_lanes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, dict[str, Session]]:
-    """A base checkout on ``main`` and three provisioned lanes, none of them committed yet."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -117,7 +95,6 @@ def three_lanes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, 
 
 
 def _land(repo: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[merge.QueueResult], list[str]]:
-    """Run the queue over all three lanes, recording every rework attempt it charges."""
     charged: list[str] = []
     monkeypatch.setattr(
         policy, "record_rework", lambda _root, bead, _gate: charged.append(bead) or 1
@@ -129,7 +106,6 @@ def _land(repo: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[merge.Queue
 def test_three_lanes_each_adding_a_check_and_a_ratchet_entry_all_land(
     three_lanes: tuple[Path, dict[str, Session]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The criterion: no bounce, no rework, and a composed state that matches the tree."""
     repo, sessions = three_lanes
     for lane, session in sessions.items():
         fragment = session.path / dropin.FRAGMENT_DIR / f"basicly-{lane}.toml"
@@ -144,16 +120,12 @@ def test_three_lanes_each_adding_a_check_and_a_ratchet_entry_all_land(
     assert [result.result.conflicts for result in results] == [()] * 3
     assert charged == []
 
-    # The assembled config on the merged base carries every lane's check, in filename order
-    # rather than landing order, so the set does not depend on who landed first.
     assert [check.name for check in config.load_verify_config(repo).checks] == [
         "base",
         "gate-one",
         "gate-three",
         "gate-two",
     ]
-    # And the ratchet the three lanes each moved agrees with the tree they made together:
-    # 1 + 1 + 1 + 1 suppressions, three unargued ones, from three deltas of +1.
     assert dropin.compose(
         repo, "noqa_debt", frozen={"S603": 1}, count=0, may_only=dropin.MAY_ONLY_TRACK
     ) == dropin.Baseline({"S603": 4}, 3)
@@ -162,12 +134,7 @@ def test_three_lanes_each_adding_a_check_and_a_ratchet_entry_all_land(
 def test_the_unsplit_form_bounces_the_lanes_that_land_second(
     three_lanes: tuple[Path, dict[str, Session]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Positive control: the same three lanes on the shared anchors still collide.
 
-    Without this, deleting the fragment scan would leave the test above passing on three
-    lanes that wrote nothing anyone reads — which is the shape of failure this whole change
-    is about. Two of the three bounce, each on both anchors, and each is charged.
-    """
     repo, sessions = three_lanes
     for lane, session in sessions.items():
         for name, addition in (

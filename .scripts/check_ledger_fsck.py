@@ -1,33 +1,3 @@
-r"""Fail when the owned ledger's `fsck` finds a defect that is not already recorded.
-
-`fsck` is the only reader that checks the log against itself — forked and gapped sequence
-chains, unparseable and malformed lines, edges into nothing, carried totals the fold
-disagrees with, derived files that lie. It was not in `[[verify.checks]]`, so the one
-`broken` finding this ledger carries was visible only to somebody who ran it by hand, and
-nobody had since 2026-08-16 (basicly-t10ipy).
-
-**Why an allowance rather than a plain pass/fail.** `ledger_bodies.py` was wired only after
-its backfill landed, on the rule that a gate refusing the repository's own state fails every
-commit and is worth nothing. That repair is not available here: the finding is a **lost
-event**, and an append-only log has no undelete, so the condition can never be cleared. The
-recorded finding is therefore declared in ``[tool.ledger_fsck.frozen]`` and the gate binds on
-everything else — the same shape `check_docs_citations.py` uses, and for the same reason.
-
-**The key is ``<subject>/<kind>``, not the subject.** A per-record allowance would absorb any
-*other* defect that later landed on the same record, which is the fail-open a discriminator
-exists to prevent. A count that falls has to be banked in the same diff, for the reason
-``[tool.module_size.frozen]`` states: leaving the higher number licenses regrowth for free.
-
-Warnings are printed and never fatal, which is `fsck`'s own rule
-(.basicly/core/kit/tracker/SPEC.md §4.5) — an unfolded kind is a newer writer, not
-corruption.
-
-Run::
-
-    uv run python .scripts/check_ledger_fsck.py
-    uv run python .scripts/check_ledger_fsck.py --repo ../some-consumer
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -51,24 +21,11 @@ FROZEN_TABLE = f"[tool.{_GATE}.frozen]"
 
 
 class LedgerFsckError(Exception):
-    """The gate could not reach an answer: no kit to check with, or no baseline to read."""
+    pass
 
 
 @dataclass(frozen=True)
 class Counted:
-    """One `fsck` run, reduced to what the baseline is written in terms of.
-
-    Attributes:
-        broken: ``<subject>/<kind>`` to how many findings of that class it carries.
-        derived: Findings a `fsck --rebuild` would clear, as printable lines.
-        warnings: Findings that are reported and never fatal, as printable lines.
-        events: Events the run folded, so a pass over an empty ledger is not silent.
-        records: Records it folded, for the same reason.
-        unattributed: Events among them naming no actor. Reported and never failed: the
-            population is inherited and an append-only log has no way to attribute a write
-            already made, so a gate on it would refuse every commit forever.
-    """
-
     broken: dict[str, int]
     derived: tuple[str, ...]
     warnings: tuple[str, ...]
@@ -78,11 +35,7 @@ class Counted:
 
 
 def load_kit(kit_dir: Path) -> Any:
-    """Load the kit's ``fsck.py`` by path, the way a consumer without basicly would.
 
-    Raises:
-        LedgerFsckError: the kit is not there, or does not import.
-    """
     source = kit_dir / "fsck.py"
     if not source.is_file():
         raise LedgerFsckError(f"no tracker kit at {kit_dir.as_posix()} — nothing to check")
@@ -99,14 +52,7 @@ def load_kit(kit_dir: Path) -> Any:
 
 
 def load_frozen(repo: Path) -> dict[str, int]:
-    """The recorded findings, from ``pyproject.toml``.
 
-    Refused rather than defaulted when absent: an empty baseline would pass a ledger whose
-    every recorded defect had been forgotten, which is the fail-open this gate replaces.
-
-    Raises:
-        LedgerFsckError: the table is missing or does not map each key to a count.
-    """
     try:
         data = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -121,7 +67,6 @@ def load_frozen(repo: Path) -> dict[str, int]:
 
 
 def measure(kit: Any, ledger: Path) -> Counted:
-    """Run `fsck` over *ledger* and reduce its report to counts per ``<subject>/<kind>``."""
     report = kit.check(ledger)
     broken: dict[str, int] = {}
     derived: list[str] = []
@@ -146,7 +91,6 @@ def measure(kit: Any, ledger: Path) -> Counted:
 
 
 def verdicts(counted: Counted, frozen: dict[str, int]) -> list[str]:
-    """Every way *counted* disagrees with *frozen*, each naming its own repair."""
     rebuild = f"uv run python {(KIT_DIR / 'fsck.py').as_posix()} {LEDGER_DIR.as_posix()} --rebuild"
     found = [f"{line} — rebuild it: `{rebuild}`" for line in counted.derived]
     for key, count in sorted(counted.broken.items()):
@@ -173,7 +117,6 @@ def verdicts(counted: Counted, frozen: dict[str, int]) -> list[str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Entry point: report every ledger defect the recorded baseline does not already hold."""
     parser = argparse.ArgumentParser(
         description="Check the owned ledger with the kit's fsck against a recorded baseline."
     )

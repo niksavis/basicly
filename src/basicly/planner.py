@@ -1,5 +1,3 @@
-"""Plan which fragments go into which output files."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,33 +6,7 @@ from .schema import Fragment, OutputDef, PlannedOutput, Target, ValidationError
 
 
 def contained_output_path(repo_root: Path, relative: str, *, field: str) -> Path:
-    """Join *relative* onto *repo_root*, refusing anything that leaves the repo.
 
-    The projection writes generated files, so a declaration that can name a path
-    outside the repo turns ``basicly build`` into a write-anywhere primitive
-    (basicly-m4zv.12). Catalog paths come from ``.basicly/core/targets/`` and the
-    consumer's ``.basicly-local/`` overlay, and an overlay is a trust boundary the
-    moment it can be copied in from somewhere else — so containment is checked here
-    rather than assumed of whoever wrote it.
-
-    Two escapes, and the first gives a reviewer nothing to spot:
-
-    * An **absolute** path replaces the root outright — ``Path('/repo') /
-      '/etc/passwd'`` is ``/etc/passwd``, because pathlib discards the left operand.
-      The string just looks like a path.
-    * A **traversal** sequence walks upward: ``repo_root / '../../etc/passwd'``.
-
-    Containment is *compared* after ``resolve()``, so ``..`` segments are collapsed
-    rather than pattern-matched — screening for a literal ``..`` would miss whatever
-    spelling it failed to anticipate. Both sides are resolved, or a symlinked checkout
-    would fail its own containment test.
-
-    The value **returned** is the plain join, deliberately not the resolved form. Every
-    consumer calls ``output_path.relative_to(repo_root)`` against the *unresolved*
-    root, so handing back a resolved path would raise on any checkout reached through
-    a symlink — macOS ``/tmp`` and a symlinked clone both qualify. Resolution belongs
-    to the check, not to the value.
-    """
     if not relative:
         raise ValidationError(f"{field} is empty; a projection output needs a path")
     candidate = Path(relative)
@@ -55,14 +27,7 @@ def contained_output_path(repo_root: Path, relative: str, *, field: str) -> Path
 
 
 def _checked_fragment_id(fragment_id: str, *, field: str) -> str:
-    """Return *fragment_id* when it is safe to interpolate into a path, else refuse.
 
-    A fragment id is free-form in the schema (``pattern`` is declared on only two
-    fields in the whole catalog) and ``path_template`` interpolates it directly, so a
-    separator or traversal segment reaches outside the repo through a template that
-    reads as perfectly ordinary. Refused by shape as well as by containment, so the
-    diagnostic names the id rather than only the path it produced (basicly-m4zv.12).
-    """
     if "/" in fragment_id or "\\" in fragment_id or fragment_id.strip(".") == "":
         raise ValidationError(
             f"{field}: fragment id {fragment_id!r} contains a path separator or is a "
@@ -76,11 +41,7 @@ def plan_outputs(
     targets: list[Target],
     repo_root: Path,
 ) -> list[PlannedOutput]:
-    """Return the list of concrete output files to render.
 
-    Every planned path is asserted to resolve inside *repo_root*; a catalog
-    declaration that escapes it is refused and named (basicly-m4zv.12).
-    """
     active = [f for f in fragments if f.status == "active"]
     active = _apply_user_replacements(active)
     planned: list[PlannedOutput] = []
@@ -130,7 +91,6 @@ def plan_outputs(
 
 
 def _apply_user_replacements(fragments: list[Fragment]) -> list[Fragment]:
-    """Drop replaced core fragments when active user fragments declare replacements."""
     replaced_core_ids = {
         replaced_id
         for fragment in fragments

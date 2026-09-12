@@ -1,11 +1,3 @@
-"""Tests for the cross-repo fleet rollup (basicly-h0f0).
-
-The rollup is read-only and resilient: it discovers basicly repos under a
-workspace root, summarizes each one's run-records, and folds an injected
-per-repo status snapshot in — a single bad repo becomes an error entry, never a
-failed rollup.
-"""
-
 from __future__ import annotations
 
 import json
@@ -29,7 +21,6 @@ def _write_records(repo: Path, data: dict) -> None:
 
 
 def test_discover_repos_finds_basicly_dirs_sorted(tmp_path: Path) -> None:
-    """Only immediate, non-hidden subdirs with a .basicly/ dir count, name-sorted."""
     _make_repo(tmp_path, "zebra")
     _make_repo(tmp_path, "alpha")
     _make_repo(tmp_path, "plain", basicly=False)
@@ -40,7 +31,6 @@ def test_discover_repos_finds_basicly_dirs_sorted(tmp_path: Path) -> None:
 
 
 def test_discover_repos_tolerates_missing_root(tmp_path: Path) -> None:
-    """A non-existent or non-directory root yields an empty list, never raises."""
     assert fleet.discover_repos(tmp_path / "nope") == []
     afile = tmp_path / "afile"
     afile.write_text("x", encoding="utf-8")
@@ -48,7 +38,6 @@ def test_discover_repos_tolerates_missing_root(tmp_path: Path) -> None:
 
 
 def test_run_record_summary_empty_when_no_records(tmp_path: Path) -> None:
-    """A repo with no run-records file reports zeroes, not None."""
     summary = fleet.run_record_summary(tmp_path)
     assert summary == {
         "total_runs": 0,
@@ -60,7 +49,6 @@ def test_run_record_summary_empty_when_no_records(tmp_path: Path) -> None:
 
 
 def test_run_record_summary_aggregates_outcomes_agents_models(tmp_path: Path) -> None:
-    """Totals, per-outcome counts, and distinct agents/models roll up across beads."""
     _write_records(
         tmp_path,
         {
@@ -69,7 +57,7 @@ def test_run_record_summary_aggregates_outcomes_agents_models(tmp_path: Path) ->
                 {"outcome": "failed", "agent": "claude", "model": None},
             ],
             "b2": [{"outcome": "executed", "agent": "codex", "model": "gpt"}],
-            "b3": [],  # a bead with no runs does not count
+            "b3": [],
         },
     )
     summary = fleet.run_record_summary(tmp_path)
@@ -81,7 +69,6 @@ def test_run_record_summary_aggregates_outcomes_agents_models(tmp_path: Path) ->
 
 
 def test_run_record_summary_tolerates_corrupt_file(tmp_path: Path) -> None:
-    """A corrupt records file degrades to an empty summary, never raises."""
     records = tmp_path / run_record.RUN_RECORDS_FILE
     records.parent.mkdir(parents=True, exist_ok=True)
     records.write_text("{not json", encoding="utf-8")
@@ -89,7 +76,6 @@ def test_run_record_summary_tolerates_corrupt_file(tmp_path: Path) -> None:
 
 
 def test_fleet_report_rolls_up_repos_and_totals(tmp_path: Path) -> None:
-    """The rollup carries schema, root, per-repo entries, and aggregated totals."""
     a = _make_repo(tmp_path, "alpha")
     _make_repo(tmp_path, "beta")
     _write_records(a, {"b1": [{"outcome": "executed", "agent": "claude"}]})
@@ -110,7 +96,6 @@ def test_fleet_report_rolls_up_repos_and_totals(tmp_path: Path) -> None:
 
 
 def test_fleet_report_captures_a_failing_repo_as_error(tmp_path: Path) -> None:
-    """A repo whose status snapshot raises becomes an error entry; the rollup survives."""
     _make_repo(tmp_path, "good")
     _make_repo(tmp_path, "bad")
 
@@ -123,5 +108,4 @@ def test_fleet_report_captures_a_failing_repo_as_error(tmp_path: Path) -> None:
     entries = {r["name"]: r for r in report["repos"]}
     assert entries["good"]["status"] == {"ok": True}
     assert entries["bad"]["status"]["error"] == "ValueError: broken install"
-    # The failing repo still contributes its (empty) run summary and the totals stand.
     assert report["totals"]["repos"] == 2

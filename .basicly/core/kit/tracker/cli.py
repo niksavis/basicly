@@ -1,28 +1,3 @@
-r"""The tracker kit's standalone entry point: the whole work graph from a command line.
-
-The responsibility is *the command line*; the boundary is against the modules it drives.
-Nothing here folds, mints or writes a line — ``events`` appends, ``ids`` mints,
-``commands`` writes, ``queries`` reads.
-
-**The gap it closes** (§4 in `SPEC.md`, a kit consumable with zero basicly imports
-and nothing on PATH): the write side had only ``basicly tracker``, which is the engine, so
-a repository that copied the kit could read a ledger it had no way to advance.
-
-``create`` and ``child`` mint an id and open a record; ``show`` and ``list`` read;
-``ready``, ``blocked`` and ``stats`` answer about the set; ``update``, ``close``,
-``comment``, ``dep`` and ``delete`` advance one. ``fsck`` and ``snapshot`` keep their own
-entry points, because each is a whole-ledger operation rather than a verb on a record.
-
-**Redaction stays injected.** §4.2 requires a redaction pass on every write and the kit
-may not import ``basicly.redact``, so :func:`main` takes the callable as a keyword. A bare
-command line passes none and the ledger holds what the operator typed — honest for a typed
-title, wrong for agent output, which belongs on the engine's write path.
-
-Kit rules (`.basicly/core/kit/README.md`): no basicly, standard library only, no network,
-no subprocess, and syntax an interpreter older than this repo's 3.14 floor can parse —
-hence one exception class per handler.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -37,15 +12,7 @@ _HERE = Path(__file__).resolve().parent
 
 
 def _load(file_name: str, module_name: str) -> Any:
-    """Load a sibling kit module by path, without touching ``sys.path``.
 
-    The cache lookup is the point rather than the speed: a second load mints a second
-    ``Event`` class, and a frozen dataclass compares unequal across the two. Every loader
-    in the kit uses these same ``basicly_tracker_kit_<module>`` names for that reason.
-
-    Raises:
-        ImportError: *file_name* is not beside this file.
-    """
     cached = sys.modules.get(module_name)
     if cached is not None:
         return cached
@@ -65,27 +32,15 @@ queries = _load("queries.py", "basicly_tracker_kit_queries")
 events = snapshot.events
 ids = events.ids
 
-# The status a record is created with when the caller names none — the kit's own
-# vocabulary spells it (`differential.Vocabulary.known_statuses`). Not validated against
-# that set on the way in: the vocabulary is configurable because a consumer's statuses are
-# its own, so refusing one here would refuse the case it exists for.
 DEFAULT_STATUS = "open"
 
 EXIT_OK = 0
 
-# Every refusal: an unknown record, a directory that is not a ledger, a ledger that will
-# not take the write. One code, because the report says which — a caller scripting this
-# branches on the JSON, and a shell caller only needs "did it happen".
 EXIT_REFUSED = 1
 
 
 def _field_value(raw: str) -> object:
-    """One ``--field`` value: JSON when it parses, otherwise the literal string.
 
-    ``priority=2`` has to reach the ledger as an integer or ``scheduler._priority``
-    silently reads it as the default band, and ``labels=["a"]`` as a list. Falling back to
-    the string is what keeps ``title=fix the parser`` from needing quotes.
-    """
     try:
         return json.loads(raw)
     except ValueError:
@@ -93,15 +48,7 @@ def _field_value(raw: str) -> object:
 
 
 def _fields(title: str, pairs: Sequence[str]) -> dict[str, object]:
-    """The ``created`` event's payload, from ``--title`` and the ``--field name=value`` list.
 
-    The title's field name comes from :data:`scheduler.TITLE_FIELD` rather than a literal:
-    the store takes exactly one spelling per field, and the scheduler is the
-    module that declares this one.
-
-    Raises:
-        ValueError: a pair has no ``=``.
-    """
     fields: dict[str, object] = {}
     if title:
         fields[scheduler.TITLE_FIELD] = title
@@ -113,25 +60,12 @@ def _fields(title: str, pairs: Sequence[str]) -> dict[str, object]:
     return fields
 
 
-# The record operations, kept under their original names because this module is the
-# kit's public entry point and `owned_write`, the engine and the kit's own tests reach
-# them here. The bodies moved to the two modules whose boundary they belong to, which is
-# the split this module's docstring already claimed; the read below composes two of
-# those answers rather than folding a third.
 create_record = commands.create_root
 query_records = queries.query_records
 
 
 def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
-    """One record's folded state with both directions of its dependency graph, or None.
 
-    An edge is stored on the dependent, so a record's *dependents* are in no half of the
-    fold and are inverted from the population; without them no kit command answered what
-    a record holds up (basicly-ztik9a). Both keys are always present, because an absent
-    one reads as a record with no edges. The engine renders the same two lists in
-    `basicly.tracker._edges`, which the kit may not import — `test_tracker_query` holds
-    the two producers to one shape.
-    """
     states = queries.folded(directory)
     state = states.get(record)
     if state is None:
@@ -143,11 +77,7 @@ def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
 
 
 def _edges(record: str, views: Mapping[str, Any], states: Mapping[str, Any]) -> dict[str, object]:
-    """*record*'s outgoing and incoming edges, each naming the other record's status.
 
-    A target the fold does not hold is ``unknown``, the spelling `queries._open_blockers`
-    uses: ``""`` is what a record that is held and never opened reads as.
-    """
     view = views.get(record)
     return {
         "dependencies": [
@@ -173,13 +103,11 @@ def _edges(record: str, views: Mapping[str, Any], states: Mapping[str, Any]) -> 
 
 
 def _status(views: Mapping[str, Any], record: str) -> str:
-    """*record*'s status as the population reports it, or ``unknown`` when it holds none."""
     view = views.get(record)
     return "unknown" if view is None else view.status or ""
 
 
 def _parser() -> argparse.ArgumentParser:
-    """Every subcommand, each taking the ledger directory as its first argument."""
     parser = argparse.ArgumentParser(
         description="Create, read, query and advance work items in a tracker kit ledger."
     )
@@ -213,7 +141,6 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _add_query_parsers(sub: Any) -> None:
-    """The three views a consumer needs to decide what to work on next."""
     for name, helping in (
         ("ready", "the ranked ready set: what can be worked on now"),
         ("blocked", "each dispatchable record that is not ready, and what holds it"),
@@ -226,7 +153,6 @@ def _add_query_parsers(sub: Any) -> None:
 
 
 def _add_write_parsers(sub: Any) -> None:
-    """The writes that advance a record, as against the ``create`` that opens one."""
     child = sub.add_parser("child", help="mint the next child id under a parent")
     child.add_argument("directory", help="the ledger directory")
     child.add_argument("parent", help="the parent record id")
@@ -263,10 +189,6 @@ def _add_write_parsers(sub: Any) -> None:
     removal.add_argument("record", help="the record id")
 
 
-# Each write, as the call it makes. A dispatch table rather than a chain of comparisons,
-# the same shape and the same reason as `mirror._MIRRORED_WRITES`: the write surface is
-# what a reviewer checks against the tracker's documented verbs, and a branch buried in a
-# function body is not readable as a set.
 _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
     "child": lambda a, r: commands.create_child(
         a.directory, a.parent, _fields(a.title, a.field), status=a.status, redact=r
@@ -288,7 +210,6 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
     "delete": lambda a, r: commands.delete(a.directory, a.record, redact=r),
 }
 
-# Each read that answers about the set rather than about one record.
 _VIEWS: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
     "ready": lambda a: queries.ready(a.directory, limit=a.limit),
     "blocked": lambda a: queries.blocked(a.directory),
@@ -299,7 +220,6 @@ _VIEWS: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
 def _run(
     args: argparse.Namespace, redact: Callable[[str], str] | None
 ) -> tuple[int, dict[str, object]]:
-    """Execute one parsed command, returning its exit code and the report to print."""
     if args.command == "create":
         written = create_record(
             args.directory,
@@ -321,7 +241,6 @@ def _run(
         if appended:
             record = appended[0].record
         else:
-            # `close` names ids (basicly-wu4w8v).
             ids = args.record
             record = ids if isinstance(ids, str) else ids[0]
         return EXIT_OK, {
@@ -334,18 +253,7 @@ def _run(
 
 
 def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | None = None) -> int:
-    """Run one command and print its JSON report.
 
-    Args:
-        argv: The command line, defaulting to ``sys.argv[1:]``.
-        redact: Applied to every string written, §4.2. Injected because the kit may not
-            import the engine's redactor; a command line passes none.
-
-    Returns:
-        :data:`EXIT_OK`, or :data:`EXIT_REFUSED` with a ``refused`` or ``found: false``
-        report. A refusal is printed rather than raised so the report is machine-readable
-        on both paths.
-    """
     args = _parser().parse_args(argv)
     report: Mapping[str, object]
     try:
@@ -353,8 +261,6 @@ def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | No
     except events.LedgerError as exc:
         code, report = EXIT_REFUSED, {"refused": str(exc)}
     except ValueError as exc:
-        # A bad `--field` pair, and every `ids.IdError` — that family subclasses
-        # ValueError, so a second handler for it would be unreachable.
         code, report = EXIT_REFUSED, {"refused": str(exc)}
     print(json.dumps(report, sort_keys=True, indent=2, ensure_ascii=False))
     return code

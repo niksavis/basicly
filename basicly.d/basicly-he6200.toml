@@ -30,4 +30,3 @@ rebaseline_reason = "the edge-retraction kind and the fold that honours it, in t
 
 [ratchet.module_size.rebaselined]
 ".basicly/core/kit/tracker/events.py" = 80
-".basicly/core/kit/tracker/differential.py" = 160

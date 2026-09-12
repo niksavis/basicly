@@ -1,15 +1,3 @@
-"""Resolve each anchored model against the upstream payload, cell by cell.
-
-Split out of ``generate_model_map.py`` (basicly-u2hl.36), between the anchor
-source that declares what we want and the artifact assembly that writes what we
-got. Everything here answers one question — does this provider serve this
-anchor, and on what terms — so an unserved anchor becomes an explicit
-``unavailable`` cell with a reason rather than a silent substitution.
-
-Depends on :mod:`model_map_anchors` and never the other way round: validation of
-what a human wrote cannot depend on what upstream happens to serve today.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -27,13 +15,11 @@ from model_map_anchors import (
 
 from basicly.schema import MODEL_TIERS
 
-# What a resolved cell's `status` says. A cell is one or the other, never absent.
 AVAILABLE = "available"
 UNAVAILABLE = "unavailable"
 
 
 def _provider_models(payload: Mapping[str, Any], provider: str) -> Mapping[str, Any]:
-    """Return one provider's model records or raise naming the provider."""
     entry = payload.get(provider)
     if entry is None:
         raise ResolutionError(f"provider '{provider}' is not in the models.dev payload")
@@ -44,7 +30,6 @@ def _provider_models(payload: Mapping[str, Any], provider: str) -> Mapping[str, 
 
 
 def _check_general(record: Mapping[str, Any], rule: GeneralModelRule, where: str) -> None:
-    """Refuse a model that is not a general text tool-calling model."""
     failures = rule.failures(record)
     if failures:
         raise ResolutionError(f"{where} is not usable as a tier: it {'; and it '.join(failures)}")
@@ -53,11 +38,7 @@ def _check_general(record: Mapping[str, Any], rule: GeneralModelRule, where: str
 def _match_by_name(
     models: Mapping[str, Any], model_name: str, provider: str, where: str
 ) -> str | None:
-    """The single id ``provider`` serves ``model_name`` under, or None.
 
-    None means genuinely unavailable. Two matches is a guess, so it raises rather
-    than picking one.
-    """
     matches = sorted(
         model_id for model_id, record in models.items() if record.get("name") == model_name
     )
@@ -72,15 +53,11 @@ def _match_by_name(
 
 
 def _serving_entry(record: Mapping[str, Any], model_id: str, provider: str) -> dict[str, Any]:
-    """The serving data one surface publishes for one model."""
     where = f"'{provider}/{model_id}'"
     cost = require_mapping(record.get("cost"), f"{where} 'cost'")
     limit = require_mapping(record.get("limit"), f"{where} 'limit'")
 
     limits: dict[str, Any] = {"context": require_number(limit, "context", f"{where} 'limit'")}
-    # Only some providers publish a separate input cap, and not for every model
-    # (github-copilot's claude-sonnet-5 has none), so it is optional. Where it is
-    # absent, `context` governs the input side.
     if "input" in limit:
         limits["input"] = require_number(limit, "input", f"{where} 'limit'")
     limits["output"] = require_number(limit, "output", f"{where} 'limit'")
@@ -104,7 +81,6 @@ def _resolve_surface(
     rule: GeneralModelRule,
     where: str,
 ) -> dict[str, Any]:
-    """Resolve one (model, surface) pair to a serving entry or an explicit gap."""
     models = _provider_models(payload, surface)
     model_id = _match_by_name(models, model_name, surface, where)
     if model_id is None:
@@ -120,7 +96,6 @@ def _resolve_surface(
 def _resolve_vendor_tier(
     payload: Mapping[str, Any], vendor: Vendor, tier: str, rule: GeneralModelRule
 ) -> dict[str, Any]:
-    """Resolve one (tier, vendor) anchor across every surface serving that vendor."""
     where = f"tier '{tier}' vendor '{vendor.id}'"
     anchor_id = vendor.tiers[tier]
     anchor_record = _provider_models(payload, vendor.id).get(anchor_id)
@@ -152,7 +127,6 @@ def _resolve_vendor_tier(
 
 
 def resolve_tiers(payload: Mapping[str, Any], anchors: Anchors) -> dict[str, Any]:
-    """Resolve every (tier, vendor, surface) cell, and publish each tier's walk order."""
     return {
         tier: {
             "vendor_order": list(anchors.tier_vendor_order[tier]),

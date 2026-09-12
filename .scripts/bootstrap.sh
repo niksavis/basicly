@@ -1,12 +1,4 @@
 #!/bin/sh
-# Bootstrap basicly into the current repo without a pre-installed uv/Python.
-#
-# Usage (from the consumer repo root):
-#   curl -fsSL https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.sh | sh
-#   curl -fsSL .../bootstrap.sh | sh -s -- --ref v0.12.2 --technologies python,zsh
-#
-# --ref pins the basicly version (default: main); every other argument passes
-# through to `basicly install`. Windows users: see bootstrap.ps1.
 set -eu
 
 REPO_URL="https://github.com/niksavis/basicly"
@@ -17,7 +9,6 @@ fail() {
     exit 1
 }
 
-# Consume --ref; rotate everything else back into "$@" for basicly install.
 remaining=$#
 while [ "$remaining" -gt 0 ]; do
     arg=$1
@@ -47,8 +38,6 @@ if ! command -v uv >/dev/null 2>&1; then
     command -v curl >/dev/null 2>&1 || fail "curl is required to install uv"
     printf 'bootstrap: uv not found; installing it from astral.sh\n'
     curl -fsSL https://astral.sh/uv/install.sh | sh
-    # The installer defaults to ~/.local/bin (or $UV_INSTALL_DIR); make sure
-    # this same run can see the fresh binary.
     PATH="${UV_INSTALL_DIR:-$HOME/.local/bin}:$PATH"
     export PATH
     command -v uv >/dev/null 2>&1 \

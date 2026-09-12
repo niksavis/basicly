@@ -1,30 +1,5 @@
 #!/usr/bin/env python3
-"""Measure always-on recall per agent family against a no-guidance control.
 
-Plan §4 Phase 1 item 1a.
-The question is not whether the baseline is *well-formed* — every existing gate
-answers that — but whether a rule in it is still being attended to at the size
-the file has reached. Anything the agent cannot recall is not doing work.
-
-**Why a control arm is not optional.** Ask a guidance-free agent to list the
-rules it works under and it will volunteer "never commit secrets" and "keep
-diffs small" from its priors alone. Crediting the baseline for those would
-manufacture recall. So both arms get the *same* prompt in the *same* cell shape
-and differ in exactly one bit: whether the family's always-on file is present.
-Per-rule lift (baseline minus control) is the only figure that says anything
-about the file.
-
-**Why reads are denied.** With a file-read tool available the agent can simply
-open the baseline and transcribe it, which measures nothing — recall becomes
-`cat`. Every read path is blocked so the answer can only come from context
-loaded at session start, which is the mechanism under test.
-
-Run::
-
-    .scripts/recall_eval.py --inventory          # derive rule ids, check anchors
-    .scripts/recall_eval.py --dry-run            # print the cells and argv
-    .scripts/recall_eval.py --reps 3             # execute (costs tokens)
-"""
 
 from __future__ import annotations
 
@@ -45,18 +20,11 @@ from basicly import runner  # noqa: E402  (path set above)
 
 RULES_TOML = Path(__file__).resolve().parent / "recall_rules.toml"
 
-# Where each family's always-on file is projected, relative to a repo root. The
-# cell reproduces this exact path: testing the file at some other location would
-# not be testing what we ship.
 FAMILY_BASELINE = {
     "claude": Path(".claude/CLAUDE.md"),
     "copilot": Path(".github/copilot-instructions.md"),
 }
 
-# Every path in a cell that any family would load as guidance. The isolation
-# check asserts the set present equals the arm's declaration — the contamination
-# bug worth fearing is a *second* guidance file nobody meant to ship into the
-# cell.
 GUIDANCE_PATHS = (
     Path("CLAUDE.md"),
     Path(".claude/CLAUDE.md"),
@@ -66,9 +34,6 @@ GUIDANCE_PATHS = (
     Path(".windsurfrules"),
 )
 
-# Identical across arms, or the control measures a different question. The
-# no-file-reading instruction is belt to the tool denial's braces: the denial is
-# what actually enforces it.
 PROMPT = (
     "List every rule, convention, or constraint that governs how work is done in "
     "this repository. Output one rule per line as a short imperative sentence. "
@@ -78,20 +43,17 @@ PROMPT = (
     "list any files."
 )
 
-ARM_BASELINE = "baseline"  # the always-on file is present
-ARM_CONTROL = "control"  # no guidance at all
+ARM_BASELINE = "baseline"
+ARM_CONTROL = "control"
 
 
 @dataclass(frozen=True)
 class Rule:
-    """One baseline rule and the anchors that decide whether a response recalls it."""
-
     rule_id: str
     text: str
     anchors: tuple[tuple[str, ...], ...]
 
     def recalled_by(self, response: str) -> bool:
-        """True when every anchor group matches *response* (case-insensitive regex)."""
         return all(
             any(re.search(term, response, re.IGNORECASE) for term in group)
             for group in self.anchors
@@ -99,12 +61,7 @@ class Rule:
 
 
 def derive_rules(baseline: Path) -> list[tuple[str, str]]:
-    """Every ``(rule_id, text)`` in *baseline*, as ``<section-slug>.<n>``.
 
-    Derived from the file rather than listed in the TOML so that a rule added to
-    the catalog cannot silently escape scoring: ``load_rules`` errors when a
-    derived id has no anchors.
-    """
     derived: list[tuple[str, str]] = []
     section: str | None = None
     index = 0
@@ -120,20 +77,7 @@ def derive_rules(baseline: Path) -> list[tuple[str, str]]:
 
 
 def load_rules(baseline: Path, known_ids: set[str] | None = None) -> list[Rule]:
-    """The scored rule set, refusing to proceed when the inventory has drifted.
 
-    Three failures are distinguished because they need different fixes: a rule
-    with no anchors (author them), an anchor entry for a rule that no longer
-    exists (delete it), and a rule whose text changed under its anchors
-    (re-review, then update ``text``). The third is the quiet one — the anchors
-    still match *something*, so without this the number stays plausible and
-    stops being about the rule.
-
-    *known_ids* is the union of ids derivable across every measured family. Each
-    family's baseline carries its own family-specific section, so an id absent
-    from *this* baseline is not necessarily orphaned; without the union the
-    orphan check would reject a correct inventory.
-    """
     configured = tomllib.loads(RULES_TOML.read_text(encoding="utf-8"))["rules"]
     derived = derive_rules(baseline)
     derived_ids = {rule_id for rule_id, _ in derived}
@@ -169,14 +113,7 @@ def load_rules(baseline: Path, known_ids: set[str] | None = None) -> list[Rule]:
 
 
 def confined_spec(family: str) -> runner.RunnerSpec:
-    """The family's adapter with every read, write and shell path denied.
 
-    Built on ``runner.confine_for_decider`` rather than a private list so the
-    two confinements cannot drift apart. Copilot's ``read`` is added here
-    because the shipped list omits it — verified deniable by live probe, tracked
-    as basicly-jr0l.27; once that lands this extra becomes a no-op rather than
-    a second source of truth.
-    """
     spec = next(s for s in runner.BUILTIN_RUNNERS if s.name == family)
     confined = runner.confine_for_decider(spec)
     if confined is None:
@@ -187,7 +124,6 @@ def confined_spec(family: str) -> runner.RunnerSpec:
 
 
 def build_cell(cell_dir: Path, family: str, arm: str, baseline_source: Path) -> None:
-    """Materialise one throwaway repo containing only *arm*'s guidance."""
     cell_dir.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q"], cwd=cell_dir, check=True)  # nosec
     if arm == ARM_BASELINE:
@@ -197,12 +133,7 @@ def build_cell(cell_dir: Path, family: str, arm: str, baseline_source: Path) -> 
 
 
 def assert_isolation(cell_dir: Path, family: str, arm: str) -> None:
-    """Fail unless the guidance actually present equals what the arm declared.
 
-    Read back rather than assumed: ponytail shipped a falsely tiny effect because
-    a hook fired on every arm, so "the baseline was secretly running ponytail".
-    An arm that cannot prove what guidance was live cannot be reported.
-    """
     expected = {FAMILY_BASELINE[family]} if arm == ARM_BASELINE else set()
     present = {path for path in GUIDANCE_PATHS if (cell_dir / path).is_file()}
     if present != expected:
@@ -213,17 +144,11 @@ def assert_isolation(cell_dir: Path, family: str, arm: str) -> None:
 
 
 def score(response: str, rules: list[Rule]) -> dict[str, bool]:
-    """Which rules *response* recalls."""
     return {rule.rule_id: rule.recalled_by(response) for rule in rules}
 
 
 def report(results: list[dict], rules_by_family: dict[str, list[Rule]]) -> str:
-    """A markdown summary: per-family aggregate, the lift, then the per-rule table.
 
-    The denominator is per family: each baseline carries its own family-specific
-    section, so the rule counts differ and a shared denominator would misstate
-    one of them.
-    """
     families = sorted({r["family"] for r in results})
     lines: list[str] = []
 
@@ -270,7 +195,7 @@ def report(results: list[dict], rules_by_family: dict[str, list[Rule]]) -> str:
             runs = [r for r in results if r["family"] == family and r["arm"] == arm]
             scored = [r for r in runs if rule_id in r["scores"]]
             if not scored:
-                cells.append("n/a")  # not a rule in this family's baseline
+                cells.append("n/a")
                 continue
             hits = sum(1 for r in scored if r["scores"][rule_id])
             cells.append(f"{hits}/{len(scored)}")
@@ -279,7 +204,6 @@ def report(results: list[dict], rules_by_family: dict[str, list[Rule]]) -> str:
 
 
 def main() -> int:
-    """Check the inventory, or build and dispatch every cell and report."""
     parser = argparse.ArgumentParser(
         description="Measure always-on recall per agent family against a no-guidance control."
     )
@@ -322,9 +246,6 @@ def main() -> int:
                 assert_isolation(cell, family, arm)
                 argv = runner.format_command(spec, PROMPT)
                 if args.dry_run:
-                    # Elide the prompt by identity, not by index: the deny flags
-                    # sit between the binary and the prompt, so a fixed index
-                    # blanks a flag and makes the confinement look absent.
                     shown = ["<prompt>" if part == PROMPT else part for part in argv]
                     print(f"[{family}/{arm}/{rep}] cwd={cell}")
                     print("  " + " ".join(shown))

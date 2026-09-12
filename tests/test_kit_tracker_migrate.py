@@ -1,26 +1,3 @@
-"""Tests for importing the existing tracker into the event log (basicly-vkh0.17).
-
-The two acceptance criteria are properties of the *import*, so each is asserted against
-something that can fail rather than restated:
-
-- **Every record and edge arrives with provenance.** The subject is this repo's own
-  `.beads/issues.jsonl` — the live tracker's current contents, all 600-odd records — and
-  the assertion is set equality on the imported edges against the source's own dependency
-  list, plus a per-record check that the folded state carries the label. A synthetic fixture
-  could not catch a field the real export has and the importer drops.
-- **The snapshot cannot express a deletion.** A record is removed from a second export and
-  the import is asked to apply it: the record is reported ``absent``, no tombstone lands,
-  and the fold still holds it. Only then is the deletion *stated*, which is the path that
-  writes the tombstone. The negative half is what makes the tombstone path exercised rather
-  than assumed — without it a test could tombstone directly and never learn that absence is
-  ambiguous.
-
-Everything the module would take from its host is test data: the wall clock, the ledger
-lock's timeout, and the two path flavours the source-name rule is checked against, which is
-this repo's platform-hermetic rule (a rule checked through ``Path`` is only ever checked on
-whichever OS ran it).
-"""
-
 from __future__ import annotations
 
 import ast
@@ -46,7 +23,6 @@ IDS_SOURCE = KIT_DIR / "ids.py"
 
 
 def _load(path: Path, name: str) -> ModuleType:
-    """Load a standalone script by path, the way a consumer without basicly would."""
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -56,9 +32,6 @@ def _load(path: Path, name: str) -> ModuleType:
 
 
 migrate = _load(MIGRATE_SOURCE, "tracker_migrate")
-# The event log the importer itself loaded, not a second copy: two loads of one file give
-# two `Event` classes and two `InvalidEventError`s, and an `isinstance` or an `except`
-# against the wrong one passes for the wrong reason.
 events = migrate.events
 
 SOURCE = "the committed ledger"
@@ -71,7 +44,6 @@ CLOCK = 1_000_000_000.0
 
 
 def _record(record_id: str, **overrides: Any) -> dict[str, Any]:
-    """One source record in the export's shape, with the fields a beads record carries."""
     record = {
         "id": record_id,
         "title": f"the record {record_id}",
@@ -87,47 +59,34 @@ def _record(record_id: str, **overrides: Any) -> dict[str, Any]:
 
 
 def _export(*records: dict[str, Any]) -> str:
-    """The records as export text: one JSON object per line."""
     return "".join(json.dumps(record, sort_keys=True) + "\n" for record in records)
 
 
 def _snapshot(*records: dict[str, Any], name: str = SOURCE) -> Any:
-    """A parsed snapshot over *records*."""
     return migrate.parse_snapshot(_export(*records), name=name)
 
 
 def _import(ledger: Path, snapshot: Any, **kwargs: Any) -> Any:
-    """Import *snapshot* under a fixed clock, so nothing in the result is time-dependent."""
     return migrate.import_snapshot(ledger, snapshot, clock=lambda: CLOCK, **kwargs)
 
 
 def _fold(ledger: Path) -> Any:
-    """The ledger folded, asserting on the way that nothing had to be quarantined."""
     found, quarantined = events.read_events(ledger)
     assert quarantined == []
     return events.fold(found)
 
 
 def _kinds(minted: list[Any]) -> dict[str, int]:
-    """How many events of each kind landed."""
     counts: dict[str, int] = {}
     for event in minted:
         counts[event.kind] = counts.get(event.kind, 0) + 1
     return counts
 
 
-# --- AC1: every record and edge arrives with import provenance ----------------
-
-
 def test_the_live_trackers_records_and_edges_all_arrive_with_import_provenance(
     tmp_path: Path,
 ) -> None:
-    """The acceptance criterion, against this tracker's real history rather than a fixture.
 
-    Edges are asserted as a **set equality** against the source's own dependency list: a
-    subset check would pass an importer that dropped a dependency type it did not
-    recognise, and a count check would pass one that wrote the same edge twice.
-    """
     snapshot = migrate.parse_snapshot(tracker_corpus.snapshot_text(), name=SOURCE)
     assert snapshot.unreadable == ()
     assert len(snapshot.records) > 500, "the corpus should hold the whole tracker"
@@ -170,7 +129,6 @@ def test_the_live_trackers_records_and_edges_all_arrive_with_import_provenance(
 def test_every_kind_the_importer_writes_carries_the_same_provenance_label(
     tmp_path: Path,
 ) -> None:
-    """One label on every event, tombstones included — not just on the record."""
     first = _snapshot(
         _record(RECORD_A, comments=[{"id": 7, "author": "niksa", "text": "a note"}]),
         _record(
@@ -198,14 +156,12 @@ def test_every_kind_the_importer_writes_carries_the_same_provenance_label(
 
 
 def _fold_events(ledger: Path) -> list[Any]:
-    """Every event in the ledger, in canonical order."""
     found, quarantined = events.read_events(ledger)
     assert quarantined == []
     return events.canonical_order(found)
 
 
 def test_the_digest_is_recorded_on_the_created_event_and_nowhere_else(tmp_path: Path) -> None:
-    """The pin goes where it is minted once, because an id is derived from its payload."""
     snapshot = _snapshot(
         _record(RECORD_A, comments=[{"id": 1, "text": "a note"}]),
         _record(RECORD_B),
@@ -220,13 +176,7 @@ def test_the_digest_is_recorded_on_the_created_event_and_nowhere_else(tmp_path: 
 def test_re_importing_the_same_facts_from_a_reserialised_export_appends_nothing(
     tmp_path: Path,
 ) -> None:
-    """The test that catches a digest on every event: it would duplicate the history.
 
-    The second export holds the same facts with different whitespace and key order, so its
-    digest differs while nothing it says is new. A per-event digest would give every
-    comment, edge and status a fresh content-derived id and the whole record would land
-    twice.
-    """
     records = (
         _record(RECORD_A, comments=[{"id": 1, "text": "a note"}]),
         _record(
@@ -244,7 +194,7 @@ def test_re_importing_the_same_facts_from_a_reserialised_export_appends_nothing(
     landed = _import(tmp_path, first).events
     replayed = _import(tmp_path, reserialised)
 
-    assert len(landed) == 6  # two created, two status, one comment, one edge
+    assert len(landed) == 6
     assert replayed.events == []
     assert replayed.imported == []
     assert replayed.diverged == []
@@ -252,7 +202,6 @@ def test_re_importing_the_same_facts_from_a_reserialised_export_appends_nothing(
 
 
 def test_a_replayed_import_of_the_same_export_appends_nothing(tmp_path: Path) -> None:
-    """Idempotent by content, which is what makes a re-run after a failure safe."""
     snapshot = _snapshot(_record(RECORD_A), _record(RECORD_C))
 
     _import(tmp_path, snapshot)
@@ -263,7 +212,6 @@ def test_a_replayed_import_of_the_same_export_appends_nothing(tmp_path: Path) ->
 
 
 def test_the_source_field_set_is_split_into_events_and_record_fields(tmp_path: Path) -> None:
-    """Status, comments and dependencies become events; everything else is a field."""
     snapshot = _snapshot(
         _record(
             RECORD_A,
@@ -293,7 +241,6 @@ def test_the_source_field_set_is_split_into_events_and_record_fields(tmp_path: P
 
 
 def test_the_edge_event_is_recorded_on_the_dependent_record(tmp_path: Path) -> None:
-    """The edge is about the item that depends, so that item's sequence carries it."""
     snapshot = _snapshot(
         _record(RECORD_A),
         _record(
@@ -324,13 +271,7 @@ def test_the_edge_event_is_recorded_on_the_dependent_record(tmp_path: Path) -> N
 def test_an_imported_edge_is_a_kind_the_current_fold_carries_without_folding(
     tmp_path: Path,
 ) -> None:
-    """§4.5's tolerant direction, asserted rather than assumed.
 
-    `events.py` applies no ``edge`` state and delegates the kind, so the fold counts it
-    as delegated and folds no edge state (vkh0.38). The event is
-    still counted in the record's totals, which is what stops an older reader reporting
-    every later event as a false disagreement.
-    """
     snapshot = _snapshot(
         _record(RECORD_A),
         _record(
@@ -347,19 +288,10 @@ def test_an_imported_edge_is_a_kind_the_current_fold_carries_without_folding(
     assert folded.records[RECORD_B].totals.events == 3
 
 
-# --- AC2: the export cannot express a deletion --------------------------------
-
-
 def test_a_record_missing_from_a_later_export_is_reported_absent_and_not_deleted(
     tmp_path: Path,
 ) -> None:
-    """The negative half: the deletion is attempted through the snapshot and cannot land.
 
-    Removing the record from the export is the only thing an upsert-only format lets a
-    caller say, and it is ambiguous by construction — deleted, pruned, or never exported.
-    So the import names it and leaves it alone: no tombstone, no event at all, and the
-    record still folded.
-    """
     _import(tmp_path, _snapshot(_record(RECORD_A), _record(RECORD_B), _record(RECORD_C)))
 
     report = _import(tmp_path, _snapshot(_record(RECORD_A), _record(RECORD_C)))
@@ -374,11 +306,7 @@ def test_a_record_missing_from_a_later_export_is_reported_absent_and_not_deleted
 
 
 def test_a_deletion_has_to_be_stated_and_lands_as_a_tombstone_event(tmp_path: Path) -> None:
-    """The tombstone path, reached the only way there is: the caller states the deletion.
 
-    The record stays in the fold saying it was deleted rather than being removed, which is
-    what keeps its id out of a later mint's reach (`ids.minted_ever`).
-    """
     _import(tmp_path, _snapshot(_record(RECORD_A), _record(RECORD_B)))
     remaining = _snapshot(_record(RECORD_A))
 
@@ -397,7 +325,6 @@ def test_a_deletion_has_to_be_stated_and_lands_as_a_tombstone_event(tmp_path: Pa
 
 
 def test_a_tombstoned_record_is_not_reported_absent_again(tmp_path: Path) -> None:
-    """Absence is a question the deletion answered; asking it again would be noise."""
     _import(tmp_path, _snapshot(_record(RECORD_A), _record(RECORD_B)))
     remaining = _snapshot(_record(RECORD_A))
     _import(tmp_path, remaining, deleted=[RECORD_B])
@@ -409,7 +336,6 @@ def test_a_tombstoned_record_is_not_reported_absent_again(tmp_path: Path) -> Non
 
 
 def test_stating_the_same_deletion_twice_appends_one_tombstone(tmp_path: Path) -> None:
-    """Idempotent like every other event: the second draft's id is the first one's."""
     _import(tmp_path, _snapshot(_record(RECORD_A), _record(RECORD_B)))
     remaining = _snapshot(_record(RECORD_A))
     _import(tmp_path, remaining, deleted=[RECORD_B])
@@ -421,7 +347,6 @@ def test_stating_the_same_deletion_twice_appends_one_tombstone(tmp_path: Path) -
 
 
 def test_a_deletion_is_refused_for_a_record_the_snapshot_still_asserts(tmp_path: Path) -> None:
-    """A contradiction, not a deletion: the export says the record is there."""
     snapshot = _snapshot(_record(RECORD_A), _record(RECORD_B))
     _import(tmp_path, snapshot)
 
@@ -434,7 +359,6 @@ def test_a_deletion_is_refused_for_a_record_the_snapshot_still_asserts(tmp_path:
 
 
 def test_a_deletion_is_refused_for_a_record_the_ledger_never_held(tmp_path: Path) -> None:
-    """Nothing to tombstone, so nothing is written and the caller is told which id."""
     report = _import(tmp_path, _snapshot(_record(RECORD_A)), deleted=[RECORD_C, "not an id"])
 
     assert report.tombstoned == []
@@ -443,11 +367,7 @@ def test_a_deletion_is_refused_for_a_record_the_ledger_never_held(tmp_path: Path
 
 
 def test_a_record_from_another_source_is_never_reported_absent(tmp_path: Path) -> None:
-    """The absent set is scoped by the provenance the import itself wrote.
 
-    Without that scope every record the ledger holds natively — everything minted after the
-    flip — would be reported as deleted at a source that never held it.
-    """
     _import(tmp_path, _snapshot(_record(RECORD_A), name="another/tracker.jsonl"))
     _import(tmp_path, _snapshot(_record(RECORD_B)))
 
@@ -456,13 +376,9 @@ def test_a_record_from_another_source_is_never_reported_absent(tmp_path: Path) -
     assert report.absent == []
 
 
-# --- one-shot: a record is created once ---------------------------------------
-
-
 def test_a_record_the_ledger_already_holds_is_reported_diverged_not_rewritten(
     tmp_path: Path,
 ) -> None:
-    """An import is not a sync (§5.1), so a changed field is a finding and not a patch."""
     _import(tmp_path, _snapshot(_record(RECORD_A)))
 
     report = _import(tmp_path, _snapshot(_record(RECORD_A, title="edited at the source")))
@@ -474,7 +390,6 @@ def test_a_record_the_ledger_already_holds_is_reported_diverged_not_rewritten(
 
 
 def test_a_new_comment_or_edge_still_lands_after_the_first_import(tmp_path: Path) -> None:
-    """The monotone parts are not held back, so an import torn at the tail completes."""
     _import(tmp_path, _snapshot(_record(RECORD_A), _record(RECORD_B)))
 
     report = _import(
@@ -497,12 +412,7 @@ def test_a_new_comment_or_edge_still_lands_after_the_first_import(tmp_path: Path
 def test_a_status_the_record_has_held_before_is_recorded_again_not_swallowed(
     tmp_path: Path,
 ) -> None:
-    """`closed -> open -> closed` across three exports, which is §9.4's documented trap.
 
-    The second ``closed`` repeats a fact already recorded, so its content-derived id is the
-    first one's and the event would be dropped as a replay without a generation bump. The
-    fold ending on ``closed`` is the assertion that discriminates.
-    """
     _import(tmp_path, _snapshot(_record(RECORD_A, status="closed")))
     _import(tmp_path, _snapshot(_record(RECORD_A, status="open")))
 
@@ -517,24 +427,16 @@ def test_a_status_the_record_has_held_before_is_recorded_again_not_swallowed(
 
 
 def test_an_unchanged_status_records_no_second_event(tmp_path: Path) -> None:
-    """Nothing happened, so nothing is recorded — the fold is what a status event moves."""
     snapshot = _snapshot(_record(RECORD_A, status="in_progress"))
     _import(tmp_path, snapshot)
 
     assert _import(tmp_path, snapshot).events == []
 
 
-# --- format drift is expected, so one bad record is a finding ------------------
-
-
 def test_an_unparseable_line_is_reported_by_number_and_the_rest_still_imports(
     tmp_path: Path,
 ) -> None:
-    """A truncated export line is somebody else's drift, not our torn write.
 
-    The ledger tolerates one unparseable trailing line because that is the signature of our
-    own crash; an export is read by nobody else's rules, so every bad line is reported.
-    """
     text = _export(_record(RECORD_A)) + '{"id": "basicly-broken"\n' + _export(_record(RECORD_B))
     snapshot = migrate.parse_snapshot(text, name=SOURCE)
 
@@ -548,11 +450,7 @@ def test_an_unparseable_line_is_reported_by_number_and_the_rest_still_imports(
 def test_a_slug_id_the_commit_gate_would_refuse_is_rejected_rather_than_written(
     tmp_path: Path,
 ) -> None:
-    """`br create --slug` mints ``basicly-my-slug``, which no ledger id may look like.
 
-    The positive control is the second record: the same import writes it, so the rejection
-    is the id being refused rather than the import failing.
-    """
     snapshot = _snapshot(_record("basicly-my-slug"), _record(RECORD_A))
 
     report = _import(tmp_path, snapshot)
@@ -565,7 +463,6 @@ def test_a_slug_id_the_commit_gate_would_refuse_is_rejected_rather_than_written(
 def test_a_source_field_this_version_never_heard_of_is_imported_verbatim(
     tmp_path: Path,
 ) -> None:
-    """Drift adds fields, and dropping one loses data silently (§5.1)."""
     snapshot = _snapshot(_record(RECORD_A, dolt_commit="abc123", estimate_points=5))
 
     _import(tmp_path, snapshot)
@@ -576,7 +473,6 @@ def test_a_source_field_this_version_never_heard_of_is_imported_verbatim(
 
 
 def test_a_record_carrying_a_reserved_provenance_field_is_refused(tmp_path: Path) -> None:
-    """It would overwrite the provenance of the event recording it, so it is not imported."""
     snapshot = _snapshot(_record(RECORD_A, provenance="INFERRED"), _record(RECORD_B))
 
     report = _import(tmp_path, snapshot)
@@ -589,12 +485,7 @@ def test_a_record_carrying_a_reserved_provenance_field_is_refused(tmp_path: Path
 def test_a_field_the_ledger_cannot_hold_rejects_that_record_and_not_the_batch(
     tmp_path: Path,
 ) -> None:
-    """A capped key holding a container is refused by the event log's schema (§4.2).
 
-    Checked here before anything is written, so the answer is one rejection rather than a
-    half-written import — and the check is the event log's own `prepare_payload`, not a
-    second copy of the rule that could disagree with it.
-    """
     snapshot = _snapshot(_record(RECORD_A, detail=["structured", "evidence"]), _record(RECORD_B))
 
     report = _import(tmp_path, snapshot)
@@ -606,7 +497,6 @@ def test_a_field_the_ledger_cannot_hold_rejects_that_record_and_not_the_batch(
 def test_two_records_under_one_id_are_reported_rather_than_folded_together(
     tmp_path: Path,
 ) -> None:
-    """An export with one id twice is drift, and the second line is not a field update."""
     snapshot = _snapshot(_record(RECORD_A), _record(RECORD_A, title="the same id again"))
 
     report = _import(tmp_path, snapshot)
@@ -617,7 +507,6 @@ def test_two_records_under_one_id_are_reported_rather_than_folded_together(
 
 
 def test_an_edge_pointing_at_something_that_is_not_a_record_is_refused(tmp_path: Path) -> None:
-    """An edge into nothing would gate a landing on a record that cannot exist."""
     snapshot = _snapshot(
         _record(
             RECORD_A,
@@ -641,7 +530,6 @@ def test_an_edge_pointing_at_something_that_is_not_a_record_is_refused(tmp_path:
 
 
 def test_a_record_with_no_usable_status_imports_and_says_so(tmp_path: Path) -> None:
-    """A missing status is reported, because a silently statusless record reads as open."""
     snapshot = _snapshot(_record(RECORD_A, status=None))
 
     report = _import(tmp_path, snapshot)
@@ -654,7 +542,6 @@ def test_a_record_with_no_usable_status_imports_and_says_so(tmp_path: Path) -> N
 def test_a_comment_without_text_is_reported_and_its_siblings_still_land(
     tmp_path: Path,
 ) -> None:
-    """One malformed comment is one finding, not a lost record."""
     snapshot = _snapshot(
         _record(
             RECORD_A,
@@ -674,7 +561,6 @@ def test_a_comment_without_text_is_reported_and_its_siblings_still_land(
 def test_two_identical_texts_stay_two_comments_because_the_source_id_is_carried(
     tmp_path: Path,
 ) -> None:
-    """Without the source's comment id they would be one fact recorded twice."""
     snapshot = _snapshot(
         _record(
             RECORD_A,
@@ -690,9 +576,6 @@ def test_two_identical_texts_stay_two_comments_because_the_source_id_is_carried(
     assert _fold(tmp_path).records[RECORD_A].comments == ["ready", "ready"]
 
 
-# --- the source name is a label, never a machine path -------------------------
-
-
 @pytest.mark.parametrize(
     "name",
     [
@@ -706,18 +589,12 @@ def test_two_identical_texts_stay_two_comments_because_the_source_id_is_carried(
     ],
 )
 def test_a_source_name_that_is_a_machine_path_is_refused(name: str) -> None:
-    """It is written into every event and the ledger is committed (basicly-vkh0.5).
 
-    Both path flavours are asked as **test data** rather than by running on that OS: the
-    Windows cases are asserted here, on whatever platform this is, because a rule checked
-    through ``Path`` is only ever checked on one of the three.
-    """
     with pytest.raises(migrate.SnapshotError):
         migrate.validate_source_name(name)
 
 
 def test_a_portable_label_is_accepted_and_recorded_on_every_event(tmp_path: Path) -> None:
-    """The positive control for the rule above: a relative label is fine."""
     assert migrate.validate_source_name(".beads/issues.jsonl") == ".beads/issues.jsonl"
 
     report = _import(tmp_path, _snapshot(_record(RECORD_A), name=".beads/issues.jsonl"))
@@ -726,7 +603,6 @@ def test_a_portable_label_is_accepted_and_recorded_on_every_event(tmp_path: Path
 
 
 def test_the_default_name_is_the_files_base_name_and_not_its_path(tmp_path: Path) -> None:
-    """Reading an export from an absolute path must not put that path in the ledger."""
     export = tmp_path / "exports" / "issues.jsonl"
     export.parent.mkdir()
     export.write_text(_export(_record(RECORD_A)), encoding="utf-8")
@@ -739,11 +615,7 @@ def test_the_default_name_is_the_files_base_name_and_not_its_path(tmp_path: Path
 def test_the_digest_is_the_same_whatever_the_checkout_did_to_the_line_endings(
     tmp_path: Path,
 ) -> None:
-    """The export is not ours to declare ``-text``, so the pin must survive a CRLF checkout.
 
-    Written as bytes so the difference is the file's, not the host's: an ``open`` in text
-    mode would translate the endings on write and both files would be identical.
-    """
     body = _export(_record(RECORD_A), _record(RECORD_B))
     unix = tmp_path / "unix.jsonl"
     windows = tmp_path / "windows.jsonl"
@@ -756,17 +628,10 @@ def test_the_digest_is_the_same_whatever_the_checkout_did_to_the_line_endings(
     )
 
 
-# --- the read-check-write is one critical section ------------------------------
-
-
 def test_an_import_reports_contention_rather_than_deciding_on_a_stale_read(
     tmp_path: Path,
 ) -> None:
-    """Two importers must not both decide that a record needs creating.
 
-    The timeout is zero so the deadline has passed on the first poll — the assertion is
-    which failure happens, not how long it takes.
-    """
     lock = events.LedgerLock(tmp_path, pid=os.getpid(), is_alive=lambda _pid: True)
     lock.acquire()
     try:
@@ -780,7 +645,6 @@ def test_an_import_reports_contention_rather_than_deciding_on_a_stale_read(
 
 
 def test_a_caller_can_hold_the_lock_across_an_import_and_its_own_work(tmp_path: Path) -> None:
-    """The ``held_lock`` seam, used the way the dual-write phase will need it."""
     lock = events.LedgerLock(tmp_path)
     with lock:
         report = _import(tmp_path, _snapshot(_record(RECORD_A)), held_lock=lock)
@@ -792,7 +656,6 @@ def test_a_caller_can_hold_the_lock_across_an_import_and_its_own_work(tmp_path: 
 
 
 def test_the_actor_and_the_clock_are_the_callers(tmp_path: Path) -> None:
-    """Nothing here reads a clock of its own; the timestamp is injected evidence (§9.5)."""
     report = migrate.import_snapshot(
         tmp_path,
         _snapshot(_record(RECORD_A)),
@@ -805,7 +668,6 @@ def test_the_actor_and_the_clock_are_the_callers(tmp_path: Path) -> None:
 
 
 def test_the_redactor_reaches_an_imported_field(tmp_path: Path) -> None:
-    """The pattern set is the engine's; what the kit owns is that it runs before storage."""
     snapshot = _snapshot(_record(RECORD_A, description="ran under /home/somebody/dev"))
 
     _import(tmp_path, snapshot, redact=lambda text: text.replace("/home/somebody", "<home>"))
@@ -815,15 +677,10 @@ def test_the_redactor_reaches_an_imported_field(tmp_path: Path) -> None:
 
 
 def test_a_redacted_field_is_not_reported_as_divergence_on_a_replay(tmp_path: Path) -> None:
-    """The comparison compares stored against would-be-stored, not against the raw source.
 
-    A raw comparison would call every redacted record diverged on every re-import, which is
-    the shape of finding that trains a reader to ignore the report.
-    """
     snapshot = _snapshot(_record(RECORD_A, description="ran under /home/somebody/dev"))
 
     def redact(text: str) -> str:
-        """Stand in for the engine's pattern set."""
         return text.replace("/home/somebody", "<home>")
 
     _import(tmp_path, snapshot, redact=redact)
@@ -831,9 +688,6 @@ def test_a_redacted_field_is_not_reported_as_divergence_on_a_replay(tmp_path: Pa
 
     assert again.diverged == []
     assert again.events == []
-
-
-# --- the kit boundary ---------------------------------------------------------
 
 
 _DRIVER = """
@@ -880,12 +734,7 @@ print(json.dumps({
 
 
 def _pruned_env(tmp_path: Path) -> dict[str, str]:
-    """An environment with no basicly on PATH and nothing pointing at this repo.
 
-    Built from empty rather than filtered, so nothing inherited can smuggle the package
-    back in. The few names copied back are what an interpreter needs on its own platform,
-    which makes the platform difference test data.
-    """
     empty = tmp_path / "empty-path-dir"
     empty.mkdir(exist_ok=True)
     home = tmp_path / "scratch-home"
@@ -899,12 +748,7 @@ def _pruned_env(tmp_path: Path) -> dict[str, str]:
 
 
 def test_a_consumer_with_no_basicly_can_import_their_tracker(tmp_path: Path) -> None:
-    """The kit's reason to exist, exercised end to end the way a consumer would.
 
-    ``-S`` drops site-packages, where this repo's own ``basicly`` lives, and ``-I`` drops
-    ``PYTHONPATH`` and the script's directory. All three kit files are copied because the
-    sibling loader is part of what is being proved: a consumer copies the directory.
-    """
     consumer = tmp_path / "consumer" / "kit" / "tracker"
     consumer.mkdir(parents=True)
     for source in (MIGRATE_SOURCE, EVENTS_SOURCE, IDS_SOURCE):
@@ -960,7 +804,6 @@ def test_a_consumer_with_no_basicly_can_import_their_tracker(tmp_path: Path) -> 
 
 
 def test_the_module_imports_nothing_outside_the_standard_library() -> None:
-    """The kit boundary, read off the source rather than trusted."""
     source = MIGRATE_SOURCE.read_text(encoding="utf-8")
     imported: set[str] = set()
     for node in ast.walk(ast.parse(source)):

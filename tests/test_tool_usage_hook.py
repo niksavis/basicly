@@ -1,5 +1,3 @@
-"""Tests for the tool-usage counting hook (.basicly/core/hooks/tool-usage.py)."""
-
 from __future__ import annotations
 
 import json
@@ -28,7 +26,6 @@ def _stats(cwd: Path) -> dict:
 
 
 def test_claude_payload_counts_every_pipeline_segment(tmp_path: Path) -> None:
-    """A Claude PostToolUse Bash payload increments each segment head once."""
     payload = {
         "hook_event_name": "PostToolUse",
         "tool_name": "Bash",
@@ -40,19 +37,16 @@ def test_claude_payload_counts_every_pipeline_segment(tmp_path: Path) -> None:
     stats = _stats(tmp_path)
     assert {tool: entry["count"] for tool, entry in stats.items()} == {"rg": 1, "jq": 1, "fd": 1}
     assert all(entry["last_used"] for entry in stats.values())
-    # The usage dir ignores itself so the data never enters git.
     assert (tmp_path / ".basicly/usage/.gitignore").read_text(encoding="utf-8") == "*\n"
 
 
 def test_copilot_payload_shape_is_counted(tmp_path: Path) -> None:
-    """The Copilot postToolUse camelCase shape feeds the same counters."""
     payload = {"toolName": "bash", "toolArgs": {"command": "yq '.a' file.yaml"}}
     assert _run(payload, tmp_path).returncode == 0
     assert _stats(tmp_path)["yq"]["count"] == 1
 
 
 def test_skill_invocations_count_under_skill_prefix(tmp_path: Path) -> None:
-    """A Claude Skill payload records a skill:<name> entry; bad shapes do not."""
     payload = {
         "hook_event_name": "PostToolUse",
         "tool_name": "Skill",
@@ -66,7 +60,6 @@ def test_skill_invocations_count_under_skill_prefix(tmp_path: Path) -> None:
 
 
 def test_counts_accumulate_across_invocations(tmp_path: Path) -> None:
-    """Counters survive between hook invocations (and thus between sessions)."""
     payload = {"tool_name": "Bash", "tool_input": {"command": "rg foo"}}
     _run(payload, tmp_path)
     _run(payload, tmp_path)
@@ -74,7 +67,6 @@ def test_counts_accumulate_across_invocations(tmp_path: Path) -> None:
 
 
 def test_non_shell_tools_and_garbage_never_fail(tmp_path: Path) -> None:
-    """Edits, corrupt stdin, and a corrupt counter file all exit 0 quietly."""
     assert _run({"tool_name": "Edit", "tool_input": {"file_path": "x"}}, tmp_path).returncode == 0
     assert not (tmp_path / USAGE_FILE).exists()
 
@@ -84,4 +76,4 @@ def test_non_shell_tools_and_garbage_never_fail(tmp_path: Path) -> None:
     (tmp_path / USAGE_FILE).write_text("{corrupt", encoding="utf-8")
     payload = {"tool_name": "Bash", "tool_input": {"command": "bat file"}}
     assert _run(payload, tmp_path).returncode == 0
-    assert _stats(tmp_path)["bat"]["count"] == 1  # restarted clean
+    assert _stats(tmp_path)["bat"]["count"] == 1

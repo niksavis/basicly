@@ -1,12 +1,3 @@
-"""Tests for the recorded form of a queue item (basicly-kjc5.4, design 7.1/7.3).
-
-The round trip is the subject: what :func:`render_enqueue` writes is what
-:func:`items_by_id` must read back, and everything else on the bead — a human's
-comment, a marker from a newer or a broken writer — has to be skipped rather than
-raised, because one garbled comment must not wedge the read of a whole bead's
-queue.
-"""
-
 from __future__ import annotations
 
 import json
@@ -28,8 +19,6 @@ class _Proc:
 
 
 class _FakeBr:
-    """br stand-in answering ``comments list`` from a seeded per-issue list."""
-
     def __init__(self) -> None:
         self.comments: dict[str, list[str]] = {}
 
@@ -47,13 +36,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
 def test_garbled_markers_never_wedge_the_queue(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Malformed headers/payloads and foreign comments are skipped, not raised.
 
-    The one well-formed item is written by :func:`render_enqueue` rather than
-    hand-spelled, so this is also the round-trip control: were the writer and the
-    reader to disagree about the header, the real item would be dropped with the
-    junk and this would fail rather than pass an emptier queue.
-    """
     fake = _FakeBr()
     _install(monkeypatch, fake)
     real_id = decision_marker.decision_id_for("epic.1", "needs-input", "which db?")

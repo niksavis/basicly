@@ -29,12 +29,4 @@ count_delta = 1
 rebaseline_reason = "the cited document was deleted into the kit's own SPEC.md; these 14 named citations sit in 9 modules held by live lanes, so the pointer swap is deferred rather than raced"
 
 [ratchet.code_citations.rebaselined]
-".basicly/core/kit/tracker/events.py" = 1
-".basicly/core/kit/tracker/migrate.py" = 1
-"src/basicly/owned_write.py" = 1
-"src/basicly/tracker.py" = 1
-"tests/test_kit_tracker_events_durability.py" = 5
-"tests/test_kit_tracker_fsck.py" = 2
-"tests/test_kit_tracker_provenance.py" = 1
-"tests/test_kit_tracker_scheduler.py" = 1
-"tests/test_tracker_requirements.py" = 1
+"tests/test_kit_tracker_events_durability.py" = 1

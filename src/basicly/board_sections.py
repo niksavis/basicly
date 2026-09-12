@@ -1,19 +1,3 @@
-"""The board producer's section reducers: one function per section of the snapshot.
-
-The boundary is which rows a section is, against what may cross the wire
-(:mod:`basicly.board_fields`). Every string still leaves through :func:`board_fields.text`, so
-that rule is enforced in one place and consumed in seven (basicly-y754k2).
-"""
-
-# comment-density-waiver: cohesion: 51.5% after the split that basicly-y754k2 asked for,
-# and the split is the cause: seven reducers each carry the contract a schema consumer needs
-# - which rows a section is, which fields are omitted rather than guessed - against a body
-# that is one comprehension. Measured at every step down from 55.1%: the stale `_session`
-# cross-reference
-# and the restatement of what `test_board_sections` asserts are gone. What remains is the
-# 140/203/1 pairing criterion, the second-fold cost this reader exists to avoid, and why a
-# lane phase is an argument. Deleting any of those is what the cap exists to prevent.
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,24 +12,9 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 # module-size-waiver: cost(basicly-k6tpep.1): 6217 of 4000 tokens. It was 4416 when
-# `lanes[].state` and the two keys that date and explain it added 432: the closed set this
-# layer bounds the wire with, three fields, and `_standing`. basicly-w6vbw61 added the rest -
-# `backlog`, which `board_snapshot` held while this module's own docstring claimed every
-# section reducer, plus the two the throughput figure needs. That move is what kept
-# `board_snapshot` under its own cap and it belongs here on the docstring's own rule. The
-# nameable cut is still the one `board_facts` and `board_regions` name in their waivers -
-# `LaneFacts`, `lanes` and `_standing` into `board_lane.py` - and it needs a line in
-# `.importlinter`, whose entries leave no module unlisted. No prose was cut to pay for either;
-# the density share is waived already.
 
-# The separator a wait id uses to carry its subject, read only by :func:`asks`.
 _SUBJECT_SEP = "#wait-"
 
-# The closed set `board-snapshot.schema.json` permits on `lanes[].state`, spelled here
-# because this layer bounds what reaches the wire and a value outside a closed set costs the
-# whole `lanes` section rather than one key. `supervise.LANE_*` are the writers and the
-# schema is the contract; `tests/test_board_facts.py` asserts the three agree, because three
-# spellings of one closed set is exactly the drift a shipped consumer refuses a document for.
 LANE_STATES = frozenset({
     "queued",
     "running",
@@ -56,45 +25,13 @@ LANE_STATES = frozenset({
     "parked",
 })
 
-# The status a record reaches when its work is done. The kit's vocabulary, spelled here
-# because this layer counts records by it and `board_snapshot` cuts the active population
-# with it, and two spellings of one status are how two counts come to disagree.
 CLOSED_STATUS = "closed"
 
-# The status a record holds while somebody is working it. Counted apart from the rest
-# because "how much is moving" and "how much is left" are different questions.
 ACTIVE_STATUS = "in_progress"
 
 
 @dataclass(frozen=True)
 class LaneFacts:
-    """One in-flight lane, supplied by a caller that drives the loop rather than derived.
-
-    **`phase` is why this is an argument.** The schema requires it, and its authority is
-    `loop_state.read_node_state`, which calls `validate_gate.required_config` to learn what
-    the unit owes before it reads a gate. That required-gate set is a fourth source, outside
-    the three files this producer opens, and a phase folded out of ledger evidence alone
-    diverges from the engine's for any unit owing validation. The schema has no field marking
-    a value as derived, so the two would render identically. Caller-supplied or omitted, and
-    nothing between - the same rule the supervisor lock takes in `board_snapshot.SessionFacts`.
-
-    The first eight fields are what a caller above the loop already holds:
-    `supervise.LaneView` carries `issue_id`, `status`, `last_agent`, `last_tokens`,
-    `branch` and `last_run_at`, and the phase comes from the loop read beside it. The schema's
-    other lane properties - `model`, `cost_usd`, `elapsed_s`, the `context_used` pair, the
-    rework counters, `note` - are carried too, on the same rule: emitted only where the caller
-    held one, so an omitted property renders as absent and a guessed one would render as
-    fact. It bites hardest on a *live* lane, whose last run holds a cost and an occupancy
-    for a different dispatch; carrying those forward states this run's spend as last run's.
-
-    `live` and `provisioned` used to share one key (basicly-ze0po3): `live` is an agent inside
-    the lane now, `provisioned` is only its worktree existing. `board_facts._lane_fact` says why.
-
-    `state` is where the lane stands in the *pass*, which `live` true-or-false had nothing
-    between: a finished lane waiting for the merge queue, a lane being landed and one the WIP
-    bound refused all read as an idle build (basicly-ncday7). Bounded to :data:`LANE_STATES`.
-    """
-
     id: str
     phase: str
     status: str = ""
@@ -119,15 +56,6 @@ class LaneFacts:
 
 @dataclass(frozen=True)
 class DetailFacts:
-    """One record's loop detail, supplied by a caller that may read the engine.
-
-    Every field here is a derivation this producer may not make, on the rule
-    :class:`LaneFacts` states: the checkpoint roster is `config.CHECKPOINTS`, the binding is
-    `loop_state.parse_worktree_ref`, the required gate set is `validate_gate.required_in`
-    and the command is the engine's own remedy. A second spelling of any of them renders
-    identically to the engine's and disagrees with it.
-    """
-
     id: str
     worktree: str = ""
     branch: str = ""
@@ -139,26 +67,13 @@ class DetailFacts:
 
 @dataclass(frozen=True)
 class RepoFacts:
-    """Which checkout the document is about, past the name a path component answers.
-
-    **A subprocess is the whole reason this is an argument.** ``dirty`` is the index against
-    the working tree - ``git status`` and nothing cheaper - while the producer's contract is
-    that it opens files and spawns nothing, pinned by a spy in
-    ``tests/test_board_snapshot.py``. Reading git state below this line would break that for
-    every caller to serve one, so the caller already running git supplies all three at once.
-    """
-
     branch: str = ""
     head: str = ""
     dirty: bool | None = None
 
 
 def repo(name: str, facts: RepoFacts | None) -> dict[str, object]:
-    """Which checkout this is: *name*, plus whatever git state the caller held.
 
-    A field the caller left empty omits its key rather than filling one, because a branch with
-    no ``dirty`` beside it is a weaker claim than a clean tree that is not clean.
-    """
     section: dict[str, object] = {"name": board_fields.text(name, board_fields.ID_MAX)}
     if facts is None:
         return section
@@ -173,34 +88,15 @@ def repo(name: str, facts: RepoFacts | None) -> dict[str, object]:
 
 @dataclass(frozen=True)
 class Readiness:
-    """Which records the tracker calls ready and which it calls blocked, from the caller.
-
-    **Two sets rather than a predicate, because the third answer is the point.** A record in
-    neither set is one the tracker's own ready walk did not rule on, and :meth:`flag` returns
-    None for it so the row omits ``ready`` instead of reading False. `ready` is a derivation
-    over a status vocabulary and the whole edge population - the kit's `queries` owns it - and
-    a second spelling here is how two derivations come to disagree.
-    """
-
     ready: frozenset[str] = frozenset()
     blocked: frozenset[str] = frozenset()
 
     def flag(self, record: str) -> bool | None:
-        """Whether *record* is ready; None when neither set names it."""
         if record in self.ready:
             return True
         return False if record in self.blocked else None
 
 
-# What a viewer may offer to do about an ask, by the kind the engine wrote. The two kinds are
-# `policy.record_wait_request`'s `checkpoint` and `decisions`' `decision`, and nothing else
-# writes one. The verb strings are literals rather than an import: `board_actions` is nine
-# tiers above this producer, and the schema's own closed enum is the contract between them -
-# `tests/test_board_asks.py` pins these against that table, from the side that executes them.
-#
-# **A kind this table does not name gets no `actions` key at all**, which is the schema's rule
-# that such an offer is "drawn without a button rather than refused". Never a default: a board
-# offering a verb that does not fit the ask is worse than one offering none (basicly-3qstvw).
 _OFFERS: Mapping[str, tuple[str, str]] = {
     "checkpoint": ("Approve it", "checkpoint-approve"),
     "decision": ("Answer it", "loop-answer"),
@@ -213,24 +109,7 @@ def asks(
     now: datetime,
     questions: Mapping[str, str] | None = None,
 ) -> list[dict[str, object]]:
-    """The pending asks: a wait whose id no marker anywhere reports as answered.
 
-    **Pairing, not counting, and that is the whole criterion.** Reading every request as
-    pending reports **140** against **1** genuinely open, with **203** distinct answered ids
-    behind it - so a parser matching nothing still looks plausible on the pending count, and
-    the test pins all three. Order-independent, ``policy._open_wait_stamp``'s rule: an answer
-    anywhere closes the wait, and comment order is not chronological.
-
-    ``waiting_s`` is *now* minus the request stamp, and *now* is the caller's injected instant
-    rather than a reading taken here - the same stamp the document is dated with, so the two
-    can never disagree. ``question`` is caller-supplied and keyed by wait id: a request marker
-    carries no prose at all (``policy.record_wait_request`` writes id, kind and ``requested``),
-    so the wording exists only on the decision queue and a wait with none keeps the key absent.
-
-    ``actions`` names the verb that answers the ask, from :data:`_OFFERS`. Without it the
-    board drew no form for a real pending checkpoint at all - the consumer reads this key to
-    know what a button would run, and this producer never wrote it (basicly-3qstvw).
-    """
     waits = [row for row in markers if row.family == board_fields.WAIT_FAMILY]
     answered = {
         row.fields["id"]
@@ -262,12 +141,7 @@ def asks(
 
 
 def _standing(lane: LaneFacts) -> dict[str, object]:
-    """*lane*'s pass-state keys, or nothing where its state is outside the closed set.
 
-    The three travel together under one guard: a state with no stamp cannot be aged, and a
-    detail with no state has nothing to explain. A value the schema does not permit is
-    dropped rather than clipped, because a closed set refused costs the whole section.
-    """
     if lane.state not in LANE_STATES:
         return {}
     held: dict[str, object] = {"state": lane.state}
@@ -279,15 +153,7 @@ def _standing(lane: LaneFacts) -> dict[str, object]:
 
 
 def lanes(facts: Iterable[LaneFacts]) -> list[dict[str, object]]:
-    """*facts* as bounded lane rows, one per lane, in the order the caller supplied.
 
-    A lane missing either required value is skipped rather than completed: `id` and `phase`
-    are the two the schema refuses a row without, and a row invented for a lane whose phase
-    the caller could not read is the estimate :class:`LaneFacts` exists to refuse. Every
-    other value is emitted only when the caller held one, so no lane panel draws a zero it
-    was not given. An empty result is still a section: `[]` is a pass with nothing running,
-    and *absent* is a producer that cannot see lanes - the schema separates the two.
-    """
     rows = []
     for lane in facts:
         if not lane.id or not lane.phase:
@@ -331,15 +197,7 @@ def lanes(facts: Iterable[LaneFacts]) -> list[dict[str, object]]:
 
 
 def detail(facts: Iterable[DetailFacts]) -> list[dict[str, object]]:
-    """One row per record a reader can open, at the fields :func:`units` leaves out.
 
-    The two sections split on who reads them: a wall draws every unit and pays for every
-    key, and these are read one record at a time. `checkpoints_*`, `rework` and the two
-    binding keys are emitted even when empty, because a caller that built a row at all knows
-    them - an empty `worktree` is no binding, and omitting it would render as unreported.
-    `next_command` is omitted where the caller held none, on the rule the rest of this module
-    follows.
-    """
     rows = []
     for held in facts:
         if not held.id:
@@ -372,27 +230,7 @@ def units(
     ready: Readiness | None = None,
     owes: Mapping[str, Sequence[str]] | None = None,
 ) -> list[dict[str, object]]:
-    """One bounded row per folded record in *states*, at the fields a board draws.
 
-    **This is the rule at its sharpest: fields, never records.** A folded record carries its
-    description, its acceptance criteria and every comment body, and a row shaped like one
-    would put 1,472,207 tokens on the wire against 11,113 for the selection - the 132.5x this
-    module exists for. `title` is the only prose admitted and it is bounded, so a description
-    cannot arrive by being called a title.
-
-    `owes` is the third such map and obeys the same rule: this module sits below `invest`
-    in the layer contract, so the Definition-of-Ready verdict is computed above and passed
-    in. Only section *names* arrive, never a body - `owes` absent leaves the row unmarked,
-    which reads as unknown rather than as satisfied.
-
-    `phase` and `ready` reach a row from *phases* and *ready* and from nowhere else, which is
-    the same rule :class:`LaneFacts` states one section over: `phase`'s authority is
-    `loop_state.derive_phase` reading a required-gate set outside the three files this producer
-    opens, and `ready` is the tracker's own walk. Neither map has to be complete - a record
-    absent from *phases* keeps `phase` absent, and :meth:`Readiness.flag` returning None keeps
-    `ready` absent - because the schema has no field marking a value as derived here, so a
-    guess would render identically to a read.
-    """
     rows = []
     for state in states:
         row: dict[str, object] = {"id": board_fields.text(state.record, board_fields.ID_MAX)}
@@ -421,14 +259,7 @@ def backlog(
     closings: Mapping[str, str],
     moment: datetime,
 ) -> dict[str, object]:
-    """The status tally, a count per priority label, the caller's two set sizes, and today's.
 
-    ``ready`` and ``blocked`` are ``len`` over the sets *readiness* carries, which is counting
-    a supplied answer rather than deriving one - the tracker's ready walk stays the only walk.
-
-    ``closed_today`` is dated against *moment*, the instant this document is stamped with, so
-    a page opened after midnight reports the producer's day and never the reader's.
-    """
     counts: dict[str, int] = {}
     priorities: dict[str, int] = {}
     for state in live:
@@ -452,32 +283,12 @@ def backlog(
 
 
 def _day(moment: datetime) -> str:
-    """*moment* as its UTC calendar day, the one date rule this module counts by.
 
-    Normalised to UTC before the date is taken, which is `board_fields.stamp`'s own rule: a
-    stamp carrying a numeric offset names a different day in its own zone, and a figure that
-    changed meaning with the writer's zone would be uncountable.
-    """
     return moment.astimezone(UTC).date().isoformat()
 
 
 def closing_days(kit: Any, collected: Iterable[Any]) -> dict[str, str]:
-    """Each record's UTC day of the most recent event that closed it, keyed by record.
 
-    **A pass over the caller's already-read events, never a read of its own**, which is
-    :func:`edge_triples`' rule and the whole distance between this producer and `observe()`'s
-    93 folds. It answers the one question the fold cannot: :class:`RecordState` carries a
-    status and no date for it, so a folded record says a unit is closed and never when.
-
-    ``ts`` is the only source there is. The tracker's own ``closed_at`` field looks like one
-    and is not: it was imported from the external tracker, and on this ledger 663 closed
-    records carry it while **0 of the 20 closed on 2026-09-05** do, so a figure read off it
-    would report the harness era as a factory that closes nothing [measured 2026-09-05].
-
-    Dated per record and not counted here, because the day to count against is the
-    document's own ``generated_at`` and only :func:`basicly.board_snapshot.build_document`
-    holds that instant. A close whose stamp will not parse is in no day at all.
-    """
     days: dict[str, str] = {}
     for event in kit.events.canonical_order(collected):
         if event.kind != kit.events.KIND_STATUS:
@@ -491,18 +302,7 @@ def closing_days(kit: Any, collected: Iterable[Any]) -> dict[str, str]:
 
 
 def closed_on(live: Iterable[Any], days: Mapping[str, str], moment: datetime) -> int:
-    """How many of *live* the log closed on *moment*'s UTC day.
 
-    **The throughput figure, and it is a count rather than an event row.** The events tail is
-    capped at 50 by contract - "an unbounded event list is how a derived, disposable document
-    turns into the second source of truth this design refuses" - and a day's closes can
-    exceed that cap, so lengthening the tail could never carry this (basicly-w6vbw61).
-
-    Both halves are required, and that is what keeps the figure at or below ``closed``. A
-    record must still *be* closed, so one closed this morning and reopened this afternoon is
-    not counted; and its latest close must fall on the day, so a record closed last week is
-    not. A tombstoned record reaches neither, because *live* has already dropped it.
-    """
     day = _day(moment)
     return sum(
         1 for state in live if state.status == CLOSED_STATUS and days.get(state.record) == day
@@ -510,20 +310,7 @@ def closed_on(live: Iterable[Any], days: Mapping[str, str], moment: datetime) ->
 
 
 def edge_triples(kit: Any, collected: Iterable[Any]) -> list[tuple[str, str, str]]:
-    """Every edge the log still asserts, as ``(source, kind, target)``, last statement wins.
 
-    **Read off the events rather than through the kit's own `views_from_events`, and the
-    reason is the one guarantee this producer sells.** That function folds the log a second
-    time to answer this, and a second fold is exactly what makes `observe()` cost 6.1 s over
-    93 of them. So the caller's already-read event list is walked once more here, which is a
-    pass and not a fold.
-
-    Nothing about the dialect is respelled: the kinds, the payload keys and the ordering are
-    all *kit* values reached through the sanctioned attribute chain, and
-    `tests/test_board_sections.py` binds the result to `views_from_events`'s own edge set on
-    a corpus holding a retraction. A retracted edge is absent here while both of its events
-    stay in the log, which is what makes a retraction not a deletion.
-    """
     held: dict[tuple[str, str, str], bool] = {}
     for event in kit.events.canonical_order(collected):
         if event.kind not in (kit.events.KIND_EDGE, kit.events.KIND_EDGE_RETRACTED):
@@ -536,12 +323,7 @@ def edge_triples(kit: Any, collected: Iterable[Any]) -> list[tuple[str, str, str
 
 
 def graph(triples: Iterable[tuple[str, str, str]]) -> dict[str, object]:
-    """*triples* as the `graph` section: `from`, `to` and the edge kind, each bounded.
 
-    Separate from :func:`units` because edges answer the one question a count of blocked
-    items raises and cannot settle. The kind is passed through rather than mapped: the schema
-    leaves it an open string, so a foreign harness's own vocabulary crosses unaltered.
-    """
     return {
         "edges": [
             {
@@ -555,18 +337,7 @@ def graph(triples: Iterable[tuple[str, str, str]]) -> dict[str, object]:
 
 
 def events(markers: Sequence[board_fields.Marker], limit: int) -> list[dict[str, object]]:
-    """The last *limit* marker rows, each as its family and its declared fields.
 
-    The family is the event kind, which is where the whole roster is used and why all 12 are
-    parsed. ``text`` is the header's fields re-rendered, never the body.
-
-    **So no row here can ever report a lifecycle change.** ``kind`` is a marker family, and a
-    status change writes no marker - it is a ledger event. A consumer reading this tail for
-    throughput therefore found nothing on a day twenty records closed [measured 2026-09-05];
-    :func:`closed_on` is
-    the figure that answers it, and it is counted rather than listed because this tail is
-    capped at 50 and a day's closes can exceed the cap (basicly-w6vbw61).
-    """
     rows = []
     for row in markers[-limit:]:
         at = board_fields.instant(row.at)

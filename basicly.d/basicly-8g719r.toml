@@ -130,6 +130,5 @@ rebaseline_reason = "merge.py: the landing must name the tip and the commit coun
 [ratchet.module_size.rebaselined]
 "src/basicly/merge.py" = 208
 "tests/test_merge.py" = 538
-"src/basicly/worktree.py" = 627
 "tests/test_worktree.py" = 1532
 "tests/test_loop.py" = 109

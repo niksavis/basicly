@@ -1,5 +1,3 @@
-"""Tests for the protect-generated Claude Code PreToolUse guard."""
-
 from __future__ import annotations
 
 import importlib.util
@@ -38,7 +36,6 @@ def _run_hook(payload: object) -> subprocess.CompletedProcess[str]:
 
 
 def test_detects_fragment_and_skill_markers(tmp_path: Path) -> None:
-    """Both marker flavors are recognized, wherever they sit in the opening lines."""
     module = _load_module()
 
     direct = tmp_path / "CLAUDE.md"
@@ -53,7 +50,6 @@ def test_detects_fragment_and_skill_markers(tmp_path: Path) -> None:
 
 
 def test_manifest_json_counts_as_generated(tmp_path: Path) -> None:
-    """The marker-less projection manifest is matched by its constant basename."""
     module = _load_module()
     manifest = tmp_path / "generated-manifest.json"
     manifest.write_text("{}\n", encoding="utf-8")
@@ -61,7 +57,6 @@ def test_manifest_json_counts_as_generated(tmp_path: Path) -> None:
 
 
 def test_normal_files_are_not_generated(tmp_path: Path) -> None:
-    """A plain source file, even one that merely mentions basicly, passes."""
     module = _load_module()
     source = tmp_path / "notes.md"
     source.write_text("# Notes\n\nbasicly is a projector.\n", encoding="utf-8")
@@ -69,7 +64,6 @@ def test_normal_files_are_not_generated(tmp_path: Path) -> None:
 
 
 def test_blocks_edit_of_generated_file(tmp_path: Path) -> None:
-    """An Edit targeting a marker file exits 2 and names the source workflow."""
     target = tmp_path / "AGENTS.md"
     target.write_text(FRAGMENT_MARKER + "# Baseline\n", encoding="utf-8")
 
@@ -79,7 +73,6 @@ def test_blocks_edit_of_generated_file(tmp_path: Path) -> None:
 
 
 def test_allows_edit_of_normal_file(tmp_path: Path) -> None:
-    """A normal file passes with no output."""
     target = tmp_path / "main.py"
     target.write_text("print('hi')\n", encoding="utf-8")
 
@@ -88,7 +81,6 @@ def test_allows_edit_of_normal_file(tmp_path: Path) -> None:
 
 
 def test_fails_open_on_missing_file_and_bad_payloads(tmp_path: Path) -> None:
-    """Nonexistent targets, absent paths, and garbage stdin never block."""
     missing = {"tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "new.md")}}
     assert _run_hook(missing).returncode == 0
     assert _run_hook({"tool_name": "Edit", "tool_input": {}}).returncode == 0

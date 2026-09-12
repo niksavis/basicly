@@ -1,80 +1,3 @@
-"""Fail when a closed record produced no release note and nothing else notices.
-
-`changelog.d` refuses a fragment that is empty or misnamed, so every check it has binds on
-**a fragment that exists**. Nothing bound on a closed record that produced none, and
-absence is the one shape a presence check cannot see. Measured at the v0.9.0 cut: 54
-records closed since v0.8.0, 35 with a fragment, 19 without — `basicly-4kdm` among them,
-the seven specialist agents and five loop skills that `basicly install` vendors to every
-consumer, and the largest thing in that release. Eight fragments were written by hand at
-cut time; that was mopping.
-
-It is unrecoverable rather than untidy. `.github/workflows/release.yml` extracts
-`CHANGELOG.md` from the **tagged** commit, so a note written afterwards can never reach the
-published release (basicly-m3od.1 paid for the same one-shot property from the other side).
-
-**The discriminator is the record's own `## Scope`, and absence alone would not do.** A
-closed record with no fragment is ambiguous three ways: a forgotten note, a change no
-consumer can see, or a record that closed before any of this existed. So the gate judges
-only a record that declares a machine-readable scope — the `## Scope` backticks
-:func:`~basicly.plan_record.backticked_entries` reads, which the decomposer writes and
-`plan_gate` refuses a dispatch without. A closed record carrying none is not reported at
-all: 435 of 740 closed records here are in that state, and reporting them would be
-reporting the convention's own arrival as a defect. `basicly-r343` and the wired-or-deleted
-baseline share the trap — bind on a marker a producer writes, not on the absence of one.
-
-**Owed is measured against the shipped surface, positively.** `src/basicly/` and
-`.basicly/core/` are what the wheel carries (`[tool.hatch.build.targets.wheel]`);
-`README.md` and `site/` are what a consumer reads and what the release rewrites pins in. An
-exclusion list would silently admit every directory added after it was written. 17 closed
-records declare machinery alone — `docs/`, `tests/`, the ledger, `.scripts/`, the ratchet
-tables — and owe nothing.
-
-**Accounted for is a citation, not a resemblance.** The note may be an unassembled fragment
-named for the record, a citation inside another fragment's body, or a citation in
-`CHANGELOG.md`, where both go once assembly deletes the files. Parenthetical, and
-restricted to the id prefixes the tracker holds: a loose `word-word` match reads "(see the
-pre-commit hook)" as a citation, which is how `basicly-jms0` read English as an id.
-
-**A ratchet, not a hard gate**, and `ratchet.py` holds the mechanism the other three use.
-145 records were already unaccounted for when this landed, every one closed through a green
-gate, and failing them would have meant turning the gate off. Each is recorded in
-`[tool.release_notes.frozen]` at 1, with ``may_only = "track"`` so the record must *equal*
-the tree. Four ways it disagrees:
-
-* A record **not in the table** owes a note. Refused on sight — the omission this exists
-  for.
-* A frozen record **gained a note**: it has graduated and the entry goes with it. Leaving it
-  would license the omission coming back for free.
-* A frozen record **is no longer closed**. Reported for the same reason, and it is what
-  closes the reopen hole: the exemption cannot survive rework, because the repairs are
-  deleting the entry or writing the note, and after the deletion the re-close is refused.
-* A **declaration** that exempts nothing.
-
-**A tree that is behind is not in debt.** A fragment the base branch holds and this
-checkout merely predates is warned about, never failed: the remedy is a rebase, and a
-gate refusing the commit has already refused the clean tree a rebase needs — three lanes
-deadlocked that way in one session.
-
-**The declaration half.** A change genuinely invisible to a consumer has to be declarable
-or the gate trains people to write empty fragments. It is an entry in
-`[tool.release_notes.invisible]` carrying its reason, counted against `declared_count` as
-`[tool.module_size]`'s `waiver_count` is, and validated against the population it exempts
-from: an entry naming a record the tracker does not hold, or one that is not closed, or one
-that owes no note anyway, or one that already has a note, fails as stale. An empty reason
-fails as an empty fragment does.
-
-**The landing mode, because closed is too late.** Everything above judges a *closed*
-record, and a lane's record is still open while it lands — so the gate passes at every
-landing and refuses the commit that closes it, after ship has torn the worktree down.
-`--landing <record>` asks the same question about that one open record, from the landing,
-while the lane still has somewhere to write the note (:func:`landing`).
-
-Run::
-
-    uv run python .scripts/check_release_notes.py
-    uv run python .scripts/check_release_notes.py --landing <record>
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -109,7 +32,6 @@ from release_note_standing import (  # noqa: E402 - the path above comes first
     standings,
 )
 
-# The gate, as `[tool.release_notes]` and `[ratchet.release_notes]` spell it.
 _GATE = "release_notes"
 FROZEN_TABLE = f"[tool.{_GATE}.frozen]"
 INVISIBLE_TABLE = f"[tool.{_GATE}.invisible]"
@@ -118,25 +40,14 @@ COUNT_KEY = "declared_count"
 
 
 def load_ratchet(repo: Path) -> Ratchet[int]:
-    """This gate's baseline: the frozen unaccounted records, and the declaration count.
 
-    ``may_only="track"`` for the reason `noqa-debt` states: the record must *equal* the
-    tree. A frozen record that gained a note has to be banked in the same diff, because
-    leaving the entry licenses the omission returning for free.
-    """
     return compose_ratchet(
         repo, _GATE, count_key=COUNT_KEY, entry_type=int, may_only=MAY_ONLY_TRACK
     )
 
 
 def declarations(repo: Path) -> dict[str, str]:
-    """The declared-invisible records and the reason each carries.
 
-    Raises:
-        RatchetError: pyproject.toml is unreadable, or the table holds something other than
-            a reason — never defaulted to empty, which would turn a typo into a silent
-            withdrawal of every declaration.
-    """
     try:
         data = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -148,7 +59,6 @@ def declarations(repo: Path) -> dict[str, str]:
 
 
 def _write_or_declare(subject: str) -> str:
-    """The two ways out, always named together: nothing else clears this gate."""
     return (
         f"write `changelog.d/{subject}.<category>.md`, or declare it invisible to a "
         f"consumer in {INVISIBLE_TABLE} with its reason and {count_delta_remedy(_GATE, 1)}"
@@ -156,7 +66,6 @@ def _write_or_declare(subject: str) -> str:
 
 
 def _owes(subject: str) -> Finding:
-    """A closed record that changed a shipped surface and produced no release note."""
     return Finding(
         subject=subject,
         detail=(
@@ -169,12 +78,7 @@ def _owes(subject: str) -> Finding:
 
 
 def _owed_at_ship(subject: str) -> Finding:
-    """An open record whose landing must be refused, because its close will be.
 
-    Shorter than :func:`_owes` on purpose: a landing reports this through
-    :func:`~basicly.verify.check_remedy`, which caps detail-plus-remedy at 400 characters,
-    and the longer wording spent the budget the second remedy needs.
-    """
     return Finding(
         subject=subject,
         detail=(
@@ -186,7 +90,6 @@ def _owed_at_ship(subject: str) -> Finding:
 
 
 def _graduated(subject: str, standing: Standing | None, baseline: int) -> Finding:
-    """A frozen record that stopped owing a note, so its entry describes nothing."""
     return Finding(
         subject=subject,
         detail=(
@@ -201,7 +104,6 @@ def _graduated(subject: str, standing: Standing | None, baseline: int) -> Findin
 
 
 def _grew(subject: str, count: int, baseline: int) -> Finding:
-    """A frozen entry the tree disagrees with upward, which only a hand-edit produces."""
     return Finding(
         subject=subject,
         detail=f"{count} unaccounted release note(s), up from the frozen {baseline}",
@@ -212,7 +114,6 @@ def _grew(subject: str, count: int, baseline: int) -> Finding:
 def _declared(
     subject: str, reason: str, standing: Standing | None, frozen: Mapping[str, int]
 ) -> list[Finding]:
-    """Whether a declaration still exempts something, and whether it argued its case."""
     findings: list[Finding] = []
     if subject in frozen:
         findings.append(
@@ -248,7 +149,6 @@ def _declared(
 
 
 def _counted(declared: Collection[str], recorded: int) -> list[Finding]:
-    """The declaration ratchet, which moves only in a diff that says it moved."""
     if len(declared) == recorded:
         return []
     grew = len(declared) > recorded
@@ -268,13 +168,7 @@ def _counted(declared: Collection[str], recorded: int) -> list[Finding]:
 def collect(
     found: Mapping[str, Standing], ratchet: Ratchet[int], declared: Mapping[str, str]
 ) -> list[Finding]:
-    """Every disagreement between the tree and the recorded ratchet.
 
-    The subjects are the **union** of what the tree owes, what the table freezes and what
-    the declarations name, so the recorded set is visited whether or not the tree produced
-    it. Iterating the measured set alone is how a stale entry — a record that gained a note,
-    or one that was reopened — comes to be satisfied by never being looked at.
-    """
     owed = {subject for subject, standing in found.items() if standing.owed}
     findings: list[Finding] = []
     for subject in sorted(owed | set(ratchet.frozen) | set(declared)):
@@ -284,7 +178,6 @@ def collect(
             findings.extend(_declared(subject, declared[subject], standing, ratchet.frozen))
             continue
         if standing is not None and standing.behind:
-            # The note is one tree away; only a rebase brings it and only a pass permits one.
             continue
         baseline = ratchet.frozen.get(subject)
         if baseline is None:
@@ -298,7 +191,6 @@ def collect(
 
 
 def summary(found: Mapping[str, Standing], ratchet: Ratchet[int], declared: Collection[str]) -> str:
-    """The pass line: what was judged, and how much of it is exempt rather than accounted."""
     judged = [item for item in found.values() if item.reason not in (OPEN, UNSCOPED)]
     owed = [item for item in judged if item.owed and not item.behind]
     return (
@@ -309,12 +201,7 @@ def summary(found: Mapping[str, Standing], ratchet: Ratchet[int], declared: Coll
 
 
 def landing(repo: Path, record_id: str) -> int:
-    """Refuse *record_id*'s landing when the commit that closes it would be refused.
 
-    Named against the lane rather than the tree: every other record in the tracker is
-    somebody else's, and failing a landing on one of them would charge this lane for a
-    debt its diff cannot pay (basicly-qorx).
-    """
     try:
         ratchet = load_ratchet(repo)
         declared = declarations(repo)
@@ -337,7 +224,6 @@ def landing(repo: Path, record_id: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point: report every closed record whose change reached a consumer unannounced."""
     parser = argparse.ArgumentParser(description="Refuse a release note nobody can add later.")
     parser.add_argument(
         "--landing",

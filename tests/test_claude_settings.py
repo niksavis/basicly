@@ -1,5 +1,3 @@
-"""Tests for Claude worktree.bgIsolation settings management (onb.1.6)."""
-
 from __future__ import annotations
 
 import json
@@ -32,14 +30,12 @@ def _read_settings(repo_root: Path) -> dict:
 
 
 def test_current_bg_isolation_none_when_unset(tmp_path: Path) -> None:
-    """A missing file or missing key reports None."""
     assert claude_settings.current_bg_isolation(tmp_path) is None
     _write_settings(tmp_path, {"permissions": {"allow": ["Bash"]}})
     assert claude_settings.current_bg_isolation(tmp_path) is None
 
 
 def test_set_bg_isolation_preserves_other_keys(tmp_path: Path) -> None:
-    """The write merges in, leaving existing settings intact."""
     _write_settings(tmp_path, {"includeCoAuthoredBy": False, "permissions": {"allow": ["Bash"]}})
 
     assert claude_settings.set_bg_isolation_none(tmp_path) is True
@@ -52,13 +48,11 @@ def test_set_bg_isolation_preserves_other_keys(tmp_path: Path) -> None:
 
 
 def test_set_bg_isolation_is_idempotent(tmp_path: Path) -> None:
-    """A second write reports no change."""
     _write_settings(tmp_path, {"worktree": {"bgIsolation": "none"}})
     assert claude_settings.set_bg_isolation_none(tmp_path) is False
 
 
 def test_cli_bg_isolation_requires_consent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Without --yes the command explains and writes nothing."""
     _write_settings(tmp_path, {"permissions": {"allow": ["Bash"]}})
     monkeypatch.chdir(tmp_path)
 
@@ -69,7 +63,6 @@ def test_cli_bg_isolation_requires_consent(tmp_path: Path, monkeypatch: pytest.M
 def test_cli_bg_isolation_writes_with_consent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With --yes the committed settings gain worktree.bgIsolation=none."""
     _write_settings(tmp_path, {"permissions": {"allow": ["Bash"]}})
     monkeypatch.chdir(tmp_path)
 
@@ -82,7 +75,6 @@ def test_cli_bg_isolation_writes_with_consent(
 def test_cli_bg_isolation_noop_when_already_none(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Already-none is reported as nothing-to-do, even with --yes."""
     _write_settings(tmp_path, {"worktree": {"bgIsolation": "none"}})
     monkeypatch.chdir(tmp_path)
 
@@ -94,10 +86,6 @@ GUARD = HookSpec(
     id="protect-generated", script="protect-generated.py", stage="pretooluse", manager="claude"
 )
 HOOKS_RELPATH = ".basicly/core/hooks"
-# `${CLAUDE_PROJECT_DIR}`-qualified, so the hook resolves from any working directory
-# rather than only the repo root (basicly-f3mi). Spelled out rather than built from the
-# module's constants: a test that reuses the implementation's own strings cannot catch a
-# change to them.
 EXPECTED_COMMAND = (
     "uv run --no-project --no-python-downloads python "
     '"${CLAUDE_PROJECT_DIR}/.basicly/core/hooks/protect-generated.py"'
@@ -105,7 +93,6 @@ EXPECTED_COMMAND = (
 
 
 def test_sync_agent_hooks_writes_and_preserves_other_keys(tmp_path: Path) -> None:
-    """The projection adds the PreToolUse wiring without disturbing settings."""
     _write_settings(tmp_path, {"permissions": {"allow": ["Bash"]}})
 
     assert claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is True
@@ -122,14 +109,12 @@ def test_sync_agent_hooks_writes_and_preserves_other_keys(tmp_path: Path) -> Non
 
 
 def test_sync_agent_hooks_is_idempotent(tmp_path: Path) -> None:
-    """A second sync reports no change and leaves a single managed group."""
     assert claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is True
     assert claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is False
     assert len(_read_settings(tmp_path)["hooks"]["PreToolUse"]) == 1
 
 
 def test_merge_preserves_foreign_pretooluse_groups(tmp_path: Path) -> None:
-    """Consumer-authored agent hooks survive the managed projection."""
     foreign = {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hi"}]}
     _write_settings(tmp_path, {"hooks": {"PreToolUse": [foreign]}})
 
@@ -141,7 +126,6 @@ def test_merge_preserves_foreign_pretooluse_groups(tmp_path: Path) -> None:
 
 
 def test_agent_hook_mismatches_flags_missing_and_stale(tmp_path: Path) -> None:
-    """A missing or altered managed entry is reported; a synced one is not."""
     assert claude_settings.agent_hook_mismatches(tmp_path, [GUARD], HOOKS_RELPATH)
 
     claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH)
@@ -159,7 +143,6 @@ COUNTER = HookSpec(
 
 
 def test_posttooluse_spec_lands_in_its_own_event_with_its_matcher(tmp_path: Path) -> None:
-    """A posttooluse spec projects under PostToolUse with its Bash matcher."""
     assert claude_settings.sync_agent_hooks(tmp_path, [GUARD, COUNTER], HOOKS_RELPATH) is True
 
     data = _read_settings(tmp_path)
@@ -184,7 +167,6 @@ def test_posttooluse_spec_lands_in_its_own_event_with_its_matcher(tmp_path: Path
         }
     ]
 
-    # Idempotent across both events; removal strips both and prunes empties.
     assert claude_settings.sync_agent_hooks(tmp_path, [GUARD, COUNTER], HOOKS_RELPATH) is False
     assert claude_settings.agent_hook_mismatches(tmp_path, [GUARD, COUNTER], HOOKS_RELPATH) == []
     assert claude_settings.remove_agent_hooks(tmp_path, [GUARD, COUNTER], HOOKS_RELPATH) is True
@@ -192,7 +174,6 @@ def test_posttooluse_spec_lands_in_its_own_event_with_its_matcher(tmp_path: Path
 
 
 def test_remove_agent_hooks_strips_managed_only(tmp_path: Path) -> None:
-    """Uninstall drops managed groups, keeps foreign ones, and prunes empties."""
     foreign = {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hi"}]}
     _write_settings(tmp_path, {"hooks": {"PreToolUse": [foreign]}, "other": 1})
     claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH)
@@ -202,7 +183,6 @@ def test_remove_agent_hooks_strips_managed_only(tmp_path: Path) -> None:
     assert data["hooks"]["PreToolUse"] == [foreign]
     assert data["other"] == 1
 
-    # With no foreign groups left, the empty containers disappear entirely.
     _write_settings(tmp_path, {"other": 1})
     claude_settings.sync_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH)
     assert claude_settings.remove_agent_hooks(tmp_path, [GUARD], HOOKS_RELPATH) is True
@@ -210,7 +190,6 @@ def test_remove_agent_hooks_strips_managed_only(tmp_path: Path) -> None:
 
 
 def test_consumer_hook_with_same_basename_survives(tmp_path: Path) -> None:
-    """A consumer hook running its own protect-generated.py is not managed."""
     consumer_group = {
         "matcher": "Bash",
         "hooks": [{"type": "command", "command": "python scripts/protect-generated.py"}],
@@ -231,16 +210,7 @@ def test_consumer_hook_with_same_basename_survives(tmp_path: Path) -> None:
 
 
 def test_every_declared_agent_hook_event_has_a_catalog_consumer() -> None:
-    """D37's pairing rule, enforced: a stage lands with the source that uses it.
 
-    The vocabulary is deliberately three of the events Claude Code documents, and
-    widening it to all of them was refused on the argument this repo already makes
-    about dead definitions — an unconsumed stage is a surface to keep true against
-    a vendor that moves, for nothing. The rule that keeps it honest is that a stage
-    arrives with its consumer: `SessionStart` did, with `session-start.py`.
-
-    Runs over the real catalog, which is the only place the rule means anything.
-    """
     specs = load_hook_specs()
     consumed = {spec.stage for spec in specs if spec.manager == "claude"}
 
@@ -253,11 +223,7 @@ def test_every_declared_agent_hook_event_has_a_catalog_consumer() -> None:
 
 
 def test_the_pairing_rule_would_catch_an_unconsumed_stage() -> None:
-    """The positive control: the assertion above discriminates.
 
-    Without this, a rule that happens to hold today reads identically to one that
-    can never fail, and this repo has shipped that mistake before.
-    """
     specs = load_hook_specs()
     consumed = {spec.stage for spec in specs if spec.manager == "claude"}
 
@@ -267,11 +233,7 @@ def test_the_pairing_rule_would_catch_an_unconsumed_stage() -> None:
 
 
 def _as_the_host_would_run(settings: dict, event: str, tool: str, repo: Path) -> list[list[str]]:
-    """The argv Claude Code would run for *tool*: match, substitute, split, in that order.
 
-    ``as_posix`` keeps the substituted path backslash-free, so ``shlex`` reads it the
-    same on every platform.
-    """
     return [
         shlex.split(
             hook["command"].replace(claude_settings.PROJECT_DIR_PLACEHOLDER, repo.as_posix())
@@ -283,7 +245,6 @@ def _as_the_host_would_run(settings: dict, event: str, tool: str, repo: Path) ->
 
 
 def _fire_agent_hook(argv: list[str], repo: Path, target: Path) -> subprocess.CompletedProcess:
-    """Run one projected agent hook on an ``Edit`` payload shaped as the host sends it."""
     payload = {"tool_name": "Edit", "tool_input": {"file_path": str(target)}}
     return subprocess.run(  # nosec B603 - argv comes from the projection under test
         argv, input=json.dumps(payload), cwd=repo, capture_output=True, text=True, check=False
@@ -291,14 +252,8 @@ def _fire_agent_hook(argv: list[str], repo: Path, target: Path) -> subprocess.Co
 
 
 def test_projected_agent_hook_fires_and_its_refusal_reaches_the_agent(tmp_path: Path) -> None:
-    """Playing the host runs the projected wiring, and the guard's refusal comes back.
 
-    Asserting the settings file *names* the hook would pass on one that never runs — the
-    built-and-never-connected defect basicly-0p8n exists to refuse. So this materializes
-    the scripts, projects the real catalog specs, then does what the host does: select by
-    matcher, substitute the placeholder, and run the command verbatim.
-    """
-    shutil.copytree(  # as `basicly install` materializes it: no machine-local bytecode
+    shutil.copytree(
         REPO_ROOT / HOOKS_RELPATH,
         tmp_path / HOOKS_RELPATH,
         ignore=shutil.ignore_patterns("__pycache__"),
@@ -309,20 +264,13 @@ def test_projected_agent_hook_fires_and_its_refusal_reaches_the_agent(tmp_path: 
     generated.write_text(GENERATED_MARKER + "# Baseline\n", encoding="utf-8")
 
     argvs = _as_the_host_would_run(_read_settings(tmp_path), "PreToolUse", "Edit", tmp_path)
-    # The write-tools guards only: a Bash-only guard sharing this event must not be
-    # selected, which is what this count is really asserting (basicly-zq9i2m.4 added the
-    # second write-tools hook and turned the old bare `== 1` into a false negative).
     selected = {Path(argv[-1]).name for argv in argvs}
     assert selected == {"protect-generated.py", "headroom-guard.py"}
     guard = next(argv for argv in argvs if argv[-1].endswith("protect-generated.py"))
     blocked = _fire_agent_hook(guard, tmp_path, generated)
-    # The exit code alone does not discriminate — `python <missing>.py` also exits 2, so a
-    # projection pointing at nothing would satisfy it. The refusal text is what binds.
     assert blocked.returncode == 2, blocked.stderr
     assert "basicly build" in blocked.stderr
 
-    # The control that makes the block the guard's decision rather than a command that
-    # simply failed to run: the same argv lets an ordinary file through.
     plain = tmp_path / "notes.md"
     plain.write_text("# notes\n", encoding="utf-8")
     assert _fire_agent_hook(guard, tmp_path, plain).returncode == 0

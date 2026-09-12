@@ -1,5 +1,3 @@
-"""Tests for what an answered gate escalation authorises (basicly-u2hl.54.3)."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -15,7 +13,6 @@ if TYPE_CHECKING:
 def _item(
     *, question: str, answer: str | None, answered_by: str = "niksa"
 ) -> decisions.DecisionItem:
-    """One queued item. ``answer=None`` is what makes it pending — there is no flag."""
     return decisions.DecisionItem(
         decision_id="d-1",
         issue_id="i",
@@ -29,7 +26,6 @@ def _item(
 
 
 def _unreliable_question() -> str:
-    """The wording the engine itself queues, so the parser under test recognises it."""
     return policy.unreliable_gate_escalation_question(merge.MERGE_GATE)
 
 
@@ -41,7 +37,6 @@ def _pin(monkeypatch: pytest.MonkeyPatch, items: list, *, spent: bool = False) -
 def test_an_answered_land_anyway_authorises_the_named_gate(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The gate name travels, so an answer about one gate cannot waive another."""
     _pin(monkeypatch, [_item(question=_unreliable_question(), answer="land anyway - it flakes")])
     assert landing_gate.gate_override(tmp_path, "i") == merge.MERGE_GATE
 
@@ -49,7 +44,6 @@ def test_an_answered_land_anyway_authorises_the_named_gate(
 def test_a_spent_override_authorises_nothing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Once, not once per landing — the remedy is spent where it is used (basicly-tcmy.6)."""
     _pin(
         monkeypatch,
         [_item(question=_unreliable_question(), answer="land anyway")],
@@ -61,7 +55,6 @@ def test_a_spent_override_authorises_nothing(
 def test_a_delegated_answer_cannot_waive_a_landing_gate(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """An autonomy grant may dispose of the question; skipping a gate is not its call."""
     _pin(
         monkeypatch,
         [
@@ -78,7 +71,6 @@ def test_a_delegated_answer_cannot_waive_a_landing_gate(
 def test_a_pending_escalation_is_not_an_answer(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Pending means unanswered; only a recorded answer authorises anything."""
     _pin(monkeypatch, [_item(question=_unreliable_question(), answer=None)])
     assert landing_gate.answered_unreliable_escalation(tmp_path, "i") is None
 
@@ -86,7 +78,6 @@ def test_a_pending_escalation_is_not_an_answer(
 def test_an_unreadable_queue_reads_as_no_answer(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Fail closed: the answer this looks for is what permits skipping a gate."""
 
     def _raise(*_a, **_k):
         raise RuntimeError("queue unreadable")

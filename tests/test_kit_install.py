@@ -1,28 +1,3 @@
-"""Tests for the portable kit's install entry point (basicly-wbsz.3).
-
-The installer writes into a file it does not own, so most of what matters here
-is what it does **not** do: it must not duplicate on a re-run, must not touch a
-hook the consumer wrote, and must not overwrite a settings file it cannot parse.
-Each of those is checked with a positive control in the same test — an installer
-that did nothing at all would satisfy every "leaves it alone" assertion on its
-own.
-
-The CLI is driven as a subprocess under ``-S -I`` and an environment built from
-empty, so the kit's no-basicly constraint is carried by the same harness that
-checks the behaviour rather than asserted separately.
-
-Paths are compared as ``Path`` objects or through ``as_posix()`` on both sides,
-never against a literal POSIX string, so the suite means the same thing on the
-two platforms CI runs that this one is not.
-
-**Every project-scope test installs into a repository that contains the kit**
-(the ``consumer`` fixture), because that is the only arrangement a consumer ever
-has: ``basicly install`` copies the kit into the repo it manages. Running the
-installer out of basicly's own checkout while writing settings into an unrelated
-``tmp_path`` is what hid basicly-dukb — the hook was never inside the root, so no
-test could observe how the repository's own committed file gets addressed.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -45,7 +20,6 @@ HOOK = KIT_DIR / "claude_tier_hook.py"
 
 
 def _load(path: Path, suffix: str = "") -> ModuleType:
-    """Load a kit file by path, the way a consumer who copied it would."""
     name = f"kit_{path.stem}_under_test{suffix}"
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
@@ -60,11 +34,7 @@ kit = _load(INSTALLER)
 
 @pytest.fixture
 def consumer(tmp_path: Path) -> Path:
-    """A repository shaped like a consumer's, with the kit copied inside it.
 
-    Both kit files, at the path ``basicly install`` puts them, so the installer
-    can name the hook relative to the repository it is writing into.
-    """
     kit_dir = tmp_path / KIT_RELATIVE_DIR
     kit_dir.mkdir(parents=True)
     for source in (INSTALLER, HOOK):
@@ -73,7 +43,6 @@ def consumer(tmp_path: Path) -> Path:
 
 
 def _installer_in(repo: Path) -> ModuleType:
-    """The installer as it sits inside *repo*, not as it sits in this checkout."""
     return _load(repo / KIT_RELATIVE_DIR / INSTALLER.name, suffix=f"_{repo.name}")
 
 
@@ -89,11 +58,7 @@ def _our_groups(settings: dict) -> list:
     return [g for g in _groups(settings) if kit._runs_our_hook(g)]
 
 
-# --- the constraint -----------------------------------------------------------
-
-
 def test_the_installer_imports_nothing_but_the_standard_library() -> None:
-    """A third-party or basicly import would break the kit in a consumer repo."""
     tree = ast.parse(INSTALLER.read_text(encoding="utf-8"))
     imported: set[str] = set()
     for node in ast.walk(tree):
@@ -108,11 +73,7 @@ def test_the_installer_imports_nothing_but_the_standard_library() -> None:
     assert imported <= set(sys.stdlib_module_names), sorted(imported - set(sys.stdlib_module_names))
 
 
-# --- what it writes -----------------------------------------------------------
-
-
 def test_installing_writes_a_pretooluse_hook_matching_the_agent_tool(consumer: Path) -> None:
-    """The acceptance criterion: it installs where the host actually loads it from."""
     installed, lines = _installer_in(consumer).install(
         ["claude"], consumer, user=False, dry_run=False
     )
@@ -125,14 +86,7 @@ def test_installing_writes_a_pretooluse_hook_matching_the_agent_tool(consumer: P
 
 
 def test_the_project_scope_command_carries_no_absolute_path_at_all(consumer: Path) -> None:
-    """The bug (basicly-dukb): this file is committed, so an absolute path leaks a username.
 
-    The earlier version of this test asserted the opposite, justified by "a
-    relative path breaks the moment a spawn happens in a subdirectory". That
-    rationale is true, and it was never an argument for an *absolute* path: the
-    host substitutes ``${CLAUDE_PROJECT_DIR}`` itself, which is neither absolute
-    nor dependent on the directory the spawn happened in.
-    """
     _installer_in(consumer).install(["claude"], consumer, user=False, dry_run=False)
 
     command = _our_groups(_settings(consumer))[0]["hooks"][0]["command"]
@@ -140,8 +94,6 @@ def test_the_project_scope_command_carries_no_absolute_path_at_all(consumer: Pat
     assert consumer.resolve().as_posix() not in command, "leaks the repository location"
     assert Path(sys.executable).as_posix() not in command, "leaks the interpreter location"
     assert "\\" not in command
-    # Positive control: naming neither absolute path only means something if the
-    # command still names the hook and something that can run it.
     assert (KIT_RELATIVE_DIR / HOOK.name).as_posix() in command
     assert command.startswith("uv run ")
 
@@ -149,11 +101,7 @@ def test_the_project_scope_command_carries_no_absolute_path_at_all(consumer: Pat
 def test_the_project_scope_command_does_not_depend_on_the_working_directory(
     consumer: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The property the absolute rendering was reaching for, kept without an absolute path.
 
-    Rendered from a subdirectory, the command has to come out identical — the
-    repository root is the anchor, not wherever the installer happened to run.
-    """
     kit_local = _installer_in(consumer)
     hook = consumer / KIT_RELATIVE_DIR / HOOK.name
     subdirectory = consumer / "docs"
@@ -171,11 +119,7 @@ def test_the_project_scope_command_does_not_depend_on_the_working_directory(
 def test_the_user_scope_command_stays_absolute(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The other half of the AC: that file is machine-local, so absolute is correct there.
 
-    It also needs nothing on ``PATH`` — the interpreter that ran the installer is
-    named outright.
-    """
     configured = tmp_path / "dictated-config"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(configured))
 
@@ -190,19 +134,16 @@ def test_the_user_scope_command_stays_absolute(
 
 
 def test_a_project_scope_install_refuses_a_hook_outside_the_repository(tmp_path: Path) -> None:
-    """Fail closed: falling back to the absolute rendering would reinstate the bug."""
     outside = tmp_path / "not-the-repo"
     outside.mkdir()
 
     with pytest.raises(ValueError, match="outside"):
         kit.hook_command(HOOK, root=outside)
 
-    # Positive control: the same call succeeds once the hook is under the root.
     assert kit.hook_command(HOOK, root=REPO_ROOT)
 
 
 def test_an_interpreter_override_is_written_for_a_consumer_without_uv(consumer: Path) -> None:
-    """The kit must stay usable with no basicly and no uv, which is why this exists."""
     kit_local = _installer_in(consumer)
 
     kit_local.install(["claude"], consumer, user=False, dry_run=False, interpreter="py -3")
@@ -214,7 +155,6 @@ def test_an_interpreter_override_is_written_for_a_consumer_without_uv(consumer: 
 
 
 def test_the_report_names_the_host_and_the_file_it_wrote(consumer: Path) -> None:
-    """Reports which host it configured and what it wrote, verbatim from the AC."""
     _, lines = _installer_in(consumer).install(["claude"], consumer, user=False, dry_run=False)
 
     joined = "\n".join(lines)
@@ -222,22 +162,13 @@ def test_the_report_names_the_host_and_the_file_it_wrote(consumer: Path) -> None
     assert (consumer / ".claude" / "settings.json").as_posix() in joined.replace("\\", "/")
 
 
-# --- the restart the write requires -------------------------------------------
-
-
 def _restated(lines: list[str]) -> bool:
-    """Whether the report tells the reader to quit and relaunch the host.
 
-    Keyed on the two words the acceptance criterion is about rather than on the
-    constant, so a notice reworded into something that no longer says it fails
-    here instead of passing on an identity comparison.
-    """
     joined = "\n".join(lines).lower()
     return "quit" in joined and "relaunch" in joined
 
 
 def test_a_run_that_writes_says_the_host_must_be_quit_and_relaunched(consumer: Path) -> None:
-    """The hook is read at process start, so the success line is where the reader is."""
     _, lines = _installer_in(consumer).install(["claude"], consumer, user=False, dry_run=False)
 
     assert _restated(lines)
@@ -245,7 +176,6 @@ def test_a_run_that_writes_says_the_host_must_be_quit_and_relaunched(consumer: P
 
 
 def test_a_dry_run_does_not_ask_for_a_restart_it_changed_nothing(consumer: Path) -> None:
-    """Nothing was written, so there is nothing a restart would pick up."""
     _, lines = _installer_in(consumer).install(["claude"], consumer, user=False, dry_run=True)
 
     assert not _restated(lines)
@@ -253,7 +183,6 @@ def test_a_dry_run_does_not_ask_for_a_restart_it_changed_nothing(consumer: Path)
 
 
 def test_an_already_installed_run_does_not_ask_for_a_restart(consumer: Path) -> None:
-    """A converge run leaves the settings byte-identical; restarting would be noise."""
     kit_local = _installer_in(consumer)
     _, first = kit_local.install(["claude"], consumer, user=False, dry_run=False)
 
@@ -264,25 +193,19 @@ def test_an_already_installed_run_does_not_ask_for_a_restart(consumer: Path) -> 
 
 
 def test_a_host_that_installs_nothing_does_not_ask_for_a_restart(tmp_path: Path) -> None:
-    """A decline changed no file, so the notice would be advice for a non-event."""
     _, lines = kit.install(["copilot"], tmp_path, user=False, dry_run=False)
 
     assert not _restated(lines)
 
 
 def test_the_restart_notice_is_reported_once_for_the_whole_run(consumer: Path) -> None:
-    """It is the reader's next step, not a per-host fact to repeat."""
     _, lines = _installer_in(consumer).install(list(kit.HOSTS), consumer, user=False, dry_run=False)
 
     assert _restated(lines)
     assert [line for line in lines if line == kit.RESTART_NOTICE] == [kit.RESTART_NOTICE]
 
 
-# --- converging rather than duplicating ---------------------------------------
-
-
 def test_a_second_run_converges_without_duplicating_the_hook(consumer: Path) -> None:
-    """Re-running an installer is the normal case, not the exceptional one."""
     kit_local = _installer_in(consumer)
     kit_local.install(["claude"], consumer, user=False, dry_run=False)
     first = _settings(consumer)
@@ -296,7 +219,6 @@ def test_a_second_run_converges_without_duplicating_the_hook(consumer: Path) -> 
 
 
 def test_a_stale_entry_is_replaced_rather_than_raced(consumer: Path) -> None:
-    """An entry left by an older kit must leave one hook behind, not two that disagree."""
     old_command = '"/old/python" "/old/claude_tier_hook.py"'
     stale = {
         "hooks": {
@@ -320,7 +242,6 @@ def test_a_stale_entry_is_replaced_rather_than_raced(consumer: Path) -> None:
 
 
 def test_hooks_the_consumer_wrote_are_left_untouched(consumer: Path) -> None:
-    """Matched by the script they run, never by position in the list."""
     theirs = {
         "matcher": "Bash",
         "hooks": [{"type": "command", "command": "python their_own_guard.py"}],
@@ -339,13 +260,9 @@ def test_hooks_the_consumer_wrote_are_left_untouched(consumer: Path) -> None:
     assert len(_our_groups(after)) == 1, "positive control: ours was installed alongside theirs"
 
 
-# --- scope --------------------------------------------------------------------
-
-
 def test_the_user_scope_writes_the_configured_config_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Dictated rather than discovered, so the path is one answer on every platform."""
     configured = tmp_path / "dictated-config"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(configured))
 
@@ -356,7 +273,6 @@ def test_the_user_scope_writes_the_configured_config_directory(
 def test_the_user_scope_falls_back_to_the_home_config_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The default a consumer gets when they dictate nothing."""
     home = tmp_path / "fake-home"
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
@@ -367,7 +283,6 @@ def test_the_user_scope_falls_back_to_the_home_config_directory(
 def test_installing_at_user_scope_writes_only_there(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The wider scope must not also write into the repository, or uninstall lies."""
     configured = tmp_path / "dictated-config"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(configured))
 
@@ -379,11 +294,7 @@ def test_installing_at_user_scope_writes_only_there(
     assert not (tmp_path / ".claude").exists()
 
 
-# --- a host that cannot intercept ---------------------------------------------
-
-
 def test_copilot_installs_nothing_and_says_why(tmp_path: Path) -> None:
-    """The AC clause: it must not report success for a hook that will never fire."""
     installed, lines = kit.install(["copilot"], tmp_path, user=False, dry_run=False)
 
     assert not installed
@@ -395,7 +306,6 @@ def test_copilot_installs_nothing_and_says_why(tmp_path: Path) -> None:
 
 
 def test_every_known_host_is_reported_even_when_only_one_installs(consumer: Path) -> None:
-    """A silent omission would read as "copilot was fine", which is the failure."""
     installed, lines = _installer_in(consumer).install(
         list(kit.HOSTS), consumer, user=False, dry_run=False
     )
@@ -406,16 +316,12 @@ def test_every_known_host_is_reported_even_when_only_one_installs(consumer: Path
         assert host in joined
 
 
-# --- refusing rather than clobbering ------------------------------------------
-
-
 @pytest.mark.parametrize(
     "content", ["{not json", '"a string"', "[1, 2]"], ids=["malformed", "scalar", "array"]
 )
 def test_settings_that_cannot_be_parsed_are_refused_never_overwritten(
     content: str, consumer: Path
 ) -> None:
-    """It is the consumer's file; a mangled one is worse than an uninstalled hook."""
     path = consumer / ".claude" / "settings.json"
     path.parent.mkdir(parents=True)
     path.write_text(content, encoding="utf-8")
@@ -427,7 +333,6 @@ def test_settings_that_cannot_be_parsed_are_refused_never_overwritten(
 
 
 def test_an_empty_settings_file_is_installed_into_rather_than_refused(consumer: Path) -> None:
-    """Positive control for the refusal above: empty is not the same as unparseable."""
     path = consumer / ".claude" / "settings.json"
     path.parent.mkdir(parents=True)
     path.write_text("   \n", encoding="utf-8")
@@ -439,7 +344,6 @@ def test_an_empty_settings_file_is_installed_into_rather_than_refused(consumer: 
 
 
 def test_a_dry_run_reports_the_write_without_making_it(consumer: Path) -> None:
-    """The safe way to see what the wider scope would do before choosing it."""
     installed, lines = _installer_in(consumer).install(
         ["claude"], consumer, user=False, dry_run=True
     )
@@ -450,7 +354,6 @@ def test_a_dry_run_reports_the_write_without_making_it(consumer: Path) -> None:
 
 
 def test_a_missing_hook_script_is_reported_rather_than_installed(consumer: Path) -> None:
-    """A half-copied kit must not leave a settings entry pointing at nothing."""
     kit_local = _installer_in(consumer)
     (consumer / KIT_RELATIVE_DIR / HOOK.name).unlink()
 
@@ -461,11 +364,7 @@ def test_a_missing_hook_script_is_reported_rather_than_installed(consumer: Path)
     assert not (consumer / ".claude").exists()
 
 
-# --- the command line, with no basicly ----------------------------------------
-
-
 def _pruned_env(tmp_path: Path, extra: dict[str, str] | None = None) -> dict[str, str]:
-    """An environment with no basicly on PATH and nothing pointing at this repo."""
     empty = tmp_path / "empty-path-dir"
     empty.mkdir(exist_ok=True)
     home = tmp_path / "scratch-home"
@@ -481,7 +380,6 @@ def _pruned_env(tmp_path: Path, extra: dict[str, str] | None = None) -> dict[str
 
 
 def _run(args: list[str], repo: Path) -> subprocess.CompletedProcess[str]:
-    """Drive the installer that sits inside *repo*, from *repo*, with no basicly."""
     installer = repo / KIT_RELATIVE_DIR / INSTALLER.name
     return subprocess.run(
         [sys.executable, "-S", "-I", str(installer), *args],
@@ -494,7 +392,6 @@ def _run(args: list[str], repo: Path) -> subprocess.CompletedProcess[str]:
 
 
 def test_the_command_line_installs_from_a_consumer_shaped_interpreter(consumer: Path) -> None:
-    """The whole entry point, with basicly neither importable nor on PATH."""
     result = _run(["--host", "claude"], repo=consumer)
 
     assert result.returncode == 0, result.stderr
@@ -503,12 +400,7 @@ def test_the_command_line_installs_from_a_consumer_shaped_interpreter(consumer: 
 
 
 def test_the_command_line_writes_a_committable_command(consumer: Path) -> None:
-    """End to end, through the real entry point: nothing machine-specific reaches the file.
 
-    The unit-level test above can only see what ``hook_command`` returns. This one
-    reads the file a consumer would actually commit, which is where basicly-dukb
-    was found in the first place.
-    """
     assert _run(["--host", "claude"], repo=consumer).returncode == 0
 
     written = (consumer / ".claude" / "settings.json").read_text(encoding="utf-8")
@@ -518,17 +410,14 @@ def test_the_command_line_writes_a_committable_command(consumer: Path) -> None:
 
 
 def test_the_command_line_exits_non_zero_when_nothing_was_installed(consumer: Path) -> None:
-    """A script must be able to branch on it without parsing the report."""
     declined = _run(["--host", "copilot"], repo=consumer)
     assert declined.returncode == 1, declined.stdout
     assert "nothing installed" in declined.stdout
 
-    # Positive control: the same command line for the host that can intercept.
     assert _run(["--host", "claude"], repo=consumer).returncode == 0
 
 
 def test_the_command_line_refuses_unparseable_settings_with_a_reason(consumer: Path) -> None:
-    """Refusal has to reach stderr and the exit status, not just an exception."""
     path = consumer / ".claude" / "settings.json"
     path.parent.mkdir(parents=True)
     path.write_text("{not json", encoding="utf-8")
@@ -543,7 +432,6 @@ def test_the_command_line_refuses_unparseable_settings_with_a_reason(consumer: P
 def test_the_command_line_prints_the_restart_requirement_only_when_it_wrote(
     consumer: Path,
 ) -> None:
-    """Through the real entry point, which is the surface a consumer actually reads."""
     wrote = _run(["--host", "claude"], repo=consumer)
     assert wrote.returncode == 0, wrote.stderr
     assert _restated([wrote.stdout])

@@ -1,20 +1,3 @@
-"""The comments kit as a command: report prose comments, or remove them on request.
-
-Three subcommands and no others. ``check`` names every prose comment and exits 1 when it
-found one, which is what a CI step and a commit hook read. ``fix`` rewrites the files and
-exits 0. ``languages`` prints what the kit claims, so a consumer can tell an unsupported
-file from a clean one.
-
-**A check never writes and a fix never writes a file it could not prove.** The two are
-separate subcommands rather than a flag pair because a strip that runs by accident is the
-failure mode that costs a working tree.
-
-The walk is its own, not git's: kit rules forbid a subprocess, so the roots are walked
-directly and the directories below are skipped by name. That means an ignored file is
-visited unless its directory is on the list, which is why the list carries the vendor
-directories rather than only the version-control ones.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -49,7 +32,6 @@ SKIPPED_DIRECTORIES = frozenset({
 
 
 def _load(file_name: str, module_name: str):
-    """Load a sibling kit module by path, under the kit's fixed ``sys.modules`` name."""
     cached = sys.modules.get(module_name)
     if cached is not None:
         return cached
@@ -68,7 +50,6 @@ strip = _load("strip.py", "basicly_comments_kit_strip")
 
 
 def covered_files(roots, skipped) -> list:
-    """Every file under *roots* whose language this kit claims, in a stable order."""
     found = []
     for root in roots:
         path = Path(root)
@@ -86,7 +67,6 @@ def covered_files(roots, skipped) -> list:
 
 
 def check(paths, stream) -> int:
-    """Report every prose comment; 1 where any was found, 2 where a file could not be read."""
     found = unreadable = 0
     for path in paths:
         try:
@@ -105,7 +85,6 @@ def check(paths, stream) -> int:
 
 
 def fix(paths, stream) -> int:
-    """Rewrite each file without its prose comments; 2 where any file refused its own proof."""
     changed = refused = 0
     for path in paths:
         try:
@@ -123,13 +102,11 @@ def fix(paths, stream) -> int:
 
 
 def _one_line(text: str) -> str:
-    """*text* as a single short line, so a multi-line docstring does not flood a report."""
     first = text.strip().split("\n")[0]
     return first if len(first) <= 88 else first[:85] + "..."
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """The command surface, kept to three verbs."""
     parser = argparse.ArgumentParser(
         prog="basicly-comments",
         description="Refuse prose comments in code, and remove them when asked.",
@@ -153,7 +130,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    """Exit 0 clean, 1 where prose was found by `check`, 2 where a file could not be read."""
     args = build_parser().parse_args(argv)
     if args.command == "languages":
         for suffix in languages.covered_suffixes():

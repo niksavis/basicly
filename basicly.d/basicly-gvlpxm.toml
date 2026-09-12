@@ -50,5 +50,4 @@
 rebaseline_reason = "test_handoff.py: the four acceptance criteria name four demonstrations and the suite had 0 tokens of headroom; the only extraction available is the _cut_violation seam move into artifact_record, which basicly-pp7q4i deferred to a record that owns it and which this record's scope does not include. merge.py: the landing must report the head it took, and the only cheaper site for that value is a second ref read after the merge, which reintroduces the staleness it fixes"
 
 [ratchet.module_size.rebaselined]
-"tests/test_handoff.py" = 990
 "src/basicly/merge.py" = 79

@@ -1,23 +1,3 @@
-"""The `.importlinter` gate must discriminate, not merely report.
-
-`.importlinter` used to declare one contract forbidding `basicly.fragments` and
-`basicly.targets`. Neither module existed and neither structurally could — fragments
-and targets are YAML under `.basicly/core/`, never Python under `src/basicly/` — so
-`lint-imports` reported `1 kept, 0 broken` over the whole tree forever while running
-on every commit in this repo and in every consumer repo (`basicly-tcmy.2`).
-
-These tests are the control pair the old contract could never have passed: the same
-staged copy of the package is checked unchanged (kept) and again with one upward
-import injected (broken, naming both modules). A contract that cannot fail fails
-these, so the gate's own gate is a gate.
-
-The last test is the other half of the same worry, one level down: a contract holds a
-*tier*, and a tier can be renumbered by someone who never reads the reason it was drawn
-there. So the one edge C11 forbids by name - the board producer importing `supervise`,
-which unit F would close into a cycle - is asserted against the module text as well, and
-carries its reason with it.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -34,7 +14,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _lint_imports_binary() -> str:
-    """Resolve import-linter's console script for the interpreter running the tests."""
     found = shutil.which("lint-imports", path=sysconfig.get_path("scripts"))
     if found is None:  # pragma: no cover - a dev-group install always provides it
         pytest.skip("lint-imports is not installed in this environment")
@@ -42,12 +21,7 @@ def _lint_imports_binary() -> str:
 
 
 def _stage_package(tmp_path: Path) -> Path:
-    """Copy the engine source and the real `.importlinter` into an isolated root.
 
-    The checks run against this copy rather than the working tree so a test can
-    inject a violation without touching `src/`. `PYTHONPATH` puts the copy ahead of
-    the editable install's `.pth` entry, so grimp resolves `basicly` to the copy.
-    """
     root = tmp_path / "staged"
     root.mkdir()
     shutil.copytree(REPO_ROOT / "src" / "basicly", root / "basicly")
@@ -72,12 +46,10 @@ def _append_import(module: Path, statement: str) -> None:
 
 
 def _import_upward_across_engine_tiers(root: Path) -> None:
-    """`verify` sits well below `loop`; importing it is the archetypal violation."""
     _append_import(root / "basicly" / "verify.py", "from basicly import loop")
 
 
 def _import_sideways_between_renderers(root: Path) -> None:
-    """Per-target renderers are declared independent of one another."""
     _append_import(
         root / "basicly" / "renderers" / "copilot.py",
         "from basicly.renderers import claude",
@@ -85,23 +57,15 @@ def _import_sideways_between_renderers(root: Path) -> None:
 
 
 def _add_undeclared_module(root: Path) -> None:
-    """`exhaustive = True` is what stops a new module from escaping the tiers."""
     (root / "basicly" / "ghost.py").write_text('"""Undeclared."""\n', encoding="utf-8")
 
 
 def _action_surface_reads_engine_state(root: Path) -> None:
-    """The board's action surface reaching `policy`, which mints the confirm code it may not read.
 
-    The edge that would defeat the anti-autopilot gate rather than break a tier: `policy` is
-    *below* `board_actions`, so layering permits the import and only the forbidden contract
-    refuses it - through `policy -> tracker`, which the chain in the report names
-    (basicly-rn0o.6).
-    """
     _append_import(root / "basicly" / "board_actions.py", "from basicly import policy")
 
 
 def test_contracts_pass_on_the_unchanged_package(tmp_path: Path) -> None:
-    """The positive control: the staged copy is exactly what the repo ships."""
     result = _run_lint_imports(_stage_package(tmp_path))
 
     output = result.stdout + result.stderr
@@ -140,7 +104,6 @@ def test_contracts_pass_on_the_unchanged_package(tmp_path: Path) -> None:
 def test_contracts_break_on_a_real_violation(
     tmp_path: Path, mutate: Callable[[Path], None], expected: tuple[str, ...]
 ) -> None:
-    """The negative control: each violation is reported, naming the modules involved."""
     root = _stage_package(tmp_path)
     mutate(root)
 
@@ -154,15 +117,7 @@ def test_contracts_break_on_a_real_violation(
 
 @pytest.mark.parametrize("module", ["board_snapshot", "board_fields"])
 def test_the_board_producer_does_not_import_supervise(module: str) -> None:
-    """C11's one named edge, read off the source rather than off the tier stack.
 
-    Unit F has `supervise` import the producer, so the reverse edge closes
-    `supervise -> board_snapshot -> supervise`. That cycle is why the live-lock facts and
-    the lane facts are arguments the caller supplies rather than reads this module makes.
-
-    The first assertion is the positive control: it fails if no import was read at all, so a
-    green result is the absence of the edge and not the absence of a probe.
-    """
     source = REPO_ROOT / "src" / "basicly" / f"{module}.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
     imported = set()

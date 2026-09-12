@@ -71,13 +71,5 @@ base_commit = "1b06dd7f72c7cf9f5981d73cc45055847266b7b6"
 
 [ratchet.module_size]
 count_delta = 1
-
-[ratchet.comment_density]
-count_delta = 1
-
-# One added `# noqa: S603` on the `git merge-base --is-ancestor` read. `src/` has flake8-
-# bandit adopted, and the alternative to the suppression is validating an argv this module
-# builds itself. `shutil.which` resolves the binary, so S607 needs no entry - an unfindable
-# git is one of the answers this read has to give anyway.
 [ratchet.noqa_debt.frozen]
 S603 = 1

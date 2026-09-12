@@ -1,5 +1,3 @@
-"""Tests for the fragment and target loader."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,13 +11,11 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _wf(path: Path, front: str, body: str = "body") -> None:
-    """Write a fragment YAML source: front matter fields + a body block scalar."""
     block = "\n".join(["body: |"] + [f"  {ln}" if ln else "" for ln in body.split("\n")])
     path.write_text(front.rstrip("\n") + "\n" + block + "\n", encoding="utf-8")
 
 
 def test_load_fragments() -> None:
-    """All fixture fragments are loaded with correct ids."""
     fragments = load_fragments(FIXTURES, {"claude", "copilot"})
     ids = {f.id for f in fragments}
     assert ids == {
@@ -32,7 +28,6 @@ def test_load_fragments() -> None:
 
 
 def test_fragment_fields() -> None:
-    """Scoped and unscoped fragments are parsed correctly."""
     fragments = load_fragments(FIXTURES, {"claude", "copilot"})
     by_id = {f.id: f for f in fragments}
     assert by_id["python-style"].is_scoped is True
@@ -41,14 +36,12 @@ def test_fragment_fields() -> None:
 
 
 def test_missing_required_field(tmp_path: Path) -> None:
-    """A fragment missing required fields raises ValidationError."""
     _wf(tmp_path / "bad.fragment.yaml", "id: bad")
     with pytest.raises(ValidationError):
         load_fragments(tmp_path, {"claude"})
 
 
 def test_unknown_category(tmp_path: Path) -> None:
-    """An unknown category value raises ValidationError."""
     _wf(
         tmp_path / "bad.fragment.yaml",
         "id: bad\ndescription: x\ncategory: not-a-category\napplies_to: [all]",
@@ -58,7 +51,6 @@ def test_unknown_category(tmp_path: Path) -> None:
 
 
 def test_quirks_category_loads(tmp_path: Path) -> None:
-    """The incident-derived quirks category is a valid fragment category."""
     _wf(
         tmp_path / "quirks.fragment.yaml",
         "id: quirks\ndescription: x\ncategory: quirks\napplies_to: [all]",
@@ -68,7 +60,6 @@ def test_quirks_category_loads(tmp_path: Path) -> None:
 
 
 def test_unknown_target_in_applies_to(tmp_path: Path) -> None:
-    """An applies_to value that is not a registered target raises ValidationError."""
     _wf(
         tmp_path / "bad.fragment.yaml",
         "id: bad\ndescription: x\ncategory: project\napplies_to: [unknown]",
@@ -80,11 +71,7 @@ def test_unknown_target_in_applies_to(tmp_path: Path) -> None:
 def test_the_unknown_target_error_names_the_set_and_the_field_that_wanted_it(
     tmp_path: Path,
 ) -> None:
-    """`applies_to` reads as "which contexts" and means "which rendering target".
 
-    A consumer authored six routing words there, passed the shipped JSON schema, and
-    met the refusal only inside `build` with nothing in the message to act on.
-    """
     _wf(
         tmp_path / "bad.fragment.yaml",
         "id: bad\ndescription: x\ncategory: project\napplies_to: [rules]",
@@ -98,14 +85,12 @@ def test_the_unknown_target_error_names_the_set_and_the_field_that_wanted_it(
 
 
 def test_load_targets() -> None:
-    """All fixture target registries are loaded."""
     targets = load_targets(FIXTURES / "targets")
     names = {t.name for t in targets}
     assert names == {"claude", "copilot"}
 
 
 def test_extension_fields_default_to_safe_values() -> None:
-    """Fragments without extension fields get safe defaults."""
     fragments = load_fragments(FIXTURES, {"claude", "copilot"})
     by_id = {f.id: f for f in fragments}
     fragment = by_id["python-style"]
@@ -116,7 +101,6 @@ def test_extension_fields_default_to_safe_values() -> None:
 
 
 def test_extension_fields_are_parsed(tmp_path: Path) -> None:
-    """Extension fields are loaded when present."""
     _wf(
         tmp_path / "core.fragment.yaml",
         "id: python-style\ndescription: Core style\ncategory: code-style\napplies_to: [all]",
@@ -137,14 +121,12 @@ def test_extension_fields_are_parsed(tmp_path: Path) -> None:
 
 
 def test_enforced_by_defaults_to_empty() -> None:
-    """Fragments without enforced_by get an empty list."""
     fragments = load_fragments(FIXTURES, {"claude", "copilot"})
     by_id = {f.id: f for f in fragments}
     assert by_id["python-style"].enforced_by == []
 
 
 def test_enforced_by_is_parsed(tmp_path: Path) -> None:
-    """The enforced_by field is loaded when present."""
     _wf(
         tmp_path / "styled.fragment.yaml",
         "id: styled\ndescription: x\ncategory: code-style\napplies_to: [all]\n"
@@ -156,7 +138,6 @@ def test_enforced_by_is_parsed(tmp_path: Path) -> None:
 
 
 def test_enforced_by_must_be_string_list(tmp_path: Path) -> None:
-    """A non-list enforced_by value raises ValidationError."""
     _wf(
         tmp_path / "bad.fragment.yaml",
         "id: bad\ndescription: x\ncategory: project\napplies_to: [all]\nenforced_by: ruff",
@@ -166,7 +147,6 @@ def test_enforced_by_must_be_string_list(tmp_path: Path) -> None:
 
 
 def test_invalid_source_value(tmp_path: Path) -> None:
-    """An invalid source value raises ValidationError."""
     _wf(
         tmp_path / "bad.fragment.yaml",
         "id: bad\ndescription: x\ncategory: project\napplies_to: [all]\nsource: invalid",
@@ -176,7 +156,6 @@ def test_invalid_source_value(tmp_path: Path) -> None:
 
 
 def test_replaces_must_be_string_list(tmp_path: Path) -> None:
-    """A non-list replaces value raises ValidationError."""
     _wf(
         tmp_path / "bad.fragment.yaml",
         "id: bad\ndescription: x\ncategory: project\napplies_to: [all]\nreplaces: not-a-list",
@@ -186,7 +165,6 @@ def test_replaces_must_be_string_list(tmp_path: Path) -> None:
 
 
 def test_load_from_core_and_overlay_roots(tmp_path: Path) -> None:
-    """Fragments from multiple roots are loaded with inferred source values."""
     core_root = tmp_path / ".basicly" / "core" / "fragments"
     overlay_root = tmp_path / ".basicly-local" / "fragments"
     core_root.mkdir(parents=True)
@@ -214,16 +192,7 @@ def test_load_from_core_and_overlay_roots(tmp_path: Path) -> None:
 
 
 def test_source_inference_ignores_a_user_component_in_the_checkout_path(tmp_path: Path) -> None:
-    """A checkout under a directory named `user` still loads its fragments as core.
 
-    Regression (basicly-n6uu): inference folded every component of the absolute
-    path, so a home directory named `user` (or `/Users/user`, or `/srv/User`)
-    made every fragment loaded without a source hint an overlay. Overlay
-    provenance downgrades an unknown `replaces` from an error to a warning and
-    lets `planner._apply_user_replacements` drop the named core fragment — so a
-    core rule would vanish from every agent's projected guidance, silently, and
-    only on machines whose path happened to spell it.
-    """
     root = tmp_path / "home" / "user" / "checkout" / ".basicly" / "fragments"
     root.mkdir(parents=True)
     _wf(
@@ -237,11 +206,7 @@ def test_source_inference_ignores_a_user_component_in_the_checkout_path(tmp_path
 
 
 def test_source_inference_reads_the_legacy_user_subdir_of_a_root(tmp_path: Path) -> None:
-    """The pre-migration overlay location — `user/` *inside* a root — still infers user.
 
-    `install` migrates `.basicly/fragments/user/` into the overlay, but a repo
-    that has not run it yet loads that root with no hint (cli._fragment_roots).
-    """
     root = tmp_path / "user" / ".basicly" / "fragments"
     (root / "user").mkdir(parents=True)
     _wf(
@@ -255,7 +220,6 @@ def test_source_inference_reads_the_legacy_user_subdir_of_a_root(tmp_path: Path)
 
 
 def test_source_inference_reads_the_overlay_marker_root(tmp_path: Path) -> None:
-    """A root under the declared `.basicly-local` overlay infers user without a hint."""
     root = tmp_path / "user" / ".basicly-local" / "fragments"
     root.mkdir(parents=True)
     _wf(
@@ -269,7 +233,6 @@ def test_source_inference_reads_the_overlay_marker_root(tmp_path: Path) -> None:
 
 
 def test_replaces_missing_override_is_rejected(tmp_path: Path) -> None:
-    """A fragment that lists replaces without override: true is a hard error."""
     _wf(
         tmp_path / "core.fragment.yaml",
         "id: base\ndescription: x\ncategory: project\napplies_to: [all]",
@@ -286,11 +249,7 @@ def test_replaces_missing_override_is_rejected(tmp_path: Path) -> None:
 def test_user_replaces_of_a_removed_core_id_warns_and_loads(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An overlay replacing an id a core upgrade removed degrades to a warning.
 
-    A hard error here would brick every basicly command in the consumer repo
-    after the upgrade; the replace is ignored instead and named in stderr.
-    """
     _wf(
         tmp_path / "user.fragment.yaml",
         "id: repl\ndescription: x\ncategory: project\napplies_to: [all]\n"
@@ -303,7 +262,6 @@ def test_user_replaces_of_a_removed_core_id_warns_and_loads(
 
 
 def test_core_replaces_unknown_target_is_rejected(tmp_path: Path) -> None:
-    """A core fragment replacing an unknown id is still a hard authoring error."""
     _wf(
         tmp_path / "core.fragment.yaml",
         "id: repl\ndescription: x\ncategory: project\napplies_to: [all]\n"
@@ -314,7 +272,6 @@ def test_core_replaces_unknown_target_is_rejected(tmp_path: Path) -> None:
 
 
 def test_source_newer_schema_version_is_rejected(tmp_path: Path) -> None:
-    """A source authored for a newer schema fails loudly instead of misreading."""
     _wf(
         tmp_path / "future.fragment.yaml",
         "schema_version: 99\nid: fut\ndescription: x\ncategory: project\napplies_to: [all]",
@@ -324,7 +281,6 @@ def test_source_newer_schema_version_is_rejected(tmp_path: Path) -> None:
 
 
 def test_mutual_user_replace_is_rejected(tmp_path: Path) -> None:
-    """Two user fragments replacing each other is a hard error."""
     _wf(
         tmp_path / "a.fragment.yaml",
         "id: frag-a\ndescription: x\ncategory: project\napplies_to: [all]\n"
@@ -340,7 +296,6 @@ def test_mutual_user_replace_is_rejected(tmp_path: Path) -> None:
 
 
 def test_valid_user_replace_of_core_is_accepted(tmp_path: Path) -> None:
-    """A well-formed user replacement of an existing core fragment loads cleanly."""
     _wf(
         tmp_path / "core.fragment.yaml",
         "id: base\ndescription: x\ncategory: project\napplies_to: [all]",
@@ -357,11 +312,7 @@ def test_valid_user_replace_of_core_is_accepted(tmp_path: Path) -> None:
 def test_legacy_md_fragment_warns_but_loads_yaml(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A leftover .fragment.md is surfaced loudly, never silently ignored.
 
-    Regression (basicly-v1y): consumer overlays written before the YAML source
-    migration were silently inert — on disk, absent from every projection.
-    """
     _wf(
         tmp_path / "kept.fragment.yaml",
         "id: kept\ndescription: x\ncategory: project\napplies_to: [all]",
@@ -372,7 +323,7 @@ def test_legacy_md_fragment_warns_but_loads_yaml(
 
     fragments = load_fragments(tmp_path, {"claude"})
 
-    assert {f.id for f in fragments} == {"kept"}  # md is not loaded...
+    assert {f.id for f in fragments} == {"kept"}
     err = capsys.readouterr().err
-    assert "old.fragment.md" in err  # ...but its presence is called out
+    assert "old.fragment.md" in err
     assert "catalog new fragment" in err

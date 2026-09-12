@@ -1,54 +1,3 @@
-"""Supervisor core: lock, session, recovery, and concurrent dispatch.
-
-Factory design D1/7.2: one deterministic supervisor process per repo owns the
-base checkout, the machine concurrency budget, and the single-writer usage
-files — so supervisor-ness itself must be a singleton. Part 1 (basicly-kjc5.5)
-built the lock, the session definition, and crash recovery. Part 2
-(basicly-kjc5.6) adds the concurrent dispatch layer on those primitives:
-
-- **Dispatch bundles are pure functions of ``br`` state at dispatch time**
-  (D6): each lane's prompt is assembled from the issue record the moment its
-  runner starts, folding in any ``[harness-info]`` found-info records other
-  lanes published since the work was planned. Nothing is ever injected into a
-  running lane.
-- **Concurrency honors the worktree cap**: ready lanes fan out over a bounded
-  thread pool, and the holder keeps heartbeating the singleton lock between
-  completions so a long dispatch pass is never declared stale.
-- **The usage meter** (D8) reads each run's final context occupancy from the
-  adapter and reports it against ``[policy.sizing] context_ceiling`` of the
-  runner's window. Observability, not a control (D23): the ceiling names both
-  numbers on the outcome and acts on neither.
-
-Outcome routing (green → merge-ready, block → decision queue) and standing
-merge-queue integration are part 3 (kjc5.7); ``basicly loop supervise`` runs
-one derivation + dispatch pass under the lock and reports the outcomes.
-
-A lane the pass **held** (green and committed, but landed after another lane's
-landing failed) is carried into the next pass as a landing-only outcome rather
-than dispatched again (basicly-kjc5.18): its runner already finished and
-committed, so a fresh implement-and-commit dispatch would pay for work that is
-on the branch. The carry lapses the moment the lane's own work needs changing —
-rework, a bounce, a retry — because that is when a dispatch is the right move.
-A pass also re-derives that set from git (``committed_lanes``), so a lane whose
-commits outlived the supervisor that made them lands after a crash rather than
-being built a second time (basicly-pjaudy).
-
-Three rules, all from the design:
-
-- **Lock** — ``.basicly/usage/supervisor.lock`` created with ``O_CREAT|O_EXCL``
-  (atomic, portable), carrying PID + session id + root issue. Liveness is the
-  file's **heartbeat mtime**, refreshed by the holder; a lock older than
-  :data:`STALE_AFTER_S` is a crashed holder and is taken over atomically — no
-  PID probing (avoids platform divergence and new dependencies).
-- **Session** — one supervisor run bound to one root issue, identified by the
-  session id in the lock file. Grant expiry (D3) and supervisor lifetime both
-  reference this definition.
-- **Recovery is derivation, not replay** — the supervisor keeps no side-state,
-  so a restart rebuilds everything from ``br``: children of the root issue with
-  a ``worktree:`` ``external_ref`` binding are re-adopted as in-flight lanes,
-  cross-checked against the live worktree session records.
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -106,24 +55,20 @@ from .working_set import (
 
 LOCK_FILE = Path(".basicly/usage/supervisor.lock")
 
-# Heartbeat cadence for the holder, and the staleness horizon for contenders.
-# Fixed semantics, not config: 4 missed beats = a crashed holder (design 7.2).
 HEARTBEAT_INTERVAL_S = 15.0
 STALE_AFTER_S = 60.0
 
 
 class LockHeldError(RuntimeError):
-    """Another supervisor holds (or just took over) the singleton lock."""
+    pass
 
 
 class LockLostError(RuntimeError):
-    """The holder's lock vanished — a contender declared it stale and took over."""
+    pass
 
 
 @dataclass(frozen=True)
 class LockInfo:
-    """The recorded holder of the supervisor lock, plus its heartbeat age."""
-
     pid: int | None
     session_id: str | None
     root_issue: str | None
@@ -131,21 +76,15 @@ class LockInfo:
 
 
 def new_session_id(root_issue: str) -> str:
-    """A fresh session id: the root issue plus a short random suffix."""
     return f"{root_issue}:{secrets.token_hex(4)}"
 
 
 def _now() -> float:
-    """Wall-clock seconds; indirection so tests can pin the clock."""
     return time.time()
 
 
 def read_holder(repo_root: Path) -> LockInfo | None:
-    """The current lock holder and heartbeat age, or None when no lock exists.
 
-    Best-effort on content: a corrupt payload still reports the heartbeat age
-    (staleness is mtime-only by design), with the identity fields None.
-    """
     path = repo_root / LOCK_FILE
     try:
         age = _now() - path.stat().st_mtime
@@ -167,22 +106,13 @@ def read_holder(repo_root: Path) -> LockInfo | None:
 
 
 def _create_lock(path: Path, payload: str) -> None:
-    """Create the lock file atomically; FileExistsError when someone else won."""
     fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(payload)
 
 
 def acquire(repo_root: Path, session_id: str, root_issue: str) -> Path:
-    """Acquire the singleton supervisor lock; raise :class:`LockHeldError` otherwise.
 
-    A fresh lock (heartbeat younger than :data:`STALE_AFTER_S`) refuses the
-    contender with the holder's identity. A stale lock is taken over
-    atomically: the contender renames it aside first — ``os.rename`` succeeds
-    for exactly one contender; every loser gets ``FileNotFoundError`` — then
-    re-creates it with ``O_CREAT|O_EXCL``, so two racing takeovers can never
-    both believe they own the repo.
-    """
     path = repo_root / LOCK_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     gitignore = path.parent / ".gitignore"
@@ -203,8 +133,6 @@ def acquire(repo_root: Path, session_id: str, root_issue: str) -> Path:
 
     holder = read_holder(repo_root)
     if holder is None:
-        # The holder released between our failed create and this read: the
-        # lock is free, not contested — try the plain create once more.
         try:
             _create_lock(path, payload)
         except FileExistsError as exc:
@@ -216,9 +144,6 @@ def acquire(repo_root: Path, session_id: str, root_issue: str) -> Path:
             f"supervisor {holder.session_id or 'unknown'} (pid {holder.pid or '?'}) holds the "
             f"lock, heartbeat {holder.age_s:.0f}s old (stale after {STALE_AFTER_S:.0f}s)"
         )
-    # Stale: steal it via the atomic rename. replace (not rename) so a
-    # tombstone abandoned by a crashed same-pid contender never blocks a
-    # takeover on Windows, where rename refuses an existing destination.
     tombstone = path.with_name(f"{path.name}.stale.{os.getpid()}")
     try:
         path.replace(tombstone)
@@ -233,15 +158,7 @@ def acquire(repo_root: Path, session_id: str, root_issue: str) -> Path:
 
 
 def heartbeat(lock_path: Path, session_id: str) -> None:
-    """Refresh the lock's liveness mtime; raise :class:`LockLostError` when not ours.
 
-    Ownership is fenced by content, not file existence: after a takeover the
-    path almost always holds the *successor's* lock (the rename-then-recreate
-    window is microseconds), so a stalled-then-resumed holder would otherwise
-    keep beating a lock it no longer owns — two live supervisors. A missing,
-    unreadable, or foreign-session lock all mean the same thing: this holder
-    was declared stale and must stop supervising immediately.
-    """
     try:
         data = json.loads(lock_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -252,16 +169,7 @@ def heartbeat(lock_path: Path, session_id: str) -> None:
 
 
 def release(lock_path: Path, session_id: str) -> None:
-    """Remove the lock if this session still owns it; never delete a successor's.
 
-    After a takeover the file belongs to the new holder, so ownership is
-    re-checked by content before unlinking. Missing or unreadable locks are
-    left alone — release is idempotent and never raises on a clean shutdown.
-    Accepted residual race: a takeover completing entirely between the read
-    and the unlink deletes the successor's lock; it requires the releasing
-    holder to already be past the staleness horizon, and the successor's next
-    heartbeat detects the loss and stands down (fail-safe, not fail-double).
-    """
     try:
         data = json.loads(lock_path.read_text(encoding="utf-8"))
     except OSError, json.JSONDecodeError:
@@ -270,21 +178,7 @@ def release(lock_path: Path, session_id: str) -> None:
         lock_path.unlink(missing_ok=True)
 
 
-# --- The board rides the beat (basicly-rn0o.7) --------------------------------
-
-
 class HeartbeatThread(threading.Thread):
-    """Background heartbeat so long phases never let the lock go stale.
-
-    Dispatch waits beat inline, but routing lands lanes through full verify
-    suites that easily exceed :data:`STALE_AFTER_S` — without a background
-    beat a contender would take the lock over mid-merge, the exact
-    two-supervisors state the lock exists to prevent (basicly-kjc5.7). A lost
-    lock is captured, not raised (threads cannot signal the main loop
-    directly); callers poll :meth:`check` between steps and pass it as the
-    ``beat`` callback so a takeover stops the pass promptly.
-    """
-
     def __init__(
         self,
         lock_path: Path,
@@ -294,12 +188,7 @@ class HeartbeatThread(threading.Thread):
         board: Callable[[float], object] | None = None,
         report: Callable[[str], None] | None = None,
     ) -> None:
-        """Bind the beater to one lock file and session; daemonized by default.
 
-        With *board* the beat also emits the wall's snapshot, taking the interval it beats
-        at so a caller that pinned one publishes the cadence it keeps; without it the thread
-        only beats. *report* takes the line a failed emission costs.
-        """
         super().__init__(name="supervisor-heartbeat", daemon=True)
         self._lock_path = lock_path
         self._session_id = session_id
@@ -310,7 +199,6 @@ class HeartbeatThread(threading.Thread):
         self.lost: LockLostError | None = None
 
     def run(self) -> None:
-        """Beat until stopped; capture (do not raise) a lost lock, then emit the board."""
         while not self._stopped.wait(self._interval):
             try:
                 heartbeat(self._lock_path, self._session_id)
@@ -320,17 +208,7 @@ class HeartbeatThread(threading.Thread):
             self._emit_board()
 
     def _emit_board(self) -> None:
-        """Ride this beat with a board snapshot; never let the board cost the pass.
 
-        After the beat, not before: the beat is what stops a contender taking the lock
-        mid-landing, so a slow producer must delay a display rather than that. The catch is
-        deliberately everything - narrowing it to what a fold is known to raise today makes
-        the next unknown one the thing that fails a landing.
-
-        The producer is the caller's rather than this module's: folding what the wall needs
-        takes `board_facts`, which sits above this tier, and a tick that folded on the lock
-        alone published 0 phases of 234 where `board --out` published 234 (basicly-bd4epr).
-        """
         if self._board is None:
             return
         try:
@@ -339,40 +217,25 @@ class HeartbeatThread(threading.Thread):
             _say(self._report, f"board:    snapshot not written - {exc}")
 
     def stop(self) -> None:
-        """Stop beating (idempotent); the holder is releasing or has lost the lock."""
         self._stopped.set()
 
     def check(self) -> None:
-        """Raise the captured :class:`LockLostError`, if the lock was taken over."""
         if self.lost is not None:
             raise self.lost
 
-
-# --- Operator stop: finish the round, then return (basicly-o40x) -------------
 
 STOP_FILE = Path(".basicly/usage/supervisor.stop")
 
 
 @dataclass(frozen=True)
 class StopRequest:
-    """An operator's request that the supervisor finish its round and return."""
-
     root_issue: str
     requested_by: str
     reason: str
 
 
 def request_stop(repo_root: Path, root_issue: str, *, requested_by: str, reason: str) -> Path:
-    """Record a stop for the session on *root_issue*; returns the marker's path.
 
-    A marker rather than a signal, because the lanes are ``claude -p`` subprocesses of
-    the supervisor: signalling the parent leaves them killed mid-write or orphaned
-    against a grant nothing is metering, and neither is a documented outcome. This is
-    read at a round boundary, the one moment where nothing the supervisor started is
-    still running. Lock takeover is not this control either — :func:`acquire` steals a
-    lock only from a holder whose heartbeat has gone stale, so a *working* supervisor
-    cannot be asked to finish.
-    """
     path = repo_root / STOP_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -387,13 +250,7 @@ def request_stop(repo_root: Path, root_issue: str, *, requested_by: str, reason:
 
 
 def take_stop_request(repo_root: Path, root_issue: str) -> StopRequest | None:
-    """The pending stop for *root_issue*, consumed as it is read, else None.
 
-    Read-and-clear like :func:`repair_brief.take_repair_brief`: a marker left behind
-    would stop the *next* supervisor started on this repo before it ran a round. A
-    marker naming another root is left in place — the lock is a repo singleton, but a
-    stop names the session it was asked of.
-    """
     path = repo_root / STOP_FILE
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -410,23 +267,13 @@ def take_stop_request(repo_root: Path, root_issue: str) -> StopRequest | None:
 
 
 def holds_lock(repo_root: Path, session_id: str) -> bool:
-    """True while *session_id* still owns the lock — the condition a stop waits on.
 
-    Ownership by content, as :func:`heartbeat` fences it: a successor's lock at the
-    same path is a different session, and the one we asked to stop has returned.
-    """
     holder = read_holder(repo_root)
     return holder is not None and holder.session_id == session_id
 
 
 def await_session_return(repo_root: Path, session_id: str, *, poll_s: float = 2.0) -> None:
-    """Block until *session_id* has released the lock — its round landed and it returned.
 
-    Polled rather than notified: the supervisor is a separate process and its exit is
-    the lock going away. The default cadence is well under :data:`STALE_AFTER_S`, so a
-    returned session is reported promptly without busy-waiting on a round that runs
-    for minutes.
-    """
     while holds_lock(repo_root, session_id):
         time.sleep(poll_s)
 
@@ -439,18 +286,7 @@ def session_end_reason(
     limit: int | None,
     carried: frozenset[str] = frozenset(),
 ) -> str | None:
-    """Why this session stops at the round boundary it just reached, or None to go on.
 
-    Two bounds, one boundary. An operator's stop is taken first so its marker is
-    consumed rather than left behind for the next session, and it names who asked and
-    why; the pass limit is the cheaper half, committing a launch to a bounded number of
-    rounds so nobody has to intervene at all. Neither reaches a running lane — the
-    caller is between rounds, which is what makes this a stop and not a signal.
-
-    *carried* lanes are named in the line rather than left out of it: they are green
-    and committed but held behind another lane's failed landing (basicly-kjc5.18), so
-    an ending that did not say so would read as everything having landed.
-    """
     stop = take_stop_request(repo_root, state.root_issue)
     if stop is None and not (limit is not None and passes >= limit):
         return None
@@ -465,105 +301,49 @@ def session_end_reason(
     return ended
 
 
-# --- Session state: derivation from br (recovery = re-reading) ---------------
-
-
 @dataclass(frozen=True)
 class AdoptedLane:
-    """One in-flight lane re-adopted from its ``br`` worktree binding."""
-
     issue_id: str
     status: str
     binding: loop_state.WorktreeBinding
-    # True when the worktree session record still exists on disk; a bound issue
-    # whose worktree is gone needs a re-dispatch, not an adoption.
     live: bool
 
 
 @dataclass(frozen=True)
 class SessionState:
-    """The supervisor's view of one session, derived purely from ``br``."""
-
     root_issue: str
     root_status: str
-    children: tuple[tuple[str, str], ...]  # (issue_id, status)
+    children: tuple[tuple[str, str], ...]
     adopted: tuple[AdoptedLane, ...]
-    # The label this pass selected its lanes with, when it was given one
-    # (:func:`lane_selection`). Carried on the state because every re-derivation
-    # inside a pass has to reproduce the same lane set — the selector is the one
-    # input that is *not* recoverable from the graph.
     lane_label: str | None = None
-    # The supervisor session this pass belongs to, for the directory its lane
-    # transcripts are filed under (basicly-rrah). Minted per supervisor run, so it
-    # is not recoverable from the graph either.
     session_id: str | None = None
 
     @property
     def log_session(self) -> str:
-        """Where this pass's transcripts are filed: its session, or the root issue.
 
-        The fallback keeps an unsupervised dispatch recorded — a transcript skipped
-        for want of an id is the defect this replaced.
-        """
         return self.session_id or self.root_issue
 
     @property
     def open_children(self) -> tuple[str, ...]:
-        """Ids of the children this session may still size, fund and dispatch.
 
-        The admitted statuses are named by
-        :func:`loop_state.is_dispatchable` rather than excluded one at a time.
-        A ``deferred`` child is not one of them, at either of the two sites that
-        read this: it is left out of the band table, the open-child total and the
-        ``cap x per-lane`` forecast, and it does not hold the session open below
-        (basicly-toj6).
-        """
         return tuple(cid for cid, status in self.children if loop_state.is_dispatchable(status))
 
     @property
     def done(self) -> bool:
-        """True when the session's work is finished (root closed, or no open child).
 
-        Fan-in reads the same rule as dispatch, so an epic whose only remaining
-        child is one somebody deferred completes instead of waiting on it forever.
-        """
         if self.root_status == "closed":
             return True
         return bool(self.children) and not self.open_children
 
 
 class LaneSelectionError(RuntimeError):
-    """A lane selector named a set the pass cannot run: no bead carries it."""
+    pass
 
 
 def lane_selection(
     repo_root: Path, label: str, *, exclude: Iterable[str] = ()
 ) -> tuple[tuple[str, str], ...]:
-    """The ``(issue_id, status)`` pairs carrying *label* — a pass's explicit lane set.
 
-    Membership in a release cut is a **label**, not a parent-child edge (plan §14),
-    and ``br`` permits exactly one parent — so a cut assembled from beads that
-    already have an epic of origin could not be expressed as one supervised pass at
-    all, and four of six lanes on the ``v0.7.0`` cut had to be driven single-track
-    (basicly-1lpo). This is the query that decouples the two: what a pass *runs* and
-    what a bead's parent *is* are independent questions, and the ``parent-child``
-    edge was being made to answer both.
-
-    Which store answers is :mod:`basicly.label_source`'s business, including that closed
-    beads are in the set — a selection whose every bead has closed is a *finished*
-    session, and reading it as an empty one would report a completed cut as blocked.
-    The matching write is ``tracker write -- update <id> --add-label``, resolved against
-    the record's current set at the write seam; that module states where.
-
-    *exclude* drops ids that are not lanes of this pass — the root itself, which is
-    the pass's anchor rather than work it runs. Sorted by id so a pass is ordered by
-    the selection rather than by what order the store happened to return; the scheduler
-    rank then orders the lanes that actually dispatch (``ready_lanes``).
-
-    Raises :class:`LaneSelectionError` when nothing is selected. A mistyped label
-    otherwise derives an empty session that reports itself blocked for a reason
-    unrelated to the typo.
-    """
     selected = label_source.labelled(repo_root, label)
     for issue_id in exclude:
         selected.pop(issue_id, None)
@@ -583,24 +363,7 @@ def derive_session(
     lane_label: str | None = None,
     session_id: str | None = None,
 ) -> SessionState:
-    """Rebuild the session's state from ``br`` — the whole crash-recovery story.
 
-    The supervisor keeps no side-state, so this derivation is both cold start
-    and restart: the root issue's parent-child dependents are the session's
-    lanes, and any open child carrying a ``worktree:`` ``external_ref`` binding
-    is re-adopted as in-flight, flagged ``live`` when its worktree session
-    record still exists on disk. One ``br show`` per open child (matching the
-    loop's per-issue reads); fine for a derivation pass, but the kjc5.6
-    standing loop should not re-derive on every tick.
-
-    *lane_label* replaces the parent-child derivation with the label selector
-    (:func:`lane_selection`, basicly-1lpo): the lanes are then the beads carrying
-    that label and the root is the pass's anchor only — its grant, its decision
-    queue, its lock. Nothing else about the derivation changes, so the pass is
-    still a pure function of ``br`` and still restart-safe: re-reading the label
-    on the next tick picks up a bead labelled into the cut since and drops one
-    labelled out of it.
-    """
     record = tracker.require_record(repo_root, root_issue)
 
     if lane_label is not None:
@@ -644,14 +407,12 @@ def derive_session(
 
 
 def _show_issue(repo_root: Path, issue_id: str) -> dict | None:
-    """The issue's ``br show`` record, or None when there is no usable one."""
     return tracker.read_record(repo_root, issue_id)
 
 
 def _binding_of(
     repo_root: Path, issue_id: str, record: dict | None
 ) -> loop_state.WorktreeBinding | None:
-    """The issue's worktree binding, reading ``br`` unless *record* is at hand."""
     if record is None:
         record = _show_issue(repo_root, issue_id)
         if record is None:
@@ -659,18 +420,8 @@ def _binding_of(
     return loop_state.parse_worktree_ref(record.get("external_ref"))
 
 
-# --- Client attach: read-only observation (design 7.3 layer 3) ---------------
-
-
 @dataclass(frozen=True)
 class LaneView:
-    """One in-flight lane as an attached client sees it.
-
-    :class:`AdoptedLane` plus what that lane last *ran* — the supervisor itself
-    never needs the run history to decide anything, but a client asking "is this
-    lane working or wedged?" cannot answer from the ``br`` binding alone.
-    """
-
     issue_id: str
     status: str
     worktree: str
@@ -684,8 +435,6 @@ class LaneView:
 
 @dataclass(frozen=True)
 class Observation:
-    """A second session's read-only view of one supervisor session (design 7.3)."""
-
     root_issue: str
     root_status: str
     children_total: int
@@ -693,55 +442,24 @@ class Observation:
     done: bool
     lanes: tuple[LaneView, ...]
     pending_decisions: tuple[decisions.DecisionItem, ...]
-    # The label the observed lane set was selected with, echoed so a client can see
-    # *which* session these counts describe: a root can be supervised over its
-    # decomposition or over a labelled cut, and the two are different sessions.
     lane_label: str | None = None
-    # The recorded lock holder, or None when nobody is supervising this repo. A
-    # holder past the staleness horizon is reported rather than hidden: "crashed
-    # holder, takeover allowed" and "working" are exactly what a client attaches
-    # to find out apart.
     holder: LockInfo | None = None
     holder_stale: bool = False
-    # False when the holder is supervising a *different* root — the lock is a
-    # repo singleton, so an attached client can be looking at an unsupervised
-    # session while another one runs.
     holder_on_this_root: bool = False
     grant_level: str | None = None
     token_budget: int | None = None
     spent_tokens: int = 0
-    # Where the session's wall clock actually went (basicly-kjc5.51). Waiting on a
-    # human dominates it, and the run record measures only dispatch — so the two
-    # are reported side by side and never added together.
     human_wait_s: int = 0
     delegated_wait_s: int = 0
     dispatch_s: float = 0.0
 
     @property
     def supervised(self) -> bool:
-        """True when a live supervisor is bound to this session's root."""
         return self.holder is not None and self.holder_on_this_root and not self.holder_stale
 
 
 def observe(repo_root: Path, root_issue: str, *, lane_label: str | None = None) -> Observation:
-    """Snapshot the session a client just attached to — a pure read (design 7.3).
 
-    Layer 3's status half. It is the same derivation the supervisor runs on
-    every tick (:func:`derive_session`), plus the facts a client cannot get
-    from the tracker alone: who holds the lock and how fresh their heartbeat is,
-    what each in-flight lane last ran, how much of the grant's token budget
-    (D3) the session has spent, and where its wall clock went — human wait time
-    reported apart from dispatch time (D11, basicly-kjc5.51).
-
-    Takes no lock and writes nothing, so any number of clients may attach while
-    the supervisor works — and attaching to an *unsupervised* root is a valid
-    read, not an error: ``holder`` is then None.
-
-    *lane_label* is the selector the supervisor was started with, when it was
-    given one: the lane set is then not the root's children, so a client that
-    omits it observes a truthful view of a *different* session — the root's
-    decomposition — and would report a running label pass as childless.
-    """
     state = derive_session(repo_root, root_issue, lane_label=lane_label)
     holder = read_holder(repo_root)
     grant = policy.active_grant(repo_root, root_issue)
@@ -768,11 +486,7 @@ def observe(repo_root: Path, root_issue: str, *, lane_label: str | None = None) 
 
 
 def lane_view(repo_root: Path, lane: AdoptedLane) -> LaneView:
-    """Widen one adopted lane with its most recent run-record, if it has one.
 
-    Public because the board's `IN FLIGHT` needs the same widening `loop session` gets, and a
-    second one is a second answer to what a lane last ran (basicly-bd4epr).
-    """
     latest = run_record.latest_record(repo_root, lane.issue_id)
     return LaneView(
         issue_id=lane.issue_id,
@@ -787,21 +501,10 @@ def lane_view(repo_root: Path, lane: AdoptedLane) -> LaneView:
     )
 
 
-# --- Found-info records: cross-lane discoveries via br (design 7.4, D6) ------
-
-
-# Comment marker carrying a structured cross-lane discovery, the same durable,
-# attributable pattern as policy's [harness-policy]. The payload after the
-# marker is one JSON object: kind, summary, detail, affects.
 INFO_MARKER = "[harness-info]"
 
-# The record kinds the design names; `coupling` additionally implies a missed
-# dependency edge (proposed by the outcome routing, kjc5.7).
 FOUND_INFO_KINDS = ("coupling", "constraint", "decision", "fact")
 
-# Bounds on what folds into a dispatch prompt: found-info is agent-authored, so
-# one runaway record (or a flood of them) must not bloat — or steer — every
-# later lane's context, eating the very budget the ceiling meter guards.
 _MAX_INFO_SUMMARY = 200
 _MAX_INFO_DETAIL = 500
 _MAX_FOLDED_RECORDS = 20
@@ -809,38 +512,21 @@ _MAX_FOLDED_RECORDS = 20
 
 @dataclass(frozen=True)
 class FoundInfo:
-    """One cross-lane discovery a lane published through the tracker."""
-
     kind: str
     summary: str
     detail: str = ""
-    # Issue ids and/or scope globs the discovery is relevant to.
     affects: tuple[str, ...] = ()
-    # The bead the record was found on (the discovering lane); stamped by the
-    # parser — a record being written does not carry it.
     source: str = ""
 
 
 def _folded_ref(info: FoundInfo) -> str:
-    """A stable reference to one folded found-info record, for the run-record.
 
-    ``FoundInfo`` carries no id of its own, so identify it by its source bead,
-    its kind, and a digest of its summary. That is enough to locate the exact
-    comment again when diffing why two attempts on one node saw different
-    prompts (D9) — bundle assembly truncates to the newest few, so without this
-    the difference is unexplainable.
-    """
     digest = hashlib.sha256(info.summary.encode("utf-8")).hexdigest()[:8]
     return f"{info.source or '?'}#{info.kind}-{digest}"
 
 
 def record_found_info(repo_root: Path, issue_id: str, info: FoundInfo) -> None:
-    """Publish *info* as a marker comment on *issue_id* (its ``source`` is implied).
 
-    Discoveries propagate through ``br``, never into a running lane's context
-    (D6): the supervisor folds matching records into *future* dispatch bundles.
-    ``br`` stamps author and timestamp on the comment itself.
-    """
     if info.kind not in FOUND_INFO_KINDS:
         raise ValueError(
             f"unknown found-info kind {info.kind!r}; expected one of {FOUND_INFO_KINDS}"
@@ -858,13 +544,7 @@ def record_found_info(repo_root: Path, issue_id: str, info: FoundInfo) -> None:
 
 
 def parse_found_info(text: str, source: str) -> FoundInfo | None:
-    """Parse one comment into a :class:`FoundInfo`, or None when it is not one.
 
-    Best-effort: a malformed payload (bad JSON, unknown kind, empty summary) is
-    skipped, never raised — a garbled advisory record must not wedge dispatch.
-    Summary and detail are truncated at parse time so an oversized record is
-    bounded everywhere downstream, not just in prompts.
-    """
     stripped = text.strip()
     if not stripped.startswith(INFO_MARKER):
         return None
@@ -895,7 +575,6 @@ def parse_found_info(text: str, source: str) -> FoundInfo | None:
 
 
 def found_info_records(repo_root: Path, issue_ids: Iterable[str]) -> tuple[FoundInfo, ...]:
-    """All found-info records published on *issue_ids*, in comment order."""
     records: list[FoundInfo] = []
     for issue_id in issue_ids:
         for row in tracker.read_comments(repo_root, issue_id):
@@ -905,19 +584,11 @@ def found_info_records(repo_root: Path, issue_ids: Iterable[str]) -> tuple[Found
     return tuple(records)
 
 
-# --- Dispatch bundles: pure functions of br state at dispatch time (D6) ------
-
-
 @dataclass(frozen=True)
 class DispatchBundle:
-    """One lane's dispatch prompt, assembled purely from ``br`` at dispatch time."""
-
     issue_id: str
     prompt: str
     folded: tuple[FoundInfo, ...]
-    # Answered decisions folded into the prompt, newest last. Without these an
-    # answer reaches nobody: the lane that blocked on the question re-dispatches
-    # with the same prompt it had before (basicly-kjc5.40).
     answers: tuple[decisions.DecisionItem, ...] = ()
 
 
@@ -928,35 +599,12 @@ def build_bundle(
     known_ids: frozenset[str] = frozenset(),
     cwd: Path | None = None,
 ) -> DispatchBundle:
-    """Assemble *issue_id*'s dispatch bundle from ``br`` state right now.
 
-    The base prompt is the loop's agent-neutral dispatch prompt; found-info
-    records published on the session's beads (*known_ids*) are folded in when
-    they affect this lane — named by issue id, or by a scope glob overlapping
-    the lane's declared ``## Scope``. Because assembly happens at dispatch time,
-    a record published while earlier lanes ran is naturally visible to every
-    later dispatch, and never to one already in flight (D6).
-
-    Given the lane's worktree in *cwd*, a repair brief left there by a failed gate
-    replaces the base prompt with :func:`repair_brief.repair_prompt` (D5). That is the
-    whole of "supervised rework repairs rather than rebuilds": the dispatch runs in
-    the same worktree it always did, but it now starts from the gate's own
-    findings instead of the fixed text that sent the first run at the requirement.
-    The cross-lane records and answers still fold in — they are facts about the
-    work, and a repair run is as entitled to them as a build.
-
-    The brief is carried in the prompt and nowhere else, deliberately: a
-    ``repair`` flag on this record would be read only by the module that set it,
-    and the prompt is already what every consumer of a dispatch — the runner, the
-    recorded dispatch inputs, an operator reading the telemetry — actually sees.
-    """
     record = _show_issue(repo_root, issue_id) or {}
     scope = decompose.parse_scope_section(str(record.get("description") or ""))
     sources = sorted({issue_id, *known_ids})
     records = found_info_records(repo_root, sources)
     matching = [r for r in records if _info_matches(r, issue_id, scope, known_ids)]
-    # Newest-last comment order; under the cap, keep the most recent records —
-    # they reflect the latest graph and landed work.
     folded = tuple(matching[-_MAX_FOLDED_RECORDS:])
     repair = repair_brief.take_repair_brief(cwd) if cwd is not None else None
     prompt = (
@@ -987,11 +635,7 @@ def build_bundle(
 
 
 def answered_decisions(repo_root: Path, issue_id: str) -> tuple[decisions.DecisionItem, ...]:
-    """The lane's own answered queue items, newest last and bounded like found-info.
 
-    Only the lane's own items: a sibling lane's answer is that lane's context,
-    and cross-lane facts travel as ``[harness-info]`` records by design (7.4).
-    """
     items = [item for item in decisions.items_on(repo_root, issue_id) if not item.pending]
     return tuple(items[-_MAX_FOLDED_RECORDS:])
 
@@ -999,12 +643,7 @@ def answered_decisions(repo_root: Path, issue_id: str) -> tuple[decisions.Decisi
 def _info_matches(
     info: FoundInfo, issue_id: str, scope: tuple[str, ...], known_ids: frozenset[str]
 ) -> bool:
-    """True when *info* affects this lane: by issue id, or by scope-glob overlap.
 
-    An ``affects`` entry naming a *different* session bead is an id reference,
-    not a glob — it must not be glob-tested against this lane's scope, where a
-    broad pattern like ``**`` would false-fold every record everywhere.
-    """
     for entry in info.affects:
         if entry == issue_id:
             return True
@@ -1018,14 +657,7 @@ def _info_matches(
 def coupled_beads(
     repo_root: Path, info: FoundInfo, candidates: Iterable[str], known_ids: frozenset[str]
 ) -> tuple[str, ...]:
-    """The *candidates* a coupling record affects, by the same test folding uses.
 
-    Deliberately :func:`_info_matches`, not a second implementation: the bead that
-    earns an edge from a record must be exactly the bead that gets the record
-    folded into its next prompt, or the graph and the prompts would disagree
-    about what a discovery means. The record's own source is excluded — a lane
-    cannot be coupled to itself.
-    """
     found: list[str] = []
     for bead in sorted(candidates):
         if bead == info.source:
@@ -1040,37 +672,7 @@ def coupled_beads(
 def propose_coupling_edges(
     repo_root: Path, session: SessionState
 ) -> tuple[tuple[str, str, str], ...]:
-    """Turn ``kind=coupling`` discoveries into dependency edges (D6, design 7.4).
 
-    D6 has the graph learn a coupling from a *discovery*, not only from a merge
-    collision: a lane that finds out two packages are coupled teaches the graph
-    immediately, so the next decomposition serializes them instead of declaring
-    them parallel-safe again. Reading the records was already built (they fold
-    into later dispatch bundles); this is the write half.
-
-    Which edge depends on whether the affected bead has started, and that
-    distinction is the whole lesson of basicly-grrb:
-
-    - **Not started** — a ``blocks`` edge, which gates. Nothing is lost by making
-      it wait and a collision is prevented outright, which is the point of
-      learning the coupling before either lane runs.
-    - **In flight** — a non-gating :func:`merge.record_coupling` edge instead.
-      That lane has committed work; gating it would drop it out of
-      :func:`ready_lanes` and strand that work behind a human, which is exactly
-      the defect grrb fixed on the bounce path. It still learns the discovery the
-      way D6 intends — the record folds into its next prompt.
-
-    Runs once per pass from the supervisor loop rather than inside
-    :func:`build_bundle`, which is called concurrently from the dispatch threads:
-    writing edges there would mean concurrent ``br`` writes and a landing order
-    that depended on thread scheduling.
-
-    Idempotent per edge — an existing dependency between the two beads is left
-    alone, whatever its type. ``br`` refuses a duplicate rather than changing its
-    type, so an edge first recorded while a lane was in flight keeps its
-    non-gating type afterwards; that is the safe direction to be wrong in.
-    Returns the ``(bead, coupled_to, dep_type)`` triples recorded by this call.
-    """
     open_children = frozenset(session.open_children)
     known = frozenset({session.root_issue, *(cid for cid, _ in session.children)})
     in_flight = {lane.issue_id for lane in session.adopted if lane.live}
@@ -1085,22 +687,13 @@ def propose_coupling_edges(
                 merge.record_coupling(repo_root, bead, info.source)
                 recorded.append((bead, info.source, merge.COUPLING_DEP_TYPE))
             else:
-                # Best-effort like every other coupling write: a cycle br refuses
-                # must not end the pass.
                 tracker.try_write(repo_root, ["dep", "add", bead, info.source, "-t", "blocks"])
                 recorded.append((bead, info.source, "blocks"))
     return tuple(recorded)
 
 
 def _already_coupled(repo_root: Path, bead: str, coupled_to: str) -> bool:
-    """True when *bead* already carries any dependency on *coupled_to*.
 
-    Any type counts. ``br`` will refuse a second edge between the same pair
-    anyway, so re-issuing one would only add a failed write per pass — and a
-    ``parent-child`` edge already expresses the ordering a coupling would.
-    Unreadable tracker reads as "already there": skipping an edge is recoverable
-    next pass, while a spurious gating edge holds a lane.
-    """
     try:
         record = _show_issue(repo_root, bead)
     except RuntimeError, OSError, ValueError:
@@ -1115,86 +708,19 @@ def _already_coupled(repo_root: Path, bead: str, coupled_to: str) -> bool:
     return False
 
 
-# --- The spend ceiling at pass admission (D3 looking forward, basicly-jr0l.22) ---
-#
-# ``policy.spend_status`` compares spend *already recorded* against the grant's
-# budget, so a pass is admitted whenever the previous ones happened to fit. On the
-# basicly-u6jq.1 proof run a 5000000-token ceiling admitted a pass that spent
-# 46026602 and halted on the pass *after* the money was gone. The arithmetic was
-# right; it was simply retrospective, and with concurrent lanes one pass can spend
-# an unbounded multiple of a budget nothing checked it against.
-#
-# So the pass now sums what it is about to start and refuses when that will not fit
-# the remainder. The fix is emphatically not to interrupt a working agent: this runs
-# before anything spawns, in-flight lanes still land through the routing layer, and
-# a refusal costs no prompt assembly — the same place and the same reasoning as the
-# working-set band above and ``runner.run``'s model refusal.
-#
-# Two rules keep the sum honest, and both matter more than the total being large:
-#
-# - **A lane the band already refuses is not counted.** It will not dispatch, so it
-#   will not spend; counting it would refuse a pass over money nobody was going to
-#   spend, and the two gates would compound into a wedge.
-# - **A lane with no forecast is named, never guessed at.** Most open beads carry no
-#   ``## Scope``, so a missing forecast is the common case, not the anomaly. Its
-#   absence is carried in ``unforecast`` and stated in the message, because the
-#   honest reading of this gate is "the lanes that could be forecast do not fit",
-#   and a total presented as complete when it is partial is the failure mode
-#   basicly-jr0l.21 built the seeded/measured labelling to prevent.
-#
-# The gate admits when it cannot forecast anything at all, on the same reasoning the
-# band admits an un-estimatable lane: failing closed on a missing estimate turns a
-# spend governor into a ban on hand-filed work.
-
-
-# The queue question a forecast-refused pass asks, named once for the same reason
-# :data:`SIZING_QUESTION` is: :func:`decisions.enqueue` keys items by
-# (issue, kind, question), so a second copy of this string would leak a pending item
-# that nothing can find (basicly-jr0l.52). The numbers stay in the *detail*, which is
-# not part of the id, so a pass that keeps refusing finds the item it already queued.
-#
-# It was bound twice — here, and again beside its only consumer 220 lines down. The
-# second one won at import, so editing this copy, the one a reader finds beside
-# `PassSpendAdmission`, changed nothing at all: verbatim the failure jr0l.52 exists to
-# prevent, in the constant that carries jr0l.52's own warning (basicly-tcmy.3).
-#
-# `PASS` here is the supervisor *pass* over the lanes, not a credential — S105 keys on
-# the substring. Renaming to dodge the heuristic was rejected: the name is the domain
-# term used by `PassSpendAdmission` and every pass-scoped constant beside it.
-
-
 @dataclass(frozen=True)
 class PassSpendAdmission:
-    """Whether the lanes a pass is about to start fit the grant's remaining budget."""
-
-    # None only when the pass has no lanes to start at all. Every dispatching lane
-    # now contributes either a forecast or a conservative assumed bound.
     forecast_tokens: int | None
-    # None when no ceiling applies: no grant, or an L1 grant with no budget.
     remaining_tokens: int | None
-    # The lanes whose real forecasts make up part of *forecast_tokens*, and the ones
-    # counted at the unsizeable-lane bound instead — kept apart so a message can never
-    # present an assumption as a measurement.
     counted: tuple[str, ...]
     unforecast: tuple[str, ...]
-    # A warning and no longer a verdict: nothing refuses on it (basicly-hnnmk9.1).
     warning: str | None
-    # Lanes with no readable scope, counted at `decompose.unsized_lane_tokens` rather
-    # than skipped. Skipping them is what left a pass unbounded (basicly-vz78).
     assumed: tuple[str, ...] = ()
-    # Whether that bound came from measured lane actuals or from the declared seed.
     assumed_source: str = ""
 
     @property
     def coverage(self) -> str:
-        """How this pass's total was arrived at — reported whether or not it refused.
 
-        Printed on every pass, because the failure mode this closes was *silent*: a
-        pass with no forecast at all returned ``warning=None``, which is
-        indistinguishable at the surface from a pass that was checked and fitted
-        (basicly-vz78). An operator has to be able to see that a number is an
-        assumption before it is the only thing standing between them and the bill.
-        """
         if self.forecast_tokens is None:
             return "no lanes to start"
         parts = [f"{self.forecast_tokens} tokens forecast"]
@@ -1220,21 +746,7 @@ def admit_pass_spend(
     status: policy.SpendStatus,
     sizing: SizingConfig,
 ) -> PassSpendAdmission:
-    """Judge the pass's combined forecast spend against the grant's remainder.
 
-    *working_sets* are the band admissions already computed for this pass, so the
-    forecast is built on the estimate that gates each lane rather than on a second
-    reading of the same beads.
-
-    A lane whose scope cannot be read is counted at :func:`decompose.unsized_lane_tokens`
-    instead of being dropped. Dropping it is what made the gate inert for most of a
-    real tracker: with nothing counted the function returned ``warning=None``, which
-    ``refused`` reads as "admit", so a pass of unsizeable lanes had no forward bound at
-    all (basicly-vz78). An assumed bound can be wrong; no bound cannot be right.
-
-    Never raises. An unreadable history still yields a bound, because the fallback's
-    own seed needs no I/O.
-    """
     dispatching = tuple(item for item in working_sets if not item.refused)
     if not dispatching:
         return PassSpendAdmission(None, status.remaining_tokens, (), (), None)
@@ -1248,17 +760,11 @@ def admit_pass_spend(
     counted: list[str] = []
     total = 0
     if forecasts:
-        # strict: `dispatch_spend_forecasts` returns one forecast per sizing, so a
-        # length mismatch is a bug, not a lane to skip. The empty tuple a suppressed
-        # read leaves behind is handled by not entering the loop at all.
         for item, forecast in zip(sized, forecasts, strict=True):
             if forecast.tokens is None:
                 continue
             counted.append(item.issue_id)
             total += forecast.tokens
-    # Everything the real forecast could not cover — an absent scope, a None-token
-    # forecast, or a suppressed read — is bounded at the same conservative figure
-    # rather than waved through.
     assumed = tuple(
         item.issue_id for item in dispatching if item.issue_id not in frozenset(counted)
     )
@@ -1270,9 +776,6 @@ def admit_pass_spend(
         forecast_tokens=total,
         remaining_tokens=status.remaining_tokens,
         counted=tuple(counted),
-        # Nothing is left without a figure now; the field stays for a caller that
-        # still wants to distinguish "no bound" and for the message to stay honest if
-        # a future path reintroduces one.
         unforecast=(),
         warning=policy.check_pass_spend(total, status),
         assumed=assumed,
@@ -1281,11 +784,7 @@ def admit_pass_spend(
 
 
 def _stopped_clause(agent: dict[str, Any]) -> str:
-    """How many of an agent's runs a terminal bound stopped, and which bound did it.
 
-    Named rather than totalled: ``spend`` is the grant ceiling ending the session and
-    ``quiet`` is a wedged stream, and an operator does different things about those.
-    """
     bounds: dict[str, int] = agent["stopped_bounds"]
     if not bounds:
         return "0 stopped by a bound"
@@ -1294,27 +793,7 @@ def _stopped_clause(agent: dict[str, Any]) -> str:
 
 
 def health_coverage(repo_root: Path) -> tuple[str, str]:
-    """What each agent's own record says, and whether drift flags a regression.
 
-    A pure read over the run-record log the engine already writes
-    (:func:`health.health_report`): it spawns nothing, meters nothing and reaches no
-    model. It is also **never** a gate — ``basicly health`` has no recorded correct
-    firing, so under D23 it is observability, surfaced on the pass line and
-    falsifiable against the ledger rather than allowed to refuse a lane
-    (basicly-zdtx).
-
-    Two strings, health then drift, because they answer the same question in two
-    halves the way :func:`band_coverage` and :attr:`PassSpendAdmission.coverage` do:
-    what an agent's whole history is, then whether its *recent* window has moved
-    against that history. The drift half names its two window sizes, since the flag
-    only means something at :data:`health.MIN_WINDOW_SAMPLE` runs on each side.
-
-    The health half states the runs a terminal bound stopped beside the failure
-    rate rather than inside it: a lane the grant ceiling halted is our budget
-    ending, not a runner degrading, and folding the two together made this line's
-    first printed output a regression flag for a control working as designed
-    (basicly-e2mz.3).
-    """
     report = health.health_report(repo_root)
     agents = report["agents"]
     if not agents:
@@ -1344,17 +823,7 @@ def _report_coverage(
     working_sets: tuple[WorkingSetAdmission, ...],
     pass_spend: PassSpendAdmission,
 ) -> None:
-    """Emit what each cost gate covered, before the pass dispatches anything.
 
-    The band and spend lines together, because they answer one question in two halves
-    — what the band measured, and what the spend total is made of — and an operator
-    who sees only one of them is back to reading a partial check as a complete one.
-
-    The health and drift lines beside them for the mirror reason (:func:`health_coverage`):
-    a runner whose own failure rate has moved is a pass-level number, and printed
-    anywhere but here it is read by whoever ran a gate rather than by whoever reads
-    the pass. They report and never refuse.
-    """
     if report is None:
         return
     report(f"band:     {band_coverage(working_sets)}")
@@ -1371,13 +840,7 @@ PARKED_LANE_QUESTION = (
 
 
 def metered_without_a_budget(repo_root: Path, admission: policy.SpendStatus) -> str | None:
-    """The configured runner's name when it meters spend under no budget, else None.
 
-    Hoisted out of :func:`dispatch_lanes` so a caller can ask *before* doing expensive
-    setup. Seeding provisions a worktree per lane — a ``uv sync`` and an ``npm install``
-    each — and doing five of those to then refuse the dispatch is minutes of work for a
-    pass that could never have started (basicly-kkux).
-    """
     if admission.grant is not None and admission.grant.token_budget is not None:
         return None
     config = load_runner_config(repo_root)
@@ -1387,80 +850,34 @@ def metered_without_a_budget(repo_root: Path, admission: policy.SpendStatus) -> 
 
 @dataclass(frozen=True)
 class LaneOutcome:
-    """What one lane dispatch produced, for the routing layer (kjc5.7) and the CLI."""
-
     issue_id: str
     runner_name: str
-    # None when the lane could not dispatch (no worktree session record).
     result: runner.RunResult | None
-    # The agent's structured "missing fact" signal, consumed from its worktree.
     needs_fact: str | None
-    # Final context occupancy in tokens; None when the adapter reports none.
     occupancy: int | None
-    # Whether that occupancy crossed the runner's context ceiling. Reported, never
-    # acted on (D23) — the lane lands exactly as one under the ceiling does.
     overrun: bool
     detail: str
-    # False for a lane carried into this pass with its work already committed:
-    # no runner ran, so a null result means "nothing to implement", not
-    # "the dispatch failed" (basicly-kjc5.18).
     dispatched: bool = True
-    # True when the engine refused to start this lane at all — nothing spawned, and
-    # a queue item now holds it. Distinct from a failed run (basicly-jr0l.16): a
-    # deterministic refusal cannot be fixed by re-running it, so it must route to
-    # the queue rather than burn the bounded dispatch retries.
     refused: bool = False
-    # True when a hard-killed dispatch's worktree was committed on its way out
-    # (basicly-yvx9). Only ever set beside a timed-out result, and it is what tells
-    # the routing there is a diff to judge: a killed run with nothing committed has
-    # nothing for the landing to say anything about, and parks on its queue item.
     salvaged: bool = False
-    # True when the dispatch died on a *transient* failure of the tracker's storage
-    # layer rather than on anything about this lane (basicly-vkh0.10). Nothing
-    # spawned and the lane's tree is untouched, so charging it a dispatch rework
-    # attempt is charging the lane for the store's contention: on the 2026-08-02
-    # five-lane pass that is exactly what parked `basicly-tcmy.11`, which reached the
-    # rework cap without an agent ever starting. Distinct from `refused`, which is
-    # deterministic and cannot be fixed by re-running, and from a plain failure,
-    # which is about the work.
     transient: bool = False
-    # Which model actually did the work, and whether that is the one asked for
-    # (basicly-e5a6). "via claude" names the *adapter*, which says nothing about the
-    # tier — and tier resolution is the whole point of the models map, so a run that
-    # silently resolved to a cheaper or dearer model than intended read identically to
-    # a correct one. Requested tier and resolved id are knowable before the run;
-    # `observed` and `honoured` only after it, so they are separate fields rather than
-    # one summary.
     model: str | None = None
     model_tier: str | None = None
     model_source: str | None = None
     observed_models: tuple[str, ...] = ()
     tier_honoured: bool | None = None
-    # What the *provider's* own allowance said when it refused this dispatch, empty for
-    # every other outcome (basicly-jr0l.10). Its own field rather than a flag, because
-    # the text carries the reset time and nothing else on the pass can derive it.
     provider_refusal: str = ""
-    # What the run record will meter this dispatch at. The adapter's whole measurement
-    # rather than a token count, because `estimated` travels with it: a chars/4 floor and
-    # an adapter's own count are different measurements, and a summary that spelled them
-    # the same way would invite an operator to add them up.
     spend: runner.Usage | None = None
 
     @property
     def spend_note(self) -> str:
-        """What this dispatch cost, or "" when nothing measured it.
 
-        The floor is labelled rather than folded away, for the reason
-        :func:`runner.extract_usage` flags it: a measurement that could not be made must
-        never read as one that was.
-        """
         if self.spend is None:
             return ""
         return f", {self.spend.tokens} tokens{' (estimated)' if self.spend.estimated else ''}"
 
     @property
     def model_note(self) -> str:
-        """One compact clause naming the model identity, or "" when nothing is known."""
         parts: list[str] = []
         if self.model_tier:
             asked = f"tier {self.model_tier}"
@@ -1470,8 +887,6 @@ class LaneOutcome:
         if self.model:
             parts.append(f"model {self.model}")
         observed = tuple(m for m in self.observed_models if m)
-        # Reported when it disagrees with the pin, and when nothing was pinned at all —
-        # the second case is how a dispatch with no declared tier still says what ran.
         if observed and (self.model is None or set(observed) != {self.model}):
             parts.append(f"observed {', '.join(observed)}")
         if self.tier_honoured is False:
@@ -1480,58 +895,23 @@ class LaneOutcome:
 
 
 class Unstarted(Enum):
-    """Why no runner ran a lane — the one axis the unstarted outcomes differ on.
-
-    :class:`LaneOutcome` records this as three independent booleans because that is
-    what the routing layer and the run record read, but only these four of their
-    eight combinations mean anything. Naming them here is what lets
-    :func:`_unstarted` take one argument instead of three, and what makes an
-    impossible pair (refused *and* carried) unspellable at the call site rather
-    than merely unused.
-    """
-
-    # A bound said no and nothing spawned. Deterministic — re-running would reach
-    # the identical verdict — so it must not count against the lane's rework budget.
     REFUSED = "refused"
-    # Nothing spawned for a reason that is neither a deterministic refusal nor a
-    # known-retryable fault: a ceiling reached while the lane waited for a slot, a
-    # worktree with no session record, an unclassified error before the spawn.
     STOPPED = "stopped"
-    # The dispatch died before the agent started, on a transient failure of the
-    # tracker's storage — retryable, and distinct from a refusal for that reason.
     TRANSIENT = "transient"
-    # Work already committed on the branch: the lane owes a landing, not a run.
     CARRIED = "carried"
 
 
 class ProviderGate:
-    """The pass's latch: once the provider refuses one lane, no further lane starts.
-
-    Pass-scoped rather than module state, and that is the whole design: a seat allowance
-    is a fact about *now*, so the next pass has to be free to find it reset. Lanes
-    already running are never touched, exactly as the spend ceiling leaves them
-    (basicly-jr0l.10) — this only declines to start one that is still waiting for a slot.
-
-    Written from the pool's worker threads and read from them too, which is why the latch
-    is an :class:`threading.Event` rather than a bool.
-    """
-
     def __init__(self) -> None:
-        """An open gate: nothing has been refused yet."""
         self._shut = threading.Event()
 
     def latch(self, outcome: LaneOutcome) -> LaneOutcome:
-        """Pass *outcome* through, shutting the gate when it names a provider refusal."""
         if outcome.provider_refusal:
             self._shut.set()
         return outcome
 
     def declined(self, issue_id: str, runner_name: str) -> LaneOutcome | None:
-        """The unstarted outcome for a lane the shut gate refuses, or None to start it.
 
-        REFUSED, not STOPPED: nothing spawned and the verdict is not about this lane's
-        work, so it reaches the queue rather than the bounded rework counter.
-        """
         if not self._shut.is_set():
             return None
         return _unstarted(
@@ -1543,12 +923,7 @@ class ProviderGate:
 
 
 def _unstarted(issue_id: str, runner_name: str, detail: str, why: Unstarted) -> LaneOutcome:
-    """The outcome of a lane no runner ran: every measured field is None, not 0.
 
-    Six sites produce one — carried, refused two ways, halted, failed before spawn
-    — and they differ only in *detail* and *why*. A fabricated zero would be
-    indistinguishable from a measured one, which is what the metering rests on.
-    """
     return LaneOutcome(
         issue_id=issue_id,
         runner_name=runner_name,
@@ -1564,16 +939,7 @@ def _unstarted(issue_id: str, runner_name: str, detail: str, why: Unstarted) -> 
 
 
 def _declined_start(issue_id: str, runner_name: str, gate: ProviderGate) -> LaneOutcome | None:
-    """Why a lane waiting on a slot must not start after all, or None to start it.
 
-    One bound, and it is not about the lane's work: the provider has stopped taking
-    dispatches at all. A lane already running is never interrupted by it - this only
-    declines to *start* one.
-
-    Spend was the second bound and is gone (basicly-hnnmk9.1). It refused a lane that had
-    reached the front of the queue, and the pass then routed that lane to `retry`, so an
-    exhausted grant span the same lane against its rework budget without ever starting it.
-    """
     declined = gate.declined(issue_id, runner_name)
     if declined is not None:
         note_standing(LANE_REFUSED, declined.detail, issue_id)
@@ -1583,22 +949,7 @@ def _declined_start(issue_id: str, runner_name: str, gate: ProviderGate) -> Lane
 def ready_lanes(
     repo_root: Path, session: SessionState, *, skip: frozenset[str] = frozenset()
 ) -> tuple[AdoptedLane, ...]:
-    """The session's dispatchable lanes: adopted, live, and unblocked per ``br``.
 
-    Readiness is re-checked at pass time, because a dependency edge added since
-    provisioning (e.g. a found-info coupling) must gate the lane *now*. The gate
-    is blocked-ness plus an empty decision queue for the lane, not ready-list
-    membership: a provisioned lane is claimed (in_progress), and ``tracker
-    scheduler`` recommends only unclaimed work — so the scheduler's rank orders
-    the lanes it does know, and the rest follow in adoption order.
-
-    *skip* drops lanes the caller is handling without a runner this pass — the
-    ones carried forward to land (basicly-kjc5.18).
-
-    A lane whose status is not dispatchable (``deferred``) is still *adopted* —
-    dropping it from :func:`derive_session` would hide its worktree from landing
-    and from binding repair — but it takes no runner here (basicly-toj6).
-    """
     blocked = set(loop_state.blocked_ids(repo_root))
     ranks = {node.issue_id: node.rank for node in loop_state.ready_ranked(repo_root)}
     live = [
@@ -1608,17 +959,8 @@ def ready_lanes(
         and loop_state.is_dispatchable(lane.status)
         and lane.issue_id not in blocked
         and lane.issue_id not in skip
-        # A lane waiting on a queued judgment must not burn a dispatch that
-        # will only re-block on the same missing answer (basicly-kjc5.7).
         and not decisions.has_pending(repo_root, lane.issue_id)
-        # Only build-phase lanes take a runner: a landed lane parked in
-        # verify/ship must be advanced (see advance_parked), never handed a
-        # fresh implement-and-commit run against an already-merged branch.
         and _phase_of(repo_root, lane.issue_id) == "build"
-        # A lane carrying sub-task beads is excluded for the mirror-image reason
-        # (basicly-kjc5.9, D7): the loop's lane mini-loop drives it, dispatching
-        # one fresh runner per sub-task inside the lane worktree, so dispatching
-        # the lane bead itself would re-implement the whole package in one run.
         and not _has_subtasks(repo_root, lane.issue_id)
     ]
     return tuple(
@@ -1627,17 +969,11 @@ def ready_lanes(
 
 
 def _phase_of(repo_root: Path, issue_id: str) -> str:
-    """The lane's derived loop phase (pure read; br is the state)."""
     return loop_state.read_node_state(repo_root, issue_id).phase
 
 
 def _has_subtasks(repo_root: Path, issue_id: str) -> bool:
-    """True when *issue_id* was split into sub-task beads (a mini-loop lane, D7).
 
-    Status-agnostic on purpose: a lane whose sub-tasks have all closed is waiting
-    to integrate, not to be re-implemented, so it must stay out of the top-level
-    dispatch set as much as one still working through them.
-    """
     record = _show_issue(repo_root, issue_id) or {}
     return any(
         isinstance(dep, dict) and dep.get("dependency_type") == "parent-child"
@@ -1646,55 +982,28 @@ def _has_subtasks(repo_root: Path, issue_id: str) -> bool:
 
 
 def configure_budget(repo_root: Path) -> runner.ProcessBudget:
-    """Install the session's global agent-process budget from config (component 8).
 
-    ``[runner] max_agent_processes`` is the ceiling and ``[worktree] concurrency``
-    is the lane reservation, so the two knobs a consumer already sets determine
-    the whole split — there is nothing extra to configure. Called once per
-    supervisor start: D1 makes this process the owner of the machine's
-    concurrency, and the budget must not be re-derived while slots are held.
-    """
     return runner.configure_process_budget(
         load_runner_config(repo_root).max_agent_processes,
         load_worktree_config(repo_root).concurrency,
     )
 
 
-# Decision kinds the decider may take at L2+ (design 7.1: "approve delegable
-# checkpoints, triage escalations, and answer needs-input questions"). The three
-# excluded kinds are excluded on purpose:
-#
-# - ``checkpoint`` — the delegable-checkpoint path *is*
-#   ``policy._grant_approval``, and it already ran and refused before this item
-#   was enqueued. Answering the item would clear the lane's hold without the
-#   checkpoint ever being approved, routing around the ladder and the L3
-#   preconditions D3 makes ship conditional on.
-# - ``validate`` — a judged NO re-judged by another agent is the consensus-voting
-#   shape D9 rejects by name; R4 wants a human on an unmet acceptance criterion.
-# - ``stall`` — a hard-killed runner is an operational fact about a process, not a
-#   question the intake corpus can answer.
 DELEGABLE_KINDS = ("escalation", "needs-input")
 
-# L2 is where delegation begins (D3): L0 is task-by-task and L1 only pre-approves
-# the decompose checkpoint at intake.
 _MIN_DELEGATION_LEVEL = "L2"
 
 
 @dataclass(frozen=True)
 class DelegatedDecision:
-    """One decider invocation's outcome, for the pass report."""
-
     decision_id: str
     issue_id: str
     kind: str
-    # True when the decider decided and the answer is recorded; False when the
-    # item stayed with the human (abstained, unparseable, capped, unconfinable).
     answered: bool
     detail: str
 
 
 def _delegation_allowed(grant: policy.Grant | None) -> bool:
-    """True when the grant's level reaches L2, where D3 starts delegating."""
     if grant is None:
         return False
     levels = AUTONOMY_LEVELS
@@ -1710,24 +1019,9 @@ def delegate_decisions(
     beat: Callable[[], None] | None = None,
     admission: policy.SpendStatus | None = None,
 ) -> tuple[DelegatedDecision, ...]:
-    """Ask the decider to resolve the session's delegable pending items (D3 L2+).
 
-    This is the autonomous path: without it an L2 grant delegates nothing,
-    because a pending item only ever *holds* its lane
-    (:func:`ready_lanes`). Run before dispatch in a pass, so an item the decider
-    answers releases its lane in that same pass.
-
-    Serial by design — the decider is one reserved process, not a fan-out — and
-    *beat* is invoked between invocations so a slow decider never lets the
-    singleton lock go stale. Every drop-to-human cause (abstention, unparseable
-    verdict, ``decider_max_decisions``, an unconfinable runner family, the spend
-    halt) is decided inside :func:`decisions.invoke_decider`; this layer only
-    chooses *which* items to offer it and reports what came back.
-    """
     if admission is None:
         admission = policy.spend_status(repo_root, session.root_issue)
-    # No delegation without a covering grant. Spend was the other half of this condition
-    # and is gone: a budget running out is not an answer (basicly-hnnmk9.1).
     if not _delegation_allowed(admission.grant):
         return ()
     delegated: list[DelegatedDecision] = []
@@ -1743,12 +1037,9 @@ def delegate_decisions(
 def _delegate_one(
     repo_root: Path, item: decisions.DecisionItem, root_issue: str
 ) -> DelegatedDecision:
-    """Offer one item to the decider; a failed invocation leaves it with the human."""
     try:
         outcome = decisions.invoke_decider(repo_root, item.decision_id, root_issue)
     except (RuntimeError, OSError, ValueError) as exc:
-        # Per-item containment, matching the lane dispatch stance: one broken
-        # delegation must not abort the pass and strand every other decision.
         return DelegatedDecision(
             decision_id=item.decision_id,
             issue_id=item.issue_id,
@@ -1774,13 +1065,11 @@ def _delegate_one(
 
 
 def _say(report: Callable[[str], None] | None, line: str) -> None:
-    """Emit one pass-output line, or nothing when the caller wants no output."""
     if report is not None:
         report(line)
 
 
 def say_delegated(delegated: tuple[DelegatedDecision, ...], say: Callable[[str], None]) -> None:
-    """Report what the decider disposed of this pass, and what it handed to a human."""
     for decided in delegated:
         verb = "decided" if decided.answered else "to human"
         say(f"decider:  {decided.decision_id} [{decided.kind}] {verb} - {decided.detail}")
@@ -1793,34 +1082,22 @@ def say_dispatch(
     admission: policy.SpendStatus,
     say: Callable[[str], None],
 ) -> None:
-    """Report one pass's dispatch: carried lanes, a spend halt, or each runner.
 
-    Beside the ``refused:`` and ``running:`` lines this module already emits, rather
-    than in the command (basicly-o40x): the pass's report is about the pass's own
-    outcomes, and the two halves of one narrative were being written in two modules.
-    """
     if carried:
         say(f"carried:  {', '.join(sorted(carried))} - landing without a new dispatch")
     if admission.halted:
-        # Distinct from an idle pass on purpose: the lanes were ready and the
-        # ceiling stopped them (basicly-kjc5.23).
         say(f"halted:   {admission.detail}")
     elif not outcomes and not carried:
         say("dispatch: (no ready build-phase lanes)")
     spent = 0
     for outcome in outcomes:
         occupancy = f", context {outcome.occupancy} tokens" if outcome.occupancy is not None else ""
-        # The adapter name alone said nothing about which model ran (basicly-e5a6).
         note = f" [{outcome.model_note}]" if outcome.model_note else ""
         say(
             f"dispatch: {outcome.issue_id} via {outcome.runner_name}{note} - "
             f"{outcome.detail}{outcome.spend_note}{occupancy}"
         )
         spent += outcome.spend.tokens if outcome.spend is not None else 0
-    # The pass total, so the operator driving it sees the session's spend accrue without
-    # attaching a second client to read the run records back (basicly-jr0l.10). Only when
-    # something was metered: a pass of carried and refused lanes has no spend to report,
-    # and a printed 0 would read as a measurement.
     if spent:
         say(f"spent:    {spent} tokens this pass, over {len(outcomes)} dispatch(es)")
 
@@ -1828,12 +1105,7 @@ def say_dispatch(
 def _pass_lanes(
     repo_root: Path, session: SessionState, skip: frozenset[str]
 ) -> tuple[AdoptedLane, ...]:
-    """The pass's ready lanes, with the previous pass's standings forgotten first.
 
-    The clear belongs ahead of the empty-ready return rather than inside `dispatch_lanes`:
-    a pass with nothing ready would otherwise keep publishing the shape of the pass before
-    it, and a board is read between passes (basicly-ncday7).
-    """
     clear_standings()
     return ready_lanes(repo_root, session, skip=skip)
 
@@ -1845,20 +1117,11 @@ def _admit_wip(
     runner_name: str,
     report: Callable[[str], None] | None,
 ) -> tuple[tuple[AdoptedLane, ...], tuple[LaneOutcome, ...]]:
-    """Apply :mod:`basicly.wip`'s bound: the lanes that may start, and the held ones.
 
-    The held lanes come back as *outcomes* rather than as a silently shorter lane
-    list, so the routing layer sees them and an operator reads why. `refused` is what
-    keeps a held lane off the rework counter: the bound is deterministic arithmetic,
-    so re-running the lane would reach the identical verdict.
-    """
     bound = wip.admit(repo_root, lanes, session.adopted, exclude=session.root_issue)
     _say(report, f"wip:      {bound.coverage}")
     wip.record_refusal(repo_root, session.root_issue, bound)
-    # Which units to land is this frame's half of the message (see `wip.reason`).
     land = f"; land or review {', '.join(bound.downstream)}" if bound.downstream else ""
-    # And onto the board: `record_refusal` above enqueues only for a pass that starts
-    # nothing, so a bound holding one of six published nowhere (basicly-ncday7).
     note_standing(LANE_REFUSED, bound.reason, *(lane.issue_id for lane in bound.refused))
     note_standing(LANE_PARKED, "unlanded work the bound is counting", *bound.downstream)
     admitted = (lane.issue_id for lane in bound.admitted)
@@ -1882,52 +1145,12 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     admission: policy.SpendStatus | None = None,
     report: Callable[[str], None] | None = None,
 ) -> tuple[LaneOutcome, ...]:
-    """Dispatch the session's ready lanes concurrently, honoring the cap.
 
-    The cap defaults to ``[worktree] concurrency`` — one runner per provisioned
-    lane, matching the fan-out that created the worktrees. While dispatches run,
-    *beat* is invoked every :data:`HEARTBEAT_INTERVAL_S` so the singleton lock
-    never goes stale mid-pass; a :class:`LockLostError` from it cancels every
-    lane not yet started and propagates immediately. Runners already executing
-    are not killed — their commits and run-records complete on their branches,
-    and the successor supervisor re-adopts the lanes from ``br`` (recovery is
-    derivation). Outcomes return in dispatch (scheduler-rank) order.
-
-    Dispatch is *admitted* only while the session is inside D3's spend ceiling
-    (basicly-kjc5.23), measured two ways. Backward: a session whose recorded spend
-    has reached the budget starts nothing new. Forward: a pass whose lanes are
-    together forecast to overrun what is left starts nothing new either
-    (basicly-jr0l.22) — the retrospective half alone admitted a pass that spent 9x
-    its ceiling and only noticed afterwards. Either way in-flight lanes still land
-    through the routing layer, no running agent is ever interrupted, and the refusal
-    is enqueued on the root so the human learns what is required. *admission* lets a
-    caller that already read the status pass it in; omitting it re-reads here, so no
-    dispatch path can bypass the ceiling by forgetting to check.
-
-    Dispatch is bounded a second way, by the **downstream WIP limit**
-    (:mod:`basicly.wip`): lanes past what the session's unlanded work leaves room
-    for are refused naming the limit, and start once earlier work lands.
-
-    *skip* excludes lanes the caller lands without a runner (basicly-kjc5.18).
-
-    *report* receives the pass's band and spend coverage before anything is dispatched
-    — which lanes the band measured and which it could not (basicly-jr0l.60), then how
-    the spend total was reached and which lanes are counted at an assumed bound rather
-    than a real forecast. Emitted on the admitted path too, deliberately: the defect
-    both close was that an unbounded pass looked exactly like a checked one
-    (basicly-vz78). It then receives the runners' own health and drift
-    (:func:`health_coverage`), which report and never refuse.
-    """
     lanes = _pass_lanes(repo_root, session, skip)
     if not lanes:
         return ()
-    # Readiness first, then admission: the queue item records a *refusal*, so a
-    # halted session with nothing ready has nothing to escalate yet. It escalates
-    # on the first pass where the ceiling actually stops ready work.
     if admission is None:
         admission = policy.spend_status(repo_root, session.root_issue)
-    # Three spend refusals stood here - this halt, the ungranted runner and the pass-spend
-    # gate. All three report now: the budget measures and never blocks (basicly-hnnmk9.1).
     if admission.halted:
         _say(report, f"spend:    {admission.detail}")
     if cap is None:
@@ -1936,23 +1159,15 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     sizing = load_sizing_config(repo_root)
 
-    # Refused outright until basicly-hnnmk9.1; the bound that works is basicly-tkbmndn.
     if spec.kind == runner.HEADLESS and (
         admission.grant is None or admission.grant.token_budget is None
     ):
         _say(report, f"spend:    the {spec.name} runner is metered and no budget covers it")
 
-    # BUILD's other entry predicate — the downstream WIP bound. Read before sizing,
-    # so nothing forecasts a lane the bound holds.
     lanes, held = _admit_wip(repo_root, session, lanes, spec.name, report)
     if not lanes:
         return held
 
-    # Size every lane before any of them starts. The band needs this per lane and
-    # the pass-spend gate needs all of them summed, so it is read once here and
-    # handed down — the same hoist basicly-jr0l.16 made of the estimate the dispatch
-    # record already carried, extended by one level because the question is now
-    # about the pass rather than the lane.
     working_sets = tuple(admit_working_set(repo_root, lane.issue_id, sizing) for lane in lanes)
     pass_spend = admit_pass_spend(repo_root, working_sets, admission, sizing)
     _report_coverage(report, repo_root, working_sets, pass_spend)
@@ -1960,34 +1175,17 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
         _say(report, f"spend:    {pass_spend.warning} ({pass_spend.coverage})")
     banded = {item.issue_id: item for item in working_sets}
 
-    # Read once for the whole pass, not per lane: every lane must be recorded
-    # against the *same* ranking, or the pass ordering it explains is a blend of
-    # several answers and reconstructs to nothing (D9, basicly-vkh0.3). `lanes` is
-    # already in dispatch order, so a lane's position in it is the ordering key
-    # actually used — including for the lanes br never ranked, which is most of
-    # them once they are claimed.
     ranking = loop_state.ready_ranking(repo_root)
     ranked = ranking.by_issue()
     dispatch_ranks = {lane.issue_id: position for position, lane in enumerate(lanes, start=1)}
 
-    # Stamped inside the worker rather than at submit time: with more ready lanes than
-    # the cap, the extras sit in the pool queue, and counting that wait as run time
-    # would report an elapsed figure for a lane that has not started (basicly-vu6u).
     started: dict[str, float] = {}
     gate = ProviderGate()
 
     def guarded(lane: AdoptedLane) -> LaneOutcome:
-        # Re-read at the moment this lane actually starts, not when the pass was admitted:
-        # lanes past the concurrency cap wait in the pool queue and the provider can stop
-        # taking dispatches while they wait, which the one pass-entry verdict cannot see
-        # (basicly-jr0l.10). The grant's remainder was the second bound here and is gone,
-        # so the ledger walk that read it goes with it (basicly-hnnmk9.1).
         if (declined := _declined_start(lane.issue_id, spec.name, gate)) is not None:
             return declined
         started[lane.issue_id] = time.monotonic()
-        # Per-lane containment: a transient br failure (e.g. a locked tracker
-        # DB under this very concurrency) or an OS hiccup in one lane must not
-        # discard every other lane's outcome at collection time.
         try:
             return gate.latch(
                 _dispatch_lane(
@@ -2005,9 +1203,6 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
                 )
             )
         except (RuntimeError, OSError, ValueError) as exc:
-            # `transient` is classified here rather than at the routing layer because
-            # this is the only frame that knows nothing ran: a nonzero *runner* exit
-            # quoting the same text is about the agent's work, not the store.
             return _unstarted(
                 lane.issue_id,
                 spec.name,
@@ -2028,10 +1223,6 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
             if pending and beat is not None:
                 beat()
             if pending and report is not None:
-                # A lane emits nothing between adoption and completion, so a whole
-                # multi-minute run looked identical to a wedge (basicly-vu6u). Measured:
-                # the log stood still for 519.6s on a healthy lane, and `pgrep` was the
-                # only way to tell. Reported from the heartbeat that already runs here.
                 report(f"running:  {_inflight_note(started, by_future, pending)}")
     except BaseException:
         pool.shutdown(wait=False, cancel_futures=True)
@@ -2045,22 +1236,7 @@ def _inflight_note(
     by_future: dict[Future[LaneOutcome], AdoptedLane],
     pending: set[Future[LaneOutcome]],
 ) -> str:
-    """One line naming each still-running lane, how long it has run, and what it has spent.
 
-    Tokens-so-far is the other half an operator wants, and it used to be unavailable
-    here — the runner drained its pipes only after the process was down. It now comes
-    off the lane's live event stream (:class:`LaneStream`, basicly-rupz). Reported only
-    once a lane has reported some: an adapter that measures out of band has no stream
-    to read, and a fabricated 0 would be indistinguishable from a measured one.
-
-    *What* it is doing is the third half, and it is why the dispatch stream is forwarded
-    at all (basicly-jr0l.66, basicly-u2hl.7): elapsed and spend say a lane is alive and
-    expensive without saying whether it is stuck. It is omitted for a lane that has said
-    nothing, on the same rule as spend — a blank is honest, an invented one is not.
-
-    A monotonic clock, because this is a duration; a wall clock can step backwards and
-    report a lane as having run for a negative time.
-    """
     now = time.monotonic()
     running = sorted(
         (lane.issue_id, now - started[lane.issue_id])
@@ -2068,8 +1244,6 @@ def _inflight_note(
         if future in pending and lane.issue_id in started
     )
     if not running:
-        # Every pending lane is still queued behind the cap, which is itself worth
-        # saying: the operator would otherwise read the silence as a stall.
         queued = len(pending)
         return f"{queued} lane(s) queued behind the concurrency cap, none started yet"
     live = inflight_spend()
@@ -2083,19 +1257,7 @@ def _inflight_note(
 
 
 def lane_activity(cwd: Path) -> str:
-    """A fingerprint of a lane's visible progress: its commits plus its dirty tree.
 
-    The two things a working lane changes, and half of the liveness signal — the
-    other half is the lane's own event stream (:class:`LaneStream`). This one has a
-    blind spot the stream covers: a lane spending ten minutes inside one test run
-    writes no file and makes no commit, so this reading stands still while the lane
-    works. It is kept because the stream has the mirror-image blind spot, emitting
-    nothing inside that same long tool call.
-    """
-    # Two read-only git queries. The argv is literal apart from *cwd*, which is a
-    # worktree path this process created, and it is passed as one list element with
-    # `shell=False` — a path with a space or a `;` in it stays one argument. `git` by
-    # name so the consumer's PATH picks the binary, as everywhere else in the engine.
     head = subprocess.run(  # noqa: S603 — argv list, no shell; see the note above
         ["git", "-C", str(cwd), "rev-parse", "HEAD"],  # noqa: S607 — PATH git, as everywhere
         capture_output=True,
@@ -2111,56 +1273,9 @@ def lane_activity(cwd: Path) -> str:
     return hashlib.sha256(f"{head.stdout}\n{dirty.stdout}".encode()).hexdigest()
 
 
-# --- Live lane telemetry, read off the dispatch's own stream (basicly-rupz) ----
-
-
 class LaneStream:
-    """One lane's running view of its dispatch, as its event stream arrives.
-
-    The sink :func:`runner.run` feeds (:class:`runner.StreamEvent`). Every metered
-    lane already asks its CLI for a per-turn event stream and the harness used to
-    throw it away; this is what consumes it, and it answers the two questions a
-    pass could previously only guess at.
-
-    * **Is the lane alive?** Any event is proof of life, whether or not a file
-      changed, so :meth:`fingerprint` moves on every one.
-    * **What has it spent?** Per-turn usage accrues as it arrives, so the session's
-      standing against its D3 grant is knowable *during* a dispatch instead of only
-      once the run record is written. That gap is on the record: a 20000000-token
-      grant was overshot to 22164783 because ``policy.spend_status`` is read before
-      a pass and written after it, with nothing in between.
-
-    Not authoritative: ``runner.extract_usage`` over the terminal result object stays
-    the one number that reaches the run record, and this figure is only ever a lower
-    bound on it — every turn reported so far, and none of the turn in progress.
-
-    It *is* terminal, through :class:`SpendBound` (basicly-lpsf), and that is a narrow
-    exception to a standing rule rather than a reversal of it. Cost is bounded by
-    sizing the work, never by interrupting a working agent — which is why
-    :func:`policy.check_pass_spend` refuses to *start* an over-budget pass and leaves
-    every running lane alone, and why nothing here kills a lane for being expensive
-    relative to its forecast. A grant's ``token_budget`` is a different quantity: it
-    is the authorization ceiling a human set, and D3 says no spend occurs past it.
-    Honouring that after the fact is not honouring it — the 20000000-token grant that
-    was overshot to 22164783 on 2026-08-06 was overshot by lanes that were still in
-    flight when ``policy.spend_status`` last ran, because it is read before a pass and
-    written after it with nothing in between.
-
-    Written from the runner's reader thread and read from the supervisor's, so every
-    access takes the lock.
-    """
-
     def __init__(self, *, agent: str = "", model: str = "") -> None:
-        """An unstarted meter for a dispatch of *agent* on *model*.
 
-        **The dispatch's own facts, held while it runs.** The run record carrying them is
-        written after the process stops, so a first dispatch had none to read and its card
-        drew no agent, model or start time for the whole of it (basicly-1bsfx3). Empty
-        defaults: a caller that cannot name what it meters publishes nothing.
-
-        Two clocks, because :attr:`elapsed_s` subtracts the monotonic one: a wall clock
-        stepping mid-dispatch would otherwise age a running lane backwards.
-        """
         self.agent = agent
         self.model = model
         self.started_at = datetime.now(UTC).isoformat()
@@ -2171,7 +1286,6 @@ class LaneStream:
         self._doing = ""
 
     def __call__(self, event: runner.StreamEvent) -> None:
-        """Record one event. Called on the runner's stdout reader thread."""
         with self._lock:
             self._events += 1
             if event.usage is not None:
@@ -2182,50 +1296,33 @@ class LaneStream:
 
     @property
     def events(self) -> int:
-        """How many events this dispatch has emitted so far."""
         with self._lock:
             return self._events
 
     @property
     def spent(self) -> int:
-        """Tokens the dispatch has reported so far, summed over its turns."""
         with self._lock:
             return self._tokens
 
     @property
     def doing(self) -> str:
-        """The last thing this dispatch said, or empty before it has said anything."""
         with self._lock:
             return self._doing
 
     @property
     def elapsed_s(self) -> float:
-        """Seconds this dispatch has been running, on the monotonic clock."""
         return max(0.0, time.monotonic() - self._start)
 
     def fingerprint(self) -> str:
-        """A reading that changes on every event, for :class:`runner.StallWatchdog`.
 
-        The count rather than the last line: two identical lines are still two
-        events, and a lane repeating itself is working, not wedged.
-        """
         return f"events:{self.events}"
 
 
-# How much of a turn's prose reaches a one-line heartbeat. Long enough to tell two
-# activities apart, short enough that four concurrent lanes still fit on a terminal row.
 _SAID_CHARS = 60
 
 
 def _said(event: runner.StreamEvent) -> str:
-    """The one line *event* contributes to a heartbeat, or empty if it contributes none.
 
-    Only the first line of the turn's prose: an agent's turn is paragraphs and the
-    heartbeat is a row. A forwarded turn is prefixed with the nested agent that produced
-    it (``runner.StreamEvent.subagent``), because "which agent is talking" is the whole
-    reason a lane that fans out internally is otherwise unreadable — the events arrive
-    interleaved and are indistinguishable without it.
-    """
     lines = (event.text or "").strip().splitlines()
     first = lines[0].strip() if lines else ""
     if not first:
@@ -2236,29 +1333,11 @@ def _said(event: runner.StreamEvent) -> str:
     return f"{event.subagent}: {clipped}" if event.subagent else clipped
 
 
-# The in-flight lane meters of the pass currently running, keyed by issue id.
-# Module-level because the reader is a *different* lane's admission check — the
-# point is that a lane waiting on a concurrency slot can see what the lanes already
-# running have spent, which no run record says yet. One supervisor holds the lock
-# file and runs one session at a time, so there is a single pass to account for.
 _LIVE_LANES: dict[str, LaneStream] = {}
 _LIVE_LOCK = threading.Lock()
 
 
 class _Retired:
-    """Live spend from lanes that have ended, accumulated and never reset.
-
-    Guarded by :data:`_LIVE_LOCK` rather than a lock of its own, because the point is
-    that it moves in the *same* critical section a lane leaves :data:`_LIVE_LANES` in:
-    a window where a lane's spend is in neither half is a window where the ceiling
-    reads high.
-
-    Only ever consumed as the *difference* between two moments (:class:`SpendBound`),
-    so a monotonic counter is the whole requirement — what a bound holding a stale
-    remainder needs is how much spend reached the run records since it took that
-    remainder, and every such record came from a lane that retired from here.
-    """
-
     tokens = 0
 
 
@@ -2267,24 +1346,13 @@ _RETIRED = _Retired()
 
 @contextlib.contextmanager
 def live_lane(issue_id: str, stream: LaneStream) -> Iterator[LaneStream]:
-    """Publish *stream* as *issue_id*'s in-flight meter for the dispatch's duration.
 
-    Dropped on the way out, and that is not tidying: the run record written just
-    after is this lane's spend, so a meter left registered would have the same
-    dispatch counted twice. Its final figure moves to :func:`retired_spend` in the
-    same breath, so nothing sees the lane's spend vanish from both halves at once.
-    """
     with _LIVE_LOCK:
         _LIVE_LANES[issue_id] = stream
-        # The one moment `queued` stops being true: this registration *is* the lane
-        # starting, so the standing that said it was waiting for a slot is dropped in the
-        # same critical section rather than by whichever caller remembers (basicly-ncday7).
         _STANDING.pop(issue_id, None)
     try:
         yield stream
     finally:
-        # Read outside the lock: `spent` takes the stream's own, and taking two in
-        # a fixed order here is an ordering nothing else has to know about.
         final = stream.spent
         with _LIVE_LOCK:
             if _LIVE_LANES.pop(issue_id, None) is not None:
@@ -2292,26 +1360,19 @@ def live_lane(issue_id: str, stream: LaneStream) -> Iterator[LaneStream]:
 
 
 def inflight_spend() -> dict[str, int]:
-    """Tokens each currently-running lane has reported but not yet recorded."""
     with _LIVE_LOCK:
         live = tuple(_LIVE_LANES.items())
     return {issue_id: stream.spent for issue_id, stream in live}
 
 
 def inflight_activity() -> dict[str, str]:
-    """The last thing each currently-running lane said, for the heartbeat."""
     with _LIVE_LOCK:
         live = tuple(_LIVE_LANES.items())
     return {issue_id: stream.doing for issue_id, stream in live if stream.doing}
 
 
 def inflight_dispatch() -> dict[str, LaneStream]:
-    """Each currently-running lane's meter, for the facts its dispatch was issued with.
 
-    The meter rather than a figure per field: its key set is the same "registered right
-    now" the two accessors above answer, and a third spelling of that membership would be
-    a third answer to which lanes are live.
-    """
     with _LIVE_LOCK:
         return dict(_LIVE_LANES)
 
@@ -2327,24 +1388,15 @@ LANE_PARKED = "parked"
 
 @dataclass(frozen=True)
 class LaneStanding:
-    """Where one lane stands in the pass, why, and since when."""
-
     state: str
     detail: str = ""
     since: str = ""
 
 
-# The pass's own standings, keyed by issue id. Process-local for the same reason
-# :data:`_LIVE_LANES` is, and that is basicly-ncday7's finding: every one of these facts
-# lives in one frame of one pass and reaches no store, so `wip.record_refusal` - which
-# enqueues only when a pass starts *nothing* - recorded a bound that held one of six
-# nowhere at all. Guarded by :data:`_LIVE_LOCK`: nothing takes both, so a second lock buys
-# no concurrency and adds an ordering rule a reader would have to know.
 _STANDING: dict[str, LaneStanding] = {}
 
 
 def note_standing(state: str, detail: str, *issue_ids: str) -> None:
-    """Publish *state* for each of *issue_ids*, stamped now."""
     standing = LaneStanding(state, detail, datetime.now(UTC).isoformat())
     with _LIVE_LOCK:
         for issue_id in issue_ids:
@@ -2352,39 +1404,21 @@ def note_standing(state: str, detail: str, *issue_ids: str) -> None:
 
 
 def forget_standing(*issue_ids: str) -> None:
-    """Drop *issue_ids* from the standings, for a state that has stopped being true."""
     with _LIVE_LOCK:
         for issue_id in issue_ids:
             _STANDING.pop(issue_id, None)
 
 
 def clear_standings() -> None:
-    """Forget every standing, so no pass publishes the shape of the one before it."""
     with _LIVE_LOCK:
         _STANDING.clear()
 
 
 def lane_standings() -> dict[str, LaneStanding]:
-    """Where each lane of the pass running now stands, keyed by issue id."""
     with _LIVE_LOCK:
         return dict(_STANDING)
 
 
-# How far the live per-turn sum over-reports the run record it is compared against
-# (basicly-jr0l.67). The two are *different denominations*: the record is one terminal
-# result object, the live figure accumulates every `assistant` event, and measurement
-# says the second is the larger. Four lanes, live figure over recorded tokens:
-#
-#   basicly-vkh0.9   >= 1.79   (7426083 at 667s of 700s / 4160032)
-#   basicly-lpsf         1.55   (25595734 / 16495867)
-#   basicly-vkh0.12      1.55   (11994844 / 7730640)
-#   basicly-vkh0.11      1.46   (16671836 at 1579s of 1641s / 11431736)
-#
-# Roughly constant rather than growing with turn count, which is what rules out the
-# obvious explanation (a cached prompt prefix re-counted once per turn would compound).
-# The real mechanism is not established — establishing it needs a captured stream
-# alongside its own result object, which no run record keeps — so this is an empirical
-# bound, deliberately above every sample, not a conversion factor.
 LIVE_OVERREPORT_BOUND = 2.0
 
 
@@ -2394,47 +1428,19 @@ STALL_FLAG_QUESTION = "lane may be stuck: intervene now or let the hard kill arr
 def flag_stalled_lane(
     repo_root: Path, issue_id: str, stall_after: float, quiet_after: float
 ) -> decisions.DecisionItem:
-    """Queue a lane as possibly-stuck, leaving the run to continue (design section 6).
 
-    Idempotent per (issue, kind, question), so a lane is flagged once however many
-    times it is sampled. The item names the hard kill deliberately: the human's
-    real choice is whether to intervene now or let the kill arrive — and the one it
-    names is ``quiet_after``, the first terminal bound a genuinely quiet lane will
-    reach, not the wall clock far behind it (basicly-lpsf).
-
-    Because the question is only meaningful *while* the run is in flight,
-    :func:`resolve_stall_flag` disposes of it as soon as the dispatch ends.
-    """
     return decisions.enqueue(
         repo_root,
         issue_id,
         "stall",
         STALL_FLAG_QUESTION,
-        # :g rather than :.0f — a sub-second stall_after (tests, tight configs)
-        # otherwise reads as "0s", which says the opposite of what happened.
         f"no commits and no file changes for {stall_after:g}s; the run continues "
         f"until the quiet bound ({quiet_after:g}s), still holding a lane slot",
     )
 
 
 def resolve_stall_flag(repo_root: Path, issue_id: str) -> tuple[str, ...]:
-    """Auto-answer *issue_id*'s mid-run stall flags; the ids disposed of.
 
-    The flag asks whether to intervene *before* the hard kill arrives, so the moment
-    the dispatch ends the question can no longer be acted on — either the kill
-    arrived (and enqueued its own, answerable item) or the run finished and there is
-    nothing to intervene in. Left pending it is worse than useless: ``has_pending``
-    drops the lane from ``ready_lanes`` and from the carry, so a lane that was merely
-    slow parks until a human clears a question with no live subject
-    (basicly-jr0l.52).
-
-    Answered rather than deleted, so the audit trail still shows the lane was flagged
-    and why the flag stopped mattering. Scans by question instead of recomputing the
-    content-derived id, because a re-opened item carries a generation suffix.
-
-    The engine disposing of its own moot question is not a human decision, so it is
-    recorded as delegated and never lands in the human-wait column (D11).
-    """
     disposed: list[str] = []
     for item in decisions.items_on(repo_root, issue_id):
         if item.kind == "stall" and item.question == STALL_FLAG_QUESTION and item.pending:
@@ -2450,28 +1456,16 @@ def resolve_stall_flag(repo_root: Path, issue_id: str) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class DispatchOrdering:
-    """Why one lane went when it did, recorded on its run marker (basicly-vkh0.3).
-
-    *node* is br's scheduler evidence and is None whenever br did not rank the
-    lane — the ordinary case, since a provisioned lane is claimed and ``tracker
-    scheduler`` recommends only unclaimed work. *dispatch_rank* is always known,
-    so the pass ordering stays reconstructible either way.
-    """
-
     dispatch_rank: int | None
     node: loop_state.RankedNode | None
     policy: str
 
     def as_inputs(self) -> dict[str, object]:
-        """The recorded-dispatch keywords this ordering contributes."""
         return {
             "dispatch_rank": self.dispatch_rank,
             "scheduler_rank": self.node.rank if self.node else None,
             "scheduler_fallback_rank": self.node.fallback_rank if self.node else None,
             "scheduler_score": self.node.score if self.node else None,
-            # Recorded even when br did not rank this lane: the policy is a
-            # property of the pass, and it says which version produced the
-            # ordering the other lanes were sorted by.
             "scheduler_policy": self.policy or None,
         }
 
@@ -2479,18 +1473,7 @@ class DispatchOrdering:
 def record_unstarted_dispatch(
     repo_root: Path, issue_id: str, spec: runner.RunnerSpec, error: BaseException
 ) -> None:
-    """Record a dispatch that died before its agent process started (basicly-jr0l.64).
 
-    The engine's own captured error is the entire transcript of such a dispatch, so
-    it goes on the record as the run's output: the chars/4 floor over it is a real
-    bound on the cost rather than the structural under-count the same floor is for
-    an agent run, and ``run_record.UNSTARTED`` is what says so. That label is the
-    whole point — without it ``policy.session_spend`` reads the floor as an
-    unmeterable *run* and halts the grant over a dispatch that spawned nothing.
-
-    Telemetry, so it never raises: ``runner.record_dispatch`` already suppresses its
-    own write errors, and the caller is on its way to re-raising the real failure.
-    """
     runner.record_dispatch(
         repo_root,
         issue_id,
@@ -2503,16 +1486,7 @@ def record_unstarted_dispatch(
 def _lane_seed(
     repo_root: Path, root_issue: str, spec: runner.RunnerSpec
 ) -> runner.SessionSeed | None:
-    """The session a lane's BUILD dispatch inherits, or None when its role stays cold.
 
-    Keyed on the *root issue* because a corpus belongs to the feature, not the lane: every
-    lane after the first forks what its predecessor read rather than re-reading it
-    (basicly-2kh170). BUILD resolves to `implementer`, the one role the policy lets inherit,
-    so the question is asked of :mod:`basicly.roles` rather than answered here.
-
-    A family with no ``resume_style`` gets None: the argv drops such a seed but the store
-    would still record it, and every later lane would fork a session that never existed.
-    """
     if spec.resume_style is None or not roles.phase_inherits_context("build"):
         return None
     return runner.session_seed(repo_root, root_issue, runner.model_family(spec))
@@ -2525,11 +1499,7 @@ def _keep_lane_seed(
     seed: runner.SessionSeed | None,
     result: runner.RunResult,
 ) -> None:
-    """Record a seed this dispatch created, so the next lane forks it instead of minting.
 
-    Only a clean return proves the session exists — a refused or killed dispatch may have
-    left nothing to resume, and recording that id would cost every later lane a failed fork.
-    """
     if seed is not None and not seed.exists and result.returncode == 0:
         runner.record_session_seed(
             repo_root, root_issue, runner.model_family(spec), seed.session_id
@@ -2542,15 +1512,7 @@ def _finished_detail(
     needs: needs_input.NeedsInput | None,
     verdict: context_meter.CeilingVerdict,
 ) -> str:
-    """The one line a dispatch that reached its own exit reports itself as.
 
-    The provider's refusal outranks the exit code because it *explains* it: the account's
-    allowance turned the dispatch away and the agent never ran, so "runner exited 1" would
-    describe the symptom and hide the cause (basicly-jr0l.10).
-
-    The occupancy is appended to whichever outcome the run had rather than replacing it:
-    it is an observation about the run, not a verdict on it (D23).
-    """
     if refused is not None:
         detail = refused.detail
     elif result.returncode != 0:
@@ -2571,15 +1533,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     ordering: DispatchOrdering | None = None,
     working_set: WorkingSetAdmission | None = None,
 ) -> LaneOutcome:
-    """Run one lane: assemble its bundle now, dispatch, record, and meter.
 
-    *working_set* lets the pass hand down the band admission it already computed to
-    sum the pass forecast (basicly-jr0l.22); omitting it re-estimates here, so a
-    caller that forgets cannot dispatch an unsized lane past the band.
-
-    It took a *spend* hand-down for the bound that killed a running dispatch at the
-    grant's remainder. That bound is gone (basicly-hnnmk9.1) and so is the argument.
-    """
     record = worktree.load_session(lane.binding.name, repo_root)
     if record is None:
         note_standing(
@@ -2591,18 +1545,12 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
             f"worktree {lane.binding.name!r} has no session record; re-provision the lane",
             Unstarted.STOPPED,
         )
-    # Sized before the dispatch, not after: the estimate has to describe the tree the
-    # agent was handed, not the one it left behind (basicly-kjc5.30). And before the
-    # bundle rather than beside the run, because the band now *gates* the dispatch
-    # (basicly-jr0l.16) — a refusal should cost no prompt assembly, for the same
-    # reason ``runner.run`` resolves its model before it spawns anything.
     admission = working_set
     if admission is None:
         admission = admit_working_set(repo_root, lane.issue_id, sizing)
     queued = escalate_working_set(repo_root, admission)
     if admission.refused:
         held = f"; held by {queued.decision_id}" if queued is not None else ""
-        # `live_lane` is the only site that pops `queued`, and this returns before it.
         note_standing(LANE_REFUSED, f"{admission.violation}{held}", lane.issue_id)
         return _unstarted(
             lane.issue_id,
@@ -2612,58 +1560,17 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         )
     lane_sizing = admission.record_inputs(repo_root)
     if not lane_sizing:
-        # A lane with no readable scope is still dispatched, bounded at the assumed
-        # figure — so record that figure as its forecast. Without it the pass is gated
-        # on a number the record never carries, and the lane lands as one more actual
-        # with no forecast half: after a completed four-lane run `usage forecast` still
-        # reported "no dispatch carries both", 17 actual with no forecast. The
-        # telemetry that would calibrate the bound was the one thing the bound's own
-        # dispatches never produced (basicly-jr0l.58).
-        #
-        # It lands on the **spend** field, because that is the quantity it is
-        # denominated in: `unsized_lane_tokens` is a quantile of measured lane actuals,
-        # so writing it to `forecast_tokens` put a whole-lane cost in the working-set
-        # slot and paired it against a whole-lane actual at a ratio of ~1x — a forecast
-        # that looks perfect while predicting the wrong quantity (basicly-tcmy.34).
         assumed_tokens, assumed_source = decompose.unsized_lane_tokens(repo_root, sizing)
         lane_sizing = {
             "forecast_spend_tokens": assumed_tokens,
-            # Namespaced, so a reader can never mistake an assumed bound for an
-            # estimate derived from this lane's own declared scope.
             "forecast_source": f"assumed:{assumed_source}",
         }
     known = frozenset({session.root_issue, *(cid for cid, _ in session.children)})
-    # Everything from here to the dispatch itself is pre-flight — a tracker read, a
-    # config read, a prompt assembly, a spawn — so a failure in it means no agent
-    # process ever existed. Recorded as such rather than left as a silent hole in the
-    # telemetry: the pass otherwise keeps no evidence that the lane was attempted at
-    # all, and the meter has nothing to tell this apart from an unmeterable agent run
-    # (basicly-jr0l.64). The dispatch itself is inside the guard because its own
-    # pre-spawn refusals — an unresolvable model tier, a missing CLI — are the same
-    # fact; a failure after the process is up would be mislabelled, which is why the
-    # region stops at `runner.run` and the recorded run below sits outside it.
     try:
-        # The lane's existing worktree, and the only one this dispatch ever runs
-        # in — a rework round re-enters here rather than provisioning a fresh tree,
-        # so handing it to the bundle is what lets a failed gate's brief reach the
-        # run that has to fix it (basicly-u2hl.4).
         cwd = Path(record.worktree_path)
         bundle = build_bundle(repo_root, lane.issue_id, known_ids=known, cwd=cwd)
         runner_config = load_runner_config(repo_root)
-        # A lane draws on the reserved lane slots, so it never waits behind a helper
-        # (component 8, basicly-kjc5.11). The watchdog only *flags* a wedge
-        # (basicly-kjc5.25) — the timeout below is still the sole terminal action.
-        #
-        # Liveness is fingerprinted over the dispatch's own event stream *and* its
-        # git state, so the lane counts as quiet only when both are (basicly-rupz).
-        # Either alone has a blind spot: git state does not move while the agent runs
-        # a long test suite, and the stream emits nothing inside that same long tool
-        # call. An adapter with no stream to read contributes a constant, which
-        # leaves the probe exactly the git reading it was.
         seed = _lane_seed(repo_root, session.root_issue, spec)
-        # Resolved here as well as inside ``runner.run`` so the meter can name the model
-        # while the lane runs: a config read with no side effect, whose refusal is the
-        # one the enclosing guard already records.
         stream = LaneStream(
             agent=spec.name, model=runner.resolve_model(spec, repo_root=cwd).model or ""
         )
@@ -2674,27 +1581,10 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
                 repo_root, lane.issue_id, runner_config.stall_after, runner_config.quiet_after
             ),
         )
-        # The two bounds that replace the wall clock as this lane's working bound
-        # (basicly-lpsf). Both read the dispatch's own event stream rather than the
-        # clock: no events at all is a wedge, and reported tokens against the grant's
-        # remainder is the ceiling D3 declares. `runner_timeout` is still passed and
-        # is still terminal, but it now sits underneath both as the backstop for what
-        # neither can see — a process holding the pipe open with nothing behind it.
-        # No `stop_when`. `SpendBound` killed a running dispatch at the grant's remainder,
-        # which is basicly-hnnmk9.1's harm 1: a lane stopped mid-work on basicly-ncday7 whose
-        # unreviewed diff then landed with three major defects, and basicly-vkh0.11 killed
-        # with a third of its grant unspent. `quiet_after` still ends a wedged dispatch and
-        # `runner_timeout` is still the backstop; neither is a spend fact.
         bounds = runner.DispatchBounds(
             quiet_after=runner_config.quiet_after,
-            # The lane's own ceiling, off unless `[runner] lane_token_ceiling` sets one.
-            # `SpendBound` stood here and killed on the *grant's* remainder, which is a
-            # session fact another lane can move (basicly-hnnmk9.1, basicly-tkbmndn).
             token_ceiling=runner_config.lane_token_ceiling or None,
         )
-        # The same events, kept (basicly-rrah). The meter above forgets them; the
-        # transcript is what leaves a claim about what this lane *did* evidenceable
-        # once the process is gone. In the `with` so it closes on every route out.
         with (
             live_lane(lane.issue_id, stream),
             lane_log.lane_transcript(repo_root, session.log_session, lane.issue_id) as transcript,
@@ -2709,7 +1599,6 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
                 timeout=runner_config.runner_timeout,
                 on_event=lane_log.fanout(stream, transcript),
                 bounds=bounds,
-                # Passed no role at all until basicly-4xmu: 0 of 346 reached an argv.
                 role=roles.resolve_role(repo_root, spec, "build"),
                 seed=seed,
             )
@@ -2724,41 +1613,16 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         result,
         prompt=bundle.prompt,
         phase=run_record.LANE_PHASE,
-        # Which bound stopped it, when one did (basicly-lpsf). Null for a run that
-        # reached its own exit and for the wall-clock backstop, which `outcome`
-        # already labels — so a non-null value is a record of one of the two new
-        # bounds firing, which is the only evidence that will ever calibrate them.
         stopped_bound=result.stopped.bound if result.stopped is not None else None,
         folded_info=tuple(_folded_ref(info) for info in bundle.folded),
-        # The lane dispatch is where the measured 160-420x forecast misses were
-        # spent, so it is the dispatch that most needs its forecast recorded beside
-        # its actual (basicly-jr0l.34).
         **lane_sizing,
         **(ordering.as_inputs() if ordering else {}),
     )
-    # The dispatch has ended, so any mid-run stall flag is moot — retire it here,
-    # before the timeout branch below queues the answerable version. Unconditional on
-    # purpose: if the kill did arrive, the flag's "intervene before the hard kill?"
-    # is superseded by that item, and leaving both pending means answering one does
-    # not release the lane (basicly-jr0l.52).
     resolve_stall_flag(repo_root, lane.issue_id)
     if result.timed_out:
-        # Which of the three terminal bounds ended it, named once and reused by every
-        # surface that reports the kill (basicly-lpsf), so the queue item, the salvage
-        # commit and the routed outcome cannot describe the same stop differently.
         bound = runner.stop_label(result, runner_config.runner_timeout)
-        # Consume any sentinel the killed run managed to write — leaving it
-        # would mis-attribute the fact to the *next* dispatch after triage.
         stale_needs = needs_input.take(cwd)
-        # The tree is where the run's whole value sits, and the kill took the agent
-        # out before the commit that is its last step — so the harness commits it
-        # (basicly-yvx9). Judged, never trusted: the routing below sends a salvaged
-        # lane to the landing, where a red gate reworks it with real findings.
         salvaged = commit.salvage(cwd, lane.issue_id, reason=bound)
-        # Hard-kill stall (design section 6): queue it whatever the salvage found.
-        # A kill is a thing a human should see, and rescuing the diff must not
-        # turn one into a silent success — the item is what keeps the kill on the
-        # record even when the work goes on to land.
         stall = decisions.enqueue(
             repo_root,
             lane.issue_id,
@@ -2795,17 +1659,11 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         )
     needs = needs_input.take(cwd)
     if needs is not None:
-        # Durable trace (basicly-kjc5.3): the L3 lights-out precondition counts
-        # these markers after the sentinel file is consumed (D3).
         policy.record_needs_input(repo_root, lane.issue_id, needs.fact)
-        # And one decision-queue item (basicly-kjc5.4) for `loop answer`.
         decisions.enqueue(repo_root, lane.issue_id, "needs-input", needs.fact, needs.detail)
     verdict = context_meter.meter_context_ceiling(spec, result, sizing)
     refused = provider_limit.refusal(spec.usage_format, result.stdout)
     detail = _finished_detail(result, refused, needs, verdict)
-    # Read off the result rather than re-resolved, for the same reason the run record
-    # does it that way (basicly-kjc5.59): a second read of the map could answer
-    # differently from the dispatch that actually happened.
     resolution = result.model_resolution
     return LaneOutcome(
         issue_id=lane.issue_id,
@@ -2825,36 +1683,12 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     )
 
 
-# --- Outcome routing: green lands, everything else queues (basicly-kjc5.7) ---
-
-
-# Rework gate name for failed dispatches: bounded like merge/verify rework, so
-# a crash-looping runner escalates to the queue instead of retrying forever.
 DISPATCH_GATE = "dispatch"
-# A separate counter for the dispatches lost to the *store* rather than to the work
-# (basicly-vkh0.10). It has to be separate, not merely smaller: a lane that spends its
-# dispatch budget on tracker contention arrives at the escalation with nothing to
-# triage, which is how a five-lane pass parked a lane that had never run an agent. The
-# cap still exists, so termination is unchanged — a store that stays broken escalates
-# to a human on its own counter instead of silently retrying forever.
 TRACKER_GATE = "tracker-storage"
 
 
-# Route for a landing killed by `merge.TrackerCommitRefusedError`: not ``held``, which the
-# rest of the pass stops behind, and not ``error``, which is non-retriable and ended the
-# session (basicly-85cadb).
 READY_TO_LAND = "ready-to-land"
 
-# Routes that keep the standing loop iterating even without a landing: the
-# lane will be re-tried and its termination is bounded elsewhere (the dispatch
-# and verify rework caps both escalate into the decision queue, which then
-# holds the lane via has_pending). "lane-step" is a mini-loop lane that closed a
-# sub-task this pass — bounded by max_subtasks_per_lane plus those same caps;
-# "bounced" is a collided lane whose agent re-applies its intent next pass,
-# bounded by the same merge rework cap; "re-dispatch" is a lane whose merge a
-# landing this pass broke, cancelled before it collided and bounded by the
-# dispatch cap. "lane-blocked" is deliberately absent, because such a lane waits
-# on an agent or a human exactly like a handoff.
 RETRIABLE_ROUTES = (
     "retry",
     "rework",
@@ -2862,73 +1696,35 @@ RETRIABLE_ROUTES = (
     "lane-step",
     "bounced",
     "re-dispatch",
-    # A cleared stale binding changes what the *next* derivation sees, so the pass
-    # that cleared it has genuinely unblocked work even though nothing landed
-    # (basicly-1koh). Termination is not at risk: the binding is gone, so the same
-    # lane cannot be repaired twice.
     "repaired",
-    # Bounded by the landing that re-runs the refusing gate next pass; a gate that refuses
-    # forever fails every lane's landing identically rather than spinning this one.
     READY_TO_LAND,
-    # Newly provisioned lanes exist but are not dispatched until the next derivation
-    # reads them (basicly-t73d). Bounded by the worktree cap and by `seed_lanes`
-    # returning `seed-blocked` — which is *not* retriable — the moment a root stops
-    # producing lanes, so a root that cannot seed ends the session instead of looping.
     "seeded",
 )
 
 
 @dataclass(frozen=True)
 class RoutedOutcome:
-    """Where one lane's outcome went after collection (design component 5)."""
-
     issue_id: str
-    # "shipped" | "merged" | "retry" | "rework" | "held" | "decision"
-    # | "handoff" | "lane-step" | "lane-blocked" | "bounced" | "re-dispatch"
-    # | "repaired" | "ready-to-land" | "error"
     route: str
     detail: str
 
     @property
     def progressed(self) -> bool:
-        """True when the session moved (a landing or a ship happened)."""
         return self.route in ("merged", "shipped")
 
 
 def should_continue(routed: tuple[RoutedOutcome, ...]) -> bool:
-    """True when the standing loop has another useful iteration to run.
 
-    Progress (a landing or ship) obviously continues; so does any retriable
-    route — its termination is guaranteed by the rework caps escalating into
-    the decision queue, which then holds the lane. Everything else means the
-    session waits on a human.
-    """
     return any(r.progressed or r.route in RETRIABLE_ROUTES for r in routed)
 
 
 def carried_forward(routed: tuple[RoutedOutcome, ...]) -> frozenset[str]:
-    """The lanes whose landing this pass deferred, for the next pass to land first.
 
-    Two routes carry, for one reason: the lane is green and committed and no evidence
-    faults it. ``held`` ran out of a landable base; :data:`READY_TO_LAND` had the engine's
-    own tracker-sync commit refused, which examined the lane's diff not at all. Every other
-    route either progressed or means the lane's work needs changing, which is when a fresh
-    dispatch *is* right — so the carry lapses and the lane re-enters dispatch.
-
-    This half of the carry is in-process only, so a supervisor that crashed
-    mid-session remembers nothing; :func:`committed_lanes` re-derives the same
-    set from git at the next pass, which is what keeps the carry across a
-    restart (basicly-pjaudy).
-    """
     return frozenset(r.issue_id for r in routed if r.route in ("held", READY_TO_LAND))
 
 
 def _awaits_landing(repo_root: Path, lane: AdoptedLane) -> bool:
-    """True when *lane*'s branch already holds committed work no agent need redo.
 
-    A repair brief outranks the commits: a failed gate left it for the lane's
-    next dispatch, and landing again would only re-fail the same gate.
-    """
     session = worktree.load_session(lane.binding.name, repo_root)
     if session is None or session.stale:
         return False
@@ -2943,17 +1739,7 @@ def _awaits_landing(repo_root: Path, lane: AdoptedLane) -> bool:
 
 
 def committed_lanes(repo_root: Path, session: SessionState) -> frozenset[str]:
-    """Ready lanes whose work is committed and clean already: land, do not dispatch.
 
-    The durable half of :func:`carried_forward`, read from git rather than from
-    the last pass's routes, so a lane that was committed before a crash — or by
-    hand — lands instead of paying for a second implement run (basicly-pjaudy).
-    Eligibility is :func:`ready_lanes`, so a lane already blocked, parked past
-    build, or holding a queued decision is none of this function's business —
-    but a session with nothing adopted is answered without asking it, because
-    ``ready_lanes`` filters ``adopted`` and its two tracker reads could only
-    return empty. That is every pass of a root still being seeded.
-    """
     if not session.adopted:
         return frozenset()
     return frozenset(
@@ -2964,13 +1750,7 @@ def committed_lanes(repo_root: Path, session: SessionState) -> frozenset[str]:
 
 
 def _carried_outcome(issue_id: str) -> LaneOutcome:
-    """The landing-only outcome for a lane whose work is already committed.
 
-    A lane held by an earlier failed landing (see :func:`carried_forward`) has
-    already finished its run and committed on its branch, so the next pass owes
-    it a *landing*, not a fresh implement-and-commit dispatch — that would spend
-    a full run re-doing work already on the branch (basicly-kjc5.18).
-    """
     return _unstarted(
         issue_id,
         "(none)",
@@ -2987,69 +1767,18 @@ def route_outcomes(
     beat: Callable[[], None] | None = None,
     carried: Iterable[str] = (),
 ) -> tuple[RoutedOutcome, ...]:
-    """Collect dispatch outcomes: land green lanes as they can, bounce collisions (D5).
 
-    Green lanes go through the single-track engine — ``loop.advance`` is the only
-    landing path, so each landing is serial and re-verifying — and they are
-    landed in the **dependency order** :func:`merge.landing_order` computes from
-    ``br``, not merely in the scheduler rank the outcomes arrive in
-    (basicly-kjc5.20). The queue's consume-as-ready stance (kjc5.10) holds here
-    too:
-
-    - A **scope collision** bounces back to the owning lane and the pass keeps
-      going, and the remaining green lanes still land. A lane's wrong scope
-      declaration is its own problem, not a reason to stall everyone. The missed
-      coupling — and the brief naming the conflicting paths and both sides, which
-      is what gives the lane's next dispatch something to do
-      (:func:`_record_bounce_briefs`) — is recorded once the pass is over
-      (:func:`_attribute_pass_couplings`) rather than at the bounce, so neither
-      can depend on which lanes had landed by then (D9, basicly-kjc5.32). A
-      landing that failed *identically* to the lane's previous one escalates
-      there and then, refunded rather than charged
-      (:func:`_escalate_repeat_bounce`).
-    - A lane a *landing this pass* already **broke** — its branch no longer
-      merges cleanly, and that landing's paths are why — is cancelled before its
-      own landing is attempted and re-dispatched with the collision recorded for
-      its next prompt (D6, :func:`_preempt_lane`); that likewise does not hold
-      the pass.
-    - Any **other** blocked landing (a red gate, an uncommitted worktree) still
-      holds the later green lanes (``held``) — that is a signal about the base,
-      and they re-land next iteration on top of whatever fix lands first.
-
-    *carried* names the lanes the previous pass held: their work is committed
-    already, so they are landed here **without** a dispatch having run for them
-    this pass (basicly-kjc5.18), ahead of freshly dispatched lanes at equal
-    dependency rank because their work is the older of the two.
-
-    Blocked shapes route to the decision queue: a needs-input fact and a timeout
-    stall were queued at dispatch, a failed run retries under the bounded rework
-    cap and escalates at it, and a landed lane whose ship checkpoint no grant
-    covers queues a checkpoint request for the human. A hard-killed lane whose
-    worktree was salvaged is the one shape that does both — the stall item holds
-    the *timeout* for a human while the *diff* goes to the landing to be judged
-    (basicly-yvx9).
-
-    *beat* fires between outcomes; per-outcome failures are contained to that
-    lane's route so one br hiccup cannot discard the rest of the pass. Outcomes
-    are returned in the order they were processed (landing order), not in the
-    order they came in.
-    """
     pass_outcomes = _carried_outcomes(repo_root, session, carried, outcomes) + outcomes
     ordered = _landing_order(repo_root, pass_outcomes)
     queue = _note_landing_queue(ordered)
     try:
         return _land_in_order(repo_root, session, ordered, beat)
     finally:
-        # The queue stops existing when this frame returns, so no standing may outlive it.
         forget_standing(*queue)
 
 
 def _note_landing_queue(ordered: Sequence[LaneOutcome]) -> tuple[str, ...]:
-    """Publish each landable lane's place in the serial landing queue; the ids published.
 
-    **This frame is the only one that knows the queue.** Landings are serial, so the
-    position is what a duration cannot replace: how many stand before this one.
-    """
     waiting = [one.issue_id for one in ordered if _is_green(one) or one.salvaged]
     for position, issue_id in enumerate(waiting, start=1):
         note_standing(
@@ -3064,26 +1793,14 @@ def _land_in_order(
     ordered: Sequence[LaneOutcome],
     beat: Callable[[], None] | None,
 ) -> tuple[RoutedOutcome, ...]:
-    """Route *ordered* one at a time, in the landing order the caller computed.
 
-    Split out of :func:`route_outcomes` so a `LockLostError` from *beat*, raised outside
-    each outcome's own guard, still retires the queue standings.
-    """
     routed: list[RoutedOutcome] = []
     landing_blocked = False
-    # (bead, paths its landing added to the base) per landing this pass — the
-    # evidence D6's pre-empt reads to name the landing that broke a pending merge
-    # (merge.missed_couplings, via _invalidated_by).
     landed: list[tuple[str, tuple[str, ...]]] = []
-    # (bead, conflicting paths) per collision, attributed after the pass rather
-    # than here: see _attribute_pass_couplings (D9, basicly-kjc5.32).
     collisions: list[tuple[str, tuple[str, ...]]] = []
     for outcome in ordered:
         if beat is not None:
             beat()
-        # A salvaged timeout is not green — the run was killed — but it does try to
-        # land, so it needs the same pre-landing head sha and the same "stop landing
-        # after a failure this pass" treatment as a green lane (basicly-yvx9).
         lands = _is_green(outcome) or outcome.salvaged
         if landing_blocked and lands:
             routed.append(
@@ -3097,27 +1814,17 @@ def _land_in_order(
         before = merge.head_sha(repo_root) if lands else ""
         try:
             if lands:
-                # Which lane lands *now*, published before the call that takes minutes and
-                # reports nothing while it runs. The heartbeat's own board emission reads
-                # this on every tick, so the stamp is what makes the duration move.
                 note_standing(LANE_LANDING, "the supervisor is landing this lane", outcome.issue_id)
             one = _route_one(repo_root, session, outcome, landed, collisions)
         except merge.TrackerCommitRefusedError as exc:
-            # The landing never reached the lane's diff, so it faults neither the lane nor
-            # the base: keep the work ready to land and let later lanes try (basicly-85cadb).
             one = RoutedOutcome(
                 outcome.issue_id,
                 READY_TO_LAND,
                 f"landing deferred: the engine's own tracker-sync commit was refused: {exc}",
             )
         except (RuntimeError, OSError, ValueError) as exc:
-            # Contained like dispatch's guarded(): the lane re-routes next
-            # pass; "error" is non-retriable so a persistent infra failure
-            # ends the loop instead of spinning on it.
             one = RoutedOutcome(outcome.issue_id, "error", f"routing failed: {exc}")
         if lands:
-            # Retired per route: a `bounced` left this lane `landing` under the next. A
-            # route that carries forward is still landable, so it says so.
             if one.progressed:
                 forget_standing(outcome.issue_id)
             elif one.route in ("held", READY_TO_LAND):
@@ -3138,24 +1845,7 @@ def _attribute_pass_couplings(
     collisions: list[tuple[str, tuple[str, ...]]],
     landed: list[tuple[str, tuple[str, ...]]],
 ) -> tuple[RoutedOutcome, ...]:
-    """Record this pass's missed couplings, once the whole pass is known (D9).
 
-    The edge outlives the pass — it changes every later decomposition — so nothing
-    about the pass's own ordering may decide it (basicly-kjc5.32). Attributing at
-    the bounce did: a collided lane could only be blamed on the landings that
-    happened to precede it, so with the lanes' completion order reversed the same
-    plan taught the graph the opposite edge, or none at all. Here the inputs are
-    the whole pass's landings and the declared scopes behind them — both order-free
-    — and :func:`merge.record_coupling` writes the pair in a canonical direction so
-    the edge is literally identical either way.
-
-    The bounced lanes' details are completed here for the same reason: which lane
-    to name is not known while the pass is still running — and so is the brief
-    each bounced lane's next dispatch reads (:func:`_record_bounce_briefs`).
-
-    Best-effort like every tracker read on the landing path: a tracker that will
-    not answer costs the graph an edge, never the pass.
-    """
     if not collisions:
         return routed
     try:
@@ -3163,8 +1853,6 @@ def _attribute_pass_couplings(
             repo_root, collisions, [bead for bead, _ in landed]
         )
     except RuntimeError, OSError, ValueError:
-        # The brief is still owed: the conflicting paths are the lane's own
-        # evidence and do not depend on the attribution succeeding.
         attributed = {}
     _record_bounce_briefs(repo_root, collisions, attributed)
     return tuple(_reporting_couplings(one, attributed.get(one.issue_id, ())) for one in routed)
@@ -3175,31 +1863,7 @@ def _record_bounce_briefs(
     collisions: list[tuple[str, tuple[str, ...]]],
     attributed: dict[str, tuple[str, ...]],
 ) -> None:
-    """Tell each bounced lane's *next* dispatch what its landing conflicted on (D6).
 
-    Without this a re-dispatched bounce says nothing new. ``bounced`` is
-    retriable and deliberately not carried forward, so the lane does get a fresh
-    agent — but :func:`build_bundle` assembles its prompt from the loop's fixed
-    dispatch prompt plus the records published against it, and the bounce
-    published none. The agent was handed the prompt it had already satisfied for
-    work already committed on its branch, changed nothing, and the next landing
-    re-derived the identical conflict; the second attempt escalated having
-    learned nothing (basicly-bdd4, observed three times on 2026-08-05/06).
-
-    So the brief is the same ``kind=coupling`` channel :func:`_preempt_lane`
-    already uses for the collision the supervisor *predicts* — the collision it
-    *observes* simply never got it. It names the conflicting paths and both
-    sides, which is what turns the re-dispatch into a resolvable task rather
-    than a replay.
-
-    Published here rather than at the bounce for the D9 reason the coupling edge
-    is: the culprits are not known while the pass is still running, so naming
-    whoever had landed by then would leak pass order into a durable record. With
-    no attribution the paths still stand on their own.
-
-    Best-effort per record: a tracker that will not take one brief must not cost
-    the other lanes theirs, nor the pass.
-    """
     for bead, conflicts in collisions:
         paths = ", ".join(conflicts) or "paths git did not name"
         culprits = attributed.get(bead, ())
@@ -3228,7 +1892,6 @@ def _record_bounce_briefs(
 
 
 def _reporting_couplings(one: RoutedOutcome, culprits: tuple[str, ...]) -> RoutedOutcome:
-    """*one* with the culprits it was attributed against named in its detail."""
     if not culprits:
         return one
     return RoutedOutcome(
@@ -3242,13 +1905,7 @@ def _carried_outcomes(
     carried: Iterable[str],
     outcomes: tuple[LaneOutcome, ...],
 ) -> tuple[LaneOutcome, ...]:
-    """Landing-only outcomes for the still-eligible lanes carried into this pass.
 
-    Eligibility is :func:`ready_lanes` membership, so a carried lane that has
-    since landed, blocked on a dependency, or picked up a pending decision is
-    dropped rather than landed twice; a lane that somehow also got dispatched
-    this pass is left to its dispatch outcome.
-    """
     wanted = frozenset(carried) - {outcome.issue_id for outcome in outcomes}
     if not wanted:
         return ()
@@ -3257,13 +1914,7 @@ def _carried_outcomes(
 
 
 def _landing_order(repo_root: Path, outcomes: tuple[LaneOutcome, ...]) -> list[LaneOutcome]:
-    """Order this pass's outcomes so a lane lands before the lanes depending on it.
 
-    Reuses the merge queue's dependency sort (kjc5.10) on the beads in hand, so
-    both landing paths agree on what "topo order" means. Non-green outcomes ride
-    along in the same sort — they do not land, so their position only affects
-    reporting — and an unreadable tracker degrades to the arrival order.
-    """
     by_id = {outcome.issue_id: outcome for outcome in outcomes}
     items = [(outcome.issue_id, outcome.issue_id) for outcome in outcomes]
     return [by_id[bead] for _, bead in merge.landing_order(repo_root, items)]
@@ -3271,8 +1922,6 @@ def _landing_order(repo_root: Path, outcomes: tuple[LaneOutcome, ...]) -> list[L
 
 def _is_green(outcome: LaneOutcome) -> bool:
     if not outcome.dispatched:
-        # A carried lane never ran this pass; its work is committed and was
-        # already green when it was held (basicly-kjc5.18).
         return True
     result = outcome.result
     return (
@@ -3292,17 +1941,10 @@ def _seeding_declined(
     skip: frozenset[str],
     admission: policy.SpendStatus | None,
 ) -> tuple[RoutedOutcome, ...] | None:
-    """Why this pass will not seed, or None to go ahead — :func:`seed_lanes`' guards.
 
-    Split out so the caller keeps one return per *outcome* rather than one per
-    precondition; the reasons themselves are unrelated to each other.
-    """
     if ready_lanes(repo_root, session, skip=skip):
         return ()
     if not session.open_children:
-        # No children at all is a leaf root, which seeds itself as the single lane
-        # (`loop._start_build_leaf`) — the case `preflight` prices as one. Children
-        # all closed is an exhausted epic, which is done (basicly-xkaya9).
         leaf = not session.children and loop_state.is_dispatchable(session.root_status)
         if not leaf:
             return ()
@@ -3328,42 +1970,7 @@ def seed_lanes(
     skip: frozenset[str] = frozenset(),
     admission: policy.SpendStatus | None = None,
 ) -> tuple[RoutedOutcome, ...]:
-    """Provision the root's child worktrees when the pass has nothing to dispatch.
 
-    Without this, ``loop supervise <root>`` cannot start work at all. ``ready_lanes``
-    returns only lanes at phase ``build``, a bead reaches ``build`` only by acquiring a
-    worktree binding, and the code that provisions one — ``loop._ensure_child_worktrees``,
-    reached from the root's decompose->build advance — sits on no supervise path. So a
-    cold root reported "no ready lanes and nothing to land" and exited while dozens of
-    dependency-unblocked children sat at ``intake``, and three handovers documented a
-    command that dispatched nothing (basicly-t73d).
-
-    Delegated to ``loop.run_ceremony`` on the root rather than reimplemented, so the
-    decompose checkpoint, the worktree cap and the ready-set filter keep their single
-    definition. The *ceremony* rather than ``run_until_blocked``, because that driver
-    stops dead at a checkpoint and never reaches ``policy.approve_checkpoint_guarded``
-    (basicly-kjc5.62): a root whose children already existed answered ``seed-blocked -
-    decompose checkpoint awaiting human approval`` under a live L3 grant that
-    :data:`policy.GRANT_COVERAGE` delegates that very checkpoint to, and the operator
-    hand-drove ``loop run`` per child on the same root and the same grant. Nothing is
-    widened by the swap — the ceremony's only route to an approval is that same guarded
-    predicate, so a checkpoint no grant covers still stops the pass and says so.
-
-    Runs only when there is genuinely nothing to dispatch: with lanes already in flight,
-    re-advancing the root would provision past what the cap intends. Termination is why
-    the route depends on what was provisioned rather than on the attempt having been
-    made — a root that seeds nothing dispatchable returns a non-retriable outcome, so the
-    pass says why and stops rather than spinning. :func:`_seeding_outcome` decides which.
-
-    *admission* short-circuits the whole step when the dispatch it would feed cannot
-    start anyway. Provisioning is not cheap — a ``uv sync`` and an ``npm install`` per
-    lane — so seeding five worktrees and then refusing the dispatch for want of a budget
-    wastes minutes on a pass that was never going to run (basicly-kkux).
-
-    A pass whose lanes were selected by label takes :func:`_seed_selected_lanes`
-    instead: the root's advance provisions the root's *children*, which a labelled cut
-    by construction is not (basicly-1lpo).
-    """
     declined = _seeding_declined(repo_root, session, skip=skip, admission=admission)
     if declined is not None:
         return declined
@@ -3382,21 +1989,7 @@ def seed_lanes(
 def _seed_selected_lanes(
     repo_root: Path, session: SessionState, *, skip: frozenset[str]
 ) -> tuple[RoutedOutcome, ...]:
-    """Provision a label-selected lane set directly, bypassing the root's own advance.
 
-    :func:`seed_lanes` delegates to ``loop.run_until_blocked`` on the *root*, whose
-    decompose->build advance provisions the root's ``parent-child`` children — and a
-    label-selected pass exists precisely because its lanes are not the root's
-    children (basicly-1lpo). Taking that route would drive a release epic through its
-    own checkpoints and provision nothing, so the selection is provisioned directly
-    through the primitive the root's advance itself uses
-    (:func:`loop.ensure_lane_worktrees`), which keeps the cap, the rank and the band
-    refusal identical for both kinds of pass.
-
-    Routed on what was *provisioned*, the rule :func:`_seeding_outcome` records: a
-    pass that built lanes must not report ``seed-blocked``, because that route is
-    deliberately non-retriable and the session would end discarding them.
-    """
     lanes = tuple(
         (issue_id, status)
         for issue_id, status in session.children
@@ -3408,8 +2001,6 @@ def _seed_selected_lanes(
         return (
             RoutedOutcome(session.root_issue, "error", f"seeding the selected lanes failed: {exc}"),
         )
-    # Re-derived rather than read off *session*: the bindings that make a lane
-    # dispatchable did not exist when this pass derived its state.
     derived = derive_session(repo_root, session.root_issue, lane_label=session.lane_label)
     dispatchable = ready_lanes(repo_root, derived, skip=skip)
     selected = f"{len(lanes)} lane(s) selected by label {session.lane_label!r}"
@@ -3446,32 +2037,7 @@ def _seeding_outcome(
     skip: frozenset[str],
     ceremony: loop.CeremonyResult | None = None,
 ) -> tuple[RoutedOutcome, ...]:
-    """Route a completed seeding attempt on what it *provisioned* (basicly-jr0l.57).
 
-    The route used to depend on whether the **root's own** advance progressed, and a
-    package root parked awaiting its children can never progress — ``run_until_blocked``
-    returns its steps as blocked by construction. So a pass that had just created N
-    worktrees reported ``seed-blocked``, and because that route is deliberately *not*
-    retriable, the session ended and discarded the lanes it had built. Observed on
-    basicly-jr0l: five worktrees provisioned, then ``seed-blocked - no lane could be
-    provisioned from 28 open child(ren)`` — a message false in its own terms — while the
-    identical command dispatched all four fundable lanes on its second run. That second
-    run is the whole tell: the state was right and only the verdict was wrong.
-
-    Re-derived rather than read off *session*, because the entire point of seeding is
-    that the bindings did not exist when this pass derived its state. Termination is
-    unaffected: :func:`_seeding_declined` returns early once a pass starts with ready
-    lanes, so the ``seeded`` route can be taken at most once per lane set.
-
-    A lane set that exists but is wholly undispatchable still terminates — nothing
-    another pass could change — but it says so rather than claiming nothing was built.
-
-    *ceremony* is what the root's drive did about its own checkpoints, and it is on the
-    terminal refusal for the reason basicly-kjc5.62 was hard to read: "awaiting human
-    approval" names neither the level that would delegate the checkpoint nor the fact
-    that a grant was consulted and declined, so an operator holding a covering grant
-    could not tell which of those had happened.
-    """
     final = steps[-1]
     live_before = frozenset(lane.issue_id for lane in session.adopted if lane.live)
     derived = derive_session(repo_root, session.root_issue, lane_label=session.lane_label)
@@ -3503,14 +2069,7 @@ def _seeding_outcome(
 
 
 def _unauthorized_detail(ceremony: loop.CeremonyResult | None, root_issue: str) -> str:
-    """`; <why the checkpoint was not resolved>`, or empty when none stopped the drive.
 
-    Three outcomes, and the whole point is that they read differently. A grant that was
-    consulted and declined says so in its own words (``challenge_reason``, which
-    ``policy._grant_approval`` composes). A refusal names itself. An unchallenged
-    checkpoint means no grant was in play at all, so this names the lowest level
-    :data:`policy.GRANT_COVERAGE` delegates it to and the command that issues one.
-    """
     if ceremony is None:
         return ""
     if ceremony.refused is not None:
@@ -3531,24 +2090,7 @@ def _unauthorized_detail(ceremony: loop.CeremonyResult | None, root_issue: str) 
 
 
 def repair_stale_bindings(repo_root: Path, session: SessionState) -> tuple[RoutedOutcome, ...]:
-    """Dispose of adopted lanes whose worktree is gone; the outcomes recorded.
 
-    ``derive_session`` already flags these ``live=False`` and its own comment says such
-    a lane "needs a re-dispatch, not an adoption" — but nothing acted on it, so the
-    lane was re-adopted and re-discarded on every pass while the bead sat at ``build``
-    permanently, out of reach of both ``ready_lanes`` and ``advance_parked``
-    (basicly-1koh). This is the step that acts.
-
-    Safe cases are cleared silently-but-reported: with the ref gone the bead falls back
-    to the phase its checkpoints evidence and the next fan-out re-provisions it, which
-    is the "re-dispatch" the adoption comment always intended. An unsafe case — a branch
-    still carrying unlanded commits — is enqueued as a decision instead, because
-    clearing it would make those commits unreachable from the loop and re-provisioning
-    would fork a second branch for one bead.
-
-    Idempotent: a cleared binding is not adopted next pass, and an enqueued decision is
-    keyed by (issue, kind, question) so a lane that keeps refusing re-reports one item.
-    """
     routed: list[RoutedOutcome] = []
     for lane in session.adopted:
         if lane.live:
@@ -3573,18 +2115,7 @@ def repair_stale_bindings(repo_root: Path, session: SessionState) -> tuple[Route
 def advance_parked(
     repo_root: Path, session: SessionState, *, beat: Callable[[], None] | None = None
 ) -> tuple[RoutedOutcome, ...]:
-    """Advance lanes the engine drives without a top-level runner dispatch.
 
-    Two shapes qualify. A lane past build parks in :data:`wip.DOWNSTREAM_PHASES`,
-    imported so the bound's population and this one are one set (basicly-xab3); there
-    the only correct move is more ``loop.advance``, never a fresh dispatch against an
-    already-merged branch. A lane still in build that carries sub-task beads is a
-    mini-loop lane (basicly-kjc5.9): its sub-tasks are dispatched one at a time from
-    inside ``loop.advance``, so the supervisor advances it here instead of dispatching
-    the lane bead itself. Lanes with a pending judgment stay parked. A lane whose
-    worktree is gone is not advanced here either — it is disposed of by
-    :func:`repair_stale_bindings` before the pass reaches this point (basicly-1koh).
-    """
     routed: list[RoutedOutcome] = []
     for lane in session.adopted:
         if not lane.live or decisions.has_pending(repo_root, lane.issue_id):
@@ -3608,16 +2139,9 @@ def advance_parked(
         if final.to_phase == "done":
             routed.append(RoutedOutcome(lane.issue_id, "shipped", final.detail))
         elif any(step.progressed for step in steps):
-            # The loop moved this lane, so the pass has another useful iteration: a closed
-            # sub-task in build, a landing anywhere downstream.
             route = "lane-step" if final.to_phase == "build" else "merged"
             routed.append(RoutedOutcome(lane.issue_id, route, final.detail))
         else:
-            # It did not move, and every phase must say so the same way. Until
-            # basicly-u2hl.55 only the `build` branch checked: a lane blocked at a
-            # downstream checkpoint fell here, was reported as `merged`, read as progress
-            # through `RoutedOutcome.progressed`, and re-adopted every round — measured at
-            # 257 rounds over 49 minutes, dispatching nothing and never returning.
             routed.append(
                 RoutedOutcome(
                     lane.issue_id, "lane-blocked", _blocked_lane_detail(repo_root, lane, final)
@@ -3627,11 +2151,7 @@ def advance_parked(
 
 
 def _blocked_lane_detail(repo_root: Path, lane: AdoptedLane, final: loop.AdvanceResult) -> str:
-    """Record what a stuck lane waits on, so the pass ends with a question rather than quietly.
 
-    `advance_parked` enqueued nothing, so the operator saw a live process and no item in the
-    decision queue — which is why the spin above was invisible rather than merely wrong.
-    """
     with contextlib.suppress(OSError, RuntimeError, ValueError):
         decisions.enqueue(
             repo_root,
@@ -3650,26 +2170,13 @@ def _route_one(
     landed: list[tuple[str, tuple[str, ...]]],
     collisions: list[tuple[str, tuple[str, ...]]],
 ) -> RoutedOutcome:
-    """Route one collected outcome, appending to the pass's *landed*/*collisions*.
 
-    Both ledgers are required rather than defaulted: a caller that omitted
-    *collisions* would drop a bounce's coupling silently, which is the D9
-    regression this shape exists to prevent (basicly-kjc5.32).
-    """
     issue_id = outcome.issue_id
     result = outcome.result
     if not outcome.dispatched:
-        # Carried lane: nothing ran, so there is no run to triage — land it.
         return _land_green(repo_root, session, outcome, landed, collisions)
     if result is not None and result.handoff:
         return RoutedOutcome(issue_id, "handoff", outcome.detail)
-    # Held-by-the-queue shapes come before the failure branch: a nonzero exit
-    # that also wrote the sentinel is waiting on the fact, not on a retry —
-    # burning a dispatch-rework attempt on it would be double jeopardy. A lane the
-    # engine refused on its size is the same shape for a stronger reason
-    # (basicly-jr0l.16): the refusal is deterministic arithmetic, so every retry
-    # would reach the identical verdict and only delay the escalation that already
-    # holds the lane.
     if outcome.refused or outcome.needs_fact is not None:
         return RoutedOutcome(issue_id, "decision", outcome.detail)
     if result is not None and result.timed_out:
@@ -3686,19 +2193,7 @@ def _route_timeout(
     landed: list[tuple[str, tuple[str, ...]]],
     collisions: list[tuple[str, tuple[str, ...]]],
 ) -> RoutedOutcome:
-    """Where a hard-killed lane goes, decided by whether its worktree was rescued.
 
-    A kill whose worktree :func:`commit.salvage` committed lands like any other
-    committed lane (basicly-yvx9). The stall item queued at dispatch already holds
-    the *timeout* for a human; what routes here is the *diff*, and verify is the
-    authority on a diff where a clock is not — green lands, red reworks the lane
-    with real findings about the code the killed run actually wrote.
-
-    With nothing committed the lane parks on that queue item, exactly as every
-    timeout did before: there is no diff for a landing to judge, and the killed run
-    is not a failure of the work that a bounded re-dispatch could fix — it would
-    only reach the same clock.
-    """
     if not outcome.salvaged:
         return RoutedOutcome(outcome.issue_id, "decision", outcome.detail)
     return _land_green(repo_root, session, outcome, landed, collisions)
@@ -3710,82 +2205,33 @@ def _route_blocked_landing(
     landing: loop.AdvanceResult,
     collisions: list[tuple[str, tuple[str, ...]]],
 ) -> RoutedOutcome:
-    """Where a blocked landing goes, read off the merge attempt behind it.
 
-    The shape decides: a scope collision bounces back to the lane (and does not
-    hold the pass), a rework cap already escalated into the decision queue, an
-    uncommitted worktree is bounded by the dispatch cap like a failed run, and
-    anything else is a plain rework block the loop's own counter bounds.
-    """
     attempt = landing.landing
     if attempt is not None and attempt.conflicted:
         return _bounce_lane(repo_root, outcome.issue_id, landing, attempt, collisions)
     if landing.action == "escalated":
-        # loop._rework already queued the escalation (kjc5.4); the pending item
-        # now holds the lane until a human triages it.
         return RoutedOutcome(outcome.issue_id, "decision", landing.detail)
     if attempt is not None and attempt.foreign:
-        # A tracker-wide gate failed on another lane's finishing record, which is
-        # what makes this a supervisor's problem rather than a lane's: every lane in
-        # the pass shares one ledger through the redirect, so the identical
-        # assertion fails inside every sibling's landing. This lane is green and
-        # committed and no evidence faults it, so it takes the ``held`` shape — carry
-        # it forward to land first next pass, charge it nothing, and do not re-dispatch
-        # an agent to rewrite a correct diff (basicly-qorx). The loop already
-        # attributed the failure to the culprits and escalated it; holding here is
-        # what stops the pass from spending a full verify run per remaining lane to
-        # reach the same verdict.
         return RoutedOutcome(outcome.issue_id, "held", landing.detail)
     if attempt is not None and attempt.unreliable:
-        # The gate failed and then passed unchanged, so this lane is green and
-        # committed and only the gate was unreliable (basicly-55yh). That is
-        # exactly the ``held`` shape: carry it forward to land first next pass,
-        # and do not re-dispatch an agent over work no evidence faults — a fresh
-        # dispatch would spend tokens rewriting a correct diff.
         return RoutedOutcome(outcome.issue_id, "held", landing.detail)
     if attempt is not None and attempt.status == "not-ready":
-        # A green run that committed nothing (merge's not-ready guard,
-        # basicly-4psl) would re-dispatch forever un-counted — bound it with the
-        # dispatch rework cap like a failed run.
         return _route_failed(repo_root, outcome.issue_id, outcome)
     return RoutedOutcome(outcome.issue_id, "rework", landing.detail)
 
 
-# The merge gate's convergence threshold, and the strictest one there is: the
-# *first* repeat stops the lane, where a finding-set gate warns once first
-# (:data:`policy.MAX_STALLED_REWORK_ROUNDS`). The verdict is shared; this number is
-# the one thing about it that is the merge gate's own, so it is named here rather
-# than assumed by whoever reads ``stalled``.
 MAX_REPEAT_BOUNCES = 1
 
 
 def conflict_signature(attempt: merge.MergeResult) -> tuple[str, ...]:
-    """What a landing failed on, reduced to a comparable finding set (pure).
 
-    The merge gate's members are its cause and its conflicting paths, where a
-    test gate's are its failing checks — one shape, so one mechanism can store and
-    compare both (basicly-m4zv.5). :func:`policy.finding_signature` sorts and
-    dedupes them, because git's ordering is not a fact about the collision and two
-    orderings of one conflict must not read as two different failures. The status
-    is tagged rather than bare so a cause can never be mistaken for a path.
-
-    Only the lane's own status and paths go in, so no pass ordering reaches a
-    durable record (D9).
-    """
     return policy.finding_signature((f"status={attempt.status}", *attempt.conflicts))
 
 
 def _bounce_convergence(
     repo_root: Path, issue_id: str, attempt: merge.MergeResult
 ) -> policy.Convergence | None:
-    """Record this bounce's signature and judge it; None when the tracker refused.
 
-    Tolerant on purpose, exactly as the comment write and read it replaced were:
-    the bounce still has a lane to brief and a coupling to attribute, and letting a
-    tracker hiccup turn a routable bounce into an ``error`` route would cost more
-    than the missed comparison — one lost signature delays an escalation by a
-    bounce and suppresses none.
-    """
     try:
         return policy.record_finding_set(
             repo_root, issue_id, merge.MERGE_GATE, conflict_signature(attempt)
@@ -3801,34 +2247,11 @@ def _bounce_lane(
     attempt: merge.MergeResult,
     collisions: list[tuple[str, tuple[str, ...]]],
 ) -> RoutedOutcome:
-    """Bounce a collided lane back to its owner and note the collision (D5).
 
-    The rework attempt was already recorded by the loop's own landing (and it
-    escalated into the decision queue if that hit the cap); what the supervisor
-    adds is the graph edge that makes the next decomposition serialize what it
-    wrongly called parallel-safe. That edge is deliberately **not** written here:
-    naming whoever had landed by the time this bounce happened is the pass-order
-    dependence D9 forbids, so the conflicting paths are noted as evidence and
-    :func:`_attribute_pass_couplings` attributes them once the pass is over
-    (basicly-kjc5.32) — and publishes the brief the lane's next dispatch reads
-    (:func:`_record_bounce_briefs`).
-
-    What *is* recorded here is the failure signature, because it is order-free
-    and the next bounce needs it: a landing that failed exactly as it failed last
-    time escalates instead of spending another attempt
-    (:func:`_escalate_repeat_bounce`). It is recorded through
-    :func:`policy.record_finding_set`, which is where every gate's signature
-    history lives, and the threshold below is the merge gate's own.
-
-    There is no resolution of any kind here: the base was left untouched and the
-    lane keeps its commits for its agent to re-apply on the new base.
-    """
     collisions.append((issue_id, attempt.conflicts))
     convergence = _bounce_convergence(repo_root, issue_id, attempt)
     if convergence is not None and convergence.stalled_rounds >= MAX_REPEAT_BOUNCES:
         return _escalate_repeat_bounce(repo_root, issue_id, convergence)
-    # At the rework cap the loop already queued the escalation, so the lane is
-    # held by a pending decision rather than re-dispatched — say so.
     route = "decision" if landing.action == "escalated" else "bounced"
     return RoutedOutcome(issue_id, route, f"bounced back to the lane: {landing.detail}")
 
@@ -3836,32 +2259,7 @@ def _bounce_lane(
 def _escalate_repeat_bounce(
     repo_root: Path, issue_id: str, convergence: policy.Convergence
 ) -> RoutedOutcome:
-    """A landing that failed exactly as it failed last time: stop, and charge nothing.
 
-    The strictest threshold on the shared convergence verdict, and the merge
-    gate's own: it escalates on the *first* repeat where a finding-set gate warns
-    and escalates on the second (:data:`policy.MAX_STALLED_REWORK_ROUNDS`). A
-    repeated finding set is only probably stalled, since an agent may have changed
-    something the gate does not report; re-applying one branch to one anchor
-    provably cannot converge, so there is nothing a second attempt could do
-    differently.
-
-    The attempt is *refunded* rather than merely reported. The loop's landing
-    already charged it (:func:`loop._rework`) before the supervisor saw the
-    shape, and an attempt that could not have changed the outcome is not one the
-    lane spent: on 2026-08-05 that charge was the whole remaining budget, and the
-    pass ended on a human decision the first bounce had already reported verbatim.
-    :func:`policy.spend_convergence_refund` offsets it additively — and only once,
-    so a lane nobody answers still reaches its cap rather than bouncing forever
-    forgiven.
-
-    Deliberately blind to *why* the branch is unchanged. A second consecutive
-    collision on one anchor is a decomposition the graph got wrong, and a human
-    deciding that is the point of the escalation — whether the lane's agent tried
-    and failed or never tried at all. The queue item is the loop's own rework
-    escalation, and :func:`decisions.enqueue` is idempotent per question, so a
-    landing that already escalated at the cap is not queued twice.
-    """
     signature = " ".join(convergence.members)
     policy.spend_convergence_refund(repo_root, issue_id, merge.MERGE_GATE)
     item = decisions.enqueue(
@@ -3886,21 +2284,7 @@ def _escalate_repeat_bounce(
 
 
 def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> RoutedOutcome:
-    """A failed dispatch retries under the bounded rework cap, then escalates.
 
-    A dispatch the *tracker's storage* lost is charged to its own counter instead
-    (R7, basicly-vkh0.10). Nothing spawned and the lane's tree is untouched, so the
-    dispatch budget — which exists to bound how many times an agent may be re-run at
-    a problem — has no claim on it. Spending it here is what parked a lane that
-    never started an agent on the 2026-08-02 five-lane pass, while br reported the
-    contention as ``retryable: false`` and the supervisor believed it.
-
-    A dispatch the *provider's own allowance* refused spends nothing at all and holds
-    the lane for a human (basicly-jr0l.10). Not a merit failure and not retriable: the
-    agent never ran, so there is no work to re-attempt, and every retry before the
-    reset reaches the identical verdict — 70 of them across 7 lanes in 20 minutes on
-    2026-08-28, one rework charged per lane and nothing learned.
-    """
     if outcome.provider_refusal:
         return _route_provider_limit(repo_root, issue_id, outcome)
     if outcome.transient:
@@ -3922,18 +2306,7 @@ def _route_failed(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> Route
 
 
 def _route_provider_limit(repo_root: Path, issue_id: str, outcome: LaneOutcome) -> RoutedOutcome:
-    """Hold *issue_id* on the queue after the provider refused its dispatch.
 
-    "decision" rather than "retry" is what stops the pass: the route is outside
-    :data:`RETRIABLE_ROUTES`, so :func:`should_continue` ends the standing loop unless
-    something else progressed, and the queue item keeps :func:`ready_lanes` off the lane
-    until a human answers it. No :func:`policy.record_rework` call, which is the whole
-    point — the refusal is the provider's, and the lane's budget is for its work.
-
-    Idempotent per lane by :func:`decisions.enqueue`'s own key, so the refusals a pass
-    already in flight collects collapse onto one item; what the provider *said*, reset
-    time and all, rides in the detail where the key cannot see it.
-    """
     item = decisions.enqueue(
         repo_root,
         issue_id,
@@ -3953,18 +2326,7 @@ def _capped_dispatch(  # noqa: PLR0913 — route, detail and question vary indep
     question: str,
     gate: str = DISPATCH_GATE,
 ) -> RoutedOutcome:
-    """Owe *issue_id* another dispatch, bounded by *gate*'s rework cap.
 
-    One counter for every reason a lane needs re-running (a failed run, a
-    pre-empted landing): the cap has to bound the *dispatches* a lane can spend,
-    so splitting it per reason would let a lane alternate between them and never
-    reach an escalation. At the cap the queue item holds the lane for a human.
-
-    *gate* is the single exception, and it is not a reason the lane needs re-running
-    at all: :data:`TRACKER_GATE` counts dispatches the store lost before the lane
-    ran. Alternating between the two cannot postpone an escalation, because a lane
-    only reaches the tracker counter by not having been dispatched.
-    """
     config = policy.load_policy(repo_root)
     attempts = policy.record_rework(repo_root, issue_id, gate)
     if attempts < config.max_rework:
@@ -3981,26 +2343,7 @@ def _invalidated_by(
     issue_id: str,
     landed: list[tuple[str, tuple[str, ...]]],
 ) -> tuple[str, ...]:
-    """Lanes landed this pass that broke *issue_id*'s pending landing (D6).
 
-    Read from the evidence, not from a proxy. ``git merge-tree`` predicts the
-    merge without touching any tree (:func:`merge.probe_merge`), and the paths it
-    names are intersected with what each landing changed
-    (:func:`merge.missed_couplings`) to say *which* landing did it — the same
-    attribution a bounce makes, one attempt earlier. A lane's declared ``##
-    Scope`` is only what it promised to touch, so overlapping it does not mean
-    the landing is doomed: cancelling on that would spend an agent run replacing
-    work that would have landed clean.
-
-    Nothing is returned unless a landing *this pass* is to blame. A branch that
-    conflicts on its own is the bounce path's business, which records the missed
-    coupling and takes the rework attempt the loop's own landing owes it.
-
-    Every way of failing to read the evidence — no adopted lane, no worktree
-    record, an unreadable session — yields nothing rather than raising: the
-    remedy costs an agent run, so it is spent on a demonstrated collision only,
-    and a lane that would have landed must never be cancelled by a git hiccup.
-    """
     if not landed:
         return ()
     lane = next((la for la in session.adopted if la.issue_id == issue_id and la.live), None)
@@ -4019,28 +2362,7 @@ def _invalidated_by(
 
 
 def _preempt_lane(repo_root: Path, issue_id: str, culprits: tuple[str, ...]) -> RoutedOutcome:
-    """Cancel a lane a landing this pass broke and re-dispatch it *informed* (D6).
 
-    D6 forbids messaging a lane whose base moved under it; the write-side
-    counterpart is not to let it walk into the collision either. So the landing is
-    skipped and the lane owes a fresh dispatch — but a re-dispatch that says
-    nothing new would run the same agent, on the same tree, to the same
-    collision. What makes it worth a run is the ``kind=coupling`` found-info
-    record published here: that is D6's own propagation channel, and
-    :func:`build_bundle` folds it into this lane's **next** prompt, so its agent
-    re-applies its intent knowing which lane landed what.
-
-    No dependency edge is recorded either — the found-info record already carries
-    the discovery to the one lane that needs it, and the graph learns the coupling
-    from the bounce if the re-applied work collides again. (That edge is
-    non-gating since basicly-grrb, so the choice here is about not duplicating a
-    record, no longer about avoiding a stall.)
-
-    Cancelling is not destructive: like a bounce, the lane keeps its commits on
-    its branch. What it costs is a dispatch, so it is bounded — once per lane per
-    pass, because a lane routes exactly once — and counted against the dispatch
-    rework cap, which escalates to a human rather than re-dispatching forever.
-    """
     who = ", ".join(culprits)
     record_found_info(
         repo_root,
@@ -4077,27 +2399,10 @@ def _land_green(
     landed: list[tuple[str, tuple[str, ...]]],
     collisions: list[tuple[str, tuple[str, ...]]],
 ) -> RoutedOutcome:
-    """Land a green lane through the single-track engine, then try to ship it.
 
-    A lane whose merge one of *landed* just broke is cancelled and re-dispatched
-    instead (:func:`_preempt_lane`, D6) — the doomed landing is not attempted.
-    Otherwise ``loop.advance`` does the build→verify landing (rebase, verify,
-    gate) — the supervisor composes it, never replaces it. A blocked landing is
-    triaged by :func:`_route_blocked_landing`, which adds a collision to
-    *collisions* for the pass to attribute at the end. The ship checkpoint is
-    then tried non-interactively: an L3 grant with the lights-out preconditions
-    holding approves and the next advance ships; otherwise the request queues for
-    the human and the lane parks in verify.
-    """
     invalidated = _invalidated_by(repo_root, session, outcome.issue_id, landed)
     if invalidated:
         return _preempt_lane(repo_root, outcome.issue_id, invalidated)
-    # ``repair_dispatch=False``: a red gate here leaves its brief for the next
-    # pass's ``_dispatch_lane`` to run, rather than having the landing spawn an
-    # agent of its own (basicly-u2hl.4). A dispatch from inside the landing would
-    # sit outside the spend bound, the stall watchdog and the stream meter that
-    # every supervised run is metered by, and it would run while the pass still
-    # holds lanes waiting to land.
     landing = loop.advance(repo_root, outcome.issue_id, repair_dispatch=False)
     if landing.blocked:
         return _route_blocked_landing(repo_root, outcome, landing, collisions)
@@ -4114,9 +2419,6 @@ def _land_green(
             outcome.issue_id,
             "checkpoint",
             f"approve the ship checkpoint for {outcome.issue_id}",
-            # The approval's own detail says why a grant declined, when one did
-            # (basicly-5ltn) — the human answering this item is the one who needs
-            # it, and the wrinkle is often in a sibling lane's bead.
             "; ".join(part for part in (landing.detail, approval.detail) if part),
         )
         return RoutedOutcome(
@@ -4124,7 +2426,6 @@ def _land_green(
             "merged",
             f"landed; ship awaits a human ({item.decision_id})",
         )
-    # An L3 unit rests in validate, not ship: this drive spawns a validator (basicly-xab3).
     shipped = loop.run_until_blocked(repo_root, outcome.issue_id, grant_root=session.root_issue)
     final = shipped[-1] if shipped else landing
     if final.to_phase == "done":

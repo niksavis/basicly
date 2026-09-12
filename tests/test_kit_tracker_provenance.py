@@ -1,33 +1,3 @@
-"""Tests for provenance on edge events (basicly-vkh0.13).
-
-Both acceptance criteria are dispositions rather than outputs, so each is asserted where
-it would actually bite:
-
-- **The three derivations get three labels, and the labels buy three different powers.**
-  One ledger records a human's assertion, an agent's proposal and a merge queue's
-  uncertain deduction, and the assertions are that the human's edge is the *only* one
-  `gating_edges` returns, that the agent's is present and visible as a proposal, and that
-  the uncertain one routes a decision item the engine's own queue would accept. Naming
-  the gating set positively and negatively in the same fixture is what makes it
-  discriminating: a module that gated everything and a module that gated nothing both
-  pass a test that only counts.
-- **A confirmation appends.** The log's bytes are captured before the promotion and the
-  assertion is that the file grew by exactly the new line — the original is still there,
-  byte for byte — while the folded edge moves from proposal to gate and its history reads
-  as the two-step sequence it was.
-
-The label a derivation *deserves* is the recorder's judgment and deliberately not this
-module's: `work-tracker.md` §9.6 puts a confident bounce inference at ``INFERRED``,
-while this bead's criterion records an uncertain one as ``AMBIGUOUS``. Both are the same
-call — how sure was the deriver — so the module maps no source to any label, and the
-fixture below follows the criterion.
-
-Everything the module would otherwise take from its host is test data: the wall clock via
-`events.append`'s injected seam, and the engine's decision vocabulary read from
-`basicly.decisions` rather than restated, so a rename there fails here instead of leaving
-this module routing to a kind the queue rejects.
-"""
-
 from __future__ import annotations
 
 import ast
@@ -55,7 +25,6 @@ DIFFERENTIAL_SOURCE = KIT_DIR / "differential.py"
 
 
 def _load(path: Path, name: str) -> ModuleType:
-    """Load a standalone script by path, the way a consumer without basicly would."""
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -65,14 +34,8 @@ def _load(path: Path, name: str) -> ModuleType:
 
 
 provenance = _load(PROVENANCE_SOURCE, "tracker_provenance")
-# The sibling the module loaded for itself, never a second copy: two loads of `events.py`
-# would mint two `InvalidEventError` classes and every `except` clause here would stop
-# matching one of them. The module names the module name for exactly this reason.
 events = provenance.events
 
-# The other fold over the same edge events, loaded for the dialect control below. It reaches
-# `events.py` through `migrate.py` under the published module name, so this is still the one
-# copy — asserted where the single-load contract is asserted.
 differential = _load(DIFFERENTIAL_SOURCE, "tracker_differential")
 migrate = differential.migrate
 
@@ -83,15 +46,12 @@ RECORD_D = "basicly-dd44.2"
 
 CLOCK = 1_000_000_000.0
 
-# The three derivations of the criterion, all out of one record so one landing decision
-# has to choose between them.
 HUMAN_EDGE = provenance.EdgeKey(RECORD_A, "blocks", RECORD_B)
 AGENT_EDGE = provenance.EdgeKey(RECORD_A, "couples-with", RECORD_C)
 BOUNCE_EDGE = provenance.EdgeKey(RECORD_A, "blocks", RECORD_D)
 
 
 def _three_derivations() -> list[Any]:
-    """One edge asserted by a human, one proposed by an agent, one deduced from a bounce."""
     return [
         provenance.edge_draft(
             HUMAN_EDGE,
@@ -115,32 +75,21 @@ def _three_derivations() -> list[Any]:
 
 
 def _build(directory: Path) -> list[Any]:
-    """Append the three derivations to a fresh ledger under a fixed clock."""
     return events.append(directory, _three_derivations(), clock=lambda: CLOCK)
 
 
 def _folded(directory: Path) -> Any:
-    """Read the ledger back and fold its edges."""
     stored, quarantined = events.read_events(directory)
     assert quarantined == []
     return provenance.fold_edges(stored)
 
 
 def _keys(states: tuple[Any, ...]) -> list[Any]:
-    """The edges a selector returned, as keys."""
     return [state.key for state in states]
 
 
-# --- AC1: three derivations, three labels -------------------------------------
-
-
 def test_each_derivation_records_its_own_label_on_its_own_event(tmp_path: Path) -> None:
-    """The label reaches the ledger line, not just the object the builder returned.
 
-    Read back off the file rather than off the return value, because the write path
-    redacts and caps a payload on the way through — a label that survived in memory and
-    was mangled on disk would pass any assertion made before the round trip.
-    """
     _build(tmp_path)
 
     stored, _ = events.read_events(tmp_path)
@@ -161,12 +110,7 @@ def test_each_derivation_records_its_own_label_on_its_own_event(tmp_path: Path) 
 
 
 def test_only_the_human_asserted_edge_may_gate_a_landing(tmp_path: Path) -> None:
-    """The whole point: an agent's guess must not stop a landing unexamined.
 
-    Asserted as an equality over the gating set rather than as three separate membership
-    checks — a module that gated every edge and one that gated none would each satisfy a
-    weaker assertion, and they are opposite defects.
-    """
     _build(tmp_path)
 
     edge_fold = _folded(tmp_path)
@@ -179,11 +123,7 @@ def test_only_the_human_asserted_edge_may_gate_a_landing(tmp_path: Path) -> None
 
 
 def test_the_agent_proposal_is_usable_but_visible_as_a_proposal(tmp_path: Path) -> None:
-    """Usable means it is in the graph; a proposal means it is labelled as one.
 
-    The failure this rules out is dropping the edge entirely — a safe-looking way to keep
-    an inference from gating that also throws away the inference.
-    """
     _build(tmp_path)
 
     edge_fold = _folded(tmp_path)
@@ -199,7 +139,6 @@ def test_the_agent_proposal_is_usable_but_visible_as_a_proposal(tmp_path: Path) 
 
 
 def test_the_uncertain_edge_routes_a_decision_and_never_gates(tmp_path: Path) -> None:
-    """`AMBIGUOUS` has a disposition path that already exists — the decision queue."""
     _build(tmp_path)
 
     edge_fold = _folded(tmp_path)
@@ -213,19 +152,13 @@ def test_the_uncertain_edge_routes_a_decision_and_never_gates(tmp_path: Path) ->
 
 
 def test_the_routed_item_is_one_the_engines_decision_queue_accepts(tmp_path: Path) -> None:
-    """Routing a decision is a claim about another component, so it is checked there.
 
-    `decisions.enqueue` refuses a kind outside its own vocabulary, so a kit constant that
-    drifted from it would produce items nothing could queue — and the kit may not import
-    basicly to find that out. The test can, which is where the coupling belongs.
-    """
     _build(tmp_path)
 
     request = provenance.decision_requests(_folded(tmp_path))[0]
 
     assert request.kind in decisions.KINDS
     assert provenance.DECISION_KIND in decisions.KINDS
-    # The id the queue would derive is well formed and splits back to the record it is on.
     decision_id = decisions.decision_id_for(request.record, request.kind, request.question)
     assert decisions.split_decision_id(decision_id)[0] == RECORD_A
 
@@ -233,11 +166,7 @@ def test_the_routed_item_is_one_the_engines_decision_queue_accepts(tmp_path: Pat
 def test_the_decision_question_does_not_drift_as_the_edges_history_grows(
     tmp_path: Path,
 ) -> None:
-    """The queue keys an item on its question, so a drifting one re-enqueues forever.
 
-    A second, weaker assertion on the same edge changes the *detail* — which is what the
-    answerer reads — and must leave the question, and therefore the item's id, alone.
-    """
     _build(tmp_path)
     before = provenance.decision_requests(_folded(tmp_path))[0]
 
@@ -263,18 +192,10 @@ def test_the_decision_question_does_not_drift_as_the_edges_history_grows(
     ) == decisions.decision_id_for(before.record, before.kind, before.question)
 
 
-# --- AC2: a confirmation appends, and the history reads as a sequence ---------
-
-
 def test_confirming_an_inferred_edge_appends_and_leaves_the_original_line_intact(
     tmp_path: Path,
 ) -> None:
-    """The criterion, asserted on the bytes.
 
-    The log is compared as a prefix rather than by re-parsing: an implementation that
-    rewrote the original line to carry the new label could still produce a fold that looks
-    right, and only the bytes distinguish "appended" from "overwritten".
-    """
     _build(tmp_path)
     log = tmp_path / events.INITIAL_LOG_NAME
     before = log.read_bytes()
@@ -293,7 +214,6 @@ def test_confirming_an_inferred_edge_appends_and_leaves_the_original_line_intact
     after = log.read_bytes()
     assert after.startswith(before)
     assert after[len(before) :] == (events.to_json(landed[0]) + "\n").encode("utf-8")
-    # The original event is untouched and still says what it said.
     reread = {event.id: event for event in events.read_events(tmp_path)[0]}
     assert reread[proposal.event_id].payload[provenance.KEY_LABEL] == provenance.INFERRED
     assert len(landed) == 1
@@ -303,13 +223,7 @@ def test_confirming_an_inferred_edge_appends_and_leaves_the_original_line_intact
 def test_the_confirmed_edge_gates_and_its_history_reads_as_a_sequence(
     tmp_path: Path,
 ) -> None:
-    """Promotion is a fold over two events, not a mutation of one.
 
-    Both halves are asserted: the disposition moved from proposal to gate, and the two
-    assertions are still readable in the order they were made, each with its own actor —
-    which is what "readable as a sequence rather than overwritten" has to mean to be
-    checkable at all.
-    """
     _build(tmp_path)
     events.append(
         tmp_path,
@@ -334,12 +248,7 @@ def test_the_confirmed_edge_gates_and_its_history_reads_as_a_sequence(
 
 
 def test_re_confirming_the_same_fact_appends_nothing(tmp_path: Path) -> None:
-    """An event id is content-derived, so a replayed confirmation is a no-op.
 
-    Stated as a test because the same mechanism is a trap in the other direction: a second
-    reviewer who genuinely reached the same conclusion needs ``generation=2`` or their
-    assertion is swallowed as this one is. Both directions are asserted here.
-    """
     _build(tmp_path)
     confirm = provenance.confirmation_draft(AGENT_EDGE, detail="reviewed", actor="human:owner")
     events.append(tmp_path, [confirm], clock=lambda: CLOCK)
@@ -371,13 +280,7 @@ def test_re_confirming_the_same_fact_appends_nothing(tmp_path: Path) -> None:
 def test_a_weaker_later_label_is_recorded_and_does_not_demote_the_edge(
     tmp_path: Path,
 ) -> None:
-    """The strongest label wins (§9.6), and this is the cost of that rule made checkable.
 
-    Asserting doubt over a confirmed edge lands in the history — where a reader and a
-    later retraction kind can both see it — and changes nothing about the disposition.
-    The module documents the absence of a demotion path; this is what documenting it
-    means in practice.
-    """
     _build(tmp_path)
     events.append(
         tmp_path,
@@ -399,17 +302,8 @@ def test_a_weaker_later_label_is_recorded_and_does_not_demote_the_edge(
     assert state.gates is True
 
 
-# --- the fold is a function of the event set ----------------------------------
-
-
 def test_the_edge_fold_ignores_the_order_the_events_arrive_in(tmp_path: Path) -> None:
-    """A shuffle, a reversal and the file order all fold to one set of edges and histories.
 
-    The promotion in the fixture is what makes this discriminating: a fold that trusted
-    arrival order would put the confirmation before the proposal in the reversed run, and
-    the history — the thing AC2 asks to be readable as a sequence — would be backwards
-    while the label still looked right.
-    """
     _build(tmp_path)
     events.append(
         tmp_path,
@@ -434,7 +328,6 @@ def test_the_edge_fold_ignores_the_order_the_events_arrive_in(tmp_path: Path) ->
 
 
 def test_a_duplicated_edge_event_folds_once(tmp_path: Path) -> None:
-    """Idempotency by id, so a union merge that duplicated a line adds no assertion."""
     _build(tmp_path)
     original, _ = events.read_events(tmp_path)
 
@@ -447,11 +340,7 @@ def test_a_duplicated_edge_event_folds_once(tmp_path: Path) -> None:
 def test_a_non_edge_event_is_ignored_rather_than_filtered_by_the_caller(
     tmp_path: Path,
 ) -> None:
-    """The fold takes whatever `read_events` returned rather than a filtered list.
 
-    Asking the caller to filter first invites a second caller who filters differently,
-    which is the shape of defect this design keeps paying for.
-    """
     events.append(
         tmp_path,
         [
@@ -469,19 +358,10 @@ def test_a_non_edge_event_is_ignored_rather_than_filtered_by_the_caller(
     assert edge_fold.malformed == []
 
 
-# --- forward compatibility, in the fail-closed direction ----------------------
-
-
 def test_a_label_from_a_newer_writer_is_reported_and_routes_a_decision(
     tmp_path: Path,
 ) -> None:
-    """The tolerant direction for a gate is the restrictive one.
 
-    A newer writer's label is preserved and counted, and it lands on the disposition of
-    the thing we are least sure about — never on the one that can hold up a landing.
-    Written as a raw event because the write path refuses to mint such a label at all,
-    which is the other half of the same rule and is asserted separately.
-    """
     _build(tmp_path)
     events.append(
         tmp_path,
@@ -514,12 +394,7 @@ def test_a_label_from_a_newer_writer_is_reported_and_routes_a_decision(
 
 
 def test_an_unknown_label_cannot_outrank_a_known_one(tmp_path: Path) -> None:
-    """It ranks below every label we know, so it neither promotes nor demotes.
 
-    Without this the fail-closed rule would have a hole in each direction: an unknown
-    label sorting high would inherit a gate, and one sorting merely *last* would knock a
-    confirmed edge back to a decision.
-    """
     _build(tmp_path)
     events.append(
         tmp_path,
@@ -562,13 +437,7 @@ def test_an_unknown_label_cannot_outrank_a_known_one(tmp_path: Path) -> None:
 def test_a_malformed_edge_event_is_named_and_never_becomes_an_edge(
     tmp_path: Path, payload: dict[str, str], reason: str
 ) -> None:
-    """Reported and skipped, where `events.fold` would raise — and the divergence is safe.
 
-    A skipped edge is an *absent* edge, and an absent edge can never gate anything, so the
-    failure mode is a missed gate that `malformed` names rather than a wrong gate nobody
-    can see. The rest of the ledger still folds, which is the availability half: one bad
-    line from a foreign writer must not wedge every edge read.
-    """
     _build(tmp_path)
     events.append(
         tmp_path,
@@ -609,12 +478,7 @@ def test_a_malformed_edge_event_is_named_and_never_becomes_an_edge(
     ],
 )
 def test_the_write_path_refuses_what_it_cannot_mean(key: Any, label: str, match: str) -> None:
-    """Validation at the trust boundary, before anything is authoritative.
 
-    The refusal is raised as a subclass of the event log's own error, so a caller that
-    wrapped build-and-append in one ``except events.LedgerError`` catches the draft
-    builder too rather than having it escape the handler written for the write.
-    """
     with pytest.raises(provenance.InvalidEdgeError, match=match):
         provenance.edge_draft(key, label)
 
@@ -622,23 +486,10 @@ def test_the_write_path_refuses_what_it_cannot_mean(key: Any, label: str, match:
     assert issubclass(provenance.InvalidEdgeError, events.LedgerError)
 
 
-# --- the two edge dialects ----------------------------------------------------
-
-# The fold read `target`/`edge_type` while `migrate.py` writes `to`/`type`, so it read **0 of
-# the 1,083** edge events in this repo's log and `gating_edges` answered for the whole
-# population by seeing nothing (basicly-svct4w). Zero is why a count alone cannot be the
-# test: an empty edge set is the same answer for a ledger with no edges and a ledger the
-# reader could not parse. Every test here is therefore held against a second measurement —
-# `differential.views_from_events` over the *same* events, `migrate.py`'s own constants, or
-# the `dialects` report — rather than against a number this file also chose.
-#
-# One edge in the dialect the engine actually writes. Built from `migrate.py`'s constants: a
-# literal would keep passing after a rename that reopened the split.
 ENGINE_EDGE = provenance.EdgeKey(RECORD_B, "parent-child", RECORD_C)
 
 
 def _engine_dialect_draft(key: Any, label: str = provenance.EXTRACTED) -> Any:
-    """One edge event spelled `from`/`to`/`type`, the way `migrate.py` records one."""
     return events.Draft(
         key.source,
         provenance.KIND_EDGE,
@@ -655,12 +506,7 @@ def _engine_dialect_draft(key: Any, label: str = provenance.EXTRACTED) -> Any:
 def test_the_engine_dialect_folds_to_the_edge_count_the_differential_reads(
     tmp_path: Path,
 ) -> None:
-    """The equality between the two folds on one input, which is the whole control.
 
-    ``malformed`` is asserted empty in the same breath, because that is where all 1,083 of
-    this log's edges used to land: a fold can satisfy a count by refusing the population
-    into a list nobody reads.
-    """
     edges = (ENGINE_EDGE, provenance.EdgeKey(RECORD_A, "blocks", RECORD_D))
     events.append(tmp_path, [_engine_dialect_draft(key) for key in edges], clock=lambda: CLOCK)
     stored, quarantined = events.read_events(tmp_path)
@@ -681,14 +527,7 @@ def test_the_engine_dialect_folds_to_the_edge_count_the_differential_reads(
 def test_a_ledger_in_both_dialects_folds_both_and_says_which_it_read(
     tmp_path: Path,
 ) -> None:
-    """Accepting the engine's spelling must not trade one blindness for the other.
 
-    Three edges in the declared dialect and one in the engine's, with both sides named: a
-    reader that had simply *switched* spellings passes a test counting only the engine's.
-
-    **The asymmetry this recorded is closed.** It asserted `views_from_events` saw 1 of these
-    4; `basicly-oii83r` fixed that fold, so the equality below is a control, not a caveat.
-    """
     _build(tmp_path)
     events.append(tmp_path, [_engine_dialect_draft(ENGINE_EDGE)], clock=lambda: CLOCK)
     stored, _ = events.read_events(tmp_path)
@@ -707,12 +546,7 @@ def test_a_ledger_in_both_dialects_folds_both_and_says_which_it_read(
 
 
 def test_the_second_dialect_is_the_engine_writers_own_spelling_and_not_a_third() -> None:
-    """Read off `migrate.py`, so a rename there fails here instead of reopening the split.
 
-    The inequalities are what keep it from being a tautology: the two pairs are still
-    *different* names, so a later edit that quietly unified them fails here — that is a
-    change to what the kit writes into consumers' logs, not a detail.
-    """
     assert provenance.ALT_KEY_TARGET == migrate.EDGE_TO
     assert provenance.ALT_KEY_TYPE == migrate.EDGE_TYPE
     assert provenance.KEY_TARGET != migrate.EDGE_TO
@@ -730,12 +564,7 @@ def test_the_second_dialect_is_the_engine_writers_own_spelling_and_not_a_third()
 
 
 def test_a_dialect_neither_writer_uses_is_refused_by_name(tmp_path: Path) -> None:
-    """A third spelling is malformed, not a silently absent edge.
 
-    The `to`-without-`type` payload is the discriminating case: a reader that keyed the
-    dialect off one field alone would take it for the engine's and then refuse it naming
-    the wrong spelling, which sends a reader of the report to the wrong writer.
-    """
     _build(tmp_path)
     events.append(
         tmp_path,
@@ -760,16 +589,8 @@ def test_a_dialect_neither_writer_uses_is_refused_by_name(tmp_path: Path) -> Non
     assert provenance.edge_dialect(stored[-1].payload) == provenance.DIALECT_DECLARED
 
 
-# --- the size cap, and which fields it may reach ------------------------------
-
-
 def test_the_structural_edge_fields_are_outside_the_size_cap(tmp_path: Path) -> None:
-    """A cut through ``EXTRACTED`` would make a disposition depend on neighbouring text.
 
-    Asserted both ways: the declaration (which keys the cap names) and the behaviour (a
-    detail long enough to be cut, on an event whose label and endpoints come through
-    whole and whose edge still gates).
-    """
     assert provenance.KEY_DETAIL in events.TRUNCATABLE_KEYS
     for structural in (provenance.KEY_LABEL, provenance.KEY_TARGET, provenance.KEY_TYPE):
         assert structural not in events.TRUNCATABLE_KEYS
@@ -791,19 +612,10 @@ def test_the_structural_edge_fields_are_outside_the_size_cap(tmp_path: Path) -> 
     assert _folded(tmp_path).edges[HUMAN_EDGE].gates is True
 
 
-# --- the seam with the record fold --------------------------------------------
-
-
 def test_an_edge_event_counts_in_the_records_totals_and_changes_no_record_state(
     tmp_path: Path,
 ) -> None:
-    """`events.fold` delegates this kind rather than applying it, and that is correct.
 
-    An edge is not a record field, so there is no record state for it to fold into — it
-    is counted in the totals and reported under ``delegated_kinds``, naming the sibling
-    that folds it. It was ``unknown_kinds`` until vkh0.38, which made a delegation
-    indistinguishable from corruption.
-    """
     events.append(
         tmp_path,
         [events.Draft(RECORD_A, "created", {"title": "the lane"})],
@@ -820,16 +632,8 @@ def test_an_edge_event_counts_in_the_records_totals_and_changes_no_record_state(
     assert result.records[RECORD_A].fields == {"title": "the lane"}
 
 
-# --- the kit boundary ---------------------------------------------------------
-
-
 def test_the_module_imports_nothing_outside_the_standard_library() -> None:
-    """The kit boundary, read off the source rather than trusted.
 
-    Only ``events.py`` is loaded from beside it, and that happens by path with no
-    ``sys.path`` mutation — a library that reordered a consumer's import path could
-    shadow a module they own.
-    """
     imported: set[str] = set()
     for node in ast.walk(ast.parse(PROVENANCE_SOURCE.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
@@ -851,14 +655,7 @@ def test_the_module_imports_nothing_outside_the_standard_library() -> None:
 
 
 def test_the_sibling_event_log_is_loaded_once_under_the_name_it_publishes() -> None:
-    """Two copies of ``events.py`` would mint two exception classes that stop matching.
 
-    The module name is public for that reason, and this is the assertion that makes it a
-    contract instead of an implementation detail somebody is free to rename. The second
-    load is the positive control: it shows the hazard is real rather than theoretical —
-    a caller who loaded the file under a name of their own would hold an
-    ``InvalidEventError`` that no ``except`` clause here would catch.
-    """
     assert sys.modules[provenance.EVENTS_MODULE_NAME] is events
     assert provenance.EVENTS_MODULE_NAME not in ("events", "ids")
 
@@ -869,8 +666,6 @@ def test_the_sibling_event_log_is_loaded_once_under_the_name_it_publishes() -> N
     assert not issubclass(provenance.InvalidEdgeError, rival.InvalidEventError)
 
 
-# The subprocess asserts the kit constraint itself before asserting anything else: an
-# environment that quietly still had basicly in it would make this whole section vacuous.
 _DRIVER = """
 import importlib.util
 import json
@@ -915,12 +710,7 @@ print(json.dumps({
 
 
 def _pruned_env(tmp_path: Path) -> dict[str, str]:
-    """An environment with no basicly on PATH and nothing pointing at this repo.
 
-    Built from empty rather than filtered, so nothing inherited can smuggle the package
-    back in — no ``PYTHONPATH``, no ``VIRTUAL_ENV``. The few names copied back are what an
-    interpreter needs on its own platform, which makes the platform difference test data.
-    """
     empty = tmp_path / "empty-path-dir"
     empty.mkdir(exist_ok=True)
     home = tmp_path / "scratch-home"
@@ -936,13 +726,7 @@ def _pruned_env(tmp_path: Path) -> dict[str, str]:
 def test_an_edge_is_asserted_confirmed_and_folded_with_no_basicly_importable(
     tmp_path: Path,
 ) -> None:
-    """The kit's hard constraint, exercised the way a consumer would exercise it.
 
-    ``-S`` drops site-packages, which is where this repo's own ``basicly`` lives, and
-    ``-I`` drops ``PYTHONPATH``, the user site directory and the script's own directory.
-    The directory is copied rather than a named list: that is what a consumer does, and a
-    hand list went stale the moment `labels.py` split out (basicly-493g5f).
-    """
     consumer = tmp_path / "consumer" / "kit" / "tracker"
     consumer.mkdir(parents=True)
     for source in sorted(KIT_DIR.glob("*.py")):

@@ -1,14 +1,3 @@
-"""The one assertion every board page owes: it fetches nothing from an origin.
-
-A board page carries no script and names no origin, so a wall opens it from disk or from the
-server with the network off and it renders the same. The one reference a page may carry is the
-vendored stylesheet, by the relative path `board_assets.href` spells (basicly-lywzp71); every
-other ``<link``, every ``src=`` and every absolute or protocol-relative URL is refused.
-
-Asserted on the raw text rather than by parsing, because the failure this guards is a template
-gaining an attribute a parser would have to be taught about first.
-"""
-
 from __future__ import annotations
 
 import re
@@ -26,7 +15,6 @@ ALLOWED_HREFS = frozenset(
 
 
 def assert_offline(page: str) -> None:
-    """Fail unless *page* references nothing but the vendored stylesheet, relatively."""
     assert "<script" not in page
     assert "src=" not in page
     assert "http://" not in page

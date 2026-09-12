@@ -1,5 +1,3 @@
-"""Load and validate fragments and target registries."""
-
 from __future__ import annotations
 
 import sys
@@ -22,24 +20,16 @@ from .schema import (
 
 FRAGMENT_SOURCE_GLOB = "*.fragment.yaml"
 
-# The pre-migration source format. No longer loaded — but its presence in a
-# fragment root means user content is silently inert, which must be surfaced.
 LEGACY_FRAGMENT_GLOB = "*.fragment.md"
 
 REQUIRED_FRAGMENT_FIELDS = {"id", "description", "category", "applies_to"}
 
-# The overlay marker directory declared in `[paths] overlay_fragments`
-# (config.DEFAULT_CONFIG_TOML). Only consulted for a root loaded without a
-# source hint — cli._fragment_roots hints every root it resolves itself.
 OVERLAY_MARKER_DIR = ".basicly-local"
 
-# Pre-migration overlays lived in a `user/` subdirectory of a fragment root;
-# `install` relocates them, so this is only reached before that migration runs.
 LEGACY_OVERLAY_SUBDIR = "user"
 
 
 def load_fragments(fragments_dir: Path, target_names: set[str]) -> list[Fragment]:
-    """Load all fragment files from the fragments directory."""
     return load_fragments_from_roots([(fragments_dir, None)], target_names)
 
 
@@ -47,7 +37,6 @@ def load_fragments_from_roots(
     fragment_roots: list[tuple[Path, str | None]],
     target_names: set[str],
 ) -> list[Fragment]:
-    """Load all fragment files from one or more fragment roots."""
     fragments: list[Fragment] = []
     seen_ids: dict[str, Path] = {}
 
@@ -72,13 +61,7 @@ def load_fragments_from_roots(
 
 
 def _warn_legacy_sources(root: Path) -> None:
-    """Warn loudly when a fragment root still holds legacy ``*.fragment.md`` files.
 
-    Only YAML sources load since the format migration; a legacy file is user
-    content that has silently stopped affecting builds. Advisory (never fails
-    the load) — the fix is the user's: migrate each file to
-    ``<id>.fragment.yaml`` (``basicly catalog new fragment`` scaffolds one).
-    """
     legacy = sorted(root.rglob(LEGACY_FRAGMENT_GLOB))
     if not legacy:
         return
@@ -92,11 +75,7 @@ def _warn_legacy_sources(root: Path) -> None:
 
 
 def _validate_replacements(fragments: list[Fragment]) -> None:
-    """Enforce replaces/override integrity across the merged fragment set.
 
-    A fragment that lists ids in ``replaces`` must set ``override: true``, every
-    replaced id must exist, and two user fragments may not replace each other.
-    """
     by_id = {fragment.id: fragment for fragment in fragments}
 
     for fragment in fragments:
@@ -114,9 +93,6 @@ def _validate_replacements(fragments: list[Fragment]) -> None:
             replaced = by_id.get(replaced_id)
             if replaced is None:
                 if fragment.source == "user":
-                    # A core upgrade may remove the replaced fragment; the
-                    # overlay must not brick every command. The replace is
-                    # ignored until the user updates their overlay.
                     print(
                         f"Warning: overlay fragment '{fragment.id}' "
                         f"({fragment.source_path}) replaces unknown id "
@@ -179,12 +155,7 @@ def _load_fragment(path: Path, root: Path, source_hint: str | None = None) -> Fr
 
 
 def _validate_schema_version(value: object, path: Path) -> None:
-    """Reject a source authored for a newer schema than this basicly knows.
 
-    Missing is accepted (pre-versioning overlays); catalog lint enforces the
-    field on core sources. Newer must be a hard, actionable error — silently
-    misreading a future format is worse than failing.
-    """
     if value is None:
         return
     if not isinstance(value, int) or isinstance(value, bool):
@@ -198,18 +169,7 @@ def _validate_schema_version(value: object, path: Path) -> None:
 
 
 def _infer_source_from_path(path: Path, root: Path) -> str:
-    """Infer source from where a fragment sits *inside its own fragment root*.
 
-    Two conventions mean overlay: the root lives under the overlay marker
-    directory the repo declares in ``[paths] overlay_fragments``, or the
-    fragment sits in the pre-migration ``user/`` subdirectory of the root.
-
-    Nothing above the root may decide. Folding the whole absolute path made any
-    component named ``user`` — a home directory, ``/Users/user`` — mark every
-    fragment an overlay, and overlay provenance is real semantics: an unknown
-    ``replaces`` degrades to a warning here, and the planner drops the core
-    fragment it names. Behaviour would have depended on the machine's path.
-    """
     if OVERLAY_MARKER_DIR in {part.lower() for part in root.parts}:
         return "user"
     relative_parts = {part.lower() for part in path.relative_to(root).parts}
@@ -248,10 +208,6 @@ def _validate_fragment(
 
     for target in fragment.applies_to:
         if target != "all" and target not in target_names:
-            # The registered set and the `tags` suggestion are in the message because the
-            # name reads as "which contexts does this apply to" and means "which rendering
-            # target". A consumer authored six routing words there, passed the JSON schema,
-            # and met this only inside `build` with nowhere to go (basicly-a7g9sre).
             registered = ", ".join(["all", *sorted(target_names)])
             raise ValidationError(
                 f"applies_to value '{target}' is not a registered target "
@@ -285,7 +241,6 @@ def _validate_fragment(
 
 
 def load_targets(targets_dir: Path) -> list[Target]:
-    """Load all target registry YAML files."""
     targets: list[Target] = []
 
     for path in sorted(targets_dir.glob("*.yaml")):

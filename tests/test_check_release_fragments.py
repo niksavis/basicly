@@ -1,10 +1,3 @@
-"""Tests for the release-fragment gate (basicly-x8hwwv's sibling: size and bullet shape).
-
-The baseline is git itself, so every case here drives a real scratch repository: a
-fragment in HEAD carries its committed size as its own ceiling, a new one must fit the
-cap, and a bulletless first line is refused unconditionally.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -36,7 +29,6 @@ OLD_BODY = "- an entry committed long ago, well over any cap\n" + ("x" * 5000) +
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A scratch repository whose HEAD holds one oversized fragment."""
     fragments = tmp_path / "changelog.d"
     fragments.mkdir()
     (fragments / "basicly-old1.fixed.md").write_text(OLD_BODY, encoding="utf-8")
@@ -50,7 +42,6 @@ def repo(tmp_path: Path) -> Path:
 
 
 def test_a_committed_fragment_keeps_its_size_as_its_own_ceiling(repo: Path) -> None:
-    """An unchanged oversized fragment is inherited debt, not a finding."""
     refused, new, inherited = gate.findings(repo)
     assert refused == []
     assert (new, inherited) == (0, 1)
@@ -59,7 +50,6 @@ def test_a_committed_fragment_keeps_its_size_as_its_own_ceiling(repo: Path) -> N
 def test_a_committed_fragment_that_grows_is_refused_and_one_that_shrinks_passes(
     repo: Path,
 ) -> None:
-    """Both directions of the shrink-only rule on the same committed file."""
     path = repo / "changelog.d" / "basicly-old1.fixed.md"
     path.write_text(OLD_BODY + "grown\n", encoding="utf-8")
     refused, _new, _inherited = gate.findings(repo)
@@ -71,7 +61,6 @@ def test_a_committed_fragment_that_grows_is_refused_and_one_that_shrinks_passes(
 
 
 def test_a_new_fragment_must_fit_the_cap(repo: Path) -> None:
-    """Absent from HEAD means new, and new means the cap binds, both directions."""
     path = repo / "changelog.d" / "basicly-new1.added.md"
     path.write_text("- " + "y" * (gate.CAP_CHARS + 10) + "\n", encoding="utf-8")
     refused, new, _inherited = gate.findings(repo)
@@ -84,7 +73,6 @@ def test_a_new_fragment_must_fit_the_cap(repo: Path) -> None:
 
 
 def test_a_bulletless_first_line_is_refused_whatever_its_age(repo: Path) -> None:
-    """The v0.9.0 orphaning defect: loose prose loses its entry at assembly."""
     path = repo / "changelog.d" / "basicly-new2.added.md"
     path.write_text("loose prose with no bullet\n", encoding="utf-8")
     refused, _new, _inherited = gate.findings(repo)
@@ -93,14 +81,12 @@ def test_a_bulletless_first_line_is_refused_whatever_its_age(repo: Path) -> None
 
 
 def test_a_misnamed_file_is_not_this_gates_population(repo: Path) -> None:
-    """`basicly release` refuses misnamed files; counting them here would double-report."""
     (repo / "changelog.d" / "README.md").write_text("not a fragment\n", encoding="utf-8")
     (repo / "changelog.d" / "basicly-x.typo.md").write_text("bad category\n", encoding="utf-8")
     assert gate.findings(repo)[0] == []
 
 
 def test_the_gate_fails_end_to_end_and_names_the_file(repo: Path) -> None:
-    """The script alone travels: stdlib-only, so the copy needs no package beside it."""
     scripts = repo / ".scripts"
     scripts.mkdir()
     copied = shutil.copy(SCRIPT, scripts / SCRIPT.name)
@@ -123,12 +109,7 @@ def test_the_gate_fails_end_to_end_and_names_the_file(repo: Path) -> None:
 
 
 def test_the_live_tree_passes_its_own_gate() -> None:
-    """The positive control for the wiring: the gate sees the whole live population, green.
 
-    No floor on the count: a release deletes every fragment it assembles, so a release
-    commit legitimately holds zero and the directory's README is the marker that the
-    population is the real one (basicly-ssv5qq).
-    """
     refused, new, inherited = gate.findings(REPO_ROOT)
     assert refused == []
     assert (REPO_ROOT / gate.FRAGMENT_DIR / "README.md").is_file()

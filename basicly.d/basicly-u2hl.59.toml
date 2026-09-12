@@ -43,4 +43,3 @@ rebaseline_reason = "handoff.py: the declaration of which kinds have a producer 
 
 [ratchet.module_size.rebaselined]
 "src/basicly/handoff.py" = 4504
-"tests/test_handoff.py" = 1178

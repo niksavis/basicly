@@ -1,5 +1,3 @@
-"""Tests for the catalog scaffold commands (catalog new skill / catalog new fragment)."""
-
 from __future__ import annotations
 
 import argparse
@@ -14,7 +12,6 @@ from basicly.skills import discover_skills
 
 
 def _catalog_subparser() -> argparse._SubParsersAction:
-    """The ``catalog`` group's subparser action from the built parser."""
     top = next(a for a in cli._build_parser()._actions if isinstance(a, argparse._SubParsersAction))
     return next(
         a for a in top.choices["catalog"]._actions if isinstance(a, argparse._SubParsersAction)
@@ -22,7 +19,6 @@ def _catalog_subparser() -> argparse._SubParsersAction:
 
 
 def test_catalog_group_exposes_the_authoring_verbs() -> None:
-    """`basicly catalog` groups exactly lint/verify/review/new/list/dump (basicly-b6j)."""
     assert set(_catalog_subparser().choices) == {
         "lint",
         "verify",
@@ -48,7 +44,6 @@ def test_catalog_group_exposes_the_authoring_verbs() -> None:
     ],
 )
 def test_old_flat_names_are_removed(flat: str) -> None:
-    """The pre-b6j flat names no longer parse — breaking change, no aliases."""
     with pytest.raises(SystemExit):
         cli._build_parser().parse_args([flat])
 
@@ -56,7 +51,6 @@ def test_old_flat_names_are_removed(flat: str) -> None:
 def test_skills_new_creates_loadable_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Scaffolding a skill via `catalog new skill` writes a loadable skill.yaml."""
     monkeypatch.chdir(tmp_path)
 
     args = ["catalog", "new", "skill", "demo-skill", "--description", "A demo skill."]
@@ -70,7 +64,6 @@ def test_skills_new_creates_loadable_source(
 
 
 def test_skills_new_refuses_existing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Re-running `catalog new skill` does not clobber an existing source."""
     monkeypatch.chdir(tmp_path)
     assert cli.main(["catalog", "new", "skill", "demo-skill"]) == 0
     assert cli.main(["catalog", "new", "skill", "demo-skill"]) == 1
@@ -79,7 +72,6 @@ def test_skills_new_refuses_existing(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def test_fragment_new_creates_loadable_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Scaffolding via `catalog new fragment` writes a loadable source in the category dir."""
     monkeypatch.chdir(tmp_path)
 
     args = ["catalog", "new", "fragment", "demo-frag", "--category", "tools", "--description", "D."]
@@ -93,14 +85,12 @@ def test_fragment_new_creates_loadable_source(
 
 
 def test_fragment_new_refuses_existing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Re-running `catalog new fragment` does not clobber an existing source."""
     monkeypatch.chdir(tmp_path)
     assert cli.main(["catalog", "new", "fragment", "demo-frag"]) == 0
     assert cli.main(["catalog", "new", "fragment", "demo-frag"]) == 1
 
 
 def test_overlay_stubs_are_loadable_drafts(tmp_path: Path) -> None:
-    """The scaffolded overview/commands stubs parse as valid draft fragments."""
     paths = load_project_paths(tmp_path)
     cli._scaffold_overlay_stubs(tmp_path, paths)
 
@@ -111,7 +101,6 @@ def test_overlay_stubs_are_loadable_drafts(tmp_path: Path) -> None:
 
 
 def test_overlay_stubs_never_overwrite(tmp_path: Path) -> None:
-    """A filled-in stub survives re-running the scaffold."""
     paths = load_project_paths(tmp_path)
     cli._scaffold_overlay_stubs(tmp_path, paths)
 

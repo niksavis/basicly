@@ -1,17 +1,3 @@
-"""Shared loading and fixtures for the model-map generator suites (basicly-u2hl.36).
-
-Split out when the module-size ratchet refused ``test_model_map.py``. The
-generator is now three modules — the anchor source, the resolution layer, and the
-artifact assembly with its CLI — and each has a suite of its own, so the loader
-and the paths they all need live here.
-
-The loader does two things that are not optional. It registers each module in
-``sys.modules`` before executing it, because ``@dataclass`` resolves its defining
-module by name; and it puts ``.scripts`` on ``sys.path``, because the generator
-imports its two siblings by plain name — which is what happens for free when the
-script is run directly and has to be arranged when it is loaded by path.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -28,34 +14,13 @@ MODELS_DIR = REPO / ".basicly" / "core" / "models"
 ANCHORS_PATH = MODELS_DIR / "anchors.yaml"
 MAP_PATH = MODELS_DIR / "model-map.json"
 SCHEMA_PATH = MODELS_DIR / "model-map.schema.json"
-# Captured from https://models.dev/api.json on 2026-08-09: 48,014 bytes, 5 of the 182
-# published providers, 37 records. Every record is byte-identical to what upstream served
-# that day — the trim selects whole providers and whole models, and never edits one.
-#
-# The trim is deliberate and each part of it earns its place, so re-capture by preserving
-# the selection rather than by re-deriving it:
-#   - the duplicate Claude Haiku 4.5 record (`claude-haiku-4-5` and
-#     `claude-haiku-4-5-20251001`), which is what an alias collision looks like upstream;
-#   - cells with and without `limit.input`, since the generator must tolerate both;
-#   - the real broker coverage gaps, now 2 of 32 cells (`low` on google and moonshotai);
-#   - non-general models a naive tier sweep would pick — image, embedding, tts, video.
-#
-# Two records were dropped on 2026-08-09 because upstream withdrew them
-# (`github-copilot/gemini-2.5-pro`, `github-copilot/gemini-3-flash-preview`) and two added
-# because the anchors now resolve them there (`github-copilot/kimi-k3`,
-# `github-copilot/gemini-3.6-flash`). A fixture that keeps a withdrawn record is no longer
-# a copy of the live document, which is the one property it exists to have.
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "modelsdev-api.json"
 
-# The vendors the map is required to cover, and the broker surface every one of
-# them is also resolved onto. Spelled out rather than read from anchors.yaml: an
-# assertion derived from its subject cannot fail when the subject shrinks.
 REQUIRED_VENDORS = ("anthropic", "openai", "moonshotai", "google")
 BROKER_SURFACE = "github-copilot"
 
 
 def load_script(name: str):
-    """Load one of the generator's modules from ``.scripts`` by module name."""
     if str(SCRIPTS) not in sys.path:
         sys.path.insert(0, str(SCRIPTS))
     spec = importlib.util.spec_from_file_location(name, SCRIPTS / f"{name}.py")
@@ -72,27 +37,22 @@ generator = load_script("generate_model_map")
 
 
 def read_payload() -> dict[str, Any]:
-    """The captured models.dev document, parsed fresh so a mutation cannot leak."""
     return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
 def read_anchors():
-    """The repo's real anchor source — the thing the map is generated from."""
     return generator.load_anchors(ANCHORS_PATH)
 
 
 def read_committed() -> dict[str, Any]:
-    """The committed map."""
     return json.loads(MAP_PATH.read_text(encoding="utf-8"))
 
 
 def read_declared() -> dict[str, Any]:
-    """The raw anchor source, as a reviewer reads it."""
     return yaml.safe_load(ANCHORS_PATH.read_text(encoding="utf-8"))
 
 
 def make_workspace(tmp_path: Path) -> Path:
-    """A models dir holding the real anchors and a map built from the fixture."""
     models_dir = tmp_path / "models"
     models_dir.mkdir()
     (models_dir / "anchors.yaml").write_text(
@@ -104,7 +64,6 @@ def make_workspace(tmp_path: Path) -> Path:
 
 
 def run_cli(models_dir: Path, *extra: str) -> int:
-    """Invoke the script's entry point against a workspace and the fixture."""
     return generator.main([
         "--models-dir",
         str(models_dir),
@@ -115,7 +74,6 @@ def run_cli(models_dir: Path, *extra: str) -> int:
 
 
 def cells(document: dict[str, Any]):
-    """Yield every (tier, vendor, surface, entry) cell of a map."""
     for tier, entry in document["tiers"].items():
         for vendor, vendor_entry in entry["vendors"].items():
             for surface, served in vendor_entry["surfaces"].items():

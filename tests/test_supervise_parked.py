@@ -1,14 +1,3 @@
-"""How a pass ends when a parked lane cannot be advanced (basicly-u2hl.55).
-
-Its own module rather than a block in ``test_supervise.py``: that file is the tree's largest
-at roughly fifteen times the size cap, so the ratchet allows it to shrink and not to grow.
-
-The defect these pin was invisible for the same reason it was cheap — a lane blocked at a
-downstream checkpoint was reported as ``merged``, which reads as progress, so the standing
-loop re-adopted it every round. Measured at 257 rounds over 49 minutes with no dispatch, no
-tokens, and no decision queued for the human to answer.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -40,12 +29,7 @@ def _session(*lanes: supervise.AdoptedLane) -> supervise.SessionState:
 
 
 def _parked(monkeypatch: pytest.MonkeyPatch, *, was: str, now: str) -> list[tuple]:
-    """Stub one parked lane advancing *was* -> *now*, recording what was enqueued.
 
-    ``AdvanceResult.progressed`` is derived from the phases rather than declared, so a
-    landing is modelled by moving one and a stall by repeating it. Stubbing a `progressed`
-    flag instead would assert against a field that does not exist.
-    """
     enqueued: list[tuple] = []
     monkeypatch.setattr(supervise, "_phase_of", lambda _r, _i: now)
     monkeypatch.setattr(supervise, "_has_subtasks", lambda _r, _i: False)
@@ -73,11 +57,7 @@ def _parked(monkeypatch: pytest.MonkeyPatch, *, was: str, now: str) -> list[tupl
 def test_a_lane_blocked_downstream_ends_the_pass(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The spin: a lane that did not move must not be reported as a landing.
 
-    ``test_supervise.py`` already pins this for the ``build`` branch. The ``else`` branch —
-    every phase downstream of build — had no such check.
-    """
     _parked(monkeypatch, was="verify", now="verify")
 
     routed = supervise.advance_parked(tmp_path, _session(_lane("epic.1")))
@@ -89,7 +69,6 @@ def test_a_lane_blocked_downstream_ends_the_pass(
 def test_a_lane_blocked_downstream_queues_the_question(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Ending the pass is not enough: the human is owed the question that ended it."""
     enqueued = _parked(monkeypatch, was="verify", now="verify")
 
     supervise.advance_parked(tmp_path, _session(_lane("epic.1")))
@@ -102,11 +81,7 @@ def test_a_lane_blocked_downstream_queues_the_question(
 def test_a_lane_that_moved_downstream_is_still_a_landing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The discriminator: the new refusal is on progress, not on the phase being downstream.
 
-    Without this, routing every downstream lane as ``lane-blocked`` would also pass the two
-    assertions above while ending every pass that lands anything.
-    """
     enqueued = _parked(monkeypatch, was="build", now="verify")
 
     routed = supervise.advance_parked(tmp_path, _session(_lane("epic.1")))

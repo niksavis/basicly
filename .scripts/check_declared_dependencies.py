@@ -1,40 +1,3 @@
-"""Fail when a record's declared `- depends on:` disagrees with the `blocks` edges it holds.
-
-Two sources hold one dependency. :func:`~basicly.plan_record.parse_plan_section` reads the
-declaration off the body; the ledger's ``edge`` events hold the graph the scheduler ranks
-with. The decomposer writes both from one plan, so they agree at creation and can drift on
-any later hand edit or `dep remove` — and an **inverted** edge reads as correct from either
-side: the body says this lane depends on its sibling, the ready set says the sibling depends
-on this lane, and nothing reported the disagreement. `basicly-rn0o.4` sat exactly there, the
-one board lane no supervised pass could dispatch (basicly-9yyj6i). That instance was
-hand-corrected before this landed, which is the argument for the gate rather than against
-it: the repair was a tracker write nothing would have caught twice.
-
-**The declaration is checked against the edges, never the reverse.** An edge with no matching
-declaration is ordinary — `dep add` is how a coupling gets recorded after the body was
-written, and a `## Plan` is a plan rather than a mirror of the graph. Only the direction that
-misleads a reader is a defect: a body naming a dependency the ready set does not enforce.
-
-**A title resolves before a miss is reported.** `decompose` couples siblings by *title* (its
-plan graph is title-keyed), so a body may legitimately name a title where the edge names the
-id. Two of the eight live declarations are of that shape; reading ids alone would report both
-as defects.
-
-**An empty population is the probe failing, not the tree passing.** A parser that stopped
-matching the recorded form, or a ledger that would not load, both answer "no disagreement" —
-so a population with nothing in it to reconcile exits non-zero and says which half is empty.
-
-Measured over this ledger on 2026-08-21: 232 open records, 26 carrying a `- depends on:`
-line, 8 of those naming something, 110 `blocks` edges across them, and every declaration
-reconciled. There is no go-live debt, so this binds hard rather than against a frozen
-baseline.
-
-Run::
-
-    uv run python .scripts/check_declared_dependencies.py
-    uv run python .scripts/check_declared_dependencies.py --repo ../some-consumer
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -55,23 +18,12 @@ _OPEN = "open"
 
 @dataclass(frozen=True)
 class Miss:
-    """One declared dependency with no `blocks` edge behind it.
-
-    Attributes:
-        record: The record whose body declares it.
-        declared: What the body says, verbatim — an id or a title.
-        candidates: The ids *declared* names: itself when it is one, every record carrying
-            it when it is a title, and none when the tracker holds neither.
-        edges: The `blocks` edge targets the record does hold.
-    """
-
     record: str
     declared: str
     candidates: tuple[str, ...]
     edges: tuple[str, ...]
 
     def line(self) -> str:
-        """The finding as one printable line: the record, the declaration and its edges."""
         held = ", ".join(self.edges) or "none"
         if not self.candidates:
             named = f"`{self.declared}`, which names no record in the tracker"
@@ -84,16 +36,6 @@ class Miss:
 
 @dataclass(frozen=True)
 class Reconciliation:
-    """What one run covered, and every disagreement in it.
-
-    Attributes:
-        open_records: The population read.
-        declaring: Bodies carrying a `- depends on:` line, a declared-empty one included.
-        declarations: Declared dependencies naming something — what was reconciled.
-        edges: `blocks` edges held across the population.
-        misses: One entry per declaration with no edge behind it.
-    """
-
     open_records: int
     declaring: int
     declarations: int
@@ -102,12 +44,7 @@ class Reconciliation:
 
 
 def blocks_targets(record: Mapping[str, object]) -> tuple[str, ...]:
-    """*record*'s outgoing `blocks` edge targets.
 
-    Read through :func:`~basicly.tracker.dependency_edge` rather than the keys directly: it
-    is the one reader for both spellings of an edge row, and a second spelling here would
-    silently report every edge as absent.
-    """
     rows = record.get("dependencies")
     if not isinstance(rows, list):
         return ()
@@ -116,12 +53,7 @@ def blocks_targets(record: Mapping[str, object]) -> tuple[str, ...]:
 
 
 def titles_to_ids(records: Sequence[Mapping[str, object]]) -> dict[str, tuple[str, ...]]:
-    """Every record id keyed by its title, over the **whole** tracker.
 
-    Closed records included: a sibling that has since closed is still what an open body's
-    title names, and 2 of the 8 live declarations name exactly that. One title is held by
-    two records on this tree, so a title maps to ids rather than to an id.
-    """
     held: dict[str, list[str]] = {}
     for record in records:
         title = str(record.get("title") or "")
@@ -133,18 +65,13 @@ def titles_to_ids(records: Sequence[Mapping[str, object]]) -> dict[str, tuple[st
 def candidates(
     declared: str, ids: frozenset[str], titles: Mapping[str, tuple[str, ...]]
 ) -> tuple[str, ...]:
-    """The record ids *declared* names, by id first and by title second.
 
-    Id first because that is what the decomposer writes; a body that names a title is
-    resolved rather than reported, and one the tracker holds under neither yields nothing.
-    """
     if declared in ids:
         return (declared,)
     return titles.get(declared, ())
 
 
 def reconcile(records: Sequence[Mapping[str, object]]) -> Reconciliation:
-    """Hold every open record's declared dependencies against its `blocks` edges."""
     ids = frozenset(str(record.get("id") or "") for record in records)
     titles = titles_to_ids(records)
     open_records = [record for record in records if record.get("status") == _OPEN]
@@ -170,7 +97,6 @@ def reconcile(records: Sequence[Mapping[str, object]]) -> Reconciliation:
 
 
 def verdicts(found: Reconciliation) -> list[str]:
-    """Every reason to refuse: an empty probe first, then each disagreement."""
     if not found.open_records:
         return [
             "no open record was read at all — the ledger did not load, or this is not a "
@@ -188,7 +114,6 @@ def verdicts(found: Reconciliation) -> list[str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Entry point: report every declared dependency the graph does not enforce."""
     parser = argparse.ArgumentParser(description="Reconcile declared dependencies with edges.")
     parser.add_argument(
         "--repo",
@@ -201,8 +126,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     found = reconcile(tracker.all_records(args.repo))
     faults = verdicts(found)
     if faults:
-        # A disagreement and an empty probe are both refusals and different findings: the
-        # first has a repair to name, the second is the check reporting on itself.
         disagreed = bool(found.misses)
         headline = (
             f"{len(faults)} disagreement(s) between a body and the graph"

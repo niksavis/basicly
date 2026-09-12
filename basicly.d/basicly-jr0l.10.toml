@@ -70,23 +70,3 @@ rebaseline_reason = "the routing layer is where an outcome is judged, and every 
 
 [ratchet.module_size.rebaselined]
 "src/basicly/supervise.py" = 1737
-
-# ## comment_density: one waiver, bought on cohesion
-#
-# `src/basicly/provider_limit.py` at 66.4% against the 50% cap, on 380 tokens of code -
-# four short total functions. What the module *is* is a discriminator plus the provenance
-# that fixes it: which vendor sentence was captured and how often ("You've hit your session
-# limit · resets 5:50pm (Europe/Vienna)", 35 events over 7 lanes), which of its two marks is
-# derived from a record rather than observed in one, and why the `rate_limit_event` this
-# record was filed against discriminates nothing - a healthy dispatch emits one too,
-# carrying `{"status": "allowed"}`, pinned that way in this suite's own live-probe fixture.
-#
-# Cutting to 50% means deleting the half a reader needs to re-check the rule against a
-# future CLI, which is what the cap exists to protect rather than to charge for. Cohesion,
-# so nothing is owed back: the prose is the contract, and there is no follow-up that would
-# make it smaller without making it wrong.
-#
-# Trimmed before it was waived, 69.8% -> 64.6% (the waiver comment itself is prose in the
-# module it waives, which is why the granted figure reads 66.4%).
-[ratchet.comment_density]
-count_delta = 1

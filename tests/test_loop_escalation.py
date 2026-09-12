@@ -1,20 +1,3 @@
-"""When a failing gate stops being this lane's problem (basicly-jr0l.41, basicly-qorx).
-
-Split out of ``test_loop.py``. Both escalations here answer the same livelock: a
-gate that fails for a reason the lane cannot fix spends no rework, so no cap is
-ever reached, so nothing ever asks a human and the lane can never land.
-
-- A *chronically unreliable* gate — one that fails and then passes unchanged — is
-  forgiven, but only up to a bound; past it the loop escalates instead of deferring
-  forever.
-- A gate another lane's record invalidated in the shared tracker is not this lane's
-  failure at all: it escalates on the first occurrence, names the lane responsible,
-  charges nothing, and asks only once.
-
-What the loop does with the answer to either question is
-``test_loop_land_anyway.py``.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -55,7 +38,6 @@ def _state(
 
 @pytest.fixture
 def at(monkeypatch: pytest.MonkeyPatch):
-    """Return a helper that pins read_node_state to a given NodeState."""
 
     def _pin(state: NodeState) -> None:
         monkeypatch.setattr(loop.loop_state, "read_node_state", lambda *_a, **_k: state)
@@ -65,7 +47,6 @@ def at(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture(autouse=True)
 def tracker_commits(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
-    """Record engine tracker commits — loop tests run outside a git repo."""
     calls: list[tuple[str, str | None]] = []
 
     def _record(_repo_root, bead, **kwargs):
@@ -81,7 +62,6 @@ def _advance(tmp_path: Path, **kw) -> loop.AdvanceResult:
 
 
 def _unreliable_landing(monkeypatch: pytest.MonkeyPatch, events: int) -> list[tuple[str, str]]:
-    """Drive a landing whose gate is unreliable, with the count already at *events*."""
     attempt = merge.MergeResult(
         "i", merge.VERIFY_UNRELIABLE, "verify full failed on pytest but passed unchanged on re-run"
     )
@@ -99,7 +79,6 @@ def _unreliable_landing(monkeypatch: pytest.MonkeyPatch, events: int) -> list[tu
 def test_a_flaky_gate_below_the_bound_blocks_without_escalating(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """One flake is no evidence against the work, so it must not reach a human yet."""
     at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
     enqueued = _unreliable_landing(monkeypatch, events=1)
 
@@ -112,12 +91,7 @@ def test_a_flaky_gate_below_the_bound_blocks_without_escalating(
 def test_a_chronically_unreliable_gate_escalates_instead_of_deferring_forever(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The livelock: no budget is spent, so no cap is reached, so nothing escalated.
 
-    Observed in the field — a br clock defect failed one arbitrary test per run,
-    the loop correctly refused to charge rework, and the lane could never land
-    because "forgiven" had no exit. The bound gives it one.
-    """
     at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
     enqueued = _unreliable_landing(monkeypatch, events=policy.MAX_UNRELIABLE_GATE_EVENTS)
 
@@ -129,21 +103,12 @@ def test_a_chronically_unreliable_gate_escalates_instead_of_deferring_forever(
     assert kind == policy.REWORK_ESCALATION_KIND
     assert policy.gate_from_unreliable_escalation(question) == merge.MERGE_GATE
     assert "escalated" in result.detail
-    # That it is never charged as rework is pinned at the policy level, where the
-    # tracker is faked — asserting it here would drag a real br call into a unit test.
-
-
-# --- A shared-tracker gate is not this lane's failure (basicly-qorx) -----------
 
 
 def _foreign_landing(
     monkeypatch: pytest.MonkeyPatch, *, queue: tuple[decisions.DecisionItem, ...] = ()
 ) -> dict:
-    """Drive a landing whose gate another lane's record invalidated.
 
-    *queue* is what the bead's decision queue already holds, so the ask-once guard
-    can be exercised without a real tracker.
-    """
     seen: dict = {"charged": [], "attributed": [], "enqueued": []}
     attempt = merge.MergeResult(
         "i",
@@ -171,19 +136,14 @@ def _foreign_landing(
 def test_a_gate_another_lanes_record_failed_spends_no_rework_and_names_that_lane(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The measured defect: two siblings were charged 1/2 for a declaration in neither diff.
 
-    Every lane in a supervised pass shares one `.beads` through the redirect, so the
-    working-set ceiling asserted over basicly-tcmy.5's finishing record inside the
-    landings of basicly-tcmy.6 and basicly-tcmy.22 as well.
-    """
     at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
     seen = _foreign_landing(monkeypatch)
 
     result = _advance(tmp_path)
 
     assert result.blocked
-    assert seen["charged"] == []  # the whole point
+    assert seen["charged"] == []
     assert [(one[1], one[2], one[3]) for one in seen["attributed"]] == [
         ("i", merge.MERGE_GATE, ("basicly-tcmy.5",))
     ]
@@ -192,12 +152,7 @@ def test_a_gate_another_lanes_record_failed_spends_no_rework_and_names_that_lane
 def test_it_escalates_on_the_first_occurrence_rather_than_after_a_bound(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A flake may clear itself on the next landing; a record in the tracker will not.
 
-    So the bound an unreliable gate gets would only delay the escalation — every
-    retry reaches the identical verdict (basicly-jr0l.16's reasoning about a
-    deterministic refusal).
-    """
     at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
     seen = _foreign_landing(monkeypatch)
 
@@ -214,12 +169,7 @@ def test_it_escalates_on_the_first_occurrence_rather_than_after_a_bound(
 def test_an_answered_shared_gate_escalation_is_not_asked_again(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Ask once: an answered item re-opens under the next generation, which is a ladder.
 
-    The remedies are the human's to carry out and neither is on this lane's side, so
-    the answer cannot release the landing — the node holds on the answer it has
-    (basicly-tcmy.6's ladder, not repeated).
-    """
     at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
     answered = decisions.DecisionItem(
         decision_id="i#f1a5e",

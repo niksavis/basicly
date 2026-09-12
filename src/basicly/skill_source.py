@@ -1,27 +1,3 @@
-"""A skill as its author wrote it: the ``skill.yaml`` source, loaded and validated.
-
-One responsibility, and it is the load. :func:`discover_skills` turns a source
-collection directory into :class:`SkillDefinition` objects or a
-:class:`~basicly.schema.ValidationError` naming the file and the field, and nothing
-here writes anything, renders anything, or knows a projection root exists.
-
-The source is deliberately non-discoverable — ``skill.yaml``, never ``SKILL.md`` — so a
-broadly-scanning agent cannot load the catalog source as a second copy of the skill
-(architecture §10.2). That is why the invocation axis and the source file names live
-here rather than beside the renderer: they are facts about the authored form, and
-:mod:`basicly.catalog_lint` asks about them without going anywhere near projection.
-
-A source directory may bundle the full Agent Skills layout
-(https://agentskills.io/specification) — ``scripts/``, ``references/``, ``assets/`` and
-any other file. This module ignores those: they are copied verbatim by the projector,
-and nothing about them is validated at load time.
-
-Split out of ``skills`` when the module-size ratchet caught that module growing. The
-boundary is *authored form* against *projected form*: :mod:`basicly.skills` renders and
-mirrors a :class:`SkillDefinition` onto disk and imports this module to get one, which
-is why nothing here imports back into it.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -33,14 +9,8 @@ from .schema import ValidationError, validate_technologies
 
 SKILLS_SOURCE_DIR = Path(".basicly/core/skills")
 SKILL_SOURCE_FILE = "skill.yaml"
-# Tier-2 routing evidence (basicly-m4zv.2), colocated with the entry it is about
-# so a reviewer sees the description and the prompts that must reach it in one
-# diff. A catalog *source*, not a bundled resource: it is read by `catalog lint`
-# and never projected, because an agent loading a skill has no use for the eval
-# corpus and every reason not to pay for it.
 EVAL_SOURCE_FILE = "evals.yaml"
 
-# The invocation axis (basicly-m4zv.1).
 MODEL_INVOKED = "model"
 USER_INVOKED = "user"
 INVOCATIONS = frozenset({MODEL_INVOKED, USER_INVOKED})
@@ -48,24 +18,9 @@ INVOCATIONS = frozenset({MODEL_INVOKED, USER_INVOKED})
 
 @dataclass(frozen=True)
 class SkillDefinition:
-    """A source skill loaded from .basicly/core/skills.
-
-    ``technologies`` is basicly-internal scoping (§9) and is NOT emitted into the
-    projected SKILL.md frontmatter. The optional spec fields (``license``,
-    ``compatibility``, ``allowed_tools``, ``metadata``) round-trip into the
-    frontmatter; omitting them yields the minimal ``name``/``description`` header.
-    """
-
     slug: str
     name: str
-    # The invocation axis (basicly-m4zv.1). A model-invoked entry keeps a
-    # description and is advertised to the agent, paying context load every turn;
-    # a user-invoked entry carries none and is reached by a human typing it.
-    # Declared rather than inferred, because "does this route correctly" is not a
-    # well-posed question until an entry knows whether anything can route to it —
-    # which is why this is the prerequisite for the Tier-2 routing evals.
     invocation: str
-    # Empty for a user-invoked entry; the pairing is enforced by catalog_lint.
     description: str
     instructions: str
     source_path: Path
@@ -74,25 +29,12 @@ class SkillDefinition:
     compatibility: str | None = None
     allowed_tools: str | None = None
     metadata: tuple[tuple[str, str], ...] = ()
-    # The unit work this skill covers (basicly-jcl4rm), read by
-    # :mod:`basicly.skill_coverage` to decide which skills a dispatch brief names.
-    # Declared, never inferred: a matcher guessing from the `description` misses
-    # silently, and a silent miss is the defect this field exists to close. Empty on
-    # both axes means the skill declares no coverage and no brief can reach it by unit
-    # -- which the usage report names rather than leaves to a reader to notice.
     covered_work_types: tuple[str, ...] = ()
     covered_phases: tuple[str, ...] = ()
-    # Claude-only frontmatter, projected into `.claude/skills` and nowhere else
-    # (basicly-a3ab.11, D36). The four fields above are the Agent Skills portable
-    # subset and the whole point of that subset is that a projected SKILL.md loads
-    # on any host; a host-specific key at top level would trade that away for one
-    # behaviour. Fenced, it costs nothing: the open-standard root still receives
-    # exactly the portable fields.
     claude: tuple[tuple[str, object], ...] = ()
 
     @property
     def source_dir(self) -> Path:
-        """The skill's source directory (parent of ``skill.yaml``)."""
         return self.source_path.parent
 
 
@@ -105,7 +47,6 @@ def _require_str(value: object, field: str, path: Path) -> str:
 def _optional_str(
     value: object, field: str, path: Path, *, max_len: int | None = None
 ) -> str | None:
-    """Validate an optional spec string field (absent -> None)."""
     if value is None:
         return None
     if not isinstance(value, str) or not value.strip():
@@ -115,20 +56,11 @@ def _optional_str(
     return value
 
 
-# Frontmatter keys the renderer owns; the claude passthrough may not shadow them.
-# Without this the fence is a back door that rewrites the portable header from a
-# vendor block — the same hole agents.RESERVED_FRONTMATTER_KEYS closes.
 RESERVED_SKILL_FRONTMATTER_KEYS = frozenset({"name", "description"})
 
 
 def _load_claude_passthrough(value: object, path: Path) -> tuple[tuple[str, object], ...]:
-    """Validate the optional Claude-only frontmatter block.
 
-    Values are deliberately untyped: this passes through host frontmatter whose
-    shape is the host's to define (``paths`` is a list, ``context`` a string), and
-    a schema of our own would go stale against a vendor that moves. The keys are
-    checked because those are ours to keep unshadowed.
-    """
     if value is None:
         return ()
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
@@ -143,7 +75,6 @@ def _load_claude_passthrough(value: object, path: Path) -> tuple[tuple[str, obje
 
 
 def _load_metadata(value: object, path: Path) -> tuple[tuple[str, str], ...]:
-    """Validate the optional ``metadata`` map (string keys -> string values)."""
     if value is None:
         return ()
     if not isinstance(value, dict):
@@ -161,12 +92,7 @@ def _load_metadata(value: object, path: Path) -> tuple[tuple[str, str], ...]:
 
 
 def _load_covers(value: object, path: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Validate the optional ``covers`` block into its two axes (work types, phases).
 
-    Shape only. The controlled vocabularies live two tiers up in
-    :mod:`basicly.config` and :mod:`basicly.roles`, which this module may not import,
-    so ``catalog_lint`` holds that half through :mod:`basicly.skill_coverage`.
-    """
     if value is None:
         return (), ()
     if not isinstance(value, dict):
@@ -197,7 +123,6 @@ def discover_skills(
     repo_root: Path,
     source_dir: Path = SKILLS_SOURCE_DIR,
 ) -> list[SkillDefinition]:
-    """Load and validate all skills from the source collection directory."""
     base_dir = repo_root / source_dir
     if not base_dir.exists():
         return []
@@ -227,9 +152,6 @@ def discover_skills(
                 f"got {invocation!r}",
                 path,
             )
-        # A user-invoked entry legitimately has no description, so this cannot go
-        # through _require_str. The pairing (model needs one, user must not have
-        # one) is a catalog_lint rule so the failure can explain itself.
         raw_description = data.get("description")
         description = raw_description.strip() if isinstance(raw_description, str) else ""
         covers = _load_covers(data.get("covers"), path)

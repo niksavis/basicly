@@ -1,11 +1,3 @@
-"""Tests for the protect-generated commit backstop hook (basicly-yw28).
-
-Covers `.basicly/core/hooks/protect-generated-commit.py`. Unit tests exercise the
-pure pieces (hash form, manifest parsing, violation detection); integration tests
-drive the git plumbing against a real staged index so the deterministic block is
-verified end-to-end.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -37,16 +29,11 @@ def _sha(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
-# --- pure units -------------------------------------------------------------
-
-
 def test_hash_bytes_matches_sha256_of_text_form() -> None:
-    """hash_bytes mirrors renderers.common.sha256_of_text over the same bytes."""
     assert hook.hash_bytes(b"hello") == _sha(b"hello")
 
 
 def test_manifest_hashes_extracts_output_hashes(tmp_path: Path) -> None:
-    """Only dict entries with a string hash are kept; other shapes are ignored."""
     manifest = tmp_path / "generated-manifest.json"
     manifest.write_text(
         json.dumps({
@@ -62,7 +49,6 @@ def test_manifest_hashes_extracts_output_hashes(tmp_path: Path) -> None:
 
 
 def test_manifest_hashes_empty_on_corrupt_or_shapeless(tmp_path: Path) -> None:
-    """A corrupt file or a non-dict outputs map degrades to an empty map."""
     corrupt = tmp_path / "c.json"
     corrupt.write_text("{not json", encoding="utf-8")
     assert hook.manifest_hashes(corrupt) == {}
@@ -72,7 +58,6 @@ def test_manifest_hashes_empty_on_corrupt_or_shapeless(tmp_path: Path) -> None:
 
 
 def test_find_manifest_default_then_search_then_none(tmp_path: Path) -> None:
-    """Default path wins; else a search under .basicly; else None."""
     assert hook.find_manifest(tmp_path) is None
     nested = tmp_path / ".basicly" / "nested"
     nested.mkdir(parents=True)
@@ -85,15 +70,11 @@ def test_find_manifest_default_then_search_then_none(tmp_path: Path) -> None:
 
 
 def test_violations_flags_only_diverged_generated_files() -> None:
-    """Flag a tampered generated file; skip matches, unknown paths, and deleted blobs."""
     hashes = {"AGENTS.md": _sha(b"good"), "CLAUDE.md": _sha(b"clean")}
     blobs = {"AGENTS.md": b"TAMPERED", "CLAUDE.md": b"clean", "other.py": b"x"}
     staged = ["AGENTS.md", "CLAUDE.md", "other.py", "gone.md"]
     result = hook.violations(hashes, staged, blobs.get)
     assert result == ["AGENTS.md"]
-
-
-# --- integration against a real staged index --------------------------------
 
 
 def _init_repo(path: Path) -> None:
@@ -117,7 +98,6 @@ def _seed_generated(repo: Path, rel: str, content: bytes) -> None:
 def test_main_passes_when_staged_generated_file_matches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A staged generated file that matches the manifest hash lets the commit through."""
     _init_repo(tmp_path)
     _seed_generated(tmp_path, "AGENTS.md", b"generated body\n")
     subprocess.run(["git", "add", "AGENTS.md"], cwd=tmp_path, check=True)
@@ -128,7 +108,6 @@ def test_main_passes_when_staged_generated_file_matches(
 def test_main_blocks_when_staged_generated_file_is_tampered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A hand-edited generated file staged for commit is blocked deterministically."""
     _init_repo(tmp_path)
     _seed_generated(tmp_path, "AGENTS.md", b"generated body\n")
     (tmp_path / "AGENTS.md").write_bytes(b"hand-edited body\n")
@@ -139,7 +118,6 @@ def test_main_blocks_when_staged_generated_file_is_tampered(
 
 
 def test_main_exits_zero_with_no_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fail-safe: no manifest means nothing to check, so the commit is never blocked."""
     _init_repo(tmp_path)
     (tmp_path / "file.txt").write_text("x", encoding="utf-8")
     subprocess.run(["git", "add", "file.txt"], cwd=tmp_path, check=True)
@@ -148,7 +126,6 @@ def test_main_exits_zero_with_no_manifest(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 def test_main_ignores_a_staged_deletion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A staged deletion of a generated file is not an edit — the hook does not block it."""
     _init_repo(tmp_path)
     _seed_generated(tmp_path, "AGENTS.md", b"generated body\n")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)

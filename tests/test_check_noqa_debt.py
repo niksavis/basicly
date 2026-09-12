@@ -1,25 +1,3 @@
-"""Tests for the `# noqa` suppression-debt ratchet (basicly-u2hl.12).
-
-The gate's whole value is that it fails, so most of these assert a *failure* and name the
-numbers it has to report. Three things can each make it fail open, and each is pinned here:
-
-* **It counts what ruff obeys, not what grep finds.** The spellings in
-  ``test_a_directive_is_read_the_way_ruff_reads_it`` were run through ruff 0.14 itself on
-  2026-08-08; every case that says "suppressed" was observed to suppress and every case that
-  says "not a directive" was observed to warn. A substring count would inflate the debt with
-  comments that silence nothing, and `src/basicly/tracker.py:70` is one of those today.
-* **A marker in a string is a mention.** Comments come from :mod:`tokenize`, which is what
-  lets this file and the gate spell the marker throughout without counting themselves —
-  ``test_neither_the_gate_nor_this_test_declares_a_suppression`` is what proves it.
-* **The count falls as well as rises.** A debt that fell and was not banked licenses regrowth
-  back to the old number for free, which is the shape `check_module_size.py` was built to
-  refuse and the reason its waiver count is checked in both directions.
-
-The logic tests drive :func:`collect` with synthetic suppressions rather than building trees.
-Two end-to-end runs cover the acceptance criterion in both directions: the real repository
-must exit zero, and a scratch repository carrying one unannounced suppression must not.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -39,7 +17,6 @@ RATCHET = REPO_ROOT / ".scripts" / "ratchet.py"
 
 
 def _load(path: Path, name: str) -> ModuleType:
-    """Load a standalone script by path, the way `uv run python` does."""
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -63,9 +40,6 @@ def _codes(source: str) -> list[str]:
     return [item.code for item in gate.suppressions("m.py", source)]
 
 
-# --- reading a directive --------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     ("source", "codes"),
     [
@@ -79,38 +53,29 @@ def _codes(source: str) -> list[str]:
         ("x = 1  # nosec B603  # noqa: S603 - literal argv\n", ["S603"]),
         ("# noqa: F841\nx = 1\n", ["F841"]),
         ("x = 1  # noqa\n", [gate.BLANKET]),
-        # Observed 2026-08-08: ruff warns "Invalid `# noqa` directive" and suppresses
-        # nothing. Counting it would charge the tree for a comment that does nothing.
         ("x = 1  # noqa/nosec pair: prose about both\n", []),
         ("x = 1  # noqadoc: not a directive\n", []),
         ("x = 1  # nothing to see here\n", []),
     ],
 )
 def test_a_directive_is_read_the_way_ruff_reads_it(source: str, codes: list[str]) -> None:
-    """Each spelling was run through ruff itself before being written down here."""
     assert _codes(source) == codes
 
 
 def test_a_marker_inside_a_string_is_a_mention_not_a_suppression() -> None:
-    """The discriminator a regex over raw text cannot draw, and this file depends on it."""
     assert _codes('MARKER = "# noqa: F841"\n') == []
     assert _codes('"""Docs naming # noqa: F841 in prose."""\n') == []
 
 
 def test_a_directive_carries_the_line_it_sits_on() -> None:
-    """A count nobody can act on is a count nobody acts on."""
     found = gate.suppressions("src/basicly/mod.py", "x = 1\ny = 2  # noqa: F841\n")
 
     assert [item.site for item in found] == ["src/basicly/mod.py:2"]
 
 
 def test_a_module_that_does_not_tokenize_fails_rather_than_being_skipped() -> None:
-    """Skipping it would exempt the file, which is the fail-open shape this gate refuses."""
     with pytest.raises(gate.RatchetError, match="could not tokenize"):
         gate.suppressions("broken.py", "def f(\n")
-
-
-# --- the reason -----------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -125,29 +90,22 @@ def test_a_module_that_does_not_tokenize_fails_rather_than_being_skipped() -> No
     ],
 )
 def test_the_reason_is_whatever_follows_the_code(source: str, reason: str | None) -> None:
-    """A dash on its own is not an argument; the house form is `# noqa: CODE - reason`."""
     assert gate.suppressions("m.py", source)[0].reason == reason
 
 
 def test_one_reason_covers_every_code_in_its_directive() -> None:
-    """`# noqa: S603, S607 - argv list, no shell` argues for both, as this tree writes it."""
     found = gate.suppressions("m.py", "x = 1  # noqa: S603,S607 - argv list, no shell\n")
 
     assert [item.reason for item in found] == ["argv list, no shell"] * 2
 
 
-# --- the ratchet ----------------------------------------------------------------------
-
-
 def test_a_tree_that_matches_its_recorded_counts_is_admitted() -> None:
-    """The baseline is the whole debt, so agreeing with it exactly is the passing state."""
     found = [_found("PLR0913"), _found("PLR0913"), _found("S603")]
 
     assert gate.collect(found, _ratchet({"PLR0913": 2, "S603": 1})) == []
 
 
 def test_an_added_suppression_fails_naming_the_code_and_both_counts() -> None:
-    """The acceptance criterion: a count that rose has to be legible without a diff."""
     found = [_found("PLR0913"), _found("PLR0913"), _found("PLR0913")]
     findings = gate.collect(found, _ratchet({"PLR0913": 2}))
 
@@ -159,7 +117,6 @@ def test_an_added_suppression_fails_naming_the_code_and_both_counts() -> None:
 
 
 def test_a_code_the_table_never_recorded_is_refused() -> None:
-    """Refused by default: "we already suppress that one" is what has to be written down."""
     findings = gate.collect([_found("N806")], _ratchet())
 
     assert [finding.subject for finding in findings] == ["N806"]
@@ -168,7 +125,6 @@ def test_a_code_the_table_never_recorded_is_refused() -> None:
 
 
 def test_a_blanket_suppression_is_refused_and_cannot_be_recorded_away() -> None:
-    """Ruff passes a used blanket directive; RUF100 only catches one silencing nothing."""
     findings = gate.collect([_found(gate.BLANKET, reason=None)], _ratchet())
 
     assert [finding.subject for finding in findings] == [gate.BLANKET]
@@ -177,7 +133,6 @@ def test_a_blanket_suppression_is_refused_and_cannot_be_recorded_away() -> None:
 
 
 def test_a_count_that_fell_must_be_banked_in_the_same_diff() -> None:
-    """A record left at the old number licenses regrowth back to it for free."""
     findings = gate.collect([_found("PLR0913")], _ratchet({"PLR0913": 4}))
 
     assert len(findings) == 1
@@ -186,11 +141,7 @@ def test_a_count_that_fell_must_be_banked_in_the_same_diff() -> None:
 
 
 def test_the_last_suppression_of_a_code_deletes_its_entry() -> None:
-    """Zeroing it would keep a licence for a rule this tree no longer suppresses at all.
 
-    The delta the remedy names composes to zero, and :func:`basicly.dropin.compose` drops an
-    entry that reaches zero rather than recording it, so banking it *is* deleting it.
-    """
     findings = gate.collect([], _ratchet({"E731": 1}))
 
     assert len(findings) == 1
@@ -199,17 +150,12 @@ def test_the_last_suppression_of_a_code_deletes_its_entry() -> None:
 
 
 def test_a_blanket_suppression_is_not_counted_against_the_reason_ratchet() -> None:
-    """It is already refused outright; charging it twice would misname the repair."""
     findings = gate.collect([_found(gate.BLANKET, reason=None)], _ratchet())
 
     assert [finding.subject for finding in findings] == [gate.BLANKET]
 
 
-# --- the reason ratchet ---------------------------------------------------------------
-
-
 def test_a_reasonless_suppression_fails_naming_where_it_is() -> None:
-    """A bare marker is a suppression with no argument; the remedy names writing one."""
     found = [_found("PLR0913", reason=None, line=42)]
     findings = gate.collect(found, _ratchet({"PLR0913": 1}))
 
@@ -220,7 +166,6 @@ def test_a_reasonless_suppression_fails_naming_where_it_is() -> None:
 
 
 def test_the_reason_ratchet_fails_when_the_last_unargued_one_is_justified() -> None:
-    """It fails in both directions, or the count decays into a blanket exemption."""
     findings = gate.collect([_found("E731")], _ratchet({"E731": 1}, unreasoned=1))
 
     assert len(findings) == 1
@@ -228,21 +173,13 @@ def test_the_reason_ratchet_fails_when_the_last_unargued_one_is_justified() -> N
 
 
 def test_an_unargued_suppression_cannot_be_swapped_for_another_one() -> None:
-    """The count is what stops a justified one being spent on a new bare marker."""
     found = [_found("E731", reason=None), _found("PLR0913", reason="mirrors the CLI surface")]
 
     assert gate.collect(found, _ratchet({"E731": 1, "PLR0913": 1}, unreasoned=1)) == []
 
 
-# --- the recorded state, and the wiring -----------------------------------------------
-
-
 def test_the_ratchet_cannot_be_read_as_empty(tmp_path: Path) -> None:
-    """An absent table has to fail, not default to a baseline of nothing.
 
-    Defaulting would report the whole existing debt as new, which is loud — but a table that
-    parsed to `{}` for any other reason would pass every code silently.
-    """
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
 
     with pytest.raises(gate.RatchetError, match=re.escape(f"no {gate.RATCHET_TABLE}")):
@@ -250,7 +187,6 @@ def test_the_ratchet_cannot_be_read_as_empty(tmp_path: Path) -> None:
 
 
 def test_no_frozen_entry_sits_at_zero() -> None:
-    """The table is a measurement, not an allowance: an emptied code leaves the list."""
     ratchet = gate.load_ratchet(REPO_ROOT)
 
     assert ratchet.frozen, "an empty table would refuse every code at once"
@@ -259,7 +195,6 @@ def test_no_frozen_entry_sits_at_zero() -> None:
 
 
 def test_the_gate_passes_on_this_repository() -> None:
-    """The recorded ratchet describes this tree — run as a consumer runs it."""
     completed = subprocess.run(
         [sys.executable, str(SCRIPT)],
         capture_output=True,
@@ -273,18 +208,7 @@ def test_the_gate_passes_on_this_repository() -> None:
 
 
 def test_the_gate_fails_end_to_end_on_an_unannounced_suppression(tmp_path: Path) -> None:
-    """The other half of the acceptance criterion, run the way a commit would run it.
 
-    A scratch repository rather than a mutation of this one: the gate resolves its root from
-    its own location, so copying it into a tmp tree exercises `git ls-files`, the tokenizer
-    and the TOML read together without putting a deliberate defect in the working tree.
-
-    The gate is a three-file unit since basicly-2j5a — it reads through `ratchet.py`, which
-    imports :mod:`basicly.dropin` off the ``src`` it derives from its own path — so the
-    scratch tree carries both. Only those: neither declares a suppression beyond the one
-    ``E402`` the record below allows for `ratchet.py`'s own import, whereas copying the whole
-    package would put every suppression in `basicly` inside a tree that freezes ``E731 = 1``.
-    """
     scripts = tmp_path / ".scripts"
     scripts.mkdir()
     copied = shutil.copy(SCRIPT, scripts / SCRIPT.name)
@@ -316,13 +240,7 @@ def test_the_gate_fails_end_to_end_on_an_unannounced_suppression(tmp_path: Path)
 
 
 def test_only_the_suppression_the_gate_really_declares_is_counted() -> None:
-    """Both files spell the marker throughout; only a real directive may reach the debt.
 
-    The gate declares exactly one — the ``basicly.dropin`` import that has to follow the
-    ``sys.path`` line (basicly-ef7t) — against dozens of mentions in its prose and its
-    regexes, so a reading that counted mentions would fail here rather than inflate the
-    count it measures. The test file declares none at all.
-    """
     declared = gate.suppressions(SCRIPT.name, SCRIPT.read_text(encoding="utf-8"))
 
     assert [(item.code, item.reason) for item in declared] == [
@@ -332,13 +250,11 @@ def test_only_the_suppression_the_gate_really_declares_is_counted() -> None:
 
 
 def test_the_gate_is_declared_as_a_verify_check() -> None:
-    """Wired to the fast set, so it runs at commit time and not only on request."""
     config = tomllib.loads((REPO_ROOT / "basicly.toml").read_text(encoding="utf-8"))
     checks = {check["name"]: check for check in config["verify"]["checks"]}
 
     assert "noqa-debt" in checks
     entry = checks["noqa-debt"]
     assert SCRIPT.relative_to(REPO_ROOT).as_posix() in entry["command"]
-    # A bare `python` on windows-latest is a system interpreter, not the project's.
     assert entry["command"][:3] == ["uv", "run", "python"]
     assert set(entry["modes"]) == {"fast", "full"}

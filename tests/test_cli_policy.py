@@ -1,10 +1,3 @@
-"""Tests for the ``basicly policy checkpoint`` CLI wiring (basicly-shgo).
-
-The command gates ``--approve`` on an interactive TTY or a one-time confirm
-code. These tests fake the tracker and stdin so they assert only that wiring:
-a non-interactive approve challenges (exit 1) and a matching code approves.
-"""
-
 from __future__ import annotations
 
 import json
@@ -25,8 +18,6 @@ class _Proc:
 
 
 class _FakeBr:
-    """Stateful br stand-in whose comment writes are visible to later reads."""
-
     def __init__(self) -> None:
         self.comments: list[str] = []
 
@@ -37,13 +28,8 @@ class _FakeBr:
             self.comments.append(args[-1])
             return _Proc("")
         if args[:1] == ["show"]:
-            # An open, childless session root — enough for active_grant's
-            # expiry check and the grant-approval session walk.
             return _Proc(json.dumps([{"status": "open", "dependents": []}]))
         if args[:1] == ["update"]:
-            # An answered `park` defers the lane (basicly-u2hl.3). Accepted rather
-            # than asserted on here: what that write has to achieve belongs with the
-            # gate verbs in `test_cli_gate_verbs.py`.
             return _Proc("")
         raise AssertionError(f"unexpected br call: {args}")
 
@@ -53,8 +39,6 @@ def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     fake = _FakeBr()
     monkeypatch.setattr(policy, "_write", fake)
-    # The marker traffic left policy's alias for `tracker.add_comment`/`tracker.read_comments`
-    # (basicly-s5li); both funnel through `tracker.run_br` on this rung.
     fake_tracker.install(monkeypatch, fake)
 
 
@@ -65,7 +49,6 @@ def _no_tty(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_checkpoint_approve_non_interactive_challenges(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Without a TTY and without a code, approve refuses and prints a re-run line."""
     _no_tty(monkeypatch)
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
     rc = cli.main(["policy", "checkpoint", "basicly-x", "ship", "--approve"])
@@ -78,79 +61,50 @@ def test_checkpoint_approve_non_interactive_challenges(
 def test_challenge_says_the_caller_may_run_it_once_a_human_approves(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The challenge must not read as "hand this over and wait" (basicly-kjc5.34).
 
-    The gate forces a human *decision*; it never cared whose fingers type the
-    command. The old wording said "a human must re-run with the one-time code",
-    so an agent handed the command over and waited — a wasted round trip that
-    raced the code's TTL, and a ship code did expire mid-ask.
-    """
     _no_tty(monkeypatch)
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
     assert cli.main(["policy", "checkpoint", "basicly-x", "ship", "--approve"]) == 1
     err = capsys.readouterr().err
     assert "A human must approve this decision" in err
     assert "may run the command themselves" in err
-    # The protocol, so an agent knows what "approval" has to look like.
     assert "get an explicit yes" in err
-    # The deadline, since queueing the ask behind other work is how a code expires.
     assert f"expires in {policy.CONFIRM_TTL_SECONDS // 60} minutes" in err
-    # The regression pin: the phrasing that caused the hand-off is gone.
     assert "must re-run" not in err
 
 
 def test_ship_challenge_says_the_merge_already_happened_and_nothing_is_published(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The ship prompt must state what approving does and does not do (basicly-jr0l.39).
 
-    The name reads as *release* or *publish*, and it sits after the merge it
-    sounds like it performs — the owner of this harness misread it off a live
-    prompt, and a consumer has strictly less context. The name is not changed
-    (that is deferred to basicly-kjc5.45); the prompt has to carry the meaning,
-    because the approval protocol asks the driver to say what approving does and
-    a bare phase name cannot answer that.
-    """
     _no_tty(monkeypatch)
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
     assert cli.main(["policy", "checkpoint", "basicly-x", "ship", "--approve"]) == 1
     err = capsys.readouterr().err
-    # The merge is past, not what this approval performs.
     assert "ALREADY happened" in err
     assert "build->verify landing" in err
-    # What it does, and the three things it does not do.
     assert "tears down the worktree and closes the bead" in err
     assert "publishes nothing" in err
     assert "no tag or release" in err
-    # The recorded incident: approving before `[merged]` wedges an unmerged node.
     assert "'[merged]'" in err
     assert "no un-approve" in err
 
 
 class _GrantedBr(_FakeBr):
-    """The base fake plus ``gate list``, so a real grant decision can be reached."""
-
     def __call__(self, repo_root: Path, args: list[str], *, _check: bool = True) -> _Proc:
         if args[:2] == ["gate", "list"]:
-            return _Proc(json.dumps({"results": []}))  # verify missing: a real wrinkle
+            return _Proc(json.dumps({"results": []}))
         return super().__call__(repo_root, args, _check=_check)
 
 
 def test_ship_challenge_names_the_precondition_the_grant_declined_on(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A grant that covered ship and declined must say so on the operator's surface.
 
-    The measured incident (basicly-5ltn): the operator saw only CONFIRMATION
-    REQUIRED, with nothing to distinguish "no grant" from "a covering grant
-    refused because a lights-out precondition is violated".
-    """
     _no_tty(monkeypatch)
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
     fake = _GrantedBr()
     monkeypatch.setattr(policy, "_write", fake)
-    # Both seams, or the grant marker below lands on this fake's comment list while
-    # `tracker.read_comments` still answers out of the fixture's — one store per read.
     fake_tracker.install(monkeypatch, fake)
     fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
 
@@ -160,14 +114,12 @@ def test_ship_challenge_names_the_precondition_the_grant_declined_on(
     assert "CONFIRMATION REQUIRED" in err
     assert "the active L3 grant covers ship but declined it" in err
     assert "required gates not green on basicly-x: verify" in err
-    # The code still has to come back: the message is new, the gate is not.
     assert "--confirm cafe1234" in err
 
 
 def test_a_challenge_with_no_grant_prints_no_reason_line(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Given no grant the output is unchanged: nothing new between header and meaning."""
     _no_tty(monkeypatch)
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
 
@@ -181,11 +133,7 @@ def test_a_challenge_with_no_grant_prints_no_reason_line(
 def test_classify_and_decompose_challenges_state_their_own_effect(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Every named checkpoint says what approving it does, not just ship.
 
-    Same defect class: "CONFIRMATION REQUIRED" plus a phase name leaves the
-    driver unable to satisfy the protocol's "say what approving it does".
-    """
     _no_tty(monkeypatch)
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
     assert cli.main(["policy", "checkpoint", "basicly-x", "classify", "--approve"]) == 1
@@ -202,11 +150,7 @@ def test_classify_and_decompose_challenges_state_their_own_effect(
 def test_grant_challenge_carries_no_checkpoint_meaning(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The grant challenge keeps the generic block: it approves no checkpoint.
 
-    It is the one caller with no checkpoint name to look up, so the lookup must
-    degrade to nothing rather than mislabel what is being approved.
-    """
     _no_tty(monkeypatch)
     _allow_autonomy(monkeypatch)
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
@@ -222,7 +166,6 @@ def test_grant_challenge_carries_no_checkpoint_meaning(
 def test_checkpoint_approve_with_valid_code_succeeds(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Re-running with the issued code records approval and exits 0."""
     _no_tty(monkeypatch)
     monkeypatch.setattr(policy, "_new_code", lambda: "cafe1234")
     assert cli.main(["policy", "checkpoint", "basicly-x", "ship", "--approve"]) == 1
@@ -240,9 +183,6 @@ def test_checkpoint_approve_with_valid_code_succeeds(
     assert "APPROVED" in capsys.readouterr().out
 
 
-# --- basicly policy grant (basicly-kjc5.3, design D3) --------------------------
-
-
 def _tty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
 
@@ -255,7 +195,6 @@ def _allow_autonomy(monkeypatch: pytest.MonkeyPatch, level: str = "L3") -> None:
 def test_grant_issue_interactive_then_show_and_revoke(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A TTY caller issues under the ceiling; show reports it; revoke clears it."""
     _tty(monkeypatch)
     _allow_autonomy(monkeypatch)
     assert cli.main(["policy", "grant", "root", "--level", "L2", "--token-budget", "5000"]) == 0
@@ -274,18 +213,11 @@ def test_grant_issue_interactive_then_show_and_revoke(
 def test_grant_issuance_states_how_many_beads_it_covers(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Issuance and the ledger both report coverage (basicly-jr0l.40).
 
-    An L3 marker with a large ceiling reads as authority over a whole track
-    whether the session is twenty beads or the one it sits on, so the count is
-    the only thing that tells those apart — and the single-leaf case has to name
-    itself rather than leave "1" to be read as a rounding of something larger.
-    """
     _tty(monkeypatch)
     _allow_autonomy(monkeypatch)
     grant = ["policy", "grant", "root", "--level", "L2", "--token-budget", "5000"]
 
-    # The default fake tracker is an open, childless, ungating root.
     assert cli.main(grant) == 0
     assert "covers 1 bead (this issue only)" in capsys.readouterr().out
 
@@ -300,13 +232,7 @@ def test_grant_issuance_states_how_many_beads_it_covers(
 def test_the_ledger_tells_approving_a_checkpoint_from_originating_a_proposal(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An operator must not be able to read autonomy the engine lacks (basicly-u6jq.2).
 
-    ``delegable: classify, decompose, ship`` reads as "the loop classifies and
-    decomposes for you". It only ever meant the checkpoint approval; L1 is the
-    level where the difference is visible on one line — it approves the decompose
-    checkpoint and originates nothing.
-    """
     _tty(monkeypatch)
     _allow_autonomy(monkeypatch, "L3")
 
@@ -328,7 +254,6 @@ def test_the_ledger_tells_approving_a_checkpoint_from_originating_a_proposal(
 def test_grant_issue_non_interactive_challenges(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An agent without a TTY cannot self-issue: it gets a relay code and exit 1."""
     _no_tty(monkeypatch)
     _allow_autonomy(monkeypatch)
     monkeypatch.setattr(policy, "_new_code", lambda: "feed5678")
@@ -337,25 +262,19 @@ def test_grant_issue_non_interactive_challenges(
     err = capsys.readouterr().err
     assert "CONFIRMATION REQUIRED" in err
     assert "--confirm feed5678" in err
-    # Grant issuance shares the challenge wording with checkpoint approval.
     assert "may run the command themselves" in err
 
 
 def test_grant_issue_refused_at_default_ceiling(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With the default [policy] autonomy = L0 every issuance is refused."""
     _tty(monkeypatch)
     rc = cli.main(["policy", "grant", "root", "--level", "L1"])
     assert rc == 1
     assert "autonomy ceiling" in capsys.readouterr().err
 
 
-# --- basicly loop decisions / answer (basicly-kjc5.4) ---------------------------
-
-
 def test_loop_decisions_and_answer_round_trip(capsys: pytest.CaptureFixture[str]) -> None:
-    """An enqueued item is listed, answerable with attribution, then gone."""
     item = decisions.enqueue(Path(), "basicly-x", "needs-input", "which db?")
 
     assert cli.main(["loop", "decisions", "basicly-x"]) == 1
@@ -369,19 +288,14 @@ def test_loop_decisions_and_answer_round_trip(capsys: pytest.CaptureFixture[str]
 
 
 def test_loop_answer_refuses_unknown_id(capsys: pytest.CaptureFixture[str]) -> None:
-    """Answering a decision that was never asked is an error, not a silent write."""
     assert cli.main(["loop", "answer", "basicly-x#abcdef", "yes"]) == 1
     assert "refused" in capsys.readouterr().err
-
-
-# --- An answered `retry` is carried out, not just recorded (basicly-4tjt) -----
 
 
 _CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 
 
 def _escalate(gate: str = "merge") -> decisions.DecisionItem:
-    """Spend the budget on *gate* and enqueue the escalation the loop would."""
     for _ in range(_CONFIG.max_rework):
         policy.record_rework(Path(), "basicly-x", gate)
     return decisions.enqueue(
@@ -395,7 +309,6 @@ def _escalate(gate: str = "merge") -> decisions.DecisionItem:
 def test_answering_a_rework_escalation_with_retry_permits_one_more_attempt(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The reported defect: the answer was recorded and the lane still could not move."""
     item = _escalate()
     assert policy.rework_allowances(Path(), "basicly-x", "merge") == 0
 
@@ -405,7 +318,6 @@ def test_answering_a_rework_escalation_with_retry_permits_one_more_attempt(
 
 
 def test_a_retry_answer_may_carry_a_rationale(capsys: pytest.CaptureFixture[str]) -> None:
-    """Operators explain themselves; the leading token is what decides."""
     item = _escalate()
     answer = "retry - the gate failed on the br clock defect, not on this lane"
     assert cli.main(["loop", "answer", item.decision_id, answer, "--by", "niksa"]) == 0
@@ -413,12 +325,7 @@ def test_a_retry_answer_may_carry_a_rationale(capsys: pytest.CaptureFixture[str]
 
 
 def test_answering_with_park_grants_nothing(capsys: pytest.CaptureFixture[str]) -> None:
-    """Only one of the three offered choices extends the budget.
 
-    ``park`` does now carry out a route of its own — it defers the lane
-    (``tests/test_cli_gate_verbs.py``) — but it is still not the one that buys
-    another attempt, which is what this asserts.
-    """
     item = _escalate()
     assert cli.main(["loop", "answer", item.decision_id, "park", "--by", "niksa"]) == 0
     assert "granted" not in capsys.readouterr().out
@@ -428,7 +335,6 @@ def test_answering_with_park_grants_nothing(capsys: pytest.CaptureFixture[str]) 
 def test_answering_with_re_dispatch_is_not_read_as_retry(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`re-dispatch` shares a prefix with nothing, but the guard must be explicit."""
     item = _escalate()
     assert cli.main(["loop", "answer", item.decision_id, "re-dispatch", "--by", "niksa"]) == 0
     assert "granted" not in capsys.readouterr().out
@@ -437,7 +343,6 @@ def test_answering_with_re_dispatch_is_not_read_as_retry(
 def test_a_decider_answer_does_not_extend_its_own_rework_budget(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """An autonomy grant may dispose of the question; the engine still holds the budget."""
     item = _escalate()
     by = f"{decisions.DECIDER_BY_PREFIX}claude"
     assert cli.main(["loop", "answer", item.decision_id, "retry", "--by", by]) == 0
@@ -448,7 +353,6 @@ def test_a_decider_answer_does_not_extend_its_own_rework_budget(
 def test_a_retry_on_a_non_rework_decision_grants_nothing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Only a rework escalation carries a gate to forgive."""
     item = decisions.enqueue(Path(), "basicly-x", "needs-input", "retry which db?")
     assert cli.main(["loop", "answer", item.decision_id, "retry", "--by", "niksa"]) == 0
     assert "granted" not in capsys.readouterr().out
@@ -457,7 +361,6 @@ def test_a_retry_on_a_non_rework_decision_grants_nothing(
 def test_policy_rework_allow_retry_is_the_operators_direct_lever(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The escalation is answerable out of band too, without touching max_rework."""
     _escalate("verify")
     assert cli.main(["policy", "rework", "basicly-x", "--gate", "verify", "--allow-retry"]) == 0
     out = capsys.readouterr().out
@@ -466,11 +369,7 @@ def test_policy_rework_allow_retry_is_the_operators_direct_lever(
     assert "forgiven" in out
 
 
-# --- ...and so is an answered `land anyway` (basicly-tcmy.6) ------------------
-
-
 def _escalate_unreliable(gate: str = "merge") -> decisions.DecisionItem:
-    """Enqueue the unreliable-gate escalation the loop raises at the flake bound."""
     return decisions.enqueue(
         Path(),
         "basicly-x",
@@ -482,11 +381,7 @@ def _escalate_unreliable(gate: str = "merge") -> decisions.DecisionItem:
 def test_answering_land_anyway_says_what_the_next_landing_will_do(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The reported defect: answering printed the same line as an answer that did nothing.
 
-    The override itself is spent by the landing (``landing_gate.gate_override``), so
-    this is the confirmation that the engine will act on the answer at all.
-    """
     item = _escalate_unreliable()
 
     assert cli.main(["loop", "answer", item.decision_id, "land anyway", "--by", "niksa"]) == 0
@@ -494,7 +389,6 @@ def test_answering_land_anyway_says_what_the_next_landing_will_do(
 
 
 def test_answering_fix_the_flake_promises_no_override(capsys: pytest.CaptureFixture[str]) -> None:
-    """Two remedies are offered and only one of them waives the gate."""
     item = _escalate_unreliable()
 
     assert cli.main(["loop", "answer", item.decision_id, "fix the flake", "--by", "niksa"]) == 0
@@ -504,7 +398,6 @@ def test_answering_fix_the_flake_promises_no_override(capsys: pytest.CaptureFixt
 def test_a_delegated_land_anyway_is_told_it_authorises_nothing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Skipping a landing gate is not a call a model makes for itself."""
     item = _escalate_unreliable()
     by = f"{decisions.DECIDER_BY_PREFIX}claude"
 
@@ -517,11 +410,7 @@ def test_a_delegated_land_anyway_is_told_it_authorises_nothing(
 def test_land_anyway_on_the_rework_escalation_promises_nothing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Both escalations share one decision kind, so the question must decide.
 
-    `land anyway` is not one of the rework question's three choices; reading it as an
-    override there would waive a gate nobody was asked about.
-    """
     item = _escalate()
 
     assert cli.main(["loop", "answer", item.decision_id, "land anyway", "--by", "niksa"]) == 0
@@ -533,18 +422,13 @@ def test_land_anyway_on_the_rework_escalation_promises_nothing(
 def test_policy_rework_refuses_record_and_allow_retry_together(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Charging and forgiving in one call is a contradiction, not a no-op."""
     assert cli.main(["policy", "rework", "basicly-x", "--record", "--allow-retry"]) == 1
     assert "opposites" in capsys.readouterr().err
-
-
-# --- policy scaffold / the DoR refusal's own remedy (basicly-kjc5.44) --------
 
 
 def test_policy_scaffold_prints_the_body_for_the_work_type(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The command emits the DoR structure plus ``## Scope``, ready to pipe into br create."""
     assert cli.main(["policy", "scaffold", "--type", "bug"]) == 0
     out = capsys.readouterr().out
     assert out == policy.scaffold_body("bug")
@@ -553,7 +437,6 @@ def test_policy_scaffold_prints_the_body_for_the_work_type(
 
 
 def test_policy_scaffold_rejects_a_type_outside_the_br_taxonomy() -> None:
-    """An unknown type is a parser error, not a body missing its template sections."""
     with pytest.raises(SystemExit):
         cli.main(["policy", "scaffold", "--type", "nonsense"])
 
@@ -561,14 +444,7 @@ def test_policy_scaffold_rejects_a_type_outside_the_br_taxonomy() -> None:
 def test_dor_refusal_names_the_scaffold_command_for_the_issues_own_type(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A refusal must hand back the fix, typed for the bead (basicly-kjc5.44).
 
-    Learning the required sections by being refused cost a read, an edit and a
-    re-check twice in one run; the refusal now prints the command that emits them.
-    """
-    # One record, one reader: the verdict and the scaffold hint both come off the record
-    # `tracker.read_record` returns (basicly-tcmy.14), so a bug carrying only its acceptance
-    # criteria is refused for the section its own work type requires.
     bug = {"issue_type": "bug", "description": "## Acceptance Criteria\n\nx"}
     fake_tracker.install(monkeypatch, lambda _root, _args: _Proc(json.dumps([bug])))
 
@@ -578,24 +454,13 @@ def test_dor_refusal_names_the_scaffold_command_for_the_issues_own_type(
     assert "basicly policy scaffold --type bug" in err
 
 
-# The trigger every work type now owes (basicly-q1ve1fn), stated with no persona.
 _TRIGGER = "## Trigger\n\nWhen gated, I want a trigger, so I can validate it.\n\n"
 
 
 def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_verdict(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A ready bead with an unreadable scope must still read READY, and still say so.
 
-    The failure basicly-tuy6 fixes is silent, so the warning has to reach an author
-    on the path they already run. It is advisory: it cannot flip the verdict or the
-    exit code, or it becomes the fail-closed refusal basicly-vz78 rejected.
-    """
-    # One record carrying both sections. The criteria read and the scope read are the
-    # same `br show` on the same bead, and since `tracker.read_record` became the one reader
-    # (basicly-tcmy.14) they resolve through one stub — so serving two different bodies
-    # from two stubs would be describing a bead that cannot exist. The entry here is a
-    # bare path, which is the defect: it parses to no globs.
     body = _TRIGGER + "## Acceptance Criteria\n\n- x\n\n## Scope\n\n- src/a.py\n"
     record = _Proc(json.dumps([{"issue_type": "task", "description": body}]))
     fake_tracker.install(monkeypatch, lambda _root, _args: record)
@@ -609,9 +474,6 @@ def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_ver
 def test_dor_stays_quiet_when_the_scope_parsed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The control: a bead whose entries are backticked globs earns no warning."""
-    # One record, both sections — see the sibling above. The only difference is the
-    # scope entry, which is the backticked form here, so nothing warns.
     body = _TRIGGER + f"## Acceptance Criteria\n\n- x\n\n## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
     record = _Proc(json.dumps([{"issue_type": "task", "description": body}]))
     fake_tracker.install(monkeypatch, lambda _root, _args: record)
@@ -623,7 +485,6 @@ def test_dor_stays_quiet_when_the_scope_parsed(
 def test_dor_refusal_still_offers_the_scaffold_when_the_type_is_unreadable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A tracker read that fails must not swallow the remedy — it degrades to a placeholder."""
     fake_tracker.install(monkeypatch, lambda _root, _args: _Proc(""))
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 1

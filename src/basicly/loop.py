@@ -1,43 +1,3 @@
-"""Checkpoint-gated loop state machine (onb.6.3).
-
-The conductor of the harness: it advances one issue's track through the loop
-phases (intake → classify → decompose → build → verify → ship → teardown),
-enforcing the three human checkpoints and the bounded rework loop via the
-policy engine (onb.3) and composing the already-built modules — classify
-(onb.6.2), the decomposer (onb.4), worktree lifecycle (onb.1), the verify
-runner (onb.2), and the serial merge queue (onb.5).
-
-Thin conductor: the *agent* supplies the inputs a phase needs (the work type to
-classify, the child plan to decompose) and does the actual coding in the
-worktree; the engine records, gates, and advances. :func:`advance` is a single
-resumable step — it re-reads the current phase from ``br`` (loop_state, onb.6.1)
-every call and keeps no side-state, so a restart or an agent switch resumes
-exactly where the tracker left off.
-
-Because the phase is *derived* from ``br`` state, every step must either **block**
-(waiting on an agent input, a human checkpoint, or a gate) or **produce a new
-``br`` signal** that moves the derived phase forward — recording a type, creating
-children, provisioning a worktree, recording a gate, or closing the issue. A
-step never merely announces a move it did not make, so the resumable derivation
-and the machine never disagree (and the :func:`run_until_blocked` driver cannot
-spin).
-
-Scope (recorded plan, Q3): this drives a single track. A decomposed feature fans
-out one worktree per ready child and lands them through the serial merge queue
-once they close; child tracks are advanced by re-invoking :func:`advance` per
-child (the CLI/driver, onb.6.4, iterates them). Leaf types (bug/chore/task) skip
-decomposition and build in their own worktree.
-
-Lane mini-loop (factory design D7, basicly-kjc5.9): a *lane* is a build-phase
-node that also has sub-task beads — write parallelism stops at depth 1, so a
-lane never provisions worktrees of its own. Its sub-tasks are worked strictly in
-sequence inside the lane's single worktree (one fresh runner dispatch each,
-``fast`` verify each), and the lane signals merge-ready only once its
-integration passes ``full`` verify plus the required validate gate. The lane's
-own split into sub-tasks is engine-governed (the sizing governor plus
-``[policy] max_subtasks_per_lane``), never a fourth human checkpoint.
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -95,27 +55,16 @@ from .tracker import write as _write
 if TYPE_CHECKING:
     from .decompose import ChildSpec
 
-# Work classes that are leaf tracks — they build directly rather than decompose
-# (architecture §23.1: bug/chore are leaves; a task is a unit of work).
 _LEAF_TYPES = ("bug", "chore", "task")
 
-# Phases whose transition merges a worktree back or tears one down and closes the
-# issue. Git refuses to update a branch checked out in another worktree, so these
-# must run from the base checkout; advancing them from a linked worktree once
-# stranded a commit (child closed but unmerged) — the loop now refuses instead.
 _BASE_CHECKOUT_PHASES = ("build", "ship")
 
-# Verify modes chosen deterministically by change class (factory design D4): a
-# sub-task inside a lane runs the fast suite, the lane's own integration runs the
-# full one. Never an agent's judgment call, so neither reads Inputs.verify_mode.
 _SUBTASK_VERIFY_MODE = "fast"
 _LANE_VERIFY_MODE = "full"
 
 
 @dataclass(frozen=True)
 class Inputs:
-    """Agent-supplied inputs a phase may need; absent ones cause a blocked result."""
-
     work_type: str | None = None
     children: tuple[ChildSpec, ...] | None = None
     verify_mode: str = "full"
@@ -123,51 +72,27 @@ class Inputs:
 
 @dataclass(frozen=True)
 class AdvanceResult:
-    """The outcome of one :func:`advance` step."""
-
     issue_id: str
     from_phase: str
     to_phase: str
-    # "classified"|"decomposed"|"built"|"merged"|"shipped"|"tore-down"
-    # |"done"|"sub-task"|"blocked"|"escalated"|"decision"
     action: str
     detail: str = ""
     needs_input: str | None = None
-    # The landing attempt behind this step, when one ran. Carried as data so a
-    # driver can tell a scope collision from a red gate or an uncommitted
-    # worktree without parsing the message (basicly-kjc5.20).
     landing: merge.MergeResult | None = None
-    # The human checkpoint this step is waiting on, when the block is a
-    # checkpoint block. Same stance as ``landing``: a ceremony driver resolves
-    # the checkpoint from data, never by sniffing the detail string
-    # (basicly-kjc5.41).
     checkpoint: str | None = None
 
     @property
     def advanced(self) -> bool:
-        """True when the track moved to a new phase."""
         return self.to_phase != self.from_phase
 
     @property
     def progressed(self) -> bool:
-        """True when the step did useful work, even without changing phase.
 
-        A lane mini-loop step closes one sub-task and stays in ``build`` (the
-        phase is derived, and the lane is still building) — real progress that
-        neither :attr:`advanced` nor :attr:`blocked` captures, so drivers can
-        keep iterating instead of mistaking it for a stall.
-        """
         return self.advanced or self.action == "sub-task"
 
     @property
     def blocked(self) -> bool:
-        """True when the track is waiting on an input, a checkpoint, or a gate.
 
-        ``decision`` counts: a lane holding on a queued validate dispute (D4
-        amended) is waiting on a human exactly like an escalation, and if it were
-        neither blocked nor progressed the CLI would exit 0 on a lane that did not
-        land — a silent stall.
-        """
         return self.action in ("blocked", "escalated", "decision")
 
 
@@ -178,15 +103,7 @@ class _Ctx:
     state: loop_state.NodeState
     config: PolicyConfig
     inputs: Inputs
-    # The issue carrying the grant ledger for this session, when the caller named
-    # one (``loop run --root``). None leaves the dispatch cost gates inert, which is
-    # what every caller that never had a session root already got (basicly-1th1).
     grant_root: str | None = None
-    # Whether this driver wants the build phase to spend a repair dispatch itself
-    # (basicly-u2hl.4). True for the interactive path, which has no other dispatch
-    # step; False for the supervisor, whose landing pass must not spawn an agent —
-    # it dispatches the repair from ``supervise._dispatch_lane`` instead, under the
-    # spend gate, the watchdog and the stream meter that only exist there.
     repair_dispatch: bool = True
 
 
@@ -216,18 +133,7 @@ def _moved(ctx: _Ctx, to_phase: str, action: str, detail: str = "") -> AdvanceRe
 
 
 def _evidence_block(ctx: _Ctx, root: Path | None = None) -> AdvanceResult | None:
-    """Refuse the step when this phase's declared evidence artifact is absent (m4zv.13).
 
-    None when the phase declares nothing — the default, and then this costs one
-    dict lookup and touches neither disk nor tracker. When a declaration *is*
-    satisfied the path is recorded on the bead here, before the transition rather
-    than after it: ``_on_ship`` commits the tracker state, so a marker written
-    afterwards would sit in the local db only (the ordering
-    :func:`_record_cost_rollup` needs, for the same reason).
-
-    *root* is the checkout the phase's work happened in; ``None`` means the one the
-    advance is running in.
-    """
     status = policy.evidence_status(root or ctx.repo_root, ctx.config, ctx.state.phase)
     if not status.satisfied:
         return _blocked(ctx, status.reason, needs_input="evidence")
@@ -237,16 +143,7 @@ def _evidence_block(ctx: _Ctx, root: Path | None = None) -> AdvanceResult | None
 
 
 def _record_gate(ctx: _Ctx, issue_id: str, report: verify.VerifyReport) -> str | None:
-    """Record *report* as the verify gate; return a reason when the tracker refused.
 
-    :func:`verify.report_gate` degrades gracefully so a missing tracker never
-    masks the verify result — but the caller must not then carry on as if the
-    gate were recorded. :func:`loop_state.derive_phase` keys off
-    ``gates.can_advance``, so an unrecorded gate derives the node back to
-    ``build`` and the next advance re-runs build->verify: a loop that never
-    progresses and never says why. Surfacing the tracker's own message turns
-    that into one blocked result naming the cause (basicly-o7z5).
-    """
     record = run_record.latest_record(ctx.repo_root, issue_id)
     ok, message = verify.report_gate(
         ctx.repo_root, issue_id, report, actor=record.agent if record else None
@@ -254,33 +151,14 @@ def _record_gate(ctx: _Ctx, issue_id: str, report: verify.VerifyReport) -> str |
     return None if ok else f"verify gate not recorded on {issue_id}: {message}"
 
 
-# --- Phase handlers ---------------------------------------------------------
-
-
 def _declared_scope(ctx: _Ctx) -> tuple[str, ...]:
-    """The bead's own ``## Scope`` globs, for the integrity rule to classify.
 
-    Intake never passed these, so ``integrity.assign(())`` hit its ``unclassified``
-    fallback and **every unit the loop classified recorded L2** — measured on
-    basicly-u2hl.54.1, whose twelve globs classify L3. That made L3, and every
-    behaviour gated on it, unreachable. Absent scope still keeps the fallback.
-    """
     info = decompose.bead_class_and_scope(ctx.repo_root, ctx.issue_id)
     return info[1] if info is not None else ()
 
 
 def _on_intake(ctx: _Ctx) -> AdvanceResult:
-    """Record the agent's proposed work type, then wait for the classify checkpoint.
 
-    The type comes from the caller when one supplied it, and otherwise from a
-    proposer the grant permits (:func:`_proposed_work_type`) — the loop originates
-    the input rather than waiting for a human to hand it in. Neither route reaches
-    the tracker unvalidated: :func:`classify.classify` still refuses a type outside
-    the fixed ``br`` set.
-
-    Recording the type does not itself leave intake — the derived phase advances
-    to ``classify`` only when the classify checkpoint is approved.
-    """
     work_type, attributed = ctx.inputs.work_type, ""
     if not work_type:
         proposal = _proposed_work_type(ctx)
@@ -301,21 +179,9 @@ def _on_intake(ctx: _Ctx) -> AdvanceResult:
 
 
 def _on_classify(ctx: _Ctx) -> AdvanceResult:
-    """Classify checkpoint is approved (that is why we are here): gate DoR, then branch.
 
-    A leaf type provisions its own worktree; a feature/epic decomposes an
-    agent-proposed child plan — supplied by the caller, or originated by a
-    proposer the grant permits (:func:`_proposed_children`). Either action changes
-    ``br`` so the derived phase moves forward.
-    """
     dor = policy.definition_of_ready(ctx.repo_root, ctx.issue_id)
     if not dor.ready:
-        # Hand back the remedy, not just the complaint. This refusal is where an
-        # agent used to *discover* the required sections — a read, an edit and a
-        # re-check each time — even though the set is derivable from the work
-        # type the engine already recorded (basicly-kjc5.44).
-        # Both voices inline: an author sent to a second command writes the one shape
-        # they already know, which is the persona.
         voices = f". {invest.trigger_remedy()}" if invest.TRIGGER_HEADING in dor.missing else ""
         return _blocked(
             ctx,
@@ -340,29 +206,15 @@ def _on_classify(ctx: _Ctx) -> AdvanceResult:
         ctx,
         "decompose",
         "decomposed",
-        # A group count with no reason for it is where the collapse hid: the loop is
-        # how decompose actually runs in the factory, and `basicly decompose`'s
-        # report is a surface nobody reads on that path (basicly-jr0l.45).
         f"created {len(result.children)} children in {result.parallel_groups} group(s)"
         + attributed
         + decompose.collapse_note(result.collapsing)
-        # Reported, never refused: at plan time a demonstration naming a test the child
-        # has not written yet is the honest case, and D19 puts that call on the author
-        # while re-cutting is still cheap. The refusal is at ship (basicly-u2hl.58).
         + demonstration_proof.plan_notice(ctx.repo_root, children),
     )
 
 
 def _on_decompose(ctx: _Ctx) -> AdvanceResult:
-    """Children exist: gate the decompose checkpoint and the plan artifact, then fan out.
 
-    The ``implementation-plan`` artifact is checked here because this is where the plan
-    enters BUILD: the next call provisions a worktree per child and starts spending. One
-    check at the fan-out rather than one per child — the artifact is one per decompose
-    event, so gating it per dispatch would ask the same question N times and pay a parent
-    lookup for each. A feature carrying no artifact is admitted, which is the ratchet
-    :mod:`basicly.handoff` states.
-    """
     if not policy.checkpoint_approved(ctx.repo_root, ctx.issue_id, "decompose"):
         return _blocked(ctx, "decompose checkpoint awaiting human approval", checkpoint="decompose")
     plan = handoff.entry_verdict(ctx.repo_root, ctx.issue_id, handoff.IMPLEMENTATION_PLAN)
@@ -372,17 +224,7 @@ def _on_decompose(ctx: _Ctx) -> AdvanceResult:
 
 
 def _on_build(ctx: _Ctx) -> AdvanceResult:
-    """A worktree is bound: run the lane's next mini-loop step, or verify and land.
 
-    A node whose package was split into sub-task beads is a lane (D7): its
-    sub-tasks run in sequence inside this one worktree before it may land. A plain
-    leaf has no sub-tasks and lands whatever its own dispatch committed.
-
-    A gate that went red last advance left a repair brief in that same worktree,
-    and repairing is what the node owes before anything else: re-running the
-    landing without it would re-derive the verdict already on the bead, and
-    running the next sub-task would build on a step a gate rejected.
-    """
     if ctx.state.worktree is None:
         return _blocked(ctx, "build phase without a bound worktree")
     if ctx.inputs.children and not ctx.state.has_children:
@@ -396,27 +238,7 @@ def _on_build(ctx: _Ctx) -> AdvanceResult:
 
 
 def stale_binding_verdict(repo_root: Path, binding: loop_state.WorktreeBinding) -> tuple[bool, str]:
-    """Whether a dead worktree *binding* may be cleared, and why.
 
-    A binding is the only evidence that reaches the ``build`` rung of
-    :func:`loop_state.derive_phase`, and it is *tracker* state while the worktree is
-    *filesystem* state. When the worktree goes without the ref being cleared, the node
-    derives ``build`` forever: the supervisor adopts it non-live, and both
-    ``ready_lanes`` and the phase gate in ``advance_parked`` skip it — so it is
-    simultaneously past classify and undispatchable (basicly-1koh).
-
-    The verdict splits on whether work can be stranded, because that is what decides
-    if clearing is safe. :func:`_worktree_landed` is the same deterministic proof the
-    post-merge check uses: it holds when the branch is gone (``git branch -d`` refuses
-    an unmerged branch) or when its tip is an ancestor of base. Then nothing can be
-    lost and the ref may go. Otherwise commits may still be sitting on the branch, so
-    clearing would orphan them and re-provisioning would fork a second branch for the
-    same bead — this refuses and names the branch, per fail-closed-on-an-indeterminate-
-    answer.
-
-    A pure read: the caller does the clearing, so the decision and the write stay
-    separable and this stays callable from a status command.
-    """
     if _worktree_landed(repo_root, binding):
         return True, (
             f"worktree {binding.name!r} is gone and branch {binding.branch!r} holds "
@@ -430,17 +252,11 @@ def stale_binding_verdict(repo_root: Path, binding: loop_state.WorktreeBinding) 
 
 
 def clear_worktree_binding(repo_root: Path, issue_id: str) -> None:
-    """Drop *issue_id*'s ``worktree:`` external_ref, so it stops deriving ``build``."""
     _write(repo_root, ["update", issue_id, "--external-ref", ""])
 
 
 def _on_verify(ctx: _Ctx) -> AdvanceResult:
-    """Required gate is green (that is why we are here): gate the ship checkpoint.
 
-    Through the guarded path, not a bare marker read (basicly-u2hl.56): this asked only
-    whether a marker existed, so a lane the supervisor re-adopted blocked forever under a
-    grant whose coverage included ship. ``interactive=False`` because nothing here has a TTY.
-    """
     approval = policy.approve_checkpoint_guarded(
         ctx.repo_root, ctx.issue_id, "ship", interactive=False, grant_root=ctx.grant_root
     )
@@ -453,14 +269,7 @@ def _on_verify(ctx: _Ctx) -> AdvanceResult:
 
 
 def _on_validate(ctx: _Ctx) -> AdvanceResult:
-    """The unit merged and owes the consumer check its recorded L3 level requires.
 
-    **Failed and missing are different refusals, and only failed is rework.** Failed
-    means a validation ran and the change did not survive it. Missing means nobody has
-    looked yet, and charging that burns the budget that exists for repairing findings
-    on the absence of any. Failed is also the one branch that merges, because a repair
-    commits on the lane's branch. Nothing here tears down, closes or commits.
-    """
     gate = validate_gate.VALIDATE_GATE
     if gate in ctx.state.gates.required_failed:
         repaired = _repair_from_validate(ctx, gate)
@@ -476,29 +285,13 @@ def _on_validate(ctx: _Ctx) -> AdvanceResult:
 
 
 def _repair_from_validate(ctx: _Ctx, gate: str) -> AdvanceResult | None:
-    """Repair a red consumer gate in the lane's worktree and re-land it, or None.
 
-    The route a failed validation had none: :func:`_repair_in_place` is reached only
-    from :func:`_on_build`, so a red gate spun on :func:`_rework` and escalated with
-    the brief unread (basicly-e2mz.4).
-
-    **The phase does not move.** Falling back to ``build`` hands the unit a phase whose
-    work base already holds, so the repair commits on a branch nothing merges again —
-    the shape that stranded work before basicly-5vu4. The re-land is done here instead,
-    split on the ancestry proof ``_on_ship`` refuses on: a branch base does not hold
-    carries the repair's commit and is merged before the validator re-runs against it;
-    otherwise the waiting brief goes out under the same spend gate (basicly-xab3).
-
-    **The re-land records the ``change-summary``** (basicly-3katht): the second merge site,
-    whose silence left the artifact describing the first landing.
-    """
     binding = ctx.state.worktree
     if binding is None:
         return None
     if _worktree_landed(ctx.repo_root, binding):
         return _repair_in_place(ctx, binding)
     mode = ctx.inputs.verify_mode
-    # Before the merge — see :func:`_changed_paths`.
     changed = _changed_paths(ctx, binding.name)
     landed = merge.merge_worktree(ctx.repo_root, binding.name, bead=ctx.issue_id, verify_mode=mode)
     if not landed.merged:
@@ -520,14 +313,7 @@ def _repair_from_validate(ctx: _Ctx, gate: str) -> AdvanceResult | None:
 
 
 def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
-    """Run the validator against the merged change, or None to leave the gate missing.
 
-    In ``repo_root``, not the worktree: a consumer exercises the merged product. Bound
-    by D3's halt as a fifth metered site (basicly-dbbh), and by ``repair_dispatch`` for
-    the reason that gates a repair — under the supervisor this runs inside a landing
-    pass, which names the session as its grant root but has no watchdog or stream
-    meter of its own (basicly-xab3).
-    """
     if not ctx.repair_dispatch or validate_gate.has_foreign_result(ctx.state.gates):
         return None
     dispatch = _run_agent(
@@ -544,8 +330,6 @@ def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
     verdict = validate_gate.verdict_from_reply(reply)
     if verdict is not None:
         validate_gate.record_verdict(ctx.repo_root, ctx.issue_id, passed=verdict)
-    # After the verdict is recorded, never before: a review that could not reach the
-    # tracker would otherwise throw away the validator's own answer along with its cost.
     _dispatch_reviews(ctx)
     if verdict is None:
         return _blocked(
@@ -556,8 +340,6 @@ def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
             action="decision",
             needs_input="validation",
         )
-    # Re-read rather than trust the parse: green means the store took the verdict, and a
-    # recorded FAIL is a finding the next advance repairs, not a phase move.
     if gate in policy.gate_status(ctx.repo_root, ctx.issue_id, ctx.config).required_passed:
         return _moved(ctx, "verify", "validated", f"{gate} recorded green by the validator")
     return _blocked(
@@ -568,18 +350,7 @@ def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
 
 
 def _dispatch_reviews(ctx: _Ctx) -> None:
-    """Dispatch one reviewer per declared lens, beside the validator (§3.1, §6.5).
 
-    Advisory by decision: nothing here reads a verdict or touches a gate. The validator
-    owns the gate, so a reviewer records a finding for a human and never blocks a landing
-    on its own authority. Each lens gets its own prompt, run record and recorded finding,
-    and no code path merges two of them (§6.4).
-
-    Priced as a read: ``phase="validate"`` records outside ``WRITE_PHASES``, so a
-    read-only judge cannot leak into the sample a lane's cost is calibrated from. Reached
-    past the validator's spend halt and block triage, so a session the grant refuses pays
-    for none of these.
-    """
     for dispatch in roles.lens_dispatches("validate"):
         run = _run_agent(
             ctx,
@@ -598,18 +369,7 @@ def _dispatch_reviews(ctx: _Ctx) -> None:
 
 
 def _worktree_landed(repo_root: Path, binding: loop_state.WorktreeBinding) -> bool:
-    """True when the worktree branch has landed on its base (or is already gone).
 
-    A branch that no longer exists was merged and cleaned — ``git branch -d``
-    refuses an unmerged branch, so a missing branch is proof it landed. An
-    existing branch counts as landed only when its tip is an ancestor of the base
-    HEAD, i.e. ``_verify_and_land`` really ran ``merge.merge_worktree``. This is
-    the deterministic signal ``_on_ship`` uses to refuse closing a stranded node.
-
-    Shares :func:`merge.is_ancestor` with the landing's own post-merge proof
-    (basicly-jr0l.46), so the two places that decide whether work landed cannot
-    answer the question differently.
-    """
     branch = binding.branch
     exists = (
         worktree.git(
@@ -627,21 +387,7 @@ def _worktree_landed(repo_root: Path, binding: loop_state.WorktreeBinding) -> bo
 
 
 def _on_ship(ctx: _Ctx) -> AdvanceResult:
-    """Tear down the worktree, close the issue, and commit the tracker state.
 
-    Guard: never close a leaf whose worktree branch has not landed on its base.
-    The merge happens only in the build->verify transition (``_verify_and_land``);
-    if that step was skipped — e.g. the verify gate was recorded out-of-band, so
-    the derived phase jumped straight to verify — the code is stranded on the
-    harness branch. Block with no side effects (no close, teardown, or tracker
-    commit) instead of closing a bead whose work never merged.
-
-    A second guard of the same shape runs before it: the demonstration the bead recorded
-    has to select something now the work claims to be done. Five beads were closed in one
-    session against a selector matching nothing, every one of whose real regressions existed
-    under another name (basicly-u2hl.58) — this is the rung where that is a defect
-    rather than a promise, and it is the last one a close passes through.
-    """
     unrun = demonstration_proof.unrun_reason(ctx.repo_root, ctx.issue_id)
     if unrun:
         return _blocked(ctx, unrun, needs_input="demonstration")
@@ -655,9 +401,6 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
                 "recorded out-of-band?); re-run the build->verify advance to land it first",
             )
         worktree.cleanup(binding.name, force=False, repo_root=ctx.repo_root, missing_ok=True)
-    # After the curation, before the commit that flushes it. Before, because a rollup
-    # written after would sit in the local db only (basicly-kjc5.50); after, because
-    # the curator is a dispatch and rolling up first under-counted it (basicly-agzx.4).
     curated = _dispatch_curation(ctx)
     rolled = cost_rollup.record(ctx.repo_root, ctx.issue_id)
     _write(ctx.repo_root, ["close", ctx.issue_id, "--reason", "shipped by the harness loop"])
@@ -671,22 +414,12 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
     if committed:
         detail += "; tracker state committed"
     else:
-        # The ship itself succeeded — the code merged and the bead closed — so this
-        # is a warning on a completed step, not a failure. What it must not be is
-        # silent: an unrelated dirty file in base once made this skip the closing
-        # chore(beads) commit with no hint at all, and the operator pushed the code
-        # without the tracker state and found out later (basicly-f7li).
         detail += _skipped_tracker_suffix(ctx)
     return _moved(ctx, "done", "tore-down", detail)
 
 
 def _dispatch_curation(ctx: _Ctx) -> str:
-    """Bind the shipped unit's claims to their evidence, and say what came back.
 
-    Priced and bounded exactly as the validator's judges are: outside ``WRITE_PHASES``,
-    past the grant halt, and skipped under the supervisor's landing pass, which has no
-    watchdog or stream meter of its own. Never raises — the package has already merged.
-    """
     if not ctx.repair_dispatch or not handoff.adopted(ctx.repo_root, handoff.RELEASE_RECORD):
         return ""
     run = _run_agent(
@@ -703,33 +436,17 @@ def _dispatch_curation(ctx: _Ctx) -> str:
 
 
 def _skipped_tracker_suffix(ctx: _Ctx) -> str:
-    """`; <warning>` when foreign dirt blocked the tracker commit, else empty.
 
-    Empty covers the ordinary case of nothing pending to commit, which needs no
-    words — only a *declined* commit is news.
-    """
     warning = merge.skipped_tracker_commit_warning(ctx.repo_root)
     return f"; {warning}" if warning else ""
 
 
-# --- Build helpers ----------------------------------------------------------
-
-
 def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
-    """Provision the leaf's worktree and dispatch the selected runner in it.
 
-    A headless runner does the node's coding before the block (architecture §29.2); the
-    manual handoff runner keeps the block-and-resume contract untouched. Either
-    way this step blocks — the next advance verifies and lands whatever the
-    agent committed.
-    """
     wt_config = load_worktree_config(ctx.repo_root)
     refusal = worktree.cap_refusal(wt_config.concurrency, ctx.repo_root)
     if refusal:
         return _blocked(ctx, refusal)
-    # Publish the claim: roll the pending tracker-only dirt (status, work type,
-    # classify approval) into a chore commit now, so a teammate pulling the
-    # repo sees the claim from the moment work starts, not at landing.
     claimed = merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="record the claim before provisioning"
     )
@@ -739,23 +456,12 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
     dispatched = _dispatch_runner(ctx, name, Path(session.worktree_path))
     if claimed:
         return dispatched
-    # Same silence as the ship case, with a different cost: an unpublished claim is
-    # invisible to a teammate pulling the repo, so two sessions can start the same
-    # bead (basicly-f7li).
     suffix = _skipped_tracker_suffix(ctx)
     return replace(dispatched, detail=dispatched.detail + suffix) if suffix else dispatched
 
 
 def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
-    """Run the selected agent headless in the worktree; a handoff just blocks.
 
-    Cost-gated before anything spawns, because this was the one dispatch site with no
-    gate on it at all (basicly-1th1). ``policy.spend_status`` is D3's single halt
-    predicate, and its three enforcing call sites were delegated approval, the
-    supervised lane admission, and decider delegation — an interactive ``loop run``
-    reached ``runner.run`` past all three, so an exhausted grant still spent real money
-    on the path a human is most likely to drive by hand.
-    """
     refused = _dispatch_refused(ctx, name)
     if refused is not None:
         return refused
@@ -773,17 +479,7 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
 
 
 def _observe_context_ceiling(ctx: _Ctx, dispatch: _Dispatch) -> str:
-    """Report this dispatch's occupancy against the context ceiling, and act on neither.
 
-    The other half of the D8 meter, which measured this path all along and acted on it
-    only under ``supervise`` — so basicly-23ep ran to completion at 403051 tokens
-    against a 120000 trigger while the same work under a supervised lane was truncated
-    and followed up (basicly-7kxq). D23 settled that disagreement the other way: the
-    ceiling has never once fired correctly, so neither path finalizes a lane on it and
-    both say the same sentence about it instead.
-
-    Returns the detail suffix — empty when nothing crossed.
-    """
     verdict = context_meter.meter_context_ceiling(
         dispatch.spec, dispatch.result, load_sizing_config(ctx.repo_root)
     )
@@ -791,34 +487,9 @@ def _observe_context_ceiling(ctx: _Ctx, dispatch: _Dispatch) -> str:
 
 
 def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
-    """Why this dispatch must not start, or None to go ahead (basicly-1th1).
 
-    Three forward-looking gates, all inert without a ``grant_root`` — a caller that
-    named no session has no grant ledger to read, no session to size against, and no
-    tracker read on this path to fail closed on. Two are the supervised path's applied
-    to the interactive one: the D3 spend halt and the working-set band. The third is the
-    plan gate, ratcheted on the ``## Plan`` heading (:func:`plan_entry.entry_verdict_for`).
-
-    Reuses ``working_set``'s admission rather than re-deriving it. A second copy of a
-    sizing rule is how the number that gates a dispatch and the number recorded beside
-    its actual come to disagree, which is the defect basicly-jr0l.34 exists to prevent.
-    That module sits three tiers below this one, so the import is top-level.
-
-    A running dispatch is never interrupted — decision 14 — so this only ever declines
-    to *start* one.
-    """
     if ctx.grant_root is None:
         return None
-    # The plan gate, on entry to BUILD rather than on exit from DECOMPOSE: inspection
-    # belongs before the expensive stage, and BUILD is where nearly all the tokens go.
-    #
-    # Two ratchets, not one. The `## Plan` heading decides *whether the fields bind*:
-    # a body carrying it was written by the decomposer under this gate, so an incomplete
-    # one is refused naming the field, and a body without it predates the gate and is
-    # admitted. The grant root above decides *whether the read happens at all*: this
-    # predicate fails closed on an unreadable record, so running it against every
-    # interactive dispatch would turn a tracker that did not answer into a refusal on a
-    # path that never read the tracker before.
     entry = plan_entry.build_entry_verdict(ctx.repo_root, ctx.issue_id)
     if not entry.admitted:
         return _blocked(ctx, entry.reason, needs_input="plan")
@@ -837,8 +508,6 @@ def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
 
 @dataclass(frozen=True)
 class _Dispatch:
-    """One finished runner dispatch: what ran, where, and under which timeout."""
-
     spec: runner.RunnerSpec
     result: runner.RunResult
     cwd: Path
@@ -854,32 +523,11 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
     phase: str = "build",
     role: str | None = None,
 ) -> _Dispatch:
-    """Dispatch *issue_id*'s prompt through the configured runner in *cwd*, recorded.
 
-    The prompt is assembled per dispatch, so a lane's sequential sub-tasks each
-    start from a fresh context that already sees the commits their predecessors
-    made (D6/D7). *prompt* overrides it for the one dispatch that is not a build:
-    a repair run, which is briefed with the gate that rejected the work rather
-    than with the requirement (:func:`repair_brief.repair_prompt`, D5).
-
-    *role* names the persona explicitly, for a phase that dispatches more than one:
-    VALIDATE runs a reviewer per lens beside the validator its table names, so the phase
-    alone no longer identifies which role a dispatch is. Left None it resolves from the
-    phase as every other dispatch does.
-
-    The sizing is measured *before* the agent runs and recorded with the dispatch
-    (basicly-kjc5.30, basicly-jr0l.34). The scope read-cost is the denominator of
-    every calibration sample, so measuring it later — against a tree this very
-    dispatch is about to change — is what let the build factors drift; and the
-    forecast has to be written here, beside the actual this same record will
-    receive, or the forecast error is not computable at all.
-    """
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     prompt = prompt if prompt is not None else dispatch_prompt(issue_id)
     sizing = sizing_at_dispatch(ctx.repo_root, issue_id)
-    # A sub-task runner is the lane's own write agent (D7), so it draws on the
-    # lane reservation like any lane dispatch (component 8, basicly-kjc5.11).
     role = (
         roles.resolve_role(ctx.repo_root, spec, phase)
         if role is None
@@ -893,11 +541,6 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
             cwd,
             capture_usage=True,
             timeout=config.runner_timeout,
-            # The engine names the role; the host loads it from the agent root
-            # `basicly install` wrote (basicly-4kdm). None when the phase has no
-            # persona, or the family cannot select one, or the projection is not
-            # there — each falls back to the default runner rather than failing,
-            # so a consumer on an older install still gets a working loop.
             role=role,
         )
     record_run(
@@ -906,9 +549,6 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
         spec,
         result,
         prompt=prompt,
-        # The phase it ran for, against the closed `run_record.WRITE_PHASES`: a validate
-        # or retrospective dispatch reads and judges, and recording it as a write would
-        # put a helper's cost into the sample a lane is priced from (basicly-u2hl.54.3).
         phase=phase,
         **sizing,
     )
@@ -918,16 +558,7 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
 def _with_role_skills(
     ctx: _Ctx, spec: runner.RunnerSpec, role: str | None, prompt: str, phase: str
 ) -> str:
-    """*prompt* carrying the bodies of the skills this dispatch declares (basicly-ey58).
 
-    A declared ``skills:`` is inert under the headless spawn shape - probed twice on
-    claude 2.1.231 with a positive control - so a specialist ran without its
-    specialism. Injecting the bodies costs about 0.03% of a lane and reaches every
-    family, where the vendor's own mechanism reaches one.
-
-    The unit's work type and phase go too; :func:`dispatch_brief.brief_skills` owns why,
-    and no role is still a dispatch.
-    """
     names = dispatch_brief.brief_skills(ctx.repo_root, spec.name, role, ctx.state.issue_type, phase)
     if not names:
         return prompt
@@ -936,18 +567,7 @@ def _with_role_skills(
 
 
 def sizing_at_dispatch(repo_root: Path, issue_id: str) -> dict[str, object]:
-    """The bead's sizing inputs as ``record_dispatch`` keywords, empty when unreadable.
 
-    The keywords themselves come from :meth:`decompose.DispatchSizing.record_inputs`,
-    which is what keeps this identical to the supervisor's lane dispatch — that one
-    resolves the same sizing to *gate* on it (basicly-jr0l.16) and records the
-    verdict's own numbers, so a forecast reaching only one of the two sites would
-    leave exactly the expensive lane runs unpairable (basicly-jr0l.34).
-
-    Telemetry on the critical path, so it never raises: a bead with no readable
-    ``## Scope`` section records nothing and calibration falls back to measuring the
-    tree, exactly as it did before.
-    """
     with contextlib.suppress(RuntimeError, ValueError, OSError):
         sizing = decompose.dispatch_sizing(repo_root, issue_id)
         if sizing is not None:
@@ -958,13 +578,7 @@ def sizing_at_dispatch(repo_root: Path, issue_id: str) -> dict[str, object]:
 def _runner_block(
     ctx: _Ctx, dispatch: _Dispatch, *, issue_id: str, target: str
 ) -> AdvanceResult | None:
-    """The blocked outcome of a finished dispatch, or None when it ran cleanly.
 
-    One triage for both dispatch paths — a leaf's own worktree and a lane's
-    sequential sub-tasks — so the hard-kill, failure, and needs-input contracts
-    cannot drift apart. *issue_id* is the bead the outcome is attributed to
-    (a sub-task, not its lane); *target* names where it ran, for the message.
-    """
     spec, result = dispatch.spec, dispatch.result
     if result.timed_out:
         salvaged = _salvage_killed_run(issue_id, dispatch)
@@ -976,25 +590,14 @@ def _runner_block(
     if result.returncode != 0:
         tail = (result.stderr or result.stdout).strip().splitlines()
         detail = tail[-1] if tail else "no output"
-        # A usage-capturing failure can leave one giant JSON envelope line on
-        # stdout; cap the blocked reason so it stays a message, not a blob.
         if len(detail) > 200:
             detail = detail[:200] + "…"
         return _blocked(
             ctx, f"runner {spec.name!r} failed in {target} (exit {result.returncode}): {detail}"
         )
-    # The agent finished cleanly but may have signalled it could not resolve a
-    # required fact (basicly-o774): a needs-input sentinel maps to the loop's
-    # block-and-resume contract so the missing fact is surfaced instead of the
-    # loop landing a confident wrong answer. Consumed here so a re-dispatch (once
-    # the fact is supplied) starts clean.
     needs = needs_input.take(dispatch.cwd)
     if needs is not None:
-        # Durable trace (basicly-kjc5.3): the sentinel is consumed here, so the
-        # marker comment is what the L3 lights-out precondition counts (D3).
         policy.record_needs_input(ctx.repo_root, issue_id, needs.fact)
-        # And one queue item (basicly-kjc5.4): answerable via `loop answer`,
-        # notified to the human, decidable by the decider under a grant.
         decisions.enqueue(ctx.repo_root, issue_id, "needs-input", needs.fact, needs.detail)
         reason = f"runner {spec.name!r} needs input in {target}: {needs.detail or needs.fact}"
         return _blocked(ctx, reason, needs_input=needs.fact)
@@ -1002,19 +605,7 @@ def _runner_block(
 
 
 def _salvage_killed_run(issue_id: str, dispatch: _Dispatch) -> commit.Salvage:
-    """Commit the killed dispatch's worktree, and say what the next advance can do.
 
-    The kill takes the agent out before its last step, which is the commit — so
-    the harness makes one instead and the *next* advance judges it, exactly as it
-    would have judged the agent's own (basicly-yvx9). Nothing else changes: this
-    advance still blocks, because a timeout is a thing an operator should see.
-
-    Both dispatch paths reach this. A leaf's next advance lands the salvaged
-    commit through :func:`_verify_and_land`; a lane sub-task's next advance sees
-    the commit through :func:`_subtask_committed` and verifies it rather than
-    re-dispatching the sub-task — which is the same idempotence the handoff runner
-    already relies on, reached now by a killed headless run too.
-    """
     salvaged = commit.salvage(
         dispatch.cwd, issue_id, reason=runner.stop_label(dispatch.result, dispatch.timeout)
     )
@@ -1033,60 +624,24 @@ def record_run(
     result: runner.RunResult,
     **inputs: object,
 ) -> None:
-    """Persist a metadata-only run-record for this dispatch, keyed by the bead.
 
-    Thin alias for :func:`runner.record_dispatch`, which every dispatch site now
-    shares (the loop, the supervisor, the rubric judge, and the decider) so all of
-    them feed the one telemetry stream. *inputs* forwards the recorded dispatch
-    inputs (prompt, phase, sizing, folded record ids) unchanged.
-    """
     runner.record_dispatch(repo_root, issue_id, spec, result, **inputs)  # type: ignore[arg-type]
-
-
-# --- Delegated proposals: originating a phase's input (basicly-u6jq.2) -------
-#
-# Intake and classify each need one input the engine cannot derive — the work type,
-# the child plan — and neither had a producer: both arrived from outside, so a
-# granted session stopped dead waiting for a human to *request* the phase. The gate
-# was never the problem; the missing producer was.
-#
-# Authority is not widened anywhere. The grant decides whether an agent may be asked
-# at all (:func:`policy.proposal_delegated`, L2+ — one level stricter than the
-# checkpoint over the same phase); the *engine* measures the working set, never the
-# agent, so `basicly decompose`'s governor still refuses a wishful plan before a byte
-# reaches the tracker; and anything that declines or fails validation falls back to
-# the `needs_input` block that was the only behaviour before. The prompts themselves,
-# and why they fence the requirement as data, are :mod:`basicly.dispatch_brief`.
-#
-# One attempt per advance, deliberately: a refused plan records nothing, so the next
-# `advance` re-proposes under a freshly checked spend gate, and an operator who wants
-# to stop paying for retries simply stops advancing.
 
 
 @dataclass(frozen=True)
 class _Proposal:
-    """One proposer dispatch's outcome: what it produced, or why nothing did."""
-
     work_type: str | None = None
     children: tuple[ChildSpec, ...] | None = None
-    # Why nothing was proposed. Empty on success.
     reason: str = ""
-    # Attribution for a proposal that was made, e.g. ``proposed under the L3 grant``.
     by: str = ""
 
 
 def _proposal_declined(block: str, proposal: _Proposal) -> str:
-    """The fallback block's reason, carrying why the proposer produced nothing."""
     return f"{block}; {proposal.reason}" if proposal.reason else block
 
 
 def _proposal_payload(text: str) -> dict | None:
-    """The one JSON object in a proposer's reply, or None when there is not one.
 
-    Fail-closed like :func:`decisions.parse_verdict`, and for the same reason: a
-    proposer that could not follow its output contract has not proposed anything,
-    and guessing at what it meant is the one thing this must never do.
-    """
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         return None
@@ -1098,26 +653,7 @@ def _proposal_payload(text: str) -> dict | None:
 
 
 def _run_proposer(ctx: _Ctx, kind: str, prompt: str, *, phase: str) -> tuple[str, str]:
-    """Dispatch the proposer for *kind*; return its reply, or "" plus why not.
 
-    *phase* selects the persona, passed per call site rather than derived from *kind*
-    so a third proposal cannot inherit none silently; the **confined** spec is asked,
-    because it is what is dispatched (basicly-4xmu).
-
-    Confined with :func:`runner.confine_for_decider` — the proposer answers from
-    the bead's recorded requirement exactly as the decider answers from the intake
-    corpus, and a family with no known overlay is not dispatched at all rather than
-    turned loose unconfined (D3's drop-to-human stance).
-
-    Metered like every other dispatch (``capture_usage``, a run-record): without
-    the flag the record carries the chars/4 estimate, which
-    :func:`policy.session_spend` counts as an *unmeterable* dispatch and halts the
-    whole grant on — so the flag is what keeps a proposal from costing the session
-    its autonomy. It also wraps the reply, hence :func:`runner.result_text`.
-
-    Takes the decider's reserved process slot: a proposal is what the fan-out is
-    waiting on, so it must be dispatchable with every lane slot busy.
-    """
     config = load_runner_config(ctx.repo_root)
     selected = runner.select_runner(config.specs, config.decider or config.default)
     if selected.kind == runner.HANDOFF:
@@ -1161,12 +697,7 @@ def _run_proposer(ctx: _Ctx, kind: str, prompt: str, *, phase: str) -> tuple[str
 
 
 def _proposer_corpus(ctx: _Ctx, kind: str) -> tuple[str, str]:
-    """The bead's own requirement text, or "" plus why there is nothing to propose from.
 
-    The issue itself, not the session root: the requirement being classified or
-    decomposed is the authority for its own plan, and a root's description says
-    nothing about a child three levels down.
-    """
     corpus = decisions.intake_corpus(ctx.repo_root, ctx.issue_id)
     if not corpus.strip():
         return "", (
@@ -1177,19 +708,7 @@ def _proposer_corpus(ctx: _Ctx, kind: str) -> tuple[str, str]:
 
 
 def _proposal_grant(ctx: _Ctx, kind: str) -> policy.ProposalGrant:
-    """The grant's verdict on originating *kind*, declined when ``br`` will not answer.
 
-    The grant root defaults to the issue itself, exactly as
-    :func:`policy.approve_checkpoint_guarded` defaults it: a grant issued on the very
-    epic being decomposed is the grant that covers it, and the interactive
-    ``loop advance`` names no session root at all.
-
-    A ledger that cannot be read is not authority to act. This is optional machinery
-    on top of a block that already existed, so an unreadable one falls back to that
-    block rather than failing an advance that used to succeed at blocking — the same
-    fail-closed direction :func:`decisions.parse_verdict` takes on a reply it cannot
-    parse.
-    """
     try:
         return policy.proposal_delegated(
             ctx.repo_root, ctx.issue_id, kind, ctx.grant_root or ctx.issue_id
@@ -1199,7 +718,6 @@ def _proposal_grant(ctx: _Ctx, kind: str) -> policy.ProposalGrant:
 
 
 def _proposed_work_type(ctx: _Ctx) -> _Proposal:
-    """Ask a proposer for the work type, validated against the fixed ``br`` set."""
     grant = _proposal_grant(ctx, "work_type")
     if not grant.allowed:
         return _Proposal(reason=grant.reason)
@@ -1224,16 +742,7 @@ def _proposed_work_type(ctx: _Ctx) -> _Proposal:
 def _proposed_children(  # noqa: PLR0911 — one return per distinct fall-back-to-human cause
     ctx: _Ctx,
 ) -> _Proposal:
-    """Ask a proposer for the child plan, validated by the schema and the governor.
 
-    Both halves of the validation ``basicly decompose`` runs, in its order: the
-    plan schema (:func:`decompose.parse_children`, which refuses a child with no
-    declared scope rather than guessing one) and then the sizing governor's band.
-    :func:`decompose.estimate_plan` is the read-only half of the same governor
-    :func:`decompose.decompose` enforces, so a plan accepted here cannot be refused
-    a line later — and it freezes nothing, so a refused proposal leaves no estimate
-    behind for the next attempt to inherit.
-    """
     grant = _proposal_grant(ctx, "children")
     if not grant.allowed:
         return _Proposal(reason=grant.reason)
@@ -1262,13 +771,7 @@ def _proposed_children(  # noqa: PLR0911 — one return per distinct fall-back-t
 
 
 def _build_evidence_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None:
-    """The ``build`` phase's evidence precondition, resolved against its worktree.
 
-    A build artifact is produced in the lane's own worktree, so it is checked
-    there — the merge that would bring it into base is the very step this decides
-    whether to run (basicly-m4zv.13). The session is read only when something is
-    declared, so the default configuration pays nothing for this.
-    """
     root = ctx.repo_root
     if ctx.config.evidence.get("build"):
         session = worktree.load_session(worktree_name, ctx.repo_root)
@@ -1283,20 +786,7 @@ def _build_evidence_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None
 
 
 def _live_lane_scopes(ctx: _Ctx) -> dict[str, tuple[str, ...]]:
-    """Declared scopes of the *other* beads that currently hold a worktree.
 
-    A collision only means something against a lane that is still building: a bead
-    whose worktree is gone has landed or been torn down, and nobody is about to
-    write into its scope. So the live set is the worktree session records on disk —
-    what ``worktree.create`` wrote — mapped back to beads through the same
-    derivation the loop provisions with.
-
-    The tracker export cannot serve as the index here: the ``worktree:`` binding is
-    written with ``br update --external-ref`` and is not flushed to
-    ``issues.jsonl`` until the next tracker commit, so a freshly provisioned lane —
-    exactly the one most likely to be mid-edit — would be invisible. Bead *ids* are
-    stable in the export, which is all this needs.
-    """
     live = {session.name for session in worktree.list_sessions(ctx.repo_root)}
     if not live:
         return {}
@@ -1306,39 +796,14 @@ def _live_lane_scopes(ctx: _Ctx) -> dict[str, tuple[str, ...]]:
 
 
 def _scope_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None:
-    """Hold the lane's committed changes against its declared scope (basicly-jr0l.44).
 
-    ``decompose`` treated the declared ``## Scope`` as a planning input and nothing
-    ever checked it again, so a wrong or stale declaration was not detected when it
-    was made — it surfaced later and indirectly, as a merge-queue conflict, by which
-    point two lanes had already done work that fights. This is that check, at the
-    one moment the lane's real diff exists: the build->verify landing, before the
-    merge, so a refusal has spent nothing.
-
-    Two outcomes, and only one of them is a refusal:
-
-    - **Every** out-of-scope path is recorded on the bead as evidence, and that
-      alone: a plan authored by an agent will sometimes be legitimately incomplete,
-      and refusing each of those would convert it into a rework cycle that costs
-      more than the finding is worth.
-    - A path that also falls inside **another live lane's** declared scope is the
-      case that actually causes the collision, and ``[policy] scope_collision``
-      decides it deterministically: ``block`` refuses here, ``warn`` lands.
-
-    Inert for a bead with no readable declared scope — a hand-filed leaf declares
-    no plan and so contradicts none — which is also what keeps this from costing a
-    tracker read on repos that never decompose.
-    """
     declared = decompose.bead_class_and_scope(ctx.repo_root, ctx.issue_id)
     if declared is None or not declared[1]:
         return None
     session = worktree.load_session(worktree_name, ctx.repo_root)
     if session is None:
-        # The landing itself refuses a missing session with a better message; this
-        # check has nothing to compute and must not pre-empt it with a worse one.
         return None
     changed = merge.branch_changed_paths(ctx.repo_root, session.base, session.branch)
-    # The refusal prints the declaration as authored; the diff is held to more than it.
     held = declared[1] + lane_scope(ctx.issue_id)
     outside = merge.out_of_scope_paths(changed, held)
     if not outside:
@@ -1360,28 +825,12 @@ def _scope_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None:
 
 
 def _unreliable_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceResult:
-    """Record an unreliable landing gate and hold, escalating at the bound.
 
-    The gate failed and then passed unchanged, so nothing here faults this work:
-    record the flake and block for another landing attempt rather than spending the
-    node's bounded budget on it (basicly-55yh).
-    """
     events = policy.record_unreliable_gate(
         ctx.repo_root, ctx.issue_id, merge.MERGE_GATE, result.detail
     )
-    # ...but "block and try again" with nothing counting the tries is a livelock
-    # (basicly-jr0l.41). No budget is spent, so no cap is reached, so a chronically
-    # unreliable gate defers its lane forever while looking merely slow. At the bound
-    # the lane escalates to the same queue an exhausted budget uses, so a human sees
-    # an untrustworthy gate rather than a lane that never finishes.
     if events < policy.MAX_UNRELIABLE_GATE_EVENTS:
         return _blocked(ctx, result.detail, landing=result)
-    # Ask once. `decisions.enqueue` is idempotent only while the item is *pending*: an
-    # answered one re-opens under the next generation, which is right for a fact that
-    # blocked again after a re-dispatch and wrong here, because this escalation's own
-    # remedies leave the flake in place. Re-asking produced an unbounded ladder of
-    # identical questions (basicly-tcmy.6), so an answered escalation ends the asking
-    # and the node holds on the answer it already has.
     answered = landing_gate.answered_unreliable_escalation(ctx.repo_root, ctx.issue_id)
     if answered is not None:
         return _blocked(
@@ -1404,27 +853,11 @@ def _unreliable_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceRe
 
 
 def _shared_gate_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceResult:
-    """Attribute a tracker-wide landing gate to the lanes that invalidated it, and hold.
 
-    The gate asserts over the whole shared tracker and failed on another lane's
-    finishing record, so nothing here faults this work: record the attribution
-    against those lanes and spend none of this node's bounded budget on it
-    (basicly-qorx).
-
-    Escalated on the first occurrence rather than after a bound, which is the one way
-    this differs from :func:`_unreliable_landing_block`. The livelock that bound
-    exists for (basicly-jr0l.41) is the same, but the evidence is stronger: the record
-    is durable, so the next landing reaches the identical verdict and only a human
-    changing that record — or the constant it fails against — can clear it. Both
-    remedies are named in the question and neither needs the engine to carry it out.
-    """
     policy.record_shared_gate_failure(
         ctx.repo_root, ctx.issue_id, merge.MERGE_GATE, result.culprits, result.detail
     )
     question = policy.shared_gate_escalation_question(merge.MERGE_GATE, result.culprits)
-    # Ask once, for the reason `_unreliable_landing_block` states: `decisions.enqueue`
-    # is idempotent only while an item is pending, so an answered one would re-open
-    # under the next generation and build the ladder basicly-tcmy.6 recorded.
     answered = landing_gate.answered_shared_gate_escalation(ctx.repo_root, ctx.issue_id)
     if answered is not None:
         return _blocked(
@@ -1441,16 +874,7 @@ def _shared_gate_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceR
 
 
 def _no_evidence_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceResult | None:
-    """The hold for a landing gate carrying no evidence against this lane, else None.
 
-    Two shapes, one rule. A gate that failed and then passed unchanged (basicly-55yh)
-    and a tracker-wide gate another lane's record invalidated (basicly-qorx) both block
-    the landing while faulting nothing in this diff, so neither may spend the node's
-    bounded rework budget. Naming the rule once is what keeps the second from being
-    read as a special case of the first: they differ in what clears them — a flake may
-    stop reproducing, a record in the shared tracker cannot — which is why each keeps
-    its own escalation.
-    """
     if result.unreliable:
         return _unreliable_landing_block(ctx, result)
     if result.foreign:
@@ -1461,30 +885,7 @@ def _no_evidence_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceR
 def _verify_and_land(
     ctx: _Ctx, worktree_name: str, *, verify_mode: str | None = None
 ) -> AdvanceResult:
-    """Land the worktree (merge re-verifies internally), then record the required gate.
 
-    Idempotent across an interruption: if a previous attempt merged and died before
-    recording the gate, this resumes at the gate rather than re-reading the branch as
-    empty (basicly-jr0l.50).
-
-    The single funnel for the build->verify transition — both the plain leaf and a
-    lane's ``_integrate_lane`` reach the landing through here — which is why the
-    ``build`` phase's evidence check lives at the top of it rather than in
-    :func:`advance` (basicly-m4zv.13). It runs before the merge, so a refusal has
-    spent nothing. It also deliberately outranks the ``jr0l.50`` forward recovery:
-    where the commits already sit does not change that the declared artifact is
-    missing, and holding costs only the artifact, which is what was asked for.
-
-    The declared-scope check (:func:`_scope_block`, basicly-jr0l.44) sits here for
-    the same two reasons — one funnel, and before the merge — and after the
-    evidence check, so a landing missing both is held on the cheaper one first.
-
-    An answered ``land anyway`` (:func:`landing_gate.gate_override`) skips the landing's
-    re-verify for exactly one attempt. It is spent only once the landing actually
-    reached that gate: a lane that was not committed yet, or whose branch moved, never
-    ran it, and burning an operator's one-shot override on a state it did not touch
-    would repeat the mistake ``QueueResult.deferred`` exists to avoid.
-    """
     for precondition in (_build_evidence_block, _scope_block):
         held = precondition(ctx, worktree_name)
         if held is not None:
@@ -1501,19 +902,12 @@ def _verify_and_land(
     )
     if override is not None and result.reached_gate:
         policy.spend_gate_override(ctx.repo_root, ctx.issue_id, override)
-        # A landing that skipped a gate says so in its own report: the operator
-        # authorised it, but "merged @ abc1234" alone would read as a green landing.
         result = replace(
             result, detail=f"{result.detail} (gate '{override}' skipped: answered 'land anyway')"
         )
     if result.status == merge.ALREADY_LANDED:
-        # The merge already happened and the process died before the gate record.
-        # Finish the landing forward: re-merging is impossible and re-running the
-        # build is wrong, because the work is already in base (basicly-jr0l.50).
         return _record_verify(ctx, result.detail, verify_mode=mode)
     if result.status == "not-ready":
-        # The build's work is not committed on the branch: block with guidance,
-        # do not burn a rework attempt on an operator-fixable state (basicly-4psl).
         return _blocked(ctx, result.detail, landing=result)
     if (held := _no_evidence_landing_block(ctx, result)) is not None:
         return held
@@ -1531,16 +925,7 @@ def _verify_and_land(
 
 
 def _changed_paths(ctx: _Ctx, worktree_name: str) -> tuple[str, ...] | None:
-    """The paths the build's branch changed since its base, or None when none may be read.
 
-    Read **before** the merge, the only moment they are still the build's own: afterwards
-    the changed set is whatever else landed alongside. The paths only — the merge rewrites
-    the head and reports it back as ``merge.MergeResult.landed_head``. None when the
-    worktree has no session record, which the landing refuses with a better message.
-
-    Nothing is read at all in a repo that has not adopted the artifact contract: the paths
-    would have nowhere to go and reading them costs a git call all the same.
-    """
     if not handoff.adopted(ctx.repo_root, handoff.CHANGE_SUMMARY):
         return None
     session = worktree.load_session(worktree_name, ctx.repo_root)
@@ -1552,18 +937,7 @@ def _changed_paths(ctx: _Ctx, worktree_name: str) -> tuple[str, ...] | None:
 def _record_change_summary(
     ctx: _Ctx, changed: tuple[str, ...] | None, result: merge.MergeResult
 ) -> AdvanceResult | None:
-    """Hand VERIFY the ``change-summary`` for this landing, or hold when it will not validate.
 
-    BUILD's handoff artifact (§8): every field is derived — the bead's title, the head the
-    merge took, the paths :func:`_changed_paths` read before it as a count and digest, and
-    the landing's own verdict — so nothing depends on an agent having composed a report.
-
-    Held rather than raised: a payload the schema refuses is a fact about this landing an
-    operator can fix, and blocking names the field. A landing whose branch facts could not
-    be read records nothing and is admitted downstream by the same ratchet
-    :mod:`basicly.handoff` states — the alternative is refusing every already-landed
-    forward recovery, whose worktree is gone by construction.
-    """
     if changed is None or not result.landed_head:
         return None
     payload = handoff.summary_payload(
@@ -1580,27 +954,7 @@ def _record_change_summary(
 
 
 def _landing_findings(result: merge.MergeResult) -> tuple[str, ...]:
-    """What a failed landing reported, as finding-set members (pure).
 
-    A conflict reports none *here*: its members are its paths, and
-    :func:`supervise._bounce_lane` records and judges them at the bounce, where
-    the merge gate's stricter threshold and its refund live. Recording them in both
-    places would compare a round against itself. The two cannot both fire for one
-    round, because a landing has exactly one status.
-
-    Every other failure — a red verify above all, which is the shape this rule was
-    written for — carries its finding set only in the report's ``detail``, which is
-    the gate's own rendering of it and is stable round to round for the same
-    failures (``verify full failed: pytest, ruff``). So a *repeat* is detectable,
-    which is what bounds the loop. It is one member rather than a parsed list, on
-    purpose: a growing set of failing checks reads as a change rather than as
-    divergence. Those checks are now data on :attr:`merge.MergeResult.checks`
-    (basicly-3oxf0d), so closing that is possible — but it changes how rework
-    converges rather than what a repair is told, so it is another record's.
-
-    Tagged with the status for the same reason the bounce tags its own: a cause
-    must never compare equal to a path or to a check name.
-    """
     if result.conflicted:
         return ()
     return (f"status={result.status}", result.detail)
@@ -1609,21 +963,7 @@ def _landing_findings(result: merge.MergeResult) -> tuple[str, ...]:
 def _landing_evidence(
     result: merge.MergeResult, mode: str
 ) -> tuple[repair_brief.GateEvidence, ...]:
-    """A landing's red verify as the gate reported it, for the repair brief (pure).
 
-    One entry per check the landing's re-run reproduced, with the argv it ran and the
-    output it printed. The landing captures that transcript for its unreliable-gate test
-    and used to drop it, so a repair was briefed with `"output": ""` and re-ran the gate by
-    hand to learn the two errors it had already printed (basicly-3oxf0d).
-
-    The whole-suite command stands in when the failure carries no checks — the release-note
-    debt refuses a landing whose suite was green, so nothing was re-run — because a command
-    that reproduces the verdict is the least a repair can start from.
-
-    Nothing for any other status: a collision, a stale branch or an uncommitted
-    worktree is not a check a repair run can re-run, and an unreliable or foreign verdict
-    carries no checks because it is not evidence against the lane's work.
-    """
     if result.status != repair_brief.LANDING_VERIFY_FAILED:
         return ()
     whole_suite = f"basicly verify --mode {mode}"
@@ -1640,27 +980,7 @@ def _landing_evidence(
 
 
 def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceResult | None:
-    """Dispatch a repair run in the bound worktree when a gate left a brief, else None.
 
-    The worktree is the one already bound to the node — the brief was written into
-    it and is read out of it — so there is no path from here to
-    ``worktree.create``. That is the whole substance of repair *in place*: the diff
-    a gate rejected, the branch it sits on and the run that fixes it are the same
-    tree, and the run starts knowing what failed instead of re-deriving the work
-    from the tracker (D5).
-
-    Inert for a driver that dispatches elsewhere (``ctx.repair_dispatch``): under
-    the supervisor this function's caller is a *landing* pass, and a landing that
-    spawned an agent would run it outside the spend gate, the stall watchdog and
-    the stream meter that only exist in ``supervise._dispatch_lane``. The brief is
-    left where that dispatch reads it instead.
-
-    The brief is consumed on read, so a repair that itself fails leaves a fresh one
-    through :func:`_rework` and a repair the gate then accepts leaves none — the loop
-    is bounded by the same per-gate cap and total ceiling as any other rework round,
-    and this adds no cycle of its own. One the branch moved past is dropped with a
-    note and the landing runs.
-    """
     if not ctx.repair_dispatch:
         return None
     session = _bound_session(ctx, binding)
@@ -1693,12 +1013,7 @@ def _repair_outcome(
     where: str,
     branch: str = "",
 ) -> AdvanceResult:
-    """What a finished repair dispatch leaves the loop blocked on.
 
-    Split out of :func:`_repair_in_place` so admitting the spend gate there did not push
-    it past its return budget: the metric is the shape, not the score (basicly-dbbh). The
-    committed-nothing check joined it for the same reason (basicly-59fkfu).
-    """
     if branch and merge.branch_head(ctx.repo_root, branch) == brief.branch_head:
         return _blocked(ctx, repair_brief.no_commit_reason(brief, where), needs_input="validation")
     if dispatch.result.handoff:
@@ -1717,19 +1032,8 @@ def _repair_outcome(
     )
 
 
-# --- Lane mini-loop: sequential sub-tasks in one worktree (basicly-kjc5.9) ----
-
-
 def _run_lane(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceResult:
-    """Run one step of the lane's mini-loop inside the lane's own worktree (D7).
 
-    One advance = one step (run the next sub-task, or integrate), so the phase
-    stays ``build`` throughout and a crash resumes mid-package straight from
-    ``br`` like every other phase. Sub-tasks in a lane overlap by construction —
-    a package splittable into disjoint scopes should have been split into
-    top-level lanes — so they run strictly in sequence in this one worktree; the
-    lane never provisions worktrees or spawns write-agents of its own.
-    """
     subtasks = _child_states(ctx)
     cap = ctx.config.max_subtasks_per_lane
     if len(subtasks) > cap:
@@ -1752,9 +1056,6 @@ def _run_lane(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceResult:
     runnable = [
         cid
         for cid in open_ids
-        # A sub-task waiting on a queued judgment must not burn a dispatch that
-        # would only re-block on the same missing answer (same stance as the
-        # supervisor's readiness gate).
         if cid not in blocked_ids and not decisions.has_pending(ctx.repo_root, cid)
     ]
     if not runnable:
@@ -1774,14 +1075,7 @@ def _run_lane(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceResult:
 
 
 def _decompose_lane(ctx: _Ctx, children: tuple[ChildSpec, ...]) -> AdvanceResult:
-    """Record the agent-proposed sub-task plan for a lane already in build (D7).
 
-    The same decompose engine the session level uses — so the sizing governor,
-    scope-overlap grouping, and DoR-satisfying child bodies all apply — bounded
-    additionally by ``max_subtasks_per_lane``. Recording sub-tasks does not move
-    the derived phase (the lane stays in ``build``), so this step blocks; the next
-    advance runs the first sub-task.
-    """
     cap = ctx.config.max_subtasks_per_lane
     if len(children) > cap:
         return _blocked(
@@ -1800,17 +1094,7 @@ def _decompose_lane(ctx: _Ctx, children: tuple[ChildSpec, ...]) -> AdvanceResult
 def _run_subtask(
     ctx: _Ctx, subtask_id: str, session: worktree.Session, *, position: int, total: int
 ) -> AdvanceResult:
-    """Dispatch one sub-task fresh in the lane worktree, then ``fast``-verify it.
 
-    A fresh dispatch per sub-task is the point (D7/D8): the prompt is rebuilt from
-    ``br`` and the runner starts on a clean context that already sees the commits
-    its predecessors made. The commit-presence check makes the step idempotent —
-    a handoff runner blocks for the driving agent, and the next advance verifies
-    the commit rather than re-dispatching the same sub-task. A passing ``fast``
-    verify closes the sub-task, which is what advances the lane; a failure is
-    bounded on the sub-task's own rework record, so one bad sub-task escalates
-    instead of consuming the whole lane's budget.
-    """
     cwd = Path(session.worktree_path)
     where = f"sub-task {position}/{total} ({subtask_id})"
     if not _subtask_committed(subtask_id, session):
@@ -1858,27 +1142,12 @@ def _run_subtask(
 
 
 def references_bead(message: str, bead_id: str) -> bool:
-    """True when *message* references *bead_id* as a whole id, not as a prefix.
 
-    Bead ids nest by suffix (``x.1`` and ``x.10``), so a plain substring test
-    would read ``x.10``'s commit as proof that ``x.1`` was done — enough to close
-    a sub-task nobody worked on. The id must therefore not be followed by another
-    id character.
-    """
     return re.search(rf"{re.escape(bead_id)}(?![0-9A-Za-z._-])", message) is not None
 
 
 def _subtask_committed(subtask_id: str, session: worktree.Session) -> bool:
-    """True when the lane branch carries a commit referencing *subtask_id*.
 
-    The deterministic "did this sub-task's work actually happen" signal, and the
-    reason the step is safe to re-enter: every dispatch prompt (and this repo's
-    commit-msg gate) requires a commit to reference its bead id, so a commit
-    naming the sub-task since the lane forked is proof of work — the same stance
-    as the merge queue's not-ready guard, with no extra state to keep. ``git
-    grep``'s fixed-string match is only a prefilter; :func:`references_bead`
-    decides, so a sibling id that merely starts with this one cannot pass.
-    """
     proc = worktree.git(
         [
             "log",
@@ -1896,17 +1165,7 @@ def _subtask_committed(subtask_id: str, session: worktree.Session) -> bool:
 
 
 def _integrate_lane(ctx: _Ctx, binding: loop_state.WorktreeBinding, cwd: Path) -> AdvanceResult:
-    """Every sub-task closed: validate the lane, then land it under ``full`` verify.
 
-    Order matters. Validate (D4: the behavioral ``rubric`` gate, advisory at
-    sub-task level and **required** here) runs on the lane's own tree *before* the
-    landing, because the landing merges the moment its verify passes — a validate
-    failure has to stop the lane while its work is still unmerged. Integration
-    itself is that landing: it rebases the lane onto the current base, re-runs the
-    deterministic suite in ``full`` mode, and records the required verify gate.
-    Nothing records a passing verify gate ahead of the merge, which would derive
-    the phase past ``build`` and strand the branch.
-    """
     validate = _validate_lane(ctx, cwd)
     if validate is not None:
         return validate
@@ -1914,34 +1173,7 @@ def _integrate_lane(ctx: _Ctx, binding: loop_state.WorktreeBinding, cwd: Path) -
 
 
 def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
-    """Evaluate the lane's behavioral rubrics; None when validate passes.
 
-    D4: validate is acceptance-criteria satisfaction. It is a **composite of two
-    gates with different types**, recorded separately by
-    :func:`rubrics.report_gate`:
-
-    - ``rubric`` — the **pre-flight** half. Deterministic checks only, promoted
-      from advisory to **required** at lane level. The promotion belongs to the
-      level, not to ``[policy] required_gates``, so a consumer's gate list cannot
-      silently drop it.
-    - ``rubric-judged`` — the **escalation** half. Judged checks only, never
-      required, so it can record an honest ``fail`` without killing the lane.
-
-    Splitting them is what gives the required half teeth: as one gate, D4 promoted
-    to required a gate whose judged checks could not fail it, so it could pass
-    having checked nothing. A work class no rubric covers still has nothing to
-    validate.
-
-    Two failure shapes, deliberately different (D4 as amended 2026-07-25), and now
-    each with a gate type behind it rather than a special case here:
-
-    - a **deterministic** no is a test failure — spend a bounded rework attempt;
-    - a **judged** no is a *decision* — enqueue it with its evidence and hold the
-      lane. It does not land, does not bounce, and does not spend a rework
-      attempt, because a false NO from a model must not consume the budget that
-      exists for real defects. A human, or the decider under an L2+ grant,
-      disposes of it.
-    """
     selected = rubrics.select_rubrics(rubrics.load_rubrics(), ctx.state.issue_type)
     if not selected:
         return None
@@ -1971,16 +1203,7 @@ def _validate_lane(ctx: _Ctx, cwd: Path) -> AdvanceResult | None:
 def _rubric_evidence(
     verdicts: Sequence[rubrics.CheckVerdict],
 ) -> tuple[repair_brief.GateEvidence, ...]:
-    """The deterministic ``no`` verdicts as repair evidence (pure).
 
-    The judged half is deliberately left out. A judged ``no`` is a decision, not a
-    test failure — it holds the lane on the queue rather than spending a rework
-    attempt (D4 amended) — so briefing a repair with it would have an agent act on
-    a finding a human has not yet accepted.
-
-    A rubric check carries no command of its own: its evidence *is* what the
-    evaluator observed, which is what the repair has to act on.
-    """
     return tuple(
         repair_brief.GateEvidence(
             check=verdict.check_id, output=repair_brief.clip_output(verdict.evidence)
@@ -1991,16 +1214,7 @@ def _rubric_evidence(
 
 
 def _hold_for_validate_decision(ctx: _Ctx, disputed: list[rubrics.CheckVerdict]) -> AdvanceResult:
-    """Enqueue the disputed acceptance criteria and hold the lane (D4 amended, R4).
 
-    The item carries the failing criterion ids, each one's **severity**, and the
-    validator's evidence, so whoever disposes of it can see what was claimed and
-    on what basis without re-reading the lane. The severity is what makes the item
-    triageable rather than merely present: a queue that renders a MINOR note and a
-    BLOCKER identically is a queue read in arrival order (§5.4).
-    ``enqueue`` is idempotent per (issue, kind, question), so re-advancing a held
-    lane re-reports the same item instead of flooding.
-    """
     criteria = ", ".join(f"{v.check_id} ({v.severity})" for v in disputed)
     evidence = "; ".join(f"{verdict.check_id}: {verdict.evidence}" for verdict in disputed)
     decisions.enqueue(
@@ -2014,25 +1228,12 @@ def _hold_for_validate_decision(ctx: _Ctx, disputed: list[rubrics.CheckVerdict])
         ctx,
         f"lane validate disputed: {criteria} — queued as a decision, lane holds "
         "(dispose of it with `basicly loop answer`)",
-        # "decision", not "held": a held lane is *carried* and landed dispatch-less
-        # on the next supervisor pass (kjc5.18), which would defeat the hold. The
-        # "decision" route is outside RETRIABLE_ROUTES, so the lane waits.
         action="decision",
     )
 
 
 def _build_children(ctx: _Ctx) -> AdvanceResult:
-    """Fan out a worktree per ready child; once all close, land those still live.
 
-    A child driven through its own loop lands and tears down its worktree before
-    closing, so only children with a live session go through the merge queue —
-    the rest already self-landed.
-
-    Fan-in waits on the *dispatchable* children, not on every non-closed one: a
-    child somebody deferred is not work this pass owes, and holding the epic on it
-    parked the epic at "still open" with nothing left that could ever close
-    (basicly-toj6).
-    """
     children = _child_states(ctx)
     if not children:
         return _blocked(ctx, "decompose approved but no child tracks are recorded")
@@ -2060,13 +1261,7 @@ def _build_children(ctx: _Ctx) -> AdvanceResult:
 
 
 def _record_verify(ctx: _Ctx, detail: str, *, verify_mode: str | None = None) -> AdvanceResult:
-    """Run verify + record the required gate so the derived phase becomes verify.
 
-    VERIFY's entry predicate runs first (§3.1): a ``change-summary`` that does not
-    validate is refused before the gate spends a full check run on it. An epic landing
-    its children's worktrees carries no summary of its own and is admitted, which is the
-    ratchet :mod:`basicly.handoff` states.
-    """
     summary = handoff.entry_verdict(ctx.repo_root, ctx.issue_id, handoff.CHANGE_SUMMARY)
     if not summary.admitted:
         return _blocked(ctx, summary.reason, needs_input="artifact")
@@ -2084,44 +1279,15 @@ def _record_verify(ctx: _Ctx, detail: str, *, verify_mode: str | None = None) ->
     return _moved(ctx, "verify", "merged", detail)
 
 
-# A lane's total rework budget, as a multiple of one gate's (D12). The per-gate
-# allowance is what the counters already record and what D12 keeps; without a
-# total, a node whose verify, validate and merge gates each go red spends
-# ``max_rework`` once per gate and reaches no cap at all — the compounding D12
-# names as the thing a ceiling has to stop.
-#
-# The factor is 2 rather than 1 so the total is never *stricter* than the per-gate
-# cap it bounds: one gate may still spend its whole allowance and a second may
-# still fail, which is the ordinary shape of a lane that is converging. It is
-# derived from ``max_rework`` rather than configured separately because a repo
-# that widens the per-gate budget means the lane's budget too, and a second knob
-# would let the two disagree.
 LANE_REWORK_CEILING_FACTOR = 2
 
 
 def lane_rework_ceiling(config: PolicyConfig) -> int:
-    """The total rework attempts a lane may spend across all of its gates."""
     return config.max_rework * LANE_REWORK_CEILING_FACTOR
 
 
 def lane_rework_spent(repo_root: Path, issue_id: str, config: PolicyConfig) -> int | None:
-    """Attempts charged to *issue_id* across every gate; None when unreadable.
 
-    *Charged*, not recorded: an allowance an operator granted for an answered
-    ``retry`` lowers the total exactly as it lowers the per-gate count, so the one
-    lever that authorises a further attempt still works against the ceiling. A
-    ceiling no answer could ever lift would wedge the lane with nothing to do but
-    abandon it.
-
-    The gates summed are the consumer's required ones — it may name its own — plus
-    the three the engine charges itself, none of which has to appear in that list
-    to fire.
-
-    None rather than a raise when the tracker refuses. This is called from inside a
-    gate-failure path, where the per-gate cap is already bounding the loop; letting
-    a tracker hiccup turn a bounded rework into a crash would cost more than the
-    delayed ceiling, which the next attempt re-checks anyway.
-    """
     gates = dict.fromkeys((*config.required_gates, *repair_brief.REPAIR_GATES, merge.MERGE_GATE))
     try:
         return sum(policy.rework_charged(repo_root, issue_id, gate) for gate in gates)
@@ -2139,41 +1305,9 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
     findings: Sequence[str] = (),
     evidence: Sequence[repair_brief.GateEvidence] = (),
 ) -> AdvanceResult:
-    """Record a rework attempt for *gate* and block, escalating at the cap.
 
-    An escalation is a human judgment call, so it also enters the decision
-    queue (basicly-kjc5.4) — one surface for everything blocked on a decision.
-    *issue_id* attributes the attempt to a bead other than the node itself: a
-    lane's sub-task is bounded on its own record, so one bad sub-task escalates
-    rather than spending the whole lane's rework budget. *landing* carries the
-    merge attempt that failed, so a driver can route a scope collision
-    differently from a red gate (basicly-kjc5.20).
-
-    *findings* is what the gate reported this round — a verify report's failures,
-    a rubric's failed checks. Given one, the round is also judged for
-    *convergence* against the previous round's set, because the cap alone counts
-    attempts and cannot see that an attempt learned nothing (basicly-m4zv.5).
-    This is the one funnel every finding-reporting gate passes through, so the
-    check belongs here rather than at each of them.
-
-    The merge gate deliberately passes none. Its finding set is paths, its
-    threshold is stricter, and :func:`supervise._bounce_lane` records and judges
-    it at the bounce — where the refund and the graph edge are. Recording it here
-    too would compare each round against itself and refund twice.
-
-    *evidence* is the same round rendered for whoever has to fix it — the failing
-    check's command and its output. It is carried separately from *findings*
-    because the two have different jobs: a finding is a comparable member of a set
-    the convergence test judges, evidence is the text a repair run is briefed with
-    and is deliberately not compared. Given a repairable gate and an allowance
-    still to spend, both are left in the lane's worktree as a
-    :class:`repair_brief.RepairBrief` for its next dispatch (D5).
-    """
     target = issue_id or ctx.issue_id
     attempts = policy.record_rework(ctx.repo_root, target, gate)
-    # The marker above is the ledger's only writer, so this is the one moment the
-    # special-cause signal can turn over. Appended to *reason* rather than to the
-    # returned detail so the escalation paths below carry it too.
     reason += _retrospective(ctx)
     convergence = (
         policy.record_finding_set(ctx.repo_root, target, gate, findings) if findings else None
@@ -2183,12 +1317,6 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
         if stop is not None:
             return _escalate_stalled_rework(ctx, target, gate, f"{reason}; {stop}", landing)
         if convergence.stalled:
-            # The first stalled round is a warning, not an escalation: the bead now
-            # says the attempt changed nothing the gate reports, and the next one
-            # stops the loop. It goes in the *reason*, not only in the returned
-            # detail, because at a low ``max_rework`` this round is also the cap
-            # round — and then this sentence is what the human triaging the queue
-            # item needs in order to see that a re-dispatch would learn nothing.
             reason = f"{reason}; warning: {convergence.detail}"
     capped = _lane_ceiling_block(ctx, target, gate, reason, landing)
     if capped is not None:
@@ -2204,8 +1332,6 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
             reason,
         )
     else:
-        # The allowance is not exhausted, so this round is going to be retried —
-        # and this is the only place that holds what the gate actually reported.
         suffix = _brief_repair(ctx, target, gate, reason, findings, evidence, landing)
     return _blocked(
         ctx,
@@ -2216,18 +1342,7 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
 
 
 def _retrospective(ctx: _Ctx) -> str:
-    """Fire a retrospective when the session's ledger shows a special cause (§3.2).
 
-    Not a phase, not a transition and never a rung: nothing here moves the unit and no
-    ladder carries it. The returned suffix is empty on the expected answer — one failure
-    inside the limits is common cause, and acting on it is tampering.
-
-    Inert three ways, each matching a dispatch gate the loop already has: no
-    ``grant_root`` means no session to read a ledger over, ``repair_dispatch`` is off
-    under the supervisor whose landing pass must not spawn an agent, and D3's spend halt
-    refuses a run the grant cannot pay for — asked before the claim, so a signal a
-    refused session could not act on survives for the next pass.
-    """
     root = ctx.grant_root
     if root is None or not ctx.repair_dispatch:
         return ""
@@ -2246,8 +1361,6 @@ def _retrospective(ctx: _Ctx) -> str:
     outcome = retrospective.settle(
         ctx.repo_root, root, runner.result_text(dispatch.spec, dispatch.result.stdout)
     )
-    # The signal *and its inputs*: an advance result is where an operator meets a fired
-    # retrospective first, and the chart is what makes the verdict checkable there.
     chart = signal.chart
     return (
         f"; retrospective fired ({signal.rule} on {signal.point}): {signal.detail} "
@@ -2263,24 +1376,7 @@ def _lane_ceiling_block(
     reason: str,
     landing: merge.MergeResult | None,
 ) -> AdvanceResult | None:
-    """Escalate when the lane's total rework across gates hits the ceiling, else None.
 
-    D12 keeps the allowance per gate, which is what the counters record and what
-    lets one bad sub-task escalate without spending the lane's whole budget. The
-    cost of that is compounding: nothing bounded a lane whose verify, validate and
-    merge gates each failed ``max_rework`` times, because no single counter ever
-    reached its cap. This is that bound, and it is checked after the convergence
-    verdict so a non-converging round still gets its refund first — a round the
-    lane was not charged for must not be the round that trips the total.
-
-    It escalates rather than blocking, for the reason the per-gate cap does: what
-    is left is a judgment call, and the queue is the one surface for those.
-
-    Keyed on *target*, so it bounds whichever record is being charged — a lane, or
-    a sub-task bounded on its own record. That is the same attribution the per-gate
-    counter uses, and using a different one here would let a sub-task's failures
-    escalate the lane it happens to sit in.
-    """
     ceiling = lane_rework_ceiling(ctx.config)
     spent = lane_rework_spent(ctx.repo_root, target, ctx.config)
     if spent is None or spent < ceiling:
@@ -2315,17 +1411,7 @@ def _brief_repair(  # noqa: PLR0913 — one parameter per recorded fact
     evidence: Sequence[repair_brief.GateEvidence],
     landing: merge.MergeResult | None,
 ) -> str:
-    """Leave the repair brief in the lane's worktree; the detail suffix, or empty.
 
-    Only for a gate a repair run can act on (:data:`repair_brief.REPAIR_GATES`, plus a landing
-    that failed on its verify gate) and only while the allowance is unspent — an
-    escalated round is a human's to dispose of, and briefing a dispatch that is not
-    going to happen would leave a stale file for whatever runs next.
-
-    Written into the worktree already bound to the node, never a fresh one: the
-    brief is how "repair in place" is carried out, so it cannot be produced without
-    the tree the failing diff is in.
-    """
     repairable = gate in repair_brief.REPAIR_GATES or (
         landing is not None and landing.status == repair_brief.LANDING_VERIFY_FAILED
     )
@@ -2349,13 +1435,7 @@ def _brief_repair(  # noqa: PLR0913 — one parameter per recorded fact
 
 
 def _recorded_reviews(ctx: _Ctx, target: str, gate: str) -> tuple[lens_review.LensFindings, ...]:
-    """The lens reviews a repair after a failed *validation* is briefed with.
 
-    Keyed on the gate, never on whether a marker happens to exist: the reviews judged
-    the merged product, so a repair after a red verify or rubric is briefed exactly as
-    it was before (basicly-w88t). Clipped per lens on a gate output's bound, because a
-    marker that reached the tracker some other way must not overflow the prompt.
-    """
     if gate != validate_gate.VALIDATE_GATE:
         return ()
     return tuple(
@@ -2365,12 +1445,7 @@ def _recorded_reviews(ctx: _Ctx, target: str, gate: str) -> tuple[lens_review.Le
 
 
 def _bound_session(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> worktree.Session | None:
-    """The session record for the node's bound worktree, or None when unreadable.
 
-    Tolerant because both callers are optional paths — leaving a brief and reading
-    one — and a binding whose tree or record is gone is already reported, loudly,
-    by the landing (:func:`stale_binding_verdict`).
-    """
     try:
         return worktree.load_session(binding.name, ctx.repo_root)
     except RuntimeError, OSError, ValueError:
@@ -2384,19 +1459,7 @@ def _escalate_stalled_rework(
     reason: str,
     landing: merge.MergeResult | None,
 ) -> AdvanceResult:
-    """A rework loop that is not converging: stop now, and charge nothing for it.
 
-    The attempt is *refunded* — once, and :func:`policy.spend_convergence_refund`
-    is where that bound and its reason live. The whole defect this closes is a node
-    reaching a human having burnt its budget re-reporting a finding set it already
-    had, so whatever cap remains is left intact for the answer to spend; forgiving
-    every subsequent round instead would mean no cap is ever reached and nothing
-    ends the loop if nobody answers.
-
-    The queue item is the ordinary rework escalation, so an answered ``retry``
-    stays executable and ``decisions.enqueue`` is idempotent per question — a
-    node that already escalated at the cap is not queued twice.
-    """
     refunded = policy.spend_convergence_refund(ctx.repo_root, target, gate)
     attempts = policy.rework_charged(ctx.repo_root, target, gate)
     spent = "this attempt refunded" if refunded else "the refund for this was already spent"
@@ -2416,25 +1479,7 @@ def _escalate_stalled_rework(
 
 
 def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
-    """Provision worktrees for the highest-ranked dispatchable children, up to the cap.
 
-    Ordered by ``br scheduler`` rank rather than by the order br happens to return
-    the dependents in. The cap makes provisioning a *selection*: whichever children
-    it reaches are the pass, and :func:`supervise.ready_lanes` can only rank-order
-    the set chosen here. Reducing ``ready_ranked`` to a membership set therefore
-    discarded the one ordering that decides which work actually runs — a computed
-    ranking thrown away, so an arbitrary br ordering picked the lanes
-    (basicly-jr0l.62).
-
-    A child the band refuses is skipped rather than provisioned. Dispatch drops it
-    regardless — :func:`working_set.escalate_working_set` leaves a pending decision
-    and ``ready_lanes`` filters on that — so provisioning it spends a concurrency
-    slot on a worktree nothing ever runs in, and crowds out an admissible lane.
-
-    An *unsizeable* child is still provisioned. An unreadable scope is not a
-    refusal (``admit_working_set`` sets ``refused`` on the ceiling alone), and
-    dropping it here would silently lose work rather than defer it.
-    """
     wt_config = load_worktree_config(ctx.repo_root)
     sizing = load_sizing_config(ctx.repo_root)
     existing = {session.name for session in worktree.list_sessions(ctx.repo_root)}
@@ -2445,7 +1490,6 @@ def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
         for node in loop_state.ready_ranked(ctx.repo_root)
         if node.issue_id in open_children
     ]
-    # Publish the fan-out claims the same way a leaf publishes its own.
     merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="record the claim before provisioning"
     )
@@ -2470,19 +1514,7 @@ def ensure_lane_worktrees(
     *,
     config: PolicyConfig | None = None,
 ) -> tuple[str, ...]:
-    """Provision worktrees for an explicit lane set; the ids that gained one.
 
-    The same selection :func:`_ensure_child_worktrees` makes for a root's children
-    — scheduler rank, the worktree cap, the band's refusal — over a lane set the
-    caller names instead of one read off the ``parent-child`` edge. A supervised
-    pass whose lanes were chosen by label has no such edge to read (basicly-1lpo),
-    and the seeding path it would otherwise take provisions the root's *children*,
-    so a labelled cut could never be provisioned at all.
-
-    Public here rather than reimplemented in ``supervise`` so the cap and the
-    ranking keep their single definition; the *selection* of what to provision is
-    the caller's, which is the whole point of the split.
-    """
     config = config or load_policy_config(repo_root)
     state = loop_state.read_node_state(repo_root, root_issue, config)
     ctx = _Ctx(repo_root, root_issue, state, config, Inputs())
@@ -2494,16 +1526,11 @@ def ensure_lane_worktrees(
 
 
 def _bind_worktree(ctx: _Ctx, name: str, branch: str, *, issue_id: str | None = None) -> None:
-    """Stash the worktree/branch binding on the issue's external_ref."""
     ref = loop_state.format_worktree_ref(name, branch)
     _write(ctx.repo_root, ["update", issue_id or ctx.issue_id, "--external-ref", ref])
 
 
 def _child_states(ctx: _Ctx) -> list[tuple[str, str]]:
-    """Return ``(child_id, status)`` for each parent-child dependent of the node."""
-    # `require_record` rather than the raw unwrap this used to do: the old form guarded
-    # the payload shape not at all, so a non-object payload reached `record.get` and
-    # raised AttributeError — the one site of eleven with no guard (basicly-tcmy.14).
     record = tracker.require_record(ctx.repo_root, ctx.issue_id)
     dependents = record.get("dependents") or []
     return [
@@ -2514,11 +1541,8 @@ def _child_states(ctx: _Ctx) -> list[tuple[str, str]]:
 
 
 def _worktree_name(issue_id: str) -> str:
-    """A filesystem/branch-safe worktree name derived from an issue id."""
     return issue_id.replace(".", "-")
 
-
-# --- Public entry points ----------------------------------------------------
 
 _HANDLERS = {
     "intake": _on_intake,
@@ -2540,17 +1564,7 @@ def advance(  # noqa: PLR0913 — one keyword per independent driver choice
     grant_root: str | None = None,
     repair_dispatch: bool = True,
 ) -> AdvanceResult:
-    """Advance *issue_id* one loop phase, resuming from its ``br`` state.
 
-    Reads the current phase from the tracker, dispatches to the phase handler,
-    and returns the transition outcome. Blocks (rather than raising) when an
-    input is missing or a checkpoint/gate is not yet satisfied.
-
-    *repair_dispatch* is the one thing a driver may switch off: a caller that
-    dispatches agents itself (the supervisor) leaves the repair brief for its own
-    dispatch step rather than having the build phase spawn a run inside a landing
-    pass (:func:`_repair_in_place`).
-    """
     config = config or load_policy_config(repo_root)
     inputs = inputs or Inputs()
     state = loop_state.read_node_state(repo_root, issue_id, config)
@@ -2566,13 +1580,6 @@ def advance(  # noqa: PLR0913 — one keyword per independent driver choice
             "and re-run 'basicly loop advance'",
             needs_input="base-checkout",
         )
-    # Evidence is a precondition on *leaving* a phase, so it is checked before the
-    # handler runs and can spend nothing (basicly-m4zv.13). ``build`` is the one
-    # phase whose handler also takes steps that stay inside it — a lane runs its
-    # sub-tasks through ``_on_build`` — and those steps are what produce a build
-    # artifact in the first place, so checking here would deadlock the lane on its
-    # own evidence. Its check sits at the single funnel for the build->verify
-    # transition instead (``_verify_and_land``).
     if state.phase != "build":
         held = _evidence_block(ctx)
         if held is not None:
@@ -2589,17 +1596,7 @@ def run_until_blocked(  # noqa: PLR0913 — a thin driver carries advance's driv
     grant_root: str | None = None,
     max_steps: int = 20,
 ) -> list[AdvanceResult]:
-    """Advance repeatedly until the track blocks, finishes, or hits *max_steps*.
 
-    A thin driver over :func:`advance`; each step re-reads ``br`` so the loop
-    stays resumable. Stops as soon as a step blocks or reaches ``done`` — a
-    human/agent then resolves the block and re-invokes. A lane mini-loop step
-    neither blocks nor changes phase, so a headless lane runs its sub-tasks in
-    sequence within one call (bounded by *max_steps*).
-
-    *grant_root* is forwarded to :func:`advance`: a driver whose steps can reach a
-    metered dispatch names its session, and D3's halt is inert without one.
-    """
     results: list[AdvanceResult] = []
     for _ in range(max_steps):
         result = advance(repo_root, issue_id, config=config, inputs=inputs, grant_root=grant_root)
@@ -2609,63 +1606,29 @@ def run_until_blocked(  # noqa: PLR0913 — a thin driver carries advance's driv
     return results
 
 
-# --- The whole-boundary ceremony (basicly-kjc5.41, design D10) ---------------
-#
-# :func:`run_until_blocked` stops dead at a checkpoint, and the checkpoint
-# cannot be answered from inside it — so an agent driving one leaf bead had to
-# interleave `policy dor`, `policy checkpoint --approve` (twice: mint, then
-# confirm) and `loop advance` by hand, about six deterministic commands per
-# bead. D10 says a deterministic *sequence* an agent performs by hand means the
-# engine is missing a command. :func:`run_ceremony` is that command's engine
-# half: it drives the loop across a whole phase boundary, resolving each
-# checkpoint it is authorized to resolve and stopping cleanly on the ones it is
-# not. It never widens authorization — resolution goes through
-# :func:`policy.approve_checkpoint_guarded`, so a TTY, a covering autonomy
-# grant, or a relayed one-time code are still the only three ways in.
-
-
 @dataclass(frozen=True)
 class CheckpointApproval:
-    """A human checkpoint the ceremony resolved itself, between two loop steps."""
-
     checkpoint: str
     detail: str = ""
 
 
-# One ceremony event, in the order it happened: a loop step, or the checkpoint
-# approval that unblocked the next one.
 CeremonyEvent = AdvanceResult | CheckpointApproval
 
 
 @dataclass(frozen=True)
 class CeremonyResult:
-    """The outcome of one :func:`run_ceremony` call."""
-
     events: tuple[CeremonyEvent, ...] = ()
-    # The checkpoint that challenged, with the one-time code a human must relay
-    # back. Set only when the ceremony stopped for want of authorization.
     challenge: tuple[str, str] | None = None
-    # Why a grant did not resolve that challenge itself, when one existed and
-    # declined it (basicly-5ltn). Empty when no grant was consulted, so the
-    # ungranted challenge stays as bare as it was.
     challenge_reason: str = ""
-    # The checkpoint that refused, with why — a bad or expired code, or a grant
-    # precondition that does not hold.
     refused: tuple[str, str] | None = None
 
     @property
     def steps(self) -> tuple[AdvanceResult, ...]:
-        """Just the loop steps, dropping the approvals the ceremony interleaved."""
         return tuple(event for event in self.events if isinstance(event, AdvanceResult))
 
     @property
     def blocked(self) -> bool:
-        """True when the ceremony stopped short of shipping the track.
 
-        Waiting on the agent's work is the *expected* end of the opening
-        boundary, so this is not "something went wrong" — it means the track
-        needs a human or an agent before the loop moves again.
-        """
         steps = self.steps
         if self.challenge is not None or self.refused is not None:
             return True
@@ -2683,38 +1646,20 @@ def run_ceremony(  # noqa: PLR0913 — mirrors the CLI surface
     grant_root: str | None = None,
     max_steps: int = 20,
 ) -> CeremonyResult:
-    """Advance across a whole phase boundary, resolving the checkpoints it may.
 
-    Drives :func:`advance` like :func:`run_until_blocked`, except that a block on
-    a human checkpoint is not the end: the checkpoint is put through
-    :func:`policy.approve_checkpoint_guarded` (TTY, a covering grant on
-    *grant_root*, or a matching one-time code from *confirms*) and, when that
-    approves, the loop keeps going. Stops on a challenge or a refusal — carrying
-    the code to relay (plus why a grant declined to resolve it, when one did), or
-    the reason — and on any block that is not a checkpoint:
-    a missing input, a red gate, or the handoff that awaits the agent's work.
-
-    Never mints more than one challenge per call: a challenged checkpoint blocks
-    the loop, so there is nothing further to drive until a human answers it.
-    """
     config = config or load_policy_config(repo_root)
     inputs = inputs or Inputs()
     codes = dict(confirms or {})
     events: list[CeremonyEvent] = []
     resolved: set[str] = set()
     for _ in range(max_steps):
-        # The *grant_root* the checkpoints below are approved against also gates the
-        # dispatch this may approve its way into (basicly-1th1): a ceremony that can
-        # reach a build must read the ledger that build spends under.
         result = advance(repo_root, issue_id, config=config, inputs=inputs, grant_root=grant_root)
         events.append(result)
         if result.to_phase == "done":
             break
         if not result.blocked:
-            continue  # real progress — keep driving toward the boundary
+            continue
         name = result.checkpoint
-        # Not a checkpoint block, or one this call already approved (which would
-        # spin): the boundary ends here.
         if name is None or name in resolved:
             break
         approval = policy.approve_checkpoint_guarded(

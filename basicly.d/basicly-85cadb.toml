@@ -58,7 +58,6 @@
 rebaseline_reason = "the gate-name reader, the bounded tracker-sync retry and the landing split that carries its note; re-measured after a rebase in which ncday7 and tjhjmk landed into the same two modules and spent the headroom the first measurement assumed"
 
 [ratchet.module_size.rebaselined]
-"src/basicly/checkout.py" = 4232
 "src/basicly/merge.py" = 787
 "src/basicly/supervise.py" = 297
 "tests/test_supervise.py" = 526

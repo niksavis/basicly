@@ -72,9 +72,3 @@ rebaseline_reason = "the sequence-gap finding class and its regression tests, in
 [ratchet.module_size.rebaselined]
 ".basicly/core/kit/tracker/fsck.py" = 643
 "tests/test_kit_tracker_fsck.py" = 923
-
-[ratchet.comment_density]
-rebaseline_reason = "the gap finding states the §4.1 max+1 invariant that makes a hole a lost line rather than a numbering style, which the code cannot express; one redundant restatement was cut first, taking the rise from 0.4 to 0.2"
-
-[ratchet.comment_density.rebaselined]
-".basicly/core/kit/tracker/fsck.py" = 0.2

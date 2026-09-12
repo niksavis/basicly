@@ -1,0 +1,32 @@
+# The comment ban (basicly-phglc2x). Stripping every prose comment and docstring removed
+# 49554 lines, and three ratchets measured prose rather than code, so each moved.
+#
+# ## code_citations: three bindings deleted
+#
+# A binding says which document a bare section mark in a directory means. Every mark those
+# three bindings served lived in a comment, so with the comments gone the bindings attribute
+# nothing and the gate refuses them by name. `binding_count` ratchets the table in both
+# directions, which is why the removal is declared here rather than left to be noticed.
+#
+# ## retired-vocabulary: the gate is retired with its subject
+#
+# It scanned comments and docstrings for the retired tracker name and nothing else, so the
+# ban leaves it no population: the live tree carried 1 mention where the test's positive
+# control expected more than 50. A gate that can never fire is not a gate, and the
+# no-comments gate subsumes it - a comment holding the retired name is now refused for
+# being a comment. Its verify entry lived in `basicly.d/basicly-e90rue.toml`, which goes
+# with it.
+[ratchet]
+base_commit = "24319f9f"
+
+[ratchet.code_citations]
+count_delta = -3
+#
+# ## noqa_debt: five E402 suppressions fell
+#
+# Removing the `D` family from ruff left five `# noqa: D...` directives unused, and
+# `ruff check --fix` removed them; the rest of the fall is modules whose import block moved
+# once its docstring was gone. A debt that fell is banked or it grows back for free.
+
+[ratchet.noqa_debt.frozen]
+E402 = -5

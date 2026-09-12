@@ -1,18 +1,3 @@
-"""Every board page draws offline, on one shared theme, with bootstrap's controls and cards.
-
-Four assertions the bootstrap record (basicly-lywzp71) owes, each on the templates themselves
-so a fifth page cannot ship without them:
-
-* every page links the vendored stylesheet by the relative path and nothing else;
-* every page includes `board_theme.css.j2` and holds no palette of its own, so a card on the
-  wall is the card on the loop and the backlog;
-* every control a reader presses is a bootstrap `.btn` in the board's variant, which is what
-  gives it the focus ring, the disabled state and the one size scale;
-* a class the board uses that bootstrap also defines is adopted on purpose or renamed - the
-  wall's `mark` was bootstrap's highlight and the loop's `col` was its grid column, and both
-  restyled silently the moment the stylesheet was linked.
-"""
-
 from __future__ import annotations
 
 import os
@@ -30,7 +15,6 @@ TEMPLATES = board_render.root()
 PAGES = sorted(path for path in TEMPLATES.glob("board_*.html.j2"))
 THEME = TEMPLATES / "board_theme.css.j2"
 
-# Bootstrap classes the board adopts, by name. Anything else in the intersection is a collision.
 ADOPTED = frozenset({"btn", "card", "table", "table-sm"})
 
 _CLASS_ATTR = re.compile(r'class="([^"]*)"')
@@ -45,7 +29,6 @@ _TRIPLE = re.compile(r"(\d{1,3}),\s*(\d{1,3}),\s*(\d{1,3})")
 
 
 def _classes(template: str) -> set[str]:
-    """Every class token a template writes into markup or names in its own stylesheet."""
     used = set()
     for attribute in _CLASS_ATTR.findall(template):
         used.update(token for token in attribute.split() if "{" not in token)
@@ -55,7 +38,6 @@ def _classes(template: str) -> set[str]:
 
 
 def test_every_page_links_the_stylesheet_and_includes_the_one_theme() -> None:
-    """Four pages, one `<link>` each, one `include` each, and no `:root` palette of their own."""
     assert len(PAGES) == 4, [path.name for path in PAGES]
     for path in PAGES:
         template = path.read_text(encoding="utf-8")
@@ -68,7 +50,6 @@ def test_every_page_links_the_stylesheet_and_includes_the_one_theme() -> None:
 
 
 def test_every_control_a_reader_presses_is_the_boards_bootstrap_button() -> None:
-    """No bare `<button>` on any page: each carries `btn btn-board`, the variant the theme skins."""
     found = 0
     for path in PAGES:
         for tag in _BUTTON.findall(path.read_text(encoding="utf-8")):
@@ -82,7 +63,6 @@ def test_every_control_a_reader_presses_is_the_boards_bootstrap_button() -> None
 
 
 def test_a_board_class_bootstrap_also_defines_is_adopted_or_renamed() -> None:
-    """The intersection of the board's classes and bootstrap's is exactly the adopted set."""
     vendored = (TEMPLATES / board_assets.DIRNAME / board_assets.STYLESHEET).read_text(
         encoding="utf-8"
     )
@@ -94,7 +74,6 @@ def test_a_board_class_bootstrap_also_defines_is_adopted_or_renamed() -> None:
 
 
 def test_staleness_is_dated_off_the_newest_template_not_the_wall_alone(tmp_path: Path) -> None:
-    """A shared partial edited under a running server is a change that server must see."""
     wall = tmp_path / "board_page.html.j2"
     theme = tmp_path / "board_theme.css.j2"
     wall.write_text("wall", encoding="utf-8")
@@ -110,16 +89,7 @@ def test_staleness_is_dated_off_the_newest_template_not_the_wall_alone(tmp_path:
 
 
 def test_the_page_uses_only_the_palette_the_site_already_ships() -> None:
-    """The board looks like basicly because it lifts `site/index.html`, not because it tried.
 
-    Both directions: no custom property the site does not define, and no `var()` the page does
-    not define - an undefined `var()` renders as nothing and is invisible in review.
-
-    Bootstrap's own `--bs-*` properties are the bridge that puts its components on that
-    palette, not a palette (basicly-lywzp71): one may hold a site property, an rgb triple a
-    site hex resolves to, `transparent`, or a non-colour such as a length or a font. A literal
-    hex or a triple the site does not ship is a hue entering through the bridge, and fails.
-    """
     page = render("wall-v1.json")
     site_css = SITE.read_text(encoding="utf-8")
     site = set(_DEFINED.findall(site_css))

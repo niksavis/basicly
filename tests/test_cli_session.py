@@ -1,14 +1,3 @@
-"""`basicly session start`: the derived orientation that replaces a written handover.
-
-Its own file rather than `tests/test_cli.py`, which has 1746 tokens of size headroom
-left [measured 2026-08-28, `.scripts/headroom.py`]; `test_cli_<aspect>.py` is the
-derived name the `test-naming` gate accepts.
-
-Every fixture here seeds a real ledger through the kit, because the whole claim under
-test is that no line is authored: a stubbed reader would assert the renderer and leave
-the derivation unmeasured.
-"""
-
 from __future__ import annotations
 
 import json
@@ -21,8 +10,6 @@ from tests.flipped_tracker import flipped_repo, seed_records
 if TYPE_CHECKING:
     import pytest
 
-# One decision-record index, in the document's own shape: a decision the tree holds, one
-# it does not, and one qualified. The command must separate the first from the other two.
 ARCHITECTURE = """# Architecture
 
 ## 38. Decision records
@@ -36,7 +23,6 @@ ARCHITECTURE = """# Architecture
 
 
 def _with_decisions(repo: Path, text: str = ARCHITECTURE) -> Path:
-    """Give *repo* a decision-record document at the path the command reads."""
     path = repo / cli.DECISION_RECORDS_DOC
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -44,13 +30,11 @@ def _with_decisions(repo: Path, text: str = ARCHITECTURE) -> Path:
 
 
 def _run(repo: Path, monkeypatch: pytest.MonkeyPatch, *argv: str) -> int:
-    """Run the command from *repo*, which is the only way it learns which repo it is in."""
     monkeypatch.chdir(repo)
     return cli.main(["session", "start", *argv])
 
 
 def _seeded(tmp_path: Path) -> Path:
-    """A ledger holding one ready record, one blocked by it, and one granted root."""
     repo = flipped_repo(tmp_path)
     seed_records(
         repo,
@@ -76,7 +60,6 @@ def _seeded(tmp_path: Path) -> Path:
 def test_the_orientation_prints_ready_blocked_grants_and_decision_targets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The four things a session needs, and the handover was the only place holding them."""
     repo = _seeded(tmp_path)
     _with_decisions(repo)
 
@@ -92,7 +75,6 @@ def test_the_orientation_prints_ready_blocked_grants_and_decision_targets(
 def test_the_ranking_policy_is_printed_beside_the_ready_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A rank with no policy beside it is uninterpretable, which is the kit's own rule."""
     repo = _seeded(tmp_path)
 
     assert _run(repo, monkeypatch) == 0
@@ -103,7 +85,6 @@ def test_the_ranking_policy_is_printed_beside_the_ready_set(
 def test_a_decision_the_tree_holds_is_not_reported_as_a_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`accepted` and nothing else is the whole discriminator; a qualifier is a target."""
     repo = _seeded(tmp_path)
     _with_decisions(repo)
 
@@ -117,7 +98,6 @@ def test_a_decision_the_tree_holds_is_not_reported_as_a_target(
 def test_a_repository_with_no_decision_document_says_so_rather_than_none_found(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A consumer repository has no architecture document, and no targets is a claim."""
     repo = _seeded(tmp_path)
 
     assert _run(repo, monkeypatch) == 0
@@ -128,7 +108,6 @@ def test_a_repository_with_no_decision_document_says_so_rather_than_none_found(
 def test_an_empty_ledger_says_so_instead_of_drawing_an_empty_frame(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An empty Ready table reads as nothing to do; a fresh consumer has nothing filed."""
     repo = flipped_repo(tmp_path)
 
     assert _run(repo, monkeypatch) == 0
@@ -141,7 +120,6 @@ def test_an_empty_ledger_says_so_instead_of_drawing_an_empty_frame(
 def test_a_repository_with_no_owned_tracker_reports_no_backlog(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Read-only means it cannot install a tracker to have something to say."""
     assert _run(tmp_path, monkeypatch) == 0
 
     assert "ledger: none" in capsys.readouterr().out
@@ -150,7 +128,6 @@ def test_a_repository_with_no_owned_tracker_reports_no_backlog(
 def test_a_grant_on_a_closed_root_is_not_live(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A grant dies with its session, so a closed root's marker is history."""
     repo = flipped_repo(tmp_path)
     seed_records(
         repo,
@@ -172,11 +149,7 @@ def test_a_grant_on_a_closed_root_is_not_live(
 def test_the_remaining_budget_is_the_budget_less_what_this_checkout_recorded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The figure the grant bounds, and the one a handover restated by hand.
 
-    Each store's own figure rides beside it: this checkout has a run record the ledger has
-    no marker for, which is the disagreement a display may not resolve silently.
-    """
     repo = _seeded(tmp_path)
     run_record.record(
         repo,
@@ -210,12 +183,7 @@ def test_the_remaining_budget_is_the_budget_less_what_this_checkout_recorded(
 def test_a_checkout_that_holds_no_dispatch_reports_the_spend_unknown_not_zero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A checkout drawing the full budget left would be claiming a spend it cannot see.
 
-    It is no dispatch rather than no run-record file that makes the figure unknown: the
-    file is per-checkout and the ledger's `[harness-run]` markers are not, so a clone with
-    neither is the only checkout that genuinely cannot tell (basicly-7hebuh).
-    """
     repo = _seeded(tmp_path)
 
     assert _run(repo, monkeypatch) == 0
@@ -228,7 +196,6 @@ def test_a_checkout_that_holds_no_dispatch_reports_the_spend_unknown_not_zero(
 def test_the_json_payload_carries_every_section_the_tables_print(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The scripted surface, mirroring `status --json`: sections keyed, counts explicit."""
     repo = _seeded(tmp_path)
     _with_decisions(repo)
 
@@ -242,10 +209,7 @@ def test_the_json_payload_carries_every_section_the_tables_print(
 
 
 def test_the_command_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Read-only is the contract, asserted on the bytes rather than on the intent.
 
-    A write here would land at the moment a session is least able to notice it.
-    """
     repo = _seeded(tmp_path)
     _with_decisions(repo)
     before = {path: path.read_bytes() for path in sorted(tracker.ledger_dir(repo).glob("*.jsonl"))}
@@ -260,10 +224,7 @@ def test_the_command_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 def test_a_section_with_nothing_in_it_says_so_rather_than_drawing_an_empty_table(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An empty frame reads as a shape the report found, when it found nothing.
 
-    Nothing ready is a finding rather than a blank — it means every open record is held.
-    """
     repo = flipped_repo(tmp_path)
     seed_records(repo, [{"id": "basicly-eee", "status": "closed", "title": "done"}])
 
@@ -276,7 +237,6 @@ def test_a_section_with_nothing_in_it_says_so_rather_than_drawing_an_empty_table
 
 
 def _note(repo: Path, record: str, text: str, at: float) -> None:
-    """Append one prose note stamped *at*, the clock injected so the order is the test's."""
     kit = tracker.kit(repo)
     kit.events.append(
         tracker.ledger_dir(repo),
@@ -288,11 +248,7 @@ def _note(repo: Path, record: str, text: str, at: float) -> None:
 def test_the_newest_handover_note_is_printed_first_whichever_root_carries_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The line the file existed to carry: where the last session stopped (D-42).
 
-    Newest by the event stamp, so the note on the alphabetically earlier record wins here
-    and a reader that took canonical order or the text's own date would print the other.
-    """
     repo = _seeded(tmp_path)
     _with_decisions(repo)
     _note(repo, "basicly-ccc", f"{cli.HANDOVER_MARKER} 2026-08-27] stopped on ccc", at=1000.0)
@@ -313,7 +269,6 @@ def test_the_newest_handover_note_is_printed_first_whichever_root_carries_it(
 def test_a_ledger_with_no_handover_note_says_so_and_names_the_skill_that_writes_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Absence is a finding with a remedy, not a blank the reader fills from memory."""
     repo = _seeded(tmp_path)
     _with_decisions(repo)
 

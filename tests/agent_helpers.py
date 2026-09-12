@@ -1,10 +1,3 @@
-"""Shared source factories for the agent suites (basicly-u2hl.52).
-
-Split out when the module-size ratchet refused ``test_agents.py``. The same
-shape ``model_map_helpers`` already has: two suites need one set of factories,
-so the factories get a module rather than a copy each.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

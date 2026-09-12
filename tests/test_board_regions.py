@@ -1,21 +1,3 @@
-"""The question regions this module owns, asserted against the answer each owes.
-
-The owner's verdict on the render this replaces was that the page did not answer *what is
-being implemented, where the loop is, what state it is in, or what is in the backlog*. So each
-region is asserted on the answer it owes. The loop row's own answer is
-`tests/test_board_loop.py`'s, with the module it moved to:
-
-* **the alarm** must say whether a person is waiting, in all six of its spellings, must lead
-  with the *age* in the coarsest unit that is still true and stated once, must escalate to its
-  alarm colour only past a declared wait and never on existence alone, and must never report an
-  unreadable `asks` section as a quiet room;
-* **running now** must draw one card per lane and *nothing* when there is no lane, because a
-  reserved frame announcing nothing is the dead space this layout was redrawn to remove;
-* **next up** must rank the ready set in two shapes - the narrow column beside the lanes, and
-  the reclaimed width where its top rows must not be truncated at all - and must distinguish
-  three different absences from an empty one.
-"""
-
 from __future__ import annotations
 
 from datetime import timedelta
@@ -25,7 +7,6 @@ from tests.test_board_wall import STAMPED, document, readings
 
 
 def _reads(name: str, **override: object) -> dict[str, board_wall.Reading]:
-    """A fixture's readings, with named sections replaced by hand-built ones."""
     reads = readings(name)
     for key, value in override.items():
         reads[key] = board_wall.Reading(key, board_wall.BY_KEY[board_wall.RENDERABLE], "", value)
@@ -33,24 +14,20 @@ def _reads(name: str, **override: object) -> dict[str, board_wall.Reading]:
 
 
 def _age(name: str, after_s: float = 8.0) -> board_wall.Age:
-    """The fixture's own age, taken against an injected instant."""
     return board_wall.age(document(name), STAMPED + timedelta(seconds=after_s))
 
 
 def _swap(
     name: str, reads: dict[str, board_wall.Reading], state: str, note: str
 ) -> dict[str, board_wall.Reading]:
-    """*reads* with *name* replaced by a reading in *state*, carrying *note* and no value."""
     return {**reads, name: board_wall.Reading(name, board_wall.BY_KEY[state], note)}
 
 
 def _absent(name: str, reads: dict[str, board_wall.Reading]) -> dict[str, board_wall.Reading]:
-    """*reads* with *name* replaced by the reading a section the producer omitted gets."""
     return _swap(name, reads, board_wall.ABSENT, board_wall.ABSENT_TEXT)
 
 
 def _ask(waiting_s: float) -> dict[str, object]:
-    """A synthetic ask waiting exactly *waiting_s*, for driving the alarm threshold by hand."""
     return {
         "wait_id": "w",
         "issue": "basicly-x",
@@ -62,13 +39,7 @@ def _ask(waiting_s: float) -> dict[str, object]:
 
 
 def test_a_pending_ask_leads_with_its_age_in_the_coarsest_unit_that_is_still_true() -> None:
-    """The one question a display in a room exists to move, and the age is the headline.
 
-    `31 MINUTES`, not `31m 2s`: the criterion is that the largest text in the region is the
-    age, so the count of asks steps down to the kicker and the id and kind go beneath. The
-    detail line states an absolute since-when and the producer's own offer instead of a
-    second spelling of the same duration - basicly-v8jwf0's fault.
-    """
     band = board_regions.band(_reads("wall-v1.json"), _age("wall-v1.json"), STAMPED)
     assert band.state.key == board_wall.WAITING
     assert band.headline == "31 MINUTES"
@@ -82,7 +53,6 @@ def test_a_pending_ask_leads_with_its_age_in_the_coarsest_unit_that_is_still_tru
 
 
 def test_an_empty_ask_list_reads_calm_and_an_unreadable_one_never_does() -> None:
-    """A section that could not be read must not be reported as a quiet room."""
     calm = board_regions.band(_reads("wall-v1.json", asks=[]), _age("wall-v1.json"), STAMPED)
     assert calm.state.key == board_wall.CALM
     assert calm.state.key not in (board_wall.WAITING, board_wall.STUCK), "nothing pending, no alarm"
@@ -97,7 +67,6 @@ def test_an_empty_ask_list_reads_calm_and_an_unreadable_one_never_does() -> None
 
 
 def test_a_stale_document_says_so_without_hiding_what_it_last_knew() -> None:
-    """The marker is appended to whichever ask verdict holds, never in place of it."""
     band = board_regions.band(_reads("wall-v1.json"), _age("wall-v1.json", 900), STAMPED)
     assert band.state.key == board_wall.WAITING, "the stale marker replaced the ask verdict"
     assert band.stale.startswith("STALE")
@@ -107,13 +76,7 @@ def test_a_stale_document_says_so_without_hiding_what_it_last_knew() -> None:
 
 
 def test_the_band_reads_six_ways_and_no_more() -> None:
-    """Each spelling exercised, rather than a list of names read back off the module.
 
-    A declared list agrees with itself while the branch that would produce a seventh reading
-    goes unasserted, so the band is driven into all six instead: the four exclusive ask
-    verdicts - waiting itself now split by severity into WAITING and STUCK - and the stale
-    marker that rides on whichever of them holds.
-    """
     reads, fresh = _reads("wall-v1.json"), _age("wall-v1.json")
     withheld = _swap("asks", reads, board_wall.WITHHELD, "$.asks[0]: too long")
     stuck = _reads("wall-v1.json", asks=[_ask(board_regions.BAND_ALARM_AFTER_S)])
@@ -138,11 +101,7 @@ def test_the_band_reads_six_ways_and_no_more() -> None:
 
 
 def test_the_alarm_colour_steps_at_the_declared_threshold_and_no_earlier() -> None:
-    """A short wait and a long wait must not paint the same colour (basicly-v8jwf0).
 
-    Driven across :data:`board_regions.BAND_ALARM_AFTER_S` on both sides, rather than against
-    a literal this test would have to keep in step with the region by hand.
-    """
     boundary = board_regions.BAND_ALARM_AFTER_S
     fresh = _age("wall-v1.json")
     under = board_regions.band(_reads("wall-v1.json", asks=[_ask(boundary - 1)]), fresh, STAMPED)
@@ -152,10 +111,8 @@ def test_the_alarm_colour_steps_at_the_declared_threshold_and_no_earlier() -> No
 
 
 def test_the_ready_set_is_ranked_with_priority_and_id_and_title() -> None:
-    """Ranked rather than merely listed: an unordered ready set is a list nobody can act on."""
     listing = board_regions.next_up(_reads("wall-v1.json"))
     assert listing.state.key == board_wall.RENDERABLE
-    # A slot is a line, and a group heading is a line, so the two share the one budget.
     assert len(listing.rows) + len(listing.groups) == board_regions.READY_SLOTS
     assert [row.priority for row in listing.rows] == sorted(row.priority for row in listing.rows)
     assert all(row.ident and row.title for row in listing.rows)
@@ -164,13 +121,7 @@ def test_the_ready_set_is_ranked_with_priority_and_id_and_title() -> None:
 
 
 def test_the_reclaimed_width_leaves_the_top_ready_titles_untruncated() -> None:
-    """The criterion, and the reason the list has two shapes rather than one.
 
-    The narrow column beside the lanes truncates at 62 characters because that is what fits
-    there; the reclaimed width does not, and the assertion is the *pair* - a single bound wide
-    enough for the reclaimed row would run off the end of the column. The fixture's own longest
-    ready title is the control: without one over 62 characters neither half discriminates.
-    """
     long = "the board goes backwards the moment a supervisor starts and in flight has no producer"
     row = {"ready": True, "priority": "P0", "title": long}
     units = [{"id": f"u-{n:02d}", **row} for n in range(20)]
@@ -186,11 +137,7 @@ def test_the_reclaimed_width_leaves_the_top_ready_titles_untruncated() -> None:
 
 
 def test_an_advance_ask_stops_the_band_reading_nothing_is_waiting() -> None:
-    """basicly-2no50w: the owner asked why one sat in ship while the band said nothing.
 
-    The band needed no change for this - it reads any ask kind - so this is the assertion
-    that keeps it that way. A future `kind` the band special-cased would fail here.
-    """
     stalled = board_advance.asks(
         {"basicly-b2n2": ("ship", True, "in_progress")},
         lanes=None,
@@ -211,20 +158,7 @@ def test_an_advance_ask_stops_the_band_reading_nothing_is_waiting() -> None:
 
 
 def test_ready_capacity_is_derived_from_the_viewport_actually_given_not_a_constant() -> None:
-    """basicly-ffm2yp: 14 rows drawn where 26 fit, because the cap ignored the viewport.
 
-    `.scripts/check_render_overflow.py`'s own answer, found by binary search against the
-    *live* repo document rather than a fixture: patch the capacity, render, and ask the
-    instrument whether the body still fits. The formula lands one row under each ceiling -
-    the margin `READY_CHROME_SAFETY_MARGIN_PX` is meant to spend - and it is derived from the
-    viewport rather than a single guessed count.
-
-    **Re-measured for the drawn loop (basicly-6c97zx).** The ceilings were 16, 32 and 29 when
-    the region above this list was seven counted boxes; a diagram is taller, and they are now
-    7, 19 and 16. The numbers below are that measurement and not an adjustment of the old
-    ones - a capacity edited to make a gate pass is the fixture-measured constant that
-    clipped 54px live.
-    """
     assert board_regions.ready_capacity(900, 1440) == 6
     assert board_regions.ready_capacity(1200, 1600) == 18
     assert board_regions.ready_capacity(1080, 1920) == 15
@@ -234,12 +168,10 @@ def test_ready_capacity_is_derived_from_the_viewport_actually_given_not_a_consta
 
 
 def test_ready_capacity_falls_back_to_the_stated_default_when_the_viewport_is_unknown() -> None:
-    """Unknown is never guessed into a number; it draws the figure that has always been safe."""
     assert board_regions.ready_capacity(None) == board_regions.READY_SLOTS_WIDE
 
 
 def test_next_up_draws_more_of_the_reclaimed_width_at_a_taller_viewport() -> None:
-    """The row count moves with the height passed in, at the same width's row set."""
     long = "the board goes backwards the moment a supervisor starts and in flight has no producer"
     row = {"ready": True, "priority": "P0", "title": long}
     units = [{"id": f"u-{n:02d}", **row} for n in range(60)]
@@ -251,7 +183,6 @@ def test_next_up_draws_more_of_the_reclaimed_width_at_a_taller_viewport() -> Non
 
 
 def test_the_ready_region_tells_three_absences_apart_and_none_of_them_is_a_zero() -> None:
-    """The middle case is the one a count would have reported as "0 ready"."""
     absent = board_regions.next_up(_absent("units", _reads("wall-v1.json")))
     assert absent.note == board_wall.ABSENT_TEXT
     assert not absent.rows
@@ -266,7 +197,6 @@ def test_the_ready_region_tells_three_absences_apart_and_none_of_them_is_a_zero(
 
 
 def test_the_status_bar_draws_the_grant_bar_only_against_a_declared_budget() -> None:
-    """The catastrophe signal, and it needs both of its numbers like every other bar."""
     cells = board_regions.head(_reads("wall-v1.json"))
     run = next(cell for cell in cells if cell.label == "run")
     assert run.bar is not None and run.bar.over

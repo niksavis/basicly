@@ -1,11 +1,3 @@
-"""Tests for per-agent health scoring and behavioral drift (basicly-y886).
-
-Health and drift are pure functions of the run-record map, so most tests feed a
-literal map; a few exercise the on-disk read and the fleet rollup. Drift is a
-rolling baseline off the records' own timestamps — recent window vs everything
-older — so the fixtures stamp increasing timestamps to control the split.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -30,7 +22,6 @@ def _entry(agent: str, outcome: str, ts: str, bound: str | None = None) -> dict:
 
 
 def _ts(i: int) -> str:
-    """A sortable ISO-ish timestamp keyed by a monotonically increasing index."""
     return f"2026-07-{i:02d}T00:00:00+00:00"
 
 
@@ -40,11 +31,7 @@ def _write_records(repo: Path, data: dict) -> None:
     records.write_text(json.dumps(data), encoding="utf-8")
 
 
-# --- agent_health -----------------------------------------------------------
-
-
 def test_agent_health_counts_outcomes_and_failure_rate() -> None:
-    """Outcomes are tallied; failure rate excludes handoffs from the denominator."""
     records = {
         "basicly-a": [_entry("claude", "executed", _ts(1)), _entry("claude", "failed", _ts(2))],
         "basicly-b": [_entry("claude", "handoff", _ts(3))],
@@ -52,18 +39,11 @@ def test_agent_health_counts_outcomes_and_failure_rate() -> None:
     (h,) = health.agent_health(records)
     assert h.agent == "claude"
     assert (h.runs, h.executed, h.failed, h.handoff) == (3, 1, 1, 1)
-    assert h.failure_rate == 0.5  # 1 failed of 2 dispatched; the handoff is excluded
+    assert h.failure_rate == 0.5
 
 
 def test_a_bounded_stop_leaves_the_failure_rate_and_is_counted_under_its_bound() -> None:
-    """AC: our own ceiling stopping a lane is not the agent failing (basicly-e2mz.3).
 
-    The measured shape of the defect: on 2026-08-13 the grant spend ceiling stopped
-    four live lanes at once and every one of them landed in claude's failure count.
-    Held here against the same run: one real failure, one clean run, two the ceiling
-    stopped. The rate has to read 50% over the two runs that were actually observed,
-    and `runs` still has to account for all four.
-    """
     records = {
         "basicly-a": [
             _entry("claude", "executed", _ts(1)),
@@ -76,24 +56,21 @@ def test_a_bounded_stop_leaves_the_failure_rate_and_is_counted_under_its_bound()
     assert h.stopped == 2
     assert h.stopped_bounds == {"quiet": 1, "spend": 1}
     assert (h.executed, h.failed) == (1, 1), "a bounded stop is not a failed dispatch"
-    assert h.failure_rate == 0.5  # 1 of the 2 runs that ran to their own exit
-    # Nothing disappears: the excluded runs are still in the total, just not in the rate.
+    assert h.failure_rate == 0.5
     assert h.runs == 4 == h.executed + h.failed + h.handoff + h.stopped
 
 
 def test_agent_health_rework_signal_counts_redispatched_beads() -> None:
-    """A bead with more than one record for the agent is a rework bead."""
     records = {
         "basicly-a": [_entry("claude", "failed", _ts(1)), _entry("claude", "executed", _ts(2))],
         "basicly-b": [_entry("claude", "executed", _ts(3))],
     }
     (h,) = health.agent_health(records)
-    assert h.rework_beads == 1  # basicly-a re-dispatched
-    assert h.rework_rate == 0.5  # 1 of 2 beads
+    assert h.rework_beads == 1
+    assert h.rework_rate == 0.5
 
 
 def test_agent_health_perfect_agent_scores_one() -> None:
-    """No failures and no rework yields a perfect score."""
     records = {"basicly-a": [_entry("codex", "executed", _ts(1))]}
     (h,) = health.agent_health(records)
     assert h.failure_rate == 0.0 and h.rework_beads == 0
@@ -101,7 +78,6 @@ def test_agent_health_perfect_agent_scores_one() -> None:
 
 
 def test_agent_health_all_failures_score_zero() -> None:
-    """A fully-failing agent scores zero regardless of rework."""
     records = {"basicly-a": [_entry("codex", "failed", _ts(1)), _entry("codex", "failed", _ts(2))]}
     (h,) = health.agent_health(records)
     assert h.failure_rate == 1.0
@@ -109,42 +85,33 @@ def test_agent_health_all_failures_score_zero() -> None:
 
 
 def test_agent_health_rework_discounts_a_succeeding_agent() -> None:
-    """Churn on a succeeding agent applies the multiplicative rework penalty."""
     records = {
         "basicly-a": [_entry("claude", "executed", _ts(1)), _entry("claude", "executed", _ts(2))]
     }
     (h,) = health.agent_health(records)
-    # failure_rate 0, rework_rate 1.0 -> 1.0 * (1 - 0.3) = 0.7
     assert h.health_score == 0.7
 
 
 def test_agent_health_sorted_by_agent() -> None:
-    """Multiple agents come back sorted by name."""
     records = {
         "basicly-a": [_entry("zeta", "executed", _ts(1)), _entry("alpha", "executed", _ts(2))]
     }
     assert [h.agent for h in health.agent_health(records)] == ["alpha", "zeta"]
 
 
-# --- agent_drift ------------------------------------------------------------
-
-
 def test_agent_drift_flags_regression() -> None:
-    """A recent failure-rate jump over the baseline is flagged as a regression."""
-    # 3 clean baseline runs, then 5 recent runs that are mostly failures.
     entries = [_entry("claude", "executed", _ts(i)) for i in range(1, 4)]
-    entries += [_entry("claude", "failed", _ts(i)) for i in range(4, 8)]  # 4 failed
-    entries += [_entry("claude", "executed", _ts(8))]  # 1 executed -> recent window of 5
+    entries += [_entry("claude", "failed", _ts(i)) for i in range(4, 8)]
+    entries += [_entry("claude", "executed", _ts(8))]
     records = {"basicly-a": entries}
     (d,) = health.agent_drift(records, window=5)
     assert d.baseline_runs == 3 and d.recent_runs == 5
     assert d.baseline_failure_rate == 0.0
-    assert d.recent_failure_rate == 0.8  # 4 of 5
+    assert d.recent_failure_rate == 0.8
     assert d.regressed is True
 
 
 def test_agent_drift_no_regression_when_stable() -> None:
-    """A stable failure rate across windows is not a regression."""
     records = {"basicly-a": [_entry("claude", "executed", _ts(i)) for i in range(1, 9)]}
     (d,) = health.agent_drift(records, window=5)
     assert d.regressed is False
@@ -152,22 +119,16 @@ def test_agent_drift_no_regression_when_stable() -> None:
 
 
 def test_agent_drift_insufficient_sample_never_regresses() -> None:
-    """Too few runs in a window cannot trip a regression even if all recent fail."""
-    # Only 2 baseline runs (< MIN_WINDOW_SAMPLE); recent all-fail.
     entries = [_entry("claude", "executed", _ts(1)), _entry("claude", "executed", _ts(2))]
     entries += [_entry("claude", "failed", _ts(i)) for i in range(3, 8)]
     records = {"basicly-a": entries}
     (d,) = health.agent_drift(records, window=5)
-    assert d.baseline_runs == 2  # below MIN_WINDOW_SAMPLE
+    assert d.baseline_runs == 2
     assert d.regressed is False
 
 
 def _drift_over_four_stops(bound: str | None) -> health.AgentDrift:
-    """The 2026-08-13 shape: a clean baseline, then one run and four stops.
 
-    *bound* is what stopped those four — the grant ceiling, or nothing at all, which
-    is the only difference between a budget running out and a runner degrading.
-    """
     entries = [_entry("claude", "executed", _ts(i)) for i in range(1, 7)]
     entries += [_entry("claude", "failed", _ts(i), bound=bound) for i in range(7, 11)]
     (drift,) = health.agent_drift({"basicly-a": entries}, window=5)
@@ -175,12 +136,7 @@ def _drift_over_four_stops(bound: str | None) -> health.AgentDrift:
 
 
 def test_a_window_the_ceiling_emptied_cannot_flag_but_the_same_failures_do() -> None:
-    """AC: the exclusion applies inside each window, and the sample rule after it.
 
-    Both halves in one test on purpose. Asserting only that the bounded window stays
-    quiet cannot tell this fix from deleting the detector — the control is the same
-    fixture with the bound taken off, which must still flag.
-    """
     bounded = _drift_over_four_stops("spend")
     assert bounded.recent_runs == 1, "four stops leave one scored run in the window"
     assert bounded.recent_runs < health.MIN_WINDOW_SAMPLE
@@ -193,18 +149,13 @@ def test_a_window_the_ceiling_emptied_cannot_flag_but_the_same_failures_do() -> 
 
 
 def test_agent_drift_ignores_handoffs() -> None:
-    """Handoffs carry no outcome, so they never enter the drift windows."""
     records = {"basicly-a": [_entry("claude", "handoff", _ts(i)) for i in range(1, 6)]}
     (d,) = health.agent_drift(records, window=5)
     assert d.baseline_runs == 0 and d.recent_runs == 0
     assert d.regressed is False
 
 
-# --- health_report / on-disk + resilience -----------------------------------
-
-
 def test_health_report_empty_when_no_records(tmp_path: Path) -> None:
-    """A repo with no run-record file reports empty agents/drift, no regressions."""
     report = health.health_report(tmp_path)
     assert report["schema_version"] == health.HEALTH_SCHEMA_VERSION
     assert report["agents"] == [] and report["drift"] == []
@@ -212,7 +163,6 @@ def test_health_report_empty_when_no_records(tmp_path: Path) -> None:
 
 
 def test_health_report_reads_on_disk_records(tmp_path: Path) -> None:
-    """health_report reads the run-record file and surfaces per-agent health."""
     _write_records(tmp_path, {"basicly-a": [_entry("claude", "failed", _ts(1))]})
     report = health.health_report(tmp_path)
     assert report["agents"][0]["agent"] == "claude"
@@ -220,7 +170,6 @@ def test_health_report_reads_on_disk_records(tmp_path: Path) -> None:
 
 
 def test_health_report_tolerates_corrupt_log(tmp_path: Path) -> None:
-    """A corrupt records file degrades to an empty report, never raises."""
     records = tmp_path / run_record.RUN_RECORDS_FILE
     records.parent.mkdir(parents=True, exist_ok=True)
     records.write_text("{not json", encoding="utf-8")
@@ -229,7 +178,6 @@ def test_health_report_tolerates_corrupt_log(tmp_path: Path) -> None:
 
 
 def test_health_report_surfaces_regression(tmp_path: Path) -> None:
-    """A regressing agent lands in the regressions list."""
     entries = [_entry("claude", "executed", _ts(i)) for i in range(1, 4)]
     entries += [_entry("claude", "failed", _ts(i)) for i in range(4, 9)]
     _write_records(tmp_path, {"basicly-a": entries})
@@ -237,11 +185,7 @@ def test_health_report_surfaces_regression(tmp_path: Path) -> None:
     assert report["regressions"] == ["claude"]
 
 
-# --- fleet_health -----------------------------------------------------------
-
-
 def test_fleet_health_rolls_up_repos(tmp_path: Path) -> None:
-    """The fleet rollup reports each repo's health and totals the regressions."""
     good = tmp_path / "good"
     (good / ".basicly").mkdir(parents=True)
     _write_records(good, {"basicly-a": [_entry("claude", "executed", _ts(1))]})
@@ -255,17 +199,13 @@ def test_fleet_health_rolls_up_repos(tmp_path: Path) -> None:
     report = health.fleet_health(tmp_path, window=5)
     assert [r["name"] for r in report["repos"]] == ["bad", "good"]
     assert report["totals"]["repos"] == 2
-    assert report["totals"]["regressions"] == 1  # only 'bad' regressed
+    assert report["totals"]["regressions"] == 1
 
 
 def test_fleet_health_empty_root(tmp_path: Path) -> None:
-    """A root with no basicly repos yields an empty, valid rollup."""
     report = health.fleet_health(tmp_path / "nope")
     assert report["repos"] == []
     assert report["totals"] == {"repos": 0, "regressions": 0}
-
-
-# --- CLI --------------------------------------------------------------------
 
 
 def _args(**kw) -> argparse.Namespace:
@@ -275,7 +215,6 @@ def _args(**kw) -> argparse.Namespace:
 
 
 def test_cmd_health_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
-    """--json prints the health payload for the current repo."""
     _write_records(tmp_path, {"basicly-a": [_entry("claude", "executed", _ts(1))]})
     monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
     assert cli.cmd_health(_args(json=True)) == 0
@@ -284,7 +223,6 @@ def test_cmd_health_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
 
 
 def test_cmd_health_rejects_bad_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A window below 1 is a usage error."""
     monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
     assert cli.cmd_health(_args(window=0)) == 2
 
@@ -292,17 +230,12 @@ def test_cmd_health_rejects_bad_window(tmp_path: Path, monkeypatch: pytest.Monke
 def test_cmd_health_text_no_records(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
-    """The text path with no records reports cleanly and exits 0."""
     monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
     assert cli.cmd_health(_args()) == 0
     assert "no run-records" in capsys.readouterr().out
 
 
-# --- the supervisor pass line -----------------------------------------------
-
-
 def _coverage_lines(repo: Path) -> list[str]:
-    """The pass report `supervise` emits before it dispatches anything."""
     lines: list[str] = []
     spend = supervise.PassSpendAdmission(None, None, (), (), None)
     supervise._report_coverage(lines.append, repo, (), spend)
@@ -310,13 +243,7 @@ def _coverage_lines(repo: Path) -> list[str]:
 
 
 def test_pass_report_carries_agent_health_and_drift(tmp_path: Path) -> None:
-    """The pass line states the runners' own reliability (basicly-zdtx).
 
-    The report had no operational caller, so an agent whose failure rate had moved was
-    visible only to whoever ran `basicly health` — never to whoever reads a pass, where
-    every other pass-level number already is. Both halves are asserted, including the
-    two window sizes, because a drift flag without its sample is not falsifiable.
-    """
     entries = [_entry("claude", "executed", _ts(i)) for i in range(1, 6)]
     entries += [_entry("claude", "failed", _ts(i)) for i in range(6, 11)]
     _write_records(tmp_path, {"basicly-a": entries})
@@ -331,12 +258,7 @@ def test_pass_report_carries_agent_health_and_drift(tmp_path: Path) -> None:
 
 
 def test_the_pass_line_names_the_bounded_stops_and_does_not_flag_them(tmp_path: Path) -> None:
-    """AC: the count a bound stopped is stated beside the failure rate, not inside it.
 
-    This is the line the defect was found on: `basicly-zdtx` wired the report onto the
-    pass and its first output was `REGRESSED claude` over four lanes the grant ceiling
-    had stopped 96ms apart. Same fixture, at the surface an operator reads.
-    """
     entries = [_entry("claude", "executed", _ts(i)) for i in range(1, 7)]
     entries += [_entry("claude", "failed", _ts(i), bound="spend") for i in range(7, 11)]
     _write_records(tmp_path, {"basicly-a": entries})
@@ -348,11 +270,7 @@ def test_the_pass_line_names_the_bounded_stops_and_does_not_flag_them(tmp_path: 
 
 
 def test_pass_report_health_survives_a_repo_with_no_records(tmp_path: Path) -> None:
-    """No log is a reported absence, never a raise and never a refusal.
 
-    The wiring is observability: it reports on the pass line and returns nothing a
-    caller can gate on, so a pass over a fresh repo still says what it could not read.
-    """
     lines = _coverage_lines(tmp_path)
 
     assert lines[2] == "health:   no run-records yet"

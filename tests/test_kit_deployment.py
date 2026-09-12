@@ -1,37 +1,3 @@
-"""Tests for the tracker kit's deployment requirements and the gate that enforces them.
-
-The kit states two requirements on its *host* repository and can satisfy neither itself
-(basicly-vkh0.21): ``events-*.jsonl`` declared ``-text``, and the ledger's ignore rules
-covering ``snapshot.DERIVED_PATTERNS``. Both were prose in a docstring, which is the one
-place a gate cannot read.
-
-Every assertion here is made by **running git**, never by reading ``.gitattributes`` or
-``.gitignore`` as text. Matching globs against those files by hand would reimplement git's
-precedence — later lines win, a negation may re-include, a nested ignore file may override
-— and would be wrong in exactly the cases the rules exist for. So the log requirement is
-checked by committing a real log and cloning it under ``core.autocrlf=true``, and the
-derived-file requirement by asking ``git status`` about a ledger the kit actually wrote.
-
-**What the measurement said, stated because it is not what the docstring implies.**
-``events.py`` says a normalising checkout "rewrites the ledger in place" without the
-``-text`` rule. Measured on git 2.43.0, that is true of a host whose only rule is
-``* text=auto`` — an LF-only log comes back CRLF. It was *already* false of this repo,
-whose ``* text=auto eol=lf`` pinned the working-tree ending before this bead existed. So
-the rule is not repairing live corruption here. It makes byte-exactness a property of the
-log's own rule rather than a side effect of a repo-wide ``eol`` setting somebody may
-change, and it is what carries the requirement to a consumer whose ``*`` rule is bare.
-``test_the_text_rule_is_what_survives_a_host_without_a_repo_wide_eol_rule`` is where that
-distinction is asserted rather than argued.
-
-Every host is built from **this repo's own rule files**, copied, and the negative controls
-are made by deleting the exact line under test (``kit_deployment_helpers``). The gate is
-driven as a subprocess throughout. It loads the host's kit by path, and ``snapshot.py``
-caches ``events`` under a fixed ``sys.modules`` name — so a test that edits a kit constant
-would be served the previous test's copy in-process, and the drift test is precisely the
-one that must not be. The ``merge=union`` half of the log rule has its own module,
-``test_kit_deployment_union_merge.py``.
-"""
-
 from __future__ import annotations
 
 import subprocess
@@ -65,28 +31,18 @@ from tests.kit_deployment_helpers import (
 
 @pytest.fixture
 def env(tmp_path: Path) -> dict[str, str]:
-    """The hermetic git environment every call in this module runs under."""
     return git_env(tmp_path)
 
 
 @pytest.fixture
 def host(tmp_path: Path, env: dict[str, str]) -> Path:
-    """A consumer-shaped host repository with the kit and this repo's rule files."""
     return make_host(tmp_path / "host", env)
-
-
-# --- the log's bytes (first acceptance criterion) ------------------------------
 
 
 def test_a_normalising_checkout_leaves_a_real_log_byte_identical(
     tmp_path: Path, host: Path, env: dict[str, str]
 ) -> None:
-    """A log written by the kit survives an ``autocrlf`` checkout of this repo's rules.
 
-    The round trip is the assertion: commit the ledger, clone it with the host normalising
-    line endings, and compare bytes. Both logs are compared, so a rule that only reached
-    the initial name would fail on the rotated one.
-    """
     write_ledger(host / LEDGER_RELATIVE)
     git(host, env, "add", "-A")
     git(host, env, "commit", "-qm", "a ledger")
@@ -109,16 +65,7 @@ def test_a_normalising_checkout_leaves_a_real_log_byte_identical(
 def test_the_text_rule_is_what_survives_a_host_without_a_repo_wide_eol_rule(
     tmp_path: Path, env: dict[str, str]
 ) -> None:
-    """The ``-text`` rule alone preserves the log on a host whose only rule normalises.
 
-    Two hosts, one log, one difference. ``* text=auto`` is the minimal normalising host and
-    what a consumer that installed the kit without this repo's ``eol=lf`` has; it returns
-    the log CRLF. The same host carrying ``events-*.jsonl -text`` returns it unchanged.
-
-    This is the control this repo's own ``.gitattributes`` cannot provide: its ``eol=lf``
-    already pinned the working-tree ending, so removing ``-text`` from it changes nothing,
-    and a test built that way would assert a rule that was doing no work.
-    """
     written = {}
     for name, attributes in (
         ("bare", "* text=auto\n"),
@@ -143,18 +90,13 @@ def test_the_text_rule_is_what_survives_a_host_without_a_repo_wide_eol_rule(
     assert written["ruled"] == b'{"a":1}\n{"b":2}\n'
 
 
-# --- the derived files (second acceptance criterion) ---------------------------
-
-
 def _ledger_status(repo: Path, env: dict[str, str]) -> set[str]:
-    """Every ledger path git offers as untracked, read from ``git status``."""
     listing = git(repo, env, "status", "--porcelain", "--untracked-files=all").stdout
     prefix = LEDGER_RELATIVE.as_posix() + "/"
     return {line[3:] for line in listing.splitlines() if line[3:].startswith(prefix)}
 
 
 def _ledger_staged(repo: Path, env: dict[str, str]) -> set[str]:
-    """Every ledger path that reaches the index when everything stageable is staged."""
     git(repo, env, "add", "-A")
     staged = git(repo, env, "diff", "--cached", "--name-only").stdout
     prefix = LEDGER_RELATIVE.as_posix() + "/"
@@ -164,12 +106,7 @@ def _ledger_staged(repo: Path, env: dict[str, str]) -> set[str]:
 def test_git_offers_neither_derived_file_from_a_real_ledger(
     host: Path, env: dict[str, str]
 ) -> None:
-    """Neither derived file is untracked-and-offerable, and neither can be staged.
 
-    The logs are the control in the same assertion: an ignore rule wide enough to swallow
-    the truth would pass a "the snapshot is absent" check on its own, and this repo's kit
-    documents that failure — deleting the truth to save a cache.
-    """
     ledger = host / LEDGER_RELATIVE
     write_ledger(ledger)
     derived = {path.name for path in snapshot.derived_paths(ledger)}
@@ -189,7 +126,6 @@ def test_git_offers_neither_derived_file_from_a_real_ledger(
 def test_without_the_ignore_rules_git_offers_both_derived_files(
     host: Path, env: dict[str, str]
 ) -> None:
-    """The control: the same ledger in the same repo, with the two rules removed."""
     drop_lines(host / ".gitignore", SNAPSHOT_RULE, CHECKPOINT_RULE)
     ledger = host / LEDGER_RELATIVE
     write_ledger(ledger)
@@ -202,15 +138,8 @@ def test_without_the_ignore_rules_git_offers_both_derived_files(
         assert prefix + name in staged
 
 
-# --- the gate (third acceptance criterion) -------------------------------------
-
-
 def test_the_gate_passes_on_this_repository(tmp_path: Path) -> None:
-    """This repository satisfies both requirements, checked the way a consumer would.
 
-    No ``--repo``, so the default is exercised too: a gate that only answered for a path
-    it was handed would pass every test above and be unwired in ``basicly.toml``.
-    """
     completed = subprocess.run(
         [sys.executable, str(SCRIPT)],
         capture_output=True,
@@ -223,7 +152,6 @@ def test_the_gate_passes_on_this_repository(tmp_path: Path) -> None:
 
 
 def test_the_gate_names_the_text_rule_the_host_lacks(host: Path, env: dict[str, str]) -> None:
-    """A host without the ``-text`` declaration fails, and is told the rule and the file."""
     assert run_gate(host, env).returncode == 0
 
     drop_lines(host / ".gitattributes", LOG_RULE)
@@ -235,7 +163,6 @@ def test_the_gate_names_the_text_rule_the_host_lacks(host: Path, env: dict[str, 
 
 
 def test_the_gate_names_both_ignore_rules_the_host_lacks(host: Path, env: dict[str, str]) -> None:
-    """A host without the derived-file rules fails, naming each pattern separately."""
     drop_lines(host / ".gitignore", SNAPSHOT_RULE, CHECKPOINT_RULE)
     completed = run_gate(host, env)
 
@@ -248,12 +175,7 @@ def test_the_gate_names_both_ignore_rules_the_host_lacks(host: Path, env: dict[s
 def test_a_rule_naming_only_the_initial_log_does_not_satisfy_the_gate(
     host: Path, env: dict[str, str]
 ) -> None:
-    """The obvious literal — the initial log's own name — is caught as the partial rule it is.
 
-    ``events-0001.jsonl`` is the file a host actually has when someone reaches for a
-    concrete name, and a gate checking one sample would accept it and then be wrong from
-    the first rotation. This is why ``GLOB_FILLS`` carries two entries.
-    """
     attributes = host / ".gitattributes"
     drop_lines(attributes, LOG_RULE)
     with attributes.open("a", encoding="utf-8") as handle:
@@ -269,11 +191,7 @@ def test_a_rule_naming_only_the_initial_log_does_not_satisfy_the_gate(
 def test_the_gate_says_uncommit_when_a_derived_file_is_already_tracked(
     host: Path, env: dict[str, str]
 ) -> None:
-    """An ignore rule does not un-commit a file, and the gate does not pretend it does.
 
-    The remedy has to differ from the missing-rule one, or a host that already committed a
-    snapshot is told to add a rule it has and the message is a dead end.
-    """
     ledger = host / LEDGER_RELATIVE
     write_ledger(ledger)
     git(host, env, "add", "-f", (LEDGER_RELATIVE / "snapshot.jsonl").as_posix())
@@ -289,13 +207,7 @@ def test_the_gate_says_uncommit_when_a_derived_file_is_already_tracked(
 def test_the_gate_reads_the_kits_constants_rather_than_a_second_spelling(
     host: Path, env: dict[str, str]
 ) -> None:
-    """Move the kit's two constants and the gate demands the moved rules, not the old ones.
 
-    This is the acceptance criterion's "derived from or checked against ``LOG_GLOB`` rather
-    than spelled a second time". A gate carrying its own copy of ``events-*.jsonl`` would
-    keep passing this host — the rules for the old names are still in place — which is
-    exactly the drift ``events.py`` documents as the defect this design keeps paying for.
-    """
     kit = host / KIT_RELATIVE
     log_source = kit / "events.py"
     log_source.write_text(
@@ -322,7 +234,6 @@ def test_the_gate_reads_the_kits_constants_rather_than_a_second_spelling(
 
 
 def test_the_gate_fails_when_the_host_has_no_kit(tmp_path: Path, env: dict[str, str]) -> None:
-    """No kit is a failure, never a vacuous pass — the fail-open shape this repo distrusts."""
     root = tmp_path / "kitless"
     init(root, env)
 
@@ -332,39 +243,25 @@ def test_the_gate_fails_when_the_host_has_no_kit(tmp_path: Path, env: dict[str, 
     assert KIT_RELATIVE.as_posix() in completed.stderr
 
 
-# --- the wiring, and the one path that is a literal ----------------------------
-
-
 def test_the_gate_is_declared_as_a_verify_check() -> None:
-    """The gate is wired to something that runs it, not merely committed.
 
-    An instrument built and never connected is this repo's named defect class, and it is
-    the reason the kit's requirements went unenforced in the first place.
-    """
     config = tomllib.loads((REPO_ROOT / "basicly.toml").read_text(encoding="utf-8"))
     checks = {check["name"]: check for check in config["verify"]["checks"]}
 
     assert "kit-deployment" in checks
     entry = checks["kit-deployment"]
     assert SCRIPT.relative_to(REPO_ROOT).as_posix() in entry["command"]
-    # A bare `python` on windows-latest is a system interpreter, not the project's.
     assert entry["command"][:3] == ["uv", "run", "python"]
     assert set(entry["modes"]) == {"fast", "full"}
 
 
 def test_the_default_ledger_is_the_directory_this_repo_actually_uses() -> None:
-    """The gate's one host-layout literal is tied to the engine's own resolver.
 
-    The kit names no path — it takes its directory as an argument — so ``LEDGER_DIR`` is a
-    fact about this repo, and ``tracker_paths`` is where the engine states the same fact.
-    Moving one without the other is what this catches.
-    """
     assert tracker_paths.LEDGER_DIR_NAME == gate.LEDGER_DIR
     assert gate.KIT_DIR == KIT_RELATIVE
 
 
 def test_samples_covers_a_pattern_with_and_without_a_wildcard() -> None:
-    """A literal pattern is its own sample; a glob yields one name per fill."""
     assert gate.samples("snapshot.jsonl") == ("snapshot.jsonl",)
     assert gate.samples("events-*.jsonl") == ("events-0001.jsonl", "events-2026q1.jsonl")
     assert len(gate.GLOB_FILLS) > 1

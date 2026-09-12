@@ -1,14 +1,3 @@
-"""The owned ledger's identity scrub (basicly-r166).
-
-Its own module because ``tests/test_br_seam.py`` is frozen with two tokens of
-size headroom; ``test_br_<aspect>`` is the derived name the ``test-naming`` gate
-accepts.
-
-The username is injected, never read from the host: a test that asserted against
-the real ``getpass.getuser()`` would pass on the machine that wrote it and assert
-nothing on any other.
-"""
-
 from __future__ import annotations
 
 import json
@@ -32,7 +21,6 @@ def _as_username(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _repo(tmp_path: Path) -> Path:
-    """A checkout with the tracker kit installed and an empty ledger directory."""
     (tmp_path / tracker.KIT_TRACKER_DIR).mkdir(parents=True)
     for source in sorted(KIT_SOURCE.glob("*.py")):
         shutil.copy2(source, tmp_path / tracker.KIT_TRACKER_DIR / source.name)
@@ -51,7 +39,6 @@ def _write_events(repo: Path, events: list[dict]) -> Path:
 
 
 def _event(repo: Path, record: str, seq: int, actor: str, payload: dict) -> dict:
-    """One event carrying the id the kit would have minted for it."""
     kit = tracker.kit(repo)
     return {
         "id": kit.events.event_id_for(record, "created", payload),
@@ -69,7 +56,6 @@ def _read(path: Path) -> list[dict]:
 
 
 def test_the_username_is_removed_from_the_actor_and_from_the_payload(tmp_path: Path) -> None:
-    """Both sites the leak was measured at: 840 events carried it on one, 3,972 on the other."""
     repo = _repo(tmp_path)
     path = _write_events(
         repo, [_event(repo, "basicly-a", 1, USERNAME, {"created_by": USERNAME, "title": "t"})]
@@ -83,7 +69,6 @@ def test_the_username_is_removed_from_the_actor_and_from_the_payload(tmp_path: P
 
 
 def test_a_rewritten_event_re_mints_its_own_id(tmp_path: Path) -> None:
-    """Without this the scrub leaves every touched event failing its own consistency check."""
     repo = _repo(tmp_path)
     path = _write_events(repo, [_event(repo, "basicly-a", 1, "", {"created_by": USERNAME})])
     tracker.scrub_ledger(repo)
@@ -94,7 +79,6 @@ def test_a_rewritten_event_re_mints_its_own_id(tmp_path: Path) -> None:
 
 
 def test_two_events_that_redact_onto_one_payload_keep_distinct_ids(tmp_path: Path) -> None:
-    """The generation counter runs over the redacted payloads, not only the stored ones."""
     repo = _repo(tmp_path)
     kit = tracker.kit(repo)
     payload = {"created_by": USERNAME}
@@ -111,7 +95,6 @@ def test_two_events_that_redact_onto_one_payload_keep_distinct_ids(tmp_path: Pat
 
 
 def test_an_event_whose_id_does_not_re_mint_stops_the_whole_rewrite(tmp_path: Path) -> None:
-    """Fail closed: an underivable generation means the re-mint would invent an id."""
     repo = _repo(tmp_path)
     event = _event(repo, "basicly-a", 1, USERNAME, {"created_by": USERNAME})
     event["id"] = "basicly-a#ev-notthisone"
@@ -125,14 +108,12 @@ def test_an_event_whose_id_does_not_re_mint_stops_the_whole_rewrite(tmp_path: Pa
 
 
 def test_a_repo_with_no_ledger_is_a_no_op_and_never_loads_the_kit(tmp_path: Path) -> None:
-    """It runs on the commit path, so an `external` repo must not be a failed landing."""
     (tmp_path / "basicly.toml").write_text('[tracker]\nmode = "external"\n', encoding="utf-8")
 
     assert tracker.scrub_ledger(tmp_path) == 0
 
 
 def test_a_clean_ledger_is_left_byte_identical(tmp_path: Path) -> None:
-    """It runs on every tracker commit, so a no-change pass must not churn the file."""
     repo = _repo(tmp_path)
     path = _write_events(repo, [_event(repo, "basicly-a", 1, "", {"title": "nothing to redact"})])
     before = path.read_text(encoding="utf-8")
@@ -142,12 +123,7 @@ def test_a_clean_ledger_is_left_byte_identical(tmp_path: Path) -> None:
 
 
 def _hold_the_lock(repo: Path) -> Path:
-    """The lock file a live writer holding the ledger would have left.
 
-    Our own pid, because the steal rule frees a lock whose holder is known dead and an
-    invented pid is either dead or somebody else's process — which would make the test
-    assert about this machine's process table instead of about the lock.
-    """
     kit = tracker.kit(repo)
     path = tracker.ledger_dir(repo) / kit.events.LOCK_NAME
     path.write_text(
@@ -157,7 +133,6 @@ def _hold_the_lock(repo: Path) -> Path:
 
 
 def _dirty_ledger(tmp_path: Path) -> tuple[Path, Path]:
-    """A repo whose single event carries the username, and that event's log."""
     repo = _repo(tmp_path)
     events = [_event(repo, "basicly-a", 1, USERNAME, {"created_by": USERNAME})]
     return repo, _write_events(repo, events)
@@ -166,11 +141,7 @@ def _dirty_ledger(tmp_path: Path) -> tuple[Path, Path]:
 def test_a_rewrite_takes_the_writer_lock_and_touches_nothing_while_another_holds_it(
     tmp_path: Path,
 ) -> None:
-    """The whole-file rewrite was the only writer taking no lock (basicly-cqu7i3).
 
-    Refused rather than waiting forever: ``LockUnavailableError`` is the retryable failure
-    every other writer already raises, so a caller backs off instead of a log being lost.
-    """
     repo, path = _dirty_ledger(tmp_path)
     before = path.read_text(encoding="utf-8")
     _hold_the_lock(repo)
@@ -185,13 +156,7 @@ def test_a_rewrite_takes_the_writer_lock_and_touches_nothing_while_another_holds
 def test_an_append_arriving_during_a_rewrite_is_refused_by_the_lock_not_dropped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The destroyed-silently shape: an append landing between the read and the rename.
 
-    Before the lock the append succeeded, the rename dropped its line, and nothing
-    reported it — the file parsed and the fold was consistent because the lost line was
-    never in the text re-emitted. The publish is the window, so the append is attempted
-    from there.
-    """
     repo, path = _dirty_ledger(tmp_path)
     kit = tracker.kit(repo)
     ledger = tracker.ledger_dir(repo)
@@ -217,7 +182,6 @@ def test_an_append_arriving_during_a_rewrite_is_refused_by_the_lock_not_dropped(
 def test_an_append_queued_behind_a_rewrite_lands_once_the_lock_is_released(
     tmp_path: Path,
 ) -> None:
-    """Serialised, not refused forever: the hold ends with the rewrite."""
     repo, path = _dirty_ledger(tmp_path)
 
     assert tracker.scrub_ledger(repo) == 1
@@ -231,11 +195,7 @@ def test_an_append_queued_behind_a_rewrite_lands_once_the_lock_is_released(
 
 
 def test_a_lock_hold_past_the_stale_bound_renames_nothing(tmp_path: Path) -> None:
-    """The hold is bounded, because a waiter may steal one older than the bound.
 
-    Past that point the rename excludes nobody, so it could clobber the append the thief
-    made. Not scrubbing leaves the leak for `tracker-path-scan`; renaming would lose it.
-    """
     repo, path = _dirty_ledger(tmp_path)
     before = path.read_text(encoding="utf-8")
     kit = tracker.kit(repo)

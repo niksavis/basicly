@@ -1,9 +1,3 @@
-"""Tests for the unsplit-loop Claude Code PreToolUse guard (basicly-m2g3).
-
-The positive control is the real command from the session that filed the bead, kept
-verbatim: a guard written from a paraphrase of a defect is a guard against the paraphrase.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -19,8 +13,6 @@ SCRIPT_PATH = (
     Path(__file__).resolve().parents[2] / ".basicly" / "core" / "hooks" / "unsplit-loop-guard.py"
 )
 
-# The command as it was actually run on 2026-08-09. It looped once over the whole string,
-# touched none of the 15 files, and exited 0.
 THE_REAL_ONE = (
     'MOVE="tool-ast-grep tool-curl tool-fd tool-git tool-jq tool-ripgrep tool-sd '
     'tool-shellcheck tool-tmux tool-tree tool-typos tool-uv tool-wget tool-xh tool-yq" && '
@@ -56,7 +48,6 @@ def _bash(command: str) -> dict:
 
 
 def test_the_command_that_filed_this_bead_is_refused() -> None:
-    """Positive control: the real defect, verbatim, blocked with the variable named."""
     result = _run_hook(_bash(THE_REAL_ONE))
 
     assert result.returncode == 2
@@ -65,13 +56,7 @@ def test_the_command_that_filed_this_bead_is_refused() -> None:
 
 
 def _working_shell(shell: str) -> str | None:
-    r"""Return the shell's path only when the binary actually runs a script.
 
-    Being on `PATH` is not enough: on a Windows runner `bash` resolves to
-    `System32\bash.exe`, the WSL launcher, which with no distribution installed prints a
-    UTF-16 install notice and exits non-zero. A positive control is the only thing that
-    tells that apart from a real shell answering the question this test asks.
-    """
     path = shutil.which(shell)
     if path is None:
         return None
@@ -82,11 +67,7 @@ def _working_shell(shell: str) -> str | None:
 
 
 def test_zsh_really_does_run_that_loop_only_once() -> None:
-    """The defect is a property of the shell, not a story about it.
 
-    If a future shell splits this, the guard is refusing something harmless and should be
-    reconsidered — this test is how anyone would find out.
-    """
     script = 'V="a b c"\nn=0\nfor x in $V; do n=$((n+1)); done\necho "$n"'
     exercised = 0
     for shell in ("zsh", "bash"):
@@ -104,12 +85,7 @@ def test_zsh_really_does_run_that_loop_only_once() -> None:
 
 
 def test_a_launcher_on_path_is_not_a_working_shell(monkeypatch: pytest.MonkeyPatch) -> None:
-    r"""The Windows CI regression, as data rather than as an OS.
 
-    `System32\bash.exe` is on PATH, answers with output, and is not bash. Selecting on
-    "PATH has it" ran the loop question against a WSL install notice and read the notice
-    as bash's answer.
-    """
     wsl_stub = subprocess.CompletedProcess(
         args=["bash", "-c", "echo ok"],
         returncode=1,
@@ -122,10 +98,7 @@ def test_a_launcher_on_path_is_not_a_working_shell(monkeypatch: pytest.MonkeyPat
 
 
 def test_the_corrected_forms_are_all_allowed() -> None:
-    """The three forms the guard's own advice recommends must not trip it.
 
-    A gate that refuses its own remedy teaches nothing and gets switched off.
-    """
     allowed = (
         "for x in a b c; do echo $x; done",
         'arr=(a b c); for x in "${arr[@]}"; do echo $x; done',
@@ -138,31 +111,26 @@ def test_the_corrected_forms_are_all_allowed() -> None:
 
 
 def test_an_array_assignment_is_not_a_scalar() -> None:
-    """Zsh splits an array, so looping over one unquoted is correct and must pass."""
     module = _load_module()
     assert module.unsplit_loop_names("arr=(a b c)\nfor x in $arr; do echo $x; done") == ()
 
 
 def test_a_single_word_scalar_loops_once_correctly() -> None:
-    """One word in, one iteration out — the loop does what it looks like it does."""
     module = _load_module()
     assert module.unsplit_loop_names('V="solo"\nfor x in $V; do echo $x; done') == ()
 
 
 def test_a_quoted_expansion_is_an_explicit_choice() -> None:
-    """`"$V"` passes one word on purpose; refusing it would be refusing correct code."""
     module = _load_module()
     assert module.unsplit_loop_names('V="a b"\nfor x in "$V"; do echo $x; done') == ()
 
 
 def test_command_substitution_is_left_alone() -> None:
-    """Also unsplit under zsh, but idiomatic — see the module docstring for why not here."""
     module = _load_module()
     assert module.unsplit_loop_names('V="a b"\nfor x in $(ls); do echo $x; done') == ()
 
 
 def test_the_two_halves_are_only_a_defect_together() -> None:
-    """Either half alone is ordinary shell; the intersection is the whole check."""
     module = _load_module()
     assert module.unsplit_loop_names('V="a b c"; echo "$V"') == ()
     assert module.unsplit_loop_names("for x in $UNSET_ELSEWHERE; do echo $x; done") == ()
@@ -170,20 +138,17 @@ def test_the_two_halves_are_only_a_defect_together() -> None:
 
 
 def test_every_broken_name_is_reported_not_just_the_first() -> None:
-    """A caller fixing one and re-running would otherwise pay a round trip per variable."""
     module = _load_module()
     command = 'A="1 2"\nB="3 4"\nfor i in $A; do :; done\nfor j in ${B}; do :; done'
     assert module.unsplit_loop_names(command) == ("A", "B")
 
 
 def test_the_braced_form_is_caught_too() -> None:
-    """`${V}` is the same expansion wearing braces."""
     module = _load_module()
     assert module.unsplit_loop_names('V="a b"\nfor x in ${V}; do echo $x; done') == ("V",)
 
 
 def test_it_fails_open_on_anything_it_cannot_read() -> None:
-    """A bug in the guard must never be able to stop an agent running commands."""
     for payload in ("", "not json", "[]", '"a string"', json.dumps({}), json.dumps({"a": 1})):
         result = _run_hook(payload)
         assert result.returncode == 0, f"{payload!r} blocked"
@@ -194,7 +159,6 @@ def test_it_fails_open_on_anything_it_cannot_read() -> None:
 
 
 def test_an_ordinary_command_passes_silently() -> None:
-    """The common case writes nothing at all — a guard that chatters gets muted."""
     result = _run_hook(_bash("uv run pytest -q"))
     assert result.returncode == 0
     assert result.stdout == "" and result.stderr == ""

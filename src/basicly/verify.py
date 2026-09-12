@@ -1,28 +1,3 @@
-"""Config-driven verify runner — the harness's deterministic gate.
-
-Runs the checks declared in ``[verify]`` of ``basicly.toml`` for a given mode
-(``fast`` / ``full`` / ``staged``), collecting a pass/fail/skip verdict per
-check. When an issue id is supplied it records the aggregate verdict as a gate
-via ``br gate report``. The block-vs-advise policy (which gates are required,
-the rework rule) lives in the gate/checkpoint engine, not here — this runner
-only produces and records the verdict.
-
-A check may declare a ``fix_command`` — a deterministic, lossless repair such as
-a formatter's write mode. ``apply_fixes`` runs those and nothing else; it is
-never part of a plain verify run, so the verdict a consumer (or CI) gets from
-``run_verify`` is unchanged.
-
-Check subprocess output streams straight to the terminal (it is not captured),
-so the consumer sees each tool's own output live. The run's *verdict* is handed to
-:func:`basicly.verify_artifact.write_run_artifact`, which is what gives the
-declared-evidence gate something to point at; how that record is written and where
-it lands is that module's answer, not this one's.
-
-Every check that passes is recorded in the engine's own execution ledger
-(:mod:`basicly.usage`), because this runner is the only thing that ever executes
-a declared check — see :func:`run_check`.
-"""
-
 from __future__ import annotations
 
 import os
@@ -42,30 +17,14 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 DEFAULT_GATE = "verify"
-# Single-sourced in config so policy.gate_status can recognise it as engine-owned
-# without importing this module (basicly-jr0l.51).
 GATE_PROVIDER = VERIFY_GATE_PROVIDER
 
 
 def linked_worktree_guard(repo_root: Path) -> str | None:
-    """Reason recording a gate from *repo_root* would lose it, or None when safe.
 
-    A linked worktree whose ledger redirects to the base checkout shares the one real
-    tracker (:func:`basicly.tracker_paths.tracker_root` resolves it), so recording from
-    it is safe.
-
-    An **abort** gate, classified as :data:`basicly.policy.LINKED_WORKTREE_GATE`: it
-    halts the record and preserves the verify verdict the caller already has. Not a
-    revision gate — no rework can make a throwaway tracker the real one — and not
-    pre-flight, because the check is worth running after the work as well as before
-    it. The type is declared in :mod:`basicly.policy`, which owns the taxonomy;
-    this module cannot import it (the two are siblings in the import contract).
-    """
     try:
         main = worktree.main_checkout(repo_root)
     except OSError, RuntimeError:
-        # worktree.run wraps any git failure in RuntimeError — outside a git
-        # checkout there is no landing to lose the gate to.
         return None
     root = Path(repo_root).resolve()
     if main == root:
@@ -84,61 +43,34 @@ def linked_worktree_guard(repo_root: Path) -> str | None:
 
 @dataclass(frozen=True)
 class CheckResult:
-    """The outcome of one verify check."""
-
     name: str
-    status: str  # "pass" | "fail" | "skip"
+    status: str
     returncode: int
-    # One-line human-readable context for a failure the tool itself could not
-    # report (e.g. the command was not found on PATH).
     detail: str = ""
-    # Combined stdout+stderr, populated only when the caller asked to capture
-    # (basicly-kjc5.56). Empty for a streamed run, which is every normal one —
-    # a gate's output belongs on the operator's terminal, not in memory.
     output: str = ""
-    # The argv run, staged filenames included, so a consumer holding only the result can
-    # reproduce it: a landing briefed a repair with the whole-suite command because the
-    # per-check argv lived in a config the brief could not read (basicly-3oxf0d).
     command: tuple[str, ...] = ()
-    # Wall clock for this check's own subprocess; the run keeps none, so `verify: 132s`
-    # could not name which of 38 checks it was. Measured 2026-08-27: `pytest` 84.4s of a
-    # 132.4s full run, the three `pyright-*` passes 32.2s, 88% in four (basicly-tjhjmk).
-    # Zero for a check that never spawned, which is not a fast check.
     duration_s: float = 0.0
 
 
 @dataclass(frozen=True)
 class VerifyReport:
-    """The aggregate outcome of a verify run."""
-
     mode: str
     results: tuple[CheckResult, ...]
 
     @property
     def passed(self) -> bool:
-        """True when no check failed (skips and an empty run count as passing)."""
         return not any(r.status == "fail" for r in self.results)
 
     @property
     def failures(self) -> tuple[str, ...]:
-        """Names of the checks that failed."""
         return tuple(r.name for r in self.results if r.status == "fail")
 
 
-# The remedy lands in a one-line detail; the transcript stays in `CheckResult.output`.
 _REMEDY_CHARS = 400
 
 
 def check_remedy(output: str, check: str) -> str | None:
-    """The lines *check* prefixed with its own name in *output*, or None when it printed none.
 
-    The shape is observed off `.scripts/ratchet.py` `report`, not composed:
-    `release-notes: <subject>: <detail>` then an indented `release-notes:   <remedy>`.
-    Carrying that second line is the point — it names the exact
-    `changelog.d/<id>.<category>.md` to write, and a landing reporting only the check's name
-    sent an operator to re-run a gate that had already written it (basicly-fi1i7z). The
-    label is stripped; every caller prints the check's name itself.
-    """
     label = f"{check}:"
     lines = [line.strip() for line in output.splitlines() if line.strip().startswith(label)]
     if not lines:
@@ -147,24 +79,12 @@ def check_remedy(output: str, check: str) -> str | None:
     return joined if len(joined) <= _REMEDY_CHARS else joined[:_REMEDY_CHARS] + "…"
 
 
-# The check that refuses a record owing a release note, and the flag that asks it about one
-# record that is still open. Its argv comes from `[[verify.checks]]`, so a second spelling
-# of the script path cannot go stale here.
 RELEASE_NOTES_CHECK = "release-notes"
 RELEASE_NOTES_LANDING_FLAG = "--landing"
 
 
 def release_note_debt(repo_root: Path, tree: Path, mode: str, bead: str) -> str | None:
-    """What `release-notes` says *bead* owes in *tree*, or None when it owes nothing.
 
-    The check judges *closed* records, so a lane's own is invisible to it while the lane
-    lands and the refusal arrives on the commit that closes it — after the worktree that
-    would repair it is gone (basicly-ibzr0f). None when nothing declares the check: a tree
-    without the gate is not in debt to it.
-
-    A failure never answers with an empty string: a caller reading that as "owes nothing"
-    would take a silent gate failure for a pass.
-    """
     declared = load_verify_config(repo_root).checks
     check = next((item for item in declared if item.name == RELEASE_NOTES_CHECK), None)
     if check is None:
@@ -178,16 +98,9 @@ def release_note_debt(repo_root: Path, tree: Path, mode: str, bead: str) -> str 
 
 
 def staged_files(repo_root: Path, suffix: str) -> list[str] | None:
-    """Staged (added/copied/modified) files ending in *suffix*; None if git failed.
 
-    None and [] are deliberately distinct: an empty list means "nothing staged"
-    (the check may skip), None means the git call itself failed — a lost gate
-    must never pass unnoticed, so callers must fail the check.
-    """
     try:
         proc = subprocess.run(
-            # `except OSError` below is the git-not-installed branch a resolved absolute
-            # path would have pre-empted, so `shutil.which` buys nothing.
             ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],  # noqa: S607 — PATH git
             cwd=repo_root,
             capture_output=True,
@@ -204,21 +117,7 @@ def staged_files(repo_root: Path, suffix: str) -> list[str] | None:
 def run_check(
     check: VerifyCheck, repo_root: Path, mode: str, *, capture: bool = False
 ) -> CheckResult:
-    """Run a single check, filtering to staged files in ``staged`` mode.
 
-    A pass is recorded as an execution of the check (:func:`usage.record_verify_check`),
-    which is the evidence :func:`basicly.release.unexercised_capabilities` reads before
-    a tag. This is the only component that can produce it: a check is never typed at a
-    shell, so the ``tool-usage`` hook cannot see one, and the release gate was refusing
-    a tag over checks it had just watched pass (basicly-3yi3).
-
-    Only a pass. The two ways a declared capability demonstrably did *not* run — the
-    command is not on PATH (127) and it is not executable (126) — both surface as a
-    ``fail`` here, so crediting a failure would witness exactly the case the gate
-    exists to catch; a skip ran nothing at all. Recorded here rather than in
-    :func:`run_verify` so a re-run counts too, and not in :func:`_run`, which also
-    serves ``run_fix`` — a fixer passing says nothing about the check.
-    """
     result = _run(check, list(check.command), repo_root, mode, capture=capture)
     if result.status == "pass":
         usage.record_verify_check(repo_root, check.name)
@@ -226,12 +125,7 @@ def run_check(
 
 
 def run_fix(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
-    """Apply *check*'s mechanical repair; skip when it declares no ``fix_command``.
 
-    A fix is never a verdict: the check that follows is what decides pass/fail,
-    so a failing fixer is reported (status ``fail``) but does not stand in for
-    the gate.
-    """
     if not check.fix_command:
         return CheckResult(check.name, "skip", 0)
     return _run(check, list(check.fix_command), repo_root, mode)
@@ -245,15 +139,7 @@ def _run(
     *,
     capture: bool = False,
 ) -> CheckResult:
-    """Run one check-or-fix command, filtering to staged files in ``staged`` mode.
 
-    *command* is passed separately because ``run_fix`` runs the check's
-    ``fix_command`` rather than its ``command``; everything else comes off *check*.
-
-    ``capture`` diverts the command's output into ``CheckResult.output`` instead of
-    the terminal. Off by default and only ever set for the diagnostic re-run, so
-    an operator watching a long gate still sees it stream.
-    """
     name = check.name
     if mode == "staged" and check.staged_suffix:
         files = staged_files(repo_root, check.staged_suffix)
@@ -271,9 +157,6 @@ def _run(
         command += files
     started = time.perf_counter()
     try:
-        # `command` is the repo's own `[[verify.checks]]` argv plus staged filenames —
-        # both inside the trust boundary, since running a repo's declared checks *is* the
-        # feature. `shell=False` keeps a filename with a space or a `;` one argv element.
         proc = _spawn(command, repo_root, capture=capture)
     except FileNotFoundError:
         return CheckResult(
@@ -285,9 +168,6 @@ def _run(
             command=tuple(command),
         )
     except OSError as exc:
-        # e.g. PermissionError: a PATH candidate exists but is not executable
-        # (common on WSL with Windows mounts on PATH). Same contract: a failed
-        # check with a one-line reason, never a traceback.
         return CheckResult(
             name,
             "fail",
@@ -298,9 +178,6 @@ def _run(
         )
     output = f"{proc.stdout or ''}{proc.stderr or ''}"
     failed = proc.returncode != 0
-    # A failing check's own words, kept where the terminal cannot take them away. Only on
-    # failure, and only from the streamed run: `rerun_failures` captures too but runs after
-    # the fact, so a flake passes there and leaves nothing (basicly-zlqn7e).
     detail = (
         verify_log.pointer(verify_log.write(repo_root, name, output), repo_root)
         if failed and not capture
@@ -320,20 +197,7 @@ def _run(
 def _spawn(
     command: Sequence[str], repo_root: Path, *, capture: bool
 ) -> subprocess.CompletedProcess[str]:
-    """Run *command*, streaming its output unless *capture* diverts it, and return both.
 
-    **A tee rather than a choice.** Streaming is the contract an operator watching a long
-    gate depends on, and a failure that exists only on their terminal is a failure nobody
-    can diagnose afterwards - a `pytest` gate flaked once and its identity was simply gone
-    (basicly-zlqn7e). So the streamed path now forwards each line *and* keeps it.
-
-    `capture=True` is the diagnostic re-run's, and it stays silent: that caller reads the
-    text itself and a second copy on the terminal would double a transcript the operator
-    has already seen.
-    """
-    # `command` is the repo's own `[[verify.checks]]` argv plus staged filenames — both
-    # inside the trust boundary, since running a repo's declared checks *is* the feature.
-    # `shell=False` keeps a filename with a space or a `;` one argv element.
     env = sanitised_project_env(os.environ, repo_root)
     if capture:
         return subprocess.run(  # noqa: S603 — repo-declared argv, list form, no shell
@@ -349,9 +213,6 @@ def _spawn(
         bufsize=1,
     ) as proc:
         kept: list[str] = []
-        # Line by line rather than `communicate()`, which would hold the whole transcript
-        # until exit and stop the streaming this branch exists to preserve. Iterating the
-        # pipe is the one shape that works the same on every platform this ships to.
         for line in proc.stdout or ():
             sys.stdout.write(line)
             kept.append(line)
@@ -360,20 +221,7 @@ def _spawn(
 
 
 def run_verify(repo_root: Path, mode: str, config: VerifyConfig | None = None) -> VerifyReport:
-    """Run every check configured for *mode*, collect the results, record the run.
 
-    The artifact is written here rather than by each caller because this is the
-    one entry point every full verify run goes through — the CLI, the loop's
-    build->verify transition, the merge queue's per-worktree run — so a consumer
-    declaring ``[policy.evidence] verify`` gets a producer without wiring one
-    (basicly-m0s4). Not from :func:`rerun_failures`: that re-runs only the checks
-    that failed, and overwriting the run's record with a subset would leave the
-    artifact describing a run that never happened.
-
-    The record gets :func:`failure_detail` applied and the returned report does not: the
-    derived line exists for a reader who has only the file, and the caller streamed the
-    real output already.
-    """
     config = config or load_verify_config(repo_root)
     results = tuple(run_check(check, repo_root, mode) for check in config.for_mode(mode))
     report = VerifyReport(mode=mode, results=results)
@@ -389,27 +237,7 @@ def rerun_failures(
     *,
     capture: bool = False,
 ) -> VerifyReport:
-    """Re-run just the checks that failed in *report*, unchanged.
 
-    Evidence, not a retry. Nothing in the tree, the config, or the command line
-    differs between the two runs, so a check that passes now did not fail on the
-    work under test — which is what lets a caller tell an unreliable gate from a
-    merit failure instead of scoring both the same (basicly-55yh).
-
-    Only the failed checks re-run, and the whole check re-runs rather than the
-    one case inside it that failed: narrowing to a single test would change the
-    run, and an order-dependent test that passes alone would then be excused as a
-    flake when it is a real defect.
-
-    Fail-safe by construction. A green *report* is returned unchanged, and so is
-    one whose failures no longer match a configured check — no new evidence means
-    the original verdict stands. A caller may only forgive on a positive pass
-    here, never on the absence of a result.
-
-    ``capture`` collects the re-run's output so a caller can also ask
-    :func:`dependency_defect` about a failure that *did* reproduce
-    (basicly-kjc5.56).
-    """
     failed = set(report.failures)
     if not failed:
         return report
@@ -423,19 +251,6 @@ def rerun_failures(
     )
 
 
-# Failure signatures a dependency emits and the work under test cannot cause
-# (basicly-kjc5.56). Each entry is (substrings that must all appear on ONE line,
-# why forgiving it is safe). An entry earns its place only on proof that no change
-# to this repo can produce it — otherwise this launders a real failure. Keep the
-# reason with the entry.
-#
-# Matching is per-line and conjunctive: requiring the store's own error class on the
-# same line proves the failure came out of the ledger, not out of a test's fixture.
-#
-# One entry left with the external tracker's deletion rather than with a fix
-# (basicly-vkh0.42.7); no such process remains, so it would launder whatever else
-# produced that text. The lock entry stays because the property did — one lock per
-# append, lanes run concurrently. Anchored on `events.LedgerLock.__enter__`'s wording.
 DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[tuple[str, ...], str], ...] = (
     (
         ("LockUnavailableError", "another writer holds"),
@@ -448,7 +263,6 @@ DEPENDENCY_DEFECT_SIGNATURES: tuple[tuple[tuple[str, ...], str], ...] = (
 
 
 def _defect_reason(output: str) -> str | None:
-    """The register reason matching any single line of *output*, else None."""
     for line in output.splitlines():
         for substrings, reason in DEPENDENCY_DEFECT_SIGNATURES:
             if all(s in line for s in substrings):
@@ -457,24 +271,7 @@ def _defect_reason(output: str) -> str | None:
 
 
 def dependency_defect(report: VerifyReport) -> str | None:
-    """The reason *every* failure in *report* is a known dependency defect, else None.
 
-    Matched on captured output, so it answers only for a report produced with
-    ``capture=True``; a streamed report has no text and yields None, which keeps
-    the original verdict standing rather than forgiving on absent evidence.
-
-    This exists because the re-run test alone cannot see this class of defect. A
-    backwards clock step persists for a window, so the failure reproduces and
-    scores as a merit failure — measured on basicly-m4zv.9, where a landing spent
-    a rework attempt on it (basicly-55yh shipped the re-run; this closes the gap).
-
-    **Every** failing check must be explained, not merely one: a run that mixes a
-    dependency defect with a real failure is a real failure. Granularity is the
-    check, though, so a single check whose output holds both is still forgiven —
-    the honest bound on this mechanism. What keeps that bound acceptable is that
-    the caller's verdict *blocks* the landing rather than merging it, so a wrong
-    forgive costs one more cycle and can never merge an unverified tree.
-    """
     failures = [r for r in report.results if r.status == "fail"]
     if not failures:
         return None
@@ -488,13 +285,7 @@ def dependency_defect(report: VerifyReport) -> str | None:
 
 
 def apply_fixes(repo_root: Path, mode: str, config: VerifyConfig | None = None) -> VerifyReport:
-    """Apply the ``fix_command`` of every *mode* check that declares one.
 
-    Deliberately separate from ``run_verify``: a plain verify run stays a pure
-    verdict, so CI still fails on unformatted input from outside the harness. The
-    fix step is opt-in (``basicly verify --fix``, the pre-commit hook) and its
-    results are advisory — the checks that follow produce the gate.
-    """
     config = config or load_verify_config(repo_root)
     results = tuple(run_fix(check, repo_root, mode) for check in config.for_mode(mode))
     return VerifyReport(mode=mode, results=results)
@@ -508,21 +299,7 @@ def report_gate(
     *,
     actor: str | None = None,
 ) -> tuple[bool, str]:
-    """Record the verdict on *issue_id* as a ``gate report`` write.
 
-    When the dispatched runner is known (basicly-140a), *actor* is recorded as the
-    gate's audit-trail actor, so a gate result ties to the agent that produced it.
-    It is optional — a gate reported outside a dispatch records no actor. (Model
-    provenance rides the landing commit trailer, not the gate's free-text note.)
-
-    Returns ``(ok, message)`` and never raises: a store that will not take the write must
-    not mask the verify result, and it carries its own reason out, because a cause-less
-    "gate not recorded" strands the next landing.
-
-    ``ok`` stays True when the ledger already held this exact row: it is there, so
-    refusing would strand the lane. The message then says the held one stands rather
-    than claiming this run recorded it (basicly-wu4w8v).
-    """
     status = "pass" if report.passed else "fail"
     detail = ", ".join(f"{r.name}={r.status}" for r in report.results) or "no checks"
     note = f"verify {report.mode}: {detail}"

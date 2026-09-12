@@ -1,13 +1,3 @@
-"""Answer one question for one file: where are its comments, and which of them may stay.
-
-The dispatch lives here and nowhere else. Python goes to `python_source`, which is exact;
-every other covered language goes to the `lexer` state machine; anything the kit does not
-claim - config, data, prose - is reported as uncovered rather than guessed at.
-
-A finding is a comment that is **not** a directive. That subtraction is the whole policy:
-`directives` decides what a tool reads, and what a tool reads is not the author's prose.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -19,7 +9,6 @@ _HERE = Path(__file__).resolve().parent
 
 
 def _load(file_name: str, module_name: str):
-    """Load a sibling kit module by path, under the kit's fixed ``sys.modules`` name."""
     cached = sys.modules.get(module_name)
     if cached is not None:
         return cached
@@ -41,8 +30,6 @@ LexError = lexer.LexError
 
 
 class Finding(NamedTuple):
-    """One comment a covered file may not keep."""
-
     path: Path
     line: int
     text: str
@@ -50,17 +37,12 @@ class Finding(NamedTuple):
 
 
 def is_covered(path: Path) -> bool:
-    """True where this kit claims *path*'s language."""
     suffix = path.suffix.lower()
     return languages.is_python(suffix) or languages.for_suffix(suffix) is not None
 
 
 def all_spans(path: Path, source: str) -> list:
-    """Every comment in *source*, directives included, in offset order.
 
-    Raises LexError where the file cannot be read with certainty, and ValueError where the
-    kit does not claim the language - the caller has no business editing either.
-    """
     suffix = path.suffix.lower()
     if languages.is_python(suffix):
         return python_source.comment_spans(source)
@@ -71,7 +53,6 @@ def all_spans(path: Path, source: str) -> list:
 
 
 def findings(path: Path, source: str) -> list:
-    """The comments in *source* that are prose, so the ban refuses them."""
     return [
         Finding(path, span.line, span.text(source), span)
         for span in all_spans(path, source)
@@ -80,5 +61,4 @@ def findings(path: Path, source: str) -> list:
 
 
 def strippable_spans(path: Path, source: str) -> list:
-    """The spans a fix removes: every comment that is not a directive."""
     return [finding.span for finding in findings(path, source)]

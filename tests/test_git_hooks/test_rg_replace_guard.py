@@ -1,10 +1,3 @@
-"""Tests for the ripgrep `--replace` Claude Code PreToolUse guard (basicly-0m5hn5w).
-
-The positive controls are taken verbatim from this repository's own recorded Bash calls,
-where 92 of 2977 `rg` invocations carry the trap. The negative half covers the 6 recorded
-deliberate `-r` uses plus the ordinary flags a cluster rule could plausibly over-match.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -48,7 +41,6 @@ def _load_module():
 
 
 def _run(payload: object) -> subprocess.CompletedProcess[str]:
-    """Drive the hook the way the host does: one JSON payload on stdin."""
     return subprocess.run(  # nosec B603
         [sys.executable, str(SCRIPT_PATH)],
         input=json.dumps(payload),
@@ -60,23 +52,19 @@ def _run(payload: object) -> subprocess.CompletedProcess[str]:
 
 @pytest.mark.parametrize(("command", "cluster"), RECORDED_TRAPS)
 def test_recorded_trap_is_refused(command: str, cluster: str) -> None:
-    """Every cluster shape the corpus recorded is refused and named."""
     assert _load_module().swallowed_replacements(command) == (cluster,)
 
 
 @pytest.mark.parametrize(("command", "why"), SAFE)
 def test_safe_shape_is_allowed(command: str, why: str) -> None:
-    """The deliberate uses and the near-miss flags stay silent."""
     assert _load_module().swallowed_replacements(command) == (), why
 
 
 def test_a_later_pipeline_stage_is_judged_too() -> None:
-    """The trap is refused wherever in the pipeline it sits."""
     assert _load_module().swallowed_replacements("cat f | rg -rn pat") == ("-rn",)
 
 
 def test_end_to_end_refuses_with_exit_two_and_names_the_fix() -> None:
-    """Exit 2 is what the host reads as a block."""
     result = _run({"tool_name": "Bash", "tool_input": {"command": "rg -rn pat src/"}})
     assert result.returncode == 2
     assert "`-rn`" in result.stderr
@@ -84,7 +72,6 @@ def test_end_to_end_refuses_with_exit_two_and_names_the_fix() -> None:
 
 
 def test_end_to_end_allows_the_deliberate_control() -> None:
-    """The control that must never fire, driven through stdin."""
     result = _run({"tool_name": "Bash", "tool_input": {"command": "rg -n pat -r '' src/"}})
     assert result.returncode == 0
     assert result.stderr == ""
@@ -99,12 +86,10 @@ def test_end_to_end_allows_the_deliberate_control() -> None:
     ],
 )
 def test_it_fails_open_on_anything_it_cannot_judge(payload: dict) -> None:
-    """A payload this guard cannot judge never blocks a call."""
     assert _run(payload).returncode == 0
 
 
 def test_malformed_stdin_never_blocks() -> None:
-    """A bug here must not lock an agent out of the shell."""
     result = subprocess.run(  # nosec B603
         [sys.executable, str(SCRIPT_PATH)],
         input="not json at all",

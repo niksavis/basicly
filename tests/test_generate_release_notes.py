@@ -1,11 +1,3 @@
-"""The release page is the summary of a changelog section, never the section (basicly-xsdvp6).
-
-Two readers must agree on what a summary is: `.scripts/generate_release_notes.py`, which
-builds the page after the tag, and `release._summary_missing`, which refuses a cut with none
-before the tag. Both are exercised here on the same bodies, and the page is rendered over the
-repository's own v0.10.0 section - the one the owner called a wall of text.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -23,7 +15,6 @@ if TYPE_CHECKING:
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / ".scripts" / "generate_release_notes.py"
 REPO_URL = "https://github.com/niksavis/basicly"
-# The imported fixture is what lets this file run a real release; ruff reads the export.
 __all__ = ["repo"]
 
 
@@ -119,7 +110,6 @@ def test_the_page_carries_summary_counts_link_breaking_and_install_and_nothing_e
 def test_the_repositorys_own_v0_10_0_section_renders_under_the_cap_with_every_breaking_entry() -> (
     None
 ):
-    """The regression the record was filed on: 2,326 lines in, a page a human reads out."""
     lines = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines()
     date, body = notes.section(lines, "v0.10.0")
     page = notes.render("v0.10.0", date, body, REPO_URL)
@@ -133,7 +123,6 @@ def test_the_repositorys_own_v0_10_0_section_renders_under_the_cap_with_every_br
 
 
 def test_the_refusal_and_the_page_agree_on_what_a_summary_is() -> None:
-    """One rule, two readers: a body the page would call empty is a body the cut refuses."""
     cases = {
         "none": ["", "### Added", "", "- x"],
         "delta only": ["", "Delta: v1..v2", "", "### Added"],

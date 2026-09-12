@@ -1,11 +1,3 @@
-"""Tests for the ``basicly release`` CLI wiring (basicly-kjc5.12).
-
-The engine behaviour lives in `test_release.py`; these assert only the wiring the
-CLI owns — exit codes, which stream a refusal goes to, and that the flags reach
-`run_release` unmangled. A release is irreversible enough that "the flag was
-accepted" and "the flag was passed on" must not be the same claim.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,7 +9,6 @@ from basicly import cli, release
 
 @pytest.fixture
 def stub_release(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict:
-    """Capture what the CLI hands the engine, without running a release."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
     plan = release.ReleasePlan(current_version="0.5.1", version="0.6.0", date="2026-07-26", pins=())
@@ -38,7 +29,6 @@ def stub_release(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict:
 def test_a_successful_release_exits_zero_and_reports_each_step(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The steps are the operator's record of what just happened to their repo."""
     code = cli.main(["release", "0.6.0", "--issue", "x-1"])
 
     out = capsys.readouterr().out
@@ -51,7 +41,6 @@ def test_a_successful_release_exits_zero_and_reports_each_step(
 def test_a_refusal_exits_one_and_goes_to_stderr(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Refusals belong on stderr so a scripted caller can separate them from steps."""
     plan = release.plan_release(Path(), "0.6.0")
     monkeypatch.setattr(
         release,
@@ -70,7 +59,6 @@ def test_a_refusal_exits_one_and_goes_to_stderr(
 
 
 def test_the_autonomy_flags_reach_the_engine(stub_release: dict) -> None:
-    """--root and --shipping are the D3 inputs; silently dropping one would widen it."""
     assert (
         cli.main([
             "release",
@@ -98,7 +86,6 @@ def test_the_autonomy_flags_reach_the_engine(stub_release: dict) -> None:
 def test_root_without_autonomous_is_refused_rather_than_ignored(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Accepting --root while ignoring it reads as if the D3 check ran."""
     code = cli.main(["release", "0.6.0", "--issue", "x-1", "--root", "epic"])
 
     assert code == 1
@@ -106,6 +93,5 @@ def test_root_without_autonomous_is_refused_rather_than_ignored(
 
 
 def test_the_issue_flag_is_required() -> None:
-    """The commit-msg gate needs a beads id, so there is no useful default."""
     with pytest.raises(SystemExit):
         cli.main(["release", "0.6.0"])

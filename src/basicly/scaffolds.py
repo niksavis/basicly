@@ -1,17 +1,3 @@
-"""File templates `basicly install` scaffolds into a consumer repo.
-
-Three files, one contract: each is written **once** when absent, is the user's
-to edit afterwards (install never overwrites it), and is removed by
-``uninstall --purge`` only while still byte-identical to the template here.
-
-They live apart from :mod:`basicly.config` because they are not configuration:
-nothing in this module is read back, parsed, or merged — they are literal file
-bodies the installer copies out, and the only thing that ever compares against
-them is the purge check. ``DEFAULT_CONFIG_TOML`` deliberately stays in
-:mod:`basicly.config`: that one *is* the config schema's own default, and a
-reader who wants to know what a key defaults to looks there.
-"""
-
 from __future__ import annotations
 
 import re
@@ -22,17 +8,9 @@ from . import __version__
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Pinned to the version doing the scaffolding, never a branch: a consumer whose catalog
-# is vendored at one version must be linted by that version's engine, or whatever `main`
-# holds that morning decides whether their commits pass.
 DIST_SOURCE = f"git+https://github.com/niksavis/basicly@v{__version__}"
 UVX_COMMAND = f"uvx --from {DIST_SOURCE} basicly"
 
-# What basicly generates into a consumer tree and must never reach a commit, with the
-# reason for each. `install` appends whichever the consumer's .gitignore is missing.
-# The ledger's two folds are rebuilt from the committed log; a committed fold recreates
-# the dual-store conflict the log exists to escape. A `.basicly-bak` is the copy an
-# overwrite keeps, and nothing ignored it, so an upgrade left untracked files behind.
 GENERATED_IGNORES: tuple[tuple[str, str], ...] = (
     (
         "basicly.local.toml",
@@ -50,23 +28,13 @@ GENERATED_IGNORES: tuple[tuple[str, str], ...] = (
 )
 
 
-# Every basicly pin a scaffold carries, at any version. Built from DIST_SOURCE so the URL
-# is written once: only our own `git+…/basicly@vX.Y.Z` matches, never a consumer's other
-# pins. An upgrade leaves a scaffolded workflow at the old tag, and CI then runs the old
-# engine against the catalog the new one installed — which the version-skew guard refuses,
-# correctly, in a file the consumer had no reason to look at (basicly-jdpzlwj).
 _PIN_PATTERN = re.compile(
     re.escape(DIST_SOURCE).replace(re.escape(f"v{__version__}"), r"v\d+\.\d+\.\d+")
 )
 
 
 def repin(text: str) -> tuple[str, int]:
-    """*text* with every basicly install pin pointed at this engine, and how many moved.
 
-    The pin is the one thing in a written-once scaffold that was never the consumer's:
-    it names the engine that wrote the file, so an upgrade that leaves it behind is our
-    stale value in their tree, not their edit.
-    """
     repinned = _PIN_PATTERN.sub(DIST_SOURCE, text)
     if repinned == text:
         return text, 0
@@ -74,11 +42,6 @@ def repin(text: str) -> tuple[str, int]:
     return repinned, moved
 
 
-# Scaffolded into .vscode/tasks.json by `basicly install` when absent — one
-# single-command task per harness operation (no shell && chaining, so the
-# commands work in PowerShell 5, cmd, and POSIX shells alike). The file is the
-# user's after scaffolding: install never overwrites it, and uninstall --purge
-# deletes it only when still byte-identical to this scaffold.
 VSCODE_TASKS_JSON = """\
 {
   // Scaffolded by `basicly install`; yours to edit — install never overwrites it.
@@ -123,13 +86,6 @@ VSCODE_TASKS_JSON = """\
 }
 """.replace("@UVX@", UVX_COMMAND)
 
-# Scaffolded into .github/workflows/basicly-gates.yml by `basicly install` when
-# absent — the consumer CI floor mirroring the local git-hook gates. Assumes no
-# consumer stack beyond git + uv on the runner: the commit-message hooks are
-# stdlib-only (plain python3), drift/verify run through the uvx git+ channel,
-# and `basicly verify` executes only the checks the consumer configured (an
-# empty config passes). Same contract as the other scaffolds: written once,
-# then the user's; uninstall --purge removes it only while byte-identical.
 CONSUMER_CI_WORKFLOW = """\
 # Scaffolded by `basicly install`; yours to edit — install never overwrites it.
 name: basicly-gates
@@ -203,14 +159,6 @@ jobs:
         run: @UVX@ verify --mode full
 """.replace("@UVX@", UVX_COMMAND)
 
-# Scaffolded into the user overlay by `basicly install` when absent — the two
-# highest-signal descriptive blocks an agent instruction file needs (project
-# overview and verbatim-runnable commands). Their content is per-repo, so each
-# ships as a draft the consumer fills in and activates: draft fragments load
-# and lint but never project (the planner keeps only active ones), so the
-# placeholders cannot leak into generated files. Same contract as the other
-# scaffolds: written once, then the file is the user's. Keyed by path relative
-# to the overlay `user/` root.
 OVERLAY_FRAGMENT_STUBS: dict[str, str] = {
     "project/project-overview.fragment.yaml": """\
 schema_version: 1
@@ -270,12 +218,6 @@ body: |
 }
 
 
-# A consumer's own linter and formatter are driven by one of these, and the managed core
-# is an ordinary tracked directory — so tooling scoped to the repo root reaches into it.
-# One consumer's `ruff-check` reported 1192 E501 inside `.basicly/core/**` at their
-# 88-character limit, blocking every commit, and their `prettier` and `ruff-format`
-# rewrote 75 of our files on the way (basicly-8cd7wo5). Install cannot edit these — a
-# consumer's config is theirs — so it names the exclusion and leaves the edit to them.
 FOREIGN_TOOLING: tuple[tuple[str, str], ...] = (
     (
         ".pre-commit-config.yaml",
@@ -292,10 +234,6 @@ CORE_EXCLUDE_HEADING = (
     "tooling scoped to the repo root will lint and rewrite it. Exclude `.basicly/core/`:"
 )
 
-# Claude Code loads `./CLAUDE.md` and `./.claude/CLAUDE.md` both, and only the second is
-# a projection target — so install neither overwrites nor mentions a root one, and the
-# consumer ends with two always-on instruction files and no notice (basicly-8cd7wo5
-# sibling). Naming it is the whole fix; merging them is the consumer's call.
 CLAUDE_SHADOW_NOTE = (
     "You have a root CLAUDE.md and install just wrote .claude/CLAUDE.md. Claude Code "
     "loads both, so they are now two always-on instruction files. Nothing overwrote "
@@ -303,11 +241,6 @@ CLAUDE_SHADOW_NOTE = (
 )
 
 
-# A secret scanner flags a 64-character hex string on entropy alone, and every `created`
-# event an import writes carries one: `payload.import_digest`, the sha256 of the export
-# it came from. A consumer's 702-record import gave them 702 flagged lines and a blocked
-# commit (basicly-nu3z2md sibling). A baseline is the wrong instrument — the digests are
-# regenerated on every import — so the answer is a path exclusion.
 SECRET_SCANNERS: tuple[tuple[str, str], ...] = (
     (".secrets.baseline", "detect-secrets"),
     (".gitleaks.toml", "gitleaks"),
@@ -324,7 +257,6 @@ LEDGER_EXCLUDE_HEADING = (
 
 
 def _secret_scanners(repo_root: Path) -> list[str]:
-    """The secret scanners this repo is configured for, by name and by the file naming it."""
     found = {name: path for path, name in SECRET_SCANNERS if (repo_root / path).is_file()}
     precommit = repo_root / ".pre-commit-config.yaml"
     if precommit.is_file():
@@ -336,7 +268,6 @@ def _secret_scanners(repo_root: Path) -> list[str]:
 
 
 def install_notes(repo_root: Path) -> list[str]:
-    """What install noticed about this repo that it will not change on the repo's behalf."""
     notes: list[str] = []
     found = [(name, advice) for name, advice in FOREIGN_TOOLING if (repo_root / name).is_file()]
     pyproject = repo_root / "pyproject.toml"

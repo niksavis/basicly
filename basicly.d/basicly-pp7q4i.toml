@@ -51,7 +51,6 @@
 rebaseline_reason = "the demonstration the acceptance criteria name is a 20,000-byte artifact admitted by the entry predicate, in a suite that had 14 tokens of headroom; the available extraction is the _cut_violation seam move basicly-wug2o2 deferred to a record that owns it"
 
 [ratchet.module_size.rebaselined]
-"tests/test_handoff.py" = 4134
 
 [ratchet.module_size.frozen]
 "src/basicly/handoff.py" = -4099

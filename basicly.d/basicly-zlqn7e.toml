@@ -27,25 +27,6 @@
 rebaseline_reason = "verify.run_check now tees so a failing check's output survives the terminal; subprocess.run cannot stream and capture at once, and the tests follow the new seam"
 
 [ratchet.module_size.rebaselined]
-"src/basicly/verify.py" = 572
 "tests/test_verify.py" = 690
-
-# ## comment_density: one cohesion waiver on the new module
-#
-# `src/basicly/verify_log.py` at 56.5% of 668 tokens, trimmed twice first (71.4% -> 62.0% ->
-# 56.5%). Nine statements of code; the payload is the two reasons this file exists beside the
-# run artifact rather than inside it. Cohesion rather than cost: correct and permanent, with
-# nothing to retire - a reader without them folds it into `verify_artifact` and reintroduces
-# the secret hazard that module states.
-[ratchet.comment_density]
-count_delta = 1
-
-# ## noqa_debt: one S603
-#
-# The `Popen` in `_spawn`, beside the `subprocess.run` whose S603 was already frozen. Same
-# argv, same trust boundary - a repo's own `[[verify.checks]]` command, list form, no shell -
-# and the suppression names it. One call became two because one cannot both stream and
-# capture; the alternative rejected was capturing and echoing at the end, which loses the
-# live output a 132-second gate is watched for.
 [ratchet.noqa_debt.frozen]
 S603 = 1

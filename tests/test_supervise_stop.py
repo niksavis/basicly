@@ -1,11 +1,3 @@
-"""Tests for stopping a supervisor session: `loop stop`, and `--max-passes`.
-
-A working supervisor had no stop short of a signal, and the lanes are `claude -p`
-subprocesses of it — so a signal leaves them killed mid-write or orphaned against a
-grant nothing meters (basicly-o40x). These pin the alternative: a marker read at the
-round boundary, the pass limit beside it, and the record of who asked for the stop.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -22,15 +14,8 @@ if TYPE_CHECKING:
     import pytest
 
 
-# --- Stop request: the round boundary, not a signal (basicly-o40x) ------------
-
-
 def test_a_stop_marker_records_who_asked_and_why(tmp_path: Path) -> None:
-    """AC: the session's stop is inspectable afterwards, naming its requester.
 
-    Read-and-clear, because the marker outlives the process it stops: left behind, it
-    would end the next supervisor started here before it had run a round.
-    """
     path = supervise.request_stop(tmp_path, "epic", requested_by="operator", reason="budget")
 
     assert json.loads(path.read_text(encoding="utf-8"))["requested_by"] == "operator"
@@ -42,11 +27,7 @@ def test_a_stop_marker_records_who_asked_and_why(tmp_path: Path) -> None:
 
 
 def test_a_stop_asked_of_another_session_is_left_where_it_was(tmp_path: Path) -> None:
-    """The lock is a repo singleton; a stop names the session it was asked of.
 
-    Consuming another root's marker here would swallow the operator's request
-    silently — the supervisor it was meant for would never see it.
-    """
     supervise.request_stop(tmp_path, "other-epic", requested_by="operator", reason="budget")
 
     assert supervise.take_stop_request(tmp_path, "epic") is None
@@ -54,7 +35,6 @@ def test_a_stop_asked_of_another_session_is_left_where_it_was(tmp_path: Path) ->
 
 
 def test_holds_lock_is_false_once_a_successor_owns_the_path(tmp_path: Path) -> None:
-    """What a stop waits on: ownership by content, as the heartbeat fences it."""
     supervise.acquire(tmp_path, "epic:first", "epic")
 
     assert supervise.holds_lock(tmp_path, "epic:first")
@@ -62,7 +42,6 @@ def test_holds_lock_is_false_once_a_successor_owns_the_path(tmp_path: Path) -> N
 
 
 def test_the_session_end_reason_names_the_bound_that_ended_it(tmp_path: Path) -> None:
-    """Both bounds report at the same boundary, and neither reaches a running lane."""
     state = supervise.SessionState("epic", "open", (("epic.1", "open"), ("epic.2", "open")), ())
 
     assert supervise.session_end_reason(tmp_path, state, passes=1, limit=None) is None
@@ -71,8 +50,6 @@ def test_the_session_end_reason_names_the_bound_that_ended_it(tmp_path: Path) ->
 
     supervise.request_stop(tmp_path, "epic", requested_by="operator", reason="budget")
 
-    # The operator's reason wins over the bound they also happened to hit, and a lane
-    # held unlanded is named rather than left to read as landed.
     asked = supervise.session_end_reason(
         tmp_path, state, passes=1, limit=1, carried=frozenset({"epic.2"})
     )
@@ -81,23 +58,18 @@ def test_the_session_end_reason_names_the_bound_that_ended_it(tmp_path: Path) ->
     )
 
 
-# --- The loop's own boundary ------------------------------------------------
-
-
 class _Heartbeat:
-    """A heartbeat that does nothing, so the loop under test owns no timing."""
-
     def __init__(self, *_args: object, **_kwargs: object) -> None:
-        """Accept the lock, the session id and the board wiring the command supplies."""
+        pass
 
     def start(self) -> None:
-        """Started and stopped by the command; there is nothing to beat."""
+        pass
 
     def check(self) -> None:
-        """The lock is never contended in a test, so this never raises."""
+        pass
 
     def stop(self) -> None:
-        """Nothing to join."""
+        pass
 
 
 def _lane_outcome(issue_id: str) -> supervise.LaneOutcome:
@@ -118,13 +90,7 @@ def _stub_rounds(
     *,
     mid_round: Callable[[], object] | None = None,
 ) -> None:
-    """Run the *real* pass with each collaborator it calls stubbed to a fixed answer.
 
-    The round has to be the real one. With ``_supervise_pass`` itself replaced, "the
-    next round seeded zero lanes" degrades into "a function was not called again",
-    which cannot see a lane seeded inside a pass. *mid_round* runs while both lanes
-    are in flight — where an operator's stop actually arrives.
-    """
     monkeypatch.setattr(cli.supervise, "HeartbeatThread", _Heartbeat)
     monkeypatch.setattr(cli.supervise, "new_session_id", lambda _root: "epic:0001")
     monkeypatch.setattr(
@@ -149,8 +115,6 @@ def _stub_rounds(
 
     def dispatch(*_a: object, **_k: object) -> tuple[supervise.LaneOutcome, ...]:
         calls.append("dispatch")
-        # Every round here makes progress and the session is never done, so a loop
-        # that ignored its bound would hang the suite rather than fail it.
         if calls.count("dispatch") > 2:
             raise AssertionError("the supervisor ran past the bound under test")
         if mid_round is not None:
@@ -177,13 +141,7 @@ def _stub_rounds(
 def test_a_stop_lands_the_round_in_flight_then_seeds_no_further_lane(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AC: a stop requested with lanes in flight costs none of their work.
 
-    Asked for from inside the dispatch, which is the moment a signal to the
-    supervisor would have killed two running agents. Both lanes still reach a
-    terminal route, and the round after it seeds nothing at all — a marker is only
-    ever read between rounds.
-    """
     monkeypatch.chdir(tmp_path)
     calls: list[str] = []
     _stub_rounds(
@@ -202,19 +160,13 @@ def test_a_stop_lands_the_round_in_flight_then_seeds_no_further_lane(
     assert "routed:   epic.1 -> merged - landed, ship pending" in out
     assert "routed:   epic.2 -> merged - landed, ship pending" in out
     assert "stopped:  requested by operator - the grant is nearly spent" in out
-    # Consumed, or the next supervisor started here stops before running a round.
     assert not (tmp_path / supervise.STOP_FILE).exists()
 
 
 def test_max_passes_returns_after_the_nth_round_with_children_still_open(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AC: a launch commits to a bounded number of rounds instead of intervening.
 
-    Both children stay open and every round makes progress, so the loop's own exit
-    conditions never fire — the bound is the only thing that returns it, and the
-    reason is what an operator reading the log has to find there.
-    """
     monkeypatch.chdir(tmp_path)
     calls: list[str] = []
     _stub_rounds(monkeypatch, calls)
@@ -228,7 +180,6 @@ def test_max_passes_returns_after_the_nth_round_with_children_still_open(
 
 
 def _observation(**overrides: object) -> supervise.Observation:
-    """A session as `loop stop` observes it: supervised here unless overridden."""
     defaults: dict[str, object] = {
         "root_issue": "epic",
         "root_status": "open",
@@ -253,7 +204,6 @@ def _stop_args(**overrides: object) -> argparse.Namespace:
 def test_a_stop_records_the_request_and_names_the_lanes_it_waits_to_land(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AC: the marker names who asked and why, and the operator sees what is landing."""
     monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
     monkeypatch.setattr(cli.supervise, "observe", lambda *_a, **_k: _observation())
     monkeypatch.setattr(cli.supervise, "await_session_return", lambda *_a, **_k: None)
@@ -271,7 +221,6 @@ def test_a_stop_records_the_request_and_names_the_lanes_it_waits_to_land(
 def test_a_stop_with_no_supervisor_running_is_refused_and_writes_no_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A marker nobody reads stops the *next* session here before it runs a round."""
     monkeypatch.setattr(cli, "_repo_root", lambda: tmp_path)
     monkeypatch.setattr(
         cli.supervise, "observe", lambda *_a, **_k: _observation(holder=None, lanes=())

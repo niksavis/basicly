@@ -20,4 +20,3 @@
 rebaseline_reason = "the independence probe's control read; the module's only non-circular cut is the reference audit, whose move is a decomposition track of its own"
 
 [ratchet.module_size.rebaselined]
-".basicly/core/kit/tracker/differential.py" = 158

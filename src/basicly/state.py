@@ -1,14 +1,3 @@
-"""Install provenance state (``.basicly/state/install.json``).
-
-``basicly install`` snapshots the managed core right after materializing the
-bundled catalog: basicly version, timestamp, and a per-file sha256 map. A later
-mismatch between the snapshot and the on-disk core means the managed content
-was hand-edited; the upgrade sync (``basicly-zrj.12.2``) uses that to protect
-user changes from silent overwrites, and ``basicly check`` reports it as
-advisory drift. The authoring repo (core is its own bundled source) never
-writes a state file.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -25,20 +14,16 @@ STATE_SCHEMA_VERSION = 1
 
 @dataclass(frozen=True)
 class InstallState:
-    """Provenance recorded by the most recent ``basicly install``."""
-
     basicly_version: str
     installed_at: str
     core_hashes: dict[str, str]
 
 
 def sha256_of_file(path: Path) -> str:
-    """Prefixed sha256 of a file's bytes, the hash format used across basicly."""
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def snapshot_core(core_root: Path) -> dict[str, str]:
-    """Hash every managed core file, keyed by core-relative posix path."""
     return {
         path.relative_to(core_root).as_posix(): sha256_of_file(path)
         for path in iter_catalog_files(core_root)
@@ -48,12 +33,7 @@ def snapshot_core(core_root: Path) -> dict[str, str]:
 def write_install_state(
     state_path: Path, version: str, core_hashes: dict[str, str]
 ) -> InstallState:
-    """Write the provenance file for the given vouched-for core hashes.
 
-    Callers pass only the hashes install actually vouches for (files whose
-    on-disk content is what install wrote) — a kept hand-edit or unknown file
-    must NOT be recorded, or the next sync would treat it as upstream content.
-    """
     state = InstallState(
         basicly_version=version,
         installed_at=datetime.now(UTC).isoformat(),
@@ -71,7 +51,6 @@ def write_install_state(
 
 
 def read_install_state(state_path: Path) -> InstallState | None:
-    """Read the provenance file; None when absent, ValidationError when corrupt."""
     if not state_path.exists():
         return None
     try:
@@ -107,12 +86,7 @@ def read_install_state(state_path: Path) -> InstallState | None:
 
 
 def core_drift(state: InstallState, core_root: Path) -> list[tuple[str, str]]:
-    """Compare the recorded snapshot against the on-disk core.
 
-    Returns ``(core-relative path, reason)`` pairs, reason being ``"modified"``
-    or ``"removed"``. Files added to the core after install are not drift — the
-    snapshot only guards what install materialized.
-    """
     drift: list[tuple[str, str]] = []
     for rel_path, recorded in sorted(state.core_hashes.items()):
         on_disk = core_root / rel_path

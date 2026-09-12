@@ -10,7 +10,6 @@ if TYPE_CHECKING:
 
 
 def _load_identity_guard_module():
-    """Load the identity-guard hook module from its script path."""
     script_path = (
         Path(__file__).resolve().parents[2] / ".basicly" / "core" / "hooks" / "identity-guard.py"
     )
@@ -22,14 +21,12 @@ def _load_identity_guard_module():
 
 
 def test_accepts_a_real_identity() -> None:
-    """A configured name and real email should pass."""
     module = _load_identity_guard_module()
     ok, _ = module.check_identity("Ada Lovelace", "ada@personal.example")
     assert ok
 
 
 def test_rejects_missing_email() -> None:
-    """An empty email (git would use the hostname fallback) must be blocked."""
     module = _load_identity_guard_module()
     ok, message = module.check_identity("Ada Lovelace", "")
     assert not ok
@@ -37,7 +34,6 @@ def test_rejects_missing_email() -> None:
 
 
 def test_rejects_hostname_fallback_email() -> None:
-    """A machine-local auto-generated email must be blocked."""
     module = _load_identity_guard_module()
     for bad in ("user@workstation.local", "user@host.(none)", "user@box.localdomain"):
         ok, message = module.check_identity("Ada Lovelace", bad)
@@ -46,7 +42,6 @@ def test_rejects_hostname_fallback_email() -> None:
 
 
 def test_rejects_missing_name() -> None:
-    """An empty name must be blocked even when the email is valid."""
     module = _load_identity_guard_module()
     ok, message = module.check_identity("", "ada@personal.example")
     assert not ok
@@ -54,7 +49,6 @@ def test_rejects_missing_name() -> None:
 
 
 def test_allow_email_pattern_enforced_when_set() -> None:
-    """When basicly.identityAllowEmail is set, a non-matching email is blocked."""
     module = _load_identity_guard_module()
     ok_match, _ = module.check_identity("Ada Lovelace", "ada@acme.example", r"@acme\.example$")
     assert ok_match
@@ -63,9 +57,6 @@ def test_allow_email_pattern_enforced_when_set() -> None:
     )
     assert not ok_miss
     assert "identityAllowEmail" in message
-
-
-# --- effective (env-aware) identity: opt-in bot identity (basicly-smzg) ------
 
 
 def _init_repo(path: Path, name: str, email: str, allow_email: str = "") -> None:
@@ -88,7 +79,6 @@ def _run_main(module, cwd: Path, monkeypatch: pytest.MonkeyPatch, **env: str) ->
 def test_effective_identity_reads_env_override(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Resolve the GIT_*_EMAIL env override via git var, not just config (basicly-smzg)."""
     module = _load_identity_guard_module()
     _init_repo(tmp_path, "Human Dev", "human@company.com")
     monkeypatch.chdir(tmp_path)
@@ -101,7 +91,6 @@ def test_effective_identity_reads_env_override(
 def test_main_blocks_bot_email_violating_allow_pattern(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A bot committer email that fails allow-email is blocked though config passes."""
     module = _load_identity_guard_module()
     _init_repo(tmp_path, "Human Dev", "human@company.com", allow_email=r"@company\.com$")
     rc = _run_main(
@@ -117,7 +106,6 @@ def test_main_blocks_bot_email_violating_allow_pattern(
 def test_main_allows_bot_email_matching_allow_pattern(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A bot identity whose email matches the allow pattern passes both checks."""
     module = _load_identity_guard_module()
     _init_repo(tmp_path, "Human Dev", "human@company.com", allow_email=r"@company\.com$")
     rc = _run_main(
@@ -135,10 +123,8 @@ def test_main_allows_bot_email_matching_allow_pattern(
 def test_main_passes_human_commit_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No env override: behavior is exactly the config-only check (backward compatible)."""
     module = _load_identity_guard_module()
     _init_repo(tmp_path, "Human Dev", "human@company.com", allow_email=r"@company\.com$")
-    # Clear any inherited GIT_* identity so this is a pure config commit.
     for var in (
         "GIT_AUTHOR_NAME",
         "GIT_AUTHOR_EMAIL",

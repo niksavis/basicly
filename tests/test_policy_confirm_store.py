@@ -1,10 +1,3 @@
-"""The confirm-code store under concurrency: two writers, and a reader mid-write.
-
-Split out of `tests/test_policy.py` under the `test_<module>_<aspect>` form that
-`.scripts/check_test_naming.py` enforces, rather than banked as ratchet debt on a module
-already 9x the read cap; these tests share none of that module's fixtures.
-"""
-
 from __future__ import annotations
 
 import json
@@ -18,21 +11,13 @@ if TYPE_CHECKING:
     import pytest
 
 
-# A wedged lock must fail the test rather than hang the suite; never asserted as a
-# duration.
 _LOCK_SAFETY_S = 10.0
 
 
 def test_concurrent_confirm_code_writers_both_land(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Two concurrent writers to the confirm-code store must not lose either write.
 
-    An unguarded read-modify-write (basicly-kas8q7) lets the second writer's read
-    predate the first writer's write, so its write clobbers the first entry. The
-    stub holds the first writer inside its read until the second has started, so an
-    unserialised store genuinely overlaps here.
-    """
     entered = threading.Event()
     release = threading.Event()
     real_read = policy._read_confirms
@@ -74,13 +59,7 @@ def test_concurrent_confirm_code_writers_both_land(
 def test_a_reader_racing_a_write_never_sees_a_torn_confirm_store(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The store is swapped in whole, so a reader mid-write still parses the old map.
 
-    Written in place it is observable half-written, and the reader that lands there is
-    `_read_confirms` returning `{}` on the parse error — every unexpired code silently
-    gone. The one window is the instant before the replace, so the read is taken there
-    rather than by racing a thread and hoping to land in it.
-    """
     path = tmp_path / policy._CONFIRM_FILE
     before = {"i1:ship": {"code": "code-a", "expires": 1000.0}}
     policy._write_confirms(path, before)

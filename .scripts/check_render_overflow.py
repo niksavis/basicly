@@ -1,34 +1,5 @@
 #!/usr/bin/env python3
-"""Report two geometry faults of a rendered page: a box that clips, and boxes that collide.
 
-A green check set cannot see a clip. Three board pages shipped in one day with every
-gate passing and a region cut off the screen: a schema dump nobody could read, five
-clipped regions - four already clipped on the fixture the layout passed against - and a
-panel drawing `0` over ten real edges. Each was found by looking at a screenshot, which
-is a human act that does not scale and does not survive a handover.
-
-**A scrollbar is not the signal.** A wall page sets `overflow: hidden`, so it clips in
-silence and the absence of a scrollbar proves nothing. The measurement is the DOM's own:
-an element whose `scrollWidth`/`scrollHeight` exceeds its `clientWidth`/`clientHeight`
-holds more than it shows.
-
-**Overlap is a second fault and it needs a second signal.** The day after this landed it
-reported zero on a wall where two gate names were painted over the two below them, and it
-was right to: an element drawn across its neighbour does not overflow. Its content fits
-its own box - the box is simply in the same place as another box, because a fixed row
-height was allotted to a name that took two lines. So the two are measured side by side
-and reported apart, one line each, and neither is folded into the other: an overlap
-report is a pairwise intersection of the boxes that carry text, an overflow report is an
-element measured against itself, and a page can fail either alone.
-
-Deliberately **not** a `[[verify.checks]]` entry: continuous integration has no browser,
-and a check that skips reads as a pass - this repository's own failure-semantics table
-says so. It is a script a human and an agent run, and `rendered-surfaces` is the rule
-that says when.
-
-    uv run python .scripts/check_render_overflow.py board.html
-    uv run python .scripts/check_render_overflow.py board.html --width 1200 --height 900
-"""
 
 from __future__ import annotations
 
@@ -41,8 +12,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Where a Windows browser lives when this runs under WSL, and the POSIX names otherwise.
-# Ordered, because the first that exists is the one a reader's own screenshot came from.
 _CANDIDATES = (
     "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
     "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
@@ -52,17 +21,10 @@ _CANDIDATES = (
     "chromium-browser",
 )
 
-# Sub-pixel rounding makes a scroll size exceed a client size by a fraction on a box that
-# fits. Measured against a page with no clip at all: the largest honest delta was under
-# one device pixel, so anything at or below this is the renderer's arithmetic, not a clip.
 TOLERANCE_PX = 2
 
-# The probe writes its answer here rather than to the console, because `--dump-dom` gives
-# back the document and never the log.
 _MARKER = "data-overflow-report"
 
-# How the two signals name themselves in the output. Spelled once, because the pass line and
-# the failure line of each have to agree, and a reader greps for the prefix.
 OVERFLOW = "render-overflow"
 OVERLAP = "render-overlap"
 
@@ -163,7 +125,6 @@ window.addEventListener('load', function () {
 
 
 def find_browser() -> str | None:
-    """The first browser this machine has, or None. Ordered, never guessed at."""
     for candidate in _CANDIDATES:
         if candidate.startswith("/"):
             if Path(candidate).exists():
@@ -174,11 +135,7 @@ def find_browser() -> str | None:
 
 
 def _page_url(page: Path, browser: str) -> str:
-    """*page* as a URL the chosen browser can open, crossing the WSL boundary if needed.
 
-    A Windows browser cannot read a Linux path, so `wslpath -w` supplies the UNC form.
-    Its absence is not fatal: a POSIX browser wants the POSIX path anyway.
-    """
     if not browser.endswith(".exe"):
         return page.resolve().as_uri()
     win = subprocess.run(  # nosec B603 B607 - fixed argv, path supplied by the caller
@@ -188,11 +145,7 @@ def _page_url(page: Path, browser: str) -> str:
 
 
 def measure(page: Path, browser: str, width: int, height: int) -> dict:
-    """The page's overflow report, rendered at *width* x *height*.
 
-    The probe is appended to a copy rather than to *page*: the input is an artifact a
-    consumer opens, and a measurement that edits its own subject measures something else.
-    """
     probe = _PROBE.replace("TOL", str(TOLERANCE_PX)).replace("MARKER", _MARKER)
     with tempfile.TemporaryDirectory() as work:
         probed = Path(work) / page.name
@@ -221,16 +174,7 @@ def measure(page: Path, browser: str, width: int, height: int) -> dict:
 
 
 def _measure_at_viewport(page: Path, browser: str, width: int, height: int) -> dict:
-    """Measure at a *viewport* of the given size, not a window of it.
 
-    A browser window is not its viewport: `--window-size=1920,1080` renders into 1904x985
-    here, and measuring the short one reported a 44px clip on a page that has none. The
-    trap already cost one lane a false finding, so it is compensated rather than written
-    down - the caller asks for the viewport a reader will have.
-
-    One re-run, never a loop: the chrome is a fixed inset, so a second pass lands. A pass
-    that still misses reports the viewport it got, and the caller can see the difference.
-    """
     report = measure(page, browser, width, height)
     got_w, got_h = report["viewport"]
     if (got_w, got_h) == (width, height):
@@ -239,7 +183,6 @@ def _measure_at_viewport(page: Path, browser: str, width: int, height: int) -> d
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Measure one page and report; non-zero when anything is clipped or unanswerable."""
     parser = argparse.ArgumentParser(
         description="Report two geometry faults of a rendered page: clipping and overlap."
     )
@@ -267,21 +210,16 @@ def main(argv: list[str] | None = None) -> int:
         return _refuse(str(exc))
 
     where = f"{args.page.name} at {'x'.join(str(n) for n in report['viewport'])}"
-    # Both signals report on every run and the exit code is their disjunction. Neither
-    # short-circuits the other: a page that clips nothing may still paint a row over a row,
-    # which is the pair of runs that produced this second signal in the first place.
     clipped = _report_clipped(report["clipped"], where)
     return max(clipped, _report_collided(report["collided"], where))
 
 
 def _refuse(reason: str) -> int:
-    """Exit 2 under *both* prefixes: a reader grepping one must not read the silence as a pass."""
     print(f"{OVERFLOW}/{OVERLAP}: {reason}", file=sys.stderr)
     return 2
 
 
 def _report_clipped(clipped: list[dict], where: str) -> int:
-    """The overflow signal: elements holding more than their own box shows."""
     if not clipped:
         print(f"{OVERFLOW}: {where}: nothing is clipped")
         return 0
@@ -299,12 +237,7 @@ def _report_clipped(clipped: list[dict], where: str) -> int:
 
 
 def _report_collided(collided: list[dict], where: str) -> int:
-    """The overlap signal: pairs of text-carrying boxes drawn over one another.
 
-    The text each box holds is printed beside its class, because a grid of cells that all
-    share one class is named identically by every other field and `noqa-debt` under
-    `projection-permissions` is the whole finding.
-    """
     if not collided:
         print(f"{OVERLAP}: {where}: nothing is drawn over anything")
         return 0

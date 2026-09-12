@@ -1,46 +1,3 @@
-"""Generate and gate the documentation claims this repo derives from its own tree.
-
-A document that restates a fact the tree already answers — a measured character
-count, the set of shipped subcommands, a catalog inventory — goes stale the moment
-the tree moves, and nothing notices. Correcting the prose fixes today's copy and
-guarantees tomorrow's drift. The owner's rule applies: a deterministic fact is a
-script, not an instruction. So these facts are *generated* into marked blocks and
-gated on every commit rather than written by hand.
-
-Two kinds of claim, because they fail differently:
-
-* **Generated blocks** — the whole block between a marker pair is rendered from the
-  tree, so ``--fix`` repairs any drift with no hand editing. Everything inside a
-  block is derived; authored prose belongs outside it.
-* **Assertions** — a claim spread through authored prose that a script can check but
-  cannot write. The §8 command tables carry a hand-written behavior paragraph per
-  row, so the gate asserts *coverage* (every shipped subcommand appears) and names
-  what is missing; the row itself stays a human's job.
-
-Markers are HTML comments so they render as nothing::
-
-    <!-- docs-claims:begin <name> -->
-    <!-- docs-claims:end <name> -->
-
-The begin marker's indentation is reapplied to every generated line, so a block
-nested in a numbered list keeps its list item.
-
-Wired as a ``[[verify.checks]]`` entry rather than a new CLI subcommand pair: the
-claims gated here are basicly's own documentation, not a consumer artifact, so
-nothing needs projecting. ``--check`` is the check command and ``--fix`` the
-``fix_command``, so the pre-commit fast set applies the regeneration and re-stages
-it exactly as it does for ``ruff format``.
-
-``tests/test_docs_drift.py`` keeps the *reverse* direction of the command claim (a
-removed subcommand must leave the tables) at pre-push; this script promotes the
-forward direction — an omitted subcommand — into the fast set.
-
-Usage::
-
-    python .scripts/docs_claims.py --check   # report drift, write nothing
-    python .scripts/docs_claims.py --fix     # regenerate every stale block
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -54,10 +11,6 @@ from pathlib import Path
 from basicly import cli
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-# `.scripts` is deliberately not a package, so the sibling below is importable only
-# with this script's own directory on the path. Running this file as a script already
-# puts it there; the insert is for `tests/test_docs_claims.py`, which loads this module
-# by file path through `spec_from_file_location` and so starts with neither entry.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import docs_claim_layers as layers  # noqa: E402 - sibling; needs the insert above
@@ -81,19 +34,12 @@ HOOKS_DIR = ".basicly/core/hooks"
 SRC_DIR = "src/basicly"
 
 TUTORIAL_DIR = "docs/tutorial"
-# The per-command reference, gated whole rather than by section: it left the architecture
-# document as its own file (basicly-mfavrh), so there is no sibling prose to slice away.
 CLI_MD = "docs/reference/cli.md"
 CHANGELOG_MD = "CHANGELOG.md"
 
-# The changelog's released-section heading, newest first under `## [Unreleased]` —
-# `.scripts/generate_release_changelog.py` writes each new one directly below it, so the
-# first match in document order is the release a consumer can actually install.
 _RELEASE_HEADING = re.compile(
     r"^## v(?P<version>\d+\.\d+\.\d+) - \d{4}-\d{2}-\d{2}[ \t]*$", re.MULTILINE
 )
-# The two ways the tutorial names a version, each with how a stale one reads: the install
-# pin a reader copies, and the engine version its recorded transcripts quote back.
 _TUTORIAL_VERSIONS = (
     (
         re.compile(r"@v(?P<version>\d+\.\d+\.\d+)"),
@@ -105,17 +51,10 @@ _TUTORIAL_VERSIONS = (
     ),
 )
 
-# `uv run python`, not a bare `python`: on Windows the bare form resolves to a system
-# interpreter that cannot import this script's dependencies (basicly-tcmy.32), so the
-# printed repair has to be the one a contributor on any platform can paste.
 FIX_HINT = "uv run python .scripts/docs_claims.py --fix"
 
 
-# ----------------------------------------------------------------- block splice
-
-
 def _splice(text: str, name: str, body: list[str]) -> str:
-    """Return *text* with the ``name`` block's content replaced by *body*."""
     begin = re.search(
         rf"^([ \t]*)<!-- docs-claims:begin {re.escape(name)} -->$", text, re.MULTILINE
     )
@@ -130,11 +69,7 @@ def _splice(text: str, name: str, body: list[str]) -> str:
     return f"{text[: begin.end()]}\n{rendered}{text[end.start() :]}"
 
 
-# ---------------------------------------------------------------- claim renderers
-
-
 def _table(header: list[str], rows: list[list[str]]) -> list[str]:
-    """Render a GitHub markdown table, blank-line padded for MD058."""
     return [
         "",
         f"| {' | '.join(header)} |",
@@ -145,12 +80,7 @@ def _table(header: list[str], rows: list[list[str]]) -> list[str]:
 
 
 def _always_on_sizes(root: Path) -> list[str]:
-    """Measured size of every always-on surface against its target's soft cap.
 
-    A surface is a target output with a literal ``path``; the ``path_template``
-    outputs are the path-scoped rules, which are not always-on. Characters, not
-    bytes — ``cli.py`` compares ``len(content)`` on the decoded string.
-    """
     rows: list[list[str]] = []
     for target_path in sorted((root / TARGETS_DIR).glob("*.yaml")):
         target = load_yaml(target_path)
@@ -173,13 +103,7 @@ def _always_on_sizes(root: Path) -> list[str]:
 
 
 def _catalog_skills(root: Path) -> list[str]:
-    """One row per skill source, carrying the source's own routing fields.
 
-    A user-invoked source legitimately carries no ``description`` — that absence
-    *is* the mechanism that keeps it out of the model's always-loaded index
-    (``skills.render_skill_md``) — so an empty cell is the correct rendering, not
-    a defect to raise on.
-    """
     rows: list[list[str]] = []
     for source in sorted((root / SKILLS_DIR).glob("*/skill.yaml")):
         skill = load_yaml(source)
@@ -200,12 +124,7 @@ def _catalog_skills(root: Path) -> list[str]:
 
 
 def _script_purpose(entry: dict) -> str:
-    """The hook's one-line purpose, read off its manifest entry.
 
-    Read from `hooks.yaml` rather than from the script's module docstring: code files in
-    this repository carry no prose, so a docstring is not somewhere a fact can live
-    (basicly-phglc2x). A manifest is catalog data and keeps its own comments.
-    """
     description = entry.get("description")
     if not isinstance(description, str) or not description.strip():
         raise ClaimError(
@@ -215,11 +134,7 @@ def _script_purpose(entry: dict) -> str:
 
 
 def _catalog_hooks(root: Path) -> list[str]:
-    """One row per hook in ``hooks.yaml``, in the manifest's own order.
 
-    Manifest order is authored and meaningful (pre-commit, then commit-msg, then
-    pre-push), so it is preserved rather than sorted.
-    """
     hooks_dir = root / HOOKS_DIR
     manifest = load_yaml(hooks_dir / "hooks.yaml")
     entries = manifest.get("hooks")
@@ -243,40 +158,18 @@ def _catalog_hooks(root: Path) -> list[str]:
     return _table(["Hook", "Stage", "Manager", "Script", "Purpose"], rows)
 
 
-# ------------------------------------------------------------------- assertions
-
-
 def _cells(row: str) -> list[str]:
-    r"""Cells of a markdown table row.
 
-    Split on unescaped pipes only: a command cell spells its alternatives
-    ``[--root ...\|--all-default-roots]``, and splitting on that ``\|`` cut the cell
-    in half and lost every name after it.
-    """
     return re.split(r"(?<!\\)\|", row)
 
 
 def _cli_reference(root: Path) -> str:
-    """The CLI reference, whole: every table in it tabulates commands.
 
-    A section slice out of a larger document used to be needed here and no longer is,
-    which is the point of the move: nothing keys on a heading, so renaming one cannot
-    silently reduce this claim to checking an empty string.
-    """
     return read_text(root / CLI_MD)
 
 
 def _documented_commands(section: str) -> set[str]:
-    """Subcommand names declared in the *first* cell of each reference table row.
 
-    Only the command cell, never the behavior prose beside it: that column is full
-    of incidental backticked words (``basicly.toml``, ``check``, ``build``) which
-    would silently satisfy the coverage claim for a command nobody documented.
-
-    Two spellings appear there, and both count: the leading ``basicly <name>``, and
-    the bare backticked alternative a build/check pair is written with
-    (``` `basicly agents-build` / `agents-check` ```).
-    """
     documented: set[str] = set()
     for line in section.splitlines():
         if not line.startswith("|"):
@@ -293,7 +186,6 @@ def _documented_commands(section: str) -> set[str]:
 
 
 def _cli_commands_covered(root: Path) -> list[str]:
-    """Every subcommand the CLI ships must appear in the CLI reference's tables."""
     top = subparsers(cli._build_parser())
     if top is None:  # pragma: no cover - the CLI is a subcommand parser by construction
         raise ClaimError("the CLI parser declares no subcommands")
@@ -305,22 +197,7 @@ def _cli_commands_covered(root: Path) -> list[str]:
 
 
 def _cli_subcommands_covered(root: Path) -> list[str]:
-    """Every subcommand of a command *group* must appear in that group's own rows.
 
-    :func:`_cli_commands_covered` is satisfied by a single ``basicly worktree ...``
-    row, which is how three of that group's six subcommands stayed undocumented
-    while every gate passed (``basicly-tcmy.9``): the worktree row still described a
-    lifecycle of create/list/cleanup long after ``merge`` and ``merge-queue``
-    shipped, and a skill repeated the omission as "not yet part of `basicly
-    worktree`".
-
-    Coverage is scoped to the rows whose **command cell** names the parent, not to
-    the CLI section as a whole. Scanning it whole would let an incidental ``list``
-    in the ``catalog`` row satisfy ``worktree list`` — the same failure mode
-    :func:`_documented_commands` avoids by reading only the command column, one level
-    up. Within an owning row either column counts, because a group is documented as
-    one row of prose rather than a row per subcommand.
-    """
     top = subparsers(cli._build_parser())
     if top is None:  # pragma: no cover - the CLI is a subcommand parser by construction
         raise ClaimError("the CLI parser declares no subcommands")
@@ -343,8 +220,6 @@ def _cli_subcommands_covered(root: Path) -> list[str]:
         missing = [
             name
             for name in sorted(nested.choices)
-            # A word boundary that also refuses a hyphen, so `merge` is not credited
-            # to the `merge-queue` that happens to be documented beside it.
             if not re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", documented)
         ]
         if missing:
@@ -355,7 +230,6 @@ def _cli_subcommands_covered(root: Path) -> list[str]:
 
 
 def _released_version(root: Path) -> str:
-    """The newest released version in ``CHANGELOG.md``, without its ``v``."""
     found = _RELEASE_HEADING.search(read_text(root / CHANGELOG_MD))
     if found is None:
         raise ClaimError(f"{CHANGELOG_MD}: no `## vX.Y.Z - YYYY-MM-DD` release heading found")
@@ -363,24 +237,7 @@ def _released_version(root: Path) -> str:
 
 
 def _tutorial_versions_current(root: Path) -> list[str]:
-    """Every version the tutorial names must be the released one, by file and line.
 
-    The tutorial is deliberately outside ``release.PIN_FILES`` because its transcripts
-    quote the engine version they were recorded against, so a mechanical pin bump would
-    leave the page claiming an execution that never happened. That exemption left it
-    three releases behind with nothing to notice (`basicly-c7nvs2`: `@v0.8.0` against a
-    released v0.11.0). So the pin and the quoted versions are checked *together*: a page
-    whose install line and transcripts disagree is the very failure the exemption exists to
-    prevent, and one whose pin merely lags is the failure it caused.
-
-    So the remedy for a failure here is a **re-recording**, not an edit: re-execute the
-    page against the release and paste what it printed. A release that bumps the version
-    without one goes red here, which is the point.
-
-    The limit, stated rather than discovered: any `basicly X.Y.Z` under
-    ``docs/tutorial/`` is read as a quoted transcript, so prose that must name an older
-    release deliberately has nowhere to live on these pages.
-    """
     version = _released_version(root)
     problems: list[str] = []
     for path in sorted((root / TUTORIAL_DIR).glob("*.md")):
@@ -397,13 +254,8 @@ def _tutorial_versions_current(root: Path) -> list[str]:
     return problems
 
 
-# ----------------------------------------------------------------------- claims
-
-
 @dataclass(frozen=True)
 class Block:
-    """A doc region rendered wholly from the tree, and therefore auto-repairable."""
-
     name: str
     path: str
     render: Callable[[Path], list[str]]
@@ -411,8 +263,6 @@ class Block:
 
 @dataclass(frozen=True)
 class Assertion:
-    """A claim in authored prose that is checkable but not writable by a script."""
-
     name: str
     path: str
     check: Callable[[Path], list[str]]
@@ -445,21 +295,13 @@ ASSERTIONS: tuple[Assertion, ...] = (
 )
 
 
-# ------------------------------------------------------------------------- main
-
-
 def _write(path: Path, text: str) -> None:
-    """Write *text* back to *path*, preserving the file's existing line ending.
 
-    Reading normalizes CRLF to LF, so writing without this would silently convert
-    every line of a Windows checkout the first time one block drifted.
-    """
     newline = "\r\n" if b"\r\n" in path.read_bytes() else "\n"
     path.write_text(text, encoding="utf-8", newline=newline)
 
 
 def _run_blocks(root: Path, blocks: tuple[Block, ...], *, fix: bool) -> list[str]:
-    """Compare (and optionally rewrite) each of *blocks*; return failure lines."""
     failures: list[str] = []
     for block in blocks:
         path = root / block.path
@@ -482,12 +324,10 @@ def _run_blocks(root: Path, blocks: tuple[Block, ...], *, fix: bool) -> list[str
 
 
 def _count(items: tuple[object, ...], noun: str) -> str:
-    """``2 blocks current`` / ``1 block current`` — the clean-run summary phrase."""
     return f"{len(items)} {noun}{'' if len(items) == 1 else 's'} current"
 
 
 def _run_assertions(root: Path) -> list[str]:
-    """Evaluate every assertion; return failure lines."""
     failures: list[str] = []
     for assertion in ASSERTIONS:
         try:
@@ -499,7 +339,6 @@ def _run_assertions(root: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point: ``--check`` reports drift, ``--fix`` regenerates the stale blocks."""
     parser = argparse.ArgumentParser(
         description="Generate and gate the documentation claims derived from this repo itself."
     )
@@ -512,8 +351,6 @@ def main(argv: list[str] | None = None) -> int:
         default=REPO_ROOT,
         help="Repository root to evaluate (default: this script's repo)",
     )
-    # Scoped for the merge queue's regeneration (basicly-3w51): a wider rebuild would
-    # modify documents outside the conflict it resolved. Assertions go with it.
     parser.add_argument("--block", help="Only this block")
     args = parser.parse_args(argv)
 

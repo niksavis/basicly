@@ -1,12 +1,3 @@
-"""The file bodies `basicly install` writes into a consumer repo.
-
-These are literal templates, never parsed by the engine — so the only thing that can
-go wrong is that one of them stops being valid in the format its *consumer* parses it
-as, and nothing here would notice. A malformed `tasks.json` breaks a consumer's editor
-and a malformed workflow breaks their CI, in both cases at install time in someone
-else's repository. That is what these assertions exist to catch.
-"""
-
 from __future__ import annotations
 
 import json
@@ -20,18 +11,12 @@ _SCAFFOLDS = {"tasks.json": VSCODE_TASKS_JSON, "basicly-gates.yml": CONSUMER_CI_
 
 
 def test_no_scaffold_resolves_the_engine_from_a_branch() -> None:
-    """A branch ref lets whatever `main` holds that morning gate a pinned consumer.
 
-    Both scaffolds shipped `@main` on every uvx line, so a repo that vendored one
-    version was linted by another — the schema field required upstream after the vendor
-    refused every source in the catalog the consumer actually had.
-    """
     for name, body in _SCAFFOLDS.items():
         assert "@main" not in body, f"{name} resolves the engine from a branch"
 
 
 def test_every_scaffolded_uvx_line_pins_the_scaffolding_version() -> None:
-    """The pin is the running version, so install and the gate it writes never disagree."""
     assert DIST_SOURCE.endswith(f"@v{__version__}")
     for name, body in _SCAFFOLDS.items():
         uvx_lines = [line for line in body.splitlines() if "uvx --from" in line]
@@ -41,13 +26,7 @@ def test_every_scaffolded_uvx_line_pins_the_scaffolding_version() -> None:
 
 
 def test_the_vscode_scaffold_parses_as_the_jsonc_vscode_reads() -> None:
-    """It ships with `//` comments, which is JSONC — valid to VS Code, not to `json`.
 
-    Asserted by stripping the comment lines and parsing the remainder, because the
-    thing that must hold is that everything *other* than the comments is well-formed
-    JSON. A trailing comma or an unclosed brace survives a substring check and breaks
-    the consumer's editor silently.
-    """
     body = "\n".join(
         line for line in VSCODE_TASKS_JSON.splitlines() if not line.strip().startswith("//")
     )
@@ -57,11 +36,7 @@ def test_the_vscode_scaffold_parses_as_the_jsonc_vscode_reads() -> None:
 
 
 def test_every_scaffolded_task_is_a_single_command() -> None:
-    """No `&&` chaining: the scaffold's own contract is that it works in PowerShell 5.
 
-    `cmd` and PowerShell 5 do not accept `&&`, so a chained command is a task that is
-    broken on exactly the platforms this project claims to support.
-    """
     body = "\n".join(
         line for line in VSCODE_TASKS_JSON.splitlines() if not line.strip().startswith("//")
     )
@@ -70,7 +45,6 @@ def test_every_scaffolded_task_is_a_single_command() -> None:
 
 
 def test_every_scaffolded_task_is_labelled_and_described() -> None:
-    """A task with no label is unrunnable from the palette; one with no detail is a guess."""
     body = "\n".join(
         line for line in VSCODE_TASKS_JSON.splitlines() if not line.strip().startswith("//")
     )
@@ -80,12 +54,7 @@ def test_every_scaffolded_task_is_labelled_and_described() -> None:
 
 
 def test_the_ci_scaffold_parses_as_yaml_and_declares_its_triggers() -> None:
-    """`on` is quoted in the source because bare `on` is YAML 1.1's boolean True.
 
-    That is the classic workflow footgun, and it is why the assertion reads the key
-    back rather than trusting the file looks right: if the quoting were ever dropped,
-    the parsed mapping would carry a `True` key and GitHub would run nothing.
-    """
     parsed = yaml.safe_load(CONSUMER_CI_WORKFLOW)
     assert parsed["name"] == "basicly-gates"
     assert "on" in parsed, "bare `on` parsed as a boolean — the workflow would not trigger"
@@ -93,10 +62,6 @@ def test_the_ci_scaffold_parses_as_yaml_and_declares_its_triggers() -> None:
 
 
 def test_the_ci_scaffold_keeps_tracker_only_pushes_out_of_ci() -> None:
-    """The harness commits the tracker separately from the work it describes.
 
-    Without this path filter every tracker commit spends a CI run, which is the cost
-    the comment above the constant claims it avoids — so it is worth binding.
-    """
     parsed = yaml.safe_load(CONSUMER_CI_WORKFLOW)
     assert ".basicly/ledger/**" in parsed["on"]["push"]["paths-ignore"]

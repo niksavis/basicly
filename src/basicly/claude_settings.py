@@ -1,24 +1,3 @@
-"""Claude Code settings management for the harness (Claude target only).
-
-Claude Code's background-isolation guard (``worktree.bgIsolation``, default on)
-forces a background agent to isolate into ``.claude/worktrees/`` before editing,
-which conflicts with the harness's own sibling ``<repo>.worktrees/`` isolation
-(EnterWorktree cannot target a sibling path). To run the harness under Claude
-Code the guard must be ``none`` — the harness provides isolation itself.
-
-This module also projects the catalog's ``manager: claude`` hook specs into the
-``hooks`` section of the same file. Some gate at *tool time* (a PreToolUse command
-exiting 2 blocks the tool call), which is how the protect-generated guard stops an
-agent from hand-editing projected files before any commit-time gate could see the
-damage; a SessionStart one only adds context.
-
-Values are written to the *committed* ``.claude/settings.json`` (the team-wide
-default that ships with the repo). Per Claude's verified settings precedence
-(local ``.claude/settings.local.json`` overrides project ``.claude/settings.json``
-overrides user global), any user may override it locally without touching the
-committed default. Codex and Copilot have no equivalent setting.
-"""
-
 from __future__ import annotations
 
 import json
@@ -39,41 +18,13 @@ PERMISSIONS_KEY = "permissions"
 DENY_KEY = "deny"
 
 HOOKS_KEY = "hooks"
-# Substituted by Claude Code itself, as a plain string, before any shell sees it —
-# which is what lets a projected hook resolve from any working directory without a
-# machine-specific absolute path in a tracked file (basicly-dukb, basicly-f3mi).
-# Kept identical to `.basicly/core/kit/tier/install_hook.py`'s pair on purpose: two
-# spellings of the same contract would drift.
 PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
 HOOK_INTERPRETER = "uv run --no-project --no-python-downloads python"
-# Settings event per manifest stage; a spec's `stage` picks its section.
-#
-# Three of the events Claude Code documents, and deliberately so [D37]. Widening to all
-# of them was refused on the argument this repo already makes about dead definitions: an
-# unconsumed stage is a surface to keep true against a vendor that moves, bought for
-# nothing. **A stage arrives with the catalog source that uses it** —
-# `test_every_declared_agent_hook_event_has_a_catalog_consumer` enforces that and will
-# fail on a key added ahead of its consumer. `SessionStart` arrived that way with
-# `session-start.py` (basicly-yru8eu); `hooks.COPILOT_EVENTS` took `sessionStart` in the
-# same diff, so the two stay even.
-#
-# Two further consumers are known and neither is ready:
-#   - `Stop` returning `decision: block` gives BUILD an in-dispatch termination gate.
-#     Probed reachable under our own `claude -p`, but it is capped at 8 consecutive
-#     blocks and that bound is unmeasured (basicly-u2hl.51) — designing a control on
-#     an unmeasured ceiling is how a gate ends up looking like it binds.
-#   - basicly-0p8n's enforcement at the tool-call boundary, which is where our gates
-#     do not reach at all today.
-#
-# A stage Copilot has no event for projects to one family only — declare that gap when it
-# is created rather than letting the two drift silently uneven.
 AGENT_HOOK_EVENTS = {
     "pretooluse": "PreToolUse",
     "posttooluse": "PostToolUse",
     "sessionstart": "SessionStart",
 }
-# Default tool filter (the file-writing family); a spec's `matcher` overrides.
-# `MultiEdit` is intentionally absent: Claude Code no longer ships that tool.
 AGENT_HOOK_MATCHER = "Edit|Write|NotebookEdit"
 
 
@@ -85,7 +36,6 @@ def _load_settings(path: Path) -> dict:
 
 
 def current_bg_isolation(repo_root: Path) -> str | None:
-    """Return the committed ``worktree.bgIsolation`` value, or None when unset."""
     settings = _load_settings(repo_root / CLAUDE_SETTINGS_PATH)
     section = settings.get(WORKTREE_KEY)
     if isinstance(section, dict):
@@ -96,11 +46,7 @@ def current_bg_isolation(repo_root: Path) -> str | None:
 
 
 def set_bg_isolation_none(repo_root: Path) -> bool:
-    """Set ``worktree.bgIsolation=none`` in the committed ``.claude/settings.json``.
 
-    Merges into existing settings, preserving every other key. Returns True when
-    the file was changed, False when it was already ``none``.
-    """
     if current_bg_isolation(repo_root) == BG_ISOLATION_NONE:
         return False
 
@@ -118,13 +64,7 @@ def set_bg_isolation_none(repo_root: Path) -> bool:
 
 
 def merge_permission_deny(settings: dict, patterns: list[str]) -> dict:
-    """Return settings with the managed deny *patterns* ensured present (union).
 
-    Order-preserving: existing deny entries keep their place and any missing
-    managed pattern is appended. Consumer-added entries are never removed — an
-    extra deny is fail-safe, and a flat deny string carries no marker to prune
-    managed-ness by (see permissions.py).
-    """
     merged = dict(settings)
     perms = merged.get(PERMISSIONS_KEY)
     perms = dict(perms) if isinstance(perms, dict) else {}
@@ -143,7 +83,6 @@ def merge_permission_deny(settings: dict, patterns: list[str]) -> dict:
 
 
 def permission_deny_mismatches(repo_root: Path, patterns: list[str]) -> list[str]:
-    """Return a reason per managed deny pattern missing from the committed settings."""
     settings = _load_settings(repo_root / CLAUDE_SETTINGS_PATH)
     perms = settings.get(PERMISSIONS_KEY)
     perms = perms if isinstance(perms, dict) else {}
@@ -157,11 +96,7 @@ def permission_deny_mismatches(repo_root: Path, patterns: list[str]) -> list[str
 
 
 def sync_permission_deny(repo_root: Path, patterns: list[str]) -> bool:
-    """Project managed deny patterns into ``.claude/settings.json``.
 
-    Returns True when the file changed, False when already in sync (all managed
-    patterns already present) or when there is nothing to project.
-    """
     if not patterns:
         return False
     if not permission_deny_mismatches(repo_root, patterns):
@@ -177,32 +112,12 @@ def sync_permission_deny(repo_root: Path, patterns: list[str]) -> bool:
 
 
 def _agent_hook_command(spec: HookSpec, hooks_relpath: str) -> str:
-    """Return the shell command Claude Code runs for a managed agent hook.
 
-    Qualified by ``${CLAUDE_PROJECT_DIR}``, which the host substitutes as a plain
-    string before any shell sees it — so the hook resolves from whatever directory
-    the agent happens to be in, and no machine-specific absolute path lands in a
-    tracked file. It also survives PowerShell, where ``${...}`` is not shell syntax.
-
-    This deliberately does **not** mirror the pre-commit entries, which is what the
-    previous relative form was justified by. A pre-commit hook always runs from the
-    repo root; a Claude Code handler runs in the *current* directory, so a relative
-    path failed the moment the working directory drifted — a `cd` was enough
-    (basicly-f3mi). The same conclusion basicly-dukb reached from the vendor docs, and
-    ``.basicly/core/kit/tier/install_hook.py`` already ships this exact shape.
-
-    ``--no-project`` keeps the spawn out of virtualenv resolution and matches the kit;
-    every managed hook script is stdlib-only, so none of them needs the project env.
-    Re-projection over the old form still replaces it, because
-    :func:`_references_managed_script` matches on the relpath-qualified script, which
-    this command still contains.
-    """
     script = f"{PROJECT_DIR_PLACEHOLDER}/{hooks_relpath}/{spec.script}"
     return f'{HOOK_INTERPRETER} "{script}"'
 
 
 def _event_key(spec: HookSpec) -> str:
-    """The settings hook event a spec's stage maps to (PreToolUse/PostToolUse)."""
     event = AGENT_HOOK_EVENTS.get(spec.stage)
     if event is None:
         raise ValueError(
@@ -220,12 +135,7 @@ def _managed_group(spec: HookSpec, hooks_relpath: str) -> dict:
 
 
 def _references_managed_script(group: object, script_paths: set[str]) -> bool:
-    """True when a hook group runs one of the managed hook scripts.
 
-    Matches the relpath-qualified script (``.basicly/core/hooks/x.py``), never
-    the bare basename — a consumer hook running its own same-named script must
-    not be classified as basicly-managed and stripped.
-    """
     if not isinstance(group, dict):
         return False
     for hook in group.get("hooks") or []:
@@ -242,14 +152,7 @@ def merge_agent_hooks(
     hooks_relpath: str,
     strip_scripts: set[str] | None = None,
 ) -> dict:
-    """Return settings with basicly's managed agent hooks merged in (per event).
 
-    Managed groups (matched by the hook script they run) are stripped and a
-    fresh group per spec is appended, so re-running is idempotent and any
-    consumer-authored hooks are preserved untouched. ``strip_scripts`` widens
-    the strip set beyond the rendered specs so a hook a technology selection
-    excludes is removed rather than stranded.
-    """
     merged = dict(settings)
     hooks_section = merged.get(HOOKS_KEY)
     hooks_section = dict(hooks_section) if isinstance(hooks_section, dict) else {}
@@ -274,11 +177,7 @@ def merge_agent_hooks(
 
 
 def agent_hook_mismatches(repo_root: Path, specs: list[HookSpec], hooks_relpath: str) -> list[str]:
-    """Return a reason per managed agent hook missing from the committed settings.
 
-    A managed hook matches when some group under its event carries the expected
-    matcher and command; extra consumer keys and groups are allowed.
-    """
     settings = _load_settings(repo_root / CLAUDE_SETTINGS_PATH)
     hooks_section = settings.get(HOOKS_KEY)
     hooks_section = hooks_section if isinstance(hooks_section, dict) else {}
@@ -307,7 +206,6 @@ def agent_hook_mismatches(repo_root: Path, specs: list[HookSpec], hooks_relpath:
 def excluded_agent_hooks_present(
     repo_root: Path, excluded_specs: list[HookSpec], hooks_relpath: str
 ) -> list[str]:
-    """Return a reason per excluded managed agent hook still wired in the settings."""
     settings = _load_settings(repo_root / CLAUDE_SETTINGS_PATH)
     hooks_section = settings.get(HOOKS_KEY)
     hooks_section = hooks_section if isinstance(hooks_section, dict) else {}
@@ -333,12 +231,7 @@ def sync_agent_hooks(
     hooks_relpath: str,
     excluded_specs: list[HookSpec] | None = None,
 ) -> bool:
-    """Project managed agent hooks into ``.claude/settings.json``.
 
-    Returns True when the file changed, False when already in sync. No-op
-    (returns False) when there is nothing to project or prune. Hooks in
-    ``excluded_specs`` (excluded by a technology selection) are stripped.
-    """
     excluded_specs = excluded_specs or []
     if not specs and not excluded_specs:
         return False
@@ -358,11 +251,7 @@ def sync_agent_hooks(
 
 
 def remove_agent_hooks(repo_root: Path, specs: list[HookSpec], hooks_relpath: str) -> bool:
-    """Strip basicly's managed agent hooks from the settings (uninstall path).
 
-    Drops every hook group (any managed event) referencing a managed script;
-    empty containers left behind are removed. Returns True when the file changed.
-    """
     path = repo_root / CLAUDE_SETTINGS_PATH
     if not path.exists() or not specs:
         return False
