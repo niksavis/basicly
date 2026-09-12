@@ -45,15 +45,10 @@ uv sync --group dev
 uv run pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push
 ```
 
-Test:
+Test, whole suite then one file:
 
 ```sh
 uv run pytest -q
-```
-
-Single test file:
-
-```sh
 uv run pytest tests/test_cli.py -q
 ```
 
@@ -69,6 +64,7 @@ Projection gates (after editing catalog sources):
 ```sh
 uv run basicly check
 uv run basicly skills-check
+uv run basicly styles-check
 uv run basicly agents-check
 uv run basicly hooks-check
 uv run basicly permissions-check

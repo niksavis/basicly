@@ -107,6 +107,12 @@ from .hooks import (
     sync_hooks,
 )
 from .loader import load_fragments_from_roots, load_targets
+from .output_styles import UNMANAGED_REASON_PREFIX as STYLES_UNMANAGED_REASON_PREFIX
+from .output_styles import (
+    check_synced_styles,
+    resolve_style_roots,
+    sync_styles,
+)
 from .planner import plan_outputs
 from .renderers.common import sha256_of_text
 from .scaffolds import (
@@ -1405,6 +1411,7 @@ def cmd_install(args: argparse.Namespace) -> int:
             cmd_skills_build,
             argparse.Namespace(roots=None),
         ),
+        ("styles-build", cmd_styles_build, argparse.Namespace(roots=None)),
         ("agents-build", cmd_agents_build, argparse.Namespace()),
         ("hooks-build", cmd_hooks_build, argparse.Namespace(no_install=False)),
         ("permissions-build", cmd_permissions_build, argparse.Namespace()),
@@ -1888,6 +1895,50 @@ def cmd_skills_list(_args: argparse.Namespace) -> int:
             for skill in skills
         ],
     )
+    return 0
+
+
+STYLES_STALE_REMEDY = (
+    "Stale output style projection detected. Run `basicly styles-build` to sync them."
+)
+STYLES_UNMANAGED_REMEDY = (
+    "Unmanaged files under a projected output-styles root. Move each one into a "
+    "`.basicly/core/output-styles/<slug>/style.yaml` source and rebuild, or delete it — "
+    "`basicly styles-build` will not, since nothing describes it."
+)
+
+
+def _styles_stale_message(mismatches: list[tuple[Path, str]]) -> str:
+    unmanaged = sum(
+        1 for _, reason in mismatches if reason.startswith(STYLES_UNMANAGED_REASON_PREFIX)
+    )
+    if not unmanaged:
+        return STYLES_STALE_REMEDY
+    if unmanaged == len(mismatches):
+        return STYLES_UNMANAGED_REMEDY
+    return f"{STYLES_UNMANAGED_REMEDY} The remaining drift is fixed by `basicly styles-build`."
+
+
+def cmd_styles_build(args: argparse.Namespace) -> int:
+    repo_root = _repo_root()
+    roots = resolve_style_roots(repo_root, getattr(args, "roots", None))
+    result, pruned = sync_styles(repo_root, roots, selection=load_technology_selection(repo_root))
+    for path in pruned:
+        print(f"Removed {_format_path(path, repo_root)} (excluded by technology selection)")
+    _report_sync(result, repo_root, noun="output styles", label="Output style")
+    return 0
+
+
+def cmd_styles_check(args: argparse.Namespace) -> int:
+    repo_root = _repo_root()
+    roots = resolve_style_roots(repo_root, getattr(args, "roots", None))
+    mismatches = check_synced_styles(
+        repo_root, roots, selection=load_technology_selection(repo_root)
+    )
+    if _report_mismatches(mismatches, repo_root, stale_message=_styles_stale_message(mismatches)):
+        return 1
+    checked = ", ".join(_format_path(root, repo_root) for root in roots)
+    ui.say(f"Projected output styles are up to date in {checked}.", style="ok")
     return 0
 
 
@@ -4070,6 +4121,15 @@ def _add_agents_parsers(subparsers: argparse._SubParsersAction) -> None:
     subparsers.add_parser("agents-check", help=f"Check projected agents are up to date in {roots}")
 
 
+def _add_style_root_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--root",
+        action="append",
+        dest="roots",
+        help="Destination output-styles root. Repeat for multiple roots.",
+    )
+
+
 def _add_skill_root_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--root",
@@ -4827,6 +4887,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_skill_root_args(skills_check_parser)
 
+    styles_build_parser = subparsers.add_parser(
+        "styles-build",
+        help="Project output styles from .basicly/core/output-styles",
+    )
+    _add_style_root_args(styles_build_parser)
+
+    styles_check_parser = subparsers.add_parser(
+        "styles-check",
+        help="Check projected output styles are up to date",
+    )
+    _add_style_root_args(styles_check_parser)
+
     _add_agents_parsers(subparsers)
 
     hooks_build_parser = subparsers.add_parser(
@@ -4871,6 +4943,8 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "health": cmd_health,
         "skills-build": cmd_skills_build,
         "skills-check": cmd_skills_check,
+        "styles-build": cmd_styles_build,
+        "styles-check": cmd_styles_check,
         "agents-build": cmd_agents_build,
         "agents-check": cmd_agents_check,
         "hooks-build": cmd_hooks_build,

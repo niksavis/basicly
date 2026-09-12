@@ -22,6 +22,7 @@ from .catalog_source import (
     HOOKS_DIR,
     RUBRICS_DIR,
     SKILLS_DIR,
+    STYLES_DIR,
     load_mapping,
     rel,
     schema_validator,
@@ -148,6 +149,11 @@ def lint_catalog(repo_root: Path) -> list[str]:
         f"{rel(path, repo_root)}: rubric sources must be *.rubric.yaml, not markdown"
         for path in sorted((repo_root / RUBRICS_DIR).rglob("*.md"))
     )
+    violations.extend(
+        f"{rel(path, repo_root)}: output style sources must be style.yaml, not markdown "
+        "(the projector renders the markdown into the output-styles root)"
+        for path in sorted((repo_root / STYLES_DIR).rglob("*.md"))
+    )
 
     violations.extend(
         f"{rel(path, repo_root)}: use the .yaml extension, not .yml"
@@ -162,6 +168,11 @@ def lint_catalog(repo_root: Path) -> list[str]:
         )
     for path in sorted((repo_root / FRAGMENTS_DIR).rglob("*.fragment.yaml")):
         violations.extend(schema_violations(path, fragment_validator, repo_root))
+    style_sources = sorted((repo_root / STYLES_DIR).glob("*/style.yaml"))
+    if style_sources:
+        style_validator = schema_validator(repo_root, "output-style.schema.json")
+        for path in style_sources:
+            violations.extend(schema_violations(path, style_validator, repo_root))
 
     violations.extend(_validate_agent_schemas(repo_root))
     violations.extend(_check_agent_tier_declared(repo_root))

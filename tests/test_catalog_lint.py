@@ -512,3 +512,37 @@ def test_a_user_invoked_entry_costs_nothing_in_the_listing(tmp_path: Path) -> No
 
     assert over != []
     assert listing_budget_warnings(root) == []
+
+
+def _style_source(root: Path, body: str) -> Path:
+    path = root / ".basicly/core/output-styles/s/style.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_a_catalog_with_no_output_style_needs_no_output_style_schema(tmp_path: Path) -> None:
+    root = _catalog(tmp_path)
+    assert not (root / ".basicly/core/schemas/output-style.schema.json").exists()
+
+    assert lint_catalog(root) == []
+
+
+def test_an_output_style_source_is_validated_against_its_schema(tmp_path: Path) -> None:
+    root = _catalog(tmp_path)
+    (root / ".basicly/core/schemas/output-style.schema.json").write_text(
+        (REPO / ".basicly/core/schemas/output-style.schema.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    _style_source(root, "schema_version: 1\nname: S\ndescription: d\nbody: |\n  text\nextra: 1\n")
+
+    assert any("'extra' was unexpected" in v for v in lint_catalog(root))
+
+
+def test_a_markdown_output_style_source_is_refused(tmp_path: Path) -> None:
+    root = _catalog(tmp_path)
+    path = root / ".basicly/core/output-styles/s/style.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("---\nname: S\n---\n", encoding="utf-8")
+
+    assert any("output style sources must be style.yaml" in v for v in lint_catalog(root))

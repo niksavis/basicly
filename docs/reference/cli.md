@@ -32,7 +32,7 @@ They fall into three surfaces.
 
 | Command | Behaviour |
 | --- | --- |
-| `basicly install` | Idempotent converge: materialize or sync the core, migrate legacy layouts, scaffold overlay and config without overwriting, then build, skills-build across all default roots, agents-build, hooks-build with activation. First install and every upgrade |
+| `basicly install` | Idempotent converge: materialize or sync the core, migrate legacy layouts, scaffold overlay and config without overwriting, then build, skills-build across all default roots, styles-build, agents-build, hooks-build with activation. First install and every upgrade |
 | `basicly uninstall [--purge]` | Remove everything managed, preserve the overlay and config unless purging, refuse in the authoring repo |
 | `basicly status [--json] [--fleet]` | Read-only snapshot: installed catalog version against running engine version, drift summary, per-manager hook state, technology selection, overlay counts. Never writes, always exits zero. The fleet flag rolls it across the housed repositories as one JSON payload |
 | `basicly health [--json] [--window N] [--fleet]` | Read-only per-agent health scoring and behavioural drift from the run-record log: dispatch failure rate, a rework signal, a bounded score, and a rolling-baseline drift flag. Never writes, always exits zero |
@@ -45,6 +45,7 @@ They fall into three surfaces.
 | `basicly build [--target NAME] [--verify]` | Render enabled targets, write only changed bytes, update the manifest, warn on cap overrun. The verify flag runs the content checks first and writes nothing on failure |
 | `basicly check` | Byte-for-byte staleness check of generated files and the manifest; exit 1 on mismatch, no auto-fix |
 | `basicly skills-build [--root ...]` / `skills-check` | The same build and check contract for the skill catalog, mirrored per root. With no `--root` it covers every default root ([14. Skills](../architecture/architecture.md#14-skills)); `--all-default-roots` is a deprecated no-op |
+| `basicly styles-build [--root ...]` / `styles-check` | The same build and check contract for the output-style catalog. An output style rewrites the host's system prompt for every session, so the catalog owns it; only Claude Code reads one, so it projects to `.claude/output-styles/<slug>.md` and nowhere else |
 | `basicly agents-build` / `agents-check` | The same contract for the agent catalog, always both roots, with no root-selection flag |
 | `basicly hooks-build [--no-install]` / `hooks-check` | Materialize hook scripts, merge a managed block into the hook config preserving foreign hooks, then install the git hooks so the gates are active. The check reports projection drift and warns when the git hooks are not installed |
 | `basicly permissions-build` / `permissions-check` | Project the agent-permissions deny-list into the co-owned settings file: ensure-present, consumer entries preserved, nothing pruned, with a semantic subset drift check |

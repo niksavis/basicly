@@ -1,0 +1,1 @@
+- Output styles are now a catalog content type: author `.basicly/core/output-styles/<slug>/style.yaml`, project it with `basicly styles-build`, and the new `projection-styles` gate refuses a hand edit. `basicly install` delivers it, so a consumer gets the style the way it gets skills.

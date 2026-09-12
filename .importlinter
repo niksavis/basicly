@@ -51,7 +51,7 @@ layers =
     lane_log
     claude_settings | runner
     context_window
-    agents | catalog_verify | copilot_store | fleet | hooks | loader | models | permissions | planner | renderers | skills | state
+    agents | catalog_verify | copilot_store | fleet | hooks | loader | models | permissions | output_styles | planner | renderers | skills | state
     skill_pairing
     provider_limit | runner_usage
     decider_contract

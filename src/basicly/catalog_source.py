@@ -16,6 +16,7 @@ FRAGMENTS_DIR = CORE_DIR / "fragments"
 AGENTS_DIR = CORE_DIR / "agents"
 HOOKS_DIR = CORE_DIR / "hooks"
 RUBRICS_DIR = CORE_DIR / "rubrics"
+STYLES_DIR = CORE_DIR / "output-styles"
 SCHEMAS_DIR = CORE_DIR / "schemas"
 
 

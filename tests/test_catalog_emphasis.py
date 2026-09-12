@@ -155,3 +155,25 @@ def test_the_committed_catalog_actually_carries_a_marker() -> None:
     ).read_text(encoding="utf-8")
 
     assert emphasis.markers_in(body) == ["IMPORTANT"]
+
+
+def _style(catalog: Path, body: str) -> None:
+    indented = "\n".join(f"  {line}" for line in body.splitlines())
+    path = catalog / ".basicly/core/output-styles/s/style.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"schema_version: 1\nname: S\ndescription: d\nbody: |\n{indented}\n",
+        encoding="utf-8",
+    )
+
+
+def test_an_output_style_carries_its_own_budget(catalog: Path) -> None:
+    _style(catalog, "IMPORTANT: verdict first.\nNEVER bury the correction.")
+
+    assert any(line.startswith("output style s:") for line in emphasis.violations(catalog))
+
+
+def test_one_marker_in_an_output_style_passes(catalog: Path) -> None:
+    _style(catalog, "IMPORTANT: verdict first.")
+
+    assert emphasis.violations(catalog) == []

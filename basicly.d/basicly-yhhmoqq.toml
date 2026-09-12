@@ -1,0 +1,4 @@
+[[verify.checks]]
+name = "projection-styles"
+command = ["uv", "run", "basicly", "styles-check"]
+modes = ["fast", "full"]

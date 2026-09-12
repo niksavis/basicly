@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
-from . import skill_source
+from . import output_styles, skill_source
 from .catalog_source import rel
 from .config import load_project_paths
 from .loader import load_fragments_from_roots, load_targets
@@ -101,5 +101,23 @@ def _skill_violations(repo_root: Path) -> list[str]:
     return violations
 
 
+def _style_violations(repo_root: Path) -> list[str]:
+    try:
+        styles = output_styles.discover_styles(repo_root)
+    except ValidationError:
+        return []
+    found: list[str] = []
+    for style in sorted(styles, key=lambda entry: entry.slug):
+        source = rel(style.source_path, repo_root) if style.source_path else f"<{style.slug}>"
+        sites = [Site(source, marker) for marker in markers_in(style.body)]
+        if len(sites) > BUDGET:
+            found.append(_refusal(f"output style {style.slug}", sites))
+    return found
+
+
 def violations(repo_root: Path) -> list[str]:
-    return [*_projection_violations(repo_root), *_skill_violations(repo_root)]
+    return [
+        *_projection_violations(repo_root),
+        *_skill_violations(repo_root),
+        *_style_violations(repo_root),
+    ]

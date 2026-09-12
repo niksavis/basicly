@@ -668,9 +668,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | chars | cap | headroom |
 | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 8858 | 9000 | 142 |
-| `AGENTS.md` (codex) | 16135 | 16000 | -135 |
-| `.github/copilot-instructions.md` (copilot) | 8957 | 9000 | 43 |
+| `.claude/CLAUDE.md` (claude) | 8883 | 9000 | 117 |
+| `AGENTS.md` (codex) | 16160 | 16000 | -160 |
+| `.github/copilot-instructions.md` (copilot) | 8982 | 9000 | 18 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -3234,7 +3234,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 61 tiers hold 138 modules and group into 9 bands. Every band may import every band below
+The 61 tiers hold 139 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3247,7 +3247,7 @@ flowchart TB
   b3["3 · loop mechanics — 37<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
   b4["4 · configuration and isolation — 3<br/>config · worktree"]
   b5["5 · agent runtime — 5<br/>runner · lane_log · lane_split · context_window · claude_settings"]
-  b6["6 · projection — 12<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
+  b6["6 · projection — 13<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
   b7["7 · records and telemetry — 15<br/>run_record · artifact_record · lens_review · spend_calibration"]
   b8["8 · tracker seam — 25<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
   b9["9 · leaf data and pure helpers — 27<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
@@ -3419,13 +3419,13 @@ appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 34 | pre-commit |
-| full | 38 | pre-push, continuous integration, and the loop's verify step |
+| fast | 35 | pre-commit |
+| full | 39 | pre-push, continuous integration, and the loop's verify step |
 | staged | 3 | a staged-files-only subset |
 
-The configuration declares 39 checks in total. They cover lint, format, three
+The configuration declares 40 checks in total. They cover lint, format, three
 platform-specific type-check passes, a security scan, dead code, a wiring gate, the kit
-boundary, the layering contract, the test suite, all five projection drift checks, the
+boundary, the layering contract, the test suite, all six projection drift checks, the
 documentation claim gates, and the ratchets.
 
 **The four counts above are a tripwire, not a reading.** `tests/test_docs_drift.py` re-derives
