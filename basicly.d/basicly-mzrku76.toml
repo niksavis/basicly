@@ -1,0 +1,4 @@
+[[verify.checks]]
+name = "always-on-size"
+command = ["uv", "run", "python", ".scripts/check_always_on_size.py"]
+modes = ["fast", "full"]

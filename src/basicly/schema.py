@@ -133,6 +133,10 @@ class Target:
     max_size_warning: int
     max_lines_warning: int
     outputs: list[OutputDef]
+    max_size_unit: str = "characters"
+
+    def measure(self, content: str) -> int:
+        return len(content.encode("utf-8")) if self.max_size_unit == "bytes" else len(content)
 
 
 @dataclass(frozen=True)

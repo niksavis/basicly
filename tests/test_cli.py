@@ -703,20 +703,33 @@ def _set_codex_size_cap(work_repo: Path, value: int) -> None:
 def test_cli_check_reports_the_always_on_budget_overrun_build_reports(work_repo: Path) -> None:
 
     run_basicly(work_repo, "build")
-    agents_chars = len((work_repo / "AGENTS.md").read_text(encoding="utf-8"))
-    _set_codex_size_cap(work_repo, agents_chars - 1)
+    agents_bytes = len((work_repo / "AGENTS.md").read_bytes())
+    _set_codex_size_cap(work_repo, agents_bytes - 1)
 
     result = run_basicly(work_repo, "check")
 
     assert result.returncode == 0, "an over-budget file is a cost to weigh, not a stale tree"
     assert "up to date" in result.stdout
-    assert f"AGENTS.md exceeds {agents_chars - 1} characters" in result.stderr
+    assert f"AGENTS.md exceeds {agents_bytes - 1} bytes ({agents_bytes})" in result.stderr
+
+
+def test_the_codex_budget_is_measured_in_the_unit_codex_enforces(work_repo: Path) -> None:
+    run_basicly(work_repo, "build")
+    text = (work_repo / "AGENTS.md").read_text(encoding="utf-8")
+    assert len(text.encode("utf-8")) > len(text), "the two units must differ to tell them apart"
+    _set_codex_size_cap(work_repo, len(text))
+
+    result = run_basicly(work_repo, "check")
+
+    assert f"({len(text.encode('utf-8'))})" in result.stderr, (
+        "project_doc_max_bytes counts bytes, so a character count would under-report"
+    )
 
 
 def test_cli_check_is_silent_on_a_budget_it_meets(work_repo: Path) -> None:
 
     run_basicly(work_repo, "build")
-    agents_chars = len((work_repo / "AGENTS.md").read_text(encoding="utf-8"))
+    agents_chars = len((work_repo / "AGENTS.md").read_bytes())
     _set_codex_size_cap(work_repo, agents_chars + 1)
 
     result = run_basicly(work_repo, "check")

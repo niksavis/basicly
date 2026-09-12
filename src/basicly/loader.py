@@ -278,4 +278,5 @@ def _load_target(path: Path) -> Target:
         max_size_warning=data.get("max_size_warning", 0),
         max_lines_warning=data.get("max_lines_warning", 0),
         outputs=outputs,
+        max_size_unit=str(data.get("max_size_unit", "characters")),
     )

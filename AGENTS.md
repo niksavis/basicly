@@ -212,7 +212,6 @@ edges. Every one passed the whole check set.
 
 ## Use
 
-- Read this file before acting; re-read after context resets or long tool chains.
 - User instructions in the current task override this file.
 - More specific path-scoped instructions override this file for matching files.
 

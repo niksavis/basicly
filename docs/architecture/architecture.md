@@ -668,9 +668,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | chars | cap | headroom |
 | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 8883 | 9000 | 117 |
-| `AGENTS.md` (codex) | 16160 | 16000 | -160 |
-| `.github/copilot-instructions.md` (copilot) | 8982 | 9000 | 18 |
+| `.claude/CLAUDE.md` (claude) | 8801 | 12000 | 3199 |
+| `AGENTS.md` (codex) | 16078 | 24576 | 8498 |
+| `.github/copilot-instructions.md` (copilot) | 8900 | 12000 | 3100 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -3234,7 +3234,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 61 tiers hold 139 modules and group into 9 bands. Every band may import every band below
+The 61 tiers hold 140 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3244,7 +3244,7 @@ against them.
 flowchart TB
   b1["1 · entry — 1 module<br/>cli"]
   b2["2 · drivers — 13<br/>supervise · loop · release · usage_report"]
-  b3["3 · loop mechanics — 37<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
+  b3["3 · loop mechanics — 38<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
   b4["4 · configuration and isolation — 3<br/>config · worktree"]
   b5["5 · agent runtime — 5<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 13<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
@@ -3419,11 +3419,11 @@ appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 35 | pre-commit |
-| full | 39 | pre-push, continuous integration, and the loop's verify step |
+| fast | 37 | pre-commit |
+| full | 41 | pre-push, continuous integration, and the loop's verify step |
 | staged | 3 | a staged-files-only subset |
 
-The configuration declares 40 checks in total. They cover lint, format, three
+The configuration declares 42 checks in total. They cover lint, format, three
 platform-specific type-check passes, a security scan, dead code, a wiring gate, the kit
 boundary, the layering contract, the test suite, all six projection drift checks, the
 documentation claim gates, and the ratchets.

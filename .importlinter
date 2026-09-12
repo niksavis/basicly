@@ -40,7 +40,7 @@ layers =
     classify | context_meter | decompose | loop_state | plan_entry | retrospective | rubrics
     validate_gate
     dispatch_brief
-    catalog_emphasis | catalog_token_cost | skill_coverage
+    catalog_emphasis | catalog_token_cost | skill_coverage | retention
     decisions
     handoff
     plan_gate | policy | routing_evals | tuning | verify

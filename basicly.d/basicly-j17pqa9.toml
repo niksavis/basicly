@@ -1,0 +1,4 @@
+[[verify.checks]]
+name = "retention-scorer"
+command = ["uv", "run", "python", ".scripts/retention_eval.py", "--self-check"]
+modes = ["fast", "full"]

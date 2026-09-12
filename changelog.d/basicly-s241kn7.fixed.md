@@ -1,0 +1,1 @@
+- Retired `recall_eval.py` and its hand-maintained `recall_rules.toml`, which had rotted to 9 anchorless rules and 11 stale text guards and failed on a clean tree. The replacement derives its rule set from the instruction file itself.

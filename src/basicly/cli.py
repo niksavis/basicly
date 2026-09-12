@@ -250,9 +250,11 @@ def _budget_warnings(
         if target.name != item.target_name:
             continue
         where = item.output_path.relative_to(repo_root)
-        if target.max_size_warning and len(content) > target.max_size_warning:
+        measured = target.measure(content)
+        if target.max_size_warning and measured > target.max_size_warning:
             out.append(
-                f"Warning: {where} exceeds {target.max_size_warning} characters ({len(content)})"
+                f"Warning: {where} exceeds {target.max_size_warning} "
+                f"{target.max_size_unit} ({measured})"
             )
         lines = content.count("\n") + 1
         if target.max_lines_warning and lines > target.max_lines_warning:
