@@ -1,0 +1,1 @@
+- The published page lists what the catalog projects, and now names output styles among them. The enumeration went out one short in v0.13.0, the release that added the type.
