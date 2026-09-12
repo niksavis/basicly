@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -154,6 +155,10 @@ def test_the_vendored_stylesheet_is_served_by_name_and_nothing_else_beside_it(
         assert refused.value.code == 404
 
 
+def _without_clock(body: bytes) -> bytes:
+    return re.sub(rb"[0-9]+", b"0", body)
+
+
 def test_the_record_route_answers_with_and_without_the_suffix(board_repo: Path) -> None:
 
     with _running(board_serve.bind(board_repo, port=0)) as listener:
@@ -163,8 +168,12 @@ def test_the_record_route_answers_with_and_without_the_suffix(board_repo: Path) 
         plain = _get(f"{listener.url}/record/{ident}")
         suffixed = _get(f"{listener.url}/record/{ident}.html")
         assert plain[0] == 200
+        assert suffixed[0] == 200
         assert ident in plain[1].decode("utf-8")
-        assert plain[1] == suffixed[1], "the two spellings answer with different pages"
+        assert ident in suffixed[1].decode("utf-8")
+        assert _without_clock(plain[1]) == _without_clock(suffixed[1]), (
+            "the two spellings answer with different pages"
+        )
 
         with pytest.raises(urllib.error.HTTPError) as missing:
             urllib.request.urlopen(f"{listener.url}/record/no-such-record", timeout=TIMEOUT_S)
