@@ -27,10 +27,16 @@ tracker: added to .gitattributes: events-*.jsonl -text merge=union
 tracker: 18 file(s) written, 0 unchanged, in .basicly/kit/tracker
 ```
 
-`init` vendors the kit into `.basicly/kit/<name>` and writes any git rule the kit's
-correctness depends on, refusing to install at all if it cannot. `uninstall` removes
-exactly what it wrote. Copying the files by hand still works and is the documented
+`init` vendors the kit into `.basicly/kit/<name>`, writes the kit's skill into every agent
+skill root, and writes any git rule the kit's correctness depends on, refusing to install at
+all if it cannot. `--with-instructions` also places a short always-on block. `uninstall`
+removes exactly what it wrote. Copying the files by hand still works and is the documented
 fallback, not the route.
+
+**A kit ships its guidance, not only its code.** Every kit directory carries a `GUIDANCE.md`
+that becomes the consumer's `SKILL.md` and an `INSTRUCTION.md` that becomes the always-on
+block, because a consumer who never runs `basicly` gets none of the projected catalog and
+would otherwise have working code that no agent knows to call.
 
 ## Constraints anything here must keep
 
@@ -52,6 +58,7 @@ These bind **every** kit, and each one is cited from the modules it governs.
 ## Adding a kit
 
 Give it a directory, a README stating what it is for and which of the two failure modes
-above it takes, and an entry in the table here. Then check whether `kit-deployment` needs to
+above it takes, a `GUIDANCE.md` skill and an `INSTRUCTION.md` block so a standalone consumer
+is told the kit exists, and an entry in the table here. Then check whether `kit-deployment` needs to
 know about it: that gate asserts a **host repository** satisfies a kit's deployment
 requirements, and a kit with no such requirements needs no entry.

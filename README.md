@@ -124,10 +124,40 @@ scaffolded VS Code tasks/CI workflow (only when still unedited).
   and Copilot agent hooks.
 - An owned work tracker — an append-only event ledger under `.basicly/ledger/`, read
   and written by `basicly tracker` — plus VS Code tasks and a CI gates workflow.
+- A gate that refuses a prose comment in a code file. The code is the source of truth, so
+  changing it can never leave a stale claim beside it; a directive a tool reads (`noqa`,
+  `nosec`, `type: ignore`, a shebang, a licence banner) is not prose and stays.
 
 Customize via YAML fragments in `.basicly-local/fragments/user/` — install
 never touches them. Scope the catalog to your stack with
 `--technologies` (for example `--technologies python,zsh`).
+
+## Take one piece without the harness
+
+**Three parts of basicly are packaged to stand alone**, for a repository that wants one of
+them and not the workflow around it. Each is its own distribution with no dependencies and a
+Python 3.9 floor, built from the same source this repo uses, so there is no second copy to
+drift.
+
+| Kit | What it gives a repository that has no basicly |
+| --- | --- |
+| [`basicly-tracker`](packages/basicly-tracker) | an append-only work tracker whose ledger merges cleanly when two people or two agents append in parallel — no server, no database, no binary |
+| [`basicly-comments`](packages/basicly-comments) | a gate that refuses a prose comment in a code file, and a prover that removes them safely across nine language families |
+| [`basicly-tier`](packages/basicly-tier) | a portable model tier a subagent declares instead of a provider model id, resolved per host |
+
+```sh
+uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init
+```
+
+`init` **vendors** the kit into `.basicly/kit/<name>`, so plain `python3` runs it afterwards
+with no `uvx`, no network and nothing on `PATH`. It also writes the kit's **skill** into
+`.claude/skills/`, `.agents/skills/` and `.github/skills/`, so an agent in that repository
+knows the kit exists and when to use it — a kit nothing calls is a kit nobody has. Add
+`--with-instructions` to place a short always-on block in the instruction files you already
+have, inside a marked region `uninstall` removes byte for byte.
+
+The tracker's install also writes the `merge=union` git attribute its parallel-append promise
+rests on, **before** the first kit file, and refuses to install at all if it cannot.
 
 ### Committer requirements
 

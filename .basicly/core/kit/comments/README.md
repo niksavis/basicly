@@ -30,6 +30,17 @@ it with no `uvx`, no network and nothing on `PATH`. `update` re-vendors and repo
 changed, `status` says whether the installed copy matches, and `uninstall` removes exactly
 the files `init` wrote and nothing else.
 
+`init` also writes the kit's **skill** into `.claude/skills/comments/`, `.agents/skills/comments/`
+and `.github/skills/comments/`, so an agent in that repository knows the kit exists and when to
+reach for it. That is the half a code-only install leaves out: a kit nothing calls is a kit
+nobody has.
+
+Add `--with-instructions` and it also writes a short always-on block into whichever of
+`CLAUDE.md`, `.claude/CLAUDE.md`, `AGENTS.md` and `.github/copilot-instructions.md` are
+present, inside a marked region that a second run does not duplicate and `uninstall` removes
+byte for byte. Without the flag it prints the block instead, because editing your instruction
+file is not something an installer should do unasked.
+
 Running it without vendoring works too — `basicly-comments <subcommand>` passes straight through to
 the kit.
 

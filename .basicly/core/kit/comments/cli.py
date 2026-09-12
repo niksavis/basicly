@@ -54,7 +54,7 @@ def covered_files(roots, skipped) -> list:
     for root in roots:
         path = Path(root)
         if path.is_file():
-            if scan.is_covered(path):
+            if scan.is_covered(path) and not any(part in skipped for part in path.parts):
                 found.append(path)
             continue
         for candidate in sorted(path.rglob("*")):

@@ -10,6 +10,22 @@ from typing import NamedTuple
 
 DEFAULT_ROOT = Path(".basicly") / "kit"
 
+SKILL_ROOTS = (
+    Path(".claude") / "skills",
+    Path(".agents") / "skills",
+    Path(".github") / "skills",
+)
+
+ALWAYS_ON_FILES = (
+    Path("CLAUDE.md"),
+    Path(".claude") / "CLAUDE.md",
+    Path("AGENTS.md"),
+    Path(".github") / "copilot-instructions.md",
+)
+
+GUIDANCE_FILE = "GUIDANCE.md"
+INSTRUCTION_FILE = "INSTRUCTION.md"
+
 SKIPPED_NAMES = frozenset({"__pycache__", ".basicly"})
 
 
@@ -18,6 +34,97 @@ def read_kit_constant(kit_dir: Path, module_file: str, name: str):
     if not hasattr(module, name):
         raise SystemExit(f"{kit_dir / module_file} declares no {name}")
     return getattr(module, name)
+
+
+def skill_paths(target: Path, name: str) -> list:
+    return [target / root / name / "SKILL.md" for root in SKILL_ROOTS]
+
+
+def marker(name: str) -> tuple:
+    return (f"<!-- basicly-kit:{name} begin -->", f"<!-- basicly-kit:{name} end -->")
+
+
+def write_skill(kit_dir: Path, target: Path, name: str, stream) -> int:
+    source = kit_dir / GUIDANCE_FILE
+    if not source.is_file():
+        return 0
+    body = source.read_text(encoding="utf-8")
+    written = 0
+    for path in skill_paths(target, name):
+        if path.exists() and path.read_text(encoding="utf-8") == body:
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        stream.write(f"{name}: wrote the skill to {path.relative_to(target)}\n")
+        written += 1
+    return written
+
+
+def drop_skill(target: Path, name: str, stream) -> int:
+    removed = 0
+    for path in skill_paths(target, name):
+        if not path.exists():
+            continue
+        path.unlink()
+        removed += 1
+        _prune_empty(path.parent, target.resolve())
+    if removed:
+        stream.write(f"{name}: removed the skill from {removed} root(s)\n")
+    return removed
+
+
+def block_text(kit_dir: Path, name: str) -> str:
+    source = kit_dir / INSTRUCTION_FILE
+    if not source.is_file():
+        return ""
+    begin, end = marker(name)
+    return f"{begin}\n\n{source.read_text(encoding='utf-8').rstrip()}\n\n{end}\n"
+
+
+def write_block(kit_dir: Path, target: Path, name: str, stream) -> int:
+    block = block_text(kit_dir, name)
+    if not block:
+        return 0
+    begin, end = marker(name)
+    found = [path for path in ALWAYS_ON_FILES if (target / path).is_file()]
+    if not found:
+        stream.write(
+            f"{name}: no always-on instruction file here, so nothing was edited. "
+            f"Paste this into the one your agent reads:\n\n{block}\n"
+        )
+        return 0
+    for relative in found:
+        path = target / relative
+        text = path.read_text(encoding="utf-8")
+        if begin in text and end in text:
+            head, _, rest = text.partition(begin)
+            _, _, tail = rest.partition(end)
+            updated = head + block.rstrip("\n") + tail
+        else:
+            updated = text.rstrip("\n") + "\n\n" + block
+        if updated != text:
+            path.write_text(updated, encoding="utf-8")
+            stream.write(f"{name}: wrote the always-on block into {relative}\n")
+    return len(found)
+
+
+def drop_block(target: Path, name: str, stream) -> int:
+    begin, end = marker(name)
+    removed = 0
+    for relative in ALWAYS_ON_FILES:
+        path = target / relative
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if begin not in text or end not in text:
+            continue
+        head, _, rest = text.partition(begin)
+        _, _, tail = rest.partition(end)
+        path.write_text(head.rstrip("\n") + "\n" + tail.lstrip("\n"), encoding="utf-8")
+        removed += 1
+    if removed:
+        stream.write(f"{name}: removed the always-on block from {removed} file(s)\n")
+    return removed
 
 
 def host_rules(kit):
@@ -67,9 +174,15 @@ def vendored_root(target: Path, name: str) -> Path:
     return target / DEFAULT_ROOT / name
 
 
-def install(kit_dir: Path, target: Path, name: str, stream, kit=None) -> int:
+def install(request) -> int:
+    kit_dir, target, name, stream = (
+        request.kit.directory,
+        request.target,
+        request.kit.name,
+        request.stream,
+    )
     destination = vendored_root(target, name)
-    for rule_file, lines in host_rules(kit):
+    for rule_file, lines in host_rules(request.kit):
         path = target / rule_file
         try:
             added = ensure_lines(path, lines)
@@ -91,14 +204,32 @@ def install(kit_dir: Path, target: Path, name: str, stream, kit=None) -> int:
         shutil.copyfile(source, path)
         written += 1
     stream.write(f"{name}: {written} file(s) written, {unchanged} unchanged, in {destination}\n")
-    if written == 0:
+    skills = write_skill(kit_dir, target, name, stream)
+    blocks = 0
+    if request.instructions:
+        blocks = write_block(kit_dir, target, name, stream)
+    elif block_text(kit_dir, name):
+        stream.write(
+            f"{name}: an always-on block is available; re-run with --with-instructions to "
+            f"write it into your agent instruction files, or read it in "
+            f"{destination / INSTRUCTION_FILE}\n"
+        )
+    if written == 0 and skills == 0 and blocks == 0:
         stream.write(f"{name}: already installed at this version; nothing changed\n")
     return 0
 
 
-def uninstall(kit_dir: Path, target: Path, name: str, stream, kit=None) -> int:
+def uninstall(request) -> int:
+    kit_dir, target, name, stream = (
+        request.kit.directory,
+        request.target,
+        request.kit.name,
+        request.stream,
+    )
     destination = vendored_root(target, name)
-    for rule_file, lines in host_rules(kit):
+    drop_skill(target, name, stream)
+    drop_block(target, name, stream)
+    for rule_file, lines in host_rules(request.kit):
         dropped = drop_lines(target / rule_file, set(lines))
         if dropped:
             stream.write(f"{name}: removed {dropped} line(s) from {rule_file}\n")
@@ -134,7 +265,13 @@ def _prune_empty(directory: Path, stop_at: Path) -> None:
         path = path.parent
 
 
-def status(kit_dir: Path, target: Path, name: str, stream, kit=None) -> int:
+def status(request) -> int:
+    kit_dir, target, name, stream = (
+        request.kit.directory,
+        request.target,
+        request.kit.name,
+        request.stream,
+    )
     destination = vendored_root(target, name)
     if not destination.exists():
         stream.write(f"{name}: not installed at {destination}\n")
@@ -153,7 +290,7 @@ def status(kit_dir: Path, target: Path, name: str, stream, kit=None) -> int:
         return 1
     missing = [
         f"{rule_file}: {line}"
-        for rule_file, lines in host_rules(kit)
+        for rule_file, lines in host_rules(request.kit)
         for line in lines
         if line not in _lines_of(target / rule_file)
     ]
@@ -186,6 +323,13 @@ def load_kit_module(kit_dir: Path, file_name: str, module_name: str):
     return module
 
 
+class Request(NamedTuple):
+    kit: object
+    target: Path
+    stream: object
+    instructions: bool = False
+
+
 class Kit(NamedTuple):
     command: str
     name: str
@@ -206,14 +350,22 @@ def run(kit: Kit, argv=None) -> int:
             default=Path(),
             help="the repository to install into (default: the working directory)",
         )
+        parser.add_argument(
+            "--with-instructions",
+            action="store_true",
+            help="also write the always-on block into the agent instruction files present",
+        )
         parsed = parser.parse_args(args[1:])
-        return verbs[args[0]](kit.directory, parsed.into, kit.name, sys.stdout, kit)
+        request = Request(kit, parsed.into, sys.stdout, parsed.with_instructions)
+        return verbs[args[0]](request)
     if not args or args[0] in {"-h", "--help"}:
         sys.stdout.write(
             f"usage: {kit.command} <init|update|uninstall|status> [--into PATH]\n"
             f"       {kit.command} <the kit's own subcommands>\n\n"
-            f"init      vendor the kit into ./{DEFAULT_ROOT / kit.name}, so plain python3\n"
-            f"          runs it afterwards with no uvx and no network\n"
+            f"init      vendor the kit into ./{DEFAULT_ROOT / kit.name} and write its skill\n"
+            f"          to every agent skill root, so plain python3 runs it afterwards\n"
+            f"          with no uvx and no network\n"
+            f"          --with-instructions also writes the always-on block\n"
             f"update    the same, reporting what changed\n"
             f"uninstall remove only the files init wrote\n"
             f"status    say whether the installed copy matches this one\n\n"

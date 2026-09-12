@@ -17,6 +17,8 @@ scope:
   paths:
   - src/**
   - tests/**
+  - packages/**
+  - site/**
   - .scripts/**
   - .basicly/core/hooks/**
   - .basicly/core/kit/**

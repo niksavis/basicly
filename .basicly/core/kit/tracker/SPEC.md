@@ -61,6 +61,17 @@ $ python3 .basicly/kit/tracker/cli.py ready .
 `update` re-vendors and reports what changed, `status` says whether the installed copy and
 its rules are current, and `uninstall` removes exactly what `init` wrote.
 
+`init` also writes the kit's **skill** into `.claude/skills/tracker/`, `.agents/skills/tracker/`
+and `.github/skills/tracker/`, so an agent in that repository knows the kit exists and when to
+reach for it. That is the half a code-only install leaves out: a kit nothing calls is a kit
+nobody has.
+
+Add `--with-instructions` and it also writes a short always-on block into whichever of
+`CLAUDE.md`, `.claude/CLAUDE.md`, `AGENTS.md` and `.github/copilot-instructions.md` are
+present, inside a marked region that a second run does not duplicate and `uninstall` removes
+byte for byte. Without the flag it prints the block instead, because editing your instruction
+file is not something an installer should do unasked.
+
 **Copying the files by hand is the fallback, not the route.** It still works — the kit
 imports nothing but the standard library — but a hand copy does not write the git
 attribute, so a repository installed that way keeps the conflicts this design removes.

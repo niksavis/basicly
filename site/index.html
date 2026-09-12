@@ -743,6 +743,39 @@
             everything managed; your overlay survives.
           </li>
         </ul>
+        <h2 style="margin-top:2.5rem">Or take one piece, without the harness</h2>
+        <p class="lead">
+          Three parts are packaged to stand alone, for a repository that wants
+          one of them and not the workflow around it. Each has no dependencies
+          and a Python 3.9 floor, and is built from the same source this repo
+          uses, so there is no second copy to drift.
+        </p>
+        <ul class="plain">
+          <li>
+            <strong><code>basicly-tracker</code></strong> — an append-only work
+            tracker whose ledger merges cleanly when two people or two agents
+            append in parallel. No server, no database, no binary to install.
+          </li>
+          <li>
+            <strong><code>basicly-comments</code></strong> — a gate that refuses
+            a prose comment in a code file, and a prover that removes them
+            safely across nine language families.
+          </li>
+          <li>
+            <strong><code>basicly-tier</code></strong> — a portable model tier a
+            subagent declares instead of a provider model id, resolved per host.
+          </li>
+        </ul>
+        <pre><span class="p">$ </span>uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init</pre>
+        <p class="muted">
+          <code>init</code> vendors the kit into
+          <code>.basicly/kit/&lt;name&gt;</code>, so plain <code>python3</code>
+          runs it afterwards with no uvx and no network. It also writes the
+          kit's <strong>skill</strong> into the agent skill roots, so an agent
+          in that repository knows the kit exists and when to use it — a kit
+          nothing calls is a kit nobody has. <code>uninstall</code> removes
+          exactly what it wrote.
+        </p>
       </div>
     </section>
 

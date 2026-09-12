@@ -218,3 +218,100 @@ def test_the_tier_wheel_carries_the_model_map_beside_its_resolver(tmp_path: Path
     wheel = next(tmp_path.glob("*.whl"))
 
     assert "basicly_tier/kit/model-map.json" in zipfile.ZipFile(wheel).namelist()
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_every_kit_carries_a_skill_and_an_always_on_block(kit: str) -> None:
+    guidance = CATALOG / kit / "GUIDANCE.md"
+    instruction = CATALOG / kit / "INSTRUCTION.md"
+
+    assert guidance.is_file(), "a kit with no skill is code an agent never calls"
+    assert instruction.is_file(), "a kit with no always-on block is a skill nothing triggers"
+
+    body = guidance.read_text(encoding="utf-8")
+    assert body.startswith("---\n"), "the skill needs frontmatter or no host will index it"
+    assert "\nname:" in body
+    assert "\ndescription:" in body
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_the_skill_description_says_when_to_use_it(kit: str) -> None:
+    body = (CATALOG / kit / "GUIDANCE.md").read_text(encoding="utf-8")
+    description = body.split("description:", 1)[1].split("\n", 1)[0].lower()
+
+    assert "use when" in description or "use whenever" in description, (
+        "a description that does not say when to reach for the skill is a skill nothing loads"
+    )
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_init_writes_the_skill_into_every_root_an_agent_reads(kit: str, tmp_path: Path) -> None:
+    installer.run(_kit(kit), ["init", "--into", str(tmp_path)])
+
+    for root in (".claude/skills", ".agents/skills", ".github/skills"):
+        path = tmp_path / root / kit / "SKILL.md"
+        assert path.is_file(), f"{root} has no skill, so that agent family is never told"
+        assert path.read_text(encoding="utf-8") == (CATALOG / kit / "GUIDANCE.md").read_text(
+            encoding="utf-8"
+        )
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_init_does_not_touch_an_instruction_file_without_the_flag(kit: str, tmp_path: Path) -> None:
+    original = "# mine\n\nMy own guidance.\n"
+    (tmp_path / "CLAUDE.md").write_text(original, encoding="utf-8")
+
+    installer.run(_kit(kit), ["init", "--into", str(tmp_path)])
+
+    assert (tmp_path / "CLAUDE.md").read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_the_flag_writes_a_marked_block_that_a_second_run_does_not_duplicate(
+    kit: str, tmp_path: Path
+) -> None:
+    (tmp_path / "CLAUDE.md").write_text("# mine\n\nMy own guidance.\n", encoding="utf-8")
+
+    installer.run(_kit(kit), ["init", "--into", str(tmp_path), "--with-instructions"])
+    once = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+    installer.run(_kit(kit), ["init", "--into", str(tmp_path), "--with-instructions"])
+
+    assert (tmp_path / "CLAUDE.md").read_text(encoding="utf-8") == once
+    assert once.count(f"<!-- basicly-kit:{kit} begin -->") == 1
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_uninstall_leaves_the_instruction_file_byte_for_byte(kit: str, tmp_path: Path) -> None:
+    original = "# mine\n\nMy own guidance.\n"
+    (tmp_path / "CLAUDE.md").write_text(original, encoding="utf-8")
+    installer.run(_kit(kit), ["init", "--into", str(tmp_path), "--with-instructions"])
+
+    installer.run(_kit(kit), ["uninstall", "--into", str(tmp_path)])
+
+    assert (tmp_path / "CLAUDE.md").read_text(encoding="utf-8") == original
+    assert not (tmp_path / ".claude").exists()
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_with_no_instruction_file_the_block_is_printed_rather_than_placed(
+    kit: str, tmp_path: Path, capsys
+) -> None:
+    installer.run(_kit(kit), ["init", "--into", str(tmp_path), "--with-instructions"])
+
+    printed = capsys.readouterr().out
+    assert "no always-on instruction file here" in printed
+    assert f"<!-- basicly-kit:{kit} begin -->" in printed
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_the_wheel_carries_the_guidance_so_a_consumer_gets_it(kit: str, tmp_path: Path) -> None:
+    subprocess.run(  # nosec B603 B607
+        ["uv", "build", "--wheel", str(PACKAGES / f"basicly-{kit}"), "--out-dir", str(tmp_path)],
+        capture_output=True,
+        check=True,
+    )
+
+    names = zipfile.ZipFile(next(tmp_path.glob("*.whl"))).namelist()
+
+    assert f"basicly_{kit}/kit/GUIDANCE.md" in names
+    assert f"basicly_{kit}/kit/INSTRUCTION.md" in names
