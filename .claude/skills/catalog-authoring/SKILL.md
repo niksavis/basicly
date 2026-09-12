@@ -71,7 +71,9 @@ CLAUDE.md corpus (2026-07 research, epic basicly-84v):
   a bare "never X" leaves it stuck.
 - Give a one-clause rationale so the rule generalizes beyond its literal case.
 - Emphasis is a scarce resource: at most one `IMPORTANT`-style marker per
-  projection, or every marker becomes invisible.
+  projection, or every marker becomes invisible. `basicly catalog lint`
+  counts them per composed projection and per skill, and refuses the second
+  one by name; a marker inside a code span or a fence does not count.
 - Every rule should trace to a real incident, not a hypothetical one; the
   quirks category exists for exactly those.
 - Apply the deletion test before adding a bullet: would removing it cause the

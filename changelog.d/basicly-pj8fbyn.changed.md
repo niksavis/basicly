@@ -1,0 +1,1 @@
+- The `tired-engineer` output style asks for a status report on an observable condition instead of after every third tool call, which a model cannot count.

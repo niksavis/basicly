@@ -7,6 +7,7 @@ import yaml
 
 from . import (
     agents,
+    catalog_emphasis,
     catalog_token_cost,
     read_cost,
     routing_evals,
@@ -183,6 +184,8 @@ def lint_catalog(repo_root: Path) -> list[str]:
     violations.extend(_check_coverage_vocabulary(repo_root))
 
     violations.extend(catalog_token_cost.violations(repo_root))
+
+    violations.extend(catalog_emphasis.violations(repo_root))
 
     return violations
 

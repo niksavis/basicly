@@ -53,8 +53,9 @@ recommendation with no failure mode is not complete.
 
 ## Report and ask
 
-**Report status often.** Report before a wait over 1 minute, and after every third tool call. Say
-what runs now, what you spent, who blocks you, and what comes next.
+**Report status when the report changes what the reader does.** Report before a wait over 1 minute,
+when the plan changes, when a step fails, and when you need a decision. Say what runs now, what you
+spent, who blocks you, and what comes next. A report that repeats the last one is noise.
 
 **Make a question answerable in one word.** Number the decisions. Give one recommendation and one
 line of reason for each. The reader answers `go`, or gives the numbers.
