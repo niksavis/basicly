@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.13.0 - 2026-09-12
+
+Delta: v0.12.2..v0.13.0
+
 Two themes. Every kit now installs without basicly at all, and the guidance layer stopped
 asserting things about itself and started measuring them.
 
@@ -47,6 +51,64 @@ swallows `-r`'s value.
 **Model anchors moved where the vendors moved.** `claude-fable-5` is legacy, `kimi-k2.5` is
 gone, and OpenAI publishes a genuine fourth class, so maximum resolves to `gpt-6-astra` and
 OpenAI's tier collapse is removed. The tier kit ships the new map.
+
+### Added
+
+- **`rg-replace-guard` refuses a ripgrep flag cluster that swallows `-r`'s value.** `-r` is `--replace`, so `rg -rn <pat>` searches with replacement `n`: the pattern is substituted in every printed line, the line numbers vanish, and the output still reads as a real finding. Measured over 2977 recorded `rg` calls: 92 traps, 6 deliberate `-r`, all six as their own token. (basicly-0m5hn5w)
+
+- `basicly catalog lint` now counts emphasis markers per composed projection and per skill, and refuses a second one by name. A marker inside a code span or a fenced block does not count. (basicly-1zo13gk)
+
+- **`bare-var-guard` refuses a command prefix held in an unquoted variable.** zsh does not word-split an expansion, so `W="uv run x --"; $W a b` seeks one command named `uv run x --` and exits 127 while the chain runs on. Measured over 17358 recorded calls: 4 true positives, 0 false ones. A quoted `"$VAR"` head is deliberate and never fires. (basicly-gmdvdwo)
+
+- `.scripts/retention_eval.py` measures how much of an always-on instruction file a model actually retains, reporting the rate, the curve by position in the file, and each unretained rule beside the closest line in the response. It derives the rules from the file, so there is no anchor inventory to drift. (basicly-j17pqa9)
+
+- **A comments kit that refuses prose in code.** `check` names every prose comment and exits 1; `fix` removes them and keeps the directives a tool reads (`noqa`, `nosec`, `type: ignore`, shebangs, licence banners). Covers Python, JS/TS, C-like, C#, CSS, HTML, shell and SQL; declines config and Markdown. Every strip is proved by re-parse, idempotence and literal preservation. (basicly-phglc2x)
+
+- **Each kit installs on its own, with no basicly.** `uvx --from git+…#subdirectory=packages/basicly-tracker basicly-tracker init` vendors the kit into `.basicly/kit/<name>`, so plain `python3` runs it afterwards; `uninstall` removes exactly what it wrote. The tracker install also writes the `merge=union` attribute its parallel-append promise rests on, and refuses if it cannot. (basicly-ssbkq5c)
+
+- `basicly retention` scores a recall answer against an always-on instruction file and reports whether that file is in the session's context, with bands set from a measured 95%-with-file against 5%-without separation. The `retention-probe` skill is the runbook. It answers presence, never adherence. (basicly-wdg7hia)
+
+- **Each kit now ships the skill and the instruction that make an agent use it.** A standalone install used to leave working code no agent knew to call. `init` now writes the kit's skill into `.claude/skills/`, `.agents/skills/` and `.github/skills/`, and `--with-instructions` places a short always-on block in a marked region that `uninstall` removes byte for byte. (basicly-witw3qh)
+
+- Output styles are now a catalog content type: author `.basicly/core/output-styles/<slug>/style.yaml`, project it with `basicly styles-build`, and the new `projection-styles` gate refuses a hand edit. `basicly install` delivers it, so a consumer gets the style the way it gets skills. (basicly-yhhmoqq)
+
+### Changed
+
+- Dropped the always-on line telling the agent to re-read the instruction file after a context reset. The host already re-injects it after compaction, so the instruction asked for something that had already happened. (basicly-1t1d7dr)
+
+- The `core-rules`, `quality-gate`, `self-improvement-retro` and `decision-protocol` always-on fragments now give a reason for each rule they state, at three characters less than before. (basicly-dxefpz1)
+
+- **The prose ratchets are named as a two-second local check.** `python-guidelines` now gives `.scripts/check_comment_density.py` and `.scripts/check_module_size.py` as the way to measure while writing, instead of waiting about four minutes for the same refusal to arrive from a full `pytest` run. Neither reads an argument; both sweep the tree. (basicly-eocuw9y)
+
+- Every prohibition in the `secure-coding` always-on fragment now states the reason it exists, so the rule generalises past the case it names. (basicly-fpbb211)
+
+- The always-on size caps are now blocking (`always-on-size`), the codex cap counts bytes because that is what `project_doc_max_bytes` enforces, and every cap is set from a measured retention curve rather than a guess. (basicly-mzrku76)
+
+- The `tired-engineer` output style asks for a status report on an observable condition instead of after every third tool call, which a model cannot count. (basicly-pj8fbyn)
+
+- **A coverage claim must name the list the code iterates.** The `quality-gate` guidance now says that the generality of a mechanism is no evidence about membership — a path-agnostic guard says nothing about which paths it is handed. Filed after a guarantee was claimed for a file that was never in the projected output at all. (basicly-s8ao2fj)
+
+### Fixed
+
+- **The security scan now reads the four Python files the kits ship.** `kit_installer.py` and the three shims are force-included into every wheel and run file operations in a consumer's repo, and bandit had never scanned `packages/`. The coverage sweep could not notice, because it derived its population from a list that named only two roots. (basicly-49jp9r3)
+
+- Documented the output-style content type in the architecture reference and added `styles-check` to both how-to guides, which had shipped listing five projection checks where there are now six. (basicly-4cy3b8t)
+
+- **`basicly install` now writes the ledger's union-merge attribute.** Without it two branches that each append an event conflict, which is the failure the append-only tracker exists to remove — and only the standalone installer wrote it, so the integrated path was the weaker one. The glob is read off the kit's own `events.LOG_GLOB`, and an install that cannot write it refuses. (basicly-55iggkk)
+
+- **Three model anchors named models the vendors have moved past.** `claude-fable-5` is legacy, `kimi-k2.5` is gone, and OpenAI now publishes a genuine fourth class, so maximum resolves to `gpt-6-astra` and OpenAI's collapse is removed. Google's Pro tier is recorded as unavailable on Copilot, which now serves only the flash line. The tier kit ships the new map. (basicly-b63vxdk)
+
+- **A board-serve test no longer fails on the clock.** It compared two record pages fetched a moment apart byte for byte, so one clock-derived digit made the two spellings of the route look like different pages. It now asserts the routing property directly and compares the pages with digit runs normalised. Cost a round on 2026-09-11 and a refused push on 2026-09-12. (basicly-gssz1qa)
+
+- **A standalone kit install no longer writes a third skill copy.** Copilot discovers `.github/skills`, `.claude/skills` and `.agents/skills` with no documented dedup, so the third was found a third time — the defect the catalog dropped and the kit installer kept. `init` writes two roots and removes a stale third when it is byte-for-byte ours. Kits at 0.2.1. (basicly-hzkl3am)
+
+- **An upgrade moves the version pin in the files it scaffolded.** Those are written once and then yours, so an upgrade left the five `@vX.Y.Z` pins in `basicly-gates.yml` at the old tag: CI ran the old engine against the new catalog and the skew guard refused four of five steps. Only the pin moves. (basicly-jdpzlwj)
+
+- **A standalone kit install refuses where basicly already manages that kit.** Two copies at `.basicly/core/kit/<name>` and `.basicly/kit/<name>` could drift with nothing reconciling them, and a hook wired against one would keep running it after the other was updated. The refusal names both paths; `status` reports the managed copy as the one in use. (basicly-lr9vrj2)
+
+- **A basicly consumer now gets the comment-ban skill, not just the rule.** The catalog ships `no-comments`, generated from the kit's own guidance so the standalone and integrated consumers are told the same thing, with a test that fails if the two drift. (basicly-oujmj4h)
+
+- Retired `recall_eval.py` and its hand-maintained `recall_rules.toml`, which had rotted to 9 anchorless rules and 11 stale text guards and failed on a clean tree. The replacement derives its rule set from the instruction file itself. (basicly-s241kn7)
 
 ## v0.12.2 - 2026-09-11
 

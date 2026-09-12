@@ -1,1 +1,0 @@
-- `basicly catalog lint` now counts emphasis markers per composed projection and per skill, and refuses a second one by name. A marker inside a code span or a fenced block does not count.

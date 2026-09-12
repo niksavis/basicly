@@ -1,1 +1,0 @@
-- **A standalone kit install no longer writes a third skill copy.** Copilot discovers `.github/skills`, `.claude/skills` and `.agents/skills` with no documented dedup, so the third was found a third time — the defect the catalog dropped and the kit installer kept. `init` writes two roots and removes a stale third when it is byte-for-byte ours. Kits at 0.2.1.

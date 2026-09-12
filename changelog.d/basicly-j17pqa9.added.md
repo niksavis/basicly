@@ -1,1 +1,0 @@
-- `.scripts/retention_eval.py` measures how much of an always-on instruction file a model actually retains, reporting the rate, the curve by position in the file, and each unretained rule beside the closest line in the response. It derives the rules from the file, so there is no anchor inventory to drift.

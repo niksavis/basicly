@@ -1,1 +1,0 @@
-- **An upgrade moves the version pin in the files it scaffolded.** Those are written once and then yours, so an upgrade left the five `@vX.Y.Z` pins in `basicly-gates.yml` at the old tag: CI ran the old engine against the new catalog and the skew guard refused four of five steps. Only the pin moves. (basicly-jdpzlwj)

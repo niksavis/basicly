@@ -1,1 +1,0 @@
-- **A coverage claim must name the list the code iterates.** The `quality-gate` guidance now says that the generality of a mechanism is no evidence about membership — a path-agnostic guard says nothing about which paths it is handed. Filed after a guarantee was claimed for a file that was never in the projected output at all. (basicly-s8ao2fj)

@@ -1,1 +1,0 @@
-- **Three model anchors named models the vendors have moved past.** `claude-fable-5` is legacy, `kimi-k2.5` is gone, and OpenAI now publishes a genuine fourth class, so maximum resolves to `gpt-6-astra` and OpenAI's collapse is removed. Google's Pro tier is recorded as unavailable on Copilot, which now serves only the flash line. The tier kit ships the new map. (basicly-b63vxdk)

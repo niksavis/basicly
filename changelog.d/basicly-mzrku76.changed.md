@@ -1,1 +1,0 @@
-- The always-on size caps are now blocking (`always-on-size`), the codex cap counts bytes because that is what `project_doc_max_bytes` enforces, and every cap is set from a measured retention curve rather than a guess.

@@ -1,1 +1,0 @@
-- Dropped the always-on line telling the agent to re-read the instruction file after a context reset. The host already re-injects it after compaction, so the instruction asked for something that had already happened.

@@ -1,1 +1,0 @@
-- `basicly retention` scores a recall answer against an always-on instruction file and reports whether that file is in the session's context, with bands set from a measured 95%-with-file against 5%-without separation. The `retention-probe` skill is the runbook. It answers presence, never adherence.
