@@ -87,7 +87,7 @@ def test_the_rule_admits_every_committed_anchor(payload: dict, anchors) -> None:
 
 
 def test_reasoning_is_recorded_but_not_required(payload: dict, anchors) -> None:
-    assert anchors.rule.failures(payload["moonshotai"]["models"]["kimi-k2-turbo-preview"]) == []
+    assert anchors.rule.failures(payload["openai"]["models"]["gpt-4.1-mini"]) == []
     tiers = generator.resolve_tiers(payload, anchors)
     assert tiers["high"]["vendors"]["google"]["reasoning"] is True
 
@@ -178,8 +178,8 @@ def test_check_reports_a_surface_that_stopped_serving_a_tier(
     document = json.loads(map_path.read_text(encoding="utf-8"))
     document["tiers"]["low"]["vendors"]["moonshotai"]["surfaces"][BROKER_SURFACE] = {
         "status": "available",
-        "model": "kimi-k2.5",
-        "cost_usd_per_mtok": {"input": 0.6, "output": 3},
+        "model": "kimi-k2.6",
+        "cost_usd_per_mtok": {"input": 0.95, "output": 4},
         "limit_tokens": {"context": 262144, "output": 262144},
         "upstream_last_updated": "2026-01-01",
     }
@@ -234,7 +234,7 @@ def test_check_fails_and_writes_nothing_when_an_anchor_is_unresolvable(
 ) -> None:
     anchors_path = workspace / "anchors.yaml"
     anchors_path.write_text(
-        anchors_path.read_text(encoding="utf-8").replace("kimi-k2.5", "kimi-k2.9"),
+        anchors_path.read_text(encoding="utf-8").replace("kimi-k2.6", "kimi-k2.9"),
         encoding="utf-8",
     )
     before = (workspace / "model-map.json").read_text(encoding="utf-8")

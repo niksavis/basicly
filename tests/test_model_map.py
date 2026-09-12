@@ -132,7 +132,7 @@ def test_an_unserved_tier_is_marked_unavailable_with_no_model_key(payload: dict,
     gap = tiers["low"]["vendors"]["moonshotai"]["surfaces"][BROKER_SURFACE]
     assert gap["status"] == "unavailable"
     assert "model" not in gap, "an unavailable cell must not carry a model id"
-    assert "Kimi K2.5" in gap["reason"]
+    assert "Kimi K2.6" in gap["reason"]
 
     served = tiers["medium"]["vendors"]["moonshotai"]["surfaces"][BROKER_SURFACE]
     assert served["status"] == "available"
@@ -149,32 +149,41 @@ def test_the_broker_gaps_are_exactly_the_measured_ones(payload: dict, anchors) -
         if vendor_entry["surfaces"][BROKER_SURFACE]["status"] == "unavailable"
     )
     assert gaps == [
+        ("high", "google"),
         ("low", "google"),
         ("low", "moonshotai"),
+        ("maximum", "google"),
     ]
 
 
 def test_a_shorter_vendor_ladder_declares_its_collapse(payload: dict, anchors) -> None:
     tiers = generator.resolve_tiers(payload, anchors)
-    for vendor in ("openai", "moonshotai", "google"):
+    for vendor in ("moonshotai", "google"):
         entry = tiers["maximum"]["vendors"][vendor]
         assert entry["collapse"]["same_model_as_tier"] == "high"
         assert entry["collapse"]["reason"].strip()
         assert entry["anchor"] == tiers["high"]["vendors"][vendor]["anchor"]
-    assert "collapse" not in tiers["maximum"]["vendors"]["anthropic"]
+    for vendor in ("anthropic", "openai"):
+        assert "collapse" not in tiers["maximum"]["vendors"][vendor], (
+            f"{vendor} publishes a genuine fourth class, so its maximum must not collapse"
+        )
+        assert (
+            tiers["maximum"]["vendors"][vendor]["anchor"]
+            != (tiers["high"]["vendors"][vendor]["anchor"])
+        )
     assert "collapse" not in tiers["high"]["vendors"]["openai"]
 
 
 def test_a_collapse_that_disagrees_with_the_ids_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "anchors.yaml"
     declared = yaml.safe_load(ANCHORS_PATH.read_text(encoding="utf-8"))
-    openai = next(v for v in declared["vendors"] if v["id"] == "openai")
-    openai["tiers"]["maximum"] = "gpt-5.5-pro"
+    moonshot = next(v for v in declared["vendors"] if v["id"] == "moonshotai")
+    moonshot["tiers"]["maximum"] = "kimi-k2.6"
     path.write_text(yaml.safe_dump(declared), encoding="utf-8")
 
     with pytest.raises(generator.ResolutionError) as excinfo:
         generator.load_anchors(path)
-    assert "collapse" in str(excinfo.value) and "gpt-5.5-pro" in str(excinfo.value)
+    assert "collapse" in str(excinfo.value) and "kimi-k2.6" in str(excinfo.value)
 
 
 def test_a_collapse_without_a_reason_is_rejected(tmp_path: Path) -> None:
