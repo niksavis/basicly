@@ -1,0 +1,1 @@
+- **A `plain-english` skill, and the landing page rewritten to obey it.** Five of nine section titles used the "X, not Y" construction, which props a claim on the thing it is not. The skill names the constructions to delete, and asks for ASD-STE100 simplified technical English so a reader does not need English as a first language. It ships to consumers with the catalog.
