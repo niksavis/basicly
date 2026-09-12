@@ -6,6 +6,31 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+A follow-up to v0.13.0. One skill that repositories asked for, and four corrections to
+things that release got wrong.
+
+**Prose written for a reader who does not share the writer's language.** The landing page
+carried the construction "X, not Y" in five of its nine section titles, where the claim
+leans on the thing it is not rather than on evidence. The new `plain-english` skill names
+those constructions and asks for simplified technical English. It also separates the honest
+use of that construction from the decorative one: "a lane claim is a lease, not an
+assignment" removes a real misreading and stays. The skill ships with the catalog, so a
+consumer receives it the way it receives every other skill.
+
+**The readmes described a project that no longer exists.** The catalog readme called
+fragments Markdown files, named `SKILL.md` as the skill source, and documented three
+commands that exit 2. The root readme gave an install line for one kit out of three. Both
+are rewritten, and every command they now claim was executed before it was written down.
+
+**Two size measurements were reported in the wrong unit.** Codex enforces
+`project_doc_max_bytes` in bytes, and the published table counted characters, so it
+under-reported `AGENTS.md`. The table now states each target's own unit and carries the
+line count beside it, which is the cap that actually binds.
+
+**A fix inside a wheel needs a version to travel on.** The tier kit goes to 0.2.2, because
+`uvx` caches by name and version and a corrected file at an unchanged version reaches
+nobody.
+
 ## v0.13.0 - 2026-09-12
 
 Delta: v0.12.2..v0.13.0
