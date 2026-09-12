@@ -169,7 +169,7 @@ hooks:
     stage: pretooluse
     manager: claude
     matcher: Bash
-  # `module-size` and `comment-density` are budgets, not rules: prose can say the gate
+  # `module-size` is a budget, not a rule: prose can say the gate
   # exists and cannot say a module has 456 tokens left. `.scripts/headroom.py` is the read
   # that answers it before the code is written, and the `python` skill gives the command -
   # skipped three times on 2026-08-14 (basicly-co64) and three more on 2026-09-04, every

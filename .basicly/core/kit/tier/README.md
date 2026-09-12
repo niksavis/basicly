@@ -10,7 +10,7 @@ network.
 | `tier_resolver.py` | answers _which model_ a tier means, for one host surface |
 | `claude_tier_hook.py` | rewrites a Claude Code spawn to use it |
 | `install_hook.py` | wires the hook into the host's settings |
-| `../models/model-map.json` | the committed data all three read ([contract](../models/README.md)) |
+| `model-map.json` | the committed data all three read, vendored beside them by `init` |
 
 The `tier-injection` skill is the entry point for using it. This file is the
 reference for how it behaves and where it stops.

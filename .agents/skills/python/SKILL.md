@@ -69,7 +69,7 @@ Paying it after the code is written is the slowest order. Before writing a line,
 every file the change will touch:
 
 ```sh
-uv run python .scripts/headroom.py <file> [<file> ...]   # tokens left, prose points left
+uv run python .scripts/headroom.py <file> [<file> ...]   # module-size tokens left
 ```
 
 A file with under ~200 tokens left wants the extraction decided now, not after the

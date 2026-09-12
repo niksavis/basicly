@@ -1,10 +1,13 @@
 # basicly
 
-A source-of-truth projector that generates AI agent configuration files from small, tool-agnostic Markdown fragments.
+The catalog: one set of YAML sources projected into the configuration files each
+coding agent natively reads.
 
 ## Why
 
-Keep agent instructions (Claude Code, GitHub Copilot, Codex, etc.) in one place. Author a rule once as a fragment, then project it to each target's native format and activation rules.
+Keep agent instructions — Claude Code, GitHub Copilot, Codex — in one place. Author a
+rule once as a fragment, then project it to every target's own format and activation
+rules, so the three never drift apart by hand.
 
 ## Layout
 
@@ -17,160 +20,137 @@ ever writes into a consumer repo.
 ```text
 .basicly/
   core/
-    fragments/    # managed core fragments shipped by basicly (guidance, non-deterministic)
-    skills/       # managed skill catalog shipped by basicly
-    hooks/        # managed git hook scripts (gating, deterministic) - see hooks/README.md
-    targets/      # per-target registry files (YAML)
-    templates/    # Jinja2 templates for each target
+    fragments/      # always-on and path-scoped guidance
+    skills/         # on-demand runbooks, loaded when their description matches
+    output-styles/  # the host's answer format, replaced for every session
+    agents/         # subagent definitions
+    hooks/          # git hook scripts - see hooks/README.md
+    permissions/    # the managed deny-list
+    kit/            # the three standalone kits, also published as wheels
+    models/         # the model-tier map - see models/README.md
+    rubrics/        # scoring rubrics the loop reads
+    targets/        # per-target registry files
+    templates/      # Jinja2 templates for each target
+    schemas/        # JSON Schema for every source type
   generated-manifest.json  # deterministic projection record
 
 .basicly-local/
-  fragments/      # user-owned overlay fragments
+  fragments/        # user-owned overlay fragments, never touched by an upgrade
 ```
 
-Fragments and skills are the **suggestive** half of the harness (Markdown guidance a
-model reads); hooks under `core/hooks/` are the **gating** half (scripts that
-mechanically block a bad commit/push). Both are first-class, catalog-distributed
-artifact types — see [`docs/architecture/architecture.md`](../docs/architecture/architecture.md) §10, §13.
+Fragments, skills and output styles are the **suggestive** half of the harness — text a
+model reads. Hooks under `core/hooks/` are the **gating** half: scripts that mechanically
+block a bad commit or push. Both are first-class, catalog-distributed artifact types — see
+[`docs/architecture/architecture.md`](../docs/architecture/architecture.md) §10, §13.
+
+## Sources are YAML, never a discoverable filename
+
+A coding agent auto-discovers context by filename: `SKILL.md`, `AGENTS.md`, `CLAUDE.md`,
+`*.instructions.md`. So a **source** here is YAML, and the discoverable markdown is emitted
+only at the target roots by the projector. `basicly catalog lint` refuses a `SKILL.md` or a
+`*.fragment.md` under this directory, because a source with a discoverable name is loaded
+twice: once as itself and once as the projection.
+
+| Type | Source | Projects to |
+| --- | --- | --- |
+| fragment | `core/fragments/<category>/<id>.fragment.yaml` | the always-on files, or `.claude/rules/<id>.md` when scoped |
+| skill | `core/skills/<slug>/skill.yaml` | `SKILL.md` under `.claude/skills/` and `.agents/skills/` |
+| output style | `core/output-styles/<slug>/style.yaml` | `.claude/output-styles/<slug>.md` |
+| agent | `core/agents/<slug>/agent.yaml` | `.claude/agents/` and `.github/agents/` |
+
+Every source carries a `# yaml-language-server: $schema=` header pointing at
+`core/schemas/`, so an editor and an agent both validate it as they write.
 
 ## Fragments
 
-Each fragment is a Markdown file with YAML front matter:
+A fragment is a YAML file whose prose lives in a `body:` block scalar:
 
-```markdown
----
-id: python-style
-description: Python style conventions for this repo.
-category: code-style
-priority: medium
+```yaml
+# yaml-language-server: $schema=../../schemas/fragment.schema.json
+schema_version: 1
+id: use
+description: How to use the AGENTS.md baseline file.
+category: project
 applies_to: [all]
-scope:
-  paths: ["**/*.py"]
----
-
-- Use type hints for public functions.
-- Prefer `pathlib` over `os.path`.
-- Format with `ruff`.
+body: |
+  - User instructions in the current task override this file.
 ```
 
-Fields:
-
-- `id` — stable, unique identifier.
-- `description` — one-line summary.
-- `category` — controlled vocabulary (e.g. `project`, `code-style`, `security`).
-- `applies_to` — list of target names, or `[all]` for cross-tool baseline.
-- `priority` — `critical` | `high` | `medium` | `low`.
-- `scope.paths` — glob list; non-default scopes produce path-scoped outputs.
-- `status` — `active` | `draft` | `deprecated`.
-- `title` — optional display heading.
-- `source` — `"core"` or `"user"` (reserved for phase 2; defaults to `"core"`).
-- `override` — boolean, allows a user fragment to replace core fragments (reserved).
-- `replaces` — list of fragment ids to remove when this fragment is active (reserved).
-- `extends` — list of fragment ids this fragment augments (reserved).
+`applies_to` selects targets — `[all]`, or a target name. A `scope.paths` key makes the
+fragment path-scoped, so it loads only when the agent touches a matching file. Follow the
+`catalog-authoring` skill; `basicly catalog new fragment` scaffolds one.
 
 ## Targets
 
-Targets are defined in `.basicly/core/targets/<name>.yaml`. Each target declares its outputs, templates, and fragment selection rules.
+`core/targets/<name>.yaml` registers a target: its outputs, their templates, the filter
+that selects fragments for each, and the size caps. See
+[`docs/architecture/architecture.md`](../docs/architecture/architecture.md) §12.
 
 ## CLI
 
 Run from the repository root:
 
-```bash
-# List active fragments
-PYTHONPATH=src uv run python -m basicly.cli list
+```sh
+# Build and check the always-on files and path-scoped rules
+uv run basicly build
+uv run basicly check
 
-# Refresh managed core layout only
-PYTHONPATH=src uv run python -m basicly.cli update
+# One target only
+uv run basicly build --target claude
 
-# Build all enabled targets
-PYTHONPATH=src uv run python -m basicly.cli build
+# The other projected types, each with its own build and check
+uv run basicly skills-build
+uv run basicly skills-check
+uv run basicly styles-build
+uv run basicly styles-check
+uv run basicly agents-build
+uv run basicly agents-check
+uv run basicly hooks-build
+uv run basicly hooks-check
+uv run basicly permissions-build
+uv run basicly permissions-check
 
-# Build only one target
-PYTHONPATH=src uv run python -m basicly.cli build --target claude
+# Validate every source against its schema
+uv run basicly catalog lint
 
-# Check generated files are up to date (CI gate)
-PYTHONPATH=src uv run python -m basicly.cli check
-
-# List source skill collection entries
-PYTHONPATH=src uv run python -m basicly.cli skills-list
-
-# Project skills into .claude/skills (default)
-PYTHONPATH=src uv run python -m basicly.cli skills-build
-
-# Project skills into all default roots
-PYTHONPATH=src uv run python -m basicly.cli skills-build --all-default-roots
-
-# Check projected skills are synchronized
-PYTHONPATH=src uv run python -m basicly.cli skills-check
+# Print what the sources compose to, and which file each item came from
+uv run basicly catalog dump
 ```
+
+`basicly check` covers the always-on files and the scoped rules only. Each other type has
+its own check, and all of them run in `basicly verify`.
 
 ## CI
 
-The `.github/workflows/basicly.yml` workflow runs `check` on every push and pull request to `main`.
+The `.github/workflows/basicly.yml` workflow runs the projection checks on every push and
+pull request to `main`. `basicly verify --mode full` runs them together with the ratchets,
+the type checks and the test suite.
 
 ## Adding a fragment
 
-1. Create core fragments under `.basicly/core/fragments/<category>/`.
-2. Create user override fragments under `.basicly-local/fragments/user/<category>/`.
-3. Set `applies_to` to `[all]` for cross-tool rules, or to specific target names.
-4. Run `build` and commit the updated generated files and manifest.
+1. `uv run basicly catalog new fragment <id> --category <category>`.
+2. Fill in `description`, `applies_to` and the `body:` block scalar.
+3. Run `uv run basicly build` and commit the updated generated files and manifest.
 
-## Path configuration
-
-Paths are configured in `basicly.toml`:
-
-1. `paths.core_fragments`
-2. `paths.overlay_fragments`
-3. `paths.targets`
-4. `paths.templates`
-5. `paths.manifest`
-
-This allows users to choose a custom overlay folder name instead of `.basicly-local`.
+A user override goes under `.basicly-local/fragments/user/<category>/` instead, where an
+upgrade never touches it.
 
 ## Adding a target
 
 1. Add a renderer module at `src/basicly/renderers/<name>.py`.
 2. Add templates under `.basicly/core/templates/<name>/`.
 3. Add a registry file at `.basicly/core/targets/<name>.yaml`.
-4. Run `build` and commit.
+4. Run `uv run basicly build` and commit.
 
-## Skill collection
+## Path configuration
 
-`basicly` also supports a repository-controlled skill catalog:
-
-- Source of truth: `.basicly/core/skills/<skill-name>/SKILL.md`
-- Projection roots (optional): `.claude/skills`, `.github/skills`, `.agents/skills`
-- Default behavior: `skills-build` syncs source skills into `.claude/skills`
-
-This keeps skills shippable when extracting the `basicly` engine into a standalone repository while still allowing downstream repos to consume projected skill files.
-
-**Known gap**: the skill source format is still Markdown+YAML-frontmatter (`SKILL.md`)
-at the catalog level. Per [`docs/architecture/architecture.md`](../docs/architecture/architecture.md) §13 / §16,
-this should migrate to a non-`SKILL.md`-named, Python-authored source so a broad
-filesystem scan for `SKILL.md` by a coding agent can't discover the catalog copy in
-addition to the projected one — not yet executed.
-
-## Git hooks
-
-`basicly` also ships git hook scripts as a first-class catalog artifact under
-[`core/hooks/`](core/hooks/README.md) — the deterministic, gating counterpart to
-fragments/skills. This repo dogfoods them directly via
-[`.pre-commit-config.yaml`](../.pre-commit-config.yaml); there is no `hooks-build`
-projection command yet for installing them into a fresh consumer repo.
-
-## User customizations (phase 2 preview)
-
-The `.basicly-local/fragments/user/` directory is reserved for user-added fragments that
-survive updates to the core fragments shipped with basicly. The schema already accepts
-`source`, `override`, `replaces`, and `extends` fields with safe defaults. The full
-verification and override workflow is described in
-[`docs/architecture/architecture.md`](../docs/architecture/architecture.md) §19.
+`basicly.toml` sets `paths.core_fragments`, `paths.overlay_fragments`, `paths.targets`,
+`paths.templates` and `paths.manifest`, so a consumer can choose a different overlay
+directory name instead of `.basicly-local`.
 
 ## Extracting basicly
 
-The engine in `src/basicly/` and templates in `.basicly/core/templates/` have no terminal-specific content. To reuse basicly in another repo:
-
-1. Copy `src/basicly/` and `.basicly/core/templates/`.
-2. Replace `.basicly/core/fragments/` and `.basicly/core/targets/` with the new repo's content.
-3. Keep the CLI interface and manifest format unchanged.
+The engine in `src/basicly/` and the templates in `.basicly/core/templates/` carry no
+repo-specific content. A consumer does not copy them: `basicly install` materializes the
+catalog and `uvx --from git+https://github.com/niksavis/basicly basicly install` needs
+nothing on `PATH` first. Copying is the fallback for an air-gapped tree, not the route.

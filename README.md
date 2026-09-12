@@ -145,13 +145,22 @@ drift.
 | [`basicly-comments`](packages/basicly-comments) | a gate that refuses a prose comment in a code file, and a prover that removes them safely across nine language families |
 | [`basicly-tier`](packages/basicly-tier) | a portable model tier a subagent declares instead of a provider model id, resolved per host |
 
+Each one installs with a single line. Copy the one you want:
+
 ```sh
+# an append-only work tracker
 uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init
+
+# a gate that refuses a prose comment in a code file
+uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-comments basicly-comments init
+
+# a portable model tier a subagent declares instead of a model id
+uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tier basicly-tier init
 ```
 
 `init` **vendors** the kit into `.basicly/kit/<name>`, so plain `python3` runs it afterwards
 with no `uvx`, no network and nothing on `PATH`. It also writes the kit's **skill** into
-`.claude/skills/`, `.agents/skills/` and `.github/skills/`, so an agent in that repository
+`.claude/skills/` and `.agents/skills/`, so an agent in that repository
 knows the kit exists and when to use it — a kit nothing calls is a kit nobody has. Add
 `--with-instructions` to place a short always-on block in the instruction files you already
 have, inside a marked region `uninstall` removes byte for byte.

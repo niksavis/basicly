@@ -600,12 +600,12 @@ refused before it can reach a path template.
 
 Three targets ship, all enabled.
 
-| Target | Output | Filter | Soft cap |
+| Target | Output | Filter | Cap |
 | --- | --- | --- | --- |
-| claude | `.claude/CLAUDE.md` | `all` plus `claude`, scoped excluded | 9000 chars |
+| claude | `.claude/CLAUDE.md` | `all` plus `claude`, scoped excluded | 200 lines, 12000 chars |
 | claude | `.claude/rules/<id>.md`, one per scoped fragment, carrying a `paths:` frontmatter key | `all` plus `claude`, scoped only | — |
-| codex | `AGENTS.md` | `all`, scoped **inlined** | 16000 chars |
-| copilot | `.github/copilot-instructions.md` | `all` plus `copilot`, scoped excluded | 9000 chars |
+| codex | `AGENTS.md` | `all`, scoped **inlined** | 320 lines, 24576 **bytes** |
+| copilot | `.github/copilot-instructions.md` | `all` plus `copilot`, scoped excluded | 200 lines, 12000 chars |
 
 **Codex inlines a scoped fragment because it has nowhere to put one.** Codex is not short
 of steering files. It supports a nested `AGENTS.md`, an override file, fallback filenames,
