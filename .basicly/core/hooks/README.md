@@ -32,6 +32,8 @@ module docstring, and gated by `.scripts/docs_claims.py`.
 | `protect-generated` | `pretooluse` | `claude` | [`protect-generated.py`](protect-generated.py) | Block agent edits to basicly-generated files (Claude Code PreToolUse hook). |
 | `unsplit-loop-guard` | `pretooluse` | `claude` | [`unsplit-loop-guard.py`](unsplit-loop-guard.py) | Refuse a for-loop over an unsplit scalar (Claude Code PreToolUse hook, basicly-m2g3). |
 | `pipe-status-guard` | `pretooluse` | `claude` | [`pipe-status-guard.py`](pipe-status-guard.py) | Refuse reading a pipeline's exit status when a filter ends it (PreToolUse, xkqxp9). |
+| `bare-var-guard` | `pretooluse` | `claude` | [`bare-var-guard.py`](bare-var-guard.py) | Refuse a command whose head is a bare `$VAR` that same command assigned a phrase. |
+| `rg-replace-guard` | `pretooluse` | `claude` | [`rg-replace-guard.py`](rg-replace-guard.py) | Refuse an `rg` short-flag cluster that swallows `-r`'s replacement value. |
 | `headroom-guard` | `pretooluse` | `claude` | [`headroom-guard.py`](headroom-guard.py) | Put a Python module's remaining ratchet room in context before it is edited. |
 | `protect-generated-commit` | `pre-commit` | `git` | [`protect-generated-commit.py`](protect-generated-commit.py) | Block a commit that stages a hand-edited basicly-generated file (git backstop). |
 | `tool-usage` | `posttooluse` | `claude` | [`tool-usage.py`](tool-usage.py) | Count which terminal tools and skills the agent actually invokes (PostToolUse hook). |

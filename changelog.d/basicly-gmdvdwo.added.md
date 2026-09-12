@@ -1,0 +1,1 @@
+- **`bare-var-guard` refuses a command prefix held in an unquoted variable.** zsh does not word-split an expansion, so `W="uv run x --"; $W a b` seeks one command named `uv run x --` and exits 127 while the chain runs on. Measured over 17358 recorded calls: 4 true positives, 0 false ones. A quoted `"$VAR"` head is deliberate and never fires. (basicly-gmdvdwo)

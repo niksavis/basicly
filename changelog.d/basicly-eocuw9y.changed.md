@@ -1,0 +1,1 @@
+- **The prose ratchets are named as a two-second local check.** `python-guidelines` now gives `.scripts/check_comment_density.py` and `.scripts/check_module_size.py` as the way to measure while writing, instead of waiting about four minutes for the same refusal to arrive from a full `pytest` run. Neither reads an argument; both sweep the tree. (basicly-eocuw9y)

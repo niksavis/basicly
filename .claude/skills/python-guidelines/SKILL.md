@@ -64,6 +64,17 @@ Test quality is out of scope — `test-discipline` owns it.
 
 ## Fix the metric, do not move the score
 
+- **Run the ratchet directly, not through the suite.** Both print the same
+  refusal `pytest` does, in about a second (measured 2026-09-12: 1.30s and
+  0.12s) against about four minutes for the suite:
+
+      uv run python .scripts/check_comment_density.py
+      uv run python .scripts/check_module_size.py
+
+  Neither reads an argument — both sweep the whole tracked tree, and the full
+  sweep is still cheaper than the wait. Four trim cycles on one module cost
+  sixteen minutes on 2026-09-11 for want of this. Measure while writing the
+  prose, not after the gate refuses.
 - Both size gates can be satisfied without improving anything. Extracting
   `_part1()`/`_part2()` satisfies `C901`; deleting docstrings and comments
   lowers a token count, and the module-size ratchet counts tokens — so the

@@ -117,6 +117,31 @@ hooks:
     stage: pretooluse
     manager: claude
     matcher: Bash
+  # zsh does not word-split an unquoted expansion, so `W="uv run x --"; $W a b` looks for
+  # one command literally named `uv run x --`, exits 127, and lets the chain run on. A
+  # consumer who had read the always-on rule first still hit it eight times in a row
+  # (basicly-gmdvdwo). Fires only where the same command assigns that variable a value
+  # holding whitespace: measured over 17358 recorded calls that is 4 true positives and 0
+  # false ones, while a quoted `"$VAR"` head - a path with a space - occurs 54 times and
+  # is deliberate, so the missing quotes are the discriminator.
+  - id: bare-var-guard
+    script: bare-var-guard.py
+    stage: pretooluse
+    manager: claude
+    matcher: Bash
+  # `-r` is ripgrep's --replace and takes a value, so `rg -rn <pat>` searches with
+  # replacement `n`: the pattern is substituted in every printed line, the line numbers
+  # vanish, and the output reads as a real finding (basicly-0m5hn5w). `-rn` reads as
+  # "recursive plus line numbers" to a grep habit, and ripgrep recurses by default, so the
+  # `r` is never wanted. Measured over 17391 recorded calls: 2977 rg invocations, 92 with a
+  # trap cluster and 6 deliberate `-r`, every deliberate one as its own token - so a
+  # cluster is the discriminator and its false-positive population is empty. Prose was
+  # tried first; it lost the always-on budget contest and would not have bound anyway.
+  - id: rg-replace-guard
+    script: rg-replace-guard.py
+    stage: pretooluse
+    manager: claude
+    matcher: Bash
   # `module-size` and `comment-density` are budgets, not rules: prose can say the gate
   # exists and cannot say a module has 456 tokens left. `.scripts/headroom.py` is the read
   # that answers it before the code is written, and the `python` skill gives the command -
