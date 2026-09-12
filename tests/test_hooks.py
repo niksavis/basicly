@@ -78,6 +78,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "tracker-path-scan",
         "internal-info-scan",
         "kit-boundary",
+        "no-comments",
         "headroom-guard",
         "commit-msg-script",
         "tracker-commit-msg-script",

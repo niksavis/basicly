@@ -3,23 +3,12 @@ repos:
   hooks:
   - id: markdownlint
     name: markdownlint
-    # Repo-wide run through .markdownlint-cli2.yaml (globs + generated-file
-    # ignores) instead of staged filenames, so explicit paths can't bypass the
-    # config's ignore list.
-    #
-    # Launched through a script that resolves node itself rather than `npx
-    # --no-install markdownlint-cli2` (basicly-jr0l.14): a hook shell has no
-    # profile, so with nvm off PATH WSL interop resolved npx to the Windows
-    # nodejs, which cannot express the worktree's UNC path. The launcher never
-    # invokes npx and fails in one line when no usable node exists.
     entry: uv run --no-project python .basicly/core/hooks/markdownlint.py
     language: system
     stages:
     - pre-commit
     pass_filenames: false
     files: \.md$
-- repo: local
-  hooks:
   - id: identity-guard
     name: identity-guard
     entry: uv run --no-project python .basicly/core/hooks/identity-guard.py
@@ -68,6 +57,14 @@ repos:
     - pre-commit
     pass_filenames: false
     always_run: true
+  - id: no-comments
+    name: no-comments
+    entry: uv run --no-project python .basicly/core/hooks/no-comments.py
+    language: system
+    stages:
+    - pre-commit
+    pass_filenames: true
+    files: \.(py|pyi|js|jsx|mjs|cjs|ts|tsx|mts|cts|java|kt|kts|cs|c|cc|cpp|cxx|h|hpp|go|rs|swift|scala|php|m|mm|css|scss|sass|less|html|htm|xhtml|vue|svelte|cshtml|razor|sh|bash|zsh|ksh|ps1|psm1|psd1|sql|vb|vbs)$
   - id: kit-boundary
     name: kit-boundary
     entry: uv run --no-project python .basicly/core/hooks/kit-boundary.py

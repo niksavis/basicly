@@ -369,7 +369,7 @@ here is inferred from a benchmark this repository has not run.
 | **Offline operation** | no agent dispatch depends on the network | fresh model data. The map is generated at authoring time, and the drift check reports rather than writes | **no standing instrument.** Falsified by any network call on the dispatch path; the model-map generator has deliberately no verify-check entry |
 | **Portability** | three platforms, one behaviour | POSIX-only mechanisms. The ledger lock is a file whose existence is the lock, because the POSIX advisory lock is missing on one platform | the quality-gates workflow runs the full check set on linux, macos and windows, fail-fast off |
 | **Auditability** | every state change is a plain, git-tracked file | a daemon, a cache and any hidden state | `git diff` and `git blame` are the trail. `uv run basicly check` is the offline staleness gate |
-| **Agent working set** | one module fits what an agent can hold | file count. An extraction adds a module rather than shrinking one | `uv run python .scripts/check_module_size.py` and `.scripts/check_comment_density.py`, both frozen per-file ratchets |
+| **Agent working set** | one module fits what an agent can hold | file count. An extraction adds a module rather than shrinking one | `uv run python .scripts/check_module_size.py`, a frozen per-file ratchet |
 | **Security and redaction** | no committed artifact carries a machine-specific path, username or hostname | completeness. The secret-rule mirror between the engine and the copied pre-commit scripts is kept in step by convention only | `uv run pytest tests/test_redact.py -q`, plus two pre-commit hooks. The path-rule mirror has an equality test; the secret-rule mirror does not |
 | **Cost per landed unit** | not set | — | **not measured.** [31.2](#312-forecasting-spend) states the arithmetic; nothing scores it against landed work. Falsified by a report pairing total tokens, wall clock and human interventions against landed correct units |
 | **Adherence of the always-on baseline** | not set | — | **not measured.** Recall under a direct cue is measured and is only an upper bound. Falsified by a measurement of which baseline rules bind while an agent works |
@@ -669,7 +669,7 @@ Measured from the projected files, and regenerated and gated on every commit:
 | Surface | chars | cap | headroom |
 | --- | --- | --- | --- |
 | `.claude/CLAUDE.md` (claude) | 8861 | 9000 | 139 |
-| `AGENTS.md` (codex) | 16077 | 16000 | -77 |
+| `AGENTS.md` (codex) | 16138 | 16000 | -138 |
 | `.github/copilot-instructions.md` (copilot) | 8960 | 9000 | 40 |
 
 <!-- docs-claims:end always-on-sizes -->
@@ -3419,11 +3419,11 @@ appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 33 | pre-commit |
-| full | 37 | pre-push, continuous integration, and the loop's verify step |
+| fast | 34 | pre-commit |
+| full | 38 | pre-push, continuous integration, and the loop's verify step |
 | staged | 3 | a staged-files-only subset |
 
-The configuration declares 38 checks in total. They cover lint, format, three
+The configuration declares 39 checks in total. They cover lint, format, three
 platform-specific type-check passes, a security scan, dead code, a wiring gate, the kit
 boundary, the layering contract, the test suite, all five projection drift checks, the
 documentation claim gates, and the ratchets.
@@ -3600,7 +3600,7 @@ measures therefore cannot get worse in silence.
 | Gate | Metric | Baseline shape |
 | --- | --- | --- |
 | module size | module tokens excluding top-level imports, against a per-file cap | a frozen per-file table plus a waiver count |
-| comment density | comments plus docstrings as a share of module tokens, against a cap | a frozen per-file table plus a waiver count, with an explicit rebaseline escape carrying a reason |
+| prose comments | any comment or docstring in a code file, excluding directives a tool reads | zero, with no baseline and no waiver: the ban is absolute (basicly-phglc2x) |
 | suppression debt | count of lint suppressions per rule code | a frozen per-code table that must **equal** the tree, not merely not exceed it |
 | corpus drift | unaccounted context bullets per open parent issue | a frozen per-issue count |
 | stale citations | `file:line` references in a document that no longer point at what the sentence claims | a frozen per-document count |
@@ -4736,7 +4736,7 @@ runner name; the discriminator is whether a human receives the prompts.
 
 ### D-38 · A ratchet waiver carries a reason at the lower integrity levels and an approval at `consumer-surface`
 
-**Decision.** A module-size or comment-density waiver always carries a one-line reason in
+**Decision.** A module-size waiver always carries a one-line reason in
 the file. At `docs-and-tests` and `engine` the reason suffices; at `consumer-surface` the
 waiver needs an approval, reusing the integrity level the unit already computed.
 

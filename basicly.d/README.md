@@ -49,15 +49,15 @@ and fails a gate neither lane's rebase conflicted on. `count_delta = 1` from eac
 sums to the tree that landed, and addition is commutative, so the composed baseline
 does not depend on landing order.
 
-`count_delta` moves the table's tree-wide total (`waiver_count` for `module_size` and
-for `comment_density`, `unreasoned_count` for `noqa_debt`).
+`count_delta` moves the table's tree-wide total (`waiver_count` for `module_size`,
+`unreasoned_count` for `noqa_debt`, `binding_count` for `code_citations`).
 `[ratchet.<gate>.frozen]` moves one recorded entry each. An entry whose deltas reach
 zero is dropped, which is the rule the ratchet tables already state for a debt that
 has been paid off.
 
 ## `frozen` may only move the safe way, and one gate has no such way
 
-`module_size` and `comment_density` bound a subject, so a `frozen` delta that **raises**
+`module_size` bounds a subject, so a `frozen` delta that **raises**
 a recorded baseline — or that names an entry `pyproject.toml` does not — is refused.
 `ratchet.py` says the list is closed and that an added entry is a line a reviewer sees;
 before `basicly-e2mz.20` a fragment could do both, and one had.
@@ -70,85 +70,23 @@ subject means.
 
 ## `rebaselined`, for the one case `frozen` cannot carry
 
-A baseline sometimes has to rise with no narration added: deleting code that was less
-prose-dense than its module raises the module's *share* while both prose and code fall.
-That case declares itself, with a reason, and is counted on the gate's pass line:
+`frozen` may only fall, which is right for a baseline and wrong for the case where a
+module honestly grows and the growth is the point — a new finding class, a split that
+lands one side larger. That case declares itself, with a reason, and is counted on the
+gate's pass line:
 
 ```toml
-[ratchet.comment_density]
-rebaseline_reason = "code deletion shrank the denominator: prose fell 503 tokens, code fell 985"
+[ratchet.module_size]
+rebaseline_reason = "a new finding class: the constant, what `broken` means for it, and one line in `check`"
 
-[ratchet.comment_density.rebaselined]
-"src/basicly/supervise.py" = 0.7
+[ratchet.module_size.rebaselined]
+"src/basicly/fsck.py" = 412
 ```
 
-Its own table rather than a flag on `frozen` because the point is that it is countable —
-`(68 frozen, 3 waived, 41 rebaselined across 19 entries)`. A missing `rebaseline_reason` is
-refused.
-
-**What the count prevents, precisely.** It makes each loosening visible; it does not stop one
-file taking several. The count reports *declarations*, and names the entries apart when the
-two differ, because they did: keyed by entry it read `19 rebaselined` while 41 deltas had been
-declared, so four separate loosenings of `tests/test_loop.py` — 311, 146, 13 and 109 — read as
-one, and three of `merge.py` read as one. Every entry still binds individually, so nothing was
-wrongly admitted; what was wrong was the number an operator reads to judge how much debt a
-file has taken (`basicly-wpqdag`). A file appearing in several fragments is a signal to split
-it, and the count is what shows you.
-
-## `base_commit`, for the measurement a delta was sized against
-
-A delta composes in any order. The **headroom** you measured before choosing that
-delta does not. Two lanes branched from one commit each measured `merge.py` at
-exactly 2 tokens of headroom, each spent that same 2, and the composed tree failed a
-gate neither branch failed (`basicly-nwx4ku`).
-
-Record the commit you measured on, once per fragment, and a gate refuses the fragment
-when `HEAD` does not contain it:
-
-```toml
-[ratchet]
-base_commit = "be56ce2d0927d66c8b9168f69ab41457147b7641"
-```
-
-**Ancestry, not equality.** Work landing on top of your measurement does not stale it;
-only a base this head does not contain does, which is a measurement taken on a tree
-that is not this one.
-
-**It is optional, and hand-written.** Nothing writes a fragment for you, so there is
-no write-time hook to derive it at, and a fragment that records no base composes
-exactly as it did before — absence is not a violation, or every fragment already in
-this directory would stop landing. Recording it is a lane volunteering precision
-about its own numbers. Git's third answer is not a violation either: where the
-history is not there to read — a tree copied without its `.git`, a shallow clone —
-the check has nothing to say and says nothing.
-
-## The two ratchets do not share a denominator
-
-`module_size` counts `module_tokens`, which **excludes top-level imports**;
-`comment_density`'s share is over `_text_tokens` for the whole file. Sizing a cut with
-the wrong one flips a marginal case, and nothing else in the repo says so.
-
-## Why one gate's deltas are fractional
-
-Two of the three ratchets count things — tokens, suppressions — so their deltas are
-integers. `comment_density` records a **percentage share** to one decimal, so its
-per-entry deltas are floats:
-
-```toml
-# The prose share this lane cut off a frozen module, and the waiver it took.
-[ratchet.comment_density]
-count_delta = 1
-
-[ratchet.comment_density.frozen]
-"src/basicly/thing.py" = -1.4
-```
-
-`dropin.compose` is told that by a `fractional=True` argument rather than reading it
-off the values it was handed, for two reasons. A recorded table can be empty, and an
-empty table offers nothing to infer from; and inferring from the values would admit a
-float into a counting ratchet the first time one arrived, which is exactly the silent
-widening the fragment schema otherwise fails closed on. `count_delta` counts entries,
-so it stays whole for all three gates including this one (`basicly-05g0`).
+`base_commit` must be an ancestor of `HEAD`, and `rebaseline_reason` must be non-empty,
+so a raise is always attributable. It is used 72 times across 25 entries today. What is
+forbidden is only the *silent* raise: hand-editing `[tool.*.frozen]`, or a `frozen` delta
+that loosens.
 
 ## What still edits the anchor itself
 

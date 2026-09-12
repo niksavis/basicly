@@ -30,3 +30,12 @@ count_delta = -3
 
 [ratchet.noqa_debt.frozen]
 E402 = -5
+
+# The gate the ban rests on. `check` walks the tree itself rather than asking git, because a
+# kit may not spawn a subprocess, so the skip list carries the vendor directories by name.
+# Modes fast and full: a comment must not survive a commit, and CI is the backstop for a
+# consumer whose hooks are not installed.
+[[verify.checks]]
+name = "no-comments"
+command = ["uv", "run", "python", ".basicly/core/kit/comments/cli.py", "check", "."]
+modes = ["fast", "full"]

@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-09-12T10:33:15.748315+00:00",
+  "generated_at": "2026-09-12T11:53:50.662708+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
       "hash": "sha256:1ddf692b5cc1c6cc7c3f733ea22b89daac9e0e4f8ae2c85102085293ab461794",
@@ -38,7 +38,7 @@
       ]
     },
     ".claude/rules/code-is-authoritative.md": {
-      "hash": "sha256:1077a1769eae26c38c854c89658bc9d0d2842677d17e6606b99d00e02252cf23",
+      "hash": "sha256:cbc3715c7c490192f52d0f34ad8e43510c81d27186459206d8044ae52e08fe20",
       "source_fragments": [
         "code-is-authoritative"
       ]
@@ -62,7 +62,7 @@
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:00c7cd42a49b5650a31602e27a78bf68d83bec541bd8a5fa8b30d134e2692254",
+      "hash": "sha256:ef95933cbfbbad4ef1a85b351b52bb9b4b93e5586ccfe202099fa15b6726973d",
       "source_fragments": [
         "require-explicit-confirmation",
         "knowledge-priming",

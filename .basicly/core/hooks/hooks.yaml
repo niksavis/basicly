@@ -82,6 +82,17 @@ hooks:
   # is its own — it would never declare the check. The verify entry covers this
   # repo's CI (`full`, run by pre-push.py); this covers commit time, here and
   # there, so the two wirings do not duplicate each other's work.
+  # The comment ban (basicly-phglc2x). The code is the source of truth, so a code file
+  # carries no prose: `check` reports every prose comment and exits 1, and a directive a
+  # tool reads is never reported. Scoped by extension rather than always_run, because the
+  # kit claims code files only - config and markdown keep their comments, which are the one
+  # place a why can live once the code cannot hold it.
+  - id: no-comments
+    description: "Refuse a commit that adds a prose comment to a code file."
+    script: no-comments.py
+    stage: pre-commit
+    files: \.(py|pyi|js|jsx|mjs|cjs|ts|tsx|mts|cts|java|kt|kts|cs|c|cc|cpp|cxx|h|hpp|go|rs|swift|scala|php|m|mm|css|scss|sass|less|html|htm|xhtml|vue|svelte|cshtml|razor|sh|bash|zsh|ksh|ps1|psm1|psd1|sql|vb|vbs)$
+    pass_filenames: true
   - id: kit-boundary
     description: "Fail when a kit module reaches back into basicly (basicly-vkh0.16)."
     script: kit-boundary.py
