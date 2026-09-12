@@ -41,6 +41,7 @@ from . import (
     loop_state,
     merge,
     owned_store,
+    owned_write,
     permissions,
     policy,
     projection,
@@ -1169,6 +1170,28 @@ def _setup_tracker(repo_root: Path) -> None:
     )
 
 
+def _scaffold_ledger_attributes(repo_root: Path) -> None:
+    rules = owned_write.ledger_git_rules(repo_root)
+    if not rules:
+        return
+    path = repo_root / ".gitattributes"
+    try:
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        present = {line.strip() for line in text.split("\n")}
+        missing = [rule for rule in rules if rule not in present]
+        if not missing:
+            return
+        prefix = "" if not text or text.endswith("\n") else "\n"
+        body = text + prefix + _LEDGER_ATTRIBUTE_NOTE + "\n".join(missing) + "\n"
+        path.write_text(body, encoding="utf-8")
+    except OSError as exc:
+        raise SystemExit(
+            f"basicly install: cannot write {_format_path(path, repo_root)}, and the tracker "
+            f"ledger conflicts on every parallel append without it: {exc}"
+        ) from exc
+    print(f"Added {', '.join(missing)} to .gitattributes")
+
+
 def _scaffold_overlay_stubs(repo_root: Path, paths: ProjectPaths) -> None:
 
     overlay_user = repo_root / paths.overlay_fragments_dirs[0] / "user"
@@ -1247,6 +1270,14 @@ def _report_missing_config_sections(repo_root: Path) -> None:
 def ignore_covers(ignore_text: str, pattern: str) -> bool:
 
     return any(line.strip().lstrip("/") == pattern for line in ignore_text.splitlines())
+
+
+_LEDGER_ATTRIBUTE_NOTE = (
+    "# The tracker ledger is append-only, and two branches that each append conflict\n"
+    "# without a union merge. `-text` keeps git from rewriting a byte an event id is\n"
+    "# derived from. The glob is read off the kit's own `events.LOG_GLOB`. This rule\n"
+    "# must sit after any `*` rule to win.\n"
+)
 
 
 def _scaffold_generated_ignores(repo_root: Path) -> None:
@@ -1364,6 +1395,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 1
 
     _setup_tracker(repo_root)
+    _scaffold_ledger_attributes(repo_root)
     _scaffold_consumer_files(repo_root, force=bool(getattr(args, "overwrite_scaffolds", False)))
 
     steps: list[tuple[str, Any, argparse.Namespace]] = [

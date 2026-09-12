@@ -23,6 +23,8 @@ ALWAYS_ON_FILES = (
     Path(".github") / "copilot-instructions.md",
 )
 
+MANAGED_ROOT = Path(".basicly") / "core" / "kit"
+
 GUIDANCE_FILE = "GUIDANCE.md"
 INSTRUCTION_FILE = "INSTRUCTION.md"
 
@@ -174,6 +176,24 @@ def vendored_root(target: Path, name: str) -> Path:
     return target / DEFAULT_ROOT / name
 
 
+def managed_elsewhere(target: Path, name: str) -> Path | None:
+    candidate = target / MANAGED_ROOT / name
+    return candidate if candidate.is_dir() else None
+
+
+def refuse_second_copy(target: Path, name: str, command: str) -> None:
+    managed = managed_elsewhere(target, name)
+    if managed is None:
+        return
+    raise SystemExit(
+        f"{name}: basicly already manages this kit at {managed}, and installing a second "
+        f"copy at {vendored_root(target, name)} would leave two versions that nothing "
+        f"reconciles.\n"
+        f"Keep the basicly-managed one and run `basicly install` to update it, or remove "
+        f"basicly from this repository first and then re-run `{command} init`."
+    )
+
+
 def install(request) -> int:
     kit_dir, target, name, stream = (
         request.kit.directory,
@@ -181,6 +201,7 @@ def install(request) -> int:
         request.kit.name,
         request.stream,
     )
+    refuse_second_copy(target, name, request.kit.command)
     destination = vendored_root(target, name)
     for rule_file, lines in host_rules(request.kit):
         path = target / rule_file
@@ -273,6 +294,12 @@ def status(request) -> int:
         request.stream,
     )
     destination = vendored_root(target, name)
+    managed = managed_elsewhere(target, name)
+    if managed is not None:
+        stream.write(
+            f"{name}: basicly manages this kit at {managed}; that copy is the one in use\n"
+        )
+        return 0
     if not destination.exists():
         stream.write(f"{name}: not installed at {destination}\n")
         return 1

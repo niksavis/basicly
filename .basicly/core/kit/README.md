@@ -38,6 +38,12 @@ that becomes the consumer's `SKILL.md` and an `INSTRUCTION.md` that becomes the 
 block, because a consumer who never runs `basicly` gets none of the projected catalog and
 would otherwise have working code that no agent knows to call.
 
+Those two files are the **standalone** path's source. `basicly build` does not project them,
+so a reader should not look for their output — a basicly consumer is told the same thing
+through the catalog instead. Where both exist they are one text with a gate on it:
+`.basicly/core/skills/no-comments/skill.yaml` is generated from
+`kit/comments/GUIDANCE.md`, and `tests/test_kit_packages.py` fails if they drift.
+
 ## Constraints anything here must keep
 
 These bind **every** kit, and each one is cited from the modules it governs.

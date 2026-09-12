@@ -1,0 +1,1 @@
+- **A basicly consumer now gets the comment-ban skill, not just the rule.** The catalog ships `no-comments`, generated from the kit's own guidance so the standalone and integrated consumers are told the same thing, with a test that fails if the two drift. (basicly-oujmj4h)

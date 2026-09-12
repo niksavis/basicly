@@ -1,0 +1,1 @@
+- **A standalone kit install refuses where basicly already manages that kit.** Two copies at `.basicly/core/kit/<name>` and `.basicly/kit/<name>` could drift with nothing reconciling them, and a hook wired against one would keep running it after the other was updated. The refusal names both paths; `status` reports the managed copy as the one in use. (basicly-lr9vrj2)

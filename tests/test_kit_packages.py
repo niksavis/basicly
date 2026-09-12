@@ -7,6 +7,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PACKAGES = REPO_ROOT / "packages"
@@ -315,3 +316,42 @@ def test_the_wheel_carries_the_guidance_so_a_consumer_gets_it(kit: str, tmp_path
 
     assert f"basicly_{kit}/kit/GUIDANCE.md" in names
     assert f"basicly_{kit}/kit/INSTRUCTION.md" in names
+
+
+def test_the_catalog_skill_and_the_kit_guidance_are_one_text() -> None:
+    guidance = (CATALOG / "comments" / "GUIDANCE.md").read_text(encoding="utf-8")
+    _, front, body = guidance.split("---\n", 2)
+    described = dict(line.split(":", 1) for line in front.strip().split("\n"))
+
+    source = yaml.safe_load(
+        (REPO_ROOT / ".basicly" / "core" / "skills" / "no-comments" / "skill.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert source["name"] == described["name"].strip()
+    assert " ".join(source["description"].split()) == " ".join(described["description"].split())
+    assert source["instructions"].strip() == body.strip(), (
+        "the catalog skill and the kit guidance have drifted; regenerate one from the other"
+    )
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_a_standalone_install_refuses_where_basicly_already_manages_the_kit(
+    kit: str, tmp_path: Path
+) -> None:
+    managed = tmp_path / ".basicly" / "core" / "kit" / kit
+    managed.mkdir(parents=True)
+    (managed / "cli.py").write_text("x = 1\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="basicly already manages this kit"):
+        installer.run(_kit(kit), ["init", "--into", str(tmp_path)])
+
+    assert not (tmp_path / ".basicly" / "kit").exists()
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_status_names_the_managed_copy_as_the_one_in_use(kit: str, tmp_path: Path) -> None:
+    (tmp_path / ".basicly" / "core" / "kit" / kit).mkdir(parents=True)
+
+    assert installer.run(_kit(kit), ["status", "--into", str(tmp_path)]) == 0

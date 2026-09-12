@@ -22,6 +22,14 @@ UNRESOLVED_ACTOR = "unresolved:no-redactable-identity"
 MAX_ACTOR_CHARS = 64
 
 
+def ledger_git_rules(repo_root: Path) -> tuple[str, ...]:
+    try:
+        log_glob = owned_store.kit(repo_root, "events").LOG_GLOB
+    except owned_store.TrackerDivergenceError:
+        return ()
+    return (f"{log_glob} -text merge=union",)
+
+
 def resolved_actor(environ: Mapping[str, str] | None = None) -> str:
 
     values = os.environ if environ is None else environ

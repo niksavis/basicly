@@ -5,6 +5,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 effort: high
 skills:
 - python-guidelines
+- no-comments
 - repair-in-place
 - test-discipline
 - conventional-commits
