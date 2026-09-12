@@ -67,10 +67,16 @@ faulthandler_timeout = "60"
 # so adding `include` alone would not have been enough — the default `exclude` has
 # to be replaced, not extended.
 #
-# Replacing it means re-stating the two patterns worth keeping. `**/.*` is not
-# among them, and nothing else needs to be: `include` is an allow-list, so `.venv`
-# and any nested worktree under `.claude/` stay out by not being named rather than
-# by being excluded.
+# Replacing it means re-stating the patterns worth keeping. `**/.*` is not among
+# them, so a dot-directory *inside* an included tree is no longer filtered for free.
+# That is why `**/.venv` is named explicitly: `packages` is on the include list, and
+# `uv run --project packages/basicly-tier` writes `packages/basicly-tier/.venv` there.
+# The directory is gitignored, so nothing warns, and pyright then reports three errors
+# in vendored `activate_this.py` files that are not this repository's code. Found
+# 2026-09-12 (basicly-4cy3b8t) by exercising the kits from their source trees.
+#
+# A nested worktree under `.claude/` still stays out by not being named, because
+# `.claude` is not on the include list at all.
 #
 # `tests/test_type_checking.py` sweeps the tracked tree against both lists, so the
 # next directory of first-party Python fails there instead of being silently dropped,
@@ -79,7 +85,7 @@ faulthandler_timeout = "60"
 extraPaths = ["src", "."]
 typeCheckingMode = "standard"
 include = ["src", "tests", ".scripts", ".basicly/core", "packages"]
-exclude = ["**/node_modules", "**/__pycache__"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.venv"]
 
 [project.scripts]
 basicly = "basicly.cli:main"

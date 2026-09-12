@@ -136,6 +136,7 @@ check command exits non-zero when the file on disk no longer matches.
 | --- | --- | --- |
 | `.claude/CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`, `.claude/rules/*.md` | `basicly build` | `basicly check` |
 | `.claude/skills/**`, `.agents/skills/**` | `basicly skills-build` | `basicly skills-check` |
+| `.claude/output-styles/*.md` | `basicly styles-build` | `basicly styles-check` |
 | `.claude/agents/**`, `.github/agents/**` | `basicly agents-build` | `basicly agents-check` |
 | `.pre-commit-config.yaml`, agent hook config | `basicly hooks-build` | `basicly hooks-check` |
 | the managed deny-list in `.claude/settings.json` | `basicly permissions-build` | `basicly permissions-check` |

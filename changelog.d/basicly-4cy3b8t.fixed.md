@@ -1,0 +1,1 @@
+- Documented the output-style content type in the architecture reference and added `styles-check` to both how-to guides, which had shipped listing five projection checks where there are now six.

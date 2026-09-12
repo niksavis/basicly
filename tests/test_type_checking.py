@@ -110,3 +110,23 @@ def test_pyright_fails_on_a_type_error_under_a_dot_directory(tmp_path: Path) -> 
         "the discriminator analysed files, so the exclude override is not what carries "
         f"the coverage: {without_exclude}"
     )
+
+
+def test_a_virtualenv_inside_an_included_tree_is_excluded() -> None:
+    settings = _pyright_settings()
+
+    assert _unanalysed(
+        settings, [PurePosixPath("packages/basicly-tier/.venv/bin/activate_this.py")]
+    ) == ["packages/basicly-tier/.venv/bin"], (
+        "uv run --project packages/<kit> writes a gitignored .venv inside an included tree; "
+        "pyright then reports errors in vendored activate_this.py (basicly-4cy3b8t)"
+    )
+
+
+def test_the_venv_exclusion_does_not_drop_real_package_code() -> None:
+    settings = _pyright_settings()
+
+    assert (
+        _unanalysed(settings, [PurePosixPath("packages/basicly-tier/basicly_tier/__init__.py")])
+        == []
+    )

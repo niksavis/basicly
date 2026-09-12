@@ -6,6 +6,45 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Two themes. Every kit now installs without basicly at all, and the guidance layer stopped
+asserting things about itself and started measuring them.
+
+**Three kits ship standalone over `uvx`, and each one now teaches an agent to use it.** A
+standalone install used to leave working code that no agent knew to call: `init` writes the
+kit's skill into `.claude/skills/`, `.agents/skills/` and `.github/skills/`, and
+`--with-instructions` places a short always-on block in a marked region that `uninstall`
+removes byte for byte. The tracker install also writes the `merge=union` git attribute its
+whole parallel-append promise rests on — and refuses if it cannot — which the integrated
+`basicly install` had never done, making the bundled path the weaker of the two.
+
+**Comments are gone from code, and a gate keeps them gone.** A new comments kit names every
+prose comment and exits 1, or removes them while keeping the directives a tool actually
+reads: `noqa`, `nosec`, `type: ignore`, shebangs, licence banners. It covers Python, JS/TS,
+the C-like languages, C#, CSS, HTML, shell and SQL, and declines config and Markdown. Every
+strip is proved by re-parse, idempotence and literal preservation.
+
+**The always-on size caps were guesses, and now they are measurements.** Two of the three
+had no vendor basis at all and all three counted the wrong unit — Codex enforces
+`project_doc_max_bytes` in bytes, not characters. A new harness dispatches a throwaway
+session holding one instruction file and scores how much of it comes back: 95% at 152
+lines, 92% at 266, 82% at 700, 79% at 1667, against 5% with no file at all. The first half
+of a file survives at roughly 90% whatever its length; only the tail is lost. The caps are
+now set inside that flat zone, they refuse instead of warning, and `basicly retention` will
+tell a session whether its instruction file is in context at all.
+
+**Guidance is held to the standard it asks for.** Every prohibition in the always-on files
+now carries the reason it exists, paid for by compression rather than by growth — the
+projection is three characters smaller than before. `catalog lint` enforces the
+one-emphasis-marker budget the authoring skill has always stated. Output styles became a
+catalog content type instead of a hand-edited file. Two `PreToolUse` guards landed with
+their false-positive rates measured over the recorded corpus: 4 true positives in 17358
+calls for an unquoted command head, 92 traps in 2977 for a ripgrep flag cluster that
+swallows `-r`'s value.
+
+**Model anchors moved where the vendors moved.** `claude-fable-5` is legacy, `kimi-k2.5` is
+gone, and OpenAI publishes a genuine fourth class, so maximum resolves to `gpt-6-astra` and
+OpenAI's tier collapse is removed. The tier kit ships the new map.
+
 ## v0.12.2 - 2026-09-11
 
 Delta: v0.12.1..v0.12.2

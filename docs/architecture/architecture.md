@@ -845,6 +845,48 @@ and its technologies, rendered from the sources and gated by
 `.scripts/docs_claims.py`. A source whose technologies no target declares is filtered
 out of that target's root, so fewer skills are projected than authored.
 
+## 14A. Output styles
+
+An output style replaces the host's default answer format for every session in the
+repository. It is always-on guidance of the same class as a fragment, so the catalog owns
+it rather than a hand-edited markdown file.
+
+**One root, because one host reads it.**
+
+| Root | Who reads it |
+| --- | --- |
+| `.claude/output-styles/<slug>.md` | Claude Code, the only host with the concept |
+
+The codex and copilot targets emit nothing. A style is not a skill and not a fragment: it
+is not selected on demand, and it does not merge into the always-on files. It is delivered
+to the host as a system-prompt replacement.
+
+**The source.** `.basicly/core/output-styles/<slug>/style.yaml` declares `name`,
+`description`, `body`, and `keep_coding_instructions`. The slug is the directory name, not
+a field. `output-style.schema.json` validates it, and `catalog lint` refuses a markdown
+source under the directory for the same reason it refuses a `SKILL.md` under the skills
+directory: a discoverable filename inside the catalog is loaded twice.
+
+**`keep_coding_instructions` defaults to true, and the default is load-bearing.** A custom
+style otherwise omits the host's built-in software-engineering instructions, including how
+to verify work. Losing that in a repository whose subject is verification discipline would
+be the worst available regression (`basicly-2izl`, verified against the vendor doc).
+
+**The generated marker is a YAML comment inside the frontmatter**, not a line in the body.
+The body of an output style *is* the system prompt, so a marker there would be read as
+content and charged as tokens. In the frontmatter the parser drops it and `styles-check`
+still has a drift signal to key on.
+
+**The commands.** `basicly styles-build` writes the projection; `basicly styles-check`
+refuses a hand edit and names the remedy; the `projection-styles` gate runs the check in
+`fast` and `full` mode; `basicly install` runs the build, so a consumer receives the style
+the way it receives skills.
+
+**What stays hand-edited.** `.claude/settings.json` selects which style is active. It is
+committed, carries no generated marker, and `claude_settings.py` merges only `permissions`,
+`hooks` and `worktree.bgIsolation` into it — so the selection survives every projection
+(`basicly-2izl`). Only the style body moved into the catalog.
+
 ## 15. Subagent definitions
 
 Subagent definition files are the third catalog kind. They are generated and never

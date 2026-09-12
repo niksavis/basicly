@@ -56,12 +56,13 @@ All generated files and manifest are up to date.
 ```
 
 `basicly check` covers the instruction files and path-scoped rules only. Skills,
-subagents, hooks and the permissions deny-list have their own checks, all of
-which exit 0 when in sync:
+output styles, subagents, hooks and the permissions deny-list have their own
+checks, all of which exit 0 when in sync:
 
 ```sh
 basicly check
 basicly skills-check
+basicly styles-check
 basicly agents-check
 basicly hooks-check
 basicly permissions-check
@@ -69,6 +70,7 @@ basicly permissions-check
 
 ```text
 Projected skills are up to date in .claude/skills, .agents/skills.
+Projected output styles are up to date in .claude/output-styles.
 Projected agents are up to date.
 Projected hooks are up to date.
 Projected permissions deny-list is up to date.
