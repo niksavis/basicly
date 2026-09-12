@@ -21,6 +21,10 @@ UNPAIRED_EXEMPTIONS: dict[str, str] = {
     "session-finish": "operator: the driving session is the one that closes itself out",
     "catalog-authoring": "operator: catalog sources are authored in the driving session",
     "tier-injection": "operator: installing the tier kit is host setup, not lane work",
+    "retention-probe": (
+        "diagnostic: any role runs it on itself when guidance looks missing, so it belongs "
+        "to no single role"
+    ),
     "python": "environment: reached from the listing by whichever role needs the platform",
     "node": "environment: reached from the listing by whichever role needs the platform",
     "wsl": "environment: reached from the listing by whichever role needs the platform",

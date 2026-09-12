@@ -168,3 +168,85 @@ def test_the_scorer_controls_hold_on_the_committed_baseline() -> None:
 
     assert verbatim.rate == 1.0
     assert retention.score_response(rules, noise).retained == 0
+
+
+def test_the_verdict_bands_come_from_the_two_measured_populations() -> None:
+    assert retention.verdict(0.949, 111, 59) == retention.LOADED
+    assert retention.verdict(0.051, 69, 59) == retention.ABSENT
+
+
+def test_a_score_between_the_populations_is_not_decisive() -> None:
+    assert retention.verdict(0.50, 100, 59) == retention.PARTIAL
+
+
+def test_the_band_edges_are_inclusive_on_the_confident_side() -> None:
+    assert retention.verdict(retention.LOADED_FLOOR, 100, 50) == retention.LOADED
+    assert retention.verdict(retention.ABSENT_CEILING, 100, 50) == retention.ABSENT
+
+
+def test_a_short_answer_is_undersampled_rather_than_absent() -> None:
+    assert retention.verdict(0.45, 30, 58) == retention.UNDERSAMPLED
+
+
+def test_undersampled_outranks_a_high_score_too() -> None:
+    assert retention.verdict(0.95, 10, 58) == retention.UNDERSAMPLED
+
+
+def test_the_no_file_arm_is_long_enough_to_be_called_absent() -> None:
+    assert retention.verdict(0.051, 69, 59) != retention.UNDERSAMPLED, (
+        "the measured control wrote 1.17 lines per rule; clipping it would hide a real absence"
+    )
+
+
+def test_every_verdict_carries_an_explanation() -> None:
+    assert set(retention.VERDICTS) == {
+        retention.LOADED,
+        retention.PARTIAL,
+        retention.ABSENT,
+        retention.UNDERSAMPLED,
+    }
+
+
+def test_the_report_reads_its_own_verdict(rules: list[retention.Rule]) -> None:
+    response = "\n".join(f"- {rule.text}" for rule in rules) + "\n- filler\n" * 4
+
+    assert retention.score_response(rules, response).verdict == retention.LOADED
+
+
+WRAPPED = """\
+## External Facts
+
+- **Your training data has a cutoff and interfaces move.** A flag, field or
+  model id may have changed. Never answer from recall: grep the adapter first.
+- A short one.
+"""
+
+
+def test_a_bullet_wrapped_over_lines_is_one_rule() -> None:
+    derived = retention.derive_rules(WRAPPED)
+
+    assert len(derived) == 2
+    assert "grep the adapter first" in derived[0].text
+
+
+def test_a_wrapped_rule_keeps_the_words_on_its_later_lines() -> None:
+    derived = retention.derive_rules(WRAPPED)
+
+    assert {"recall", "adapter", "grep"} <= derived[0].words
+
+
+def test_a_heading_ends_the_bullet_before_it() -> None:
+    derived = retention.derive_rules("## A\n\n- one line\n  continued\n\n## B\n\n- two\n")
+
+    assert [rule.rule_id for rule in derived] == ["a.1", "b.1"]
+    assert derived[0].text == "one line continued"
+
+
+def test_a_blank_line_ends_a_bullet() -> None:
+    derived = retention.derive_rules("## A\n\n- one\n\n  a separate paragraph\n")
+
+    assert [rule.text for rule in derived] == ["one"]
+
+
+def test_a_star_bullet_counts_too() -> None:
+    assert len(retention.derive_rules("## A\n\n* starred rule here\n")) == 1

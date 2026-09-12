@@ -46,6 +46,7 @@ from . import (
     policy,
     projection,
     release,
+    retention,
     review,
     routing_evals,
     rubrics,
@@ -1942,6 +1943,70 @@ def cmd_styles_check(args: argparse.Namespace) -> int:
     checked = ", ".join(_format_path(root, repo_root) for root in roots)
     ui.say(f"Projected output styles are up to date in {checked}.", style="ok")
     return 0
+
+
+RETENTION_TREND = Path(".basicly/usage/retention.jsonl")
+
+RETENTION_SCOPE = (
+    "This probe answers one question: is the instruction file in this session's context? "
+    "It does not measure adherence, and it cannot measure gradual forgetting -- while the "
+    "file is in context the response is read from it, not recalled. A low score means read "
+    "the file; a high score means it is loaded, not that it is being followed. Gates and "
+    "hooks are what enforce a rule."
+)
+
+
+def _retention_baseline(repo_root: Path, given: str | None) -> Path:
+    if given:
+        candidate = Path(given)
+        return candidate if candidate.is_absolute() else repo_root / candidate
+    for relative in (".claude/CLAUDE.md", "CLAUDE.md", "AGENTS.md"):
+        candidate = repo_root / relative
+        if candidate.is_file():
+            return candidate
+    raise SystemExit(
+        "no always-on instruction file found at .claude/CLAUDE.md, CLAUDE.md or AGENTS.md; "
+        "pass one with --baseline"
+    )
+
+
+def cmd_retention(args: argparse.Namespace) -> int:
+    repo_root = _repo_root()
+    baseline = _retention_baseline(repo_root, getattr(args, "baseline", None))
+    rules = retention.derive_rules_from(baseline)
+    if not rules:
+        raise SystemExit(f"{_format_path(baseline, repo_root)} declares no rules to score against")
+
+    source = getattr(args, "response", None)
+    text = sys.stdin.read() if source in (None, "-") else Path(source).read_text(encoding="utf-8")
+    report = retention.score_response(rules, text)
+    call = report.verdict
+
+    print(
+        f"{_format_path(baseline, repo_root)}: {report.retained}/{report.total} rules "
+        f"({report.rate:.0%}) -> {call.upper()}"
+    )
+    print(f"  {retention.VERDICTS[call]}")
+    if getattr(args, "verbose", False):
+        for match in report.forgotten():
+            print(f"  [{match.score:.2f}] {match.rule.rule_id}: {match.rule.text[:90]}")
+    print(f"  {RETENTION_SCOPE}")
+
+    trend = repo_root / RETENTION_TREND
+    trend.parent.mkdir(parents=True, exist_ok=True)
+    with trend.open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps({
+                "at": datetime.now(UTC).isoformat(),
+                "baseline": _format_path(baseline, repo_root),
+                "rules": report.total,
+                "retained": report.retained,
+                "rate": round(report.rate, 4),
+                "verdict": call,
+            })
+            + "\n"
+        )
+    return 1 if call == retention.ABSENT and getattr(args, "strict", False) else 0
 
 
 def cmd_skills_build(args: argparse.Namespace) -> int:
@@ -4901,6 +4966,21 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_style_root_args(styles_check_parser)
 
+    retention_parser = subparsers.add_parser(
+        "retention",
+        help="Score a recall response against an instruction file to see if it is in context",
+    )
+    retention_parser.add_argument(
+        "response", nargs="?", default="-", help="file holding the response, or - for stdin"
+    )
+    retention_parser.add_argument("--baseline", help="instruction file to score against")
+    retention_parser.add_argument(
+        "--verbose", action="store_true", help="list the rules that did not come back"
+    )
+    retention_parser.add_argument(
+        "--strict", action="store_true", help="exit non-zero when the verdict is absent"
+    )
+
     _add_agents_parsers(subparsers)
 
     hooks_build_parser = subparsers.add_parser(
@@ -4947,6 +5027,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "skills-check": cmd_skills_check,
         "styles-build": cmd_styles_build,
         "styles-check": cmd_styles_check,
+        "retention": cmd_retention,
         "agents-build": cmd_agents_build,
         "agents-check": cmd_agents_check,
         "hooks-build": cmd_hooks_build,

@@ -8,6 +8,37 @@ from pathlib import Path
 
 RETAINED_THRESHOLD = 0.5
 
+LOADED = "loaded"
+PARTIAL = "partial"
+ABSENT = "absent"
+UNDERSAMPLED = "undersampled"
+
+LOADED_FLOOR = 0.80
+ABSENT_CEILING = 0.30
+SAMPLE_FLOOR = 0.75
+
+VERDICTS = {
+    LOADED: (
+        "the instruction file is in context. Measured 2026-09-12, a file present in a "
+        "fresh cell returned 92-95% of its own rules."
+    ),
+    PARTIAL: (
+        "between the two measured populations, so this is not decisive. A partial score "
+        "reads the same whether the file loaded and the response was cut short, or the "
+        "file is absent and the model guessed well. Re-run before acting on it."
+    ),
+    ABSENT: (
+        "the instruction file is not in context. Measured 2026-09-12, a cell with no "
+        "guidance file returned 5% of the rules. Read the file to recover."
+    ),
+    UNDERSAMPLED: (
+        "the response is too short to judge: it has fewer lines than the file has rules, "
+        "so a low score says the answer stopped early, not that the file is missing. "
+        "Measured 2026-09-12, every genuine attempt wrote at least 1.17 lines per rule, "
+        "including the one with no file at all. Answer exhaustively and probe again."
+    ),
+}
+
 _STOPWORDS = frozenset((
     "a",
     "again",
@@ -190,6 +221,10 @@ class Report:
             out.append((index // size, sum(1 for m in window if m.retained), len(window)))
         return out
 
+    @property
+    def verdict(self) -> str:
+        return verdict(self.rate, self.response_lines, self.total)
+
     def forgotten(self) -> tuple[Match, ...]:
         return tuple(
             sorted(
@@ -208,24 +243,57 @@ def stem(word: str) -> str:
     return word.rstrip("e") if len(word) >= 6 else word
 
 
+def verdict(rate: float, response_lines: int = 0, rules: int = 0) -> str:
+    if rules and response_lines < SAMPLE_FLOOR * rules:
+        return UNDERSAMPLED
+    if rate >= LOADED_FLOOR:
+        return LOADED
+    if rate <= ABSENT_CEILING:
+        return ABSENT
+    return PARTIAL
+
+
 def content_words(text: str) -> frozenset[str]:
     stripped = _SPLIT.sub(" ", _MARKDOWN.sub(" ", text.lower()))
     return frozenset(stem(word) for word in _WORD.findall(stripped) if word not in _STOPWORDS)
 
 
+def _bullets(baseline: str) -> list[tuple[str, str]]:
+    found: list[tuple[str, str]] = []
+    section: str | None = None
+    pending: list[str] = []
+
+    def flush() -> None:
+        if pending and section:
+            found.append((section, re.sub(r"\s+", " ", " ".join(pending)).strip()))
+        pending.clear()
+
+    for line in baseline.splitlines():
+        if line.startswith("#"):
+            flush()
+            if line.startswith("## "):
+                section = re.sub(r"[^a-z0-9]+", "-", line[3:].strip().lower()).strip("-")
+            continue
+        stripped = line.strip()
+        if stripped.startswith(("- ", "* ")):
+            flush()
+            pending.append(stripped[2:])
+        elif pending and stripped and line[:1].isspace():
+            pending.append(stripped)
+        elif not stripped:
+            flush()
+    flush()
+    return found
+
+
 def derive_rules(baseline: str) -> list[Rule]:
     rules: list[Rule] = []
-    section = None
-    index = 0
-    for line in baseline.splitlines():
-        if line.startswith("## "):
-            section = re.sub(r"[^a-z0-9]+", "-", line[3:].strip().lower()).strip("-")
-            index = 0
-        elif line.strip().startswith("- ") and section:
-            index += 1
-            text = re.sub(r"\s+", " ", line.strip()[2:]).strip()
-            if content_words(text):
-                rules.append(Rule(f"{section}.{index}", section, len(rules), text))
+    counts: dict[str, int] = {}
+    for section, text in _bullets(baseline):
+        if not content_words(text):
+            continue
+        counts[section] = counts.get(section, 0) + 1
+        rules.append(Rule(f"{section}.{counts[section]}", section, len(rules), text))
     return rules
 
 
