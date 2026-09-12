@@ -15,7 +15,10 @@ kit's skill into `.claude/skills/`, `.agents/skills/` and `.github/skills/`, and
 `--with-instructions` places a short always-on block in a marked region that `uninstall`
 removes byte for byte. The tracker install also writes the `merge=union` git attribute its
 whole parallel-append promise rests on — and refuses if it cannot — which the integrated
-`basicly install` had never done, making the bundled path the weaker of the two.
+`basicly install` had never done, making the bundled path the weaker of the two. The kits
+also stopped writing a third copy of their skill into `.github/skills`: Copilot discovers
+all three skill roots with no documented dedup, so the copy the catalog had already dropped
+for that reason was still being written by every standalone install.
 
 **Comments are gone from code, and a gate keeps them gone.** A new comments kit names every
 prose comment and exits 1, or removes them while keeping the directives a tool actually
