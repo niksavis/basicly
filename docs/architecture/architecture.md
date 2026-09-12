@@ -655,22 +655,23 @@ everything downstream.
    language-specific rule then costs no context budget on an unrelated task.
 6. **Stable ordering**, so a diff stays minimal.
 
-**The caps are a discipline choice, not a platform limit.** Claude's own degradation
-warning is far above these numbers. One vendor removed its former hard character limit
-and now only advises a shorter file. Codex reads its file up to a configurable byte cap.
-**A cap warning means split into a scoped rule. It does not mean shrink the prose.** The
-cap counts **characters**, not bytes, so a byte count overstates a UTF-8 baseline by its
-multi-byte characters.
+**Each cap now comes from a measurement.** Until 2026-09-12 two of the three had no
+vendor basis at all, and all three counted the wrong unit. Anthropic states its budget in
+lines and skips a `CLAUDE.md` above 4 MiB. GitHub removed its 4000-character limit in June
+2026 and documents no size for the file today. Codex enforces `project_doc_max_bytes`,
+32768 by default and configurable, and it counts **bytes** — so the codex cap counts bytes
+and the other two count characters. **A cap breach means split into a scoped rule. It does
+not mean shrink the prose.**
 
 Measured from the projected files, and regenerated and gated on every commit:
 
 <!-- docs-claims:begin always-on-sizes -->
 
-| Surface | chars | cap | headroom |
-| --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 8801 | 12000 | 3199 |
-| `AGENTS.md` (codex) | 16078 | 24576 | 8498 |
-| `.github/copilot-instructions.md` (copilot) | 8900 | 12000 | 3100 |
+| Surface | size | cap | headroom | lines | line cap |
+| --- | --- | --- | --- | --- | --- |
+| `.claude/CLAUDE.md` (claude) | 8801 characters | 12000 | 3199 | 151 | 200 |
+| `AGENTS.md` (codex) | 16126 bytes | 24576 | 8450 | 265 | 320 |
+| `.github/copilot-instructions.md` (copilot) | 8900 characters | 12000 | 3100 | 152 | 200 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -686,13 +687,31 @@ and it would have left the cause standing. The old cap also stood proxy for the 
 claim that adherence degrades with length, and this repository has never measured that
 claim.
 
-**What is known and what is not.** Both families that were tested reproduce the great
-majority of their baseline's rules when asked, against a small no-guidance control. The
-"cliff already crossed" reading is therefore **refuted**. The content is not invisible at
-this size. That does **not** settle the operational question. Nothing measures which
-baseline rules *bind* while an agent works. Recall under a direct cue is an upper bound,
-and it confirms the mechanism only. The cap policy is therefore asymmetric. **A lower cap
-is ordinary housekeeping. A higher cap still has no evidence behind it.**
+**The measurement.** `.scripts/retention_eval.py` puts one instruction file in a fresh
+session, asks for every rule that session knows, and scores the answer against the rules
+derived from that same file. Measured on claude, one sample per point, 2026-09-12:
+
+| lines | rules | retained | first half | second half |
+| --- | --- | --- | --- | --- |
+| 152 | 59 | 95% | 93% | 97% |
+| 266 | 74 | 92% | 92% | 91% |
+| 700 | 130 | 82% | 89% | 75% |
+| 1667 | 158 | 79% | 90% | 67% |
+
+A control holding no file at all returned 5%, so the file accounts for about 90 points of
+the difference. The first half of a file holds near 90% at every length. Only the tail is
+lost, and the knee sits between 266 and 700 lines. Both real surfaces are inside the flat
+part, which is where the line caps put them.
+
+**What still bounds that.** One sample per point. The probe cannot separate a rule the
+session forgot from one the answer stopped short of listing, because the answer grew from
+111 to 259 lines while the rule count grew from 59 to 158. The scorer is lexical, with a
+false negative near one in six on a distant paraphrase. The positional finding is a
+comparison inside one response and survives all three; the absolute rates are floors.
+
+**Recall is not adherence.** Nothing here measures which rules *bind* while an agent
+works. A session can repeat a rule and then break it, which is why a gate and not a
+sentence is what enforces one.
 
 ## 13. The fragment model
 

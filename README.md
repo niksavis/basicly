@@ -4,7 +4,7 @@
 
 # basicly
 
-**A coding-agent harness that ships the workflow and the state, not just the instructions — one catalog projected into every agent's config, a deterministic loop that runs on it, and gates at commit time.**
+**A coding-agent harness. One catalog projected into every agent's config, a deterministic loop that runs on it, and git gates at commit time.**
 
 [![latest release](https://img.shields.io/github/v/release/niksavis/basicly?label=release)](https://github.com/niksavis/basicly/releases/latest)
 [![quality gates](https://github.com/niksavis/basicly/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/niksavis/basicly/actions/workflows/quality-gates.yml)

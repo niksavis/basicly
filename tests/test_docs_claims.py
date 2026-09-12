@@ -117,17 +117,30 @@ def test_always_on_table_measures_each_surface_against_its_target_cap() -> None:
     surfaces = [cells(row) for row in rows if row.startswith("| `")]
     assert surfaces, "the always-on block rendered no surface rows"
 
-    caps = {
-        target["name"]: target["max_size_warning"]
+    targets = {
+        target["name"]: target
         for path in (REPO / ".basicly" / "core" / "targets").glob("*.yaml")
         for target in [yaml.safe_load(path.read_text(encoding="utf-8"))]
     }
-    for surface, chars, cap, headroom in surfaces:
-        path, _, target = surface.partition(" ")
-        measured = len((REPO / path.strip("`")).read_text(encoding="utf-8"))
-        assert int(chars) == measured, f"{surface}: table says {chars}, file is {measured}"
-        assert int(cap) == caps[target.strip("()")]
-        assert int(headroom) == int(cap) - int(chars)
+    units = set()
+    for surface, size, cap, headroom, lines, line_cap in surfaces:
+        path, _, name = surface.partition(" ")
+        target = targets[name.strip("()")]
+        unit = target.get("max_size_unit", "characters")
+        units.add(unit)
+        text = (REPO / path.strip("`")).read_text(encoding="utf-8")
+        measured = len(text.encode("utf-8")) if unit == "bytes" else len(text)
+
+        assert size == f"{measured} {unit}", f"{surface}: table says {size}, file is {measured}"
+        assert int(cap) == target["max_size_warning"]
+        assert int(headroom) == int(cap) - measured
+        assert int(lines) == len(text.splitlines())
+        assert int(line_cap) == target["max_lines_warning"]
+
+    assert units == {"characters", "bytes"}, (
+        "the table must state each target's own unit; codex enforces project_doc_max_bytes "
+        "in bytes and a character count under-reports it"
+    )
 
 
 def test_skills_readme_names_exactly_the_skill_sources_on_disk() -> None:

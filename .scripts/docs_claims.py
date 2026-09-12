@@ -90,16 +90,25 @@ def _always_on_sizes(root: Path) -> list[str]:
         cap = target.get("max_size_warning")
         if not isinstance(cap, int):
             raise ClaimError(f"{target_path}: 'max_size_warning' must be an integer")
+        unit = str(target.get("max_size_unit", "characters"))
         outputs = target.get("outputs") or {}
         for _, output in sorted(outputs.items()):
             surface = output.get("path")
             if not surface:
                 continue
-            chars = len(read_text(root / surface))
-            rows.append([f"`{surface}` ({name})", str(chars), str(cap), str(cap - chars)])
+            text = read_text(root / surface)
+            size = len(text.encode("utf-8")) if unit == "bytes" else len(text)
+            rows.append([
+                f"`{surface}` ({name})",
+                f"{size} {unit}",
+                str(cap),
+                str(cap - size),
+                str(len(text.splitlines())),
+                str(target.get("max_lines_warning", "")),
+            ])
     if not rows:
         raise ClaimError(f"{TARGETS_DIR}: no enabled target declares an always-on output")
-    return _table(["Surface", "chars", "cap", "headroom"], rows)
+    return _table(["Surface", "size", "cap", "headroom", "lines", "line cap"], rows)
 
 
 def _catalog_skills(root: Path) -> list[str]:

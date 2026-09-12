@@ -24,7 +24,7 @@ reference for how it behaves and where it stops.
 
 Dynamic is preferred because a model pinned into a definition file is a fact
 duplicated in every definition, and it goes stale silently. The static path is the
-documented **fallback**, not a second-class accident.
+documented **fallback**, and it is supported.
 
 **Corrected 2026-08-08.** This section previously said copilot "has no hook surface
 at all", citing no hooks directory under `~/.copilot`, no hook key in `settings.json`
