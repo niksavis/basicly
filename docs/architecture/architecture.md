@@ -2522,6 +2522,15 @@ its earlier tasks left in its window. It ends when the engine releases it.
 A seat is not a persona and it cannot spawn one. [D-11](#d-11--an-agent-may-spawn-only-a-role-the-engine-authored)
 holds unchanged: a seat may spawn only a role the engine authored.
 
+`[TARGET]` **A judging role never runs in a warm seat.** The validator and every reviewer lens
+take a fresh session, and a seat that built a change may never review it. Warmth is carried
+conversation, and carried conversation is exactly what a judge must not have: a reviewer that
+saw the producer reach a conclusion cannot then fail to have seen it. That is the property
+`basicly-a4q3.11` exists to hold, stated there as a reviewer structurally incapable of seeing
+the producer's conclusion. **So the saving measured in [31A.2](#31a2-a-seat-is-warm-and-busy-or-it-ends)
+is deliberately not taken on a judging dispatch**, and [31](#31-cost-grants-and-metering)
+already prices a judge as a read rather than a write for the same reason.
+
 ### 31A.2 A seat is warm and busy, or it ends
 
 **A warm seat costs about one fifth of a fresh one for the same task, at the same token
@@ -2780,6 +2789,16 @@ field inside it. Two markers read by different consumers are two kinds, however 
 their payloads look. Applying the rule to the measured population in
 [32.3.1](#3231-the-measured-partition-of-the-comment-kind) yields eighteen kinds, and the
 five beyond the thirteen this table first carried are the ones the measurement forced.
+
+`[TARGET]` **`announcement` is a nineteenth kind and it is not a correction to that
+eighteen.** The eighteen partition prose that the log already holds. An announcement carries
+no prose that exists today, because the mechanism that writes it does not exist
+([31A.5](#31a5-an-announcement-is-a-ledger-append-not-a-message),
+[D-45](#d-45--the-communication-mesh-is-the-ledger-not-a-mailbox)). It is additive, so the
+eight kinds `basicly-q7etjd` lands are unchanged in number and in content, and
+`basicly-1ayiwmh` is sequenced behind that record rather than beside it. A reader counting
+kinds reads eighteen from the partition and nineteen from the specification, and the
+difference is exactly this one.
 
 | Kind | Carries | Read by | Prose or machine state |
 | --- | --- | --- | --- |
