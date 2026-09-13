@@ -1593,6 +1593,22 @@ Three mechanisms hang off the ladder without being rungs of it.
 
 ### 26.1 VALIDATE is a rung, not a lint
 
+**The two rungs test against different things, and that difference is why both exist.** ISO
+9000:2015 defines verification as confirmation that *specified requirements* are fulfilled
+(3.8.12), and validation as confirmation that the requirements *for a specific intended use*
+are fulfilled (3.8.13). Here that binds to two fields: **verify tests against
+`acceptance_criteria`, validate tests against `requirements`**
+([32.11](#3211-the-two-fields-verification-and-validation-test-against)). A unit that passes
+verify was built right. A unit that passes validate was the right thing to build. **Both
+clauses demand objective evidence**, which is why the verdict is read off a declared line and
+the engine writes the gate.
+
+`[TARGET]` **The validator has no requirement to read today.** Its contract names *"the
+requirement that asked for it"* five times and no record carries one, so the role has been
+inferring its standard from description prose. Judging against an unstated standard is not
+validation under 3.8.13. [D-50](#d-50--verification-and-validation-each-test-against-their-own-typed-field)
+carries the decision.
+
 The engine gates this phase at `consumer-surface` integrity. It refuses the advance on a
 failed or missing consumer gate. It dispatches the validator role. It prices that dispatch
 as a **read** and not as a write, so a judge never enters the sample a lane's cost is
@@ -3386,6 +3402,41 @@ somewhere else. "We summarised this" tells them neither.
 **The cap is not the concurrency guarantee, and the code says so.** It bounds how far a
 buffered writer's chunking can be interleaved, which is a mitigation. The guarantee is the
 lock in [32.5](#325-the-write-path-the-lock-and-rotation).
+
+### 32.11 The two fields verification and validation test against
+
+`[TARGET]` **Two typed fields on the record. A heading is not one of them.**
+
+| field | what it states | which rung reads it | form |
+| --- | --- | --- | --- |
+| `acceptance_criteria` | the specified requirements | verify | EARS, and each criterion names the check that decides it |
+| `requirements` | the requirements of the intended use | validate | each one names the consumer act that would show it unmet |
+
+**`requirements` never names the specification here.** ISO 9000:2015 uses the word on both
+sides of the split — verification confirms that *specified requirements* are fulfilled
+(3.8.12), validation that the requirements *for a specific intended use* are fulfilled
+(3.8.13) — so the term is ambiguous unless a glossary pins it. [39](#39-glossary) pins it to
+3.8.13, and acceptance criteria are never called requirements in this repository.
+
+**One field, one store, and today acceptance criteria have two.** The criteria live both as
+an `acceptance_criteria` payload field and as an `## Acceptance Criteria` heading inside the
+description [measured 2026-09-13, `jq` over `.basicly/ledger/events-0001.jsonl`: 467 of 1,347
+`created` events carry the field, 761 carry the heading]. `plan_record.section_entries` parses
+the **heading** for `plan_record.RecordedPlan`; `tracker_write._say_criteria` reads the
+**field**, and only to print a reminder at close. **So
+467 records carry a field no gate tests against.** The field becomes authoritative, the reader
+moves to it, and the heading is retired to prose.
+
+**Requirements exist nowhere.** [measured 2026-09-13, same probe: 0 of 1,347 created events
+carry a `requirements` field or a `## Requirements` heading, against a positive control of 761
+and 33 for the two headings that do exist]. The validator's own contract cites *"the
+requirement that asked for it"* five times, so the role has a standard to judge against and
+the store cannot hold one.
+
+**The Definition of Ready requires both fields, on every work type.** A section a gate does
+not require stops being written, and [26.1](#261-validate-is-a-rung-not-a-lint) has no
+standard to validate against without it. `policy.type_sections` carries the requirement and
+`invest.owed` already reports what a record still owes.
 
 ## 33. Handoff artifacts and their contracts
 
@@ -5295,6 +5346,44 @@ onto it and the factory notices no difference. A host whose fan-out needs an int
 session serves light mode only, whatever else it offers, and an adapter declaring dark-mode
 support states the documentation that supports the claim.
 
+### D-50 · Verification and validation each test against their own typed field
+
+**Decision.** A record carries two typed payload fields. `acceptance_criteria` holds the
+specified requirements and verify tests against it. `requirements` holds the requirements of
+the intended use and validate tests against it. Both are fields, not headings. The Definition
+of Ready requires both on every work type. The `## Acceptance Criteria` heading is retired to
+prose and the field becomes the only reader.
+
+**Because.** ISO 9000:2015 separates the two by *which* requirements are confirmed: 3.8.12
+verification confirms that specified requirements are fulfilled, 3.8.13 validation confirms
+that the requirements for a specific intended use are fulfilled. Both clauses demand objective
+evidence. **This system has been performing one of them without a standard to judge against**
+[measured 2026-09-13 over 1,347 `created` events: 0 carry a `requirements` field or a
+`## Requirements` heading, against a positive control of 761 carrying `## Acceptance Criteria`
+and 33 carrying `## Trigger`], while the validator role's own contract names "the requirement
+that asked for it" five times. A judgment against prose nobody wrote down is an opinion, and
+[D-04](#d-04--deterministic-first-judged-second) already refuses an opinion at a gate.
+
+The second half is a duplicate store rather than an absent one. Acceptance criteria exist both
+as a field, on 467 records, and as a heading, on 761. `plan_record.section_entries` reads the heading and
+`tracker_write._say_criteria` reads the field only to print a closing reminder, **so 467 records carry
+a field nothing tests against**. Two representations of one truth is a disagreement waiting for
+a reader, and the reader that exists reads the weaker one.
+
+**Fields rather than headings, which is the more expensive half of this decision.** A gate that
+must iterate criteria and bind each to a check needs a structure, not a parse of prose; a
+heading reader cannot refuse a malformed criterion without re-implementing a parser. The cost
+is honest and is not small: 761 descriptions migrate, `plan_record.section_entries` stops being
+the acceptance path, and `invest.missing_sections` moves from headings to fields for these two.
+`## Trigger` stays a heading, because it is one sentence in a declared voice and nothing
+iterates it.
+
+**Consequence.** Every open record owes both fields the moment the Definition of Ready enforces
+them, and `invest.owed` already computes exactly that list and the board already renders it. The
+migration therefore has a visible burn-down rather than a silent backlog. A record that cannot
+state its intended use is a record whose validation was always going to be theatre, so the gate
+surfacing it is the point rather than a side effect.
+
 ---
 
 **Part VIII — Appendices.** Vocabulary, and the sources this design builds on.
@@ -5317,6 +5406,8 @@ appear in a definition, a table header or a schema field.
 | **phase** | one rung of the derived ladder | never `state` in prose about the loop, because `state` also names durable tracker data |
 | **advance** | one attempt to move a phase. It blocks, or it produces a tracker signal | — |
 | **gate** | a computed verdict the engine refuses on | never a checkpoint |
+| **acceptance criteria** | the specified requirements a change is verified against, ISO 9000:2015 3.8.12 | never `requirements`. Never `spec`, which names no artifact here |
+| **requirements** | the requirements of the intended use, which a change is validated against, ISO 9000:2015 3.8.13 | never the specification sense of the same ISO word. `intent` is the one-line trigger, not this |
 | **checkpoint** | an approval marker a human or a covering grant writes. Nothing is computed | never a gate |
 | **grant** | an autonomy marker on a session's root issue | — |
 | **event kind** | one entry in the closed vocabulary of [32.3](#323-the-event-vocabulary). Eighteen of them | never `event type`, and never `record`, which names the work item |
