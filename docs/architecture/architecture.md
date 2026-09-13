@@ -3423,9 +3423,17 @@ an `acceptance_criteria` payload field and as an `## Acceptance Criteria` headin
 description [measured 2026-09-13, `jq` over `.basicly/ledger/events-0001.jsonl`: 467 of 1,347
 `created` events carry the field, 761 carry the heading]. `plan_record.section_entries` parses
 the **heading** for `plan_record.RecordedPlan`; `tracker_write._say_criteria` reads the
-**field**, and only to print a reminder at close. **So
-467 records carry a field no gate tests against.** The field becomes authoritative, the reader
-moves to it, and the heading is retired to prose.
+**field**, and only to print a reminder at close. **So 467 records carry a field no gate tests
+against**, and of the 202 carrying both, 94 disagree.
+
+**The field becomes authoritative, and the heading survives in one direction only.** On an
+**open** record the heading is refused, so the second store cannot grow back. On a **closed**
+record the heading stays readable, because a closed record is evidence and nothing will verify
+it again. **150 open records need a field written** [measured 2026-09-13: 1,361 records, 341
+open, 572 carrying the heading alone of which 150 are open]. The migration is a corrective
+append under the rule [32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) already
+binds, never a rewrite; [D-50](#d-50--verification-and-validation-each-test-against-their-own-typed-field)
+carries the reconciliation of the 94 and why a script is refused.
 
 **Requirements exist nowhere.** [measured 2026-09-13, same probe: 0 of 1,347 created events
 carry a `requirements` field or a `## Requirements` heading, against a positive control of 761
@@ -5364,19 +5372,45 @@ and 33 carrying `## Trigger`], while the validator role's own contract names "th
 that asked for it" five times. A judgment against prose nobody wrote down is an opinion, and
 [D-04](#d-04--deterministic-first-judged-second) already refuses an opinion at a gate.
 
-The second half is a duplicate store rather than an absent one. Acceptance criteria exist both
-as a field, on 467 records, and as a heading, on 761. `plan_record.section_entries` reads the heading and
-`tracker_write._say_criteria` reads the field only to print a closing reminder, **so 467 records carry
-a field nothing tests against**. Two representations of one truth is a disagreement waiting for
-a reader, and the reader that exists reads the weaker one.
+The second half is a duplicate store rather than an absent one, and the two stores already
+disagree. `plan_record.section_entries` reads the heading and `tracker_write._say_criteria`
+reads the field only to print a closing reminder, so the field is decoration. **Of the 202
+records carrying both, 94 disagree** [measured 2026-09-13 over 9,427 events, comparing the
+normalised heading entries against the field]; on `basicly-17nu` the heading reads `todo` while
+the field holds real criteria. Two representations of one truth is not a disagreement waiting
+for a reader. It is one that already happened, and the reader that exists reads the weaker
+store.
 
 **Fields rather than headings, which is the more expensive half of this decision.** A gate that
 must iterate criteria and bind each to a check needs a structure, not a parse of prose; a
-heading reader cannot refuse a malformed criterion without re-implementing a parser. The cost
-is honest and is not small: 761 descriptions migrate, `plan_record.section_entries` stops being
-the acceptance path, and `invest.missing_sections` moves from headings to fields for these two.
-`## Trigger` stays a heading, because it is one sentence in a declared voice and nothing
-iterates it.
+heading reader cannot refuse a malformed criterion without re-implementing a parser.
+`plan_record.section_entries` stops being the acceptance path and `invest.missing_sections`
+moves from headings to fields for these two. `## Trigger` stays a heading, because it is one
+sentence in a declared voice and nothing iterates it.
+
+**The migration is a corrective append over the open set, and it is smaller than it looks.**
+[32.8](#328-how-a-kind-rename-lands-on-a-log-nothing-may-rewrite) already binds the method: the
+log is append-only and committed to git, so a migration is a reader change plus a writer switch
+with no edit to any line that exists. **150 open records need a field written, not 761**
+[measured 2026-09-13: 1,361 records, 341 open; 572 carry the heading alone and 150 of those are
+open]. That is 1.6% growth on a 9,427-event log.
+
+**The 1,020 closed records are not migrated.** A closed record is evidence and will never be
+verified again, so the reader keeps the heading as a read-only fallback **for a closed record**
+and refuses it for an open one. Rewriting the log to unify them is refused outright:
+[D-27](#d-27--everything-is-a-plain-git-tracked-file) makes `git diff` and `git blame` the whole
+audit trail, and a rewrite destroys it, invalidates every commit that cites a line and breaks
+the consistency check's own history. The one rewrite path that exists, redaction
+([32.7](#327-redaction)), is justified by a leak nobody can append their way out of, and that
+justification does not transfer to adding a field.
+
+**The 94 disagreements are reconciled by hand, and a script is refused.** Picking a store
+silently loses the other's content, and some of the 94 are formatting near-misses a comparison
+cannot separate from real conflicts. A prior scripted bulk edit in this repository turned 23
+test failures into 80, which is the standing argument against the cheap route.
+
+**After the switch, a write to the heading on an open record is refused**, or the second store
+grows back.
 
 **Consequence.** Every open record owes both fields the moment the Definition of Ready enforces
 them, and `invest.owed` already computes exactly that list and the board already renders it. The
