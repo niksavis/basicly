@@ -95,6 +95,21 @@ evidence each state requires. It is not restated here: the renderer reads that t
 | A conformance kit so another project can adopt the board | designed | basicly-rn0o.4 |  |
 | Live modes — a snapshot on the supervisor tick, and a read-only wall view | shipped |  | `basicly board serve` refreshes on the supervisor 15-second tick in wall mode and on `--refresh` otherwise, by its own help text |
 
+## The software factory
+
+| Capability | Status | Record | Note |
+| --- | --- | --- | --- |
+| Requirements as a typed field, so validation has a standard to judge against | designed | basicly-li8aifz | Architecture D-50. Measured 2026-09-13 over 1,347 created events - 0 carry a `requirements` field or a `## Requirements` heading, against a positive control of 761 carrying `## Acceptance Criteria`. The validator's own contract names the requirement five times |
+| Acceptance criteria read from one store rather than two | designed | basicly-u07bfuw | Architecture D-50. The criteria live both as a field on 467 records and as a heading on 761; `plan_record.section_entries` reads the heading, so 467 records carry a field nothing tests against |
+| Both verification and validation fields required at the definition of ready | designed | basicly-zt85dgy | Architecture section 32.11 and D-50. Every open record owes both the day it lands, and `invest.owed` already computes that list |
+| A seat: one session held open across tasks and released at the cache window | designed | basicly-zi8nv3a | Architecture section 31A.2 and D-46. Measured 2026-09-13 on five live dispatches (basicly-8724lqq) - a warm session cost 0.20x and 0.19x of a fresh one on two replications at the same token count, because the cache write is avoided rather than tokens saved. Two turns per task, and the cold resume is unpriced |
+| A declared prompt cache window per runner adapter | designed | basicly-ytzqz22 | Architecture D-46. The engine may not assume a window a host has not published; a host that publishes none dispatches fresh |
+| A free seat takes the next matching ready task itself | designed | basicly-88jz7w8 | Architecture section 31A.3 and D-46. Not a second scheduler - the ready set already ranks and section 28.2's five conditions are already the pull predicate. It is the mechanism that holds a seat inside its cache window |
+| Task to seat matching on four declared axes | designed | basicly-s8hxsun | Architecture section 31A.6 and D-47. Three axes exist - scope globs, integrity level, model tier - and only the tools axis is new. The tier axis stays inert at spawn until basicly-a3yi lands, so a match on it reports unbound |
+| Announcements as ledger events with a per seat watermark | designed | basicly-1ayiwmh | Architecture section 31A.5 and D-45. One event kind and one derived watermark; no mailbox, no daemon, no second store. The section 8 non-goal stands for a mailbox and is amended for this form |
+| Why a lane carries nine times the scope its plan declares | researching | basicly-awawrt3 | Measured 2026-09-13 over 561 claude run records - declared scope median 12,000 tokens, working set median 78,832, ratio 9.3x with a p90 of 27.8x, and the working set is re-read 26.1x. Cost is the working set times the turns, so this is the largest single lever and its cause is unknown |
+| The cost of resuming a seat after its cache window has closed | researching | basicly-w921i6b | The unpriced half of D-46. Every run in basicly-8724lqq began seconds after its predecessor, so the cold arm of that experiment is missing and the release rule rests on an argument rather than a number |
+
 ## The work graph
 
 | Capability | Status | Record | Note |
