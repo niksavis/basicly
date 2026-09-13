@@ -59,6 +59,7 @@ and kept true.
 - [29. Dispatch and the runner adapters](#29-dispatch-and-the-runner-adapters)
 - [30. Roles at dispatch](#30-roles-at-dispatch)
 - [31. Cost, grants and metering](#31-cost-grants-and-metering)
+- [31A. The software factory](#31a-the-software-factory)
 
 **Part V — Information view.** The durable state, its shape, and who may write it.
 
@@ -426,7 +427,7 @@ oversight.
 | An external database or daemon | Reintroduces exactly the unowned-binary upgrade surface being removed |
 | A compression proxy in the critical path | Selection beats serialisation by orders of magnitude on measured data. See [D-21](#d-21--context-control-is-field-selection-not-encoding) |
 | A cheap-tier model pre-reader | Its characteristic error is an undetectable omission |
-| Agent-to-agent messaging | A real capability, declined because it costs reproducible scheduling and resumability |
+| Agent-to-agent messaging over a mailbox | A real capability, declined because it costs reproducible scheduling and resumability. Amended, not dropped: a seat announces by appending to the shared log, which is derived and replayable. See [D-45](#d-45--the-communication-mesh-is-the-ledger-not-a-mailbox) |
 | A general-purpose issue tracker | The work graph exists to serve the loop, not to compete with issue trackers |
 | Per-track model choice at the token level | Model awareness lives at the invocation seam; this is not an inference client |
 
@@ -2458,6 +2459,206 @@ never a stored snapshot. The check compares an agent's most recent window agains
 older. It flags a regression when the recent failure rate exceeds the baseline by a fixed
 delta, and when each window holds a minimum sample. The whole path is read-only,
 deterministic and advisory. No wall clock enters the payload.
+
+## 31A. The software factory
+
+`[TARGET]` **This section specifies the end state. Most of its mechanism is not in the
+tree.** The parts that exist are [23](#23-the-loop-and-the-work-model) to
+[31](#31-cost-grants-and-metering) and [32](#32-the-work-tracker); this section says what
+connects them and what is missing. [`status.md`](status.md) grades each part, because this
+document never does.
+
+**A factory here is four things and no more.** A pool of seats, a queue they pull from, a
+ledger that remembers, and a cockpit a human steers from. Three of the four exist under other
+names. The queue is the ranked ready set of [28.2](#282-admission-five-conditions-and-six-gates).
+The ledger is [32](#32-the-work-tracker). The cockpit is the board. **Only the seat is new.**
+
+```mermaid
+flowchart LR
+  queue["ready set<br/>ranked, five conditions, six gates"]
+  s1["seat<br/>a warm session, one task at a time"]
+  s2["seat"]
+  ledger["the ledger<br/>append-only, the only shared memory"]
+  board["the board<br/>the cockpit a human steers from"]
+
+  queue --> s1
+  queue --> s2
+  s1 -->|"writes what must survive"| ledger
+  s2 -->|"writes what must survive"| ledger
+  ledger -->|"ranks the next task"| queue
+  ledger --> board
+
+  classDef shipped fill:#d5efd5,stroke:#2e7d32,color:#000
+  classDef designed fill:#f0f0f0,stroke:#9e9e9e,color:#000,stroke-dasharray:5 3
+  class queue,ledger,board shipped
+  class s1,s2 designed
+```
+
+### 31A.1 A seat, and why the word is not `worker`
+
+**A seat is one long-lived agent session that takes one task at a time.** It is not a
+process pool slot. `worker` already names a thread in the supervisor's pool
+([28.2](#282-admission-five-conditions-and-six-gates), [35](#35-runtime-topology)) and
+[conventions §9](conventions.md#9-writing-principles) makes a bound word unavailable, so the
+seat takes its own name. A seat holds the projected guidance, the skills index and whatever
+its earlier tasks left in its window. It ends when the engine releases it.
+
+A seat is not a persona and it cannot spawn one. [D-11](#d-11--an-agent-may-spawn-only-a-role-the-engine-authored)
+holds unchanged: a seat may spawn only a role the engine authored.
+
+### 31A.2 A seat is warm and busy, or it ends
+
+**A warm seat costs about one fifth of a fresh one for the same task, at the same token
+count** [measured 2026-09-13, five live `claude -p ... --output-format json` dispatches from
+the repository root; basicly-8724lqq carries the five result objects and the commands].
+
+| task | arm | cache read | cache write | tokens | cost |
+| --- | --- | --- | --- | --- | --- |
+| B | fresh session | 46,646 | 21,093 | 68,037 | $0.2426 |
+| B | warm, second in the seat | 68,422 | 556 | 69,301 | $0.0478 |
+| C | fresh session | 46,658 | 21,100 | 67,933 | $0.2396 |
+| C | warm, third in the seat | 69,514 | 546 | 70,313 | $0.0465 |
+
+**The saving is not fewer tokens. It is the avoided cache write.** Totals agree to within
+4%; what moves is the split. A cache write is billed at a premium over base input and a cache
+read at a deep discount, so relocating the same tokens from write to read changes the price
+of those tokens by an order of magnitude. **A cost argument conducted in token counts rather
+than in priced components is wrong**, and one conducted here on 2026-09-13 was wrong for
+exactly that reason before the measurement corrected it.
+
+**Carrying an earlier task did not erode the saving.** The third task in the seat matched the
+second, 0.19x against 0.20x, while the carried prefix grew 1.5%.
+
+`[TARGET]` **The rule the measurement produces is a scheduling rule, not a lifetime policy.**
+A seat is cheap only while its cache is hot. A seat that idles past its provider's cache
+window re-writes an accumulated, and therefore larger, prefix at full price, which is worse
+than never having kept it. **So a seat is busy inside the window, or the engine ends it. An
+idle warm seat is the worst state in the system.**
+
+**Three limits this measurement does not cover.** Two replications at two model turns each,
+so the direction is established and the magnitude on a long task is not; a long task
+amortises its one cache write over more turns in the fresh arm too, so one fifth is an upper
+bound. Every run began seconds after its predecessor, so a cold resume past the cache window
+is unpriced. The three tasks only read files, so a seat that writes has a faster-growing
+prefix and may reach a compaction threshold these did not.
+
+### 31A.3 The pull queue is what keeps a seat warm
+
+**A free seat takes the next ready task itself.** Nothing is pushed to a seat, because a seat
+that is not running cannot receive anything, and a seat that is running is already spending.
+
+**This is not a second scheduler.** The ready set already ranks, and the five conditions of
+[28.2](#282-admission-five-conditions-and-six-gates) are already the pull predicate. What
+changes is who spawns: today a pass spawns a lane per task, and a seat instead asks for the
+next task when it finishes one.
+
+**The pull is also the cache mechanism, and that is the argument for it.** 31A.2 requires a
+seat to start its next task inside the cache window. A queue a free seat pulls from
+immediately is precisely what holds that property. **The kanban is not a convenience on top
+of the seat pool. It is what makes the seat pool economic.**
+
+### 31A.4 Private context is disposable, shared context is written
+
+`[TARGET]` **Two stores, and there is no third.**
+
+| | private | shared |
+| --- | --- | --- |
+| where | the seat's live session prefix | the repository, the ledger, the projected catalog |
+| how long | the seat's life | permanent |
+| who writes | the model, freely | the engine seam, gated |
+| who reads | that seat alone | any seat, by query and watermark |
+| billed | on every model turn | only when selected into a brief |
+| how it fails | grows until the prefix dominates the bill | a wrong fact is absorbed by every later task |
+| the control | end the seat | gate the write, attribute it, never mutate it |
+
+**A fact that is not written down does not survive the seat.** That is the whole contract,
+and it is the inverse of the invariant the DeepSeek harness states as model-visible implies
+logged ([D-43](#d-43--the-plugin-paradigm-four-refusals-one-adoption-two-lessons)). It forces
+a seat to externalise, which is the same act that makes work observable, resumable and
+auditable.
+
+**A third shared store is refused.** A shared mutable context is a fragment with no gate, and
+[D-12](#d-12--agent-authored-guidance-never-reaches-the-catalog-without-a-human) already
+records what a fragment with no gate costs: a bad implementation bounces off a gate, a bad
+fragment is absorbed and silently degrades every later unit. A daemon or database to hold one
+is refused separately by [D-27](#d-27--everything-is-a-plain-git-tracked-file).
+
+**A seat never reads the whole shared store.** It reads a brief the engine selects, which is
+[D-21](#d-21--context-control-is-field-selection-not-encoding) applied to the ledger.
+`basicly brief` already prints what the loop would send.
+
+### 31A.5 An announcement is a ledger append, not a message
+
+`[TARGET]` **Seats coordinate through the log they already share.** The vocabulary is three
+words over mechanism that mostly exists.
+
+| the factory word | what it is here |
+| --- | --- |
+| broadcast | one append of an `announcement` event |
+| subscribe | a query over the log by kind and predicate |
+| deliver | the next brief carries announcements after the reader's watermark |
+| replay | free: the log is the transport |
+
+**This costs one event kind and one watermark field.** The kind joins the vocabulary of
+[32.3](#323-the-event-vocabulary); the watermark is per seat and derived, so a seat that crashes
+re-reads rather than re-receives.
+
+**A mailbox is refused.** A mailbox is a second store, a message in flight is state outside
+the graph, and the instant a seat acts on one the phase stops being a pure function of the
+tracker. That breaks [6](#6-core-invariants) and
+[D-02](#d-02--phase-is-derived-and-the-phases-are-code). The non-goal in
+[8](#8-non-goals) refusing agent-to-agent messaging stands for a mailbox and is amended for
+this form by [D-45](#d-45--the-communication-mesh-is-the-ledger-not-a-mailbox).
+
+### 31A.6 A seat is matched, never self-selected
+
+`[TARGET]` **The engine matches a task to a seat on four declared axes.** A model that judges
+its own fitness is a persuadable scheduler, which [8](#8-non-goals) refuses by name, and it is
+the weakest router available: unverifiable, and biased toward taking work.
+
+| axis | where it is declared | what exists |
+| --- | --- | --- |
+| which paths | scope globs on the planned child | in the tree |
+| how much verification | the integrity rule over those paths, `integrity._RULES` | in the tree |
+| which model | the tier on the agent source | declared, and inert at spawn |
+| which tools | nothing declares it | absent |
+
+**Three of the four axes exist and the match does not.** The specialists are authored
+([15](#15-subagent-definitions)) and the engine already computes the first two per unit. What
+is missing is a tools axis and the matching function itself.
+
+### 31A.7 Dark and light, named by mechanism
+
+[D-37](#d-37--the-factory-has-a-light-mode-and-a-dark-mode) named the two modes by who
+receives the permission prompts, and that discriminator is unchanged. This section adds the
+mechanism each mode uses, because a host feature has since made the difference concrete.
+
+| | dark | light |
+| --- | --- | --- |
+| who answers a prompt | nobody; the surface is pre-approved | a human at a terminal |
+| the seat | a headless session the engine resumes per task | the host's own interactive session |
+| fan-out inside a seat | the host's subagents | the host's subagents, or its teams where it has them |
+| what the engine owns | admission, matching, landing, the ledger | the ledger, and nothing else |
+
+**A host feature that requires an interactive session cannot serve dark mode**, whatever else
+it offers. That is a property to check against a host's own documentation before an adapter
+claims it, and it is why the dark seat stays a headless session.
+
+### 31A.8 What the factory does not add
+
+**No new authority.** [6](#6-core-invariants) is unchanged: the engine disposes and seats
+propose. A seat may not write the tracker, change its own grant, or approve a gate.
+
+**No new store.** Two stores, per 31A.4.
+
+**No orchestrator persona.** The thing that matches, admits and lands is code and it stays
+unnamed, exactly as [28](#28-parallel-lanes-admission-and-the-supervisor) already requires.
+
+**No second vendor on paper.** The protocol is the ledger, so a host adapter maps its own
+spawn mechanism onto it. **The engine has dispatched `claude` 561 times and `codex` and
+`copilot` zero times each** [measured 2026-09-13, `uv run basicly health`], so a fourth
+adapter is not evidence of portability and a third is not either. An adapter is claimed when
+a unit has run through it end to end.
 
 ---
 
@@ -4994,6 +5195,106 @@ documentation-routes probe of 2026-08-19 into the `interface-facts` skill's rout
 78962968:docs/research/2026-07-26-sota-review.md`. Appendix A holds the provenance and licence
 of every source, Appendix B the 2026-08-22 re-measurement.
 
+### D-45 · The communication mesh is the ledger, not a mailbox
+
+**Decision.** Seats coordinate by appending an `announcement` event to the work log and by
+reading announcements after their own watermark. There is no inbox file, no bus and no
+daemon. The non-goal in [8](#8-non-goals) refusing agent-to-agent messaging stands for a
+mailbox, and this form is the amendment to it.
+
+**Because.** A mailbox is a second store. A message in flight is state outside the graph, so
+the moment a seat acts on one the phase stops being a pure function of the tracker and
+[D-02](#d-02--phase-is-derived-and-the-phases-are-code) no longer holds. A crashed seat can
+re-read a log; it cannot re-receive a message it already consumed. The reference
+implementation this design was compared against puts each agent's mailbox in a JSON file
+under the user's home directory and deletes the team's own configuration when the session
+ends, so nothing about that transport survives a crash or reaches a reviewer.
+
+**Consequence.** The mesh costs one event kind in [32.3](#323-the-event-vocabulary) and one
+derived watermark per seat. Delivery is a property of the next brief rather than an event in
+its own right, so an undelivered announcement is a selection bug and never a lost message.
+The board folds announcements for free, because it already folds the log.
+
+### D-46 · A seat is warm and busy, or the engine ends it
+
+**Decision.** A seat takes its next task inside the provider's cache window or the engine
+releases it. There is no idle seat.
+
+**Because.** A warm seat costs about one fifth of a fresh one for the same task at the same
+token count [measured 2026-09-13, five live `claude -p` dispatches; basicly-8724lqq]. The
+saving is the avoided cache write, not fewer tokens: totals agreed to within 4% while the
+cache write fell from about 21,000 tokens to about 550. **The corollary is the hard part.** A
+cache write is billed at a premium, so a seat that idles past the window re-writes an
+accumulated and therefore larger prefix at full price. An idle warm seat is worse than a
+fresh one, and it is the only state in this design that is worse than doing nothing.
+
+**Consequence.** Seat lifetime is a scheduling property, not a configuration value. The pull
+queue of [31A.3](#31a3-the-pull-queue-is-what-keeps-a-seat-warm) is the mechanism that holds
+it, which is why the queue and the seat land together or not at all. The cache window is a
+host fact, so an adapter declares it rather than the engine assuming it; a host that
+publishes no window gets no seat and dispatches fresh.
+
+**What this does not settle.** Two replications at two model turns each. The direction is
+established and the magnitude on a long task is not, because a long task amortises its single
+cache write over more turns in the fresh arm too. A cold resume past the window is unpriced.
+
+### D-47 · A seat is matched by declared axes, never by self-assessment
+
+**Decision.** The engine matches a task to a seat on four declared axes: the scope globs, the
+integrity level the paths assign, the model tier on the agent source, and the tools the seat
+holds. A model never reports its own fitness and a seat never chooses its own task.
+
+**Because.** [8](#8-non-goals) refuses an LLM orchestrator over the tracker because a
+persuadable scheduler is not a scheduler, and self-assessed fitness is the weakest form of
+that failure: unverifiable, unreproducible, and biased toward accepting work. Three of the
+four axes are already computed per unit, so the deterministic route is also the cheap one.
+
+**Consequence.** The tools axis has no declaration today and is the only new field. The tier
+axis is declared and does not reach a spawn, so matching on it is inert until that is fixed;
+a match that silently ignores an axis is worse than no match, so the matcher reports which
+axes bound and which were unavailable.
+
+### D-48 · Private context is disposable and shared context is written
+
+**Decision.** There are two stores. A seat's session prefix is private, disposable and
+uninspectable. The repository, the ledger and the projected catalog are shared, durable and
+gated. A fact that is not written to the shared store does not survive the seat that learned
+it. No third store is created.
+
+**Because.** A shared mutable context is a fragment with no gate, and
+[D-12](#d-12--agent-authored-guidance-never-reaches-the-catalog-without-a-human) records the
+asymmetry that makes that unacceptable: a bad implementation bounces off a gate, a bad
+fragment is absorbed and degrades every later unit silently. A database or daemon to hold a
+third store is refused separately by
+[D-27](#d-27--everything-is-a-plain-git-tracked-file). The rule also earns its keep on the
+other side: forcing a seat to externalise is the same act that makes its work observable,
+resumable and reviewable.
+
+**Consequence.** A seat reads a selected brief rather than the store, which is
+[D-21](#d-21--context-control-is-field-selection-not-encoding) applied to the ledger.
+Anything a seat must hand on becomes an append, so the handoff artifact of
+[33](#33-handoff-artifacts-and-their-contracts) and the announcement of
+[D-45](#d-45--the-communication-mesh-is-the-ledger-not-a-mailbox) are one mechanism with two
+uses rather than two features.
+
+### D-49 · A host adapter is claimed only after a unit has run through it
+
+**Decision.** The factory's portability claim names the adapters a unit of work has actually
+completed on, and no others. An authored adapter that nothing has exercised is described as
+authored, never as supported.
+
+**Because.** **The engine has dispatched `claude` 561 times and `codex` and `copilot` zero
+times each** [measured 2026-09-13, `uv run basicly health`], while the README and
+[29](#29-dispatch-and-the-runner-adapters) have described three families throughout. The
+three-family claim has never been false about the code and has never been true about the
+practice, and that gap is exactly the shape
+[26](#26-validate-evidence-and-retrospective) exists to refuse elsewhere.
+
+**Consequence.** The protocol is the ledger, so an adapter maps a host's own spawn mechanism
+onto it and the factory notices no difference. A host whose fan-out needs an interactive
+session serves light mode only, whatever else it offers, and an adapter declaring dark-mode
+support states the documentation that supports the claim.
+
 ---
 
 **Part VIII — Appendices.** Vocabulary, and the sources this design builds on.
@@ -5008,6 +5309,9 @@ appear in a definition, a table header or a schema field.
 | --- | --- | --- |
 | **issue** | one record in the work tracker | `child` is an issue seen from its parent. `leaf` is an issue with no children. Both are relations, not types |
 | **lane** | one issue being worked in its own worktree, from dispatch to landing | `unit of work` is the same thing before it is dispatched. Prefer `lane` once a worktree exists |
+| **seat** | one long-lived agent session that takes one task at a time, kept warm between tasks | never `worker`, which names a thread in the supervisor's pool. Never `agent`, which names the tool family |
+| **announcement** | one event a seat appends for other seats to read | never `message` and never `broadcast`, which both imply a transport this design refuses |
+| **watermark** | a seat's derived read position in the shared log | never `cursor`, which reads as the editor of that name in a document that lists target families |
 | **work class** | the issue type: epic, feature, task, bug, chore | — |
 | **track** | the workflow a work class selects. Tracks nest | — |
 | **phase** | one rung of the derived ladder | never `state` in prose about the loop, because `state` also names durable tracker data |
