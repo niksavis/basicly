@@ -268,9 +268,16 @@ sections:
   - name: Acceptance criteria read from one store rather than two
     status: designed
     record: basicly-u07bfuw
-    note: Architecture D-50. The criteria live both as a field on 467 records and as a heading
-      on 761; `plan_record.section_entries` reads the heading, so 467 records carry a field
-      nothing tests against
+    note: Architecture D-50, migrated by corrective append under the rule section 32.8 binds -
+      150 open records need a field written, and the 1,020 closed ones keep the heading as
+      evidence. `plan_record.section_entries` reads the heading today, so 467 records carry a
+      field nothing tests against
+  - name: The two acceptance stores reconciled where they disagree
+    status: designed
+    record: basicly-fjvdie6
+    note: Architecture D-50. Measured 2026-09-13 - 202 records carry both stores and 94 disagree;
+      on basicly-17nu the heading reads `todo` while the field holds real criteria. Read rather
+      than scripted, because picking a store loses the other's content
   - name: Both verification and validation fields required at the definition of ready
     status: designed
     record: basicly-zt85dgy
