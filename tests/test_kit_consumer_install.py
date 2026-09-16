@@ -112,3 +112,64 @@ def test_uninstalling_from_a_wheel_leaves_no_hook_naming_a_deleted_kit(
         if g.get("matcher") == "Agent"
     ]
     assert agent_hooks == [], "a hook naming a deleted kit is the defect this pins"
+
+
+def test_the_comments_kit_refuses_prose_and_removes_it_without_basicly(
+    consumer: Path, tmp_path: Path
+) -> None:
+
+    wheel = _wheel("comments", tmp_path / "dist")
+    assert _from_wheel(wheel, "comments", consumer, "init").returncode == 0
+    sample = consumer / "sample.py"
+    sample.write_text("def f():\n    # a prose comment a human wrote\n    return 1\n", "utf-8")
+    cli = consumer / ".basicly" / "kit" / "comments" / "cli.py"
+
+    refused = subprocess.run(  # nosec B603
+        ["python3", str(cli), "check", str(sample)], capture_output=True, text=True, check=False
+    )
+    fixed = subprocess.run(  # nosec B603
+        ["python3", str(cli), "fix", str(sample)], capture_output=True, text=True, check=False
+    )
+
+    assert refused.returncode == 1, refused.stdout
+    assert fixed.returncode == 0, fixed.stderr
+    assert "prose comment" not in sample.read_text(encoding="utf-8")
+
+
+def test_the_tracker_kit_holds_a_record_without_basicly(consumer: Path, tmp_path: Path) -> None:
+
+    wheel = _wheel("tracker", tmp_path / "dist")
+    assert _from_wheel(wheel, "tracker", consumer, "init").returncode == 0
+    cli = consumer / ".basicly" / "kit" / "tracker" / "cli.py"
+    ledger = consumer / ".basicly" / "ledger"
+
+    created = subprocess.run(  # nosec B603
+        ["python3", str(cli), "create", str(ledger), "--prefix", "acme", "--title", "a record"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    ready = subprocess.run(  # nosec B603
+        ["python3", str(cli), "ready", str(ledger)], capture_output=True, text=True, check=False
+    )
+
+    assert created.returncode == 0, created.stderr
+    assert ledger.is_dir(), "create makes its own ledger; a consumer needs no mkdir"
+    assert json.loads(ready.stdout)["count"] == 1
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_uninstalling_leaves_no_residue(kit: str, consumer: Path, tmp_path: Path) -> None:
+
+    wheel = _wheel(kit, tmp_path / "dist")
+    assert _from_wheel(wheel, kit, consumer, "init").returncode == 0
+
+    assert _from_wheel(wheel, kit, consumer, "uninstall").returncode == 0
+
+    assert not (consumer / ".basicly" / "kit" / kit).exists()
+    for root in (".claude/skills", ".agents/skills"):
+        assert not (consumer / root / kit).exists(), f"{root} kept the skill"
+    for name in (".gitignore", ".gitattributes"):
+        marker = consumer / name
+        if marker.is_file():
+            assert "basicly" not in marker.read_text(encoding="utf-8"), f"{name} kept a line"

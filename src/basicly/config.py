@@ -62,6 +62,13 @@ manifest = ".basicly/generated-manifest.json"
 # [catalog]
 # technologies = ["python", "zsh"]
 
+# The work tracker's id namespace. A create with no parent needs one, and the
+# engine refuses rather than guessing a prefix no later read would find again.
+# Pick a short repo-specific token; it becomes the leading word of every id.
+#
+# [tracker]
+# prefix = "acme"
+
 # Sibling git-worktree isolation for harness tracks.
 [worktree]
 # Branch new harness/<name> worktrees fork from. Empty = the current branch.
