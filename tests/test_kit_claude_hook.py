@@ -282,6 +282,55 @@ def test_a_directory_with_no_map_is_left_alone_though_the_kit_has_one_beside_it(
     assert _updated_input(rewritten)["model"] == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
 
 
+def _vendored_kit(repo: Path) -> Path:
+    destination = repo / ".basicly" / "kit" / "tier"
+    shutil.copytree(KIT_DIR, destination, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copy2(MAP, destination / MAP.name)
+    return destination
+
+
+def test_a_vendored_kit_reads_the_map_it_installed_beside_itself(tmp_path: Path) -> None:
+
+    consumer = tmp_path / "consumer"
+    _definition(consumer / ".claude" / "agents" / f"{AGENT_NAME}.md", tier=DECLARED_TIER)
+    hook = _vendored_kit(consumer) / HOOK.name
+
+    result = subprocess.run(
+        [sys.executable, "-S", "-I", str(hook)],
+        input=json.dumps(_payload(consumer)),
+        cwd=consumer,
+        env=_pruned_env(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _updated_input(result)["model"] == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
+
+
+def test_a_vendored_kit_leaves_a_project_it_was_not_installed_into_alone(tmp_path: Path) -> None:
+
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    hook = _vendored_kit(owner) / HOOK.name
+    stranger = tmp_path / "stranger"
+    _definition(stranger / ".claude" / "agents" / f"{AGENT_NAME}.md", tier=DECLARED_TIER)
+
+    result = subprocess.run(
+        [sys.executable, "-S", "-I", str(hook)],
+        input=json.dumps(_payload(stranger)),
+        cwd=stranger,
+        env=_pruned_env(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
 def test_the_subagent_model_environment_override_disables_the_rewrite(
     tmp_path: Path,
 ) -> None:

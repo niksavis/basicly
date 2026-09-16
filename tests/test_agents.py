@@ -254,7 +254,7 @@ def test_render_agent_md_shape(tmp_path: Path, root: AgentOutputRoot) -> None:
 
 
 @pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
-def test_render_omits_the_model_line_for_a_tier_source(
+def test_render_carries_the_tier_and_never_a_model_line(
     tmp_path: Path, root: AgentOutputRoot
 ) -> None:
 
@@ -265,9 +265,19 @@ def test_render_omits_the_model_line_for_a_tier_source(
     )
     (agent,) = discover_agents(_roots(tmp_path))
     rendered = render_agent_md(agent, {}, root)
-    assert "model" not in rendered
-    assert "tier" not in rendered
-    assert "maximum" not in rendered
+    assert "tier: maximum" in rendered
+    assert "model:" not in rendered
+    assert "claude-" not in rendered
+
+
+@pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)
+def test_render_omits_the_tier_key_when_the_source_declares_none(
+    tmp_path: Path, root: AgentOutputRoot
+) -> None:
+
+    _write_agent(tmp_path / "core", "code-reviewer", _agent_yaml("code-reviewer"))
+    (agent,) = discover_agents(_roots(tmp_path))
+    assert "tier" not in render_agent_md(agent, {}, root)
 
 
 @pytest.mark.parametrize("root", AGENTS_OUTPUT_ROOTS, ids=lambda root: root.family)

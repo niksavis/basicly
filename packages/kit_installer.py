@@ -252,9 +252,32 @@ def install(request) -> int:
             f"write it into your agent instruction files, or read it in "
             f"{destination / INSTRUCTION_FILE}\n"
         )
-    if written == 0 and skills == 0 and blocks == 0:
+    configured = configure_host(request, destination)
+    if written == 0 and skills == 0 and blocks == 0 and configured == 0:
         stream.write(f"{name}: already installed at this version; nothing changed\n")
     return 0
+
+
+def configure_host(request, destination: Path) -> int:
+    name = request.kit.name
+    file_name = request.kit.configure_file
+    if not file_name:
+        return 0
+    script = destination / file_name
+    if not script.is_file():
+        request.stream.write(
+            f"{name}: {file_name} is missing from the vendored copy, so the host was not "
+            f"configured and the kit will not run at a spawn\n"
+        )
+        return 0
+    module = load_kit_module(destination, file_name, f"basicly_kit_configure_{name}")
+    code = module.main(["--root", str(request.target)])
+    if code != 0:
+        request.stream.write(
+            f"{name}: {file_name} exited {code}; the kit is vendored but the host is not "
+            f"wired to it. Run it yourself: python3 {script} --root {request.target}\n"
+        )
+    return 1
 
 
 def uninstall(request) -> int:
@@ -381,6 +404,7 @@ class Kit(NamedTuple):
     module: str
     cli_file: str = "cli.py"
     rules: object = None
+    configure_file: str = ""
 
 
 def run(kit: Kit, argv=None) -> int:

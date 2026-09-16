@@ -210,6 +210,10 @@ def find_map(root: Path | None = None, *, beside_the_kit: bool = True) -> Path |
         candidate = base / CORE_DIR / MODELS_DIRNAME / MAP_FILENAME
         if candidate.is_file():
             return candidate
+    here = Path(__file__).resolve().parent
+    vendored = here / MAP_FILENAME
+    if here.is_relative_to(start.resolve()) and vendored.is_file():
+        return vendored
     if not beside_the_kit:
         return None
     here = Path(__file__).resolve().parent

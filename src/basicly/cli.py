@@ -1417,6 +1417,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         ("styles-build", cmd_styles_build, argparse.Namespace(roots=None)),
         ("agents-build", cmd_agents_build, argparse.Namespace()),
         ("hooks-build", cmd_hooks_build, argparse.Namespace(no_install=False)),
+        ("tier-hook", cmd_tier_hook, argparse.Namespace()),
         ("permissions-build", cmd_permissions_build, argparse.Namespace()),
     ]
     for step, handler, namespace in steps:
@@ -1430,6 +1431,33 @@ def cmd_install(args: argparse.Namespace) -> int:
         "\nbasicly install complete: repo converged. Re-run the same command to upgrade.",
         style="ok",
     )
+    return 0
+
+
+TIER_HOOK_INSTALLER = Path(".basicly") / "core" / "kit" / "tier" / "install_hook.py"
+
+
+def cmd_tier_hook(_args: argparse.Namespace) -> int:
+
+    repo_root = _repo_root()
+    script = repo_root / TIER_HOOK_INSTALLER
+    if not script.is_file():
+        ui.say(f"{TIER_HOOK_INSTALLER.as_posix()} is absent, so no host was wired to a tier")
+        return 0
+    completed = subprocess.run(  # noqa: S603 — run, not imported; the engine holds no kit import
+        [sys.executable, str(script), "--root", str(repo_root)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    sys.stdout.write(completed.stdout)
+    if completed.returncode != 0:
+        sys.stderr.write(completed.stderr)
+        ui.say(
+            "the tier hook was not installed, so a declared tier will not reach a spawn; "
+            f"run `python3 {TIER_HOOK_INSTALLER.as_posix()}` yourself",
+            style="warn",
+        )
     return 0
 
 

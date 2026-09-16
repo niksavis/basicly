@@ -1,0 +1,6 @@
+# `basicly install` now runs the tier kit's own installer so a declared tier reaches a spawn.
+# The engine cannot import that script: architecture §5 keeps `.basicly/` free of engine code
+# and the `kit-boundary` gate binds that direction, so the only way to reach it is to run it.
+# One `subprocess.run` with this interpreter and a repository path, no shell.
+[ratchet.noqa_debt.frozen]
+S603 = 1

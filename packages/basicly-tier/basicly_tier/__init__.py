@@ -33,6 +33,7 @@ KIT = installer.Kit(
     directory=_HERE / "kit",
     module="basicly_tier_resolver",
     cli_file="tier_resolver.py",
+    configure_file="install_hook.py",
 )
 
 
