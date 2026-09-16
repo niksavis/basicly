@@ -23,10 +23,9 @@ DEFAULT_INTERPRETER = "uv run --no-project --no-python-downloads python"
 
 CANNOT_INTERCEPT = {
     "copilot": (
-        "no copilot hook is known to fire for a spawn "
-        "(repo-level .github/hooks never fired across three probes, and 1.0.77 "
-        "has no hooks directory, no hook setting and no hook option); use static "
-        "frontmatter plus `copilot --model` instead"
+        "this kit wires no copilot spawn yet. That host selects a subagent's model in "
+        "configuration rather than through a hook, so a declared tier is projected into "
+        ".github/agents and nothing there reads it. Claude is wired and works"
     ),
 }
 

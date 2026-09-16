@@ -491,6 +491,39 @@ def test_the_declared_tier_pins_the_model_this_repos_lanes_already_ran() -> None
     assert resolution.model == _OBSERVED_LANE_MODEL
 
 
+def test_a_roles_own_tier_outranks_the_pass_default_on_the_headless_path() -> None:
+
+    spec = _repo_runner_specs()["claude"]
+    assert spec.tier == "high", "the pass default this test discriminates against"
+
+    cheap = runner.resolve_model(spec, repo_root=REPO_ROOT, role="tester")
+
+    assert cheap.tier == "low", "tester declares low; the pass default is high"
+    assert cheap.source == runner.ROLE_TIER
+    assert cheap.honoured
+    assert cheap.model != _OBSERVED_LANE_MODEL
+
+
+def test_no_role_still_falls_back_to_the_pass_default() -> None:
+
+    resolution = runner.resolve_model(
+        _repo_runner_specs()["claude"], repo_root=REPO_ROOT, role=None
+    )
+
+    assert resolution.source == FAMILY_DEFAULT_TIER
+    assert resolution.model == _OBSERVED_LANE_MODEL
+
+
+def test_a_role_the_catalog_does_not_declare_falls_back_rather_than_failing() -> None:
+
+    resolution = runner.resolve_model(
+        _repo_runner_specs()["claude"], repo_root=REPO_ROOT, role="no-such-role"
+    )
+
+    assert resolution.source == FAMILY_DEFAULT_TIER
+    assert resolution.model == _OBSERVED_LANE_MODEL
+
+
 def test_the_ledger_holds_the_metered_dispatches_that_named_no_model() -> None:
 
     metered = [

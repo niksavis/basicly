@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO
 
-from . import context_window, models, run_record
+from . import agents, context_window, models, run_record
 from .checkout import sanitised_colour_env, sanitised_git_env
 from .context_window import ADAPTER_WINDOW, ADAPTER_WINDOWS, DEFAULT_CONTEXT_WINDOW, FALLBACK_WINDOW
 from .copilot_store import COPILOT_SESSION_STORE, shutdown_data, store_usage
@@ -229,6 +229,7 @@ def _apply_model(spec: RunnerSpec, argv: list[str]) -> list[str]:
 
 AGENT_MODEL_PIN = "agent model pin"
 AGENT_TIER = "agent tier"
+ROLE_TIER = "role tier"
 FAMILY_DEFAULT_TIER = "family default tier"
 
 
@@ -240,19 +241,35 @@ def model_family(spec: RunnerSpec) -> str:
     return Path(binary).stem.lower()
 
 
+def role_tier(repo_root: Path | None, role: str | None) -> str | None:
+
+    if not role or repo_root is None:
+        return None
+    try:
+        declared = agents.discover_agents(agents.default_agent_roots(Path(repo_root)))
+    except OSError, ValueError:
+        return None
+    for definition in declared:
+        if definition.slug == role:
+            return definition.tier or None
+    return None
+
+
 def resolve_model(
     spec: RunnerSpec,
     *,
     repo_root: Path | None = None,
     mapping: dict | None = None,
+    role: str | None = None,
 ) -> models.ModelResolution:
 
     if spec.model is not None:
         return models.ModelResolution(model=spec.model, source=AGENT_MODEL_PIN)
-    tier = spec.tier
+    declared = role_tier(repo_root, role)
+    tier = declared or spec.tier
     if tier is None:
         return models.ModelResolution()
-    source = spec.tier_source or AGENT_TIER
+    source = ROLE_TIER if declared else (spec.tier_source or AGENT_TIER)
     family = model_family(spec)
     surfaces = models.FAMILY_MODEL_SURFACES.get(family)
     if spec.kind == HANDOFF or surfaces is None:
@@ -886,7 +903,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
     seed: SessionSeed | None = None,
 ) -> RunResult:
 
-    resolution = resolve_model(spec, repo_root=cwd)
+    resolution = resolve_model(spec, repo_root=cwd, role=role)
     carried = resolution if (resolution.model or resolution.tier) else None
     if resolution.model is not None:
         spec = replace(spec, model=resolution.model)
