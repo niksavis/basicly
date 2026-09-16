@@ -202,19 +202,18 @@ sections:
   - name: Tier injection, so a declared tier reaches the spawn
     status: building
     record: basicly-a3yi
-    note: The tier is declared on every agent source and validated by lint, and it reaches
-      no spawn, because the hook that would rewrite one is not installed - this repository's
-      `.claude/settings.json` carries `PreToolUse` entries for the edit tools and for `Bash`,
-      and none for `Agent` [measured 2026-09-16]. **The earlier clause saying the claude
-      installer declines with a nonzero exit is withdrawn as false** [measured 2026-09-16,
-      `python3 .basicly/core/kit/tier/install_hook.py --dry-run` exits 0 and reports it would
-      write the `PreToolUse`/`Agent` hook]. The hook returns `hookSpecificOutput.updatedInput`, which is
-      a documented `PreToolUse` field, so the shape is right and only the firing is unproven.
-      `CLAUDE_CODE_SUBAGENT_MODEL` outranks whatever the hook writes and
-      `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` outranks the spawn prompt and the definition too; both
-      are unset here. On copilot the installer writes nothing and its stated reason is
-      known-wrong - that host now ships hooks and carries per-subagent selection in config at
-      `subagents.agents.<name>.{model, effortLevel, contextTier}`, which basicly-u2hl.41 wires
+    note: '**The break is at projection, not at spawn** [measured 2026-09-16]. The catalog source
+      declares the tier - `.basicly/core/agents/reviewer/agent.yaml` reads `tier: high` - and
+      **0 of 11 projected files under `.claude/agents/` carry a `tier:` field**. `agents.py`
+      parses the tier into the agent model and validates it against `MODEL_TIERS`, and nothing
+      emits it into the rendered frontmatter, so the resolver reads a file the tier never
+      reached. The hook is now installed here and correctly rewrites nothing. Two earlier
+      clauses are withdrawn as false - the claude installer exits 0 and writes the
+      `PreToolUse`/`Agent` entry, and the hook returns `hookSpecificOutput.updatedInput`, which
+      is a documented field rather than a contract the host refuses. Whether the host calls the
+      hook on a real spawn is still unproven; every probe fed the script a payload directly. On
+      copilot the installer writes nothing and its stated reason is known-wrong - that host now
+      ships hooks and carries per-subagent selection in config, which basicly-u2hl.41 wires'
 
   - name: Per-model spend and wall-clock forecast enforced at pass admission
     status: building
