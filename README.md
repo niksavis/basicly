@@ -127,6 +127,11 @@ scaffolded VS Code tasks/CI workflow (only when still unedited).
 - A gate that refuses a prose comment in a code file. The code is the source of truth, so
   changing it can never leave a stale claim beside it; a directive a tool reads (`noqa`,
   `nosec`, `type: ignore`, a shebang, a licence banner) is not prose and stays.
+- Model tiers wired to the spawn, on Claude. Each projected subagent carries the `tier:` its
+  source declares, and install adds the hook that rewrites a spawn to the model that tier
+  resolves to — so `tier: low` runs on the cheap model without any agent file naming one.
+  Copilot is not wired: it selects a subagent's model in configuration rather than through a
+  hook. [`docs/reference/kits.md`](docs/reference/kits.md) has the detail.
 
 Customize via YAML fragments in `.basicly-local/fragments/user/` — install
 never touches them. Scope the catalog to your stack with
@@ -165,8 +170,17 @@ knows the kit exists and when to use it — a kit nothing calls is a kit nobody 
 `--with-instructions` to place a short always-on block in the instruction files you already
 have, inside a marked region `uninstall` removes byte for byte.
 
-The tracker's install also writes the `merge=union` git attribute its parallel-append promise
-rests on, **before** the first kit file, and refuses to install at all if it cannot.
+**`init` also configures the repository where the kit needs it.** The tracker writes the
+`merge=union` git attribute its parallel-append promise rests on, **before** the first kit
+file, and refuses to install at all if it cannot. The tier kit wires the host hook that makes
+a declared tier reach a spawn. The comments kit needs no wiring.
+
+**`uninstall` takes back exactly what `init` wrote** — the vendored tree, both skill roots,
+the tier hook, and the tracker's own `.gitignore` and `.gitattributes` lines — and leaves an
+`Agent` hook somebody else wrote alone.
+
+**Every command each kit ships, with its flags, is in
+[`docs/reference/kits.md`](docs/reference/kits.md).**
 
 ### Committer requirements
 
@@ -234,9 +248,14 @@ Task-focused guides for the recurring operations:
 | [Run several lanes in parallel](docs/how-to/run-parallel-lanes.md) | decompose, preflight, grants, the serial merge queue |
 | [Resume or hand over a track](docs/how-to/resume-a-track.md) | after a crash, or onto a different agent family |
 
-Reference: [`docs/architecture/architecture.md`](docs/architecture/architecture.md)
-for the system, [`CONTRIBUTING.md`](CONTRIBUTING.md) for developing basicly
-itself.
+Reference:
+
+| Page | Covers |
+| --- | --- |
+| [`docs/reference/cli.md`](docs/reference/cli.md) | every `basicly` command and its flags |
+| [`docs/reference/kits.md`](docs/reference/kits.md) | every kit command and its flags, and what each kit writes and removes |
+| [`docs/architecture/architecture.md`](docs/architecture/architecture.md) | the system, and the decision behind each part of it |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | developing basicly itself |
 
 ## Everyday commands
 
