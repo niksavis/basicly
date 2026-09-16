@@ -258,6 +258,24 @@ def install(request) -> int:
     return 0
 
 
+def unconfigure_host(request, destination: Path) -> int:
+    name = request.kit.name
+    file_name = request.kit.configure_file
+    script = destination / file_name if file_name else None
+    if script is None or not script.is_file():
+        return 0
+    module = load_kit_module(destination, file_name, f"basicly_kit_configure_{name}")
+    if not hasattr(module, "main"):
+        return 0
+    code = module.main(["--root", str(request.target), "--uninstall"])
+    if code != 0:
+        request.stream.write(
+            f"{name}: {file_name} --uninstall exited {code}; a host may still name a hook "
+            f"this uninstall is about to delete\n"
+        )
+    return 1
+
+
 def configure_host(request, destination: Path) -> int:
     name = request.kit.name
     file_name = request.kit.configure_file
@@ -288,6 +306,7 @@ def uninstall(request) -> int:
         request.stream,
     )
     destination = vendored_root(target, name)
+    unconfigure_host(request, destination)
     drop_skill(target, name, stream)
     drop_block(target, name, stream)
     for rule_file, lines in host_rules(request.kit):

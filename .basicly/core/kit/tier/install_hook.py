@@ -121,6 +121,45 @@ def merge_hook(settings: dict, command: str) -> dict:
     return merged
 
 
+def drop_hook(settings: dict) -> tuple[dict, bool]:
+
+    section = settings.get(HOOKS_KEY)
+    if not isinstance(section, dict):
+        return settings, False
+    existing = section.get(HOOK_EVENT)
+    if not isinstance(existing, list):
+        return settings, False
+    kept = [group for group in existing if not _runs_our_hook(group)]
+    if len(kept) == len(existing):
+        return settings, False
+    merged = dict(settings)
+    trimmed = dict(section)
+    if kept:
+        trimmed[HOOK_EVENT] = kept
+    else:
+        trimmed.pop(HOOK_EVENT, None)
+    if trimmed:
+        merged[HOOKS_KEY] = trimmed
+    else:
+        merged.pop(HOOKS_KEY, None)
+    return merged, True
+
+
+def uninstall_claude(root: Path, *, user: bool, dry_run: bool) -> tuple[bool, bool, str]:
+
+    path = settings_path(root, user=user)
+    scope = "user" if user else "project"
+    current = load_settings(path)
+    updated, changed = drop_hook(current)
+    if not changed:
+        return True, False, f"claude: no {HOOK_EVENT}/{HOOK_MATCHER} hook of ours in {path}"
+    if dry_run:
+        return True, False, f"claude: would remove the {HOOK_EVENT}/{HOOK_MATCHER} hook from {path}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
+    return True, True, f"claude: removed the {HOOK_EVENT}/{HOOK_MATCHER} hook ({scope}) from {path}"
+
+
 def install_claude(
     root: Path, *, user: bool, dry_run: bool, interpreter: str | None = None
 ) -> tuple[bool, bool, str]:
@@ -173,6 +212,21 @@ def install(
     return installed, lines
 
 
+def uninstall(hosts: list[str], root: Path, *, user: bool, dry_run: bool) -> tuple[bool, list[str]]:
+
+    lines = []
+    removed = False
+    for host in hosts:
+        reason = CANNOT_INTERCEPT.get(host)
+        if reason is not None:
+            lines.append(f"{host}: nothing removed - {reason}")
+            continue
+        ok, _, message = uninstall_claude(root, user=user, dry_run=dry_run)
+        removed = removed or ok
+        lines.append(message)
+    return removed, lines
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Install the tier injection hook into a coding agent's settings."
@@ -189,6 +243,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="install for every repository on this machine instead of just this one",
     )
     parser.add_argument("--root", help="repository to install into (default: cwd)")
+    parser.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="remove the hook this script installs, leaving every other hook alone",
+    )
     parser.add_argument(
         "--interpreter",
         help=(
@@ -208,13 +267,17 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     root = Path(args.root) if args.root else Path.cwd()
     try:
-        installed, lines = install(
-            list(args.host or HOSTS),
-            root,
-            user=args.user,
-            dry_run=args.dry_run,
-            interpreter=args.interpreter,
-        )
+        hosts = list(args.host or HOSTS)
+        if args.uninstall:
+            installed, lines = uninstall(hosts, root, user=args.user, dry_run=args.dry_run)
+        else:
+            installed, lines = install(
+                hosts,
+                root,
+                user=args.user,
+                dry_run=args.dry_run,
+                interpreter=args.interpreter,
+            )
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -224,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
     for line in lines:
         print(line)
     if not installed:
-        print("nothing was installed", file=sys.stderr)
+        print("nothing was removed" if args.uninstall else "nothing was installed", file=sys.stderr)
         return 1
     return 0
 
