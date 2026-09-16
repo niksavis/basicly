@@ -199,21 +199,29 @@ sections:
       nothing, and four of those - `classification`, `change-shape`, `verification-evidence`
       and `validation-transcript` - are tracked by no work item. Architecture §33 carries the
       per-kind measurement
-  - name: Tier injection, so a declared tier reaches the spawn
+  - name: Tier injection on claude, so a declared tier reaches the spawn
+    status: shipped
+    note: 'Measured on three spawn paths 2026-09-16, each read off the model the run actually
+      used rather than the input it was given. `claude -p` here spawned `validator` (medium)
+      and the result object carried `claude-sonnet-5` beside the opus lead. An in-session
+      background subagent, `tester` (low), ran on `claude-haiku-4-5` across all 7 of its
+      assistant messages. A `-p` spawn in a repository with no `.basicly/core` at all ran
+      `scribe` (low) on `claude-haiku-4-5` for 0.10 usd. The projector emits `tier:` into both
+      agent roots, `basicly install` and `basicly-tier init` both wire the hook, and uninstall
+      removes it while leaving an unrelated `Agent` hook alone. Architecture section 17 carries
+      the mechanism and D-09 the refusal that shapes it'
+  - name: Tier injection on copilot
     status: building
     record: basicly-a3yi
-    note: '**The break is at projection, not at spawn** [measured 2026-09-16]. The catalog source
-      declares the tier - `.basicly/core/agents/reviewer/agent.yaml` reads `tier: high` - and
-      **0 of 11 projected files under `.claude/agents/` carry a `tier:` field**. `agents.py`
-      parses the tier into the agent model and validates it against `MODEL_TIERS`, and nothing
-      emits it into the rendered frontmatter, so the resolver reads a file the tier never
-      reached. The hook is now installed here and correctly rewrites nothing. Two earlier
-      clauses are withdrawn as false - the claude installer exits 0 and writes the
-      `PreToolUse`/`Agent` entry, and the hook returns `hookSpecificOutput.updatedInput`, which
-      is a documented field rather than a contract the host refuses. Whether the host calls the
-      hook on a real spawn is still unproven; every probe fed the script a payload directly. On
-      copilot the installer writes nothing and its stated reason is known-wrong - that host now
-      ships hooks and carries per-subagent selection in config, which basicly-u2hl.41 wires'
+    note: 'Inert by construction rather than by defect - `install_hook.CANNOT_INTERCEPT` names
+      that host, so nothing there reads the `tier:` the projector now writes into
+      `.github/agents/<slug>.agent.md`. basicly-a3yi was re-scoped by the owner on 2026-07-31
+      to require claude **and** copilot, so it stays open on this half. The route is per-subagent
+      selection in config rather than a hook, which basicly-u2hl.41 owns. Two facts recorded
+      2026-09-16: a paid probe there was confounded, because `tier: high` and the configured
+      default are both `claude-opus-5`, and neither probe spawned a subagent at all. When it is
+      worked, `~/.copilot/session-store.db` table `assistant_usage_events` reads the model per
+      turn for free, and the test must use a tier whose model differs from the default'
 
   - name: Per-model spend and wall-clock forecast enforced at pass admission
     status: building
