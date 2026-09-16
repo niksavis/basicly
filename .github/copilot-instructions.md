@@ -95,6 +95,14 @@ uv run basicly permissions-check
   the control is empty too, the zero belongs to the probe.
 - **A number in a claim is derived twice, by paths sharing no step.** One green test
   on one path is still one path; treat a disagreement as an instrument fault first.
+  When a person reports one against a vendor's own figure, run the vendor's path
+  before defending ours.
+- **A probe bounds what it proves.** Report the claim the probe supports, not the
+  one you hoped for. Where two hypotheses predict the same observation, say so and
+  change the probe until they differ.
+- **A cost claim names its priced components, never a token count.** A cache write,
+  a cache read and an output token carry different prices, so a total in tokens
+  hides which one moved.
 
 ## Core Rules
 
