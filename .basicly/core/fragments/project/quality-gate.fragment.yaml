@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
 token_cost:
-  claude: 247
-  codex: 247
-  copilot: 247
+  claude: 283
+  codex: 283
+  copilot: 284
 id: quality-gate
 description: Quality gate rules before finishing work.
 category: project
@@ -22,3 +22,4 @@ body: |
   - A coverage claim names the list the code iterates; a general mechanism proves nothing about membership.
   - In a plan awaiting approval, mark parts resting on unread code as assumptions, not design; an approval on a false premise costs the checkpoint and the rework behind it.
   - Same for a README, release note or repo description claim: exercise it before publishing; `docs-claims` catches only an invented command.
+  - A design document sentence naming a call the code does not make is a claim, not a plan; write it once the call exists or say what is owed, because `docs-claims` reads a command and not a call, so nothing refuses it.

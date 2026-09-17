@@ -77,6 +77,8 @@ tracker_mode = owned_store.tracker_mode
 ledger_dir = owned_store.ledger_dir
 kit = owned_store.kit
 
+LEDGER_GLOBS = ("events-*.jsonl", "pending-*.jsonl")
+
 
 def owned_record(repo_root: Path, issue_id: str) -> dict | None:
 
@@ -495,7 +497,7 @@ def scrub_ledger(
     monotonic: Callable[[], float] = time.monotonic,
 ) -> int:
 
-    files = sorted(ledger_dir(repo_root).glob("events-*.jsonl"))
+    files = sorted(found for glob in LEDGER_GLOBS for found in ledger_dir(repo_root).glob(glob))
     if not files:
         return 0
     kit_module = kit(repo_root)

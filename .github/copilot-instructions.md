@@ -109,6 +109,7 @@ uv run basicly permissions-check
 - Minimal diffs; an unrelated refactor hides which change failed.
 - Solve the stated requirement only; a speculative abstraction or unrequested config is a guess you keep.
 - Reuse > reinvent: prove a capability absent before building it; the authority is the code that reads it, not the docs or `--help`.
+- A change under `.basicly/core/kit/` names where a consumer with no engine gets the capability; half a mechanism in `src/basicly/` hands that consumer the cost and none of the fix.
 - Root cause, not symptom: check other call sites before calling a single-site patch complete.
 - Back claims with evidence: files read · commands run · tests.
 - No dead code or debug prints; a swallowed error becomes a wrong answer.
@@ -128,6 +129,7 @@ uv run basicly permissions-check
 - A coverage claim names the list the code iterates; a general mechanism proves nothing about membership.
 - In a plan awaiting approval, mark parts resting on unread code as assumptions, not design; an approval on a false premise costs the checkpoint and the rework behind it.
 - Same for a README, release note or repo description claim: exercise it before publishing; `docs-claims` catches only an invented command.
+- A design document sentence naming a call the code does not make is a claim, not a plan; write it once the call exists or say what is owed, because `docs-claims` reads a command and not a call, so nothing refuses it.
 
 ## Use
 

@@ -1694,7 +1694,8 @@ def cmd_hooks_build(_args: argparse.Namespace) -> int:
         print(f"Activated git hooks for stages: {', '.join(stages)}.")
     else:
         print(f"Could not auto-activate git hooks: {message}", file=sys.stderr)
-    if not any((repo_root / owned_store.LEDGER_DIR).glob("events-*.jsonl")):
+    ledger = repo_root / owned_store.LEDGER_DIR
+    if not any(ledger.glob(glob) for glob in ("events-*.jsonl", "pending-*.jsonl")):
         print(
             f"Note: no tracker found ({owned_store.LEDGER_DIR.as_posix()}/); the "
             f"tracker-commit-msg hook will skip its issue-id check. Create a first "

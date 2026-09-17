@@ -47,7 +47,7 @@ checkout reaches it only once that checkout's tracker state is committed.
 REDIRECT_NAME = "redirect"
 
 LEDGER_DIR = Path(".basicly") / "ledger"
-LEDGER_GLOB = "events-*.jsonl"
+LEDGER_GLOBS = ("events-*.jsonl", "pending-*.jsonl")
 
 
 def _tracker_root() -> Path:
@@ -84,10 +84,10 @@ def _known_ids_with_source() -> tuple[set[str], str] | None:
 
     ledger_dir = _tracker_root() / LEDGER_DIR
     ledger_ids: set[str] = set()
-    for log in sorted(ledger_dir.glob(LEDGER_GLOB)):
+    for log in sorted(f for glob in LEDGER_GLOBS for f in ledger_dir.glob(glob)):
         ledger_ids |= _ids_from_jsonl(log, "record")
     if ledger_ids:
-        return ledger_ids, str(LEDGER_DIR / LEDGER_GLOB)
+        return ledger_ids, " or ".join(str(LEDGER_DIR / glob) for glob in LEDGER_GLOBS)
     return None
 
 

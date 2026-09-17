@@ -1,0 +1,1 @@
+- Three readers of the ledger were blind to a writer's pending shard: the `tracker-commit-msg` gate refused a commit citing an id minted since the last compaction, `scrub_ledger` skipped a shard when rewriting machine paths out, and `basicly install` reported no tracker present. The hook's glob is now bound to both kit constants by a test.

@@ -26,7 +26,7 @@ def _write_ledger(root: Path, *records: str) -> None:
     ledger = root / module.LEDGER_DIR
     ledger.mkdir(parents=True)
     lines = "".join(f'{{"record":"{record}","kind":"created"}}\n' for record in records)
-    (ledger / module.LEDGER_GLOB.replace("*", "0001")).write_text(lines, encoding="utf-8")
+    (ledger / module.LEDGER_GLOBS[0].replace("*", "0001")).write_text(lines, encoding="utf-8")
 
 
 def _load_tracker_commit_msg_module():
@@ -141,7 +141,30 @@ def test_load_known_issue_ids_returns_none_without_a_tracker(tmp_path: Path, mon
 def test_ledger_glob_matches_the_kit_contract() -> None:
 
     module = _load_tracker_commit_msg_module()
-    assert module.LEDGER_GLOB == _load_kit_events().LOG_GLOB
+    events = _load_kit_events()
+    assert module.LEDGER_GLOBS == (events.LOG_GLOB, events.PENDING_GLOB), (
+        "the gate reads the id set off these globs, so a kit that writes a shape they "
+        "miss makes a freshly minted id invisible and refuses the commit that cites it"
+    )
+
+
+def test_an_id_minted_into_a_pending_shard_is_found_by_the_gate(
+    tmp_path: Path, monkeypatch
+) -> None:
+    module = _load_tracker_commit_msg_module()
+    (tmp_path / ".git").mkdir()
+    _write_ledger(tmp_path, "proj-trunk")
+    shard = tmp_path / module.LEDGER_DIR / module.LEDGER_GLOBS[1].replace("*", "main")
+    shard.write_text('{"record":"proj-shard","kind":"created"}\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    known, _ = _found(module)
+
+    assert "proj-trunk" in known, "the control: the trunk id is found either way"
+    assert "proj-shard" in known, (
+        "a writer appends to its own shard, so an id minted since the last compaction "
+        "lives there and a gate that reads only the trunk refuses its own commit"
+    )
 
 
 def test_the_gate_binds_over_a_ledger_and_names_the_store_it_checked(
@@ -154,7 +177,7 @@ def test_the_gate_binds_over_a_ledger_and_names_the_store_it_checked(
 
     known, source = _found(module)
     assert known == {"proj-owned"}
-    assert source == str(module.LEDGER_DIR / module.LEDGER_GLOB)
+    assert source == " or ".join(str(module.LEDGER_DIR / glob) for glob in module.LEDGER_GLOBS)
     assert module.validate("feat(x): a thing (proj-owned)", known, source)[0]
 
     is_valid, error = module.validate("feat(x): a thing (proj-nope)", known, source)
