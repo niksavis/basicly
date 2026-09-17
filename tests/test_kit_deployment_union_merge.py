@@ -208,6 +208,35 @@ def test_the_same_one_shard_history_merges_clean_with_the_union_attribute(
     }
 
 
+def test_sharded_branches_merge_clean_even_for_a_merger_that_ignores_the_attribute(
+    host: Path, env: dict[str, str]
+) -> None:
+    drop_lines(host / ".gitattributes", LOG_RULE, PENDING_RULE)
+    ledger = _two_appends(host, env)
+
+    merged = _merge(host, env, "agent-a", "agent-b")
+
+    assert merged.returncode == 0, (
+        f"a forge computes mergeability without reading .gitattributes, so the union "
+        f"driver is unavailable to it; disjoint paths are what has to carry the merge: "
+        f"{merged.stdout}{merged.stderr}"
+    )
+    assert set(_folded(ledger)) == {"basicly-base", "basicly-a", "basicly-b"}
+
+
+def test_one_shared_log_is_what_that_same_merger_flags(host: Path, env: dict[str, str]) -> None:
+    drop_lines(host / ".gitattributes", LOG_RULE, PENDING_RULE)
+    _two_appends_on_one_branch(host, env)
+
+    merged = _merge(host, env, "agent-a", "agent-b")
+
+    assert merged.returncode != 0, (
+        "the control: without the union attribute a shared log must conflict, or the "
+        "test above is passing for a reason other than the sharding"
+    )
+    assert "CONFLICT (content)" in merged.stdout + merged.stderr
+
+
 def test_the_union_does_not_reach_the_derived_files(host: Path) -> None:
     ledger = LEDGER_RELATIVE.as_posix()
 

@@ -146,8 +146,18 @@ def drop_block(target: Path, name: str, stream) -> int:
     return removed
 
 
+CACHE_DIR_NAME = "__pycache__"
+
+
+def cache_ignore_rule(name: str) -> tuple[str, tuple[str, ...]]:
+    return (".gitignore", (f"{(DEFAULT_ROOT / name / CACHE_DIR_NAME).as_posix()}/",))
+
+
 def host_rules(kit):
-    return () if kit is None or kit.rules is None else kit.rules(kit.directory)
+    if kit is None:
+        return ()
+    declared = () if kit.rules is None else tuple(kit.rules(kit.directory))
+    return (*declared, cache_ignore_rule(kit.name))
 
 
 def ensure_lines(path: Path, lines) -> list[str]:
