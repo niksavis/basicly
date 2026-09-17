@@ -141,9 +141,24 @@ Three reasons the kit is a requirement rather than a nicety:
 computes mergeability ahead of the merge and that computation ignores a repository's
 `.gitattributes`; its own auto-merge then refuses a pull request it has flagged. The
 request has been open since 2021-12-24 and was still unimplemented at 2026-08
-(github/community discussion 9288). So a shared log is a conflict surface on a forge
-however the attribute is declared, and a local `git merge` that succeeds proves nothing
-about the pull request. That is the defect this section exists for, not a hypothetical.
+(github/community discussion 9288).
+
+**Measured on GitHub rather than argued from that thread**, on a throwaway private
+repository, 2026-09-17. Two arms, each carrying the identical `.gitattributes` above on
+its own base branch, each advancing that base by one append and then opening a pull
+request for a second append:
+
+| arm | the pull request changes | `git merge` locally | GitHub `mergeable` |
+| --- | --- | --- | --- |
+| one shared log | `events-0001.jsonl` | MERGEABLE | **CONFLICTING**, state DIRTY |
+| one file per writer | `pending-<writer>.jsonl` | MERGEABLE | **MERGEABLE**, state CLEAN |
+
+The first row is the whole argument: **the same commits, under the same declared
+attribute, merge clean locally and are refused by the forge.** So a local `git merge` that
+succeeds proves nothing about the pull request, and the conflicting arm is the positive
+control without which the clean one would be worth nothing. A shared log is a conflict
+surface on a forge however the attribute is declared. That is the defect this section
+exists for, not a hypothetical.
 
 **A writer appends to `pending-<writer>.jsonl`, never to the trunk.** Two branches then
 change two different paths, and a forge has nothing to flag. The writer is derived from
