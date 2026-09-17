@@ -49,6 +49,17 @@ ids = _load_ids()
 LOG_GLOB = "events-*.jsonl"
 INITIAL_LOG_NAME = "events-0001.jsonl"
 
+PENDING_GLOB = "pending-*.jsonl"
+_PENDING_PREFIX, _, _PENDING_SUFFIX = PENDING_GLOB.partition("*")
+WRITER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+GIT_DIR_NAME = ".git"
+_GIT_HEAD = "HEAD"
+_GIT_REF_MARK = "ref:"
+_GIT_DIR_MARK = "gitdir:"
+_GIT_BRANCH_PREFIX = "refs/heads/"
+DETACHED_WRITER = "detached"
+
 LOCK_NAME = ".events.lock"
 
 TRUNCATABLE_KEYS = frozenset({"text", "value", "output", "detail"})
@@ -504,6 +515,70 @@ def log_paths(directory: Path | str) -> list[Path]:
     return sorted(Path(directory).glob(LOG_GLOB))
 
 
+def pending_paths(directory: Path | str) -> list[Path]:
+
+    return sorted(Path(directory).glob(PENDING_GLOB))
+
+
+def ledger_paths(directory: Path | str) -> list[Path]:
+
+    return log_paths(directory) + pending_paths(directory)
+
+
+def pending_path(directory: Path | str, writer: str) -> Path:
+
+    if not WRITER_PATTERN.match(writer):
+        raise LedgerError(
+            f"writer {writer!r} must match {WRITER_PATTERN.pattern}: it becomes a file name, "
+            f"so a slash or a leading dot would escape the ledger directory"
+        )
+    return Path(directory) / f"{_PENDING_PREFIX}{writer}{_PENDING_SUFFIX}"
+
+
+def writer_of(path: Path | str) -> str:
+
+    name = Path(path).name
+    if not name.startswith(_PENDING_PREFIX) or not name.endswith(_PENDING_SUFFIX):
+        raise LedgerError(f"{name} is not a pending shard")
+    return name[len(_PENDING_PREFIX) : -len(_PENDING_SUFFIX)]
+
+
+def _git_dir(start: Path) -> Path | None:
+
+    for directory in (start, *start.parents):
+        candidate = directory / GIT_DIR_NAME
+        if candidate.is_dir():
+            return candidate
+        if candidate.is_file():
+            text = candidate.read_text(encoding="utf-8").strip()
+            if text.startswith(_GIT_DIR_MARK):
+                linked = Path(text[len(_GIT_DIR_MARK) :].strip())
+                return linked if linked.is_absolute() else (directory / linked).resolve()
+    return None
+
+
+def _slug(text: str) -> str:
+
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-.")
+    return cleaned[:64] or DETACHED_WRITER
+
+
+def derive_writer(directory: Path | str) -> str | None:
+
+    git_dir = _git_dir(Path(directory).resolve())
+    if git_dir is None:
+        return None
+    try:
+        head = (git_dir / _GIT_HEAD).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not head.startswith(_GIT_REF_MARK):
+        return DETACHED_WRITER
+    ref = head[len(_GIT_REF_MARK) :].strip()
+    branch = ref.removeprefix(_GIT_BRANCH_PREFIX)
+    return _slug(branch)
+
+
 def read_log(path: Path | str) -> tuple[list[Event], list[Quarantine]]:
 
     file_path = Path(path)
@@ -527,18 +602,25 @@ def read_log(path: Path | str) -> tuple[list[Event], list[Quarantine]]:
     return events, quarantined
 
 
-def read_events(directory: Path | str) -> tuple[list[Event], list[Quarantine]]:
+def read_events_from(paths: Sequence[Path]) -> tuple[list[Event], list[Quarantine]]:
     events: list[Event] = []
     quarantined: list[Quarantine] = []
-    for path in log_paths(directory):
+    for path in paths:
         found, bad = read_log(path)
         events.extend(found)
         quarantined.extend(bad)
     return events, quarantined
 
 
-def append_target(directory: Path | str) -> Path:
+def read_events(directory: Path | str) -> tuple[list[Event], list[Quarantine]]:
+    return read_events_from(ledger_paths(directory))
 
+
+def append_target(directory: Path | str, *, writer: str | None = None) -> Path:
+
+    chosen = writer if writer is not None else derive_writer(directory)
+    if chosen:
+        return pending_path(directory, chosen)
     paths = log_paths(directory)
     return paths[-1] if paths else Path(directory) / INITIAL_LOG_NAME
 
@@ -769,7 +851,7 @@ def prepare_payload(
     return prepared
 
 
-def _append_lines(path: Path, lines: Sequence[str]) -> None:
+def append_lines(path: Path, lines: Sequence[str]) -> None:
 
     needs_newline = False
     if path.exists():
@@ -794,6 +876,7 @@ def append(  # noqa: PLR0913 — every keyword is an injected dependency the kit
     max_text_bytes: int = MAX_TEXT_BYTES,
     held_lock: LedgerLock | None = None,
     lock_timeout_s: float = DEFAULT_LOCK_TIMEOUT_S,
+    writer: str | None = None,
 ) -> list[Event]:
 
     pending = list(drafts)
@@ -842,7 +925,7 @@ def append(  # noqa: PLR0913 — every keyword is an injected dependency the kit
             )
             seen.add(event_id)
         if minted:
-            _append_lines(append_target(ledger), [to_json(event) for event in minted])
+            append_lines(append_target(ledger, writer=writer), [to_json(event) for event in minted])
         return minted
     finally:
         if acquired:
@@ -863,7 +946,7 @@ def _withdrawn_payload(event: Event) -> dict[str, object]:
 
 def _find_line(ledger: Path, event_id: str) -> tuple[Path, str, int, Event]:
 
-    for path in log_paths(ledger):
+    for path in ledger_paths(ledger):
         text = path.read_text(encoding="utf-8")
         for index, line in enumerate(text.splitlines()):
             try:

@@ -176,6 +176,7 @@ def collect(repo: Path, ledger: Path = LEDGER_DIR, kit_dir: Path = KIT_DIR) -> l
     kit = load_kit(repo / kit_dir)
     findings = [
         *log_findings(repo, ledger, kit.events.LOG_GLOB),
+        *log_findings(repo, ledger, kit.events.PENDING_GLOB),
         *derived_findings(repo, ledger, kit.DERIVED_PATTERNS),
     ]
     return sorted(findings, key=lambda finding: finding.key)

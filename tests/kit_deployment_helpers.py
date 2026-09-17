@@ -14,6 +14,7 @@ KIT_RELATIVE = Path(".basicly") / "core" / "kit" / "tracker"
 LEDGER_RELATIVE = Path(".basicly") / "ledger"
 
 LOG_RULE = "events-*.jsonl -text merge=union"
+PENDING_RULE = "pending-*.jsonl -text merge=union"
 SNAPSHOT_RULE = ".basicly/ledger/snapshot.jsonl"
 CHECKPOINT_RULE = ".basicly/ledger/checkpoint-*.jsonl"
 
@@ -32,6 +33,7 @@ def _load(path: Path, name: str) -> ModuleType:
 gate = _load(SCRIPT, "kit_deployment")
 snapshot = _load(REPO_ROOT / KIT_RELATIVE / "snapshot.py", "kit_deployment_test_snapshot")
 events = snapshot.events
+fsck = _load(REPO_ROOT / KIT_RELATIVE / "fsck.py", "kit_deployment_test_fsck")
 
 
 def git_env(tmp_path: Path) -> dict[str, str]:
@@ -93,6 +95,7 @@ def write_ledger(directory: Path) -> None:
         actor="test",
         clock=lambda: CLOCK,
     )
+    snapshot.compact(directory)
     snapshot.rotate(directory, "2026")
     events.append(
         directory,
@@ -100,6 +103,7 @@ def write_ledger(directory: Path) -> None:
         actor="test",
         clock=lambda: CLOCK,
     )
+    snapshot.compact(directory)
     snapshot.rebuild(directory)
 
 

@@ -301,7 +301,7 @@ class LogTally:
 
 def scan_logs(directory: Path | str) -> LogTally:
 
-    return scan_paths(events.log_paths(directory))
+    return scan_paths(events.ledger_paths(directory))
 
 
 def scan_paths(paths: Sequence[Path]) -> LogTally:
@@ -395,7 +395,7 @@ class Fold:
 def fold_all(directory: Path | str) -> Fold:
 
     ledger = Path(directory)
-    logs = events.log_paths(ledger)
+    logs = events.ledger_paths(ledger)
     found, quarantined = events.read_events(ledger)
     return Fold(
         result=events.fold(found),
@@ -418,7 +418,7 @@ def fold_resumed(directory: Path | str) -> Fold:
     folded_before = [path for path in events.log_paths(ledger) if period_of(path) <= boundary]
     if scan_paths(folded_before).lines != base.header.log_lines:
         return fold_all(ledger)
-    logs = logs_after(ledger, boundary)
+    logs = logs_after(ledger, boundary) + events.pending_paths(ledger)
     found: list[Any] = []
     quarantined: list[Any] = []
     for path in logs:
@@ -477,6 +477,69 @@ def load(directory: Path | str) -> Snapshot:
 
 
 @dataclass(frozen=True)
+class Compaction:
+    trunk: Path
+    shards: tuple[Path, ...] = ()
+    appended: int = 0
+    duplicates: int = 0
+
+
+def compact(
+    directory: Path | str,
+    *,
+    writers: Sequence[str] = (),
+    held_lock: Any = None,
+    lock_timeout_s: float = events.DEFAULT_LOCK_TIMEOUT_S,
+) -> Compaction:
+
+    ledger = Path(directory)
+    ledger.mkdir(parents=True, exist_ok=True)
+    lock = (
+        held_lock if held_lock is not None else events.LedgerLock(ledger, timeout_s=lock_timeout_s)
+    )
+    acquired = held_lock is None
+    if acquired:
+        lock.acquire()
+    try:
+        wanted = frozenset(writers)
+        shards = [
+            path
+            for path in events.pending_paths(ledger)
+            if not wanted or events.writer_of(path) in wanted
+        ]
+        trunk = events.append_target(ledger, writer="")
+        if not shards:
+            return Compaction(trunk=trunk, shards=())
+        known = {event.id for event in events.read_events_from(events.log_paths(ledger))[0]}
+        carried: list[str] = []
+        duplicates = 0
+        for path in shards:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    event = events.from_json(line)
+                except events.InvalidEventError:
+                    carried.append(line)
+                    continue
+                if event.id in known:
+                    duplicates += 1
+                    continue
+                known.add(event.id)
+                carried.append(line)
+        if carried:
+            events.append_lines(trunk, carried)
+        for path in shards:
+            path.unlink()
+        return Compaction(
+            trunk=trunk, shards=tuple(shards), appended=len(carried), duplicates=duplicates
+        )
+    finally:
+        if acquired:
+            lock.release()
+
+
+@dataclass(frozen=True)
 class Rotation:
     log: Path
     checkpoint: Path | None
@@ -502,6 +565,12 @@ def rotate(
     if acquired:
         lock.acquire()
     try:
+        if held := events.pending_paths(ledger):
+            raise SnapshotError(
+                f"{len(held)} pending shard(s) hold uncompacted events "
+                f"({', '.join(path.name for path in held)}); a rotation would write a "
+                f"checkpoint the resumed fold cannot match, so compact before rotating"
+            )
         target = log_path(ledger, period)
         archived = events.log_paths(ledger)
         if target.exists():

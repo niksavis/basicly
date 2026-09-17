@@ -55,14 +55,14 @@ class Abandoned(list):
         os._exit(9)
 
 
-written = module._append_lines
+written = module.append_lines
 
 
 def dying(path, lines):
     return written(path, Abandoned(lines))
 
 
-module._append_lines = dying
+module.append_lines = dying
 module.append(
     Path(sys.argv[2]),
     [

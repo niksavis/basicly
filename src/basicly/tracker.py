@@ -205,7 +205,7 @@ def _fact(kit_module: Any, event: Any) -> str:
 def _refuse_a_write_the_store_did_not_keep(repo_root: Path, landed: list[Any]) -> None:
 
     kit_module = kit(repo_root)
-    logs = kit_module.events.log_paths(ledger_dir(repo_root))
+    logs = kit_module.events.ledger_paths(ledger_dir(repo_root))
     text = "".join(path.read_text(encoding="utf-8") for path in logs)
     lost = [event for event in landed if f'"id":"{event.id}"' not in text]
     if not lost:

@@ -9,6 +9,7 @@ from tests.kit_deployment_helpers import (
     CLOCK,
     LEDGER_RELATIVE,
     LOG_RULE,
+    PENDING_RULE,
     drop_lines,
     events,
     gate,
@@ -72,7 +73,15 @@ def _folded(ledger: Path) -> dict:
 
 
 def _log_lines(ledger: Path) -> list[str]:
-    return (ledger / events.INITIAL_LOG_NAME).read_text(encoding="utf-8").splitlines()
+    lines: list[str] = []
+    for path in events.ledger_paths(ledger):
+        lines += path.read_text(encoding="utf-8").splitlines()
+    return lines
+
+
+def _touched(host: Path, env: dict[str, str], branch: str) -> set[str]:
+    shown = git(host, env, "show", "--name-only", "--format=", branch)
+    return {line.strip() for line in shown.stdout.splitlines() if line.strip()}
 
 
 def test_two_branches_that_each_append_merge_clean_and_both_events_survive(
@@ -85,6 +94,21 @@ def test_two_branches_that_each_append_merge_clean_and_both_events_survive(
     assert merged.returncode == 0, merged.stdout + merged.stderr
     assert set(_folded(ledger)) == {"basicly-base", "basicly-a", "basicly-b"}
     assert len(_log_lines(ledger)) == 3
+
+
+def test_each_branch_appends_to_its_own_shard_so_the_commits_touch_no_shared_path(
+    host: Path, env: dict[str, str]
+) -> None:
+    _two_appends(host, env)
+
+    a_paths = _touched(host, env, "agent-a")
+    b_paths = _touched(host, env, "agent-b")
+
+    assert a_paths and b_paths, "the control: each branch commits at least one path"
+    assert a_paths & b_paths == set(), (
+        f"agent-a wrote {sorted(a_paths)} and agent-b wrote {sorted(b_paths)}; a shared "
+        f"path is what a forge flags as conflicting whatever .gitattributes says"
+    )
 
 
 def test_the_fold_is_the_same_whichever_branch_merged_first(
@@ -102,7 +126,6 @@ def test_the_fold_is_the_same_whichever_branch_merged_first(
     b_first = _log_lines(ledger)
     b_fold = _folded(ledger)
 
-    assert a_first != b_first
     assert sorted(a_first) == sorted(b_first)
     assert a_fold == b_fold
 
@@ -123,14 +146,46 @@ def test_the_landing_rebase_keeps_both_events_too(host: Path, env: dict[str, str
     assert set(_folded(ledger)) == {"basicly-base", "basicly-a", "basicly-b"}
 
 
-def test_the_same_history_conflicts_when_the_union_attribute_is_removed(
+def _two_appends_on_one_branch(host: Path, env: dict[str, str]) -> Path:
+
+    ledger = host / LEDGER_RELATIVE
+    _append(ledger, "basicly-base")
+    git(host, env, "add", "-A")
+    git(host, env, "commit", "-qm", "base")
+    shard = events.append_target(ledger)
+    for agent in ("a", "b"):
+        git(host, env, "checkout", "-qb", f"agent-{agent}", "main")
+        git(host, env, "checkout", "-q", "main")
+        git(host, env, "checkout", "-q", f"agent-{agent}")
+        with shard.open("a", encoding="utf-8") as handle:
+            handle.write(_line(f"basicly-{agent}"))
+        git(host, env, "add", "-A")
+        git(host, env, "commit", "-qm", f"agent {agent} appends")
+    return ledger
+
+
+def _line(record: str) -> str:
+    event = events.Event(
+        id=f"{record}#ev-{record[-1]}",
+        record=record,
+        seq=1,
+        kind=events.KIND_CREATED,
+        actor="test",
+        ts="2026-09-17T00:00:00Z",
+        payload={"title": f"record {record}"},
+    )
+    return events.to_json(event) + "\n"
+
+
+def test_two_writers_on_one_shard_still_need_the_union_attribute(
     host: Path, env: dict[str, str]
 ) -> None:
     attributes = host / ".gitattributes"
-    drop_lines(attributes, LOG_RULE)
+    drop_lines(attributes, LOG_RULE, PENDING_RULE)
     with attributes.open("a", encoding="utf-8") as handle:
         handle.write(f"{TEXT_ONLY_RULE}\n")
-    _two_appends(host, env)
+        handle.write("pending-*.jsonl -text\n")
+    _two_appends_on_one_branch(host, env)
 
     merged = _merge(host, env, "agent-a", "agent-b")
 
@@ -138,11 +193,27 @@ def test_the_same_history_conflicts_when_the_union_attribute_is_removed(
     assert "CONFLICT (content)" in merged.stdout + merged.stderr
 
 
+def test_the_same_one_shard_history_merges_clean_with_the_union_attribute(
+    host: Path, env: dict[str, str]
+) -> None:
+    _two_appends_on_one_branch(host, env)
+
+    merged = _merge(host, env, "agent-a", "agent-b")
+
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert set(_folded(host / LEDGER_RELATIVE)) == {
+        "basicly-base",
+        "basicly-a",
+        "basicly-b",
+    }
+
+
 def test_the_union_does_not_reach_the_derived_files(host: Path) -> None:
     ledger = LEDGER_RELATIVE.as_posix()
 
     assert gate.attribute(host, f"{ledger}/events-0001.jsonl", "merge") == "union"
     assert gate.attribute(host, f"{ledger}/events-2026q1.jsonl", "merge") == "union"
+    assert gate.attribute(host, f"{ledger}/pending-agent-a.jsonl", "merge") == "union"
     assert gate.attribute(host, f"{ledger}/snapshot.jsonl", "merge") == "unspecified"
     assert gate.attribute(host, f"{ledger}/checkpoint-0001.jsonl", "merge") == "unspecified"
 

@@ -31,9 +31,13 @@ LEDGER_DIR = ".basicly/ledger"
 
 def ledger_rules(directory: Path):
     log_glob = installer.read_kit_constant(directory, "events.py", "LOG_GLOB")
+    pending_glob = installer.read_kit_constant(directory, "events.py", "PENDING_GLOB")
     derived = installer.read_kit_constant(directory, "snapshot.py", "DERIVED_PATTERNS")
     return (
-        (".gitattributes", (f"{log_glob} -text merge=union",)),
+        (
+            ".gitattributes",
+            tuple(f"{glob} -text merge=union" for glob in (log_glob, pending_glob)),
+        ),
         (".gitignore", tuple(f"{LEDGER_DIR}/{pattern}" for pattern in derived)),
     )
 

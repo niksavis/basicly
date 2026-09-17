@@ -17,6 +17,8 @@ SELF = f"{SCRIPT_DIR.name}/{Path(__file__).name}"
 
 SRC_ROOT = "src/basicly"
 LOG_GLOB = ".basicly/ledger/events-*.jsonl"
+PENDING_GLOB = ".basicly/ledger/pending-*.jsonl"
+STORE_GLOBS = (LOG_GLOB, PENDING_GLOB)
 ROSTER_DOC = "docs/architecture/architecture.md"
 
 _MARKER = re.compile(r"\[harness-[a-z][a-z-]*\]")
@@ -128,7 +130,7 @@ def declared_families(repo: Path) -> dict[str, tuple[str, ...]]:
 
 
 def _log_bodies(repo: Path) -> Iterator[tuple[str, str]]:
-    for path in sorted(repo.glob(LOG_GLOB)):
+    for path in sorted(found for glob in STORE_GLOBS for found in repo.glob(glob)):
         store = path.relative_to(repo).as_posix()
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             if not line.strip():
@@ -151,7 +153,7 @@ def logged_families(repo: Path) -> Census:
         if found:
             rows[found.group(1)] = rows.get(found.group(1), 0) + 1
     if not stores:
-        raise FamilyError(f"no store to read at {LOG_GLOB}")
+        raise FamilyError(f"no store to read at {' or '.join(STORE_GLOBS)}")
     if comments and not rows:
         raise FamilyError(f"read {comments} comment bodies and matched no family: bad probe")
     return Census(rows=dict(sorted(rows.items())), comments=comments, stores=tuple(sorted(stores)))

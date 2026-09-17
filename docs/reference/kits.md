@@ -44,7 +44,7 @@ flag `init` says the block is available and where to read it.
 | Kit | Files vendored | Skill roots | Host or repository configuration |
 | --- | --- | --- | --- |
 | `comments` | 10 | `.claude/skills/comments`, `.agents/skills/comments` | none |
-| `tracker` | 20 | `.claude/skills/tracker`, `.agents/skills/tracker` | `.gitattributes` gains `events-*.jsonl -text merge=union`; `.gitignore` gains the snapshot and checkpoint paths |
+| `tracker` | 20 | `.claude/skills/tracker`, `.agents/skills/tracker` | `.gitattributes` gains `events-*.jsonl` and `pending-*.jsonl`, each `-text merge=union`; `.gitignore` gains the snapshot and checkpoint paths |
 | `tier` | 7 | `.claude/skills/tier`, `.agents/skills/tier` | a `PreToolUse`/`Agent` hook in `.claude/settings.json`, pointing at the vendored hook |
 
 [measured 2026-09-16 by installing each kit from its own built wheel into a fresh `git init`
@@ -90,6 +90,8 @@ argument, and `create` makes that directory if it does not exist.
 | `basicly-tracker comment DIR RECORD TEXT` | Append a comment |
 | `basicly-tracker dep DIR RECORD TARGET [--type EDGE_TYPE]` | Add an edge. The types in use are `parent-child`, `blocks`, `related` and `discovered-from` |
 | `basicly-tracker delete DIR RECORD` | Tombstone a record |
+| `basicly-tracker compact DIR [--writer W]` | Fold every pending writer shard into the trunk log and unlink it. `--writer` narrows it to one and repeats |
+| `basicly-tracker shards DIR` | The pending writer shards the ledger holds, with the warn and refuse thresholds |
 
 A `--field` value is read as JSON when it parses as JSON, and as a string otherwise.
 

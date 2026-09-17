@@ -135,6 +135,52 @@ Three reasons the kit is a requirement rather than a nicety:
    owns. If the harness is abandoned, the ledger and its scripts must stay usable — a
    property no in-package-only design has.
 
+### 4.0 Sharding — a writer appends to its own file
+
+**`merge=union` does not stop a pull request being flagged as conflicting.** GitHub
+computes mergeability ahead of the merge and that computation ignores a repository's
+`.gitattributes`; its own auto-merge then refuses a pull request it has flagged. The
+request has been open since 2021-12-24 and was still unimplemented at 2026-08
+(github/community discussion 9288). So a shared log is a conflict surface on a forge
+however the attribute is declared, and a local `git merge` that succeeds proves nothing
+about the pull request. That is the defect this section exists for, not a hypothetical.
+
+**A writer appends to `pending-<writer>.jsonl`, never to the trunk.** Two branches then
+change two different paths, and a forge has nothing to flag. The writer is derived from
+`.git/HEAD` — a file read, not a subprocess — and a linked worktree's `.git` file is
+followed to its own `HEAD`, so a lane is its own writer without the engine telling it so.
+A directory outside a repository keeps the single trunk log, which is what keeps an
+existing ledger reading and writing exactly as it did.
+
+**This is the one place the kit reads a file it does not own.** §4's rule is otherwise
+that the kit reads its own committed data and takes everything else as arguments. The
+exception is narrow and stated rather than assumed: git is already the substrate the
+whole design rests on, and the alternative — a required `--writer` on every call — would
+make the standalone install worse than the bundled one, which is the split this kit
+exists to avoid. `events.append` still accepts `writer=` for a caller that knows better.
+
+**A shard is transient. `compact` folds it into the trunk and unlinks it.** The count of
+files must be bounded by how many writers are open at once, never by how many have ever
+existed. Measured 2026-09-17, one `git add` over a directory of shards costs 2.89s at
+1,000 files and 35.59s at 10,000 on NTFS, against 0.16s and 0.66s on ext4 — and the ratio
+doubles every decade, reaching 374.27s against 3.48s at 100,000. At a measured 8.2 lanes a
+day a shard kept forever reaches 3,000 files inside a year, so `fsck` warns above 1,000 and
+refuses above 10,000.
+
+Compaction needs no central serializer, which is why it is a kit command rather than an
+engine one. Two clones that each compact the same shards and push converge: union merge
+concatenates, event ids are content-derived so a duplicate folds once, and a shard removed
+on both sides is a delete that git resolves. The engine's landing calls the same function;
+it is a caller, not a second mechanism.
+
+**Rotation refuses while any shard is uncompacted.** A checkpoint records the line count
+of the logs it covers, and `fold_resumed` matches that count to decide whether it may
+resume. A rotation taken while a writer still holds events would write a checkpoint no
+resumed fold can match, and the failure would be a silent fall back to a whole-history
+fold rather than an error. So the shard namespace is separate from `events-*` in the first
+place: `period_of` parses everything after `events-` as a period and `rotate` compares
+file names, so a writer component inside that namespace corrupts both.
+
 ### 4.1 Ordering — the per-item sequence
 
 Every event carries a **per-item integer sequence number**. The writer reads the item's

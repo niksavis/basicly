@@ -36,6 +36,13 @@
 # that the derived files carry no union.
 events-*.jsonl -text merge=union
 
+# A writer's uncompacted shard (basicly-v5zvsh1). Two branches append to two different
+# shard files, so the pull request that carries one has nothing to conflict on -- which
+# `merge=union` alone does not buy, because GitHub's mergeability flag ignores this file
+# (github/community discussion 9288). The union rule still applies here for the local
+# merge, and for the window between a compaction on one clone and a pull on another.
+pending-*.jsonl -text merge=union
+
 # Treat binary files as binary (no line-ending conversion).
 *.png binary
 *.jpg binary

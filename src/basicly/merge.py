@@ -300,7 +300,7 @@ def _worktree_land_readiness(repo_root: Path, session: Session) -> MergeResult |
 
 ENGINE_TRACKER_PATHS = (owned_store.LEDGER_DIR.as_posix(),)
 
-EVENT_LOG_GLOB = "events-*.jsonl"
+LEDGER_GLOBS = ("events-*.jsonl", "pending-*.jsonl")
 
 
 def _under(path: str, tree: str) -> bool:
@@ -384,7 +384,7 @@ def known_bead_ids(repo_root: Path) -> set[str] | None:
 
     ledger = tracker_paths.ledger_dir(repo_root)
     ids: set[str] = set()
-    for log in sorted(ledger.glob(EVENT_LOG_GLOB)):
+    for log in sorted(found for glob in LEDGER_GLOBS for found in ledger.glob(glob)):
         for raw_line in log.read_text(encoding="utf-8").splitlines():
             line = raw_line.strip()
             if not line:

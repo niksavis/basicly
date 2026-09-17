@@ -1,0 +1,1 @@
+- The tracker ledger shards per writer: each branch appends to its own `pending-<writer>.jsonl` derived from `.git/HEAD`, so two branches touch no shared path and a forge has nothing to flag as conflicting. `basicly-tracker compact` folds a shard into the trunk log and unlinks it, `shards` reports what is outstanding, and `fsck` warns above 1000 shards and refuses above 10000.

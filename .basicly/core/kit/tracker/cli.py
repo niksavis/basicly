@@ -29,6 +29,7 @@ snapshot = _load("snapshot.py", "basicly_tracker_kit_snapshot")
 scheduler = _load("scheduler.py", "basicly_tracker_kit_scheduler")
 commands = _load("commands.py", "basicly_tracker_kit_commands")
 queries = _load("queries.py", "basicly_tracker_kit_queries")
+fsck = _load("fsck.py", "basicly_tracker_kit_fsck")
 events = snapshot.events
 ids = events.ids
 
@@ -135,6 +136,21 @@ def _parser() -> argparse.ArgumentParser:
     listing.add_argument("--status", default=None, help="only records at this status")
     listing.add_argument("--limit", type=int, default=None, help="at most this many records")
 
+    compaction = sub.add_parser(
+        "compact", help="fold every pending writer shard into the trunk log and unlink it"
+    )
+    compaction.add_argument("directory", help="the ledger directory")
+    compaction.add_argument(
+        "--writer",
+        action="append",
+        default=[],
+        metavar="WRITER",
+        help="only this writer's shard; repeats. Every shard when omitted",
+    )
+
+    shards = sub.add_parser("shards", help="the pending writer shards this ledger holds")
+    shards.add_argument("directory", help="the ledger directory")
+
     _add_query_parsers(sub)
     _add_write_parsers(sub)
     return parser
@@ -210,10 +226,33 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
     "delete": lambda a, r: commands.delete(a.directory, a.record, redact=r),
 }
 
+
+def _compacted(args: argparse.Namespace) -> dict[str, object]:
+    done = snapshot.compact(args.directory, writers=tuple(args.writer))
+    return {
+        "trunk": done.trunk.name,
+        "shards": [path.name for path in done.shards],
+        "appended": done.appended,
+        "duplicates": done.duplicates,
+    }
+
+
+def _shards(args: argparse.Namespace) -> dict[str, object]:
+    held = events.pending_paths(args.directory)
+    return {
+        "count": len(held),
+        "writers": [events.writer_of(path) for path in held],
+        "warn_above": fsck.SHARDS_WARN_ABOVE,
+        "refuse_above": fsck.SHARDS_REFUSE_ABOVE,
+    }
+
+
 _VIEWS: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
     "ready": lambda a: queries.ready(a.directory, limit=a.limit),
     "blocked": lambda a: queries.blocked(a.directory),
     "stats": lambda a: queries.stats(a.directory),
+    "compact": _compacted,
+    "shards": _shards,
 }
 
 
