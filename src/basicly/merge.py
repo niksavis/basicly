@@ -351,15 +351,25 @@ def commit_tracker_state(
 def _commit_tracker_state(
     repo_root: Path, bead: str, *, action: str, on_retry: Callable[[str], None] | None = None
 ) -> bool:
-    lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
-    paths = [line[3:] for line in lines if line.strip()]
-    if not paths or not all(is_engine_tracker_path(path) for path in paths):
+    paths = _dirty_paths(repo_root)
+    if not all(is_engine_tracker_path(path) for path in paths):
+        return False
+    shards = tracker.pending_shards(repo_root)
+    if not paths and not shards:
         return False
     tracker.scrub_ledger(repo_root)
-    dirty = [tree for tree in ENGINE_TRACKER_PATHS if any(_under(path, tree) for path in paths)]
+    tracker.fold_pending_shards(repo_root)
+    dirty = [
+        tree for tree in ENGINE_TRACKER_PATHS if shards or any(_under(path, tree) for path in paths)
+    ]
     git(["add", *dirty], cwd=repo_root)
     _commit_staged_tracker_state(repo_root, f"chore(beads): {action} ({bead})", on_retry)
     return True
+
+
+def _dirty_paths(repo_root: Path) -> list[str]:
+    lines = git(["status", "--porcelain"], cwd=repo_root).stdout.splitlines()
+    return [line[3:] for line in lines if line.strip()]
 
 
 def _commit_staged_tracker_state(

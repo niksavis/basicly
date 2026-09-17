@@ -185,8 +185,16 @@ refuses above 10,000.
 Compaction needs no central serializer, which is why it is a kit command rather than an
 engine one. Two clones that each compact the same shards and push converge: union merge
 concatenates, event ids are content-derived so a duplicate folds once, and a shard removed
-on both sides is a delete that git resolves. The engine's landing calls the same function;
-it is a caller, not a second mechanism.
+on both sides is a delete that git resolves. An engine above the kit calls that same
+command at whatever seam commits tracker state; it is a caller, not a second mechanism.
+
+**What sharding buys depends on who commits the ledger, and the two are not one claim.**
+Where a developer commits the ledger on a feature branch — the standalone shape — sharding
+is what keeps the pull request mergeable, which is the measurement above. Where a harness
+commits tracker state only from one base checkout and every worktree redirects to that one
+ledger, there is a single committer and no branch to conflict with, so sharding buys
+tidiness and a bounded file count rather than merge safety. Stating only the first would
+overclaim for the second.
 
 **Rotation refuses while any shard is uncompacted.** A checkpoint records the line count
 of the logs it covers, and `fold_resumed` matches that count to decide whether it may

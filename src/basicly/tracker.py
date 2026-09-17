@@ -202,6 +202,25 @@ def _fact(kit_module: Any, event: Any) -> str:
     return f"{event.record} {event.kind}"
 
 
+def pending_shards(repo_root: Path) -> tuple[str, ...]:
+
+    try:
+        kit_module = kit(repo_root, "events")
+    except TrackerDivergenceError:
+        return ()
+    return tuple(path.name for path in kit_module.pending_paths(ledger_dir(repo_root)))
+
+
+def fold_pending_shards(repo_root: Path) -> tuple[str, ...]:
+
+    try:
+        kit_module = kit(repo_root, "snapshot")
+    except TrackerDivergenceError:
+        return ()
+    done = kit_module.compact(ledger_dir(repo_root))
+    return tuple(path.name for path in done.shards)
+
+
 def _refuse_a_write_the_store_did_not_keep(repo_root: Path, landed: list[Any]) -> None:
 
     kit_module = kit(repo_root)
