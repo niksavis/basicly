@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**Two install defects a canary repository found in v0.14.0, both on the bundled path.** A
+repository that upgrades with `basicly install` now gets the `pending-*.jsonl -text
+merge=union` rule as well as the trunk one. It got only the trunk rule, so the writer
+shards v0.14.0 introduced had no union driver — and because a shard is named from
+`.git/HEAD`, two clones sitting on the same branch mint the same shard path and their
+appends meet in one file. The standalone kit installer already wrote both rules, so the two
+install paths had diverged and the documentation described the one a bundled consumer does
+not use. The measurement behind v0.14.0 used two *branches* and never covered the
+same-branch case; the specification now states that bound rather than leaving the reader to
+notice it.
+
+**And `install` no longer rewrites a scaffolded CI workflow without leaving a copy.** The
+default path re-pinned it in place with no backup while `--overwrite-scaffolds` wrote one
+first, so the flag that sounds destructive was the safer of the two. Both paths now leave a
+`.basicly-bak` sibling, and a run that re-pins nothing still writes nothing.
+
+Neither defect was reachable from this repository's own gates: it carried the shard rule
+only because it had been hand-edited in during development, so the rule looked present
+everywhere and was absent for every consumer.
+
 ## v0.14.0 - 2026-09-18
 
 Delta: v0.13.1..v0.14.0
