@@ -160,6 +160,16 @@ def _parser() -> argparse.ArgumentParser:
     page.add_argument("directory", help="the ledger directory")
     page.add_argument("--out", default="tracker-board.html", help="the file to write")
 
+    check = sub.add_parser(
+        "fsck", help="fold the whole log and report anything unparseable or broken"
+    )
+    check.add_argument("directory", help="the ledger directory")
+    check.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="delete every derived file and write it again from the log before checking",
+    )
+
     gate = sub.add_parser(
         "dor",
         help="the definition of ready: refuse a record that cannot be verified against",
@@ -334,9 +344,22 @@ def _dor(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     }
 
 
+def _fsck(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
+    rebuilt: dict[str, object] = {}
+    if args.rebuild:
+        done = fsck.rebuild(args.directory)
+        rebuilt = {
+            "rebuilt": [path.name for path in done.written],
+            "removed": [path.name for path in done.removed],
+        }
+    report = fsck.check(args.directory)
+    return (EXIT_OK if report.clean else report.exit_code), {**report.as_dict(), **rebuilt}
+
+
 _REFUSABLE: dict[str, Callable[[argparse.Namespace], tuple[int, dict[str, object]]]] = {
     "show": _shown,
     "dor": _dor,
+    "fsck": _fsck,
 }
 
 

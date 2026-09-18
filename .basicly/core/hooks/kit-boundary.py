@@ -16,6 +16,20 @@ _KIT_DATA_DIRS = frozenset({"core"})
 
 _IMPORT_CALLS = frozenset({"__import__", "import_module", "find_spec"})
 
+_REACHES_OUT = {
+    "subprocess": "spawns a process",
+    "socket": "opens a network socket",
+    "ssl": "opens a network socket",
+    "urllib": "fetches over the network",
+    "http": "fetches over the network",
+    "ftplib": "fetches over the network",
+    "smtplib": "fetches over the network",
+    "telnetlib": "fetches over the network",
+    "asyncio": "spawns a process or opens a socket",
+    "multiprocessing": "spawns a process",
+    "webbrowser": "reaches the host desktop",
+}
+
 _PATH_CALLS = frozenset({"Path", "PurePath", "PurePosixPath", "PureWindowsPath"})
 _JOIN_CALLS = frozenset({"join", "joinpath"})
 
@@ -95,6 +109,13 @@ def _statement_strings(tree: ast.Module) -> set[int]:
     return ids
 
 
+def _reaches_out(rel: str, lineno: int, name: str, shown: str) -> list[Finding]:
+    why = _REACHES_OUT.get(_root_package(name))
+    if why is None:
+        return []
+    return [Finding(rel, lineno, "reaches-outside", f"{shown} — it {why}")]
+
+
 def _import_findings(rel: str, tree: ast.Module) -> list[Finding]:
     findings: list[Finding] = []
     for node in ast.walk(tree):
@@ -104,10 +125,16 @@ def _import_findings(rel: str, tree: ast.Module) -> list[Finding]:
                 for alias in node.names
                 if _root_package(alias.name) == "basicly"
             ]
+            for alias in node.names:
+                findings += _reaches_out(rel, node.lineno, alias.name, f"import {alias.name}")
         elif isinstance(node, ast.ImportFrom):
             if node.module and _root_package(node.module) == "basicly":
                 findings.append(
                     Finding(rel, node.lineno, "imports-basicly", f"from {node.module} import ...")
+                )
+            if node.module:
+                findings += _reaches_out(
+                    rel, node.lineno, node.module, f"from {node.module} import ..."
                 )
         elif isinstance(node, ast.Call) and _callee(node) in _IMPORT_CALLS and node.args:
             target = node.args[0]
@@ -202,8 +229,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print(
-        "kit-boundary: the kit reaches back into basicly — the dependency direction "
-        "is one-way (.basicly/core/kit/tracker/SPEC.md §4).",
+        "kit-boundary: the kit crossed a boundary .basicly/core/kit/tracker/SPEC.md §4 "
+        "declares — the dependency "
+        "direction is one-way, and the kit imports nothing but the standard library, "
+        "reaching no network and spawning no process.",
         file=sys.stderr,
     )
     for finding in findings:
@@ -211,8 +240,9 @@ def main(argv: list[str] | None = None) -> int:
     print(
         "The kit is copied into repositories that have never heard of this harness, "
         "so an engine import or read makes it unusable there.\n"
-        "Take the value as an argument instead, or read it from the kit's own "
-        "committed data under .basicly/core.",
+        "Take the value as an argument instead, read it from the kit's own committed "
+        "data under .basicly/core, or let the caller do the reaching and hand in the "
+        "result.",
         file=sys.stderr,
     )
     return 1

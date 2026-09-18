@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from tests.kit_deployment_helpers import CLOCK, events, fsck, snapshot
+from tests.kit_deployment_helpers import (
+    CLOCK,
+    KIT_RELATIVE,
+    REPO_ROOT,
+    _load,
+    events,
+    fsck,
+    snapshot,
+)
+
+cli = _load(REPO_ROOT / KIT_RELATIVE / "cli.py", "kit_shards_test_cli")
 
 WRITER = "lane-one"
 OTHER = "lane-two"
@@ -183,6 +194,32 @@ def test_a_shard_makes_the_derived_snapshot_stale(tmp_path: Path) -> None:
     _append(tmp_path, "demo-one", writer=WRITER)
 
     assert snapshot.staleness(tmp_path).stale
+
+
+def test_fsck_is_reachable_from_the_one_command_a_consumer_knows(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _append(tmp_path, "demo-trunk", writer="")
+
+    assert cli.main(["fsck", str(tmp_path)]) == cli.EXIT_OK
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["clean"] is True
+    assert report["records"] == 1
+
+
+def test_fsck_rebuild_writes_the_derivatives_again(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _append(tmp_path, "demo-trunk", writer="")
+    snapshot.rebuild(tmp_path)
+    assert snapshot.snapshot_path(tmp_path).is_file(), "the control: a derivative exists"
+
+    assert cli.main(["fsck", str(tmp_path), "--rebuild"]) == cli.EXIT_OK
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["rebuilt"], "a rebuild names what it wrote"
+    assert snapshot.snapshot_path(tmp_path).is_file()
 
 
 def test_the_shard_gate_stays_quiet_at_the_warn_threshold(tmp_path: Path) -> None:

@@ -52,6 +52,18 @@ python3 .basicly/kit/tracker/cli.py child . <parent-id> --title "<a piece of it>
 Run `cli.py <verb> --help` for the exact flags; they are checked and a wrong one is refused
 by name rather than ignored.
 
+## Check the log itself
+
+```sh
+python3 .basicly/kit/tracker/cli.py fsck .            # exit 0 clean, 1 stale derivative, 2 broken
+python3 .basicly/kit/tracker/cli.py fsck . --rebuild  # write the derivatives again first
+```
+
+The log is the truth and everything else is derived from it, which is only worth saying if
+you can check it. Run this after a merge you are unsure about, or when a query answers
+something that surprises you. A finding names the record and the reason; a broken log is
+repaired by appending a corrective event, never by editing a line.
+
 ## Show a human where the work stands
 
 ```sh

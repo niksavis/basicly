@@ -69,6 +69,43 @@ def test_a_kit_module_importing_basicly_fails(tmp_path: Path, case: str, source:
 
 
 @pytest.mark.parametrize(
+    ("case", "source"),
+    [
+        ("subprocess", "import subprocess\n"),
+        ("subprocess-from", "from subprocess import run\n"),
+        ("socket", "import socket\n"),
+        ("urllib", "import urllib.request\n"),
+        ("http-client", "from http.client import HTTPSConnection\n"),
+        ("multiprocessing", "import multiprocessing\n"),
+        ("webbrowser", "import webbrowser\n"),
+    ],
+)
+def test_a_kit_module_that_reaches_a_process_or_the_network_fails(
+    tmp_path: Path, case: str, source: str
+) -> None:
+    _seed(tmp_path / "kit", f"{case.replace('-', '_')}.py", source)
+
+    assert _rules(tmp_path / "kit") == ["reaches-outside"], (
+        ".basicly/core/kit/tracker/SPEC.md §4 declares the kit reaches no network and "
+        "spawns no process; until "
+        "this rule the gate read only the engine-import half and the rest was prose"
+    )
+
+
+def test_the_standard_library_the_kit_does_use_is_not_refused(tmp_path: Path) -> None:
+    _seed(
+        tmp_path / "kit",
+        "ordinary.py",
+        "import json\nimport re\nfrom pathlib import Path\nimport importlib.util\n",
+    )
+
+    assert _rules(tmp_path / "kit") == [], (
+        "the control: the kit is standard-library-only, not import-free, so a rule that "
+        "refused json or pathlib would refuse every module it guards"
+    )
+
+
+@pytest.mark.parametrize(
     "call",
     [
         'importlib.import_module("basicly.policy")',

@@ -94,6 +94,7 @@ argument, and `create` makes that directory if it does not exist.
 | `basicly-tracker shards DIR` | The pending writer shards the ledger holds, with the warn and refuse thresholds |
 | `basicly-tracker import DIR EXPORT [--source NAME] [--dry-run]` | Import a foreign tracker's JSONL export, keeping ids, comments and dependency edges. `--dry-run` reports the same plan and writes nothing; a re-run appends nothing |
 | `basicly-tracker dor DIR RECORD` | The definition of ready. Exit 0 when the record carries a trigger, acceptance criteria and requirements; exit 1 naming what is missing and how to state it |
+| `basicly-tracker fsck DIR [--rebuild]` | Fold the whole log and report anything unparseable, broken or disagreeing with a derivative. Exit 0 clean, 1 a stale derivative, 2 a broken log. `--rebuild` writes every derivative again from the log first |
 | `basicly-tracker board DIR [--out PATH]` | Write one self-contained HTML page: the counts, the ranked ready set, what is blocked and what holds it, a bounded dependency drawing, and every record with what it owes |
 
 A `--field` value is read as JSON when it parses as JSON, and as a string otherwise.
