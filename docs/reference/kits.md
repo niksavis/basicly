@@ -92,6 +92,7 @@ argument, and `create` makes that directory if it does not exist.
 | `basicly-tracker delete DIR RECORD` | Tombstone a record |
 | `basicly-tracker compact DIR [--writer W]` | Fold every pending writer shard into the trunk log and unlink it. `--writer` narrows it to one and repeats |
 | `basicly-tracker shards DIR` | The pending writer shards the ledger holds, with the warn and refuse thresholds |
+| `basicly-tracker import DIR EXPORT [--source NAME] [--dry-run]` | Import a foreign tracker's JSONL export, keeping ids, comments and dependency edges. `--dry-run` reports the same plan and writes nothing; a re-run appends nothing |
 
 A `--field` value is read as JSON when it parses as JSON, and as a string otherwise.
 

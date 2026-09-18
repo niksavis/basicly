@@ -30,6 +30,7 @@ scheduler = _load("scheduler.py", "basicly_tracker_kit_scheduler")
 commands = _load("commands.py", "basicly_tracker_kit_commands")
 queries = _load("queries.py", "basicly_tracker_kit_queries")
 fsck = _load("fsck.py", "basicly_tracker_kit_fsck")
+migrate = _load("migrate.py", "basicly_tracker_kit_migrate")
 events = snapshot.events
 ids = events.ids
 
@@ -151,6 +152,23 @@ def _parser() -> argparse.ArgumentParser:
     shards = sub.add_parser("shards", help="the pending writer shards this ledger holds")
     shards.add_argument("directory", help="the ledger directory")
 
+    bring = sub.add_parser(
+        "import", help="import a foreign tracker's JSONL export into this ledger"
+    )
+    bring.add_argument("directory", help="the ledger directory")
+    bring.add_argument("export", help="the export file to read, one JSON record per line")
+    bring.add_argument(
+        "--source",
+        default="",
+        help="the name recorded as the provenance of every imported record; "
+        "defaults to the export's file name",
+    )
+    bring.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="report what the same plan would write, and write nothing",
+    )
+
     _add_query_parsers(sub)
     _add_write_parsers(sub)
     return parser
@@ -237,6 +255,24 @@ def _compacted(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _imported(args: argparse.Namespace, redact: Callable[[str], str] | None) -> dict[str, object]:
+    source = args.source or Path(args.export).name
+    read = migrate.read_snapshot(args.export, name=source)
+    report = migrate.import_snapshot(args.directory, read, redact=redact, dry_run=args.dry_run)
+    return {
+        "source": source,
+        "dry_run": args.dry_run,
+        "imported": report.imported,
+        "diverged": report.diverged,
+        "absent": report.absent,
+        "tombstoned": report.tombstoned,
+        "rejected": [
+            {"subject": one.subject, "reason": one.reason}
+            for one in (*report.rejected, *report.unreadable)
+        ],
+    }
+
+
 def _shards(args: argparse.Namespace) -> dict[str, object]:
     held = events.pending_paths(args.directory)
     return {
@@ -247,12 +283,15 @@ def _shards(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
-_VIEWS: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
-    "ready": lambda a: queries.ready(a.directory, limit=a.limit),
-    "blocked": lambda a: queries.blocked(a.directory),
-    "stats": lambda a: queries.stats(a.directory),
-    "compact": _compacted,
-    "shards": _shards,
+_VIEWS: dict[
+    str, Callable[[argparse.Namespace, Callable[[str], str] | None], dict[str, object]]
+] = {
+    "ready": lambda a, _r: queries.ready(a.directory, limit=a.limit),
+    "blocked": lambda a, _r: queries.blocked(a.directory),
+    "stats": lambda a, _r: queries.stats(a.directory),
+    "compact": lambda a, _r: _compacted(a),
+    "shards": lambda a, _r: _shards(a),
+    "import": _imported,
 }
 
 
@@ -274,7 +313,7 @@ def _run(
             return EXIT_REFUSED, {"record": args.record, "found": False}
         return EXIT_OK, found
     if (view := _VIEWS.get(args.command)) is not None:
-        return EXIT_OK, view(args)
+        return EXIT_OK, view(args, redact)
     if (write := _WRITES.get(args.command)) is not None:
         appended = write(args, redact)
         if appended:

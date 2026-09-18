@@ -19,8 +19,30 @@ each append an event merge clean instead of conflicting. `init` writes it before
 a single kit file, and refuses to install at all if it cannot.
 
 `init` copies the kit into `.basicly/kit/tracker` so it runs from plain `python3`
-afterwards. It also imports a beads JSONL export, so a repository can move its backlog
-across without retyping it.
+afterwards.
+
+**A repository that already has a backlog brings it across with `import`**, rather than
+retyping it. It reads a JSONL export one record per line, keeps the ids, and carries the
+comments and the dependency edges with them. Preview it first — `--dry-run` reports the
+same plan by the same code path and writes nothing:
+
+```console
+$ python3 .basicly/kit/tracker/cli.py import .basicly/ledger issues.jsonl --dry-run
+{
+  "absent": [],
+  "diverged": [],
+  "dry_run": true,
+  "imported": ["demo-aa11", "demo-bb22"],
+  "rejected": [{"reason": "not a record id", "subject": "'not-an-id'"}],
+  "source": "issues.jsonl",
+  "tombstoned": []
+}
+```
+
+A record the importer cannot name is **refused and reported, never dropped quietly**.
+Re-running the same export appends nothing, so an import can be repeated while the other
+tracker is still authoritative. Every imported record records where it came from, which
+`--source` names if the file name is not the name you want.
 
 Full specification, including the collision budget the ids are sized from:
 [`kit/SPEC.md`](../../.basicly/core/kit/tracker/SPEC.md).

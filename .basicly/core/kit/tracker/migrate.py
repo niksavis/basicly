@@ -356,6 +356,7 @@ def import_snapshot(  # noqa: PLR0913 — every keyword past the snapshot is an 
     max_text_bytes: int = events.MAX_TEXT_BYTES,
     held_lock: Any = None,
     lock_timeout_s: float = events.DEFAULT_LOCK_TIMEOUT_S,
+    dry_run: bool = False,
 ) -> ImportReport:
 
     ledger = Path(directory)
@@ -411,6 +412,15 @@ def import_snapshot(  # noqa: PLR0913 — every keyword past the snapshot is an 
         tombstones, refused = _deletion_drafts(deleted, snapshot, asserted, held, detail)
         drafts.extend(tombstones)
         report.rejected.extend(refused)
+
+        if dry_run:
+            report.imported = sorted(
+                draft.record for draft in drafts if draft.kind == events.KIND_CREATED
+            )
+            report.tombstoned = sorted(
+                draft.record for draft in drafts if draft.kind == events.KIND_TOMBSTONE
+            )
+            return report
 
         minted = events.append(
             ledger,
