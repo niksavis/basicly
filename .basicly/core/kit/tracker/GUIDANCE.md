@@ -52,6 +52,17 @@ python3 .basicly/kit/tracker/cli.py child . <parent-id> --title "<a piece of it>
 Run `cli.py <verb> --help` for the exact flags; they are checked and a wrong one is refused
 by name rather than ignored.
 
+## Show a human where the work stands
+
+```sh
+python3 .basicly/kit/tracker/cli.py board . --out tracker-board.html
+```
+
+One self-contained page: the counts, the ranked ready set, what is blocked and what holds
+it, a dependency drawing, and every record with what it still owes. No server and no
+network — it is a file, and nothing on it updates until you run the command again. Write
+it when someone asks what the state of the work is, rather than pasting JSON at them.
+
 ## Shape a record before you build against it
 
 A record is **shaped** when it carries three things: a trigger in either story voice, the

@@ -94,6 +94,7 @@ argument, and `create` makes that directory if it does not exist.
 | `basicly-tracker shards DIR` | The pending writer shards the ledger holds, with the warn and refuse thresholds |
 | `basicly-tracker import DIR EXPORT [--source NAME] [--dry-run]` | Import a foreign tracker's JSONL export, keeping ids, comments and dependency edges. `--dry-run` reports the same plan and writes nothing; a re-run appends nothing |
 | `basicly-tracker dor DIR RECORD` | The definition of ready. Exit 0 when the record carries a trigger, acceptance criteria and requirements; exit 1 naming what is missing and how to state it |
+| `basicly-tracker board DIR [--out PATH]` | Write one self-contained HTML page: the counts, the ranked ready set, what is blocked and what holds it, a bounded dependency drawing, and every record with what it owes |
 
 A `--field` value is read as JSON when it parses as JSON, and as a string otherwise.
 
@@ -103,6 +104,14 @@ is shaped when it carries a trigger in either story voice, acceptance criteria a
 requirements — as those fields, or as `## Acceptance Criteria` and `## Requirements`
 sections of dash-space bullets in the description, so a record written as prose keeps working.
 A placeholder counts as absent.
+
+**`board` is a file, not a server.** It writes one HTML page with its style and its
+dependency drawing inline — no script, no linked stylesheet, no network — so it opens
+from disk and nothing about it updates on its own. The drawing is bounded: it takes whole
+dependency clusters up to a cap and states how many records and edges it drew against how
+many the ledger holds. A cluster larger than the cap is dropped whole rather than cut,
+because a half-drawn cluster shows a blocked record with no arrow into it. The table
+beneath carries every blocking pair either way.
 
 **`dor` is the gate, not `ready`.** `ready` still offers every unblocked record; `dor`
 exits non-zero on one that cannot be verified against, which is what a hook or an agent

@@ -32,6 +32,7 @@ queries = _load("queries.py", "basicly_tracker_kit_queries")
 fsck = _load("fsck.py", "basicly_tracker_kit_fsck")
 migrate = _load("migrate.py", "basicly_tracker_kit_migrate")
 shaping = _load("shaping.py", "basicly_tracker_kit_shaping")
+board = _load("board.py", "basicly_tracker_kit_board")
 events = snapshot.events
 ids = events.ids
 
@@ -199,6 +200,10 @@ def _parser() -> argparse.ArgumentParser:
     shards = sub.add_parser("shards", help="the pending writer shards this ledger holds")
     shards.add_argument("directory", help="the ledger directory")
 
+    page = sub.add_parser("board", help="write one self-contained HTML page a human can open")
+    page.add_argument("directory", help="the ledger directory")
+    page.add_argument("--out", default="tracker-board.html", help="the file to write")
+
     gate = sub.add_parser(
         "dor",
         help="the definition of ready: refuse a record that cannot be verified against",
@@ -347,6 +352,7 @@ _VIEWS: dict[
     "stats": lambda a, _r: queries.stats(a.directory),
     "compact": lambda a, _r: _compacted(a),
     "shards": lambda a, _r: _shards(a),
+    "board": lambda a, _r: {"written": board.write(a.directory, a.out).as_posix()},
     "import": _imported,
 }
 
