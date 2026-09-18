@@ -1,0 +1,1 @@
+- A patch release no longer costs a tutorial re-record. The two transcript lines that named a version now name the tool alone, and `basicly release` re-pins `docs/tutorial/*.md` with the rest of the docs, so only the one sentence that makes a claim about the released version is left for a human to edit.

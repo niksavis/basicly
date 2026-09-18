@@ -43,19 +43,33 @@ def test_a_tutorial_install_pin_behind_the_release_fails_naming_the_line(
     assert f"{TUTORIAL_MD}:{first}: install pin @v0.0.1 is not the released v{current}" in err
 
 
-def test_a_tutorial_transcript_quoting_an_older_engine_fails_naming_the_line(
+def test_a_tutorial_claim_naming_an_older_version_fails_naming_the_line(
     work_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
     path = work_repo / TUTORIAL_MD
     current = claims._released_version(work_repo)
     text = path.read_text(encoding="utf-8")
-    older = text.replace(f"engine: basicly {current}", "engine: basicly 0.0.1")
+    older = text.replace(
+        f"basicly {current} in a real terminal", "basicly 0.0.1 in a real terminal"
+    )
+    assert older != text, "the control: the claim names the released version to begin with"
     path.write_text(older, encoding="utf-8")
 
     assert _run(work_repo, "--check") == 1
     err = capsys.readouterr().err
     assert f"transcript quotes basicly 0.0.1, not the released {current}" in err
+
+
+def test_the_quoted_output_names_no_version_for_a_tool_to_rewrite(work_repo: Path) -> None:
+
+    text = (work_repo / TUTORIAL_MD).read_text(encoding="utf-8")
+
+    assert "engine: basicly ..." in text, (
+        "the page elides the version in what it presents as printed, so a release pins "
+        "the command a reader types and never rewrites a line quoted as output"
+    )
+    assert "catalog: installed by basicly ... at ..." in text
 
 
 def test_a_changelog_with_no_release_heading_is_a_loud_failure(

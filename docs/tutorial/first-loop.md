@@ -63,9 +63,9 @@ basicly status
 ```
 
 ```text
-engine: basicly 0.14.2
+engine: basicly ...
 repo: consumer
-catalog: installed by basicly 0.14.2 at ... (matches engine)
+catalog: installed by basicly ... at ... (matches engine)
 drift: generated files up to date
 Hooks
 ┏━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┓

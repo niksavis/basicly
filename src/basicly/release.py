@@ -28,7 +28,7 @@ PIN_FILES = (
     Path(".scripts") / "bootstrap.sh",
     Path(".scripts") / "bootstrap.ps1",
 )
-PIN_GLOBS = ("docs/how-to/*.md",)
+PIN_GLOBS = ("docs/how-to/*.md", "docs/tutorial/*.md")
 
 
 RERECORDED_PATHS = ("docs/tutorial/",)
