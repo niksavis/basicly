@@ -140,7 +140,7 @@ def install(  # noqa: PLR0913 — one keyword per seam the host injects; a setti
     advice: str = "",
 ) -> int:
 
-    script = _within(_HERE / CLI_FILE, root)
+    script = "" if command else _within(_HERE / CLI_FILE, root)
     within = _within(ledger, root)
     directory = hooks_dir(root)
     if directory is None:

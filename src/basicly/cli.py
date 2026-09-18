@@ -1583,6 +1583,18 @@ def _report_install_steps(
 
 TIER_HOOK_INSTALLER = Path(".basicly") / "core" / "kit" / "tier" / "install_hook.py"
 TRACKER_HOOK_INSTALLER = Path(".basicly") / "core" / "kit" / "tracker" / "install_hook.py"
+CATALOG_ROOT_PARTS = 2
+
+
+def _installer(repo_root: Path, relative: Path, *, dry_run: bool) -> Path:
+
+    vendored = repo_root / relative
+    if not dry_run:
+        return vendored
+    bundled = bundled_catalog_root().joinpath(*relative.parts[CATALOG_ROOT_PARTS:])
+    return bundled if bundled.is_file() else vendored
+
+
 FOLD_COMMAND = "tracker fold"
 CONSOLE_SCRIPT = "basicly"
 
@@ -1599,7 +1611,8 @@ def fold_command() -> str:
 def cmd_tracker_hook(args: argparse.Namespace) -> int:
 
     repo_root = _repo_root()
-    script = repo_root / TRACKER_HOOK_INSTALLER
+    dry_run = bool(getattr(args, "dry_run", False))
+    script = _installer(repo_root, TRACKER_HOOK_INSTALLER, dry_run=dry_run)
     if not script.is_file():
         ui.say(
             f"{TRACKER_HOOK_INSTALLER.as_posix()} is absent, so no merge folds the pending shards"
@@ -1617,7 +1630,7 @@ def cmd_tracker_hook(args: argparse.Namespace) -> int:
         "--advice",
         f"{UVX_COMMAND} {FOLD_COMMAND}",
     ]
-    if getattr(args, "dry_run", False):
+    if dry_run:
         argv.append("--dry-run")
     completed = subprocess.run(  # noqa: S603 — run, not imported; the engine holds no kit import
         argv,
@@ -1639,12 +1652,13 @@ def cmd_tracker_hook(args: argparse.Namespace) -> int:
 def cmd_tier_hook(args: argparse.Namespace) -> int:
 
     repo_root = _repo_root()
+    dry_run = bool(getattr(args, "dry_run", False))
     script = repo_root / TIER_HOOK_INSTALLER
     if not script.is_file():
         ui.say(f"{TIER_HOOK_INSTALLER.as_posix()} is absent, so no host was wired to a tier")
         return 0
     argv = [sys.executable, str(script), "--root", str(repo_root)]
-    if getattr(args, "dry_run", False):
+    if dry_run:
         argv.append("--dry-run")
     completed = subprocess.run(  # noqa: S603 — run, not imported; the engine holds no kit import
         argv,

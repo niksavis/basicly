@@ -109,3 +109,55 @@ def test_a_repo_with_no_scanner_is_told_nothing_about_the_ledger(tmp_path: Path)
     _repo(tmp_path, {".pre-commit-config.yaml": "repos: []\n"})
 
     assert "Exclude `.basicly/ledger/`" not in "\n".join(install_notes(tmp_path))
+
+
+PER_FILE_IGNORES = '[lint.per-file-ignores]\n".basicly/core/hooks/**" = ["S"]\n'
+
+
+def test_a_per_file_ignore_naming_the_core_is_not_an_exclusion(tmp_path: Path) -> None:
+    (tmp_path / ".ruff.toml").write_text(PER_FILE_IGNORES, encoding="utf-8")
+
+    notes = "\n".join(install_notes(tmp_path))
+
+    assert ".ruff.toml" in notes
+
+
+def test_an_exclusion_beside_a_per_file_ignore_stays_silent(tmp_path: Path) -> None:
+    (tmp_path / ".ruff.toml").write_text(
+        f'extend-exclude = [".basicly/core"]\n{PER_FILE_IGNORES}', encoding="utf-8"
+    )
+
+    assert install_notes(tmp_path) == []
+
+
+def test_a_commented_path_is_not_an_exclusion(tmp_path: Path) -> None:
+    (tmp_path / ".prettierignore").write_text("# .basicly/core/\n", encoding="utf-8")
+
+    assert ".prettierignore" in "\n".join(install_notes(tmp_path))
+
+
+def test_a_pre_commit_exclude_line_silences_it(tmp_path: Path) -> None:
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        "repos:\n  - hooks:\n      - id: x\n        exclude: ^\\.basicly/core/\n", encoding="utf-8"
+    )
+
+    assert install_notes(tmp_path) == []
+
+
+def test_a_hook_id_naming_the_core_is_not_an_exclusion(tmp_path: Path) -> None:
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        "repos:\n  - hooks:\n      - id: lint-basicly/core\n", encoding="utf-8"
+    )
+
+    assert ".pre-commit-config.yaml" in "\n".join(install_notes(tmp_path))
+
+
+def test_a_pyproject_ruff_table_is_read_for_an_exclusion_not_a_mention(tmp_path: Path) -> None:
+    mentions = '[tool.ruff]\nsrc = [".basicly/core"]\n'
+    (tmp_path / "pyproject.toml").write_text(mentions, encoding="utf-8")
+    assert "pyproject.toml" in "\n".join(install_notes(tmp_path))
+
+    (tmp_path / "pyproject.toml").write_text(
+        f'{mentions}extend-exclude = [".basicly/core"]\n', encoding="utf-8"
+    )
+    assert install_notes(tmp_path) == []

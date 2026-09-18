@@ -1,0 +1,1 @@
+- The managed-core exclusion advice is back for a repo that needs it. v0.15.0 asked whether a linter config mentioned `.basicly/core` anywhere, so a `per-file-ignores` entry, an `include` list or a comment naming the path silenced it. It now reads the exclusion directive itself — ruff's `exclude`/`extend-exclude`, a pre-commit `exclude:` line, an ignore file's uncommented line.

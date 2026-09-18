@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import sys
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pytest
 
 from basicly import cli
 from basicly.scaffolds import UVX_COMMAND
+from tests.kit_deployment_helpers import KIT_RELATIVE, REPO_ROOT, _load
 
 INSTALLER = cli.TRACKER_HOOK_INSTALLER
 
@@ -81,3 +83,46 @@ def test_install_runs_the_tracker_hook_step() -> None:
 
     steps = source.split("steps: list[tuple[str, Any, argparse.Namespace]] = [", 1)[1]
     assert "tracker-hook" in steps.split("]\n", 1)[0]
+
+
+def test_a_dry_run_previews_with_the_kit_the_sync_would_install(tmp_path: Path) -> None:
+    stale = tmp_path / cli.TRACKER_HOOK_INSTALLER
+    stale.parent.mkdir(parents=True)
+    stale.write_text("", encoding="utf-8")
+
+    previewed = cli._installer(tmp_path, cli.TRACKER_HOOK_INSTALLER, dry_run=True)
+    real = cli._installer(tmp_path, cli.TRACKER_HOOK_INSTALLER, dry_run=False)
+
+    assert previewed != stale, "a dry run that reads the vendored kit reports the old kit's flags"
+    assert previewed.read_text(encoding="utf-8").count("--advice") >= 1
+    assert real == stale
+
+
+def test_a_real_run_uses_the_vendored_kit_even_when_it_differs(tmp_path: Path) -> None:
+    vendored = tmp_path / cli.TRACKER_HOOK_INSTALLER
+    vendored.parent.mkdir(parents=True)
+    vendored.write_text("# a consumer's own copy\n", encoding="utf-8")
+
+    assert cli._installer(tmp_path, cli.TRACKER_HOOK_INSTALLER, dry_run=False) == vendored
+
+
+def test_a_host_command_needs_no_in_repo_kit_path(tmp_path: Path) -> None:
+    outside = _load(REPO_ROOT / KIT_RELATIVE / "install_hook.py", "kit_hook_outside")
+    (tmp_path / ".git" / "hooks").mkdir(parents=True)
+    stream = io.StringIO()
+
+    assert (
+        outside.install(
+            tmp_path,
+            ledger=tmp_path / ".basicly" / "ledger",
+            dry_run=False,
+            interpreter="RUNNER",
+            stream=stream,
+            command="basicly tracker fold",
+        )
+        == 0
+    )
+
+    assert "basicly tracker fold" in (tmp_path / ".git" / "hooks" / "post-merge").read_text(
+        encoding="utf-8"
+    )

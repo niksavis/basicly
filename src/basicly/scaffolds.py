@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
+import tomllib
 from typing import TYPE_CHECKING
 
 from . import __version__
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 DIST_SOURCE = f"git+https://github.com/niksavis/basicly@v{__version__}"
@@ -273,14 +275,75 @@ def _secret_scanners(repo_root: Path) -> list[str]:
 
 
 CORE_PATH_MARKER = ".basicly/core"
+RUFF_EXCLUDE_KEYS = ("exclude", "extend-exclude")
+_YAML_EXCLUDE = re.compile(r"^\s*(?:-\s+)?exclude\s*:(?P<value>.*)$")
 
 
-def _needs_core_exclusion(path: Path) -> bool:
+def _ruff_excludes_core(table: object) -> bool:
+
+    if not isinstance(table, dict):
+        return False
+    for key in RUFF_EXCLUDE_KEYS:
+        entries = table.get(key)
+        if isinstance(entries, list) and any(
+            isinstance(entry, str) and CORE_PATH_MARKER in entry for entry in entries
+        ):
+            return True
+    return False
+
+
+def _toml_excludes_core(path: Path, *, section: str = "") -> bool:
 
     try:
-        return CORE_PATH_MARKER not in path.read_text(encoding="utf-8")
+        parsed = tomllib.loads(path.read_text(encoding="utf-8"))
+    except OSError, tomllib.TOMLDecodeError:
+        return False
+    table: object = parsed
+    for name in filter(None, section.split(".")):
+        if not isinstance(table, dict):
+            return False
+        table = table.get(name, {})
+    return _ruff_excludes_core(table)
+
+
+def _yaml_excludes_core(path: Path) -> bool:
+
+    try:
+        text = path.read_text(encoding="utf-8")
     except OSError:
-        return True
+        return False
+    return any(
+        CORE_PATH_MARKER in found.group("value")
+        for line in text.splitlines()
+        if (found := _YAML_EXCLUDE.match(line)) is not None
+    )
+
+
+def _ignore_file_excludes_core(path: Path) -> bool:
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return any(
+        CORE_PATH_MARKER in line
+        for raw in text.splitlines()
+        if (line := raw.strip()) and not line.startswith("#")
+    )
+
+
+CORE_EXCLUSION_READERS: dict[str, Callable[[Path], bool]] = {
+    ".pre-commit-config.yaml": _yaml_excludes_core,
+    "ruff.toml": _toml_excludes_core,
+    ".ruff.toml": _toml_excludes_core,
+    ".prettierignore": _ignore_file_excludes_core,
+    ".eslintignore": _ignore_file_excludes_core,
+}
+
+
+def _needs_core_exclusion(name: str, path: Path) -> bool:
+
+    return not CORE_EXCLUSION_READERS[name](path)
 
 
 def install_notes(repo_root: Path) -> list[str]:
@@ -288,12 +351,12 @@ def install_notes(repo_root: Path) -> list[str]:
     found = [
         (name, advice)
         for name, advice in FOREIGN_TOOLING
-        if (repo_root / name).is_file() and _needs_core_exclusion(repo_root / name)
+        if (repo_root / name).is_file() and _needs_core_exclusion(name, repo_root / name)
     ]
     pyproject = repo_root / "pyproject.toml"
     if pyproject.is_file():
         text = pyproject.read_text(encoding="utf-8")
-        if "[tool.ruff]" in text and CORE_PATH_MARKER not in text:
+        if "[tool.ruff]" in text and not _toml_excludes_core(pyproject, section="tool.ruff"):
             found.append((
                 "pyproject.toml",
                 'add `extend-exclude = [".basicly/core"]` under [tool.ruff]',
