@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**A merge now folds the writer shard it brought in, and it did not.** A writer appends to
+`pending-<branch>.jsonl` so two branches never edit one file, but every reader reads the
+trunk log. Merging a branch therefore landed events that were invisible until the next
+tracker write or loop landing folded them, and a quiet repository accumulated them. The
+kit's own `post-merge` hook could not fix this for a repository with basicly installed:
+its commit carries no record id, and `tracker-commit-msg`, written by the same install,
+refuses it. So `basicly install` now wires the hook to `basicly tracker fold`, which is
+the engine's existing fold, and that commit carries a record id taken from the shard's
+own events. A tree carrying work in progress is left alone.
+
+`basicly install --dry-run` answers the question an upgrade used to answer only by
+happening: which of my paths does this write, and which of my own edits does it keep. It
+names every path the run would create, overwrite or delete, and on a repository that
+already has a core catalog it runs each projection's check verb, so it also names which
+build steps would rewrite a projected file.
+
+A patch release no longer costs a full tutorial re-record. Two transcript lines in the
+first-loop tutorial named a version; they now name the tool, and `basicly release` re-pins
+the tutorial with the rest of the docs. One sentence is left for a human to edit.
+
 ## v0.14.2 - 2026-09-18
 
 Delta: v0.14.1..v0.14.2
