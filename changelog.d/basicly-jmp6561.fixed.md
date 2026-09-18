@@ -1,1 +1,0 @@
-- `docs/reference/kits.md` said `basicly install` brings all three kits with nothing else to run. It does not wire the tracker's `post-merge` shard hook, and does not need to — the engine folds shards itself at the seam that commits tracker state. The page now says which folding a bundled repository gets and when.

@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.14.2 - 2026-09-18
+
+Delta: v0.14.1..v0.14.2
+
 **The markdown basicly generates now passes markdownlint's default rules, and it did not.**
 A canary repository upgrading to v0.14.1 could not commit: 62 lint errors, every one of them
 in markdown this project had written into it. The cause is that we had disabled the rule
@@ -22,6 +26,12 @@ generator, which is the projected-output check doing what it was put there for.
 shard hook. The page now says which folding a bundled repository gets and when: the engine
 folds at the seam that commits tracker state, with a record id the commit-message gate
 accepts, which the hook cannot supply.
+
+### Fixed
+
+- The markdown basicly generates now passes markdownlint's default rules. Three catalog sources left a table's delimiter row unpadded under padded cells, and two generators wrote an empty cell as two spaces; both make MD060 read the table as inconsistent. This repository had disabled that rule for itself and never shipped the decision. (basicly-f0s5j7o)
+
+- `docs/reference/kits.md` said `basicly install` brings all three kits with nothing else to run. It does not wire the tracker's `post-merge` shard hook, and does not need to — the engine folds shards itself at the seam that commits tracker state. The page now says which folding a bundled repository gets and when. (basicly-jmp6561)
 
 ## v0.14.1 - 2026-09-18
 
