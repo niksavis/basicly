@@ -24,10 +24,10 @@ MAX_ACTOR_CHARS = 64
 
 def ledger_git_rules(repo_root: Path) -> tuple[str, ...]:
     try:
-        log_glob = owned_store.kit(repo_root, "events").LOG_GLOB
+        events = owned_store.kit(repo_root, "events")
     except owned_store.TrackerDivergenceError:
         return ()
-    return (f"{log_glob} -text merge=union",)
+    return tuple(f"{glob} -text merge=union" for glob in (events.LOG_GLOB, events.PENDING_GLOB))
 
 
 def resolved_actor(environ: Mapping[str, str] | None = None) -> str:

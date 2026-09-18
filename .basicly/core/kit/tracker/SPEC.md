@@ -167,6 +167,15 @@ followed to its own `HEAD`, so a lane is its own writer without the engine telli
 A directory outside a repository keeps the single trunk log, which is what keeps an
 existing ledger reading and writing exactly as it did.
 
+**Sharding separates branches, not clones, and `merge=union` still carries the rest.** The
+writer name comes from `.git/HEAD`, so two checkouts both sitting on the trunk write the
+same shard path and their appends meet in one file. That is not a defect in the design and
+it is not covered by the measurement above, which used two branches: it is the case the
+union driver exists for, which is why the install declares the attribute on the shard glob
+as well as the trunk one and why an installer that writes only one of them leaves a hole.
+State it this way round — a shard removes the conflict *between branches*, and the
+attribute removes the one *within* a branch.
+
 **This is the one place the kit reads a file it does not own.** §4's rule is otherwise
 that the kit reads its own committed data and takes everything else as arguments. The
 exception is narrow and stated rather than assumed: git is already the substrate the

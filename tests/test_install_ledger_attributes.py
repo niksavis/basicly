@@ -17,7 +17,9 @@ GIT = (
     "commit.gpgsign=false",
 )
 RULE = "events-*.jsonl -text merge=union"
+SHARD_RULE = "pending-*.jsonl -text merge=union"
 LOG = ".basicly/ledger/events-0001.jsonl"
+SHARD = ".basicly/ledger/pending-main.jsonl"
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -26,19 +28,21 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _repo(tmp_path: Path, attribute: str | None) -> Path:
+def _repo(tmp_path: Path, *attributes: str) -> Path:
     _git(tmp_path, "init", "-q", ".")
-    if attribute is not None:
-        (tmp_path / ".gitattributes").write_text(attribute + "\n", encoding="utf-8")
+    declared = [one for one in attributes if one is not None]
+    if declared:
+        (tmp_path / ".gitattributes").write_text("\n".join(declared) + "\n", encoding="utf-8")
     (tmp_path / ".basicly" / "ledger").mkdir(parents=True, exist_ok=True)
-    (tmp_path / LOG).write_text('{"id":"e1"}\n', encoding="utf-8")
+    for name in (LOG, SHARD):
+        (tmp_path / name).write_text('{"id":"e1"}\n', encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-qm", "base")
     return tmp_path
 
 
-def _two_branches_append_and_merge(repo: Path) -> subprocess.CompletedProcess[str]:
-    log = repo / LOG
+def _two_branches_append_and_merge(repo: Path, name: str = LOG) -> subprocess.CompletedProcess[str]:
+    log = repo / name
     _git(repo, "checkout", "-qb", "agent-a")
     log.write_text(log.read_text(encoding="utf-8") + '{"id":"a1"}\n', encoding="utf-8")
     _git(repo, "commit", "-qam", "a")
@@ -51,7 +55,7 @@ def _two_branches_append_and_merge(repo: Path) -> subprocess.CompletedProcess[st
 
 
 def test_a_parallel_append_conflicts_without_the_attribute(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, None)
+    repo = _repo(tmp_path)
 
     merged = _two_branches_append_and_merge(repo)
 
@@ -79,7 +83,33 @@ def test_the_rule_the_install_writes_makes_the_same_merge_clean(tmp_path: Path) 
 
 
 def test_the_rule_is_derived_from_the_kit_and_not_spelled_again(work_repo: Path) -> None:
-    assert owned_write.ledger_git_rules(work_repo) == (RULE,)
+    assert owned_write.ledger_git_rules(work_repo) == (RULE, SHARD_RULE), (
+        "a writer appends to a shard, and two clones on one branch share that shard's "
+        "name, so the shard needs the union driver exactly as the trunk does"
+    )
+
+
+def test_two_clones_on_one_branch_merge_clean_under_the_shard_rule(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, RULE, SHARD_RULE)
+
+    merged = _two_branches_append_and_merge(repo, name=SHARD)
+
+    assert merged.returncode == 0, (
+        "the shard name comes from .git/HEAD, so two clones both on main write the same "
+        f"path; without {SHARD_RULE!r} that is the same-line conflict the ledger exists "
+        f"to escape: {merged.stdout}{merged.stderr}"
+    )
+
+
+def test_the_same_shard_history_conflicts_without_the_shard_rule(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, RULE)
+
+    merged = _two_branches_append_and_merge(repo, name=SHARD)
+
+    assert merged.returncode != 0, (
+        "the control: the trunk rule alone does not reach a shard, so this must conflict "
+        "or the test above passes for a reason other than the rule"
+    )
 
 
 def test_a_repository_with_no_kit_gets_no_rule(tmp_path: Path) -> None:
@@ -93,7 +123,7 @@ def test_the_scaffold_writes_the_rule_after_any_star_rule(work_repo: Path) -> No
     cli._scaffold_ledger_attributes(work_repo)
 
     lines = [line for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
-    assert lines[-1] == RULE
+    assert lines[-2:] == [RULE, SHARD_RULE]
     assert lines.index("* text=auto") < lines.index(RULE)
 
 

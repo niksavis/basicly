@@ -353,7 +353,10 @@ sections:
       private repository with the identical `merge=union` attribute on both bases. One shared
       log: the pull request reports `mergeable=CONFLICTING`, `state=DIRTY`, while the same
       history merges clean under a local git. One file per writer: `MERGEABLE`, `CLEAN`. The
-      conflicting arm is the positive control and it fired'
+      conflicting arm is the positive control and it fired. **The measurement covers two
+      branches, not two clones on one branch**: the shard name comes from `.git/HEAD`, so
+      same-branch appends meet in one file and the `merge=union` attribute is what carries
+      them - which is why the install must declare it on the shard glob too'
   - name: Shards are folded without anyone remembering a command
     status: shipped
     note: The engine folds them at the seam that commits tracker state, and a consumer's
