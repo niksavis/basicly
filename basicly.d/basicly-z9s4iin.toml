@@ -1,0 +1,22 @@
+# `basicly install` now wires a `post-merge` hook that calls `basicly tracker fold`, so a
+# plain `git merge` or `git pull` folds the shard it brought in (basicly-z9s4iin).
+#
+# Two suppressions, both on the seam this change adds.
+#
+# `PLR0913 = +1` on the kit's `install_hook.install`. The hook installer now takes a sixth
+# keyword, `command`, which is the host's own fold command; the kit writes its own `compact`
+# call when the keyword is empty. Every one of the six is a seam a caller injects — the root,
+# the ledger, the dry run, the interpreter, the stream and the command. The alternative is a
+# settings object, and that would put a type in a kit whose boundary gate refuses an engine
+# import and holds it to the standard library alone.
+#
+# `S603 = +1` on `cmd_tracker_hook` in `src/basicly/cli.py`. It is the same `subprocess.run`
+# of a vendored kit script that `cmd_tier_hook` two functions above already carries, with the
+# same reason and the same list form: the engine runs a kit, it never imports one.
+[ratchet]
+base_commit = "07df6930b50659964a75aebec488dfcbfe47c3e6"
+
+# Both reasoned, so `unreasoned_count` does not move.
+[ratchet.noqa_debt.frozen]
+PLR0913 = 1
+S603 = 1

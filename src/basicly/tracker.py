@@ -213,6 +213,20 @@ def pending_shards(repo_root: Path) -> tuple[str, ...]:
     return tuple(path.name for path in kit_module.pending_paths(ledger_dir(repo_root)))
 
 
+def a_folded_record(repo_root: Path) -> str | None:
+
+    try:
+        kit_module = kit(repo_root, "events")
+    except TrackerDivergenceError:
+        return None
+    ledger = ledger_dir(repo_root)
+    for path in kit_module.pending_paths(ledger):
+        found, _ = kit_module.read_events_from([path])
+        for event in found:
+            return str(event.record)
+    return None
+
+
 def fold_pending_shards(repo_root: Path) -> tuple[str, ...]:
 
     try:

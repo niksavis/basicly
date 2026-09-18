@@ -25,6 +25,11 @@ GENERATED_IGNORES: tuple[tuple[str, str], ...] = (
         "*.basicly-bak",
         "Your copy of a file basicly replaced; delete it once you have merged what you want.",
     ),
+    (
+        "__pycache__/",
+        "Bytecode the vendored hooks and kits write when they run. Untracked dirt here "
+        "is not a tracker path, so it refuses the commit that folds the ledger.",
+    ),
 )
 
 

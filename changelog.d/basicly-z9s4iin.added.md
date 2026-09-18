@@ -1,0 +1,1 @@
+- `basicly install` wires a `post-merge` hook that runs `basicly tracker fold`, so a plain `git merge` or `git pull` folds the writer shard it brought in and commits it with a record id the commit-msg gate accepts. Run `basicly tracker fold` by hand when the hook did not run. The hook prints what to run when the engine is not on the path.

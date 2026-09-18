@@ -21,6 +21,7 @@ from typing import Any
 from . import (
     __version__,
     agents,
+    board_action_surface,
     board_cli,
     board_facts,
     catalog_lint,
@@ -1427,6 +1428,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         ("agents-build", cmd_agents_build, argparse.Namespace()),
         ("hooks-build", cmd_hooks_build, argparse.Namespace(no_install=False)),
         ("tier-hook", cmd_tier_hook, argparse.Namespace()),
+        ("tracker-hook", cmd_tracker_hook, argparse.Namespace()),
         ("permissions-build", cmd_permissions_build, argparse.Namespace()),
     ]
     for step, handler, namespace in steps:
@@ -1444,6 +1446,51 @@ def cmd_install(args: argparse.Namespace) -> int:
 
 
 TIER_HOOK_INSTALLER = Path(".basicly") / "core" / "kit" / "tier" / "install_hook.py"
+TRACKER_HOOK_INSTALLER = Path(".basicly") / "core" / "kit" / "tracker" / "install_hook.py"
+FOLD_COMMAND = "tracker fold"
+
+
+def cmd_tracker_hook(_args: argparse.Namespace) -> int:
+
+    repo_root = _repo_root()
+    script = repo_root / TRACKER_HOOK_INSTALLER
+    if not script.is_file():
+        ui.say(
+            f"{TRACKER_HOOK_INSTALLER.as_posix()} is absent, so no merge folds the pending shards"
+        )
+        return 0
+    engine = board_action_surface.executable()
+    if engine is None:
+        ui.say(
+            "basicly is not on the path, so the post-merge hook was left unwired; "
+            f"run `basicly {FOLD_COMMAND}` yourself after a merge",
+            style="warn",
+        )
+        return 0
+    completed = subprocess.run(  # noqa: S603 — run, not imported; the engine holds no kit import
+        [
+            sys.executable,
+            str(script),
+            "--root",
+            str(repo_root),
+            "--ledger",
+            str(repo_root / owned_store.LEDGER_DIR),
+            "--command",
+            f"{engine} {FOLD_COMMAND}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    sys.stdout.write(completed.stdout)
+    if completed.returncode != 0:
+        sys.stderr.write(completed.stderr)
+        ui.say(
+            "the post-merge hook was not installed, so a merged shard stays unfolded; "
+            f"run `basicly {FOLD_COMMAND}` yourself after a merge",
+            style="warn",
+        )
+    return 0
 
 
 def cmd_tier_hook(_args: argparse.Namespace) -> int:
@@ -1911,11 +1958,41 @@ def cmd_tracker_scrub(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tracker_fold(_args: argparse.Namespace) -> int:
+
+    repo_root = _repo_root()
+    shards = tracker.pending_shards(repo_root)
+    if not shards:
+        print("No pending shard to fold; the trunk log already holds every event.")
+        return 0
+    if merge.foreign_dirt(repo_root):
+        print(
+            "Refusing to fold: this checkout carries changes outside the ledger, and the "
+            "fold commits what it folds. Commit or stash them and run this again.",
+            file=sys.stderr,
+        )
+        return 1
+    record = tracker.a_folded_record(repo_root)
+    gone = tracker.fold_pending_shards(repo_root)
+    if record is None:
+        print(f"Folded {len(gone)} shard(s); nothing to commit.")
+        return 0
+    committed = merge.commit_tracker_state(
+        repo_root, record, action="fold pending writer shards into the trunk log"
+    )
+    print(
+        f"Folded {len(gone)} shard(s) into the trunk log"
+        + (f" and committed against {record}." if committed else "; nothing to commit.")
+    )
+    return 0
+
+
 def cmd_tracker(args: argparse.Namespace) -> int:
     handlers = {
         "write": tracker_write.cmd_write,
         "import": cmd_tracker_import,
         "scrub": cmd_tracker_scrub,
+        "fold": cmd_tracker_fold,
         **tracker_query.HANDLERS,
     }
     return _dispatch(args, "tracker_command", handlers, group="tracker")
@@ -4926,6 +5003,10 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
         help="A record you confirmed deleted out of band; absence alone never means deleted",
     )
     tracker_sub.add_parser("scrub", help="Rewrite the ledger without machine paths or usernames")
+    tracker_sub.add_parser(
+        "fold",
+        help="Fold pending writer shards into the trunk log and commit them",
+    )
 
 
 def _tolerate_narrow_consoles() -> None:

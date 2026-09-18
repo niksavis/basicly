@@ -197,3 +197,39 @@ def test_a_dry_run_writes_nothing(hook, repo: Path) -> None:
 
     assert not _hook_file(hook, repo).exists()
     assert "would write" in stream.getvalue()
+
+
+def test_a_host_command_replaces_the_kit_call(hook, repo: Path) -> None:
+    stream = io.StringIO()
+
+    assert (
+        hook.install(
+            repo,
+            ledger=repo / LEDGER,
+            dry_run=False,
+            interpreter="RUNNER",
+            stream=stream,
+            command="basicly tracker fold",
+        )
+        == 0
+    )
+
+    written = _hook_file(hook, repo).read_text(encoding="utf-8")
+    assert "basicly tracker fold" in written
+    assert "RUNNER" not in written
+    assert "git commit" not in written
+
+
+def test_a_host_command_reports_a_failed_fold(hook, repo: Path) -> None:
+    hook.install(
+        repo,
+        ledger=repo / LEDGER,
+        dry_run=False,
+        interpreter="RUNNER",
+        stream=io.StringIO(),
+        command="basicly tracker fold",
+    )
+
+    written = _hook_file(hook, repo).read_text(encoding="utf-8")
+    assert "are not folded" in written
+    assert "`" not in written
