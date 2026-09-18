@@ -1,0 +1,1 @@
+- `dor` refuses a record for missing `requirements` only when the kit minted it under the rule; a record that predates the rule still reports the debt but is not blocked for it. All 341 open records here owed it and none could have carried it, because the write seam could not store that field until now. Trigger and acceptance criteria bind every open record either way.

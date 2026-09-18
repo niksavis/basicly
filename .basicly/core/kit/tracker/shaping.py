@@ -11,6 +11,9 @@ ACCEPTANCE_FIELD = "acceptance_criteria"
 REQUIREMENTS_FIELD = "requirements"
 DESCRIPTION_FIELD = "description"
 
+SHAPED_UNDER_FIELD = "shaped_under"
+SHAPING_RULE = "dor.v2"
+
 JOB_STORY_EXAMPLE = "When <situation>, I want to <motivation>, so I can <outcome>."
 USER_STORY_EXAMPLE = "As a <persona>, I want <goal>, so that <benefit>."
 
@@ -91,8 +94,21 @@ def owed(record: Mapping[str, object], *, closed: bool = False) -> tuple:
     return tuple(missing)
 
 
+def minted_under_the_rule(record: Mapping[str, object]) -> bool:
+
+    return bool(record.get(SHAPED_UNDER_FIELD))
+
+
+def refused(record: Mapping[str, object], *, closed: bool = False) -> tuple:
+
+    missing = owed(record, closed=closed)
+    if minted_under_the_rule(record):
+        return missing
+    return tuple(one for one in missing if one != REQUIREMENTS_HEADING)
+
+
 def shaped(record: Mapping[str, object], *, closed: bool = False) -> bool:
-    return not owed(record, closed=closed)
+    return not refused(record, closed=closed)
 
 
 def remedy(missing: Sequence[str]) -> str:

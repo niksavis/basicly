@@ -80,6 +80,11 @@ def _shape_fields(shape: argparse.Namespace | None):
     return tuple((name, value) for name, value in declared if value)
 
 
+def _minting(fields: dict[str, object]) -> dict[str, object]:
+    fields.setdefault(shaping.SHAPED_UNDER_FIELD, shaping.SHAPING_RULE)
+    return fields
+
+
 create_record = commands.create_root
 query_records = queries.query_records
 read_record = record_view.read_record
@@ -237,7 +242,11 @@ def _add_write_parsers(sub: Any) -> None:
 
 _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
     "child": lambda a, r: commands.create_child(
-        a.directory, a.parent, _fields(a.title, a.field, a), status=a.status, redact=r
+        a.directory,
+        a.parent,
+        _minting(_fields(a.title, a.field, a)),
+        status=a.status,
+        redact=r,
     ),
     "update": lambda a, r: commands.update(
         a.directory,
@@ -317,7 +326,7 @@ def _shown(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
 
 def _dor(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     verdict = _owed_of(args.directory, args.record)
-    ready = not verdict["owed"]
+    ready = not verdict["refused"]
     return (EXIT_OK if ready else EXIT_REFUSED), {
         "record": args.record,
         "ready": ready,
@@ -337,7 +346,7 @@ def _run(
     if args.command == "create":
         written = create_record(
             args.directory,
-            _fields(args.title, args.field, args),
+            _minting(_fields(args.title, args.field, args)),
             prefix=args.prefix,
             status=args.status,
             redact=redact,

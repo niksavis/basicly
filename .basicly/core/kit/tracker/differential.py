@@ -11,6 +11,7 @@ from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 _MIGRATE_MODULE_NAME = "basicly_tracker_kit_migrate"
+_SHAPING_MODULE_NAME = "basicly_tracker_kit_shaping"
 
 
 def _load_migrate() -> ModuleType:
@@ -29,8 +30,24 @@ def _load_migrate() -> ModuleType:
     return module
 
 
+def _load_shaping():
+    cached = sys.modules.get(_SHAPING_MODULE_NAME)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(_SHAPING_MODULE_NAME, _HERE / "shaping.py")
+    if spec is None or spec.loader is None:
+        raise DifferentialError(
+            "the tracker kit's shaping.py is missing from beside differential.py"
+        )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_SHAPING_MODULE_NAME] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 migrate = _load_migrate()
 events = migrate.events
+shaping = _load_shaping()
 
 _DERIVATION_MODULE_NAME = "basicly_tracker_kit_derivation"
 

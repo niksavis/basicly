@@ -120,6 +120,12 @@ many the ledger holds. A cluster larger than the cap is dropped whole rather tha
 because a half-drawn cluster shows a blocked record with no arrow into it. The table
 beneath carries every blocking pair either way.
 
+**Requirements bind a record the kit minted, not one that predates the rule.** Every write
+reports what a record `owed`; `dor` refuses on what it `refused`, and the two differ only
+for a record created before the rule existed, which reports its missing requirements
+without being blocked for them. A trigger and acceptance criteria are required of every
+open record either way.
+
 **`dor` is the gate, not `ready`.** `ready` still offers every unblocked record; `dor`
 exits non-zero on one that cannot be verified against, which is what a hook or an agent
 skill calls before work starts.

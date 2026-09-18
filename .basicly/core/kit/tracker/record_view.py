@@ -40,7 +40,12 @@ def owed_of(directory: Path | str, record: str) -> dict[str, object]:
     held = dict(state.fields) if state is not None else {}
     closed = state is not None and is_closed(state)
     missing = shaping.owed(held, closed=closed)
-    return {"owed": list(missing), "remedy": shaping.remedy(missing) if missing else ""}
+    blocking = shaping.refused(held, closed=closed)
+    return {
+        "owed": list(missing),
+        "refused": list(blocking),
+        "remedy": shaping.remedy(blocking) if blocking else "",
+    }
 
 
 def _edges(record: str, views: Mapping[str, Any], states: Mapping[str, Any]) -> dict[str, object]:

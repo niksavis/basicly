@@ -105,7 +105,11 @@ def _create_drafts(kit_module: Any, args: Sequence[str], stdout: str) -> list[ob
             f"a flag ({', '.join(tracker_argv.CREATE_LONG_FLAGS)}). Dropping it mints a "
             f"record nothing reads as typed"
         )
-    fields: dict[str, object] = {"title": positional[1]}
+    shaping = kit_module.shaping
+    fields: dict[str, object] = {
+        "title": positional[1],
+        shaping.SHAPED_UNDER_FIELD: shaping.SHAPING_RULE,
+    }
     parent = ""
     for flag, value in tracker_argv.flag_pairs(args, VALUE_FLAGS["create"]):
         name = CREATE_FIELD_FLAGS.get(flag)

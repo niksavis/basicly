@@ -5437,6 +5437,24 @@ migration therefore has a visible burn-down rather than a silent backlog. A reco
 state its intended use is a record whose validation was always going to be theatre, so the gate
 surfacing it is the point rather than a side effect.
 
+**Amended 2026-09-18: the requirements half binds only records minted under it.** The
+Definition of Ready was written as "both on every work type", and that is unsatisfiable for
+the backlog that existed when it landed. Measured over the folded ledger: **all 341 open
+records owe `requirements`, 0 carry the field, and 0 carry a heading to migrate from** —
+because the engine's write seam could not write that field at all until `basicly-77tjvmk`.
+The debt was never a lapse; it was impossible. Retro-filling 341 statements would be
+inventing content.
+
+So a record is **refused** for missing requirements only when it carries the marker its
+producer writes at mint. An older record still **reports** the debt, so a board keeps showing
+it and the set shrinks as records close; only the refusal is withheld. Trigger and acceptance
+criteria are still required of every open record, because those could always be written.
+
+**The discriminator may not be a clock or a sequence.** The tracker kit's own
+`SPEC.md` §9.5 forbids deriving anything from a timestamp, and there is no global order across records —
+sequence numbers are per item. A marker the producer writes is the only honest
+discriminator, and its absence is unambiguous precisely because every new record carries it.
+
 ### D-51 · The repository is the distribution channel, and there is no package index
 
 **Decision.** `basicly` and every kit it ships are installed from this repository with

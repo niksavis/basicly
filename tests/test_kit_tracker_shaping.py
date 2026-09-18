@@ -196,6 +196,54 @@ def test_a_child_is_shaped_by_the_same_flags(
     assert report["owed"] == []
 
 
+LEGACY = {
+    "description": TRIGGER,
+    "acceptance_criteria": "the gate exits zero",
+}
+
+
+def test_a_record_the_kit_minted_is_refused_for_missing_requirements(
+    ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    record, _ = _create(
+        capsys, ledger, "--description", TRIGGER, "--acceptance", "the gate exits zero"
+    )
+
+    code, report = _run(capsys, "dor", str(ledger), record)
+
+    assert code == cli.EXIT_REFUSED
+    assert shaping.REQUIREMENTS_HEADING in report["refused"]
+
+
+def test_a_record_minted_before_the_rule_is_not_refused_for_requirements() -> None:
+    assert shaping.REQUIREMENTS_HEADING in shaping.owed(LEGACY), (
+        "the debt stays visible, so a board still shows it"
+    )
+    assert shaping.REQUIREMENTS_HEADING not in shaping.refused(LEGACY), (
+        "no record could carry requirements before the engine seam could write it, so "
+        "refusing 341 of them would be refusing content nobody could have written"
+    )
+    assert shaping.shaped(LEGACY)
+
+
+def test_the_marker_is_absent_rather_than_dated_on_a_legacy_record() -> None:
+    assert not shaping.minted_under_the_rule(LEGACY)
+    assert shaping.minted_under_the_rule({shaping.SHAPED_UNDER_FIELD: shaping.SHAPING_RULE})
+
+
+def test_a_minted_record_still_owes_the_trigger_and_the_criteria(
+    ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    record, report = _create(capsys, ledger)
+
+    assert report["refused"] == [
+        shaping.TRIGGER_HEADING,
+        shaping.ACCEPTANCE_HEADING,
+        shaping.REQUIREMENTS_HEADING,
+    ]
+    assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
+
+
 def test_a_list_of_criteria_counts_as_stated() -> None:
     assert (
         shaping.owed({
