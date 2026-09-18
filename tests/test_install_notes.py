@@ -33,6 +33,44 @@ def test_each_tooling_config_present_names_its_own_exclusion(tmp_path: Path) -> 
     assert 'extend-exclude = [".basicly/core"]` under [tool.ruff]' in notes
 
 
+def test_a_config_that_already_excludes_the_core_is_not_advised(tmp_path: Path) -> None:
+    _repo(
+        tmp_path,
+        {
+            ".ruff.toml": 'extend-exclude = [".basicly/core"]\n',
+            ".prettierignore": ".basicly/core/\n",
+            "pyproject.toml": '[tool.ruff]\nextend-exclude = [".basicly/core"]\n',
+            ".pre-commit-config.yaml": "repos:\n  - hooks:\n      - exclude: ^\\.basicly/core/\n",
+        },
+    )
+
+    assert install_notes(tmp_path) == [], (
+        "advising a change the repository has already made is unactionable, and it sits "
+        "in the same tail of the install output as a tracked CI edit"
+    )
+
+
+def test_the_same_configs_without_the_exclusion_are_still_advised(tmp_path: Path) -> None:
+    _repo(
+        tmp_path,
+        {
+            ".ruff.toml": "line-length = 88\n",
+            ".prettierignore": "dist/\n",
+            "pyproject.toml": "[tool.ruff]\nline-length = 88\n",
+            ".pre-commit-config.yaml": "repos: []\n",
+        },
+    )
+
+    notes = "\n".join(install_notes(tmp_path))
+
+    assert ".ruff.toml" in notes, (
+        "the control: without this the fix above is a suppression rather than a check"
+    )
+    assert ".prettierignore" in notes
+    assert "pyproject.toml" in notes
+    assert ".pre-commit-config.yaml" in notes
+
+
 def test_a_pyproject_without_ruff_is_not_named(tmp_path: Path) -> None:
     _repo(tmp_path, {"pyproject.toml": '[project]\nname = "x"\n'})
 

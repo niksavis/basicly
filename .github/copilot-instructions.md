@@ -92,7 +92,11 @@ uv run basicly permissions-check
 - **An empty probe is not evidence of absence.** A search returning nothing is
   ambiguous between "absent" and "wrong probe", and the second is the common case.
   Run a **positive control** that must return something before you report a zero; if
-  the control is empty too, the zero belongs to the probe.
+  the control is empty too, the zero belongs to the probe. Build that control from a
+  failure you have **seen**, never from what you assume one looks like: a control that
+  is the right idea and the wrong instance is valid input, returns zero, and reads
+  exactly like a dead probe. Check the denominator moved — if adding the control did
+  not change the count of things examined, it was never examined.
 - **A number in a claim is derived twice, by paths sharing no step.** One green test
   on one path is still one path; treat a disagreement as an instrument fault first.
   When a person reports one against a vendor's own figure, run the vendor's path

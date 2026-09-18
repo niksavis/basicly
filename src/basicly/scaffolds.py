@@ -267,15 +267,32 @@ def _secret_scanners(repo_root: Path) -> list[str]:
     return [f"  {path}: {name}" for name, path in sorted(found.items())]
 
 
+CORE_PATH_MARKER = ".basicly/core"
+
+
+def _needs_core_exclusion(path: Path) -> bool:
+
+    try:
+        return CORE_PATH_MARKER not in path.read_text(encoding="utf-8")
+    except OSError:
+        return True
+
+
 def install_notes(repo_root: Path) -> list[str]:
     notes: list[str] = []
-    found = [(name, advice) for name, advice in FOREIGN_TOOLING if (repo_root / name).is_file()]
+    found = [
+        (name, advice)
+        for name, advice in FOREIGN_TOOLING
+        if (repo_root / name).is_file() and _needs_core_exclusion(repo_root / name)
+    ]
     pyproject = repo_root / "pyproject.toml"
-    if pyproject.is_file() and "[tool.ruff]" in pyproject.read_text(encoding="utf-8"):
-        found.append((
-            "pyproject.toml",
-            'add `extend-exclude = [".basicly/core"]` under [tool.ruff]',
-        ))
+    if pyproject.is_file():
+        text = pyproject.read_text(encoding="utf-8")
+        if "[tool.ruff]" in text and CORE_PATH_MARKER not in text:
+            found.append((
+                "pyproject.toml",
+                'add `extend-exclude = [".basicly/core"]` under [tool.ruff]',
+            ))
     if found:
         notes.append(CORE_EXCLUDE_HEADING)
         notes.extend(f"  {name}: {advice}" for name, advice in found)
