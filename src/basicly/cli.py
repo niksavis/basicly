@@ -1216,14 +1216,23 @@ def _scaffold_overlay_stubs(repo_root: Path, paths: ProjectPaths) -> None:
         )
 
 
+SCAFFOLD_BACKUP_SUFFIX = ".basicly-bak"
+
+
 def _write_scaffold(path: Path, content: str, label: str, *, force: bool) -> None:
 
     if path.exists():
         if not force:
-            repinned, moved = repin(path.read_text(encoding="utf-8"))
+            existing = path.read_text(encoding="utf-8")
+            repinned, moved = repin(existing)
             if moved:
+                backup = path.with_suffix(path.suffix + SCAFFOLD_BACKUP_SUFFIX)
+                backup.write_text(existing, encoding="utf-8")
                 path.write_text(repinned, encoding="utf-8")
-                print(f"Re-pinned {moved} basicly reference(s) in {label} to v{__version__}")
+                print(
+                    f"Re-pinned {moved} basicly reference(s) in {label} to "
+                    f"v{__version__}; your previous copy is at {backup.name}"
+                )
             else:
                 print(f"{label} already exists; left unchanged (--overwrite-scaffolds replaces it)")
             return
@@ -1231,7 +1240,7 @@ def _write_scaffold(path: Path, content: str, label: str, *, force: bool) -> Non
         if existing == content:
             print(f"{label} already current")
             return
-        backup = path.with_suffix(path.suffix + ".basicly-bak")
+        backup = path.with_suffix(path.suffix + SCAFFOLD_BACKUP_SUFFIX)
         backup.write_text(existing, encoding="utf-8")
         path.write_text(content, encoding="utf-8")
         print(f"Replaced {label}; your previous copy is at {backup.name}")

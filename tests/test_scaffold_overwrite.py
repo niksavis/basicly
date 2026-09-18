@@ -85,6 +85,36 @@ def test_an_upgrade_moves_a_stale_pin_without_the_flag(
     assert "Re-pinned 5 basicly reference(s)" in capsys.readouterr().out
 
 
+def test_a_repin_leaves_the_previous_copy_beside_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    cli._scaffold_ci_workflow(tmp_path)
+    stale = CONSUMER_CI_WORKFLOW.replace(DIST_SOURCE, OLD_PIN)
+    workflow.write_text(stale, encoding="utf-8")
+
+    cli._scaffold_ci_workflow(tmp_path)
+
+    backup = workflow.with_suffix(workflow.suffix + BACKUP)
+    assert backup.read_text(encoding="utf-8") == stale, (
+        "the default path rewrites a file a consumer may hold on a confirmation list, so "
+        "it leaves the previous bytes the same way the force path does"
+    )
+    assert backup.name in capsys.readouterr().out
+
+
+def test_a_run_that_repins_nothing_leaves_no_backup(tmp_path: Path) -> None:
+    workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
+    cli._scaffold_ci_workflow(tmp_path)
+
+    cli._scaffold_ci_workflow(tmp_path)
+
+    assert not workflow.with_suffix(workflow.suffix + BACKUP).exists(), (
+        "the control: a backup on every run would litter the tree and stop meaning "
+        "anything, so it is written only when the file is about to change"
+    )
+
+
 def test_the_repin_leaves_everything_but_the_pin_alone(tmp_path: Path) -> None:
     workflow = tmp_path / ".github" / "workflows" / "basicly-gates.yml"
     cli._scaffold_ci_workflow(tmp_path)
