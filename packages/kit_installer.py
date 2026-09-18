@@ -277,7 +277,12 @@ def unconfigure_host(request, destination: Path) -> int:
     module = load_kit_module(destination, file_name, f"basicly_kit_configure_{name}")
     if not hasattr(module, "main"):
         return 0
-    code = module.main(["--root", str(request.target), "--uninstall"])
+    code = module.main([
+        "--root",
+        str(request.target),
+        *request.kit.configure_args,
+        "--uninstall",
+    ])
     if code != 0:
         request.stream.write(
             f"{name}: {file_name} --uninstall exited {code}; a host may still name a hook "
@@ -299,7 +304,7 @@ def configure_host(request, destination: Path) -> int:
         )
         return 0
     module = load_kit_module(destination, file_name, f"basicly_kit_configure_{name}")
-    code = module.main(["--root", str(request.target)])
+    code = module.main(["--root", str(request.target), *request.kit.configure_args])
     if code != 0:
         request.stream.write(
             f"{name}: {file_name} exited {code}; the kit is vendored but the host is not "
@@ -434,6 +439,7 @@ class Kit(NamedTuple):
     cli_file: str = "cli.py"
     rules: object = None
     configure_file: str = ""
+    configure_args: tuple = ()
 
 
 def run(kit: Kit, argv=None) -> int:

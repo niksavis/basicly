@@ -48,6 +48,8 @@ KIT = installer.Kit(
     directory=_HERE / "kit",
     module="basicly_tracker_kit_cli",
     rules=ledger_rules,
+    configure_file="install_hook.py",
+    configure_args=("--ledger", LEDGER_DIR),
 )
 
 

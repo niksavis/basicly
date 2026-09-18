@@ -44,7 +44,7 @@ flag `init` says the block is available and where to read it.
 | Kit | Files vendored | Skill roots | Host or repository configuration |
 | --- | --- | --- | --- |
 | `comments` | 10 | `.claude/skills/comments`, `.agents/skills/comments` | none |
-| `tracker` | 20 | `.claude/skills/tracker`, `.agents/skills/tracker` | `.gitattributes` gains `events-*.jsonl` and `pending-*.jsonl`, each `-text merge=union`; `.gitignore` gains the snapshot and checkpoint paths |
+| `tracker` | 24 | `.claude/skills/tracker`, `.agents/skills/tracker` | `.gitattributes` gains `events-*.jsonl` and `pending-*.jsonl`, each `-text merge=union`; `.gitignore` gains the snapshot, checkpoint and vendored-cache paths; a `post-merge` git hook folds pending shards |
 | `tier` | 7 | `.claude/skills/tier`, `.agents/skills/tier` | a `PreToolUse`/`Agent` hook in `.claude/settings.json`, pointing at the vendored hook |
 
 [measured 2026-09-16 by installing each kit from its own built wheel into a fresh `git init`
@@ -104,6 +104,13 @@ is shaped when it carries a trigger in either story voice, acceptance criteria a
 requirements — as those fields, or as `## Acceptance Criteria` and `## Requirements`
 sections of dash-space bullets in the description, so a record written as prose keeps working.
 A placeholder counts as absent.
+
+**A `post-merge` hook keeps the shard count bounded.** After a merge or a pull it folds
+every pending writer shard into the trunk log and commits the result — but **only when the
+ledger is the sole uncommitted change**. A developer with work in progress is left entirely
+alone, because a hook that rewrites your tree on every pull is worse than the shards it
+removes. It honours `core.hooksPath`, merges into a hook somebody else wrote rather than
+replacing it, and `uninstall` removes exactly its own marked block.
 
 **`board` is a file, not a server.** It writes one HTML page with its style and its
 dependency drawing inline — no script, no linked stylesheet, no network — so it opens
