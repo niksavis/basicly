@@ -6,6 +6,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**A work tracker a repository can install on its own, and a measured reason to.** The
+ledger now shards per writer: each branch appends to its own file, so two branches touch no
+shared path. That matters because of something we measured rather than assumed — GitHub
+computes a pull request's mergeability **without reading the repository's
+`.gitattributes`**, so the `merge=union` rule every append-only tracker leans on does not
+stop a pull request being flagged. Two arms on a throwaway repository, identical attribute
+on both: the shared log reported `CONFLICTING` while the *same history merged clean under a
+local git*; one file per writer reported `MERGEABLE`. Same commits, same declared attribute,
+opposite verdicts. Shards are folded back into the trunk automatically — by the engine at
+the seam that commits tracker state, and by a `post-merge` hook for a repository that has
+only the kit.
+
+**A record now carries what an agent verifies and validates against.** Acceptance criteria
+and requirements are typed fields rather than prose headings, and `dor` refuses a record
+that cannot be checked. 170 records that had written their criteria as prose were migrated
+verbatim. The requirements field was unwritable until this release — it was in neither flag
+table — so the rule refuses only records minted under it, and older ones report the debt
+without being blocked by it.
+
+**A repository leaving another tracker can bring its backlog**, keeping ids, comments and
+dependency edges, with a dry run that reports the same plan by the same code path. And a
+human can see the work: one self-contained HTML page with the counts, the ready set, what is
+blocked and what holds it, and a bounded dependency drawing — no server, no network.
+
+**What this release does not claim.** Every validation of the standalone kit was run by its
+author, from a built wheel into repositories with no engine present. That is the right
+shape and it is not a consumer. Only Linux was exercised, against a stated matrix of three
+platforms. `basicly-lddx5vr` holds that open.
+
 ## v0.13.1 - 2026-09-12
 
 Delta: v0.13.0..v0.13.1

@@ -275,24 +275,28 @@ sections:
 - name: The software factory
   capabilities:
   - name: 'Requirements as a typed field, so validation has a standard to judge against'
-    status: designed
-    record: basicly-li8aifz
-    note: Architecture D-50. Measured 2026-09-13 over 1,347 created events - 0 carry a `requirements`
-      field or a `## Requirements` heading, against a positive control of 761 carrying `##
-      Acceptance Criteria`. The validator's own contract names the requirement five times
+    status: shipped
+    note: 'Architecture D-50 as amended 2026-09-18. `shaping.py` in the kit computes what a
+      record owes and `dor` refuses one that cannot be verified against. The field was
+      unwritable until basicly-77tjvmk: it was in neither CREATE_FIELD_FLAGS nor
+      UPDATE_FIELD_FLAGS, which is why 0 of 1,367 created events carried it. Both producers
+      now mint the `shaped_under` marker, and the requirement refuses only a record minted
+      under it - measured after: reported on 341 open records, refused on 0'
   - name: Acceptance criteria read from one store rather than two
-    status: designed
-    record: basicly-u07bfuw
-    note: Architecture D-50, migrated by corrective append under the rule section 32.8 binds -
-      150 open records need a field written, and the 1,020 closed ones keep the heading as
-      evidence. `plan_record.section_entries` reads the heading today, so 467 records carry a
-      field nothing tests against
+    status: shipped
+    note: '`shaping.owed` reads the typed field alone on an open record and the heading only
+      on a closed one, which is evidence. 170 open records carrying the heading alone were
+      migrated verbatim by corrective append under section 32.8, reconciled against a 172-line
+      ledger delta; heading-only is now 0 and the open records owing acceptance criteria fell
+      from 222 to 52, which carry none in either store'
   - name: The two acceptance stores reconciled where they disagree
-    status: designed
+    status: partial
     record: basicly-fjvdie6
-    note: Architecture D-50. Measured 2026-09-13 - 202 records carry both stores and 94 disagree;
-      on basicly-17nu the heading reads `todo` while the field holds real criteria. Read rather
-      than scripted, because picking a store loses the other's content
+    note: 'The migratable set is done and 36 open records carrying both stores are listed on
+      basicly-zrkyizs, untouched. Why a script cannot finish it is now measured rather than
+      asserted: two normalisations written the same day disagree on how many of the 36 differ
+      in content - joining the heading entries with a space says 22, rendering them as bullets
+      says 36 - so the answer depends on a formatting choice the comparison itself makes'
   - name: Both verification and validation fields required at the definition of ready
     status: designed
     record: basicly-zt85dgy
@@ -341,6 +345,56 @@ sections:
     note: The unpriced half of D-46. Every run in basicly-8724lqq began seconds after its
       predecessor, so the cold arm of that experiment is missing and the release rule rests on
       an argument rather than a number
+- name: The standalone tracker kit
+  capabilities:
+  - name: A writer appends to its own shard, so two branches touch no shared path
+    status: shipped
+    note: 'Measured on GitHub 2026-09-17 rather than argued from a thread, on a throwaway
+      private repository with the identical `merge=union` attribute on both bases. One shared
+      log: the pull request reports `mergeable=CONFLICTING`, `state=DIRTY`, while the same
+      history merges clean under a local git. One file per writer: `MERGEABLE`, `CLEAN`. The
+      conflicting arm is the positive control and it fired'
+  - name: Shards are folded without anyone remembering a command
+    status: shipped
+    note: The engine folds them at the seam that commits tracker state, and a consumer's
+      `post-merge` hook folds them after a merge or a pull - measured to fire on both a
+      fast-forward and a no-fast-forward merge. The hook runs only when the ledger is the sole
+      uncommitted change, because the first version rewrote the tree on every pull
+  - name: A repository leaving another tracker imports its backlog
+    status: shipped
+    note: '`basicly-tracker import` keeps ids, comments and dependency edges; `--dry-run`
+      reports the same plan by the same code path rather than a second estimate, and a re-run
+      appends nothing. The README claimed `init` did this and it never had'
+  - name: A definition-of-ready gate a consumer can call
+    status: shipped
+    note: '`dor` exits non-zero on a record with no trigger, acceptance criteria or
+      requirements, and names how to state what is missing. `ready` is deliberately not the
+      gate: 314 of 342 open records here owe a trigger, so a filtering ready set would collapse
+      the ready count from 275 and stall the loop'
+  - name: A page a human can open, written by the kit
+    status: shipped
+    note: 'One self-contained HTML file - no script, no linked stylesheet, no network. The
+      dependency drawing takes whole clusters up to a cap and drops an over-cap cluster rather
+      than cutting it, because a blocked record drawn with no arrow into it reads as having
+      nothing open against it. Three defects in it were found by rendering the page, not by
+      reading its markup'
+  - name: The kit boundary gated rather than asserted
+    status: shipped
+    note: '`kit-boundary` now reads both halves of SPEC.md section 4 - no engine import or
+      path, and no module that spawns a process or reaches the network. A planted import proves
+      the refusal fires and an ordinary standard-library module proves it does not over-refuse'
+  - name: Distribution from this repository with uvx, and no package index
+    status: shipped
+    note: Architecture D-51, owner decision 2026-09-18. A tag here is already the release
+      boundary, so a consumer pinning a git ref pins what was gated; a second channel would be
+      a second place a version can be current
+  - name: Validated by a consumer who is not its author
+    status: researching
+    record: basicly-lddx5vr
+    note: '**Every validation on the rows above is the author''s own, against fixtures the
+      author wrote.** Each was run from a built wheel in a repository with no `.basicly/core`
+      present, which is the right shape, but nobody outside has installed it. The owner is
+      trialling it on other projects and this row stays open until that reports'
 - name: The work graph
   capabilities:
   - name: Issues, dependencies, gate results, checkpoints and evidence in a tracked graph
