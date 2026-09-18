@@ -6,6 +6,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**The markdown basicly generates now passes markdownlint's default rules, and it did not.**
+A canary repository upgrading to v0.14.1 could not commit: 62 lint errors, every one of them
+in markdown this project had written into it. The cause is that we had disabled the rule
+here and never shipped the decision, so the failures were invisible on this side and
+blocking on theirs.
+
+Two defects sat under it. Three catalog sources wrote a padded table header and padded
+cells over an unpadded delimiter row, which makes the rule read the whole table as
+inconsistent. Two generators rendered an empty cell as two spaces where one is what the
+rule accepts. Turning the rule back on found a third instance immediately, in a second
+generator, which is the projected-output check doing what it was put there for.
+
+`basicly install` also said it left nothing else to run while not wiring the tracker's
+shard hook. The page now says which folding a bundled repository gets and when: the engine
+folds at the seam that commits tracker state, with a record id the commit-message gate
+accepts, which the hook cannot supply.
+
 ## v0.14.1 - 2026-09-18
 
 Delta: v0.14.0..v0.14.1
