@@ -5,13 +5,15 @@ config:
     siblings_only: true
   MD033: false
   MD041: false
-  # MD060 (table-column-style) requires every table to stay internally
-  # consistent with one pipe style; its default "any" still fires the moment a
-  # single cell in an aligned table is edited without re-padding every other
-  # pipe, and --fix will not re-pad the aligned style (basicly-jaz4). Disabled
-  # so editing a wide table no longer forces a hand re-pad; existing aligned
-  # tables stay readable and ragged edits lint clean.
-  MD060: false
+  # MD060 (table-column-style) was disabled for the reason basicly-jaz4 recorded:
+  # editing one cell of an ALIGNED table forces a hand re-pad of every other pipe
+  # and --fix will not do it. That reasoning is scoped to hand-edited, aligned
+  # tables and does not cover generated output, which is what basicly-f0s5j7o
+  # found: 62 errors in a consumer's checkout, every one in markdown this
+  # repository produced, invisible here because the rule was off. The rule is on
+  # again. The three catalog sources and the one generator that failed it are
+  # fixed; if an aligned table ever makes jaz4's pain real, normalise the
+  # delimiter row in --fix rather than turning this off a second time.
 globs:
   - "**/*.md"
 ignores:

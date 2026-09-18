@@ -19,6 +19,12 @@ _VOCABULARY_HEADER = ("State", "Means", "Evidence required to claim it")
 _GRADING_HEADINGS = frozenset({"status", "state"})
 
 _HEADER = ["Capability", "Status", "Record", "Note"]
+
+
+def _row(cells: list[str]) -> str:
+    return "|" + "|".join(f" {cell} " if cell else " " for cell in cells) + "|"
+
+
 _STATES_WITHOUT_WORK = frozenset({"shipped", "deferred"})
 _FENCE = re.compile(r"^(```|~~~)")
 
@@ -145,9 +151,9 @@ def render_status_view(root: Path) -> list[str]:
             "",
             f"## {name}",
             "",
-            f"| {' | '.join(_HEADER)} |",
-            f"| {' | '.join('---' for _ in _HEADER)} |",
-            *(f"| {' | '.join(row)} |" for row in rows),
+            _row(_HEADER),
+            _row(["---" for _ in _HEADER]),
+            *(_row(row) for row in rows),
         ])
     body.append("")
     return body

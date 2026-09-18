@@ -24,63 +24,63 @@ evidence each state requires. It is not restated here: the renderer reads that t
 
 | Capability | Status | Record | Note |
 | --- | --- | --- | --- |
-| One catalog projected to three agent families: instructions, skills, subagents, permissions | shipped |  |  |
-| Projection drift gate run by CI | shipped |  |  |
-| Path-scoped rules tier | shipped |  | Engine built; four fragments and one skill glob use it. Cost falls for two families and rises for the one that inlines |
-| Invocation axis per entry | shipped |  | Declared on skill sources; not yet on fragments |
-| Deterministic lexical routing evals with a ratcheting rank-1 floor | shipped |  |  |
+| One catalog projected to three agent families: instructions, skills, subagents, permissions | shipped | | |
+| Projection drift gate run by CI | shipped | | |
+| Path-scoped rules tier | shipped | | Engine built; four fragments and one skill glob use it. Cost falls for two families and rises for the one that inlines |
+| Invocation axis per entry | shipped | | Declared on skill sources; not yet on fragments |
+| Deterministic lexical routing evals with a ratcheting rank-1 floor | shipped | | |
 | Both skill roots written by every skills command | shipped | basicly-jt0dgi | A bare `skills-build` or `skills-check` covers every default root, and the check names them. `--root` still narrows to one; `--all-default-roots` is a deprecated no-op |
 | An eval case file per catalog entry, enforced as a structural failure | building | basicly-m4zv.3 | Model-invoked skills carry one by convention; fragments carry none |
 | Relieve the always-on baseline by scoping what is conditional | building | basicly-a3ab | Authoring work, not engine work |
-| Tutorial and how-to layer | shipped |  | The tutorial was executed end to end on a fresh repository before it was written |
+| Tutorial and how-to layer | shipped | | The tutorial was executed end to end on a fresh repository before it was written |
 | Whether an individual entry changes behaviour, and which baseline rules bind while an agent works | researching | basicly-kjc5.46 | Recall is measured; adherence is open. **The largest gap in the system** |
 | Behavioural efficacy evals with control arms, hidden checks and a safety tier | designed | basicly-imnu.13 | No arms, no hidden checks, no safety tier exist in code |
-| Cursor as a target; a native Codex scoped-rules renderer | deferred |  | For Codex there is currently no mechanism to project *to* |
+| Cursor as a target; a native Codex scoped-rules renderer | deferred | | For Codex there is currently no mechanism to project *to* |
 
 ## Gates
 
 | Capability | Status | Record | Note |
 | --- | --- | --- | --- |
-| Git hook floor across three stages | shipped |  |  |
-| Agent hooks for two families | shipped |  | Four hooks: three on claude spanning two event types, one on copilot |
-| Verify pipeline with three modes | shipped |  |  |
-| Ratchets: module size, comment density, suppression debt, corpus drift, stale citations | shipped |  | Tree growth reports rather than blocks, because it has no firing history |
-| Severity required on judged output, and a lint refusing a pre-judging reviewer bundle | shipped |  |  |
-| Rework convergence detection from the open-finding set rather than the count | shipped |  |  |
-| A release gate refusing to ship a declared capability nothing has exercised | shipped |  | Derives the inventory from the configured checks, and fails closed with no ledger at all |
-| A gate that runs the demonstration a unit declared | shipped |  | `demonstration_proof` runs it: advisory at the decompose advance, **blocking at the ship advance**. It rebuilds a pytest argv from an allowlist; a non-pytest demonstration is still admitted |
-| The plan gate running the demonstration it admits | deferred |  | Not `designed`: this is a deliberate separation, not sequenced work. The plan gate judges the field's form and `demonstration_proof` runs the command, at the decompose advance and at the ship advance. Architecture §36.4 holds the reason. No open work item proposes moving the run into the gate [measured 2026-08-16, a `plan[_ ]gate` search over every tracker record: 12 open matches, none of them proposing it, against a positive control of 11 closed matches] |
+| Git hook floor across three stages | shipped | | |
+| Agent hooks for two families | shipped | | Four hooks: three on claude spanning two event types, one on copilot |
+| Verify pipeline with three modes | shipped | | |
+| Ratchets: module size, comment density, suppression debt, corpus drift, stale citations | shipped | | Tree growth reports rather than blocks, because it has no firing history |
+| Severity required on judged output, and a lint refusing a pre-judging reviewer bundle | shipped | | |
+| Rework convergence detection from the open-finding set rather than the count | shipped | | |
+| A release gate refusing to ship a declared capability nothing has exercised | shipped | | Derives the inventory from the configured checks, and fails closed with no ledger at all |
+| A gate that runs the demonstration a unit declared | shipped | | `demonstration_proof` runs it: advisory at the decompose advance, **blocking at the ship advance**. It rebuilds a pytest argv from an allowlist; a non-pytest demonstration is still admitted |
+| The plan gate running the demonstration it admits | deferred | | Not `designed`: this is a deliberate separation, not sequenced work. The plan gate judges the field's form and `demonstration_proof` runs the command, at the decompose advance and at the ship advance. Architecture §36.4 holds the reason. No open work item proposes moving the run into the gate [measured 2026-08-16, a `plan[_ ]gate` search over every tracker record: 12 open matches, none of them proposing it, against a positive control of 11 closed matches] |
 | Every gate classified by type | building | basicly-dho6cc | The gates the engine names by constant are typed; the rest are classified in prose because they have nothing to key on |
 | Enforcement at the tool-call boundary, not only at the commit boundary | designed | basicly-q9aa4q | Engine work before it is catalog work: the host event vocabulary is barely mapped |
 | `basicly install` reporting the capability tier it actually delivered | building | basicly-imnu.3 | On a host with no plugin tier the projection degrades to advice, and we say so nowhere |
-| A check that code citations of `architecture §N` resolve | shipped |  | `.scripts/check_code_citations.py`, `code-citations` in `basicly verify`: 377 citations in 101 modules, 161 resolve to a heading, 216 unresolved and frozen so the count may only fall |
+| A check that code citations of `architecture §N` resolve | shipped | | `.scripts/check_code_citations.py`, `code-citations` in `basicly verify`: 377 citations in 101 modules, 161 resolve to a heading, 216 unresolved and frozen so the count may only fall |
 | A typed event vocabulary: `note` for prose, first-class kinds for machine state | partial | basicly-vkh0.39 | **Ten of the eighteen kinds exist and one of the three new ones now has a reader.** `artifact` is the live transport for a handoff artifact: `tracker.read_artifacts` folds it and `artifact_record.recorded` consumes it, over 10 events on this ledger [measured 2026-08-21]. `note` carries prose and only the kit's own writer records it, so the log holds none; `checkpoint` has no writer at all and folds into named state that only `snapshot.record_to_dict` reads. `comment` is a permanent alias of `note` — 2,821 of 6,273 events — and the write seam still emits it, so a marker body is still parsed as prose rather than selected by kind. The target set is **eighteen** kinds, sized by partitioning the measured population rather than by proposal — routing 2,540 `comment` rows through the thirteen first drafted left 585 of them, 23%, with nowhere to go. Architecture §32.3 carries the vocabulary, §32.3.1 the measured partition and its command, §32.3.2 the reader's alias, §32.8 the migration, and D-34 the decision including why `record` is unavailable |
-| A single definition of the closed event-kind set | shipped |  | `events.KNOWN_KINDS` is an explicit twelve-member frozenset and every sibling takes its kind from it — the ten built kinds of the eighteen, plus `comment` as the permanent alias and `edge_retracted` beside `edge` [measured 2026-08-21]. It was **six** partial definitions, not the four first recorded — `baseline.py` and `provenance.py` were missed. `baseline.py` keeps its own spelling deliberately, with the reason at the declaration. Two tests bind it, one over this repository's own log and one over every sibling's AST, both proven against five mutations. Architecture §32.8 |
-| A `unknown_kinds` signal that separates delegation from corruption | shipped |  | `classify_kind` answers applied, delegated or unknown, `DELEGATED_KINDS` names the folding function per kind, and `fsck` warns only on the third case — moving 1,015 events, 18.09% of the log, out of the false-unknown population. The closed set is checked to be exactly applied plus delegated, and disjoint. Architecture §32.8 |
-| The owned tracker as the only store | shipped |  | The external binary is removed: no `br.py`, every write goes through the engine seam into `.basicly/ledger/`, and `ledger-fsck` gates the log on every commit. Architecture §32 |
-| A mermaid render check on every committed block | shipped |  | `.scripts/check_mermaid.py` renders every block through `render_mermaid.mjs` (mermaid pinned) and runs as the `mermaid` verify check |
+| A single definition of the closed event-kind set | shipped | | `events.KNOWN_KINDS` is an explicit twelve-member frozenset and every sibling takes its kind from it — the ten built kinds of the eighteen, plus `comment` as the permanent alias and `edge_retracted` beside `edge` [measured 2026-08-21]. It was **six** partial definitions, not the four first recorded — `baseline.py` and `provenance.py` were missed. `baseline.py` keeps its own spelling deliberately, with the reason at the declaration. Two tests bind it, one over this repository's own log and one over every sibling's AST, both proven against five mutations. Architecture §32.8 |
+| A `unknown_kinds` signal that separates delegation from corruption | shipped | | `classify_kind` answers applied, delegated or unknown, `DELEGATED_KINDS` names the folding function per kind, and `fsck` warns only on the third case — moving 1,015 events, 18.09% of the log, out of the false-unknown population. The closed set is checked to be exactly applied plus delegated, and disjoint. Architecture §32.8 |
+| The owned tracker as the only store | shipped | | The external binary is removed: no `br.py`, every write goes through the engine seam into `.basicly/ledger/`, and `ledger-fsck` gates the log on every commit. Architecture §32 |
+| A mermaid render check on every committed block | shipped | | `.scripts/check_mermaid.py` renders every block through `render_mermaid.mjs` (mermaid pinned) and runs as the `mermaid` verify check |
 
 ## The loop
 
 | Capability | Status | Record | Note |
 | --- | --- | --- | --- |
-| Single-track loop driven identically by any supported agent | shipped |  |  |
-| Worktree isolation per unit of work | shipped |  |  |
-| Parallel lanes: supervisor, lane mini-loop, serial landing | shipped |  |  |
-| Autonomy grants with a spend ceiling, decision queue, confined decider | shipped |  | Two of the five decision kinds are delegable: `needs-input` and `escalation` |
-| Release automation up to the annotated tag | shipped |  |  |
-| Scope sized by the material a lane actually reads | shipped |  |  |
-| Measured context occupancy recorded beside the forecast on every dispatch | shipped |  |  |
-| VALIDATE as a rung with its own gate, a validator plus a reviewer per lens | shipped |  |  |
-| Hold and Kill as writes an operator's answer actually carries out | shipped |  |  |
-| A named role per judgment step | shipped |  | All seven reachable; **the declared tier is inert at spawn**, and no supervised pass has yet recorded a role on an argv |
-| RETROSPECTIVE on a computed special cause | shipped |  |  |
-| An improvement controller driving a codebase property to a set point | shipped |  | Has run live and filed one issue; manual-dispatch caller only, by decision |
+| Single-track loop driven identically by any supported agent | shipped | | |
+| Worktree isolation per unit of work | shipped | | |
+| Parallel lanes: supervisor, lane mini-loop, serial landing | shipped | | |
+| Autonomy grants with a spend ceiling, decision queue, confined decider | shipped | | Two of the five decision kinds are delegable: `needs-input` and `escalation` |
+| Release automation up to the annotated tag | shipped | | |
+| Scope sized by the material a lane actually reads | shipped | | |
+| Measured context occupancy recorded beside the forecast on every dispatch | shipped | | |
+| VALIDATE as a rung with its own gate, a validator plus a reviewer per lens | shipped | | |
+| Hold and Kill as writes an operator's answer actually carries out | shipped | | |
+| A named role per judgment step | shipped | | All seven reachable; **the declared tier is inert at spawn**, and no supervised pass has yet recorded a role on an argv |
+| RETROSPECTIVE on a computed special cause | shipped | | |
+| An improvement controller driving a codebase property to a set point | shipped | | Has run live and filed one issue; manual-dispatch caller only, by decision |
 | A schema-validated handoff artifact at each state boundary | building | basicly-mmmrqd | Three of eight kinds have a producer, two of those a consumer. The rest refuse nothing, and four of those - `classification`, `change-shape`, `verification-evidence` and `validation-transcript` - are tracked by no work item. Architecture §33 carries the per-kind measurement |
-| Tier injection on claude, so a declared tier reaches the spawn | shipped |  | Measured on three spawn paths 2026-09-16, each read off the model the run actually used rather than the input it was given. `claude -p` here spawned `validator` (medium) and the result object carried `claude-sonnet-5` beside the opus lead. An in-session background subagent, `tester` (low), ran on `claude-haiku-4-5` across all 7 of its assistant messages. A `-p` spawn in a repository with no `.basicly/core` at all ran `scribe` (low) on `claude-haiku-4-5` for 0.10 usd. The projector emits `tier:` into both agent roots, `basicly install` and `basicly-tier init` both wire the hook, and uninstall removes it while leaving an unrelated `Agent` hook alone. Architecture section 17 carries the mechanism and D-09 the refusal that shapes it |
+| Tier injection on claude, so a declared tier reaches the spawn | shipped | | Measured on three spawn paths 2026-09-16, each read off the model the run actually used rather than the input it was given. `claude -p` here spawned `validator` (medium) and the result object carried `claude-sonnet-5` beside the opus lead. An in-session background subagent, `tester` (low), ran on `claude-haiku-4-5` across all 7 of its assistant messages. A `-p` spawn in a repository with no `.basicly/core` at all ran `scribe` (low) on `claude-haiku-4-5` for 0.10 usd. The projector emits `tier:` into both agent roots, `basicly install` and `basicly-tier init` both wire the hook, and uninstall removes it while leaving an unrelated `Agent` hook alone. Architecture section 17 carries the mechanism and D-09 the refusal that shapes it |
 | Tier injection on copilot | building | basicly-a3yi | Inert by construction rather than by defect - `install_hook.CANNOT_INTERCEPT` names that host, so nothing there reads the `tier:` the projector now writes into `.github/agents/<slug>.agent.md`. basicly-a3yi was re-scoped by the owner on 2026-07-31 to require claude **and** copilot, so it stays open on this half. The route is per-subagent selection in config rather than a hook, which basicly-u2hl.41 owns. Two facts recorded 2026-09-16: a paid probe there was confounded, because `tier: high` and the configured default are both `claude-opus-5`, and neither probe spawned a subagent at all. When it is worked, `~/.copilot/session-store.db` table `assistant_usage_events` reads the model per turn for free, and the test must use a tier whose model differs from the default |
 | Per-model spend and wall-clock forecast enforced at pass admission | building | basicly-u6jq.3 | The current forecast models working set, not turn count, and that is now measured rather than suspected |
-| A supervised multi-lane run with zero human interventions caused by an engine defect | building | basicly-zq9i2m |  |
+| A supervised multi-lane run with zero human interventions caused by an engine defect | building | basicly-zq9i2m | |
 | The judged-output contract: a reviewer structurally incapable of seeing the producer's conclusion, a review base recorded before dispatch, re-review scoped to the fix range, late rounds escalating a tier | designed | basicly-a4q3.11 | **Deterministic engine code, not a persona**, which is why it survived the routing landing |
 | Cost per landed unit | researching | basicly-884gj4 | The instrument the tier claims rest on |
 
@@ -88,20 +88,20 @@ evidence each state requires. It is not restated here: the renderer reads that t
 
 | Capability | Status | Record | Note |
 | --- | --- | --- | --- |
-| A published snapshot contract a foreign harness can conform to | shipped |  | `.basicly/core/schemas/board-snapshot.schema.json`, deliberately not strict, so a consumer meeting an undeclared key counts and reports it rather than erroring. Carries no figure it cannot re-derive |
-| A file-only producer that folds the log once and spawns nothing | shipped |  | Four modules — bounds, row reducers, `.basicly/usage/` sections, assembly — with the fold count and the subprocess count both pinned by spies, because "reads only files" is a claim one convenient import breaks |
-| Omit-never-estimate, so an absent source is absent rather than zero | shipped |  | The schema has no field marking a value as estimated, so a guess would render identically to a billed figure |
-| A command that emits a snapshot | shipped |  | `basicly board --out <page>` writes `board-snapshot.json` beside the page, and `basicly board serve` serves it at `/snapshot.json` |
-| A rendered page a human can open | shipped |  | `board_render.py` and `.basicly/core/templates/board/board_page.html.j2`; `basicly board --out` writes it |
-| A conformance kit so another project can adopt the board | designed | basicly-rn0o.4 |  |
-| Live modes — a snapshot on the supervisor tick, and a read-only wall view | shipped |  | `basicly board serve` refreshes on the supervisor 15-second tick in wall mode and on `--refresh` otherwise, by its own help text |
+| A published snapshot contract a foreign harness can conform to | shipped | | `.basicly/core/schemas/board-snapshot.schema.json`, deliberately not strict, so a consumer meeting an undeclared key counts and reports it rather than erroring. Carries no figure it cannot re-derive |
+| A file-only producer that folds the log once and spawns nothing | shipped | | Four modules — bounds, row reducers, `.basicly/usage/` sections, assembly — with the fold count and the subprocess count both pinned by spies, because "reads only files" is a claim one convenient import breaks |
+| Omit-never-estimate, so an absent source is absent rather than zero | shipped | | The schema has no field marking a value as estimated, so a guess would render identically to a billed figure |
+| A command that emits a snapshot | shipped | | `basicly board --out <page>` writes `board-snapshot.json` beside the page, and `basicly board serve` serves it at `/snapshot.json` |
+| A rendered page a human can open | shipped | | `board_render.py` and `.basicly/core/templates/board/board_page.html.j2`; `basicly board --out` writes it |
+| A conformance kit so another project can adopt the board | designed | basicly-rn0o.4 | |
+| Live modes — a snapshot on the supervisor tick, and a read-only wall view | shipped | | `basicly board serve` refreshes on the supervisor 15-second tick in wall mode and on `--refresh` otherwise, by its own help text |
 
 ## The software factory
 
 | Capability | Status | Record | Note |
 | --- | --- | --- | --- |
-| Requirements as a typed field, so validation has a standard to judge against | shipped |  | Architecture D-50 as amended 2026-09-18. `shaping.py` in the kit computes what a record owes and `dor` refuses one that cannot be verified against. The field was unwritable until basicly-77tjvmk: it was in neither CREATE_FIELD_FLAGS nor UPDATE_FIELD_FLAGS, which is why 0 of 1,367 created events carried it. Both producers now mint the `shaped_under` marker, and the requirement refuses only a record minted under it - measured after: reported on 341 open records, refused on 0 |
-| Acceptance criteria read from one store rather than two | shipped |  | `shaping.owed` reads the typed field alone on an open record and the heading only on a closed one, which is evidence. 170 open records carrying the heading alone were migrated verbatim by corrective append under section 32.8, reconciled against a 172-line ledger delta; heading-only is now 0 and the open records owing acceptance criteria fell from 222 to 52, which carry none in either store |
+| Requirements as a typed field, so validation has a standard to judge against | shipped | | Architecture D-50 as amended 2026-09-18. `shaping.py` in the kit computes what a record owes and `dor` refuses one that cannot be verified against. The field was unwritable until basicly-77tjvmk: it was in neither CREATE_FIELD_FLAGS nor UPDATE_FIELD_FLAGS, which is why 0 of 1,367 created events carried it. Both producers now mint the `shaped_under` marker, and the requirement refuses only a record minted under it - measured after: reported on 341 open records, refused on 0 |
+| Acceptance criteria read from one store rather than two | shipped | | `shaping.owed` reads the typed field alone on an open record and the heading only on a closed one, which is evidence. 170 open records carrying the heading alone were migrated verbatim by corrective append under section 32.8, reconciled against a 172-line ledger delta; heading-only is now 0 and the open records owing acceptance criteria fell from 222 to 52, which carry none in either store |
 | The two acceptance stores reconciled where they disagree | partial | basicly-fjvdie6 | The migratable set is done and 36 open records carrying both stores are listed on basicly-zrkyizs, untouched. Why a script cannot finish it is now measured rather than asserted: two normalisations written the same day disagree on how many of the 36 differ in content - joining the heading entries with a space says 22, rendering them as bullets says 36 - so the answer depends on a formatting choice the comparison itself makes |
 | Both verification and validation fields required at the definition of ready | designed | basicly-zt85dgy | Architecture section 32.11 and D-50. Every open record owes both the day it lands, and `invest.owed` already computes that list |
 | A seat: one session held open across tasks and released at the cache window | designed | basicly-zi8nv3a | Architecture section 31A.2 and D-46. Measured 2026-09-13 on five live dispatches (basicly-8724lqq) - a warm session cost 0.20x and 0.19x of a fresh one on two replications at the same token count, because the cache write is avoided rather than tokens saved. Two turns per task, and the cold resume is unpriced |
@@ -116,32 +116,32 @@ evidence each state requires. It is not restated here: the renderer reads that t
 
 | Capability | Status | Record | Note |
 | --- | --- | --- | --- |
-| A writer appends to its own shard, so two branches touch no shared path | shipped |  | Measured on GitHub 2026-09-17 rather than argued from a thread, on a throwaway private repository with the identical `merge=union` attribute on both bases. One shared log: the pull request reports `mergeable=CONFLICTING`, `state=DIRTY`, while the same history merges clean under a local git. One file per writer: `MERGEABLE`, `CLEAN`. The conflicting arm is the positive control and it fired. **The measurement covers two branches, not two clones on one branch**: the shard name comes from `.git/HEAD`, so same-branch appends meet in one file and the `merge=union` attribute is what carries them - which is why the install must declare it on the shard glob too |
-| Shards are folded without anyone remembering a command | shipped |  | The engine folds them at the seam that commits tracker state, and a consumer's `post-merge` hook folds them after a merge or a pull - measured to fire on both a fast-forward and a no-fast-forward merge. The hook runs only when the ledger is the sole uncommitted change, because the first version rewrote the tree on every pull |
-| A repository leaving another tracker imports its backlog | shipped |  | `basicly-tracker import` keeps ids, comments and dependency edges; `--dry-run` reports the same plan by the same code path rather than a second estimate, and a re-run appends nothing. The README claimed `init` did this and it never had |
-| A definition-of-ready gate a consumer can call | shipped |  | `dor` exits non-zero on a record with no trigger, acceptance criteria or requirements, and names how to state what is missing. `ready` is deliberately not the gate: 314 of 342 open records here owe a trigger, so a filtering ready set would collapse the ready count from 275 and stall the loop |
-| A page a human can open, written by the kit | shipped |  | One self-contained HTML file - no script, no linked stylesheet, no network. The dependency drawing takes whole clusters up to a cap and drops an over-cap cluster rather than cutting it, because a blocked record drawn with no arrow into it reads as having nothing open against it. Three defects in it were found by rendering the page, not by reading its markup |
-| The kit boundary gated rather than asserted | shipped |  | `kit-boundary` now reads both halves of SPEC.md section 4 - no engine import or path, and no module that spawns a process or reaches the network. A planted import proves the refusal fires and an ordinary standard-library module proves it does not over-refuse |
-| Distribution from this repository with uvx, and no package index | shipped |  | Architecture D-51, owner decision 2026-09-18. A tag here is already the release boundary, so a consumer pinning a git ref pins what was gated; a second channel would be a second place a version can be current |
+| A writer appends to its own shard, so two branches touch no shared path | shipped | | Measured on GitHub 2026-09-17 rather than argued from a thread, on a throwaway private repository with the identical `merge=union` attribute on both bases. One shared log: the pull request reports `mergeable=CONFLICTING`, `state=DIRTY`, while the same history merges clean under a local git. One file per writer: `MERGEABLE`, `CLEAN`. The conflicting arm is the positive control and it fired. **The measurement covers two branches, not two clones on one branch**: the shard name comes from `.git/HEAD`, so same-branch appends meet in one file and the `merge=union` attribute is what carries them - which is why the install must declare it on the shard glob too |
+| Shards are folded without anyone remembering a command | shipped | | The engine folds them at the seam that commits tracker state, and a consumer's `post-merge` hook folds them after a merge or a pull - measured to fire on both a fast-forward and a no-fast-forward merge. The hook runs only when the ledger is the sole uncommitted change, because the first version rewrote the tree on every pull |
+| A repository leaving another tracker imports its backlog | shipped | | `basicly-tracker import` keeps ids, comments and dependency edges; `--dry-run` reports the same plan by the same code path rather than a second estimate, and a re-run appends nothing. The README claimed `init` did this and it never had |
+| A definition-of-ready gate a consumer can call | shipped | | `dor` exits non-zero on a record with no trigger, acceptance criteria or requirements, and names how to state what is missing. `ready` is deliberately not the gate: 314 of 342 open records here owe a trigger, so a filtering ready set would collapse the ready count from 275 and stall the loop |
+| A page a human can open, written by the kit | shipped | | One self-contained HTML file - no script, no linked stylesheet, no network. The dependency drawing takes whole clusters up to a cap and drops an over-cap cluster rather than cutting it, because a blocked record drawn with no arrow into it reads as having nothing open against it. Three defects in it were found by rendering the page, not by reading its markup |
+| The kit boundary gated rather than asserted | shipped | | `kit-boundary` now reads both halves of SPEC.md section 4 - no engine import or path, and no module that spawns a process or reaches the network. A planted import proves the refusal fires and an ordinary standard-library module proves it does not over-refuse |
+| Distribution from this repository with uvx, and no package index | shipped | | Architecture D-51, owner decision 2026-09-18. A tag here is already the release boundary, so a consumer pinning a git ref pins what was gated; a second channel would be a second place a version can be current |
 | Validated by a consumer who is not its author | researching | basicly-lddx5vr | **Every validation on the rows above is the author's own, against fixtures the author wrote.** Each was run from a built wheel in a repository with no `.basicly/core` present, which is the right shape, but nobody outside has installed it. The owner is trialling it on other projects and this row stays open until that reports |
 
 ## The work graph
 
 | Capability | Status | Record | Note |
 | --- | --- | --- | --- |
-| Issues, dependencies, gate results, checkpoints and evidence in a tracked graph | shipped |  |  |
-| Phase derived from tracker state, so resume is a read rather than a replay | shipped |  |  |
-| Atomic publish of the shared export, and a store error charged to the store rather than to the lane's rework budget | shipped |  |  |
-| The scheduler score and rank recorded behind each dispatch | shipped |  |  |
-| A pure, age-free ranking function owned in-process | shipped |  |  |
-| Harness comment markers native to the owned store | shipped |  | Landed ahead of the steps before it, which is why the differential must run on dual |
-| A repeatable ledger import a fresh consumer can run | shipped |  | Refuses a post-flip ledger |
-| A seam-routed surface for a human tracker write, so both stores move together | shipped |  | Closes the last bypass route the differential can see |
+| Issues, dependencies, gate results, checkpoints and evidence in a tracked graph | shipped | | |
+| Phase derived from tracker state, so resume is a read rather than a replay | shipped | | |
+| Atomic publish of the shared export, and a store error charged to the store rather than to the lane's rework budget | shipped | | |
+| The scheduler score and rank recorded behind each dispatch | shipped | | |
+| A pure, age-free ranking function owned in-process | shipped | | |
+| Harness comment markers native to the owned store | shipped | | Landed ahead of the steps before it, which is why the differential must run on dual |
+| A repeatable ledger import a fresh consumer can run | shipped | | Refuses a post-flip ledger |
+| A seam-routed surface for a human tracker write, so both stores move together | shipped | | Closes the last bypass route the differential can see |
 | No committed artifact carries a host path, username or hostname | partial | basicly-vkh0.44 | The path half is shipped. **The identity half covers the running committer only, and both stores carry a second person's** [measured 2026-08-17: the export holds one on 83 of 924 records and an address on 56; the owned log holds one on 211 of 5,616 lines and an address on 56, and all 263 identity-carrying events carry the import's own marker against a positive control of zero live writes]. The pre-commit floor is green over both, correctly, because it builds its rule from the running user. Architecture §32.7.1. The secret-rule mirror is kept in step by convention only |
-| The owned append-only event log as the source of truth | shipped |  | The flip has happened [measured 2026-08-20: `.beads/` is absent, no engine module spawns the external binary, and `basicly.toml` declares one store]. What remains is surface cleanup rather than cutover: the `br`-shaped argv vocabulary is still the write seam's input language, which is why `mirror.py` translates it |
-| A consistency check and rebuild, so "the log is the truth" is checkable | shipped |  | The "reached by nothing" note is **withdrawn as false** [measured 2026-08-20: `ledger-fsck` is a `[[verify.checks]]` entry declared in `basicly.d/basicly-t10ipy.toml` and runs on every `verify --mode full`, reporting 6,271 events over 1,022 records]. `rebuild` is still reached by tests only, which is the honest remainder |
+| The owned append-only event log as the source of truth | shipped | | The flip has happened [measured 2026-08-20: `.beads/` is absent, no engine module spawns the external binary, and `basicly.toml` declares one store]. What remains is surface cleanup rather than cutover: the `br`-shaped argv vocabulary is still the write seam's input language, which is why `mirror.py` translates it |
+| A consistency check and rebuild, so "the log is the truth" is checkable | shipped | | The "reached by nothing" note is **withdrawn as false** [measured 2026-08-20: `ledger-fsck` is a `[[verify.checks]]` entry declared in `basicly.d/basicly-t10ipy.toml` and runs on every `verify --mode full`, reporting 6,271 events over 1,022 records]. `rebuild` is still reached by tests only, which is the honest remainder |
 | Provenance on every edge: extracted, inferred, ambiguous | partial | basicly-1ep0cp | The vocabulary collision is closed [measured 2026-08-20: 1,065 edges fold and `gating_edges` now returns all 1,065, up from 932]. The engine writes `engine` and `dual-write` into the same key this module reads as evidence strength — two axes, one name — and both are now recognised as declared provenance and counted apart in `EdgeFold.writer_labels`. What keeps this `partial` is only that `INFERRED` and `AMBIGUOUS` have still never been written by anything |
-| Cross-repo work offers as self-writes in each repository's own ledger | deferred |  | Deferred until a second repository runs the loop; today one ledger holds every record, so an offer has nowhere to be written and nothing would read it |
+| Cross-repo work offers as self-writes in each repository's own ledger | deferred | | Deferred until a second repository runs the loop; today one ledger holds every record, so an offer has nowhere to be written and nothing would read it |
 
 <!-- docs-claims:end status-view -->
 

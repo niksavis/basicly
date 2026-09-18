@@ -69,12 +69,16 @@ def _splice(text: str, name: str, body: list[str]) -> str:
     return f"{text[: begin.end()]}\n{rendered}{text[end.start() :]}"
 
 
+def _row(cells: list[str]) -> str:
+    return "|" + "|".join(f" {cell} " if cell else " " for cell in cells) + "|"
+
+
 def _table(header: list[str], rows: list[list[str]]) -> list[str]:
     return [
         "",
-        f"| {' | '.join(header)} |",
-        f"| {' | '.join('---' for _ in header)} |",
-        *(f"| {' | '.join(row)} |" for row in rows),
+        _row(header),
+        _row(["---" for _ in header]),
+        *(_row(row) for row in rows),
         "",
     ]
 

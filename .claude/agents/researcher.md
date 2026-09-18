@@ -86,7 +86,7 @@ A table, one row per claim:
 
 ```text
 | Claim | Verdict | Rung | Source | Verified at |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | copilot reports no token counts | REFUTED | 1 (our code) | copilot_store.py | 1.0.78, 2026-08-09 |
 ```
 

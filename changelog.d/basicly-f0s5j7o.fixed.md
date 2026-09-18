@@ -1,0 +1,1 @@
+- The markdown basicly generates now passes markdownlint's default rules. Three catalog sources left a table's delimiter row unpadded under padded cells, and two generators wrote an empty cell as two spaces; both make MD060 read the table as inconsistent. This repository had disabled that rule for itself and never shipped the decision.
