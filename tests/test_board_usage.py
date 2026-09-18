@@ -50,8 +50,9 @@ def _dispatch(**overrides: object) -> dict:
 def board_repo(work_repo: Path) -> Path:
     ledger = owned_store.ledger_dir(work_repo)
     ledger.mkdir(parents=True, exist_ok=True)
-    for stale in ledger.glob("events-*.jsonl"):
-        stale.unlink()
+    for pattern in ("events-*.jsonl", "pending-*.jsonl"):
+        for stale in ledger.glob(pattern):
+            stale.unlink()
     shutil.copy2(FIXTURE_LEDGER, ledger / "events-0001.jsonl")
     return work_repo
 

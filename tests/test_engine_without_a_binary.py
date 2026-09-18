@@ -33,8 +33,9 @@ CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 def flipped(work_repo: Path) -> Path:
 
     assert owned_store.tracker_mode(work_repo) == owned_store.MODE_OWNED
-    for log in owned_store.ledger_dir(work_repo).glob("events-*.jsonl"):
-        log.unlink()
+    for pattern in ("events-*.jsonl", "pending-*.jsonl"):
+        for log in owned_store.ledger_dir(work_repo).glob(pattern):
+            log.unlink()
     kit = owned_store.kit(work_repo)
     kit.events.append(
         owned_store.ledger_dir(work_repo),

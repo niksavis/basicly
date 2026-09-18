@@ -83,8 +83,9 @@ def _run_records(work_repo: Path, records: dict) -> None:
     (usage_dir / "run-records.json").write_text(json.dumps(records), encoding="utf-8")
     ledger = work_repo / tracker_paths.LEDGER_DIR_NAME
     (ledger / tracker_paths.REDIRECT_NAME).unlink(missing_ok=True)
-    for log in ledger.glob("events-*.jsonl"):
-        log.write_text("", encoding="utf-8")
+    for pattern in ("events-*.jsonl", "pending-*.jsonl"):
+        for log in ledger.glob(pattern):
+            log.write_text("", encoding="utf-8")
 
 
 def test_cli_usage_forecast_reports_the_ratio_per_paired_dispatch(work_repo: Path) -> None:
