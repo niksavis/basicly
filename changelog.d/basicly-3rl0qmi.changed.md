@@ -1,1 +1,0 @@
-- The always-on rule on positive controls now says what a control must be built from — a failure you have seen, not an assumed one — and to check the denominator moved. A consumer followed the previous wording exactly and still got a false zero, because their control was valid input and never a violation.

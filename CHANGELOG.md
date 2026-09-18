@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.15.0 - 2026-09-18
+
+Delta: v0.14.2..v0.15.0
+
 **A merge now folds the writer shard it brought in, and it did not.** A writer appends to
 `pending-<branch>.jsonl` so two branches never edit one file, but every reader reads the
 trunk log. Merging a branch therefore landed events that were invisible until the next
@@ -36,6 +40,24 @@ The `catalog-lint` refusal gained a warning and a sentence, and its lines reorde
 And the page claimed the first commit in a fresh repo is refused for naming no bead id;
 it is not — the gate passes while the ledger holds no records, and refuses from the
 first record onward.
+
+### Added
+
+- `basicly install --dry-run` names every path the run would create, overwrite or delete, and every hand-edited core file it would keep, then writes nothing and exits 0. On a repository that already has a core catalog it runs each projection's check verb, so it also names which build steps would rewrite a projected file. (basicly-jgim0r0)
+
+- `basicly install` wires a `post-merge` hook that folds the writer shard a merge brought in and commits it with a record id the commit-msg gate accepts. It resolves the engine at run time — a `basicly` on `PATH`, else the pinned `uvx` form — so a cache prune cannot break it. It folds only when the ledger is the sole uncommitted change. (basicly-z9s4iin)
+
+### Changed
+
+- The always-on rule on positive controls now says what a control must be built from — a failure you have seen, not an assumed one — and to check the denominator moved. A consumer followed the previous wording exactly and still got a false zero, because their control was valid input and never a violation. (basicly-3rl0qmi)
+
+- A patch release no longer costs a tutorial re-record. The two transcript lines that named a version now name the tool alone, and `basicly release` re-pins `docs/tutorial/*.md` with the rest of the docs, so only the one sentence that makes a claim about the released version is left for a human to edit. (basicly-8y8rxv4)
+
+### Fixed
+
+- `basicly install` no longer advises excluding the managed core from a linter whose config already excludes it. It tested only whether the config file existed, never what it contained, so a repository that had taken the advice was told to take it again — in the same tail of the output where a re-pin of a tracked CI workflow is announced. (basicly-7407m52)
+
+- `basicly release` now refuses a stale tutorial transcript in its preflight, where `--dry-run` shows it, instead of rewriting the version, the pins, the projections and the changelog and then meeting the refusal at the commit gate. (basicly-oror9os)
 
 ## v0.14.2 - 2026-09-18
 

@@ -1,1 +1,0 @@
-- `basicly release` now refuses a stale tutorial transcript in its preflight, where `--dry-run` shows it, instead of rewriting the version, the pins, the projections and the changelog and then meeting the refusal at the commit gate.

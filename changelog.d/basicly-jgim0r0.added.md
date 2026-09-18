@@ -1,1 +1,0 @@
-- `basicly install --dry-run` names every path the run would create, overwrite or delete, and every hand-edited core file it would keep, then writes nothing and exits 0. On a repository that already has a core catalog it runs each projection's check verb, so it also names which build steps would rewrite a projected file.

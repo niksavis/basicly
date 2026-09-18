@@ -1,1 +1,0 @@
-- `basicly install` wires a `post-merge` hook that folds the writer shard a merge brought in and commits it with a record id the commit-msg gate accepts. It resolves the engine at run time — a `basicly` on `PATH`, else the pinned `uvx` form — so a cache prune cannot break it. It folds only when the ledger is the sole uncommitted change.

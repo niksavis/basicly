@@ -1,1 +1,0 @@
-- `basicly install` no longer advises excluding the managed core from a linter whose config already excludes it. It tested only whether the config file existed, never what it contained, so a repository that had taken the advice was told to take it again — in the same tail of the output where a re-pin of a tracked CI workflow is announced.

@@ -4,7 +4,7 @@ This is a walkthrough, not a reference. Follow it top to bottom on a **scratch
 git repo** and you will end with one unit of work filed, built in its own
 worktree, merged, and closed by the harness — one sitting, no agent spend.
 Every command and every quoted output below was executed against a fresh repo on
-basicly 0.14.2 in a real terminal, with that repo's generated bead-id prefix swapped for
+basicly 0.15.0 in a real terminal, with that repo's generated bead-id prefix swapped for
 `myrepo`, absolute paths written as `/path/to/...`, and `...` marking an elided line.
 
 When you want to look something up rather than learn the shape, stop here and
@@ -33,7 +33,7 @@ Every command below is written as bare `basicly`. Run it as the pinned form so
 you always get the version you chose:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.14.2 basicly <args>
+uvx --from git+https://github.com/niksavis/basicly@v0.15.0 basicly <args>
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -47,7 +47,7 @@ uvx --from git+https://github.com/niksavis/basicly@v0.14.2 basicly <args>
 From the repo root:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.14.2 basicly install
+uvx --from git+https://github.com/niksavis/basicly@v0.15.0 basicly install
 ```
 
 It ends with:
@@ -86,30 +86,23 @@ next step is about.
 
 ## Step 2 — make the first commit possible
 
-The gates are active from now on, including on the install output itself. Two
-of them refuse a fresh repo, and both are one line to fix. Do it now rather
-than discovering it mid-commit.
-
-**The hook scripts leave `__pycache__` behind.** They are Python, they run from
-`.basicly/core/hooks/`, and the `.gitignore` basicly writes covers only what
-basicly itself generates. Commit the `.pyc` files by accident and every later commit
-fails with `pre-commit-script … files were modified by this hook`. Add the line
-yourself:
-
-```sh
-printf '__pycache__/\n' >> .gitignore
-```
+The gates are active from now on, including on the install output itself. One
+of them refuses a fresh repo, and it is one line to fix. Do it now rather than
+discovering it mid-commit.
 
 **`catalog-lint` wants a routing floor.** The catalog now sitting in your repo
 is measured for how often the right skill ranks first, and the hook refuses to
 guess what number you consider acceptable:
 
 ```text
+catalog lint: warning: skill listing is 2092 tokens against a 2000-token budget (1% of the 200000-token claude window a consumer gets), from 23 model-invoked entries. The host drops descriptions least-invoked first, so the entries this overrun silences are the ones already hardest to reach. Retire a dead skill or move it to user-invoked.
 catalog lint: warning: .basicly/core/skills/harness-loop/skill.yaml: SKILL.md body is 536 lines; keep it under ~500 (move detail into references/)
-catalog lint: routing: rank-1 rate 41/46 = 89.1% (no floor declared)
 catalog lint: FAILED
-  no rank-1 floor declared — set `[catalog] rank1_floor` in basicly.toml below the measured baseline (currently 89.1%)
+  no rank-1 floor declared — set `[catalog] rank1_floor` in basicly.toml below the measured baseline (currently 89.1%). It is a fraction between 0 and 1, not a percentage: write 0.87, not 89.1
+catalog lint: routing: rank-1 rate 41/46 = 89.1% (no floor declared)
 ```
+
+The two warnings do not fail the commit; only the missing floor does.
 
 Take the number it just measured **for you** and set the floor a little under it, in
 `basicly.toml` — the rate depends on the catalog your version shipped, so a floor copied
@@ -125,14 +118,15 @@ existing one drops the rate and fails the commit.
 
 ## Step 3 — file the bead you are about to work on
 
-Nothing commits in this repo without a bead id — the `tracker-commit-msg` hook
-refuses it, install output included:
+Commit the install output now and it lands: the `tracker-commit-msg` hook passes
+while the ledger holds no records, because there is no id to reference yet. From
+the first record onward it refuses every commit that names none:
 
 ```text
 ERROR: Commit message does not reference a tracked issue id.
 ```
 
-So file one before you commit anything. A bead has to pass the
+So file a bead before the commit after this one. A bead has to pass the
 **Definition of Ready** gate before the loop will build it, and you do not have
 to guess what that means — ask for the shape:
 
