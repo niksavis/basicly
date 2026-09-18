@@ -1,1 +1,0 @@
-- `basicly-tracker import DIR EXPORT` brings an existing backlog across, keeping ids, comments and dependency edges. `--dry-run` reports the same plan by the same code path and writes nothing, a re-run appends nothing, and a record the importer cannot name is refused and reported rather than dropped. The README previously claimed `init` did this; it never did.

@@ -1,1 +1,0 @@
-- `kit-boundary` now enforces the half of the kit's contract that was prose: a kit module importing `subprocess`, `socket`, `urllib`, `http` or any other reaching module is refused, naming what it does instead. The rule lands green on the kit as it stands, with a planted import proving the refusal fires and an ordinary stdlib module proving it does not over-refuse.

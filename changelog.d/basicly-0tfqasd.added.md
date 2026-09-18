@@ -1,1 +1,0 @@
-- `basicly-tracker board DIR --out page.html` writes one self-contained HTML page a human can open offline: the counts, the ranked ready set, what is blocked and what holds it, a bounded dependency drawing, and every record with what it still owes. No script, no linked stylesheet, no network.

@@ -1,1 +1,0 @@
-- Two always-on rules from a session retro: a change under `.basicly/core/kit/` must name where a consumer with no engine gets the capability, and a design-document sentence naming a call the code does not make is a claim rather than a plan.

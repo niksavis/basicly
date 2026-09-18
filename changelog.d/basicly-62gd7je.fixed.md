@@ -1,1 +1,0 @@
-- The engine now folds every pending writer shard into the trunk log at the seam that commits tracker state, so a landing leaves no shard behind and nobody runs `compact` by hand. `SPEC.md` §4.0 claimed this in the commit that shipped sharding without wiring it.

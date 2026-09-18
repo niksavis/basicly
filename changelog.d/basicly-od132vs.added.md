@@ -1,1 +1,0 @@
-- `basicly-tracker init` now wires a `post-merge` hook that folds pending writer shards into the trunk log and commits them, so a consumer with no engine never has to remember `compact`. It runs only when the ledger is the sole uncommitted change, honours `core.hooksPath`, merges into an existing hook, and `uninstall` removes only its own block.

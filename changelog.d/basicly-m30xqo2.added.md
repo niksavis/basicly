@@ -1,1 +1,0 @@
-- `basicly-tracker fsck DIR [--rebuild]` is a subcommand, so checking that the log is still the truth no longer requires knowing which file inside the vendored kit to run.

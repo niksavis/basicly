@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.14.0 - 2026-09-18
+
+Delta: v0.13.1..v0.14.0
+
 **A work tracker a repository can install on its own, and a measured reason to.** The
 ledger now shards per writer: each branch appends to its own file, so two branches touch no
 shared path. That matters because of something we measured rather than assumed — GitHub
@@ -34,6 +38,38 @@ blocked and what holds it, and a bounded dependency drawing — no server, no ne
 author, from a built wheel into repositories with no engine present. That is the right
 shape and it is not a consumer. Only Linux was exercised, against a stated matrix of three
 platforms. `basicly-lddx5vr` holds that open.
+
+### Added
+
+- `basicly-tracker board DIR --out page.html` writes one self-contained HTML page a human can open offline: the counts, the ranked ready set, what is blocked and what holds it, a bounded dependency drawing, and every record with what it still owes. No script, no linked stylesheet, no network. (basicly-0tfqasd)
+
+- The tracker kit carries the structure an agent verifies against: `create`, `child` and `update` take `--description`, `--acceptance` and `--requirements` and report what a record still owes, and `basicly-tracker dor DIR RECORD` exits non-zero on one that cannot be verified against. A `## Acceptance Criteria` or `## Requirements` section still counts. (basicly-b84ql8z)
+
+- `basicly-tracker import DIR EXPORT` brings an existing backlog across, keeping ids, comments and dependency edges. `--dry-run` reports the same plan by the same code path and writes nothing, a re-run appends nothing, and a record the importer cannot name is refused and reported rather than dropped. The README previously claimed `init` did this; it never did. (basicly-i98ooyo)
+
+- `basicly-tracker fsck DIR [--rebuild]` is a subcommand, so checking that the log is still the truth no longer requires knowing which file inside the vendored kit to run. (basicly-m30xqo2)
+
+- `basicly-tracker init` now wires a `post-merge` hook that folds pending writer shards into the trunk log and commits them, so a consumer with no engine never has to remember `compact`. It runs only when the ledger is the sole uncommitted change, honours `core.hooksPath`, merges into an existing hook, and `uninstall` removes only its own block. (basicly-od132vs)
+
+- The tracker ledger shards per writer: each branch appends to its own `pending-<writer>.jsonl` derived from `.git/HEAD`, so two branches touch no shared path and a forge has nothing to flag as conflicting. `basicly-tracker compact` folds a shard into the trunk log and unlinks it, `shards` reports what is outstanding, and `fsck` warns above 1000 shards and refuses above 10000. (basicly-v5zvsh1)
+
+### Changed
+
+- `dor` refuses a record for missing `requirements` only when the kit minted it under the rule; a record that predates the rule still reports the debt but is not blocked for it. All 341 open records here owed it and none could have carried it, because the write seam could not store that field until now. Trigger and acceptance criteria bind every open record either way. (basicly-5ytyenk)
+
+- The tracker kit's definition-of-ready gate reads `acceptance_criteria` and `requirements` from the typed fields alone on an open record, as D-50 decided; a heading still reads on a closed record. The engine's write seam gained both flags on `create` and `--requirements` on `update`, which it could not write at all before. (basicly-77tjvmk)
+
+- D-51 records that this repository is the distribution channel: `basicly` and every kit install from it with `uvx`, and nothing is published to a package index. (basicly-nulqucg)
+
+- Two always-on rules from a session retro: a change under `.basicly/core/kit/` must name where a consumer with no engine gets the capability, and a design-document sentence naming a call the code does not make is a claim rather than a plan. (basicly-zsq6xkz)
+
+### Fixed
+
+- `kit-boundary` now enforces the half of the kit's contract that was prose: a kit module importing `subprocess`, `socket`, `urllib`, `http` or any other reaching module is refused, naming what it does instead. The rule lands green on the kit as it stands, with a planted import proving the refusal fires and an ordinary stdlib module proving it does not over-refuse. (basicly-26sup5m)
+
+- The engine now folds every pending writer shard into the trunk log at the seam that commits tracker state, so a landing leaves no shard behind and nobody runs `compact` by hand. `SPEC.md` §4.0 claimed this in the commit that shipped sharding without wiring it. (basicly-62gd7je)
+
+- Three readers of the ledger were blind to a writer's pending shard: the `tracker-commit-msg` gate refused a commit citing an id minted since the last compaction, `scrub_ledger` skipped a shard when rewriting machine paths out, and `basicly install` reported no tracker present. The hook's glob is now bound to both kit constants by a test. (basicly-zsq6xkz)
 
 ## v0.13.1 - 2026-09-12
 

@@ -1,1 +1,0 @@
-- The tracker kit carries the structure an agent verifies against: `create`, `child` and `update` take `--description`, `--acceptance` and `--requirements` and report what a record still owes, and `basicly-tracker dor DIR RECORD` exits non-zero on one that cannot be verified against. A `## Acceptance Criteria` or `## Requirements` section still counts.
