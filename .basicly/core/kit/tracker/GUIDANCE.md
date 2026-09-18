@@ -40,16 +40,45 @@ rather than inventing a task.
 ## Write
 
 ```sh
-python3 .basicly/kit/tracker/cli.py create . --prefix <p> --title "<what>"
+python3 .basicly/kit/tracker/cli.py create . --prefix <p> --title "<what>" \
+    --description "<the trigger>" --acceptance "<how it is checked>" --requirements "<the standard>"
 python3 .basicly/kit/tracker/cli.py update . <id> --status in_progress
 python3 .basicly/kit/tracker/cli.py comment . <id> "<what you learned>"
-python3 .basicly/kit/tracker/cli.py dep . <id> --blocked-by <other-id>
+python3 .basicly/kit/tracker/cli.py dep . <id> <the-id-it-waits-on>
 python3 .basicly/kit/tracker/cli.py close . <id> --reason "<what shipped, and the evidence>"
 python3 .basicly/kit/tracker/cli.py child . <parent-id> --title "<a piece of it>"
 ```
 
 Run `cli.py <verb> --help` for the exact flags; they are checked and a wrong one is refused
 by name rather than ignored.
+
+## Shape a record before you build against it
+
+A record is **shaped** when it carries three things: a trigger in either story voice, the
+acceptance criteria a check is derived from, and the requirements validation judges the
+built thing against. Every write prints what the record still `owed`, and the gate refuses
+one that is not shaped:
+
+```sh
+python3 .basicly/kit/tracker/cli.py dor . <id>     # exit 0 ready, exit 1 with what is missing
+```
+
+Run it before you start work, not after. The three sections are what you verify and
+validate against; without them you are checking the code against your own reading of a
+title, which is the failure this tracker exists to stop.
+
+State the trigger as a situation — *"When <situation>, I want to <motivation>, so I can
+<outcome>."* — or as a persona — *"As a <persona>, I want <goal>, so that <benefit>."* A
+persona is never required: where a situation triggers the work and nobody in particular
+wants it, inventing one is the defect. A placeholder counts as absent, so pasting either
+template unfilled does not satisfy the gate.
+
+`--acceptance` and `--requirements` are the direct route. A `## Acceptance Criteria` or
+`## Requirements` section of dash-space bullets in the description counts too, so a record
+written as prose stays valid.
+
+**`ready` is not the gate.** It offers every unblocked record, shaped or not; `dor` is what
+refuses. Read `ready` to choose, then run `dor` before you build.
 
 ## How to use it well
 
@@ -61,6 +90,8 @@ by name rather than ignored.
   measurement stays true and stays attributable.
 - **Reference the id in the commit message.** That is the only link between a change and
   why it was made.
+- **Shape it as you file it.** `create` takes the three sections; adding them later costs
+  a second write and the record is unusable in between.
 - **File the thing you noticed.** A defect you found and did not file is one nobody else
   can see; `create` costs one command.
 

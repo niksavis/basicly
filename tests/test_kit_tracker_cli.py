@@ -223,7 +223,12 @@ def test_a_swallowed_write_is_reported_not_raised(
         assert cli.main(argv) == cli.EXIT_OK
         capsys.readouterr()
         assert cli.main(argv) == cli.EXIT_OK
-        assert json.loads(capsys.readouterr().out) == skipped
+        report = json.loads(capsys.readouterr().out)
+        assert {key: report[key] for key in skipped} == skipped
+        assert report["owed"], (
+            "a swallowed write still reports what the record owes; this record was "
+            "created with no fields, so all three sections are outstanding"
+        )
 
 
 def test_an_unknown_record_is_refused_and_named(

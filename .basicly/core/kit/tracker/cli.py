@@ -31,6 +31,7 @@ commands = _load("commands.py", "basicly_tracker_kit_commands")
 queries = _load("queries.py", "basicly_tracker_kit_queries")
 fsck = _load("fsck.py", "basicly_tracker_kit_fsck")
 migrate = _load("migrate.py", "basicly_tracker_kit_migrate")
+shaping = _load("shaping.py", "basicly_tracker_kit_shaping")
 events = snapshot.events
 ids = events.ids
 
@@ -49,17 +50,41 @@ def _field_value(raw: str) -> object:
         return raw
 
 
-def _fields(title: str, pairs: Sequence[str]) -> dict[str, object]:
+def _fields(
+    title: str, pairs: Sequence[str], shape: argparse.Namespace | None = None
+) -> dict[str, object]:
 
     fields: dict[str, object] = {}
     if title:
         fields[scheduler.TITLE_FIELD] = title
+    fields.update(_shape_fields(shape))
     for pair in pairs:
         name, sep, raw = pair.partition("=")
         if not sep or not name:
             raise ValueError(f"--field {pair!r} is not name=value")
         fields[name] = _field_value(raw)
     return fields
+
+
+def _shape_fields(shape: argparse.Namespace | None):
+
+    if shape is None:
+        return ()
+    declared = (
+        (shaping.ACCEPTANCE_FIELD, getattr(shape, "acceptance", None)),
+        (shaping.REQUIREMENTS_FIELD, getattr(shape, "requirements", None)),
+        (shaping.DESCRIPTION_FIELD, getattr(shape, "description", None)),
+    )
+    return tuple((name, value) for name, value in declared if value)
+
+
+def _owed_of(directory: Path | str, record: str) -> dict[str, object]:
+
+    found, _ = events.read_events(directory)
+    state = events.fold(found).records.get(record)
+    held = dict(state.fields) if state is not None else {}
+    missing = shaping.owed(held)
+    return {"owed": list(missing), "remedy": shaping.remedy(missing) if missing else ""}
 
 
 create_record = commands.create_root
@@ -109,6 +134,27 @@ def _status(views: Mapping[str, Any], record: str) -> str:
     return "unknown" if view is None else view.status or ""
 
 
+def _add_shape_arguments(parser: Any) -> None:
+    parser.add_argument(
+        "--acceptance",
+        default="",
+        metavar="TEXT",
+        help="the acceptance criteria a check is derived from",
+    )
+    parser.add_argument(
+        "--requirements",
+        default="",
+        metavar="TEXT",
+        help="the requirements validation judges the built thing against",
+    )
+    parser.add_argument(
+        "--description",
+        default="",
+        metavar="TEXT",
+        help="the record's body, which may carry the sections as headings instead",
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Create, read, query and advance work items in a tracker kit ledger."
@@ -127,6 +173,7 @@ def _parser() -> argparse.ArgumentParser:
         help="an extra field; the value is read as JSON when it parses, else as a string",
     )
     create.add_argument("--status", default=DEFAULT_STATUS, help="the status to open it at")
+    _add_shape_arguments(create)
 
     show = sub.add_parser("show", help="read one record's folded state and both edge directions")
     show.add_argument("directory", help="the ledger directory")
@@ -151,6 +198,13 @@ def _parser() -> argparse.ArgumentParser:
 
     shards = sub.add_parser("shards", help="the pending writer shards this ledger holds")
     shards.add_argument("directory", help="the ledger directory")
+
+    gate = sub.add_parser(
+        "dor",
+        help="the definition of ready: refuse a record that cannot be verified against",
+    )
+    gate.add_argument("directory", help="the ledger directory")
+    gate.add_argument("record", help="the record id")
 
     bring = sub.add_parser(
         "import", help="import a foreign tracker's JSONL export into this ledger"
@@ -193,6 +247,7 @@ def _add_write_parsers(sub: Any) -> None:
     child.add_argument("--title", default="", help="the record's title")
     child.add_argument("--field", action="append", default=[], metavar="NAME=VALUE")
     child.add_argument("--status", default=DEFAULT_STATUS, help="the status to open it at")
+    _add_shape_arguments(child)
 
     update = sub.add_parser("update", help="set a record's fields, status or labels")
     update.add_argument("directory", help="the ledger directory")
@@ -201,6 +256,7 @@ def _add_write_parsers(sub: Any) -> None:
     update.add_argument("--status", default="", help="the status to move it to")
     update.add_argument("--add-label", action="append", default=[], metavar="LABEL")
     update.add_argument("--remove-label", action="append", default=[], metavar="LABEL")
+    _add_shape_arguments(update)
 
     closing = sub.add_parser("close", help="move records to the closed status")
     closing.add_argument("directory", help="the ledger directory")
@@ -225,12 +281,12 @@ def _add_write_parsers(sub: Any) -> None:
 
 _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
     "child": lambda a, r: commands.create_child(
-        a.directory, a.parent, _fields(a.title, a.field), status=a.status, redact=r
+        a.directory, a.parent, _fields(a.title, a.field, a), status=a.status, redact=r
     ),
     "update": lambda a, r: commands.update(
         a.directory,
         a.record,
-        fields=_fields("", a.field),
+        fields=_fields("", a.field, a),
         status=a.status,
         add_labels=a.add_label,
         remove_labels=a.remove_label,
@@ -295,23 +351,48 @@ _VIEWS: dict[
 }
 
 
+def _shown(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
+    found = read_record(args.directory, args.record)
+    if found is None:
+        return EXIT_REFUSED, {"record": args.record, "found": False}
+    return EXIT_OK, found
+
+
+def _dor(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
+    verdict = _owed_of(args.directory, args.record)
+    ready = not verdict["owed"]
+    return (EXIT_OK if ready else EXIT_REFUSED), {
+        "record": args.record,
+        "ready": ready,
+        **verdict,
+    }
+
+
+_REFUSABLE: dict[str, Callable[[argparse.Namespace], tuple[int, dict[str, object]]]] = {
+    "show": _shown,
+    "dor": _dor,
+}
+
+
 def _run(
     args: argparse.Namespace, redact: Callable[[str], str] | None
 ) -> tuple[int, dict[str, object]]:
     if args.command == "create":
         written = create_record(
             args.directory,
-            _fields(args.title, args.field),
+            _fields(args.title, args.field, args),
             prefix=args.prefix,
             status=args.status,
             redact=redact,
         )
-        return EXIT_OK, {"record": written[0].record, "events": [event.id for event in written]}
-    if args.command == "show":
-        found = read_record(args.directory, args.record)
-        if found is None:
-            return EXIT_REFUSED, {"record": args.record, "found": False}
-        return EXIT_OK, found
+        record = written[0].record
+        return EXIT_OK, {
+            "record": record,
+            "events": [event.id for event in written],
+            **_owed_of(args.directory, record),
+        }
+    if (gate := _REFUSABLE.get(args.command)) is not None:
+        return gate(args)
     if (view := _VIEWS.get(args.command)) is not None:
         return EXIT_OK, view(args, redact)
     if (write := _WRITES.get(args.command)) is not None:
@@ -325,6 +406,7 @@ def _run(
             "record": record,
             "events": [event.id for event in appended],
             "appended": bool(appended),
+            **_owed_of(args.directory, record),
         }
     records = query_records(args.directory, status=args.status, limit=args.limit)
     return EXIT_OK, {"count": len(records), "records": records}

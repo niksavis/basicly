@@ -93,8 +93,20 @@ argument, and `create` makes that directory if it does not exist.
 | `basicly-tracker compact DIR [--writer W]` | Fold every pending writer shard into the trunk log and unlink it. `--writer` narrows it to one and repeats |
 | `basicly-tracker shards DIR` | The pending writer shards the ledger holds, with the warn and refuse thresholds |
 | `basicly-tracker import DIR EXPORT [--source NAME] [--dry-run]` | Import a foreign tracker's JSONL export, keeping ids, comments and dependency edges. `--dry-run` reports the same plan and writes nothing; a re-run appends nothing |
+| `basicly-tracker dor DIR RECORD` | The definition of ready. Exit 0 when the record carries a trigger, acceptance criteria and requirements; exit 1 naming what is missing and how to state it |
 
 A `--field` value is read as JSON when it parses as JSON, and as a string otherwise.
+
+`create`, `child` and `update` also take `--description`, `--acceptance` and
+`--requirements`, and every one of them reports what the record still **owes**. A record
+is shaped when it carries a trigger in either story voice, acceptance criteria and
+requirements — as those fields, or as `## Acceptance Criteria` and `## Requirements`
+sections of dash-space bullets in the description, so a record written as prose keeps working.
+A placeholder counts as absent.
+
+**`dor` is the gate, not `ready`.** `ready` still offers every unblocked record; `dor`
+exits non-zero on one that cannot be verified against, which is what a hook or an agent
+skill calls before work starts.
 
 ## `basicly-tier`
 
