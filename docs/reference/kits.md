@@ -12,7 +12,11 @@ has no basicly. There is no second copy to drift.
 
 ## Getting a kit
 
-**With basicly.** `basicly install` brings all three. Nothing else to run.
+**With basicly.** `basicly install` brings all three and wires the tier hook. It does **not**
+wire the tracker's `post-merge` shard hook, and does not need to: the engine folds pending
+shards itself at the seam that commits tracker state, with a record id the commit-msg gate
+accepts. A repository that has basicly gets the folding; it gets it at a landing rather than
+at a merge.
 
 **Without basicly.** One line each, and no dependency beyond a Python 3.9 floor:
 
