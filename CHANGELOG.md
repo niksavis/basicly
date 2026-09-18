@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+**The exclusion advice v0.15.0 fixed was fixed into silence, and a canary caught it within
+hours of the tag.** The check asked whether a linter config contained the string
+`.basicly/core` anywhere. A `per-file-ignores` entry, an `include` list or a comment naming
+the path all answer yes, so a repository with no exclusion at all was told nothing. That is
+worse than the over-eager message it replaced: an unactionable line is noise, a missing one
+is a repository whose linter rewrites the managed core. The check now reads the exclusion
+directive itself — ruff's `exclude` and `extend-exclude`, a pre-commit `exclude:` line, an
+uncommented line in an ignore file.
+
+`basicly install --dry-run` also named this release's own headline feature as broken. The
+dry run writes nothing, so it never syncs the catalog, so it ran the `install_hook.py`
+already on disk against the new engine's flags and reported *the post-merge hook was not
+installed*. A real install syncs first and wires it. The hook step is now previewed with
+the kit the sync would install. A false negative here is the expensive kind: the dry run
+exists so a consumer can decide before anything writes, and this one argued against a
+release that was fine.
+
+Both were reported with controlled fixtures and a positive control on the previous version,
+which is what separated *suppressed* from *unreachable*.
+
 ## v0.15.0 - 2026-09-18
 
 Delta: v0.14.2..v0.15.0
