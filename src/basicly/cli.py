@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from functools import partial
@@ -1093,6 +1093,7 @@ def _sync_catalog(
     dst: Path,
     previous: state.InstallState | None,
     force: bool,
+    dry_run: bool = False,
 ) -> _CatalogSyncReport:
 
     report = _CatalogSyncReport()
@@ -1103,54 +1104,74 @@ def _sync_catalog(
         target = dst / rel_path
         src_bytes = src_path.read_bytes()
         if not target.exists():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_path, target)
+            if not dry_run:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_path, target)
             report.new.append(rel_path)
             continue
         if target.read_bytes() == src_bytes:
             report.unchanged += 1
             continue
         if force or state.sha256_of_file(target) == recorded.get(rel_path):
-            shutil.copy2(src_path, target)
+            if not dry_run:
+                shutil.copy2(src_path, target)
             report.updated.append(rel_path)
         else:
             report.skipped_edits.append(rel_path)
 
     if dst.exists():
-        for target in iter_catalog_files(dst):
-            rel_path = target.relative_to(dst).as_posix()
-            if rel_path in bundled:
-                continue
-            if state.sha256_of_file(target) == recorded.get(rel_path):
-                target.unlink()
-                report.deleted.append(rel_path)
-                parent = target.parent
-                while parent != dst and not any(parent.iterdir()):
-                    parent.rmdir()
-                    parent = parent.parent
-            else:
-                report.kept_unknown.append(rel_path)
+        _prune_catalog(dst, bundled, recorded, report, dry_run=dry_run)
 
     return report
 
 
-def _report_catalog_sync(report: _CatalogSyncReport, core_dst: Path, repo_root: Path) -> None:
+def _prune_catalog(
+    dst: Path,
+    bundled: dict[str, Path],
+    recorded: Mapping[str, str],
+    report: _CatalogSyncReport,
+    *,
+    dry_run: bool,
+) -> None:
+
+    for target in iter_catalog_files(dst):
+        rel_path = target.relative_to(dst).as_posix()
+        if rel_path in bundled:
+            continue
+        if state.sha256_of_file(target) != recorded.get(rel_path):
+            report.kept_unknown.append(rel_path)
+            continue
+        report.deleted.append(rel_path)
+        if dry_run:
+            continue
+        target.unlink()
+        parent = target.parent
+        while parent != dst and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
+
+
+def _report_catalog_sync(
+    report: _CatalogSyncReport, core_dst: Path, repo_root: Path, *, dry_run: bool = False
+) -> None:
     print(
-        f"Synced core catalog at {_format_path(core_dst, repo_root)}: "
+        f"{'Would sync' if dry_run else 'Synced'} core catalog at "
+        f"{_format_path(core_dst, repo_root)}: "
         f"{len(report.new)} new, {len(report.updated)} updated, "
         f"{len(report.deleted)} removed, {report.unchanged} unchanged"
     )
     if report.skipped_edits:
         print(
-            "Warning: hand-edited managed core files were left as-is "
-            "(re-run with --force to overwrite; hand-edits belong in the overlay):",
+            f"Warning: hand-edited managed core files {'are' if dry_run else 'were'} left "
+            "as-is (re-run with --force to overwrite; hand-edits belong in the overlay):",
             file=sys.stderr,
         )
         for rel_path in report.skipped_edits:
             print(f"  {rel_path}", file=sys.stderr)
     if report.kept_unknown:
         print(
-            "Warning: files of unknown origin in the managed core were kept "
+            "Warning: files of unknown origin in the managed core "
+            f"{'are' if dry_run else 'were'} kept "
             "(move yours to the overlay; core is managed by basicly install):",
             file=sys.stderr,
         )
@@ -1166,23 +1187,30 @@ def _tracker_prefix(repo_root: Path) -> str:
     return prefix
 
 
-def _setup_tracker(repo_root: Path) -> None:
+def _setup_tracker(repo_root: Path, *, dry_run: bool = False) -> None:
 
     ledger = repo_root / owned_store.LEDGER_DIR
     if ledger.is_dir():
         print("Tracker ledger exists; left unchanged.")
         return
-    ledger.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        ledger.mkdir(parents=True, exist_ok=True)
     print(
-        f"Initialized the tracker ledger at {owned_store.LEDGER_DIR.as_posix()}. "
+        f"{'Would initialize' if dry_run else 'Initialized'} the tracker ledger at "
+        f"{owned_store.LEDGER_DIR.as_posix()}. "
         f'To mint root record ids, set [tracker] prefix = "{_tracker_prefix(repo_root)}" '
         f"in basicly.toml."
     )
 
 
-def _scaffold_ledger_attributes(repo_root: Path) -> None:
+def _scaffold_ledger_attributes(repo_root: Path, *, dry_run: bool = False) -> None:
     rules = owned_write.ledger_git_rules(repo_root)
     if not rules:
+        if dry_run:
+            print(
+                "Would add the ledger union-merge rules to .gitattributes; the exact globs "
+                "are read off the tracker kit, which this run has not written yet"
+            )
         return
     path = repo_root / ".gitattributes"
     try:
@@ -1193,16 +1221,17 @@ def _scaffold_ledger_attributes(repo_root: Path) -> None:
             return
         prefix = "" if not text or text.endswith("\n") else "\n"
         body = text + prefix + _LEDGER_ATTRIBUTE_NOTE + "\n".join(missing) + "\n"
-        path.write_text(body, encoding="utf-8")
+        if not dry_run:
+            path.write_text(body, encoding="utf-8")
     except OSError as exc:
         raise SystemExit(
             f"basicly install: cannot write {_format_path(path, repo_root)}, and the tracker "
             f"ledger conflicts on every parallel append without it: {exc}"
         ) from exc
-    print(f"Added {', '.join(missing)} to .gitattributes")
+    print(f"{'Would add' if dry_run else 'Added'} {', '.join(missing)} to .gitattributes")
 
 
-def _scaffold_overlay_stubs(repo_root: Path, paths: ProjectPaths) -> None:
+def _scaffold_overlay_stubs(repo_root: Path, paths: ProjectPaths, *, dry_run: bool = False) -> None:
 
     overlay_user = repo_root / paths.overlay_fragments_dirs[0] / "user"
     for rel_path, content in OVERLAY_FRAGMENT_STUBS.items():
@@ -1210,17 +1239,21 @@ def _scaffold_overlay_stubs(repo_root: Path, paths: ProjectPaths) -> None:
         if stub_path.exists():
             print(f"{_format_path(stub_path, repo_root)} already exists; left unchanged")
             continue
-        stub_path.parent.mkdir(parents=True, exist_ok=True)
-        stub_path.write_text(content, encoding="utf-8")
+        if not dry_run:
+            stub_path.parent.mkdir(parents=True, exist_ok=True)
+            stub_path.write_text(content, encoding="utf-8")
         print(
-            f"Wrote {_format_path(stub_path, repo_root)} (draft: fill it in and set status: active)"
+            f"{'Would write' if dry_run else 'Wrote'} {_format_path(stub_path, repo_root)} "
+            "(draft: fill it in and set status: active)"
         )
 
 
 SCAFFOLD_BACKUP_SUFFIX = ".basicly-bak"
 
 
-def _write_scaffold(path: Path, content: str, label: str, *, force: bool) -> None:
+def _write_scaffold(
+    path: Path, content: str, label: str, *, force: bool, dry_run: bool = False
+) -> None:
 
     if path.exists():
         if not force:
@@ -1228,11 +1261,13 @@ def _write_scaffold(path: Path, content: str, label: str, *, force: bool) -> Non
             repinned, moved = repin(existing)
             if moved:
                 backup = path.with_suffix(path.suffix + SCAFFOLD_BACKUP_SUFFIX)
-                backup.write_text(existing, encoding="utf-8")
-                path.write_text(repinned, encoding="utf-8")
+                if not dry_run:
+                    backup.write_text(existing, encoding="utf-8")
+                    path.write_text(repinned, encoding="utf-8")
                 print(
-                    f"Re-pinned {moved} basicly reference(s) in {label} to "
-                    f"v{__version__}; your previous copy is at {backup.name}"
+                    f"{'Would re-pin' if dry_run else 'Re-pinned'} {moved} basicly "
+                    f"reference(s) in {label} to v{__version__}; your previous copy "
+                    f"{'would be' if dry_run else 'is'} at {backup.name}"
                 )
             else:
                 print(f"{label} already exists; left unchanged (--overwrite-scaffolds replaces it)")
@@ -1242,33 +1277,43 @@ def _write_scaffold(path: Path, content: str, label: str, *, force: bool) -> Non
             print(f"{label} already current")
             return
         backup = path.with_suffix(path.suffix + SCAFFOLD_BACKUP_SUFFIX)
-        backup.write_text(existing, encoding="utf-8")
-        path.write_text(content, encoding="utf-8")
-        print(f"Replaced {label}; your previous copy is at {backup.name}")
+        if not dry_run:
+            backup.write_text(existing, encoding="utf-8")
+            path.write_text(content, encoding="utf-8")
+        print(
+            f"{'Would replace' if dry_run else 'Replaced'} {label}; your previous copy "
+            f"{'would be' if dry_run else 'is'} at {backup.name}"
+        )
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    print(f"Wrote {label}")
+    if not dry_run:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    print(f"{'Would write' if dry_run else 'Wrote'} {label}")
 
 
-def _scaffold_vscode_tasks(repo_root: Path, *, force: bool = False) -> None:
+def _scaffold_vscode_tasks(repo_root: Path, *, force: bool = False, dry_run: bool = False) -> None:
     _write_scaffold(
-        repo_root / ".vscode" / "tasks.json", VSCODE_TASKS_JSON, ".vscode/tasks.json", force=force
+        repo_root / ".vscode" / "tasks.json",
+        VSCODE_TASKS_JSON,
+        ".vscode/tasks.json",
+        force=force,
+        dry_run=dry_run,
     )
 
 
-def _scaffold_ci_workflow(repo_root: Path, *, force: bool = False) -> None:
+def _scaffold_ci_workflow(repo_root: Path, *, force: bool = False, dry_run: bool = False) -> None:
     _write_scaffold(
         repo_root / ".github" / "workflows" / "basicly-gates.yml",
         CONSUMER_CI_WORKFLOW,
         ".github/workflows/basicly-gates.yml",
         force=force,
+        dry_run=dry_run,
     )
 
 
-def _scaffold_consumer_files(repo_root: Path, *, force: bool) -> None:
-    _scaffold_vscode_tasks(repo_root, force=force)
-    _scaffold_ci_workflow(repo_root, force=force)
+def _scaffold_consumer_files(repo_root: Path, *, force: bool, dry_run: bool = False) -> None:
+    _scaffold_vscode_tasks(repo_root, force=force, dry_run=dry_run)
+    _scaffold_ci_workflow(repo_root, force=force, dry_run=dry_run)
 
 
 def _report_missing_config_sections(repo_root: Path) -> None:
@@ -1299,7 +1344,7 @@ _LEDGER_ATTRIBUTE_NOTE = (
 )
 
 
-def _scaffold_generated_ignores(repo_root: Path) -> None:
+def _scaffold_generated_ignores(repo_root: Path, *, dry_run: bool = False) -> None:
 
     ignore_path = repo_root / ".gitignore"
     text = ignore_path.read_text(encoding="utf-8") if ignore_path.exists() else ""
@@ -1312,8 +1357,9 @@ def _scaffold_generated_ignores(repo_root: Path) -> None:
         added.append(pattern)
     if not added:
         return
-    ignore_path.write_text(text, encoding="utf-8")
-    print(f"Added {', '.join(added)} to .gitignore")
+    if not dry_run:
+        ignore_path.write_text(text, encoding="utf-8")
+    print(f"{'Would add' if dry_run else 'Added'} {', '.join(added)} to .gitignore")
 
 
 def _validate_install_technologies(raw: str | None) -> list[str] | None:
@@ -1347,75 +1393,114 @@ def _record_install_technologies(repo_root: Path, technologies: list[str]) -> bo
     return True
 
 
-def cmd_install(args: argparse.Namespace) -> int:
-
-    technologies = _validate_install_technologies(getattr(args, "technologies", None))
-    if technologies is None:
-        return 1
-
-    repo_root = _repo_root()
-    paths = load_project_paths(repo_root)
+def _sync_core(repo_root: Path, paths: ProjectPaths, *, force: bool, dry_run: bool) -> bool:
 
     core_src = bundled_catalog_root()
     core_dst = repo_root / paths.core_root
     state_path = repo_root / paths.state_path
-    authoring_source = core_src.resolve() == core_dst.resolve()
-    if authoring_source:
+    upgrade = core_dst.is_dir()
+    if core_src.resolve() == core_dst.resolve():
         print("Core catalog is its own authoring source here; left in place.")
-    else:
-        try:
-            previous_state = state.read_install_state(state_path)
-        except ValidationError as exc:
-            print(
-                f"Note: {exc}; treating existing core files as unverified "
-                "(diffs are kept unless --force).",
-                file=sys.stderr,
-            )
-            previous_state = None
-        report = _sync_catalog(
-            core_src, core_dst, previous_state, force=bool(getattr(args, "force", False))
+        _migrate_legacy_layout(repo_root, paths)
+        return upgrade
+
+    try:
+        previous_state = state.read_install_state(state_path)
+    except ValidationError as exc:
+        print(
+            f"Note: {exc}; treating existing core files as unverified "
+            "(diffs are kept unless --force).",
+            file=sys.stderr,
         )
-        _report_catalog_sync(report, core_dst, repo_root)
+        previous_state = None
+    report = _sync_catalog(core_src, core_dst, previous_state, force=force, dry_run=dry_run)
+    _report_catalog_sync(report, core_dst, repo_root, dry_run=dry_run)
 
     _migrate_legacy_layout(repo_root, paths)
 
-    if not authoring_source:
-        bundled_hashes = state.snapshot_core(core_src)
-        disk_hashes = state.snapshot_core(core_dst)
-        vouched = {
-            rel_path: digest
-            for rel_path, digest in disk_hashes.items()
-            if bundled_hashes.get(rel_path) == digest
-        }
+    bundled_hashes = state.snapshot_core(core_src)
+    disk_hashes = state.snapshot_core(core_dst)
+    vouched = {
+        rel_path: digest
+        for rel_path, digest in disk_hashes.items()
+        if bundled_hashes.get(rel_path) == digest
+    }
+    if not dry_run:
         state.write_install_state(state_path, __version__, vouched)
-        print(f"Recorded install state in {_format_path(state_path, repo_root)}")
+    print(
+        f"{'Would record' if dry_run else 'Recorded'} install state in "
+        f"{_format_path(state_path, repo_root)}"
+    )
+    return upgrade
+
+
+def _scaffold_repo(
+    repo_root: Path,
+    paths: ProjectPaths,
+    technologies: list[str],
+    *,
+    overwrite_scaffolds: bool,
+    dry_run: bool,
+) -> bool:
 
     for overlay in paths.overlay_fragments_dirs:
         user_dir = repo_root / overlay / "user"
         existed = user_dir.exists()
-        user_dir.mkdir(parents=True, exist_ok=True)
-        verb = "exists" if existed else "created"
+        if not (existed or dry_run):
+            user_dir.mkdir(parents=True, exist_ok=True)
+        verb = "exists" if existed else ("would be created" if dry_run else "created")
         print(f"Overlay {verb}: {_format_path(user_dir, repo_root)}")
 
-    _scaffold_overlay_stubs(repo_root, paths)
+    _scaffold_overlay_stubs(repo_root, paths, dry_run=dry_run)
 
     config_path = repo_root / CONFIG_FILE
     if config_path.exists():
         print(f"{CONFIG_FILE} already exists; left unchanged")
         _report_missing_config_sections(repo_root)
     else:
-        config_path.write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
-        print(f"Wrote {CONFIG_FILE}")
-    _scaffold_generated_ignores(repo_root)
+        if not dry_run:
+            config_path.write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
+        print(f"{'Would write' if dry_run else 'Wrote'} {CONFIG_FILE}")
+    _scaffold_generated_ignores(repo_root, dry_run=dry_run)
     for note in install_notes(repo_root):
         print(note, file=sys.stderr)
 
-    if not _record_install_technologies(repo_root, technologies):
+    if dry_run:
+        if technologies:
+            print(f"Would record technology selection in {CONFIG_FILE}: {', '.join(technologies)}")
+    elif not _record_install_technologies(repo_root, technologies):
+        return False
+
+    _setup_tracker(repo_root, dry_run=dry_run)
+    _scaffold_ledger_attributes(repo_root, dry_run=dry_run)
+    _scaffold_consumer_files(repo_root, force=overwrite_scaffolds, dry_run=dry_run)
+    return True
+
+
+def cmd_install(args: argparse.Namespace) -> int:
+
+    technologies = _validate_install_technologies(getattr(args, "technologies", None))
+    if technologies is None:
         return 1
 
-    _setup_tracker(repo_root)
-    _scaffold_ledger_attributes(repo_root)
-    _scaffold_consumer_files(repo_root, force=bool(getattr(args, "overwrite_scaffolds", False)))
+    dry_run = bool(getattr(args, "dry_run", False))
+    if dry_run:
+        ui.heading("basicly install --dry-run: nothing below is written")
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+
+    upgrade = _sync_core(
+        repo_root, paths, force=bool(getattr(args, "force", False)), dry_run=dry_run
+    )
+
+    if not _scaffold_repo(
+        repo_root,
+        paths,
+        technologies,
+        overwrite_scaffolds=bool(getattr(args, "overwrite_scaffolds", False)),
+        dry_run=dry_run,
+    ):
+        return 1
 
     steps: list[tuple[str, Any, argparse.Namespace]] = [
         ("build", cmd_build, argparse.Namespace(target=None, verify=False)),
@@ -1431,6 +1516,8 @@ def cmd_install(args: argparse.Namespace) -> int:
         ("tracker-hook", cmd_tracker_hook, argparse.Namespace()),
         ("permissions-build", cmd_permissions_build, argparse.Namespace()),
     ]
+    if dry_run:
+        return _report_install_steps(steps, upgrade=upgrade)
     for step, handler, namespace in steps:
         ui.heading(f"\n== basicly {step} ==")
         rc = handler(namespace)
@@ -1445,12 +1532,61 @@ def cmd_install(args: argparse.Namespace) -> int:
     return 0
 
 
+def _dry_run_counterparts() -> dict[str, tuple[str, Any, argparse.Namespace]]:
+
+    return {
+        "build": ("check", cmd_check, argparse.Namespace()),
+        "skills-build": ("skills-check", cmd_skills_check, argparse.Namespace(roots=None)),
+        "styles-build": ("styles-check", cmd_styles_check, argparse.Namespace(roots=None)),
+        "agents-build": ("agents-check", cmd_agents_check, argparse.Namespace()),
+        "hooks-build": ("hooks-check", cmd_hooks_check, argparse.Namespace()),
+        "permissions-build": ("permissions-check", cmd_permissions_check, argparse.Namespace()),
+        "tier-hook": ("tier-hook", cmd_tier_hook, argparse.Namespace(dry_run=True)),
+        "tracker-hook": ("tracker-hook", cmd_tracker_hook, argparse.Namespace(dry_run=True)),
+    }
+
+
+def _report_install_steps(
+    steps: list[tuple[str, Any, argparse.Namespace]], *, upgrade: bool
+) -> int:
+
+    if not upgrade:
+        ui.say(
+            "\nbasicly install --dry-run complete: nothing was written. This repo has no "
+            "core catalog yet, so every projected file below is written from scratch: "
+            + ", ".join(step for step, _handler, _namespace in steps)
+            + ".",
+            style="ok",
+        )
+        return 0
+    counterparts = _dry_run_counterparts()
+    would_rewrite: list[str] = []
+    for step, _handler, _namespace in steps:
+        probe, handler, namespace = counterparts[step]
+        ui.heading(f"\n== basicly {probe} ==")
+        if handler(namespace) != 0:
+            would_rewrite.append(step)
+    ui.say(
+        "\nbasicly install --dry-run complete: nothing was written. "
+        + (
+            f"These steps would rewrite a projected file: {', '.join(would_rewrite)}."
+            if would_rewrite
+            else "Every projected file is already current."
+        )
+        + " A projection is checked against the core catalog on disk, not the one this run "
+        "would sync, so when the sync above names a new or updated file, the run rewrites "
+        "more than this names.",
+        style="ok",
+    )
+    return 0
+
+
 TIER_HOOK_INSTALLER = Path(".basicly") / "core" / "kit" / "tier" / "install_hook.py"
 TRACKER_HOOK_INSTALLER = Path(".basicly") / "core" / "kit" / "tracker" / "install_hook.py"
 FOLD_COMMAND = "tracker fold"
 
 
-def cmd_tracker_hook(_args: argparse.Namespace) -> int:
+def cmd_tracker_hook(args: argparse.Namespace) -> int:
 
     repo_root = _repo_root()
     script = repo_root / TRACKER_HOOK_INSTALLER
@@ -1467,17 +1603,20 @@ def cmd_tracker_hook(_args: argparse.Namespace) -> int:
             style="warn",
         )
         return 0
+    argv = [
+        sys.executable,
+        str(script),
+        "--root",
+        str(repo_root),
+        "--ledger",
+        str(repo_root / owned_store.LEDGER_DIR),
+        "--command",
+        f"{engine} {FOLD_COMMAND}",
+    ]
+    if getattr(args, "dry_run", False):
+        argv.append("--dry-run")
     completed = subprocess.run(  # noqa: S603 — run, not imported; the engine holds no kit import
-        [
-            sys.executable,
-            str(script),
-            "--root",
-            str(repo_root),
-            "--ledger",
-            str(repo_root / owned_store.LEDGER_DIR),
-            "--command",
-            f"{engine} {FOLD_COMMAND}",
-        ],
+        argv,
         capture_output=True,
         text=True,
         check=False,
@@ -1493,15 +1632,18 @@ def cmd_tracker_hook(_args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_tier_hook(_args: argparse.Namespace) -> int:
+def cmd_tier_hook(args: argparse.Namespace) -> int:
 
     repo_root = _repo_root()
     script = repo_root / TIER_HOOK_INSTALLER
     if not script.is_file():
         ui.say(f"{TIER_HOOK_INSTALLER.as_posix()} is absent, so no host was wired to a tier")
         return 0
+    argv = [sys.executable, str(script), "--root", str(repo_root)]
+    if getattr(args, "dry_run", False):
+        argv.append("--dry-run")
     completed = subprocess.run(  # noqa: S603 — run, not imported; the engine holds no kit import
-        [sys.executable, str(script), "--root", str(repo_root)],
+        argv,
         capture_output=True,
         text=True,
         check=False,
@@ -4257,6 +4399,14 @@ def _add_lifecycle_parsers(subparsers: argparse._SubParsersAction) -> None:
         help=(
             "Install or upgrade basicly in this repo "
             "(sync catalog + scaffold + build + skills + hooks)"
+        ),
+    )
+    install_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Name every path the run would create, overwrite or delete, and every "
+            "hand-edited core file it would keep, then write nothing"
         ),
     )
     install_parser.add_argument(

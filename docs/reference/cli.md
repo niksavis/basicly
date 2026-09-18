@@ -32,7 +32,7 @@ They fall into three surfaces.
 
 | Command | Behaviour |
 | --- | --- |
-| `basicly install` | Idempotent converge: materialize or sync the core, migrate legacy layouts, scaffold overlay and config without overwriting, then build, skills-build across all default roots, styles-build, agents-build, hooks-build with activation. First install and every upgrade |
+| `basicly install [--dry-run]` | Idempotent converge: materialize or sync the core, migrate legacy layouts, scaffold overlay and config without overwriting, then build, skills-build across all default roots, styles-build, agents-build, hooks-build with activation. First install and every upgrade. `--dry-run` names every path the run would create, overwrite or delete, and every hand-edited core file it would keep, then writes nothing and exits 0 |
 | `basicly uninstall [--purge]` | Remove everything managed, preserve the overlay and config unless purging, refuse in the authoring repo |
 | `basicly status [--json] [--fleet]` | Read-only snapshot: installed catalog version against running engine version, drift summary, per-manager hook state, technology selection, overlay counts. Never writes, always exits zero. The fleet flag rolls it across the housed repositories as one JSON payload |
 | `basicly health [--json] [--window N] [--fleet]` | Read-only per-agent health scoring and behavioural drift from the run-record log: dispatch failure rate, a rework signal, a bounded score, and a rolling-baseline drift flag. Never writes, always exits zero |
