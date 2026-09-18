@@ -1,0 +1,1 @@
+- The tracker kit's definition-of-ready gate reads `acceptance_criteria` and `requirements` from the typed fields alone on an open record, as D-50 decided; a heading still reads on a closed record. The engine's write seam gained both flags on `create` and `--requirements` on `update`, which it could not write at all before.

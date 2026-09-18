@@ -32,6 +32,7 @@ queries = _load("queries.py", "basicly_tracker_kit_queries")
 fsck = _load("fsck.py", "basicly_tracker_kit_fsck")
 migrate = _load("migrate.py", "basicly_tracker_kit_migrate")
 shaping = _load("shaping.py", "basicly_tracker_kit_shaping")
+record_view = _load("record_view.py", "basicly_tracker_kit_record_view")
 board = _load("board.py", "basicly_tracker_kit_board")
 events = snapshot.events
 ids = events.ids
@@ -79,60 +80,10 @@ def _shape_fields(shape: argparse.Namespace | None):
     return tuple((name, value) for name, value in declared if value)
 
 
-def _owed_of(directory: Path | str, record: str) -> dict[str, object]:
-
-    found, _ = events.read_events(directory)
-    state = events.fold(found).records.get(record)
-    held = dict(state.fields) if state is not None else {}
-    missing = shaping.owed(held)
-    return {"owed": list(missing), "remedy": shaping.remedy(missing) if missing else ""}
-
-
 create_record = commands.create_root
 query_records = queries.query_records
-
-
-def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
-
-    states = queries.folded(directory)
-    state = states.get(record)
-    if state is None:
-        return None
-    views, _ = queries.views_and_children(directory)
-    shown = snapshot.record_to_dict(state)
-    shown.update(_edges(record, views, states))
-    return shown
-
-
-def _edges(record: str, views: Mapping[str, Any], states: Mapping[str, Any]) -> dict[str, object]:
-
-    view = views.get(record)
-    return {
-        "dependencies": [
-            {
-                "id": edge.target,
-                "dependency_type": edge.type,
-                "status": _status(views, edge.target),
-            }
-            for edge in (view.dependencies if view is not None else ())
-        ],
-        "dependents": [
-            {
-                "id": other,
-                "dependency_type": edge.type,
-                "status": held.status or "",
-                "title": str(states[other].fields.get("title", "")) if other in states else "",
-            }
-            for other, held in sorted(views.items())
-            for edge in held.dependencies
-            if edge.target == record and not held.tombstoned
-        ],
-    }
-
-
-def _status(views: Mapping[str, Any], record: str) -> str:
-    view = views.get(record)
-    return "unknown" if view is None else view.status or ""
+read_record = record_view.read_record
+_owed_of = record_view.owed_of
 
 
 def _add_shape_arguments(parser: Any) -> None:

@@ -1,0 +1,1 @@
+- D-51 records that this repository is the distribution channel: `basicly` and every kit install from it with `uvx`, and nothing is published to a package index.

@@ -10,6 +10,7 @@ UPDATE_FIELD_FLAGS = {
     "--design": "design",
     "--acceptance": "acceptance_criteria",
     "--acceptance-criteria": "acceptance_criteria",
+    "--requirements": "requirements",
     "--notes": "notes",
     "-t": "issue_type",
     "--type": "issue_type",
@@ -38,6 +39,9 @@ def labels_of(value: object) -> tuple[str, ...]:
 
 
 CREATE_FIELD_FLAGS = {
+    "--acceptance": "acceptance_criteria",
+    "--acceptance-criteria": "acceptance_criteria",
+    "--requirements": "requirements",
     "-t": "issue_type",
     "--type": "issue_type",
     "-p": "priority",

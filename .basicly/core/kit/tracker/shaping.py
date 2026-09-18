@@ -60,13 +60,15 @@ def states_something(text) -> bool:
     return bool(isinstance(text, str) and text.strip()) and not _PLACEHOLDER.search(text)
 
 
-def _held(record: Mapping[str, object], field: str, heading: str) -> bool:
+def _held(record: Mapping[str, object], field: str, heading: str, closed: bool) -> bool:
 
     value = record.get(field)
     if isinstance(value, str) and states_something(value):
         return True
     if isinstance(value, (list, tuple)) and any(states_something(one) for one in value):
         return True
+    if not closed:
+        return False
     described = record.get(DESCRIPTION_FIELD)
     body = described if isinstance(described, str) else ""
     return any(states_something(entry) for entry in section_entries(body, heading))
@@ -80,17 +82,17 @@ SECTIONS = (
 CONDITIONS = (TRIGGER_HEADING, *(heading for heading, _field in SECTIONS))
 
 
-def owed(record: Mapping[str, object]) -> tuple:
+def owed(record: Mapping[str, object], *, closed: bool = False) -> tuple:
 
     described = record.get(DESCRIPTION_FIELD)
     body = described if isinstance(described, str) else ""
     missing = [] if trigger_voice(body) is not None else [TRIGGER_HEADING]
-    missing += [heading for heading, field in SECTIONS if not _held(record, field, heading)]
+    missing += [heading for heading, field in SECTIONS if not _held(record, field, heading, closed)]
     return tuple(missing)
 
 
-def shaped(record: Mapping[str, object]) -> bool:
-    return not owed(record)
+def shaped(record: Mapping[str, object], *, closed: bool = False) -> bool:
+    return not owed(record, closed=closed)
 
 
 def remedy(missing: Sequence[str]) -> str:

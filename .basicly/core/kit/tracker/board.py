@@ -92,8 +92,9 @@ def _title(row: Mapping[str, object]) -> str:
 
 def _owed_by_record(directory: Path | str) -> dict[str, tuple]:
     states = queries.folded(directory)
+    closed_statuses = differential.DEFAULT_VOCABULARY.closed_statuses
     return {
-        record: shaping.owed(dict(state.fields))
+        record: shaping.owed(dict(state.fields), closed=state.status in closed_statuses)
         for record, state in states.items()
         if not state.tombstoned
     }

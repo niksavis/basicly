@@ -5437,6 +5437,36 @@ migration therefore has a visible burn-down rather than a silent backlog. A reco
 state its intended use is a record whose validation was always going to be theatre, so the gate
 surfacing it is the point rather than a side effect.
 
+### D-51 · The repository is the distribution channel, and there is no package index
+
+**Decision.** `basicly` and every kit it ships are installed from this repository with
+`uvx`. Nothing is published to PyPI, and no work is planned that assumes a package index
+exists. The install line a consumer runs names the repository and the package's
+subdirectory; that shape is the permanent one, not a placeholder for a shorter one.
+
+**Because.** A package index is a second place a version can be current, and the failure it
+invites is the one this design spends most of its rules avoiding: two stores of one truth,
+where the reader that exists reads the weaker one. A tag in this repository is already the
+release boundary
+[D-27](#d-27--everything-is-a-plain-git-tracked-file), so a consumer pinning a git ref pins
+exactly what was reviewed, gated and tagged — there is no second artefact to go stale, to be
+yanked, or to be published from a tree nobody gated.
+
+It also keeps the dependency direction the kits already commit to. A kit imports nothing but
+the standard library and reaches no network at runtime; making its *distribution* depend on
+a hosted index would put a third party in the path of an install that otherwise needs only
+git.
+
+**What it costs, stated rather than implied.** The install line is longer than a package
+name, and a consumer must have `uv`. Neither is free and neither is the reason to take an
+index: the line is copied once from the documentation, and `uv` is already the floor every
+other command here assumes.
+
+**What it refuses.** A proposal to publish "just the kits" for convenience, and any argument
+from discoverability. Discoverability is a documentation problem, and the answer to it is a
+page that carries the line — not a second release channel with its own version, its own
+metadata and its own way of disagreeing with the tag.
+
 ---
 
 **Part VIII — Appendices.** Vocabulary, and the sources this design builds on.

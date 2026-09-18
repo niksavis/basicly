@@ -76,12 +76,31 @@ def test_the_flags_shape_a_record_with_no_prose_at_all(
     assert report["remedy"] == ""
 
 
-def test_prose_headings_still_count_so_an_existing_record_keeps_working(
+def test_a_heading_does_not_shape_an_open_record(
     ledger: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _, report = _create(capsys, ledger, "--description", PROSE)
 
-    assert report["owed"] == []
+    assert report["owed"] == [shaping.ACCEPTANCE_HEADING, shaping.REQUIREMENTS_HEADING], (
+        "D-50 retires the heading to prose and makes the field the only reader for an "
+        "open record; two stores is the disagreement the decision exists to end"
+    )
+
+
+def test_a_heading_still_reads_on_a_closed_record(
+    ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    record, _ = _create(capsys, ledger, "--description", PROSE)
+    assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
+
+    _run(capsys, "close", str(ledger), record)
+
+    code, report = _run(capsys, "dor", str(ledger), record)
+    assert code == cli.EXIT_OK
+    assert report["owed"] == [], (
+        "a closed record is evidence and will never be verified again, so the heading "
+        "stays readable rather than being rewritten"
+    )
 
 
 def test_either_story_voice_satisfies_the_trigger() -> None:
@@ -113,7 +132,16 @@ def test_the_gate_refuses_an_unshaped_record_and_names_what_is_missing(
 
 
 def test_the_gate_passes_a_shaped_record(ledger: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    record, _ = _create(capsys, ledger, "--description", PROSE)
+    record, _ = _create(
+        capsys,
+        ledger,
+        "--description",
+        TRIGGER,
+        "--acceptance",
+        "the gate exits zero",
+        "--requirements",
+        "standard library only",
+    )
 
     code, report = _run(capsys, "dor", str(ledger), record)
 
