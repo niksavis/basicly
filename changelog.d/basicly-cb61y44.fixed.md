@@ -1,1 +1,0 @@
-- `basicly install` writes the `pending-*.jsonl -text merge=union` rule as well as the trunk one. It wrote only the trunk rule, so a repository upgraded through the engine had no union driver on its writer shards — and two clones on the same branch mint the same shard path, which is the case that rule exists for. The standalone kit installer already wrote both.

@@ -1,1 +1,0 @@
-- `basicly install` now leaves a `.basicly-bak` copy before it re-pins a scaffolded CI workflow or `tasks.json`. The default path rewrote them in place with no backup while `--overwrite-scaffolds` kept one, so the flag that sounds destructive was the safer of the two. A run that re-pins nothing still writes no backup.

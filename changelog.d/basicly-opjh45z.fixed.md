@@ -1,1 +1,0 @@
-- Four test fixtures that replace the ledger to pin a known corpus cleared `events-*.jsonl` and not `pending-*.jsonl`, so a stray writer shard inflated a frozen board count. They now clear both.

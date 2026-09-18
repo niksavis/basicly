@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.14.1 - 2026-09-18
+
+Delta: v0.14.0..v0.14.1
+
 **Two install defects a canary repository found in v0.14.0, both on the bundled path.** A
 repository that upgrades with `basicly install` now gets the `pending-*.jsonl -text
 merge=union` rule as well as the trunk one. It got only the trunk rule, so the writer
@@ -25,6 +29,14 @@ first, so the flag that sounds destructive was the safer of the two. Both paths 
 Neither defect was reachable from this repository's own gates: it carried the shard rule
 only because it had been hand-edited in during development, so the rule looked present
 everywhere and was absent for every consumer.
+
+### Fixed
+
+- `basicly install` writes the `pending-*.jsonl -text merge=union` rule as well as the trunk one. It wrote only the trunk rule, so a repository upgraded through the engine had no union driver on its writer shards — and two clones on the same branch mint the same shard path, which is the case that rule exists for. The standalone kit installer already wrote both. (basicly-cb61y44)
+
+- `basicly install` now leaves a `.basicly-bak` copy before it re-pins a scaffolded CI workflow or `tasks.json`. The default path rewrote them in place with no backup while `--overwrite-scaffolds` kept one, so the flag that sounds destructive was the safer of the two. A run that re-pins nothing still writes no backup. (basicly-kfj94k8)
+
+- Four test fixtures that replace the ledger to pin a known corpus cleared `events-*.jsonl` and not `pending-*.jsonl`, so a stray writer shard inflated a frozen board count. They now clear both. (basicly-opjh45z)
 
 ## v0.14.0 - 2026-09-18
 
