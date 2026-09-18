@@ -1,0 +1,1 @@
+- `basicly install` no longer tells you to exclude the managed core from the `.pre-commit-config.yaml` it wrote. That file holds basicly's own hooks, several of which lint `.basicly/core` on purpose, so following the advice disabled the gates the install had just installed. It now stays silent until the config carries a hook basicly did not write, and the advice says so.

@@ -228,7 +228,8 @@ body: |
 FOREIGN_TOOLING: tuple[tuple[str, str], ...] = (
     (
         ".pre-commit-config.yaml",
-        "add `exclude: ^\\.basicly/core/` to each hook that scans the repo",
+        "add `exclude: ^\\.basicly/core/` to each hook of your own that scans the repo; "
+        "basicly's own hooks lint the core on purpose and must not carry it",
     ),
     ("ruff.toml", 'add `extend-exclude = [".basicly/core"]`'),
     (".ruff.toml", 'add `extend-exclude = [".basicly/core"]`'),
@@ -277,6 +278,8 @@ def _secret_scanners(repo_root: Path) -> list[str]:
 CORE_PATH_MARKER = ".basicly/core"
 RUFF_EXCLUDE_KEYS = ("exclude", "extend-exclude")
 _YAML_EXCLUDE = re.compile(r"^\s*(?:-\s+)?exclude\s*:(?P<value>.*)$")
+_YAML_ENTRY = re.compile(r"^\s*(?:-\s+)?entry\s*:(?P<value>.*)$")
+MANAGED_HOOK_DIR = ".basicly/core/hooks/"
 
 
 def _ruff_excludes_core(table: object) -> bool:
@@ -312,11 +315,23 @@ def _yaml_excludes_core(path: Path) -> bool:
         text = path.read_text(encoding="utf-8")
     except OSError:
         return False
+    if not _scans_beyond_the_managed_core(text):
+        return True
     return any(
         CORE_PATH_MARKER in found.group("value")
         for line in text.splitlines()
         if (found := _YAML_EXCLUDE.match(line)) is not None
     )
+
+
+def _scans_beyond_the_managed_core(text: str) -> bool:
+
+    entries = [
+        found.group("value")
+        for line in text.splitlines()
+        if (found := _YAML_ENTRY.match(line)) is not None
+    ]
+    return any(MANAGED_HOOK_DIR not in entry for entry in entries) if entries else True
 
 
 def _ignore_file_excludes_core(path: Path) -> bool:

@@ -161,3 +161,33 @@ def test_a_pyproject_ruff_table_is_read_for_an_exclusion_not_a_mention(tmp_path:
         f'{mentions}extend-exclude = [".basicly/core"]\n', encoding="utf-8"
     )
     assert install_notes(tmp_path) == []
+
+
+MANAGED_ONLY = (
+    "repos:\n- repo: local\n  hooks:\n"
+    "  - id: no-comments\n    entry: uv run python .basicly/core/hooks/no-comments.py\n"
+    "  - id: kit-boundary\n    entry: uv run python .basicly/core/hooks/kit-boundary.py\n"
+)
+
+
+def test_a_config_holding_only_basicly_hooks_is_not_advised(tmp_path: Path) -> None:
+    (tmp_path / ".pre-commit-config.yaml").write_text(MANAGED_ONLY, encoding="utf-8")
+
+    assert install_notes(tmp_path) == [], (
+        "basicly writes this file and its own hooks lint the core on purpose, so the "
+        "advice would tell a consumer to disable the gates basicly just installed"
+    )
+
+
+def test_one_hook_of_the_consumers_own_brings_the_advice_back(tmp_path: Path) -> None:
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        f"{MANAGED_ONLY}  - id: mine\n    entry: ruff check\n", encoding="utf-8"
+    )
+
+    assert ".pre-commit-config.yaml" in "\n".join(install_notes(tmp_path))
+
+
+def test_a_config_with_no_entry_lines_is_still_advised(tmp_path: Path) -> None:
+    (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+
+    assert ".pre-commit-config.yaml" in "\n".join(install_notes(tmp_path))
