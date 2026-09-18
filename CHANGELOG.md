@@ -24,7 +24,18 @@ build steps would rewrite a projected file.
 
 A patch release no longer costs a full tutorial re-record. Two transcript lines in the
 first-loop tutorial named a version; they now name the tool, and `basicly release` re-pins
-the tutorial with the rest of the docs. One sentence is left for a human to edit.
+the tutorial with the rest of the docs. One sentence is left for a human to edit, and
+`basicly release` now refuses that sentence in its preflight rather than rewriting the
+version, the pins, the projections and the changelog and meeting the refusal at the
+commit gate.
+
+Walking the tutorial against this build, rather than editing the number to match it,
+found three things the number would have hidden. `basicly install` now writes
+`__pycache__/` to `.gitignore`, so the step that told you to add it yourself is gone.
+The `catalog-lint` refusal gained a warning and a sentence, and its lines reordered.
+And the page claimed the first commit in a fresh repo is refused for naming no bead id;
+it is not — the gate passes while the ledger holds no records, and refuses from the
+first record onward.
 
 ## v0.14.2 - 2026-09-18
 
