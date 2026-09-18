@@ -1,1 +1,0 @@
-- `basicly install --dry-run` no longer reports the `post-merge` hook step as broken on an upgrade. The dry run writes nothing, so it never syncs the catalog, and it was running the kit already on disk against the new engine's flags. It now previews that step with the kit the sync would install.

@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.15.1 - 2026-09-18
+
+Delta: v0.15.0..v0.15.1
+
 **The exclusion advice v0.15.0 fixed was fixed into silence, and a canary caught it within
 hours of the tag.** The check asked whether a linter config contained the string
 `.basicly/core` anywhere. A `per-file-ignores` entry, an `include` list or a comment naming
@@ -25,6 +29,12 @@ release that was fine.
 
 Both were reported with controlled fixtures and a positive control on the previous version,
 which is what separated *suppressed* from *unreachable*.
+
+### Fixed
+
+- The managed-core exclusion advice is back for a repo that needs it. v0.15.0 asked whether a linter config mentioned `.basicly/core` anywhere, so a `per-file-ignores` entry, an `include` list or a comment naming the path silenced it. It now reads the exclusion directive itself — ruff's `exclude`/`extend-exclude`, a pre-commit `exclude:` line, an ignore file's uncommented line. (basicly-ajqk150)
+
+- `basicly install --dry-run` no longer reports the `post-merge` hook step as broken on an upgrade. The dry run writes nothing, so it never syncs the catalog, and it was running the kit already on disk against the new engine's flags. It now previews that step with the kit the sync would install. (basicly-v92kmjv)
 
 ## v0.15.0 - 2026-09-18
 
