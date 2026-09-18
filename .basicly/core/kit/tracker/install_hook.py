@@ -67,14 +67,14 @@ def hooks_dir(root: Path) -> Path | None:
     return path if path.is_absolute() else (root / path)
 
 
-def body(interpreter: str, script: str, ledger: str, command: str = "") -> str:
+def body(interpreter: str, script: str, ledger: str, command: str = "", advice: str = "") -> str:
 
     if command:
         return "\n".join((
             BEGIN,
             f'if [ -z "$(git status --porcelain -- . ":(exclude){ledger}")" ]; then',
             f"  {command} >/dev/null 2>&1 ||",
-            f"    echo 'tracker: the pending shards are not folded; run {command}' >&2",
+            f"    echo 'tracker: the pending shards are not folded; run {advice or command}' >&2",
             "fi",
             END,
         ))
@@ -137,6 +137,7 @@ def install(  # noqa: PLR0913 — one keyword per seam the host injects; a setti
     interpreter: str,
     stream: Any,
     command: str = "",
+    advice: str = "",
 ) -> int:
 
     script = _within(_HERE / CLI_FILE, root)
@@ -150,7 +151,7 @@ def install(  # noqa: PLR0913 — one keyword per seam the host injects; a setti
         return 0
     hook = directory / HOOK_NAME
     current = hook.read_text(encoding="utf-8") if hook.is_file() else ""
-    wanted = merged(current, body(interpreter, script, within, command))
+    wanted = merged(current, body(interpreter, script, within, command, advice))
     if current == wanted:
         stream.write(f"tracker: {HOOK_NAME} already folds shards after a merge\n")
         return 0
@@ -215,6 +216,11 @@ def main(argv: Any = None) -> int:
         help="run this instead of the kit, for a host that folds through its own seam",
     )
     parser.add_argument(
+        "--advice",
+        default="",
+        help="the command a reader should type when --command fails; defaults to --command",
+    )
+    parser.add_argument(
         "--interpreter",
         default=DEFAULT_INTERPRETER,
         help="the command that runs the kit; the default needs only uv",
@@ -233,6 +239,7 @@ def main(argv: Any = None) -> int:
         interpreter=args.interpreter,
         stream=sys.stdout,
         command=args.command,
+        advice=args.advice,
     )
 
 

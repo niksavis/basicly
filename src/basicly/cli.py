@@ -21,7 +21,6 @@ from typing import Any
 from . import (
     __version__,
     agents,
-    board_action_surface,
     board_cli,
     board_facts,
     catalog_lint,
@@ -121,6 +120,7 @@ from .scaffolds import (
     CONSUMER_CI_WORKFLOW,
     GENERATED_IGNORES,
     OVERLAY_FRAGMENT_STUBS,
+    UVX_COMMAND,
     VSCODE_TASKS_JSON,
     install_notes,
     repin,
@@ -1584,6 +1584,16 @@ def _report_install_steps(
 TIER_HOOK_INSTALLER = Path(".basicly") / "core" / "kit" / "tier" / "install_hook.py"
 TRACKER_HOOK_INSTALLER = Path(".basicly") / "core" / "kit" / "tracker" / "install_hook.py"
 FOLD_COMMAND = "tracker fold"
+CONSOLE_SCRIPT = "basicly"
+
+
+def fold_command() -> str:
+
+    pinned = f"{UVX_COMMAND} {FOLD_COMMAND}"
+    return (
+        f"if command -v {CONSOLE_SCRIPT} >/dev/null 2>&1; "
+        f"then {CONSOLE_SCRIPT} {FOLD_COMMAND}; else {pinned}; fi"
+    )
 
 
 def cmd_tracker_hook(args: argparse.Namespace) -> int:
@@ -1595,14 +1605,6 @@ def cmd_tracker_hook(args: argparse.Namespace) -> int:
             f"{TRACKER_HOOK_INSTALLER.as_posix()} is absent, so no merge folds the pending shards"
         )
         return 0
-    engine = board_action_surface.executable()
-    if engine is None:
-        ui.say(
-            "basicly is not on the path, so the post-merge hook was left unwired; "
-            f"run `basicly {FOLD_COMMAND}` yourself after a merge",
-            style="warn",
-        )
-        return 0
     argv = [
         sys.executable,
         str(script),
@@ -1611,7 +1613,9 @@ def cmd_tracker_hook(args: argparse.Namespace) -> int:
         "--ledger",
         str(repo_root / owned_store.LEDGER_DIR),
         "--command",
-        f"{engine} {FOLD_COMMAND}",
+        fold_command(),
+        "--advice",
+        f"{UVX_COMMAND} {FOLD_COMMAND}",
     ]
     if getattr(args, "dry_run", False):
         argv.append("--dry-run")

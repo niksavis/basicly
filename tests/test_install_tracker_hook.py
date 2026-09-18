@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import pytest
 
-from basicly import board_action_surface, cli
+from basicly import cli
+from basicly.scaffolds import UVX_COMMAND
 
 INSTALLER = cli.TRACKER_HOOK_INSTALLER
 
@@ -40,28 +42,37 @@ def test_an_absent_kit_leaves_the_hook_unwired(tmp_path: Path, rooted, capsys) -
     assert "no merge folds the pending shards" in capsys.readouterr().out
 
 
-def test_an_absent_engine_names_the_command_to_run(
-    tmp_path: Path, rooted, monkeypatch: pytest.MonkeyPatch, capsys
-) -> None:
+def test_the_hook_resolves_the_engine_at_run_time_not_install_time(tmp_path: Path, rooted) -> None:
     rooted(_repo(tmp_path, vendored=True))
-    monkeypatch.setattr(board_action_surface, "executable", lambda: None)
-
-    assert cli.cmd_tracker_hook(argparse.Namespace()) == 0
-
-    assert not (tmp_path / ".git" / "hooks" / "post-merge").exists()
-    assert "basicly tracker fold" in capsys.readouterr().out
-
-
-def test_the_hook_calls_the_engine_and_not_the_kit(
-    tmp_path: Path, rooted, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    rooted(_repo(tmp_path, vendored=True))
-    monkeypatch.setattr(board_action_surface, "executable", lambda: "/opt/bin/basicly")
 
     assert cli.cmd_tracker_hook(argparse.Namespace()) == 0
 
     written = (tmp_path / ".git" / "hooks" / "post-merge").read_text(encoding="utf-8")
-    assert "/opt/bin/basicly tracker fold" in written
+    assert "command -v basicly" in written
+    assert "basicly tracker fold" in written
+    assert UVX_COMMAND in written
+    assert str(Path(sys.executable).parent) not in written
+
+
+def test_the_hook_advises_the_pinned_command_a_consumer_can_always_run(
+    tmp_path: Path, rooted
+) -> None:
+    rooted(_repo(tmp_path, vendored=True))
+
+    cli.cmd_tracker_hook(argparse.Namespace())
+
+    written = (tmp_path / ".git" / "hooks" / "post-merge").read_text(encoding="utf-8")
+    advice = written.split("are not folded; run ", 1)[1].split("'", 1)[0]
+    assert advice == f"{UVX_COMMAND} {cli.FOLD_COMMAND}"
+
+
+def test_the_hook_calls_the_engine_and_not_the_kit(tmp_path: Path, rooted) -> None:
+    rooted(_repo(tmp_path, vendored=True))
+
+    assert cli.cmd_tracker_hook(argparse.Namespace()) == 0
+
+    written = (tmp_path / ".git" / "hooks" / "post-merge").read_text(encoding="utf-8")
+    assert "git commit" not in written
     assert "compact" not in written.replace("basicly-tracker compact", "")
 
 

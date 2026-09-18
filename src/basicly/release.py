@@ -32,6 +32,7 @@ PIN_GLOBS = ("docs/how-to/*.md", "docs/tutorial/*.md")
 
 
 RERECORDED_PATHS = ("docs/tutorial/",)
+TRANSCRIPT_VERSION_RE = re.compile(r"basicly (?P<version>\d+\.\d+\.\d+)")
 PIN_RE_TEMPLATE = r"(?<![\w.])v{version}(?!\w|\.\d)"
 
 CHANGELOG_SCRIPT = Path(".scripts") / "generate_release_changelog.py"
@@ -417,6 +418,26 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
         reasons.append(summary)
     reasons.extend(_release_note_reasons(repo_root))
     reasons.extend(unexercised_capabilities(repo_root))
+    reasons.extend(stale_transcripts(repo_root, plan.version))
+    return tuple(reasons)
+
+
+def stale_transcripts(repo_root: Path, version: str) -> tuple[str, ...]:
+
+    reasons: list[str] = []
+    for prefix in RERECORDED_PATHS:
+        for path in sorted((repo_root / prefix).glob("*.md")):
+            name = path.relative_to(repo_root).as_posix()
+            text = path.read_text(encoding="utf-8")
+            for number, line in enumerate(text.splitlines(), start=1):
+                reasons.extend(
+                    f"{name}:{number}: the transcript claims it was recorded against basicly "
+                    f"{found.group('version')}, not {version}; the pin rewrite moves only "
+                    "@vX.Y.Z, so walk the page against the new build and edit this line "
+                    "before cutting"
+                    for found in TRANSCRIPT_VERSION_RE.finditer(line)
+                    if found.group("version") != version
+                )
     return tuple(reasons)
 
 

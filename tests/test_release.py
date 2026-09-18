@@ -809,3 +809,29 @@ def test_the_projection_rebuild_forces_the_target_repo_onto_pythonpath(
     assert isinstance(env, dict)
     assert env["PYTHONPATH"].split(os.pathsep)[0] == str(repo / "src")
     assert seen["cwd"] == repo
+
+
+def test_a_transcript_naming_the_old_version_refuses_before_the_write(tmp_path: Path) -> None:
+    tutorial = tmp_path / "docs" / "tutorial"
+    tutorial.mkdir(parents=True)
+    (tutorial / "first-loop.md").write_text(
+        "every output was executed on\nbasicly 0.14.2 in a real terminal\n", encoding="utf-8"
+    )
+
+    reasons = release.stale_transcripts(tmp_path, "0.15.0")
+
+    assert len(reasons) == 1
+    assert "docs/tutorial/first-loop.md:2" in reasons[0]
+    assert "basicly 0.14.2, not 0.15.0" in reasons[0]
+
+
+def test_a_transcript_naming_the_target_version_is_accepted(tmp_path: Path) -> None:
+    tutorial = tmp_path / "docs" / "tutorial"
+    tutorial.mkdir(parents=True)
+    (tutorial / "first-loop.md").write_text(
+        "recorded on basicly 0.15.0 in a real terminal\n"
+        "uvx --from git+https://example.invalid/b@v0.14.2 basicly install\n",
+        encoding="utf-8",
+    )
+
+    assert release.stale_transcripts(tmp_path, "0.15.0") == ()
