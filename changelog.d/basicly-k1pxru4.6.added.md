@@ -1,0 +1,1 @@
+- Every standalone tracker kit command now prints a `schema` field, `basicly.tracker.<command>.v1`, so a script or a frontend can detect a breaking change in the output. `ready` keeps `basicly.scheduler.v1`.

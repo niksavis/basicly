@@ -193,7 +193,10 @@ def test_the_command_writes_the_file_and_reports_where(
 
     assert cli.main(["board", str(populated), "--out", str(out)]) == cli.EXIT_OK
 
-    assert json.loads(capsys.readouterr().out) == {"written": out.as_posix()}
+    assert json.loads(capsys.readouterr().out) == {
+        "schema": "basicly.tracker.board.v1",
+        "written": out.as_posix(),
+    }
     assert out.is_file()
 
 

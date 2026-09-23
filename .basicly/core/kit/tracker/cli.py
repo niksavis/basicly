@@ -45,6 +45,8 @@ EXIT_REFUSED = 1
 
 DIRECTORY_HELP = "the ledger directory"
 
+SCHEMA_PREFIX = "basicly.tracker"
+
 _STARTS_A_LEDGER = frozenset({"create", "import"})
 
 
@@ -417,6 +419,7 @@ def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | No
         code, report = EXIT_REFUSED, {"refused": str(exc)}
     except ValueError as exc:
         code, report = EXIT_REFUSED, {"refused": str(exc)}
+    report = {"schema": f"{SCHEMA_PREFIX}.{args.command}.v1", **report}
     print(json.dumps(report, sort_keys=True, indent=2, ensure_ascii=False))
     return code
 

@@ -236,7 +236,11 @@ def test_an_unknown_record_is_refused_and_named(
 ) -> None:
     cli.create_record(tmp_path / "l", {}, prefix="acme")
     assert cli.main(["show", str(tmp_path / "l"), "acme-zzzz"]) == cli.EXIT_REFUSED
-    assert json.loads(capsys.readouterr().out) == {"record": "acme-zzzz", "found": False}
+    assert json.loads(capsys.readouterr().out) == {
+        "schema": "basicly.tracker.show.v1",
+        "record": "acme-zzzz",
+        "found": False,
+    }
 
 
 def test_a_directory_that_is_not_a_ledger_is_refused_not_answered_as_empty(
@@ -339,3 +343,39 @@ def test_an_empty_ledger_directory_reads_as_an_empty_backlog(
 
     assert cli.main(["ready", str(ledger)]) == cli.EXIT_OK
     assert _report(capsys)["count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("command", "extra"),
+    [
+        ("list", ()),
+        ("show", ("RECORD",)),
+        ("blocked", ()),
+        ("stats", ()),
+        ("shards", ()),
+        ("fsck", ()),
+        ("dor", ("RECORD",)),
+    ],
+)
+def test_every_read_names_its_schema(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], command: str, extra: tuple[str, ...]
+) -> None:
+    ledger = tmp_path / "ledger"
+    cli.main(["create", str(ledger), "--prefix", "acme", "--title", "a"])
+    record = _report(capsys)["record"]
+
+    cli.main([command, str(ledger), *(record if one == "RECORD" else one for one in extra)])
+
+    assert _report(capsys)["schema"] == f"basicly.tracker.{command}.v1"
+
+
+def test_a_schema_the_view_declares_is_kept(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    cli.main(["create", str(ledger), "--prefix", "acme", "--title", "a"])
+    capsys.readouterr()
+
+    cli.main(["ready", str(ledger)])
+
+    assert _report(capsys)["schema"] == cli.scheduler.SCHEMA

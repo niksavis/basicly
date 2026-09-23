@@ -34,6 +34,7 @@ $ python3 .basicly/kit/tracker/cli.py import .basicly/ledger issues.jsonl --dry-
   "dry_run": true,
   "imported": ["demo-aa11", "demo-bb22"],
   "rejected": [{"reason": "not a record id", "subject": "'not-an-id'"}],
+  "schema": "basicly.tracker.import.v1",
   "source": "issues.jsonl",
   "tombstoned": []
 }

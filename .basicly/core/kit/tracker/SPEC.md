@@ -49,7 +49,8 @@ than answered as an empty backlog:
 $ python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix demo --title "try the tracker"
 {
   "events": ["demo-hbms#ev-59a934da3f", "demo-hbms#ev-04bc122532"],
-  "record": "demo-hbms"
+  "record": "demo-hbms",
+  "schema": "basicly.tracker.create.v1"
 }
 $ python3 .basicly/kit/tracker/cli.py ready .basicly/ledger
 {
