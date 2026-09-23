@@ -168,15 +168,13 @@ def remedy(missing: Sequence[str]) -> str:
             )
         elif name == ACCEPTANCE_HEADING:
             parts.append(
-                f"state the acceptance criteria as `--acceptance` or a `{ACCEPTANCE_HEADING}` "
-                f"section of `- ` bullets; they are what a check is derived from, so a "
-                f"placeholder counts as absent"
+                "state the acceptance criteria as `--acceptance`; they are what a check is "
+                "derived from, so a placeholder counts as absent"
             )
         elif name == REQUIREMENTS_HEADING:
             parts.append(
-                f"state the requirements as `--requirements` or a `{REQUIREMENTS_HEADING}` "
-                f"section of `- ` bullets; they are the standard validation judges the "
-                f"built thing against"
+                "state the requirements as `--requirements`; they are the standard "
+                "validation judges the built thing against"
             )
         else:
             parts.append(
@@ -184,3 +182,17 @@ def remedy(missing: Sequence[str]) -> str:
                 f"`--field {field_of(name)}=<text>`"
             )
     return "; ".join(parts)
+
+
+_FLAGS = {ACCEPTANCE_HEADING: "--acceptance", REQUIREMENTS_HEADING: "--requirements"}
+
+
+def body(kind: str, template=None) -> dict:
+
+    headings = required({TYPE_FIELD: kind}, template)
+    flags = {_FLAGS[one]: "- <what is checked>" for one in headings if one in _FLAGS}
+    sections = [JOB_STORY_EXAMPLE] if TRIGGER_HEADING in headings else []
+    sections += [
+        f"{one}\n\n<text>" for one in headings if one != TRIGGER_HEADING and one not in _FLAGS
+    ]
+    return {"required": list(headings), "description": "\n\n".join(sections), "flags": flags}

@@ -1,0 +1,1 @@
+- The standalone tracker kit has a `scaffold` command that prints the description and flags a record of one type must carry, and its guidance now shows how to split and word a record. `basicly policy scaffold` and decompose now emit the sections a ledger template adds. The refusal text no longer points an open record at description sections, which only a closed record reads.

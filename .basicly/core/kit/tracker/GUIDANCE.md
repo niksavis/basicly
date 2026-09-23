@@ -110,9 +110,14 @@ persona is never required: where a situation triggers the work and nobody in par
 wants it, inventing one is the defect. A placeholder counts as absent, so pasting either
 template unfilled does not satisfy the gate.
 
-`--acceptance` and `--requirements` are the direct route. A `## Acceptance Criteria` or
-`## Requirements` section of dash-space bullets in the description counts too, so a record
-written as prose stays valid.
+`--acceptance` and `--requirements` are the only route on an open record: a
+`## Acceptance Criteria` or `## Requirements` section in the description is read only once
+the record is closed, as evidence of what it held. `scaffold` prints the body and flags a
+record of one type must carry, so you fill it in rather than guess:
+
+```sh
+python3 .basicly/kit/tracker/cli.py scaffold .basicly/ledger --type bug
+```
 
 ### Your own record template
 
@@ -132,6 +137,29 @@ A section is satisfied by that heading with content in the description, or by a 
 named after it: `--field risks="<text>"`, `--field steps_to_reproduce="<text>"`. `dor`,
 `create`, `board` and the basicly engine all read the same file. A malformed template is
 refused by name, never ignored.
+
+### Write a record someone else can build
+
+- **One record, one change a person can see.** If the acceptance criteria describe two
+  outcomes that can ship apart, file two records and add a `dep` edge between them.
+- **Small enough to finish.** A record that needs more than one working session is two
+  records. Use `child` to split a large one, and keep the parent as the anchor.
+- **Criteria a check can derive.** Write each criterion as a trigger and a response:
+  *"When <event>, the <system> shall <response>."* One bullet is one check.
+- **Name the standard, not the method.** Requirements say what the result must obey, such
+  as a platform, a limit or a rule. They do not say how to build it.
+
+A record the gate refuses, then the same record shaped:
+
+```sh
+python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix acme --title "fix export"
+python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix acme --title "fix export" \
+    --description "When an export holds a comment with a newline, I want it kept, so I can import it back unchanged." \
+    --acceptance "- When the export holds a multi-line comment, the importer shall keep every line" \
+    --requirements "- Standard library only"
+```
+
+The first prints three sections in `owed`. The second prints none.
 
 **`ready` is not the gate.** It offers every unblocked record, shaped or not; `dor` is what
 refuses. Read `ready` to choose, then run `dor` before you build.

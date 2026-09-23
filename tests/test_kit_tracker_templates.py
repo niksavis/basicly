@@ -170,3 +170,57 @@ def test_fsck_accepts_a_template_beside_the_log(
     _create(ledger, capsys, *_shaped_args())
 
     assert cli.main(["fsck", str(ledger)]) == cli.EXIT_OK
+
+
+def test_the_template_command_prints_the_default_shape(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    ledger.mkdir()
+
+    assert cli.main(["scaffold", str(ledger)]) == cli.EXIT_OK
+    shape = _report(capsys)
+    assert shape["required"] == ["## Trigger", "## Acceptance Criteria", "## Requirements"]
+    assert sorted(shape["flags"]) == ["--acceptance", "--requirements"]
+    assert shape["description"].startswith("When <situation>")
+
+
+def test_the_template_command_prints_the_sections_a_type_owes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    _template(ledger, {"types": {"bug": ["## Steps to Reproduce"]}})
+
+    assert cli.main(["scaffold", str(ledger), "--type", "bug"]) == cli.EXIT_OK
+    shape = _report(capsys)
+    assert shape["type"] == "bug"
+    assert "## Steps to Reproduce\n\n<text>" in shape["description"]
+
+
+def test_a_template_pasted_unfilled_is_still_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    _template(ledger, {"types": {"bug": ["## Steps to Reproduce"]}})
+    cli.main(["scaffold", str(ledger), "--type", "bug"])
+    shape = _report(capsys)
+    flags = [part for flag, text in shape["flags"].items() for part in (flag, text)]
+
+    argv = ["create", str(ledger), "--prefix", "acme", "--field", "issue_type=bug"]
+    cli.main([*argv, "--description", shape["description"], *flags])
+
+    assert _report(capsys)["owed"] == shape["required"]
+
+
+def test_a_filled_template_passes_the_gate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    _template(ledger, {"types": {"bug": ["## Steps to Reproduce"]}})
+    body = f"{TRIGGER}\n\n## Steps to Reproduce\n\nRun the import twice.\n"
+
+    argv = ["create", str(ledger), "--prefix", "acme", "--field", "issue_type=bug"]
+    cli.main([*argv, "--description", body, *_shaped_args()])
+    record = _report(capsys)["record"]
+
+    assert cli.main(["dor", str(ledger), record]) == cli.EXIT_OK

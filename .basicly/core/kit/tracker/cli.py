@@ -200,6 +200,10 @@ def _parser() -> argparse.ArgumentParser:
         help="report what the same plan would write, and write nothing",
     )
 
+    shape = sub.add_parser("scaffold", help="print what a record of one type must carry")
+    shape.add_argument("directory", help=DIRECTORY_HELP)
+    shape.add_argument("--type", default="", help="the record type, as its issue_type field")
+
     _add_query_parsers(sub)
     _add_write_parsers(sub)
     return parser
@@ -330,6 +334,7 @@ _VIEWS: dict[
     "shards": lambda a, _r: _shards(a),
     "board": lambda a, _r: {"written": board.write(a.directory, a.out).as_posix()},
     "import": _imported,
+    "scaffold": lambda a, _r: record_view.scaffold_of(a.directory, a.type),
 }
 
 

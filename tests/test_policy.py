@@ -194,6 +194,13 @@ def test_dor_reads_an_overriding_ledger_template(
     assert policy.definition_of_ready(tmp_path, "i").ready is True
 
 
+def test_the_scaffold_emits_what_the_ledger_template_requires(tmp_path: Path) -> None:
+    _ledger_template(tmp_path, {"types": {"task": ["## Risks"]}})
+
+    assert "## Risks\n\nTODO: fill this in." in policy.scaffold_body("task", tmp_path)
+    assert "## Risks" not in policy.scaffold_body("task")
+
+
 def test_dor_refuses_a_malformed_ledger_template(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

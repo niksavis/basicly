@@ -111,17 +111,21 @@ def required_sections(work_type: str, repo_root: Path | None = None) -> tuple[st
     return required_conditions(work_type, repo_root)
 
 
-def scaffold_body(work_type: str) -> str:
+def scaffold_body(work_type: str, repo_root: Path | None = None) -> str:
 
-    return compose_body(work_type, {_SCOPE_SECTION: ""})
+    return compose_body(work_type, {_SCOPE_SECTION: ""}, repo_root=repo_root)
 
 
 def compose_body(
-    work_type: str, content: Mapping[str, str] | None = None, *, preamble: str = ""
+    work_type: str,
+    content: Mapping[str, str] | None = None,
+    *,
+    preamble: str = "",
+    repo_root: Path | None = None,
 ) -> str:
 
     content = content or {}
-    headings = list(required_sections(work_type))
+    headings = list(required_sections(work_type, repo_root))
     headings += [heading for heading in content if heading not in headings]
     default = f"{_TODO}: fill this in."
     sections = (

@@ -2790,7 +2790,7 @@ def _cmd_policy_dor(args: argparse.Namespace) -> int:
 
 def _cmd_policy_scaffold(args: argparse.Namespace) -> int:
 
-    print(policy.scaffold_body(args.type), end="")
+    print(policy.scaffold_body(args.type, _repo_root()), end="")
     return 0
 
 

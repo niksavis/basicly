@@ -24,6 +24,7 @@ def _load(file_name: str, module_name: str) -> Any:
 
 queries = _load("queries.py", "basicly_tracker_kit_queries")
 label_shape = _load("label_shape.py", "basicly_tracker_kit_label_shape")
+templates = _load("templates.py", "basicly_tracker_kit_templates")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -46,7 +47,11 @@ def _is_repository(path: Path) -> bool:
 
 
 def _holds_ledger(path: Path) -> bool:
-    return any(path.glob(events.LOG_GLOB)) or any(path.glob(events.PENDING_GLOB))
+    return (
+        any(path.glob(events.LOG_GLOB))
+        or any(path.glob(events.PENDING_GLOB))
+        or (path / templates.TEMPLATE_FILE).is_file()
+    )
 
 
 def resolve_ledger(directory: Path | str, *, starts: bool = False) -> Path:

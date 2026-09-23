@@ -1009,7 +1009,7 @@ def govern_working_set(
     return verdict.estimates
 
 
-def _child_body(spec: ChildSpec, trigger: str = "") -> str:
+def _child_body(spec: ChildSpec, trigger: str = "", repo_root: Path | None = None) -> str:
 
     return policy.compose_body(
         spec.type,
@@ -1024,6 +1024,7 @@ def _child_body(spec: ChildSpec, trigger: str = "") -> str:
                 spec.demonstration or "",
             ),
         },
+        repo_root=repo_root,
     )
 
 
@@ -1067,7 +1068,7 @@ def _create_child(
     args = ["create", spec.title, "-t", spec.type, "--parent", feature_id]
     if labels:
         args += ["-l", ",".join(labels)]
-    args += ["-d", _child_body(spec, trigger), "--json"]
+    args += ["-d", _child_body(spec, trigger, repo_root), "--json"]
     return tracker.create_record(repo_root, args)
 
 

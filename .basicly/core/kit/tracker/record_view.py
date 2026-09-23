@@ -91,3 +91,7 @@ def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
     shown = snapshot.record_to_dict(state)
     shown.update(_edges(record, views, states))
     return shown
+
+
+def scaffold_of(directory: Path | str, kind: str) -> dict[str, object]:
+    return {"type": kind, **shaping.body(kind, templates.load(directory))}
