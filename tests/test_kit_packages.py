@@ -70,7 +70,7 @@ def test_no_kit_is_copied_into_the_packages_tree() -> None:
     strays = [
         str(path.relative_to(REPO_ROOT))
         for path in PACKAGES.rglob("*.py")
-        if path.name not in {"kit_installer.py", "__init__.py"}
+        if path.name not in {"kit_installer.py", "kit_bundle.py", "__init__.py"}
     ]
     assert strays == []
 

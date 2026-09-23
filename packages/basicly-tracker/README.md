@@ -21,6 +21,20 @@ a single kit file, and refuses to install at all if it cannot.
 `init` copies the kit into `.basicly/kit/tracker` so it runs from plain `python3`
 afterwards.
 
+**One file instead of `uvx`.** `bundle` writes `tracker.pyz`, a single archive that
+runs on any platform with Python 3.9 or later and needs no network after it is written:
+
+```console
+$ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker bundle
+tracker: wrote tracker.pyz; run it as python tracker.pyz <verb>
+$ python tracker.pyz init
+$ python tracker.pyz ready .basicly/ledger
+```
+
+On its first run the archive unpacks itself into a cache directory named after its own
+content (`%LOCALAPPDATA%`, else `$XDG_CACHE_HOME`, else `~/.cache`, under `basicly-kits`),
+and runs from there. It still needs Python: it is not a native executable.
+
 **A repository that already has a backlog brings it across with `import`**, rather than
 retyping it. It reads a JSONL export one record per line, keeps the ids, and carries the
 comments and the dependency edges with them. Preview it first — `--dry-run` reports the
