@@ -1,0 +1,1 @@
+- The tracker post-merge fold is now off by default, because a fold on a branch that becomes a pull request made that pull request conflict on GitHub. Enable it with `basicly-tracker init --fold-on-merge` or `[tracker] fold_on_merge = true` where one writer lands on the default branch. It then folds only there.

@@ -68,8 +68,15 @@ def _bundle(args) -> int:
     return 0
 
 
+FOLD_FLAG = "--fold-on-merge"
+
+
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args[:1] == ["bundle"]:
         return _bundle(args[1:])
+    if args[:1] in (["init"], ["update"]) and FOLD_FLAG in args:
+        args.remove(FOLD_FLAG)
+        folding = KIT._replace(configure_args=(*KIT.configure_args, FOLD_FLAG))
+        return installer.run(folding, args)
     return installer.run(KIT, args)

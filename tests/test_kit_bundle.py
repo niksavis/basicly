@@ -88,3 +88,20 @@ def test_bundle_refuses_the_source_tree(tmp_path: Path) -> None:
     assert done.returncode != 0
     assert "bundle runs from the built package" in done.stderr
     assert not (tmp_path / "x.pyz").exists()
+
+
+def test_the_fold_hook_is_wired_only_on_request(pyz: Path, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)  # nosec B603 B607
+    cache = tmp_path / "cache"
+    hook = repo / ".git" / "hooks" / "post-merge"
+
+    plain = _run(pyz, repo, cache, "init")
+    assert plain.returncode == 0, plain.stderr
+    assert "no post-merge fold is wired" in plain.stdout
+    assert not hook.exists()
+
+    folding = _run(pyz, repo, cache, "update", "--fold-on-merge")
+    assert folding.returncode == 0, folding.stderr
+    assert "compact" in hook.read_text(encoding="utf-8")

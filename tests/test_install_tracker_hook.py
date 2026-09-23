@@ -14,8 +14,10 @@ from tests.kit_deployment_helpers import KIT_RELATIVE, REPO_ROOT, _load
 INSTALLER = cli.TRACKER_HOOK_INSTALLER
 
 
-def _repo(tmp_path: Path, *, vendored: bool) -> Path:
+def _repo(tmp_path: Path, *, vendored: bool, folds: bool = True) -> Path:
     (tmp_path / ".git" / "hooks").mkdir(parents=True)
+    if folds:
+        (tmp_path / "basicly.toml").write_text("[tracker]\nfold_on_merge = true\n", "utf-8")
     if vendored:
         target = tmp_path / INSTALLER
         target.parent.mkdir(parents=True)
@@ -126,3 +128,23 @@ def test_a_host_command_needs_no_in_repo_kit_path(tmp_path: Path) -> None:
     assert "basicly tracker fold" in (tmp_path / ".git" / "hooks" / "post-merge").read_text(
         encoding="utf-8"
     )
+
+
+def test_a_repository_that_does_not_opt_in_gets_no_fold(tmp_path: Path, rooted, capsys) -> None:
+    rooted(_repo(tmp_path, vendored=True, folds=False))
+
+    assert cli.cmd_tracker_hook(argparse.Namespace()) == 0
+
+    assert not (tmp_path / ".git" / "hooks" / "post-merge").exists()
+    assert "no post-merge fold is wired" in capsys.readouterr().out
+
+
+def test_opting_out_removes_a_fold_already_wired(tmp_path: Path, rooted) -> None:
+    repo = _repo(tmp_path, vendored=True)
+    rooted(repo)
+    cli.cmd_tracker_hook(argparse.Namespace())
+    (repo / "basicly.toml").write_text("[tracker]\nfold_on_merge = false\n", "utf-8")
+
+    assert cli.cmd_tracker_hook(argparse.Namespace()) == 0
+
+    assert not (repo / ".git" / "hooks" / "post-merge").exists()

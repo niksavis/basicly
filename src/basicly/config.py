@@ -367,7 +367,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
         tables={"context_windows": _OPEN_TABLE},
         arrays={"agents": _RUNNER_AGENT_TABLE},
     ),
-    "tracker": Table(keys=frozenset({"mode", "prefix"})),
+    "tracker": Table(keys=frozenset({"mode", "prefix", "fold_on_merge"})),
     "privacy": Table(arrays={"denied": Table(keys=frozenset({"name", "token"}))}),
 }
 
@@ -501,6 +501,14 @@ def load_tracker_prefix(repo_root: Path) -> str | None:
 
     prefix = _harness_section(repo_root, "tracker").get("prefix")
     return str(prefix) if prefix else None
+
+
+def load_tracker_fold_on_merge(repo_root: Path) -> bool:
+
+    folds = _harness_section(repo_root, "tracker").get("fold_on_merge", False)
+    if not isinstance(folds, bool):
+        raise ValueError(f"[tracker] fold_on_merge must be true or false, not {folds!r}")
+    return folds
 
 
 def load_tracker_mode(repo_root: Path) -> str:

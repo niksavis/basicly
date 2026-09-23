@@ -142,16 +142,19 @@ instructions: |
   ## After a merge: fold the writer shards
 
   A writer appends to `pending-<branch>.jsonl`, never to the trunk log, so two branches
-  never edit one file and never conflict. A merge therefore lands a shard, and the readers
-  read the trunk log. Fold it:
+  never edit one file and never conflict. A merge therefore lands a shard, and every read
+  folds the shards with the trunk log, so folding only bounds the file count:
 
   ```sh
   basicly tracker fold
   ```
 
-  `basicly install` wires this to a `post-merge` hook, so a merge folds the shard on its
-  own. Run it by hand only when the hook did not run, or when the hook printed *the
-  pending shards are not folded* because the engine was not on the path. The commit it
+  `basicly install` wires this to a `post-merge` hook only when `[tracker] fold_on_merge =
+  true`, and the hook folds only on the default branch. Leave it off where the default
+  branch takes pull requests: two different folds conflict on the forge
+  (basicly-k1pxru4.3). Run it by hand, as its own pull request, when `fsck` warns about the
+  shard count, or when the hook printed *the pending shards are not folded* because the
+  engine was not on the path. The commit it
   writes carries a record id taken from the shard's own events, so the commit-msg gate
   admits it. It refuses while the tree carries a change outside the ledger, so commit
   your own work first.

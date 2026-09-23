@@ -83,6 +83,7 @@ from .config import (
     load_runner_config,
     load_sizing_config,
     load_technology_selection,
+    load_tracker_fold_on_merge,
     load_verify_config,
     load_worktree_config,
     record_technology_selection,
@@ -1632,6 +1633,8 @@ def cmd_tracker_hook(args: argparse.Namespace) -> int:
     ]
     if dry_run:
         argv.append("--dry-run")
+    if load_tracker_fold_on_merge(repo_root):
+        argv.append("--fold-on-merge")
     completed = subprocess.run(  # noqa: S603 — run, not imported; the engine holds no kit import
         argv,
         capture_output=True,

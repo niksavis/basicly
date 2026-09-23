@@ -156,7 +156,8 @@ python3 .basicly/kit/tracker/cli.py shards .basicly/ledger
 
 ### compact
 
-Fold every pending shard into the trunk log. The post-merge hook runs this for you.
+Fold every pending shard into the trunk log. Run it on the default branch as its own
+pull request; `init --fold-on-merge` runs it after a merge where one writer pushes there.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py compact .basicly/ledger

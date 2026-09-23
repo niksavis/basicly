@@ -67,12 +67,23 @@ def hooks_dir(root: Path) -> Path | None:
     return path if path.is_absolute() else (root / path)
 
 
+ON_DEFAULT_BRANCH = (
+    'tracker_default="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"',
+    'tracker_default="${tracker_default#origin/}"',
+    '[ -n "$tracker_default" ] || tracker_default="$(git config init.defaultBranch)"',
+    '[ -n "$tracker_default" ] || tracker_default=main',
+    '[ "$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" = "$tracker_default" ] &&',
+)
+
+
 def body(interpreter: str, script: str, ledger: str, command: str = "", advice: str = "") -> str:
 
     if command:
         return "\n".join((
             BEGIN,
-            f'if [ -z "$(git status --porcelain -- . ":(exclude){ledger}")" ]; then',
+            *ON_DEFAULT_BRANCH[:-1],
+            f"if {ON_DEFAULT_BRANCH[-1]}",
+            f'  [ -z "$(git status --porcelain -- . ":(exclude){ledger}")" ]; then',
             f"  {command} >/dev/null 2>&1 ||",
             f"    echo 'tracker: the pending shards are not folded; run {advice or command}' >&2",
             "fi",
@@ -82,7 +93,9 @@ def body(interpreter: str, script: str, ledger: str, command: str = "", advice: 
     missing = "no uv or python on PATH, so the pending shards are not folded"
     return "\n".join((
         BEGIN,
-        f'if [ -f "{script}" ] && [ -z "$(git status --porcelain -- . ":(exclude){ledger}")" ]',
+        *ON_DEFAULT_BRANCH[:-1],
+        f'if {ON_DEFAULT_BRANCH[-1]} [ -f "{script}" ] &&',
+        f'  [ -z "$(git status --porcelain -- . ":(exclude){ledger}")" ]',
         "then",
         '  tracker_run=""',
         f'  for tracker_try in "{interpreter}" python3 python; do',
@@ -154,13 +167,7 @@ def install(  # noqa: PLR0913 — one keyword per seam the host injects; a setti
 ) -> int:
 
     script = "" if command else _within(_HERE / CLI_FILE, root)
-    within = _within(ledger, root)
-    if not ledger.is_dir():
-        if dry_run:
-            stream.write(f"tracker: would create the ledger {within}\n")
-        else:
-            ledger.mkdir(parents=True)
-            stream.write(f"tracker: created the ledger {within}\n")
+    within = ensure_ledger(root, ledger, dry_run=dry_run, stream=stream)
     directory = hooks_dir(root)
     if directory is None:
         stream.write(
@@ -184,6 +191,25 @@ def install(  # noqa: PLR0913 — one keyword per seam the host injects; a setti
     how = "added the compact block to the existing" if kept else "wrote"
     stream.write(f"tracker: {how} {HOOK_NAME} in {directory}\n")
     return 0
+
+
+def ensure_ledger(root: Path, ledger: Path, *, dry_run: bool, stream: Any) -> str:
+
+    within = _within(ledger, root)
+    if not ledger.is_dir():
+        if dry_run:
+            stream.write(f"tracker: would create the ledger {within}\n")
+        else:
+            ledger.mkdir(parents=True)
+            stream.write(f"tracker: created the ledger {within}\n")
+    return within
+
+
+NO_FOLD = (
+    "tracker: no post-merge fold is wired, so a pull request never edits the trunk log; "
+    "run `compact` as its own pull request, or pass --fold-on-merge where one writer "
+    "pushes to the default branch\n"
+)
 
 
 def uninstall(root: Path, *, dry_run: bool, stream: Any) -> int:
@@ -240,6 +266,11 @@ def main(argv: Any = None) -> int:
         help="the command a reader should type when --command fails; defaults to --command",
     )
     parser.add_argument(
+        "--fold-on-merge",
+        action="store_true",
+        help="wire the fold; safe only where one writer pushes to the default branch",
+    )
+    parser.add_argument(
         "--interpreter",
         default=DEFAULT_INTERPRETER,
         help="the command that runs the kit; the default needs only uv",
@@ -251,6 +282,10 @@ def main(argv: Any = None) -> int:
     ledger = Path(args.ledger) if args.ledger else _HERE.parent.parent / "ledger"
     if not ledger.is_absolute():
         ledger = root / ledger
+    if not args.fold_on_merge:
+        ensure_ledger(root, ledger, dry_run=args.dry_run, stream=sys.stdout)
+        sys.stdout.write(NO_FOLD)
+        return uninstall(root, dry_run=args.dry_run, stream=sys.stdout)
     return install(
         root,
         ledger=ledger,

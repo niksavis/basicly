@@ -76,6 +76,12 @@ mode = "owned"
 # no later read would find again.
 prefix = "basicly"
 
+# Fold writer shards after a merge. Safe only where one writer lands on the default
+# branch, as the engine does here; a repository that takes pull requests leaves it off and
+# runs `basicly tracker fold` as its own pull request (basicly-k1pxru4.3, measured on
+# the testbed: every automatic fold outside one writer made a pull request conflict).
+fold_on_merge = true
+
 # Sibling git-worktree isolation for harness tracks.
 [worktree]
 # Branch new harness/<name> worktrees fork from. Empty = the current branch.

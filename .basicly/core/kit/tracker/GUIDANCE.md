@@ -69,15 +69,22 @@ repaired by appending a corrective event, never by editing a line.
 
 ## After a merge
 
-A write appends to `pending-<branch>.jsonl`, so two branches never edit one file. `init`
-wires a `post-merge` hook that folds those shards into the trunk log and commits the
-result. It runs the kit with `uv`, else `python3`, else `python`, and only when the ledger
-is the only change in the tree. When it cannot fold, it prints one line that names the
-command to run yourself:
+A write appends to `pending-<branch>.jsonl`, so two branches never edit one file, and
+every read folds the shards with the trunk log. So a merge needs nothing from you.
+
+**Folding the shards is maintenance, not correctness.** It only bounds the file count;
+`fsck` warns above 1,000 shards. Run it on the default branch as its own pull request:
 
 ```sh
 python3 .basicly/kit/tracker/cli.py compact .basicly/ledger
 ```
+
+**Do not fold automatically where the default branch takes pull requests.** A fold edits
+the trunk log, and two pull requests that each carry a different fold conflict on the
+forge. That was measured: every automatic fold outside one writer made a pull request
+conflict. Only a repository where one writer pushes straight to the default branch should
+pass `init --fold-on-merge`, which wires a `post-merge` hook that folds there and nowhere
+else.
 
 ## Show a human where the work stands
 

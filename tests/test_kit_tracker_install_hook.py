@@ -358,3 +358,37 @@ def test_the_hook_reports_a_fold_that_fails(tmp_path: Path) -> None:
     assert done.returncode == 0
     assert "the pending shards are not folded; run python" in done.stderr
     assert _shards(root) == ["pending-main.jsonl"]
+
+
+@_POSIX_HOOK
+def test_the_hook_leaves_a_feature_branch_unfolded(tmp_path: Path) -> None:
+    root = _checkout_with_a_shard(tmp_path)
+    subprocess.run(["git", "-C", str(root), "checkout", "-q", "-b", "feature"], check=True)
+
+    done = _run_hook(root, _tool_dir(tmp_path, sys.executable))
+
+    assert done.returncode == 0
+    assert done.stderr == ""
+    assert _shards(root) == ["pending-main.jsonl"], (
+        "a fold on a feature branch makes its pull request edit the shared trunk log, "
+        "which the forge reports as conflicting (basicly-k1pxru4.3)"
+    )
+
+
+@_POSIX_HOOK
+def test_the_hook_folds_on_the_branch_the_remote_names_default(tmp_path: Path) -> None:
+    root = _checkout_with_a_shard(tmp_path)
+    subprocess.run(["git", "-C", str(root), "checkout", "-q", "-b", "trunk"], check=True)
+    head = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    git = ["git", "-C", str(root)]
+    subprocess.run([*git, "update-ref", "refs/remotes/origin/trunk", head], check=True)
+    subprocess.run(
+        [*git, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"], check=True
+    )
+
+    done = _run_hook(root, _tool_dir(tmp_path, sys.executable))
+
+    assert done.returncode == 0
+    assert _shards(root) == []

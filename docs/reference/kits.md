@@ -12,11 +12,10 @@ has no basicly. There is no second copy to drift.
 
 ## Getting a kit
 
-**With basicly.** `basicly install` brings all three and wires the tier hook. It does **not**
-wire the tracker's `post-merge` shard hook, and does not need to: the engine folds pending
-shards itself at the seam that commits tracker state, with a record id the commit-msg gate
-accepts. A repository that has basicly gets the folding; it gets it at a landing rather than
-at a merge.
+**With basicly.** `basicly install` brings all three and wires the tier hook. It wires the
+tracker's `post-merge` fold only when `basicly.toml` sets `[tracker] fold_on_merge = true`,
+which is right only where one writer lands on the default branch. The engine also folds
+at the seam that commits tracker state, with a record id the commit-msg gate accepts.
 
 **Without basicly.** One line each, and no dependency beyond a Python 3.9 floor:
 
@@ -106,13 +105,15 @@ A `--field` value is read as JSON when it parses as JSON, and as a string otherw
 `create`, `child` and `update` also take `--description`, `--acceptance` and
 `--requirements`, and every one of them reports what the record still **owes**. A record
 is shaped when it carries a trigger in either story voice, acceptance criteria and
-requirements — as those fields, or as `## Acceptance Criteria` and `## Requirements`
-sections of dash-space bullets in the description, so a record written as prose keeps working.
-A placeholder counts as absent.
+requirements. On an open record the criteria and requirements count only as those fields;
+`## Acceptance Criteria` and `## Requirements` sections in the description are read once the
+record is closed. A placeholder counts as absent, and a ledger `template.json` can extend or
+replace the rule.
 
-**A `post-merge` hook keeps the shard count bounded.** After a merge or a pull it folds
-every pending writer shard into the trunk log and commits the result — but **only when the
-ledger is the sole uncommitted change**. A developer with work in progress is left entirely
+**A `post-merge` hook can keep the shard count bounded, and is off by default.** A fold
+edits the trunk log, so where the default branch takes pull requests two folds conflict;
+`init --fold-on-merge` wires it for a repository with one writer. It folds only on the
+default branch, and **only when the ledger is the sole uncommitted change**. A developer with work in progress is left entirely
 alone, because a hook that rewrites your tree on every pull is worse than the shards it
 removes. It honours `core.hooksPath`, merges into a hook somebody else wrote rather than
 replacing it, and `uninstall` removes exactly its own marked block.
