@@ -194,7 +194,7 @@ def test_commit_tracker_state_commits_beads_only_dirt(
     assert merge.commit_tracker_state(tmp_path, "basicly-x") is True
     assert ["add", ".basicly/ledger"] in fake.calls
     commit = next(call for call in fake.calls if call[0] == "commit")
-    assert "(basicly-x)" in commit[-1] and commit[-1].startswith("chore(beads):")
+    assert "(basicly-x)" in commit[-1] and commit[-1].startswith("chore(tracker):")
 
 
 def test_commit_tracker_state_refuses_mixed_dirt(

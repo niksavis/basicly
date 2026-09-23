@@ -363,7 +363,7 @@ def _commit_tracker_state(
         tree for tree in ENGINE_TRACKER_PATHS if shards or any(_under(path, tree) for path in paths)
     ]
     git(["add", *dirty], cwd=repo_root)
-    _commit_staged_tracker_state(repo_root, f"chore(beads): {action} ({bead})", on_retry)
+    _commit_staged_tracker_state(repo_root, f"chore(tracker): {action} ({bead})", on_retry)
     return True
 
 

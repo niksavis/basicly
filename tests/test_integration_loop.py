@@ -390,7 +390,7 @@ def test_the_engine_commits_the_claim_before_provisioning(harness_repo: Path) ->
 
     _to_build(repo, issue)
     assert _git(repo, "log", "-1", "--format=%s").strip() == (
-        f"chore(beads): record the claim before provisioning ({issue})"
+        f"chore(tracker): record the claim before provisioning ({issue})"
     )
     tracked = _git(repo, "show", "--name-only", "--format=", "HEAD").split()
     assert tracked and all(path.startswith(".basicly/ledger/") for path in tracked)

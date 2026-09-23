@@ -52,7 +52,7 @@ The engine makes the only tracker commits, at the three natural points:
    committed before the worktree is created, so the claim is in git history
    from the moment work starts — a teammate who pulls sees it immediately.
 2. **At landing**, `loop advance` rolls the `.basicly/ledger/**` dirt accumulated
-   since (checkpoints, gate records) into one `chore(beads)` commit before
+   since (checkpoints, gate records) into one `chore(tracker)` commit before
    merging. A base that is dirty with anything *outside* the ledger still
    blocks — that is someone's uncommitted work.
 3. **At ship**, after the closing write, the engine commits the closing
