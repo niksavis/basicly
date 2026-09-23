@@ -127,6 +127,11 @@ def _meets(record: Mapping[str, object], heading: str, body: str, closed: bool) 
     return states_something(value) or states_something(section_text(body, heading))
 
 
+def meets(record: Mapping[str, object], heading: str, *, closed: bool = False) -> bool:
+    described = record.get(DESCRIPTION_FIELD)
+    return _meets(record, heading, described if isinstance(described, str) else "", closed)
+
+
 def owed(record: Mapping[str, object], *, closed: bool = False, template=None) -> tuple:
 
     described = record.get(DESCRIPTION_FIELD)

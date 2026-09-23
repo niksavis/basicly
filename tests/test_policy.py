@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import decisions, integrity, policy, rubrics, run_record, tracker, verify
+from basicly import decisions, integrity, invest, policy, rubrics, run_record, tracker, verify
 from basicly.config import (
     ENGINE_GATE_PROVIDERS,
     LOOP_PHASES,
@@ -199,6 +199,28 @@ def test_the_scaffold_emits_what_the_ledger_template_requires(tmp_path: Path) ->
 
     assert "## Risks\n\nTODO: fill this in." in policy.scaffold_body("task", tmp_path)
     assert "## Risks" not in policy.scaffold_body("task")
+
+
+@pytest.mark.parametrize(
+    ("fields", "met"),
+    [
+        ({"description": "## Risks\n"}, False),
+        ({"description": "## Risks\n\n<risk>\n"}, False),
+        ({"description": "## Risks\n\nThe import may time out.\n"}, True),
+        ({"risks": "The import may time out."}, True),
+    ],
+)
+def test_the_engine_and_the_kit_agree_on_a_template_section(
+    tmp_path: Path, fields: dict[str, str], met: bool
+) -> None:
+    _ledger_template(tmp_path, {"mode": "override", "sections": ["## Risks"]})
+    kit = tracker.kit(tmp_path, "shaping")
+    template = tracker.ledger_template(tmp_path)
+
+    engine = invest.missing_for(fields, "task", tmp_path, template=template)
+
+    assert engine == kit.owed(fields, template=template)
+    assert engine == (() if met else ("## Risks",))
 
 
 def test_dor_refuses_a_malformed_ledger_template(

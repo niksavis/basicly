@@ -23,7 +23,7 @@ from .config import (
     load_policy_config,
 )
 from .integrity import VALIDATE_GATE
-from .invest import TRIGGER_HEADING, missing_sections, required_conditions, trigger_remedy
+from .invest import TRIGGER_HEADING, missing_for, required_conditions, trigger_remedy
 from .plan_record import ACCEPTANCE_HEADING
 from .tracker import add_comment as _add_comment
 from .tracker import read_comments as _read_comments
@@ -79,8 +79,12 @@ def definition_of_ready(repo_root: Path, issue_id: str) -> DoRResult:
 
     with preflight_gate(DOR_GATE):
         record = tracker.read_record(repo_root, issue_id) or {}
-        required = required_sections(str(record.get("issue_type") or ""), repo_root)
-        missing = missing_sections(record, required)
+        missing = missing_for(
+            record,
+            str(record.get("issue_type") or ""),
+            repo_root,
+            template=tracker.ledger_template(repo_root),
+        )
     return DoRResult(ready=not missing, missing=missing)
 
 

@@ -1,0 +1,1 @@
+- `basicly policy dor` and the standalone kit now give the same answer for a section a ledger template adds: a bare heading or a placeholder does not meet it on either route.

@@ -69,14 +69,40 @@ def required_conditions(work_type: str, repo_root: Path | None = None) -> tuple[
     return _required(work_type, load_type_sections(repo_root), tracker.ledger_template(repo_root))
 
 
+def missing_for(
+    record: Mapping[str, object],
+    work_type: str,
+    repo_root: Path,
+    declared: Mapping[str, Sequence[str]] | None = None,
+    template: Any = None,
+) -> tuple[str, ...]:
+
+    declared = load_type_sections(repo_root) if declared is None else declared
+    required = _required(work_type, declared, template)
+    from_template: set[str] = set()
+    if template is not None:
+        from_template = {*template.sections, *template.for_type(work_type)}
+        from_template -= {TRIGGER_HEADING, ACCEPTANCE_HEADING}
+    engine = set(missing_sections(record, [one for one in required if one not in from_template]))
+    return tuple(
+        one
+        for one in required
+        if one in engine
+        or (one in from_template and not tracker.section_meets(repo_root, record, one))
+    )
+
+
 def owed(states: Iterable[Any], repo_root: Path) -> dict[str, tuple[str, ...]]:
 
     declared = load_type_sections(repo_root)
     template = tracker.ledger_template(repo_root)
     return {
-        state.record: missing_sections(
+        state.record: missing_for(
             state.fields,
-            _required(str(state.fields.get("issue_type") or ""), declared, template),
+            str(state.fields.get("issue_type") or ""),
+            repo_root,
+            declared,
+            template,
         )
         for state in states
     }

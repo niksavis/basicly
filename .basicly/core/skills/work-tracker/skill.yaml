@@ -184,9 +184,9 @@ instructions: |
   `[policy.type_sections]` declares for the record's type. A `template.json` in the ledger
   directory changes that for this engine and the standalone kit alike: `"mode": "extend"`
   adds its `sections` and its per-type `types`, and `"mode": "override"` replaces the whole
-  rule. A section is met by that heading in the description; `tracker write`
-  has no `--field`, so the description is the route here. A malformed template is refused
-  by name.
+  rule. A template section is met by that heading with content in the description, the
+  same rule the kit applies; `tracker write` has no `--field`, so the description is the
+  route here. A malformed template is refused by name.
 
   ## What the tracker refuses
 

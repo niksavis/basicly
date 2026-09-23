@@ -88,6 +88,10 @@ def ledger_template(repo_root: Path) -> Any:
     return kit(repo_root, "templates").load(ledger)
 
 
+def section_meets(repo_root: Path, record: Mapping[str, object], heading: str) -> bool:
+    return bool(kit(repo_root, "shaping").meets(record, heading))
+
+
 LEDGER_GLOBS = ("events-*.jsonl", "pending-*.jsonl")
 
 
