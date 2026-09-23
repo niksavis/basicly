@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import itertools
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -74,8 +76,8 @@ def test_the_hook_carries_no_absolute_path_or_bare_python(hook, repo: Path) -> N
 
     text = _hook_file(hook, repo).read_text(encoding="utf-8")
     assert str(repo) not in text, "an absolute path breaks the next clone"
-    assert "python3 " not in text, (
-        "a bare python3 on Windows hits an execution alias that opens a store page"
+    assert '""|*WindowsApps*) continue' in text, (
+        "a python3 on Windows can be an execution alias that opens a store page"
     )
     assert "RUNNER" in text, "the control: the declared interpreter is what runs the kit"
 
@@ -250,3 +252,109 @@ def test_a_dry_run_names_the_missing_ledger_and_creates_nothing(hook, repo: Path
 
     assert "would create the ledger" in stream.getvalue()
     assert not (repo / LEDGER).exists()
+
+
+_POSIX_HOOK = pytest.mark.skipif(sys.platform == "win32", reason="runs the hook with /bin/sh")
+
+
+def _tool_dir(tmp_path: Path, python: str | None) -> Path:
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    git = shutil.which("git")
+    assert git
+    (tools / "git").symlink_to(git)
+    if python is not None:
+        (tools / "python3").symlink_to(python)
+    return tools
+
+
+def _checkout_with_a_shard(tmp_path: Path) -> Path:
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+    kit = _consumer(root)
+    (root / ".gitignore").write_text(
+        f"{VENDORED.as_posix()}/__pycache__/\n{LEDGER.as_posix()}/snapshot.jsonl\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        [sys.executable, str(kit / "cli.py"), "create", str(root / LEDGER), "--prefix", "acme"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "s"],
+        check=True,
+    )
+    hook = _load(kit / "install_hook.py", f"kit_hook_test_{next(_loaded)}")
+    _install(hook, root)
+    return root
+
+
+def _run_hook(root: Path, tools: Path) -> subprocess.CompletedProcess[str]:
+    env = {
+        "PATH": str(tools),
+        "HOME": str(root),
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+    return subprocess.run(
+        ["/bin/sh", str(root / ".git" / "hooks" / "post-merge")],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _shards(root: Path) -> list[str]:
+    return sorted(path.name for path in (root / LEDGER).glob("pending-*.jsonl"))
+
+
+@_POSIX_HOOK
+def test_the_hook_folds_with_python3_when_uv_is_absent(tmp_path: Path) -> None:
+    root = _checkout_with_a_shard(tmp_path)
+    assert _shards(root) == ["pending-main.jsonl"]
+
+    done = _run_hook(root, _tool_dir(tmp_path, sys.executable))
+
+    assert done.returncode == 0
+    assert done.stderr == ""
+    assert _shards(root) == []
+    log = subprocess.run(
+        ["git", "-C", str(root), "log", "-1", "--format=%s"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert log.stdout.strip() == "chore(tracker): fold pending shards into the trunk log"
+
+
+@_POSIX_HOOK
+def test_the_hook_says_so_when_no_interpreter_is_on_the_path(tmp_path: Path) -> None:
+    root = _checkout_with_a_shard(tmp_path)
+
+    done = _run_hook(root, _tool_dir(tmp_path, None))
+
+    assert done.returncode == 0
+    assert "no uv or python on PATH" in done.stderr
+    assert "compact .basicly/ledger" in done.stderr
+    assert _shards(root) == ["pending-main.jsonl"]
+
+
+@_POSIX_HOOK
+def test_the_hook_reports_a_fold_that_fails(tmp_path: Path) -> None:
+    root = _checkout_with_a_shard(tmp_path)
+    failing = tmp_path / "failing-python"
+    failing.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    failing.chmod(0o755)
+
+    done = _run_hook(root, _tool_dir(tmp_path, str(failing)))
+
+    assert done.returncode == 0
+    assert "the pending shards are not folded; run python" in done.stderr
+    assert _shards(root) == ["pending-main.jsonl"]

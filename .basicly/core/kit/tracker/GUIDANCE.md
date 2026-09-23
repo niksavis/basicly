@@ -66,6 +66,18 @@ you can check it. Run this after a merge you are unsure about, or when a query a
 something that surprises you. A finding names the record and the reason; a broken log is
 repaired by appending a corrective event, never by editing a line.
 
+## After a merge
+
+A write appends to `pending-<branch>.jsonl`, so two branches never edit one file. `init`
+wires a `post-merge` hook that folds those shards into the trunk log and commits the
+result. It runs the kit with `uv`, else `python3`, else `python`, and only when the ledger
+is the only change in the tree. When it cannot fold, it prints one line that names the
+command to run yourself:
+
+```sh
+python3 .basicly/kit/tracker/cli.py compact .basicly/ledger
+```
+
 ## Show a human where the work stands
 
 ```sh

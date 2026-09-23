@@ -78,12 +78,25 @@ def body(interpreter: str, script: str, ledger: str, command: str = "", advice: 
             "fi",
             END,
         ))
+    manual = f"python {script} compact {ledger}"
+    missing = "no uv or python on PATH, so the pending shards are not folded"
     return "\n".join((
         BEGIN,
         f'if [ -f "{script}" ] && [ -z "$(git status --porcelain -- . ":(exclude){ledger}")" ]',
         "then",
-        f'  {interpreter} "{script}" compact "{ledger}" >/dev/null 2>&1 || exit 0',
-        f'  if [ -n "$(git status --porcelain -- "{ledger}")" ]; then',
+        '  tracker_run=""',
+        f'  for tracker_try in "{interpreter}" python3 python; do',
+        '    case "$(command -v "${tracker_try%% *}" 2>/dev/null)" in',
+        '      ""|*WindowsApps*) continue ;;',
+        "    esac",
+        '    tracker_run="$tracker_try"',
+        "    break",
+        "  done",
+        '  if [ -z "$tracker_run" ]; then',
+        f"    echo 'tracker: {missing}; run {manual}' >&2",
+        f'  elif ! $tracker_run "{script}" compact "{ledger}" >/dev/null 2>&1; then',
+        f"    echo 'tracker: the pending shards are not folded; run {manual}' >&2",
+        f'  elif [ -n "$(git status --porcelain -- "{ledger}")" ]; then',
         f'    git add "{ledger}" >/dev/null 2>&1',
         '    git commit -q -m "chore(tracker): fold pending shards into the trunk log" \\',
         "      >/dev/null 2>&1 ||",
