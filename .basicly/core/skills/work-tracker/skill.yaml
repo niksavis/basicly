@@ -178,6 +178,16 @@ instructions: |
   one of the first two. An empty `jq` result is ambiguous between "the ledger holds none"
   and "the filter names the wrong key", and the second is the common case here.
 
+  ## What a record must carry
+
+  `basicly policy dor <id>` owes a trigger, the acceptance criteria and the sections
+  `[policy.type_sections]` declares for the record's type. A `template.json` in the ledger
+  directory changes that for this engine and the standalone kit alike: `"mode": "extend"`
+  adds its `sections` and its per-type `types`, and `"mode": "override"` replaces the whole
+  rule. A section is met by that heading in the description; `tracker write`
+  has no `--field`, so the description is the route here. A malformed template is refused
+  by name.
+
   ## What the tracker refuses
 
   - **A label write names exactly one record.** `--add-label`/`--remove-label` are

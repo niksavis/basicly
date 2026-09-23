@@ -114,6 +114,25 @@ template unfilled does not satisfy the gate.
 `## Requirements` section of dash-space bullets in the description counts too, so a record
 written as prose stays valid.
 
+### Your own record template
+
+A `template.json` beside the log changes what a record must carry. `extend` adds sections
+to the three above, and `override` replaces them. `types` adds sections for one record
+type, read from the `issue_type` field:
+
+```json
+{
+  "mode": "extend",
+  "sections": ["## Risks"],
+  "types": {"bug": ["## Steps to Reproduce"]}
+}
+```
+
+A section is satisfied by that heading with content in the description, or by a field
+named after it: `--field risks="<text>"`, `--field steps_to_reproduce="<text>"`. `dor`,
+`create`, `board` and the basicly engine all read the same file. A malformed template is
+refused by name, never ignored.
+
 **`ready` is not the gate.** It offers every unblocked record, shaped or not; `dor` is what
 refuses. Read `ready` to choose, then run `dor` before you build.
 

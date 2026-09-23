@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from . import tracker
 from .config import DEFAULT_TYPE_SECTIONS, load_type_sections
 from .plan_record import ACCEPTANCE_HEADING, has_heading, section_entries
 
@@ -52,26 +53,37 @@ def trigger_remedy() -> str:
     )
 
 
+def _required(work_type: str, declared: Mapping[str, Sequence[str]], template: Any):
+
+    base = (TRIGGER_HEADING, *declared.get(work_type, ()), ACCEPTANCE_HEADING)
+    if template is None:
+        return base
+    head = base if template.extends else ()
+    return tuple(dict.fromkeys((*head, *template.sections, *template.for_type(work_type))))
+
+
 def required_conditions(work_type: str, repo_root: Path | None = None) -> tuple[str, ...]:
 
-    declared = DEFAULT_TYPE_SECTIONS if repo_root is None else load_type_sections(repo_root)
-    return (TRIGGER_HEADING, *declared.get(work_type, ()), ACCEPTANCE_HEADING)
+    if repo_root is None:
+        return _required(work_type, DEFAULT_TYPE_SECTIONS, None)
+    return _required(work_type, load_type_sections(repo_root), tracker.ledger_template(repo_root))
 
 
 def owed(states: Iterable[Any], repo_root: Path) -> dict[str, tuple[str, ...]]:
 
     declared = load_type_sections(repo_root)
+    template = tracker.ledger_template(repo_root)
     return {
         state.record: missing_sections(
             state.fields,
-            (
-                TRIGGER_HEADING,
-                *declared.get(str(state.fields.get("issue_type") or ""), ()),
-                ACCEPTANCE_HEADING,
-            ),
+            _required(str(state.fields.get("issue_type") or ""), declared, template),
         )
         for state in states
     }
+
+
+def _field_of(heading: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", heading.lstrip("#").strip().lower()).strip("_")
 
 
 def missing_sections(record: Mapping[str, object], required: Sequence[str]) -> tuple[str, ...]:
@@ -85,7 +97,7 @@ def missing_sections(record: Mapping[str, object], required: Sequence[str]) -> t
     return tuple(
         section
         for section in required
-        if not checks.get(section, lambda s=section: has_heading(body, s))()
+        if not checks.get(section, lambda s=section: _held(record, body, s))()
     )
 
 
@@ -95,6 +107,12 @@ def _states_acceptance(record: Mapping[str, object], body: str) -> bool:
     if isinstance(field, str) and _states_something(field):
         return True
     return any(_states_something(entry) for entry in section_entries(body, ACCEPTANCE_HEADING))
+
+
+def _held(record: Mapping[str, object], body: str, heading: str) -> bool:
+
+    value = record.get(_field_of(heading))
+    return has_heading(body, heading) or (isinstance(value, str) and _states_something(value))
 
 
 def _states_something(text: str) -> bool:

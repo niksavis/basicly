@@ -77,6 +77,17 @@ tracker_mode = owned_store.tracker_mode
 ledger_dir = owned_store.ledger_dir
 kit = owned_store.kit
 
+TEMPLATE_FILE = "template.json"
+
+
+def ledger_template(repo_root: Path) -> Any:
+
+    ledger = ledger_dir(repo_root)
+    if not (ledger / TEMPLATE_FILE).is_file():
+        return None
+    return kit(repo_root, "templates").load(ledger)
+
+
 LEDGER_GLOBS = ("events-*.jsonl", "pending-*.jsonl")
 
 

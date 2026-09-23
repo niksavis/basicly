@@ -85,13 +85,57 @@ SECTIONS = (
 CONDITIONS = (TRIGGER_HEADING, *(heading for heading, _field in SECTIONS))
 
 
-def owed(record: Mapping[str, object], *, closed: bool = False) -> tuple:
+TYPE_FIELD = "issue_type"
+
+
+def field_of(heading: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", heading.lstrip("#").strip().lower()).strip("_")
+
+
+def section_text(description: str, heading: str) -> str:
+
+    lines = []
+    inside = False
+    for line in description.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            inside = stripped == heading
+            continue
+        if inside and stripped:
+            lines.append(stripped)
+    return "\n".join(lines)
+
+
+def required(record: Mapping[str, object], template=None) -> tuple:
+
+    if template is None:
+        return CONDITIONS
+    kind = record.get(TYPE_FIELD)
+    extra = template.for_type(kind if isinstance(kind, str) else "")
+    base = CONDITIONS if template.extends else ()
+    return tuple(dict.fromkeys((*base, *template.sections, *extra)))
+
+
+def _meets(record: Mapping[str, object], heading: str, body: str, closed: bool) -> bool:
+
+    if heading == TRIGGER_HEADING:
+        return trigger_voice(body) is not None
+    known = dict(SECTIONS).get(heading)
+    if known is not None:
+        return _held(record, known, heading, closed)
+    value = record.get(field_of(heading))
+    return states_something(value) or states_something(section_text(body, heading))
+
+
+def owed(record: Mapping[str, object], *, closed: bool = False, template=None) -> tuple:
 
     described = record.get(DESCRIPTION_FIELD)
     body = described if isinstance(described, str) else ""
-    missing = [] if trigger_voice(body) is not None else [TRIGGER_HEADING]
-    missing += [heading for heading, field in SECTIONS if not _held(record, field, heading, closed)]
-    return tuple(missing)
+    return tuple(
+        heading
+        for heading in required(record, template)
+        if not _meets(record, heading, body, closed)
+    )
 
 
 def minted_under_the_rule(record: Mapping[str, object]) -> bool:
@@ -99,16 +143,16 @@ def minted_under_the_rule(record: Mapping[str, object]) -> bool:
     return bool(record.get(SHAPED_UNDER_FIELD))
 
 
-def refused(record: Mapping[str, object], *, closed: bool = False) -> tuple:
+def refused(record: Mapping[str, object], *, closed: bool = False, template=None) -> tuple:
 
-    missing = owed(record, closed=closed)
+    missing = owed(record, closed=closed, template=template)
     if minted_under_the_rule(record):
         return missing
     return tuple(one for one in missing if one != REQUIREMENTS_HEADING)
 
 
-def shaped(record: Mapping[str, object], *, closed: bool = False) -> bool:
-    return not refused(record, closed=closed)
+def shaped(record: Mapping[str, object], *, closed: bool = False, template=None) -> bool:
+    return not refused(record, closed=closed, template=template)
 
 
 def remedy(missing: Sequence[str]) -> str:
@@ -128,10 +172,15 @@ def remedy(missing: Sequence[str]) -> str:
                 f"section of `- ` bullets; they are what a check is derived from, so a "
                 f"placeholder counts as absent"
             )
-        else:
+        elif name == REQUIREMENTS_HEADING:
             parts.append(
                 f"state the requirements as `--requirements` or a `{REQUIREMENTS_HEADING}` "
                 f"section of `- ` bullets; they are the standard validation judges the "
                 f"built thing against"
+            )
+        else:
+            parts.append(
+                f"the template requires `{name}`: add that section to the description, or "
+                f"`--field {field_of(name)}=<text>`"
             )
     return "; ".join(parts)

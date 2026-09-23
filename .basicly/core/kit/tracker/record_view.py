@@ -24,6 +24,7 @@ def _load(file_name: str, module_name: str) -> Any:
 
 queries = _load("queries.py", "basicly_tracker_kit_queries")
 shaping = _load("shaping.py", "basicly_tracker_kit_shaping")
+templates = _load("templates.py", "basicly_tracker_kit_templates")
 snapshot = queries.snapshot
 events = snapshot.events
 
@@ -39,8 +40,9 @@ def owed_of(directory: Path | str, record: str) -> dict[str, object]:
     state = events.fold(found).records.get(record)
     held = dict(state.fields) if state is not None else {}
     closed = state is not None and is_closed(state)
-    missing = shaping.owed(held, closed=closed)
-    blocking = shaping.refused(held, closed=closed)
+    template = templates.load(directory)
+    missing = shaping.owed(held, closed=closed, template=template)
+    blocking = shaping.refused(held, closed=closed, template=template)
     return {
         "owed": list(missing),
         "refused": list(blocking),

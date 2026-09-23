@@ -4,6 +4,7 @@ import ast
 import contextlib
 import inspect
 import json
+import shutil
 import textwrap
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -152,6 +153,55 @@ def test_dor_reads_the_required_sections_from_configuration(
     _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.missing == ("## Trigger", "## Repro", "## Acceptance Criteria")
+
+
+def _ledger_template(repo_root: Path, body: dict[str, object]) -> None:
+    shutil.copytree(
+        Path(__file__).parent.parent / ".basicly" / "core" / "kit" / "tracker",
+        repo_root / ".basicly" / "core" / "kit" / "tracker",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    ledger = repo_root / ".basicly" / "ledger"
+    ledger.mkdir(parents=True)
+    (ledger / "template.json").write_text(json.dumps(body), encoding="utf-8")
+
+
+def test_dor_reads_an_extending_ledger_template(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _ledger_template(tmp_path, {"sections": ["## Risks"], "types": {"bug": ["## Impact"]}})
+    _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
+
+    result = policy.definition_of_ready(tmp_path, "i")
+
+    assert result.missing == (
+        "## Trigger",
+        "## Steps to Reproduce",
+        "## Acceptance Criteria",
+        "## Risks",
+        "## Impact",
+    )
+
+
+def test_dor_reads_an_overriding_ledger_template(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _ledger_template(tmp_path, {"mode": "override", "sections": ["## Goal"]})
+    _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
+    assert policy.definition_of_ready(tmp_path, "i").missing == ("## Goal",)
+
+    _install(monkeypatch, _FakeBr(issue_type="bug", description="## Goal\n\nship it\n"))
+    assert policy.definition_of_ready(tmp_path, "i").ready is True
+
+
+def test_dor_refuses_a_malformed_ledger_template(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _ledger_template(tmp_path, {"mode": "replace"})
+    _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
+
+    with pytest.raises(ValueError, match="mode must be"):
+        policy.definition_of_ready(tmp_path, "i")
 
 
 def test_dor_structured_acceptance_field_satisfies_the_section(
