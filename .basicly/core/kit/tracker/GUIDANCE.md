@@ -195,6 +195,15 @@ refuses. Read `ready` to choose, then run `dor` before you build.
 
 ## What it will refuse
 
-A record id that does not exist. A dependency edge that would make a cycle. A write to a
-record the snapshot says is already closed, unless you say so deliberately. Each refusal
-names the reason; read it rather than working around it.
+Every refusal exits 1, names the reason and writes nothing; read it rather than working
+around it:
+
+- a record id the ledger does not hold, and a dependency edge that would make a cycle;
+- a status outside `open`, `in_progress`, `blocked`, `deferred`, `closed`, with the nearest
+  one suggested: `in-progress` is refused as a typo of `in_progress`;
+- a priority that is not a whole number from 0 (critical) to 4 (backlog);
+- a `close` without `--reason`;
+- a directory that is not a ledger, and a malformed `template.json`.
+
+A closed record can be reopened with `update --status`, and a record may return to a status
+it held before; both are recorded.

@@ -84,6 +84,11 @@ def kit(repo_root: Path, module_name: str = DEFAULT_KIT_MODULE) -> Any:
     directory = Path(repo_root) / KIT_TRACKER_DIR
     source = directory / f"{module_name}.py"
     if not source.is_file():
+        if directory.is_dir():
+            raise TrackerDivergenceError(
+                f"the tracker kit at {directory} has no {source.name}, so it is older than "
+                f"this engine; run `basicly install` to update it"
+            )
         raise TrackerDivergenceError(f"the tracker kit is not installed at {directory}")
     key = (str(directory.resolve()), module_name)
     if (cached := _kit_modules.get(key)) is not None:

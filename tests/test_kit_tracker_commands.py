@@ -230,7 +230,7 @@ def test_stats_counts_by_status_and_leaves_the_tombstoned_out_of_the_total(
     record = root_of(ledger)
     first = commands.create_child(ledger, record, {"title": "first"})[0].record
     second = commands.create_child(ledger, record, {"title": "second"})[0].record
-    commands.close(ledger, [first])
+    commands.close(ledger, [first], reason="landed")
     commands.delete(ledger, second)
 
     report = commands.queries.stats(ledger)

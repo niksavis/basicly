@@ -196,7 +196,7 @@ def test_without_a_redactor_the_text_is_stored_as_typed(tmp_path: Path) -> None:
 def test_a_query_narrows_by_status_and_by_limit(tmp_path: Path) -> None:
     ledger = tmp_path / "l"
     open_record = cli.create_record(ledger, {}, prefix="acme")[0].record
-    cli.create_record(ledger, {}, prefix="acme", status="closed")
+    cli.create_record(ledger, {"close_reason": "shipped"}, prefix="acme", status="closed")
     assert [held["record"] for held in cli.query_records(ledger, status="open")] == [open_record]
     assert len(cli.query_records(ledger)) == 2
     assert len(cli.query_records(ledger, limit=1)) == 1
@@ -218,7 +218,7 @@ def test_a_swallowed_write_is_reported_not_raised(
     ledger = tmp_path / "l"
     record = cli.create_record(ledger, {}, prefix="acme")[0].record
     skipped = {"record": record, "events": [], "appended": False}
-    for verb in (["update", "--status", "blocked"], ["close"]):
+    for verb in (["update", "--status", "blocked"], ["close", "--reason", "done"]):
         argv = [verb[0], str(ledger), record, *verb[1:]]
         assert cli.main(argv) == cli.EXIT_OK
         capsys.readouterr()

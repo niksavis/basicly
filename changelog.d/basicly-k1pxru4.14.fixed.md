@@ -1,0 +1,1 @@
+- The tracker now refuses, by name and on both routes, a status outside the five it knows (suggesting the nearest), a priority outside 0 to 4, and a close without a reason. A record returning to a status it held before is recorded instead of dropped in silence, and an engine newer than the vendored kit says to run `basicly install`.

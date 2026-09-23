@@ -201,11 +201,11 @@ route here. A malformed template is refused by name.
   store half-done: `update --estimate 5` is refused with *--estimate has no owned-ledger
   equivalent*, and `dep add <a> <b>` with no `-t` for the same reason — the edge type is
   part of the fact, not a default.
-- **A status the record once held is dropped as a replay.** Event ids are content
-  digests, so `update <id> --status open` on a deferred record matches the `open` it
-  was created with and appends nothing; the command still exits 0 and prints *already
-  recorded* (basicly-bj8kks). Reactivate with `--status in_progress`, which is in the
-  ready set, and read the status back with `show` — never the exit code.
+- **A wrong value is refused by name on both routes.** A status outside `open`,
+  `in_progress`, `blocked`, `deferred`, `closed` (the nearest is suggested), a priority
+  outside 0-4, and a `close` without `--reason` are not recorded. A return to a status
+  the record held before is recorded; the kit's `recurrence` module decides that for
+  the engine and the standalone kit alike (basicly-k1pxru4.14).
 
 ## Safe Defaults
 

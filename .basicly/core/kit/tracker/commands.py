@@ -26,6 +26,8 @@ queries = _load("queries.py", "basicly_tracker_kit_queries")
 label_shape = _load("label_shape.py", "basicly_tracker_kit_label_shape")
 templates = _load("templates.py", "basicly_tracker_kit_templates")
 writers = _load("writers.py", "basicly_tracker_kit_writers")
+recurrence = _load("recurrence.py", "basicly_tracker_kit_recurrence")
+values = _load("values.py", "basicly_tracker_kit_values")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -93,8 +95,10 @@ def _require(ledger: Path, record: str) -> Any:
 def _append(
     ledger: Path, drafts: Sequence[Any], redact: Callable[[str], str] | None, lock: Any
 ) -> list:
+    values.refuse(events, drafts)
+    resolved = recurrence.at_the_generation_this_write_needs(events, ledger, drafts, redact=redact)
     return events.append(
-        ledger, list(drafts), actor=writers.writer_class(), redact=redact, held_lock=lock
+        ledger, resolved, actor=writers.writer_class(), redact=redact, held_lock=lock
     )
 
 

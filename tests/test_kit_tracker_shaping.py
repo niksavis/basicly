@@ -93,7 +93,7 @@ def test_a_heading_still_reads_on_a_closed_record(
     record, _ = _create(capsys, ledger, "--description", PROSE)
     assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
 
-    _run(capsys, "close", str(ledger), record)
+    _run(capsys, "close", str(ledger), record, "--reason", "shipped")
 
     code, report = _run(capsys, "dor", str(ledger), record)
     assert code == cli.EXIT_OK

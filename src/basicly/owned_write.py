@@ -138,8 +138,9 @@ def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
             refuse_a_write_to_an_absent_record(kit_module, ledger, " ".join(args), drafts)
             _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
             stamped = _stamped(kit_module, drafts)
-            stamped = re_record.at_the_generation_this_write_needs(
-                kit_module, ledger, stamped, repeat=repeat
+            owned_store.kit(repo_root, "values").refuse(events, stamped)
+            stamped = owned_store.kit(repo_root, "recurrence").at_the_generation_this_write_needs(
+                events, ledger, stamped, repeat=repeat, redact=redact.redact_committed
             )
             landed = events.append(
                 ledger,
@@ -180,6 +181,7 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
                 else events.ids.mint_root_id(events.ids.validate_prefix(prefix or ""), minted)
             )
             drafts = mirror.drafts(kit_module, args, json.dumps({"id": record}))
+            owned_store.kit(repo_root, "values").refuse(events, drafts)
             events.append(
                 ledger,
                 _stamped(kit_module, drafts),
