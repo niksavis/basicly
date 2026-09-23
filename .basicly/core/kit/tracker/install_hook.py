@@ -142,6 +142,12 @@ def install(  # noqa: PLR0913 — one keyword per seam the host injects; a setti
 
     script = "" if command else _within(_HERE / CLI_FILE, root)
     within = _within(ledger, root)
+    if not ledger.is_dir():
+        if dry_run:
+            stream.write(f"tracker: would create the ledger {within}\n")
+        else:
+            ledger.mkdir(parents=True)
+            stream.write(f"tracker: created the ledger {within}\n")
     directory = hooks_dir(root)
     if directory is None:
         stream.write(

@@ -43,6 +43,10 @@ EXIT_OK = 0
 
 EXIT_REFUSED = 1
 
+DIRECTORY_HELP = "the ledger directory"
+
+_STARTS_A_LEDGER = frozenset({"create", "import"})
+
 
 def _field_value(raw: str) -> object:
 
@@ -119,7 +123,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     create = sub.add_parser("create", help="mint a record id and append its first events")
-    create.add_argument("directory", help=f"the ledger directory holding {events.LOG_GLOB}")
+    create.add_argument("directory", help=DIRECTORY_HELP)
     create.add_argument("--prefix", required=True, help="the ledger's id prefix, e.g. acme")
     create.add_argument("--title", default="", help="the record's title")
     create.add_argument(
@@ -133,18 +137,18 @@ def _parser() -> argparse.ArgumentParser:
     _add_shape_arguments(create)
 
     show = sub.add_parser("show", help="read one record's folded state and both edge directions")
-    show.add_argument("directory", help="the ledger directory")
+    show.add_argument("directory", help=DIRECTORY_HELP)
     show.add_argument("record", help="the record id")
 
     listing = sub.add_parser("list", help="query the records the ledger holds")
-    listing.add_argument("directory", help="the ledger directory")
+    listing.add_argument("directory", help=DIRECTORY_HELP)
     listing.add_argument("--status", default=None, help="only records at this status")
     listing.add_argument("--limit", type=int, default=None, help="at most this many records")
 
     compaction = sub.add_parser(
         "compact", help="fold every pending writer shard into the trunk log and unlink it"
     )
-    compaction.add_argument("directory", help="the ledger directory")
+    compaction.add_argument("directory", help=DIRECTORY_HELP)
     compaction.add_argument(
         "--writer",
         action="append",
@@ -154,16 +158,16 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     shards = sub.add_parser("shards", help="the pending writer shards this ledger holds")
-    shards.add_argument("directory", help="the ledger directory")
+    shards.add_argument("directory", help=DIRECTORY_HELP)
 
     page = sub.add_parser("board", help="write one self-contained HTML page a human can open")
-    page.add_argument("directory", help="the ledger directory")
+    page.add_argument("directory", help=DIRECTORY_HELP)
     page.add_argument("--out", default="tracker-board.html", help="the file to write")
 
     check = sub.add_parser(
         "fsck", help="fold the whole log and report anything unparseable or broken"
     )
-    check.add_argument("directory", help="the ledger directory")
+    check.add_argument("directory", help=DIRECTORY_HELP)
     check.add_argument(
         "--rebuild",
         action="store_true",
@@ -174,13 +178,13 @@ def _parser() -> argparse.ArgumentParser:
         "dor",
         help="the definition of ready: refuse a record that cannot be verified against",
     )
-    gate.add_argument("directory", help="the ledger directory")
+    gate.add_argument("directory", help=DIRECTORY_HELP)
     gate.add_argument("record", help="the record id")
 
     bring = sub.add_parser(
         "import", help="import a foreign tracker's JSONL export into this ledger"
     )
-    bring.add_argument("directory", help="the ledger directory")
+    bring.add_argument("directory", help=DIRECTORY_HELP)
     bring.add_argument("export", help="the export file to read, one JSON record per line")
     bring.add_argument(
         "--source",
@@ -206,14 +210,14 @@ def _add_query_parsers(sub: Any) -> None:
         ("stats", "counts by status, plus the ready and blocked counts"),
     ):
         view = sub.add_parser(name, help=helping)
-        view.add_argument("directory", help="the ledger directory")
+        view.add_argument("directory", help=DIRECTORY_HELP)
         if name == "ready":
             view.add_argument("--limit", type=int, default=None, help="at most this many")
 
 
 def _add_write_parsers(sub: Any) -> None:
     child = sub.add_parser("child", help="mint the next child id under a parent")
-    child.add_argument("directory", help="the ledger directory")
+    child.add_argument("directory", help=DIRECTORY_HELP)
     child.add_argument("parent", help="the parent record id")
     child.add_argument("--title", default="", help="the record's title")
     child.add_argument("--field", action="append", default=[], metavar="NAME=VALUE")
@@ -221,7 +225,7 @@ def _add_write_parsers(sub: Any) -> None:
     _add_shape_arguments(child)
 
     update = sub.add_parser("update", help="set a record's fields, status or labels")
-    update.add_argument("directory", help="the ledger directory")
+    update.add_argument("directory", help=DIRECTORY_HELP)
     update.add_argument("record", help="the record id")
     update.add_argument("--field", action="append", default=[], metavar="NAME=VALUE")
     update.add_argument("--status", default="", help="the status to move it to")
@@ -230,23 +234,23 @@ def _add_write_parsers(sub: Any) -> None:
     _add_shape_arguments(update)
 
     closing = sub.add_parser("close", help="move records to the closed status")
-    closing.add_argument("directory", help="the ledger directory")
+    closing.add_argument("directory", help=DIRECTORY_HELP)
     closing.add_argument("record", nargs="+", help="the record ids to close")
     closing.add_argument("--reason", default="", help="why, recorded as a field")
 
     note = sub.add_parser("comment", help="append one comment to a record")
-    note.add_argument("directory", help="the ledger directory")
+    note.add_argument("directory", help=DIRECTORY_HELP)
     note.add_argument("record", help="the record id")
     note.add_argument("text", help="the comment body")
 
     dep = sub.add_parser("dep", help="record a dependency edge on the dependent")
-    dep.add_argument("directory", help="the ledger directory")
+    dep.add_argument("directory", help=DIRECTORY_HELP)
     dep.add_argument("record", help="the dependent record id")
     dep.add_argument("target", help="the record it depends on")
     dep.add_argument("--type", dest="edge_type", default="blocks", help="the edge type")
 
     removal = sub.add_parser("delete", help="tombstone a record; its id is never reused")
-    removal.add_argument("directory", help="the ledger directory")
+    removal.add_argument("directory", help=DIRECTORY_HELP)
     removal.add_argument("record", help="the record id")
 
 
@@ -366,6 +370,8 @@ _REFUSABLE: dict[str, Callable[[argparse.Namespace], tuple[int, dict[str, object
 def _run(
     args: argparse.Namespace, redact: Callable[[str], str] | None
 ) -> tuple[int, dict[str, object]]:
+    starts = args.command in _STARTS_A_LEDGER and not getattr(args, "dry_run", False)
+    args.directory = commands.resolve_ledger(args.directory, starts=starts)
     if args.command == "create":
         written = create_record(
             args.directory,

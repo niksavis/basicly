@@ -41,15 +41,17 @@ derived-file patterns are read off `events.LOG_GLOB` and `snapshot.DERIVED_PATTE
 spelled a second time (§9.4, and the same rule `.scripts/kit_deployment.py` follows).
 
 Afterwards plain `python3` runs it — no `uvx`, no network, nothing on `PATH`. Every
-subcommand takes the repository directory as its first argument:
+subcommand takes the ledger directory, `.basicly/ledger`, as its first argument; `init`
+creates it. The repository root, or a directory that holds no ledger, is refused rather
+than answered as an empty backlog:
 
 ```console
-$ python3 .basicly/kit/tracker/cli.py create . --prefix demo --title "try the tracker"
+$ python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix demo --title "try the tracker"
 {
   "events": ["demo-hbms#ev-59a934da3f", "demo-hbms#ev-04bc122532"],
   "record": "demo-hbms"
 }
-$ python3 .basicly/kit/tracker/cli.py ready .
+$ python3 .basicly/kit/tracker/cli.py ready .basicly/ledger
 {
   "count": 1,
   "records": [{"rank": 1, "record": "demo-hbms", "score": 2000, "title": "try the tracker"}],

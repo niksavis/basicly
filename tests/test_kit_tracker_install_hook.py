@@ -233,3 +233,20 @@ def test_a_host_command_reports_a_failed_fold(hook, repo: Path) -> None:
     written = _hook_file(hook, repo).read_text(encoding="utf-8")
     assert "are not folded" in written
     assert "`" not in written
+
+
+def test_install_creates_a_missing_ledger(hook, repo: Path) -> None:
+    (repo / LEDGER).rmdir()
+
+    assert "created the ledger" in _install(hook, repo)
+    assert (repo / LEDGER).is_dir()
+
+
+def test_a_dry_run_names_the_missing_ledger_and_creates_nothing(hook, repo: Path) -> None:
+    (repo / LEDGER).rmdir()
+    stream = io.StringIO()
+
+    hook.install(repo, ledger=repo / LEDGER, dry_run=True, interpreter="RUNNER", stream=stream)
+
+    assert "would create the ledger" in stream.getvalue()
+    assert not (repo / LEDGER).exists()

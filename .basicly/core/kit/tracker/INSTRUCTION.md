@@ -4,8 +4,8 @@
 Read it before proposing work and write to it as work moves:
 
 ```sh
-python3 .basicly/kit/tracker/cli.py ready .        # what is workable now, ranked
-python3 .basicly/kit/tracker/cli.py show . <id>    # one record in full
+python3 .basicly/kit/tracker/cli.py ready .basicly/ledger        # what is workable now, ranked
+python3 .basicly/kit/tracker/cli.py show .basicly/ledger <id>    # one record in full
 ```
 
 Claim a record before building it, close it with a reason that names the evidence, and

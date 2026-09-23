@@ -23,14 +23,16 @@ with `basicly-tracker status` if a merge ever conflicts on the log.
 
 ## Read before you write
 
-Every subcommand takes the repository directory as its first argument.
+Every subcommand takes the ledger directory, `.basicly/ledger`, as its first argument.
+`init` creates it. The repository root, or a directory that holds no ledger, is refused
+by name, never answered as an empty backlog.
 
 ```sh
-python3 .basicly/kit/tracker/cli.py ready .        # what is workable now, ranked
-python3 .basicly/kit/tracker/cli.py blocked .      # what is waiting, and on what
-python3 .basicly/kit/tracker/cli.py stats .        # counts by status
-python3 .basicly/kit/tracker/cli.py show . <id>    # one record in full
-python3 .basicly/kit/tracker/cli.py list .         # every record
+python3 .basicly/kit/tracker/cli.py ready .basicly/ledger        # what is workable now, ranked
+python3 .basicly/kit/tracker/cli.py blocked .basicly/ledger      # what is waiting, and on what
+python3 .basicly/kit/tracker/cli.py stats .basicly/ledger        # counts by status
+python3 .basicly/kit/tracker/cli.py show .basicly/ledger <id>    # one record in full
+python3 .basicly/kit/tracker/cli.py list .basicly/ledger         # every record
 ```
 
 `ready` is the one to start from: it excludes anything blocked by an open dependency and
@@ -40,13 +42,13 @@ rather than inventing a task.
 ## Write
 
 ```sh
-python3 .basicly/kit/tracker/cli.py create . --prefix <p> --title "<what>" \
+python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix <p> --title "<what>" \
     --description "<the trigger>" --acceptance "<how it is checked>" --requirements "<the standard>"
-python3 .basicly/kit/tracker/cli.py update . <id> --status in_progress
-python3 .basicly/kit/tracker/cli.py comment . <id> "<what you learned>"
-python3 .basicly/kit/tracker/cli.py dep . <id> <the-id-it-waits-on>
-python3 .basicly/kit/tracker/cli.py close . <id> --reason "<what shipped, and the evidence>"
-python3 .basicly/kit/tracker/cli.py child . <parent-id> --title "<a piece of it>"
+python3 .basicly/kit/tracker/cli.py update .basicly/ledger <id> --status in_progress
+python3 .basicly/kit/tracker/cli.py comment .basicly/ledger <id> "<what you learned>"
+python3 .basicly/kit/tracker/cli.py dep .basicly/ledger <id> <the-id-it-waits-on>
+python3 .basicly/kit/tracker/cli.py close .basicly/ledger <id> --reason "<what shipped, and the evidence>"
+python3 .basicly/kit/tracker/cli.py child .basicly/ledger <parent-id> --title "<a piece of it>"
 ```
 
 Run `cli.py <verb> --help` for the exact flags; they are checked and a wrong one is refused
@@ -55,8 +57,8 @@ by name rather than ignored.
 ## Check the log itself
 
 ```sh
-python3 .basicly/kit/tracker/cli.py fsck .            # exit 0 clean, 1 stale derivative, 2 broken
-python3 .basicly/kit/tracker/cli.py fsck . --rebuild  # write the derivatives again first
+python3 .basicly/kit/tracker/cli.py fsck .basicly/ledger            # exit 0 clean, 1 stale derivative, 2 broken
+python3 .basicly/kit/tracker/cli.py fsck .basicly/ledger --rebuild  # write the derivatives again first
 ```
 
 The log is the truth and everything else is derived from it, which is only worth saying if
@@ -67,7 +69,7 @@ repaired by appending a corrective event, never by editing a line.
 ## Show a human where the work stands
 
 ```sh
-python3 .basicly/kit/tracker/cli.py board . --out tracker-board.html
+python3 .basicly/kit/tracker/cli.py board .basicly/ledger --out tracker-board.html
 ```
 
 One self-contained page: the counts, the ranked ready set, what is blocked and what holds
@@ -83,7 +85,7 @@ built thing against. Every write prints what the record still `owed`, and the ga
 one that is not shaped:
 
 ```sh
-python3 .basicly/kit/tracker/cli.py dor . <id>     # exit 0 ready, exit 1 with what is missing
+python3 .basicly/kit/tracker/cli.py dor .basicly/ledger <id>     # exit 0 ready, exit 1 with what is missing
 ```
 
 Run it before you start work, not after. The three sections are what you verify and

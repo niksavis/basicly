@@ -292,3 +292,50 @@ def test_a_record_with_no_edges_renders_both_keys_empty(tmp_path: Path) -> None:
 
     assert shown is not None
     assert (shown["dependencies"], shown["dependents"]) == ([], [])
+
+
+def _report(capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
+    return json.loads(capsys.readouterr().out)
+
+
+def test_a_write_naming_the_repository_root_is_refused_and_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / ".git").mkdir()
+
+    argv = ["create", str(tmp_path), "--prefix", "acme", "--title", "a"]
+    assert cli.main(argv) == cli.EXIT_REFUSED
+    assert "is a repository, not a ledger" in _report(capsys)["refused"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == [".git"]
+
+
+def test_a_read_naming_the_repository_root_is_refused_not_answered_as_empty(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / ".basicly" / "ledger").mkdir(parents=True)
+
+    assert cli.main(["list", str(tmp_path)]) == cli.EXIT_REFUSED
+    assert "is a repository, not a ledger" in _report(capsys)["refused"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == [".basicly"]
+
+
+def test_a_read_of_a_directory_holding_no_ledger_is_refused_and_writes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    elsewhere = tmp_path / "src"
+    elsewhere.mkdir()
+    (elsewhere / "main.py").write_text("", encoding="utf-8")
+
+    assert cli.main(["ready", str(elsewhere)]) == cli.EXIT_REFUSED
+    assert "holds no ledger" in _report(capsys)["refused"]
+    assert [path.name for path in elsewhere.iterdir()] == ["main.py"]
+
+
+def test_an_empty_ledger_directory_reads_as_an_empty_backlog(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / ".basicly" / "ledger"
+    ledger.mkdir(parents=True)
+
+    assert cli.main(["ready", str(ledger)]) == cli.EXIT_OK
+    assert _report(capsys)["count"] == 0

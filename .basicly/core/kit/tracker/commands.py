@@ -41,6 +41,33 @@ class TrackerCommandError(events.LedgerError):
     pass
 
 
+def _is_repository(path: Path) -> bool:
+    return (path / ".git").exists() or (path / ".basicly").is_dir()
+
+
+def _holds_ledger(path: Path) -> bool:
+    return any(path.glob(events.LOG_GLOB)) or any(path.glob(events.PENDING_GLOB))
+
+
+def resolve_ledger(directory: Path | str, *, starts: bool = False) -> Path:
+
+    given = Path(directory)
+    if _is_repository(given):
+        raise TrackerCommandError(
+            f"{given} is a repository, not a ledger; name the ledger directory inside it"
+        )
+    if starts:
+        return given
+    if not given.is_dir():
+        raise TrackerCommandError(f"{given} is not a ledger directory")
+    if _holds_ledger(given) or not any(given.iterdir()):
+        return given
+    raise TrackerCommandError(
+        f"{given} holds no ledger ({events.LOG_GLOB} or {events.PENDING_GLOB}); "
+        f"name the ledger directory"
+    )
+
+
 def _ledger(directory: Path | str) -> Path:
 
     ledger = Path(directory)

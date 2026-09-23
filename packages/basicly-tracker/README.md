@@ -10,7 +10,7 @@ network.
 $ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init
 tracker: added to .gitattributes: events-*.jsonl -text merge=union
 tracker: 18 file(s) written, 0 unchanged, in .basicly/kit/tracker
-$ python3 .basicly/kit/tracker/cli.py ready .
+$ python3 .basicly/kit/tracker/cli.py ready .basicly/ledger
 {"count": 0, "records": [], "schema": "basicly.scheduler.v1", ...}
 ```
 
