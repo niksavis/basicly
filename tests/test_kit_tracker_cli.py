@@ -346,19 +346,23 @@ def test_an_empty_ledger_directory_reads_as_an_empty_backlog(
 
 
 @pytest.mark.parametrize(
-    ("command", "extra"),
+    ("command", "extra", "version"),
     [
-        ("list", ()),
-        ("show", ("RECORD",)),
-        ("blocked", ()),
-        ("stats", ()),
-        ("shards", ()),
-        ("fsck", ()),
-        ("dor", ("RECORD",)),
+        ("list", (), 1),
+        ("show", ("RECORD",), 1),
+        ("blocked", (), 1),
+        ("stats", (), 1),
+        ("shards", (), 1),
+        ("fsck", (), 1),
+        ("dor", ("RECORD",), 2),
     ],
 )
 def test_every_read_names_its_schema(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], command: str, extra: tuple[str, ...]
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+    extra: tuple[str, ...],
+    version: int,
 ) -> None:
     ledger = tmp_path / "ledger"
     cli.main(["create", str(ledger), "--prefix", "acme", "--title", "a"])
@@ -366,7 +370,7 @@ def test_every_read_names_its_schema(
 
     cli.main([command, str(ledger), *(record if one == "RECORD" else one for one in extra)])
 
-    assert _report(capsys)["schema"] == f"basicly.tracker.{command}.v1"
+    assert _report(capsys)["schema"] == f"basicly.tracker.{command}.v{version}"
 
 
 def test_a_schema_the_view_declares_is_kept(
@@ -379,3 +383,18 @@ def test_a_schema_the_view_declares_is_kept(
     cli.main(["ready", str(ledger)])
 
     assert _report(capsys)["schema"] == cli.scheduler.SCHEMA
+
+
+def test_a_refusal_and_a_blocking_section_use_different_keys(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+
+    assert cli.main(["create", str(ledger), "--prefix", "acme", "--title", "a"]) == cli.EXIT_OK
+    shaped = _report(capsys)
+    assert shaped["schema"] == "basicly.tracker.create.v2"
+    assert "## Trigger" in shaped["blocking"]
+    assert "refused" not in shaped
+
+    assert cli.main(["show", str(ledger), "acme-zzzz"]) == cli.EXIT_REFUSED
+    assert "blocking" not in _report(capsys)

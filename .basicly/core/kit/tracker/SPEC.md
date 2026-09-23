@@ -50,7 +50,7 @@ $ python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix demo --tit
 {
   "events": ["demo-hbms#ev-59a934da3f", "demo-hbms#ev-04bc122532"],
   "record": "demo-hbms",
-  "schema": "basicly.tracker.create.v1"
+  "schema": "basicly.tracker.create.v2"
 }
 $ python3 .basicly/kit/tracker/cli.py ready .basicly/ledger
 {

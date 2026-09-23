@@ -47,6 +47,17 @@ DIRECTORY_HELP = "the ledger directory"
 
 SCHEMA_PREFIX = "basicly.tracker"
 
+_BLOCKING_REPORTS = frozenset({
+    "create",
+    "child",
+    "update",
+    "close",
+    "comment",
+    "dep",
+    "delete",
+    "dor",
+})
+
 _STARTS_A_LEDGER = frozenset({"create", "import"})
 
 
@@ -347,7 +358,7 @@ def _shown(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
 
 def _dor(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     verdict = _owed_of(args.directory, args.record)
-    ready = not verdict["refused"]
+    ready = not verdict["blocking"]
     return (EXIT_OK if ready else EXIT_REFUSED), {
         "record": args.record,
         "ready": ready,
@@ -424,7 +435,8 @@ def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | No
         code, report = EXIT_REFUSED, {"refused": str(exc)}
     except ValueError as exc:
         code, report = EXIT_REFUSED, {"refused": str(exc)}
-    report = {"schema": f"{SCHEMA_PREFIX}.{args.command}.v1", **report}
+    version = 2 if args.command in _BLOCKING_REPORTS else 1
+    report = {"schema": f"{SCHEMA_PREFIX}.{args.command}.v{version}", **report}
     print(json.dumps(report, sort_keys=True, indent=2, ensure_ascii=False))
     return code
 

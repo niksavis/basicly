@@ -212,7 +212,7 @@ def test_a_record_the_kit_minted_is_refused_for_missing_requirements(
     code, report = _run(capsys, "dor", str(ledger), record)
 
     assert code == cli.EXIT_REFUSED
-    assert shaping.REQUIREMENTS_HEADING in report["refused"]
+    assert shaping.REQUIREMENTS_HEADING in report["blocking"]
 
 
 def test_a_record_minted_before_the_rule_is_not_refused_for_requirements() -> None:
@@ -236,7 +236,7 @@ def test_a_minted_record_still_owes_the_trigger_and_the_criteria(
 ) -> None:
     record, report = _create(capsys, ledger)
 
-    assert report["refused"] == [
+    assert report["blocking"] == [
         shaping.TRIGGER_HEADING,
         shaping.ACCEPTANCE_HEADING,
         shaping.REQUIREMENTS_HEADING,

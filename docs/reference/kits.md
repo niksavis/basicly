@@ -126,7 +126,7 @@ because a half-drawn cluster shows a blocked record with no arrow into it. The t
 beneath carries every blocking pair either way.
 
 **Requirements bind a record the kit minted, not one that predates the rule.** Every write
-reports what a record `owed`; `dor` refuses on what it `refused`, and the two differ only
+reports what a record `owed`; `dor` refuses on what is `blocking`, and the two differ only
 for a record created before the rule existed, which reports its missing requirements
 without being blocked for them. A trigger and acceptance criteria are required of every
 open record either way.

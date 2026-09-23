@@ -45,7 +45,7 @@ def owed_of(directory: Path | str, record: str) -> dict[str, object]:
     blocking = shaping.refused(held, closed=closed, template=template)
     return {
         "owed": list(missing),
-        "refused": list(blocking),
+        "blocking": list(blocking),
         "remedy": shaping.remedy(blocking) if blocking else "",
     }
 
