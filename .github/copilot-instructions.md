@@ -108,6 +108,22 @@ uv run basicly permissions-check
   a cache read and an output token carry different prices, so a total in tokens
   hides which one moved.
 
+## Mistake Proofing
+
+Make the wrong use impossible, or make it stop at once with the fix (poka-yoke). A
+warning in a document is read after the damage; a refusal in the code is read before.
+
+- **Refuse a wrong input by name, never answer it.** A plausible default or an empty
+  result reads as success: `cli.py list .` answered 0 records for a 1398-record ledger.
+  State what was wrong and the command that is right.
+- **Make the safe path the default.** A mode that can harm shared state needs an
+  explicit flag: the tracker's post-merge fold made pull requests conflict until it
+  became opt-in.
+- **One rule, one place.** Two copies of a rule drift and give two answers; call the one
+  copy from both sides.
+- **Put the check where the mistake happens.** A mistake that can recur gets a gate or a
+  test that refuses it, not a note.
+
 ## Core Rules
 
 - Minimal diffs; an unrelated refactor hides which change failed.
