@@ -115,6 +115,12 @@ jobs:
       - name: Build distribution artifacts
         run: uv build
 
+      - name: Bundle the standalone tracker into one file
+        shell: bash
+        run: |
+          uvx --from ./packages/basicly-tracker basicly-tracker bundle --out dist/tracker.pyz
+          python3 dist/tracker.pyz --help >/dev/null
+
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v3
         with:
@@ -126,3 +132,4 @@ jobs:
           files: |
             dist/*.whl
             dist/*.tar.gz
+            dist/tracker.pyz

@@ -1,1 +1,1 @@
-- `basicly-tracker bundle` writes `tracker.pyz`, one file that installs and runs the standalone tracker on any platform with Python 3.9 or later, with no `uvx` and no network. `python tracker.pyz init` writes the same git rules as the package.
+- `basicly-tracker bundle` writes `tracker.pyz`, one file that installs and runs the standalone tracker on any platform with Python 3.9 or later, with no `uvx` and no network. `python tracker.pyz init` writes the same git rules as the package. Each GitHub release attaches the file.
