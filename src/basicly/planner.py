@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .schema import Fragment, OutputDef, PlannedOutput, Target, ValidationError
+from .schema import CATEGORY_ORDER, Fragment, OutputDef, PlannedOutput, Target, ValidationError
 
 
 def contained_output_path(repo_root: Path, relative: str, *, field: str) -> Path:
@@ -137,5 +137,5 @@ def _applies_to_matches(fragment_applies_to: list[str], filter_values: list[str]
 def _sort_fragments(fragments: list[Fragment]) -> list[Fragment]:
     return sorted(
         fragments,
-        key=lambda f: (-f.priority_value, f.category, f.id),
+        key=lambda f: (f.is_scoped, CATEGORY_ORDER.index(f.category), -f.priority_value, f.id),
     )

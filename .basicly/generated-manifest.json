@@ -1,117 +1,104 @@
 {
   "version": "1",
-  "generated_at": "2026-09-23T20:22:30.084820+00:00",
+  "generated_at": "2026-09-23T21:01:46.057341+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
-      "hash": "sha256:0c0898ef554207edf09eef94d9cef8310eb0383efc038f3d1e6b310ae2023020",
+      "hash": "sha256:885163dac451753314bbf93e1a03d16445b9c24a70355bd92fd31f866ae520da",
       "source_fragments": [
-        "require-explicit-confirmation",
         "knowledge-priming",
-        "project-defaults",
-        "project-overview",
+        "code-is-authoritative",
+        "core-rules",
+        "mistake-proofing",
         "secure-coding",
-        "commands",
-        "git-discipline",
         "decision-protocol",
         "external-facts",
-        "mistake-proofing",
-        "core-rules",
+        "require-explicit-confirmation",
+        "project-overview",
         "harness-loop",
         "quality-gate",
-        "use",
         "catalog-authoring",
         "claude-defaults",
-        "self-improvement-retro",
         "session-completion",
+        "commands",
+        "git-discipline",
         "non-interactive-shell"
       ]
     },
-    ".claude/rules/model-tier-routing.md": {
-      "hash": "sha256:a7998eb2271634c54bd2b15ee3c9583a6eb7c7de39cad5c555e31ccc3a9564ac",
-      "source_fragments": [
-        "model-tier-routing"
-      ]
-    },
     ".claude/rules/external-review.md": {
-      "hash": "sha256:dee37ed1623e40b15a808c35abb936c20af75295a5656c15c640687d2ebe7906",
+      "hash": "sha256:b86164924661c2befd894a6cac3d155d55ac08c9ec360d6a2b650c70a44d8b7d",
       "source_fragments": [
         "external-review"
       ]
     },
-    ".claude/rules/code-is-authoritative.md": {
-      "hash": "sha256:d6454eb0967346b6e0de0475c808237ba200e605735ce13b8a9bf1340a937c61",
+    ".claude/rules/model-tier-routing.md": {
+      "hash": "sha256:cccec1e76f618c37d9de29a8ee59fdb8742a23e591fe2e0f9d327cc08876ef82",
       "source_fragments": [
-        "code-is-authoritative"
+        "model-tier-routing"
       ]
     },
     ".claude/rules/rendered-surfaces.md": {
-      "hash": "sha256:02c1691b8e33ec4c3607ea5d96492c5f0a4c8a9434a3acc93186553d15e7c681",
+      "hash": "sha256:a51e41ed14e235b623a1e56095151f41fd9e08b77adc1a91b38bf08fd5810593",
       "source_fragments": [
         "rendered-surfaces"
       ]
     },
-    ".claude/rules/platform-hermetic-tests.md": {
-      "hash": "sha256:312fba814df037eb14ffbdc3672168d31bd837fd3236ed9e96d5c301ef05fed3",
-      "source_fragments": [
-        "platform-hermetic-tests"
-      ]
-    },
     ".claude/rules/release-fragments.md": {
-      "hash": "sha256:a17abf93dd7526f21497feb4a371ab1b62e37ed3497c95e213609e3ca01bcb87",
+      "hash": "sha256:64bc287f2cf12a0d88b7e90ae7ed8b44590999bc9679348241f12238738d57c7",
       "source_fragments": [
         "release-fragments"
       ]
     },
-    "AGENTS.md": {
-      "hash": "sha256:ce1aa924cffd7f91752d0b278ba25bf2f56a3162bfd54c19cb0bfaf1c8567f97",
+    ".claude/rules/platform-hermetic-tests.md": {
+      "hash": "sha256:ff3a7839fdb2e8b8bbbcac4d428600b5e4bc88818934047ce46b99d3a20feeeb",
       "source_fragments": [
-        "require-explicit-confirmation",
+        "platform-hermetic-tests"
+      ]
+    },
+    "AGENTS.md": {
+      "hash": "sha256:09d1b1b8c73f5c07a1c07efda0664d9cc8ce1f14bec002bccf8d4c22ceab7285",
+      "source_fragments": [
         "knowledge-priming",
-        "project-defaults",
-        "project-overview",
-        "secure-coding",
-        "commands",
-        "git-discipline",
-        "decision-protocol",
-        "external-facts",
-        "model-tier-routing",
-        "external-review",
-        "mistake-proofing",
         "code-is-authoritative",
         "core-rules",
+        "mistake-proofing",
+        "secure-coding",
+        "decision-protocol",
+        "external-facts",
+        "require-explicit-confirmation",
+        "project-overview",
         "harness-loop",
         "quality-gate",
-        "rendered-surfaces",
-        "use",
-        "platform-hermetic-tests",
         "catalog-authoring",
-        "release-fragments",
-        "self-improvement-retro",
         "session-completion",
-        "non-interactive-shell"
+        "commands",
+        "git-discipline",
+        "non-interactive-shell",
+        "external-review",
+        "model-tier-routing",
+        "rendered-surfaces",
+        "release-fragments",
+        "platform-hermetic-tests"
       ]
     },
     ".github/copilot-instructions.md": {
-      "hash": "sha256:4b378f99b2556b85d4c40a59da362c924a427aa9ccdc173053cc596ebc0df971",
+      "hash": "sha256:44d32296945884e6bb8274bb5f2ef677ff406d43cc4832fb58c511af8e5eb34d",
       "source_fragments": [
-        "require-explicit-confirmation",
         "knowledge-priming",
-        "project-defaults",
-        "project-overview",
+        "code-is-authoritative",
+        "core-rules",
+        "mistake-proofing",
         "secure-coding",
-        "commands",
-        "git-discipline",
         "decision-protocol",
         "external-facts",
-        "mistake-proofing",
-        "core-rules",
+        "require-explicit-confirmation",
+        "project-overview",
         "harness-loop",
         "quality-gate",
-        "use",
         "catalog-authoring",
         "copilot-defaults",
-        "self-improvement-retro",
         "session-completion",
+        "commands",
+        "git-discipline",
         "non-interactive-shell"
       ]
     }

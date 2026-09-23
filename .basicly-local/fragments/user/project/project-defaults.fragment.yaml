@@ -1,6 +1,6 @@
 schema_version: 1
 id: project-defaults
-description: Project defaults and priming context for this repo.
+description: Merged into project-overview.
 category: project
 priority: critical
 applies_to:
@@ -8,7 +8,7 @@ applies_to:
 tags:
 - defaults
 - priming
-status: active
+status: deprecated
 body: |
   - Platforms: Windows, Linux, macOS.
   - Script harness and CI helpers: `.scripts/`.

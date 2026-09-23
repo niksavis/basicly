@@ -1,5 +1,5 @@
 ---
-description: A rendered surface is not exercised until its rendering has been looked at.
+description: Check a rendered page by its picture, not by its HTML.
 paths: ["src/basicly/board_render.py", "src/basicly/board_wall.py", "src/basicly/board_regions.py", "src/basicly/board_footer.py", ".basicly/core/templates/**", "site/**"]
 ---
 
@@ -7,22 +7,20 @@ paths: ["src/basicly/board_render.py", "src/basicly/board_wall.py", "src/basicly
 
 # Rendered Surfaces
 
-`quality-gate` says run it and read the output. Here the output is an **image**, and
-reading the HTML instead is what shipped three green-but-unreadable pages in one day:
-a schema dump nobody could read, five clipped regions — four of them already clipped
-on the very fixture the layout passed against — and a panel drawing `0` over ten real
-edges. Every one passed the whole check set.
+A rendered page is an image. A page can pass every check and still be unreadable, so look at the picture:
 
-- **Render it and look at the picture** before you call it done. On WSL, drive Windows
-  Chrome over a UNC path: `chrome.exe --headless=new --disable-gpu
-  --window-size=1920,1080 --screenshot=<win-path> "file://\\\\wsl.localhost\\<distro>\\<path>"`,
-  then open the PNG. Check each acceptance criterion against the picture, not your intent.
-- **Drive it from real data, not only a fixture.** The fixture carried 12 gate checks and
-  the tree has 36; that difference is what pushed a whole region off screen.
-- **`uv run python .scripts/check_render_overflow.py <page.html>`** reports two signals:
-  `render-overflow`, a box holding more than it shows, and `render-overlap`, two text
-  boxes painted over each other. An overlap overflows nothing, so read both lines.
-- **A scrollbar is not the signal.** `overflow: hidden` clips in silence, so absence of a
-  scrollbar proves nothing. Measure the overflow.
-- Shoot every viewport the layout claims. A reflow rule is a claim about a width nobody
-  checked unless it was shot at that width.
+- Render the page and open the screenshot before you call it done. On WSL, drive Windows Chrome over a UNC path:
+
+```sh
+chrome.exe --headless=new --disable-gpu --window-size=1920,1080 --screenshot=<win-path> "file://\\\\wsl.localhost\\<distro>\\<path>"
+```
+
+- Check each acceptance criterion against the picture.
+- Render from real data as well as the fixture. A fixture with fewer rows hides an overflow.
+- Run the overflow check and read both of its signals, `render-overflow` and `render-overlap`. A clipped box shows no scrollbar.
+
+```sh
+uv run python .scripts/check_render_overflow.py <page.html>
+```
+
+- Shoot every viewport width the layout claims.

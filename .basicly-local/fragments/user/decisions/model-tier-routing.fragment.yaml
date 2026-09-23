@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../../../../.basicly/core/schemas/fragment.schema.json
+schema_version: 1
+token_cost:
+  claude: 0
+  codex: 0
+  copilot: 0
+id: model-tier-routing
+description: Declare a model tier, never a provider model id.
+category: decisions
+priority: high
+applies_to: [all]
+tags:
+- models
+- routing
+status: active
+scope:
+  paths:
+  - .basicly/core/agents/**
+  - .basicly/core/models/**
+  - basicly.toml
+title: Model Tier Routing
+body: |
+  - A dispatch declares a tier: `low`, `medium`, `high` or `maximum`. It never names a provider model id; the tier kit's model map resolves the tier.
+  - Choose the tier by the cost per landed correct change: tokens, time and human interventions. A weak model's mistakes return as rework on the same change.
+  - Use `low` only for work whose wrong answer a check catches and a rerun fixes cheaply. Start implementation from prose, decomposition, design and costly judgements at `high`.
+  - A dispatch with no tier is a bug. It inherits the session's own model.

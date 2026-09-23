@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../../../.basicly/core/schemas/fragment.schema.json
+schema_version: 1
+token_cost:
+  claude: 0
+  codex: 0
+  copilot: 0
+id: release-fragments
+description: Write a release note fragment for every change a consumer can see.
+category: project
+priority: medium
+applies_to: [all]
+tags:
+- release
+status: active
+scope:
+  paths:
+  - changelog.d/**
+  - src/**
+  - .basicly/core/**
+title: Release Fragments
+body: |
+  - A change a consumer can see writes `changelog.d/<record-id>.<category>.md` before its record closes: one bullet line, under 400 characters.
+  - Write it in the same change. The release reads the tagged commit, and a closed record with a shipped scope and no fragment blocks the next commit on main.

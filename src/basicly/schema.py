@@ -12,21 +12,23 @@ PRIORITY_MAP = {
 
 SOURCE_SCHEMA_VERSION = 1
 
-CATEGORIES = {
-    "boundaries",
-    "code-style",
-    "commands",
-    "decisions",
+CATEGORY_ORDER = (
     "design",
-    "hooks",
-    "project",
     "security",
-    "skills",
+    "decisions",
+    "boundaries",
+    "project",
+    "commands",
     "testing",
     "tools",
+    "code-style",
+    "hooks",
+    "skills",
     "ci-cd",
     "quirks",
-}
+)
+
+CATEGORIES = frozenset(CATEGORY_ORDER)
 
 STATUSES = {"active", "draft", "deprecated"}
 

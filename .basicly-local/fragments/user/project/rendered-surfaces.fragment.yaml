@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../../../.basicly/core/schemas/fragment.schema.json
+schema_version: 1
+token_cost:
+  claude: 0
+  codex: 0
+  copilot: 0
+id: rendered-surfaces
+description: Check a rendered page by its picture, not by its HTML.
+category: project
+priority: high
+applies_to: [all]
+tags:
+- rendering
+- verification
+status: active
+scope:
+  paths:
+  - src/basicly/board_render.py
+  - src/basicly/board_wall.py
+  - src/basicly/board_regions.py
+  - src/basicly/board_footer.py
+  - .basicly/core/templates/**
+  - site/**
+title: Rendered Surfaces
+body: |
+  A rendered page is an image. A page can pass every check and still be unreadable, so look at the picture:
+
+  - Render the page and open the screenshot before you call it done. On WSL, drive Windows Chrome over a UNC path:
+
+  ```sh
+  chrome.exe --headless=new --disable-gpu --window-size=1920,1080 --screenshot=<win-path> "file://\\\\wsl.localhost\\<distro>\\<path>"
+  ```
+
+  - Check each acceptance criterion against the picture.
+  - Render from real data as well as the fixture. A fixture with fewer rows hides an overflow.
+  - Run the overflow check and read both of its signals, `render-overflow` and `render-overlap`. A clipped box shows no scrollbar.
+
+  ```sh
+  uv run python .scripts/check_render_overflow.py <page.html>
+  ```
+
+  - Shoot every viewport width the layout claims.

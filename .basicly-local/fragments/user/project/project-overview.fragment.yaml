@@ -1,14 +1,21 @@
+# yaml-language-server: $schema=../../../../.basicly/core/schemas/fragment.schema.json
 schema_version: 1
+token_cost:
+  claude: 0
+  codex: 0
+  copilot: 0
 id: project-overview
-description: What basicly is - purpose, stack, entry points.
+description: What this repository is and where things live.
 category: project
 priority: critical
 applies_to: [all]
-tags: [overview, priming]
+tags:
+- project
 status: active
 title: Project Overview
 body: |
-  - Purpose: harness distribution for coding agents - one YAML catalog projected into agent instruction files, skills, and git hooks, consumed by other repos via `basicly install`.
-  - Stack: Python 3.14+, managed with `uv`; version single-sourced from `src/basicly/__init__.py`.
-  - Entry point: the `basicly` CLI (`src/basicly/cli.py`); catalog sources in `.basicly/core/`, overrides in `.basicly-local/`.
-  - Architecture: `docs/architecture/architecture.md` is the authoritative reference.
+  - basicly distributes a harness for coding agents. One YAML catalog is projected into agent instruction files, skills and git hooks. Other repositories install it with `basicly install`.
+  - Stack: Python 3.14 or later, managed with `uv`. The version lives only in `src/basicly/__init__.py`. Platforms: Windows, Linux and macOS.
+  - The `basicly` CLI is `src/basicly/cli.py`. This repository authors the catalog in `.basicly/core/`; its own overrides are in `.basicly-local/`. Scripts and CI helpers are in `.scripts/`.
+  - `docs/architecture/architecture.md` is the authoritative design reference.
+  - A change under `.basicly/core/kit/` must work for a consumer with no engine. Name where that consumer gets the capability.

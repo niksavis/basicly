@@ -10,12 +10,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FRAGMENT = (
-    REPO_ROOT
-    / ".basicly"
-    / "core"
-    / "fragments"
-    / "project"
-    / "code-is-authoritative.fragment.yaml"
+    REPO_ROOT / ".basicly" / "core" / "fragments" / "design" / "code-is-authoritative.fragment.yaml"
 )
 KIT = REPO_ROOT / ".basicly" / "core" / "kit" / "comments"
 
@@ -36,7 +31,8 @@ SKIPPED = frozenset({"vendor", "node_modules", "__pycache__"})
 
 def _scoped_paths() -> list[str]:
     source = yaml.safe_load(FRAGMENT.read_text(encoding="utf-8"))
-    return list(source["scope"]["paths"])
+    scope = source.get("scope") or {}
+    return list(scope.get("paths") or ["*"])
 
 
 def _covered_tracked_files() -> list[str]:
@@ -88,6 +84,6 @@ def test_the_sweep_reports_a_directory_no_scope_covers() -> None:
 def test_the_rule_states_the_ban_and_names_the_gate_that_enforces_it() -> None:
     body = yaml.safe_load(FRAGMENT.read_text(encoding="utf-8"))["body"]
 
-    assert "no comment, no docstring" in body.lower()
+    assert "no comment and no docstring" in body.lower()
     assert "no-comments" in body
     assert "noqa" in body, "the rule must say a directive survives, or it reads as a total ban"

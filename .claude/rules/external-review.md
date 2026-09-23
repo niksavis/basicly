@@ -1,5 +1,5 @@
 ---
-description: Verify call sites and read licences before writing an adopt finding about a third-party project.
+description: Check the code and the licence before a research document recommends a third-party project.
 paths: ["docs/research/**", "docs/requirements/**"]
 ---
 
@@ -7,40 +7,11 @@ paths: ["docs/research/**", "docs/requirements/**"]
 
 # External Review
 
-A research or design document is where a third-party project's advertising gets
-promoted to a recommendation this repo then builds against. One 2026-07-30 session
-committed three errors of this shape; each rule below is the check that would have
-caught one.
+Before a research or design document recommends a third-party project:
 
-- **A README is a claim; the code is the evidence.** Before recommending adoption of
-  a third-party feature, find its call sites and cite `file:line`. A symbol with no
-  non-test caller does not ship, and neither does one behind a config field nothing
-  reads. gastown's advertised bisecting merge queue was exactly that — the corrected
-  conclusion *inverted* the original.
-- **An absolute claim is checked by trying to break it, not by finding the caller.**
-  The inverse defect: a *reachable* feature described too strongly, which no call-site
-  search catches. Measured 2026-08-09 — a harness advertising a floor "not overridable
-  by any config, env var, or permission mode" had two documented escape hatches, each
-  flipping a deny to an allow. A true absolute costs nothing to test.
-- **Read the licence before writing the adopt finding, not after.** Read every
-  licence-bearing file, `NOTICE` included, and check for per-directory licences rather
-  than assuming a monorepo is uniform. Two restricted repos in this reference set had
-  a clean-looking top-level `LICENSE`; in both, that file alone was enough to clear
-  them, and reading it first would have cost nothing.
-- **A licence restricts copying expression, not learning a fact.** Measurements and
-  concepts survive a restriction; implementations and ports do not. Keep the finding
-  on the usable side of that line instead of dropping the source entirely.
-- **Ask what the author sells before you adopt what they recommend.** A source whose
-  recommended control happens to be its own product is positioning until something
-  independent evidences it. Measured 2026-08-08 on a widely-cited essay: every element
-  that survived scrutiny was mechanical (slice shape, an artifact of the call graph),
-  and every element that did not was one where the prescribed control was the author's
-  paid product. The tell is mechanical, so it is checkable.
-- **Check whether the prescription's premise assumes away a control you already run.**
-  That essay's argument holds only if no automated maintainability gate exists. This repo
-  runs seven. The premise was never argued, only assumed, and it took five iterations of
-  "why" to reach it — the first four all accepted it.
-- **Say whether you have the mechanism or only the correlation.** When a pattern holds
-  across independent sources, state which one you established. Writing that every
-  project adopting a design traded away determinism implied a cause that was really
-  two independent errors — the decision held, on a different argument.
+- Treat its README as a claim. Find the call sites and cite `file:line`. A symbol with no non-test caller does not ship.
+- Test an absolute claim by trying to break it. A feature can exist and still be described too strongly.
+- Read every licence file first, `NOTICE` included, and check each directory. A licence restricts copying the code, not learning a fact from it.
+- Ask what the author sells. A recommended control that is the author's own product needs independent evidence.
+- Check whether the argument assumes away a control this repository already runs.
+- Say whether you established the mechanism or only a correlation.

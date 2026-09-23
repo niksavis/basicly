@@ -8,7 +8,7 @@ tags: [commands, build, test]
 status: active
 title: Commands
 body: |
-  Run these verbatim; don't improvise variants.
+  Run these commands as written.
 
   Setup:
 

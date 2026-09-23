@@ -566,8 +566,10 @@ flowchart LR
   class targets,sources,gate,pick,order,emit,sweep shipped
 ```
 
-**Determinism is a property, not an accident.** The sort is total. It orders by priority
-descending, then by category, then by id. Two builds on identical sources produce
+**Determinism is a property, not an accident.** The sort is total. It puts every
+always-on fragment before every scoped one, then orders by the category order
+`schema.CATEGORY_ORDER` (design principles first), then by priority descending, then by
+id. Two builds on identical sources produce
 byte-identical output. A diff therefore only ever shows a real change.
 
 **Selection has exactly four axes.** Every output declares which of them it uses.
@@ -670,9 +672,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | size | cap | headroom | lines | line cap |
 | --- | --- | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 10885 characters | 12000 | 1115 | 181 | 200 |
-| `AGENTS.md` (codex) | 18212 bytes | 24576 | 6364 | 295 | 320 |
-| `.github/copilot-instructions.md` (copilot) | 10984 characters | 12000 | 1016 | 182 | 200 |
+| `.claude/CLAUDE.md` (claude) | 9391 characters | 12000 | 2609 | 161 | 200 |
+| `AGENTS.md` (codex) | 12270 bytes | 24576 | 12306 | 209 | 320 |
+| `.github/copilot-instructions.md` (copilot) | 9483 characters | 12000 | 2517 | 162 | 200 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -732,7 +734,7 @@ in-memory `Fragment` record, so it has no row below.
 | `category` | yes | `boundaries`, `code-style`, `commands`, `decisions`, `design`, `hooks`, `project`, `security`, `skills`, `testing`, `tools`, `ci-cd`, `quirks` | a closed vocabulary; unknown values are refused at load |
 | `applies_to` | yes | target names or `all` | |
 | `body` | yes | a block scalar | the projected Markdown content |
-| `priority` | no | `critical` (4), `high` (3), `medium` (2, default), `low` (1) | sorts descending |
+| `priority` | no | `critical` (4), `high` (3), `medium` (2, default), `low` (1) | sorts descending within a category |
 | `scope.paths` | no | glob list, default `["**"]` | a non-default value makes the fragment scoped |
 | `status` | no | `active` (default), `draft`, `deprecated` | only `active` is projected |
 | `technologies` | no | controlled list | untagged means universal |

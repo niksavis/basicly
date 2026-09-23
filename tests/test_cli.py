@@ -713,7 +713,18 @@ def test_cli_check_reports_the_always_on_budget_overrun_build_reports(work_repo:
     assert f"AGENTS.md exceeds {agents_bytes - 1} bytes ({agents_bytes})" in result.stderr
 
 
+def _add_multibyte_fragment(work_repo: Path) -> None:
+    target = work_repo / ".basicly-local" / "fragments" / "user" / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "multibyte.fragment.yaml").write_text(
+        "schema_version: 1\nid: multibyte\ndescription: A fixture.\ncategory: project\n"
+        "applies_to: [all]\nbody: |\n  - A na\u00efve caf\u00e9 r\u00e9sum\u00e9.\n",
+        encoding="utf-8",
+    )
+
+
 def test_the_codex_budget_is_measured_in_the_unit_codex_enforces(work_repo: Path) -> None:
+    _add_multibyte_fragment(work_repo)
     run_basicly(work_repo, "build")
     text = (work_repo / "AGENTS.md").read_text(encoding="utf-8")
     assert len(text.encode("utf-8")) > len(text), "the two units must differ to tell them apart"
@@ -835,7 +846,7 @@ def test_cli_catalog_dump_names_every_selected_item_with_its_origin_and_axes(
     )
     assert (
         "core-rules applies_to=all scope=** technologies=any "
-        "<- .basicly/core/fragments/project/core-rules.fragment.yaml [core]"
+        "<- .basicly/core/fragments/design/core-rules.fragment.yaml [core]"
     ) in result.stdout
     assert (
         "overlay-only applies_to=all scope=** technologies=any "

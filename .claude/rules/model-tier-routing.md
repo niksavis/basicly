@@ -1,5 +1,5 @@
 ---
-description: Choose a dispatch's model tier by reliability per landed change, not by per-dispatch price.
+description: Declare a model tier, never a provider model id.
 paths: [".basicly/core/agents/**", ".basicly/core/models/**", "basicly.toml"]
 ---
 
@@ -7,15 +7,7 @@ paths: [".basicly/core/agents/**", ".basicly/core/models/**", "basicly.toml"]
 
 # Model Tier Routing
 
-A dispatch declares one of four tiers, cheapest first — `low`, `medium`, `high`,
-`maximum` — never a provider model id, which each surface spells its own way. Anthropic:
-haiku, sonnet, opus, fable; OpenAI: luna, terra, sol; Google and Moonshot ship three
-classes, so `maximum` resolves onto `high`.
-
-Route by reliability, not sticker price: cost is tokens plus wall-clock plus human
-interventions **per landed correct change**, and a weak model's mistakes return as
-rework and bounced merges billed to that same change. `low` earns only work whose wrong
-answer is caught mechanically and redone cheaply — a brief already carrying the code and
-its tests; implementation from prose, decomposition, design and judgments expensive to
-be wrong start at `high`. No declared tier is a bug, not a default: the dispatch
-inherits the session's own model.
+- A dispatch declares a tier: `low`, `medium`, `high` or `maximum`. It never names a provider model id; the tier kit's model map resolves the tier.
+- Choose the tier by the cost per landed correct change: tokens, time and human interventions. A weak model's mistakes return as rework on the same change.
+- Use `low` only for work whose wrong answer a check catches and a rerun fixes cheaply. Start implementation from prose, decomposition, design and costly judgements at `high`.
+- A dispatch with no tier is a bug. It inherits the session's own model.

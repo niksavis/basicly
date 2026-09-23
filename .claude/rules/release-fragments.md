@@ -1,5 +1,5 @@
 ---
-description: A consumer-visible change writes one short bulleted changelog fragment before its record closes.
+description: Write a release note fragment for every change a consumer can see.
 paths: ["changelog.d/**", "src/**", ".basicly/core/**"]
 ---
 
@@ -7,7 +7,5 @@ paths: ["changelog.d/**", "src/**", ".basicly/core/**"]
 
 # Release Fragments
 
-A change a consumer can see writes `changelog.d/<record-id>.<category>.md` before its
-record closes: one dash-space bullet, under 400 characters. Write it in the lane — the
-release reads the tagged commit, and a closed record with a shipped scope and no
-fragment blocks the next commit on main.
+- A change a consumer can see writes `changelog.d/<record-id>.<category>.md` before its record closes: one bullet line, under 400 characters.
+- Write it in the same change. The release reads the tagged commit, and a closed record with a shipped scope and no fragment blocks the next commit on main.

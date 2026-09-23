@@ -45,12 +45,11 @@ def test_codex_is_measured_in_bytes_not_characters() -> None:
     assert _targets()["codex"]["max_size_unit"] == "bytes"
 
 
-def test_the_byte_and_character_counts_actually_differ() -> None:
-    text = (REPO / "AGENTS.md").read_text(encoding="utf-8")
+def test_a_multibyte_character_counts_as_its_bytes_under_the_byte_unit(gate) -> None:
+    text = "na\u00efve"
 
-    assert len(text.encode("utf-8")) > len(text), (
-        "if these were equal the unit choice would be untestable here"
-    )
+    assert gate._measure(text, "bytes") == len(text) + 1
+    assert gate._measure(text, "characters") == len(text)
 
 
 def test_no_declared_cap_is_looser_than_its_vendor_limit(gate) -> None:
