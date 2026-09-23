@@ -54,48 +54,14 @@ def no_br(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subprocess, "run", refuse)
 
 
-def test_a_dispatched_agent_is_recorded_instead_of_the_operating_system_user() -> None:
-
-    resolved = owned_write.resolved_actor({owned_write.AGENT_ENV_VAR: "claude"})
-    assert resolved == f"{owned_write.AGENT_ACTOR}claude"
-    assert owned_write.OPERATOR_ACTOR not in resolved
+MARKERS = ("BR_AGENT_NAME", "AI_AGENT", "CLAUDECODE")
 
 
-def test_an_undispatched_write_records_the_masked_operator_and_never_the_username() -> None:
-
-    name = redact.machine_identity()
-    if not name:
-        pytest.skip("this host has no username the identity rule can word-bound")
-    resolved = owned_write.resolved_actor({})
-    assert resolved == f"{owned_write.OPERATOR_ACTOR}{IDENTITY_PLACEHOLDER}"
-    assert name not in resolved
-
-
-def test_an_identity_the_redactor_cannot_mask_records_the_reason_not_an_empty_string(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-
-    monkeypatch.setattr(redact, "machine_identity", lambda: "")
-    resolved = owned_write.resolved_actor({})
-    assert resolved == owned_write.UNRESOLVED_ACTOR
-    assert resolved, "an unresolved actor is a reason, never an empty field"
-
-
-def test_an_actor_taken_from_the_environment_is_redacted_and_capped() -> None:
-
-    leaked = owned_write.resolved_actor({
-        owned_write.AGENT_ENV_VAR: "API_TO" + "KEN=" + "abcdefghij"
-    })
-    assert "abcdefghij" not in leaked
-    assert leaked.startswith(owned_write.AGENT_ACTOR)
-    long_name = "a" * (owned_write.MAX_ACTOR_CHARS * 2)
-    capped = owned_write.resolved_actor({owned_write.AGENT_ENV_VAR: long_name})
-    assert len(capped) == len(owned_write.AGENT_ACTOR) + owned_write.MAX_ACTOR_CHARS
-
-
-def test_a_newline_in_the_environment_cannot_reach_the_ledger_line() -> None:
-    resolved = owned_write.resolved_actor({owned_write.AGENT_ENV_VAR: " claude\n  code\t"})
-    assert resolved == f"{owned_write.AGENT_ACTOR}claude code"
+def _only(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
+    for name in MARKERS:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
 
 
 @pytest.mark.usefixtures("no_br")
@@ -103,7 +69,7 @@ def test_a_write_through_the_seam_carries_the_agent_onto_the_ledger(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
 
-    monkeypatch.setenv(owned_write.AGENT_ENV_VAR, "codex")
+    _only(monkeypatch, BR_AGENT_NAME="codex")
     repo = owned_repo(tmp_path)
     seed(repo, RECORD)
 
@@ -111,30 +77,29 @@ def test_a_write_through_the_seam_carries_the_agent_onto_the_ledger(
 
     kit = owned_store.kit(repo)
     actors = [event.actor for event in events_of(repo, RECORD)]
-    assert actors == [kit.events.UNATTRIBUTED_ACTOR, f"{owned_write.AGENT_ACTOR}codex"]
+    assert actors == [kit.events.UNATTRIBUTED_ACTOR, "agent:codex"]
 
 
 @pytest.mark.usefixtures("no_br")
 def test_a_create_through_the_seam_carries_the_agent_onto_the_ledger(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv(owned_write.AGENT_ENV_VAR, "copilot")
+    _only(monkeypatch, BR_AGENT_NAME="copilot")
     repo = owned_repo(tmp_path)
 
     minted = owned_write.create(repo, ["create", "a new record", "-t", "task"])
 
     written = events_of(repo, minted)
     assert written, "the create appended nothing, so the assertion below would be vacuous"
-    assert {event.actor for event in written} == {f"{owned_write.AGENT_ACTOR}copilot"}
+    assert {event.actor for event in written} == {"agent:copilot"}
 
 
 @pytest.mark.usefixtures("no_br")
-def test_no_event_the_seam_writes_can_carry_an_empty_actor(
+def test_a_person_is_recorded_as_the_operator_class_and_never_by_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
 
-    monkeypatch.delenv(owned_write.AGENT_ENV_VAR, raising=False)
-    monkeypatch.setattr(redact, "machine_identity", lambda: "")
+    _only(monkeypatch)
     repo = owned_repo(tmp_path)
     record = owned_write.create(repo, ["create", "a new record", "-t", "task"])
     owned_write.append(repo, ["update", record, "--status", "in_progress"])
@@ -142,4 +107,6 @@ def test_no_event_the_seam_writes_can_carry_an_empty_actor(
 
     actors = [event.actor for event in events_of(repo, record)]
     assert actors, "no event was appended, so the assertion below would be vacuous"
-    assert set(actors) == {owned_write.UNRESOLVED_ACTOR}
+    assert set(actors) == {"operator"}
+    name = redact.machine_identity()
+    assert not name or all(name not in actor for actor in actors)

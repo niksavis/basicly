@@ -86,6 +86,12 @@ conflict. Only a repository where one writer pushes straight to the default bran
 pass `init --fold-on-merge`, which wires a `post-merge` hook that folds there and nowhere
 else.
 
+## Who wrote an event
+
+Each event's `actor` says what kind of writer made it: `agent:<name>` when an agent ran
+the command, else `operator`. It never names a person. The person is the author of the
+commit that brought the line in, so ask git: `git log -S'<record-id>' -- .basicly/ledger`.
+
 ## Show a human where the work stands
 
 ```sh

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -11,15 +10,6 @@ from basicly import mirror, owned_store, re_record, redact, tracker_argv
 from basicly.owned_store import TrackerDivergenceError
 
 OWNED_PROVENANCE = "engine"
-
-AGENT_ENV_VAR = "BR_AGENT_NAME"
-
-AGENT_ACTOR = "agent:"
-OPERATOR_ACTOR = "operator:"
-
-UNRESOLVED_ACTOR = "unresolved:no-redactable-identity"
-
-MAX_ACTOR_CHARS = 64
 
 
 def ledger_git_rules(repo_root: Path) -> tuple[str, ...]:
@@ -30,16 +20,8 @@ def ledger_git_rules(repo_root: Path) -> tuple[str, ...]:
     return tuple(f"{glob} -text merge=union" for glob in (events.LOG_GLOB, events.PENDING_GLOB))
 
 
-def resolved_actor(environ: Mapping[str, str] | None = None) -> str:
-
-    values = os.environ if environ is None else environ
-    agent = " ".join(values.get(AGENT_ENV_VAR, "").split())
-    if agent:
-        return AGENT_ACTOR + redact.redact_committed(agent)[:MAX_ACTOR_CHARS]
-    name = redact.machine_identity()
-    if not name:
-        return UNRESOLVED_ACTOR
-    return OPERATOR_ACTOR + redact.redact_machine_identity(name)
+def resolved_actor(repo_root: Path) -> str:
+    return str(owned_store.kit(repo_root, "writers").writer_class())
 
 
 def _stamped(kit_module: Any, drafts: Sequence[Any]) -> list[Any]:
@@ -162,7 +144,7 @@ def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
             landed = events.append(
                 ledger,
                 stamped,
-                actor=resolved_actor(),
+                actor=resolved_actor(repo_root),
                 redact=redact.redact_committed,
                 held_lock=lock,
             )
@@ -201,7 +183,7 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
             events.append(
                 ledger,
                 _stamped(kit_module, drafts),
-                actor=resolved_actor(),
+                actor=resolved_actor(repo_root),
                 redact=redact.redact_committed,
                 held_lock=lock,
             )

@@ -25,6 +25,7 @@ def _load(file_name: str, module_name: str) -> Any:
 queries = _load("queries.py", "basicly_tracker_kit_queries")
 label_shape = _load("label_shape.py", "basicly_tracker_kit_label_shape")
 templates = _load("templates.py", "basicly_tracker_kit_templates")
+writers = _load("writers.py", "basicly_tracker_kit_writers")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -92,7 +93,9 @@ def _require(ledger: Path, record: str) -> Any:
 def _append(
     ledger: Path, drafts: Sequence[Any], redact: Callable[[str], str] | None, lock: Any
 ) -> list:
-    return events.append(ledger, list(drafts), redact=redact, held_lock=lock)
+    return events.append(
+        ledger, list(drafts), actor=writers.writer_class(), redact=redact, held_lock=lock
+    )
 
 
 def _resolved_labels(state: Any, add: Iterable[str], remove: Iterable[str]) -> str:
