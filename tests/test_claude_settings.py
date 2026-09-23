@@ -274,3 +274,24 @@ def test_projected_agent_hook_fires_and_its_refusal_reaches_the_agent(tmp_path: 
     plain = tmp_path / "notes.md"
     plain.write_text("# notes\n", encoding="utf-8")
     assert _fire_agent_hook(guard, tmp_path, plain).returncode == 0
+
+
+def test_the_subagent_cache_ttl_is_written_when_absent(tmp_path: Path) -> None:
+    assert claude_settings.default_subagent_cache_ttl(tmp_path) is True
+
+    written = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert written["subagentPromptCacheTtl"] == "1h"
+    assert claude_settings.default_subagent_cache_ttl(tmp_path) is False
+
+
+def test_a_chosen_subagent_cache_ttl_is_kept(tmp_path: Path) -> None:
+    path = tmp_path / ".claude" / "settings.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"subagentPromptCacheTtl": "5m", "other": 1}), encoding="utf-8")
+
+    assert claude_settings.default_subagent_cache_ttl(tmp_path) is False
+
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "subagentPromptCacheTtl": "5m",
+        "other": 1,
+    }

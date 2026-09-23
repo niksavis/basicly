@@ -2009,6 +2009,12 @@ def cmd_permissions_build(_args: argparse.Namespace) -> int:
         print(f"Wrote {claude_settings.CLAUDE_SETTINGS_PATH} (managed permissions deny-list)")
     else:
         print(f"Permissions deny-list in {claude_settings.CLAUDE_SETTINGS_PATH} is up to date.")
+    if claude_settings.default_subagent_cache_ttl(repo_root):
+        print(
+            f"Set {claude_settings.SUBAGENT_CACHE_TTL_KEY} to "
+            f"{claude_settings.SUBAGENT_CACHE_TTL!r} in {claude_settings.CLAUDE_SETTINGS_PATH}: "
+            "subagents keep their prompt cache through a pause longer than five minutes"
+        )
     return 0
 
 

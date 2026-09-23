@@ -18,6 +18,8 @@ PERMISSIONS_KEY = "permissions"
 DENY_KEY = "deny"
 
 HOOKS_KEY = "hooks"
+SUBAGENT_CACHE_TTL_KEY = "subagentPromptCacheTtl"
+SUBAGENT_CACHE_TTL = "1h"
 PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
 HOOK_INTERPRETER = "uv run --no-project --no-python-downloads python"
 AGENT_HOOK_EVENTS = {
@@ -58,6 +60,18 @@ def set_bg_isolation_none(repo_root: Path) -> bool:
     section[BG_ISOLATION_KEY] = BG_ISOLATION_NONE
     settings[WORKTREE_KEY] = section
 
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, json.dumps(settings, indent=2) + "\n")
+    return True
+
+
+def default_subagent_cache_ttl(repo_root: Path) -> bool:
+
+    path = repo_root / CLAUDE_SETTINGS_PATH
+    settings = _load_settings(path)
+    if SUBAGENT_CACHE_TTL_KEY in settings:
+        return False
+    settings[SUBAGENT_CACHE_TTL_KEY] = SUBAGENT_CACHE_TTL
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(path, json.dumps(settings, indent=2) + "\n")
     return True

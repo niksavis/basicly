@@ -1,0 +1,1 @@
+- `basicly install` now sets `subagentPromptCacheTtl` to `1h` in `.claude/settings.json` when the key is absent, so a subagent keeps its prompt cache through a pause longer than five minutes. A value you set yourself is kept.
