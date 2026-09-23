@@ -59,5 +59,8 @@ Re-running the same export appends nothing, so an import can be repeated while t
 tracker is still authoritative. Every imported record records where it came from, which
 `--source` names if the file name is not the name you want.
 
+Every command, with one example each:
+[`kit/tracker/REFERENCE.md`](../../.basicly/core/kit/tracker/REFERENCE.md).
+
 Full specification, including the collision budget the ids are sized from:
 [`kit/SPEC.md`](../../.basicly/core/kit/tracker/SPEC.md).

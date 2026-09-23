@@ -52,7 +52,8 @@ python3 .basicly/kit/tracker/cli.py child .basicly/ledger <parent-id> --title "<
 ```
 
 Run `cli.py <verb> --help` for the exact flags; they are checked and a wrong one is refused
-by name rather than ignored.
+by name rather than ignored. `.basicly/kit/tracker/REFERENCE.md` lists every command with
+one example.
 
 ## Check the log itself
 
