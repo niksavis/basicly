@@ -60,6 +60,7 @@ from . import (
     tracker_write,
     ui,
     usage_report,
+    user_skills,
     validate_gate,
     verify,
     working_set,
@@ -2334,6 +2335,8 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     if _report_mismatches(mismatches, repo_root, stale_message=_skills_stale_message(mismatches)):
         return 1
 
+    for line in user_skills.shadows(repo_root / user_skills.USER_SKILLS, user_skills.home_skills()):
+        ui.say(line, style="warn")
     checked = ", ".join(_format_path(root, repo_root) for root in roots)
     ui.say(f"Projected skills are up to date in {checked}.", style="ok")
     return 0
@@ -5254,6 +5257,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_skill_root_args(skills_check_parser)
 
+    skills_user_parser = subparsers.add_parser(
+        "skills-user",
+        help="Project catalog skills into ~/.claude/skills so every repo sees them",
+    )
+    skills_user_parser.add_argument("skills", nargs="+", help="names or patterns")
+    skills_user_parser.add_argument("--home", default="", help="write under this home instead")
+    skills_user_parser.add_argument("--dry-run", action="store_true", help="write nothing")
+
     styles_build_parser = subparsers.add_parser(
         "styles-build",
         help="Project output styles from .basicly/core/output-styles",
@@ -5325,6 +5336,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "health": cmd_health,
         "skills-build": cmd_skills_build,
         "skills-check": cmd_skills_check,
+        "skills-user": user_skills.cmd_skills_user,
         "styles-build": cmd_styles_build,
         "styles-check": cmd_styles_check,
         "retention": cmd_retention,

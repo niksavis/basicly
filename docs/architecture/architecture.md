@@ -852,8 +852,19 @@ tool that asymmetry is load-bearing.
 | skills | enterprise → **personal** → **project** | project, the **weakest** writable scope |
 
 A developer's personal skill of the same name therefore overrides a shipped skill in
-silence. An identically named agent would not. Nothing in the projection makes that
-visible to the consumer.
+silence. An identically named agent would not. `basicly skills-check` reports each such
+shadow and whether the two copies differ (`basicly-3n4rze0`).
+
+**Decision (2026-09-24): machine tools reach every repo through one user-level index.**
+The command-line tools terminal-setup installs are machine facts, not repo facts, so their
+skills belong in the user home. `basicly skills-user <names>` projects catalog skills into
+`~/.claude/skills` with the generated marker. It prunes only marked skills and never
+overwrites an unmarked one such as `img-zoom`. One model-invoked `cli-tools` skill names
+the tools and when to use each; the 25 `tool-*` skills stay user-invoked, so the always-on
+listing grows by one entry of 125 tokens (1900 of 2000 in the catalog). A user-level
+description loads in every repo, so the projection refuses a selection whose model-invoked
+listing exceeds 200 tokens (`basicly-mh58it6`, `basicly-dj651ii`). The skill content stays
+in basicly; terminal-setup only calls the command.
 
 **Lint enforces the specification's naming rules.** The name must match the directory. It
 must be 1 to 64 lowercase alphanumeric-or-hyphen characters, with no leading, trailing or
@@ -3576,7 +3587,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 61 tiers hold 140 modules and group into 9 bands. Every band may import every band below
+The 61 tiers hold 141 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3586,7 +3597,7 @@ against them.
 flowchart TB
   b1["1 · entry — 1 module<br/>cli"]
   b2["2 · drivers — 13<br/>supervise · loop · release · usage_report"]
-  b3["3 · loop mechanics — 38<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
+  b3["3 · loop mechanics — 39<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
   b4["4 · configuration and isolation — 3<br/>config · worktree"]
   b5["5 · agent runtime — 5<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 13<br/>loader · planner · renderers · skills · agents · hooks · permissions"]

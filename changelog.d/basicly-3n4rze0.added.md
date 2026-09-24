@@ -1,0 +1,1 @@
+- `basicly skills-user <names>` projects catalog skills into `~/.claude/skills` so every repo sees them: it marks what it writes, prunes only marked skills, keeps unmarked ones such as `img-zoom`, and refuses a model-invoked selection over 200 listing tokens. `skills-check` reports a personal skill that shadows a project skill. (basicly-3n4rze0)

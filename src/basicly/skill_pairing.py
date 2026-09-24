@@ -26,6 +26,7 @@ UNPAIRED_EXEMPTIONS: dict[str, str] = {
         "to no single role"
     ),
     "python": "environment: reached from the listing by whichever role needs the platform",
+    "cli-tools": "environment: reached from the listing by whichever role runs a shell task",
     "node": "environment: reached from the listing by whichever role needs the platform",
     "wsl": "environment: reached from the listing by whichever role needs the platform",
 }
