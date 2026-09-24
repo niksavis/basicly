@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import inspect
 import json
 import os
 import shutil
@@ -793,7 +794,10 @@ def test_the_module_imports_nothing_outside_the_standard_library() -> None:
     }
     assert "sys.path.insert" not in source
     assert ".rename(" not in source
-    assert ".replace(file_path)" in source
+    assert "events.replace_file(temporary, file_path)" in source
+    publish = inspect.getsource(snapshot.events.replace_file)
+    assert "temporary.replace(target)" in publish
+    assert ".rename(" not in publish
 
 
 _DRIVER = """
@@ -932,3 +936,52 @@ def test_threads_of_one_process_can_publish_the_snapshot_at_once(tmp_path: Path)
     assert failures == []
     assert len(_lines(path)) == len(published.records) + 1
     assert not list(path.parent.glob("*.tmp"))
+
+
+class _BusyTarget:
+    def __init__(self, refusals: int) -> None:
+        self.refusals = refusals
+        self.calls = 0
+
+    def replace(self, _target: Path) -> None:
+        self.calls += 1
+        if self.calls <= self.refusals:
+            raise PermissionError("Access is denied")
+
+
+def test_a_replace_windows_refuses_for_a_moment_is_retried() -> None:
+    busy, slept = _BusyTarget(refusals=3), []
+
+    snapshot.events.replace_file(busy, Path("target"), sleep=slept.append)
+
+    assert busy.calls == 4
+    assert len(slept) == 3
+
+
+def test_a_replace_windows_keeps_refusing_raises_after_the_last_attempt() -> None:
+    busy = _BusyTarget(refusals=10**6)
+
+    with pytest.raises(PermissionError):
+        snapshot.events.replace_file(busy, Path("target"), sleep=lambda _s: None)
+
+    assert busy.calls == snapshot.events.REPLACE_ATTEMPTS
+
+
+class _BusyRead:
+    def __init__(self, refusals: int) -> None:
+        self.refusals = refusals
+        self.calls = 0
+
+    def read_text(self, encoding: str) -> str:
+        self.calls += 1
+        if self.calls <= self.refusals:
+            raise PermissionError("Access is denied")
+        return "published " + encoding
+
+
+def test_a_read_windows_refuses_while_the_file_is_replaced_is_retried() -> None:
+    busy = _BusyRead(refusals=2)
+
+    text = snapshot.events.read_published(busy, sleep=lambda _s: None)
+
+    assert (text, busy.calls) == ("published utf-8", 3)
