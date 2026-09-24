@@ -1046,7 +1046,7 @@ def _find_line(ledger: Path, event_id: str) -> tuple[Path, str, int, Event]:
 
 def _publish_text(path: Path, text: str) -> None:
 
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.{os.urandom(6).hex()}.tmp")
     try:
         with temporary.open("w", encoding="utf-8", newline="\n") as stream:
             stream.write(text)

@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from fnmatch import fnmatch
 from pathlib import Path
 from types import ModuleType
@@ -800,6 +801,7 @@ import importlib.util
 import json
 import shutil
 import sys
+import threading
 from pathlib import Path
 
 assert importlib.util.find_spec("basicly") is None, "basicly is importable"
@@ -904,3 +906,29 @@ def test_the_hook_command_runs_the_module_as_a_script_with_no_basicly(tmp_path: 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["written"] is True
     assert (ledger / snapshot.SNAPSHOT_NAME).exists()
+
+
+def test_threads_of_one_process_can_publish_the_snapshot_at_once(tmp_path: Path) -> None:
+    _build(tmp_path)
+    published = snapshot.rebuild(tmp_path)
+    path = snapshot.snapshot_path(tmp_path)
+    failures: list[BaseException] = []
+    start = threading.Barrier(8)
+
+    def publish() -> None:
+        start.wait()
+        for _ in range(25):
+            try:
+                snapshot.write_snapshot(path, published)
+            except OSError as error:
+                failures.append(error)
+
+    workers = [threading.Thread(target=publish) for _ in range(8)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=30)
+
+    assert failures == []
+    assert len(_lines(path)) == len(published.records) + 1
+    assert not list(path.parent.glob("*.tmp"))

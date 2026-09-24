@@ -247,7 +247,7 @@ def write_snapshot(path: Path | str, snapshot: Snapshot, *, allow_shrink: bool =
         if loss.refused:
             raise SnapshotError(f"{file_path.name}: {loss.reason}")
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = file_path.with_name(f"{file_path.name}.{os.getpid()}.tmp")
+    temporary = file_path.with_name(f"{file_path.name}.{os.getpid()}.{os.urandom(6).hex()}.tmp")
     try:
         with temporary.open("w", encoding="utf-8", newline="\n") as stream:
             for line in to_lines(snapshot):
