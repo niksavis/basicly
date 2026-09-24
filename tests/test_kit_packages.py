@@ -12,8 +12,13 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PACKAGES = REPO_ROOT / "packages"
 CATALOG = REPO_ROOT / ".basicly" / "core" / "kit"
-KITS = ("comments", "tracker", "tier")
-CLI_FILE = {"comments": "cli.py", "tracker": "cli.py", "tier": "tier_resolver.py"}
+KITS = ("comments", "tracker", "tier", "board")
+CLI_FILE = {
+    "comments": "cli.py",
+    "tracker": "cli.py",
+    "tier": "tier_resolver.py",
+    "board": "server.py",
+}
 
 
 def _installer():

@@ -260,3 +260,23 @@ def test_import_linter_cannot_see_a_kit_violation(tmp_path: Path) -> None:
     assert declared > 1, "the contract file declares nothing to keep"
     assert f"Contracts: {declared} kept, 0 broken." in proc.stdout
     assert _rules(kit) == ["imports-basicly"]
+
+
+@pytest.mark.parametrize(
+    ("kit", "source", "expected"),
+    [
+        ("board", "from http.server import ThreadingHTTPServer\n", []),
+        ("board", "from http import HTTPStatus\nfrom urllib.parse import urlsplit\n", []),
+        ("board", "import socket\n", ["reaches-outside"]),
+        ("board", "from urllib.request import urlopen\n", ["reaches-outside"]),
+        ("board", "import http.client\n", ["reaches-outside"]),
+        ("board", "import subprocess\n", ["reaches-outside"]),
+        ("tracker", "from http.server import ThreadingHTTPServer\n", ["reaches-outside"]),
+    ],
+)
+def test_only_the_board_kit_may_listen_and_only_through_http_server(
+    tmp_path: Path, kit: str, source: str, expected: list[str]
+) -> None:
+    _seed(tmp_path / "kit" / kit, "module.py", source)
+
+    assert _rules(tmp_path / "kit") == expected

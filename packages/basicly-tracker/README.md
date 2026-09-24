@@ -9,7 +9,7 @@ network.
 ```console
 $ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init
 tracker: added to .gitattributes: events-*.jsonl -text merge=union
-tracker: 18 file(s) written, 0 unchanged, in .basicly/kit/tracker
+tracker: 31 file(s) written, 0 unchanged, in .basicly/kit/tracker
 $ python3 .basicly/kit/tracker/cli.py ready .basicly/ledger
 {"count": 0, "records": [], "schema": "basicly.scheduler.v1", ...}
 ```
@@ -58,6 +58,11 @@ A record the importer cannot name is **refused and reported, never dropped quiet
 Re-running the same export appends nothing, so an import can be repeated while the other
 tracker is still authoritative. Every imported record records where it came from, which
 `--source` names if the file name is not the name you want.
+
+**A browser board and an HTTP API are an optional add-on.** The
+[`basicly-board`](../basicly-board/README.md) package serves a page on `127.0.0.1:8765`
+where a person reads, writes and edits stories, and an agent refinement pass shapes them
+before they are ready. Its API returns the same versioned JSON as these commands.
 
 Every command, with one example each:
 [`kit/tracker/REFERENCE.md`](../../.basicly/core/kit/tracker/REFERENCE.md).

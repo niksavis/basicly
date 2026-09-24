@@ -509,7 +509,8 @@ def _date(state: RecordState, event: Event) -> None:
     else:
         moment = _asserted(event, payload.get(ASSERTED_AT_KEY))
     latest = dates[DATE_UPDATED]
-    if latest is None or _instant_key(moment) > _instant_key(latest):
+    imported = bool(payload.get(IMPORT_MARK_KEY))
+    if not imported or latest is None or _instant_key(moment) > _instant_key(latest):
         dates[DATE_UPDATED] = moment
 
 

@@ -160,6 +160,24 @@ def test_an_imported_record_is_dated_by_the_times_its_source_recorded() -> None:
     }
 
 
+def test_updated_is_the_last_event_even_when_the_wall_clock_went_back() -> None:
+    first = _event(1, "created", {"title": "t"})
+    later = events.Event(
+        id="acme-a1#ev-2",
+        record="acme-a1",
+        seq=2,
+        kind="status",
+        actor="operator",
+        ts="2026-08-07T16:15:10.000000Z",
+        payload={"status": "closed"},
+    )
+
+    dates = events.fold([first, later]).records["acme-a1"].dates
+
+    assert dates["updated"] == "2026-08-07T16:15:10.000000Z"
+    assert dates["closed"] == "2026-08-07T16:15:10.000000Z"
+
+
 def test_a_snapshot_of_the_previous_format_is_stale_and_rebuilds_with_dates(
     made: tuple[Path, str],
 ) -> None:

@@ -1,0 +1,1 @@
+- A new optional board kit (`basicly-board`, or `basicly tracker serve`) serves the backlog as a web page and an HTTP API on localhost. A person writes and edits stories, and an agent refinement pass (`refine`) shapes them before they are ready. Each endpoint returns the same versioned JSON as the tracker command, so a team can build its own page on it.

@@ -110,7 +110,7 @@ def test_every_documented_command_runs_on_a_fresh_install(command: str, tmp_path
 
 
 def test_the_reference_names_every_command_the_parser_defines() -> None:
-    parser = cli._parser()
+    parser = cli.arguments.parser()
     commands = next(
         action.choices for action in parser._actions if isinstance(action.choices, dict)
     )

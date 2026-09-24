@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from basicly import owned_store, tracker, ui
+from basicly import owned_store, redact, tracker, ui
 
 QUERIES_KIT_MODULE = "queries"
+BOARD_KIT = "board"
+BOARD_ENTRY = "server.py"
 
 
 def _queries(repo_root: Path) -> Any:
@@ -106,12 +110,27 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+
+    repo_root = Path.cwd()
+    args.directory = str(owned_store.ledger_dir(repo_root))
+    source = repo_root / owned_store.KIT_TRACKER_DIR.parent / BOARD_KIT / BOARD_ENTRY
+    spec = importlib.util.spec_from_file_location("basicly_board_kit_server", source)
+    if not source.is_file() or spec is None or spec.loader is None:
+        print(f"Error: the board kit is not installed at {source.parent}", file=sys.stderr)
+        return 1
+    server = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server)
+    return int(server.run(args, redact.redact_committed))
+
+
 HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
     "ready": cmd_ready,
     "blocked": cmd_blocked,
     "stats": cmd_stats,
     "show": cmd_show,
     "list": cmd_list,
+    "serve": cmd_serve,
 }
 
 
@@ -132,3 +151,8 @@ def add_parsers(tracker_sub: Any) -> None:
     listing = tracker_sub.add_parser("list", help="Print the records the ledger holds")
     listing.add_argument("--status", default=None, help="Only records at this status")
     listing.add_argument("--limit", type=int, default=None, help="At most this many records")
+
+    served = tracker_sub.add_parser("serve", help="Serve the HTTP API and the board page")
+    served.add_argument("--host", default="127.0.0.1", help="The address to bind")
+    served.add_argument("--port", type=int, default=8765, help="The port to bind")
+    served.add_argument("--web", default="", help="Serve your own page directory instead")

@@ -142,7 +142,7 @@ def test_create_appends_the_created_event_then_the_status_event(tmp_path: Path) 
     written = cli.create_record(tmp_path / "l", {"title": "a"}, prefix="acme")
     assert [event.kind for event in written] == [events.KIND_CREATED, events.KIND_STATUS]
     assert written[0].record == written[1].record
-    assert written[1].payload["status"] == cli.DEFAULT_STATUS
+    assert written[1].payload["status"] == cli.arguments.DEFAULT_STATUS
 
 
 def test_two_creates_mint_distinct_records(tmp_path: Path) -> None:

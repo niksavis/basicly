@@ -25,8 +25,11 @@ def _load(file_name: str, module_name: str) -> Any:
 queries = _load("queries.py", "basicly_tracker_kit_queries")
 shaping = _load("shaping.py", "basicly_tracker_kit_shaping")
 templates = _load("templates.py", "basicly_tracker_kit_templates")
+label_shape = _load("label_shape.py", "basicly_tracker_kit_label_shape")
 snapshot = queries.snapshot
 events = snapshot.events
+
+REFINE_LABEL = "refine"
 
 
 def is_closed(state: Any) -> bool:
@@ -95,3 +98,23 @@ def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
 
 def scaffold_of(directory: Path | str, kind: str) -> dict[str, object]:
     return {"type": kind, **shaping.body(kind, templates.load(directory))}
+
+
+def refine_queue(directory: Path | str) -> dict[str, object]:
+
+    template = templates.load(directory)
+    rows = []
+    for record, state in sorted(queries.folded(directory).items()):
+        if is_closed(state):
+            continue
+        held = dict(state.fields)
+        labelled = REFINE_LABEL in label_shape.labels_of(held.get(label_shape.LABELS_FIELD))
+        blocking = shaping.refused(held, template=template)
+        if labelled or blocking:
+            rows.append({
+                "record": record,
+                "title": str(held.get("title", "")),
+                "labelled": labelled,
+                "blocking": list(blocking),
+            })
+    return {"label": REFINE_LABEL, "count": len(rows), "records": rows}

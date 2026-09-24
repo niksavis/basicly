@@ -145,6 +145,17 @@ derived `dates` (created, updated, closed) computed from the event times.
 python3 .basicly/kit/tracker/cli.py fields .basicly/ledger
 ```
 
+### refine
+
+The open records a refinement pass owes: each one carries the `refine` label or fails
+`dor`. A person writes or edits a story, and the board page adds the label. An agent then
+rewrites the record with the full fields (trigger, acceptance criteria, requirements,
+type, priority, edges) and removes the label with `update --remove-label refine`.
+
+```sh
+python3 .basicly/kit/tracker/cli.py refine .basicly/ledger
+```
+
 ## Keep the log healthy
 
 ### fsck
