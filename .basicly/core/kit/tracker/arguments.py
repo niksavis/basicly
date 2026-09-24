@@ -176,6 +176,12 @@ def _add_write_parsers(sub: Any) -> None:
     dep.add_argument("target", help="the record it depends on")
     dep.add_argument("--type", dest="edge_type", default="blocks", help="the edge type")
 
+    undep = sub.add_parser("undep", help="retract a dependency edge the dependent holds")
+    undep.add_argument("directory", help=DIRECTORY_HELP)
+    undep.add_argument("record", help="the dependent record id")
+    undep.add_argument("target", help="the record it no longer depends on")
+    undep.add_argument("--type", dest="edge_type", default="blocks", help="the edge type")
+
     for name, helping in (
         ("assign", "reserve a record for a person without changing its status"),
         ("claim", "reserve a record for a person and set it in_progress"),

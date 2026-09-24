@@ -25,7 +25,7 @@ ENTRY = "python3 .basicly/kit/tracker/cli.py "
 FIRST = frozenset({"<id>", "<parent-id>", "acme-a1b2"})
 SECOND = frozenset({"<the-id-it-waits-on>", "acme-c3d4"})
 REFUSING = frozenset({"dor"})
-REFUSED_ON_A_FRESH_LEDGER = {"resolve": "no unresolved conflict"}
+REFUSED_ON_A_FRESH_LEDGER = {"resolve": "no unresolved conflict", "undep": "nothing to retract"}
 LEFT_BEHIND = frozenset({".basicly", ".git", ".gitattributes", ".gitignore", ".agents", ".claude"})
 LEFT_BEHIND |= {"issues.jsonl", "tracker-board.html"}
 

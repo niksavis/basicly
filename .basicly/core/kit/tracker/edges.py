@@ -73,3 +73,21 @@ def refuse_cycle(ledger: Path, record: str, target: str, edge_type: str) -> None
         if view is None:
             continue
         frontier.extend(edge.target for edge in view.dependencies if edge.type == edge_type)
+
+
+def refuse_retraction(views: Any, record: str, target: str, edge_type: str) -> None:
+
+    parent_child = differential.DEFAULT_VOCABULARY.parent_child_type
+    if edge_type == parent_child:
+        raise RefusedEdgeError(
+            f"a {parent_child!r} edge is not retractable: removing it re-parents {record} "
+            f"while its id still spells its parent, so re-parenting needs its own verb"
+        )
+    held = views.get(record)
+    if held is None or not any(
+        edge.target == target and edge.type == edge_type for edge in held.dependencies
+    ):
+        raise RefusedEdgeError(
+            f"{record} holds no {edge_type!r} edge to {target}, so there is nothing to retract; "
+            f"the edge is recorded on the dependent, so check both ids with show {record}"
+        )

@@ -45,10 +45,21 @@ python3 .basicly/kit/tracker/cli.py comment .basicly/ledger acme-a1b2 "The expor
 ### dep
 
 Record that the first record waits on the second. `--type` sets the edge type, `blocks`
-when omitted. An edge that would make a cycle is refused.
+when omitted: `blocks`, `parent-child`, `related` or `discovered-from`. An edge that would
+make a cycle, an edge the record already has, and a `blocks` edge on a closed record are
+refused.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py dep .basicly/ledger acme-a1b2 acme-c3d4
+```
+
+### undep
+
+Retract an edge the first record holds on the second, as one appended event. An edge the
+record does not hold, and a `parent-child` edge, are refused.
+
+```sh
+python3 .basicly/kit/tracker/cli.py undep .basicly/ledger acme-a1b2 acme-c3d4
 ```
 
 ### close

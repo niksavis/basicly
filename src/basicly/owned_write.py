@@ -106,27 +106,18 @@ def refuse_a_write_to_an_absent_record(
 
 
 def _refuse_a_retraction_of_an_absent_edge(
-    kit_module: Any, ledger: Path, drafts: Sequence[Any]
+    kit_module: Any, repo_root: Path, ledger: Path, drafts: Sequence[Any]
 ) -> None:
 
     retractions = [draft for draft in drafts if draft.kind == kit_module.events.KIND_EDGE_RETRACTED]
     if not retractions:
         return
+    edges = owned_store.kit(repo_root, "edges")
     migrate = kit_module.migrate
     views = kit_module.views_from_events(kit_module.read_ledger(ledger)) if ledger.is_dir() else {}
     for draft in retractions:
-        target = draft.payload[migrate.EDGE_TO]
-        edge_type = draft.payload[migrate.EDGE_TYPE]
-        held = views.get(draft.record)
-        if held is not None and any(
-            edge.target == target and edge.type == edge_type for edge in held.dependencies
-        ):
-            continue
-        raise TrackerDivergenceError(
-            f"{draft.record} holds no {edge_type!r} edge to {target}, so there is nothing "
-            f"to retract; the edge is recorded on the dependent, so check both ids against "
-            f"`basicly tracker show {draft.record}`"
-        )
+        target, edge_type = draft.payload[migrate.EDGE_TO], draft.payload[migrate.EDGE_TYPE]
+        edges.refuse_retraction(views, draft.record, target, edge_type)
 
 
 def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
@@ -140,7 +131,7 @@ def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
             drafts = mirror.drafts(kit_module, _resolve_labels(kit_module, ledger, args), "")
             _refuse_a_write_that_records_nothing(args, drafts)
             refuse_a_write_to_an_absent_record(kit_module, ledger, " ".join(args), drafts)
-            _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
+            _refuse_a_retraction_of_an_absent_edge(kit_module, repo_root, ledger, drafts)
             held = events.fold(events.read_events(ledger)[0]).records if ledger.is_dir() else {}
             holders = owned_store.kit(repo_root, "holders")
             drafts = holders.claimed_by(held, drafts, holders.default_holder(repo_root))

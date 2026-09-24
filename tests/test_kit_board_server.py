@@ -305,3 +305,19 @@ def test_a_client_that_hangs_up_early_is_logged_in_one_line(ledger: Path) -> Non
     assert logged == [
         "the client closed the connection before /api/v1/stats answered: [Errno 32] Broken pipe"
     ]
+
+
+def test_the_api_retracts_a_dependency_and_lists_edges_per_record(client: Client) -> None:
+    _, first = client.call("POST", "/api/v1/records", {"title": "the blocker"})
+    _, second = client.call("POST", "/api/v1/records", {"title": "the dependent"})
+    client.call("POST", f"/api/v1/records/{second['record']}/deps", {"target": first["record"]})
+
+    _, listed = client.call("GET", "/api/v1/records?status=open")
+    edges = {row["record"]: row["dependencies"] for row in listed["records"]}
+    assert edges[second["record"]] == [{"id": first["record"], "dependency_type": "blocks"}]
+
+    body = {"target": first["record"], "type": "blocks"}
+    status, _ = client.call("POST", f"/api/v1/records/{second['record']}/undep", body)
+    assert status == 200
+    status, refused = client.call("POST", f"/api/v1/records/{second['record']}/undep", body)
+    assert status == 422 and "nothing to retract" in refused["refused"]

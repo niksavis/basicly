@@ -313,3 +313,26 @@ def test_an_update_after_a_comment_or_another_field_changed_still_lands(ledger: 
         "renamed by the CLI",
         "written in the page",
     )
+
+
+def test_undep_retracts_an_edge_and_the_dependent_is_ready_again(ledger: Path) -> None:
+    record = root_of(ledger)
+    first = commands.create_child(ledger, record, {"title": "first"})[0].record
+    second = commands.create_child(ledger, record, {"title": "second"})[0].record
+    commands.add_dependency(ledger, second, first, edge_type="blocks")
+
+    commands.remove_dependency(ledger, second, first, edge_type="blocks")
+
+    assert second in [row["record"] for row in queries.ready(ledger)["records"]]
+    listed = {row["record"]: row["dependencies"] for row in queries.query_records(ledger)}
+    assert listed[second] == [{"id": record, "dependency_type": "parent-child"}]
+
+
+def test_undep_of_an_edge_the_record_does_not_hold_is_refused(ledger: Path) -> None:
+    record = root_of(ledger)
+    child = commands.create_child(ledger, record, {"title": "a child"})[0].record
+
+    with pytest.raises(events.LedgerError, match="nothing to retract"):
+        commands.remove_dependency(ledger, child, record, edge_type="blocks")
+    with pytest.raises(events.LedgerError, match="not retractable"):
+        commands.remove_dependency(ledger, child, record, edge_type="parent-child")

@@ -56,6 +56,7 @@ _BLOCKING_REPORTS = frozenset({
     "close",
     "comment",
     "dep",
+    "undep",
     "delete",
     "dor",
 })
@@ -132,6 +133,9 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
     "close": lambda a, r: commands.close(a.directory, a.record, reason=a.reason, redact=r),
     "comment": lambda a, r: commands.comment(a.directory, a.record, a.text, redact=r),
     "dep": lambda a, r: commands.add_dependency(
+        a.directory, a.record, a.target, edge_type=a.edge_type, redact=r
+    ),
+    "undep": lambda a, r: commands.remove_dependency(
         a.directory, a.record, a.target, edge_type=a.edge_type, redact=r
     ),
     "delete": lambda a, r: commands.delete(a.directory, a.record, redact=r),

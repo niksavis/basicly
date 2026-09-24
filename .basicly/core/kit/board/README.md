@@ -70,6 +70,7 @@ output works against the API. `GET /api/v1` also names the `holder`, the name th
 | `POST /api/v1/records/<id>/comments` | `comment` | `text` |
 | `POST /api/v1/records/<id>/close` | `close` | `reason` |
 | `POST /api/v1/records/<id>/deps` | `dep` | `target`, `type` |
+| `POST /api/v1/records/<id>/undep` | `undep` | `target`, `type` |
 | `POST /api/v1/records/<id>/assign` | `assign` | `to`, `take` |
 | `POST /api/v1/records/<id>/claim` | `claim` | `to`, `take` |
 | `POST /api/v1/records/<id>/unassign` | `unassign` | |

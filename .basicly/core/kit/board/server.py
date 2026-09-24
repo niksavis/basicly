@@ -64,6 +64,7 @@ ENDPOINTS = (
     "POST /api/v1/records/<id>/comments  {text}",
     "POST /api/v1/records/<id>/close  {reason}",
     "POST /api/v1/records/<id>/deps  {target, type}",
+    "POST /api/v1/records/<id>/undep  {target, type}",
     "POST /api/v1/records/<id>/assign  {to, take}",
     "POST /api/v1/records/<id>/claim  {to, take}",
     "POST /api/v1/records/<id>/unassign  {}",
@@ -224,6 +225,10 @@ def _dep_argv(where: str, record: str, body: object) -> list:
     return ["dep", *kind, "--", where, record, _record(_text(held, "target"))]
 
 
+def _undep_argv(where: str, record: str, body: object) -> list:
+    return ["undep", *_dep_argv(where, record, body)[1:]]
+
+
 def _hold_argv(action: str) -> Callable[[str, str, object], list]:
 
     def build(where: str, record: str, body: object) -> list:
@@ -244,6 +249,7 @@ _ACTIONS: dict[str, Callable[[str, str, object], list]] = {
     "comments": _comment_argv,
     "close": _close_argv,
     "deps": _dep_argv,
+    "undep": _undep_argv,
     "assign": _hold_argv("assign"),
     "claim": _hold_argv("claim"),
     "unassign": _unassign_argv,

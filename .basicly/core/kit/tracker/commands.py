@@ -257,6 +257,24 @@ def add_dependency(
         return _append(ledger, [events.Draft(record, migrate.KIND_EDGE, payload)], redact, lock)
 
 
+def remove_dependency(
+    directory: Path | str,
+    record: str,
+    target: str,
+    *,
+    edge_type: str = "blocks",
+    redact: Callable[[str], str] | None = None,
+) -> list:
+
+    ledger = _ledger(directory)
+    with events.LedgerLock(ledger) as lock:
+        _require(ledger, record)
+        edges.refuse_retraction(queries.views_and_children(ledger)[0], record, target, edge_type)
+        payload = {migrate.EDGE_FROM: record, migrate.EDGE_TO: target, migrate.EDGE_TYPE: edge_type}
+        drafts = [events.Draft(record, events.KIND_EDGE_RETRACTED, payload)]
+        return _append(ledger, drafts, redact, lock)
+
+
 def delete(
     directory: Path | str,
     record: str,

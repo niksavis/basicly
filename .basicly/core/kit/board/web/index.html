@@ -48,6 +48,13 @@
   .s-in_progress { color: var(--accent); } .s-blocked { color: var(--bad); } .s-deferred, .s-open { color: var(--muted); } .s-closed { color: var(--ok); }
   .warn { color: var(--warn); } .bad { color: var(--bad); } .held { color: var(--held); } .ok { color: var(--ok); }
   .empty { color: var(--muted); padding: 1rem; }
+  .links-line { color: var(--muted); font-size: .8rem; display: flex; flex-wrap: wrap; gap: .1rem .7rem; }
+  .links-line .open-blocker { color: var(--warn); }
+  .label { font-size: .72rem; padding: 0 .4rem; border-radius: 4px; background: var(--raise); color: var(--muted); }
+  details.facts summary { cursor: pointer; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
+  details.facts dl { display: grid; grid-template-columns: 11rem 1fr; gap: .2rem .8rem; margin: .5rem 0 0; font-size: .88rem; }
+  details.facts dt { color: var(--muted); }
+  details.facts dd { margin: 0; white-space: pre-wrap; word-break: break-word; }
   .crumbs { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; color: var(--muted); }
   .crumbs select { padding: .1rem .3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
   h2.story-title { font-size: 1.35rem; margin: .4rem 0 .6rem; line-height: 1.3; }
@@ -143,7 +150,7 @@ const STATUSES = ["open", "in_progress", "blocked", "deferred"];
 const EDGE_NAMES = { blocks: "waits on", "parent-child": "is a child of", related: "is related to", "discovered-from": "was discovered from" };
 const TABS = [["ready", "Ready"], ["working", "In progress"], ["refine", "Refine"], ["blocked", "Blocked"], ["mine", "Mine"], ["active", "All open"], ["closed", "Closed"]];
 const LIST_CAP = 400;
-const state = { edgeTypes: ["blocks"], me: "", records: new Map(), closed: null, ready: [], refine: new Map(), blocked: new Map(), tab: "ready", type: "", sort: "rank", query: "", current: null };
+const state = { dependents: new Map(), edgeTypes: ["blocks"], me: "", records: new Map(), closed: null, ready: [], refine: new Map(), blocked: new Map(), tab: "ready", type: "", sort: "rank", query: "", current: null };
 
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -219,6 +226,13 @@ async function load() {
   state.me = index.holder || "";
   state.edgeTypes = index.edge_types || state.edgeTypes;
   state.records = new Map(lists.flatMap((list) => list.records).map((one) => [one.record, one]));
+  state.dependents = new Map();
+  for (const one of state.records.values()) {
+    for (const edge of one.dependencies || []) {
+      if (!state.dependents.has(edge.id)) state.dependents.set(edge.id, []);
+      state.dependents.get(edge.id).push({ id: one.record, dependency_type: edge.dependency_type });
+    }
+  }
   state.ready = ready.records;
   state.blocked = new Map(blocked.records.map((one) => [one.record, one]));
   state.refine = new Map(refine.records.map((one) => [one.record, one]));
@@ -273,10 +287,39 @@ function badge(item) {
   const refine = state.refine.get(item.id);
   if (refine && refine.blocking.length) return el("span", { class: "warn" }, "owes " + owes(refine.blocking));
   if (refine && refine.labelled) return el("span", { class: "warn" }, "waits for refinement");
-  const waits = state.blocked.get(item.id);
-  if (waits && waits.blocked_by.length) return el("span", {}, "waits on " + waits.blocked_by.map((b) => b.record).join(", "));
-  if (waits && waits.children.length) return el("span", {}, "parent of " + waits.children.length);
   return null;
+}
+
+function named(ids) {
+  return ids.map((id) => id + "  " + String((state.records.get(id) || { fields: {} }).fields.title || "")).join("\n");
+}
+
+function few(ids) {
+  return ids.slice(0, 2).join(", ") + (ids.length > 2 ? " +" + (ids.length - 2) : "");
+}
+
+function linksLine(item) {
+  const record = item.record;
+  if (!record) return null;
+  const own = record.dependencies || [];
+  const theirs = state.dependents.get(item.id) || [];
+  const typed = (list, type) => list.filter((edge) => edge.dependency_type === type).map((edge) => edge.id);
+  const waiting = typed(own, "blocks");
+  const openWaits = waiting.filter((id) => state.records.has(id));
+  const parts = [];
+  if (waiting.length) parts.push(el("span", { class: openWaits.length ? "open-blocker" : null, title: named(waiting) },
+    "waits on " + few(waiting) + (openWaits.length < waiting.length ? " (" + (waiting.length - openWaits.length) + " done)" : "")));
+  const blocking = typed(theirs, "blocks");
+  if (blocking.length) parts.push(el("span", { title: named(blocking) }, "blocks " + few(blocking)));
+  const parent = typed(own, "parent-child");
+  if (parent.length) parts.push(el("span", {}, "child of " + parent.join(", ")));
+  const children = typed(theirs, "parent-child");
+  if (children.length) parts.push(el("span", { title: named(children) }, children.length + (children.length === 1 ? " child" : " children")));
+  const related = [...typed(own, "related"), ...typed(theirs, "related"), ...typed(own, "discovered-from")];
+  if (related.length) parts.push(el("span", { title: named(related) }, related.length + " related"));
+  const labels = labelsOf(record.fields.labels).filter((label) => label !== REFINE);
+  for (const label of labels.slice(0, 4)) parts.push(el("span", { class: "label" }, label));
+  return parts.length ? el("span", { class: "links-line" }, parts) : null;
 }
 
 async function closedRecords() {
@@ -324,7 +367,8 @@ function row(item) {
     record.status && record.status !== "open" ? el("span", { class: "pill s-" + record.status }, record.status.replace("_", " ")) : null,
     record.dates && record.dates.updated ? el("span", { title: "last updated " + record.dates.updated }, age(record.dates.updated)) : null,
     holder ? el("span", { class: "held" }, "● " + holder) : null,
-    badge(item))));
+    badge(item)),
+  linksLine(item)));
 }
 
 function drawList() {
@@ -675,19 +719,46 @@ function dependencyForm(bar, shown, cancel) {
   input.focus();
 }
 
-function linkRow(kind, id, title, status) {
-  return el("li", {}, el("span", { class: "kind" }, kind),
+function linkRow(kind, id, title, status, removal) {
+  const row = el("li", {}, el("span", { class: "kind" }, kind),
     el("button", { class: "link", type: "button", onclick: () => go(id) }, id),
     el("span", {}, title || ""), status && status !== "open" ? el("span", { class: "meta" }, status.replace("_", " ")) : null);
+  if (removal) {
+    const remove = el("button", { class: "link", type: "button", title: "retract this dependency" }, "remove");
+    remove.addEventListener("click", () => remove.replaceWith(el("span", { class: "inline" },
+      el("span", { class: "bad" }, "Remove this link?"),
+      el("button", { class: "btn danger", type: "button", onclick: removal }, "Remove"),
+      el("button", { class: "btn plain", type: "button", onclick: () => open(state.current.record) }, "Keep"))));
+    row.append(el("span", { class: "grow" }), remove);
+  }
+  return row;
 }
 
 function linksBlock(shown) {
   const named = { "parent-child": ["parent", "child"], blocks: ["waits on", "blocks"] };
   const rows = [
-    ...shown.dependencies.map((edge) => linkRow((named[edge.dependency_type] || [edge.dependency_type])[0], edge.id, edge.title, edge.status)),
+    ...shown.dependencies.map((edge) => linkRow((named[edge.dependency_type] || [edge.dependency_type])[0], edge.id, edge.title, edge.status,
+      edge.dependency_type === "parent-child" ? null : () => act("undep", { target: edge.id, type: edge.dependency_type }, "link removed"))),
     ...shown.dependents.map((edge) => linkRow((named[edge.dependency_type] || [, edge.dependency_type])[1], edge.id, edge.title, edge.status)),
   ];
   return el("section", { class: "block" }, el("h3", {}, "Links"), rows.length ? el("ul", { class: "links" }, rows) : el("div", { class: "none" }, "no links"));
+}
+
+const IMPORTED = ["design", "notes", "created_by", "owner", "source_repo", "imported_from", "created_at", "updated_at", "closed_at"];
+
+function factsBlock(shown) {
+  const f = shown.fields;
+  const dates = shown.dates || {};
+  const rows = [
+    ["created", dates.created], ["assigned", dates.assigned], ["updated", dates.updated], ["closed", dates.closed],
+    ["external_ref", f.external_ref], ["shaped under", f.shaped_under],
+    ["checkpoints", Object.keys(shown.checkpoints || {}).length ? JSON.stringify(shown.checkpoints) : ""],
+    ["artifacts", Object.keys(shown.artifacts || {}).join(", ")],
+    ["tokens", shown.totals && Object.values(shown.totals).some(Boolean) ? JSON.stringify(shown.totals) : ""],
+    ...IMPORTED.map((name) => ["imported " + name, f[name]]),
+  ].filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "");
+  return el("details", { class: "facts block" }, el("summary", {}, "Details"),
+    el("dl", {}, rows.flatMap(([name, value]) => [el("dt", {}, name), el("dd", {}, String(value))])));
 }
 
 function commentsBlock(shown) {
@@ -749,7 +820,8 @@ async function open(record, quiet) {
     section("Acceptance criteria", f.acceptance_criteria, "no acceptance criteria yet"),
     section("Requirements", f.requirements, "no requirements yet"),
     linksBlock(shown),
-    commentsBlock(shown));
+    commentsBlock(shown),
+    factsBlock(shown));
   pane.scrollTop = quiet ? scrolled : 0;
   drawList();
 }
