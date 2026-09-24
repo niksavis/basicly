@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.0 - 2026-09-24
+
+Delta: v0.17.0..v0.18.0
+
 This release makes the tracker safe for many people working on one repository. A person can
 reserve a story before starting it, everyone else sees who holds it, and a second person is
 refused by name. When two people write the same story on different branches, the tracker
@@ -21,6 +25,14 @@ now tells a harmless overlap from a real conflict, and one command settles a con
   name both values; `resolve` keeps the current value (`basicly-ioj3c0o`).
 - **Faster Windows tests.** The repository copy that many tests build no longer includes
   the test suite, which cuts that setup time by about a third on Windows.
+
+### Added
+
+- Many people can now share one tracker: `assign` reserves a story without starting it, `claim` reserves and starts it, and `unassign` gives it back. A story someone else holds is refused by name unless `--take` is given. `ready`, `show` and the board name each holder and mark stale and contested reservations, and the engine loop and supervisor respect them. (basicly-fdrwlvs)
+
+### Fixed
+
+- `fsck` no longer calls every concurrent write to one record broken. Two writers that set nothing in common are a warning; two branches that set one value differently fail as `conflicting-fork` and name both values, and `resolve` keeps the current value with one appended event. (basicly-ioj3c0o)
 
 ## v0.17.0 - 2026-09-24
 

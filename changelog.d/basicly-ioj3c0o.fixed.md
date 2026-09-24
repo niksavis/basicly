@@ -1,1 +1,0 @@
-- `fsck` no longer calls every concurrent write to one record broken. Two writers that set nothing in common are a warning; two branches that set one value differently fail as `conflicting-fork` and name both values, and `resolve` keeps the current value with one appended event.

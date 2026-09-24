@@ -1,1 +1,0 @@
-- Many people can now share one tracker: `assign` reserves a story without starting it, `claim` reserves and starts it, and `unassign` gives it back. A story someone else holds is refused by name unless `--take` is given. `ready`, `show` and the board name each holder and mark stale and contested reservations, and the engine loop and supervisor respect them.
