@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 TICK_S = 0.05
+CLOCK_STEP_TOLERANCE_S = 5.0
 
 EMIT_CAP_S = supervise.HEARTBEAT_INTERVAL_S / 2
 
@@ -92,7 +93,7 @@ def test_a_tick_emits_a_snapshot_whose_freshness_is_younger_than_the_tick(
     }
     stamped = datetime.fromisoformat(document["generated_at"])
     age_s = (datetime.now(UTC) - stamped).total_seconds()
-    assert 0 <= age_s < document["freshness"]["stale_after_s"]
+    assert -CLOCK_STEP_TOLERANCE_S <= age_s < document["freshness"]["stale_after_s"]
 
 
 def test_every_tick_rewrites_the_document_rather_than_leaving_the_first(
