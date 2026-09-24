@@ -40,11 +40,15 @@ by design: that absence is what keeps it out of the model's always-loaded index.
 | `tool-ast-grep` | `user` | any | |
 | `tool-bat` | `user` | any | |
 | `tool-curl` | `user` | any | |
+| `tool-direnv` | `user` | any | |
 | `tool-fd` | `user` | any | |
 | `tool-fzf` | `user` | any | |
 | `tool-git` | `user` | any | |
 | `tool-git-delta` | `user` | any | |
+| `tool-git-lfs` | `user` | any | |
 | `tool-jq` | `user` | any | |
+| `tool-just` | `user` | any | |
+| `tool-lazygit` | `user` | any | |
 | `tool-ripgrep` | `user` | any | |
 | `tool-sd` | `user` | any | |
 | `tool-shellcheck` | `user` | any | |
