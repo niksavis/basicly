@@ -241,6 +241,7 @@ def test_the_index_names_the_holder_a_page_calls_you(
     _, index = client.call("GET", "/api/v1")
 
     assert index["holder"] == "alex"
+    assert index["edge_types"] == ["blocks", "discovered-from", "parent-child", "related"]
 
 
 PAGE = (KIT_DIR / "web" / "index.html").read_text(encoding="utf-8")

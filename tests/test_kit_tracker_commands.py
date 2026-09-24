@@ -143,6 +143,40 @@ def test_an_edge_that_closes_a_cycle_is_refused(ledger: Path) -> None:
         commands.add_dependency(ledger, first, second, edge_type="blocks")
 
 
+def test_an_edge_the_record_already_has_is_refused_by_name(ledger: Path) -> None:
+    record = root_of(ledger)
+    first = commands.create_child(ledger, record, {"title": "first"})[0].record
+    second = commands.create_child(ledger, record, {"title": "second"})[0].record
+    commands.add_dependency(ledger, second, first, edge_type="blocks")
+
+    with pytest.raises(events.LedgerError, match=f"{second} already has a blocks edge on {first}"):
+        commands.add_dependency(ledger, second, first, edge_type="blocks")
+
+
+def test_an_edge_type_the_tracker_does_not_know_is_refused_with_the_known_types(
+    ledger: Path,
+) -> None:
+    record = root_of(ledger)
+    child = commands.create_child(ledger, record, {"title": "a child"})[0].record
+
+    with pytest.raises(events.LedgerError, match="'blcks' is not an edge type; use one of blocks"):
+        commands.add_dependency(ledger, child, record, edge_type="blcks")
+
+
+def test_waiting_on_a_closed_record_is_refused_and_related_is_kept(ledger: Path) -> None:
+    record = root_of(ledger)
+    done = commands.create_child(ledger, record, {"title": "done"})[0].record
+    other = commands.create_child(ledger, record, {"title": "other"})[0].record
+    commands.close(ledger, [done], reason="shipped")
+
+    with pytest.raises(events.LedgerError, match=f"{done} is closed"):
+        commands.add_dependency(ledger, other, done, edge_type="blocks")
+    commands.add_dependency(ledger, other, done, edge_type="related")
+
+    views, _ = queries.views_and_children(ledger)
+    assert ("related", done) in {(edge.type, edge.target) for edge in views[other].dependencies}
+
+
 def test_a_crossing_of_two_edge_types_is_not_a_cycle(ledger: Path) -> None:
 
     record = root_of(ledger)

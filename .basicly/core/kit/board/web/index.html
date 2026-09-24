@@ -32,20 +32,19 @@
   .grow { flex: 1; }
   select.small { padding: .15rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
   #rows { list-style: none; margin: 0; padding: .4rem .6rem; overflow: auto; flex: 1; }
-  #rows button { all: unset; display: grid; grid-template-columns: 2.4rem 1fr; gap: 0 .5rem; width: 100%; box-sizing: border-box; padding: .5rem .6rem; border-radius: 8px; cursor: pointer; }
+  #rows button { all: unset; display: grid; gap: .2rem; width: 100%; box-sizing: border-box; padding: .5rem .6rem; border-radius: 8px; cursor: pointer; }
   #rows button:hover { background: var(--raise); }
   #rows button:focus-visible { outline: 2px solid var(--accent); }
   #rows button[aria-current="true"] { background: var(--raise); box-shadow: inset 3px 0 0 var(--accent); }
   .title { font-weight: 500; }
-  .meta { grid-column: 2; color: var(--muted); font-size: .82rem; display: flex; flex-wrap: wrap; gap: .1rem .6rem; }
+  .meta { color: var(--muted); font-size: .82rem; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; }
   .id { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--muted); }
-  .p { font: 600 .75rem ui-monospace, monospace; border-radius: 5px; padding: .05rem .3rem; align-self: start; text-align: center; background: var(--raise); color: var(--muted); }
-  .p0 { background: var(--bad); color: white; } .p1 { background: var(--warn); color: black; }
+  .pr0 { color: white; background: var(--bad); border-color: var(--bad) !important; } .pr1 { color: var(--warn); }
+  .pr2 { color: var(--text); } .pr3, .pr4, .pr- { color: var(--muted); }
   .pill { display: inline-block; font-size: .75rem; font-weight: 600; line-height: 1.5; padding: 0 .5rem; border-radius: 999px; border: 1px solid currentColor; }
   .t-bug { color: var(--bad); } .t-feature { color: var(--accent); } .t-epic { color: light-dark(#7c3aed, #c4a5ff); }
   .t-task { color: var(--muted); } .t-chore { color: light-dark(#0f766e, #5eead4); }
   .s-in_progress { color: var(--accent); } .s-blocked { color: var(--bad); } .s-deferred, .s-open { color: var(--muted); } .s-closed { color: var(--ok); }
-  .crumbs .p { font-size: .8rem; padding: .05rem .45rem; }
   .warn { color: var(--warn); } .bad { color: var(--bad); } .held { color: var(--held); } .ok { color: var(--ok); }
   .empty { color: var(--muted); padding: 1rem; }
   .crumbs { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; color: var(--muted); }
@@ -64,6 +63,12 @@
   details.more .menu { position: absolute; right: 0; z-index: 5; margin-top: .3rem; min-width: 15rem; padding: .3rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 6px 24px #0004; }
   details.more .menu button { all: unset; display: block; width: 100%; box-sizing: border-box; padding: .35rem .6rem; border-radius: 5px; cursor: pointer; }
   details.more .menu button:hover { background: var(--raise); }
+  .bar select { padding: .35rem .5rem; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); }
+  .picker { position: relative; flex: 1; min-width: 16rem; }
+  .picker ul { position: absolute; z-index: 6; left: 0; right: 0; margin: .2rem 0 0; padding: .3rem; list-style: none; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 6px 24px #0004; max-height: 18rem; overflow: auto; }
+  .picker li { padding: .3rem .5rem; border-radius: 5px; cursor: pointer; display: flex; gap: .5rem; align-items: baseline; }
+  .picker li[aria-selected="true"], .picker li:hover { background: var(--raise); }
+  .verdict { font-size: .85rem; flex-basis: 100%; }
   .notice { padding: .5rem .8rem; border-radius: 8px; margin-bottom: .8rem; border: 1px solid var(--line); }
   .notice.warn { border-color: var(--warn); } .notice.bad { border-color: var(--bad); }
   section.block { margin: 1.1rem 0; }
@@ -134,10 +139,10 @@ const REFINE = "refine";
 const TYPES = ["task", "feature", "bug", "chore", "epic"];
 const PRIORITIES = [["0", "critical"], ["1", "high"], ["2", "medium"], ["3", "low"], ["4", "backlog"]];
 const STATUSES = ["open", "in_progress", "blocked", "deferred"];
-const EDGE_TYPES = ["blocks", "related", "parent-child"];
+const EDGE_NAMES = { blocks: "waits on", "parent-child": "is a child of", related: "is related to", "discovered-from": "was discovered from" };
 const TABS = [["ready", "Ready"], ["working", "In progress"], ["refine", "Refine"], ["blocked", "Blocked"], ["mine", "Mine"], ["active", "All open"], ["closed", "Closed"]];
 const LIST_CAP = 400;
-const state = { me: "", records: new Map(), closed: null, ready: [], refine: new Map(), blocked: new Map(), tab: "ready", type: "", sort: "rank", query: "", current: null };
+const state = { edgeTypes: ["blocks"], me: "", records: new Map(), closed: null, ready: [], refine: new Map(), blocked: new Map(), tab: "ready", type: "", sort: "rank", query: "", current: null };
 
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -210,6 +215,7 @@ async function load() {
     ...STATUSES.map((status) => call("GET", "/records?status=" + status)),
   ]);
   state.me = index.holder || "";
+  state.edgeTypes = index.edge_types || state.edgeTypes;
   state.records = new Map(lists.flatMap((list) => list.records).map((one) => [one.record, one]));
   state.ready = ready.records;
   state.blocked = new Map(blocked.records.map((one) => [one.record, one]));
@@ -271,9 +277,14 @@ function badge(item) {
   return null;
 }
 
+async function closedRecords() {
+  if (!state.closed) state.closed = (await call("GET", "/records?status=closed")).records;
+  return state.closed;
+}
+
 async function pick(key) {
   state.tab = key;
-  if (key === "closed" && !state.closed) await attempt(async () => { state.closed = (await call("GET", "/records?status=closed")).records; });
+  if (key === "closed") await attempt(closedRecords);
   drawList();
 }
 
@@ -291,16 +302,21 @@ function typePill(type) {
   return el("span", { class: "pill t-" + type }, type);
 }
 
+function priorityPill(priority, long) {
+  const known = PRIORITIES.find(([key]) => key === String(priority ?? ""));
+  if (!known) return el("span", { class: "pill pr-" }, "no priority");
+  return el("span", { class: "pill pr" + known[0], title: known[1] }, "P" + known[0] + (long ? " " + known[1] : ""));
+}
+
 function row(item) {
   const record = item.record || { fields: {}, dates: {} };
-  const priority = record.fields.priority ?? "";
   const holder = person(record.fields.assignee);
   return el("li", {}, el("button", {
     type: "button", "aria-current": String(Boolean(state.current) && state.current.record === item.id), onclick: () => go(item.id),
   },
-  el("span", { class: "p p" + priority }, priority === "" ? "–" : "P" + priority),
   el("span", { class: "title" }, String(record.fields.title || item.id)),
   el("span", { class: "meta" },
+    priorityPill(record.fields.priority),
     record.fields.issue_type ? typePill(record.fields.issue_type) : null,
     el("span", { class: "id" }, item.id),
     record.status && record.status !== "open" ? el("span", { class: "pill s-" + record.status }, record.status.replace("_", " ")) : null,
@@ -499,15 +515,69 @@ function actionsBar(shown) {
     });
   }
   if (!yours) item("Close…", closeForm);
-  item("Add a dependency…", () => {
-    const target = el("input", { class: "field", placeholder: "record id it depends on", style: "max-width: 16rem" });
-    const kind = select(EDGE_TYPES.map((t) => [t, t]), "blocks", () => {});
-    bar.replaceChildren(el("span", { class: "meta" }, "this story"), kind, target,
-      el("button", { class: "btn", type: "button", onclick: () => act("deps", { target: target.value.trim(), type: kind.value }, "dependency recorded") }, "Add"), cancel());
-    target.focus();
-  });
+  item("Add a dependency…", () => dependencyForm(bar, shown, cancel()));
   bar.append(el("span", { class: "grow" }), el("button", { class: "btn plain", type: "button", title: "edit the story (e)", onclick: () => edit(shown) }, "Edit"), more);
   return bar;
+}
+
+function candidates(query, shown) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const pool = [...state.records.values(), ...(state.closed || [])];
+  return pool.filter((one) => one.record !== shown.record && words.every((word) =>
+    one.record.toLowerCase().includes(word) || String(one.fields.title || "").toLowerCase().includes(word))).slice(0, 8);
+}
+
+function dependencyVerdict(shown, target, type) {
+  if (!target) return ["", "type an id or words from a title, then pick a story"];
+  if (target.record === shown.record) return ["bad", "a story cannot depend on itself"];
+  if (shown.dependencies.some((edge) => edge.id === target.record && edge.dependency_type === type)) return ["bad", "this story already " + EDGE_NAMES[type] + " " + target.record];
+  if (type === "blocks" && target.status === "closed") return ["bad", target.record + " is closed, so waiting on it holds nothing back; pick an open story, or use is related to"];
+  return ["ok", "this story " + (EDGE_NAMES[type] || type) + " " + target.record + ": " + String(target.fields.title || "")];
+}
+
+function dependencyForm(bar, shown, cancel) {
+  let picked = null, active = 0, found = [];
+  const loading = closedRecords().catch(() => []);
+  const kind = select(state.edgeTypes.map((type) => [type, EDGE_NAMES[type] || type]), "blocks", () => judge());
+  const input = el("input", { class: "field", placeholder: "id or title words", autocomplete: "off", role: "combobox", "aria-expanded": "false" });
+  const list = el("ul", { role: "listbox", hidden: true });
+  const verdict = el("div", { class: "verdict meta" });
+  const add = el("button", { class: "btn", type: "button", disabled: true, onclick: () => act("deps", { target: picked.record, type: kind.value }, "dependency recorded") }, "Add");
+  const judge = () => {
+    const [tone, text] = dependencyVerdict(shown, picked, kind.value);
+    verdict.className = "verdict " + (tone || "meta");
+    verdict.textContent = text;
+    add.disabled = tone !== "ok";
+  };
+  const choose = (one) => { picked = one; input.value = one.record + "  " + String(one.fields.title || ""); list.hidden = true; judge(); };
+  const draw = () => {
+    list.replaceChildren(...found.map((one, index) => el("li", { role: "option", "aria-selected": String(index === active), onmousedown: (event) => { event.preventDefault(); choose(one); } },
+      el("span", { class: "id" }, one.record), el("span", {}, String(one.fields.title || "")), one.status !== "open" ? el("span", { class: "pill s-" + one.status }, one.status.replace("_", " ")) : null)));
+    list.hidden = !found.length;
+    input.setAttribute("aria-expanded", String(!list.hidden));
+  };
+  input.addEventListener("input", async () => {
+    picked = null;
+    const query = input.value.trim();
+    await loading;
+    found = query ? candidates(query, shown) : [];
+    if (!found.length && /^[\w.-]+-[\w.]+$/.test(query)) {
+      try { found = [await call("GET", "/records/" + encodeURIComponent(query))]; } catch (error) { found = []; }
+    }
+    active = 0;
+    draw();
+    judge();
+    if (query && !found.length) { verdict.className = "verdict bad"; verdict.textContent = "no story matches " + query; }
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); active = (active + (event.key === "ArrowDown" ? 1 : found.length - 1)) % Math.max(found.length, 1); draw(); }
+    if (event.key === "Enter") { event.preventDefault(); if (!list.hidden && found[active]) choose(found[active]); else if (!add.disabled) add.click(); }
+    if (event.key === "Escape") { list.hidden = true; }
+  });
+  input.addEventListener("blur", () => { list.hidden = true; });
+  bar.replaceChildren(el("span", { class: "meta" }, "This story"), kind, el("div", { class: "picker" }, input, list), add, cancel, verdict);
+  judge();
+  input.focus();
 }
 
 function linkRow(kind, id, title, status) {
@@ -552,10 +622,9 @@ function titleBlock(shown) {
 function crumbs(shown) {
   const f = shown.fields;
   const labels = String(f.labels || "").split(",").map((one) => one.trim()).filter(Boolean);
-  const priority = PRIORITIES.find(([key]) => key === String(f.priority));
   return el("div", { class: "crumbs" }, el("span", { class: "id" }, shown.record),
     f.issue_type ? typePill(f.issue_type) : el("span", { class: "pill t-task" }, "no type"),
-    priority ? el("span", { class: "p p" + priority[0] }, "P" + priority[0] + " " + priority[1]) : el("span", { class: "p" }, "no priority"),
+    priorityPill(f.priority, true),
     el("span", { class: "pill s-" + shown.status }, String(shown.status || "").replace("_", " ")),
     shown.dates && shown.dates.updated ? el("span", { title: shown.dates.updated }, "updated " + age(shown.dates.updated) + " ago") : null,
     labels.length ? el("span", {}, labels.join(", ")) : null);
