@@ -59,7 +59,8 @@
   .links-line { color: var(--muted); font-size: .8rem; display: flex; flex-wrap: wrap; gap: .1rem .7rem; }
   .links-line .open-blocker { color: var(--bad); }
   .checklist { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .85rem; color: var(--muted); }
-  .checklist .have { color: var(--ok); }
+  .checklist .have, .dod li.have { color: var(--ok); }
+  .dod ul { list-style: none; padding-left: .2rem; }
   .needs { color: var(--muted); border-bottom: 1px dotted var(--muted); cursor: help; }
   .notice ul { margin: .3rem 0 0; padding-left: 1.2rem; }
   .notice li b { font-weight: 600; }
@@ -217,10 +218,10 @@ function age(stamp) {
 }
 
 const SECTIONS = {
-  "Trigger": ["why", "the situation that causes the work: When <situation>, I want <goal>, so I can <outcome>."],
-  "Acceptance Criteria": ["done-check", "checks that prove the work is done, one per line: - [ ] <a check a person can run>."],
-  "Requirements": ["rules", "what the solution must hold to, for example: standard library only."],
-  "Steps to Reproduce": ["repro steps", "the steps that make the bug happen, one per line."],
+  "Trigger": ["trigger", "the situation that causes the work: When <situation>, I want <goal>, so I can <outcome>."],
+  "Acceptance Criteria": ["acceptance criteria", "checks that prove the work is done, one per line: - [ ] <a check a person can run>. Verify checks them."],
+  "Requirements": ["requirements", "what the solution must hold to, for example: standard library only. Validation judges the result against them."],
+  "Steps to Reproduce": ["steps to reproduce", "the steps that make the bug happen, one per line."],
   "Success Criteria": ["success criteria", "what must be true when the whole epic is done."],
 };
 
@@ -231,11 +232,21 @@ function sectionOf(name) {
 
 function needs(names) {
   const parts = (names || []).map(sectionOf);
-  return el("span", { class: "needs", title: parts.map(([bare, , what]) => bare + ": " + what).join("\n") }, "needs: " + parts.map(([, short]) => short).join(", "));
+  return el("span", { class: "needs", title: parts.map(([bare, , what]) => bare + ": " + what).join("\n") }, "DoR: " + parts.map(([, short]) => short).join(", "));
+}
+
+function doneBlock(shown) {
+  const f = shown.fields;
+  const item = (ok, name, what) => el("li", { class: ok ? "have" : "" }, (ok ? "✓ " : "○ ") , el("b", {}, name), ": " + what);
+  return el("div", { class: "notice note dod" }, "Definition of Done: closing needs a reason as evidence, and the engine checks:",
+    el("ul", {}, [
+      item(Boolean(String(f.acceptance_criteria || "").trim()), "acceptance criteria", "verify checks each one"),
+      item(Boolean(String(f.requirements || "").trim()), "requirements", "validation judges the result against them, and refuses without them"),
+    ]));
 }
 
 function needsList(names) {
-  return el("ul", {}, (names || []).map(sectionOf).map(([bare, short, what]) => el("li", {}, el("b", {}, bare), " (" + short + "): " + what)));
+  return el("ul", {}, (names || []).map(sectionOf).map(([bare, , what]) => el("li", {}, el("b", {}, bare), ": " + what)));
 }
 
 function writer(raw) {
@@ -598,7 +609,7 @@ function has(form, name) {
 
 async function drawChecklist(form, box, type) {
   const { required } = await templateFor(type || "task");
-  box.replaceChildren(el("span", {}, "A " + (type || "task") + " needs:"), ...(required || []).map((name) => {
+  box.replaceChildren(el("span", { title: "Definition of Ready: what a story needs before work can start" }, "Definition of Ready for a " + (type || "task") + ":"), ...(required || []).map((name) => {
     const [bare, short, what] = sectionOf(name);
     const ok = has(form, name);
     return el("span", { class: ok ? "have" : "", title: bare + ": " + what }, (ok ? "✓ " : "○ ") + short);
@@ -838,7 +849,8 @@ function notices(shown, dor) {
   const labels = String(shown.fields.labels || "").split(",").map((one) => one.trim());
   if (shown.conflicts && shown.conflicts.length) found.push(el("div", { class: "notice bad" }, "Two branches set different values: " + shown.conflicts.map((c) => c.key + " = " + c.values.join(" / ")).join("; ") + ". Run the kit's resolve command to keep the current value."));
   if (labels.includes(REFINE)) found.push(el("div", { class: "notice note" }, "Needs agent review. A person wrote or changed this story, so an agent reviews it and fills in what is missing before work can start. Ask an agent to refine " + shown.record + "."));
-  if (shown.status !== "closed" && dor.blocking && dor.blocking.length) found.push(el("div", { class: "notice note" }, "Not ready yet. Edit the story and add:", needsList(dor.blocking)));
+  if (shown.status !== "closed" && dor.blocking && dor.blocking.length) found.push(el("div", { class: "notice note" }, "Definition of Ready not met. Edit the story and add:", needsList(dor.blocking)));
+  if (shown.status !== "closed") found.push(doneBlock(shown));
   return found;
 }
 
