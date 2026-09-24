@@ -22,11 +22,15 @@ def _a_tracked_id(root: Path) -> str:
 
 def _a_sibling_fenced_id(root: Path) -> str:
 
+    checked: set[str] = set()
     for log in sorted((root / tracker_paths.LEDGER_DIR_NAME).glob("events-*.jsonl")):
         for line in log.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             record = str(json.loads(line)["record"])
+            if record in checked:
+                continue
+            checked.add(record)
             if contention.sibling_scopes(root, record):
                 return record
     raise AssertionError("no committed record has an open sibling declaring a scope")
