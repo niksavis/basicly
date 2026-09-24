@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,9 +35,9 @@ def test_serve_runs_the_board_kit_with_the_engine_redaction(
 
     assert tracker_query.cmd_serve(_args()) == 7
 
-    out = capsys.readouterr().out
-    assert redact.redact_committed.__name__ in out
-    assert str(owned_store.ledger_dir(tmp_path)) in out
+    reported = json.loads(capsys.readouterr().out)
+    assert reported["redact"] == redact.redact_committed.__name__
+    assert Path(reported["directory"]) == owned_store.ledger_dir(tmp_path)
 
 
 def test_serve_without_the_board_kit_names_where_it_looked(
