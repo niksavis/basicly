@@ -37,7 +37,8 @@
   #rows button:hover { background: var(--raise); }
   #rows button:focus-visible { outline: 2px solid var(--accent); }
   #rows button > .st { grid-row: 1; align-self: center; }
-  #rows button > .title, #rows button > .meta, #rows button > .links-line { grid-column: 2; }
+  #rows button > .title { grid-column: 2; }
+  #rows button > .meta, #rows button > .links-line { grid-column: 1 / -1; }
   #rows button[aria-current="true"] { background: var(--raise); box-shadow: inset 3px 0 0 var(--accent); }
   .title { font-weight: 500; }
   .meta { color: var(--muted); font-size: .82rem; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; }
