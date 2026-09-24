@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import tracker
 from .plan_gate import missing_fields
-from .plan_record import PLAN_HEADING, has_heading, parse_plan_section
+from .plan_record import (
+    ACCEPTANCE_FIELD,
+    PLAN_HEADING,
+    PlanRecordError,
+    has_heading,
+    recorded_plan,
+)
+
+CLOSED_STATUS = "closed"
 
 
 @dataclass(frozen=True)
@@ -34,11 +43,15 @@ class EntryVerdict:
         )
 
 
-def entry_verdict_for(issue_id: str, description: str) -> EntryVerdict:
+def entry_verdict_for(issue_id: str, record: Mapping[str, object]) -> EntryVerdict:
 
-    if not has_heading(description, PLAN_HEADING):
+    description = record.get("description")
+    if not isinstance(description, str) or not has_heading(description, PLAN_HEADING):
         return EntryVerdict(issue_id)
-    recorded = parse_plan_section(description)
+    try:
+        recorded = recorded_plan(record, closed=record.get("status") == CLOSED_STATUS)
+    except PlanRecordError:
+        return EntryVerdict(issue_id, (ACCEPTANCE_FIELD,))
     return EntryVerdict(issue_id, missing_fields(recorded))
 
 
@@ -50,4 +63,4 @@ def build_entry_verdict(repo_root: Path, issue_id: str) -> EntryVerdict:
     description = record.get("description")
     if not isinstance(description, str):
         return EntryVerdict(issue_id, unreadable=True)
-    return entry_verdict_for(issue_id, description)
+    return entry_verdict_for(issue_id, record)

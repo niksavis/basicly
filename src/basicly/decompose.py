@@ -1015,7 +1015,6 @@ def _child_body(spec: ChildSpec, trigger: str = "", repo_root: Path | None = Non
         spec.type,
         {
             TRIGGER_HEADING: trigger,
-            "## Acceptance Criteria": "\n".join(f"- {item}" for item in spec.acceptance),
             plan_record.SCOPE_HEADING: "\n".join(f"- `{glob}`" for glob in spec.scope),
             plan_record.PLAN_HEADING: plan_record.render_plan_section(
                 spec.depends_on or (),

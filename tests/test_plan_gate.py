@@ -12,7 +12,7 @@ from tests.plan_fixtures import child_payload as _child_payload
 from tests.plan_fixtures import install as _install
 from tests.plan_fixtures import plan_payload as _plan_payload
 from tests.plan_fixtures import planned as _planned
-from tests.plan_fixtures import recorded_body as _recorded_body
+from tests.plan_fixtures import recorded as _recorded
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -202,7 +202,7 @@ def test_decompose_refuses_a_plan_missing_a_field_and_creates_no_issue(
 
 
 def test_a_fully_planned_unit_is_admitted_to_build_entry() -> None:
-    verdict = plan_entry.entry_verdict_for("feat.1", _recorded_body())
+    verdict = plan_entry.entry_verdict_for("feat.1", _recorded())
 
     assert verdict.admitted
     assert verdict.reason == ""
@@ -221,7 +221,7 @@ def test_a_fully_planned_unit_is_admitted_to_build_entry() -> None:
 def test_build_entry_refuses_a_unit_missing_a_plan_field_naming_it(
     field: str, absent: object
 ) -> None:
-    verdict = plan_entry.entry_verdict_for("feat.1", _recorded_body(**{field: absent}))
+    verdict = plan_entry.entry_verdict_for("feat.1", _recorded(**{field: absent}))
 
     assert not verdict.admitted
     assert verdict.missing == (field,)
@@ -231,14 +231,18 @@ def test_build_entry_refuses_a_unit_missing_a_plan_field_naming_it(
 
 def test_build_entry_admits_a_hand_filed_bead_that_carries_no_plan_section() -> None:
 
-    verdict = plan_entry.entry_verdict_for("feat.1", "Some prose and no headings.\n")
+    verdict = plan_entry.entry_verdict_for(
+        "feat.1", {"description": "Some prose and no headings.\n"}
+    )
 
     assert verdict.admitted
     assert verdict.missing == ()
 
 
 def test_build_entry_refuses_a_bead_whose_plan_section_is_present_but_empty() -> None:
-    verdict = plan_entry.entry_verdict_for("feat.1", f"{plan_record.PLAN_HEADING}\n\nprose\n")
+    verdict = plan_entry.entry_verdict_for(
+        "feat.1", {"description": f"{plan_record.PLAN_HEADING}\n\nprose\n"}
+    )
 
     assert not verdict.admitted
     assert verdict.missing == plan_gate.PLAN_FIELDS
@@ -247,7 +251,7 @@ def test_build_entry_refuses_a_bead_whose_plan_section_is_present_but_empty() ->
 def test_build_entry_reads_the_bead_from_the_tracker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    fake = FakeBr(records={"feat.1": {"id": "feat.1", "description": _recorded_body()}})
+    fake = FakeBr(records={"feat.1": {"id": "feat.1", **_recorded()}})
     _install(monkeypatch, fake)
 
     assert plan_entry.build_entry_verdict(tmp_path, "feat.1").admitted

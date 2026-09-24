@@ -92,6 +92,11 @@ _TODO = "TODO"
 
 _SCOPE_SECTION = "## Scope"
 
+TYPED_FIELD_FLAGS = {
+    _ACCEPTANCE_CRITERIA_SECTION: "--acceptance '- Given <state> when <action> then <result>'",
+    "## Requirements": "--requirements '- <the standard the result must obey>'",
+}
+
 SCOPE_LINE_EXAMPLE = "- `src/basicly/cli.py`"
 
 _SECTION_HINTS: dict[str, str] = {
@@ -100,9 +105,6 @@ _SECTION_HINTS: dict[str, str] = {
         f"{_TODO}: the exact commands run, the observed result, and the expected one."
     ),
     "## Success Criteria": f"{_TODO}: the high-level outcomes that close this epic.",
-    _ACCEPTANCE_CRITERIA_SECTION: (
-        f"- {_TODO}: Given <starting state> when <action> then <observable result>"
-    ),
     _SCOPE_SECTION: (
         f"- {_TODO}: one entry per line in exactly this form: {SCOPE_LINE_EXAMPLE} "
         "— an entry that is not a backticked glob parses to nothing."
@@ -129,8 +131,10 @@ def compose_body(
 ) -> str:
 
     content = content or {}
-    headings = list(required_sections(work_type, repo_root))
-    headings += [heading for heading in content if heading not in headings]
+    headings = [
+        one for one in required_sections(work_type, repo_root) if one not in TYPED_FIELD_FLAGS
+    ]
+    headings += [one for one in content if one not in headings and one not in TYPED_FIELD_FLAGS]
     default = f"{_TODO}: fill this in."
     sections = (
         f"{heading}\n\n{content.get(heading) or _SECTION_HINTS.get(heading, default)}"

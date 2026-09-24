@@ -77,7 +77,8 @@ python3 .basicly/kit/tracker/cli.py import .basicly/ledger issues.jsonl --dry-ru
 
 ### ready
 
-The ranked records that can be worked on now. It leaves out a record labelled `refine`.
+The ranked records that can be worked on now. It leaves out a record labelled `refine`,
+and a record created under the current rule that fails `dor`.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py ready .basicly/ledger --limit 10
@@ -154,6 +155,16 @@ type, priority, edges) and removes the label with `update --remove-label refine`
 
 ```sh
 python3 .basicly/kit/tracker/cli.py refine .basicly/ledger
+```
+
+### migrate-fields
+
+Move the acceptance criteria and the requirements of each open record from a description
+section into the typed field, when the field is empty. It appends events and edits no line.
+A second run appends nothing.
+
+```sh
+python3 .basicly/kit/tracker/cli.py migrate-fields .basicly/ledger
 ```
 
 ## Keep the log healthy

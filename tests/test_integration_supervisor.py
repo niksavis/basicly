@@ -78,8 +78,7 @@ def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: st
             "-t",
             issue_type,
             "-d",
-            "## Trigger\n\nWhen run, I want it to land, so I can assert it.\n\n"
-            f"## Acceptance Criteria\n\n- Given the fixture when {title} then it lands\n",
+            "## Trigger\n\nWhen run, I want it to land, so I can assert it.\n",
             "--acceptance",
             f"- Given the fixture when {title} then it lands",
             "--requirements",
@@ -223,8 +222,7 @@ def test_a_pass_attributes_the_coupling_the_same_way_whichever_lane_bounced(
             "update",
             child,
             "-d",
-            "## Trigger\n\nWhen run, I want scope kept, so I can trust it.\n\n"
-            f"## Acceptance Criteria\n\n- Given it when landed then it holds\n"
+            "## Trigger\n\nWhen run, I want scope kept, so I can trust it.\n"
             f"\n## Scope\n\n- `{scope}`\n",
         )
 

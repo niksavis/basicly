@@ -8,6 +8,7 @@ from basicly import decompose, demonstration_proof, plan_entry, plan_gate, plan_
 from tests.plan_fixtures import child_payload as _child_payload
 from tests.plan_fixtures import plan_payload as _plan_payload
 from tests.plan_fixtures import planned as _planned
+from tests.plan_fixtures import recorded as _recorded
 from tests.plan_fixtures import recorded_body as _recorded_body
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -85,5 +86,5 @@ def test_the_build_entry_predicate_does_not_require_a_demonstration() -> None:
     body = _recorded_body()
 
     assert plan_record.parse_plan_section(body).demonstration is None
-    assert plan_entry.entry_verdict_for("feat.1", body).admitted
-    assert not plan_entry.entry_verdict_for("feat.1", _recorded_body(integrity=None)).admitted
+    assert plan_entry.entry_verdict_for("feat.1", _recorded()).admitted
+    assert not plan_entry.entry_verdict_for("feat.1", _recorded(integrity=None)).admitted

@@ -158,6 +158,10 @@ def refused(record: Mapping[str, object], *, closed: bool = False, template=None
     return tuple(one for one in missing if one != REQUIREMENTS_HEADING)
 
 
+def held_from_ready(record: Mapping[str, object], *, labelled: bool, template=None) -> bool:
+    return labelled or (minted_under_the_rule(record) and bool(refused(record, template=template)))
+
+
 def shaped(record: Mapping[str, object], *, closed: bool = False, template=None) -> bool:
     return not refused(record, closed=closed, template=template)
 
@@ -191,7 +195,8 @@ def remedy(missing: Sequence[str]) -> str:
     return "; ".join(parts)
 
 
-_FLAGS = {ACCEPTANCE_HEADING: "--acceptance", REQUIREMENTS_HEADING: "--requirements"}
+TYPED_HEADINGS = {ACCEPTANCE_HEADING: "--acceptance", REQUIREMENTS_HEADING: "--requirements"}
+_FLAGS = TYPED_HEADINGS
 
 
 def body(kind: str, template=None) -> dict:

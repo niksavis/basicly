@@ -8,6 +8,7 @@ import pytest
 from basicly import classify, tracker
 from basicly.config import WORK_TYPES
 from tests import fake_tracker, flipped_tracker
+from tests.plan_fixtures import install_kit
 
 
 class _Proc:
@@ -48,6 +49,11 @@ class _FakeBr:
                 ])
             )
         raise AssertionError(f"unexpected br call: {args}")
+
+
+@pytest.fixture(autouse=True)
+def _repo_with_the_kit(tmp_path: Path) -> None:
+    install_kit(tmp_path)
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
@@ -145,9 +151,7 @@ def test_the_type_and_the_marker_land_in_the_owned_ledger_with_br_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = flipped_tracker.flipped_repo(tmp_path)
-    flipped_tracker.seed(
-        repo, "seam-1", description=_TRIGGER + "## Acceptance Criteria\n\n- given x\n"
-    )
+    flipped_tracker.seed(repo, "seam-1", description=_TRIGGER, acceptance_criteria="- given x")
     flipped_tracker.refuse_spawn(monkeypatch)
 
     result = classify.classify(repo, "seam-1", "task", ("src/basicly/policy.py",))
@@ -166,9 +170,7 @@ def test_the_dor_verdict_comes_out_of_the_owned_record_with_br_absent(
 
     repo = flipped_tracker.flipped_repo(tmp_path)
     for bead in ("ready-1", "bug-1"):
-        flipped_tracker.seed(
-            repo, bead, description=_TRIGGER + "## Acceptance Criteria\n\n- given x\n"
-        )
+        flipped_tracker.seed(repo, bead, description=_TRIGGER, acceptance_criteria="- given x")
     flipped_tracker.refuse_spawn(monkeypatch)
 
     assert classify.classify(repo, "ready-1", "task").dor.ready is True

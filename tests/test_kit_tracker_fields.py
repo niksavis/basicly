@@ -240,7 +240,7 @@ def _ready_ids(ledger: Path, capsys: pytest.CaptureFixture[str]) -> set[str]:
     return {row["record"] for row in _report(capsys)["records"]}
 
 
-def test_ready_holds_back_only_a_record_labelled_refine(
+def test_ready_holds_back_a_labelled_or_unshaped_new_record_and_keeps_an_older_one(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ledger = tmp_path / "ledger"
@@ -255,7 +255,7 @@ def test_ready_holds_back_only_a_record_labelled_refine(
         made[name] = _report(capsys)["record"]
     older = cli.commands.create_root(ledger, {"title": "older"}, prefix="acme")[0].record
 
-    assert _ready_ids(ledger, capsys) == {made["shaped"], made["unshaped"], older}
+    assert _ready_ids(ledger, capsys) == {made["shaped"], older}
 
     cli.main(["refine", str(ledger)])
     labelled = {row["record"]: row["labelled"] for row in _report(capsys)["records"]}
@@ -263,3 +263,42 @@ def test_ready_holds_back_only_a_record_labelled_refine(
 
     cli.main(["update", str(ledger), made["labelled"], "--remove-label", "refine"])
     assert made["labelled"] in _ready_ids(ledger, capsys)
+
+
+def test_migrate_fields_moves_a_section_only_criterion_once_and_edits_no_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    body = f"{TRIGGER}\n\n## Acceptance Criteria\n\nGiven a legacy record then it keeps this\n"
+    legacy = {"title": "legacy", "description": body}
+    events.append(
+        ledger,
+        [
+            events.Draft("acme-lg1", events.KIND_CREATED, legacy),
+            events.Draft("acme-lg1", events.KIND_STATUS, {"status": "open"}),
+        ],
+    )
+    before = {path: path.read_text(encoding="utf-8") for path in ledger.glob("*.jsonl")}
+
+    capsys.readouterr()
+    assert cli.main(["migrate-fields", str(ledger)]) == cli.EXIT_OK
+    assert _report(capsys)["appended"] == ["acme-lg1"]
+    cli.main(["show", str(ledger), "acme-lg1"])
+    fields = _report(capsys)["fields"]
+    assert fields["acceptance_criteria"] == "- Given a legacy record then it keeps this"
+    assert all(path.read_text(encoding="utf-8").startswith(then) for path, then in before.items())
+
+    assert cli.main(["migrate-fields", str(ledger)]) == cli.EXIT_OK
+    assert _report(capsys)["appended"] == []
+
+
+@pytest.mark.usefixtures("repo")
+def test_the_engine_route_refuses_a_criteria_heading_in_the_description(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+
+    body = f"{TRIGGER}\n\n## Acceptance Criteria\n\n- it works\n"
+    argv = ["tracker", "write", "--", "create", "a child", "--parent", ROOT, "-d", body]
+
+    assert engine_cli.main(argv) != 0
+    assert "--acceptance" in capsys.readouterr().err

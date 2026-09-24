@@ -7,7 +7,7 @@ from typing import Any
 
 from . import tracker
 from .config import DEFAULT_TYPE_SECTIONS, load_type_sections
-from .plan_record import ACCEPTANCE_HEADING, has_heading, section_entries
+from .plan_record import ACCEPTANCE_HEADING, has_heading
 
 TRIGGER_HEADING = "## Trigger"
 
@@ -25,15 +25,6 @@ _USER_STORY = re.compile(
 )
 
 _PLACEHOLDER = re.compile(r"<[^>]+>|\bTODO\b")
-
-
-def trigger_voice(description: str) -> str | None:
-
-    for voice, pattern in (("job", _JOB_STORY), ("user", _USER_STORY)):
-        for match in pattern.finditer(description):
-            if not _PLACEHOLDER.search(match.group(0)):
-                return voice
-    return None
 
 
 def trigger_sentence(description: str) -> str:
@@ -78,18 +69,15 @@ def missing_for(
 ) -> tuple[str, ...]:
 
     declared = load_type_sections(repo_root) if declared is None else declared
-    required = _required(work_type, declared, template)
-    from_template: set[str] = set()
-    if template is not None:
-        from_template = {*template.sections, *template.for_type(work_type)}
-        from_template -= {TRIGGER_HEADING, ACCEPTANCE_HEADING}
-    engine = set(missing_sections(record, [one for one in required if one not in from_template]))
-    return tuple(
-        one
-        for one in required
-        if one in engine
-        or (one in from_template and not tracker.section_meets(repo_root, record, one))
-    )
+    typed = {**record, "issue_type": work_type} if work_type else dict(record)
+    kit_order, shared = tracker.readiness(repo_root, typed, template)
+    own = declared.get(work_type, ()) if template is None or template.extends else ()
+    described = record.get("description")
+    body = described if isinstance(described, str) else ""
+    own_missing = {heading for heading in own if not _held(record, body, heading)}
+    head = kit_order[:1] if kit_order[:1] == (TRIGGER_HEADING,) else ()
+    order = dict.fromkeys((*head, *own, *kit_order))
+    return tuple(heading for heading in order if heading in shared or heading in own_missing)
 
 
 def owed(states: Iterable[Any], repo_root: Path) -> dict[str, tuple[str, ...]]:
@@ -110,29 +98,6 @@ def owed(states: Iterable[Any], repo_root: Path) -> dict[str, tuple[str, ...]]:
 
 def _field_of(heading: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", heading.lstrip("#").strip().lower()).strip("_")
-
-
-def missing_sections(record: Mapping[str, object], required: Sequence[str]) -> tuple[str, ...]:
-
-    described = record.get("description")
-    body = described if isinstance(described, str) else ""
-    checks = {
-        TRIGGER_HEADING: lambda: trigger_voice(body) is not None,
-        ACCEPTANCE_HEADING: lambda: _states_acceptance(record, body),
-    }
-    return tuple(
-        section
-        for section in required
-        if not checks.get(section, lambda s=section: _held(record, body, s))()
-    )
-
-
-def _states_acceptance(record: Mapping[str, object], body: str) -> bool:
-
-    field = record.get("acceptance_criteria")
-    if isinstance(field, str) and _states_something(field):
-        return True
-    return any(_states_something(entry) for entry in section_entries(body, ACCEPTANCE_HEADING))
 
 
 def _held(record: Mapping[str, object], body: str, heading: str) -> bool:

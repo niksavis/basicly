@@ -8,6 +8,7 @@ import pytest
 from basicly import cli, decisions, policy
 from basicly.config import PolicyConfig
 from tests import fake_tracker
+from tests.plan_fixtures import install_kit
 
 
 class _Proc:
@@ -36,6 +37,7 @@ class _FakeBr:
 
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    install_kit(tmp_path)
     monkeypatch.chdir(tmp_path)
     fake = _FakeBr()
     monkeypatch.setattr(policy, "_write", fake)
@@ -430,10 +432,13 @@ def test_policy_scaffold_prints_the_body_for_the_work_type(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert cli.main(["policy", "scaffold", "--type", "bug"]) == 0
-    out = capsys.readouterr().out
-    assert out == policy.scaffold_body("bug")
-    assert "## Steps to Reproduce" in out and "## Acceptance Criteria" in out
-    assert "## Scope" in out
+    captured = capsys.readouterr()
+    assert captured.out == policy.scaffold_body("bug")
+    assert "## Steps to Reproduce" in captured.out
+    assert "## Acceptance Criteria" not in captured.out
+    assert "## Scope" in captured.out
+    assert "--acceptance" in captured.err
+    assert "--requirements" in captured.err
 
 
 def test_policy_scaffold_rejects_a_type_outside_the_br_taxonomy() -> None:
@@ -461,8 +466,9 @@ def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_ver
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
-    body = _TRIGGER + "## Acceptance Criteria\n\n- x\n\n## Scope\n\n- src/a.py\n"
-    record = _Proc(json.dumps([{"issue_type": "task", "description": body}]))
+    body = _TRIGGER + "## Scope\n\n- src/a.py\n"
+    fields = {"issue_type": "task", "description": body, "acceptance_criteria": "- x"}
+    record = _Proc(json.dumps([fields]))
     fake_tracker.install(monkeypatch, lambda _root, _args: record)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 0
@@ -474,8 +480,9 @@ def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_ver
 def test_dor_stays_quiet_when_the_scope_parsed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    body = _TRIGGER + f"## Acceptance Criteria\n\n- x\n\n## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
-    record = _Proc(json.dumps([{"issue_type": "task", "description": body}]))
+    body = _TRIGGER + f"## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
+    fields = {"issue_type": "task", "description": body, "acceptance_criteria": "- x"}
+    record = _Proc(json.dumps([fields]))
     fake_tracker.install(monkeypatch, lambda _root, _args: record)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 0

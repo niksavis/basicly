@@ -418,7 +418,7 @@ def test_decompose_parallel_children_get_no_sibling_deps(
     assert result.parallel_groups == 2
     assert result.groups == (("feat.1",), ("feat.2",))
     assert result.serial_order == ("feat.1", "feat.2")
-    assert all("## Acceptance Criteria" in body for _id, _title, body in fake.created)
+    assert not any("## Acceptance Criteria" in body for _id, _title, body in fake.created)
     assert "src/a.py" in fake.created[0][2]
 
 
@@ -705,11 +705,9 @@ def test_child_body_carries_the_sections_the_childs_own_type_requires() -> None:
     assert headings == [
         "## Trigger",
         "## Steps to Reproduce",
-        "## Acceptance Criteria",
         "## Scope",
         "## Plan",
     ]
-    assert "- given x then y" in body
     assert decompose.parse_scope_section(body) == ("src/a.py",)
 
 

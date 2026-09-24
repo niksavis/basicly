@@ -59,8 +59,11 @@ def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: st
             issue_type,
             "-d",
             f"## Trigger\n\nWhen the fixture dispatches {title}, I want it to land, "
-            f"so I can assert the lane closed.\n\n"
-            f"## Acceptance Criteria\n\n- Given the fixture when {title} then it lands\n",
+            f"so I can assert the lane closed.\n",
+            "--acceptance",
+            f"- Given the fixture when {title} then it lands",
+            "--requirements",
+            "- The fixture repository only",
             "--parent",
             parent,
             "--json",

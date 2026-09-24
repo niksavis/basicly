@@ -71,6 +71,28 @@ def _written_names(events: Any, draft: Any) -> tuple:
     return ()
 
 
+def _written_description(events: Any, draft: Any) -> str:
+
+    if draft.kind == events.KIND_CREATED:
+        value = draft.payload.get(fields.shaping.DESCRIPTION_FIELD)
+    elif _named(events, draft, fields.shaping.DESCRIPTION_FIELD):
+        value = draft.payload.get("value")
+    else:
+        return ""
+    return value if isinstance(value, str) else ""
+
+
+def _refuse_typed_headings(events: Any, draft: Any) -> None:
+
+    lines = {line.strip() for line in _written_description(events, draft).splitlines()}
+    for heading, flag in fields.shaping.TYPED_HEADINGS.items():
+        if heading in lines:
+            raise RefusedValueError(
+                f"the description of {draft.record} holds a {heading!r} heading, which an "
+                f"open record never reads; remove it and pass the text as {flag}"
+            )
+
+
 def refuse(events: Any, drafts: Sequence[Any], template: Any = None) -> None:
 
     reasoned = {
@@ -86,6 +108,7 @@ def refuse(events: Any, drafts: Sequence[Any], template: Any = None) -> None:
         )
     }
     for draft in drafts:
+        _refuse_typed_headings(events, draft)
         for name in _written_names(events, draft):
             fields.refuse(name, template)
         if draft.kind == events.KIND_STATUS:

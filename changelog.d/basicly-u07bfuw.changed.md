@@ -1,0 +1,1 @@
+- The engine and the tracker kit now share one readiness rule: acceptance criteria and requirements are typed fields (`--acceptance`, `--requirements`), a description that holds either heading is refused, and `ready` also holds back a new record that fails `dor`. `migrate-fields` moves older section-only criteria into the fields.

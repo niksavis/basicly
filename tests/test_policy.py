@@ -4,7 +4,6 @@ import ast
 import contextlib
 import inspect
 import json
-import shutil
 import textwrap
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -22,6 +21,7 @@ from basicly.config import (
     SizingConfig,
 )
 from tests import fake_tracker
+from tests.plan_fixtures import install_kit
 
 
 class _Proc:
@@ -97,6 +97,11 @@ class _FakeBr:
 CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 
 
+@pytest.fixture(autouse=True)
+def _repo_with_the_kit(tmp_path: Path) -> None:
+    install_kit(tmp_path)
+
+
 def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
 
     monkeypatch.setattr(policy, "_write", fake)
@@ -123,7 +128,7 @@ def test_dor_requires_acceptance_criteria_whatever_the_work_type(
     assert result.missing == ("## Trigger", "## Acceptance Criteria")
 
 
-def test_dor_accepts_criteria_from_the_description_body(
+def test_dor_refuses_criteria_held_only_under_the_description_heading(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _install(
@@ -133,7 +138,7 @@ def test_dor_accepts_criteria_from_the_description_body(
             description=_TRIGGER + "\n## Acceptance Criteria\n\n- given x then y\n",
         ),
     )
-    assert policy.definition_of_ready(tmp_path, "i").ready is True
+    assert policy.definition_of_ready(tmp_path, "i").missing == ("## Acceptance Criteria",)
 
 
 def test_dor_keeps_other_missing_sections_when_adding_the_requirement(
@@ -156,11 +161,7 @@ def test_dor_reads_the_required_sections_from_configuration(
 
 
 def _ledger_template(repo_root: Path, body: dict[str, object]) -> None:
-    shutil.copytree(
-        Path(__file__).parent.parent / ".basicly" / "core" / "kit" / "tracker",
-        repo_root / ".basicly" / "core" / "kit" / "tracker",
-        ignore=shutil.ignore_patterns("__pycache__"),
-    )
+    install_kit(repo_root)
     ledger = repo_root / ".basicly" / "ledger"
     ledger.mkdir(parents=True)
     (ledger / "template.json").write_text(json.dumps(body), encoding="utf-8")
@@ -289,13 +290,13 @@ def test_compose_body_emits_every_required_section_with_a_placeholder() -> None:
     body = policy.compose_body("bug")
     assert body.startswith("## Trigger\n\n")
     assert "## Steps to Reproduce\n\n" in body
-    assert "## Acceptance Criteria\n\n" in body
-    assert body.count("TODO") == 3
+    assert "## Acceptance Criteria" not in body
+    assert body.count("TODO") == 2
 
 
 def test_compose_body_uses_supplied_content_instead_of_the_placeholder() -> None:
-    body = policy.compose_body("task", {"## Acceptance Criteria": "- Given x when y then z"})
-    assert body.endswith("## Acceptance Criteria\n\n- Given x when y then z\n")
+    body = policy.compose_body("task", {"## Scope": "- `src/a.py`"})
+    assert body.endswith("## Scope\n\n- `src/a.py`\n")
     assert body.count("TODO") == 1
 
 
@@ -303,30 +304,22 @@ def test_compose_body_appends_a_non_required_section_rather_than_dropping_it() -
 
     body = policy.compose_body("bug", {"## Scope": "- `src/basicly/cli.py`"})
     headings = [line for line in body.splitlines() if line.startswith("## ")]
-    assert headings == [
-        "## Trigger",
-        "## Steps to Reproduce",
-        "## Acceptance Criteria",
-        "## Scope",
-    ]
+    assert headings == ["## Trigger", "## Steps to Reproduce", "## Scope"]
     assert "- `src/basicly/cli.py`" in body
 
 
-def test_compose_body_never_duplicates_a_required_heading() -> None:
-    body = policy.compose_body("task", {"## Acceptance Criteria": "- given x then y"})
-    assert body.count("## Acceptance Criteria") == 1
+def test_compose_body_never_writes_a_section_the_record_carries_as_a_typed_field() -> None:
+    supplied = {"## Acceptance Criteria": "- given x then y", "## Requirements": "- stdlib"}
+    body = policy.compose_body("task", supplied)
+    assert "## Acceptance Criteria" not in body
+    assert "## Requirements" not in body
 
 
 def test_scaffold_body_emits_scope_although_the_dor_never_requires_it() -> None:
 
     body = policy.scaffold_body("bug")
     headings = [line for line in body.splitlines() if line.startswith("## ")]
-    assert headings == [
-        "## Trigger",
-        "## Steps to Reproduce",
-        "## Acceptance Criteria",
-        "## Scope",
-    ]
+    assert headings == ["## Trigger", "## Steps to Reproduce", "## Scope"]
     assert "## Scope" not in policy.required_sections("bug")
 
 

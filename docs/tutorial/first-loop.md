@@ -131,16 +131,15 @@ basicly policy scaffold --type task
 
 TODO: state the trigger in either voice - a situation, 'When <situation>, I want to <motivation>, so I can <outcome>.', or a persona, 'As a <persona>, I want <goal>, so that <benefit>.'. A persona is never required: where a situation triggers the work and no person wants it, inventing a persona is the defect.
 
-## Acceptance Criteria
-
-- TODO: Given <starting state> when <action> then <observable result>
-
 ## Scope
 
 - TODO: one entry per line in exactly this form: - `src/basicly/cli.py` — an entry that is not a backticked glob parses to nothing.
+also pass: --acceptance '- Given <state> when <action> then <result>' --requirements '- <the standard the result must obey>'
 ```
 
-Fill all three sections in and file it. A `## Trigger` is owed by every work
+The body goes in the description. The acceptance criteria and the requirements are
+fields, so they go in `--acceptance` and `--requirements`; a description that holds
+either heading is refused. Fill it all in and file it. A `## Trigger` is owed by every work
 type, and a persona is never required — where a situation triggers the work and
 nobody in particular wants it, inventing a persona is the defect. A `## Scope`
 entry must be a **backticked glob alone on its line** — a bare path parses to
@@ -151,14 +150,12 @@ basicly tracker write -- create "Add a getting started note" -t task -p 2 -d '##
 
 When a reader opens the repo, I want a one line getting started note, so I can run the harness without reading the whole tree.
 
-## Acceptance Criteria
-
-- Given a reader who opens the repo when they read NOTES.md then a one line getting started note is present
-
 ## Scope
 
 - `NOTES.md`
-'
+' \
+  --acceptance '- Given a reader who opens the repo when they read NOTES.md then a one line getting started note is present' \
+  --requirements '- One line of Markdown in NOTES.md'
 ```
 
 ```text
@@ -180,9 +177,9 @@ basicly policy dor myrepo-rq9r
 DoR: READY (myrepo-rq9r)
 ```
 
-If it says `NOT READY` it names the missing heading and repeats the scaffold
-command; fill that section in with
-`basicly tracker write -- update myrepo-rq9r -d '...'`.
+If it says `NOT READY` it names what is missing and repeats the scaffold command.
+Add a missing section with `basicly tracker write -- update myrepo-rq9r -d '...'`, and a
+missing field with `--acceptance '...'` or `--requirements '...'`.
 
 Now the install output has an id to reference, so commit it:
 

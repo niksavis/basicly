@@ -127,6 +127,7 @@ def _add_query_parsers(sub: Any) -> None:
         ("stats", "counts by status, plus the ready and blocked counts"),
         ("fields", "each record field, its role and its reader"),
         ("refine", "the open records a refinement pass owes: labelled refine or not ready"),
+        ("migrate-fields", "move section-only acceptance criteria and requirements into fields"),
     ):
         view = sub.add_parser(name, help=helping)
         view.add_argument("directory", help=DIRECTORY_HELP)

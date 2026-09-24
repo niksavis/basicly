@@ -157,6 +157,9 @@ _VIEWS: dict[
     "scaffold": lambda a, _r: record_view.scaffold_of(a.directory, a.type),
     "fields": lambda a, _r: fields.table(record_view.templates.load(a.directory)),
     "refine": lambda a, _r: record_view.refine_queue(a.directory),
+    "migrate-fields": lambda a, r: {
+        "appended": [event.record for event in commands.migrate_fields(a.directory, redact=r)]
+    },
 }
 
 

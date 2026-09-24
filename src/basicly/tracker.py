@@ -88,8 +88,13 @@ def ledger_template(repo_root: Path) -> Any:
     return kit(repo_root, "templates").load(ledger)
 
 
-def section_meets(repo_root: Path, record: Mapping[str, object], heading: str) -> bool:
-    return bool(kit(repo_root, "shaping").meets(record, heading))
+def readiness(
+    repo_root: Path, record: Mapping[str, object], template: Any
+) -> tuple[tuple[str, ...], frozenset[str]]:
+
+    shaping = kit(repo_root, "shaping")
+    required = tuple(shaping.required(record, template))
+    return required, frozenset(shaping.refused(record, template=template))
 
 
 LEDGER_GLOBS = ("events-*.jsonl", "pending-*.jsonl")

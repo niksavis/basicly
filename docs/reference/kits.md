@@ -105,10 +105,12 @@ A `--field` value is read as JSON when it parses as JSON, and as a string otherw
 `create`, `child` and `update` also take `--description`, `--acceptance` and
 `--requirements`, and every one of them reports what the record still **owes**. A record
 is shaped when it carries a trigger in either story voice, acceptance criteria and
-requirements. On an open record the criteria and requirements count only as those fields;
-`## Acceptance Criteria` and `## Requirements` sections in the description are read once the
-record is closed. A placeholder counts as absent, and a ledger `template.json` can extend or
-replace the rule.
+requirements. On an open record the criteria and requirements count only as those fields, and
+a description that holds an `## Acceptance Criteria` or `## Requirements` heading is refused;
+the sections are read only on a closed record, as evidence. `migrate-fields` moves them into
+the fields for older open records. A placeholder counts as absent, and a ledger
+`template.json` can extend or replace the rule. The engine's own readiness check calls the
+same rule and adds only its per-type sections.
 
 **A `post-merge` hook can keep the shard count bounded, and is off by default.** A fold
 edits the trunk log, so where the default branch takes pull requests two folds conflict;
@@ -132,8 +134,9 @@ for a record created before the rule existed, which reports its missing requirem
 without being blocked for them. A trigger and acceptance criteria are required of every
 open record either way.
 
-**`dor` is the gate, not `ready`.** `ready` leaves out only a record labelled `refine`, so
-it still offers an unshaped record; `dor` exits non-zero on one that cannot be verified
+**`dor` is the gate.** `ready` leaves out a record labelled `refine`, and a record created
+under the current rule that fails `dor`, but it still offers an older unshaped record; `dor`
+exits non-zero on one that cannot be verified
 against, which is what a hook or an agent skill calls before work starts.
 
 ## `basicly-tier`

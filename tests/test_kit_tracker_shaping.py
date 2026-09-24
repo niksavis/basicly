@@ -76,21 +76,28 @@ def test_the_flags_shape_a_record_with_no_prose_at_all(
     assert report["remedy"] == ""
 
 
-def test_a_heading_does_not_shape_an_open_record(
+def test_a_description_holding_a_typed_heading_is_refused_naming_the_flag(
     ledger: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _, report = _create(capsys, ledger, "--description", PROSE)
+    argv = ["create", str(ledger), "--prefix", "acme", "--title", "t", "--description", PROSE]
+    code, report = _run(capsys, *argv)
 
-    assert report["owed"] == [shaping.ACCEPTANCE_HEADING, shaping.REQUIREMENTS_HEADING], (
-        "D-50 retires the heading to prose and makes the field the only reader for an "
-        "open record; two stores is the disagreement the decision exists to end"
-    )
+    assert code == cli.EXIT_REFUSED
+    assert "--acceptance" in report["refused"]
 
 
 def test_a_heading_still_reads_on_a_closed_record(
     ledger: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    record, _ = _create(capsys, ledger, "--description", PROSE)
+    record = "acme-lgcy"
+    legacy = {"title": "an imported record", "description": PROSE}
+    cli.events.append(
+        ledger,
+        [
+            cli.events.Draft(record, cli.events.KIND_CREATED, legacy),
+            cli.events.Draft(record, cli.events.KIND_STATUS, {"status": "open"}),
+        ],
+    )
     assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
 
     _run(capsys, "close", str(ledger), record, "--reason", "shipped")
@@ -176,7 +183,7 @@ def test_an_update_can_shape_a_record_the_gate_refused(
 def test_a_child_is_shaped_by_the_same_flags(
     ledger: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    parent, _ = _create(capsys, ledger, "--description", PROSE)
+    parent, _ = _create(capsys, ledger, "--description", TRIGGER)
 
     _, report = _run(
         capsys,

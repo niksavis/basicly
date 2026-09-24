@@ -95,6 +95,19 @@ def lane_scope(repo_root: Path, target: Candidate) -> tuple[str, ...]:
     )
 
 
+LANE_REQUIREMENTS = "- The module keeps its behaviour, and every existing test still passes"
+
+
+def lane_acceptance(target: Candidate) -> str:
+    return (
+        f"- When `.scripts/check_module_size.py` measures `{target.path}` it shall "
+        f"report at most {SCOPE_FILE_READ_CAP} tokens and the module shall carry no "
+        f"`[tool.module_size.frozen]` entry - check: "
+        f"`uv run python .scripts/check_module_size.py` passes after that entry is "
+        f"deleted"
+    )
+
+
 def lane_body(repo_root: Path, target: Candidate, dropped: int) -> str:
 
     demonstration = (
@@ -104,13 +117,6 @@ def lane_body(repo_root: Path, target: Candidate, dropped: int) -> str:
     return policy.compose_body(
         LANE_TYPE,
         {
-            plan_record.ACCEPTANCE_HEADING: (
-                f"- When `.scripts/check_module_size.py` measures `{target.path}` it shall "
-                f"report at most {SCOPE_FILE_READ_CAP} tokens and the module shall carry no "
-                f"`[tool.module_size.frozen]` entry - check: "
-                f"`uv run python .scripts/check_module_size.py` passes after that entry is "
-                f"deleted"
-            ),
             plan_record.SCOPE_HEADING: "\n".join(
                 f"- `{glob}`" for glob in lane_scope(repo_root, target)
             ),
@@ -141,6 +147,10 @@ def dispatch(repo_root: Path, target: Candidate, dropped: int) -> str:
             LANE_LABEL,
             "-d",
             lane_body(repo_root, target, dropped),
+            "--acceptance",
+            lane_acceptance(target),
+            "--requirements",
+            LANE_REQUIREMENTS,
             "--json",
         ],
     )

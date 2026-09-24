@@ -2800,6 +2800,7 @@ def _cmd_policy_dor(args: argparse.Namespace) -> int:
 def _cmd_policy_scaffold(args: argparse.Namespace) -> int:
 
     print(policy.scaffold_body(args.type, _repo_root()), end="")
+    print(f"also pass: {' '.join(policy.TYPED_FIELD_FLAGS.values())}", file=sys.stderr)
     return 0
 
 

@@ -308,3 +308,27 @@ def create_child(
             events.Draft(record, migrate.KIND_EDGE, edge),
         ]
         return _append(ledger, drafts, redact, lock)
+
+
+def migrate_fields(directory: Path | str, *, redact: Callable[[str], str] | None = None) -> list:
+
+    ledger = _ledger(directory)
+    shaping = values.fields.shaping
+    with events.LedgerLock(ledger) as lock:
+        states = events.fold(events.read_events(ledger)[0]).records
+        drafts = []
+        for record, state in sorted(states.items()):
+            if state.tombstoned or state.status == CLOSED_STATUS:
+                continue
+            body = state.fields.get(shaping.DESCRIPTION_FIELD)
+            text = body if isinstance(body, str) else ""
+            for heading, name in shaping.SECTIONS:
+                held = state.fields.get(name)
+                entries = shaping.section_entries(text, heading) or tuple(
+                    line for line in shaping.section_text(text, heading).splitlines() if line
+                )
+                if entries and not (isinstance(held, str) and held.strip()):
+                    value = "\n".join(f"- {entry}" for entry in entries)
+                    payload = {"name": name, "value": value}
+                    drafts.append(events.Draft(record, events.KIND_FIELD, payload))
+        return _append(ledger, drafts, redact, lock) if drafts else []

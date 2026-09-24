@@ -10,6 +10,7 @@ import pytest
 
 from basicly import merge, policy, tracker, tracker_paths, verify
 from tests import flipped_tracker
+from tests.plan_fixtures import install_kit
 
 REPO_ROOT = Path(__file__).parent.parent
 COMMIT_MSG_HOOK = REPO_ROOT / ".basicly" / "core" / "hooks" / "tracker-commit-msg.py"
@@ -98,6 +99,7 @@ def test_r3_acceptance_criteria_are_required_for_a_work_type_lint_never_asks_abo
         "acceptance_criteria": None,
         "description": "",
     }
+    install_kit(tmp_path)
     monkeypatch.setattr(tracker, "read_record", lambda *_a, **_k: record)
     result = policy.definition_of_ready(tmp_path, "basicly-x")
 
@@ -105,15 +107,14 @@ def test_r3_acceptance_criteria_are_required_for_a_work_type_lint_never_asks_abo
     assert policy._ACCEPTANCE_CRITERIA_SECTION in result.missing
 
 
-def test_r4_multi_line_acceptance_criteria_satisfy_the_gate_from_the_body(
+def test_r4_multi_line_acceptance_criteria_satisfy_the_gate_from_the_field(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
-    body = (
-        "## Trigger\n\nWhen a record is gated, I want a trigger, so I can validate it.\n\n"
-        "## Acceptance Criteria\n\n- given a thing\n- when it happens\n- then a result\n"
-    )
-    record = {"id": "basicly-x", "acceptance_criteria": "", "description": body}
+    body = "## Trigger\n\nWhen a record is gated, I want a trigger, so I can validate it.\n"
+    criteria = "- given a thing\n- when it happens\n- then a result"
+    record = {"id": "basicly-x", "acceptance_criteria": criteria, "description": body}
+    install_kit(tmp_path)
     monkeypatch.setattr(tracker, "read_record", lambda *_a, **_k: record)
     result = policy.definition_of_ready(tmp_path, "basicly-x")
 

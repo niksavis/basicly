@@ -4,7 +4,7 @@ import json
 from typing import TYPE_CHECKING
 
 from basicly import decompose, plan_entry, plan_record, policy
-from tests.plan_fixtures import DEMONSTRATION, FakeBr, Proc
+from tests.plan_fixtures import DEMONSTRATION, FakeBr, Proc, install_kit
 from tests.plan_fixtures import install as _install
 from tests.plan_fixtures import planned as _planned
 
@@ -97,7 +97,8 @@ def test_a_recorded_body_still_satisfies_the_definition_of_ready(
 
     body = fake.created[0][2]
     for heading in policy.required_sections("task"):
-        assert heading in body
+        assert heading in body or heading in policy.TYPED_FIELD_FLAGS
+    assert fake.typed["feat.1"][plan_record.ACCEPTANCE_FIELD].startswith("- ")
 
 
 def test_a_recorded_empty_dependency_list_reads_back_as_declared_empty() -> None:
@@ -128,8 +129,8 @@ def test_a_decomposed_child_passes_the_predicate_that_gates_its_own_dispatch(
 
     decompose.decompose(tmp_path, "feat", children)
 
-    for issue_id, _title, body in fake.created:
-        verdict = plan_entry.entry_verdict_for(issue_id, body)
+    for issue_id, _title, _body in fake.created:
+        verdict = plan_entry.entry_verdict_for(issue_id, fake.record(issue_id))
         assert verdict.admitted, verdict.reason
 
 
@@ -138,7 +139,15 @@ _QUOTED_MID_SENTENCE = "Each child carries a ## Acceptance Criteria section; thi
 
 def _dor_verdict(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body: str) -> policy.DoRResult:
 
-    record = {"id": "feat.1", "description": body, "labels": []}
+    return _dor_verdict_of(monkeypatch, tmp_path, {"description": body})
+
+
+def _dor_verdict_of(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fields: dict[str, str]
+) -> policy.DoRResult:
+
+    install_kit(tmp_path)
+    record = {"id": "feat.1", "labels": [], **fields}
     _install(monkeypatch, FakeBr(records={"feat.1": record}))
     lint = Proc(json.dumps({"results": [{"missing": []}]}))
     monkeypatch.setattr(policy, "_write", lambda _root, _args, **_kw: lint)
@@ -160,16 +169,20 @@ def test_a_heading_quoted_mid_sentence_is_declared_to_neither_reader(
     assert heading in verdict.missing
 
 
-def test_a_real_heading_is_declared_to_both_readers(
+def test_an_open_record_is_ready_on_the_typed_field_and_not_on_the_heading_alone(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     heading = plan_record.ACCEPTANCE_HEADING
     trigger = "## Trigger\n\nWhen gated, I want a trigger, so I can validate it.\n\n"
-    body = f"{trigger}{heading}\n\n- given a bead when it is gated then it is held to this\n"
+    criterion = "- given a bead when it is gated then it is held to this"
 
-    assert plan_record.section_entries(body, heading) != ()
+    heading_only = _dor_verdict(monkeypatch, tmp_path, f"{trigger}{heading}\n\n{criterion}\n")
+    typed = _dor_verdict_of(
+        monkeypatch,
+        tmp_path,
+        {"description": trigger, plan_record.ACCEPTANCE_FIELD: criterion},
+    )
 
-    verdict = _dor_verdict(monkeypatch, tmp_path, body)
-
-    assert verdict.ready
-    assert verdict.missing == ()
+    assert heading in heading_only.missing
+    assert typed.ready
+    assert typed.missing == ()

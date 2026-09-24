@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 
 ACCEPTANCE_HEADING = "## Acceptance Criteria"
+ACCEPTANCE_FIELD = "acceptance_criteria"
 SCOPE_HEADING = "## Scope"
 PLAN_HEADING = "## Plan"
 
@@ -109,3 +111,37 @@ def _parse_recorded_list(value: str | None) -> tuple[str, ...] | None:
         return ()
     matches = (_BACKTICKED.match(item.strip()) for item in value.split(","))
     return tuple(match.group(1) for match in matches if match)
+
+
+class PlanRecordError(ValueError):
+    pass
+
+
+def _field_entries(text: str) -> tuple[str, ...]:
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    bullets = [match.group(1).strip() for line in lines if (match := _BULLET_LINE.match(line))]
+    return tuple(bullets or lines)
+
+
+def acceptance_of(record: Mapping[str, object], *, closed: bool) -> tuple[str, ...]:
+
+    field = record.get(ACCEPTANCE_FIELD)
+    if isinstance(field, str) and field.strip():
+        return _field_entries(field)
+    described = record.get("description")
+    legacy = section_entries(described if isinstance(described, str) else "", ACCEPTANCE_HEADING)
+    if legacy and not closed:
+        raise PlanRecordError(
+            f"the record holds its acceptance criteria only under the {ACCEPTANCE_HEADING} "
+            f"heading, and an open record reads them from the `{ACCEPTANCE_FIELD}` field; "
+            f"set it with --acceptance"
+        )
+    return legacy
+
+
+def recorded_plan(record: Mapping[str, object], *, closed: bool = False) -> RecordedPlan:
+
+    described = record.get("description")
+    parsed = parse_plan_section(described if isinstance(described, str) else "")
+    return replace(parsed, acceptance=acceptance_of(record, closed=closed))

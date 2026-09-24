@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,6 +27,7 @@ class FakeBr:
     def __init__(self, *, records: dict[str, dict] | None = None) -> None:
         self.records = records or {}
         self.created: list[tuple[str, str, str]] = []
+        self.typed: dict[str, dict[str, str]] = {}
         self.edges: list[tuple[str, str, str]] = []
         self._counter = 0
 
@@ -34,6 +36,14 @@ class FakeBr:
             self._counter += 1
             issue_id = f"feat.{self._counter}"
             self.created.append((issue_id, args[1], args[args.index("-d") + 1]))
+            self.typed[issue_id] = {
+                name: args[args.index(flag) + 1]
+                for flag, name in (
+                    ("--acceptance", plan_record.ACCEPTANCE_FIELD),
+                    ("--requirements", "requirements"),
+                )
+                if flag in args
+            }
             return Proc(json.dumps({"id": issue_id}))
         if args[:1] == ["show"]:
             record = self.records.get(args[1], {"id": args[1], "labels": []})
@@ -48,6 +58,10 @@ class FakeBr:
         if args[:2] == ["comments", "add"]:
             return Proc("")
         raise AssertionError(f"unexpected br call: {args}")
+
+    def record(self, issue_id: str) -> dict[str, str]:
+        body = next(created[2] for created in self.created if created[0] == issue_id)
+        return {"description": body, **self.typed[issue_id]}
 
 
 def install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., Proc]) -> None:
@@ -97,9 +111,6 @@ def recorded_body(**overrides: object) -> str:
     }
     fields.update(overrides)
     sections = []
-    if fields["acceptance"]:
-        entries = "\n".join(f"- {item}" for item in fields["acceptance"])  # type: ignore[union-attr]
-        sections.append(f"{plan_record.ACCEPTANCE_HEADING}\n\n{entries}")
     if fields["scope"]:
         entries = "\n".join(f"- `{glob}`" for glob in fields["scope"])  # type: ignore[union-attr]
         sections.append(f"{plan_record.SCOPE_HEADING}\n\n{entries}")
@@ -117,3 +128,18 @@ def recorded_body(**overrides: object) -> str:
     if plan_lines:
         sections.append(plan_record.PLAN_HEADING + "\n\n" + "\n".join(plan_lines))
     return "\n\n".join(sections) + "\n"
+
+
+def recorded(**overrides: object) -> dict[str, str]:
+
+    acceptance = overrides.get(
+        "acceptance", ("given the lane when it is dispatched then it is held to this",)
+    )
+    entries = "\n".join(f"- {item}" for item in acceptance)  # type: ignore[union-attr]
+    return {"description": recorded_body(**overrides), plan_record.ACCEPTANCE_FIELD: entries}
+
+
+def install_kit(root: Path) -> None:
+
+    source = Path(__file__).resolve().parent.parent / ".basicly" / "core" / "kit" / "tracker"
+    shutil.copytree(source, root / ".basicly" / "core" / "kit" / "tracker", dirs_exist_ok=True)

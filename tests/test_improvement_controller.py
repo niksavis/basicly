@@ -118,8 +118,11 @@ def test_the_filed_lane_declares_the_measurement_its_scope_and_its_plan() -> Non
     assert "- `src/basicly/cli.py`" in body
     assert "- `pyproject.toml`" in body
     assert "- `tests/test_cli*.py`" in body
-    for heading in ("## Acceptance Criteria", "## Scope", "## Plan"):
+    for heading in ("## Scope", "## Plan"):
         assert heading in body
+    assert "## Acceptance Criteria" not in body
+    acceptance = ctl.lane_acceptance(ctl.Candidate("src/basicly/cli.py", CAP + 47078, 47078))
+    assert "src/basicly/cli.py" in acceptance and acceptance.startswith("- When ")
 
 
 def test_a_target_already_named_test_renders_no_double_prefixed_glob() -> None:
