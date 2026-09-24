@@ -1,0 +1,1 @@
+- The tracker page shows each story state as a symbol in front of the row: open, in progress, blocked (also a story waiting on an open one), deferred and closed. Type pills are neutral, so colour means state or urgency only, and row properties follow scan order. (basicly-mu54qye)
