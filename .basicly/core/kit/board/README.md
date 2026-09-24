@@ -34,11 +34,12 @@ same server and removes machine paths from what it writes.
 ## The page
 
 The page lists the stories on the left and shows one story on the right. The tabs are
-Ready, Refine, Blocked, Mine, All open and Closed. Search matches titles and ids, and `/`
+Ready, In progress, Refine, Blocked, Mine, All open and Closed. Search matches titles and ids, and `/`
 moves to the search box. Each row shows the priority, the type, the age, the holder and one
 warning. The story pane renders the text, offers one main action for the state of the
 story (Claim when nobody holds it, Close when you hold it), and keeps the rest in its More
-menu. `#/record/<id>` opens a story, so a link to a story works.
+menu. Edit (or the key `e`) opens one form for the whole story. `#/record/<id>` opens a
+story, so a link to a story works.
 
 ## Refinement
 
@@ -82,7 +83,7 @@ binds another address. Anyone who can reach that address can then write.
 ## Build your own
 
 - **Your own page:** write static files and run `serve --web DIR`. Call the API with
-  `fetch`. `web/index.html` is a complete example of about 590 lines.
+  `fetch`. `web/index.html` is a complete example of about 630 lines.
 - **Your own server or tool:** call the tracker kit directly. `cli.invoke(args)` returns the
   exit code and the report for any command. Build `args` with `cli.arguments.parser()`.
 - **Your own chart or report:** read the JSON of `ready`, `blocked`, `stats`, `list` and

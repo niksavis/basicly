@@ -41,6 +41,11 @@
   .id { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--muted); }
   .p { font: 600 .75rem ui-monospace, monospace; border-radius: 5px; padding: .05rem .3rem; align-self: start; text-align: center; background: var(--raise); color: var(--muted); }
   .p0 { background: var(--bad); color: white; } .p1 { background: var(--warn); color: black; }
+  .pill { display: inline-block; font-size: .75rem; font-weight: 600; line-height: 1.5; padding: 0 .5rem; border-radius: 999px; border: 1px solid currentColor; }
+  .t-bug { color: var(--bad); } .t-feature { color: var(--accent); } .t-epic { color: light-dark(#7c3aed, #c4a5ff); }
+  .t-task { color: var(--muted); } .t-chore { color: light-dark(#0f766e, #5eead4); }
+  .s-in_progress { color: var(--accent); } .s-blocked { color: var(--bad); } .s-deferred, .s-open { color: var(--muted); } .s-closed { color: var(--ok); }
+  .crumbs .p { font-size: .8rem; padding: .05rem .45rem; }
   .warn { color: var(--warn); } .bad { color: var(--bad); } .held { color: var(--held); } .ok { color: var(--ok); }
   .empty { color: var(--muted); padding: 1rem; }
   .crumbs { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; color: var(--muted); }
@@ -62,7 +67,6 @@
   .notice { padding: .5rem .8rem; border-radius: 8px; margin-bottom: .8rem; border: 1px solid var(--line); }
   .notice.warn { border-color: var(--warn); } .notice.bad { border-color: var(--bad); }
   section.block { margin: 1.1rem 0; }
-  section.block > h3 .link { text-transform: none; letter-spacing: 0; }
   section.block > h3 { display: flex; align-items: baseline; gap: .8rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 .4rem; }
   .md p { margin: .3rem 0; } .md h4 { margin: .7rem 0 .2rem; font-size: .95rem; }
   .md ul { margin: .2rem 0; padding-left: 1.2rem; } .md li.check { list-style: none; margin-left: -1.2rem; }
@@ -73,7 +77,9 @@
   .md pre { background: var(--raise); padding: .6rem; border-radius: 6px; overflow: auto; }
   .none { color: var(--muted); font-style: italic; }
   textarea, input.field { width: 100%; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
-  textarea { min-height: 9rem; resize: vertical; font-family: ui-monospace, monospace; font-size: .88rem; }
+  textarea { min-height: 7rem; resize: vertical; font-family: ui-monospace, monospace; font-size: .88rem; line-height: 1.5; overflow: hidden; }
+  textarea.tall { min-height: 16rem; }
+  .form-foot { position: sticky; bottom: -3rem; display: flex; gap: .6rem; align-items: center; padding: .7rem 0 3rem; background: var(--bg); border-top: 1px solid var(--line); margin-top: .6rem; }
   .row-actions { display: flex; gap: .5rem; margin-top: .4rem; align-items: center; }
   .links { list-style: none; margin: 0; padding: 0; }
   .links li { display: flex; gap: .6rem; align-items: baseline; padding: .15rem 0; }
@@ -84,6 +90,7 @@
   .comments .text { white-space: pre-wrap; }
   form.grid { display: grid; gap: .6rem; }
   form.grid label { display: grid; gap: .2rem; color: var(--muted); font-size: .85rem; }
+  form.grid select { min-width: 10rem; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); font-size: .9rem; }
   .inline { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
   #toast { position: fixed; right: 1rem; bottom: 1rem; max-width: 34rem; padding: .6rem .9rem; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 24px #0004; display: none; }
   #toast.show { display: block; } #toast.bad { border-color: var(--bad); color: var(--bad); }
@@ -128,7 +135,7 @@ const TYPES = ["task", "feature", "bug", "chore", "epic"];
 const PRIORITIES = [["0", "critical"], ["1", "high"], ["2", "medium"], ["3", "low"], ["4", "backlog"]];
 const STATUSES = ["open", "in_progress", "blocked", "deferred"];
 const EDGE_TYPES = ["blocks", "related", "parent-child"];
-const TABS = [["ready", "Ready"], ["refine", "Refine"], ["blocked", "Blocked"], ["mine", "Mine"], ["active", "All open"], ["closed", "Closed"]];
+const TABS = [["ready", "Ready"], ["working", "In progress"], ["refine", "Refine"], ["blocked", "Blocked"], ["mine", "Mine"], ["active", "All open"], ["closed", "Closed"]];
 const LIST_CAP = 400;
 const state = { me: "", records: new Map(), closed: null, ready: [], refine: new Map(), blocked: new Map(), tab: "ready", type: "", sort: "rank", query: "", current: null };
 
@@ -212,8 +219,12 @@ async function load() {
 }
 
 function drawCounts() {
-  const counts = [["ready", state.ready.length], ["refine", state.refine.size], ["blocked", state.blocked.size], ["open", state.records.size]];
+  const counts = [["ready", state.ready.length], ["in progress", [...state.records.values()].filter(working).length], ["refine", state.refine.size], ["blocked", state.blocked.size], ["open", state.records.size]];
   document.getElementById("counts").replaceChildren(...counts.map(([name, value]) => el("span", {}, el("b", {}, String(value)), " " + name)));
+}
+
+function working(record) {
+  return record.status === "in_progress";
 }
 
 function mine(record) {
@@ -225,6 +236,7 @@ function population() {
   if (state.tab === "ready") return state.ready.map((row) => ({ id: row.record, rank: row.rank, record: records.get(row.record) }));
   if (state.tab === "refine") return [...state.refine.values()].map((row) => ({ id: row.record, record: records.get(row.record) }));
   if (state.tab === "blocked") return [...state.blocked.values()].map((row) => ({ id: row.record, record: records.get(row.record) }));
+  if (state.tab === "working") return [...records.values()].filter(working).map((record) => ({ id: record.record, record }));
   if (state.tab === "mine") return [...records.values()].filter(mine).map((record) => ({ id: record.record, record }));
   if (state.tab === "closed") return (state.closed || []).map((record) => ({ id: record.record, record }));
   return [...records.values()].map((record) => ({ id: record.record, record }));
@@ -266,13 +278,17 @@ async function pick(key) {
 }
 
 function drawTabs() {
-  const sizes = { ready: state.ready.length, refine: state.refine.size, blocked: state.blocked.size, mine: [...state.records.values()].filter(mine).length, active: state.records.size, closed: state.closed ? state.closed.length : null };
+  const sizes = { working: [...state.records.values()].filter(working).length, ready: state.ready.length, refine: state.refine.size, blocked: state.blocked.size, mine: [...state.records.values()].filter(mine).length, active: state.records.size, closed: state.closed ? state.closed.length : null };
   document.getElementById("tabs").replaceChildren(...TABS.map(([key, name]) => el("button", {
     class: "tab", type: "button", "aria-pressed": String(state.tab === key), onclick: () => pick(key),
   }, name, sizes[key] === null ? null : el("span", { class: "n" }, String(sizes[key])))));
   document.getElementById("types").replaceChildren(...[["", "all types"], ...TYPES.map((t) => [t, t])].map(([key, name]) => el("button", {
     class: "chip", type: "button", "aria-pressed": String(state.type === key), onclick: () => { state.type = key; drawList(); },
   }, name)));
+}
+
+function typePill(type) {
+  return el("span", { class: "pill t-" + type }, type);
 }
 
 function row(item) {
@@ -285,9 +301,9 @@ function row(item) {
   el("span", { class: "p p" + priority }, priority === "" ? "–" : "P" + priority),
   el("span", { class: "title" }, String(record.fields.title || item.id)),
   el("span", { class: "meta" },
+    record.fields.issue_type ? typePill(record.fields.issue_type) : null,
     el("span", { class: "id" }, item.id),
-    record.fields.issue_type ? el("span", {}, record.fields.issue_type) : null,
-    record.status && record.status !== "open" ? el("span", {}, record.status.replace("_", " ")) : null,
+    record.status && record.status !== "open" ? el("span", { class: "pill s-" + record.status }, record.status.replace("_", " ")) : null,
     record.dates && record.dates.updated ? el("span", { title: "last updated " + record.dates.updated }, age(record.dates.updated)) : null,
     holder ? el("span", { class: "held" }, "● " + holder) : null,
     badge(item))));
@@ -389,17 +405,64 @@ function select(options, value, onchange, unset) {
     ...options.map(([key, name]) => el("option", { value: key, selected: String(key) === String(value) }, name)));
 }
 
-function section(title, key, value, placeholder) {
-  const body = el("div", {}, value && String(value).trim() ? markdown(value) : el("div", { class: "none" }, placeholder));
-  const edit = el("button", { class: "link", type: "button", onclick: () => {
-    const area = el("textarea", {}, String(value || ""));
-    body.replaceChildren(area, el("div", { class: "row-actions" },
-      el("button", { class: "btn", type: "button", onclick: () => patch({ [key]: area.value, add_labels: [REFINE] }, "saved; an agent refinement pass owes it before it is ready") }, "Save"),
-      el("button", { class: "btn plain", type: "button", onclick: () => open(state.current.record) }, "Cancel"),
-      el("span", { class: "meta" }, "saving asks for an agent refinement pass")));
-    area.focus();
-  } }, "edit");
-  return el("section", { class: "block" }, el("h3", {}, title, edit), body);
+function section(title, value, placeholder) {
+  return el("section", { class: "block" }, el("h3", {}, title),
+    value && String(value).trim() ? markdown(value) : el("div", { class: "none" }, placeholder));
+}
+
+function grow(area) {
+  const fit = () => { area.style.height = "auto"; area.style.height = area.scrollHeight + 2 + "px"; };
+  area.addEventListener("input", fit);
+  requestAnimationFrame(fit);
+  return area;
+}
+
+const CONTENT = ["title", "description", "acceptance", "requirements"];
+
+function storyForm(values, { status, submit, cancel, note }) {
+  const type = select(TYPES.map((t) => [t, t]), values.issue_type, () => {}, "no type");
+  const priority = select(PRIORITIES.map(([key, name]) => [key, "P" + key + " " + name]), values.priority, () => {}, "no priority");
+  const state_ = status ? select(STATUSES.map((one) => [one, one.replace("_", " ")]), status, () => {}) : null;
+  const area = (name, text, placeholder, tall) => grow(el("textarea", { name, placeholder, class: tall ? "tall" : null }, String(text || "")));
+  const form = el("form", { class: "grid" },
+    el("label", {}, "Title", el("input", { class: "field", name: "title", required: true, value: String(values.title || "") })),
+    el("div", { class: "inline" }, el("label", {}, "Type", type), el("label", {}, "Priority", priority), state_ ? el("label", {}, "Status", state_) : null),
+    el("label", {}, "Story", area("description", values.description, "When <situation>, I want to <motivation>, so I can <outcome>.", true)),
+    el("label", {}, "Acceptance criteria", area("acceptance", values.acceptance, "- [ ] a check a person can run")),
+    el("label", {}, "Requirements", area("requirements", values.requirements, "- what the solution must hold to")),
+    el("div", { class: "form-foot" }, el("button", { class: "btn", type: "submit" }, submit),
+      el("button", { class: "btn plain", type: "button", onclick: cancel }, "Cancel"),
+      el("span", { class: "meta" }, note + "  ·  Ctrl+Enter saves")));
+  form.addEventListener("keydown", (event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) form.requestSubmit(); });
+  form.read = () => ({
+    title: form.title.value, description: form.description.value, acceptance: form.acceptance.value, requirements: form.requirements.value,
+    issue_type: type.value, priority: priority.value, status: state_ ? state_.value : undefined,
+  });
+  return form;
+}
+
+function edit(shown) {
+  const f = shown.fields;
+  const before = { title: f.title, description: f.description, acceptance: f.acceptance_criteria, requirements: f.requirements, issue_type: f.issue_type, priority: f.priority };
+  const form = storyForm(before, { status: shown.status, submit: "Save", cancel: () => open(shown.record), note: "a change to the text asks for an agent refinement pass" });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const after = form.read();
+    const body = {};
+    for (const key of CONTENT) if (String(after[key] || "") !== String(before[key] || "")) body[key] = after[key];
+    const fields = {};
+    if (after.issue_type && after.issue_type !== before.issue_type) fields.issue_type = after.issue_type;
+    if (after.priority !== "" && String(after.priority) !== String(before.priority ?? "")) fields.priority = Number(after.priority);
+    if (Object.keys(fields).length) body.fields = fields;
+    if (after.status !== shown.status) body.status = after.status;
+    if (!Object.keys(body).length) return open(shown.record);
+    const text = CONTENT.some((key) => key in body);
+    if (text) body.add_labels = [REFINE];
+    patch(body, text ? "saved; an agent refinement pass owes it before it is ready" : "saved");
+  });
+  document.getElementById("detail-pane").replaceChildren(
+    el("div", { class: "crumbs" }, el("span", { class: "id" }, shown.record), el("span", {}, "editing")), form);
+  form.title.focus();
 }
 
 function since(held) {
@@ -443,7 +506,7 @@ function actionsBar(shown) {
       el("button", { class: "btn", type: "button", onclick: () => act("deps", { target: target.value.trim(), type: kind.value }, "dependency recorded") }, "Add"), cancel());
     target.focus();
   });
-  bar.append(el("span", { class: "grow" }), more);
+  bar.append(el("span", { class: "grow" }), el("button", { class: "btn plain", type: "button", title: "edit the story (e)", onclick: () => edit(shown) }, "Edit"), more);
   return bar;
 }
 
@@ -483,26 +546,17 @@ function notices(shown, dor) {
 }
 
 function titleBlock(shown) {
-  const f = shown.fields;
-  const title = el("h2", { class: "story-title", title: "double-click to edit" }, String(f.title || shown.record));
-  title.addEventListener("dblclick", () => {
-    const input = el("input", { class: "field", value: String(f.title || "") });
-    title.replaceWith(el("div", { class: "row-actions" }, input,
-      el("button", { class: "btn", type: "button", onclick: () => patch({ title: input.value }, "title saved") }, "Save"),
-      el("button", { class: "btn plain", type: "button", onclick: () => open(shown.record) }, "Cancel")));
-    input.focus();
-  });
-  return title;
+  return el("h2", { class: "story-title" }, String(shown.fields.title || shown.record));
 }
 
 function crumbs(shown) {
   const f = shown.fields;
   const labels = String(f.labels || "").split(",").map((one) => one.trim()).filter(Boolean);
-  const closed = shown.status === "closed";
+  const priority = PRIORITIES.find(([key]) => key === String(f.priority));
   return el("div", { class: "crumbs" }, el("span", { class: "id" }, shown.record),
-    select(TYPES.map((t) => [t, t]), f.issue_type, (value) => patch({ fields: { issue_type: value } }, "type saved"), "no type"),
-    select(PRIORITIES.map(([key, name]) => [key, "P" + key + " " + name]), f.priority, (value) => patch({ fields: { priority: Number(value) } }, "priority saved"), "no priority"),
-    closed ? el("span", { class: "ok" }, "closed") : select(STATUSES.map((s) => [s, s.replace("_", " ")]), shown.status, (value) => patch({ status: value }, "status saved")),
+    f.issue_type ? typePill(f.issue_type) : el("span", { class: "pill t-task" }, "no type"),
+    priority ? el("span", { class: "p p" + priority[0] }, "P" + priority[0] + " " + priority[1]) : el("span", { class: "p" }, "no priority"),
+    el("span", { class: "pill s-" + shown.status }, String(shown.status || "").replace("_", " ")),
     shown.dates && shown.dates.updated ? el("span", { title: shown.dates.updated }, "updated " + age(shown.dates.updated) + " ago") : null,
     labels.length ? el("span", {}, labels.join(", ")) : null);
 }
@@ -526,9 +580,9 @@ async function open(record) {
     titleBlock(shown),
     shown.status === "closed" ? el("div", { class: "notice" }, "Closed: " + String(f.close_reason || "")) : actionsBar(shown),
     ...notices(shown, dor),
-    section("Story", "description", f.description, "no story yet: say when it happens, what the person wants, and what for"),
-    section("Acceptance criteria", "acceptance", f.acceptance_criteria, "no acceptance criteria yet"),
-    section("Requirements", "requirements", f.requirements, "no requirements yet"),
+    section("Story", f.description, "no story yet: say when it happens, what the person wants, and what for"),
+    section("Acceptance criteria", f.acceptance_criteria, "no acceptance criteria yet"),
+    section("Requirements", f.requirements, "no requirements yet"),
     linksBlock(shown),
     commentsBlock(shown));
   pane.scrollTop = 0;
@@ -544,25 +598,17 @@ function blank() {
   document.body.classList.add("reading");
   state.current = null;
   drawList();
-  const type = select(TYPES.map((t) => [t, t]), "task", () => {});
-  const priority = select(PRIORITIES.map(([key, name]) => [key, "P" + key + " " + name]), "2", () => {});
-  const form = el("form", { class: "grid" },
-    el("label", {}, "Title", el("input", { class: "field", name: "title", required: true })),
-    el("div", { class: "inline" }, el("label", {}, "Type", type), el("label", {}, "Priority", priority)),
-    el("label", {}, "Story", el("textarea", { name: "description", placeholder: "When <situation>, I want to <motivation>, so I can <outcome>." })),
-    el("label", {}, "Acceptance criteria", el("textarea", { name: "acceptance", placeholder: "- [ ] a check a person can run" })),
-    el("label", {}, "Requirements", el("textarea", { name: "requirements" })),
-    el("div", { class: "row-actions" }, el("button", { class: "btn", type: "submit" }, "Create"),
-      el("span", { class: "meta" }, "a new story waits for an agent refinement pass before it is ready")));
+  const form = storyForm({ issue_type: "task", priority: "2" }, { submit: "Create", cancel: back, note: "a new story waits for an agent refinement pass before it is ready" });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    const body = { title: form.title.value, description: form.description.value, fields: { issue_type: type.value, priority: Number(priority.value), labels: REFINE } };
-    if (form.acceptance.value.trim()) body.acceptance = form.acceptance.value;
-    if (form.requirements.value.trim()) body.requirements = form.requirements.value;
+    const made = form.read();
+    const body = { title: made.title, description: made.description, fields: { issue_type: made.issue_type || "task", priority: Number(made.priority || 2), labels: REFINE } };
+    if (made.acceptance.trim()) body.acceptance = made.acceptance;
+    if (made.requirements.trim()) body.requirements = made.requirements;
     attempt(async () => {
-      const made = await call("POST", "/records", body);
+      const report = await call("POST", "/records", body);
       await load();
-      go(made.record);
+      go(report.record);
     }, "created");
   });
   document.getElementById("detail-pane").replaceChildren(el("button", { class: "link back", type: "button", onclick: back }, "← back to the list"), el("h2", { class: "story-title" }, "New story"), form);
@@ -578,7 +624,10 @@ document.getElementById("search").addEventListener("input", (event) => { state.q
 document.getElementById("sort").addEventListener("change", (event) => { state.sort = event.target.value; drawList(); });
 document.getElementById("new").addEventListener("click", blank);
 document.addEventListener("keydown", (event) => {
-  if (event.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) { event.preventDefault(); document.getElementById("search").focus(); }
+  const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName);
+  if (typing || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.key === "/") { event.preventDefault(); document.getElementById("search").focus(); }
+  if (event.key === "e" && state.current && state.current.status !== "closed" && !document.querySelector("#detail-pane form")) { event.preventDefault(); edit(state.current); }
 });
 window.addEventListener("hashchange", routed);
 document.getElementById("detail-pane").append(el("div", { class: "empty" }, "Pick a story from the list, or press New story."));

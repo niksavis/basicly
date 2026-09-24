@@ -255,10 +255,13 @@ def test_every_action_the_page_posts_is_a_route_the_server_takes() -> None:
 
 def test_every_key_the_page_patches_is_one_the_server_accepts() -> None:
     patched = set(re.findall(r"patch\(\{ ?\"?([a-z_]+)\"?:", PAGE))
-    sections = set(re.findall(r'section\("[^"]+", "([a-z_]+)"', PAGE))
+    content = re.search(r"const CONTENT = \[([^\]]*)\]", PAGE)
+    assert content
+    edited = set(re.findall(r'"([a-z_]+)"', content.group(1)))
+    assigned = set(re.findall(r"\bbody\.([a-z_]+) =", PAGE))
 
-    assert patched and sections
-    assert patched | sections <= server._UPDATE_KEYS
+    assert patched and edited and assigned
+    assert patched | edited | assigned <= server._UPDATE_KEYS
 
 
 def test_every_list_the_page_reads_is_a_read_the_server_answers() -> None:
