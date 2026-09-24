@@ -1,1 +1,0 @@
-- The tracker page no longer overwrites a change another writer made while you edited: `update --if-seq` refuses a field changed after you read it, and the page keeps your text. It refreshes itself, names a missing story, and a readiness read answers 200 with its verdict. (basicly-jyhk9ek)

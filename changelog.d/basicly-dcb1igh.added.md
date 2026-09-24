@@ -1,1 +1,0 @@
-- Four new user-invoked tool skills for the tools terminal-setup installs: `tool-just`, `tool-direnv`, `tool-git-lfs` and `tool-lazygit`. Each is checked against the installed version and tells an agent what it must not run on its own. (basicly-dcb1igh)

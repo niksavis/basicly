@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.3 - 2026-09-24
+
+Delta: v0.18.2..v0.18.3
+
 This release makes the tracker page safe to use beside the CLI and agents, and easier to
 scan. A save in the page no longer replaces a change someone else made while you edited.
 The page refreshes itself, and every row shows the story's state, its links and its labels.
@@ -22,6 +26,26 @@ A claim now records who made it.
   `basicly-xpjqoif`, `basicly-jyhk9ek`).
 - **Four tool skills:** `tool-just`, `tool-direnv`, `tool-git-lfs` and `tool-lazygit`
   (`basicly-dcb1igh`).
+
+### Added
+
+- Four new user-invoked tool skills for the tools terminal-setup installs: `tool-just`, `tool-direnv`, `tool-git-lfs` and `tool-lazygit`. Each is checked against the installed version and tells an agent what it must not run on its own. (basicly-dcb1igh)
+
+- The tracker page suggests stories in its search, labels in the edit form and people in the new Assign to someone action. (basicly-jyhk9ek)
+
+- Each tracker page row names what the story waits on, what it blocks, its parent, its children and its labels. The story pane removes a link with a confirmation and shows a Details section with dates, the worktree link and imported text. `undep` retracts a dependency; `list` rows carry `dependencies`. (basicly-xpjqoif)
+
+### Changed
+
+- Moving a story nobody holds to `in_progress` now names you as its holder, through the kit and through `basicly tracker write update`, so an agent claim shows who works on it. (basicly-jyhk9ek)
+
+- The tracker page shows each story state as a symbol in front of the row: open, in progress, blocked (also a story waiting on an open one), deferred and closed. Type pills are neutral, so colour means state or urgency only, and row properties follow scan order. (basicly-mu54qye)
+
+### Fixed
+
+- The tracker page server reads the rest of a refused request before it answers, so on Windows the client gets the refusal instead of an aborted connection. (basicly-4g7iwbb)
+
+- The tracker page no longer overwrites a change another writer made while you edited: `update --if-seq` refuses a field changed after you read it, and the page keeps your text. It refreshes itself, names a missing story, and a readiness read answers 200 with its verdict. (basicly-jyhk9ek)
 
 ## v0.18.2 - 2026-09-24
 

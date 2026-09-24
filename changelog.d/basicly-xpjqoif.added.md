@@ -1,1 +1,0 @@
-- Each tracker page row names what the story waits on, what it blocks, its parent, its children and its labels. The story pane removes a link with a confirmation and shows a Details section with dates, the worktree link and imported text. `undep` retracts a dependency; `list` rows carry `dependencies`. (basicly-xpjqoif)
