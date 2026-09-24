@@ -62,6 +62,9 @@ DOCUMENTED = [
 
 def _consumer(tmp_path: Path) -> Path:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # nosec B603 B607
+    subprocess.run(  # nosec B603 B607
+        ["git", "-C", str(tmp_path), "config", "user.name", "Docs Reader"], check=True
+    )
     kit = installer.Kit(
         command="basicly-tracker",
         name="tracker",
