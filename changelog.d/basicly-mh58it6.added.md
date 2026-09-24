@@ -1,1 +1,0 @@
-- A model-invoked `cli-tools` skill names the installed command-line tools and when to use each, and points to the user-invoked `tool-*` skills; the listing stays at 1900 of 2000 tokens. (basicly-mh58it6)
