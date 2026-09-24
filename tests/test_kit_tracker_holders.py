@@ -287,3 +287,17 @@ def test_moving_a_held_story_to_in_progress_keeps_its_holder(
 
     _, shown = _run(capsys, "show", str(ledger), record)
     assert (shown["status"], shown["holder"]["name"]) == ("in_progress", "alex")
+
+
+def test_a_chosen_holder_name_wins_over_the_git_user_name(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    config = "[user]\n\tname = Real Name\n[basicly]\n\tholder = pseudonym\n"
+    (home / ".gitconfig").write_text(config, encoding="utf-8")
+    holders = cli.commands.holders
+    environ = {"HOME": str(home), "GIT_AUTHOR_NAME": "Author Name"}
+
+    assert holders.default_holder(tmp_path, environ) == "pseudonym"
+    assert holders.default_holder(tmp_path, {**environ, "BASICLY_HOLDER": "env name"}) == "env name"
+    (home / ".gitconfig").write_text("[user]\n\tname = Real Name\n", encoding="utf-8")
+    assert holders.default_holder(tmp_path, environ) == "Author Name"

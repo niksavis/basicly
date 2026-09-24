@@ -1,0 +1,1 @@
+- The tracker holder is a name you choose: `BASICLY_HOLDER` or `git config basicly.holder` wins over your git user name, so a pseudonym keeps your name out of the ledger. `identity-guard` now refuses a commit that adds your git user name anywhere except the holder field, and the shipped rule names that one exception. (basicly-fs7bkwu)

@@ -42,7 +42,7 @@ Make a wrong use impossible, or stop it at once with the fix (poka-yoke). A refu
 - Pass shell arguments and query values as parameters. Concatenated input runs as syntax.
 - Keep secrets in environment variables or a secret manager, out of the repository and the logs. A commit outlives the fix.
 - Log the internal detail and return a generic message. A stack trace or a path maps the system.
-- Commit no machine path, user name or host name. It breaks the next clone.
+- Commit no machine path, user name or host name. It breaks the next clone. The tracker's holder field is the one exception: it records the name you choose with `git config basicly.holder`.
 
 ## Decision Protocol
 
