@@ -54,10 +54,13 @@
   .st-deferred { border-style: dashed; }
   .st-closed { border-color: var(--ok); background: var(--ok); }
   .s-in_progress { color: var(--accent); } .s-blocked { color: var(--bad); } .s-deferred, .s-open { color: var(--muted); } .s-closed { color: var(--ok); }
-  .warn { color: var(--warn); } .bad { color: var(--bad); } .held { color: var(--held); } .ok { color: var(--ok); }
+  .bad { color: var(--bad); } .held { color: var(--held); } .ok { color: var(--ok); }
   .empty { color: var(--muted); padding: 1rem; }
   .links-line { color: var(--muted); font-size: .8rem; display: flex; flex-wrap: wrap; gap: .1rem .7rem; }
-  .links-line .open-blocker { color: var(--warn); }
+  .links-line .open-blocker { color: var(--bad); }
+  .needs { color: var(--muted); border-bottom: 1px dotted var(--muted); cursor: help; }
+  .notice ul { margin: .3rem 0 0; padding-left: 1.2rem; }
+  .notice li b { font-weight: 600; }
   .label { font-size: .72rem; padding: 0 .4rem; border-radius: 4px; background: var(--raise); color: var(--muted); }
   details.facts summary { cursor: pointer; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
   details.facts dl { display: grid; grid-template-columns: 11rem 1fr; gap: .2rem .8rem; margin: .5rem 0 0; font-size: .88rem; }
@@ -86,7 +89,7 @@
   .picker li[aria-selected="true"], .picker li:hover { background: var(--raise); }
   .verdict { font-size: .85rem; flex-basis: 100%; }
   .notice { padding: .5rem .8rem; border-radius: 8px; margin-bottom: .8rem; border: 1px solid var(--line); }
-  .notice.warn { border-color: var(--warn); } .notice.bad { border-color: var(--bad); }
+  .notice.note { border-color: var(--line); color: var(--text); } .notice.bad { border-color: var(--bad); }
   section.block { margin: 1.1rem 0; }
   section.block > h3 { display: flex; align-items: baseline; gap: .8rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 .4rem; }
   .md p { margin: .3rem 0; } .md h4 { margin: .7rem 0 .2rem; font-size: .95rem; }
@@ -211,8 +214,26 @@ function age(stamp) {
   return Math.round(days / 30) + "mo";
 }
 
-function owes(names) {
-  return (names || []).map((name) => name.replace(/^## /, "")).join(", ");
+const SECTIONS = {
+  "Trigger": ["why", "the situation that causes the work: When <situation>, I want <goal>, so I can <outcome>."],
+  "Acceptance Criteria": ["done-check", "checks that prove the work is done, one per line: - [ ] <a check a person can run>."],
+  "Requirements": ["rules", "what the solution must hold to, for example: standard library only."],
+  "Steps to Reproduce": ["repro steps", "the steps that make the bug happen, one per line."],
+  "Success Criteria": ["success criteria", "what must be true when the whole epic is done."],
+};
+
+function sectionOf(name) {
+  const bare = name.replace(/^## /, "");
+  return [bare, ...(SECTIONS[bare] || [bare.toLowerCase(), "a section the template for this type requires."])];
+}
+
+function needs(names) {
+  const parts = (names || []).map(sectionOf);
+  return el("span", { class: "needs", title: parts.map(([bare, , what]) => bare + ": " + what).join("\n") }, "needs: " + parts.map(([, short]) => short).join(", "));
+}
+
+function needsList(names) {
+  return el("ul", {}, (names || []).map(sectionOf).map(([bare, short, what]) => el("li", {}, el("b", {}, bare), " (" + short + "): " + what)));
 }
 
 function writer(raw) {
@@ -293,8 +314,8 @@ function badge(item) {
   const record = item.record || {};
   if (record.contested && record.contested.length) return el("span", { class: "bad" }, "contested");
   const refine = state.refine.get(item.id);
-  if (refine && refine.blocking.length) return el("span", { class: "warn" }, "owes " + owes(refine.blocking));
-  if (refine && refine.labelled) return el("span", { class: "warn" }, "waits for refinement");
+  if (refine && refine.blocking.length) return needs(refine.blocking);
+  if (refine && refine.labelled) return el("span", { class: "needs", title: "a person wrote or changed it, so an agent reviews it before it is ready" }, "needs agent review");
   return null;
 }
 
@@ -793,9 +814,9 @@ function notices(shown, dor) {
   const found = [];
   const labels = String(shown.fields.labels || "").split(",").map((one) => one.trim());
   if (shown.conflicts && shown.conflicts.length) found.push(el("div", { class: "notice bad" }, "Two branches set different values: " + shown.conflicts.map((c) => c.key + " = " + c.values.join(" / ")).join("; ") + ". Run the kit's resolve command to keep the current value."));
-  if (labels.includes(REFINE)) found.push(el("div", { class: "notice warn" }, "Waits for an agent refinement pass before it is ready. ",
+  if (labels.includes(REFINE)) found.push(el("div", { class: "notice note" }, "Waits for an agent refinement pass before it is ready. ",
     el("button", { class: "link", type: "button", onclick: () => patch({ remove_labels: [REFINE] }, "marked refined") }, "Mark refined")));
-  if (shown.status !== "closed" && dor.blocking && dor.blocking.length) found.push(el("div", { class: "notice warn" }, "Not ready: owes " + owes(dor.blocking) + "."));
+  if (shown.status !== "closed" && dor.blocking && dor.blocking.length) found.push(el("div", { class: "notice note" }, "Not ready yet. Edit the story and add:", needsList(dor.blocking)));
   return found;
 }
 

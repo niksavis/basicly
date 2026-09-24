@@ -1,0 +1,1 @@
+- The tracker page says what a story still needs in plain words (why, done-check, rules) with an explanation, in grey instead of amber; a waiting story uses the blocked colour, so amber marks only P1. (basicly-3h8v48o)
