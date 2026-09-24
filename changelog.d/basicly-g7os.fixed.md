@@ -1,0 +1,1 @@
+- The `python` skill description now separates its triggers, so an agent reads each trigger as its own case.
