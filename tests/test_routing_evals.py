@@ -156,7 +156,7 @@ def test_the_report_line_says_so_when_no_floor_is_declared() -> None:
 
 def test_the_missing_floor_advice_states_the_unit_it_wants() -> None:
 
-    advice = "\n".join(routing.floor_violations(0.891, None, None))
+    advice = "\n".join(routing.floor_violations(0.891, None, 0.85))
 
     assert "fraction between 0 and 1, not a percentage" in advice
     assert "write 0.87, not 89.1" in advice

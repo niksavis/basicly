@@ -1,0 +1,1 @@
+- A fresh `basicly install` now passes its own `catalog lint`. The rank-1 routing floor is required only where a repository declared a high-water mark, so a consumer that cannot edit the vendored skills is not refused.

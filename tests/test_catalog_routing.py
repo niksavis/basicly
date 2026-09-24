@@ -113,7 +113,11 @@ def test_a_floor_below_its_high_water_mark_is_refused() -> None:
     assert routing.floor_violations(0.90, 0.90, 0.85) == []
 
 
-def test_an_undeclared_floor_is_a_violation_that_reports_the_measured_rate() -> None:
-    violations = routing.floor_violations(0.92, None, None)
+def test_a_floor_removed_below_its_high_water_mark_reports_the_measured_rate() -> None:
+    violations = routing.floor_violations(0.92, None, 0.85)
     assert len(violations) == 1
     assert "92.0%" in violations[0]
+
+
+def test_a_consumer_that_declares_no_floor_and_no_high_water_is_not_refused() -> None:
+    assert routing.floor_violations(0.50, None, None) == []
