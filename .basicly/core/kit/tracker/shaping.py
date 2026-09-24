@@ -14,6 +14,8 @@ DESCRIPTION_FIELD = "description"
 SHAPED_UNDER_FIELD = "shaped_under"
 SHAPING_RULE = "dor.v2"
 
+REFINE_LABEL = "refine"
+
 JOB_STORY_EXAMPLE = "When <situation>, I want to <motivation>, so I can <outcome>."
 USER_STORY_EXAMPLE = "As a <persona>, I want <goal>, so that <benefit>."
 
@@ -154,6 +156,10 @@ def refused(record: Mapping[str, object], *, closed: bool = False, template=None
     if minted_under_the_rule(record):
         return missing
     return tuple(one for one in missing if one != REQUIREMENTS_HEADING)
+
+
+def held_from_ready(record: Mapping[str, object], *, labelled: bool, template=None) -> bool:
+    return labelled or (minted_under_the_rule(record) and bool(refused(record, template=template)))
 
 
 def shaped(record: Mapping[str, object], *, closed: bool = False, template=None) -> bool:

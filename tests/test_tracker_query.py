@@ -13,6 +13,16 @@ from tests import flipped_tracker
 ROOT = "tq-1"
 
 
+SHAPED = (
+    "-d",
+    "When a user runs it, I want it done, so I can go on.",
+    "--acceptance",
+    "- it works",
+    "--requirements",
+    "- stdlib",
+)
+
+
 @pytest.fixture(autouse=True)
 def no_spawn(monkeypatch: pytest.MonkeyPatch) -> None:
 
@@ -28,10 +38,10 @@ def backlog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo = flipped_tracker.flipped_repo(tmp_path)
     flipped_tracker.seed(repo, ROOT, title="the root")
     first = tracker.create_record(
-        repo, ["create", "parse it", "-t", "task", "-p", "1", "--parent", ROOT, "--json"]
+        repo, ["create", "parse it", "-t", "task", "-p", "1", "--parent", ROOT, *SHAPED, "--json"]
     )
     second = tracker.create_record(
-        repo, ["create", "render it", "-t", "task", "-p", "2", "--parent", ROOT, "--json"]
+        repo, ["create", "render it", "-t", "task", "-p", "2", "--parent", ROOT, *SHAPED, "--json"]
     )
     tracker.write(repo, ["dep", "add", second, first, "-t", "blocks"])
     monkeypatch.chdir(repo)

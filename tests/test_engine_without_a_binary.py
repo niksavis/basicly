@@ -40,7 +40,16 @@ def flipped(work_repo: Path) -> Path:
     kit.events.append(
         owned_store.ledger_dir(work_repo),
         [
-            kit.events.Draft(ROOT, kit.events.KIND_CREATED, {"labels": ["phase-6"]}),
+            kit.events.Draft(
+                ROOT,
+                kit.events.KIND_CREATED,
+                {
+                    "labels": ["phase-6"],
+                    "description": "When the engine runs with no binary, I want it to work, "
+                    "so I can drop the binary.",
+                    "requirements": "- Standard library only",
+                },
+            ),
             kit.events.Draft(ROOT, kit.events.KIND_STATUS, {"status": "open"}),
         ],
     )
@@ -141,3 +150,16 @@ def test_typing_gating_and_closing_a_bead_all_land_in_the_ledger(flipped: Path) 
         {"gate": validate_gate.VALIDATE_GATE, "provider": VERIFY_GATE_PROVIDER, "passed": True}
     ]
     assert policy.gate_status(flipped, ROOT, CONFIG).required_missing == ("verify",)
+
+
+@pytest.mark.usefixtures("no_br")
+def test_a_decomposed_child_carries_typed_criteria_and_the_parent_requirements(
+    flipped: Path,
+) -> None:
+
+    decompose.decompose(flipped, ROOT, _children())
+    child = tracker.read_record(flipped, f"{ROOT}.1") or {}
+
+    assert child["acceptance_criteria"].startswith("- ")
+    assert child["requirements"] == "- Standard library only"
+    assert f"{ROOT}.1" in {node.issue_id for node in loop_state.ready_ranked(flipped)}

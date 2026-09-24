@@ -36,7 +36,8 @@ same server and removes machine paths from what it writes.
 A person writes or edits a story on the page. The page adds the label `refine`. An agent
 then does a refinement pass: it reads `refine`, rewrites each record with the full fields
 and removes the label. The tracker kit's `work-tracker` skill gives the steps. A record
-that owes refinement shows "owes refinement" in the ready column.
+that carries the label, or that was created under the current rule and fails `dor`, leaves
+the ready column. An older record that fails `dor` stays there and shows "owes refinement".
 
 ## HTTP API
 

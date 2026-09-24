@@ -144,7 +144,22 @@ def test_the_tracker_kit_holds_a_record_without_basicly(consumer: Path, tmp_path
     ledger = consumer / ".basicly" / "ledger"
 
     created = subprocess.run(  # nosec B603
-        ["python3", str(cli), "create", str(ledger), "--prefix", "acme", "--title", "a record"],
+        [
+            "python3",
+            str(cli),
+            "create",
+            str(ledger),
+            "--prefix",
+            "acme",
+            "--title",
+            "a record",
+            "--description",
+            "When a user files a record, I want it kept, so I can read it back.",
+            "--acceptance",
+            "- it is kept",
+            "--requirements",
+            "- stdlib",
+        ],
         capture_output=True,
         text=True,
         check=False,

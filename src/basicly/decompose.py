@@ -1062,12 +1062,17 @@ def _create_child(
     repo_root: Path,
     feature_id: str,
     spec: ChildSpec,
-    labels: tuple[str, ...] = (),
-    trigger: str = "",
+    parent: dict,
 ) -> str:
+    labels = feature_labels(parent)
+    trigger = trigger_sentence(str(parent.get("description") or ""))
+    requirements = str(parent.get("requirements") or "")
     args = ["create", spec.title, "-t", spec.type, "--parent", feature_id]
     if labels:
         args += ["-l", ",".join(labels)]
+    args += ["--acceptance", "\n".join(f"- {item}" for item in spec.acceptance)]
+    if requirements:
+        args += ["--requirements", requirements]
     args += ["-d", _child_body(spec, trigger, repo_root), "--json"]
     return tracker.create_record(repo_root, args)
 
@@ -1092,11 +1097,7 @@ def decompose(repo_root: Path, feature_id: str, children: tuple[ChildSpec, ...])
     predecessors = chain_predecessors(groups)
 
     parent = tracker.read_record(repo_root, feature_id) or {}
-    inherited = feature_labels(parent)
-    trigger = trigger_sentence(str(parent.get("description") or ""))
-    issue_ids = [
-        _create_child(repo_root, feature_id, spec, inherited, trigger) for spec in children
-    ]
+    issue_ids = [_create_child(repo_root, feature_id, spec, parent) for spec in children]
     by_title = {spec.title: issue_ids[index] for index, spec in enumerate(children)}
 
     created: list[CreatedChild] = []

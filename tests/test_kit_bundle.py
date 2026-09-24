@@ -56,7 +56,9 @@ def test_the_archive_installs_and_runs_the_tracker(pyz: Path, tmp_path: Path) ->
     assert "merge=union" in (repo / ".gitattributes").read_text(encoding="utf-8")
 
     ledger = str(Path(".basicly") / "ledger")
-    created = _run(pyz, repo, cache, "create", ledger, "--prefix", "acme", "--title", "a")
+    shaped = ("--description", "When a user runs it, I want it done, so I can go on.")
+    shaped += ("--acceptance", "- it runs", "--requirements", "- stdlib")
+    created = _run(pyz, repo, cache, "create", ledger, "--prefix", "acme", "--title", "a", *shaped)
     assert created.returncode == 0, created.stderr
     record = json.loads(created.stdout)["record"]
 

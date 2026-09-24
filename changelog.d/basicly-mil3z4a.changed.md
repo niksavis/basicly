@@ -1,0 +1,1 @@
+- `ready` now leaves out a record labelled `refine` and a record created under the current definition of ready that fails `dor`; older records stay until they are shaped. `decompose` writes each child's acceptance criteria as the typed field and copies the parent's requirements, so a planned child is ready without a second pass.

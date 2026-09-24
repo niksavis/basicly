@@ -80,6 +80,10 @@ def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: st
             "-d",
             "## Trigger\n\nWhen run, I want it to land, so I can assert it.\n\n"
             f"## Acceptance Criteria\n\n- Given the fixture when {title} then it lands\n",
+            "--acceptance",
+            f"- Given the fixture when {title} then it lands",
+            "--requirements",
+            "- The fixture repository only",
             "--parent",
             parent,
             "--json",

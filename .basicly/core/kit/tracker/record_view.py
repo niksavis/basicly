@@ -29,7 +29,7 @@ label_shape = _load("label_shape.py", "basicly_tracker_kit_label_shape")
 snapshot = queries.snapshot
 events = snapshot.events
 
-REFINE_LABEL = "refine"
+REFINE_LABEL = shaping.REFINE_LABEL
 
 
 def is_closed(state: Any) -> bool:
@@ -116,5 +116,8 @@ def refine_queue(directory: Path | str) -> dict[str, object]:
                 "title": str(held.get("title", "")),
                 "labelled": labelled,
                 "blocking": list(blocking),
+                "held_from_ready": shaping.held_from_ready(
+                    held, labelled=labelled, template=template
+                ),
             })
     return {"label": REFINE_LABEL, "count": len(rows), "records": rows}

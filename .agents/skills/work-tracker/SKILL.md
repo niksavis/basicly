@@ -50,7 +50,9 @@ basicly tracker list --status open        # the set, as JSON
 ```
 
 `ready` ranks by priority, then by the number of records that depend on each one. A
-record with children is an anchor, not the work, so it is never ready.
+record with children is an anchor, not the work, so it is never ready. `ready` leaves
+out a record labelled `refine`, and a record created under the current rule that fails
+`dor`.
 
 The loop views answer about one unit:
 

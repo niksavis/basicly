@@ -12,6 +12,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
+TRIGGER = "When a user runs it, I want it done, so I can go on."
 
 
 def _load(path: Path, name: str) -> Any:
@@ -115,9 +116,10 @@ def test_a_consumer_without_the_engine_walks_a_whole_unit_of_work(consumer: Path
         assert proc.returncode == 0, proc.stderr or proc.stdout
         return json.loads(proc.stdout)
 
+    shaped = ("--description", TRIGGER, "--acceptance", "- it runs", "--requirements", "- stdlib")
     root = kit("create", "--prefix", "acme", "--title", "ship it")["record"]
-    first = kit("child", root, "--title", "parse", "--field", "priority=1")["record"]
-    second = kit("child", root, "--title", "render", "--field", "priority=1")["record"]
+    first = kit("child", root, "--title", "parse", "--field", "priority=1", *shaped)["record"]
+    second = kit("child", root, "--title", "render", "--field", "priority=1", *shaped)["record"]
     kit("dep", second, first, "--type", "blocks")
     kit("update", first, "--add-label", "cut-a")
 

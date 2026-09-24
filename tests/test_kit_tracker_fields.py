@@ -232,3 +232,34 @@ def test_the_engine_create_keeps_the_assignee_it_was_given(
     assert engine_cli.main([*argv, "--json"]) == 0
     minted = json.loads(capsys.readouterr().out)["id"]
     assert (tracker.read_record(repo, minted) or {})["assignee"] == "alex"
+
+
+def _ready_ids(ledger: Path, capsys: pytest.CaptureFixture[str]) -> set[str]:
+    capsys.readouterr()
+    cli.main(["ready", str(ledger)])
+    return {row["record"] for row in _report(capsys)["records"]}
+
+
+def test_ready_holds_back_a_labelled_or_unshaped_new_record_and_keeps_an_older_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    shaped = ["--description", TRIGGER, "--acceptance", "- a", "--requirements", "- b"]
+    made = {}
+    for name, extra in (
+        ("shaped", shaped),
+        ("labelled", [*shaped, "--field", "labels=refine"]),
+        ("unshaped", []),
+    ):
+        cli.main(["create", str(ledger), "--prefix", "acme", "--title", name, *extra])
+        made[name] = _report(capsys)["record"]
+    older = cli.commands.create_root(ledger, {"title": "older"}, prefix="acme")[0].record
+
+    assert _ready_ids(ledger, capsys) == {made["shaped"], older}
+
+    cli.main(["refine", str(ledger)])
+    held = {row["record"]: row["held_from_ready"] for row in _report(capsys)["records"]}
+    assert held == {made["labelled"]: True, made["unshaped"]: True, older: False}
+
+    cli.main(["update", str(ledger), made["labelled"], "--remove-label", "refine"])
+    assert made["labelled"] in _ready_ids(ledger, capsys)
