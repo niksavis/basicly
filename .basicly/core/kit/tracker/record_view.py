@@ -116,8 +116,5 @@ def refine_queue(directory: Path | str) -> dict[str, object]:
                 "title": str(held.get("title", "")),
                 "labelled": labelled,
                 "blocking": list(blocking),
-                "held_from_ready": shaping.held_from_ready(
-                    held, labelled=labelled, template=template
-                ),
             })
     return {"label": REFINE_LABEL, "count": len(rows), "records": rows}

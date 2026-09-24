@@ -55,7 +55,6 @@ def _load_sibling(file_name: str, module_name: str) -> ModuleType:
 
 shaping = _load_sibling("shaping.py", "basicly_tracker_kit_shaping")
 label_shape = _load_sibling("label_shape.py", "basicly_tracker_kit_label_shape")
-templates = _load_sibling("templates.py", "basicly_tracker_kit_templates")
 
 
 SCHEMA = "basicly.scheduler.v1"
@@ -165,9 +164,7 @@ def _priority(fields: Mapping[str, object]) -> int:
     return value
 
 
-def candidates_from_events(
-    ledger_events: Iterable[Any], template: Any = None
-) -> dict[str, Candidate]:
+def candidates_from_events(ledger_events: Iterable[Any]) -> dict[str, Candidate]:
 
     collected = list(ledger_events)
     views = differential.views_from_events(collected)
@@ -181,7 +178,7 @@ def candidates_from_events(
             view=view,
             priority=_priority(fields),
             title=title if isinstance(title, str) else "",
-            held=shaping.held_from_ready(fields, labelled=labelled, template=template),
+            held=labelled,
         )
     return candidates
 
@@ -189,7 +186,7 @@ def candidates_from_events(
 def ranking(directory: Path | str, *, limit: int | None = None, vocabulary: Any = None) -> Ranking:
 
     return rank(
-        candidates_from_events(differential.read_ledger(directory), templates.load(directory)),
+        candidates_from_events(differential.read_ledger(directory)),
         vocabulary=vocabulary,
         limit=limit,
     )

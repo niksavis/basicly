@@ -13,9 +13,9 @@ Every command takes the ledger directory as its first argument and prints one JS
 
 - **Read `ready` before you propose work.** The top row is the next thing to do. Do not
   invent a task.
-- **Run `dor` before you build.** `ready` leaves out a record labelled `refine` and a new
-  record that fails `dor`, but it keeps an older unshaped record. `dor` refuses a record
-  that has no trigger, acceptance criteria or requirements.
+- **Run `dor` before you build.** `ready` leaves out only a record labelled `refine`, so it
+  still offers an unshaped record. `dor` refuses a record that has no trigger, acceptance
+  criteria or requirements.
 - **Claim before you build.** Set the record to `in_progress`, so that a second agent does
   not take it.
 - **A close reason is evidence.** Name what shipped, the command you ran and its result.

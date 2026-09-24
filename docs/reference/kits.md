@@ -132,10 +132,9 @@ for a record created before the rule existed, which reports its missing requirem
 without being blocked for them. A trigger and acceptance criteria are required of every
 open record either way.
 
-**`dor` is the gate.** `ready` leaves out a record that carries the label `refine`, and a
-record created under the current rule that fails `dor`. An older record that fails `dor`
-stays in `ready`, so `dor` exits non-zero on one that cannot be verified against, which is
-what a hook or an agent skill calls before work starts.
+**`dor` is the gate, not `ready`.** `ready` leaves out only a record labelled `refine`, so
+it still offers an unshaped record; `dor` exits non-zero on one that cannot be verified
+against, which is what a hook or an agent skill calls before work starts.
 
 ## `basicly-tier`
 

@@ -240,7 +240,7 @@ def _ready_ids(ledger: Path, capsys: pytest.CaptureFixture[str]) -> set[str]:
     return {row["record"] for row in _report(capsys)["records"]}
 
 
-def test_ready_holds_back_a_labelled_or_unshaped_new_record_and_keeps_an_older_one(
+def test_ready_holds_back_only_a_record_labelled_refine(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ledger = tmp_path / "ledger"
@@ -255,11 +255,11 @@ def test_ready_holds_back_a_labelled_or_unshaped_new_record_and_keeps_an_older_o
         made[name] = _report(capsys)["record"]
     older = cli.commands.create_root(ledger, {"title": "older"}, prefix="acme")[0].record
 
-    assert _ready_ids(ledger, capsys) == {made["shaped"], older}
+    assert _ready_ids(ledger, capsys) == {made["shaped"], made["unshaped"], older}
 
     cli.main(["refine", str(ledger)])
-    held = {row["record"]: row["held_from_ready"] for row in _report(capsys)["records"]}
-    assert held == {made["labelled"]: True, made["unshaped"]: True, older: False}
+    labelled = {row["record"]: row["labelled"] for row in _report(capsys)["records"]}
+    assert labelled == {made["labelled"]: True, made["unshaped"]: False, older: False}
 
     cli.main(["update", str(ledger), made["labelled"], "--remove-label", "refine"])
     assert made["labelled"] in _ready_ids(ledger, capsys)

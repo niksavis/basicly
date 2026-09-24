@@ -77,8 +77,7 @@ python3 .basicly/kit/tracker/cli.py import .basicly/ledger issues.jsonl --dry-ru
 
 ### ready
 
-The ranked records that can be worked on now. It leaves out a record labelled `refine`,
-and a record created under the current rule that fails `dor`.
+The ranked records that can be worked on now. It leaves out a record labelled `refine`.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py ready .basicly/ledger --limit 10
