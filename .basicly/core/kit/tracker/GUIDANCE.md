@@ -29,6 +29,9 @@ Every command takes the ledger directory as its first argument and prints one JS
 - **Put a finding on the record**, not in a code comment.
 - **Name the record id in the commit message.** It is the only link from a change to its
   reason.
+- **Claim a record before you change code for it.** The `commit-msg` hook refuses a commit
+  that changes files outside the ledger unless you hold a record it names in progress (or
+  closed). Filing and closing commits that touch only the ledger pass.
 - **File what you notice.** A defect that you do not file is invisible to everyone else.
 
 ## Read
@@ -109,7 +112,10 @@ cause. It refuses:
 - a priority outside 0 (critical) to 4 (backlog), and a `close` without `--reason`;
 - a field that no code reads, an import-history field, or a derived date. `fields` prints
   each field, its role and its reader;
-- a directory that is not a ledger, and a malformed `template.json`.
+- a directory that is not a ledger, and a malformed `template.json`;
+- `claim` or a move to `in_progress` on a record that carries `refine` or fails `dor`, and
+  a person's removal of `refine`;
+- a code commit that names no record you hold in progress.
 
 ## Show a person the state
 

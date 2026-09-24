@@ -157,6 +157,13 @@ Counts by status, with the ready and blocked counts.
 python3 .basicly/kit/tracker/cli.py stats .basicly/ledger
 ```
 
+### commit-check
+
+The check the `commit-msg` hook runs; you do not run it yourself. It reads the commit
+message file and the staged paths, and refuses a commit that changes files outside the
+ledger unless the committer (`git config user.name`) holds a record the message names in
+progress or closed. A ledger with no record yet passes, so the first commit works.
+
 ### show
 
 One record's folded state and its edges in both directions, each edge with the title of the

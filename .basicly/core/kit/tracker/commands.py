@@ -32,6 +32,7 @@ holders = _load("holders.py", "basicly_tracker_kit_holders")
 forks = _load("forks.py", "basicly_tracker_kit_forks")
 edges = _load("edges.py", "basicly_tracker_kit_edges")
 review = _load("review.py", "basicly_tracker_kit_review")
+claims = _load("claims.py", "basicly_tracker_kit_claims")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate

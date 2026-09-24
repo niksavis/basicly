@@ -1,0 +1,1 @@
+- The `work-tracker` skill no longer claims a record with your email address as the holder; `update --status in_progress` records your git user name. (basicly-ybpki2j)

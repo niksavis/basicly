@@ -250,7 +250,7 @@ function person(name) {
 }
 
 async function load() {
-  const { version } = await call("GET", "/version");
+  const version = await call("GET", "/version").then((stamp) => stamp.version, () => "");
   const [index, ready, blocked, refine, ...lists] = await Promise.all([
     call("GET", ""), call("GET", "/ready?limit=5000"), call("GET", "/blocked"), call("GET", "/refine"),
     ...STATUSES.map((status) => call("GET", "/records?status=" + status)),

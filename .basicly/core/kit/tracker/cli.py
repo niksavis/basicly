@@ -214,7 +214,26 @@ def _fsck(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     return (EXIT_OK if report.clean else report.exit_code), {**report.as_dict(), **rebuilt}
 
 
+def _commit_check(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
+    message = Path(args.message).read_text(encoding="utf-8")
+    changed = [line.strip() for line in sys.stdin] if args.stdin else list(args.path)
+    states = events.fold(events.read_events(args.directory)[0]).records
+    committer = commands.holders.default_holder(Path.cwd())
+    ledger = Path(args.directory).resolve()
+    here = Path(__file__).resolve()
+    try:
+        shown = ledger.relative_to(Path.cwd().resolve()).as_posix()
+        script = here.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        shown, script = ledger.as_posix(), here.as_posix()
+    runner = f"python3 {script}"
+    context = commands.claims.CommitContext(committer, shown, runner)
+    commands.claims.refuse_commit(states, message, changed, context)
+    return EXIT_OK, {"committer": committer, "ids": commands.claims.named_ids(message, states)}
+
+
 _REFUSABLE: dict[str, Callable[[argparse.Namespace], tuple[int, dict[str, object]]]] = {
+    "commit-check": _commit_check,
     "show": _shown,
     "dor": _dor,
     "fsck": _fsck,

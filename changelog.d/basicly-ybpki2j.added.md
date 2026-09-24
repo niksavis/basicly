@@ -1,0 +1,1 @@
+- A commit that changes files outside the ledger is refused unless the committer holds a record it names in progress (or closed): the tracker kit installs this as a `commit-msg` hook in a standalone repository, and basicly runs it as `tracker-claim-script`. A ledger with no record yet passes, so the first commit works. (basicly-ybpki2j)

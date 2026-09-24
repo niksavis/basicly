@@ -82,6 +82,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
         "headroom-guard",
         "commit-msg-script",
         "tracker-commit-msg-script",
+        "tracker-claim-script",
         "pre-push-script",
         "protect-generated",
         "protect-generated-commit",

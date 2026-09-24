@@ -77,6 +77,14 @@ def parser() -> argparse.ArgumentParser:
     page.add_argument("directory", help=DIRECTORY_HELP)
     page.add_argument("--out", default="tracker-board.html", help="the file to write")
 
+    claim_check = sub.add_parser(
+        "commit-check", help="refuse a code commit that names no record the committer holds"
+    )
+    claim_check.add_argument("directory", help=DIRECTORY_HELP)
+    claim_check.add_argument("message", help="the commit message file git passes to commit-msg")
+    claim_check.add_argument("path", nargs="*", help="the staged paths")
+    claim_check.add_argument("--stdin", action="store_true", help="read staged paths from stdin")
+
     check = sub.add_parser(
         "fsck", help="fold the whole log and report anything unparseable or broken"
     )
