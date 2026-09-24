@@ -205,8 +205,8 @@ def test_compose_body_resolves_blocks_in_slot_order(tmp_path: Path) -> None:
     (agent,) = discover_agents(_roots(tmp_path))
     body = compose_body(agent, discover_blocks(_roots(tmp_path)))
     assert body == (
-        "role text\n\nstartup text\n\nprocess text\n\noutput_contract text"
-        "\n\nSay so if clean.\n\nNever push."
+        "role text\n\nSay so if clean.\n\nNever push."
+        "\n\nstartup text\n\nprocess text\n\noutput_contract text"
     )
 
 
@@ -249,7 +249,7 @@ def test_render_agent_md_shape(tmp_path: Path, root: AgentOutputRoot) -> None:
     assert lines[5] == ""
     assert lines[6] == GENERATED_MARKER
     assert "model:" not in rendered
-    assert rendered.endswith("The constraints slot.\n")
+    assert rendered.endswith("The output_contract slot.\n")
     assert not rendered.endswith("\n\n")
 
 
@@ -319,7 +319,8 @@ def test_claude_passthrough_may_not_shadow_rendered_keys(tmp_path: Path) -> None
 
 def _repo_with_agent(tmp_path: Path) -> Path:
     _write_block(tmp_path / ".basicly/core/agents", "honesty", body="Say so if clean.")
-    slots = "\n".join(f"  {name}:\n    - text: {name} text" for name in SLOT_ORDER[:-1])
+    kept = (name for name in SLOT_ORDER if name != "constraints")
+    slots = "\n".join(f"  {name}:\n    - text: {name} text" for name in kept)
     slots += "\n  constraints:\n    - block: honesty"
     _write_agent(
         tmp_path / ".basicly/core/agents",

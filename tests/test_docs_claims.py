@@ -241,7 +241,7 @@ def test_the_work_tracker_skill_states_the_engines_own_work_types() -> None:
     ("old", "new", "expected"),
     [
         ("`feature`, `task`;", "`feature`, `task`, `docs`, `question`;", "config.WORK_TYPES"),
-        ("`chore`, `task`; `epic`", "`chore`, `task`, `feature`; `epic`", "loop._LEAF_TYPES"),
+        ("`chore`, `task`; an `epic`", "`chore`, `task`, `feature`; an `epic`", "loop._LEAF_TYPES"),
     ],
 )
 def test_check_fails_when_the_skill_states_a_type_the_engine_rejects(

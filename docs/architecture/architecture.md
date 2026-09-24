@@ -914,8 +914,8 @@ committed, carries no generated marker, and `claude_settings.py` merges only `pe
 Subagent definition files are the third catalog kind. They are generated and never
 hand-edited.
 
-**Composition.** Every agent fills five ordered body slots. They are role, startup,
-process, output contract and constraints. Each slot holds a list of references to shared
+**Composition.** Every agent fills five ordered body slots. They are role, constraints,
+startup, process and output contract, so the hard limits come right after the role. Each slot holds a list of references to shared
 building blocks, or inline Markdown. The shared blocks live under a reserved slug, and
 [30. Roles at dispatch](#30-roles-at-dispatch) is where they are counted — from the
 catalog, under a tripwire in `tests/test_docs_drift.py`, because the count typed here
