@@ -64,7 +64,7 @@ output works against the API. `GET /api/v1` also names the `holder`, the name th
 | `GET /api/v1/scaffold?type=T` | `scaffold` | |
 | `GET /api/v1/records?status=S&limit=N` | `list` | |
 | `GET /api/v1/records/<id>` | `show` | |
-| `GET /api/v1/records/<id>/dor` | `dor` | |
+| `GET /api/v1/records/<id>/dor` | `dor`, 200 with `ready` true or false | |
 | `POST /api/v1/records` | `create`, or `child` with `parent` | `title`, `description`, `acceptance`, `requirements`, `fields`, `parent`, `prefix` |
 | `PATCH /api/v1/records/<id>` | `update` | the create keys except `parent` and `prefix`, and `status`, `add_labels`, `remove_labels` |
 | `POST /api/v1/records/<id>/comments` | `comment` | `text` |
@@ -74,8 +74,8 @@ output works against the API. `GET /api/v1` also names the `holder`, the name th
 | `POST /api/v1/records/<id>/claim` | `claim` | `to`, `take` |
 | `POST /api/v1/records/<id>/unassign` | `unassign` | |
 
-Status codes: 200 or 201 when the command succeeds, 422 when the kit refuses it, 404 for a
-missing record, 400 for a malformed request, 403 for a foreign host. A write must send
+Status codes: 200 or 201 when the command succeeds, 422 when the kit refuses a write, 404
+for a missing record, 400 for a malformed request, 403 for a foreign host. A write must send
 `Content-Type: application/json`. The server refuses a request whose `Host` or `Origin` is
 not this server, so a web page on another site cannot write to your ledger. `--host`
 binds another address. Anyone who can reach that address can then write.

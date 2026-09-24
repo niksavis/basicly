@@ -1,0 +1,1 @@
+- Moving a story nobody holds to `in_progress` now names you as its holder, through the kit and through `basicly tracker write update`, so an agent claim shows who works on it. (basicly-jyhk9ek)

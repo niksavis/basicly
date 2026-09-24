@@ -152,6 +152,12 @@ def _add_write_parsers(sub: Any) -> None:
     update.add_argument("--status", default="", help="the status to move it to")
     update.add_argument("--add-label", action="append", default=[], metavar="LABEL")
     update.add_argument("--remove-label", action="append", default=[], metavar="LABEL")
+    update.add_argument(
+        "--if-seq",
+        type=int,
+        default=None,
+        help="refuse when a field this update writes changed after this seq, as show reports it",
+    )
     _add_shape_arguments(update)
 
     closing = sub.add_parser("close", help="move records to the closed status")

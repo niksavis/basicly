@@ -126,6 +126,8 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
         add_labels=a.add_label,
         remove_labels=a.remove_label,
         redact=r,
+        if_seq=a.if_seq,
+        claimant=_holder(a),
     ),
     "close": lambda a, r: commands.close(a.directory, a.record, reason=a.reason, redact=r),
     "comment": lambda a, r: commands.comment(a.directory, a.record, a.text, redact=r),

@@ -72,7 +72,7 @@ ENDPOINTS = (
 _SHAPE = {"title": "--title", "description": "--description"}
 _SHAPE.update(acceptance="--acceptance", requirements="--requirements")
 _CREATE_KEYS = frozenset({*_SHAPE, "fields", "parent", "prefix"})
-_UPDATE_KEYS = frozenset({*_SHAPE, "fields", "status", "add_labels", "remove_labels"})
+_UPDATE_KEYS = frozenset({*_SHAPE, "fields", "status", "add_labels", "remove_labels", "if_seq"})
 
 
 class RequestError(ValueError):
@@ -125,6 +125,13 @@ def _shape_options(body: dict) -> list:
         f"--field={name}={json.dumps(value)}" for name, value in sorted(_named(body).items())
     ]
     return options
+
+
+def _seq(body: dict) -> int:
+    value = body.get("if_seq")
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise _refuse("if_seq must be the record's seq as a whole number")
+    return value
 
 
 def _labels(body: dict, key: str, flag: str) -> list:
@@ -191,6 +198,7 @@ def write_argv(ledger: Path, method: str, path: str, body: object) -> list:
             del held["title"]
         options = _shape_options(held)
         options += [f"--status={_text(held, 'status')}"] if "status" in held else []
+        options += [f"--if-seq={_seq(held)}"] if "if_seq" in held else []
         options += _labels(held, "add_labels", "--add-label")
         options += _labels(held, "remove_labels", "--remove-label")
         return ["update", *options, "--", where, record]
@@ -253,7 +261,7 @@ def api_index(ledger: Path) -> dict:
     }
 
 
-def answer(argv: list, redact: Callable[[str], str] | None) -> tuple:
+def answer(argv: list, redact: Callable[[str], str] | None, *, read: bool = False) -> tuple:
 
     cli = tracker_cli()
     try:
@@ -265,7 +273,10 @@ def answer(argv: list, redact: Callable[[str], str] | None) -> tuple:
         created = args.command in ("create", "child")
         return (HTTPStatus.CREATED if created else HTTPStatus.OK), report
     missing = report.get("found") is False
-    return (HTTPStatus.NOT_FOUND if missing else HTTPStatus.UNPROCESSABLE_ENTITY), report
+    if missing:
+        return HTTPStatus.NOT_FOUND, report
+    verdict = read and not isinstance(report.get("refused"), str)
+    return (HTTPStatus.OK if verdict else HTTPStatus.UNPROCESSABLE_ENTITY), report
 
 
 def _host_of(header: str) -> str:
@@ -281,13 +292,17 @@ class Handler(BaseHTTPRequestHandler):
     redact: Any = None
 
     def _send(self, status: HTTPStatus, body: bytes, kind: str) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", kind)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError) as error:
+            closed = "the client closed the connection before %s answered: %s"
+            self.log_message(closed, self.path, error)
 
     def _json(self, status: HTTPStatus, report: dict) -> None:
         text = json.dumps(report, sort_keys=True, indent=2, ensure_ascii=False)
@@ -323,7 +338,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, api_index(self.ledger))
             elif method == "GET" and split.path.startswith(API + "/"):
                 argv = read_argv(self.ledger, split.path, parse_qs(split.query))
-                self._json(*answer(argv, self.redact))
+                self._json(*answer(argv, self.redact, read=True))
             elif split.path.startswith(API + "/"):
                 argv = write_argv(self.ledger, method, split.path, self._body())
                 self._json(*answer(argv, self.redact))

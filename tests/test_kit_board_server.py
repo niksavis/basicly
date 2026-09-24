@@ -270,3 +270,38 @@ def test_every_list_the_page_reads_is_a_read_the_server_answers() -> None:
 
     assert reads
     assert reads <= {*server.READS, "records"}
+
+
+def test_a_readiness_read_of_a_story_that_is_not_ready_answers_200_with_the_verdict(
+    client: Client,
+) -> None:
+    _, made = client.call("POST", "/api/v1/records", {"title": "not shaped yet"})
+
+    status, verdict = client.call("GET", f"/api/v1/records/{made['record']}/dor")
+
+    assert status == 200
+    assert verdict["ready"] is False and verdict["blocking"]
+
+
+def test_a_client_that_hangs_up_early_is_logged_in_one_line(ledger: Path) -> None:
+    logged: list[str] = []
+
+    class Closed:
+        def write(self, _data: bytes) -> None:
+            raise BrokenPipeError(32, "Broken pipe")
+
+    served = server.make_server(ledger, "127.0.0.1", 0)
+    served.server_close()
+    handler = served.RequestHandlerClass.__new__(served.RequestHandlerClass)
+    handler.path = "/api/v1/stats"
+    handler.wfile = Closed()
+    handler.send_response = lambda *_a: None
+    handler.send_header = lambda *_a: None
+    handler.end_headers = lambda: None
+    handler.log_message = lambda text, *args: logged.append(text % args)
+
+    handler._send(server.HTTPStatus.OK, b"{}", "application/json")
+
+    assert logged == [
+        "the client closed the connection before /api/v1/stats answered: [Errno 32] Broken pipe"
+    ]

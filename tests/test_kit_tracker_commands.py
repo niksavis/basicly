@@ -287,3 +287,29 @@ def test_stats_counts_by_status_and_leaves_the_tombstoned_out_of_the_total(
 def test_a_directory_that_is_not_a_ledger_is_refused_by_a_query(tmp_path: Path) -> None:
     with pytest.raises(events.LedgerError, match="not a ledger directory"):
         queries.stats(tmp_path / "nowhere")
+
+
+def test_an_update_over_a_field_changed_since_the_reader_saw_it_is_refused(ledger: Path) -> None:
+    record = root_of(ledger)
+    seen = queries.folded(ledger)[record].max_seq
+    commands.update(ledger, record, fields={"description": "written by the CLI"})
+
+    with pytest.raises(events.LedgerError, match=f"{record} changed description after you read"):
+        commands.update(ledger, record, fields={"description": "written in the page"}, if_seq=seen)
+
+    assert queries.folded(ledger)[record].fields["description"] == "written by the CLI"
+
+
+def test_an_update_after_a_comment_or_another_field_changed_still_lands(ledger: Path) -> None:
+    record = root_of(ledger)
+    seen = queries.folded(ledger)[record].max_seq
+    commands.comment(ledger, record, "a comment in between")
+    commands.update(ledger, record, fields={"title": "renamed by the CLI"})
+
+    commands.update(ledger, record, fields={"description": "written in the page"}, if_seq=seen)
+
+    folded = queries.folded(ledger)[record]
+    assert (folded.fields["title"], folded.fields["description"]) == (
+        "renamed by the CLI",
+        "written in the page",
+    )

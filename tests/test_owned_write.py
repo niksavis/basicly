@@ -306,3 +306,18 @@ def test_the_seam_refuses_a_create_inside_a_read_only_section(tmp_path: Path) ->
     with tracker.read_only("a pre-flight gate"), pytest.raises(tracker.TrackerWriteRefusedError):
         tracker.create_record(repo, ["create", "c", "-t", "task", "--parent", PARENT, "--json"])
     assert events_of(repo, f"{PARENT}.1") == []
+
+
+@pytest.mark.usefixtures("no_br")
+def test_an_engine_claim_names_the_person_who_claimed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = owned_repo(tmp_path)
+    seed(repo, PARENT)
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
+
+    owned_write.append(repo, ["update", PARENT, "--status", "in_progress"])
+
+    kit = owned_store.kit(repo)
+    held = kit.events.fold(kit.read_ledger(owned_store.ledger_dir(repo))).records[PARENT]
+    assert (held.status, held.fields.get("assignee")) == ("in_progress", "sam")

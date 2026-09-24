@@ -254,3 +254,28 @@ def test_resolve_keeps_the_current_value_of_a_status_conflict_and_fsck_is_clean(
     code, refused = _run(capsys, "resolve", str(ledger), record)
     assert code == cli.EXIT_REFUSED
     assert "no unresolved conflict" in refused["refused"]
+
+
+def test_moving_a_story_nobody_holds_to_in_progress_names_the_claimant(
+    story: tuple[Path, str], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger, record = story
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
+
+    assert _run(capsys, "update", str(ledger), record, "--status", "in_progress")[0] == cli.EXIT_OK
+
+    _, shown = _run(capsys, "show", str(ledger), record)
+    assert (shown["status"], shown["holder"]["name"]) == ("in_progress", "sam")
+
+
+def test_moving_a_held_story_to_in_progress_keeps_its_holder(
+    story: tuple[Path, str], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger, record = story
+    _run(capsys, "assign", str(ledger), record, "--to", "alex")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
+
+    assert _run(capsys, "update", str(ledger), record, "--status", "in_progress")[0] == cli.EXIT_OK
+
+    _, shown = _run(capsys, "show", str(ledger), record)
+    assert (shown["status"], shown["holder"]["name"]) == ("in_progress", "alex")

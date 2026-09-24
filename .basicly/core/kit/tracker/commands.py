@@ -30,6 +30,7 @@ recurrence = _load("recurrence.py", "basicly_tracker_kit_recurrence")
 values = _load("values.py", "basicly_tracker_kit_values")
 holders = _load("holders.py", "basicly_tracker_kit_holders")
 forks = _load("forks.py", "basicly_tracker_kit_forks")
+edges = _load("edges.py", "basicly_tracker_kit_edges")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -140,6 +141,8 @@ def update(  # noqa: PLR0913 — one argument per thing an update can set; see t
     add_labels: Sequence[str] = (),
     remove_labels: Sequence[str] = (),
     redact: Callable[[str], str] | None = None,
+    if_seq: int | None = None,
+    claimant: str = "",
 ) -> list:
 
     ledger = _ledger(directory)
@@ -148,6 +151,9 @@ def update(  # noqa: PLR0913 — one argument per thing an update can set; see t
         raise TrackerCommandError("update " + record + " asks for no change")
     with events.LedgerLock(ledger) as lock:
         state = _require(ledger, record)
+        if if_seq is not None:
+            touched = {*named, *([LABELS_FIELD] if add_labels or remove_labels else [])}
+            _refuse_stale(ledger, record, if_seq, touched | ({STATUS_NAME} if status else set()))
         drafts = [
             events.Draft(record, events.KIND_FIELD, {"name": name, "value": value})
             for name, value in sorted(named.items())
@@ -159,7 +165,30 @@ def update(  # noqa: PLR0913 — one argument per thing an update can set; see t
             )
         if status:
             drafts.append(events.Draft(record, events.KIND_STATUS, {"status": status}))
+        drafts = holders.claimed_by({record: state}, drafts, claimant)
         return _append(ledger, drafts, redact, lock)
+
+
+STATUS_NAME = "status"
+
+
+def _refuse_stale(ledger: Path, record: str, if_seq: int, touched: set[str]) -> None:
+
+    changed = sorted(
+        {
+            STATUS_NAME if event.kind == events.KIND_STATUS else str(event.payload.get("name"))
+            for event in events.read_events(ledger)[0]
+            if event.record == record
+            and event.seq > if_seq
+            and event.kind in (events.KIND_FIELD, events.KIND_STATUS)
+        }
+        & touched
+    )
+    if changed:
+        raise TrackerCommandError(
+            f"{record} changed {', '.join(changed)} after you read it at seq {if_seq}; "
+            f"reload it and apply your edit again"
+        )
 
 
 def close(
@@ -222,55 +251,10 @@ def add_dependency(
     with events.LedgerLock(ledger) as lock:
         _require(ledger, record)
         _require(ledger, target)
-        _refuse_edge(ledger, record, target, edge_type)
-        _refuse_cycle(ledger, record, target, edge_type)
+        edges.refuse_edge(ledger, record, target, edge_type)
+        edges.refuse_cycle(ledger, record, target, edge_type)
         payload = {migrate.EDGE_FROM: record, migrate.EDGE_TO: target, migrate.EDGE_TYPE: edge_type}
         return _append(ledger, [events.Draft(record, migrate.KIND_EDGE, payload)], redact, lock)
-
-
-def _refuse_edge(ledger: Path, record: str, target: str, edge_type: str) -> None:
-
-    vocabulary = differential.DEFAULT_VOCABULARY
-    if edge_type not in vocabulary.edge_types:
-        known = ", ".join(sorted(vocabulary.edge_types))
-        raise TrackerCommandError(f"{edge_type!r} is not an edge type; use one of {known}")
-    views, _ = queries.views_and_children(ledger)
-    if any(edge.target == target and edge.type == edge_type for edge in views[record].dependencies):
-        raise TrackerCommandError(f"{record} already has a {edge_type} edge on {target}")
-    if (
-        edge_type in vocabulary.blocking_types
-        and views[target].status in vocabulary.closed_statuses
-    ):
-        raise TrackerCommandError(
-            f"{target} is closed, so a {edge_type} edge on it holds nothing back; "
-            f"name an open record, or use related to keep the link"
-        )
-
-
-def _refuse_cycle(ledger: Path, record: str, target: str, edge_type: str) -> None:
-
-    views, _ = queries.views_and_children(ledger)
-    seen = set()
-    frontier = [target]
-    while frontier:
-        current = frontier.pop()
-        if current == record:
-            raise TrackerCommandError(
-                "an edge "
-                + record
-                + " -> "
-                + target
-                + " of type "
-                + edge_type
-                + " closes a cycle, which leaves every record on it permanently unready"
-            )
-        if current in seen:
-            continue
-        seen.add(current)
-        view = views.get(current)
-        if view is None:
-            continue
-        frontier.extend(edge.target for edge in view.dependencies if edge.type == edge_type)
 
 
 def delete(
