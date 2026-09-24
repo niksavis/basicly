@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release publishes v0.18.0. The v0.18.0 tag was never published, because two release
+tests failed on every CI runner. Those tests read the git identity of the developer machine,
+and a runner has none. The product is unchanged from v0.18.0. Read the v0.18.0 section below
+for what it adds.
+
+- **Shared tracker.** `assign`, `claim` and `unassign` reserve a story for a person, and
+  `resolve` settles a conflicting fork. See v0.18.0 (`basicly-fdrwlvs`, `basicly-ioj3c0o`).
+- **A local test run sees what CI sees.** The test suite now runs with an empty home
+  directory, so a test that depends on the developer's git identity fails before the tag
+  (`basicly-1medk0r`, `basicly-sizoa9t`).
+
 ## v0.18.0 - 2026-09-24
 
 Delta: v0.17.0..v0.18.0
