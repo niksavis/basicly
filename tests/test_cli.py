@@ -27,6 +27,7 @@ from basicly.config import (
 )
 from basicly.scaffolds import CONSUMER_CI_WORKFLOW, GENERATED_IGNORES, VSCODE_TASKS_JSON
 from basicly.skills import GENERATED_MARKER
+from tests.conftest import WORK_REPO_LEFT_OUT
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -55,7 +56,9 @@ def run_basicly_consumer(cwd: Path, *args: str) -> subprocess.CompletedProcess[s
     )
 
 
-def test_the_work_repo_fixture_copies_all_and_only_the_tracked_files(work_repo: Path) -> None:
+def test_the_work_repo_fixture_copies_the_tracked_files_but_the_test_suite(
+    work_repo: Path,
+) -> None:
 
     listing = subprocess.run(  # nosec B603 B607
         ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
@@ -63,13 +66,18 @@ def test_the_work_repo_fixture_copies_all_and_only_the_tracked_files(work_repo: 
         text=True,
         check=True,
     )
-    tracked = {name for name in listing.stdout.split("\0") if name}
+    tracked = {
+        name
+        for name in listing.stdout.split("\0")
+        if name and name.split("/", 1)[0] not in WORK_REPO_LEFT_OUT
+    }
     copied = {
         path.relative_to(work_repo).as_posix() for path in work_repo.rglob("*") if path.is_file()
     }
 
     assert copied == tracked
     assert (work_repo / "src" / "basicly" / "cli.py").is_file()
+    assert not (work_repo / "tests").exists()
 
 
 def test_the_work_repo_fixture_leaves_out_the_state_that_differed_per_machine(
