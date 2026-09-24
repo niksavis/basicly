@@ -6,6 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the work tracker complete on its own, adds a browser board with an HTTP
+API, and rewrites every skill and agent role that basicly ships. A repository with no basicly
+can now write, refine, see and serve its backlog from the tracker kit alone, and a team can
+build its own page or tool on the same JSON the commands print.
+
+- **Board and API.** The optional board kit (`basicly-board`, or `basicly tracker serve`)
+  serves a page and an HTTP API on localhost. A person writes a story, and an agent
+  refinement pass shapes it before it is ready (`basicly-k1pxru4.9`, `basicly-mil3z4a`).
+- **One field table.** A write of a field that no code reads is refused with the fix, and
+  `show` carries dates derived from the event times (`basicly-k1pxru4.15`).
+- **Standalone tracker kit.** Versioned JSON output, a single-file `tracker.pyz`, record
+  templates, and value refusals on both routes (`basicly-k1pxru4.5`, `basicly-k1pxru4.6`,
+  `basicly-k1pxru4.14`).
+- **Skills and roles rewritten.** Every vendored skill and agent role is rules first, in
+  plain technical English, with no internal paths, and with false claims corrected
+  (`basicly-wb3alfn`, `basicly-dde1ck3`).
+- **Fresh install.** A new install passes its own catalog lint on the first commit
+  (`basicly-xkvevbo`).
+
 ## v0.15.1 - 2026-09-18
 
 Delta: v0.15.0..v0.15.1
