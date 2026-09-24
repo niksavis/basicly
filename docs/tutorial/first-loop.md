@@ -4,7 +4,7 @@ This is a walkthrough, not a reference. Follow it top to bottom on a **scratch
 git repo** and you will end with one unit of work filed, built in its own
 worktree, merged, and closed by the harness — one sitting, no agent spend.
 Every command and every quoted output below was executed against a fresh repo on
-basicly 0.18.3 in a real terminal, with that repo's generated bead-id prefix swapped for
+basicly 0.18.4 in a real terminal, with that repo's generated bead-id prefix swapped for
 `myrepo`, absolute paths written as `/path/to/...`, and `...` marking an elided line.
 
 When you want to look something up rather than learn the shape, stop here and
@@ -33,7 +33,7 @@ Every command below is written as bare `basicly`. Run it as the pinned form so
 you always get the version you chose:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.18.3 basicly <args>
+uvx --from git+https://github.com/niksavis/basicly@v0.18.4 basicly <args>
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -47,7 +47,7 @@ uvx --from git+https://github.com/niksavis/basicly@v0.18.3 basicly <args>
 From the repo root:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.18.3 basicly install
+uvx --from git+https://github.com/niksavis/basicly@v0.18.4 basicly install
 ```
 
 It ends with:

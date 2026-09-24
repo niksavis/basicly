@@ -1,1 +1,0 @@
-- The tracker page story form lists the sections the chosen type needs and ticks each off as you write; the Claim button explains why it is disabled. (basicly-h8j8a4c)

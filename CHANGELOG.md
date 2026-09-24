@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.4 - 2026-09-24
+
+Delta: v0.18.3..v0.18.4
+
 This release makes the tracker hold work to its rules. A story a person writes waits for an
 agent review before anyone can start it, and a code commit must name a record its author
 holds. The tracker page shows a change from the CLI or an agent within about two seconds
@@ -22,6 +26,28 @@ and names readiness as the Definition of Ready and the Definition of Done.
   `basicly-64739zj`, `basicly-3h8v48o`).
 - **Install warns about ruff D rules** that require the docstrings no-comments refuses
   (`basicly-oadrtiv`).
+
+### Added
+
+- The tracker page shows a change from the CLI, an agent or another browser within about two seconds: it polls the new `GET /api/v1/version` stamp and reloads only when the ledger changed. (basicly-9allu2j)
+
+- The tracker page story form lists the sections the chosen type needs and ticks each off as you write; the Claim button explains why it is disabled. (basicly-h8j8a4c)
+
+- `basicly install` and `basicly check` warn when your ruff config selects the pydocstyle D rules, which require the docstrings the no-comments hook refuses, and name the file, the codes and the fix. (basicly-oadrtiv)
+
+- A commit that changes files outside the ledger is refused unless the committer holds a record it names in progress (or closed): the tracker kit installs this as a `commit-msg` hook in a standalone repository, and basicly runs it as `tracker-claim-script`. A ledger with no record yet passes, so the first commit works. (basicly-ybpki2j)
+
+### Changed
+
+- The tracker page names readiness as the Definition of Ready (`DoR: trigger, acceptance criteria`) and shows a Definition of Done block: acceptance criteria that verify checks, requirements that validation judges against, and a close reason. (basicly-64739zj)
+
+- A story a person writes or edits waits for an agent review: only an agent removes its `refine` label, and only when nothing is owed, and `claim` or a move to `in_progress` is refused until then, standalone and in basicly. The page server writes as a person even when an agent starts it. (basicly-h8j8a4c)
+
+### Fixed
+
+- The tracker page says what a story still needs in plain words (why, done-check, rules) with an explanation, in grey instead of amber; a waiting story uses the blocked colour, so amber marks only P1. (basicly-3h8v48o)
+
+- The `work-tracker` skill no longer claims a record with your email address as the holder; `update --status in_progress` records your git user name. (basicly-ybpki2j)
 
 ## v0.18.3 - 2026-09-24
 

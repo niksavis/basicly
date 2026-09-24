@@ -1,1 +1,0 @@
-- A story a person writes or edits waits for an agent review: only an agent removes its `refine` label, and only when nothing is owed, and `claim` or a move to `in_progress` is refused until then, standalone and in basicly. The page server writes as a person even when an agent starts it. (basicly-h8j8a4c)

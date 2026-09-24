@@ -1,1 +1,0 @@
-- The tracker page names readiness as the Definition of Ready (`DoR: trigger, acceptance criteria`) and shows a Definition of Done block: acceptance criteria that verify checks, requirements that validation judges against, and a close reason. (basicly-64739zj)
