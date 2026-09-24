@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import importlib.util
 import json
+import re
 import sys
 import threading
 from collections.abc import Iterator
@@ -208,3 +209,60 @@ def test_a_second_person_reserving_through_the_api_is_refused_by_name(client: Cl
     assert (shown["status"], shown["holder"]["name"]) == ("in_progress", "sam")
     _, ready = client.call("GET", "/api/v1/ready")
     assert all("holder" in row for row in ready["records"])
+
+
+def test_a_record_read_carries_each_comment_with_its_writer_and_time(client: Client) -> None:
+    _, made = client.call("POST", "/api/v1/records", {"title": "talk about me"})
+    record = made["record"]
+    client.call("POST", f"/api/v1/records/{record}/comments", {"text": "first"})
+    client.call("POST", f"/api/v1/records/{record}/comments", {"text": "second"})
+
+    _, shown = client.call("GET", f"/api/v1/records/{record}")
+
+    assert [one["text"] for one in shown["comment_log"]] == shown["comments"] == ["first", "second"]
+    assert all(one["writer"] and one["at"] for one in shown["comment_log"])
+
+
+def test_a_record_read_names_the_title_of_each_record_it_depends_on(client: Client) -> None:
+    _, first = client.call("POST", "/api/v1/records", {"title": "the blocker"})
+    _, second = client.call("POST", "/api/v1/records", {"title": "the dependent"})
+    client.call("POST", f"/api/v1/records/{second['record']}/deps", {"target": first["record"]})
+
+    _, shown = client.call("GET", f"/api/v1/records/{second['record']}")
+
+    assert [edge["title"] for edge in shown["dependencies"]] == ["the blocker"]
+
+
+def test_the_index_names_the_holder_a_page_calls_you(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "alex")
+
+    _, index = client.call("GET", "/api/v1")
+
+    assert index["holder"] == "alex"
+
+
+PAGE = (KIT_DIR / "web" / "index.html").read_text(encoding="utf-8")
+
+
+def test_every_action_the_page_posts_is_a_route_the_server_takes() -> None:
+    posted = set(re.findall(r'\bact\("([a-z]+)"', PAGE))
+
+    assert posted
+    assert posted <= set(server._ACTIONS)
+
+
+def test_every_key_the_page_patches_is_one_the_server_accepts() -> None:
+    patched = set(re.findall(r"patch\(\{ ?\"?([a-z_]+)\"?:", PAGE))
+    sections = set(re.findall(r'section\("[^"]+", "([a-z_]+)"', PAGE))
+
+    assert patched and sections
+    assert patched | sections <= server._UPDATE_KEYS
+
+
+def test_every_list_the_page_reads_is_a_read_the_server_answers() -> None:
+    reads = set(re.findall(r'call\("GET", "/([a-z]+)', PAGE))
+
+    assert reads
+    assert reads <= {*server.READS, "records"}

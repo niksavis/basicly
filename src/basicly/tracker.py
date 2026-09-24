@@ -147,6 +147,7 @@ def _edges(issue_id: str, views: Mapping[str, Any], states: Mapping[str, Any]) -
                 "id": edge.target,
                 "dependency_type": edge.type,
                 "status": _edge_status(views, edge.target),
+                "title": _edge_title(states, edge.target),
             }
             for edge in (view.dependencies if view is not None else ())
         ],
@@ -155,13 +156,17 @@ def _edges(issue_id: str, views: Mapping[str, Any], states: Mapping[str, Any]) -
                 "id": other,
                 "dependency_type": edge.type,
                 "status": held.status or "",
-                "title": str(states[other].fields.get("title", "")) if other in states else "",
+                "title": _edge_title(states, other),
             }
             for other, held in sorted(views.items())
             for edge in held.dependencies
             if edge.target == issue_id and not held.tombstoned
         ],
     }
+
+
+def _edge_title(states: Mapping[str, Any], issue_id: str) -> str:
+    return str(states[issue_id].fields.get("title", "")) if issue_id in states else ""
 
 
 def _edge_status(views: Mapping[str, Any], issue_id: str) -> str:

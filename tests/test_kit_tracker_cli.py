@@ -285,7 +285,7 @@ def test_show_carries_both_directions_of_the_dependency_graph(tmp_path: Path) ->
     held = cli.read_record(ledger, child)
     assert held is not None
     assert held["dependencies"] == [
-        {"id": root, "dependency_type": "parent-child", "status": "open"}
+        {"id": root, "dependency_type": "parent-child", "status": "open", "title": "ship it"}
     ]
     assert held["dependents"] == []
 

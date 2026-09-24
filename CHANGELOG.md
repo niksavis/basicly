@@ -6,9 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-This release fixes how the tracker page draws blocked stories. A person reading the page now
-sees each blocked story by its title and what it waits on, and a missing field by its name.
+This release redesigns the tracker page. A person now picks a story from one ranked list
+with tabs, search and filters, reads it in a pane beside the list, and takes the one action
+that fits its state. The page also names blocked stories by their title.
 
+- **A tracker page for choosing work.** One list with tabs, search and sort; priority, type,
+  age and holder on each row; a story pane that renders the text and edits one section at a
+  time; a link for each story; close and dependency actions. `show` gives each comment with
+  its writer and time (`basicly-hl6f72r`).
 - **Blocked stories by title.** The `blocked` rows in the tracker kit and the board API carry
   `title`, and the page says what each story waits on, or `parent of N`
   (`basicly-uf79vt6`).

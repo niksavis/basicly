@@ -1,0 +1,1 @@
+- The tracker page is redesigned: one list with Ready, Refine, Blocked, Mine, All open and Closed tabs, search, sort, priority and holder on each row, a story pane that reads before it edits, a link for each story, and close and dependency actions. `show` now returns `comment_log` with each comment's writer and time. (basicly-hl6f72r)

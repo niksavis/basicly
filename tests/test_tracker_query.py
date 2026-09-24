@@ -246,9 +246,13 @@ def test_the_kit_and_the_engine_render_one_edge_shape(backlog: Path) -> None:
         assert kit_shown["dependencies"] == engine["dependencies"], record
         assert kit_shown["dependents"] == engine["dependents"], record
         if record == f"{ROOT}.1":
-            assert {"id": "tq-ghost", "dependency_type": "blocks", "status": "unknown"} in engine[
-                "dependencies"
-            ]
+            ghost = {
+                "id": "tq-ghost",
+                "dependency_type": "blocks",
+                "status": "unknown",
+                "title": "",
+            }
+            assert ghost in engine["dependencies"]
 
 
 def test_one_relation_stated_by_two_events_shows_as_one_row(
@@ -283,4 +287,6 @@ def test_one_relation_stated_by_two_events_shows_as_one_row(
     held = _json_out(capsys)["dependencies"]
 
     assert len(shown) == 1
-    assert held == [{"id": ROOT, "dependency_type": "parent-child", "status": "open"}]
+    assert [{key: row[key] for key in ("id", "dependency_type", "status")} for row in held] == [
+        {"id": ROOT, "dependency_type": "parent-child", "status": "open"}
+    ]

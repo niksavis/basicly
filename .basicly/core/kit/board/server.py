@@ -309,7 +309,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self._trusted()
             if method == "GET" and split.path.rstrip("/") == API:
-                self._json(HTTPStatus.OK, {"schema": SCHEMA, "endpoints": list(ENDPOINTS)})
+                holder = tracker_cli().commands.holders.default_holder(self.ledger)
+                index = {"schema": SCHEMA, "endpoints": list(ENDPOINTS), "holder": holder}
+                self._json(HTTPStatus.OK, index)
             elif method == "GET" and split.path.startswith(API + "/"):
                 argv = read_argv(self.ledger, split.path, parse_qs(split.query))
                 self._json(*answer(argv, self.redact))
