@@ -98,6 +98,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      - name: Exclude the build paths from Defender scanning (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-MpComputerStatus | Format-List AntivirusEnabled, RealTimeProtectionEnabled
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP, $env:TEMP, "$env:LOCALAPPDATA\uv"
       - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-node@v7
         with:
