@@ -6,11 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.5 - 2026-09-24
+
+Delta: v0.18.4..v0.18.5
+
 This release fixes the claim hook for a new standalone install: the first commit, which adds
 the kit and a first record, passes again. CI no longer tests on Windows.
 
 - **Install commit passes.** The files a kit install manages do not count as code
   (`basicly-vh8jvxj`).
+
+### Fixed
+
+- The claim hook no longer refuses the first commit of a standalone tracker install: the files a kit install manages (the kit folders, their skills, `.gitignore`, `.gitattributes`) do not count as code. (basicly-vh8jvxj)
 
 ## v0.18.4 - 2026-09-24
 
