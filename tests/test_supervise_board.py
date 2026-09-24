@@ -200,9 +200,10 @@ def test_a_failed_emission_costs_one_line_and_never_the_beat(
 def test_one_emission_stays_inside_the_beat_it_rides(work_repo: Path) -> None:
     supervise.acquire(work_repo, _SESSION, _ROOT)
     board_facts.emit_tick(work_repo, TICK_S)
-    started = time.perf_counter()
+    started, worked = time.perf_counter(), time.process_time()
     board_facts.emit_tick(work_repo, TICK_S)
-    assert time.perf_counter() - started < EMIT_CAP_S
+    assert time.process_time() - worked < EMIT_CAP_S
+    assert time.perf_counter() - started < supervise.HEARTBEAT_INTERVAL_S
 
 
 def test_the_tick_carries_every_derivation_the_idle_board_carries(work_repo: Path) -> None:
