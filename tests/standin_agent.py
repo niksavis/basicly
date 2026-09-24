@@ -54,9 +54,12 @@ def _from_prompt(pattern: re.Pattern[str], prompt: str, what: str) -> str:
 
 
 def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(  # nosec B603 B607 — fixed argv, no shell, and git is the tool
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+    done = subprocess.run(  # nosec B603 B607 — fixed argv, no shell, and git is the tool
+        ["git", *args], cwd=cwd, check=False, capture_output=True, text=True
     )
+    if done.returncode:
+        sys.stderr.write(f"stand-in agent: git {' '.join(args)} failed: {done.stderr}\n")
+        raise SystemExit(done.returncode)
 
 
 def _commit(cwd: Path, issue_id: str) -> None:

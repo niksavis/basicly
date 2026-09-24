@@ -546,8 +546,10 @@ def test_a_supervisor_pass_runs_two_agent_processes_and_lands_both(
     assert {outcome.issue_id for outcome in outcomes} == {first, second}
     for outcome in outcomes:
         assert outcome.result is not None, outcome.detail
-        assert outcome.result.executed, outcome.detail
-        assert outcome.result.returncode == 0, outcome.detail
+        said = f"{outcome.detail}; stdout: {outcome.result.stdout[-2000:]}"
+        said += f"; stderr: {outcome.result.stderr[-2000:]}"
+        assert outcome.result.executed, said
+        assert outcome.result.returncode == 0, said
         assert outcome.detail == "finished; ready to land"
         assert outcome.result.command[0] == Path(sys.executable).as_posix()
 
