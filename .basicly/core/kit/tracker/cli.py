@@ -227,7 +227,7 @@ def _commit_check(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     except ValueError:
         shown, script = ledger.as_posix(), here.as_posix()
     runner = f"python3 {script}"
-    context = commands.claims.CommitContext(committer, shown, runner)
+    context = commands.claims.CommitContext(committer, shown, runner, tuple(args.installed))
     commands.claims.refuse_commit(states, message, changed, context)
     return EXIT_OK, {"committer": committer, "ids": commands.claims.named_ids(message, states)}
 

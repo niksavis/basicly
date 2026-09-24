@@ -162,7 +162,9 @@ python3 .basicly/kit/tracker/cli.py stats .basicly/ledger
 The check the `commit-msg` hook runs; you do not run it yourself. It reads the commit
 message file and the staged paths, and refuses a commit that changes files outside the
 ledger unless the committer (`git config user.name`) holds a record the message names in
-progress or closed. A ledger with no record yet passes, so the first commit works.
+progress or closed. A ledger with no record yet passes, and the files a kit install manages
+(`.basicly/kit/`, the tracker and board skills, `.gitignore`, `.gitattributes`) do not count,
+so the install commit works.
 
 ### show
 

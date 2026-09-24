@@ -90,3 +90,19 @@ def test_the_installer_removes_only_its_claim_block(repo: Path) -> None:
     )
 
     assert not hook.exists()
+
+
+def test_the_first_commit_of_an_install_passes_with_a_record_already_filed(repo: Path) -> None:
+    (repo / ".claude" / "skills" / "tracker").mkdir(parents=True)
+    (repo / ".claude" / "skills" / "tracker" / "SKILL.md").write_text("x\n", encoding="utf-8")
+    (repo / ".gitattributes").write_text("*.jsonl merge=union\n", encoding="utf-8")
+    _kit(repo, "create", ".basicly/ledger", "--prefix", "acme", "--title", "first", *SHAPED)
+    _git(repo, "add", "-A")
+
+    installed = _git(repo, "commit", "-q", "-m", "chore: install the tracker kit")
+
+    assert installed.returncode == 0, installed.stderr
+    (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(repo, "add", "app.py")
+    refused = _git(repo, "commit", "-q", "-m", "feat: add value")
+    assert refused.returncode != 0 and "Claim the record first" in refused.stderr

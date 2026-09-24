@@ -39,6 +39,7 @@ class CommitContext(NamedTuple):
     committer: str
     ledger: str
     cli: str
+    installed: tuple[str, ...] = ()
 
 
 def named_ids(message: str, states: Mapping[str, Any]) -> list[str]:
@@ -55,9 +56,14 @@ def refuse_commit(
     states: Mapping[str, Any], message: str, changed: Iterable[str], context: CommitContext
 ) -> None:
 
-    committer, ledger, cli = context
-    prefix = ledger.rstrip("/") + "/"
-    code = [path for path in changed if path.strip() and not path.startswith(prefix)]
+    committer, ledger, cli, installed = context
+    folders = (ledger.rstrip("/") + "/", *(one for one in installed if one.endswith("/")))
+    files = {one for one in installed if not one.endswith("/")}
+    code = [
+        path
+        for path in changed
+        if path.strip() and not path.startswith(folders) and path not in files
+    ]
     if not code or not states:
         return
     ids = named_ids(message, states)

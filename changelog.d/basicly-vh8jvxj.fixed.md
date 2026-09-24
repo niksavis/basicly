@@ -1,0 +1,1 @@
+- The claim hook no longer refuses the first commit of a standalone tracker install: the files a kit install manages (the kit folders, their skills, `.gitignore`, `.gitattributes`) do not count as code. (basicly-vh8jvxj)

@@ -124,8 +124,17 @@ def body(interpreter: str, script: str, ledger: str, command: str = "", advice: 
     ))
 
 
+INSTALLED_SKILLS = ("tracker", "board")
+INSTALLED_FILES = (".gitignore", ".gitattributes")
+
+
 def claim_body(script: str, ledger: str) -> str:
-    check = f'"$tracker_try" "{script}" commit-check "{ledger}" "$1" --stdin'
+    kit_root = str(Path(script).parent.parent.as_posix())
+    installed = [f"{kit_root}/", *INSTALLED_FILES]
+    for agents in (".claude", ".agents"):
+        installed += [f"{agents}/skills/{name}/" for name in INSTALLED_SKILLS]
+    flags = " ".join(f'--installed "{one}"' for one in installed)
+    check = f'"$tracker_try" "{script}" commit-check "{ledger}" "$1" --stdin {flags}'
     return "\n".join((
         CLAIM_BEGIN,
         f'if [ -f "{script}" ] && ! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then',

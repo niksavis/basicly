@@ -84,6 +84,12 @@ def parser() -> argparse.ArgumentParser:
     claim_check.add_argument("message", help="the commit message file git passes to commit-msg")
     claim_check.add_argument("path", nargs="*", help="the staged paths")
     claim_check.add_argument("--stdin", action="store_true", help="read staged paths from stdin")
+    claim_check.add_argument(
+        "--installed",
+        action="append",
+        default=[],
+        help="a path an install manages, not code; a trailing / names a folder",
+    )
 
     check = sub.add_parser(
         "fsck", help="fold the whole log and report anything unparseable or broken"
