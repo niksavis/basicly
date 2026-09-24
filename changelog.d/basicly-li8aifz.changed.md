@@ -1,1 +1,0 @@
-- The validate phase now refuses to dispatch the validator for a record that states no `requirements`, and names the command that adds them, because the validator judges the change against that intended use.
