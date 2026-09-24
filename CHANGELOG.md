@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.1 - 2026-09-24
+
+Delta: v0.18.0..v0.18.1
+
 This release publishes v0.18.0. The v0.18.0 tag was never published, because two release
 tests failed on every CI runner. Those tests read the git identity of the developer machine,
 and a runner has none. The product is unchanged from v0.18.0. Read the v0.18.0 section below
