@@ -50,6 +50,13 @@ def git_repo(tmp_path: Path) -> Path:
     return repo
 
 
+SHAPED = {
+    "description": "When a board is drawn, I want the ready work marked, so I can pick one.",
+    "acceptance_criteria": "- the board marks it ready",
+    "requirements": "- standard library only",
+}
+
+
 def _owned_repo(root: Path, *records: str) -> Path:
 
     (root / tracker.KIT_TRACKER_DIR).mkdir(parents=True, exist_ok=True)
@@ -61,8 +68,12 @@ def _owned_repo(root: Path, *records: str) -> Path:
     kit.events.append(
         tracker.ledger_dir(root),
         [
-            kit.events.Draft(record, kit.events.KIND_STATUS, {"status": "open"})
+            draft
             for record in records
+            for draft in (
+                kit.events.Draft(record, kit.events.KIND_CREATED, SHAPED),
+                kit.events.Draft(record, kit.events.KIND_STATUS, {"status": "open"}),
+            )
         ],
     )
     return root

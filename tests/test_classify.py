@@ -20,9 +20,14 @@ class _Proc:
 
 class _FakeBr:
     def __init__(
-        self, *, acceptance_criteria: str | None = None, description: str | None = None
+        self,
+        *,
+        acceptance_criteria: str | None = None,
+        requirements: str | None = None,
+        description: str | None = None,
     ) -> None:
         self.acceptance_criteria = acceptance_criteria
+        self.requirements = requirements
         self.description = description
         self.recorded_type: str | None = None
         self.calls: list[list[str]] = []
@@ -44,6 +49,7 @@ class _FakeBr:
                 json.dumps([
                     {
                         "acceptance_criteria": self.acceptance_criteria,
+                        "requirements": self.requirements,
                         "description": self.description,
                     }
                 ])
@@ -94,6 +100,7 @@ def test_classify_reports_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_path: P
         monkeypatch,
         _FakeBr(
             acceptance_criteria="given x then y",
+            requirements="- a requirement",
             description=_TRIGGER,
         ),
     )
@@ -107,7 +114,7 @@ def test_classify_reports_not_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_pat
     result = classify.classify(tmp_path, "i", "feature")
     assert result.work_type == "feature"
     assert result.can_leave_classify is False
-    assert result.dor.missing == ("## Trigger", "## Acceptance Criteria")
+    assert result.dor.missing == ("## Trigger", "## Acceptance Criteria", "## Requirements")
 
 
 def test_classify_assigns_and_records_the_integrity_level(
@@ -151,7 +158,13 @@ def test_the_type_and_the_marker_land_in_the_owned_ledger_with_br_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = flipped_tracker.flipped_repo(tmp_path)
-    flipped_tracker.seed(repo, "seam-1", description=_TRIGGER, acceptance_criteria="- given x")
+    flipped_tracker.seed(
+        repo,
+        "seam-1",
+        description=_TRIGGER,
+        acceptance_criteria="- given x",
+        requirements="- a requirement",
+    )
     flipped_tracker.refuse_spawn(monkeypatch)
 
     result = classify.classify(repo, "seam-1", "task", ("src/basicly/policy.py",))
@@ -170,7 +183,13 @@ def test_the_dor_verdict_comes_out_of_the_owned_record_with_br_absent(
 
     repo = flipped_tracker.flipped_repo(tmp_path)
     for bead in ("ready-1", "bug-1"):
-        flipped_tracker.seed(repo, bead, description=_TRIGGER, acceptance_criteria="- given x")
+        flipped_tracker.seed(
+            repo,
+            bead,
+            description=_TRIGGER,
+            acceptance_criteria="- given x",
+            requirements="- a requirement",
+        )
     flipped_tracker.refuse_spawn(monkeypatch)
 
     assert classify.classify(repo, "ready-1", "task").dor.ready is True

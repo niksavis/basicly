@@ -45,6 +45,7 @@ class _FakeBr:
         issue_type: str = "",
         gates: list[dict] | None = None,
         acceptance_criteria: str | None = None,
+        requirements: str | None = None,
         description: str | None = None,
         dependents: list[dict] | None = None,
         status: str = "open",
@@ -54,6 +55,7 @@ class _FakeBr:
         self.issue_type = issue_type
         self.gates = gates or []
         self.acceptance_criteria = acceptance_criteria
+        self.requirements = requirements
         self.description = description
         self.dependents = dependents or []
         self.status = status
@@ -70,6 +72,7 @@ class _FakeBr:
                 return _Proc(json.dumps([self.records[args[1]]]))
             record = {
                 "acceptance_criteria": self.acceptance_criteria,
+                "requirements": self.requirements,
                 "description": self.description,
                 "dependents": self.dependents,
                 "issue_type": self.issue_type,
@@ -109,13 +112,16 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
 
 
 def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y", description=_TRIGGER))
+    _install(
+        monkeypatch,
+        _FakeBr(acceptance_criteria="given x then y", requirements="- r", description=_TRIGGER),
+    )
     assert policy.definition_of_ready(tmp_path, "i").ready is True
 
     _install(monkeypatch, _FakeBr())
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
-    assert result.missing == ("## Trigger", "## Acceptance Criteria")
+    assert result.missing == ("## Trigger", "## Acceptance Criteria", "## Requirements")
 
 
 def test_dor_requires_acceptance_criteria_whatever_the_work_type(
@@ -125,7 +131,7 @@ def test_dor_requires_acceptance_criteria_whatever_the_work_type(
     _install(monkeypatch, _FakeBr(issue_type="chore", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
-    assert result.missing == ("## Trigger", "## Acceptance Criteria")
+    assert result.missing == ("## Trigger", "## Acceptance Criteria", "## Requirements")
 
 
 def test_dor_refuses_criteria_held_only_under_the_description_heading(
@@ -135,6 +141,7 @@ def test_dor_refuses_criteria_held_only_under_the_description_heading(
         monkeypatch,
         _FakeBr(
             acceptance_criteria=None,
+            requirements="- r",
             description=_TRIGGER + "\n## Acceptance Criteria\n\n- given x then y\n",
         ),
     )
@@ -146,7 +153,12 @@ def test_dor_keeps_other_missing_sections_when_adding_the_requirement(
 ) -> None:
     _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
-    assert result.missing == ("## Trigger", "## Steps to Reproduce", "## Acceptance Criteria")
+    assert result.missing == (
+        "## Trigger",
+        "## Steps to Reproduce",
+        "## Acceptance Criteria",
+        "## Requirements",
+    )
 
 
 def test_dor_reads_the_required_sections_from_configuration(
@@ -157,7 +169,12 @@ def test_dor_reads_the_required_sections_from_configuration(
     )
     _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
-    assert result.missing == ("## Trigger", "## Repro", "## Acceptance Criteria")
+    assert result.missing == (
+        "## Trigger",
+        "## Repro",
+        "## Acceptance Criteria",
+        "## Requirements",
+    )
 
 
 def _ledger_template(repo_root: Path, body: dict[str, object]) -> None:
@@ -179,6 +196,7 @@ def test_dor_reads_an_extending_ledger_template(
         "## Trigger",
         "## Steps to Reproduce",
         "## Acceptance Criteria",
+        "## Requirements",
         "## Risks",
         "## Impact",
     )
@@ -239,7 +257,7 @@ def test_dor_structured_acceptance_field_satisfies_the_section(
 ) -> None:
     _install(
         monkeypatch,
-        _FakeBr(acceptance_criteria="the field is set", description=_TRIGGER),
+        _FakeBr(acceptance_criteria="the field is set", requirements="- r", description=_TRIGGER),
     )
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is True
@@ -255,7 +273,7 @@ def test_dor_structured_field_does_not_mask_other_missing_sections(
     )
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
-    assert result.missing == ("## Trigger", "## Steps to Reproduce")
+    assert result.missing == ("## Trigger", "## Steps to Reproduce", "## Requirements")
 
 
 def test_dor_empty_or_absent_acceptance_field_still_requires_the_section(
@@ -2906,5 +2924,8 @@ def test_definition_of_ready_still_answers_under_the_ban(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
-    _install(monkeypatch, _FakeBr(acceptance_criteria="given x then y", description=_TRIGGER))
+    _install(
+        monkeypatch,
+        _FakeBr(acceptance_criteria="given x then y", requirements="- r", description=_TRIGGER),
+    )
     assert policy.definition_of_ready(tmp_path, "i").ready is True

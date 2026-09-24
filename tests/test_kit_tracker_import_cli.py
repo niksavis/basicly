@@ -9,15 +9,22 @@ from tests.kit_deployment_helpers import KIT_RELATIVE, REPO_ROOT, _load
 
 cli = _load(REPO_ROOT / KIT_RELATIVE / "cli.py", "kit_import_test_cli")
 
+SHAPED = {
+    "description": "When a backlog moves, I want each record ready, so I can keep working.",
+    "acceptance_criteria": "- the ready query offers it",
+    "requirements": "- standard library only",
+}
+
 EXPORT = [
     {
         "id": "demo-aa11",
         "title": "move the backlog across",
         "status": "open",
+        **SHAPED,
         "comments": [{"text": "carried over from the old tracker"}],
         "dependencies": [{"issue_id": "demo-aa11", "depends_on_id": "demo-bb22", "type": "blocks"}],
     },
-    {"id": "demo-bb22", "title": "a record the first one waits on", "status": "open"},
+    {"id": "demo-bb22", "title": "a record the first one waits on", "status": "open", **SHAPED},
     {"id": "not-an-id", "title": "this one cannot be a record id"},
 ]
 

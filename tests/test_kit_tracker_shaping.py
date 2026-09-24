@@ -222,15 +222,14 @@ def test_a_record_the_kit_minted_is_refused_for_missing_requirements(
     assert shaping.REQUIREMENTS_HEADING in report["blocking"]
 
 
-def test_a_record_minted_before_the_rule_is_not_refused_for_requirements() -> None:
+def test_a_record_minted_before_the_rule_is_refused_for_requirements() -> None:
     assert shaping.REQUIREMENTS_HEADING in shaping.owed(LEGACY), (
         "the debt stays visible, so a board still shows it"
     )
-    assert shaping.REQUIREMENTS_HEADING not in shaping.refused(LEGACY), (
-        "no record could carry requirements before the engine seam could write it, so "
-        "refusing 341 of them would be refusing content nobody could have written"
+    assert shaping.refused(LEGACY) == (shaping.REQUIREMENTS_HEADING,), (
+        "the rule holds every record to the requirements, whenever it was minted"
     )
-    assert shaping.shaped(LEGACY)
+    assert not shaping.shaped(LEGACY)
 
 
 def test_the_marker_is_absent_rather_than_dated_on_a_legacy_record() -> None:

@@ -180,7 +180,11 @@ def test_an_open_record_is_ready_on_the_typed_field_and_not_on_the_heading_alone
     typed = _dor_verdict_of(
         monkeypatch,
         tmp_path,
-        {"description": trigger, plan_record.ACCEPTANCE_FIELD: criterion},
+        {
+            "description": trigger,
+            plan_record.ACCEPTANCE_FIELD: criterion,
+            "requirements": "- a requirement",
+        },
     )
 
     assert heading in heading_only.missing

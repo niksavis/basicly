@@ -258,6 +258,13 @@ def _owned_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
+_SHAPED = {
+    "description": "When a record is open, I want it ranked, so I can pick the next one.",
+    "acceptance_criteria": "- the ranking offers it",
+    "requirements": "- standard library only",
+}
+
+
 def _seed_ledger(repo: Path) -> None:
 
     kit = tracker.kit(repo)
@@ -265,16 +272,28 @@ def _seed_ledger(repo: Path) -> None:
     kit.events.append(
         tracker.ledger_dir(repo),
         [
-            events.Draft("rank-aa01", events.KIND_CREATED, {"title": "critical", "priority": 0}),
+            events.Draft(
+                "rank-aa01",
+                events.KIND_CREATED,
+                {"title": "critical", "priority": 0, **_SHAPED},
+            ),
             events.Draft("rank-aa01", events.KIND_STATUS, {"status": "open"}),
-            events.Draft("rank-bb02", events.KIND_CREATED, {"title": "waiting", "priority": 0}),
+            events.Draft(
+                "rank-bb02",
+                events.KIND_CREATED,
+                {"title": "waiting", "priority": 0, **_SHAPED},
+            ),
             events.Draft("rank-bb02", events.KIND_STATUS, {"status": "open"}),
             events.Draft(
                 "rank-bb02",
                 edge.KIND_EDGE,
                 {edge.EDGE_TO: "rank-aa01", edge.EDGE_TYPE: "blocks"},
             ),
-            events.Draft("rank-cc03", events.KIND_CREATED, {"title": "ordinary", "priority": 2}),
+            events.Draft(
+                "rank-cc03",
+                events.KIND_CREATED,
+                {"title": "ordinary", "priority": 2, **_SHAPED},
+            ),
             events.Draft("rank-cc03", events.KIND_STATUS, {"status": "open"}),
         ],
         clock=lambda: CLOCK,

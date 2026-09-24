@@ -113,7 +113,12 @@ def test_r4_multi_line_acceptance_criteria_satisfy_the_gate_from_the_field(
 
     body = "## Trigger\n\nWhen a record is gated, I want a trigger, so I can validate it.\n"
     criteria = "- given a thing\n- when it happens\n- then a result"
-    record = {"id": "basicly-x", "acceptance_criteria": criteria, "description": body}
+    record = {
+        "id": "basicly-x",
+        "acceptance_criteria": criteria,
+        "requirements": "- a requirement",
+        "description": body,
+    }
     install_kit(tmp_path)
     monkeypatch.setattr(tracker, "read_record", lambda *_a, **_k: record)
     result = policy.definition_of_ready(tmp_path, "basicly-x")

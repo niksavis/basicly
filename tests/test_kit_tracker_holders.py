@@ -168,7 +168,15 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / "basicly.toml").write_text(
         '[tracker]\nmode = "owned"\nprefix = "th"\n', encoding="utf-8"
     )
-    flipped_tracker.seed(root, "th-1", title="the root", assignee="alex")
+    flipped_tracker.seed(
+        root,
+        "th-1",
+        title="the root",
+        assignee="alex",
+        description=TRIGGER,
+        acceptance_criteria="- it is seen",
+        requirements="- stdlib",
+    )
     monkeypatch.chdir(root)
     return root
 

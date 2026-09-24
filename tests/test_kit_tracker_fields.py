@@ -246,7 +246,7 @@ def _ready_ids(ledger: Path, capsys: pytest.CaptureFixture[str]) -> set[str]:
     return {row["record"] for row in _report(capsys)["records"]}
 
 
-def test_ready_holds_back_a_labelled_or_unshaped_new_record_and_keeps_an_older_one(
+def test_ready_holds_back_a_labelled_or_unshaped_new_record_and_an_unshaped_older_one(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ledger = tmp_path / "ledger"
@@ -260,8 +260,15 @@ def test_ready_holds_back_a_labelled_or_unshaped_new_record_and_keeps_an_older_o
         cli.main(["create", str(ledger), "--prefix", "acme", "--title", name, *extra])
         made[name] = _report(capsys)["record"]
     older = cli.commands.create_root(ledger, {"title": "older"}, prefix="acme")[0].record
+    older_fields = {
+        "title": "older shaped",
+        "description": TRIGGER,
+        "acceptance_criteria": "- a",
+        "requirements": "- b",
+    }
+    older_shaped = cli.commands.create_root(ledger, older_fields, prefix="acme")[0].record
 
-    assert _ready_ids(ledger, capsys) == {made["shaped"], older}
+    assert _ready_ids(ledger, capsys) == {made["shaped"], older_shaped}
 
     cli.main(["refine", str(ledger)])
     labelled = {row["record"]: row["labelled"] for row in _report(capsys)["records"]}

@@ -467,7 +467,12 @@ def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_ver
 ) -> None:
 
     body = _TRIGGER + "## Scope\n\n- src/a.py\n"
-    fields = {"issue_type": "task", "description": body, "acceptance_criteria": "- x"}
+    fields = {
+        "issue_type": "task",
+        "description": body,
+        "acceptance_criteria": "- x",
+        "requirements": "- r",
+    }
     record = _Proc(json.dumps([fields]))
     fake_tracker.install(monkeypatch, lambda _root, _args: record)
 
@@ -481,7 +486,12 @@ def test_dor_stays_quiet_when_the_scope_parsed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     body = _TRIGGER + f"## Scope\n\n{policy.SCOPE_LINE_EXAMPLE}\n"
-    fields = {"issue_type": "task", "description": body, "acceptance_criteria": "- x"}
+    fields = {
+        "issue_type": "task",
+        "description": body,
+        "acceptance_criteria": "- x",
+        "requirements": "- r",
+    }
     record = _Proc(json.dumps([fields]))
     fake_tracker.install(monkeypatch, lambda _root, _args: record)
 

@@ -37,6 +37,24 @@ def seed(repo: Path, *records: str) -> None:
     )
 
 
+SHAPED = {
+    "description": "When a person claims a record, I want their name on it, so I can ask them.",
+    "acceptance_criteria": "- the claim names the person",
+    "requirements": "- standard library only",
+}
+
+
+def seed_ready(repo: Path, record: str) -> None:
+    kit = owned_store.kit(repo)
+    kit.events.append(
+        owned_store.ledger_dir(repo),
+        [
+            kit.events.Draft(record, kit.events.KIND_CREATED, SHAPED),
+            kit.events.Draft(record, kit.events.KIND_STATUS, {"status": "open"}),
+        ],
+    )
+
+
 @pytest.fixture
 def no_br(monkeypatch: pytest.MonkeyPatch) -> None:
 
@@ -313,7 +331,7 @@ def test_an_engine_claim_names_the_person_who_claimed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = owned_repo(tmp_path)
-    seed(repo, PARENT)
+    seed_ready(repo, PARENT)
     monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
 
     owned_write.append(repo, ["update", PARENT, "--status", "in_progress"])

@@ -1,0 +1,1 @@
+- The Definition of Ready now requires requirements for every record, not only for records created under the dor.v2 rule, so an older record without requirements leaves the ready list until an agent adds them. (basicly-kkmlzo2)

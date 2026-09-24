@@ -24,6 +24,12 @@ commands = _load(KIT_DIR / "commands.py", "tracker_commands")
 queries = commands.queries
 events = commands.events
 
+SHAPED = {
+    "description": "When a child is ready, I want it offered, so I can pick it up.",
+    "acceptance_criteria": "- the ready query offers it",
+    "requirements": "- standard library only",
+}
+
 
 @pytest.fixture
 def ledger(tmp_path: Path) -> Path:
@@ -99,7 +105,7 @@ def test_a_child_nests_under_its_parent_and_carries_the_edge(ledger: Path) -> No
 
 def test_a_decomposed_parent_leaves_the_ready_set_and_its_child_enters_it(ledger: Path) -> None:
     record = root_of(ledger)
-    child = commands.create_child(ledger, record, {"title": "a child"})[0].record
+    child = commands.create_child(ledger, record, {"title": "a child", **SHAPED})[0].record
 
     assert [row["record"] for row in queries.ready(ledger)["records"]] == [child]
     assert [row["record"] for row in queries.blocked(ledger)["records"]] == [record]
@@ -117,8 +123,8 @@ def test_a_blocked_row_carries_the_title_a_client_draws(ledger: Path) -> None:
 
 def test_a_blocking_edge_holds_the_dependent_until_the_blocker_closes(ledger: Path) -> None:
     record = root_of(ledger)
-    first = commands.create_child(ledger, record, {"title": "first"})[0].record
-    second = commands.create_child(ledger, record, {"title": "second"})[0].record
+    first = commands.create_child(ledger, record, {"title": "first", **SHAPED})[0].record
+    second = commands.create_child(ledger, record, {"title": "second", **SHAPED})[0].record
     commands.add_dependency(ledger, second, first, edge_type="blocks")
 
     assert [row["record"] for row in queries.ready(ledger)["records"]] == [first]
@@ -317,8 +323,8 @@ def test_an_update_after_a_comment_or_another_field_changed_still_lands(ledger: 
 
 def test_undep_retracts_an_edge_and_the_dependent_is_ready_again(ledger: Path) -> None:
     record = root_of(ledger)
-    first = commands.create_child(ledger, record, {"title": "first"})[0].record
-    second = commands.create_child(ledger, record, {"title": "second"})[0].record
+    first = commands.create_child(ledger, record, {"title": "first", **SHAPED})[0].record
+    second = commands.create_child(ledger, record, {"title": "second", **SHAPED})[0].record
     commands.add_dependency(ledger, second, first, edge_type="blocks")
 
     commands.remove_dependency(ledger, second, first, edge_type="blocks")

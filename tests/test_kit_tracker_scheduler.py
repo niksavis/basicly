@@ -35,6 +35,12 @@ CLOCK_B = tuple(reversed(CLOCK_A))
 
 GRAPH = (("sched-aa01", 2), ("sched-bb02", 2), ("sched-cc03", 2))
 
+SHAPED = {
+    "description": "When a record is open, I want it ranked, so I can pick the next one.",
+    "acceptance_criteria": "- the ranking offers it",
+    "requirements": "- standard library only",
+}
+
 
 def _view(
     record: str,
@@ -82,7 +88,7 @@ def _write(directory: Path, stamps: Sequence[float]) -> None:
                 events.Draft(
                     record,
                     events.KIND_CREATED,
-                    {"title": record, "priority": priority, "created_at": _iso(stamp)},
+                    {"title": record, "priority": priority, "created_at": _iso(stamp), **SHAPED},
                 ),
                 events.Draft(record, events.KIND_STATUS, {"status": "open"}),
             ],
@@ -261,7 +267,11 @@ def test_ranking_reads_a_ledger_end_to_end(tmp_path: Path) -> None:
         [
             events.Draft("sched-epic", events.KIND_CREATED, {"title": "the epic", "priority": 0}),
             events.Draft("sched-epic", events.KIND_STATUS, {"status": "open"}),
-            events.Draft("sched-leaf", events.KIND_CREATED, {"title": "the leaf", "priority": 3}),
+            events.Draft(
+                "sched-leaf",
+                events.KIND_CREATED,
+                {"title": "the leaf", "priority": 3, **SHAPED},
+            ),
             events.Draft("sched-leaf", events.KIND_STATUS, {"status": "open"}),
             events.Draft(
                 "sched-leaf",

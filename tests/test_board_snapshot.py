@@ -194,7 +194,7 @@ def test_the_units_and_graph_sections_pin_the_frozen_corpus(board_repo: Path) ->
         "status": "in_progress",
         "priority": "P1",
         "type": "task",
-        "owes": ["## Trigger", "## Acceptance Criteria"],
+        "owes": ["## Trigger", "## Acceptance Criteria", "## Requirements"],
     }
     drawn = {row["id"] for row in document["units"]}
     edges = document["graph"]["edges"]

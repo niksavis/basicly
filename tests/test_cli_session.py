@@ -34,23 +34,38 @@ def _run(repo: Path, monkeypatch: pytest.MonkeyPatch, *argv: str) -> int:
     return cli.main(["session", "start", *argv])
 
 
+SHAPED = {
+    "description": "When a session starts, I want the ready work listed, so I can pick one.",
+    "acceptance_criteria": "- the orientation lists it",
+    "requirements": "- standard library only",
+}
+
+
 def _seeded(tmp_path: Path) -> Path:
     repo = flipped_repo(tmp_path)
     seed_records(
         repo,
         [
-            {"id": "basicly-aaa", "status": "open", "title": "the ready one", "priority": "1"},
+            {
+                "id": "basicly-aaa",
+                "status": "open",
+                "title": "the ready one",
+                "priority": "1",
+                **SHAPED,
+            },
             {
                 "id": "basicly-bbb",
                 "status": "open",
                 "title": "the blocked one",
                 "dependencies": [{"id": "basicly-aaa", "type": "blocks"}],
+                **SHAPED,
             },
             {
                 "id": "basicly-ccc",
                 "status": "open",
                 "title": "the granted root",
                 "comments": [{"text": f"{policy.MARKER} grant level=L3 budget=1000000"}],
+                **SHAPED,
             },
         ],
     )

@@ -30,11 +30,21 @@ def owned_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
+SHAPED = {
+    "description": "When an agent writes, I want its name on the ledger, so I can trace it.",
+    "acceptance_criteria": "- the ledger names the agent",
+    "requirements": "- standard library only",
+}
+
+
 def seed(repo: Path, record: str) -> None:
     kit = owned_store.kit(repo)
     kit.events.append(
         owned_store.ledger_dir(repo),
-        [kit.events.Draft(record, kit.events.KIND_STATUS, {"status": "open"})],
+        [
+            kit.events.Draft(record, kit.events.KIND_CREATED, SHAPED),
+            kit.events.Draft(record, kit.events.KIND_STATUS, {"status": "open"}),
+        ],
     )
 
 
@@ -77,7 +87,7 @@ def test_a_write_through_the_seam_carries_the_agent_onto_the_ledger(
 
     kit = owned_store.kit(repo)
     actors = [event.actor for event in events_of(repo, RECORD)]
-    assert actors == [kit.events.UNATTRIBUTED_ACTOR, "agent:codex"]
+    assert actors == [kit.events.UNATTRIBUTED_ACTOR, kit.events.UNATTRIBUTED_ACTOR, "agent:codex"]
 
 
 @pytest.mark.usefixtures("no_br")

@@ -88,14 +88,25 @@ def test_a_todo_acceptance_criterion_satisfies_nothing(tmp_path: Path) -> None:
 
 
 def test_only_the_typed_field_satisfies_testable_on_an_open_record(tmp_path: Path) -> None:
-    in_body = {"description": f"{_PATCHING}\n## Acceptance Criteria\n\n- given x then y\n"}
-    in_field = {"description": _PATCHING, "acceptance_criteria": "given x then y"}
+    in_body = {
+        "description": f"{_PATCHING}\n## Acceptance Criteria\n\n- given x then y\n",
+        "requirements": "- a requirement",
+    }
+    in_field = {
+        "description": _PATCHING,
+        "acceptance_criteria": "given x then y",
+        "requirements": "- a requirement",
+    }
     assert _missing(tmp_path, in_body) == (invest.ACCEPTANCE_HEADING,)
     assert _missing(tmp_path, in_field) == ()
 
 
 def test_a_trigger_is_missing_by_its_own_name(tmp_path: Path) -> None:
-    record = {"description": "no story here", "acceptance_criteria": "given x then y"}
+    record = {
+        "description": "no story here",
+        "acceptance_criteria": "given x then y",
+        "requirements": "- a requirement",
+    }
     assert _missing(tmp_path, record) == (invest.TRIGGER_HEADING,)
 
 
