@@ -248,10 +248,12 @@ function person(name) {
 }
 
 async function load() {
+  const { version } = await call("GET", "/version");
   const [index, ready, blocked, refine, ...lists] = await Promise.all([
     call("GET", ""), call("GET", "/ready?limit=5000"), call("GET", "/blocked"), call("GET", "/refine"),
     ...STATUSES.map((status) => call("GET", "/records?status=" + status)),
   ]);
+  state.version = version;
   state.me = index.holder || "";
   state.edgeTypes = index.edge_types || state.edgeTypes;
   state.records = new Map(lists.flatMap((list) => list.records).map((one) => [one.record, one]));
@@ -918,6 +920,17 @@ async function refreshQuietly() {
   }
 }
 
+async function watchVersion() {
+  if (document.hidden || !state.version || busy()) return;
+  try {
+    const { version } = await call("GET", "/version");
+    if (version !== state.version) await refreshQuietly();
+  } catch (error) {
+    return;
+  }
+}
+
+setInterval(watchVersion, 2000);
 setInterval(refreshQuietly, 15000);
 window.addEventListener("focus", refreshQuietly);
 document.getElementById("sort").addEventListener("change", (event) => { state.sort = event.target.value; drawList(); });

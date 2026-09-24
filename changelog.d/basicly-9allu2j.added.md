@@ -1,0 +1,1 @@
+- The tracker page shows a change from the CLI, an agent or another browser within about two seconds: it polls the new `GET /api/v1/version` stamp and reloads only when the ledger changed. (basicly-9allu2j)

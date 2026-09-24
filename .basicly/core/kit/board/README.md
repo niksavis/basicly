@@ -59,6 +59,7 @@ output works against the API. `GET /api/v1` also names the `holder`, the name th
 
 | Method and path | Kit command | Body keys |
 | --- | --- | --- |
+| `GET /api/v1/version` | none: a stamp of the ledger files that changes on every write | |
 | `GET /api/v1/ready?limit=N` | `ready` | |
 | `GET /api/v1/blocked`, `/stats`, `/fields`, `/refine` | same name | |
 | `GET /api/v1/scaffold?type=T` | `scaffold` | |

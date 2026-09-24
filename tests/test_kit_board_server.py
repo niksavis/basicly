@@ -252,7 +252,7 @@ def test_every_action_the_page_posts_is_a_route_the_server_takes() -> None:
     posted = set(re.findall(r'\bact\("([a-z]+)"', PAGE))
 
     assert posted
-    assert posted <= set(server._ACTIONS)
+    assert posted <= set(server.routes._ACTIONS)
 
 
 def test_every_key_the_page_patches_is_one_the_server_accepts() -> None:
@@ -263,14 +263,14 @@ def test_every_key_the_page_patches_is_one_the_server_accepts() -> None:
     assigned = set(re.findall(r"\bbody\.([a-z_]+) =", PAGE))
 
     assert patched and edited and assigned
-    assert patched | edited | assigned <= server._UPDATE_KEYS
+    assert patched | edited | assigned <= server.routes._UPDATE_KEYS
 
 
 def test_every_list_the_page_reads_is_a_read_the_server_answers() -> None:
     reads = set(re.findall(r'call\("GET", "/([a-z]+)', PAGE))
 
     assert reads
-    assert reads <= {*server.READS, "records"}
+    assert reads <= {*server.routes.READS, "records", "version"}
 
 
 def test_a_readiness_read_of_a_story_that_is_not_ready_answers_200_with_the_verdict(
@@ -354,3 +354,13 @@ def test_drain_reads_an_unread_body_once_and_never_past_the_limit(ledger: Path) 
     oversized.rfile = io.BytesIO(b"x" * 8)
     oversized._drain()
     assert oversized.rfile.read() == b"x" * 8
+
+
+def test_the_version_stamp_changes_on_a_write_and_only_then(client: Client) -> None:
+    _, first = client.call("GET", "/api/v1/version")
+    _, again = client.call("GET", "/api/v1/version")
+    client.call("POST", "/api/v1/records", {"title": "a change"})
+    _, after = client.call("GET", "/api/v1/version")
+
+    assert first["version"] == again["version"]
+    assert after["version"] != first["version"]
