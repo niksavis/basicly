@@ -39,6 +39,25 @@ def _drop_ambient_colour_env() -> None:
 _drop_ambient_colour_env()
 
 
+HOME_VARIABLES = ("HOME", "USERPROFILE", "XDG_CONFIG_HOME")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _no_ambient_home(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+
+    before = {name: os.environ.get(name) for name in (*HOME_VARIABLES, "XDG_CACHE_HOME")}
+    os.environ.setdefault("XDG_CACHE_HOME", str(Path.home() / ".cache"))
+    home = tmp_path_factory.mktemp("home")
+    for name in HOME_VARIABLES:
+        os.environ[name] = str(home)
+    yield
+    for name, value in before.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+
+
 def _shared_git_config() -> Path | None:
 
     proc = subprocess.run(
