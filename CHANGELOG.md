@@ -6,6 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the tracker safe for many people working on one repository. A person can
+reserve a story before starting it, everyone else sees who holds it, and a second person is
+refused by name. When two people write the same story on different branches, the tracker
+now tells a harmless overlap from a real conflict, and one command settles a conflict.
+
+- **Story reservations.** `assign` reserves a story without starting it, `claim` also sets
+  it to `in_progress`, and `unassign` gives it back. `ready`, `show` and the board name each
+  holder, mark a reservation stale after `stale_days` without an event, and mark a story
+  contested when two people reserved it on different branches. `basicly loop` and the
+  supervisor respect reservations (`basicly-fdrwlvs`).
+- **Forks by what they conflict on.** Two writers on one record that set nothing in common
+  are a warning; two branches that set one value differently fail as `conflicting-fork` and
+  name both values; `resolve` keeps the current value (`basicly-ioj3c0o`).
+- **Faster Windows tests.** The repository copy that many tests build no longer includes
+  the test suite, which cuts that setup time by about a third on Windows.
+
 ## v0.17.0 - 2026-09-24
 
 Delta: v0.16.0..v0.17.0
