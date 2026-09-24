@@ -6,6 +6,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the tracker page safe to use beside the CLI and agents, and easier to
+scan. A save in the page no longer replaces a change someone else made while you edited.
+The page refreshes itself, and every row shows the story's state, its links and its labels.
+A claim now records who made it.
+
+- **No lost edits.** `update --if-seq` refuses a field that changed after you read it. The
+  page sends it and keeps your text when it is refused (`basicly-jyhk9ek`).
+- **Claims name a holder.** Moving a story that nobody holds to `in_progress` records you as
+  its holder, through the kit and through `basicly tracker write update`
+  (`basicly-jyhk9ek`).
+- **A page you can scan.** A status symbol in front of every row, neutral type pills, links
+  and labels on each row, suggestions in every search, labels and assignee in the page,
+  a Details section, and `undep` to retract a dependency (`basicly-mu54qye`,
+  `basicly-xpjqoif`, `basicly-jyhk9ek`).
+- **Four tool skills:** `tool-just`, `tool-direnv`, `tool-git-lfs` and `tool-lazygit`
+  (`basicly-dcb1igh`).
+
 ## v0.18.2 - 2026-09-24
 
 Delta: v0.18.1..v0.18.2
