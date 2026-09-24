@@ -6,6 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release gives the engine and the tracker kit one readiness rule. **Breaking:** on an
+open record, acceptance criteria and requirements are now typed fields only. A description
+that holds an `## Acceptance Criteria` or `## Requirements` heading is refused, and the
+refusal names `--acceptance` and `--requirements`. Run `migrate-fields` once to move the
+sections of older open records into the fields.
+
+- **One readiness rule.** The engine's definition of ready calls the kit's `dor` and adds
+  only its per-type sections, so a record the engine calls ready is ready for the kit too.
+  `ready` also holds back a new record that fails `dor` (`basicly-u07bfuw`).
+- **Requirements are checked where they matter.** The validate phase refuses to dispatch
+  the validator for a record that states no requirements (`basicly-li8aifz`).
+- **Vendored documents match the code.** The tracker kit specification and the tier and
+  comments kit READMEs are rewritten; ten statements in the specification that disagreed
+  with the code are corrected.
+
 ## v0.16.0 - 2026-09-24
 
 Delta: v0.15.1..v0.16.0
