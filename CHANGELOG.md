@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes readiness strict and identity deliberate. Every record now needs
+requirements before it is ready, and the tracker records the holder name you choose, with a
+gate that keeps your git name out of everything else.
+
+- **DoR for every record.** Older records without requirements leave the ready list until an
+  agent adds them (`basicly-kkmlzo2`).
+- **Choose your holder name** with `git config basicly.holder`; `identity-guard` refuses your
+  git name anywhere else (`basicly-fs7bkwu`).
+- **Faster releases.** The release workflow keeps the fast checks and leaves the test suite to
+  CI (`basicly-8xwfe5a`).
+
 ## v0.18.6 - 2026-09-24
 
 Delta: v0.18.5..v0.18.6
