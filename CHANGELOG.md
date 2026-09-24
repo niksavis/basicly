@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.16.0 - 2026-09-24
+
+Delta: v0.15.1..v0.16.0
+
 This release makes the work tracker complete on its own, adds a browser board with an HTTP
 API, and rewrites every skill and agent role that basicly ships. A repository with no basicly
 can now write, refine, see and serve its backlog from the tracker kit alone, and a team can
@@ -24,6 +28,60 @@ build its own page or tool on the same JSON the commands print.
   (`basicly-wb3alfn`, `basicly-dde1ck3`).
 - **Fresh install.** A new install passes its own catalog lint on the first commit
   (`basicly-xkvevbo`).
+
+### Added
+
+- The standalone tracker kit has a `scaffold` command that prints the description and flags a record of one type must carry, and its guidance now shows how to split and word a record. `basicly policy scaffold` and decompose now emit the sections a ledger template adds. The refusal text no longer points an open record at description sections, which only a closed record reads. (basicly-k1pxru4.4)
+
+- `basicly-tracker bundle` writes `tracker.pyz`, one file that installs and runs the standalone tracker on any platform with Python 3.9 or later, with no `uvx` and no network. `python tracker.pyz init` writes the same git rules as the package. Each GitHub release attaches the file. (basicly-k1pxru4.5)
+
+- Every standalone tracker kit command now prints a `schema` field, `basicly.tracker.<command>.v1`, so a script or a frontend can detect a breaking change in the output. `ready` keeps `basicly.scheduler.v1`. (basicly-k1pxru4.6)
+
+- The standalone tracker kit ships `REFERENCE.md`, one example for every command, and every command its documents show is now run by a test on a fresh install. (basicly-k1pxru4.7)
+
+- A `template.json` in the tracker ledger now sets what a record must carry before `dor` passes. `extend` adds sections to the default, `override` replaces it, and `types` adds sections per record type. The standalone kit and `basicly policy dor` read the same file, and a malformed template is refused by name. (basicly-k1pxru4.8)
+
+- A new optional board kit (`basicly-board`, or `basicly tracker serve`) serves the backlog as a web page and an HTTP API on localhost. A person writes and edits stories, and an agent refinement pass (`refine`) shapes them before they are ready. Each endpoint returns the same versioned JSON as the tracker command, so a team can build its own page on it. (basicly-k1pxru4.9)
+
+- A new always-on rule, Mistake Proofing, tells agents to make a wrong use of an interface impossible, or to stop it at once with the fix, instead of documenting the pitfall. (basicly-p2m9zk5)
+
+- `basicly install` now sets `subagentPromptCacheTtl` to `1h` in `.claude/settings.json` when the key is absent, so a subagent keeps its prompt cache through a pause longer than five minutes. A value you set yourself is kept. (basicly-qyvl68z)
+
+### Changed
+
+- The always-on instruction files basicly installs are rewritten in short, plain sentences with the design principles first, and path-scoped rules now follow every always-on rule. Four rules that only apply inside basicly no longer reach a consumer, so a fresh AGENTS.md is 47% smaller. (basicly-aidasmn)
+
+- The agent roles are rewritten in the same style, and each role now states its hard limits right after its role, before the procedure. (basicly-dde1ck3)
+
+- The commits basicly writes for tracker state now use the `chore(tracker):` subject instead of `chore(beads):`, which named a tracker basicly no longer uses. (basicly-k1pxru4.10)
+
+- The standalone tracker kit now reports the sections that stop a record under `blocking`, so `refused` always means an error. `create`, `child`, `update`, `close`, `comment`, `dep`, `delete` and `dor` move to schema `v2`. (basicly-k1pxru4.12)
+
+- Every tracker event now records `agent:<name>` or `operator` as its actor, on the standalone kit and through basicly alike. Before, a person was stored as a redacted placeholder that named nobody, and every standalone write was unattributed. The person who wrote an event is the git author of the commit that carries it. (basicly-k1pxru4.13)
+
+- The tracker has one field table that the kit and the engine both apply. A write of a field that no code reads, or of an import-history field, is refused with the fix. `fields` prints the table. `show` now carries `dates` (created, updated, closed) derived from the event times, and the engine create keeps `--assignee`. (basicly-k1pxru4.15)
+
+- The tracker post-merge fold is now off by default, because a fold on a branch that becomes a pull request made that pull request conflict on GitHub. Enable it with `basicly-tracker init --fold-on-merge` or `[tracker] fold_on_merge = true` where one writer lands on the default branch. It then folds only there. (basicly-k1pxru4.3)
+
+- `ready` now leaves out a record labelled `refine`, so a story saved for refinement is not dispatched before the refinement pass. `decompose` writes each child's acceptance criteria as the typed field and copies the parent's requirements. (basicly-mil3z4a)
+
+- Every shipped skill is rewritten in simplified technical English: rules first, then commands, with no dates, record ids, incident stories or basicly-internal paths, and with no rule repeated from the always-on files. The rewrite corrects claims that were false, such as `rg --exit-status` and the node hook call. (basicly-wb3alfn)
+
+### Fixed
+
+- `basicly install` no longer tells you to exclude the managed core from the `.pre-commit-config.yaml` it wrote. That file holds basicly's own hooks, several of which lint `.basicly/core` on purpose, so following the advice disabled the gates the install had just installed. It now stays silent until the config carries a hook basicly did not write, and the advice says so. (basicly-ap693b0)
+
+- The `python` skill description now separates its triggers, so an agent reads each trigger as its own case. (basicly-g7os)
+
+- The standalone tracker kit no longer answers the wrong directory in silence. Its guidance showed `cli.py create .`, which wrote the event into the repository root, and `list .` answered an empty backlog. The guidance now names `.basicly/ledger`, `init` creates it, and the kit refuses a repository root or a directory that holds no ledger. (basicly-k1pxru4.1)
+
+- `basicly policy dor` and the standalone kit now give the same answer for a section a ledger template adds: a bare heading or a placeholder does not meet it on either route. (basicly-k1pxru4.11)
+
+- The tracker now refuses, by name and on both routes, a status outside the five it knows (suggesting the nearest), a priority outside 0 to 4, and a close without a reason. A record returning to a status it held before is recorded instead of dropped in silence, and an engine newer than the vendored kit says to run `basicly install`. (basicly-k1pxru4.14)
+
+- The standalone tracker's post-merge hook now falls back to `python3` or `python` when `uv` is not on PATH, and prints the command to run when it cannot fold the shards. Before, it failed in silence and the shards grew. (basicly-k1pxru4.2)
+
+- A fresh `basicly install` now passes its own `catalog lint`. The rank-1 routing floor is required only where a repository declared a high-water mark, so a consumer that cannot edit the vendored skills is not refused. (basicly-xkvevbo)
 
 ## v0.15.1 - 2026-09-18
 

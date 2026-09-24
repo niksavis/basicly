@@ -4,7 +4,7 @@ This is a walkthrough, not a reference. Follow it top to bottom on a **scratch
 git repo** and you will end with one unit of work filed, built in its own
 worktree, merged, and closed by the harness — one sitting, no agent spend.
 Every command and every quoted output below was executed against a fresh repo on
-basicly 0.15.1 in a real terminal, with that repo's generated bead-id prefix swapped for
+basicly 0.16.0 in a real terminal, with that repo's generated bead-id prefix swapped for
 `myrepo`, absolute paths written as `/path/to/...`, and `...` marking an elided line.
 
 When you want to look something up rather than learn the shape, stop here and
@@ -33,7 +33,7 @@ Every command below is written as bare `basicly`. Run it as the pinned form so
 you always get the version you chose:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.15.1 basicly <args>
+uvx --from git+https://github.com/niksavis/basicly@v0.16.0 basicly <args>
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -47,7 +47,7 @@ uvx --from git+https://github.com/niksavis/basicly@v0.15.1 basicly <args>
 From the repo root:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.15.1 basicly install
+uvx --from git+https://github.com/niksavis/basicly@v0.16.0 basicly install
 ```
 
 It ends with:
@@ -84,37 +84,29 @@ overlays: 2 fragment(s), 0 agent(s)
 `git 13 … installed` means thirteen git hooks are now live — which is what the
 next step is about.
 
-## Step 2 — make the first commit possible
+## Step 2 — check that the first commit can pass
 
-The gates are active from now on, including on the install output itself. One
-of them refuses a fresh repo, and it is one line to fix. Do it now rather than
-discovering it mid-commit.
+The gates are active from now on, including on the install output itself. Run the catalog
+check that the commit will run:
 
-**`catalog-lint` wants a routing floor.** The catalog now sitting in your repo
-is measured for how often the right skill ranks first, and the hook refuses to
-guess what number you consider acceptable:
-
-```text
-catalog lint: warning: skill listing is 2092 tokens against a 2000-token budget (1% of the 200000-token claude window a consumer gets), from 23 model-invoked entries. The host drops descriptions least-invoked first, so the entries this overrun silences are the ones already hardest to reach. Retire a dead skill or move it to user-invoked.
-catalog lint: warning: .basicly/core/skills/harness-loop/skill.yaml: SKILL.md body is 536 lines; keep it under ~500 (move detail into references/)
-catalog lint: FAILED
-  no rank-1 floor declared — set `[catalog] rank1_floor` in basicly.toml below the measured baseline (currently 89.1%). It is a fraction between 0 and 1, not a percentage: write 0.87, not 89.1
-catalog lint: routing: rank-1 rate 41/46 = 89.1% (no floor declared)
+```sh
+basicly catalog lint
 ```
 
-The two warnings do not fail the commit; only the missing floor does.
+```text
+catalog lint: routing: rank-1 rate 42/46 = 91.3% (no floor declared)
+catalog lint: OK
+```
 
-Take the number it just measured **for you** and set the floor a little under it, in
-`basicly.toml` — the rate depends on the catalog your version shipped, so a floor copied
-from this page instead of from your own output can land above it and fail every commit:
+The rate measures how often the right skill ranks first for a test prompt. A fresh install
+declares no floor, so nothing blocks the commit. When you add your own skills, you can
+declare a floor a little under the rate that your own output shows, so that a skill whose
+description collides with another one fails the commit:
 
 ```toml
 [catalog]
-rank1_floor = 0.85
+rank1_floor = 0.89
 ```
-
-That floor is a ratchet: adding a skill whose description collides with an
-existing one drops the rate and fails the commit.
 
 ## Step 3 — file the bead you are about to work on
 
@@ -302,7 +294,7 @@ basicly loop run myrepo-rq9r --runner manual
 override: runner.default=manual
   ...
 Cleaned up worktree 'myrepo-rq9r' (worktree + branch + metadata).
-[merged] build -> verify: merged harness/myrepo-rq9r @ 137700a49e08 (1 commit(s)) into main @ cfb6c60; landing 0.6s (tracker-commit 0.4s, merge 0.1s)
+[merged] build -> verify: merged harness/myrepo-rq9r @ 137700a49e08 (1 commit(s)) into main @ cfb6c60; landing 0.6s (tracker-commit 0.4s, merge 0.1s, rebase 0.1s)
 [blocked] verify -> verify: ship checkpoint awaiting human approval
 checkpoint ship: APPROVED (myrepo-rq9r)
 [tore-down] ship -> done: worktree torn down and issue closed; cost rollup recorded; the curator bound no claims; tracker state committed
@@ -332,16 +324,16 @@ git log --oneline -6
 ```
 
 ```text
-95cb292 chore(beads): close the shipped track (myrepo-rq9r)
+95cb292 chore(tracker): close the shipped track (myrepo-rq9r)
 cfb6c60 chore(worktree): merge a harness worktree back to its base
+5aad38f chore(tracker): sync tracker state for the harness loop (myrepo-rq9r)
 137700a docs: add a getting started note (myrepo-rq9r)
-5aad38f chore(beads): sync tracker state for the harness loop (myrepo-rq9r)
-a0545c0 chore(beads): record the claim before provisioning (myrepo-rq9r)
+a0545c0 chore(tracker): record the claim before provisioning (myrepo-rq9r)
 eaca649 chore: install basicly (myrepo-rq9r)
 ```
 
 You wrote two of those six — the install commit and the change itself. The
-engine wrote the merge and the three `chore(beads)` commits, at the claim, the
+engine wrote the merge and the three `chore(tracker)` commits, at the claim, the
 landing, and the close, which is why you never `git add .basicly/ledger` yourself on
 loop-tracked work.
 

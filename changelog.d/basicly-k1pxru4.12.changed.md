@@ -1,1 +1,0 @@
-- The standalone tracker kit now reports the sections that stop a record under `blocking`, so `refused` always means an error. `create`, `child`, `update`, `close`, `comment`, `dep`, `delete` and `dor` move to schema `v2`.

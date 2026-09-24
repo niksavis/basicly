@@ -1,1 +1,0 @@
-- The standalone tracker kit ships `REFERENCE.md`, one example for every command, and every command its documents show is now run by a test on a fresh install.

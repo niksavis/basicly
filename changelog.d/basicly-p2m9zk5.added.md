@@ -1,1 +1,0 @@
-- A new always-on rule, Mistake Proofing, tells agents to make a wrong use of an interface impossible, or to stop it at once with the fix, instead of documenting the pitfall.

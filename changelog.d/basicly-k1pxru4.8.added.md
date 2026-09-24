@@ -1,1 +1,0 @@
-- A `template.json` in the tracker ledger now sets what a record must carry before `dor` passes. `extend` adds sections to the default, `override` replaces it, and `types` adds sections per record type. The standalone kit and `basicly policy dor` read the same file, and a malformed template is refused by name.

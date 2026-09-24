@@ -1,1 +1,0 @@
-- The standalone tracker's post-merge hook now falls back to `python3` or `python` when `uv` is not on PATH, and prints the command to run when it cannot fold the shards. Before, it failed in silence and the shards grew.

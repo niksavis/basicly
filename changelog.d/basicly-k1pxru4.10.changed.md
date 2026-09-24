@@ -1,1 +1,0 @@
-- The commits basicly writes for tracker state now use the `chore(tracker):` subject instead of `chore(beads):`, which named a tracker basicly no longer uses.

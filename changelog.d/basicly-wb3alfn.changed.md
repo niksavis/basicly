@@ -1,1 +1,0 @@
-- Every shipped skill is rewritten in simplified technical English: rules first, then commands, with no dates, record ids, incident stories or basicly-internal paths, and with no rule repeated from the always-on files. The rewrite corrects claims that were false, such as `rg --exit-status` and the node hook call.

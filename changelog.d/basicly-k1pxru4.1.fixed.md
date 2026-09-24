@@ -1,1 +1,0 @@
-- The standalone tracker kit no longer answers the wrong directory in silence. Its guidance showed `cli.py create .`, which wrote the event into the repository root, and `list .` answered an empty backlog. The guidance now names `.basicly/ledger`, `init` creates it, and the kit refuses a repository root or a directory that holds no ledger.

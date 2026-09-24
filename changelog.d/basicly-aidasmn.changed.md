@@ -1,1 +1,0 @@
-- The always-on instruction files basicly installs are rewritten in short, plain sentences with the design principles first, and path-scoped rules now follow every always-on rule. Four rules that only apply inside basicly no longer reach a consumer, so a fresh AGENTS.md is 47% smaller.

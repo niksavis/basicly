@@ -1,1 +1,0 @@
-- `ready` now leaves out a record labelled `refine`, so a story saved for refinement is not dispatched before the refinement pass. `decompose` writes each child's acceptance criteria as the typed field and copies the parent's requirements.

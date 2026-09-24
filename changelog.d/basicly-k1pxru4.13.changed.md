@@ -1,1 +1,0 @@
-- Every tracker event now records `agent:<name>` or `operator` as its actor, on the standalone kit and through basicly alike. Before, a person was stored as a redacted placeholder that named nobody, and every standalone write was unattributed. The person who wrote an event is the git author of the commit that carries it.
