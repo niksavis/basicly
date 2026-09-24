@@ -107,6 +107,16 @@ function notes(...parts) {
   return parts.filter(Boolean).join(" · ");
 }
 
+function owes(names) {
+  return (names || []).map((name) => name.replace(/^## /, "")).join(", ");
+}
+
+function waits(one) {
+  const on = one.blocked_by.length ? "waits on " + one.blocked_by.map((b) => b.record).join(", ") : "";
+  const parent = one.children.length ? "parent of " + one.children.length : "";
+  return notes(on, parent);
+}
+
 function row(record, title, note) {
   const item = document.createElement("li");
   const button = document.createElement("button");
@@ -152,10 +162,10 @@ async function refresh() {
     span.append(bold, " " + name);
     return span;
   }));
-  fill("refine", refine.records.map((one) => row(one.record, one.title, notes(one.blocking.join(", "), holderNote(one.holder)))));
+  fill("refine", refine.records.map((one) => row(one.record, one.title, notes(owes(one.blocking), holderNote(one.holder)))));
   const owing = new Set(refine.records.map((one) => one.record));
   fill("ready", ready.records.map((one) => row(one.record, one.title, notes(owing.has(one.record) ? "owes refinement" : "", holderNote(one.holder)))));
-  fill("blocked", blocked.records.map((one) => row(one.record, "", "waits on " + one.blocked_by.map((b) => b.record).join(", "))));
+  fill("blocked", blocked.records.map((one) => row(one.record, one.title, waits(one))));
 }
 
 function blank() {
@@ -183,7 +193,7 @@ async function open(record) {
   document.getElementById("story-id").textContent = record + (shown.dates && shown.dates.updated ? "  updated " + shown.dates.updated.slice(0, 16) : "");
   document.getElementById("holder").textContent = holderNote(shown.holder) || "not reserved";
   const dor = await fetch(API + "/records/" + encodeURIComponent(record) + "/dor").then((r) => r.json());
-  document.getElementById("owed").textContent = dor.blocking && dor.blocking.length ? "owes: " + dor.blocking.join(", ") : "";
+  document.getElementById("owed").textContent = dor.blocking && dor.blocking.length ? "owes: " + owes(dor.blocking) : "";
   document.getElementById("comments").replaceChildren(...shown.comments.map((text) => {
     const item = document.createElement("li");
     item.textContent = text;

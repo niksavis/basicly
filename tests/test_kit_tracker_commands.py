@@ -105,6 +105,16 @@ def test_a_decomposed_parent_leaves_the_ready_set_and_its_child_enters_it(ledger
     assert [row["record"] for row in queries.blocked(ledger)["records"]] == [record]
 
 
+def test_a_blocked_row_carries_the_title_a_client_draws(ledger: Path) -> None:
+    record = root_of(ledger)
+    commands.create_child(ledger, record, {"title": "a child"})
+
+    (row,) = queries.blocked(ledger)["records"]
+
+    assert row["title"] == queries.folded(ledger)[record].fields["title"]
+    assert row["title"]
+
+
 def test_a_blocking_edge_holds_the_dependent_until_the_blocker_closes(ledger: Path) -> None:
     record = root_of(ledger)
     first = commands.create_child(ledger, record, {"title": "first"})[0].record
