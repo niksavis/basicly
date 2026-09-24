@@ -144,11 +144,16 @@ def _tracked_repo_files() -> tuple[Path, ...]:
     return tracked
 
 
+WORK_REPO_LEFT_OUT = ("tests",)
+
+
 @pytest.fixture
 def work_repo(tmp_path: Path, _tracked_repo_files: tuple[Path, ...]) -> Path:
 
     work = tmp_path / "repo"
     for relative in _tracked_repo_files:
+        if relative.parts[0] in WORK_REPO_LEFT_OUT:
+            continue
         destination = work / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(REPO_ROOT / relative, destination)
