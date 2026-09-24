@@ -134,6 +134,14 @@ for a record created before the rule existed, which reports its missing requirem
 without being blocked for them. A trigger and acceptance criteria are required of every
 open record either way.
 
+**Many people share one ledger.** `assign` reserves a story for a person without changing
+its status, `claim` also sets it to `in_progress`, and `unassign` gives it back. A story
+that someone else holds is refused by name on both write routes, unless `--take` is given,
+which the ledger records. `ready`, `show` and the board name each holder, mark a
+reservation `stale` after `stale_days` with no event, and mark a story `contested` when two
+people reserved it on different branches. The engine loop records the person who runs it
+as the holder, and the supervisor skips stories that another person holds.
+
 **`dor` is the gate.** `ready` leaves out a record labelled `refine`, and a record created
 under the current rule that fails `dor`, but it still offers an older unshaped record; `dor`
 exits non-zero on one that cannot be verified

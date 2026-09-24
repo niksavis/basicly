@@ -16,8 +16,21 @@ A record is the fold of its events. The engine reads and writes the log directly
   a commit that names an id the ledger does not hold.
 - **Run `create` alone, then read the id from its reply.** The id is random, so a commit
   chained after it with a guessed id is refused.
-- **Claim before you build.** Set the status to `in_progress`, so that a second agent does
-  not take the record.
+- **Many people share this tracker. Never take a story that someone holds.** `ready` names
+  the holder of each reserved story, and the supervisor skips stories that another person
+  holds. `--take` is for an agreed handover only.
+- **Reserve a story before you plan it, and push at once.** Others see a reservation only
+  after they pull:
+
+  ```sh
+  python3 .basicly/core/kit/tracker/cli.py assign .basicly/ledger <id>    # reserve it for you
+  python3 .basicly/core/kit/tracker/cli.py claim .basicly/ledger <id>     # reserve it and start
+  python3 .basicly/core/kit/tracker/cli.py unassign .basicly/ledger <id>  # give it back
+  python3 .basicly/core/kit/tracker/cli.py ready .basicly/ledger --mine   # what you hold
+  ```
+
+  The holder name is `git config user.name`, or `--to`. `basicly loop` records the person
+  who runs it as the holder, and it stops on a story that someone else holds.
 - **Never edit, delete or reorder a line in an event file.** Every derived answer changes
   and nothing detects it. Append the write that supersedes the wrong one.
 - **Count from the file, interpret through the engine.** Grants, gate results and phases

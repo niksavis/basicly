@@ -11,15 +11,20 @@ Every command takes the ledger directory as its first argument and prints one JS
 
 ## Rules
 
-- **Read `ready` before you propose work.** The top row is the next thing to do. Do not
+- **Many people share this tracker. Never take a story that someone holds.** `ready` names
+  the holder of each reserved story. `assign` and `claim` refuse a held story and name the
+  holder; `--take` is for an agreed handover only.
+- **Reserve a story before you plan it, and push at once.** Run `assign` when you plan to
+  work on a story, even days ahead, then commit and push the ledger. Others see a
+  reservation only after they pull. Run `claim` when you start, and `unassign` when you
+  drop it.
+- **Read `ready` before you propose work.** Take the top row that nobody holds. Do not
   invent a task.
 - **Run `dor` before you build.** `ready` leaves out a record labelled `refine` and a new
   record that fails `dor`, but it keeps an older unshaped record. `dor` refuses a record
   that has no trigger, acceptance criteria or requirements.
 - **Criteria and requirements are fields.** Pass them as `--acceptance` and
   `--requirements`. A description that holds either heading is refused.
-- **Claim before you build.** Set the record to `in_progress`, so that a second agent does
-  not take it.
 - **A close reason is evidence.** Name what shipped, the command you ran and its result.
 - **Put a finding on the record**, not in a code comment.
 - **Name the record id in the commit message.** It is the only link from a change to its
@@ -33,14 +38,21 @@ python3 .basicly/kit/tracker/cli.py ready .basicly/ledger        # workable now,
 python3 .basicly/kit/tracker/cli.py blocked .basicly/ledger      # waiting, and on what
 python3 .basicly/kit/tracker/cli.py show .basicly/ledger <id>    # one record, its edges and dates
 python3 .basicly/kit/tracker/cli.py dor .basicly/ledger <id>     # exit 0 shaped, exit 1 with what is missing
+python3 .basicly/kit/tracker/cli.py ready .basicly/ledger --mine # the stories you hold
 ```
+
+A `holder` marked `stale` had no event for `stale_days` (14 by default); ask the holder
+before you take it. A story marked `contested` was reserved by two people on different
+branches; the two agree who keeps it, and one runs `unassign`.
 
 ## Write
 
 ```sh
 python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix <p> --title "<what>" \
     --description "<the trigger>" --acceptance "<how it is checked>" --requirements "<the standard>"
-python3 .basicly/kit/tracker/cli.py update .basicly/ledger <id> --status in_progress
+python3 .basicly/kit/tracker/cli.py assign .basicly/ledger <id>                 # reserve it for you
+python3 .basicly/kit/tracker/cli.py claim .basicly/ledger <id>                  # reserve it and start
+python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger <id>               # give it back
 python3 .basicly/kit/tracker/cli.py comment .basicly/ledger <id> "<what you learned>"
 python3 .basicly/kit/tracker/cli.py dep .basicly/ledger <id> <the-id-it-waits-on>
 python3 .basicly/kit/tracker/cli.py child .basicly/ledger <parent-id> --title "<a piece of it>"

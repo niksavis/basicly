@@ -98,6 +98,8 @@ def readiness(
 
 
 LEDGER_GLOBS = ("events-*.jsonl", "pending-*.jsonl")
+HOLDERS_KIT_MODULE = "holders"
+HOLDER_FIELD = "assignee"
 
 
 def owned_record(repo_root: Path, issue_id: str) -> dict | None:
@@ -468,10 +470,28 @@ def require_record(repo_root: Path, issue_id: str) -> dict:
     return record
 
 
+def holder_name(repo_root: Path) -> str:
+    return str(kit(repo_root, HOLDERS_KIT_MODULE).default_holder(repo_root))
+
+
+def held_by_another(repo_root: Path, record: Mapping[str, object]) -> str:
+
+    holder = str(record.get(HOLDER_FIELD) or "")
+    return holder if holder and holder != holder_name(repo_root) else ""
+
+
 def owned_ranking(repo_root: Path, limit: int | None = None) -> dict:
 
     scheduler = kit(repo_root, SCHEDULER_KIT_MODULE)
-    answer = scheduler.ranking(ledger_dir(repo_root), limit=limit)
+    answer = scheduler.ranking(ledger_dir(repo_root))
+    events = kit(repo_root, "events")
+    states = events.fold(events.read_events(ledger_dir(repo_root))[0]).records
+    free = [
+        entry
+        for entry in answer.records
+        if entry.record not in states or not held_by_another(repo_root, states[entry.record].fields)
+    ]
+    free = free if limit is None else free[:limit]
     return {
         "schema": answer.schema,
         "fallback_policy": {"sort": answer.sort},
@@ -482,7 +502,7 @@ def owned_ranking(repo_root: Path, limit: int | None = None) -> dict:
                 "score": entry.score,
                 "issue": {"id": entry.record, "title": entry.title},
             }
-            for entry in answer.records
+            for entry in free
         ],
     }
 

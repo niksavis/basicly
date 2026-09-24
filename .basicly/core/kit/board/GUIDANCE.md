@@ -16,6 +16,8 @@ kit beside it.
   returns its JSON. Read a refusal and fix the cause, as for the command.
 - **A saved story is not ready.** The page adds the label `refine`. Do the refinement pass
   from the `work-tracker` skill before anyone builds against it.
+- **The page shows who holds each story.** Use "Assign to me" to reserve a story and
+  "Claim" to start it. The page refuses a story that someone else holds and names them.
 
 ## Serve
 

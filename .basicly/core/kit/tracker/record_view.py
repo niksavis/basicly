@@ -93,6 +93,9 @@ def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
     views, _ = queries.views_and_children(directory)
     shown = snapshot.record_to_dict(state)
     shown.update(_edges(record, views, states))
+    stale_days = templates.load(directory).stale_days
+    now = queries.holders.newest(states)
+    shown["holder"] = queries.holders.holding(state, stale_days, now)
     return shown
 
 
@@ -103,8 +106,10 @@ def scaffold_of(directory: Path | str, kind: str) -> dict[str, object]:
 def refine_queue(directory: Path | str) -> dict[str, object]:
 
     template = templates.load(directory)
+    states = queries.folded(directory)
+    now = queries.holders.newest(states)
     rows = []
-    for record, state in sorted(queries.folded(directory).items()):
+    for record, state in sorted(states.items()):
         if is_closed(state):
             continue
         held = dict(state.fields)
@@ -116,5 +121,6 @@ def refine_queue(directory: Path | str) -> dict[str, object]:
                 "title": str(held.get("title", "")),
                 "labelled": labelled,
                 "blocking": list(blocking),
+                "holder": queries.holders.holding(state, template.stale_days, now),
             })
     return {"label": REFINE_LABEL, "count": len(rows), "records": rows}

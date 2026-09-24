@@ -57,6 +57,13 @@
         <button class="act" type="submit">Save for refinement</button>
         <button class="act plain" type="button" id="refined">Mark refined</button>
       </div>
+      <div class="owed" id="holder"></div>
+      <div class="buttons">
+        <button class="act plain" type="button" data-hold="assign">Assign to me</button>
+        <button class="act plain" type="button" data-hold="claim">Claim</button>
+        <button class="act plain" type="button" data-hold="take">Take over</button>
+        <button class="act plain" type="button" data-hold="unassign">Unassign</button>
+      </div>
       <div id="message" role="status"></div>
     </form>
     <h2>Comments</h2>
@@ -86,6 +93,18 @@ function say(text, bad) {
   const node = document.getElementById("message");
   node.textContent = text;
   node.className = bad ? "bad" : "";
+}
+
+function holderNote(held) {
+  if (!held) return "";
+  let note = held.name ? "held by " + held.name : "";
+  if (held.stale) note += " (stale)";
+  if (held.contested && held.contested.length) note += " (contested: " + held.contested.join(", ") + ")";
+  return note;
+}
+
+function notes(...parts) {
+  return parts.filter(Boolean).join(" · ");
 }
 
 function row(record, title, note) {
@@ -133,9 +152,9 @@ async function refresh() {
     span.append(bold, " " + name);
     return span;
   }));
-  fill("refine", refine.records.map((one) => row(one.record, one.title, one.blocking.join(", "))));
+  fill("refine", refine.records.map((one) => row(one.record, one.title, notes(one.blocking.join(", "), holderNote(one.holder)))));
   const owing = new Set(refine.records.map((one) => one.record));
-  fill("ready", ready.records.map((one) => row(one.record, one.title, owing.has(one.record) ? "owes refinement" : "")));
+  fill("ready", ready.records.map((one) => row(one.record, one.title, notes(owing.has(one.record) ? "owes refinement" : "", holderNote(one.holder)))));
   fill("blocked", blocked.records.map((one) => row(one.record, "", "waits on " + one.blocked_by.map((b) => b.record).join(", "))));
 }
 
@@ -162,6 +181,7 @@ async function open(record) {
   form.priority.value = String(f.priority ?? 2);
   form.status.value = shown.status || "open";
   document.getElementById("story-id").textContent = record + (shown.dates && shown.dates.updated ? "  updated " + shown.dates.updated.slice(0, 16) : "");
+  document.getElementById("holder").textContent = holderNote(shown.holder) || "not reserved";
   const dor = await fetch(API + "/records/" + encodeURIComponent(record) + "/dor").then((r) => r.json());
   document.getElementById("owed").textContent = dor.blocking && dor.blocking.length ? "owes: " + dor.blocking.join(", ") : "";
   document.getElementById("comments").replaceChildren(...shown.comments.map((text) => {
@@ -231,6 +251,23 @@ document.getElementById("comment").addEventListener("submit", async (event) => {
     say(error.message, true);
   }
 });
+
+for (const button of document.querySelectorAll("[data-hold]")) {
+  button.addEventListener("click", async () => {
+    if (!current) return say("open a record first", true);
+    const kind = button.dataset.hold;
+    const action = kind === "take" ? "claim" : kind;
+    const body = kind === "take" ? { take: true } : {};
+    try {
+      await call("POST", "/records/" + encodeURIComponent(current.record) + "/" + action, body);
+      await refresh();
+      await open(current.record);
+      say(kind === "unassign" ? "the reservation is released" : "reserved");
+    } catch (error) {
+      say(error.message, true);
+    }
+  });
+}
 
 document.getElementById("new").addEventListener("click", blank);
 refresh().catch((error) => say(error.message, true));

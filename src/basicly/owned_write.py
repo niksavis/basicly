@@ -141,6 +141,8 @@ def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
             _refuse_a_write_that_records_nothing(args, drafts)
             refuse_a_write_to_an_absent_record(kit_module, ledger, " ".join(args), drafts)
             _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
+            held = events.fold(events.read_events(ledger)[0]).records if ledger.is_dir() else {}
+            owned_store.kit(repo_root, "holders").refuse(held, drafts)
             stamped = _stamped(kit_module, drafts)
             owned_store.kit(repo_root, "values").refuse(events, stamped, _template(repo_root))
             stamped = owned_store.kit(repo_root, "recurrence").at_the_generation_this_write_needs(

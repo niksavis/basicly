@@ -190,3 +190,21 @@ def test_a_custom_page_directory_replaces_the_default_page(ledger: Path, tmp_pat
         served.server_close()
 
     assert page["text"] == "<p>our own board</p>"
+
+
+def test_a_second_person_reserving_through_the_api_is_refused_by_name(client: Client) -> None:
+    _, made = client.call("POST", "/api/v1/records", {"title": "reserve me"})
+    record = made["record"]
+
+    status, _ = client.call("POST", f"/api/v1/records/{record}/assign", {"to": "alex"})
+    assert status == 200
+    status, refused = client.call("POST", f"/api/v1/records/{record}/claim", {"to": "sam"})
+    assert status == 422
+    assert "held by alex" in refused["refused"]
+
+    status, _ = client.call("POST", f"/api/v1/records/{record}/claim", {"to": "sam", "take": True})
+    assert status == 200
+    _, shown = client.call("GET", f"/api/v1/records/{record}")
+    assert (shown["status"], shown["holder"]["name"]) == ("in_progress", "sam")
+    _, ready = client.call("GET", "/api/v1/ready")
+    assert all("holder" in row for row in ready["records"])

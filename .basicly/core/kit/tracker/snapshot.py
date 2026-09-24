@@ -40,7 +40,7 @@ CHECKPOINT_GLOB = CHECKPOINT_PREFIX + "*" + _LOG_SUFFIX
 
 DERIVED_PATTERNS = (SNAPSHOT_NAME, CHECKPOINT_GLOB)
 
-SNAPSHOT_VERSION = 2
+SNAPSHOT_VERSION = 3
 
 PERIOD_PATTERN = re.compile(r"^[0-9]{4,}[a-z0-9]*$")
 
@@ -110,6 +110,7 @@ def record_to_dict(state: Any) -> dict[str, object]:
         "totals": state.totals.as_dict(),
         "max_seq": state.max_seq,
         "dates": dict(state.dates),
+        "contested": list(state.contested),
     }
 
 
@@ -155,6 +156,9 @@ def record_from_dict(raw: Mapping[str, object]) -> Any:
         value is None or isinstance(value, str) for value in dates.values()
     ):
         raise SnapshotError(f"{record}: dates map a name to a time or null, got {dates!r}")
+    contested = raw.get("contested", [])
+    if not isinstance(contested, list) or not all(isinstance(name, str) for name in contested):
+        raise SnapshotError(f"{record}: contested must be a list of names, got {contested!r}")
     return events.RecordState(
         record=record,
         status=status,
@@ -166,6 +170,7 @@ def record_from_dict(raw: Mapping[str, object]) -> Any:
         totals=parsed,
         max_seq=int(max_seq),  # type: ignore[arg-type]
         dates={**events.RecordState(record).dates, **dates},
+        contested=list(contested),
     )
 
 

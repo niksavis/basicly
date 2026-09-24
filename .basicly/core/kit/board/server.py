@@ -64,6 +64,9 @@ ENDPOINTS = (
     "POST /api/v1/records/<id>/comments  {text}",
     "POST /api/v1/records/<id>/close  {reason}",
     "POST /api/v1/records/<id>/deps  {target, type}",
+    "POST /api/v1/records/<id>/assign  {to, take}",
+    "POST /api/v1/records/<id>/claim  {to, take}",
+    "POST /api/v1/records/<id>/unassign  {}",
 )
 
 _SHAPE = {"title": "--title", "description": "--description"}
@@ -192,16 +195,51 @@ def write_argv(ledger: Path, method: str, path: str, body: object) -> list:
         options += _labels(held, "remove_labels", "--remove-label")
         return ["update", *options, "--", where, record]
     action = parts[2] if len(parts) == 3 else ""
-    if method == "POST" and action == "comments":
-        return ["comment", "--", where, record, _text(_checked(body, frozenset({"text"})), "text")]
-    if method == "POST" and action == "close":
-        reason = _text(_checked(body, frozenset({"reason"})), "reason")
-        return ["close", f"--reason={reason}", "--", where, record]
-    if method == "POST" and action == "deps":
-        held = _checked(body, frozenset({"target", "type"}))
-        kind = [f"--type={_text(held, 'type')}"] if "type" in held else []
-        return ["dep", *kind, "--", where, record, _record(_text(held, "target"))]
-    raise _refuse(f"no {method} at {path}; GET {API} lists them", HTTPStatus.NOT_FOUND)
+    build = _ACTIONS.get(action) if method == "POST" else None
+    if build is None:
+        raise _refuse(f"no {method} at {path}; GET {API} lists them", HTTPStatus.NOT_FOUND)
+    return build(where, record, body)
+
+
+def _comment_argv(where: str, record: str, body: object) -> list:
+    return ["comment", "--", where, record, _text(_checked(body, frozenset({"text"})), "text")]
+
+
+def _close_argv(where: str, record: str, body: object) -> list:
+    reason = _text(_checked(body, frozenset({"reason"})), "reason")
+    return ["close", f"--reason={reason}", "--", where, record]
+
+
+def _dep_argv(where: str, record: str, body: object) -> list:
+    held = _checked(body, frozenset({"target", "type"}))
+    kind = [f"--type={_text(held, 'type')}"] if "type" in held else []
+    return ["dep", *kind, "--", where, record, _record(_text(held, "target"))]
+
+
+def _hold_argv(action: str) -> Callable[[str, str, object], list]:
+
+    def build(where: str, record: str, body: object) -> list:
+        held = _checked(body, frozenset({"to", "take"}))
+        options = [f"--to={_text(held, 'to')}"] if _text(held, "to") else []
+        options += ["--take"] if held.get("take") is True else []
+        return [action, *options, "--", where, record]
+
+    return build
+
+
+def _unassign_argv(where: str, record: str, body: object) -> list:
+    _checked(body, frozenset())
+    return ["unassign", "--", where, record]
+
+
+_ACTIONS: dict[str, Callable[[str, str, object], list]] = {
+    "comments": _comment_argv,
+    "close": _close_argv,
+    "deps": _dep_argv,
+    "assign": _hold_argv("assign"),
+    "claim": _hold_argv("claim"),
+    "unassign": _unassign_argv,
+}
 
 
 def answer(argv: list, redact: Callable[[str], str] | None) -> tuple:

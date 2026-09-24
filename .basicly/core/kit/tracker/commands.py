@@ -28,6 +28,7 @@ templates = _load("templates.py", "basicly_tracker_kit_templates")
 writers = _load("writers.py", "basicly_tracker_kit_writers")
 recurrence = _load("recurrence.py", "basicly_tracker_kit_recurrence")
 values = _load("values.py", "basicly_tracker_kit_values")
+holders = _load("holders.py", "basicly_tracker_kit_holders")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -96,6 +97,7 @@ def _append(
     ledger: Path, drafts: Sequence[Any], redact: Callable[[str], str] | None, lock: Any
 ) -> list:
     values.refuse(events, drafts, templates.load(ledger))
+    holders.refuse(events.fold(events.read_events(ledger)[0]).records, drafts)
     resolved = recurrence.at_the_generation_this_write_needs(events, ledger, drafts, redact=redact)
     return events.append(
         ledger, resolved, actor=writers.writer_class(), redact=redact, held_lock=lock
@@ -332,3 +334,61 @@ def migrate_fields(directory: Path | str, *, redact: Callable[[str], str] | None
                     payload = {"name": name, "value": value}
                     drafts.append(events.Draft(record, events.KIND_FIELD, payload))
         return _append(ledger, drafts, redact, lock) if drafts else []
+
+
+def _holder_draft(record: str, holder: str, take: bool) -> Any:
+
+    if not holder:
+        raise TrackerCommandError(
+            "no holder name: set git config user.name, or name the holder with --to"
+        )
+    payload: dict[str, object] = {"name": holders.HOLDER_FIELD, "value": holder}
+    if take:
+        payload[holders.TAKE_KEY] = True
+    return events.Draft(record, events.KIND_FIELD, payload)
+
+
+def assign(
+    directory: Path | str,
+    record: str,
+    holder: str,
+    *,
+    take: bool = False,
+    redact: Callable[[str], str] | None = None,
+) -> list:
+
+    ledger = _ledger(directory)
+    drafts = [_holder_draft(record, holder, take)]
+    with events.LedgerLock(ledger) as lock:
+        _require(ledger, record)
+        return _append(ledger, drafts, redact, lock)
+
+
+def claim(
+    directory: Path | str,
+    record: str,
+    holder: str,
+    *,
+    take: bool = False,
+    redact: Callable[[str], str] | None = None,
+) -> list:
+
+    ledger = _ledger(directory)
+    drafts = [
+        _holder_draft(record, holder, take),
+        events.Draft(record, events.KIND_STATUS, {"status": "in_progress"}),
+    ]
+    with events.LedgerLock(ledger) as lock:
+        _require(ledger, record)
+        return _append(ledger, drafts, redact, lock)
+
+
+def unassign(
+    directory: Path | str, record: str, *, redact: Callable[[str], str] | None = None
+) -> list:
+
+    ledger = _ledger(directory)
+    with events.LedgerLock(ledger) as lock:
+        _require(ledger, record)
+        payload = {"name": holders.HOLDER_FIELD, "value": ""}
+        return _append(ledger, [events.Draft(record, events.KIND_FIELD, payload)], redact, lock)

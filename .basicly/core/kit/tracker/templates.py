@@ -8,7 +8,8 @@ TEMPLATE_FILE = "template.json"
 SCHEMA = "basicly.tracker.template.v1"
 EXTEND = "extend"
 OVERRIDE = "override"
-_KEYS = frozenset({"schema", "mode", "sections", "types"})
+_KEYS = frozenset({"schema", "mode", "sections", "types", "stale_days"})
+DEFAULT_STALE_DAYS = 14
 
 
 class TemplateError(ValueError):
@@ -19,6 +20,7 @@ class Template(NamedTuple):
     mode: str = EXTEND
     sections: tuple = ()
     types: tuple = ()
+    stale_days: int = DEFAULT_STALE_DAYS
 
     @property
     def extends(self) -> bool:
@@ -61,10 +63,14 @@ def load(directory: Path | str) -> Template:
     types = data.get("types", {})
     if not isinstance(types, dict):
         raise TemplateError(f"{path} types must map a record type to its headings")
+    stale_days = data.get("stale_days", DEFAULT_STALE_DAYS)
+    if isinstance(stale_days, bool) or not isinstance(stale_days, int) or stale_days < 1:
+        raise TemplateError(f"{path} stale_days must be a whole number of days, 1 or more")
     return Template(
         mode,
         _headings(data.get("sections", []), f"{path} sections"),
         tuple(
             sorted((name, _headings(one, f"{path} types.{name}")) for name, one in types.items())
         ),
+        stale_days,
     )

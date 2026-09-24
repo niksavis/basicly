@@ -49,6 +49,9 @@ _BLOCKING_REPORTS = frozenset({
     "create",
     "child",
     "update",
+    "assign",
+    "claim",
+    "unassign",
     "close",
     "comment",
     "dep",
@@ -129,7 +132,16 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
         a.directory, a.record, a.target, edge_type=a.edge_type, redact=r
     ),
     "delete": lambda a, r: commands.delete(a.directory, a.record, redact=r),
+    "assign": lambda a, r: commands.assign(
+        a.directory, a.record, _holder(a), take=a.take, redact=r
+    ),
+    "claim": lambda a, r: commands.claim(a.directory, a.record, _holder(a), take=a.take, redact=r),
+    "unassign": lambda a, r: commands.unassign(a.directory, a.record, redact=r),
 }
+
+
+def _holder(args: argparse.Namespace) -> str:
+    return getattr(args, "to", "") or commands.holders.default_holder(Path.cwd())
 
 
 def _compacted(args: argparse.Namespace) -> dict[str, object]:
@@ -145,7 +157,9 @@ def _compacted(args: argparse.Namespace) -> dict[str, object]:
 _VIEWS: dict[
     str, Callable[[argparse.Namespace, Callable[[str], str] | None], dict[str, object]]
 ] = {
-    "ready": lambda a, _r: queries.ready(a.directory, limit=a.limit),
+    "ready": lambda a, _r: queries.ready(
+        a.directory, limit=a.limit, mine=_holder(a) if a.mine else ""
+    ),
     "blocked": lambda a, _r: queries.blocked(a.directory),
     "stats": lambda a, _r: queries.stats(a.directory),
     "compact": lambda a, _r: _compacted(a),

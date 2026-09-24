@@ -56,6 +56,32 @@ Move one or more records to `closed`. The reason is the permanent record of what
 python3 .basicly/kit/tracker/cli.py close .basicly/ledger acme-a1b2 --reason "Shipped the importer fix; the round-trip test passes"
 ```
 
+### assign
+
+Reserve a record for a person without changing its status, so that others see it is taken.
+The holder is `--to`, or else `git config user.name`. A record that someone else holds is
+refused with the holder's name; `--take` takes it on purpose, and the ledger records that.
+
+```sh
+python3 .basicly/kit/tracker/cli.py assign .basicly/ledger acme-a1b2 --to alex
+```
+
+### claim
+
+Reserve a record and set it to `in_progress` in one write, when you start the work.
+
+```sh
+python3 .basicly/kit/tracker/cli.py claim .basicly/ledger acme-a1b2 --to alex
+```
+
+### unassign
+
+Give a reserved record back.
+
+```sh
+python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger acme-a1b2
+```
+
 ### delete
 
 Tombstone a record. Its id is never reused.
@@ -78,7 +104,10 @@ python3 .basicly/kit/tracker/cli.py import .basicly/ledger issues.jsonl --dry-ru
 ### ready
 
 The ranked records that can be worked on now. It leaves out a record labelled `refine`,
-and a record created under the current rule that fails `dor`.
+and a record created under the current rule that fails `dor`. Each row names its `holder`
+when someone has reserved it, with `stale` when the record had no event for `stale_days`
+(14 by default, set in `template.json`) and `contested` when two people reserved it on
+different branches. `--mine` lists only the records you hold.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py ready .basicly/ledger --limit 10

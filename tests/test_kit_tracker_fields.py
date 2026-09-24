@@ -114,7 +114,12 @@ def test_the_dates_are_derived_from_the_events_and_a_reopen_clears_closed(
     closed = _report(capsys)
     stamps = [event.ts for event in events.read_events(ledger)[0]]
 
-    assert closed["dates"] == {"created": stamps[0], "updated": stamps[-1], "closed": stamps[-1]}
+    assert closed["dates"] == {
+        "created": stamps[0],
+        "updated": stamps[-1],
+        "closed": stamps[-1],
+        "assigned": None,
+    }
     assert "created_at" not in closed["fields"]
 
     cli.main(["update", str(ledger), record, "--status", "open"])
@@ -157,6 +162,7 @@ def test_an_imported_record_is_dated_by_the_times_its_source_recorded() -> None:
         "created": "2026-07-17T16:21:15.634707007Z",
         "updated": "2026-07-17T19:02:44.147293347Z",
         "closed": "2026-07-17T19:02:44.147224054Z",
+        "assigned": None,
     }
 
 

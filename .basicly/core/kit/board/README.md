@@ -59,6 +59,9 @@ output works against the API:
 | `POST /api/v1/records/<id>/comments` | `comment` | `text` |
 | `POST /api/v1/records/<id>/close` | `close` | `reason` |
 | `POST /api/v1/records/<id>/deps` | `dep` | `target`, `type` |
+| `POST /api/v1/records/<id>/assign` | `assign` | `to`, `take` |
+| `POST /api/v1/records/<id>/claim` | `claim` | `to`, `take` |
+| `POST /api/v1/records/<id>/unassign` | `unassign` | |
 
 Status codes: 200 or 201 when the command succeeds, 422 when the kit refuses it, 404 for a
 missing record, 400 for a malformed request, 403 for a foreign host. A write must send

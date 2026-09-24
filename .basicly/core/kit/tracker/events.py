@@ -174,7 +174,10 @@ UNATTRIBUTED_ACTOR = "unattributed:no-actor-supplied"
 DATE_CREATED = "created"
 DATE_UPDATED = "updated"
 DATE_CLOSED = "closed"
+DATE_ASSIGNED = "assigned"
 CLOSING_STATUS = "closed"
+HOLDER_FIELD = "assignee"
+TAKE_KEY = "taken"
 IMPORT_MARK_KEY = "imported_from"
 IMPORTED_TIME_KEYS = MappingProxyType({
     DATE_CREATED: "created_at",
@@ -359,8 +362,14 @@ class RecordState:
     totals: Totals = field(default_factory=Totals)
     max_seq: int = 0
     dates: dict[str, str | None] = field(
-        default_factory=lambda: dict.fromkeys((DATE_CREATED, DATE_UPDATED, DATE_CLOSED))
+        default_factory=lambda: dict.fromkeys((
+            DATE_CREATED,
+            DATE_UPDATED,
+            DATE_CLOSED,
+            DATE_ASSIGNED,
+        ))
     )
+    contested: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -478,6 +487,7 @@ def _resumed(state: RecordState) -> RecordState:
         totals=state.totals,
         max_seq=state.max_seq,
         dates=dict(state.dates),
+        contested=list(state.contested),
     )
 
 
@@ -514,6 +524,31 @@ def _date(state: RecordState, event: Event) -> None:
         dates[DATE_UPDATED] = moment
 
 
+def _holder_change(state: RecordState, event: Event) -> tuple[str, str] | None:
+
+    payload = event.payload
+    if event.kind == KIND_FIELD and payload.get("name") == HOLDER_FIELD:
+        return str(state.fields.get(HOLDER_FIELD) or ""), str(payload.get("value") or "")
+    if event.kind == KIND_CREATED and HOLDER_FIELD in payload:
+        return "", str(payload.get(HOLDER_FIELD) or "")
+    return None
+
+
+def _hold(state: RecordState, event: Event) -> None:
+
+    change = _holder_change(state, event)
+    if change is None:
+        return
+    before, after = change
+    taken = bool(event.payload.get(TAKE_KEY))
+    if before and after and before != after and not taken:
+        state.contested = sorted({*state.contested, before, after})
+    elif taken or not after:
+        state.contested = []
+    if after != before:
+        state.dates[DATE_ASSIGNED] = event.ts if after else None
+
+
 def fold(events: Iterable[Event], *, seed: Mapping[str, RecordState] | None = None) -> FoldResult:
 
     collected = list(events)
@@ -537,6 +572,7 @@ def fold(events: Iterable[Event], *, seed: Mapping[str, RecordState] | None = No
         if event.totals != state.totals:
             result.mismatched_totals.append(event.id)
         _date(state, event)
+        _hold(state, event)
         if event.kind == KIND_WITHDRAWN:
             _apply_withdrawn(result, event)
             continue

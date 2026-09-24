@@ -133,6 +133,7 @@ def _add_query_parsers(sub: Any) -> None:
         view.add_argument("directory", help=DIRECTORY_HELP)
         if name == "ready":
             view.add_argument("--limit", type=int, default=None, help="at most this many")
+            view.add_argument("--mine", action="store_true", help="only records you hold")
 
 
 def _add_write_parsers(sub: Any) -> None:
@@ -168,6 +169,20 @@ def _add_write_parsers(sub: Any) -> None:
     dep.add_argument("record", help="the dependent record id")
     dep.add_argument("target", help="the record it depends on")
     dep.add_argument("--type", dest="edge_type", default="blocks", help="the edge type")
+
+    for name, helping in (
+        ("assign", "reserve a record for a person without changing its status"),
+        ("claim", "reserve a record for a person and set it in_progress"),
+    ):
+        hold = sub.add_parser(name, help=helping)
+        hold.add_argument("directory", help=DIRECTORY_HELP)
+        hold.add_argument("record", help="the record id")
+        hold.add_argument("--to", default="", help="the holder; default: git config user.name")
+        hold.add_argument("--take", action="store_true", help="take it from its current holder")
+
+    release = sub.add_parser("unassign", help="give a reserved record back")
+    release.add_argument("directory", help=DIRECTORY_HELP)
+    release.add_argument("record", help="the record id")
 
     removal = sub.add_parser("delete", help="tombstone a record; its id is never reused")
     removal.add_argument("directory", help=DIRECTORY_HELP)

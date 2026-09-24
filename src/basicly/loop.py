@@ -449,6 +449,9 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
     refusal = worktree.cap_refusal(wt_config.concurrency, ctx.repo_root)
     if refusal:
         return _blocked(ctx, refusal)
+    held = _hold_for_this_session(ctx)
+    if held is not None:
+        return held
     claimed = merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="record the claim before provisioning"
     )
@@ -460,6 +463,23 @@ def _start_build_leaf(ctx: _Ctx) -> AdvanceResult:
         return dispatched
     suffix = _skipped_tracker_suffix(ctx)
     return replace(dispatched, detail=dispatched.detail + suffix) if suffix else dispatched
+
+
+def _hold_for_this_session(ctx: _Ctx) -> AdvanceResult | None:
+
+    record = tracker.read_record(ctx.repo_root, ctx.issue_id) or {}
+    other = tracker.held_by_another(ctx.repo_root, record)
+    if other:
+        return _blocked(
+            ctx,
+            f"{ctx.issue_id} is held by {other}; ask them, or take it on purpose with "
+            f"`python3 .basicly/core/kit/tracker/cli.py claim .basicly/ledger "
+            f"{ctx.issue_id} --take`",
+        )
+    me = tracker.holder_name(ctx.repo_root)
+    if me and record.get(tracker.HOLDER_FIELD) != me:
+        tracker.write(ctx.repo_root, ["update", ctx.issue_id, "--assignee", me])
+    return None
 
 
 def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
