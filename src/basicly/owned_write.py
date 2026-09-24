@@ -20,6 +20,10 @@ def ledger_git_rules(repo_root: Path) -> tuple[str, ...]:
     return tuple(f"{glob} -text merge=union" for glob in (events.LOG_GLOB, events.PENDING_GLOB))
 
 
+def _template(repo_root: Path) -> Any:
+    return owned_store.kit(repo_root, "templates").load(owned_store.ledger_dir(repo_root))
+
+
 def resolved_actor(repo_root: Path) -> str:
     return str(owned_store.kit(repo_root, "writers").writer_class())
 
@@ -138,7 +142,7 @@ def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
             refuse_a_write_to_an_absent_record(kit_module, ledger, " ".join(args), drafts)
             _refuse_a_retraction_of_an_absent_edge(kit_module, ledger, drafts)
             stamped = _stamped(kit_module, drafts)
-            owned_store.kit(repo_root, "values").refuse(events, stamped)
+            owned_store.kit(repo_root, "values").refuse(events, stamped, _template(repo_root))
             stamped = owned_store.kit(repo_root, "recurrence").at_the_generation_this_write_needs(
                 events, ledger, stamped, repeat=repeat, redact=redact.redact_committed
             )
@@ -181,7 +185,7 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
                 else events.ids.mint_root_id(events.ids.validate_prefix(prefix or ""), minted)
             )
             drafts = mirror.drafts(kit_module, args, json.dumps({"id": record}))
-            owned_store.kit(repo_root, "values").refuse(events, drafts)
+            owned_store.kit(repo_root, "values").refuse(events, drafts, _template(repo_root))
             events.append(
                 ledger,
                 _stamped(kit_module, drafts),

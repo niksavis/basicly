@@ -95,7 +95,7 @@ def _require(ledger: Path, record: str) -> Any:
 def _append(
     ledger: Path, drafts: Sequence[Any], redact: Callable[[str], str] | None, lock: Any
 ) -> list:
-    values.refuse(events, drafts)
+    values.refuse(events, drafts, templates.load(ledger))
     resolved = recurrence.at_the_generation_this_write_needs(events, ledger, drafts, redact=redact)
     return events.append(
         ledger, resolved, actor=writers.writer_class(), redact=redact, held_lock=lock

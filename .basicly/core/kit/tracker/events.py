@@ -171,6 +171,18 @@ WITHDRAWN_REASON = "reason"
 
 UNATTRIBUTED_ACTOR = "unattributed:no-actor-supplied"
 
+DATE_CREATED = "created"
+DATE_UPDATED = "updated"
+DATE_CLOSED = "closed"
+CLOSING_STATUS = "closed"
+IMPORT_MARK_KEY = "imported_from"
+IMPORTED_TIME_KEYS = MappingProxyType({
+    DATE_CREATED: "created_at",
+    DATE_UPDATED: "updated_at",
+    DATE_CLOSED: "closed_at",
+})
+ASSERTED_AT_KEY = "asserted_at"
+
 
 @dataclass(frozen=True)
 class Totals:
@@ -346,6 +358,9 @@ class RecordState:
     tombstoned: bool = False
     totals: Totals = field(default_factory=Totals)
     max_seq: int = 0
+    dates: dict[str, str | None] = field(
+        default_factory=lambda: dict.fromkeys((DATE_CREATED, DATE_UPDATED, DATE_CLOSED))
+    )
 
 
 @dataclass
@@ -462,7 +477,40 @@ def _resumed(state: RecordState) -> RecordState:
         tombstoned=state.tombstoned,
         totals=state.totals,
         max_seq=state.max_seq,
+        dates=dict(state.dates),
     )
+
+
+def _instant_key(stamp: str) -> tuple[str, str]:
+    whole, _, fraction = stamp.rstrip("Z").partition(".")
+    return whole, fraction.ljust(9, "0")
+
+
+def _asserted(event: Event, value: object) -> str:
+
+    if event.payload.get(IMPORT_MARK_KEY) and isinstance(value, str) and value:
+        return value
+    return event.ts
+
+
+def _date(state: RecordState, event: Event) -> None:
+
+    dates = state.dates
+    payload = event.payload
+    if event.kind == KIND_CREATED:
+        created = _asserted(event, payload.get(IMPORTED_TIME_KEYS[DATE_CREATED]))
+        dates[DATE_CREATED] = dates[DATE_CREATED] or created
+        moment = _asserted(event, payload.get(IMPORTED_TIME_KEYS[DATE_UPDATED]))
+    elif event.kind == KIND_STATUS:
+        closing = payload.get("status") == CLOSING_STATUS
+        held = state.fields.get(IMPORTED_TIME_KEYS[DATE_CLOSED])
+        moment = _asserted(event, held) if closing else event.ts
+        dates[DATE_CLOSED] = moment if closing else None
+    else:
+        moment = _asserted(event, payload.get(ASSERTED_AT_KEY))
+    latest = dates[DATE_UPDATED]
+    if latest is None or _instant_key(moment) > _instant_key(latest):
+        dates[DATE_UPDATED] = moment
 
 
 def fold(events: Iterable[Event], *, seed: Mapping[str, RecordState] | None = None) -> FoldResult:
@@ -487,6 +535,7 @@ def fold(events: Iterable[Event], *, seed: Mapping[str, RecordState] | None = No
         state.totals = accumulate(state.totals, event.kind, event.payload)
         if event.totals != state.totals:
             result.mismatched_totals.append(event.id)
+        _date(state, event)
         if event.kind == KIND_WITHDRAWN:
             _apply_withdrawn(result, event)
             continue

@@ -247,12 +247,12 @@ def test_a_write_the_store_does_not_keep_is_reported_as_not_recorded(
 
     monkeypatch.setattr(kit.events, "append", _append_then_lose_it)
 
-    assert cli.main(["tracker", "write", "--", "update", ROOT, "--notes", "probe"]) != 0
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "--assignee", "probe"]) != 0
 
     err = capsys.readouterr().err
     assert "not recorded" in err
-    assert f"{ROOT} --notes=probe" in err
-    assert (tracker.read_record(repo, ROOT) or {}).get("notes") is None
+    assert f"{ROOT} --assignee=probe" in err
+    assert (tracker.read_record(repo, ROOT) or {}).get("assignee") is None
 
 
 def test_a_write_that_cannot_take_the_lock_says_so_and_that_it_may_be_retried(
@@ -261,12 +261,12 @@ def test_a_write_that_cannot_take_the_lock_says_so_and_that_it_may_be_retried(
 
     _hold_the_ledger_lock(repo, monkeypatch)
 
-    assert cli.main(["tracker", "write", "--", "update", ROOT, "--notes", "probe"]) == 1
+    assert cli.main(["tracker", "write", "--", "update", ROOT, "--assignee", "probe"]) == 1
 
     err = capsys.readouterr().err
     assert "not recorded" in err
     assert "running it again is safe" in err
-    assert (tracker.read_record(repo, ROOT) or {}).get("notes") is None
+    assert (tracker.read_record(repo, ROOT) or {}).get("assignee") is None
 
 
 def test_a_write_landing_beside_a_fact_the_ledger_held_reports_both(
@@ -276,10 +276,10 @@ def test_a_write_landing_beside_a_fact_the_ledger_held_reports_both(
     assert cli.main(["tracker", "write", "--", "update", ROOT, "--title", "one"]) == 0
     capsys.readouterr()
 
-    argv = ["tracker", "write", "--", "update", ROOT, "--title", "one", "--notes", "n"]
+    argv = ["tracker", "write", "--", "update", ROOT, "--title", "one", "--assignee", "n"]
     assert cli.main(argv) == 0
 
     out = capsys.readouterr().out
-    assert f"recorded: {ROOT} --notes=n" in out
+    assert f"recorded: {ROOT} --assignee=n" in out
     assert "and 1 fact(s) the ledger already held" in out
-    assert (tracker.read_record(repo, ROOT) or {})["notes"] == "n"
+    assert (tracker.read_record(repo, ROOT) or {})["assignee"] == "n"

@@ -51,12 +51,14 @@ CREATE_FIELD_FLAGS = {
     "-d": "description",
     "--description": "description",
     "--parent": "parent",
+    "-a": "assignee",
+    "--assignee": "assignee",
 }
 
 CREATE_LONG_FLAGS = tuple(sorted(flag for flag in CREATE_FIELD_FLAGS if flag.startswith("--")))
 
 VALUE_FLAGS: dict[str, frozenset[str]] = {
-    "create": frozenset(CREATE_FIELD_FLAGS) | {"-a", "--assignee"},
+    "create": frozenset(CREATE_FIELD_FLAGS),
     "update": frozenset(UPDATE_FIELD_FLAGS) | UPDATE_STATUS_FLAGS | frozenset(UPDATE_LABEL_FLAGS),
     "close": frozenset({"--reason"}),
     "dep add": frozenset({"-t", "--type"}),

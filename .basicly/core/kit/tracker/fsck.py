@@ -689,3 +689,14 @@ def _dumps(obj: Mapping[str, object]) -> str:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def shards_report(directory: Path | str) -> dict[str, object]:
+
+    held = snapshot.events.pending_paths(directory)
+    return {
+        "count": len(held),
+        "writers": [snapshot.events.writer_of(path) for path in held],
+        "warn_above": SHARDS_WARN_ABOVE,
+        "refuse_above": SHARDS_REFUSE_ABOVE,
+    }

@@ -1,8 +1,30 @@
 from __future__ import annotations
 
 import difflib
+import importlib.util
+import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
+
+_HERE = Path(__file__).resolve().parent
+
+
+def _load(file_name: str, module_name: str) -> Any:
+
+    cached = sys.modules.get(module_name)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(module_name, _HERE / file_name)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"the tracker kit's {file_name} is missing from beside values.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+fields = _load("fields.py", "basicly_tracker_kit_fields")
 
 WRITABLE_STATUSES = ("open", "in_progress", "blocked", "deferred", "closed")
 CLOSED = "closed"
@@ -11,8 +33,7 @@ PRIORITIES = range(5)
 CLOSE_REASON_FIELD = "close_reason"
 
 
-class RefusedValueError(ValueError):
-    pass
+RefusedValueError = fields.RefusedFieldError
 
 
 def _status(value: object) -> None:
@@ -41,7 +62,16 @@ def _named(events: Any, draft: Any, name: str) -> bool:
     return draft.kind == events.KIND_FIELD and draft.payload.get("name") == name
 
 
-def refuse(events: Any, drafts: Sequence[Any]) -> None:
+def _written_names(events: Any, draft: Any) -> tuple:
+
+    if draft.kind == events.KIND_CREATED:
+        return tuple(draft.payload)
+    if draft.kind == events.KIND_FIELD:
+        return (str(draft.payload.get("name")),)
+    return ()
+
+
+def refuse(events: Any, drafts: Sequence[Any], template: Any = None) -> None:
 
     reasoned = {
         draft.record
@@ -56,6 +86,8 @@ def refuse(events: Any, drafts: Sequence[Any]) -> None:
         )
     }
     for draft in drafts:
+        for name in _written_names(events, draft):
+            fields.refuse(name, template)
         if draft.kind == events.KIND_STATUS:
             _status(draft.payload.get("status"))
             if draft.payload.get("status") == CLOSED and draft.record not in reasoned:

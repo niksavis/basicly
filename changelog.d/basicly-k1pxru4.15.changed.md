@@ -1,0 +1,1 @@
+- The tracker has one field table that the kit and the engine both apply. A write of a field that no code reads, or of an import-history field, is refused with the fix. `fields` prints the table. `show` now carries `dates` (created, updated, closed) derived from the event times, and the engine create keeps `--assignee`.

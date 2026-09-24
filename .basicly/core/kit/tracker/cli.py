@@ -34,6 +34,7 @@ migrate = _load("migrate.py", "basicly_tracker_kit_migrate")
 shaping = _load("shaping.py", "basicly_tracker_kit_shaping")
 record_view = _load("record_view.py", "basicly_tracker_kit_record_view")
 board = _load("board.py", "basicly_tracker_kit_board")
+fields = _load("fields.py", "basicly_tracker_kit_fields")
 events = snapshot.events
 ids = events.ids
 
@@ -225,6 +226,7 @@ def _add_query_parsers(sub: Any) -> None:
         ("ready", "the ranked ready set: what can be worked on now"),
         ("blocked", "each dispatchable record that is not ready, and what holds it"),
         ("stats", "counts by status, plus the ready and blocked counts"),
+        ("fields", "each record field, its role and its reader"),
     ):
         view = sub.add_parser(name, help=helping)
         view.add_argument("directory", help=DIRECTORY_HELP)
@@ -307,34 +309,6 @@ def _compacted(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
-def _imported(args: argparse.Namespace, redact: Callable[[str], str] | None) -> dict[str, object]:
-    source = args.source or Path(args.export).name
-    read = migrate.read_snapshot(args.export, name=source)
-    report = migrate.import_snapshot(args.directory, read, redact=redact, dry_run=args.dry_run)
-    return {
-        "source": source,
-        "dry_run": args.dry_run,
-        "imported": report.imported,
-        "diverged": report.diverged,
-        "absent": report.absent,
-        "tombstoned": report.tombstoned,
-        "rejected": [
-            {"subject": one.subject, "reason": one.reason}
-            for one in (*report.rejected, *report.unreadable)
-        ],
-    }
-
-
-def _shards(args: argparse.Namespace) -> dict[str, object]:
-    held = events.pending_paths(args.directory)
-    return {
-        "count": len(held),
-        "writers": [events.writer_of(path) for path in held],
-        "warn_above": fsck.SHARDS_WARN_ABOVE,
-        "refuse_above": fsck.SHARDS_REFUSE_ABOVE,
-    }
-
-
 _VIEWS: dict[
     str, Callable[[argparse.Namespace, Callable[[str], str] | None], dict[str, object]]
 ] = {
@@ -342,10 +316,13 @@ _VIEWS: dict[
     "blocked": lambda a, _r: queries.blocked(a.directory),
     "stats": lambda a, _r: queries.stats(a.directory),
     "compact": lambda a, _r: _compacted(a),
-    "shards": lambda a, _r: _shards(a),
+    "shards": lambda a, _r: fsck.shards_report(a.directory),
     "board": lambda a, _r: {"written": board.write(a.directory, a.out).as_posix()},
-    "import": _imported,
+    "import": lambda a, r: migrate.import_report(
+        a.directory, a.export, source=a.source, redact=r, dry_run=a.dry_run
+    ),
     "scaffold": lambda a, _r: record_view.scaffold_of(a.directory, a.type),
+    "fields": lambda a, _r: fields.table(record_view.templates.load(a.directory)),
 }
 
 

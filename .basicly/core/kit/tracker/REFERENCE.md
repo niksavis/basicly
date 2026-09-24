@@ -135,6 +135,16 @@ the ledger's `template.json` when there is one.
 python3 .basicly/kit/tracker/cli.py scaffold .basicly/ledger --type bug
 ```
 
+### fields
+
+Each record field, its role and the code or person that reads it. A write of a field
+that is not in the table, or of an import-history field, is refused. `show` prints the
+derived `dates` (created, updated, closed) computed from the event times.
+
+```sh
+python3 .basicly/kit/tracker/cli.py fields .basicly/ledger
+```
+
 ## Keep the log healthy
 
 ### fsck
