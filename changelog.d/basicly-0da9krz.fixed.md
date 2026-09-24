@@ -1,1 +1,0 @@
-- The tracker page no longer fails to load now and then: parallel reads on the page server wrote the same temporary snapshot file, and on Windows a read or a replace of the snapshot could be refused while another thread replaced it. Each write now uses its own temporary name, and a refused replace or read is retried briefly. (basicly-0da9krz)

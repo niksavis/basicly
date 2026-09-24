@@ -1,1 +1,0 @@
-- The tracker page names each blocked story by its title, says what it waits on (a parent card says `parent of N`), and names a missing field without the `##` heading marks. The `blocked` rows in the tracker kit and the board API now carry `title`. (basicly-uf79vt6)

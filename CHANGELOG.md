@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.2 - 2026-09-24
+
+Delta: v0.18.1..v0.18.2
+
 This release redesigns the tracker page. A person now picks a story from one ranked list
 with tabs, search and filters, reads it in a pane beside the list, and takes the one action
 that fits its state. The page also names blocked stories by their title.
@@ -17,6 +21,20 @@ that fits its state. The page also names blocked stories by their title.
 - **Blocked stories by title.** The `blocked` rows in the tracker kit and the board API carry
   `title`, and the page says what each story waits on, or `parent of N`
   (`basicly-uf79vt6`).
+
+### Added
+
+- The tracker page is redesigned: one list with Ready, Refine, Blocked, Mine, All open and Closed tabs, search, sort, priority and holder on each row, a story pane that reads before it edits, a link for each story, and close and dependency actions. `show` now returns `comment_log` with each comment's writer and time. (basicly-hl6f72r)
+
+### Changed
+
+- `dep` now refuses a dependency the story already has, an edge type the tracker does not know (it lists the known ones), and a `blocks` edge on a closed story; the tracker page checks the same rules before Add and suggests stories as you type. (basicly-hl6f72r)
+
+### Fixed
+
+- The tracker page no longer fails to load now and then: parallel reads on the page server wrote the same temporary snapshot file, and on Windows a read or a replace of the snapshot could be refused while another thread replaced it. Each write now uses its own temporary name, and a refused replace or read is retried briefly. (basicly-0da9krz)
+
+- The tracker page names each blocked story by its title, says what it waits on (a parent card says `parent of N`), and names a missing field without the `##` heading marks. The `blocked` rows in the tracker kit and the board API now carry `title`. (basicly-uf79vt6)
 
 ## v0.18.1 - 2026-09-24
 

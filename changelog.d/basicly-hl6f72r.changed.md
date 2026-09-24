@@ -1,1 +1,0 @@
-- `dep` now refuses a dependency the story already has, an edge type the tracker does not know (it lists the known ones), and a `blocks` edge on a closed story; the tracker page checks the same rules before Add and suggests stories as you type. (basicly-hl6f72r)
