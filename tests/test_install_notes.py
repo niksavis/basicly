@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from basicly import scaffolds
 from basicly.scaffolds import install_notes
 
 
@@ -191,3 +194,33 @@ def test_a_config_with_no_entry_lines_is_still_advised(tmp_path: Path) -> None:
     (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
 
     assert ".pre-commit-config.yaml" in "\n".join(install_notes(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("name", "text", "named"),
+    [
+        ("ruff.toml", '[lint]\nselect = ["E", "D"]\n', "ruff.toml: selects D"),
+        (".ruff.toml", 'extend-select = ["D103"]\n', ".ruff.toml: selects D103"),
+        ("pyproject.toml", '[tool.ruff.lint]\nselect = ["ALL"]\n', "pyproject.toml: selects ALL"),
+    ],
+)
+def test_a_ruff_config_that_requires_docstrings_is_named_at_install(
+    tmp_path: Path, name: str, text: str, named: str
+) -> None:
+    (tmp_path / name).write_text(text, encoding="utf-8")
+
+    notes = scaffolds.docstring_contradictions(tmp_path)
+
+    assert notes[0] == scaffolds.DOCSTRING_HEADING
+    assert f"  {named}" in notes
+    assert scaffolds.DOCSTRING_HEADING in scaffolds.install_notes(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ['[lint]\nselect = ["E", "F"]\n', '[lint]\nselect = ["ALL"]\nignore = ["D"]\n', "not = [toml"],
+)
+def test_a_ruff_config_without_docstring_rules_gets_no_warning(tmp_path: Path, text: str) -> None:
+    (tmp_path / "ruff.toml").write_text(text, encoding="utf-8")
+
+    assert scaffolds.docstring_contradictions(tmp_path) == []

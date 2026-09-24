@@ -1,0 +1,1 @@
+- `basicly install` and `basicly check` warn when your ruff config selects the pydocstyle D rules, which require the docstrings the no-comments hook refuses, and name the file, the codes and the fix. (basicly-oadrtiv)

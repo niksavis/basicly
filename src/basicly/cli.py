@@ -123,6 +123,7 @@ from .scaffolds import (
     OVERLAY_FRAGMENT_STUBS,
     UVX_COMMAND,
     VSCODE_TASKS_JSON,
+    docstring_contradictions,
     install_notes,
     repin,
 )
@@ -407,6 +408,8 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 def cmd_check(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
+    for line in docstring_contradictions(repo_root):
+        print(line, file=sys.stderr)
     paths = load_project_paths(repo_root)
     if _report_provenance_notes(repo_root, paths):
         return 1

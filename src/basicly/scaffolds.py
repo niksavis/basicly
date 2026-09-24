@@ -361,8 +361,47 @@ def _needs_core_exclusion(name: str, path: Path) -> bool:
     return not CORE_EXCLUSION_READERS[name](path)
 
 
+DOCSTRING_CODE = re.compile(r"^D\d*$")
+DOCSTRING_HEADING = (
+    "Your ruff config requires docstrings, and basicly's no-comments hook refuses them, so "
+    "the first commit that touches a .py file is refused by one gate or the other. Drop the "
+    "D rules from the ruff selection, then strip each file you touch with "
+    "`python .basicly/core/kit/comments/cli.py fix <path>`:"
+)
+
+
+def _ruff_tables(repo_root: Path) -> list[tuple[str, dict]]:
+
+    found = []
+    for name in ("ruff.toml", ".ruff.toml", "pyproject.toml"):
+        path = repo_root / name
+        if not path.is_file():
+            continue
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+        except OSError, tomllib.TOMLDecodeError:
+            continue
+        table = data.get("tool", {}).get("ruff") if name == "pyproject.toml" else data
+        if isinstance(table, dict):
+            lint = table.get("lint")
+            found.append((name, {**table, **(lint if isinstance(lint, dict) else {})}))
+    return found
+
+
+def docstring_contradictions(repo_root: Path) -> list[str]:
+
+    lines = []
+    for name, table in _ruff_tables(repo_root):
+        chosen = [*table.get("select", []), *table.get("extend-select", [])]
+        dropped = {*table.get("ignore", []), *table.get("extend-ignore", [])}
+        codes = [str(code) for code in chosen if DOCSTRING_CODE.match(str(code)) or code == "ALL"]
+        if codes and "D" not in dropped:
+            lines.append(f"  {name}: selects {', '.join(codes)}")
+    return [DOCSTRING_HEADING, *lines] if lines else []
+
+
 def install_notes(repo_root: Path) -> list[str]:
-    notes: list[str] = []
+    notes: list[str] = list(docstring_contradictions(repo_root))
     found = [
         (name, advice)
         for name, advice in FOREIGN_TOOLING
