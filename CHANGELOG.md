@@ -6,6 +6,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the tracker hold work to its rules. A story a person writes waits for an
+agent review before anyone can start it, and a code commit must name a record its author
+holds. The tracker page shows a change from the CLI or an agent within about two seconds
+and names readiness as the Definition of Ready and the Definition of Done.
+
+- **Agent review before work starts.** Only an agent removes the `refine` label, and only
+  when nothing is owed; `claim` and a move to `in_progress` are refused until then
+  (`basicly-h8j8a4c`).
+- **Claim before you commit code.** A commit that changes files outside the ledger must name
+  a record you hold in progress; the kit installs this as a `commit-msg` hook, and basicly
+  runs it as `tracker-claim-script` (`basicly-ybpki2j`).
+- **A live, readable page.** A two-second change stamp, `DoR` and `Definition of Done`
+  blocks, plain words for what a story needs, and amber only for P1 (`basicly-9allu2j`,
+  `basicly-64739zj`, `basicly-3h8v48o`).
+- **Install warns about ruff D rules** that require the docstrings no-comments refuses
+  (`basicly-oadrtiv`).
+
 ## v0.18.3 - 2026-09-24
 
 Delta: v0.18.2..v0.18.3
