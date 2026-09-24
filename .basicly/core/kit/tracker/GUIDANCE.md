@@ -43,7 +43,8 @@ python3 .basicly/kit/tracker/cli.py ready .basicly/ledger --mine # the stories y
 
 A `holder` marked `stale` had no event for `stale_days` (14 by default); ask the holder
 before you take it. A story marked `contested` was reserved by two people on different
-branches; the two agree who keeps it, and one runs `unassign`.
+branches; the two agree who keeps it, then run `resolve` to keep the current holder, or
+`claim --take` to change it.
 
 ## Write
 
@@ -118,8 +119,9 @@ where a person reads, creates and edits records: see the `tracker-board` skill.
 - A write appends to `pending-<branch>.jsonl`, and `merge=union` in `.gitattributes` keeps
   both sides of a merge. A merge needs nothing from you. If a merge conflicts on the log,
   run `basicly-tracker status`: the attribute is missing.
-- `fsck` checks the log: exit 0 clean, 1 stale derivative, 2 broken. Repair a broken log by
-  appending a corrective event. Never edit a line.
+- `fsck` checks the log: exit 0 clean, 1 stale derivative, 2 broken. Two writers on one
+  record are a warning. When they set one value differently, `fsck` names both values:
+  keep the current one with `resolve`, or choose with `update`. Never edit a line.
 - `compact` folds the shards into the trunk log. Run it on the default branch as its own
   pull request. Use `init --fold-on-merge` only where one writer pushes straight to the
   default branch, because two pull requests that each carry a fold conflict.

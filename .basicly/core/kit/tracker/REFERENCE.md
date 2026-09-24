@@ -74,6 +74,18 @@ Reserve a record and set it to `in_progress` in one write, when you start the wo
 python3 .basicly/kit/tracker/cli.py claim .basicly/ledger acme-a1b2 --to alex
 ```
 
+### resolve
+
+Two branches can write the same record, and the merge keeps both events. When they set one
+status or one field to different values, `fsck` fails with `conflicting-fork` and names the
+values, and `show` lists them under `conflicts`. `resolve` keeps the current value by
+appending one event. To keep the other value, use `update` instead. A fork that sets nothing
+in conflict, such as two comments, is only a warning.
+
+```sh
+python3 .basicly/kit/tracker/cli.py resolve .basicly/ledger acme-a1b2
+```
+
 ### unassign
 
 Give a reserved record back.

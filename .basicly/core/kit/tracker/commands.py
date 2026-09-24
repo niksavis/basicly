@@ -29,6 +29,7 @@ writers = _load("writers.py", "basicly_tracker_kit_writers")
 recurrence = _load("recurrence.py", "basicly_tracker_kit_recurrence")
 values = _load("values.py", "basicly_tracker_kit_values")
 holders = _load("holders.py", "basicly_tracker_kit_holders")
+forks = _load("forks.py", "basicly_tracker_kit_forks")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -94,11 +95,18 @@ def _require(ledger: Path, record: str) -> Any:
 
 
 def _append(
-    ledger: Path, drafts: Sequence[Any], redact: Callable[[str], str] | None, lock: Any
+    ledger: Path,
+    drafts: Sequence[Any],
+    redact: Callable[[str], str] | None,
+    lock: Any,
+    *,
+    repeat: bool = False,
 ) -> list:
     values.refuse(events, drafts, templates.load(ledger))
     holders.refuse(events.fold(events.read_events(ledger)[0]).records, drafts)
-    resolved = recurrence.at_the_generation_this_write_needs(events, ledger, drafts, redact=redact)
+    resolved = recurrence.at_the_generation_this_write_needs(
+        events, ledger, drafts, repeat=repeat, redact=redact
+    )
     return events.append(
         ledger, resolved, actor=writers.writer_class(), redact=redact, held_lock=lock
     )
@@ -392,3 +400,35 @@ def unassign(
         _require(ledger, record)
         payload = {"name": holders.HOLDER_FIELD, "value": ""}
         return _append(ledger, [events.Draft(record, events.KIND_FIELD, payload)], redact, lock)
+
+
+def _restated(record: str, state: Any, key: str) -> list:
+
+    if key == forks.STATUS_KEY:
+        drafts = [events.Draft(record, events.KIND_STATUS, {"status": state.status})]
+        if state.status == CLOSED_STATUS:
+            reason = {"name": CLOSE_REASON_FIELD, "value": state.fields.get(CLOSE_REASON_FIELD)}
+            drafts.insert(0, events.Draft(record, events.KIND_FIELD, reason))
+        return drafts
+    payload: dict[str, object] = {"name": key, "value": state.fields.get(key)}
+    if key == holders.HOLDER_FIELD:
+        payload[holders.TAKE_KEY] = True
+    return [events.Draft(record, events.KIND_FIELD, payload)]
+
+
+def resolve(
+    directory: Path | str, record: str, *, redact: Callable[[str], str] | None = None
+) -> list:
+
+    ledger = _ledger(directory)
+    with events.LedgerLock(ledger) as lock:
+        state = _require(ledger, record)
+        ordered = events.canonical_order(events.read_events(ledger)[0])
+        keys = sorted({one["key"] for one in forks.of_record(ordered, record)})
+        if not keys:
+            raise TrackerCommandError(f"{record} has no unresolved conflict to resolve")
+        drafts = [draft for key in keys for draft in _restated(record, state, str(key))]
+        appended = _append(ledger, drafts, redact, lock, repeat=True)
+        if not appended:
+            raise TrackerCommandError(f"resolve {record} appended nothing, so the fork stays")
+        return appended

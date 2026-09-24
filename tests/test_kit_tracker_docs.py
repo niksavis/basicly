@@ -25,6 +25,7 @@ ENTRY = "python3 .basicly/kit/tracker/cli.py "
 FIRST = frozenset({"<id>", "<parent-id>", "acme-a1b2"})
 SECOND = frozenset({"<the-id-it-waits-on>", "acme-c3d4"})
 REFUSING = frozenset({"dor"})
+REFUSED_ON_A_FRESH_LEDGER = {"resolve": "no unresolved conflict"}
 LEFT_BEHIND = frozenset({".basicly", ".git", ".gitattributes", ".gitignore", ".agents", ".claude"})
 LEFT_BEHIND |= {"issues.jsonl", "tracker-board.html"}
 
@@ -104,6 +105,10 @@ def test_every_documented_command_runs_on_a_fresh_install(command: str, tmp_path
     done = _run(repo, argv)
 
     report = json.loads(done.stdout)
+    expected = REFUSED_ON_A_FRESH_LEDGER.get(argv[0])
+    if expected is not None:
+        assert expected in str(report.get("refused")), report
+        return
     assert not isinstance(report.get("refused"), str), report
     assert done.returncode == 0 or argv[0] in REFUSING, done.stdout
     assert {path.name for path in repo.iterdir()} <= LEFT_BEHIND

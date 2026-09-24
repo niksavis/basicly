@@ -180,6 +180,10 @@ def _add_write_parsers(sub: Any) -> None:
         hold.add_argument("--to", default="", help="the holder; default: git config user.name")
         hold.add_argument("--take", action="store_true", help="take it from its current holder")
 
+    settle = sub.add_parser("resolve", help="keep the current value of each conflicting fork")
+    settle.add_argument("directory", help=DIRECTORY_HELP)
+    settle.add_argument("record", help="the record id")
+
     release = sub.add_parser("unassign", help="give a reserved record back")
     release.add_argument("directory", help=DIRECTORY_HELP)
     release.add_argument("record", help="the record id")

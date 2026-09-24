@@ -221,7 +221,11 @@ problem needs. One integer field and one sort rule give the needed order at the 
 **A timestamp is never the sort key** (§9.5). One skewed clock would reopen a `done` item.
 
 Two branches that increment the sequence of one item at the same time make a **visible fork
-that `fsck` reports**. A visible conflict is better than a silent wrong order.
+that `fsck` reports**. A visible conflict is better than a silent wrong order. A fork is a
+warning when its events set nothing in common, such as two comments. It is broken, as
+`conflicting-fork`, when two of its events set one status or one field to different values
+and no later event sets that key again. `resolve` appends that later event with the current
+value, so the tie becomes a decision.
 
 ### 4.2 Secrets, size, and the committed-ledger trust boundary
 

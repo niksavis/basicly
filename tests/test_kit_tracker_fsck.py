@@ -110,7 +110,7 @@ def test_a_ledger_that_does_not_exist_is_inert_rather_than_an_error(tmp_path: Pa
     assert report.events == 0
 
 
-def test_two_events_claiming_one_sequence_number_name_both_ids_and_fail(
+def test_two_writers_on_one_record_that_conflict_on_nothing_are_a_warning_naming_both_ids(
     tmp_path: Path,
 ) -> None:
 
@@ -126,9 +126,46 @@ def test_two_events_claiming_one_sequence_number_name_both_ids_and_fail(
     found = _of_kind(report, fsck.FORKED_SEQUENCE)
     assert len(found) == 1
     assert found[0].subject == RECORD_A
+    assert found[0].severity == fsck.WARNING
     assert forked.id in found[0].event_ids
     assert len(found[0].event_ids) == 2
+    assert report.exit_code == fsck.EXIT_CLEAN
+
+
+def _collide_last_with(ledger: Path, seq: int) -> None:
+    lines = _lines(_log(ledger))
+    collided = json.loads(lines[-1])
+    collided["seq"] = seq
+    _write(_log(ledger), [*lines[:-1], _dumps(collided)])
+
+
+def test_two_branches_setting_one_status_differently_fail_naming_both_values(
+    tmp_path: Path,
+) -> None:
+
+    ledger = _seed(tmp_path / "ledger")
+    _append(ledger, [events.Draft(RECORD_A, "status", {"status": "in_progress"})])
+    _collide_last_with(ledger, 2)
+
+    report = fsck.check(ledger)
+
+    found = _of_kind(report, fsck.CONFLICTING_FORK)
+    assert len(found) == 1
+    assert '"open"' in found[0].detail and '"in_progress"' in found[0].detail
     assert report.exit_code == fsck.EXIT_BROKEN
+
+
+def test_a_later_write_of_the_conflicting_key_settles_the_fork(tmp_path: Path) -> None:
+
+    ledger = _seed(tmp_path / "ledger")
+    _append(ledger, [events.Draft(RECORD_A, "status", {"status": "in_progress"})])
+    _collide_last_with(ledger, 2)
+    _append(ledger, [events.Draft(RECORD_A, "status", {"status": "blocked"})])
+
+    report = fsck.check(ledger)
+
+    assert _of_kind(report, fsck.CONFLICTING_FORK) == []
+    assert report.exit_code == fsck.EXIT_CLEAN
 
 
 def test_an_edge_whose_target_no_created_event_minted_names_the_edge_and_fails(

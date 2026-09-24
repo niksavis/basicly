@@ -26,6 +26,7 @@ queries = _load("queries.py", "basicly_tracker_kit_queries")
 shaping = _load("shaping.py", "basicly_tracker_kit_shaping")
 templates = _load("templates.py", "basicly_tracker_kit_templates")
 label_shape = _load("label_shape.py", "basicly_tracker_kit_label_shape")
+forks = _load("forks.py", "basicly_tracker_kit_forks")
 snapshot = queries.snapshot
 events = snapshot.events
 
@@ -96,6 +97,8 @@ def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
     stale_days = templates.load(directory).stale_days
     now = queries.holders.newest(states)
     shown["holder"] = queries.holders.holding(state, stale_days, now)
+    ordered = events.canonical_order(events.read_events(directory)[0])
+    shown["conflicts"] = forks.of_record(ordered, record)
     return shown
 
 

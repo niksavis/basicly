@@ -52,6 +52,7 @@ _BLOCKING_REPORTS = frozenset({
     "assign",
     "claim",
     "unassign",
+    "resolve",
     "close",
     "comment",
     "dep",
@@ -137,6 +138,7 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
     ),
     "claim": lambda a, r: commands.claim(a.directory, a.record, _holder(a), take=a.take, redact=r),
     "unassign": lambda a, r: commands.unassign(a.directory, a.record, redact=r),
+    "resolve": lambda a, r: commands.resolve(a.directory, a.record, redact=r),
 }
 
 

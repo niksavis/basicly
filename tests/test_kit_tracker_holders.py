@@ -231,3 +231,26 @@ def test_the_loop_records_the_person_who_runs_it_as_the_holder(
 
     assert loop._hold_for_this_session(_ctx(repo, "th-2")) is None
     assert (tracker.read_record(repo, "th-2") or {})["assignee"] == "sam"
+
+
+def test_resolve_keeps_the_current_value_of_a_status_conflict_and_fsck_is_clean(
+    story: tuple[Path, str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger, record = story
+    _run(capsys, "update", str(ledger), record, "--status", "in_progress")
+    log = sorted(ledger.glob("*.jsonl"))[-1]
+    lines = log.read_text(encoding="utf-8").splitlines()
+    collided = json.loads(lines[-1])
+    collided["seq"] -= 1
+    log.write_text("\n".join([*lines[:-1], json.dumps(collided)]) + "\n", encoding="utf-8")
+    assert _run(capsys, "fsck", str(ledger))[1]["exit_code"] == 2
+    assert _run(capsys, "show", str(ledger), record)[1]["conflicts"][0]["key"] == "status"
+
+    assert _run(capsys, "resolve", str(ledger), record)[0] == cli.EXIT_OK
+
+    _, report = _run(capsys, "fsck", str(ledger))
+    assert report["exit_code"] == 0
+    assert _run(capsys, "show", str(ledger), record)[1]["conflicts"] == []
+    code, refused = _run(capsys, "resolve", str(ledger), record)
+    assert code == cli.EXIT_REFUSED
+    assert "no unresolved conflict" in refused["refused"]
