@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.7 - 2026-09-24
+
+Delta: v0.18.6..v0.18.7
+
 This release makes readiness strict and identity deliberate. Every record now needs
 requirements before it is ready, and the tracker records the holder name you choose, with a
 gate that keeps your git name out of everything else.
@@ -16,6 +20,12 @@ gate that keeps your git name out of everything else.
   git name anywhere else (`basicly-fs7bkwu`).
 - **Faster releases.** The release workflow keeps the fast checks and leaves the test suite to
   CI (`basicly-8xwfe5a`).
+
+### Changed
+
+- The tracker holder is a name you choose: `BASICLY_HOLDER` or `git config basicly.holder` wins over your git user name, so a pseudonym keeps your name out of the ledger. `identity-guard` now refuses a commit that adds your git user name anywhere except the holder field, and the shipped rule names that one exception. (basicly-fs7bkwu)
+
+- The Definition of Ready now requires requirements for every record, not only for records created under the dor.v2 rule, so an older record without requirements leaves the ready list until an agent adds them. (basicly-kkmlzo2)
 
 ## v0.18.6 - 2026-09-24
 
