@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import importlib.util
+import io
 import json
 import re
 import sys
@@ -321,3 +322,35 @@ def test_the_api_retracts_a_dependency_and_lists_edges_per_record(client: Client
     assert status == 200
     status, refused = client.call("POST", f"/api/v1/records/{second['record']}/undep", body)
     assert status == 422 and "nothing to retract" in refused["refused"]
+
+
+def test_a_refused_write_reads_its_body_so_windows_sends_the_refusal_not_a_reset(
+    client: Client,
+) -> None:
+    body = json.dumps({"title": "x"}).encode()
+    conn = http.client.HTTPConnection("127.0.0.1", client.port, timeout=10)
+    headers = {"Content-Type": "application/json", "Origin": "http://evil.example"}
+    conn.request("POST", "/api/v1/records", body=body, headers=headers)
+    response = conn.getresponse()
+    refused = json.loads(response.read())
+    conn.close()
+
+    assert response.status == 403 and "refused" in refused
+
+
+def test_drain_reads_an_unread_body_once_and_never_past_the_limit(ledger: Path) -> None:
+    served = server.make_server(ledger, "127.0.0.1", 0)
+    served.server_close()
+    handler = served.RequestHandlerClass.__new__(served.RequestHandlerClass)
+    handler.headers = {"Content-Length": "11"}
+    handler.rfile = io.BytesIO(b'{"title":1}rest')
+
+    handler._drain()
+    handler._drain()
+
+    assert handler.rfile.read() == b"rest"
+    oversized = served.RequestHandlerClass.__new__(served.RequestHandlerClass)
+    oversized.headers = {"Content-Length": str(server.MAX_BODY_BYTES + 1)}
+    oversized.rfile = io.BytesIO(b"x" * 8)
+    oversized._drain()
+    assert oversized.rfile.read() == b"x" * 8

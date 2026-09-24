@@ -330,10 +330,23 @@ class Handler(BaseHTTPRequestHandler):
         size = int(self.headers.get("Content-Length") or 0)
         if size > MAX_BODY_BYTES:
             raise _refuse(f"the body is over {MAX_BODY_BYTES} bytes")
+        self.consumed = True
         try:
             return json.loads(self.rfile.read(size) or b"{}")
         except ValueError:
             raise _refuse("the body is not JSON") from None
+
+    def _drain(self) -> None:
+
+        if getattr(self, "consumed", False):
+            return
+        try:
+            size = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return
+        if 0 < size <= MAX_BODY_BYTES:
+            self.rfile.read(size)
+        self.consumed = True
 
     def _handle(self, method: str) -> None:
 
@@ -353,6 +366,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 raise _refuse(f"no {method} at {split.path}", HTTPStatus.METHOD_NOT_ALLOWED)
         except RequestError as exc:
+            self._drain()
             self._json(exc.status, {"schema": SCHEMA, "refused": str(exc)})
 
     def _static(self, path: str) -> None:

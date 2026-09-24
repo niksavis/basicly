@@ -1,0 +1,1 @@
+- The tracker page server reads the rest of a refused request before it answers, so on Windows the client gets the refusal instead of an aborted connection. (basicly-4g7iwbb)
