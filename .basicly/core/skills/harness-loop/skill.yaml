@@ -87,7 +87,7 @@ instructions: |
   | decompose (checkpoint) | approval before fan-out | Relay the code on the reprinted `basicly loop run <id> --confirm <code>`. |
   | build | the agent commits the work on the harness branch | `basicly worktree list`. Write the code, add fragments, `git commit`, then `basicly loop advance <id>` lands it through the serial merge queue. |
   | verify | the landing ran verify and recorded the required gate; inspect it, then approve ship | `basicly policy gate <id>` to inspect. Relay the ship code on the reprinted `basicly loop run <id> --confirm <code>`, not on a bare `basicly policy checkpoint <id> ship --approve`, which leaves the loop parked. |
-  | validate | an L3 unit needs a consumer verdict on the merged checkout | Blocks with `needs input: validation`. Repair a FAIL in the lane's worktree and land again. |
+  | validate | an L3 unit needs a consumer verdict on the merged checkout | Refused first when the record states no `requirements`. Blocks with `needs input: validation`. Repair a FAIL in the lane's worktree and land again. |
   | ship | teardown and the closing write | `basicly loop advance <id>`. It blocks with no side effect on `needs input: demonstration` or on an unmerged branch. |
 
   ### Classify by shape

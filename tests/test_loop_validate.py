@@ -37,7 +37,12 @@ STATE = NodeState(
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     root = flipped_tracker.flipped_repo(tmp_path)
-    flipped_tracker.seed(root, RECORD, title="a unit that owes the consumer gate")
+    flipped_tracker.seed(
+        root,
+        RECORD,
+        title="a unit that owes the consumer gate",
+        requirements="- A consumer runs the command and reads its table",
+    )
     return root
 
 
@@ -142,3 +147,22 @@ def test_the_two_queue_sites_give_the_decision_kind_one_spelling() -> None:
         assert "decisions.enqueue" in source, "the probe must be reading a queueing site"
         assert "VALIDATE_DECISION_KIND" in source
         assert f'"{validate_gate.VALIDATE_DECISION_KIND}"' not in source
+
+
+def test_a_record_with_no_requirements_is_refused_before_the_validator_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    root = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(root, RECORD, title="a unit that states no intended use")
+
+    def never(*_a: object, **_k: object) -> None:
+        pytest.fail("the validator was dispatched for a record with no requirements")
+
+    monkeypatch.setattr(runner, "run", never)
+
+    result = loop.advance(root, RECORD, config=CONFIG, inputs=loop.Inputs())
+
+    assert result.blocked and result.to_phase == "validate"
+    assert "states no `requirements`" in result.detail
+    assert "--requirements" in result.detail

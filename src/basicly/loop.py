@@ -316,6 +316,8 @@ def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
 
     if not ctx.repair_dispatch or validate_gate.has_foreign_result(ctx.state.gates):
         return None
+    if (refused := validate_gate.requirements_refusal(ctx.repo_root, ctx.issue_id)) is not None:
+        return _blocked(ctx, refused, needs_input="validation")
     dispatch = _run_agent(
         ctx,
         ctx.issue_id,

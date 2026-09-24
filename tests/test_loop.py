@@ -73,6 +73,8 @@ def at(monkeypatch: pytest.MonkeyPatch):
 
     def _pin(state: NodeState) -> None:
         monkeypatch.setattr(loop.loop_state, "read_node_state", lambda *_a, **_k: state)
+        shaped = {"requirements": "- A consumer runs it and reads the result"}
+        monkeypatch.setattr(loop.validate_gate, "_read_record", lambda *_a, **_k: shaped)
 
     return _pin
 

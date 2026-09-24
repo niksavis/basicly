@@ -278,3 +278,14 @@ def test_the_register_read_returns_nothing_when_its_section_is_not_there() -> No
     assert _register_ids("") == set()
     assert _register_ids("## 1. Elsewhere\n\n| R1 | a row outside the register |\n") == set()
     assert _register_ids(f"{_REGISTER_HEADING}The register\n\n| R1 | a row |\n") == {"R1"}
+
+
+def test_a_record_with_no_requirements_reads_them_as_absent_not_empty(tmp_path: Path) -> None:
+
+    root = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(root, "old-1", title="filed before requirements existed")
+
+    record = tracker.read_record(root, "old-1") or {}
+
+    assert record["title"] == "filed before requirements existed"
+    assert "requirements" not in record

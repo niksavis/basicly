@@ -10,6 +10,7 @@ from .config import VERIFY_GATE_PROVIDER
 from .dispatch_brief import VERDICT_PREFIX
 from .integrity import VALIDATE_GATE
 from .tracker import read_comments as _read_comments
+from .tracker import read_record as _read_record
 from .tracker import write as _write
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 _LEVEL_FIELD = "level="
 
 VALIDATE_DECISION_KIND = "validate"
+REQUIREMENTS_FIELD = "requirements"
 
 _MARKUP = re.compile(r"[*_`]+")
 _MARKER = re.compile(r"^[#>\-+\s]+")
@@ -132,4 +134,16 @@ def record_verdict(repo_root: Path, issue_id: str, *, passed: bool) -> None:
             "--status",
             "pass" if passed else "fail",
         ],
+    )
+
+
+def requirements_refusal(repo_root: Path, issue_id: str) -> str | None:
+
+    stated = (_read_record(repo_root, issue_id) or {}).get(REQUIREMENTS_FIELD)
+    if isinstance(stated, str) and stated.strip():
+        return None
+    return (
+        f"{issue_id} states no `{REQUIREMENTS_FIELD}`, so the validator has no intended use to "
+        f"judge the change against; state it with `basicly tracker write -- update {issue_id} "
+        f"--requirements '- <the intended use>'` and advance again"
     )
