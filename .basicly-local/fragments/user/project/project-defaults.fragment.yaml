@@ -10,5 +10,5 @@ tags:
 - priming
 status: deprecated
 body: |
-  - Platforms: Windows, Linux, macOS.
+  - Platforms: Linux and macOS, tested in CI; Windows runs but CI no longer tests it.
   - Script harness and CI helpers: `.scripts/`.

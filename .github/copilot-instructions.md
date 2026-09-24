@@ -76,7 +76,7 @@ IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a 
 ## Project Overview
 
 - basicly distributes a harness for coding agents. One YAML catalog is projected into agent instruction files, skills and git hooks. Other repositories install it with `basicly install`.
-- Stack: Python 3.14 or later, managed with `uv`. The version lives only in `src/basicly/__init__.py`. Platforms: Windows, Linux and macOS.
+- Stack: Python 3.14 or later, managed with `uv`. The version lives only in `src/basicly/__init__.py`. Platforms: Linux and macOS, tested in CI; Windows runs but CI no longer tests it.
 - The `basicly` CLI is `src/basicly/cli.py`. This repository authors the catalog in `.basicly/core/`; its own overrides are in `.basicly-local/`. Scripts and CI helpers are in `.scripts/`.
 - `docs/architecture/architecture.md` is the authoritative design reference.
 - A change under `.basicly/core/kit/` must work for a consumer with no engine. Name where that consumer gets the capability.
