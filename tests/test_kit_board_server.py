@@ -84,7 +84,7 @@ def test_a_read_returns_the_same_json_as_the_command(
 
 
 def test_a_human_draft_waits_for_refinement_until_an_agent_pass_shapes_it(
-    client: Client,
+    client: Client, ledger: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     status, made = client.call(
         "POST", "/api/v1/records", {"title": "Keep comments", "fields": {"labels": "refine"}}
@@ -94,17 +94,18 @@ def test_a_human_draft_waits_for_refinement_until_an_agent_pass_shapes_it(
     _, queue = client.call("GET", "/api/v1/refine")
     assert [row["record"] for row in queue["records"] if row["labelled"]] == [record]
 
-    shaped = {
-        "description": TRIGGER,
-        "acceptance": "- The export keeps every comment",
-        "requirements": "- Standard library only",
-        "fields": {"priority": 1},
-        "remove_labels": ["refine"],
-    }
-    status, updated = client.call("PATCH", f"/api/v1/records/{record}", shaped)
+    status, refused = client.call(
+        "PATCH", f"/api/v1/records/{record}", {"remove_labels": ["refine"]}
+    )
+    assert status == 422 and "waits for an agent review" in refused["refused"]
+    status, refused = client.call("POST", f"/api/v1/records/{record}/claim", {"to": "sam"})
+    assert status == 422 and "cannot start" in refused["refused"]
 
-    assert status == 200
-    assert updated["blocking"] == []
+    monkeypatch.setenv("AI_AGENT", "refiner")
+    argv = ["update", str(ledger), record, "--description", TRIGGER, "--remove-label", "refine"]
+    shaped = [*argv, "--acceptance", "- The export keeps every comment"]
+    assert cli.main([*shaped, "--requirements", "- Standard library only"]) == cli.EXIT_OK
+
     _, queue = client.call("GET", "/api/v1/refine")
     assert record not in {row["record"] for row in queue["records"]}
 
@@ -195,7 +196,13 @@ def test_a_custom_page_directory_replaces_the_default_page(ledger: Path, tmp_pat
 
 
 def test_a_second_person_reserving_through_the_api_is_refused_by_name(client: Client) -> None:
-    _, made = client.call("POST", "/api/v1/records", {"title": "reserve me"})
+    shaped = {
+        "title": "reserve me",
+        "description": TRIGGER,
+        "acceptance": "- a",
+        "requirements": "- b",
+    }
+    _, made = client.call("POST", "/api/v1/records", shaped)
     record = made["record"]
 
     status, _ = client.call("POST", f"/api/v1/records/{record}/assign", {"to": "alex"})
@@ -256,14 +263,13 @@ def test_every_action_the_page_posts_is_a_route_the_server_takes() -> None:
 
 
 def test_every_key_the_page_patches_is_one_the_server_accepts() -> None:
-    patched = set(re.findall(r"patch\(\{ ?\"?([a-z_]+)\"?:", PAGE))
     content = re.search(r"const CONTENT = \[([^\]]*)\]", PAGE)
     assert content
     edited = set(re.findall(r'"([a-z_]+)"', content.group(1)))
     assigned = set(re.findall(r"\bbody\.([a-z_]+) =", PAGE))
 
-    assert patched and edited and assigned
-    assert patched | edited | assigned <= server.routes._UPDATE_KEYS
+    assert edited and assigned
+    assert edited | assigned <= server.routes._UPDATE_KEYS
 
 
 def test_every_list_the_page_reads_is_a_read_the_server_answers() -> None:
@@ -364,3 +370,12 @@ def test_the_version_stamp_changes_on_a_write_and_only_then(client: Client) -> N
 
     assert first["version"] == again["version"]
     assert after["version"] != first["version"]
+
+
+def test_the_page_server_writes_as_a_person_even_when_an_agent_starts_it() -> None:
+    environ = {"AI_AGENT": "claude", "CLAUDECODE": "1", "BR_AGENT_NAME": "x", "HOME": "/h"}
+
+    server.serve_as_a_person(environ)
+
+    assert environ == {"HOME": "/h"}
+    assert cli.commands.writers.writer_class(environ) == cli.commands.writers.OPERATOR

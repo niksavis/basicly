@@ -31,6 +31,7 @@ values = _load("values.py", "basicly_tracker_kit_values")
 holders = _load("holders.py", "basicly_tracker_kit_holders")
 forks = _load("forks.py", "basicly_tracker_kit_forks")
 edges = _load("edges.py", "basicly_tracker_kit_edges")
+review = _load("review.py", "basicly_tracker_kit_review")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -103,8 +104,11 @@ def _append(
     *,
     repeat: bool = False,
 ) -> list:
-    values.refuse(events, drafts, templates.load(ledger))
-    holders.refuse(events.fold(events.read_events(ledger)[0]).records, drafts)
+    template = templates.load(ledger)
+    values.refuse(events, drafts, template)
+    states = events.fold(events.read_events(ledger)[0]).records
+    holders.refuse(states, drafts)
+    review.refuse(states, drafts, writers.writer_class(), template)
     resolved = recurrence.at_the_generation_this_write_needs(
         events, ledger, drafts, repeat=repeat, redact=redact
     )

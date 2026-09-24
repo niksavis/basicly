@@ -90,7 +90,9 @@ def _run(repo: Path, argv: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _record(repo: Path) -> str:
-    made = _run(repo, ["create", ".basicly/ledger", "--prefix", "acme", "--title", "seed"])
+    shaped = ["--description", "When a seed is read, I want it shaped, so I can start it."]
+    shaped += ["--acceptance", "- [ ] it starts", "--requirements", "- none"]
+    made = _run(repo, ["create", ".basicly/ledger", "--prefix", "acme", "--title", "seed", *shaped])
     return json.loads(made.stdout)["record"]
 
 

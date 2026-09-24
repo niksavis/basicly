@@ -73,7 +73,7 @@ def test_a_status_the_record_held_before_is_recorded_again(
     made: tuple[Path, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
     ledger, record = made
-    cli.main(["update", str(ledger), record, "--status", "in_progress"])
+    cli.main(["update", str(ledger), record, "--status", "blocked"])
     capsys.readouterr()
 
     assert cli.main(["update", str(ledger), record, "--status", "open"]) == cli.EXIT_OK

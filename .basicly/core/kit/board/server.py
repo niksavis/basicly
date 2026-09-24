@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 import mimetypes
+import os
 import sys
 from collections.abc import Callable, Sequence
 from http import HTTPStatus
@@ -241,8 +242,16 @@ def parser() -> argparse.ArgumentParser:
     return parser
 
 
+def serve_as_a_person(environ: Any = os.environ) -> None:
+
+    writers = tracker_cli().commands.writers
+    for marker in (*writers.AGENT_MARKERS, writers.CLAUDE_CODE_MARKER):
+        environ.pop(marker, None)
+
+
 def run(args: Any, redact: Callable[[str], str] | None = None) -> int:
 
+    serve_as_a_person()
     ledger = tracker_cli().commands.resolve_ledger(args.directory)
     web = Path(args.web) if args.web else WEB_DIR
     server = make_server(ledger, args.host, args.port, web=web, redact=redact)

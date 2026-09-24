@@ -38,6 +38,17 @@ def _drop_ambient_colour_env() -> None:
 
 _drop_ambient_colour_env()
 
+WRITER_MARKERS = ("BR_AGENT_NAME", "AI_AGENT", "CLAUDECODE")
+
+
+def _drop_ambient_writer_env() -> None:
+
+    for name in WRITER_MARKERS:
+        os.environ.pop(name, None)
+
+
+_drop_ambient_writer_env()
+
 
 HOME_VARIABLES = ("HOME", "USERPROFILE", "XDG_CONFIG_HOME")
 

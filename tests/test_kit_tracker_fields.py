@@ -247,7 +247,7 @@ def _ready_ids(ledger: Path, capsys: pytest.CaptureFixture[str]) -> set[str]:
 
 
 def test_ready_holds_back_a_labelled_or_unshaped_new_record_and_keeps_an_older_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ledger = tmp_path / "ledger"
     shaped = ["--description", TRIGGER, "--acceptance", "- a", "--requirements", "- b"]
@@ -267,6 +267,7 @@ def test_ready_holds_back_a_labelled_or_unshaped_new_record_and_keeps_an_older_o
     labelled = {row["record"]: row["labelled"] for row in _report(capsys)["records"]}
     assert labelled == {made["labelled"]: True, made["unshaped"]: False, older: False}
 
+    monkeypatch.setenv("AI_AGENT", "refiner")
     cli.main(["update", str(ledger), made["labelled"], "--remove-label", "refine"])
     assert made["labelled"] in _ready_ids(ledger, capsys)
 

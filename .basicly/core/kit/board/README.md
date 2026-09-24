@@ -43,9 +43,12 @@ story, so a link to a story works.
 
 ## Refinement
 
-A person writes or edits a story on the page. The page adds the label `refine`. An agent
-then does a refinement pass: it reads `refine`, rewrites each record with the full fields
-and removes the label. The tracker kit's `work-tracker` skill gives the steps. A record
+A person writes or edits a story on the page. The page adds the label `refine` and shows
+"Needs agent review". An agent then does a refinement pass: it reads `refine`, rewrites
+each record with the full fields and removes the label. Only an agent may remove it, and
+work cannot start before that: the kit refuses `claim` and a move to `in_progress`. The page
+server runs as a person even when an agent starts it. The form shows the sections the
+story's type needs. The tracker kit's `work-tracker` skill gives the steps. A record
 that carries the label, or that was created under the current rule and fails `dor`, leaves
 the Ready tab. An older record that fails `dor` stays there and shows what it owes.
 

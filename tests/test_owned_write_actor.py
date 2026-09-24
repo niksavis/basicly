@@ -102,7 +102,7 @@ def test_a_person_is_recorded_as_the_operator_class_and_never_by_name(
     _only(monkeypatch)
     repo = owned_repo(tmp_path)
     record = owned_write.create(repo, ["create", "a new record", "-t", "task"])
-    owned_write.append(repo, ["update", record, "--status", "in_progress"])
+    owned_write.append(repo, ["update", record, "--status", "blocked"])
     owned_write.append(repo, ["comments", "add", record, "a note"])
 
     actors = [event.actor for event in events_of(repo, record)]

@@ -136,6 +136,8 @@ def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
             holders = owned_store.kit(repo_root, "holders")
             drafts = holders.claimed_by(held, drafts, holders.default_holder(repo_root))
             holders.refuse(held, drafts)
+            review = owned_store.kit(repo_root, "review")
+            review.refuse(held, drafts, resolved_actor(repo_root), _template(repo_root))
             stamped = _stamped(kit_module, drafts)
             owned_store.kit(repo_root, "values").refuse(events, stamped, _template(repo_root))
             stamped = owned_store.kit(repo_root, "recurrence").at_the_generation_this_write_needs(

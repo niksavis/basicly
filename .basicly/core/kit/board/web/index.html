@@ -58,6 +58,8 @@
   .empty { color: var(--muted); padding: 1rem; }
   .links-line { color: var(--muted); font-size: .8rem; display: flex; flex-wrap: wrap; gap: .1rem .7rem; }
   .links-line .open-blocker { color: var(--bad); }
+  .checklist { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .85rem; color: var(--muted); }
+  .checklist .have { color: var(--ok); }
   .needs { color: var(--muted); border-bottom: 1px dotted var(--muted); cursor: help; }
   .notice ul { margin: .3rem 0 0; padding-left: 1.2rem; }
   .notice li b { font-weight: 600; }
@@ -483,15 +485,6 @@ function go(record) {
   else open(record);
 }
 
-async function patch(body, done) {
-  const record = state.current.record;
-  await attempt(async () => {
-    await call("PATCH", "/records/" + encodeURIComponent(record), body);
-    await load();
-    await open(record);
-  }, done);
-}
-
 async function act(action, body, done) {
   const record = state.current.record;
   await attempt(async () => {
@@ -588,8 +581,33 @@ function labelInput(value) {
   return el("div", { class: "picker" }, input, list);
 }
 
+const templates = new Map();
+
+async function templateFor(type) {
+  if (!templates.has(type)) templates.set(type, call("GET", "/scaffold?type=" + encodeURIComponent(type)).catch(() => ({ required: [] })));
+  return templates.get(type);
+}
+
+function has(form, name) {
+  const bare = name.replace(/^## /, "");
+  if (bare === "Trigger") return form.description.value.trim().length > 0;
+  if (bare === "Acceptance Criteria") return form.acceptance.value.trim().length > 0;
+  if (bare === "Requirements") return form.requirements.value.trim().length > 0;
+  return form.description.value.includes("## " + bare);
+}
+
+async function drawChecklist(form, box, type) {
+  const { required } = await templateFor(type || "task");
+  box.replaceChildren(el("span", {}, "A " + (type || "task") + " needs:"), ...(required || []).map((name) => {
+    const [bare, short, what] = sectionOf(name);
+    const ok = has(form, name);
+    return el("span", { class: ok ? "have" : "", title: bare + ": " + what }, (ok ? "✓ " : "○ ") + short);
+  }), el("span", {}, "An agent fills in what is missing."));
+}
+
 function storyForm(values, { status, submit, cancel, note }) {
-  const type = select(TYPES.map((t) => [t, t]), values.issue_type, () => {}, "no type");
+  const checklist = el("div", { class: "checklist", "aria-live": "polite" });
+  const type = select(TYPES.map((t) => [t, t]), values.issue_type, () => drawChecklist(form, checklist, type.value), "no type");
   const priority = select(PRIORITIES.map(([key, name]) => [key, "P" + key + " " + name]), values.priority, () => {}, "no priority");
   const state_ = status ? select(STATUSES.map((one) => [one, one.replace("_", " ")]), status, () => {}) : null;
   const area = (name, text, placeholder, tall) => grow(el("textarea", { name, placeholder, class: tall ? "tall" : null }, String(text || "")));
@@ -600,10 +618,13 @@ function storyForm(values, { status, submit, cancel, note }) {
     el("label", {}, "Story", area("description", values.description, "When <situation>, I want to <motivation>, so I can <outcome>.", true)),
     el("label", {}, "Acceptance criteria", area("acceptance", values.acceptance, "- [ ] a check a person can run")),
     el("label", {}, "Requirements", area("requirements", values.requirements, "- what the solution must hold to")),
+    checklist,
     el("div", { class: "form-foot" }, el("button", { class: "btn", type: "submit" }, submit),
       el("button", { class: "btn plain", type: "button", onclick: cancel }, "Cancel"),
       el("span", { class: "meta" }, note + "  ·  Ctrl+Enter saves")));
   form.addEventListener("keydown", (event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) form.requestSubmit(); });
+  form.addEventListener("input", () => drawChecklist(form, checklist, type.value));
+  drawChecklist(form, checklist, type.value);
   form.read = () => ({
     title: form.title.value, description: form.description.value, acceptance: form.acceptance.value, requirements: form.requirements.value,
     issue_type: type.value, priority: priority.value, status: state_ ? state_.value : undefined,
@@ -681,7 +702,7 @@ function since(held) {
   return held.since ? " since " + held.since.slice(0, 10) : "";
 }
 
-function actionsBar(shown) {
+function actionsBar(shown, waiting) {
   const held = shown.holder && shown.holder.name;
   const yours = Boolean(held) && held === state.me;
   const bar = el("div", { class: "bar" });
@@ -696,7 +717,7 @@ function actionsBar(shown) {
   };
   if (!held) {
     bar.append(el("span", { class: "meta" }, "Nobody holds this story."),
-      el("button", { class: "btn", type: "button", onclick: () => act("claim", {}, "claimed: it is yours and in progress") }, "Claim"));
+      el("button", { class: "btn", type: "button", disabled: Boolean(waiting), title: waiting || "take it and start", onclick: () => act("claim", {}, "claimed: it is yours and in progress") }, "Claim"));
     item("Reserve for later (assign to me)", () => act("assign", {}, "reserved for you"));
   } else if (yours) {
     bar.append(el("span", { class: "held" }, "● You hold this story" + since(shown.holder)),
@@ -816,10 +837,15 @@ function notices(shown, dor) {
   const found = [];
   const labels = String(shown.fields.labels || "").split(",").map((one) => one.trim());
   if (shown.conflicts && shown.conflicts.length) found.push(el("div", { class: "notice bad" }, "Two branches set different values: " + shown.conflicts.map((c) => c.key + " = " + c.values.join(" / ")).join("; ") + ". Run the kit's resolve command to keep the current value."));
-  if (labels.includes(REFINE)) found.push(el("div", { class: "notice note" }, "Waits for an agent refinement pass before it is ready. ",
-    el("button", { class: "link", type: "button", onclick: () => patch({ remove_labels: [REFINE] }, "marked refined") }, "Mark refined")));
+  if (labels.includes(REFINE)) found.push(el("div", { class: "notice note" }, "Needs agent review. A person wrote or changed this story, so an agent reviews it and fills in what is missing before work can start. Ask an agent to refine " + shown.record + "."));
   if (shown.status !== "closed" && dor.blocking && dor.blocking.length) found.push(el("div", { class: "notice note" }, "Not ready yet. Edit the story and add:", needsList(dor.blocking)));
   return found;
+}
+
+function waitingReason(shown, dor) {
+  if (labelsOf(shown.fields.labels).includes(REFINE)) return "an agent reviews this story before work can start";
+  if (dor && !dor.ready && shown.fields.shaped_under) return "the story is not ready: it still needs " + (dor.blocking || []).map((name) => sectionOf(name)[1]).join(", ");
+  return "";
 }
 
 function titleBlock(shown) {
@@ -856,7 +882,7 @@ async function open(record, quiet) {
     el("button", { class: "link back", type: "button", onclick: back }, "← back to the list"),
     crumbs(shown),
     titleBlock(shown),
-    shown.status === "closed" ? el("div", { class: "notice" }, "Closed: " + String(f.close_reason || "")) : actionsBar(shown),
+    shown.status === "closed" ? el("div", { class: "notice" }, "Closed: " + String(f.close_reason || "")) : actionsBar(shown, waitingReason(shown, dor)),
     ...notices(shown, dor),
     section("Story", f.description, "no story yet: say when it happens, what the person wants, and what for"),
     section("Acceptance criteria", f.acceptance_criteria, "no acceptance criteria yet"),

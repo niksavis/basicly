@@ -88,7 +88,13 @@ A person writes or edits a story, often in the served page. The page adds the la
 1. Run `refine` to list the open records that carry the label or fail `dor`.
 2. For each record, read it with `show` and rewrite it with `update`: the trigger, the
    acceptance criteria, the requirements, the type, the priority and the `dep` edges.
-3. Run `dor`. When it passes, remove the label: `update <id> --remove-label refine`.
+3. Run `dor`. When it passes, remove the label: `update <id> --remove-label refine`. You
+   may fill the missing fields and remove the label in the same `update`.
+
+Only an agent removes the label, and only when nothing is owed. The kit reads the writer
+class from `BR_AGENT_NAME` or `AI_AGENT` (set it to your agent's name), or from
+`CLAUDECODE=1`. A person's attempt is refused. While a record carries the label or fails
+`dor`, `claim` and `update --status in_progress` are refused; `assign` still reserves it.
 
 Keep the intent of the person. When the intent is unclear, add a comment with the question
 and leave the label on.

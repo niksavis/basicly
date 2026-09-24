@@ -82,7 +82,9 @@ python3 .basicly/kit/tracker/cli.py assign .basicly/ledger acme-a1b2 --to alex
 
 ### claim
 
-Reserve a record and set it to `in_progress` in one write, when you start the work.
+Reserve a record and set it to `in_progress` in one write, when you start the work. It is
+refused while the record carries the `refine` label or fails `dor`: an agent reviews it
+first.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py claim .basicly/ledger acme-a1b2 --to alex
@@ -208,7 +210,8 @@ python3 .basicly/kit/tracker/cli.py fields .basicly/ledger
 The open records a refinement pass owes: each one carries the `refine` label or fails
 `dor`. A person writes or edits a story, and the board page adds the label. An agent then
 rewrites the record with the full fields (trigger, acceptance criteria, requirements,
-type, priority, edges) and removes the label with `update --remove-label refine`.
+type, priority, edges) and removes the label with `update --remove-label refine`. Only an
+agent writer removes it, and only when `dor` passes.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py refine .basicly/ledger
