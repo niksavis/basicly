@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release lets the command-line tool skills reach every repo on a machine. One listed
+`cli-tools` skill names the tools and when to use each, and `basicly skills-user` installs
+the chosen skills into the user home without touching skills you own.
+
+- **`basicly skills-user`** projects catalog skills into `~/.claude/skills`, prunes only
+  what it wrote, and refuses a listing over its budget (`basicly-3n4rze0`).
+- **`cli-tools` index skill** routes shell tasks to the right tool (`basicly-mh58it6`).
+
 ## v0.18.5 - 2026-09-24
 
 Delta: v0.18.4..v0.18.5
