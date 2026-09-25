@@ -861,10 +861,14 @@ skills belong in the user home. `basicly skills-user <names>` projects catalog s
 `~/.claude/skills` with the generated marker. It prunes only marked skills and never
 overwrites an unmarked one such as `img-zoom`. One model-invoked `cli-tools` skill names
 the tools and when to use each; the 25 `tool-*` skills stay user-invoked, so the always-on
-listing grows by one entry of 125 tokens (1900 of 2000 in the catalog). A user-level
-description loads in every repo, so the projection refuses a selection whose model-invoked
-listing exceeds 200 tokens (`basicly-mh58it6`, `basicly-dj651ii`). The skill content stays
-in basicly; terminal-setup only calls the command.
+listing grows by one entry of 125 tokens (1900 of 2000 in the catalog). At user level each
+`tool-*` skill gets its first body paragraph as its description, so the listing says when to
+load it (`basicly-v2cyocb`). A user-level description loads in every
+repo, so the projection refuses a selection whose written descriptions exceed 900 listing
+tokens; `cli-tools` with every `tool-*` skill measures 890 (`basicly-mh58it6`,
+`basicly-dj651ii`). Catalog lint refuses a model-invoked skill that routes to a user-invoked
+skill with no first body paragraph. The skill content stays in basicly; terminal-setup only
+calls the command.
 
 **Lint enforces the specification's naming rules.** The name must match the directory. It
 must be 1 to 64 lowercase alphanumeric-or-hyphen characters, with no leading, trailing or

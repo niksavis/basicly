@@ -77,6 +77,12 @@ def routing_description(skill: SkillDefinition) -> str:
     return text
 
 
+def user_level_description(skill: SkillDefinition) -> str:
+    if skill.invocation == MODEL_INVOKED:
+        return skill.description
+    return routing_description(skill)
+
+
 def render_skill_md(
     skill: SkillDefinition,
     *,
@@ -86,11 +92,10 @@ def render_skill_md(
 ) -> str:
 
     user_invoked = skill.invocation != MODEL_INVOKED
-    routed = user_invoked and user_level
-    stripped = user_invoked and not require_description and not routed
-    if routed:
+    stripped = user_invoked and not require_description and not user_level
+    if user_level:
         description = yaml.safe_dump(
-            {"description": routing_description(skill)}, allow_unicode=True, width=math.inf
+            {"description": user_level_description(skill)}, allow_unicode=True, width=math.inf
         )
     elif stripped:
         description = ""

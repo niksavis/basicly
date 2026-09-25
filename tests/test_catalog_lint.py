@@ -270,6 +270,51 @@ def test_a_model_invoked_entry_without_a_description_fails_the_lint(tmp_path: Pa
     assert any("needs a description" in v for v in violations), violations
 
 
+def _router_and_tool(root: Path, route: str, tool_body: str) -> None:
+    _skill_source(
+        root,
+        "pick",
+        f"schema_version: 1\nname: pick\ninvocation: model\ndescription: {route}\n{_INSTRUCTIONS}",
+    )
+    _skill_source(
+        root,
+        "tool-foo",
+        "schema_version: 1\nname: tool-foo\ninvocation: user\ntoken_cost:\n  listing: 2\n"
+        f"instructions: |\n  # foo\n\n  {tool_body}\n",
+    )
+
+
+@pytest.mark.parametrize("route", ["Then load tool-foo for its flags.", "Load tool-<name>."])
+def test_a_route_to_a_user_invoked_skill_with_no_description_fails_the_lint(
+    tmp_path: Path, route: str
+) -> None:
+    root = _catalog(tmp_path)
+    _router_and_tool(root, route, "## Rules\n\n  - a rule")
+
+    violations = [v for v in lint_catalog(root) if "routes to" in v]
+
+    assert len(violations) == 1, violations
+    assert "skill 'pick' routes to the user-invoked skill 'tool-foo'" in violations[0]
+    assert "mark 'tool-foo' `invocation: model`" in violations[0]
+    assert "remove the route" in violations[0]
+
+
+def test_a_route_to_a_user_invoked_skill_with_a_routing_description_passes(
+    tmp_path: Path,
+) -> None:
+    root = _catalog(tmp_path)
+    _router_and_tool(root, "Then load tool-foo for its flags.", "Find a foo.")
+
+    assert not [v for v in lint_catalog(root) if "routes to" in v]
+
+
+def test_a_longer_skill_name_is_not_read_as_a_route_to_its_prefix(tmp_path: Path) -> None:
+    root = _catalog(tmp_path)
+    _router_and_tool(root, "Then load tool-foo-bar for its flags.", "## Rules\n\n  - a rule")
+
+    assert not [v for v in lint_catalog(root) if "routes to" in v]
+
+
 def test_every_shipped_skill_declares_the_axis() -> None:
     for path in sorted((REPO / ".basicly/core/skills").glob("*/skill.yaml")):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))

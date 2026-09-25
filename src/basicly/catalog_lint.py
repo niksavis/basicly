@@ -14,6 +14,7 @@ from . import (
     rubrics,
     skill_coverage,
     skill_source,
+    skills,
 )
 from .catalog_source import (
     AGENTS_DIR,
@@ -33,6 +34,7 @@ from .schema import MODEL_TIERS, TECHNOLOGIES, ValidationError
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _DEEP_REF_RE = re.compile(r"(?:references|scripts|assets)/[^\s()\[\]]+/[^\s()\[\]]+")
 _MAX_SKILL_BODY_LINES = 500
+_ROUTE_PLACEHOLDER_RE = re.compile(r"(?<![\w-])([a-z0-9]+(?:-[a-z0-9]+)*-)<name>")
 
 _AXIS_OWNED_REQUIRED = frozenset({"invocation"})
 
@@ -190,6 +192,8 @@ def lint_catalog(repo_root: Path) -> list[str]:
 
     violations.extend(_check_invocation_axis(repo_root))
 
+    violations.extend(_check_routes_to_user_invoked(repo_root))
+
     violations.extend(routing_evals.routing_outcome(repo_root).violations)
 
     violations.extend(_check_coverage_vocabulary(repo_root))
@@ -261,6 +265,44 @@ def _check_invocation_axis(repo_root: Path) -> list[str]:
                 "to it, so the description is context load bought for no reach"
             )
     return violations
+
+
+def _routed_slugs(text: str, slugs: set[str]) -> set[str]:
+
+    prefixes = _ROUTE_PLACEHOLDER_RE.findall(text)
+    return {
+        slug
+        for slug in slugs
+        if re.search(rf"(?<![\w-]){re.escape(slug)}(?![\w-])", text)
+        or any(slug.startswith(prefix) for prefix in prefixes)
+    }
+
+
+def _check_routes_to_user_invoked(repo_root: Path) -> list[str]:
+
+    try:
+        catalog = skill_source.discover_skills(repo_root)
+    except ValidationError:
+        return []
+    undescribed: set[str] = set()
+    for skill in catalog:
+        if skill.invocation == skill_source.MODEL_INVOKED:
+            continue
+        try:
+            skills.routing_description(skill)
+        except ValidationError:
+            undescribed.add(skill.slug)
+    return [
+        f"{rel(skill.source_path, repo_root)}: model-invoked skill '{skill.slug}' routes to the "
+        f"user-invoked skill '{target}', which has no first body paragraph for skills-user to "
+        f"write as its description; give '{target}' that paragraph, mark '{target}' "
+        "`invocation: model` with a description, or remove the route"
+        for skill in catalog
+        if skill.invocation == skill_source.MODEL_INVOKED
+        for target in sorted(
+            _routed_slugs(f"{skill.description}\n{skill.instructions}", undescribed)
+        )
+    ]
 
 
 _LISTING_BUDGET_FRACTION = 100

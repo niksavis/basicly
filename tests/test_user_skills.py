@@ -55,13 +55,29 @@ def test_an_unmarked_skill_of_a_selected_name_is_never_overwritten(tmp_path: Pat
     assert "description: mine" in mine.read_text()
 
 
-def test_a_selection_over_the_user_listing_budget_is_refused(tmp_path: Path) -> None:
+def test_a_selection_over_the_user_listing_budget_is_refused_with_its_cost(tmp_path: Path) -> None:
     root = tmp_path / ".claude" / "skills"
+    cost = user_skills.listing_cost(user_skills.selected(["*"]))
 
-    with pytest.raises(user_skills.UserSkillsError, match="over the 200-token user budget"):
-        user_skills.project(["cli-tools", "conventional-commits", "harness-loop"], root)
+    with pytest.raises(user_skills.UserSkillsError) as refused:
+        user_skills.project(["*"], root)
 
+    assert cost > user_skills.USER_LISTING_BUDGET == 900
+    assert f"cost {cost} listing tokens, over the 900-token user budget" in str(refused.value)
     assert not root.exists()
+
+
+def test_the_cli_tools_and_tool_selection_fits_the_budget_with_every_description_counted(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / ".claude" / "skills"
+    chosen = user_skills.selected(["cli-tools", "tool-*"])
+    described = user_skills.listing_cost([s for s in chosen if s.slug == "cli-tools"])
+
+    lines = user_skills.project(["cli-tools", "tool-*"], root)
+
+    assert described < user_skills.listing_cost(chosen) <= user_skills.USER_LISTING_BUDGET
+    assert len(lines) == len(chosen) >= 26
 
 
 def test_a_personal_skill_that_shadows_a_project_skill_is_reported(tmp_path: Path) -> None:
