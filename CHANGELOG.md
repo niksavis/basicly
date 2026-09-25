@@ -6,9 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.12 - 2026-09-25
+
+Delta: v0.18.11..v0.18.12
+
 This release makes the board start at once on macOS. Both board servers used to look up the host name when they bound, which took about 30 seconds on macOS and failed the consumer journey test there.
 
 - **The board starts at once on macOS.** Every serve command binds with no host name lookup (basicly-9pyaygb.11).
+
+### Fixed
+
+- **The board starts at once on macOS.** `basicly-board serve`, `basicly tracker serve` and `basicly board serve` no longer look up the host name when they bind, which took about 30 seconds on macOS (basicly-9pyaygb.11).
 
 ## v0.18.11 - 2026-09-25
 

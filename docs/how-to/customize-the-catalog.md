@@ -115,7 +115,7 @@ Technology-tagged sources (the `tool-*` skills, shell and platform fragments)
 are skipped at projection time when they fall outside your stack:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.18.11 basicly install --technologies python,zsh
+uvx --from git+https://github.com/niksavis/basicly@v0.18.12 basicly install --technologies python,zsh
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:

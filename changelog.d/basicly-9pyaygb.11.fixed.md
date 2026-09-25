@@ -1,1 +1,0 @@
-- **The board starts at once on macOS.** `basicly-board serve`, `basicly tracker serve` and `basicly board serve` no longer look up the host name when they bind, which took about 30 seconds on macOS (basicly-9pyaygb.11).
