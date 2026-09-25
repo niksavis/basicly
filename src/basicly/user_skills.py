@@ -23,9 +23,13 @@ class UserSkillsError(ValueError):
     pass
 
 
-def home_skills(environ: Mapping[str, str] | None = None) -> Path:
+def user_home(environ: Mapping[str, str] | None = None) -> Path:
     values = os.environ if environ is None else environ
-    return Path(values.get("HOME") or Path.home()) / USER_SKILLS
+    return Path(values.get("HOME") or Path.home())
+
+
+def home_skills(environ: Mapping[str, str] | None = None) -> Path:
+    return user_home(environ) / USER_SKILLS
 
 
 def _catalog_skills() -> list[skill_source.SkillDefinition]:
