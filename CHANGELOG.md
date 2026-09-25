@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release finishes the path from a prompt to a running tracker. A person can give a coding agent one link, and the agent installs the tracker and its board, asks before it imports an old backlog, and gives back the board URL. The id prefix now has one home, and a busy port is refused by name.
+
+- **Install through an agent.** The tracker README carries a copyable prompt, walked with a real headless agent session (basicly-9pyaygb.5).
+- **One prefix home.** Engine and kit read the prefix from `.basicly/ledger/template.json`, and `basicly install` moves an old `basicly.toml` value there once (basicly-9pyaygb.7).
+- **A busy port is refused by name.** Every serve command names the port and the command to start on another one (basicly-9pyaygb.8).
+
 ## v0.18.10 - 2026-09-25
 
 Delta: v0.18.9..v0.18.10
