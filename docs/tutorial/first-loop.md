@@ -71,7 +71,7 @@ Hooks
 ┏━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┓
 ┃ manager ┃ specs ┃ projection ┃ activation ┃
 ┡━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━┩
-│ git     │ 13    │ in sync    │ installed  │
+│ git     │ 14    │ in sync    │ installed  │
 │ claude  │ 8     │ in sync    │ active     │
 │ copilot │ 2     │ in sync    │ active     │
 └─────────┴───────┴────────────┴────────────┘
@@ -81,7 +81,7 @@ overlays: 2 fragment(s), 0 agent(s)
 ```
 
 `repo: consumer` means this repo *uses* the catalog rather than authoring it.
-`git 13 … installed` means thirteen git hooks are now live — which is what the
+`git 14 … installed` means fourteen git hooks are now live — which is what the
 next step is about.
 
 ## Step 2 — check that the first commit can pass
@@ -94,7 +94,7 @@ basicly catalog lint
 ```
 
 ```text
-catalog lint: routing: rank-1 rate 42/46 = 91.3% (no floor declared)
+catalog lint: routing: rank-1 rate 44/50 = 88.0% (no floor declared)
 catalog lint: OK
 ```
 
@@ -105,7 +105,7 @@ description collides with another one fails the commit:
 
 ```toml
 [catalog]
-rank1_floor = 0.89
+rank1_floor = 0.87
 ```
 
 ## Step 3 — file the bead you are about to work on
@@ -181,9 +181,12 @@ If it says `NOT READY` it names what is missing and repeats the scaffold command
 Add a missing section with `basicly tracker write -- update myrepo-rq9r -d '...'`, and a
 missing field with `--acceptance '...'` or `--requirements '...'`.
 
-Now the install output has an id to reference, so commit it:
+Now the install output has an id to reference. The `tracker-claim` hook refuses a
+commit that changes files outside the ledger unless you hold the record it names, so
+claim the record, then commit:
 
 ```sh
+basicly tracker write -- update myrepo-rq9r --status in_progress
 git add -A
 git commit -m "chore: install basicly (myrepo-rq9r)"
 ```
@@ -197,7 +200,7 @@ basicly loop status myrepo-rq9r
 ```
 
 ```text
-issue:       myrepo-rq9r (task, open)
+issue:       myrepo-rq9r (task, in_progress)
 phase:       intake
 worktree:    (none)
 gates:       advance BLOCKED
