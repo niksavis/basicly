@@ -223,7 +223,7 @@ flowchart LR
   cli["agent CLIs<br/>claude · codex · copilot"]
   vendor["model vendors<br/>reached by the agent CLI only"]
   git["git, and the git host"]
-  ci["GitHub Actions runners<br/>linux · macos · windows"]
+  ci["GitHub Actions runners<br/>linux"]
   uv["uv and CPython"]
   pc["pre-commit"]
 
@@ -672,9 +672,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | size | cap | headroom | lines | line cap |
 | --- | --- | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 9551 characters | 12000 | 2449 | 161 | 200 |
-| `AGENTS.md` (codex) | 12430 bytes | 24576 | 12146 | 209 | 320 |
-| `.github/copilot-instructions.md` (copilot) | 9643 characters | 12000 | 2357 | 162 | 200 |
+| `.claude/CLAUDE.md` (claude) | 9552 characters | 12000 | 2448 | 161 | 200 |
+| `AGENTS.md` (codex) | 12431 bytes | 24576 | 12145 | 209 | 320 |
+| `.github/copilot-instructions.md` (copilot) | 9644 characters | 12000 | 2356 | 162 | 200 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -3698,7 +3698,7 @@ flowchart TB
   pool["worker pool"]
   wt1["sibling worktree<br/>repo.worktrees/NAME on harness/NAME<br/>no store of its own"]
   agent["agent subprocess<br/>one per lane, its own context window"]
-  ci["CI runners<br/>linux · macos · windows"]
+  ci["CI runners<br/>linux"]
 
   base --> store
   base --> ledger
