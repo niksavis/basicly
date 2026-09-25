@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -75,6 +76,46 @@ def test_a_second_person_is_refused_by_name_unless_they_take_it(
     _, shown = _run(capsys, "show", str(ledger), record)
     assert (shown["status"], shown["holder"]["name"]) == ("in_progress", "sam")
     assert shown["holder"]["contested"] == []
+
+
+def _ledger_bytes(ledger: Path) -> dict[str, bytes]:
+    return {one.name: one.read_bytes() for one in sorted(ledger.iterdir()) if one.is_file()}
+
+
+@pytest.mark.parametrize("take", [(), ("--take",)])
+def test_a_claim_on_a_closed_record_is_refused_with_the_reopen_command_and_appends_nothing(
+    story: tuple[Path, str], capsys: pytest.CaptureFixture[str], take: tuple[str, ...]
+) -> None:
+    ledger, record = story
+    assert _run(capsys, "close", str(ledger), record, "--reason", "shipped")[0] == cli.EXIT_OK
+    before = _ledger_bytes(ledger)
+
+    code, refused = _run(capsys, "claim", str(ledger), record, "--to", "sam", *take)
+
+    assert code == cli.EXIT_REFUSED
+    assert f"{record} is closed" in refused["refused"]
+    assert _ledger_bytes(ledger) == before
+    assert _run(capsys, "show", str(ledger), record)[1]["status"] == "closed"
+    runner, script, *reopen = shlex.split(refused["refused"].split("`")[1])
+    assert (runner, Path(script).name) == ("python3", "cli.py")
+    assert reopen == ["update", str(ledger), record, "--status", "open"]
+    assert _run(capsys, *reopen)[0] == cli.EXIT_OK
+    assert _run(capsys, "claim", str(ledger), record, "--to", "sam")[0] == cli.EXIT_OK
+    assert _run(capsys, "show", str(ledger), record)[1]["status"] == "in_progress"
+
+
+@pytest.mark.parametrize("status", ["open", "deferred"])
+def test_a_claim_on_an_open_or_deferred_record_starts_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], status: str
+) -> None:
+    ledger = tmp_path / "ledger"
+    made = ("create", str(ledger), "--prefix", "acme", "--title", "s", "--status", status)
+    record = _run(capsys, *made, *SHAPED)[1]["record"]
+
+    assert _run(capsys, "claim", str(ledger), record, "--to", "sam")[0] == cli.EXIT_OK
+
+    _, shown = _run(capsys, "show", str(ledger), record)
+    assert (shown["status"], shown["holder"]["name"]) == ("in_progress", "sam")
 
 
 def test_unassign_frees_the_story_and_ready_names_holders(
