@@ -23,7 +23,6 @@ DEFAULT_SKILL_ROOTS = (
     Path(".claude/skills"),
     Path(".agents/skills"),
 )
-DESCRIPTION_OPTIONAL_ROOTS = frozenset({".claude/skills"})
 CLAUDE_BLOCK_ROOTS = frozenset({".claude/skills"})
 
 RETIRED_SKILL_ROOTS = (Path(".github/skills"),)
@@ -62,7 +61,7 @@ def routing_description(skill: SkillDefinition) -> str:
     first = next((block for block in blocks if block and not block.startswith("#")), "")
     if not first or _BLOCK_OTHER_THAN_A_PARAGRAPH.match(first):
         raise ValidationError(
-            f"skill '{skill.slug}' has no first body paragraph to use as its user-level "
+            f"skill '{skill.slug}' has no first body paragraph to use as its "
             "description; open its instructions with a paragraph after the title heading",
             skill.source_path,
         )
@@ -77,37 +76,20 @@ def routing_description(skill: SkillDefinition) -> str:
     return text
 
 
-def user_level_description(skill: SkillDefinition) -> str:
+def skill_description(skill: SkillDefinition) -> str:
     if skill.invocation == MODEL_INVOKED:
         return skill.description
     return routing_description(skill)
 
 
-def render_skill_md(
-    skill: SkillDefinition,
-    *,
-    require_description: bool = False,
-    emit_claude_block: bool = False,
-    user_level: bool = False,
-) -> str:
+def render_skill_md(skill: SkillDefinition, *, emit_claude_block: bool = False) -> str:
 
-    user_invoked = skill.invocation != MODEL_INVOKED
-    stripped = user_invoked and not require_description and not user_level
-    if user_level:
-        description = yaml.safe_dump(
-            {"description": user_level_description(skill)}, allow_unicode=True, width=math.inf
-        )
-    elif stripped:
-        description = ""
-    elif user_invoked:
-        description = f"description: User-invoked skill {skill.name}. A human runs it by name.\n"
-    else:
-        description = f"description: {skill.description}\n"
-    marker_comment = f"# {GENERATED_MARKER}\n" if stripped else ""
-    body_marker = "" if stripped else f"{GENERATED_MARKER}\n\n"
+    description = yaml.safe_dump(
+        {"description": skill_description(skill)}, allow_unicode=True, width=math.inf
+    )
     optional = _optional_frontmatter(skill, emit_claude_block=emit_claude_block)
-    header = f"---\nname: {skill.name}\n{marker_comment}{description}{optional}---\n"
-    return f"{header}{body_marker}{skill.instructions}"
+    header = f"---\nname: {skill.name}\n{description}{optional}---\n"
+    return f"{header}{GENERATED_MARKER}\n\n{skill.instructions}"
 
 
 def resolve_skill_roots(repo_root: Path, roots: list[str] | None) -> list[Path]:
@@ -125,12 +107,6 @@ def resolve_skill_roots(repo_root: Path, roots: list[str] | None) -> list[Path]:
         resolved.append(absolute_root)
 
     return resolved
-
-
-def root_requires_description(skill_root: Path) -> bool:
-
-    key = "/".join(skill_root.parts[-2:])
-    return key not in DESCRIPTION_OPTIONAL_ROOTS
 
 
 def root_emits_claude_block(skill_root: Path) -> bool:
@@ -180,17 +156,12 @@ def _prune_orphans(skill_dir: Path, expected: set[Path]) -> list[Path]:
     return pruned
 
 
-def _project_skill(
-    skill: SkillDefinition, skill_dir: Path, result: SyncResult, *, user_level: bool = False
-) -> list[Path]:
+def _project_skill(skill: SkillDefinition, skill_dir: Path, result: SyncResult) -> list[Path]:
     expected: set[Path] = set()
 
     skill_md = skill_dir / SKILL_FILE_NAME
-    require = root_requires_description(skill_dir.parent)
     fenced = root_emits_claude_block(skill_dir.parent)
-    rendered = render_skill_md(
-        skill, require_description=require, emit_claude_block=fenced, user_level=user_level
-    )
+    rendered = render_skill_md(skill, emit_claude_block=fenced)
     sync_file(skill_md, rendered.encode("utf-8"), result)
     expected.add(skill_md)
 
@@ -286,11 +257,8 @@ def _check_projected_skill(skill: SkillDefinition, skill_dir: Path) -> list[tupl
 
     skill_md = skill_dir / SKILL_FILE_NAME
     expected.add(skill_md)
-    require = root_requires_description(skill_dir.parent)
     fenced = root_emits_claude_block(skill_dir.parent)
-    rendered = render_skill_md(skill, require_description=require, emit_claude_block=fenced).encode(
-        "utf-8"
-    )
+    rendered = render_skill_md(skill, emit_claude_block=fenced).encode("utf-8")
     if not skill_md.exists():
         mismatches.append((skill_md, "missing"))
     elif skill_md.read_bytes() != rendered:

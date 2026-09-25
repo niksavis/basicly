@@ -17,7 +17,6 @@ from basicly.skills import (
     check_synced_skills,
     render_skill_md,
     resolve_skill_roots,
-    root_requires_description,
     sync_skills,
 )
 
@@ -280,11 +279,11 @@ def _definition(invocation: str, description: str) -> SkillDefinition:
     )
 
 
-def test_a_user_invoked_skill_projects_no_description_line() -> None:
+def test_a_user_invoked_skill_projects_its_first_paragraph_as_its_description() -> None:
     rendered = render_skill_md(_definition("user", ""))
 
     frontmatter = rendered.split("---")[1]
-    assert "description:" not in frontmatter
+    assert "description: text" in frontmatter
     assert "name: s" in frontmatter
 
 
@@ -294,58 +293,13 @@ def test_a_model_invoked_skill_still_projects_its_description() -> None:
     assert "description: Do a thing." in rendered.split("---")[1]
 
 
-def test_a_user_invoked_skill_never_advertises_the_generated_marker() -> None:
+def test_every_skill_keeps_the_marker_as_its_first_body_line() -> None:
 
-    rendered = render_skill_md(_definition("user", ""))
+    for invocation, description in (("user", ""), ("model", "Do a thing.")):
+        rendered = render_skill_md(_definition(invocation, description))
 
-    body = rendered.split("---\n")[2]
-    assert body.splitlines()[0] == "# Body", body
-    assert GENERATED_MARKER not in body
-    assert GENERATED_MARKER in rendered
-
-
-def test_a_model_invoked_skill_keeps_the_marker_as_its_first_body_line() -> None:
-
-    rendered = render_skill_md(_definition("model", "Do a thing."))
-
-    assert rendered.split("---\n")[2].splitlines()[0] == GENERATED_MARKER
-    assert f"# {GENERATED_MARKER}" not in rendered
-
-
-@pytest.mark.parametrize(
-    ("root", "requires"),
-    [
-        (Path(".claude/skills"), False),
-        (Path("/repo/.claude/skills"), False),
-        (Path("C:/repo/.claude/skills"), False),
-        (Path(".agents/skills"), True),
-        (Path("/repo/.agents/skills"), True),
-        (Path(".github/skills"), True),
-        (Path("vendor/custom-root"), True),
-    ],
-)
-def test_root_description_requirement_is_data_not_host_dependent(
-    root: Path, requires: bool
-) -> None:
-
-    assert root_requires_description(root) is requires
-
-
-def test_a_user_invoked_skill_gets_a_description_where_the_loader_demands_one() -> None:
-
-    rendered = render_skill_md(_definition("user", ""), require_description=True)
-
-    frontmatter = rendered.split("---")[1]
-    assert "description: User-invoked skill s." in frontmatter
-    assert "s" in frontmatter
-
-
-def test_a_description_bearing_render_keeps_the_marker_out_of_the_advertised_slot() -> None:
-
-    rendered = render_skill_md(_definition("user", ""), require_description=True)
-
-    assert f"# {GENERATED_MARKER}" not in rendered.split("---")[1]
-    assert rendered.split("---\n")[2].splitlines()[0] == GENERATED_MARKER
+        assert rendered.split("---\n")[2].splitlines()[0] == GENERATED_MARKER
+        assert f"# {GENERATED_MARKER}" not in rendered
 
 
 def test_build_and_check_agree_per_root(tmp_path: Path) -> None:
@@ -353,7 +307,8 @@ def test_build_and_check_agree_per_root(tmp_path: Path) -> None:
     _write_skill(tmp_path, "handrun", "handrun", "")
     path = tmp_path / SKILLS_SOURCE_DIR / "handrun" / "skill.yaml"
     path.write_text(
-        "schema_version: 1\nname: handrun\ninvocation: user\ninstructions: |\n  # x\n",
+        "schema_version: 1\nname: handrun\ninvocation: user\n"
+        "instructions: |\n  # x\n\n  Run a thing by hand.\n",
         encoding="utf-8",
     )
     roots = [tmp_path / ".claude/skills", tmp_path / ".agents/skills"]
@@ -361,10 +316,10 @@ def test_build_and_check_agree_per_root(tmp_path: Path) -> None:
     sync_skills(tmp_path, roots)
 
     assert check_synced_skills(tmp_path, roots) == []
-    tolerant = (roots[0] / "handrun" / "SKILL.md").read_text(encoding="utf-8")
-    demanding = (roots[1] / "handrun" / "SKILL.md").read_text(encoding="utf-8")
-    assert "description:" not in tolerant.split("---")[1]
-    assert "description:" in demanding.split("---")[1]
+    claude = (roots[0] / "handrun" / "SKILL.md").read_text(encoding="utf-8")
+    agents = (roots[1] / "handrun" / "SKILL.md").read_text(encoding="utf-8")
+    assert claude == agents
+    assert "description: Run a thing by hand." in claude.split("---")[1]
 
 
 def test_the_claude_fence_reaches_only_the_root_that_understands_it(tmp_path: Path) -> None:
@@ -445,7 +400,7 @@ def _user_skill(instructions: str) -> SkillDefinition:
 def test_a_user_level_description_is_one_quoted_yaml_line_of_the_first_paragraph() -> None:
     skill = _user_skill("# t\n\nUse it: when a colon\nspans two lines.\n\n## Rules\n")
 
-    rendered = render_skill_md(skill, user_level=True)
+    rendered = render_skill_md(skill)
 
     frontmatter = rendered.split("---\n")[1]
     assert frontmatter.splitlines()[1] == "description: 'Use it: when a colon spans two lines.'"
@@ -464,17 +419,27 @@ def test_a_user_level_description_is_one_quoted_yaml_line_of_the_first_paragraph
 )
 def test_a_user_level_render_refuses_a_body_with_no_first_paragraph(instructions: str) -> None:
     with pytest.raises(ValidationError, match="skill 't' has no first body paragraph"):
-        render_skill_md(_user_skill(instructions), user_level=True)
+        render_skill_md(_user_skill(instructions))
 
 
 def test_a_first_paragraph_over_the_listing_limit_is_refused() -> None:
     skill = _user_skill("# t\n\n" + "word " * 400 + "\n")
 
     with pytest.raises(ValidationError, match="over the 1536-character"):
-        render_skill_md(skill, user_level=True)
+        render_skill_md(skill)
 
 
-def test_the_repo_render_of_a_tool_skill_is_untouched_by_the_user_level_rule() -> None:
-    skill = _user_skill("# t\n\nFind a thing.\n")
+def test_every_root_writes_the_routing_description_of_a_tool_skill(tmp_path: Path) -> None:
+    _write_skill(tmp_path, "tool-t", "tool-t", "")
+    (tmp_path / SKILLS_SOURCE_DIR / "tool-t" / "skill.yaml").write_text(
+        "schema_version: 1\nname: tool-t\ninvocation: user\n"
+        "instructions: |\n  # t\n\n  Find a thing. Use it instead of `find`.\n",
+        encoding="utf-8",
+    )
+    roots = [tmp_path / root for root in DEFAULT_SKILL_ROOTS]
 
-    assert "description:" not in render_skill_md(skill).split("---\n")[1]
+    sync_skills(tmp_path, roots)
+
+    for root in roots:
+        front = yaml.safe_load((root / "tool-t" / "SKILL.md").read_text().split("---\n")[1])
+        assert front["description"] == "Find a thing. Use it instead of `find`.", root

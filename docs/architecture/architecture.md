@@ -802,18 +802,19 @@ therefore ship a long reference guide or a fixer script.
 **The invocation axis is declared, not inferred.** It is required, and it is one of two
 values.
 
-| Value | Carries a description | Costs context | When it loads |
+| Value | Where its description comes from | Costs context | When it loads |
 | --- | --- | --- | --- |
-| model-invoked | yes | on every turn, in the listing | when the model judges it relevant |
-| user-invoked | no, and lint enforces the empty pairing | nothing | when a human types its name |
+| model-invoked | the `description` field | on every turn, in the listing | when the model judges it relevant |
+| user-invoked | its first body paragraph, and lint refuses a `description` field | on every turn, in the listing | when a routing skill such as `cli-tools` sends the model to it, or a human types its name |
 
 The axis is declared and never guessed. "Does this entry route correctly" is not a
 well-posed question until the entry says whether routing applies to it. The axis is
 therefore a prerequisite for the routing evals, and not bookkeeping.
 
-**One root requires a description and the other does not.** A user-invoked skill
-therefore emits a synthesized description on the standard root. That family rejects a
-file with no description.
+**Every root writes the same description.** `skills.skill_description` is the one rule.
+A user-invoked skill gets its first body paragraph on `.claude/skills`, on
+`.agents/skills` and at user level, so a repo without the user-level copies still routes
+to it (`basicly-tvu17lj`). The 25 `tool-*` skills add about 700 listing tokens.
 
 **The projected directory is mirrored and the root itself is owned by the projector.** A
 rebuild prunes a resource the source dropped. Deselection of a technology prunes the whole
@@ -866,8 +867,8 @@ listing grows by one entry of 125 tokens (1900 of 2000 in the catalog). At user 
 load it (`basicly-v2cyocb`). A user-level description loads in every
 repo, so the projection refuses a selection whose written descriptions exceed 900 listing
 tokens; `cli-tools` with every `tool-*` skill measures 890 (`basicly-mh58it6`,
-`basicly-dj651ii`). Catalog lint refuses a model-invoked skill that routes to a user-invoked
-skill with no first body paragraph. The skill content stays in basicly; terminal-setup only
+`basicly-dj651ii`). Catalog lint refuses a user-invoked skill with no first body
+paragraph. Since `basicly-tvu17lj` the repo roots write the same description. The skill content stays in basicly; terminal-setup only
 calls the command.
 
 **Lint enforces the specification's naming rules.** The name must match the directory. It

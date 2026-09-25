@@ -12,7 +12,7 @@ from pathlib import Path
 from . import catalog, read_cost, skill_source
 from .projection import SyncResult
 from .schema import ValidationError
-from .skills import SKILL_FILE_NAME, _is_generated_skill, _project_skill, user_level_description
+from .skills import SKILL_FILE_NAME, _is_generated_skill, _project_skill, skill_description
 
 USER_SKILLS = Path(".claude") / "skills"
 USER_LISTING_BUDGET = 900
@@ -52,7 +52,7 @@ def selected(patterns: Sequence[str]) -> list[skill_source.SkillDefinition]:
 
 
 def listing_cost(skills: Sequence[skill_source.SkillDefinition]) -> int:
-    listing = "".join(f"{one.name}\n{user_level_description(one)}\n" for one in skills)
+    listing = "".join(f"{one.name}\n{skill_description(one)}\n" for one in skills)
     return read_cost._text_tokens(listing)
 
 
@@ -78,7 +78,7 @@ def project(patterns: Sequence[str], root: Path, *, dry_run: bool = False) -> li
             lines.append(f"would write {skill.slug}")
             continue
         result = SyncResult()
-        _project_skill(skill, target, result, user_level=True)
+        _project_skill(skill, target, result)
         lines.append(f"{'wrote' if result.written else 'unchanged'} {skill.slug}")
     for folder in sorted(root.iterdir()) if root.is_dir() else []:
         marked = _is_generated_skill(folder / SKILL_FILE_NAME)

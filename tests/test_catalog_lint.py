@@ -270,12 +270,7 @@ def test_a_model_invoked_entry_without_a_description_fails_the_lint(tmp_path: Pa
     assert any("needs a description" in v for v in violations), violations
 
 
-def _router_and_tool(root: Path, route: str, tool_body: str) -> None:
-    _skill_source(
-        root,
-        "pick",
-        f"schema_version: 1\nname: pick\ninvocation: model\ndescription: {route}\n{_INSTRUCTIONS}",
-    )
+def _tool(root: Path, tool_body: str) -> None:
     _skill_source(
         root,
         "tool-foo",
@@ -284,35 +279,21 @@ def _router_and_tool(root: Path, route: str, tool_body: str) -> None:
     )
 
 
-@pytest.mark.parametrize("route", ["Then load tool-foo for its flags.", "Load tool-<name>."])
-def test_a_route_to_a_user_invoked_skill_with_no_description_fails_the_lint(
-    tmp_path: Path, route: str
-) -> None:
+def test_a_user_invoked_skill_with_no_first_paragraph_fails_the_lint(tmp_path: Path) -> None:
     root = _catalog(tmp_path)
-    _router_and_tool(root, route, "## Rules\n\n  - a rule")
+    _tool(root, "## Rules\n\n  - a rule")
 
-    violations = [v for v in lint_catalog(root) if "routes to" in v]
+    violations = [v for v in lint_catalog(root) if "first body paragraph" in v]
 
     assert len(violations) == 1, violations
-    assert "skill 'pick' routes to the user-invoked skill 'tool-foo'" in violations[0]
-    assert "mark 'tool-foo' `invocation: model`" in violations[0]
-    assert "remove the route" in violations[0]
+    assert "tool-foo/skill.yaml: skill 'tool-foo' has no first body paragraph" in violations[0]
 
 
-def test_a_route_to_a_user_invoked_skill_with_a_routing_description_passes(
-    tmp_path: Path,
-) -> None:
+def test_a_user_invoked_skill_with_a_first_paragraph_passes(tmp_path: Path) -> None:
     root = _catalog(tmp_path)
-    _router_and_tool(root, "Then load tool-foo for its flags.", "Find a foo.")
+    _tool(root, "Find a foo.")
 
-    assert not [v for v in lint_catalog(root) if "routes to" in v]
-
-
-def test_a_longer_skill_name_is_not_read_as_a_route_to_its_prefix(tmp_path: Path) -> None:
-    root = _catalog(tmp_path)
-    _router_and_tool(root, "Then load tool-foo-bar for its flags.", "## Rules\n\n  - a rule")
-
-    assert not [v for v in lint_catalog(root) if "routes to" in v]
+    assert not [v for v in lint_catalog(root) if "first body paragraph" in v]
 
 
 def test_every_shipped_skill_declares_the_axis() -> None:
@@ -514,12 +495,12 @@ def test_the_listing_budget_warning_reports_the_arithmetic(tmp_path: Path) -> No
 
     warnings = listing_budget_warnings(root)
 
-    entries = sum(1 for skill in discover_skills(root) if skill.invocation == "model")
+    entries = len(discover_skills(root))
 
     assert len(warnings) == 1
     assert "skill listing is" in warnings[0]
     assert "token budget" in warnings[0]
-    assert f"{entries} model-invoked entries" in warnings[0]
+    assert f"{entries} entries" in warnings[0]
     assert "least-invoked first" in warnings[0]
 
 
@@ -536,27 +517,18 @@ def test_the_listing_budget_is_silent_when_it_fits(tmp_path: Path) -> None:
     assert listing_budget_warnings(root) == []
 
 
-def test_a_user_invoked_entry_costs_nothing_in_the_listing(tmp_path: Path) -> None:
+def test_a_user_invoked_entry_pays_its_first_paragraph_in_the_listing(tmp_path: Path) -> None:
 
     root = _catalog(tmp_path)
     for index in range(40):
         _skill_source(
             root,
             f"filler-{index}",
-            f"schema_version: 1\nname: filler-{index}\ninvocation: model\n"
-            f'description: "{"x" * 400}"\n{_INSTRUCTIONS}',
-        )
-    over = listing_budget_warnings(root)
-
-    for index in range(40):
-        _skill_source(
-            root,
-            f"filler-{index}",
-            f"schema_version: 1\nname: filler-{index}\ninvocation: user\n{_INSTRUCTIONS}",
+            f"schema_version: 1\nname: filler-{index}\ninvocation: user\n"
+            f"instructions: |\n  # x\n\n  {'word ' * 80}\n",
         )
 
-    assert over != []
-    assert listing_budget_warnings(root) == []
+    assert listing_budget_warnings(root) != []
 
 
 def _style_source(root: Path, body: str) -> Path:

@@ -4,7 +4,7 @@ import importlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import __version__, read_cost, skill_source
+from . import __version__, read_cost, skill_source, skills
 from .catalog_source import load_mapping, rel
 from .config import load_project_paths
 from .loader import load_fragments_from_roots, load_targets
@@ -104,16 +104,16 @@ def fragment_costs(repo_root: Path) -> dict[Path, dict[str, int]]:
 def skill_costs(repo_root: Path) -> dict[Path, dict[str, int]]:
 
     try:
-        skills = skill_source.discover_skills(repo_root)
+        return {
+            skill.source_path: {
+                LISTING_SURFACE: read_cost._text_tokens(
+                    f"{skill.name}\n{skills.skill_description(skill)}\n"
+                )
+            }
+            for skill in skill_source.discover_skills(repo_root)
+        }
     except ValidationError:
         return {}
-    costs: dict[Path, dict[str, int]] = {}
-    for skill in skills:
-        listed = f"{skill.name}\n"
-        if skill.invocation == skill_source.MODEL_INVOKED:
-            listed = f"{skill.name}\n{skill.description}\n"
-        costs[skill.source_path] = {LISTING_SURFACE: read_cost._text_tokens(listed)}
-    return costs
 
 
 def measured_costs(repo_root: Path) -> dict[Path, dict[str, int]]:

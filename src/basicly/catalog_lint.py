@@ -34,7 +34,6 @@ from .schema import MODEL_TIERS, TECHNOLOGIES, ValidationError
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _DEEP_REF_RE = re.compile(r"(?:references|scripts|assets)/[^\s()\[\]]+/[^\s()\[\]]+")
 _MAX_SKILL_BODY_LINES = 500
-_ROUTE_PLACEHOLDER_RE = re.compile(r"(?<![\w-])([a-z0-9]+(?:-[a-z0-9]+)*-)<name>")
 
 _AXIS_OWNED_REQUIRED = frozenset({"invocation"})
 
@@ -192,7 +191,7 @@ def lint_catalog(repo_root: Path) -> list[str]:
 
     violations.extend(_check_invocation_axis(repo_root))
 
-    violations.extend(_check_routes_to_user_invoked(repo_root))
+    violations.extend(_check_user_invoked_first_paragraph(repo_root))
 
     violations.extend(routing_evals.routing_outcome(repo_root).violations)
 
@@ -250,9 +249,10 @@ def _check_invocation_axis(repo_root: Path) -> list[str]:
         if invocation is None:
             violations.append(
                 f"{source}: no 'invocation' declared — add `invocation: model` for an entry the "
-                "agent should discover and route to, or `invocation: user` for one only a human "
-                "types (which must then carry no description). `invocation: model` preserves the "
-                "behaviour of any entry that already has a description"
+                "agent should discover and route to from its description, or `invocation: user` "
+                "for a tool reference whose description is its first body paragraph (which must "
+                "then carry no description). `invocation: model` preserves the behaviour of any "
+                "entry that already has a description"
             )
         elif invocation == skill_source.MODEL_INVOKED and not has_description:
             violations.append(
@@ -261,48 +261,28 @@ def _check_invocation_axis(repo_root: Path) -> list[str]:
             )
         elif invocation == skill_source.USER_INVOKED and has_description:
             violations.append(
-                f"{source}: a user-invoked entry must not carry a description — nothing can route "
-                "to it, so the description is context load bought for no reach"
+                f"{source}: a user-invoked entry must not carry a description — every skill root "
+                "writes its first body paragraph as the description, so a second one would drift "
+                "from it; move the text into that paragraph and remove the field"
             )
     return violations
 
 
-def _routed_slugs(text: str, slugs: set[str]) -> set[str]:
-
-    prefixes = _ROUTE_PLACEHOLDER_RE.findall(text)
-    return {
-        slug
-        for slug in slugs
-        if re.search(rf"(?<![\w-]){re.escape(slug)}(?![\w-])", text)
-        or any(slug.startswith(prefix) for prefix in prefixes)
-    }
-
-
-def _check_routes_to_user_invoked(repo_root: Path) -> list[str]:
+def _check_user_invoked_first_paragraph(repo_root: Path) -> list[str]:
 
     try:
         catalog = skill_source.discover_skills(repo_root)
     except ValidationError:
         return []
-    undescribed: set[str] = set()
+    violations: list[str] = []
     for skill in catalog:
         if skill.invocation == skill_source.MODEL_INVOKED:
             continue
         try:
             skills.routing_description(skill)
-        except ValidationError:
-            undescribed.add(skill.slug)
-    return [
-        f"{rel(skill.source_path, repo_root)}: model-invoked skill '{skill.slug}' routes to the "
-        f"user-invoked skill '{target}', which has no first body paragraph for skills-user to "
-        f"write as its description; give '{target}' that paragraph, mark '{target}' "
-        "`invocation: model` with a description, or remove the route"
-        for skill in catalog
-        if skill.invocation == skill_source.MODEL_INVOKED
-        for target in sorted(
-            _routed_slugs(f"{skill.description}\n{skill.instructions}", undescribed)
-        )
-    ]
+        except ValidationError as exc:
+            violations.append(f"{rel(skill.source_path, repo_root)}: {exc.message}")
+    return violations
 
 
 _LISTING_BUDGET_FRACTION = 100
@@ -312,14 +292,13 @@ _LISTING_REFERENCE_WINDOW = 200_000
 
 def listing_budget_warnings(repo_root: Path) -> list[str]:
 
-    entries = [
-        skill
-        for skill in skill_source.discover_skills(repo_root)
-        if skill.invocation == skill_source.MODEL_INVOKED
-    ]
+    entries = skill_source.discover_skills(repo_root)
     if not entries:
         return []
-    listing = "".join(f"{skill.name}\n{skill.description}\n" for skill in entries)
+    try:
+        listing = "".join(f"{skill.name}\n{skills.skill_description(skill)}\n" for skill in entries)
+    except ValidationError:
+        return []
     tokens = read_cost._text_tokens(listing)
     window = _LISTING_REFERENCE_WINDOW
     budget = window // _LISTING_BUDGET_FRACTION
@@ -328,9 +307,9 @@ def listing_budget_warnings(repo_root: Path) -> list[str]:
     return [
         f"skill listing is {tokens} tokens against a {budget}-token budget "
         f"(1% of the {window}-token {_LISTING_REFERENCE_FAMILY} window a consumer gets), "
-        f"from {len(entries)} model-invoked entries. The host drops descriptions "
+        f"from {len(entries)} entries. The host drops descriptions "
         f"least-invoked first, so the entries this overrun silences are the ones "
-        f"already hardest to reach. Retire a dead skill or move it to user-invoked."
+        f"already hardest to reach. Retire a dead skill or shorten a description."
     ]
 
 
