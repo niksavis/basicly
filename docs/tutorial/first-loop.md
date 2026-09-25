@@ -162,10 +162,18 @@ When a reader opens the repo, I want a one line getting started note, so I can r
 created: myrepo-rq9r
 ```
 
-A record with no `--parent` is a *root*, and a root id needs a namespace: set
-`[tracker] prefix = "myrepo"` in `basicly.toml` first, or pass `--parent <id>` to hang it
-off one you already have. The command refuses rather than guessing, because a guessed
-prefix mints an id no later read finds again.
+A record with no `--parent` is a *root*, and a root id needs a namespace. Set it once in
+the ledger, or pass `--parent <id>` to hang the record off one you already have. The
+command refuses rather than guessing, because a guessed prefix mints an id no later read
+finds again.
+
+```sh
+python3 .basicly/core/kit/tracker/cli.py config .basicly/ledger set prefix myrepo
+```
+
+The prefix has one home, `.basicly/ledger/template.json`. The engine and the tracker kit
+both read it. An older repository that set `[tracker] prefix` in `basicly.toml` keeps
+minting under it, and the next `basicly install` moves it into the ledger.
 
 Check the gate agrees:
 

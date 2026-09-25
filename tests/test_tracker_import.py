@@ -177,8 +177,8 @@ def test_the_import_names_the_id_prefix_when_the_repo_declares_none(host: Path) 
     _, lines = tracker_import.run_import(host, _export(host, _EXPORT), source_name="beads")
 
     report = "\n".join(lines)
-    assert "declares no [tracker] prefix" in report
-    assert 'prefix = "acme"' in report
+    assert "declares no id prefix" in report
+    assert owned_store.set_prefix_command("acme") in report
 
 
 def test_the_import_stays_quiet_when_a_prefix_is_declared(host: Path) -> None:
@@ -186,7 +186,7 @@ def test_the_import_stays_quiet_when_a_prefix_is_declared(host: Path) -> None:
 
     _, lines = tracker_import.run_import(host, _export(host, _EXPORT), source_name="beads")
 
-    assert "[tracker] prefix" not in "\n".join(lines)
+    assert "declares no id prefix" not in "\n".join(lines)
 
 
 HYPHENATED = [
@@ -215,4 +215,4 @@ def test_a_dry_run_names_the_id_prefix_too(host: Path) -> None:
         host, _export(host, _EXPORT), source_name="beads", dry_run=True
     )
 
-    assert 'prefix = "acme"' in "\n".join(lines)
+    assert owned_store.set_prefix_command("acme") in "\n".join(lines)

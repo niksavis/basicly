@@ -73,12 +73,14 @@ from .config import (
     CHECKPOINTS,
     CONFIG_FILE,
     DEFAULT_CONFIG_TOML,
+    LEGACY_PREFIX_KEY,
     LOCAL_CONFIG_FILE,
     MODEL_TIERS,
     VERIFY_MODES,
     WORK_TYPES,
     ProjectPaths,
     SizingConfig,
+    legacy_tracker_prefix,
     load_policy_config,
     load_project_paths,
     load_runner_config,
@@ -88,6 +90,7 @@ from .config import (
     load_verify_config,
     load_worktree_config,
     record_technology_selection,
+    retire_legacy_tracker_prefix,
     unknown_config_keys,
 )
 from .hooks import (
@@ -1197,15 +1200,31 @@ def _setup_tracker(repo_root: Path, *, dry_run: bool = False) -> None:
     ledger = repo_root / owned_store.LEDGER_DIR
     if ledger.is_dir():
         print("Tracker ledger exists; left unchanged.")
+    else:
+        if not dry_run:
+            ledger.mkdir(parents=True, exist_ok=True)
+        print(
+            f"{'Would initialize' if dry_run else 'Initialized'} the tracker ledger at "
+            f"{owned_store.LEDGER_DIR.as_posix()}. To mint root record ids, run "
+            f"`{owned_store.set_prefix_command(_tracker_prefix(repo_root))}`."
+        )
+    _move_legacy_prefix(repo_root, dry_run=dry_run)
+
+
+def _move_legacy_prefix(repo_root: Path, *, dry_run: bool) -> None:
+
+    legacy = legacy_tracker_prefix(repo_root)
+    if legacy is None:
         return
-    if not dry_run:
-        ledger.mkdir(parents=True, exist_ok=True)
-    print(
-        f"{'Would initialize' if dry_run else 'Initialized'} the tracker ledger at "
-        f"{owned_store.LEDGER_DIR.as_posix()}. "
-        f'To mint root record ids, set [tracker] prefix = "{_tracker_prefix(repo_root)}" '
-        f"in basicly.toml."
-    )
+    if dry_run:
+        print(f"Would move {LEGACY_PREFIX_KEY} = {legacy!r} to {owned_store.PREFIX_HOME}.")
+        return
+    try:
+        moved = retire_legacy_tracker_prefix(repo_root)
+    except (ValueError, owned_store.TrackerDivergenceError) as exc:
+        print(f"Warning: the id prefix stays where it is: {exc}", file=sys.stderr)
+        return
+    print(f"Moved {LEGACY_PREFIX_KEY} = {moved!r} to {owned_store.PREFIX_HOME}, its one home.")
 
 
 def _scaffold_ledger_attributes(repo_root: Path, *, dry_run: bool = False) -> None:
