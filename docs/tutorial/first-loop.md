@@ -143,7 +143,32 @@ either heading is refused. Fill it all in and file it. A `## Trigger` is owed by
 type, and a persona is never required — where a situation triggers the work and
 nobody in particular wants it, inventing a persona is the defect. A `## Scope`
 entry must be a **backticked glob alone on its line** — a bare path parses to
-nothing, and everything downstream (sizing, parallel grouping) reads it:
+nothing, and everything downstream (sizing, parallel grouping) reads it.
+
+A record with no `--parent` is a *root*, and a root id needs a namespace. Set it once in
+the ledger before you file the first root, or pass `--parent <id>` to hang the record off
+one you already have. `create` refuses rather than guessing, because a guessed prefix
+mints an id no later read finds again:
+
+```sh
+python3 .basicly/core/kit/tracker/cli.py config .basicly/ledger set prefix myrepo
+```
+
+```text
+{
+  "schema": "basicly.tracker.config.v1",
+  "set": {
+    "name": "prefix",
+    "source": "ledger file",
+    "value": "myrepo"
+  }
+}
+```
+
+The prefix has one home, `.basicly/ledger/template.json`. The engine and the tracker kit
+both read it. An older repository that set `[tracker] prefix` in `basicly.toml` keeps
+minting under it, and the next `basicly install` moves it into the ledger. Now file the
+record:
 
 ```sh
 basicly tracker write -- create "Add a getting started note" -t task -p 2 -d '## Trigger
@@ -161,19 +186,6 @@ When a reader opens the repo, I want a one line getting started note, so I can r
 ```text
 created: myrepo-rq9r
 ```
-
-A record with no `--parent` is a *root*, and a root id needs a namespace. Set it once in
-the ledger, or pass `--parent <id>` to hang the record off one you already have. The
-command refuses rather than guessing, because a guessed prefix mints an id no later read
-finds again.
-
-```sh
-python3 .basicly/core/kit/tracker/cli.py config .basicly/ledger set prefix myrepo
-```
-
-The prefix has one home, `.basicly/ledger/template.json`. The engine and the tracker kit
-both read it. An older repository that set `[tracker] prefix` in `basicly.toml` keeps
-minting under it, and the next `basicly install` moves it into the ledger.
 
 Check the gate agrees:
 
