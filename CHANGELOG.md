@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the board start at once on macOS. Both board servers used to look up the host name when they bound, which took about 30 seconds on macOS and failed the consumer journey test there.
+
+- **The board starts at once on macOS.** Every serve command binds with no host name lookup (basicly-9pyaygb.11).
+
 ## v0.18.11 - 2026-09-25
 
 Delta: v0.18.10..v0.18.11
