@@ -106,6 +106,15 @@ def test_bundled_allow_ships_no_edit_write_or_web_allow() -> None:
     assert shipped.isdisjoint({"Bash", "Edit", "Write", "WebSearch", "WebFetch"})
 
 
+def test_bundled_bash_allows_name_only_git_and_basicly_so_none_reads_a_denied_file() -> None:
+    bash = [
+        rule for rule in permissions.load_claude_permissions().allow if rule.startswith("Bash(")
+    ]
+    programs = {rule.removeprefix("Bash(").split(" ", 1)[0].rstrip(")") for rule in bash}
+    assert bash
+    assert programs == {"git", "basicly"}
+
+
 def test_loader_refuses_an_allow_that_auto_mode_drops(tmp_path: Path) -> None:
     text = (
         "allow:\n  - id: runs\n    description: d\n    claude: ['Bash(uv run *)']\n"

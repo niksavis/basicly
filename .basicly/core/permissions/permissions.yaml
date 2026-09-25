@@ -74,10 +74,6 @@ allow:
       - "Bash(git worktree list *)"
       - "Bash(git branch)"
       - "Bash(git branch --show-current)"
-  - id: json-read
-    description: read and filter JSON output with jq, which has no flag that writes or runs a program
-    claude:
-      - "Bash(jq *)"
   - id: basicly-read
     description: read the repository snapshot and the tracker ledger with basicly on the path
     claude:

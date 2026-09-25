@@ -17,7 +17,6 @@
       "Bash(git worktree list *)",
       "Bash(git branch)",
       "Bash(git branch --show-current)",
-      "Bash(jq *)",
       "Bash(basicly status *)",
       "Bash(basicly tracker show *)",
       "Bash(basicly tracker list *)",
