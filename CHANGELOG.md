@@ -6,9 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.15 - 2026-09-25
+
+Delta: v0.18.14..v0.18.15
+
 This release gives the repository copies of the tool skills the same routing description as the user-level copies. A contributor, a Codex or Copilot session or CI without the user-level skills now sees when to load each tool skill.
 
 - **Repository skill folders get the routing description of each tool skill.** `.claude/skills` and `.agents/skills` carry the first body paragraph, and the "A human runs it by name" filler is gone (basicly-tvu17lj).
+
+### Changed
+
+- **Repository skill folders get the routing description of each tool skill.** `.claude/skills` and `.agents/skills` now carry the first paragraph of a tool skill, the line `basicly skills-user` writes. The old "A human runs it by name" filler is gone. The 25 tool skills add about 700 listing tokens. (basicly-tvu17lj)
 
 ## v0.18.14 - 2026-09-25
 

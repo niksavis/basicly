@@ -1,1 +1,0 @@
-- **Repository skill folders get the routing description of each tool skill.** `.claude/skills` and `.agents/skills` now carry the first paragraph of a tool skill, the line `basicly skills-user` writes. The old "A human runs it by name" filler is gone. The 25 tool skills add about 700 listing tokens. (basicly-tvu17lj)
