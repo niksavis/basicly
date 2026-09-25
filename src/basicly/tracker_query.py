@@ -13,6 +13,11 @@ from basicly import owned_store, redact, tracker, ui
 QUERIES_KIT_MODULE = "queries"
 BOARD_KIT = "board"
 BOARD_ENTRY = "server.py"
+SERVE_COMMAND = "basicly tracker serve"
+
+
+class BoardKitMissingError(LookupError):
+    pass
 
 
 def _queries(repo_root: Path) -> Any:
@@ -110,17 +115,26 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def board_kit(repo_root: Path) -> Any:
+
+    source = repo_root / owned_store.KIT_TRACKER_DIR.parent / BOARD_KIT / BOARD_ENTRY
+    spec = importlib.util.spec_from_file_location("basicly_board_kit_server", source)
+    if not source.is_file() or spec is None or spec.loader is None:
+        raise BoardKitMissingError(f"the board kit is not installed at {source.parent}")
+    server = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server)
+    return server
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
 
     repo_root = Path.cwd()
     args.directory = str(owned_store.ledger_dir(repo_root))
-    source = repo_root / owned_store.KIT_TRACKER_DIR.parent / BOARD_KIT / BOARD_ENTRY
-    spec = importlib.util.spec_from_file_location("basicly_board_kit_server", source)
-    if not source.is_file() or spec is None or spec.loader is None:
-        print(f"Error: the board kit is not installed at {source.parent}", file=sys.stderr)
+    try:
+        server = board_kit(repo_root)
+    except BoardKitMissingError as missing:
+        print(f"Error: {missing}", file=sys.stderr)
         return 1
-    server = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(server)
     return int(server.run(args, redact.redact_committed))
 
 
@@ -156,3 +170,4 @@ def add_parsers(tracker_sub: Any) -> None:
     served.add_argument("--host", default="127.0.0.1", help="The address to bind")
     served.add_argument("--port", type=int, default=8765, help="The port to bind")
     served.add_argument("--web", default="", help="Serve your own page directory instead")
+    served.set_defaults(relaunch=SERVE_COMMAND)

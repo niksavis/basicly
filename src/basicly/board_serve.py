@@ -29,6 +29,7 @@ from . import (
     board_wall,
     catalog,
     supervise,
+    tracker_query,
     ui,
 )
 
@@ -437,6 +438,19 @@ def bind(  # noqa: PLR0913 — mirrors the CLI surface
     return Listener(_httpd=_Server((admitted_host(host), port), board), board=board)
 
 
+def bind_refusal(repo_root: Path, error: OSError, host: str, port: int) -> str:
+
+    unnamed = f"board: cannot listen on {host}:{port} - {error}"
+    try:
+        kit = tracker_query.board_kit(repo_root)
+    except tracker_query.BoardKitMissingError:
+        return unnamed
+    if not kit.address_in_use(error):
+        return unnamed
+    bound = "" if host == HOST else f" --bind {host}"
+    return str(kit.busy_port_refusal(host, port, f"basicly board serve{bound}"))
+
+
 def _tick(board: Board, stop: threading.Event) -> None:
     while not stop.wait(board.refresh_s):
         board.refresh()
@@ -462,7 +476,7 @@ def serve(  # noqa: PLR0913 — mirrors the CLI surface
             repo_root, port=port, refresh_s=refresh_s, build=build, actions=actions, host=host
         )
     except OSError as exc:
-        ui.warn(f"board: cannot listen on {host}:{port} - {exc}")
+        ui.warn(bind_refusal(repo_root, exc, host, port))
         return 1
     ui.say(
         f"board: serving {board_schema.VERSION} on {listener.url}  ({host} only; Ctrl-C to stop)"

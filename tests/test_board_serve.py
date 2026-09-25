@@ -308,9 +308,14 @@ def test_ctrl_c_reports_the_counts_and_that_no_state_was_written(
     assert board_serve.STOPPED.format(refreshes=1, failures=0) in printed
 
 
-def test_a_port_already_taken_is_reported_rather_than_raised(board_repo: Path) -> None:
+def test_a_port_already_taken_is_refused_with_the_free_port_command(
+    board_repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     with _running(board_serve.bind(board_repo, port=0)) as listener:
         assert board_serve.serve(board_repo, port=listener.port) == 1
+    printed = " ".join(capsys.readouterr().err.split())
+    assert f"port {listener.port} is in use on 127.0.0.1" in printed
+    assert f"`basicly board serve --port {listener.port + 1}`" in printed
 
 
 def test_the_bind_claims_the_port_exclusively_wherever_the_platform_offers_that(
