@@ -16,13 +16,16 @@ import sys
 
 
 def run(args, redact):
-    sys.stdout.write(json.dumps({"directory": args.directory, "redact": redact.__name__}))
+    reported = {"directory": args.directory, "redact": redact.__name__}
+    sys.stdout.write(json.dumps({**reported, "relaunch": args.relaunch}))
     return 7
 """
 
 
 def _args() -> argparse.Namespace:
-    return argparse.Namespace(host="127.0.0.1", port=0, web="")
+    parser = argparse.ArgumentParser()
+    tracker_query.add_parsers(parser.add_subparsers(dest="command"))
+    return parser.parse_args(["serve", "--port", "0"])
 
 
 def test_serve_runs_the_board_kit_with_the_engine_redaction(
@@ -38,6 +41,7 @@ def test_serve_runs_the_board_kit_with_the_engine_redaction(
     reported = json.loads(capsys.readouterr().out)
     assert reported["redact"] == redact.redact_committed.__name__
     assert Path(reported["directory"]) == owned_store.ledger_dir(tmp_path)
+    assert reported["relaunch"] == tracker_query.SERVE_COMMAND
 
 
 def test_serve_without_the_board_kit_names_where_it_looked(
