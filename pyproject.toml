@@ -436,6 +436,7 @@ declared_count = 1
 "basicly-vkh0.42.12" = "closed in the 2026-09-25 refinement review as obsolete: docs/requirements/ was deleted and absorbed into the architecture document, so no file changed"
 "basicly-vkh0.42.6" = "closed in the 2026-09-25 refinement review: the requirements document absorption shipped in c32b23dd under the vkh0.42 purge, which carries the note"
 "basicly-vkh0.47" = "closed in the 2026-09-25 refinement review as obsolete: the surface-freezing machinery it refreshed was deleted with the external tracker, so no file changed"
+"basicly-rhzr6d" = "epic anchor: its two children basicly-0eexh5 and basicly-7hebuh shipped the change and carry the notes in CHANGELOG.md; this record changed no file"
 
 # The 145 closed records that declared a scope reaching a shipped surface and produced no
 # release note when the gate landed (2026-08-20). Measured over the whole tracker: 984

@@ -1,4 +1,4 @@
-# Fifteen records closed in the refinement review (basicly-sf4dq94).
+# Sixteen records closed in the refinement review (basicly-sf4dq94).
 #
 # Each declared a scope that reaches a shipped path, so `release-notes` judged it as owing a
 # note once it closed. None shipped a change of its own: each was obsolete after the external
@@ -6,4 +6,4 @@
 # that carries the note. Declared invisible in `[tool.release_notes.invisible]`, delta recorded
 # here.
 [ratchet.release_notes]
-count_delta = 15
+count_delta = 16
