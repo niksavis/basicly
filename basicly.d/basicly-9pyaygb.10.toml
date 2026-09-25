@@ -1,0 +1,7 @@
+# A server now refuses its data routes once the kit files it loaded change on disk
+# (basicly-9pyaygb.10). The refusal names the restart command, which only the command
+# layer knows, so `make_server` takes it as a sixth keyword beside the page directory and
+# the redactor. A settings object that groups the three would only move the list, so the
+# suppression carries that reason and `unreasoned_count` does not move.
+[ratchet.noqa_debt.frozen]
+PLR0913 = 1
