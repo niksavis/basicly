@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release lets a repository that upgraded to v0.18.7 fold its ledger again. The name
+gate now judges only new text, so older ledger lines that a fold moves no longer block the
+commit, and scrub can remove your git name from old prose.
+
+- **A fold passes the name gate.** Moved lines and a snapshot holder no longer count as new
+  text, and `basicly tracker scrub` redacts the git name outside the holder field
+  (`basicly-mxtckru`).
+- **A quoted placeholder counts as filled.** A command such as `` `show <id>` `` in a
+  criterion no longer voids the section (`basicly-invzvxs`).
+
 ## v0.18.7 - 2026-09-24
 
 Delta: v0.18.6..v0.18.7
