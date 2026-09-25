@@ -1,0 +1,1 @@
+- **The tracker id prefix has one home, `.basicly/ledger/template.json`.** The engine now reads it through the kit, so engine and kit creates mint under one prefix. `basicly install` moves an old `[tracker] prefix` out of `basicly.toml`, and two differing values are refused by name (basicly-9pyaygb.7).

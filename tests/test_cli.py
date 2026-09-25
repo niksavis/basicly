@@ -239,7 +239,7 @@ def test_setup_tracker_creates_the_ledger_and_reports_a_derived_prefix(
 
     assert (repo / cli.owned_store.LEDGER_DIR).is_dir()
     out = capsys.readouterr().out
-    assert 'prefix = "myterminal2"' in out
+    assert cli.owned_store.set_prefix_command("myterminal2") in out
     assert not (repo / "basicly.toml").exists()
 
 

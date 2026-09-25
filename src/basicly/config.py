@@ -62,12 +62,10 @@ manifest = ".basicly/generated-manifest.json"
 # [catalog]
 # technologies = ["python", "zsh"]
 
-# The work tracker's id namespace. A create with no parent needs one, and the
-# engine refuses rather than guessing a prefix no later read would find again.
-# Pick a short repo-specific token; it becomes the leading word of every id.
+# The work tracker's id namespace is not set here. Its one home is
+# .basicly/ledger/template.json, which the engine and the tracker kit both read:
 #
-# [tracker]
-# prefix = "acme"
+#   python3 .basicly/core/kit/tracker/cli.py config .basicly/ledger set prefix acme
 
 # Sibling git-worktree isolation for harness tracks.
 [worktree]
@@ -497,10 +495,78 @@ def _harness_section(repo_root: Path, name: str) -> dict:
     return merged
 
 
+LEGACY_PREFIX_KEY = f"[tracker] prefix in {CONFIG_FILE}"
+
+
+def _ledger_prefix(repo_root: Path) -> str:
+
+    template = tracker.ledger_template(repo_root)
+    return template.prefix if template is not None else ""
+
+
+def _one_prefix(held: str, legacy: str) -> str | None:
+
+    if held and legacy and held != legacy:
+        raise ValueError(
+            f"the id prefix has two differing values: {held!r} in {owned_store.PREFIX_HOME} "
+            f"and {legacy!r} as {LEGACY_PREFIX_KEY}. Its one home is {owned_store.PREFIX_HOME}. "
+            f"To keep {held!r}, delete prefix from [tracker] in {CONFIG_FILE}. To keep "
+            f"{legacy!r}, run `{owned_store.set_prefix_command(legacy)}`, then `basicly install`"
+        )
+    return held or legacy or None
+
+
 def load_tracker_prefix(repo_root: Path) -> str | None:
 
-    prefix = _harness_section(repo_root, "tracker").get("prefix")
+    legacy = _harness_section(repo_root, "tracker").get("prefix")
+    return _one_prefix(_ledger_prefix(repo_root), str(legacy) if legacy else "")
+
+
+def legacy_tracker_prefix(repo_root: Path) -> str | None:
+
+    config_path = repo_root / CONFIG_FILE
+    if not config_path.is_file():
+        return None
+    section = tomllib.loads(config_path.read_text(encoding="utf-8")).get("tracker", {})
+    prefix = section.get("prefix") if isinstance(section, dict) else None
     return str(prefix) if prefix else None
+
+
+def retire_legacy_tracker_prefix(repo_root: Path) -> str | None:
+
+    legacy = legacy_tracker_prefix(repo_root)
+    if legacy is None:
+        return None
+    held = _ledger_prefix(repo_root)
+    prefix = _one_prefix(held, legacy) or legacy
+    if not held:
+        tracker.set_ledger_prefix(repo_root, prefix)
+    config_path = repo_root / CONFIG_FILE
+    original = config_path.read_text(encoding="utf-8")
+    text = _without_tracker_prefix(original)
+    expected = tomllib.loads(original)
+    del expected["tracker"]["prefix"]
+    if tomllib.loads(text) != expected:
+        raise ValueError(
+            f"{prefix!r} is now in {owned_store.PREFIX_HOME}, but the [tracker] layout of "
+            f"{CONFIG_FILE} is one this install cannot edit; delete prefix from [tracker] by hand"
+        )
+    config_path.write_text(text, encoding="utf-8")
+    return prefix
+
+
+def _without_tracker_prefix(text: str) -> str:
+
+    lines = text.splitlines(keepends=True)
+    in_tracker = False
+    for index, current in enumerate(lines):
+        stripped = current.strip()
+        if stripped.startswith("["):
+            in_tracker = stripped == "[tracker]"
+        elif in_tracker and stripped.partition("=")[0].strip() == "prefix":
+            del lines[index]
+            break
+    return "".join(lines)
 
 
 def load_tracker_fold_on_merge(repo_root: Path) -> bool:

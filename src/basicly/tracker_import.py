@@ -76,9 +76,9 @@ def _prefix_note(repo_root: Path, records: list[str]) -> list[str]:
         return []
     prefix = prefixes.pop()
     return [
-        f"  this repository declares no [tracker] prefix and these ids use '{prefix}': add "
-        f'prefix = "{prefix}" under [tracker] in basicly.toml before retiring the source '
-        f"tracker, or no new root record can be minted in this namespace"
+        f"  this repository declares no id prefix in {owned_store.PREFIX_HOME} and these ids "
+        f"use '{prefix}': run `{owned_store.set_prefix_command(prefix)}` before retiring the "
+        f"source tracker, or no new root record can be minted in this namespace"
     ]
 
 

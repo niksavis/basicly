@@ -18,6 +18,10 @@ KIT_TRACKER_DIR = Path(".basicly") / "core" / "kit" / "tracker"
 
 LEDGER_DIR = tracker_paths.LEDGER_DIR_NAME
 
+TEMPLATE_FILE = "template.json"
+
+PREFIX_HOME = (LEDGER_DIR / TEMPLATE_FILE).as_posix()
+
 _KIT_MODULE_PREFIX = "basicly_tracker_kit_"
 
 DEFAULT_KIT_MODULE = "differential"
@@ -55,6 +59,12 @@ def tracker_prefix(repo_root: Path) -> str | None:
     if not _prefix_reader:
         return None
     return _prefix_reader[0](Path(repo_root))
+
+
+def set_prefix_command(prefix: str) -> str:
+
+    kit_cli = (KIT_TRACKER_DIR / "cli.py").as_posix()
+    return f"python3 {kit_cli} config {LEDGER_DIR.as_posix()} set prefix {prefix}"
 
 
 def set_mode_reader(reader: Callable[[Path], str] | None) -> None:

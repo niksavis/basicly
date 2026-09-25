@@ -78,7 +78,7 @@ tracker_mode = owned_store.tracker_mode
 ledger_dir = owned_store.ledger_dir
 kit = owned_store.kit
 
-TEMPLATE_FILE = "template.json"
+TEMPLATE_FILE = owned_store.TEMPLATE_FILE
 
 
 def ledger_template(repo_root: Path) -> Any:
@@ -87,6 +87,11 @@ def ledger_template(repo_root: Path) -> Any:
     if not (ledger / TEMPLATE_FILE).is_file():
         return None
     return kit(repo_root, "templates").load(ledger)
+
+
+def set_ledger_prefix(repo_root: Path, prefix: str) -> None:
+
+    kit(repo_root, "settings").write(ledger_dir(repo_root), "prefix", prefix)
 
 
 def owed_of(repo_root: Path, record: str) -> dict[str, object]:
