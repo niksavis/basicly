@@ -58,8 +58,9 @@ NARROW = (
 MANAGED = permissions.ClaudePermissions(
     allow=("Read", "Bash(git status *)"),
     deny=("Bash(rm -rf*)",),
-    retired_allow=("Bash",),
 )
+
+REPO_OWN_ALLOWS = ("Bash", "Edit", "Write", "WebSearch", "WebFetch", "Bash(make lint)")
 
 
 def _write_perms(tmp_path: Path, text: str) -> Path:
@@ -97,8 +98,12 @@ def test_bundled_allow_carries_read_git_and_basicly_check_rules() -> None:
     managed = permissions.load_claude_permissions()
     for pattern in ("Read", "Glob", "Grep", "Bash(git status *)", "Bash(basicly check)"):
         assert pattern in managed.allow
-    assert "Bash" in managed.retired_allow
     assert "Bash(rm -rf*)" in managed.deny
+
+
+def test_bundled_allow_ships_no_edit_write_or_web_allow() -> None:
+    shipped = set(permissions.load_claude_permissions().allow)
+    assert shipped.isdisjoint({"Bash", "Edit", "Write", "WebSearch", "WebFetch"})
 
 
 def test_loader_refuses_an_allow_that_auto_mode_drops(tmp_path: Path) -> None:
@@ -119,28 +124,22 @@ def test_loader_refuses_a_copilot_list_on_an_allow(tmp_path: Path) -> None:
         permissions.load_claude_permissions(_write_perms(tmp_path, text))
 
 
-def test_loader_refuses_a_pattern_both_allowed_and_retired(tmp_path: Path) -> None:
-    text = (
-        "allow:\n  - id: a\n    description: d\n    claude: ['Read']\n"
-        "retired_allow:\n  - id: b\n    description: d\n    claude: ['Read']\n"
-        "deny:\n  - id: r\n    description: d\n    claude: ['Bash(rm -rf*)']\n"
-    )
-    with pytest.raises(ValueError, match="both allowed and retired"):
-        permissions.load_claude_permissions(_write_perms(tmp_path, text))
-
-
-def test_merge_keeps_consumer_rules_and_drops_only_the_retired_allow() -> None:
+def test_merge_with_the_bundled_catalog_keeps_a_repo_bash_edit_and_webfetch() -> None:
     settings = {
         "permissions": {
-            "allow": ["Bash", "Bash(make lint)", "Read"],
+            "allow": list(REPO_OWN_ALLOWS),
             "ask": ["Bash(git push *)"],
             "deny": ["Bash(sudo *)"],
         }
     }
-    perms = claude_settings.merge_permissions(settings, MANAGED)["permissions"]
-    assert perms["allow"] == ["Bash(make lint)", "Read", "Bash(git status *)"]
+    managed = permissions.load_claude_permissions()
+    perms = claude_settings.merge_permissions(settings, managed)["permissions"]
+    assert perms["allow"][: len(REPO_OWN_ALLOWS)] == list(REPO_OWN_ALLOWS)
+    assert perms["allow"][len(REPO_OWN_ALLOWS) :] == [
+        p for p in managed.allow if p not in REPO_OWN_ALLOWS
+    ]
     assert perms["ask"] == ["Bash(git push *)"]
-    assert perms["deny"] == ["Bash(sudo *)", "Bash(rm -rf*)"]
+    assert perms["deny"][0] == "Bash(sudo *)"
 
 
 def test_merge_writes_no_allow_key_when_nothing_is_allowed() -> None:
@@ -148,12 +147,18 @@ def test_merge_writes_no_allow_key_when_nothing_is_allowed() -> None:
     assert claude_settings.merge_permissions({}, managed)["permissions"] == {"deny": ["Read(.env)"]}
 
 
-def test_mismatches_name_a_missing_allow_and_a_present_retired_allow(tmp_path: Path) -> None:
+def test_a_repo_blanket_bash_is_no_mismatch_against_the_bundled_catalog(tmp_path: Path) -> None:
+    managed = permissions.load_claude_permissions()
+    allow = ["Bash", "Edit", "WebFetch", *managed.allow]
+    _write_settings(tmp_path, {"permissions": {"allow": allow, "deny": list(managed.deny)}})
+    assert claude_settings.permission_mismatches(tmp_path, managed) == []
+
+
+def test_sync_adds_a_missing_allow_and_is_idempotent(tmp_path: Path) -> None:
     _write_settings(tmp_path, {"permissions": {"allow": ["Bash"], "deny": ["Bash(rm -rf*)"]}})
     assert claude_settings.permission_mismatches(tmp_path, MANAGED) == [
         "managed allow pattern 'Read' missing",
         "managed allow pattern 'Bash(git status *)' missing",
-        "retired allow pattern 'Bash' present",
     ]
     assert claude_settings.sync_permissions(tmp_path, MANAGED) is True
     assert claude_settings.permission_mismatches(tmp_path, MANAGED) == []

@@ -3,6 +3,7 @@
   "outputStyle": "Tired Engineer",
   "permissions": {
     "allow": [
+      "Bash",
       "Edit",
       "Write",
       "Read",

@@ -42,7 +42,6 @@ class DenyRule:
 class ClaudePermissions:
     allow: tuple[str, ...] = ()
     deny: tuple[str, ...] = ()
-    retired_allow: tuple[str, ...] = ()
 
 
 def _catalog_permissions_dir() -> Path:
@@ -147,18 +146,13 @@ def _shell_command_drop_reason(tool: str, content: str, pattern: str) -> str | N
 def load_claude_permissions(permissions_dir: Path | None = None) -> ClaudePermissions:
     manifest, data = _read_manifest(permissions_dir)
     allow = _claude_only_patterns(data, "allow", manifest)
-    retired = _claude_only_patterns(data, "retired_allow", manifest)
     for pattern in allow:
         reason = auto_mode_drop_reason(pattern)
         if reason:
             raise ValueError(f"{manifest}: allow pattern {pattern!r} is refused: {reason}")
-    both = sorted(set(allow) & set(retired))
-    if both:
-        raise ValueError(f"{manifest}: {both} are both allowed and retired; keep one")
     return ClaudePermissions(
         allow=tuple(allow),
         deny=tuple(claude_deny_patterns(load_deny_rules(permissions_dir))),
-        retired_allow=tuple(retired),
     )
 
 

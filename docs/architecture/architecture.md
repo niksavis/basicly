@@ -1130,11 +1130,11 @@ Which hosts satisfy that requirement today is a status question.
 
 The projection writes an allow list and a deny list of semantic rules into
 `.claude/settings.json`, the one agent family with a config-file deny. The projection is
-**ensure-present**. It merges the managed patterns in and preserves consumer entries. A
-flat rule string carries no per-entry marker, so the projection cannot tell a consumer
-entry from one that basicly wrote. It prunes only the allow patterns that the catalog
-names in `retired_allow`, such as the blanket `Bash` allow. Drift is a subset check plus
-a check that no retired allow is present.
+**ensure-present**. It merges the managed patterns in, it preserves consumer entries, and
+it **prunes nothing**. A flat rule string carries no per-entry marker, so the projection
+cannot tell a consumer entry from one that basicly wrote. A repository's own blanket
+`Bash`, `Edit`, `Write`, `WebSearch` or `WebFetch` allow therefore stays. basicly does not
+ship any of them. Drift is a subset check.
 
 Each shipped allow names one read or check command family (`basicly-zem45s8.1`). The
 loader refuses an allow that Claude Code drops in auto mode, because such a rule grants

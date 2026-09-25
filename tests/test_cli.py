@@ -1208,13 +1208,14 @@ def test_cli_install_projects_permissions_deny_list(tmp_path: Path) -> None:
     assert "Bash(rm -rf*)" in after["permissions"]["deny"]
 
 
-def test_cli_install_keeps_consumer_permissions_and_drops_the_blanket_bash(
+def test_cli_install_leaves_a_consumer_bash_edit_and_webfetch_untouched(
     tmp_path: Path,
 ) -> None:
     consumer = tmp_path / "consumer"
     (consumer / ".claude").mkdir(parents=True)
+    own_allows = ["Bash", "Edit", "WebFetch", "Bash(make lint)"]
     consumer_rules = {
-        "allow": ["Bash", "Bash(make lint)"],
+        "allow": own_allows,
         "ask": ["Bash(git push *)"],
         "deny": ["Bash(curl *)"],
     }
@@ -1226,9 +1227,10 @@ def test_cli_install_keeps_consumer_permissions_and_drops_the_blanket_bash(
     perms = json.loads((consumer / ".claude" / "settings.json").read_text(encoding="utf-8"))[
         "permissions"
     ]
-    assert "Bash" not in perms["allow"]
-    assert perms["allow"][0] == "Bash(make lint)"
-    assert {"Read", "Bash(git status *)", "Bash(basicly check)"} <= set(perms["allow"])
+    assert perms["allow"][: len(own_allows)] == own_allows
+    shipped = perms["allow"][len(own_allows) :]
+    assert {"Read", "Bash(git status *)", "Bash(basicly check)"} <= set(shipped)
+    assert not {"Bash", "Edit", "Write", "WebSearch", "WebFetch"} & set(shipped)
     assert perms["ask"] == ["Bash(git push *)"]
     assert perms["deny"][0] == "Bash(curl *)"
     assert "Bash(rm -rf*)" in perms["deny"]

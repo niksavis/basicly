@@ -94,9 +94,7 @@ def merge_permissions(settings: dict, managed: ClaudePermissions) -> dict:
     perms = merged.get(PERMISSIONS_KEY)
     perms = dict(perms) if isinstance(perms, dict) else {}
 
-    retired = set(managed.retired_allow)
-    allow = [rule for rule in _rule_list(perms, ALLOW_KEY) if rule not in retired]
-    allow = _with_missing(allow, managed.allow)
+    allow = _with_missing(_rule_list(perms, ALLOW_KEY), managed.allow)
     if allow or ALLOW_KEY in perms:
         perms[ALLOW_KEY] = allow
     perms[DENY_KEY] = _with_missing(_rule_list(perms, DENY_KEY), managed.deny)
@@ -111,12 +109,9 @@ def permission_mismatches(repo_root: Path, managed: ClaudePermissions) -> list[s
     perms = perms if isinstance(perms, dict) else {}
     allow = set(_rule_list(perms, ALLOW_KEY))
     deny = set(_rule_list(perms, DENY_KEY))
-    retired = [rule for rule in managed.retired_allow if rule in allow]
-    return (
-        [f"managed allow pattern {rule!r} missing" for rule in managed.allow if rule not in allow]
-        + [f"retired allow pattern {rule!r} present" for rule in retired]
-        + [f"managed deny pattern {rule!r} missing" for rule in managed.deny if rule not in deny]
-    )
+    return [
+        f"managed allow pattern {rule!r} missing" for rule in managed.allow if rule not in allow
+    ] + [f"managed deny pattern {rule!r} missing" for rule in managed.deny if rule not in deny]
 
 
 def sync_permissions(repo_root: Path, managed: ClaudePermissions) -> bool:

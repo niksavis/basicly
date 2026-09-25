@@ -11,10 +11,10 @@
 # code.claude.com/docs/en/permissions (read 2026-09-25): a trailing ` *` also matches the
 # bare command, and `:*` is an equivalent spelling that this file does not use.
 #
-# `retired_allow` lists allow patterns that basicly once shipped and now withdraws.
-# `basicly permissions-build` removes each one from a consumer's allow list. It never
-# removes any other entry, so a consumer's own allow, ask and deny rules survive. When an
-# entry leaves `allow`, move its patterns here in the same change.
+# `basicly permissions-build` adds each missing pattern and removes nothing, so a
+# repository's own allow, ask and deny rules survive every install. That includes a
+# blanket `Bash`, `Edit`, `Write`, `WebSearch` or `WebFetch` allow that the repository
+# wrote itself: basicly does not ship them, and it never removes them.
 #
 # A tool is left out of `allow` when a pattern cannot exclude its dangerous form:
 # `rg` (`--pre` and `--hostname-bin` run a command), `fd` (`-x`, `-X`), `find`
@@ -59,19 +59,12 @@
 # same. Do not infer permission from the absence of an entry, and do not delete
 # a fragment bullet because no rule here mirrors it.
 allow:
-  - id: file-tools
-    description: read, search and edit files in the working directory without a prompt
+  - id: file-read-tools
+    description: read and search files in the working directory without a prompt
     claude:
       - "Read"
       - "Glob"
       - "Grep"
-      - "Edit"
-      - "Write"
-  - id: web-tools
-    description: search and fetch the web without a prompt
-    claude:
-      - "WebSearch"
-      - "WebFetch"
   - id: git-read
     description: read the repository state with git commands that write no file and run no program
     claude:
@@ -107,11 +100,6 @@ allow:
       - "Bash(basicly verify --mode fast)"
       - "Bash(basicly verify --mode full)"
       - "Bash(basicly verify --mode staged)"
-retired_allow:
-  - id: blanket-bash
-    description: the blanket shell allow; auto mode drops it and it grants arbitrary code execution
-    claude:
-      - "Bash"
 deny:
   - id: destructive-rm
     description: block recursive force-remove of files
