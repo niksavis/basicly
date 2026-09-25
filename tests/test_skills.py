@@ -436,3 +436,45 @@ def test_the_retired_flag_still_parses_and_says_it_does_nothing(
 
     assert roots == [tmp_path / root for root in DEFAULT_SKILL_ROOTS]
     assert "deprecated" in capsys.readouterr().err
+
+
+def _user_skill(instructions: str) -> SkillDefinition:
+    return SkillDefinition("t", "t", "user", "", instructions, Path("skill.yaml"))
+
+
+def test_a_user_level_description_is_one_quoted_yaml_line_of_the_first_paragraph() -> None:
+    skill = _user_skill("# t\n\nUse it: when a colon\nspans two lines.\n\n## Rules\n")
+
+    rendered = render_skill_md(skill, user_level=True)
+
+    frontmatter = rendered.split("---\n")[1]
+    assert frontmatter.splitlines()[1] == "description: 'Use it: when a colon spans two lines.'"
+    assert yaml.safe_load(frontmatter)["description"] == "Use it: when a colon spans two lines."
+    assert rendered.split("---\n")[2].splitlines()[0] == GENERATED_MARKER
+
+
+@pytest.mark.parametrize(
+    "instructions",
+    [
+        "# t\n",
+        "# t\n\n## Rules\n\n- a rule\n",
+        "# t\n\n```bash\nt --help\n```\n",
+        "# t\n\n1. a step\n",
+    ],
+)
+def test_a_user_level_render_refuses_a_body_with_no_first_paragraph(instructions: str) -> None:
+    with pytest.raises(ValidationError, match="skill 't' has no first body paragraph"):
+        render_skill_md(_user_skill(instructions), user_level=True)
+
+
+def test_a_first_paragraph_over_the_listing_limit_is_refused() -> None:
+    skill = _user_skill("# t\n\n" + "word " * 400 + "\n")
+
+    with pytest.raises(ValidationError, match="over the 1536-character"):
+        render_skill_md(skill, user_level=True)
+
+
+def test_the_repo_render_of_a_tool_skill_is_untouched_by_the_user_level_rule() -> None:
+    skill = _user_skill("# t\n\nFind a thing.\n")
+
+    assert "description:" not in render_skill_md(skill).split("---\n")[1]

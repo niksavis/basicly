@@ -11,10 +11,11 @@ from pathlib import Path
 
 from . import catalog, read_cost, skill_source
 from .projection import SyncResult
-from .skills import SKILL_FILE_NAME, _is_generated_skill, _project_skill
+from .schema import ValidationError
+from .skills import SKILL_FILE_NAME, _is_generated_skill, _project_skill, user_level_description
 
 USER_SKILLS = Path(".claude") / "skills"
-USER_LISTING_BUDGET = 200
+USER_LISTING_BUDGET = 900
 CATALOG_SKILLS = Path("skills")
 
 
@@ -47,8 +48,8 @@ def selected(patterns: Sequence[str]) -> list[skill_source.SkillDefinition]:
 
 
 def listing_cost(skills: Sequence[skill_source.SkillDefinition]) -> int:
-    listed = [skill for skill in skills if skill.invocation == skill_source.MODEL_INVOKED]
-    return read_cost._text_tokens("".join(f"{one.name}\n{one.description}\n" for one in listed))
+    listing = "".join(f"{one.name}\n{user_level_description(one)}\n" for one in skills)
+    return read_cost._text_tokens(listing)
 
 
 def project(patterns: Sequence[str], root: Path, *, dry_run: bool = False) -> list[str]:
@@ -57,9 +58,9 @@ def project(patterns: Sequence[str], root: Path, *, dry_run: bool = False) -> li
     cost = listing_cost(chosen)
     if cost > USER_LISTING_BUDGET:
         raise UserSkillsError(
-            f"the model-invoked skills selected cost {cost} listing tokens, over the "
-            f"{USER_LISTING_BUDGET}-token user budget: a user-level description loads in every "
-            f"repo, so select fewer model-invoked skills"
+            f"the skills selected cost {cost} listing tokens, over the {USER_LISTING_BUDGET}-token "
+            f"user budget: every description skills-user writes loads in every repo, so select "
+            f"fewer skills"
         )
     lines = []
     names = {skill.slug for skill in chosen}
@@ -73,7 +74,7 @@ def project(patterns: Sequence[str], root: Path, *, dry_run: bool = False) -> li
             lines.append(f"would write {skill.slug}")
             continue
         result = SyncResult()
-        _project_skill(skill, target, result)
+        _project_skill(skill, target, result, user_level=True)
         lines.append(f"{'wrote' if result.written else 'unchanged'} {skill.slug}")
     for folder in sorted(root.iterdir()) if root.is_dir() else []:
         marked = _is_generated_skill(folder / SKILL_FILE_NAME)
@@ -105,7 +106,7 @@ def cmd_skills_user(args: argparse.Namespace) -> int:
     root = Path(args.home) / USER_SKILLS if args.home else home_skills()
     try:
         lines = project(args.skills, root, dry_run=args.dry_run)
-    except UserSkillsError as exc:
+    except (UserSkillsError, ValidationError) as exc:
         print(f"skills-user: {exc}", file=sys.stderr)
         return 1
     for line in lines:
