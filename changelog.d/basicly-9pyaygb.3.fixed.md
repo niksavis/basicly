@@ -1,0 +1,1 @@
+- **The tracker import reads bd and br exports and keeps machine paths out of the ledger.** Both import with comments and edges. One table per source maps statuses and types, such as bd `hooked` to `in_progress`, and refuses any other value by name. The import drops `source_repo_path` and redacts home and drive paths. (basicly-9pyaygb.3)
