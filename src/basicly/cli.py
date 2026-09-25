@@ -1634,6 +1634,8 @@ def cmd_tracker_hook(args: argparse.Namespace) -> int:
         fold_command(),
         "--advice",
         f"{UVX_COMMAND} {FOLD_COMMAND}",
+        "--import-command",
+        "basicly tracker import {path} --from {source}",
     ]
     if dry_run:
         argv.append("--dry-run")
@@ -1641,6 +1643,7 @@ def cmd_tracker_hook(args: argparse.Namespace) -> int:
         argv.append("--fold-on-merge")
     completed = subprocess.run(  # noqa: S603 — run, not imported; the engine holds no kit import
         argv,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         check=False,

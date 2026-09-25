@@ -337,6 +337,7 @@ def uninstall_fold(root: Path, *, dry_run: bool, stream: Any) -> int:
 
 def main(argv: Any = None) -> int:
 
+    offer = _load("import_offer.py", "basicly_tracker_kit_import_offer")
     parser = argparse.ArgumentParser(
         description=(
             "Wire a post-merge hook that folds every pending writer shard into the "
@@ -380,6 +381,18 @@ def main(argv: Any = None) -> int:
         default=DEFAULT_INTERPRETER,
         help="the command that runs the kit; the default needs only uv",
     )
+    parser.add_argument(
+        "--import",
+        dest="import_source",
+        default="",
+        choices=offer.SOURCES,
+        help="import the backlog of this tracker; without it only a terminal answer imports",
+    )
+    parser.add_argument(
+        "--import-command",
+        default=offer.KIT_IMPORT,
+        help="the command the offer names, with {source}, {path}, {cli} and {ledger} filled in",
+    )
     args = parser.parse_args(None if argv is None else list(argv))
     root = Path(args.root).resolve()
     if args.uninstall:
@@ -387,6 +400,11 @@ def main(argv: Any = None) -> int:
     ledger = Path(args.ledger) if args.ledger else _HERE.parent.parent / "ledger"
     if not ledger.is_absolute():
         ledger = root / ledger
+    asked = offer.Install(root, ledger, args.import_source, args.import_command, args.dry_run)
+    try:
+        backlogs = offer.chosen_backlogs(asked)
+    except offer.ImportOfferError as exc:
+        raise SystemExit(f"tracker: {exc}") from exc
     ensure_ledger(root, ledger, dry_run=args.dry_run, stream=sys.stdout)
     if args.pin:
         pin_ledger(ledger, dry_run=args.dry_run, stream=sys.stdout)
@@ -394,16 +412,23 @@ def main(argv: Any = None) -> int:
         install_claim(root, ledger=ledger, dry_run=args.dry_run, stream=sys.stdout)
     if not args.fold_on_merge:
         sys.stdout.write(NO_FOLD)
-        return uninstall_fold(root, dry_run=args.dry_run, stream=sys.stdout)
-    return install(
-        root,
-        ledger=ledger,
-        dry_run=args.dry_run,
-        interpreter=args.interpreter,
-        stream=sys.stdout,
-        command=args.command,
-        advice=args.advice,
-    )
+        wired = uninstall_fold(root, dry_run=args.dry_run, stream=sys.stdout)
+    else:
+        wired = install(
+            root,
+            ledger=ledger,
+            dry_run=args.dry_run,
+            interpreter=args.interpreter,
+            stream=sys.stdout,
+            command=args.command,
+            advice=args.advice,
+        )
+    terminal = sys.stdin is not None and sys.stdin.isatty()
+    try:
+        offer.offer_import(asked, backlogs, ask=input if terminal else None, stream=sys.stdout)
+    except offer.ImportOfferError as exc:
+        raise SystemExit(f"tracker: {exc}") from exc
+    return wired
 
 
 if __name__ == "__main__":

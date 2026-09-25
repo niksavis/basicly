@@ -163,6 +163,25 @@ no bean of the batch is imported.
 python3 .basicly/kit/tracker/cli.py import .basicly/ledger issues.jsonl --dry-run
 ```
 
+`basicly-tracker init` and `update` look for a backlog to import. They read files only
+and never run `bd`, `br` or `beans`:
+
+| Found | What init does |
+| --- | --- |
+| `.beads/issues.jsonl` | names it with its record count and offers the import |
+| `.beads/dolt` or `.beads/embeddeddolt`, and no `issues.jsonl` | says to run `bd export -o .beads/issues.jsonl` first |
+| a `.beans` folder of beans | names it with its bean count and offers the import |
+| `.beans.yml`, and no bean under `.beans` | says to import the folder that `.beans.yml` sets by name |
+
+At a terminal, init prints a dry-run summary and asks once. It imports only on `y` or
+`yes`. With no terminal, as when an agent runs it, init imports nothing and prints the
+command that does: `basicly-tracker init --import beads` or
+`basicly-tracker init --import beans`. `--import` refuses a source that the repository
+does not hold, and nothing is written. An imported record has no Trigger, Acceptance
+Criteria or Requirements, so it lands in `refine` and `ready` shows 0 until each record
+is shaped. `refine` lists them. `basicly install` makes the same offer with no prompt,
+and names `basicly tracker import` instead.
+
 ## Read
 
 ### ready

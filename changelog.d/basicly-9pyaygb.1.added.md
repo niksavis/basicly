@@ -1,0 +1,1 @@
+- **Tracker init offers to import a beads or beans backlog.** `basicly-tracker init` names a `.beads/issues.jsonl` or `.beans` backlog with its count, says to run `bd export` first for a bd Dolt store, asks once at a terminal, and with no terminal imports only on `--import beads` or `--import beans`. (basicly-9pyaygb.1)

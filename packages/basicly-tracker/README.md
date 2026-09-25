@@ -54,6 +54,13 @@ $ python3 .basicly/kit/tracker/cli.py import .basicly/ledger issues.jsonl --dry-
 }
 ```
 
+`init` finds a beads or beans backlog by its files and offers the import. It never runs
+`bd`, `br` or `beans`. At a terminal it shows the dry-run plan and asks once. With no
+terminal it imports nothing and prints the command, for example
+`basicly-tracker init --import beads`. A bd Dolt store with no `.beads/issues.jsonl`
+needs `bd export -o .beads/issues.jsonl` first. The imported records land in `refine`,
+because they carry no acceptance criteria yet, so `ready` shows 0 until you shape them.
+
 A record the importer cannot name is **refused and reported, never dropped quietly**.
 Re-running the same export appends nothing, so an import can be repeated while the other
 tracker is still authoritative. Every imported record records where it came from, which
