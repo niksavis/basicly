@@ -1,1 +1,0 @@
-- **The board refuses a busy port by name.** `basicly-board serve`, `basicly tracker serve` and `basicly board serve` name the port and print the command to start on another port, or `--port 0`, in place of a traceback. (basicly-9pyaygb.8)
