@@ -7,6 +7,8 @@ DEFAULT_STATUS = "open"
 
 DIRECTORY_HELP = "the ledger directory"
 
+IMPORT_FORMATS = ("beads", "beans")
+
 
 def _add_shape_arguments(parser: Any) -> None:
     parser.add_argument(
@@ -112,16 +114,25 @@ def parser() -> argparse.ArgumentParser:
     gate.add_argument("directory", help=DIRECTORY_HELP)
     gate.add_argument("record", help="the record id")
 
-    bring = sub.add_parser(
-        "import", help="import a foreign tracker's JSONL export into this ledger"
-    )
+    bring = sub.add_parser("import", help="import a foreign tracker's backlog into this ledger")
     bring.add_argument("directory", help=DIRECTORY_HELP)
-    bring.add_argument("export", help="the export file to read, one JSON record per line")
+    bring.add_argument(
+        "export",
+        help="the beads export file, one JSON record per line; with --from beans, "
+        "the repository root or its .beans folder",
+    )
+    bring.add_argument(
+        "--from",
+        dest="source_format",
+        choices=IMPORT_FORMATS,
+        default=IMPORT_FORMATS[0],
+        help="the tracker that wrote the export",
+    )
     bring.add_argument(
         "--source",
         default="",
         help="the name recorded as the provenance of every imported record; "
-        "defaults to the export's file name",
+        "defaults to the export's file or folder name",
     )
     bring.add_argument(
         "--dry-run",

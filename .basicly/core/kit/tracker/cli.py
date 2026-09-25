@@ -38,6 +38,7 @@ fields = _load("fields.py", "basicly_tracker_kit_fields")
 arguments = _load("arguments.py", "basicly_tracker_kit_arguments")
 pin = _load("pin.py", "basicly_tracker_kit_pin")
 settings = _load("settings.py", "basicly_tracker_kit_settings")
+beans = _load("beans.py", "basicly_tracker_kit_beans")
 events = snapshot.events
 ids = events.ids
 
@@ -176,7 +177,10 @@ _VIEWS: dict[
     "shards": lambda a, _r: fsck.shards_report(a.directory),
     "board": lambda a, _r: {"written": board.write(a.directory, a.out).as_posix()},
     "import": lambda a, r: migrate.import_report(
-        a.directory, a.export, source=a.source, redact=r, dry_run=a.dry_run
+        a.directory,
+        beans.READERS[a.source_format](a.export, name=a.source or None),
+        redact=r,
+        dry_run=a.dry_run,
     ),
     "scaffold": lambda a, _r: record_view.scaffold_of(a.directory, a.type),
     "fields": lambda a, _r: fields.table(record_view.templates.load(a.directory)),
