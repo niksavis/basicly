@@ -93,7 +93,7 @@ evidence each state requires. It is not restated here: the renderer reads that t
 | Omit-never-estimate, so an absent source is absent rather than zero | shipped | | The schema has no field marking a value as estimated, so a guess would render identically to a billed figure |
 | A command that emits a snapshot | shipped | | `basicly board --out <page>` writes `board-snapshot.json` beside the page, and `basicly board serve` serves it at `/snapshot.json` |
 | A rendered page a human can open | shipped | | `board_render.py` and `.basicly/core/templates/board/board_page.html.j2`; `basicly board --out` writes it |
-| A conformance kit so another project can adopt the board | designed | basicly-rn0o.4 | |
+| A conformance kit so another project can adopt the board | shipped | | `tests/test_board_parity.py` and `tests/fixtures/board/foreign/produce.py` (8d65663f); `.basicly/core/kit/board/README.md` carries the adopt steps |
 | Live modes — a snapshot on the supervisor tick, and a read-only wall view | shipped | | `basicly board serve` refreshes on the supervisor 15-second tick in wall mode and on `--refresh` otherwise, by its own help text |
 
 ## The software factory

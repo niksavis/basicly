@@ -421,6 +421,21 @@ declared_count = 1
 "basicly-xgk9v0" = "investigation only: the one defect it named, the absent lanes section, shipped under basicly-u6eeag with its own note; the remaining sections read a git-ignored store by a design basicly-y754k2 records, so no file of its declared scope changed"
 "basicly-vowpbar" = "duplicate, closed with no work: basicly-62h3x9 had carried a superset of its criteria since 2026-08-28, and this record closed the hour it was filed with no commit in its worktree"
 "basicly-tkbmndn" = "built inside basicly-igqm86l, whose note names the runner ceiling in the same sentence as the mid-lane kill it replaces; the two halves are one change and two notes would tell a consumer they got two"
+"basicly-e2mz.48" = "closed in the 2026-09-25 refinement review: the route table shipped in the interface-facts skill and the gate half moved to basicly-e2mz.48.2, so this record shipped nothing of its own"
+"basicly-gwuy" = "closed in the 2026-09-25 refinement review as obsolete: the comment-density ratchet it asked a skill to reconcile was retired by basicly-phglc2x, so no file changed"
+"basicly-kjc5.37" = "closed in the 2026-09-25 refinement review as obsolete: it named the tool-br skill, retired with the external tracker, so no file changed"
+"basicly-kjc5.38" = "closed in the 2026-09-25 refinement review as obsolete: it built on the br assignee field, retired with the external tracker, so no file changed"
+"basicly-kjc5.47" = "closed in the 2026-09-25 refinement review as obsolete: it built on br labels, retired with the external tracker, so no file changed"
+"basicly-kya2os.1" = "closed in the 2026-09-25 refinement review as obsolete: the comment-density gate it fixed was retired by basicly-phglc2x, so no file changed"
+"basicly-qsd9" = "closed in the 2026-09-25 refinement review as obsolete: the size pressure behind the move ended with basicly-phglc2x, and the move was never made"
+"basicly-r2js" = "closed in the 2026-09-25 refinement review as obsolete: the size pressure behind the extraction ended with basicly-phglc2x, and the extraction was never made"
+"basicly-rn0o.4" = "closed in the 2026-09-25 refinement review: the conformance kit shipped in 8d65663f as tests/test_board_parity.py and the board kit README, under the notes of the board kit releases"
+"basicly-tcmy.15" = "closed in the 2026-09-25 refinement review as obsolete: the br read amplification ended when the owned tracker replaced br in process, so no file changed under this id"
+"basicly-u2hl.29" = "closed in the 2026-09-25 refinement review: the surviving scope shipped under basicly-i4gg with its own note, and the rest depended on br"
+"basicly-vkh0.31" = "closed in the 2026-09-25 refinement review: the tracker rollup already refuses a stray path (merge.py), shipped under earlier tracker records"
+"basicly-vkh0.42.12" = "closed in the 2026-09-25 refinement review as obsolete: docs/requirements/ was deleted and absorbed into the architecture document, so no file changed"
+"basicly-vkh0.42.6" = "closed in the 2026-09-25 refinement review: the requirements document absorption shipped in c32b23dd under the vkh0.42 purge, which carries the note"
+"basicly-vkh0.47" = "closed in the 2026-09-25 refinement review as obsolete: the surface-freezing machinery it refreshed was deleted with the external tracker, so no file changed"
 
 # The 145 closed records that declared a scope reaching a shipped surface and produced no
 # release note when the gate landed (2026-08-20). Measured over the whole tracker: 984

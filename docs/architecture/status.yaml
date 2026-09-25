@@ -266,9 +266,8 @@ sections:
     status: shipped
     note: '`board_render.py` and `.basicly/core/templates/board/board_page.html.j2`; `basicly board --out` writes it'
   - name: A conformance kit so another project can adopt the board
-    status: designed
-    record: basicly-rn0o.4
-    note: ''
+    status: shipped
+    note: '`tests/test_board_parity.py` and `tests/fixtures/board/foreign/produce.py` (8d65663f); `.basicly/core/kit/board/README.md` carries the adopt steps'
   - name: Live modes — a snapshot on the supervisor tick, and a read-only wall view
     status: shipped
     note: '`basicly board serve` refreshes on the supervisor 15-second tick in wall mode and on `--refresh` otherwise, by its own help text'
