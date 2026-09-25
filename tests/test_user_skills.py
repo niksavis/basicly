@@ -78,3 +78,17 @@ def test_a_personal_skill_that_shadows_a_project_skill_is_reported(tmp_path: Pat
 def test_an_unknown_name_is_refused_with_the_known_names(tmp_path: Path) -> None:
     with pytest.raises(user_skills.UserSkillsError, match="no catalog skill matches tool-nope"):
         user_skills.project(["tool-nope"], tmp_path)
+
+
+def test_an_unknown_name_beside_known_ones_is_refused_and_nothing_is_written(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(user_skills.UserSkillsError, match="no catalog skill matches nosuch"):
+        user_skills.project(["cli-tools", "tool-jq", "nosuch"], tmp_path)
+
+    assert not tmp_path.exists() or not any(tmp_path.iterdir())
+
+
+def test_a_misspelled_name_names_the_close_catalog_skill(tmp_path: Path) -> None:
+    with pytest.raises(user_skills.UserSkillsError, match="did you mean: tool-jq"):
+        user_skills.project(["tool-jqq"], tmp_path)

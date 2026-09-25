@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 from collections.abc import Mapping, Sequence
+from difflib import get_close_matches
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -33,11 +34,16 @@ def _catalog_skills() -> list[skill_source.SkillDefinition]:
 def selected(patterns: Sequence[str]) -> list[skill_source.SkillDefinition]:
 
     skills = _catalog_skills()
-    chosen = [skill for skill in skills if any(fnmatch(skill.slug, one) for one in patterns)]
-    if not chosen:
-        known = ", ".join(sorted(skill.slug for skill in skills))
-        raise UserSkillsError(f"no catalog skill matches {', '.join(patterns)}; known: {known}")
-    return chosen
+    slugs = sorted(skill.slug for skill in skills)
+    unmatched = [one for one in patterns if not any(fnmatch(slug, one) for slug in slugs)]
+    if unmatched or not patterns:
+        close = sorted({near for one in unmatched for near in get_close_matches(one, slugs)})
+        hint = f"did you mean: {', '.join(close)}" if close else f"known: {', '.join(slugs)}"
+        raise UserSkillsError(
+            f"no catalog skill matches {', '.join(unmatched) or 'an empty selection'}, so "
+            f"nothing was written; {hint}"
+        )
+    return [skill for skill in skills if any(fnmatch(skill.slug, one) for one in patterns)]
 
 
 def listing_cost(skills: Sequence[skill_source.SkillDefinition]) -> int:
