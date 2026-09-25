@@ -206,3 +206,22 @@ def test_a_lock_hold_past_the_stale_bound_renames_nothing(tmp_path: Path) -> Non
 
     assert path.read_text(encoding="utf-8") == before
     assert not list(tracker.ledger_dir(repo).glob("*.tmp"))
+
+
+def test_a_status_repeated_in_a_later_ledger_file_scrubs_at_its_ledger_generation(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    kit = tracker.kit(repo)
+    payload = {"status": "deferred"}
+
+    def status(seq: int, generation: int) -> dict:
+        record_id = kit.events.event_id_for("basicly-a", "status", payload, generation=generation)
+        return {**_event(repo, "basicly-a", seq, "", payload), "id": record_id, "kind": "status"}
+
+    _write_events(repo, [status(1, 1)])
+    pending = tracker.ledger_dir(repo) / "pending-main.jsonl"
+    pending.write_text(json.dumps(status(2, 2), separators=(",", ":")) + "\n", encoding="utf-8")
+
+    assert tracker.scrub_ledger(repo) == 0
+    assert _read(pending)[0]["id"].endswith("-2")

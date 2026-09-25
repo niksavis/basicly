@@ -1,0 +1,1 @@
+- `basicly tracker scrub` and the landing scrub no longer refuse a status that a record returns to when its first event is in an older ledger file (basicly-q1ng9ne).

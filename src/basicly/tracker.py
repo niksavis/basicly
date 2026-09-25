@@ -594,10 +594,10 @@ def scrub_ledger(
     changed = 0
     with events.LedgerLock(ledger_dir(repo_root), timeout_s=timeout_s):
         held_since = monotonic()
+        stored: dict[tuple[str, str, str], int] = {}
+        minted: dict[tuple[str, str, str], int] = {}
         for path in files:
             raw = path.read_text(encoding="utf-8")
-            stored: dict[tuple[str, str, str], int] = {}
-            minted: dict[tuple[str, str, str], int] = {}
             lines: list[str] = []
             for line in raw.splitlines():
                 if not line.strip():
