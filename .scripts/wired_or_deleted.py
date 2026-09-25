@@ -63,7 +63,6 @@ BASELINE: frozenset[str] = frozenset({
     "command:rubric eval",
     "command:runner list",
     "command:runner run",
-    "command:status",
     "command:usage forecast",
     "record-field:basicly.agents.AgentOutputRoot.claude_passthrough",
     "record-field:basicly.agents.AgentDefinition.deprecated_model",

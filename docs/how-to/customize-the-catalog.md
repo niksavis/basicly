@@ -139,7 +139,7 @@ check command exits non-zero when the file on disk no longer matches.
 | `.claude/output-styles/*.md` | `basicly styles-build` | `basicly styles-check` |
 | `.claude/agents/**`, `.github/agents/**` | `basicly agents-build` | `basicly agents-check` |
 | `.pre-commit-config.yaml`, agent hook config | `basicly hooks-build` | `basicly hooks-check` |
-| the managed deny-list in `.claude/settings.json` | `basicly permissions-build` | `basicly permissions-check` |
+| the managed allow and deny lists in `.claude/settings.json` | `basicly permissions-build` | `basicly permissions-check` |
 
 Only the first row is covered by `.basicly/generated-manifest.json`, which is
 why `basicly check` alone does not notice a hand-edited skill —

@@ -8,6 +8,7 @@ from .projection import atomic_write_text
 
 if TYPE_CHECKING:
     from .hooks import HookSpec
+    from .permissions import ClaudePermissions
 
 CLAUDE_SETTINGS_PATH = Path(".claude/settings.json")
 WORKTREE_KEY = "worktree"
@@ -15,6 +16,7 @@ BG_ISOLATION_KEY = "bgIsolation"
 BG_ISOLATION_NONE = "none"
 
 PERMISSIONS_KEY = "permissions"
+ALLOW_KEY = "allow"
 DENY_KEY = "deny"
 
 HOOKS_KEY = "hooks"
@@ -77,48 +79,53 @@ def default_subagent_cache_ttl(repo_root: Path) -> bool:
     return True
 
 
-def merge_permission_deny(settings: dict, patterns: list[str]) -> dict:
+def _rule_list(perms: dict, key: str) -> list[str]:
+    rules = perms.get(key)
+    return list(rules) if isinstance(rules, list) else []
+
+
+def _with_missing(rules: list[str], managed: tuple[str, ...]) -> list[str]:
+    return rules + [pattern for pattern in dict.fromkeys(managed) if pattern not in rules]
+
+
+def merge_permissions(settings: dict, managed: ClaudePermissions) -> dict:
 
     merged = dict(settings)
     perms = merged.get(PERMISSIONS_KEY)
     perms = dict(perms) if isinstance(perms, dict) else {}
-    deny = perms.get(DENY_KEY)
-    deny = list(deny) if isinstance(deny, list) else []
 
-    present = set(deny)
-    for pattern in patterns:
-        if pattern not in present:
-            deny.append(pattern)
-            present.add(pattern)
+    retired = set(managed.retired_allow)
+    allow = [rule for rule in _rule_list(perms, ALLOW_KEY) if rule not in retired]
+    allow = _with_missing(allow, managed.allow)
+    if allow or ALLOW_KEY in perms:
+        perms[ALLOW_KEY] = allow
+    perms[DENY_KEY] = _with_missing(_rule_list(perms, DENY_KEY), managed.deny)
 
-    perms[DENY_KEY] = deny
     merged[PERMISSIONS_KEY] = perms
     return merged
 
 
-def permission_deny_mismatches(repo_root: Path, patterns: list[str]) -> list[str]:
+def permission_mismatches(repo_root: Path, managed: ClaudePermissions) -> list[str]:
     settings = _load_settings(repo_root / CLAUDE_SETTINGS_PATH)
     perms = settings.get(PERMISSIONS_KEY)
     perms = perms if isinstance(perms, dict) else {}
-    deny = perms.get(DENY_KEY)
-    present = set(deny) if isinstance(deny, list) else set()
-    return [
-        f"managed deny pattern {pattern!r} missing"
-        for pattern in patterns
-        if pattern not in present
-    ]
+    allow = set(_rule_list(perms, ALLOW_KEY))
+    deny = set(_rule_list(perms, DENY_KEY))
+    retired = [rule for rule in managed.retired_allow if rule in allow]
+    return (
+        [f"managed allow pattern {rule!r} missing" for rule in managed.allow if rule not in allow]
+        + [f"retired allow pattern {rule!r} present" for rule in retired]
+        + [f"managed deny pattern {rule!r} missing" for rule in managed.deny if rule not in deny]
+    )
 
 
-def sync_permission_deny(repo_root: Path, patterns: list[str]) -> bool:
+def sync_permissions(repo_root: Path, managed: ClaudePermissions) -> bool:
 
-    if not patterns:
-        return False
-    if not permission_deny_mismatches(repo_root, patterns):
+    if not permission_mismatches(repo_root, managed):
         return False
 
     path = repo_root / CLAUDE_SETTINGS_PATH
-    settings = _load_settings(path)
-    merged = merge_permission_deny(settings, patterns)
+    merged = merge_permissions(_load_settings(path), managed)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(path, json.dumps(merged, indent=2) + "\n")

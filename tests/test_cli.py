@@ -1208,6 +1208,33 @@ def test_cli_install_projects_permissions_deny_list(tmp_path: Path) -> None:
     assert "Bash(rm -rf*)" in after["permissions"]["deny"]
 
 
+def test_cli_install_keeps_consumer_permissions_and_drops_the_blanket_bash(
+    tmp_path: Path,
+) -> None:
+    consumer = tmp_path / "consumer"
+    (consumer / ".claude").mkdir(parents=True)
+    consumer_rules = {
+        "allow": ["Bash", "Bash(make lint)"],
+        "ask": ["Bash(git push *)"],
+        "deny": ["Bash(curl *)"],
+    }
+    (consumer / ".claude" / "settings.json").write_text(
+        json.dumps({"permissions": consumer_rules}), encoding="utf-8"
+    )
+    assert run_basicly_consumer(consumer, "install").returncode == 0
+
+    perms = json.loads((consumer / ".claude" / "settings.json").read_text(encoding="utf-8"))[
+        "permissions"
+    ]
+    assert "Bash" not in perms["allow"]
+    assert perms["allow"][0] == "Bash(make lint)"
+    assert {"Read", "Bash(git status *)", "Bash(basicly check)"} <= set(perms["allow"])
+    assert perms["ask"] == ["Bash(git push *)"]
+    assert perms["deny"][0] == "Bash(curl *)"
+    assert "Bash(rm -rf*)" in perms["deny"]
+    assert run_basicly_consumer(consumer, "permissions-check").returncode == 0
+
+
 def test_cli_status_json_authoring_schema(work_repo: Path) -> None:
     result = run_basicly(work_repo, "status", "--json")
     assert result.returncode == 0, result.stderr

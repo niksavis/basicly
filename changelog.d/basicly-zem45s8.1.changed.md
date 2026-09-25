@@ -1,0 +1,1 @@
+- **`basicly install` ships narrow allow rules and removes the blanket `Bash` allow.** The allow list names read and check commands that stay in effect in Claude Code auto mode. Your own allow, ask and deny rules are kept (basicly-zem45s8.1).
