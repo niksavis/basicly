@@ -1,1 +1,0 @@
-- **`permissions-check` reports an auto mode trust list that names one repository.** It reads `~/.claude/settings.json`, warns when `autoMode.environment` has no `"$defaults"` and trusts one named repository, and prints the fix. It writes nothing (basicly-zem45s8.2).

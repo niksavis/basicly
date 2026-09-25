@@ -89,8 +89,8 @@ https://github.com/niksavis/basicly/blob/main/packages/basicly-tracker/README.md
 describes. Do the four steps in order.
 
 1. Install. Run these commands in the repository root:
-   uv tool install 'git+https://github.com/niksavis/basicly@v0.18.12#subdirectory=packages/basicly-tracker'
-   uv tool install 'git+https://github.com/niksavis/basicly@v0.18.12#subdirectory=packages/basicly-board'
+   uv tool install 'git+https://github.com/niksavis/basicly@v0.18.13#subdirectory=packages/basicly-tracker'
+   uv tool install 'git+https://github.com/niksavis/basicly@v0.18.13#subdirectory=packages/basicly-board'
    basicly-tracker init
    basicly-board init
 2. Configure. When init reports a beads or beans backlog, tell me how many records it holds.
