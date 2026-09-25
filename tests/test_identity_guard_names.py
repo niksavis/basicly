@@ -51,3 +51,40 @@ def test_an_escaped_name_is_found_and_a_short_name_is_ignored() -> None:
 
     assert guard.name_findings(lines, "Zoë Ångström", "x") == [LEDGER]
     assert guard.name_findings([("a.md", "al is here")], "al", "al") == []
+
+
+def _diff(removed: list[tuple[str, str]], added: list[tuple[str, str]]) -> str:
+    out = []
+    for path, text in removed:
+        out += [f"--- a/{path}", f"+++ b/{path}", "@@ -1 +0,0 @@", f"-{text}"]
+    for path, text in added:
+        out += ["--- /dev/null", f"+++ b/{path}", "@@ -0,0 +1 @@", f"+{text}"]
+    return "\n".join(out) + "\n"
+
+
+def test_a_fold_that_moves_a_line_naming_the_user_adds_nothing() -> None:
+    comment = json.dumps({"kind": "comment", "payload": {"text": "asked Dana Doe"}})
+    diff = _diff([(LEDGER, comment)], [(".basicly/ledger/events-0001.jsonl", comment)])
+
+    assert guard.name_findings(guard.net_added(diff), "Dana Doe", "Dana Doe") == []
+
+
+def test_a_new_line_naming_the_user_beside_a_move_is_still_found() -> None:
+    moved = json.dumps({"kind": "comment", "payload": {"text": "old"}})
+    fresh = json.dumps({"kind": "comment", "payload": {"text": "asked Dana Doe"}})
+    trunk = ".basicly/ledger/events-0001.jsonl"
+    diff = _diff([(LEDGER, moved)], [(trunk, moved), (trunk, fresh)])
+
+    assert guard.name_findings(guard.net_added(diff), "Dana Doe", "Dana Doe") == [trunk]
+
+
+def test_a_snapshot_state_holding_only_the_holder_passes() -> None:
+    snapshot = ".basicly/ledger/snapshot.jsonl"
+    state = json.dumps({"record": "acme-1", "fields": {"assignee": "Dana Doe", "title": "t"}})
+    leaked = json.dumps({
+        "record": "acme-2",
+        "fields": {"assignee": "Dana Doe", "title": "Dana Doe"},
+    })
+
+    assert guard.name_findings([(snapshot, state)], "Dana Doe", "Dana Doe") == []
+    assert guard.name_findings([(snapshot, leaked)], "Dana Doe", "Dana Doe") == [snapshot]

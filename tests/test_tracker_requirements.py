@@ -294,3 +294,22 @@ def test_a_record_with_no_requirements_reads_them_as_absent_not_empty(tmp_path: 
 
     assert record["title"] == "filed before requirements existed"
     assert "requirements" not in record
+
+
+def test_scrub_redacts_the_git_display_name_everywhere_but_the_holder_field(
+    tmp_path: Path,
+) -> None:
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(
+        repo, "b-1", assignee="Dana Doe", close_reason="Dana Doe checked it", title="t"
+    )
+    log = tracker.ledger_dir(repo) / "events-0001.jsonl"
+
+    changed = tracker.scrub_ledger(repo, display_name="Dana Doe")
+
+    lines = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    values = {line["payload"].get("name"): line["payload"].get("value") for line in lines}
+    assert changed == 1
+    assert values["assignee"] == "Dana Doe"
+    assert values["close_reason"] == "<redacted:git-user-name> checked it"
+    assert tracker.scrub_ledger(repo, display_name="Dana Doe") == 0

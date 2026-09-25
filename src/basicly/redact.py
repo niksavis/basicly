@@ -88,6 +88,17 @@ def machine_identity() -> str:
     return name if len(name) >= MIN_IDENTITY_LENGTH else ""
 
 
+GIT_NAME_RULE = "git-user-name"
+
+MIN_GIT_NAME_LENGTH = 3
+
+
+def redact_name(text: str, name: str) -> str:
+    if not text or len(name) < MIN_GIT_NAME_LENGTH:
+        return text
+    return re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", _placeholder(GIT_NAME_RULE), text)
+
+
 def redact_machine_identity(text: str) -> str:
     name = machine_identity()
     if not text or not name:

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from basicly import (
+    checkout,
     comment_rows,
     owned_store,
     owned_write,
@@ -528,6 +529,28 @@ def _redact_paths(value: object) -> object:
     return value
 
 
+def _redact_name_outside_holder(value: object, name: str) -> object:
+
+    if isinstance(value, str):
+        return redact.redact_name(value, name)
+    if isinstance(value, list):
+        return [_redact_name_outside_holder(item, name) for item in value]
+    if not isinstance(value, dict):
+        return value
+    holder_event = value.get("name") == HOLDER_FIELD
+    return {
+        key: item
+        if key == HOLDER_FIELD or (holder_event and key == "value")
+        else _redact_name_outside_holder(item, name)
+        for key, item in value.items()
+    }
+
+
+def git_display_name(repo_root: Path) -> str:
+    found = checkout.git(["config", "user.name"], cwd=repo_root, check=False)
+    return found.stdout.strip() if found.returncode == 0 else ""
+
+
 def _event_generation(counts: dict[tuple[str, str, str], int], event: Mapping[str, object]) -> int:
     key = (
         str(event.get("record", "")),
@@ -554,8 +577,10 @@ def scrub_ledger(
     *,
     lock_timeout_s: float | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    display_name: str = "",
 ) -> int:
 
+    name = display_name
     files = sorted(found for glob in LEDGER_GLOBS for found in ledger_dir(repo_root).glob(glob))
     if not files:
         return 0
@@ -585,8 +610,12 @@ def scrub_ledger(
                         " the generation cannot be derived and nothing is rewritten"
                     )
                 scrubbed = dict(event)
-                scrubbed["actor"] = redact.redact_committed(str(event.get("actor") or ""))
-                scrubbed["payload"] = _redact_paths(event["payload"])
+                scrubbed["actor"] = redact.redact_name(
+                    redact.redact_committed(str(event.get("actor") or "")), name
+                )
+                scrubbed["payload"] = _redact_name_outside_holder(
+                    _redact_paths(event["payload"]), name
+                )
                 scrubbed["id"] = events.event_id_for(
                     scrubbed["record"],
                     scrubbed["kind"],

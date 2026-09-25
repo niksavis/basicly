@@ -2123,7 +2123,8 @@ def cmd_tracker_import(args: argparse.Namespace) -> int:
 def cmd_tracker_scrub(_args: argparse.Namespace) -> int:
 
     try:
-        changed = tracker.scrub_ledger(_repo_root())
+        root = _repo_root()
+        changed = tracker.scrub_ledger(root, display_name=tracker.git_display_name(root))
     except (owned_store.TrackerDivergenceError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
