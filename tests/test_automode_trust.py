@@ -119,4 +119,4 @@ def test_permissions_check_warns_on_a_single_repository_list(
 
     assert result.returncode == 0, result.stderr
     assert "auto mode trusts one repository" in result.stdout + result.stderr
-    assert "Projected permissions deny-list is up to date." in result.stdout
+    assert "Projected permissions allow and deny lists are up to date." in result.stdout
