@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release closes three defects found while the tracker was used today. A stale tracker server now says so, a claim can no longer reopen finished work, and the auto mode trust fix no longer suggests trusting private and public repositories alike.
+
+- **A stale tracker server says so.** A server whose kit files changed on disk answers every API route with a refusal that names the restart command, and the page shows it (basicly-9pyaygb.10).
+- **A claim never reopens a closed record.** It is refused by name with the reopen command, and nothing is written (basicly-h18rvov).
+- **A safer trust fix.** `permissions-check` suggests `"$defaults"`, repositories named one by one and a visibility entry, never a whole account (basicly-o9wuws5).
+
 ## v0.18.13 - 2026-09-25
 
 Delta: v0.18.12..v0.18.13
