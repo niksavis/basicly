@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release fits the shipped Claude Code permissions to auto mode. `basicly install` now ships narrow allow rules for read and check commands, beside the deny list, and keeps every rule a repository wrote itself. `basicly permissions-check` warns when your user settings trust only one repository in auto mode.
+
+- **Narrow allow rules.** Install adds `Read`, `Glob`, `Grep` and narrow rules for read-only git and basicly read and check commands. It never ships a blanket `Bash`, `Edit`, `Write` or web rule, and never removes one a repository has (basicly-zem45s8.1).
+- **Auto mode trust check.** `permissions-check` reports an `autoMode.environment` with no `"$defaults"` whose trusted repo names one repository, and prints the fix. It writes nothing (basicly-zem45s8.2).
+
 ## v0.18.12 - 2026-09-25
 
 Delta: v0.18.11..v0.18.12
