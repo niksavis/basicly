@@ -36,6 +36,7 @@ record_view = _load("record_view.py", "basicly_tracker_kit_record_view")
 board = _load("board.py", "basicly_tracker_kit_board")
 fields = _load("fields.py", "basicly_tracker_kit_fields")
 arguments = _load("arguments.py", "basicly_tracker_kit_arguments")
+pin = _load("pin.py", "basicly_tracker_kit_pin")
 events = snapshot.events
 ids = events.ids
 
@@ -245,6 +246,7 @@ def _run(
 ) -> tuple[int, dict[str, object]]:
     starts = args.command in _STARTS_A_LEDGER and not getattr(args, "dry_run", False)
     args.directory = commands.resolve_ledger(args.directory, starts=starts)
+    pin.require(args.directory)
     if args.command == "create":
         written = create_record(
             args.directory,

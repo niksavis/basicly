@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,20 @@ SHEBANG = "#!/bin/sh"
 CLI_FILE = "cli.py"
 
 _HERE = Path(__file__).resolve().parent
+
+
+def _load(file_name: str, module_name: str) -> Any:
+
+    cached = sys.modules.get(module_name)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(module_name, _HERE / file_name)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"the tracker kit's {file_name} is missing from beside install_hook.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _within(path: Path, root: Path) -> str:
@@ -251,6 +266,16 @@ def ensure_ledger(root: Path, ledger: Path, *, dry_run: bool, stream: Any) -> st
     return within
 
 
+def pin_ledger(ledger: Path, *, dry_run: bool, stream: Any) -> None:
+
+    pin = _load("pin.py", "basicly_tracker_kit_pin")
+    if dry_run:
+        stream.write(f"tracker: would pin the ledger to tracker {pin.KIT_VERSION}\n")
+        return
+    pin.write(ledger)
+    stream.write(f"tracker: pinned the ledger to tracker {pin.KIT_VERSION}\n")
+
+
 NO_FOLD = (
     "tracker: no post-merge fold is wired, so a pull request never edits the trunk log; "
     "run `compact` as its own pull request, or pass --fold-on-merge where one writer "
@@ -346,6 +371,11 @@ def main(argv: Any = None) -> int:
         help="wire the fold; safe only where one writer pushes to the default branch",
     )
     parser.add_argument(
+        "--pin",
+        action="store_true",
+        help="pin the ledger to this kit's version; the standalone installer passes it",
+    )
+    parser.add_argument(
         "--interpreter",
         default=DEFAULT_INTERPRETER,
         help="the command that runs the kit; the default needs only uv",
@@ -358,6 +388,8 @@ def main(argv: Any = None) -> int:
     if not ledger.is_absolute():
         ledger = root / ledger
     ensure_ledger(root, ledger, dry_run=args.dry_run, stream=sys.stdout)
+    if args.pin:
+        pin_ledger(ledger, dry_run=args.dry_run, stream=sys.stdout)
     if not args.command:
         install_claim(root, ledger=ledger, dry_run=args.dry_run, stream=sys.stdout)
     if not args.fold_on_merge:

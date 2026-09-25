@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
 VERSION_FILE = Path("src") / "basicly" / "__init__.py"
 VERSION_RE = re.compile(r'^__version__ = "(?P<version>\d+\.\d+\.\d+)"$', re.MULTILINE)
+KIT_VERSION_FILE = Path(".basicly") / "core" / "kit" / "tracker" / "pin.py"
+KIT_VERSION_RE = re.compile(r'^KIT_VERSION = "(?P<version>\d+\.\d+\.\d+)"$', re.MULTILINE)
 
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
@@ -470,6 +472,12 @@ def _bump_version_file(repo_root: Path, plan: ReleasePlan) -> None:
     text = path.read_text(encoding="utf-8")
     updated = VERSION_RE.sub(f'__version__ = "{plan.version}"', text, count=1)
     path.write_text(updated, encoding="utf-8")
+    kit_pin = repo_root / KIT_VERSION_FILE
+    if kit_pin.is_file():
+        text = kit_pin.read_text(encoding="utf-8")
+        kit_pin.write_text(
+            KIT_VERSION_RE.sub(f'KIT_VERSION = "{plan.version}"', text, count=1), encoding="utf-8"
+        )
 
 
 def _rewrite_pins(repo_root: Path, plan: ReleasePlan) -> None:
