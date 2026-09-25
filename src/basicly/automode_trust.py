@@ -65,9 +65,13 @@ def _finding(settings: Path, entry: str, repos: list[_Reference]) -> str:
         f'"{DEFAULTS_ENTRY}", and its entry "{_shown(entry)}" names only {named}. Without '
         f'"{DEFAULTS_ENTRY}" this list replaces the built-in trust, so auto mode reads every '
         "other repository as external, blocks routine work there and pauses after 3 blocks in "
-        f'a row or 20 in total. Fix: add "{DEFAULTS_ENTRY}" to autoMode.environment and widen '
-        f'the entry to "Source control: {account} and all repos under it", or run '
-        "/auto-mode-setup again."
+        f'a row or 20 in total. Fix: add "{DEFAULTS_ENTRY}" to autoMode.environment. It '
+        "restores the built-in trust of the working repository and its remotes. To trust more "
+        f'repositories, name each one, as in "Source control: {account}/{repos[0].name}, '
+        f'{account}/<name>", and add a "Repository visibility: <which of them are private and '
+        'which are public>" entry, so the classifier keeps private content out of the public '
+        "ones. Do not trust a whole account in one entry, because it trusts its private and "
+        "public repositories alike. Or run /auto-mode-setup again."
     )
 
 

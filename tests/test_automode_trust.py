@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,12 @@ def _settings(home: Path, environment: list[str] | None = None, *, raw: str = ""
     return path
 
 
+def _assert_names_no_whole_account(finding: str, account: str) -> None:
+    assert "all repos" not in finding.lower()
+    assert "/*" not in finding
+    assert re.findall(rf"(?<![\w./-]){re.escape(account)}(?!/[\w<])", finding) == []
+
+
 def test_a_list_that_trusts_one_named_repository_is_reported_with_the_fix(tmp_path: Path) -> None:
     path = _settings(tmp_path, ["Source control: the working repository", SINGLE_REPO])
 
@@ -33,9 +40,13 @@ def test_a_list_that_trusts_one_named_repository_is_reported_with_the_fix(tmp_pa
     assert str(path) in found[0]
     assert f'its entry "{SINGLE_REPO}" names only acme/widget' in found[0]
     assert "reads every other repository as external" in found[0]
-    assert 'add "$defaults"' in found[0]
-    assert '"Source control: github.com/acme and all repos under it"' in found[0]
+    assert 'add "$defaults" to autoMode.environment' in found[0]
+    assert "restores the built-in trust of the working repository and its remotes" in found[0]
+    assert '"Source control: github.com/acme/widget, github.com/acme/<name>"' in found[0]
+    assert '"Repository visibility:' in found[0]
+    assert "keeps private content out of the public ones" in found[0]
     assert "/auto-mode-setup again" in found[0]
+    _assert_names_no_whole_account(found[0], "github.com/acme")
 
 
 def test_a_bare_owner_and_name_entry_is_reported_with_that_owner(tmp_path: Path) -> None:
@@ -44,7 +55,8 @@ def test_a_bare_owner_and_name_entry_is_reported_with_that_owner(tmp_path: Path)
     found = automode_trust.single_repository_findings(tmp_path)
 
     assert len(found) == 1
-    assert '"Source control: acme and all repos under it"' in found[0]
+    assert '"Source control: acme/app, acme/<name>"' in found[0]
+    _assert_names_no_whole_account(found[0], "acme")
 
 
 def test_a_repository_named_twice_is_named_once_with_the_host_it_was_given(
@@ -55,7 +67,8 @@ def test_a_repository_named_twice_is_named_once_with_the_host_it_was_given(
     found = automode_trust.single_repository_findings(tmp_path)
 
     assert "names only acme/widget. " in found[0]
-    assert '"Source control: github.com/acme and all repos under it"' in found[0]
+    assert '"Source control: github.com/acme/widget, github.com/acme/<name>"' in found[0]
+    _assert_names_no_whole_account(found[0], "github.com/acme")
 
 
 def test_a_list_with_defaults_and_an_account_wide_entry_is_clean(tmp_path: Path) -> None:
@@ -118,5 +131,8 @@ def test_permissions_check_warns_on_a_single_repository_list(
     result = run_basicly(work_repo, "permissions-check")
 
     assert result.returncode == 0, result.stderr
-    assert "auto mode trusts one repository" in result.stdout + result.stderr
+    output = result.stdout + result.stderr
+    assert "auto mode trusts one repository" in output
+    assert '"Repository visibility:' in output
+    _assert_names_no_whole_account(output, "github.com/acme")
     assert "Projected permissions allow and deny lists are up to date." in result.stdout
