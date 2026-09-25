@@ -1,0 +1,1 @@
+- **`basicly skills-user` writes a description on each tool skill.** The description is the first paragraph of the skill body, so the Claude Code listing says when to use the tool. A tool skill with no first paragraph is refused by name. Repository skill folders are unchanged. (basicly-v2cyocb)
