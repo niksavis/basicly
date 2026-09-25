@@ -21,6 +21,7 @@ from typing import Any
 from . import (
     __version__,
     agents,
+    automode_trust,
     board_cli,
     board_facts,
     catalog_lint,
@@ -2052,6 +2053,8 @@ def cmd_permissions_check(_args: argparse.Namespace) -> int:
         (settings_path, reason)
         for reason in claude_settings.permission_deny_mismatches(repo_root, patterns)
     ]
+    for line in automode_trust.single_repository_findings(user_skills.user_home()):
+        ui.say(line, style="warn")
     if _report_mismatches(
         mismatches,
         repo_root,
