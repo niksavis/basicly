@@ -33,6 +33,7 @@ from basicly import (
     owned_store,
     projection,
     supervise,
+    tracker_query,
 )
 
 if TYPE_CHECKING:
@@ -90,6 +91,23 @@ def test_the_listener_binds_the_loopback_and_never_a_wildcard_or_a_name(board_re
         assert listener.host == "127.0.0.1"
         assert listener.port > 0
         assert listener.url == f"http://127.0.0.1:{listener.port}"
+
+
+def test_neither_server_looks_up_a_name_when_it_binds(
+    board_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse_lookup(*_: object) -> str:
+        raise AssertionError("a bind looked up a host name")
+
+    monkeypatch.setattr(socket, "getfqdn", refuse_lookup)
+    with _running(board_serve.bind(board_repo, port=0)) as listener:
+        assert listener.port > 0
+    kit = tracker_query.board_kit(Path(__file__).resolve().parent.parent)
+    served = kit.make_server(tmp_path, "127.0.0.1", 0)
+    try:
+        assert served.server_address[0] == "127.0.0.1"
+    finally:
+        served.server_close()
 
 
 @pytest.mark.parametrize(

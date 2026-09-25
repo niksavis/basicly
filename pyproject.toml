@@ -125,11 +125,6 @@ ignore_names = [
   # reader is `tests/test_board_titles.py`, which is the point: the exemption exists to be
   # enumerable and reviewed, and a gate's allow-list is held by the gate (basicly-lc2bd3v.8).
   "SHAPE_ELEMENTS",
-  # A fourth kind: read by a stdlib base class vulture does not traverse.
-  # `socketserver.TCPServer.server_bind` reads `allow_reuse_address`, so `board_serve._Server`
-  # setting it False is what stops `SO_REUSEADDR` being asked for; the value is asserted in
-  # `tests/test_board_serve.py`, which is what actually holds it (basicly-t31pvf).
-  "allow_reuse_address",
   "baseline_failure_rate",
   "baseline_runs",
   "border_style",

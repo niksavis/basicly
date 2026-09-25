@@ -9,7 +9,7 @@ import os
 import sys
 from collections.abc import Callable, Sequence
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -221,6 +221,11 @@ class Handler(BaseHTTPRequestHandler):
         self._handle("PATCH")
 
 
+class LookupFreeServer(ThreadingHTTPServer):
+    def server_bind(self) -> None:
+        super(HTTPServer, self).server_bind()
+
+
 def make_server(
     ledger: Path, host: str, port: int, *, web: Path = WEB_DIR, redact: Any = None
 ) -> ThreadingHTTPServer:
@@ -230,7 +235,7 @@ def make_server(
         (Handler,),
         {"ledger": ledger, "web": web, "bound": host, "redact": staticmethod(redact)},
     )
-    return ThreadingHTTPServer((host, port), handler)
+    return LookupFreeServer((host, port), handler)
 
 
 def address_in_use(error: OSError) -> bool:

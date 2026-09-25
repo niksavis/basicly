@@ -6,6 +6,7 @@ import contextlib
 import ipaddress
 import json
 import socket
+import socketserver
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -392,7 +393,7 @@ class _Server(ThreadingHTTPServer):
     def server_bind(self) -> None:
         if EXCLUSIVE_BIND_OPTION is not None:
             self.socket.setsockopt(socket.SOL_SOCKET, EXCLUSIVE_BIND_OPTION, 1)
-        super().server_bind()
+        socketserver.TCPServer.server_bind(self)
 
 
 @dataclass(frozen=True)
