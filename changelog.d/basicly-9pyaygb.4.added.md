@@ -1,0 +1,1 @@
+- **One command shows and sets the tracker settings.** `config <ledger>` lists each setting with its value and where the value comes from, `config <ledger> set prefix acme` writes it to the ledger's `template.json`, and `create` then needs no `--prefix`. (basicly-9pyaygb.4)

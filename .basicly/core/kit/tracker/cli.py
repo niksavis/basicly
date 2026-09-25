@@ -37,6 +37,7 @@ board = _load("board.py", "basicly_tracker_kit_board")
 fields = _load("fields.py", "basicly_tracker_kit_fields")
 arguments = _load("arguments.py", "basicly_tracker_kit_arguments")
 pin = _load("pin.py", "basicly_tracker_kit_pin")
+settings = _load("settings.py", "basicly_tracker_kit_settings")
 events = snapshot.events
 ids = events.ids
 
@@ -183,6 +184,11 @@ _VIEWS: dict[
     "migrate-fields": lambda a, r: {
         "appended": [event.record for event in commands.migrate_fields(a.directory, redact=r)]
     },
+    "config": lambda a, _r: (
+        settings.write(a.directory, a.name, a.value)
+        if a.config_action == "set"
+        else settings.report(a.directory, start=Path.cwd())
+    ),
 }
 
 
@@ -251,7 +257,7 @@ def _run(
         written = create_record(
             args.directory,
             _minting(_fields(args.title, args.field, args)),
-            prefix=args.prefix,
+            prefix=settings.create_prefix(args.directory, args.prefix),
             status=args.status,
             redact=redact,
         )

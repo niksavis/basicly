@@ -4,12 +4,41 @@ Every command takes the ledger directory, `.basicly/ledger`, as its first argume
 prints one JSON object with a `schema` field. `cli.py <command> --help` lists every flag.
 The examples use `acme` as the id prefix and `acme-a1b2` as a record id.
 
+## Configure
+
+### config
+
+Every tracker setting, with its value, its `source` and its `home`. The source is
+`default`, `ledger file`, `env <NAME>`, `git config <key>` or `git hook post-merge`.
+
+| Setting | Home |
+| --- | --- |
+| `prefix`, `stale_days`, `mode`, `sections`, `types` | `template.json` in the ledger, committed with it |
+| `holder` | `git config basicly.holder`; `BASICLY_HOLDER` overrides it for one shell |
+| `fold_on_merge` | the post-merge git hook that `init --fold-on-merge` writes |
+| `pin` | `.kit-version` in the ledger, which `init` and `update` write |
+
+```sh
+python3 .basicly/kit/tracker/cli.py config .basicly/ledger
+```
+
+`config <ledger> set NAME VALUE` writes one setting whose home is `template.json`. A list or a
+number is read as JSON. The same rules as a hand-written `template.json` refuse a wrong
+value, and nothing is written. An unknown name is refused with the list of known names. A
+setting with another home is refused with the command that sets it, for example
+`git config basicly.holder alex`.
+
+```sh
+python3 .basicly/kit/tracker/cli.py config .basicly/ledger set prefix acme
+```
+
 ## Write
 
 ### create
 
 Mint a record id and append its first events. `owed` in the output names what the record
-still needs before `dor` passes.
+still needs before `dor` passes. `--prefix` names the id prefix. Without it, `create` uses
+the ledger's `prefix` setting, and refuses when the ledger sets none.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix acme --title "Keep comments on export" --description "When an export holds a comment, I want it kept, so I can import it back." --acceptance "- The importer shall keep every comment line" --requirements "- Standard library only"
