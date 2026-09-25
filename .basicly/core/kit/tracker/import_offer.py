@@ -146,7 +146,7 @@ def _refine_note(install: Install) -> str:
     )
 
 
-def _imported(install: Install, backlog: Backlog, *, dry_run: bool, stream: Any) -> int:
+def _report(install: Install, backlog: Backlog, *, dry_run: bool) -> dict[str, Any]:
 
     migrate = _load("migrate.py", "basicly_tracker_kit_migrate")
     beans = _load("beans.py", "basicly_tracker_kit_beans")
@@ -154,16 +154,28 @@ def _imported(install: Install, backlog: Backlog, *, dry_run: bool, stream: Any)
         snapshot = beans.READERS[backlog.source](install.root / backlog.path)
     except migrate.SnapshotError as exc:
         raise ImportOfferError(f"the {backlog.source} backlog cannot be read: {exc}") from exc
-    report = migrate.import_report(install.ledger, snapshot, dry_run=dry_run)
-    imported, refused = len(report["imported"]), report["rejected"]
-    verb = "a dry run would import" if dry_run else "imported"
-    stream.write(
-        f"tracker: {verb} {imported} record(s) from {backlog.path} into "
-        f"{_shown(install.ledger, install.root)}; {len(refused)} refused\n"
-    )
-    for one in refused:
+    return migrate.import_report(install.ledger, snapshot, dry_run=dry_run)
+
+
+def _refused(report: dict[str, Any], stream: Any) -> None:
+
+    for one in report["rejected"]:
         stream.write(f"tracker:   refused {one['subject']}: {one['reason']}\n")
-    return imported
+
+
+def _summary(install: Install, backlog: Backlog, report: dict[str, Any], stream: Any) -> None:
+
+    verb = "a dry run would import" if report["dry_run"] else "imported"
+    stream.write(
+        f"tracker: {verb} {len(report['imported'])} record(s) from {backlog.path} into "
+        f"{_shown(install.ledger, install.root)}; {len(report['rejected'])} refused\n"
+    )
+    _refused(report, stream)
+
+
+def _planned(install: Install, backlog: Backlog) -> dict[str, Any] | None:
+
+    return _report(install, backlog, dry_run=True) if install.ledger.is_dir() else None
 
 
 def _answered_yes(ask: Callable[[str], str], backlog: Backlog) -> bool:
@@ -193,13 +205,27 @@ def _offer_one(
         stream.write(f"tracker: found {backlog.owed}, then run `{how}`\n")
         return
     noun = "bean(s)" if backlog.source == BEANS else "record(s)"
-    stream.write(
-        f"tracker: found a {backlog.source} backlog: {backlog.path} holds {backlog.count} {noun}\n"
-    )
+    found = f"{backlog.path} holds {backlog.count} {noun}"
     if install.chosen == backlog.source and not install.dry_run:
-        _imported(install, backlog, dry_run=False, stream=stream)
+        stream.write(f"tracker: found a {backlog.source} backlog: {found}\n")
+        _summary(install, backlog, _report(install, backlog, dry_run=False), stream)
         stream.write(_refine_note(install))
         return
+    try:
+        plan = _planned(install, backlog)
+    except ImportOfferError as exc:
+        stream.write(f"tracker: found {backlog.path}, but {exc}; nothing was imported\n")
+        return
+    if plan is not None and not plan["imported"]:
+        stream.write(
+            f"tracker: the {backlog.source} backlog at {backlog.path} is already in the ledger "
+            f"({backlog.count} {noun})\n"
+        )
+        _refused(plan, stream)
+        return
+    stream.write(f"tracker: found a {backlog.source} backlog: {found}\n")
+    if plan is not None:
+        _summary(install, backlog, plan, stream)
     asking = None if install.dry_run or install.chosen else ask
     if asking is None:
         stream.write(
@@ -208,12 +234,10 @@ def _offer_one(
         )
         stream.write(_refine_note(install))
         return
-    if not _imported(install, backlog, dry_run=True, stream=stream):
-        return
     if not _answered_yes(asking, backlog):
         stream.write(f"tracker: nothing was imported; to import it later, run `{how}`\n")
         return
-    _imported(install, backlog, dry_run=False, stream=stream)
+    _summary(install, backlog, _report(install, backlog, dry_run=False), stream)
     stream.write(_refine_note(install))
 
 

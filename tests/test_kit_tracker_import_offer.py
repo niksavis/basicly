@@ -130,6 +130,22 @@ def test_import_beads_imports_every_record_into_refine_and_none_into_ready(repo:
     assert _kit(repo, "refine", LEDGER)["count"] == 3
 
 
+def test_without_a_terminal_a_backlog_the_ledger_already_holds_is_not_offered_again(
+    repo: Path,
+) -> None:
+    _beads(repo, 3)
+    _init(repo, "--import", "beads")
+
+    again = _init(repo)
+
+    assert again.returncode == 0, again.stderr
+    assert "the beads backlog at .beads/issues.jsonl is already in the ledger (3 record(s))" in (
+        again.stdout
+    )
+    assert "found a beads backlog" not in again.stdout
+    assert "--import beads`" not in again.stdout
+
+
 @pytest.mark.parametrize("store", [".beads/dolt", ".beads/embeddeddolt"])
 def test_a_bd_dolt_store_without_an_export_says_to_export_it_first(repo: Path, store: str) -> None:
     (repo / store).mkdir(parents=True)
@@ -264,7 +280,8 @@ def test_at_a_terminal_a_backlog_the_ledger_already_holds_is_not_asked_again(
     asked, out = _at_terminal(repo, "y")
 
     assert asked == []
-    assert "a dry run would import 0 record(s)" in out
+    assert "the beads backlog at .beads/issues.jsonl is already in the ledger (2 record(s))" in out
+    assert "found a beads backlog" not in out
 
 
 @pytest.mark.parametrize(
