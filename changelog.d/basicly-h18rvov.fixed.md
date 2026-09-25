@@ -1,1 +1,0 @@
-- **The tracker kit `claim` refuses a closed record.** It appends nothing and names the reopen command, `update <ledger> <id> --status open`. Before, a claim moved finished work back to `in_progress` (basicly-h18rvov).

@@ -6,11 +6,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.14 - 2026-09-25
+
+Delta: v0.18.13..v0.18.14
+
 This release closes three defects found while the tracker was used today. A stale tracker server now says so, a claim can no longer reopen finished work, and the auto mode trust fix no longer suggests trusting private and public repositories alike.
 
 - **A stale tracker server says so.** A server whose kit files changed on disk answers every API route with a refusal that names the restart command, and the page shows it (basicly-9pyaygb.10).
 - **A claim never reopens a closed record.** It is refused by name with the reopen command, and nothing is written (basicly-h18rvov).
 - **A safer trust fix.** `permissions-check` suggests `"$defaults"`, repositories named one by one and a visibility entry, never a whole account (basicly-o9wuws5).
+
+### Fixed
+
+- **A tracker server refuses data once its kit changes on disk.** `basicly tracker serve` and the board kit server compare the kit files they loaded with the files on disk. After a change, each `/api/v1` route answers 503 with the restart command, and the page shows that refusal in a banner that stays. (basicly-9pyaygb.10)
+
+- **The tracker kit `claim` refuses a closed record.** It appends nothing and names the reopen command, `update <ledger> <id> --status open`. Before, a claim moved finished work back to `in_progress` (basicly-h18rvov).
+
+- **The auto mode trust fix keeps private and public repositories apart.** `permissions-check` now says to add `"$defaults"`, to name each extra repository, and to add a `Repository visibility` entry. It no longer suggests one entry for every repository of an account (basicly-o9wuws5).
 
 ## v0.18.13 - 2026-09-25
 

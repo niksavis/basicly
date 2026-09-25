@@ -1,1 +1,0 @@
-- **A tracker server refuses data once its kit changes on disk.** `basicly tracker serve` and the board kit server compare the kit files they loaded with the files on disk. After a change, each `/api/v1` route answers 503 with the restart command, and the page shows that refusal in a banner that stays. (basicly-9pyaygb.10)
