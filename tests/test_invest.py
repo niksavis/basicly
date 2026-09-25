@@ -37,6 +37,23 @@ _USER_VOICE = (
 )
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "the gate exits zero",
+        "TODO",
+        "<fill me in>",
+        "`show <id>` prints the record",
+        "`show <id>` prints <what is checked>",
+        "`TODO` names the marker",
+        "`unclosed <id> quote",
+        shaping.JOB_STORY_EXAMPLE,
+    ],
+)
+def test_the_engine_and_the_kit_agree_on_an_unfilled_placeholder(text: str) -> None:
+    assert invest.unfilled(text) == shaping.unfilled(text)
+
+
 def test_a_job_story_trigger_states_a_trigger_with_no_persona() -> None:
     assert shaping.trigger_voice(_PATCHING) == "job"
 

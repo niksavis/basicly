@@ -126,6 +126,24 @@ def test_a_placeholder_is_absent_rather_than_present() -> None:
     )
 
 
+def test_a_placeholder_quoted_as_code_states_the_section() -> None:
+    record = {
+        "description": TRIGGER,
+        "acceptance_criteria": "- `tracker show <id>` prints the record\n- the gate exits zero",
+        "requirements": "Run `update --if-seq <seq>` before the write.",
+    }
+    assert shaping.owed(record) == ()
+
+
+def test_an_unquoted_placeholder_beside_a_quoted_one_still_owes_the_section() -> None:
+    record = {
+        "description": TRIGGER,
+        "acceptance_criteria": "- `show <id>` prints <what is checked>",
+        "requirements": "standard library only",
+    }
+    assert shaping.owed(record) == (shaping.ACCEPTANCE_HEADING,)
+
+
 def test_the_gate_refuses_an_unshaped_record_and_names_what_is_missing(
     ledger: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

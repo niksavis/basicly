@@ -1,0 +1,1 @@
+- A record section that quotes a command with an angle-bracket argument inside backticks, such as `` `tracker show <id>` ``, now counts as filled for the definition of ready. An unquoted `<...>` or `TODO` still marks the section as an unfilled template, and the kit and the engine apply the same rule. (basicly-invzvxs)

@@ -25,13 +25,18 @@ _USER_STORY = re.compile(
 )
 
 _PLACEHOLDER = re.compile(r"<[^>]+>|\bTODO\b")
+_CODE_SPAN = re.compile(r"`[^`\n]*`")
+
+
+def unfilled(text: str) -> bool:
+    return bool(_PLACEHOLDER.search(_CODE_SPAN.sub("", text)))
 
 
 def trigger_sentence(description: str) -> str:
 
     for pattern in (_JOB_STORY, _USER_STORY):
         for match in pattern.finditer(description):
-            if not _PLACEHOLDER.search(match.group(0)):
+            if not unfilled(match.group(0)):
                 return match.group(0).strip()
     return ""
 
@@ -107,4 +112,4 @@ def _held(record: Mapping[str, object], body: str, heading: str) -> bool:
 
 
 def _states_something(text: str) -> bool:
-    return bool(text.strip()) and not _PLACEHOLDER.search(text)
+    return bool(text.strip()) and not unfilled(text)
