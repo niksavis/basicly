@@ -446,18 +446,15 @@ def import_snapshot(  # noqa: PLR0913 — every keyword past the snapshot is an 
 
 def import_report(
     directory: Path | str,
-    export: Path | str,
+    snapshot: Snapshot,
     *,
-    source: str = "",
     redact: Any = None,
     dry_run: bool = False,
 ) -> dict[str, object]:
 
-    named = source or Path(export).name
-    read = read_snapshot(export, name=named)
-    report = import_snapshot(directory, read, redact=redact, dry_run=dry_run)
+    report = import_snapshot(directory, snapshot, redact=redact, dry_run=dry_run)
     return {
-        "source": named,
+        "source": snapshot.name,
         "dry_run": dry_run,
         "imported": report.imported,
         "diverged": report.diverged,

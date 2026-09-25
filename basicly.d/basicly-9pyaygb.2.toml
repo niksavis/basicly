@@ -1,0 +1,6 @@
+# `tracker_import.run_import` gained `source_format` for `basicly tracker import --from`, its
+# sixth keyword. Each keyword is one flag of that command, the shape the PLR0913 entry in
+# pyproject.toml already names. The alternative rejected was passing the argparse namespace,
+# which hides from the type checker and from the tests which flags the import reads.
+[ratchet.noqa_debt.frozen]
+PLR0913 = 1

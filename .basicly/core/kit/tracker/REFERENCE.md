@@ -152,6 +152,13 @@ python3 .basicly/kit/tracker/cli.py delete .basicly/ledger acme-a1b2
 Bring a JSONL export from another tracker across, one record per line. `--dry-run`
 reports the same plan and writes nothing.
 
+`--from beans` reads a beans backlog instead. Name the repository root that holds
+`.beans`, or the `.beans` folder. Each bean becomes one record, and a bean in
+`.beans/archive` is closed. The parent becomes a `parent-child` edge, `blocking` and
+`blocked_by` become `blocks` edges, and the tags become labels. A frontmatter form or a
+status, type or priority that the reader does not know refuses the file by name, and
+no bean of the batch is imported.
+
 ```sh
 python3 .basicly/kit/tracker/cli.py import .basicly/ledger issues.jsonl --dry-run
 ```

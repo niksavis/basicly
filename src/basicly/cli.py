@@ -2111,6 +2111,7 @@ def cmd_tracker_import(args: argparse.Namespace) -> int:
             source_name=args.source,
             dry_run=args.dry_run,
             deleted=tuple(args.deleted),
+            source_format=args.source_format,
         )
     except ValidationError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -5175,9 +5176,20 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     t_write = tracker_sub.add_parser("write", help="Make a tracker write through the engine seam")
     t_write.add_argument("argv", nargs=argparse.REMAINDER, help="The subcommand, after `--`")
     t_import = tracker_sub.add_parser(
-        "import", help="Import a foreign tracker export (beads issues.jsonl) into the ledger"
+        "import", help="Import a beads issues.jsonl export or a beans backlog into the ledger"
     )
-    t_import.add_argument("export", type=Path, help="Path to the export, one JSON object per line")
+    t_import.add_argument(
+        "export",
+        type=Path,
+        help="The beads export, one JSON object per line; with --from beans, the repo or .beans",
+    )
+    t_import.add_argument(
+        "--from",
+        dest="source_format",
+        choices=("beads", "beans"),
+        default="beads",
+        help="The tracker that wrote the export",
+    )
     t_import.add_argument("--source", default=None, help="Portable label recorded on every event")
     t_import.add_argument("--dry-run", action="store_true", help="Report and write nothing")
     t_import.add_argument(

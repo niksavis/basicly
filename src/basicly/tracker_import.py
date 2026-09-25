@@ -108,19 +108,25 @@ def preview(repo_root: Path, snapshot: Any, ledger: Path, kit: Any) -> tuple[int
     return (1 if bad or snapshot.unreadable else 0), lines
 
 
-def run_import(
+def run_import(  # noqa: PLR0913 - one keyword per `tracker import` flag, not the namespace
     repo_root: Path,
     export: Path,
     *,
     source_name: str | None = None,
     dry_run: bool = False,
     deleted: tuple[str, ...] = (),
+    source_format: str = "beads",
 ) -> tuple[int, list[str]]:
 
     kit = owned_store.kit(repo_root)
     ledger = owned_store.ledger_dir(repo_root)
+    read = (
+        kit.migrate.read_snapshot
+        if source_format == "beads"
+        else owned_store.kit(repo_root, "beans").READERS[source_format]
+    )
     try:
-        snapshot = kit.migrate.read_snapshot(export, name=source_name)
+        snapshot = read(export, name=source_name)
     except (OSError, kit.migrate.SnapshotError) as exc:
         raise ValidationError(str(exc), export) from exc
 
