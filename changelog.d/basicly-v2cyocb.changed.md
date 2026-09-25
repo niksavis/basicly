@@ -1,1 +1,0 @@
-- **`basicly skills-user` writes a description on each tool skill.** The description is the first paragraph of the skill body. The user budget counts every written description and is now 900 tokens. Catalog lint refuses a route from a model-invoked skill to a user-invoked skill with no first paragraph. Repository skill folders are unchanged. (basicly-v2cyocb)

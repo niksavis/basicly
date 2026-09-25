@@ -6,12 +6,36 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.10 - 2026-09-25
+
+Delta: v0.18.9..v0.18.10
+
 This release makes the standalone tracker ready to hand to another team. A customer can install it, import the backlog of the tracker they used before, configure it with one command and see it on the tracker page. Tool skills installed for a user now say when to load them.
 
 - **Bring the old backlog across.** `basicly-tracker init` finds a beads or beans backlog and offers to import it. At a terminal it asks once. With no terminal, for example an agent, it imports only with `--import beads` or `--import beans` (basicly-9pyaygb.1). beans Markdown files import directly (basicly-9pyaygb.2), and bd and br exports import with their comments and edges and without machine paths (basicly-9pyaygb.3).
 - **Configure and pin.** `config` shows every setting with its source and sets the id prefix once (basicly-9pyaygb.4). A standalone ledger pins its tracker version and refuses a reader of another version (basicly-afz0sbp.1).
 - **Tool skills say when to load them.** `basicly skills-user` writes each tool skill's first paragraph as its description (basicly-v2cyocb).
 - **Fix:** the landing scrub no longer refuses a status that a record returns to across two ledger files (basicly-q1ng9ne).
+
+### Added
+
+- **Tracker init offers to import a beads or beans backlog.** `basicly-tracker init` names a `.beads/issues.jsonl` or `.beans` backlog with its count, says to run `bd export` first for a bd Dolt store, asks once at a terminal, and with no terminal imports only on `--import beads` or `--import beans`. (basicly-9pyaygb.1)
+
+- **The tracker imports a beans backlog.** `import --from beans` (and `basicly tracker import --from beans`) reads the `.beans` Markdown files of a repository: each bean becomes one record with its status, type, priority, tags, parent and blocking links and body, an archived bean is closed, and a file in a form the reader does not know refuses the whole batch by name. (basicly-9pyaygb.2)
+
+- **One command shows and sets the tracker settings.** `config <ledger>` lists each setting with its value and where the value comes from, `config <ledger> set prefix acme` writes it to the ledger's `template.json`, and `create` then needs no `--prefix`. (basicly-9pyaygb.4)
+
+- **A standalone tracker pins its ledger to one version.** `basicly-tracker init` and `update` write `.basicly/ledger/.kit-version`, and every kit command refuses to run at another version, naming the exact `uv tool install` command, so an older reader never drops event kinds it does not know. (basicly-afz0sbp.1)
+
+### Changed
+
+- **`basicly skills-user` writes a description on each tool skill.** The description is the first paragraph of the skill body. The user budget counts every written description and is now 900 tokens. Catalog lint refuses a route from a model-invoked skill to a user-invoked skill with no first paragraph. Repository skill folders are unchanged. (basicly-v2cyocb)
+
+### Fixed
+
+- **The tracker import reads bd and br exports and keeps machine paths out of the ledger.** Both import with comments and edges. One table per source maps statuses and types, such as bd `hooked` to `in_progress`, and refuses any other value by name. The import drops `source_repo_path` and redacts home and drive paths. (basicly-9pyaygb.3)
+
+- `basicly tracker scrub` and the landing scrub no longer refuse a status that a record returns to when its first event is in an older ledger file (basicly-q1ng9ne).
 
 ## v0.18.9 - 2026-09-25
 

@@ -1,1 +1,0 @@
-- **A standalone tracker pins its ledger to one version.** `basicly-tracker init` and `update` write `.basicly/ledger/.kit-version`, and every kit command refuses to run at another version, naming the exact `uv tool install` command, so an older reader never drops event kinds it does not know. (basicly-afz0sbp.1)
