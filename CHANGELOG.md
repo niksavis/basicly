@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the standalone tracker ready to hand to another team. A customer can install it, import the backlog of the tracker they used before, configure it with one command and see it on the tracker page. Tool skills installed for a user now say when to load them.
+
+- **Bring the old backlog across.** `basicly-tracker init` finds a beads or beans backlog and offers to import it. At a terminal it asks once. With no terminal, for example an agent, it imports only with `--import beads` or `--import beans` (basicly-9pyaygb.1). beans Markdown files import directly (basicly-9pyaygb.2), and bd and br exports import with their comments and edges and without machine paths (basicly-9pyaygb.3).
+- **Configure and pin.** `config` shows every setting with its source and sets the id prefix once (basicly-9pyaygb.4). A standalone ledger pins its tracker version and refuses a reader of another version (basicly-afz0sbp.1).
+- **Tool skills say when to load them.** `basicly skills-user` writes each tool skill's first paragraph as its description (basicly-v2cyocb).
+- **Fix:** the landing scrub no longer refuses a status that a record returns to across two ledger files (basicly-q1ng9ne).
+
 ## v0.18.9 - 2026-09-25
 
 Delta: v0.18.8..v0.18.9
