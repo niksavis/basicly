@@ -1,1 +1,0 @@
-- **A create says when the new record is not ready.** `basicly tracker write -- create` now prints each section the record owes and the accepted trigger form, and still creates it, so an author fixes the record before `claim` refuses it. (basicly-3kscbe4)

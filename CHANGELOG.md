@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.9 - 2026-09-25
+
+Delta: v0.18.8..v0.18.9
+
 This release catches two silent mistakes at the moment you make them. A create tells you when
 the new record is not ready, and `skills-user` refuses a skill name it does not know.
 
@@ -13,6 +17,12 @@ the new record is not ready, and `skills-user` refuses a skill name it does not 
   and the accepted trigger form (`basicly-3kscbe4`).
 - **skills-user refuses an unknown skill name.** A typo beside good names no longer exits 0;
   the command names it and suggests close names (`basicly-w8ky9h1`).
+
+### Fixed
+
+- **A create says when the new record is not ready.** `basicly tracker write -- create` now prints each section the record owes and the accepted trigger form, and still creates it, so an author fixes the record before `claim` refuses it. (basicly-3kscbe4)
+
+- **skills-user refuses a name that matches no catalog skill.** An unknown name beside known ones used to exit 0 and be skipped; now the command names it, suggests close catalog names, exits non-zero and writes nothing. (basicly-w8ky9h1)
 
 ## v0.18.8 - 2026-09-25
 

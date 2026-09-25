@@ -1,1 +1,0 @@
-- **skills-user refuses a name that matches no catalog skill.** An unknown name beside known ones used to exit 0 and be skipped; now the command names it, suggests close catalog names, exits non-zero and writes nothing. (basicly-w8ky9h1)
