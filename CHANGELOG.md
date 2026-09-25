@@ -6,11 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-This release tells you at create time when a new record is not ready, so you fix it before
-`claim` refuses it. The create still succeeds; the warning is advice, not a gate.
+This release catches two silent mistakes at the moment you make them. A create tells you when
+the new record is not ready, and `skills-user` refuses a skill name it does not know.
 
 - **Create warns about a record that is not ready.** It names each section the record owes
   and the accepted trigger form (`basicly-3kscbe4`).
+- **skills-user refuses an unknown skill name.** A typo beside good names no longer exits 0;
+  the command names it and suggests close names (`basicly-w8ky9h1`).
 
 ## v0.18.8 - 2026-09-25
 
