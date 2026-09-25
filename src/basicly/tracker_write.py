@@ -19,6 +19,7 @@ def cmd_write(args: argparse.Namespace) -> int:
     if argv[0] == "create":
         record = tracker.create_record(Path.cwd(), argv)
         ui.say(json.dumps({"id": record}) if "--json" in argv else f"created: {record}")
+        _warn_owed(record)
         return 0
     if argv[0] == "close" and len(argv) > 1:
         _say_criteria(argv[1])
@@ -46,6 +47,18 @@ def _record(argv: list[str]) -> int:
         f"appends once more every time it is run, and is not idempotent"
     )
     return 1
+
+
+def _warn_owed(record: str) -> None:
+
+    with contextlib.suppress(RuntimeError, ValueError, OSError):
+        report = tracker.owed_of(Path.cwd(), record)
+        owed = report.get("blocking")
+        blocking = [str(one) for one in owed] if isinstance(owed, list) else []
+        if blocking:
+            ui.warn(f"{record} is not ready: it owes {', '.join(blocking)}; claim refuses it")
+            ui.warn(f"  {report.get('remedy')}")
+            ui.warn(f"  fix it with `basicly tracker write -- update {record} ...`")
 
 
 def _say_criteria(record: str) -> None:

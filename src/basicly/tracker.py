@@ -89,6 +89,10 @@ def ledger_template(repo_root: Path) -> Any:
     return kit(repo_root, "templates").load(ledger)
 
 
+def owed_of(repo_root: Path, record: str) -> dict[str, object]:
+    return kit(repo_root, "record_view").owed_of(ledger_dir(repo_root), record)
+
+
 def readiness(
     repo_root: Path, record: Mapping[str, object], template: Any
 ) -> tuple[tuple[str, ...], frozenset[str]]:

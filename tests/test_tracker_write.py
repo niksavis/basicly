@@ -60,6 +60,35 @@ def test_a_create_prints_json_only_when_the_caller_asked_for_it(
     assert not prose.lstrip().startswith("{")
 
 
+@pytest.mark.usefixtures("repo")
+def test_a_create_that_owes_a_section_says_so_and_still_creates(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    body = "## Trigger\n\nWhen X, I want the ledger folded, so the ledger compacts again."
+    argv = ["tracker", "write", "--", "create", "owes", "-t", "task", "-d", body]
+    argv += ["--acceptance", "- [ ] it exists", "--requirements", "It exists."]
+
+    assert cli.main(argv) == 0
+
+    out = capsys.readouterr()
+    assert out.out.startswith("created: tw-")
+    assert "owes ## Trigger" in out.err
+    assert "so I can" in out.err
+
+
+@pytest.mark.usefixtures("repo")
+def test_a_create_that_owes_nothing_prints_no_warning(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    body = "## Trigger\n\nWhen X happens, I want a record, so I can track it."
+    argv = ["tracker", "write", "--", "create", "shaped", "-t", "task", "-d", body]
+    argv += ["--acceptance", "- [ ] it exists", "--requirements", "It exists."]
+
+    assert cli.main(argv) == 0
+
+    assert "owes" not in capsys.readouterr().err
+
+
 def test_a_close_prints_what_the_record_asked_for_before_claiming_it(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
