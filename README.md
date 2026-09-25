@@ -163,6 +163,8 @@ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly
 uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tier basicly-tier init
 ```
 
+To let a coding agent install the tracker and its board, give it the [agent install prompt](packages/basicly-tracker/README.md#install-with-a-coding-agent).
+
 `init` **vendors** the kit into `.basicly/kit/<name>`, so plain `python3` runs it afterwards
 with no `uvx`, no network and nothing on `PATH`. It also writes the kit's **skill** into
 `.claude/skills/` and `.agents/skills/`, so an agent in that repository

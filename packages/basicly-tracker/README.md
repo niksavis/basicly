@@ -76,3 +76,36 @@ Every command, with one example each:
 
 Full specification, including the collision budget the ids are sized from:
 [`kit/SPEC.md`](../../.basicly/core/kit/tracker/SPEC.md).
+
+## Install with a coding agent
+
+Give a coding agent the link to this section, or copy the prompt into it. Run the agent
+in the root of your repository. The agent installs the tracker and the board, and it asks
+you before it imports a backlog.
+
+```text
+Install the basicly work tracker and its board in this repository, as
+https://github.com/niksavis/basicly/blob/main/packages/basicly-tracker/README.md#install-with-a-coding-agent
+describes. Do the four steps in order.
+
+1. Install. Run these commands in the repository root:
+   uv tool install 'git+https://github.com/niksavis/basicly@v0.18.10#subdirectory=packages/basicly-tracker'
+   uv tool install 'git+https://github.com/niksavis/basicly@v0.18.10#subdirectory=packages/basicly-board'
+   basicly-tracker init
+   basicly-board init
+2. Configure. When init reports a beads or beans backlog, tell me how many records it holds.
+   Then stop and ask me whether to import it. Never import without my yes.
+   On yes, run the import command that init printed, for example `basicly-tracker init --import beans`.
+   Set the id prefix with `basicly-tracker config .basicly/ledger set prefix <prefix>`.
+   Use the prefix of the imported ids, or else a short lowercase name for this repository.
+3. Use. `basicly-tracker ready .basicly/ledger` lists the work that can start now.
+   `basicly-tracker refine .basicly/ledger` lists the records that need acceptance criteria first.
+   An imported record starts in refine. Tell me both counts.
+4. See. Start the board in the background with `basicly-board serve .basicly/ledger`.
+   When port 8765 is taken, add `--port` with a free port.
+   Check that the URL it prints answers, then give me the URL.
+   The board can stop when this session ends. Give me the serve command that starts it again.
+```
+
+The same commands at a terminal end in the same state. At a terminal, `init` asks the
+import question itself.

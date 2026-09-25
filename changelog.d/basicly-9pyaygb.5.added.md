@@ -1,0 +1,1 @@
+- **The tracker README carries a prompt that installs the tracker and its board through a coding agent.** The agent installs both tools, asks before it imports a beads or beans backlog, sets the id prefix and gives you the board URL. `basicly release` now rewrites its version pin. (basicly-9pyaygb.5)
