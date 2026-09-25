@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release tells you at create time when a new record is not ready, so you fix it before
+`claim` refuses it. The create still succeeds; the warning is advice, not a gate.
+
+- **Create warns about a record that is not ready.** It names each section the record owes
+  and the accepted trigger form (`basicly-3kscbe4`).
+
 ## v0.18.8 - 2026-09-25
 
 Delta: v0.18.7..v0.18.8
