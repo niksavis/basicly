@@ -1,0 +1,1 @@
+- **The auto mode trust fix keeps private and public repositories apart.** `permissions-check` now says to add `"$defaults"`, to name each extra repository, and to add a `Repository visibility` entry. It no longer suggests one entry for every repository of an account (basicly-o9wuws5).
