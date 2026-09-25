@@ -122,6 +122,17 @@ def test_an_edit_from_the_page_changes_the_title_and_the_story(client: Client) -
     assert shown["fields"]["description"] == TRIGGER
 
 
+def test_a_page_create_mints_under_the_configured_prefix(
+    client: Client, ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["config", str(ledger), "set", "prefix", "acme"]) == cli.EXIT_OK
+    capsys.readouterr()
+
+    _, made = client.call("POST", "/api/v1/records", {"title": "draft"})
+
+    assert made["record"].startswith("acme-")
+
+
 def test_a_kit_refusal_is_a_422_with_the_kit_schema_and_writes_nothing(
     client: Client, ledger: Path
 ) -> None:
