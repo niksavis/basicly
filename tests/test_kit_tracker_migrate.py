@@ -668,9 +668,9 @@ def test_the_actor_and_the_clock_are_the_callers(tmp_path: Path) -> None:
 
 
 def test_the_redactor_reaches_an_imported_field(tmp_path: Path) -> None:
-    snapshot = _snapshot(_record(RECORD_A, description="ran under /home/somebody/dev"))
+    snapshot = _snapshot(_record(RECORD_A, description="ran under /srv/somebody/dev"))
 
-    _import(tmp_path, snapshot, redact=lambda text: text.replace("/home/somebody", "<home>"))
+    _import(tmp_path, snapshot, redact=lambda text: text.replace("/srv/somebody", "<home>"))
 
     fields = _fold(tmp_path).records[RECORD_A].fields
     assert fields["description"] == "ran under <home>/dev"
@@ -678,10 +678,10 @@ def test_the_redactor_reaches_an_imported_field(tmp_path: Path) -> None:
 
 def test_a_redacted_field_is_not_reported_as_divergence_on_a_replay(tmp_path: Path) -> None:
 
-    snapshot = _snapshot(_record(RECORD_A, description="ran under /home/somebody/dev"))
+    snapshot = _snapshot(_record(RECORD_A, description="ran under /srv/somebody/dev"))
 
     def redact(text: str) -> str:
-        return text.replace("/home/somebody", "<home>")
+        return text.replace("/srv/somebody", "<home>")
 
     _import(tmp_path, snapshot, redact=redact)
     again = _import(tmp_path, snapshot, redact=redact)
@@ -751,6 +751,8 @@ def test_a_consumer_with_no_basicly_can_import_their_tracker(tmp_path: Path) -> 
 
     consumer = tmp_path / "consumer" / "kit" / "tracker"
     consumer.mkdir(parents=True)
+    for name in ("beads.py", "values.py", "fields.py", "shaping.py"):
+        shutil.copy2(KIT_DIR / name, consumer / name)
     for source in (MIGRATE_SOURCE, EVENTS_SOURCE, IDS_SOURCE):
         shutil.copy2(source, consumer / source.name)
     export = tmp_path / "export.jsonl"

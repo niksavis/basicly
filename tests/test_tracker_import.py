@@ -157,11 +157,11 @@ def test_tracker_scrub_repairs_a_ledger_the_commit_gate_refuses(
 
     leak = "/home" + "/someuser/dev/acme"
     kit = owned_store.kit(host)
-    snapshot = kit.migrate.read_snapshot(
-        _export(host, [{"id": "acme-99z", "title": "t", "source_repo_path": leak}]),
-        name="beads",
+    planted = {"title": "t", "source_repo_path": leak}
+    kit.events.append(
+        owned_store.ledger_dir(host),
+        [kit.events.Draft("acme-99z", kit.events.KIND_CREATED, planted)],
     )
-    kit.migrate.import_snapshot(owned_store.ledger_dir(host), snapshot)
     monkeypatch.chdir(host)
 
     code = cli.main(["tracker", "scrub"])
