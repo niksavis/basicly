@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.18.8 - 2026-09-25
+
+Delta: v0.18.7..v0.18.8
+
 This release lets a repository that upgraded to v0.18.7 fold its ledger again. The name
 gate now judges only new text, so older ledger lines that a fold moves no longer block the
 commit, and scrub can remove your git name from old prose.
@@ -15,6 +19,12 @@ commit, and scrub can remove your git name from old prose.
   (`basicly-mxtckru`).
 - **A quoted placeholder counts as filled.** A command such as `` `show <id>` `` in a
   criterion no longer voids the section (`basicly-invzvxs`).
+
+### Fixed
+
+- A record section that quotes a command with an angle-bracket argument inside backticks, such as `` `tracker show <id>` ``, now counts as filled for the definition of ready. An unquoted `<...>` or `TODO` still marks the section as an unfilled template, and the kit and the engine apply the same rule. (basicly-invzvxs)
+
+- **A tracker fold no longer trips identity-guard on old ledger lines.** The guard now counts only lines a commit adds new, so a fold that moves lines naming the git user passes; a snapshot record whose only mention is its holder passes; `basicly tracker scrub` now redacts the git user.name everywhere except the holder field. (basicly-mxtckru)
 
 ## v0.18.7 - 2026-09-24
 

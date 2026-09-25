@@ -1,1 +1,0 @@
-- **A tracker fold no longer trips identity-guard on old ledger lines.** The guard now counts only lines a commit adds new, so a fold that moves lines naming the git user passes; a snapshot record whose only mention is its holder passes; `basicly tracker scrub` now redacts the git user.name everywhere except the holder field. (basicly-mxtckru)
