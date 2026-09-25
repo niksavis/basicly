@@ -21,8 +21,9 @@ def _repo(tmp_path: Path, *, vendored: bool, folds: bool = True) -> Path:
     if vendored:
         target = tmp_path / INSTALLER
         target.parent.mkdir(parents=True)
-        source = Path(".basicly/core/kit/tracker/install_hook.py").read_text(encoding="utf-8")
-        target.write_text(source, encoding="utf-8")
+        for name in ("install_hook.py", "import_offer.py"):
+            source = (REPO_ROOT / KIT_RELATIVE / name).read_text(encoding="utf-8")
+            target.with_name(name).write_text(source, encoding="utf-8")
         (tmp_path / ".basicly" / "core" / "kit" / "tracker" / "cli.py").write_text(
             "", encoding="utf-8"
         )
@@ -148,3 +149,20 @@ def test_opting_out_removes_a_fold_already_wired(tmp_path: Path, rooted) -> None
     assert cli.cmd_tracker_hook(argparse.Namespace()) == 0
 
     assert not (repo / ".git" / "hooks" / "post-merge").exists()
+
+
+def test_basicly_install_offers_a_beads_backlog_and_imports_nothing(
+    tmp_path: Path, rooted, capsys
+) -> None:
+    repo = _repo(tmp_path, vendored=True)
+    (repo / ".beads").mkdir()
+    (repo / ".beads" / "issues.jsonl").write_text('{"id": "old-a1"}\n{"id": "old-b2"}\n', "utf-8")
+    rooted(repo)
+
+    assert cli.cmd_tracker_hook(argparse.Namespace()) == 0
+
+    out = capsys.readouterr().out
+    assert "found a beads backlog: .beads/issues.jsonl holds 2 record(s)" in out
+    assert "run `basicly tracker import .beads/issues.jsonl --from beads`" in out
+    assert "lands in refine" in out
+    assert not list((repo / ".basicly" / "ledger").glob("*.jsonl"))

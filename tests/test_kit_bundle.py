@@ -39,6 +39,7 @@ def _run(pyz: Path, cwd: Path, cache: Path, *args: str) -> subprocess.CompletedP
         [sys.executable, str(pyz), *args],
         cwd=cwd,
         env=env,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         check=False,
@@ -107,3 +108,29 @@ def test_the_fold_hook_is_wired_only_on_request(pyz: Path, tmp_path: Path) -> No
     folding = _run(pyz, repo, cache, "update", "--fold-on-merge")
     assert folding.returncode == 0, folding.stderr
     assert "compact" in hook.read_text(encoding="utf-8")
+
+
+def test_init_offers_a_beads_backlog_and_imports_it_on_the_flag(pyz: Path, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".beads").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)  # nosec B603 B607
+    lines = [json.dumps({"id": f"old-a{n}", "title": "old", "status": "open"}) for n in range(3)]
+    (repo / ".beads" / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    cache = tmp_path / "cache"
+
+    offered = _run(pyz, repo, cache, "init")
+    imported = _run(pyz, repo, cache, "update", "--import", "beads")
+
+    assert offered.returncode == 0, offered.stderr
+    assert ".beads/issues.jsonl holds 3 record(s)" in offered.stdout
+    assert "run `basicly-tracker init --import beads`" in offered.stdout
+    assert imported.returncode == 0, imported.stderr
+    assert "imported 3 record(s) from .beads/issues.jsonl" in imported.stdout
+
+
+def test_init_refuses_an_import_flag_that_names_no_source(pyz: Path, tmp_path: Path) -> None:
+    done = _run(pyz, tmp_path, tmp_path / "cache", "init", "--import")
+
+    assert done.returncode != 0
+    assert "--import needs a source: --import beads or --import beans" in done.stderr
+    assert not (tmp_path / ".basicly").exists()

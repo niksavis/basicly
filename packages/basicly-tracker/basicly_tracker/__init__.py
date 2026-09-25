@@ -50,7 +50,13 @@ KIT = installer.Kit(
     module="basicly_tracker_kit_cli",
     rules=ledger_rules,
     configure_file="install_hook.py",
-    configure_args=("--ledger", LEDGER_DIR, "--pin"),
+    configure_args=(
+        "--ledger",
+        LEDGER_DIR,
+        "--pin",
+        "--import-command",
+        "basicly-tracker init --import {source}",
+    ),
 )
 
 
@@ -69,14 +75,30 @@ def _bundle(args) -> int:
 
 
 FOLD_FLAG = "--fold-on-merge"
+IMPORT_FLAG = "--import"
+
+
+def _configure_flags(args: list) -> tuple:
+    passed = []
+    if FOLD_FLAG in args:
+        args.remove(FOLD_FLAG)
+        passed.append(FOLD_FLAG)
+    if IMPORT_FLAG in args:
+        at = args.index(IMPORT_FLAG)
+        if at + 1 == len(args):
+            raise SystemExit(
+                f"{IMPORT_FLAG} needs a source: {IMPORT_FLAG} beads or {IMPORT_FLAG} beans"
+            )
+        passed += args[at : at + 2]
+        del args[at : at + 2]
+    return tuple(passed)
 
 
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args[:1] == ["bundle"]:
         return _bundle(args[1:])
-    if args[:1] in (["init"], ["update"]) and FOLD_FLAG in args:
-        args.remove(FOLD_FLAG)
-        folding = KIT._replace(configure_args=(*KIT.configure_args, FOLD_FLAG))
-        return installer.run(folding, args)
+    passed = _configure_flags(args) if args[:1] in (["init"], ["update"]) else ()
+    if passed:
+        return installer.run(KIT._replace(configure_args=(*KIT.configure_args, *passed)), args)
     return installer.run(KIT, args)
