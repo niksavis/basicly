@@ -1128,11 +1128,18 @@ Which hosts satisfy that requirement today is a status question.
 
 ## 18. Agent permissions
 
-The projection writes a deny-list of semantic rules into `.claude/settings.json`, the one
-agent family with a config-file deny. The projection is **ensure-present**. It merges the
-managed patterns in, it preserves consumer entries, and it **prunes nothing**. A flat deny
-string carries no per-entry marker, and an extra deny is fail-safe. Drift is therefore a
-subset check.
+The projection writes an allow list and a deny list of semantic rules into
+`.claude/settings.json`, the one agent family with a config-file deny. The projection is
+**ensure-present**. It merges the managed patterns in, it preserves consumer entries, and
+it **prunes nothing**. A flat rule string carries no per-entry marker, so the projection
+cannot tell a consumer entry from one that basicly wrote. A repository's own blanket
+`Bash`, `Edit`, `Write`, `WebSearch` or `WebFetch` allow therefore stays. basicly does not
+ship any of them. Drift is a subset check.
+
+Each shipped allow names one read or check command family (`basicly-zem45s8.1`). The
+loader refuses an allow that Claude Code drops in auto mode, because such a rule grants
+arbitrary code execution: a blanket shell rule, a wildcard in the program position, an
+interpreter, a package manager, a command wrapper, an `Agent` rule or a `Monitor` rule.
 
 **The limits are stated here, because an absent rule is not a permission.**
 

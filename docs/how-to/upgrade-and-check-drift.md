@@ -56,7 +56,7 @@ All generated files and manifest are up to date.
 ```
 
 `basicly check` covers the instruction files and path-scoped rules only. Skills,
-output styles, subagents, hooks and the permissions deny-list have their own
+output styles, subagents, hooks and the permissions allow and deny lists have their own
 checks, all of which exit 0 when in sync:
 
 ```sh
@@ -73,7 +73,7 @@ Projected skills are up to date in .claude/skills, .agents/skills.
 Projected output styles are up to date in .claude/output-styles.
 Projected agents are up to date.
 Projected hooks are up to date.
-Projected permissions deny-list is up to date.
+Projected permissions allow and deny lists are up to date.
 ```
 
 Install scaffolds `.github/workflows/basicly-gates.yml` to run this in CI, and

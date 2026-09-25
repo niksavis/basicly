@@ -1,0 +1,1 @@
+- **`basicly install` ships narrow allow rules for read and check commands.** The rules stay in effect in Claude Code auto mode. Install ships no blanket `Bash`, `Edit`, `Write`, `WebSearch` or `WebFetch` allow, and it never removes a rule that your repository wrote itself (basicly-zem45s8.1).

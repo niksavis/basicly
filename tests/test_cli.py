@@ -1208,6 +1208,35 @@ def test_cli_install_projects_permissions_deny_list(tmp_path: Path) -> None:
     assert "Bash(rm -rf*)" in after["permissions"]["deny"]
 
 
+def test_cli_install_leaves_a_consumer_bash_edit_and_webfetch_untouched(
+    tmp_path: Path,
+) -> None:
+    consumer = tmp_path / "consumer"
+    (consumer / ".claude").mkdir(parents=True)
+    own_allows = ["Bash", "Edit", "WebFetch", "Bash(make lint)"]
+    consumer_rules = {
+        "allow": own_allows,
+        "ask": ["Bash(git push *)"],
+        "deny": ["Bash(curl *)"],
+    }
+    (consumer / ".claude" / "settings.json").write_text(
+        json.dumps({"permissions": consumer_rules}), encoding="utf-8"
+    )
+    assert run_basicly_consumer(consumer, "install").returncode == 0
+
+    perms = json.loads((consumer / ".claude" / "settings.json").read_text(encoding="utf-8"))[
+        "permissions"
+    ]
+    assert perms["allow"][: len(own_allows)] == own_allows
+    shipped = perms["allow"][len(own_allows) :]
+    assert {"Read", "Bash(git status *)", "Bash(basicly check)"} <= set(shipped)
+    assert not {"Bash", "Edit", "Write", "WebSearch", "WebFetch"} & set(shipped)
+    assert perms["ask"] == ["Bash(git push *)"]
+    assert perms["deny"][0] == "Bash(curl *)"
+    assert "Bash(rm -rf*)" in perms["deny"]
+    assert run_basicly_consumer(consumer, "permissions-check").returncode == 0
+
+
 def test_cli_status_json_authoring_schema(work_repo: Path) -> None:
     result = run_basicly(work_repo, "status", "--json")
     assert result.returncode == 0, result.stderr

@@ -41,6 +41,10 @@ def _read_settings(repo_root: Path) -> dict:
     return json.loads((repo_root / SETTINGS).read_text(encoding="utf-8"))
 
 
+def _deny(*patterns: str) -> permissions.ClaudePermissions:
+    return permissions.ClaudePermissions(deny=patterns)
+
+
 def test_load_deny_rules_parses_rules_and_claude_patterns(tmp_path: Path) -> None:
     rules = permissions.load_deny_rules(_write_perms(tmp_path, SAMPLE_YAML))
     assert [r.id for r in rules] == ["destructive-rm", "env-read"]
@@ -115,7 +119,7 @@ def test_load_deny_rules_rejects_bad_copilot_specs(tmp_path: Path) -> None:
 
 
 def test_merge_adds_managed_patterns_to_empty_settings() -> None:
-    merged = claude_settings.merge_permission_deny({}, ["Bash(rm -rf*)", "Read(.env)"])
+    merged = claude_settings.merge_permissions({}, _deny("Bash(rm -rf*)", "Read(.env)"))
     assert merged["permissions"]["deny"] == ["Bash(rm -rf*)", "Read(.env)"]
 
 
@@ -124,28 +128,28 @@ def test_merge_preserves_consumer_entries_and_dedups() -> None:
         "permissions": {"allow": ["Bash"], "deny": ["Bash(rm -rf*)", "Bash(sudo*)"]},
         "hooks": {"PreToolUse": ["x"]},
     }
-    merged = claude_settings.merge_permission_deny(settings, ["Bash(rm -rf*)", "Read(.env)"])
+    merged = claude_settings.merge_permissions(settings, _deny("Bash(rm -rf*)", "Read(.env)"))
     assert merged["permissions"]["deny"] == ["Bash(rm -rf*)", "Bash(sudo*)", "Read(.env)"]
     assert merged["permissions"]["allow"] == ["Bash"]
     assert merged["hooks"] == {"PreToolUse": ["x"]}
 
 
 def test_mismatches_report_only_missing_patterns(tmp_path: Path) -> None:
-    assert claude_settings.permission_deny_mismatches(tmp_path, ["Bash(rm -rf*)"]) == [
+    assert claude_settings.permission_mismatches(tmp_path, _deny("Bash(rm -rf*)")) == [
         "managed deny pattern 'Bash(rm -rf*)' missing"
     ]
     _write_settings(tmp_path, {"permissions": {"deny": ["Bash(rm -rf*)"]}})
-    assert claude_settings.permission_deny_mismatches(tmp_path, ["Bash(rm -rf*)"]) == []
-    assert claude_settings.permission_deny_mismatches(
-        tmp_path, ["Bash(rm -rf*)", "Read(.env)"]
+    assert claude_settings.permission_mismatches(tmp_path, _deny("Bash(rm -rf*)")) == []
+    assert claude_settings.permission_mismatches(
+        tmp_path, _deny("Bash(rm -rf*)", "Read(.env)")
     ) == ["managed deny pattern 'Read(.env)' missing"]
 
 
 def test_sync_writes_then_is_idempotent(tmp_path: Path) -> None:
     patterns = ["Bash(rm -rf*)", "Read(.env)"]
-    assert claude_settings.sync_permission_deny(tmp_path, patterns) is True
+    assert claude_settings.sync_permissions(tmp_path, _deny(*patterns)) is True
     assert _read_settings(tmp_path)["permissions"]["deny"] == patterns
-    assert claude_settings.sync_permission_deny(tmp_path, patterns) is False
+    assert claude_settings.sync_permissions(tmp_path, _deny(*patterns)) is False
 
 
 def test_sync_preserves_consumer_config(tmp_path: Path) -> None:
@@ -156,7 +160,7 @@ def test_sync_preserves_consumer_config(tmp_path: Path) -> None:
             "hooks": {"PostToolUse": ["keep"]},
         },
     )
-    claude_settings.sync_permission_deny(tmp_path, ["Bash(rm -rf*)"])
+    claude_settings.sync_permissions(tmp_path, _deny("Bash(rm -rf*)"))
     result = _read_settings(tmp_path)
     assert result["permissions"]["deny"] == ["Bash(sudo*)", "Bash(rm -rf*)"]
     assert result["permissions"]["allow"] == ["Bash"]
@@ -164,15 +168,15 @@ def test_sync_preserves_consumer_config(tmp_path: Path) -> None:
 
 
 def test_sync_no_patterns_is_noop(tmp_path: Path) -> None:
-    assert claude_settings.sync_permission_deny(tmp_path, []) is False
+    assert claude_settings.sync_permissions(tmp_path, _deny()) is False
     assert not (tmp_path / SETTINGS).exists()
 
 
 def test_merge_and_mismatches_tolerate_a_tampered_file() -> None:
-    merged = claude_settings.merge_permission_deny({"permissions": "corrupt"}, ["Bash(rm -rf*)"])
+    merged = claude_settings.merge_permissions({"permissions": "corrupt"}, _deny("Bash(rm -rf*)"))
     assert merged["permissions"]["deny"] == ["Bash(rm -rf*)"]
-    merged = claude_settings.merge_permission_deny(
-        {"permissions": {"deny": {"not": "a list"}}}, ["Read(.env)"]
+    merged = claude_settings.merge_permissions(
+        {"permissions": {"deny": {"not": "a list"}}}, _deny("Read(.env)")
     )
     assert merged["permissions"]["deny"] == ["Read(.env)"]
 
