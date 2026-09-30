@@ -1,1 +1,0 @@
-- **The Quality Gate rules name the two costs a person pays, time and tokens.** Choose the cheapest check that proves the step, run the whole suite once before the commit, and report elapsed time, tokens and items left in a long run (basicly-oefprp3).

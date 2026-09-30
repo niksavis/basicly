@@ -1,1 +1,0 @@
-- **The `basicly tracker import --dry-run` preview no longer advises setting the prefix by hand when it would set it from `.beads/config.yaml`** (basicly-fxa9md2).

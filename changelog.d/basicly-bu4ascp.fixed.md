@@ -1,1 +1,0 @@
-- **The projected Claude deny-list now refuses a commit or a push that skips the gates with `git -c` before the subcommand**, such as `git -c core.hooksPath=/dev/null commit` or `git -c user.name=x commit --no-verify`. Run `basicly permissions-build` to add the rules (basicly-bu4ascp).

@@ -6,11 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.19.2 - 2026-09-30
+
+Delta: v0.19.1..v0.19.2
+
 This patch release closes a gap in the projected Claude deny-list that a consumer found. A commit or a push that puts `git -c` before the subcommand now meets a deny rule, so `git -c core.hooksPath=/dev/null commit` no longer skips the gates unseen. Run `basicly permissions-build` after the upgrade.
 
 - **The deny-list refuses a gate bypass with `git -c` before the subcommand** (basicly-bu4ascp).
 - **A tracker import dry run no longer gives prefix advice that the import makes unnecessary** (basicly-fxa9md2).
 - **The Quality Gate rules and the release-process skill state the costs of a check and the tutorial order** (basicly-oefprp3, basicly-ilhduby).
+
+### Changed
+
+- **The release-process skill states the tutorial order.** Run `verify` first, walk the page, leave the recorded-version edit uncommitted, and in the scratch clone run `verify` before the edit and set no local `user.name` (basicly-ilhduby).
+
+- **The Quality Gate rules name the two costs a person pays, time and tokens.** Choose the cheapest check that proves the step, run the whole suite once before the commit, and report elapsed time, tokens and items left in a long run (basicly-oefprp3).
+
+### Fixed
+
+- **The projected Claude deny-list now refuses a commit or a push that skips the gates with `git -c` before the subcommand**, such as `git -c core.hooksPath=/dev/null commit` or `git -c user.name=x commit --no-verify`. Run `basicly permissions-build` to add the rules (basicly-bu4ascp).
+
+- **The `basicly tracker import --dry-run` preview no longer advises setting the prefix by hand when it would set it from `.beads/config.yaml`** (basicly-fxa9md2).
 
 ## v0.19.1 - 2026-09-30
 

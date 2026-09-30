@@ -1,1 +1,0 @@
-- **The release-process skill states the tutorial order.** Run `verify` first, walk the page, leave the recorded-version edit uncommitted, and in the scratch clone run `verify` before the edit and set no local `user.name` (basicly-ilhduby).
