@@ -82,24 +82,30 @@ def _prefix_note(repo_root: Path, records: list[str]) -> list[str]:
     ]
 
 
-def _adopted(
+def _outcome(
     repo_root: Path, ledger: Path, export: Path, source_format: str, *, dry_run: bool
-) -> list[str]:
+) -> dict[str, str]:
 
     if source_format != "beads":
-        return []
+        return {}
     beads = owned_store.kit(repo_root, "beads")
     found = beads.config_prefix(export)
-    outcome = owned_store.kit(repo_root, "settings").adopt_prefix(
+    return owned_store.kit(repo_root, "settings").adopt_prefix(
         ledger, found, beads.config_source(export), dry_run=dry_run
     )
+
+
+def _shown(repo_root: Path, outcome: dict[str, str]) -> list[str]:
+
     if not outcome:
         return []
     line = owned_store.kit(repo_root, "import_offer").PREFIX_LINES[outcome["outcome"]]
     return ["  " + line.format_map(outcome).removeprefix("tracker: ").rstrip()]
 
 
-def preview(repo_root: Path, snapshot: Any, ledger: Path, kit: Any) -> tuple[int, list[str]]:
+def preview(
+    repo_root: Path, snapshot: Any, ledger: Path, kit: Any, *, advise: bool = True
+) -> tuple[int, list[str]]:
 
     held = {event.record for event in kit.events.read_events(ledger)[0] if hasattr(event, "record")}
     valid = kit.migrate.ids.is_record_id
@@ -120,7 +126,7 @@ def preview(repo_root: Path, snapshot: Any, ledger: Path, kit: Any) -> tuple[int
         if ids:
             lines.append(f"  {label}: {', '.join(sorted(ids))}")
     lines.extend(_refusal_lines(bad, valid))
-    lines.extend(_prefix_note(repo_root, fresh))
+    lines.extend(_prefix_note(repo_root, fresh) if advise else [])
     lines.extend(f"  unreadable: {i.subject} — {i.reason}" for i in snapshot.unreadable)
     return (1 if bad or snapshot.unreadable else 0), lines
 
@@ -148,13 +154,18 @@ def run_import(  # noqa: PLR0913 - one keyword per `tracker import` flag, not th
         raise ValidationError(str(exc), export) from exc
 
     if dry_run:
-        code, lines = preview(repo_root, snapshot, ledger, kit)
-        return code, [*lines, *_adopted(repo_root, ledger, export, source_format, dry_run=True)]
+        outcome = _outcome(repo_root, ledger, export, source_format, dry_run=True)
+        code, lines = preview(
+            repo_root, snapshot, ledger, kit, advise=outcome.get("outcome") != "would set"
+        )
+        return code, [*lines, *_shown(repo_root, outcome)]
 
     report = kit.migrate.import_snapshot(
         ledger, snapshot, deleted=deleted, redact=redact.redact_committed
     )
     lines = _lines(report, source=snapshot.name)
-    lines.extend(_adopted(repo_root, ledger, export, source_format, dry_run=False))
+    lines.extend(
+        _shown(repo_root, _outcome(repo_root, ledger, export, source_format, dry_run=False))
+    )
     lines.extend(_prefix_note(repo_root, report.imported))
     return (1 if report.rejected or report.unreadable else 0), lines

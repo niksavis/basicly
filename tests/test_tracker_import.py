@@ -212,8 +212,19 @@ def test_the_engine_import_adopts_the_br_prefix_like_the_kit_import(host: Path) 
 def test_the_engine_dry_run_names_the_br_prefix_and_writes_none(host: Path) -> None:
     _, lines = tracker_import.run_import(host, _br_export(host), source_name="beads", dry_run=True)
 
-    assert "would set the ledger prefix to acme" in "\n".join(lines)
+    report = "\n".join(lines)
+    assert "would set the ledger prefix to acme" in report
+    assert "declares no id prefix" not in report
     assert not (host / ".basicly" / "ledger" / "template.json").exists()
+
+
+def test_the_engine_dry_run_still_advises_when_br_names_no_prefix(host: Path) -> None:
+    export = _br_export(host)
+    (export.parent / "config.yaml").write_text("# no prefix here\n", encoding="utf-8")
+
+    _, lines = tracker_import.run_import(host, export, source_name="beads", dry_run=True)
+
+    assert "declares no id prefix" in "\n".join(lines)
 
 
 HYPHENATED = [
