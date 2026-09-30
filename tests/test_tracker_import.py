@@ -189,6 +189,33 @@ def test_the_import_stays_quiet_when_a_prefix_is_declared(host: Path) -> None:
     assert "declares no id prefix" not in "\n".join(lines)
 
 
+def _br_export(root: Path) -> Path:
+    beads = root / ".beads"
+    beads.mkdir()
+    (beads / "config.yaml").write_text("issue_prefix: acme\n", encoding="utf-8")
+    path = beads / "issues.jsonl"
+    path.write_text("\n".join(json.dumps(r) for r in _EXPORT) + "\n", encoding="utf-8")
+    return path
+
+
+def test_the_engine_import_adopts_the_br_prefix_like_the_kit_import(host: Path) -> None:
+    template = host / ".basicly" / "ledger" / "template.json"
+
+    _, lines = tracker_import.run_import(host, _br_export(host), source_name="beads")
+
+    report = "\n".join(lines)
+    assert "set the ledger prefix to acme" in report
+    assert json.loads(template.read_text(encoding="utf-8"))["prefix"] == "acme"
+    assert "declares no id prefix" not in report
+
+
+def test_the_engine_dry_run_names_the_br_prefix_and_writes_none(host: Path) -> None:
+    _, lines = tracker_import.run_import(host, _br_export(host), source_name="beads", dry_run=True)
+
+    assert "would set the ledger prefix to acme" in "\n".join(lines)
+    assert not (host / ".basicly" / "ledger" / "template.json").exists()
+
+
 HYPHENATED = [
     {"id": f"burndown-chart-{index:03d}", "title": f"t{index}", "status": "open"}
     for index in range(1, 9)

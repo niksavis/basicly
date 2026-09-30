@@ -82,6 +82,23 @@ def _prefix_note(repo_root: Path, records: list[str]) -> list[str]:
     ]
 
 
+def _adopted(
+    repo_root: Path, ledger: Path, export: Path, source_format: str, *, dry_run: bool
+) -> list[str]:
+
+    if source_format != "beads":
+        return []
+    beads = owned_store.kit(repo_root, "beads")
+    found = beads.config_prefix(export)
+    outcome = owned_store.kit(repo_root, "settings").adopt_prefix(
+        ledger, found, beads.config_source(export), dry_run=dry_run
+    )
+    if not outcome:
+        return []
+    line = owned_store.kit(repo_root, "import_offer").PREFIX_LINES[outcome["outcome"]]
+    return ["  " + line.format_map(outcome).removeprefix("tracker: ").rstrip()]
+
+
 def preview(repo_root: Path, snapshot: Any, ledger: Path, kit: Any) -> tuple[int, list[str]]:
 
     held = {event.record for event in kit.events.read_events(ledger)[0] if hasattr(event, "record")}
@@ -131,11 +148,13 @@ def run_import(  # noqa: PLR0913 - one keyword per `tracker import` flag, not th
         raise ValidationError(str(exc), export) from exc
 
     if dry_run:
-        return preview(repo_root, snapshot, ledger, kit)
+        code, lines = preview(repo_root, snapshot, ledger, kit)
+        return code, [*lines, *_adopted(repo_root, ledger, export, source_format, dry_run=True)]
 
     report = kit.migrate.import_snapshot(
         ledger, snapshot, deleted=deleted, redact=redact.redact_committed
     )
     lines = _lines(report, source=snapshot.name)
+    lines.extend(_adopted(repo_root, ledger, export, source_format, dry_run=False))
     lines.extend(_prefix_note(repo_root, report.imported))
     return (1 if report.rejected or report.unreadable else 0), lines

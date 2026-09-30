@@ -1,0 +1,1 @@
+- **`basicly tracker import --from beads` now adopts the br id prefix too.** v0.19.0 did it only on the kit import path. The rule moved into the kit settings module, which both paths call (basicly-63otkpk).
