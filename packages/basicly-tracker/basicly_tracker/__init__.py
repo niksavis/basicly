@@ -26,6 +26,7 @@ def _sibling(module_name: str, packaged: str, source: str, what: str):
 
 
 installer = _sibling("basicly_kit_installer", "installer.py", "kit_installer.py", "kit installer")
+modes = _sibling("basicly_kit_modes", "modes.py", "kit_modes.py", "kit modes")
 
 LEDGER_DIR = ".basicly/ledger"
 
@@ -44,17 +45,37 @@ def ledger_rules(directory: Path):
 
 
 PLACES = (
-    installer.sandbox_file("tracker").as_posix(),
+    modes.sandbox_file("tracker").as_posix(),
     (installer.DEFAULT_ROOT / "tracker" / "cli.py").as_posix(),
 )
 MANAGED = (
     f"{installer.DEFAULT_ROOT.as_posix()}/",
-    installer.sandbox_file("tracker").as_posix(),
-    installer.sandbox_file("board").as_posix(),
+    modes.sandbox_file("tracker").as_posix(),
+    modes.sandbox_file("board").as_posix(),
 )
 LAYOUT_ARGS = (
     *(arg for place in PLACES for arg in ("--tracker-at", place)),
     *(arg for path in MANAGED for arg in ("--managed", path)),
+)
+
+USER_SKILL = modes.UserSkill(
+    command="basicly-tracker",
+    engine_use="its `work-tracker` skill",
+    places=PLACES,
+    replacements=(
+        ("name: work-tracker", "name: basicly-tracker"),
+        (
+            "description: Use the append-only work tracker as this repository's issue tracker.",
+            "description: In a repository that holds .basicly/ledger/, use the append-only "
+            "work tracker as its issue tracker.",
+        ),
+        (
+            "`.basicly/kit/tracker/REFERENCE.md` lists every command with one example.",
+            "`basicly-tracker --help` lists every command.",
+        ),
+        ("python3 .basicly/kit/tracker/cli.py", "basicly-tracker"),
+        ("the `tracker-board` skill", "the `basicly-board` skill"),
+    ),
 )
 
 KIT = installer.Kit(
@@ -109,10 +130,22 @@ def _configure_flags(args: list) -> tuple:
     return tuple(passed)
 
 
+USER_FLAG = "--user"
+
+
+def _user(args: list) -> int:
+    home = modes.user_home()
+    if args[0] == "uninstall":
+        return modes.uninstall_user(USER_SKILL, home, sys.stdout)
+    return modes.install_user(KIT.directory, USER_SKILL, home, sys.stdout)
+
+
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args[:1] == ["bundle"]:
         return _bundle(args[1:])
+    if args[:1] in (["init"], ["update"], ["uninstall"]) and USER_FLAG in args:
+        return _user(args)
     passed = _configure_flags(args) if args[:1] in (["init"], ["update"]) else ()
     if passed:
         return installer.run(KIT._replace(configure_args=(*KIT.configure_args, *passed)), args)

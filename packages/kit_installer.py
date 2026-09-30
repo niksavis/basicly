@@ -203,10 +203,6 @@ def vendored_root(target: Path, name: str) -> Path:
     return target / DEFAULT_ROOT / name
 
 
-def sandbox_file(name: str) -> Path:
-    return DEFAULT_ROOT.parent / f"{name}.pyz"
-
-
 def managed_elsewhere(target: Path, name: str) -> Path | None:
     candidate = target / MANAGED_ROOT / name
     return candidate if candidate.is_dir() else None

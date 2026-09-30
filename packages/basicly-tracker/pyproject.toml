@@ -23,4 +23,5 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 [tool.hatch.build.targets.wheel.force-include]
 "../../.basicly/core/kit/tracker" = "basicly_tracker/kit"
 "../kit_installer.py" = "basicly_tracker/installer.py"
+"../kit_modes.py" = "basicly_tracker/modes.py"
 "../kit_bundle.py" = "basicly_tracker/bundle.py"
