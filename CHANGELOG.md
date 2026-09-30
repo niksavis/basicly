@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release completes two tracker fixes from v0.19.0 that a consumer found on the engine path. `basicly tracker import --from beads` now adopts the br id prefix as the kit import does, and the claim gate names an id that the staged ledger does not hold.
+
+- **The br prefix on every import path.** The rule moved into the kit settings module, which the engine import and the kit import both call (basicly-63otkpk).
+- **The claim gate names the unknown id.** It prints `git add .basicly/ledger` where it used to say that the commit named no record id (basicly-kgzen43).
+
 ## v0.19.0 - 2026-09-30
 
 Delta: v0.18.15..v0.19.0
