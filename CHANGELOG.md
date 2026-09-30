@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release closes a gap in the projected Claude deny-list that a consumer found. A commit or a push that puts `git -c` before the subcommand now meets a deny rule, so `git -c core.hooksPath=/dev/null commit` no longer skips the gates unseen. Run `basicly permissions-build` after the upgrade.
+
+- **The deny-list refuses a gate bypass with `git -c` before the subcommand** (basicly-bu4ascp).
+- **A tracker import dry run no longer gives prefix advice that the import makes unnecessary** (basicly-fxa9md2).
+- **The Quality Gate rules and the release-process skill state the costs of a check and the tutorial order** (basicly-oefprp3, basicly-ilhduby).
+
 ## v0.19.1 - 2026-09-30
 
 Delta: v0.19.0..v0.19.1
