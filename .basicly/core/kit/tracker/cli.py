@@ -176,9 +176,9 @@ _VIEWS: dict[
     "compact": lambda a, _r: _compacted(a),
     "shards": lambda a, _r: fsck.shards_report(a.directory),
     "board": lambda a, _r: {"written": board.write(a.directory, a.out).as_posix()},
-    "import": lambda a, r: migrate.import_report(
+    "import": lambda a, r: beans.import_backlog(
         a.directory,
-        beans.READERS[a.source_format](a.export, name=a.source or None),
+        beans.Source(a.source_format, Path(a.export), a.source or None),
         redact=r,
         dry_run=a.dry_run,
     ),

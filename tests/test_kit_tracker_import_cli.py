@@ -128,3 +128,87 @@ def test_a_named_source_is_recorded_instead(
     assert report["source"] == "old-tracker"
     text = "".join(path.read_text(encoding="utf-8") for path in sorted(ledger.iterdir()))
     assert "old-tracker" in text
+
+
+def _beads(tmp_path: Path, config: str) -> Path:
+    folder = tmp_path / ".beads"
+    folder.mkdir()
+    (folder / "config.yaml").write_text(config, encoding="utf-8")
+    path = folder / "issues.jsonl"
+    path.write_text("".join(json.dumps(record) + "\n" for record in EXPORT[:2]), encoding="utf-8")
+    return path
+
+
+def _root_create(capsys: pytest.CaptureFixture[str], ledger: Path) -> dict:
+    return _run(
+        capsys,
+        "create",
+        str(ledger),
+        "--title",
+        "a root record after the import",
+        "--description",
+        SHAPED["description"],
+        "--acceptance",
+        SHAPED["acceptance_criteria"],
+        "--requirements",
+        SHAPED["requirements"],
+    )
+
+
+def test_a_br_import_adopts_the_prefix_so_a_root_record_can_be_created(
+    tmp_path: Path, ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    export = _beads(tmp_path, "# a br comment\nissue_prefix: demo  # the prefix\n")
+
+    report = _run(capsys, "import", str(ledger), str(export), "--from", "beads")
+    created = _root_create(capsys, ledger)
+
+    assert report["prefix"]["outcome"] == "set" and report["prefix"]["source"] == "demo"
+    assert created["record"].startswith("demo-")
+
+
+def test_a_bd_prefix_in_quotes_under_its_dashed_key_is_read(tmp_path: Path) -> None:
+    beads = _load(REPO_ROOT / KIT_RELATIVE / "beads.py", "basicly_tracker_kit_beads")
+    export = _beads(tmp_path, '# comment\nissue-prefix: "demo"\n')
+
+    assert beads.config_prefix(export) == "demo"
+
+
+def test_a_dry_run_reports_the_prefix_and_sets_none(
+    tmp_path: Path, ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    export = _beads(tmp_path, "issue_prefix: demo\n")
+
+    report = _run(capsys, "import", str(ledger), str(export), "--from", "beads", "--dry-run")
+
+    assert report["prefix"]["outcome"] == "would set"
+    assert list(ledger.iterdir()) == []
+
+
+def test_a_ledger_prefix_that_differs_is_kept_and_both_are_reported(
+    tmp_path: Path, ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    export = _beads(tmp_path, "issue_prefix: demo\n")
+    _run(capsys, "config", str(ledger), "set", "prefix", "mine")
+
+    report = _run(capsys, "import", str(ledger), str(export), "--from", "beads")
+
+    assert report["prefix"] == {
+        "outcome": "kept",
+        "ledger": "mine",
+        "source": "demo",
+        "from": (export.parent / "config.yaml").as_posix(),
+    }
+    assert _root_create(capsys, ledger)["record"].startswith("mine-")
+
+
+def test_a_bd_prefix_with_a_hyphen_is_refused_by_name_and_the_import_still_lands(
+    tmp_path: Path, ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    export = _beads(tmp_path, 'issue-prefix: "burndown-chart"\n')
+
+    report = _run(capsys, "import", str(ledger), str(export), "--from", "beads")
+
+    assert report["prefix"]["outcome"] == "refused"
+    assert "contains '-'" in report["prefix"]["reason"]
+    assert report["imported"] == ["demo-aa11", "demo-bb22"]

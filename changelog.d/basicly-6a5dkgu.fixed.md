@@ -1,0 +1,1 @@
+- **A beads import now adopts the id prefix from `.beads/config.yaml`.** It reads br `issue_prefix` and bd `issue-prefix`. It sets the ledger prefix when none is set, reports both when they differ and changes neither, and names the reason when the ledger refuses the prefix. Before, the next root `create` failed (basicly-6a5dkgu).

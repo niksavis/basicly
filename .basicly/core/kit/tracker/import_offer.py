@@ -156,17 +156,25 @@ def _report(install: Install, backlog: Backlog, *, dry_run: bool) -> dict[str, A
 
     migrate = _load("migrate.py", "basicly_tracker_kit_migrate")
     beans = _load("beans.py", "basicly_tracker_kit_beans")
+    source = beans.Source(backlog.source, install.root / backlog.path)
     try:
-        snapshot = beans.READERS[backlog.source](install.root / backlog.path)
+        return beans.import_backlog(install.ledger, source, dry_run=dry_run)
     except migrate.SnapshotError as exc:
         raise ImportOfferError(f"the {backlog.source} backlog cannot be read: {exc}") from exc
-    return migrate.import_report(install.ledger, snapshot, dry_run=dry_run)
 
 
 def _refused(report: dict[str, Any], stream: Any) -> None:
 
     for one in report["rejected"]:
         stream.write(f"tracker:   refused {one['subject']}: {one['reason']}\n")
+
+
+PREFIX_LINES = {
+    "set": "tracker: set the ledger prefix to {source}, from {from}\n",
+    "would set": "tracker: would set the ledger prefix to {source}, from {from}\n",
+    "kept": "tracker: kept the ledger prefix {ledger}; {from} names {source}\n",
+    "refused": "tracker: {from} names the prefix {source}, which the ledger refuses: {reason}\n",
+}
 
 
 def _summary(install: Install, backlog: Backlog, report: dict[str, Any], stream: Any) -> None:
@@ -177,6 +185,9 @@ def _summary(install: Install, backlog: Backlog, report: dict[str, Any], stream:
         f"{_shown(install.ledger, install.root)}; {len(report['rejected'])} refused\n"
     )
     _refused(report, stream)
+    prefix = report.get("prefix")
+    if prefix:
+        stream.write(PREFIX_LINES[prefix["outcome"]].format_map(prefix))
 
 
 def _planned(install: Install, backlog: Backlog) -> dict[str, Any] | None:
