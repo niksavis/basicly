@@ -295,3 +295,31 @@ def test_a_chosen_subagent_cache_ttl_is_kept(tmp_path: Path) -> None:
         "subagentPromptCacheTtl": "5m",
         "other": 1,
     }
+
+
+def test_the_skill_listing_budget_is_written_when_absent_and_read_back(tmp_path: Path) -> None:
+    assert claude_settings.skill_listing_budget(tmp_path) == claude_settings.SKILL_LISTING_BUDGET
+    assert claude_settings.default_skill_listing_budget(tmp_path) is True
+
+    written = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert written["skillListingBudgetFraction"] == 0.02
+    assert claude_settings.default_skill_listing_budget(tmp_path) is False
+
+
+def test_a_chosen_skill_listing_budget_is_kept_and_read(tmp_path: Path) -> None:
+    path = tmp_path / ".claude" / "settings.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"skillListingBudgetFraction": 0.05}), encoding="utf-8")
+
+    assert claude_settings.default_skill_listing_budget(tmp_path) is False
+    assert claude_settings.skill_listing_budget(tmp_path) == 0.05
+
+
+def test_a_skill_listing_budget_outside_the_vendor_range_reads_as_the_default(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / ".claude" / "settings.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"skillListingBudgetFraction": 3}), encoding="utf-8")
+
+    assert claude_settings.skill_listing_budget(tmp_path) == claude_settings.SKILL_LISTING_BUDGET

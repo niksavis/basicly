@@ -9,6 +9,7 @@ from . import (
     agents,
     catalog_emphasis,
     catalog_token_cost,
+    claude_settings,
     read_cost,
     routing_evals,
     rubrics,
@@ -285,7 +286,6 @@ def _check_user_invoked_first_paragraph(repo_root: Path) -> list[str]:
     return violations
 
 
-_LISTING_BUDGET_FRACTION = 100
 _LISTING_REFERENCE_FAMILY = "claude"
 _LISTING_REFERENCE_WINDOW = 200_000
 
@@ -301,12 +301,14 @@ def listing_budget_warnings(repo_root: Path) -> list[str]:
         return []
     tokens = read_cost._text_tokens(listing)
     window = _LISTING_REFERENCE_WINDOW
-    budget = window // _LISTING_BUDGET_FRACTION
+    fraction = claude_settings.skill_listing_budget(repo_root)
+    budget = int(window * fraction)
     if tokens <= budget:
         return []
     return [
         f"skill listing is {tokens} tokens against a {budget}-token budget "
-        f"(1% of the {window}-token {_LISTING_REFERENCE_FAMILY} window a consumer gets), "
+        f"({fraction:.0%} of the {window}-token {_LISTING_REFERENCE_FAMILY} window, "
+        f"{claude_settings.SKILL_LISTING_BUDGET_KEY} in {claude_settings.CLAUDE_SETTINGS_PATH}), "
         f"from {len(entries)} entries. The host drops descriptions "
         f"least-invoked first, so the entries this overrun silences are the ones "
         f"already hardest to reach. Retire a dead skill or shorten a description."

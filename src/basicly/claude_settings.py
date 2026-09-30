@@ -22,6 +22,8 @@ DENY_KEY = "deny"
 HOOKS_KEY = "hooks"
 SUBAGENT_CACHE_TTL_KEY = "subagentPromptCacheTtl"
 SUBAGENT_CACHE_TTL = "1h"
+SKILL_LISTING_BUDGET_KEY = "skillListingBudgetFraction"
+SKILL_LISTING_BUDGET = 0.02
 PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
 HOOK_INTERPRETER = "uv run --no-project --no-python-downloads python"
 AGENT_HOOK_EVENTS = {
@@ -67,16 +69,32 @@ def set_bg_isolation_none(repo_root: Path) -> bool:
     return True
 
 
-def default_subagent_cache_ttl(repo_root: Path) -> bool:
+def _default_key(repo_root: Path, key: str, value: object) -> bool:
 
     path = repo_root / CLAUDE_SETTINGS_PATH
     settings = _load_settings(path)
-    if SUBAGENT_CACHE_TTL_KEY in settings:
+    if key in settings:
         return False
-    settings[SUBAGENT_CACHE_TTL_KEY] = SUBAGENT_CACHE_TTL
+    settings[key] = value
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(path, json.dumps(settings, indent=2) + "\n")
     return True
+
+
+def default_subagent_cache_ttl(repo_root: Path) -> bool:
+    return _default_key(repo_root, SUBAGENT_CACHE_TTL_KEY, SUBAGENT_CACHE_TTL)
+
+
+def default_skill_listing_budget(repo_root: Path) -> bool:
+    return _default_key(repo_root, SKILL_LISTING_BUDGET_KEY, SKILL_LISTING_BUDGET)
+
+
+def skill_listing_budget(repo_root: Path) -> float:
+
+    value = _load_settings(repo_root / CLAUDE_SETTINGS_PATH).get(SKILL_LISTING_BUDGET_KEY)
+    if isinstance(value, int | float) and not isinstance(value, bool) and 0 < value <= 1:
+        return float(value)
+    return SKILL_LISTING_BUDGET
 
 
 def _rule_list(perms: dict, key: str) -> list[str]:
