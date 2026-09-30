@@ -8,7 +8,9 @@ verbs they share, and the commands each one adds. The `basicly` engine's own sur
 **A kit is the same source either way.** `basicly install` materializes all three under
 `.basicly/core/kit/<name>` as part of the catalog, and the engine's own hooks call them there.
 A kit's own installer vendors that same source to `.basicly/kit/<name>` for a repository that
-has no basicly. There is no second copy to drift.
+has no basicly. There is no second copy to drift. The tracker and the board are the
+exception: they run from a user install, or from one `.basicly/<name>.pyz` file with
+`--sandbox`.
 
 ## Getting a kit
 
@@ -20,13 +22,24 @@ at the seam that commits tracker state, with a record id the commit-msg gate acc
 **Without basicly.** One line each, and no dependency beyond a Python 3.9 floor:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init
+uv tool install 'git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker'
+basicly-tracker init
 uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-comments basicly-comments init
 uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tier basicly-tier init
 ```
 
-After `init`, plain `python3 .basicly/kit/<name>/cli.py` runs the kit with no `uvx`, no
-network and nothing on `PATH`.
+After `init`, plain `python3 .basicly/kit/<name>/cli.py` runs the comments or tier kit with
+no `uvx`, no network and nothing on `PATH`. The tracker runs as `basicly-tracker`, or as
+`python3 .basicly/tracker.pyz` after `init --sandbox`.
+
+The tracker and board installers add these options to `init` and `update`:
+
+| Option | Behaviour |
+| --- | --- |
+| `--sandbox` | Write `.basicly/<name>.pyz` and a repository skill instead of using the user install; also moves a repository off the vendored folder |
+| `--user` | Write or, with `uninstall`, remove only the user skill in `~/.claude/skills/` |
+| `--mirror beads` | Tracker only: import `.beads/issues.jsonl`, mark the ledger as a mirror, and install no claim gate; `sync` re-imports it |
+| `--end-mirror` | Tracker only: end the mirror and install the claim gate |
 
 ## The four verbs every kit shares
 

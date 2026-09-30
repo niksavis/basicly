@@ -153,8 +153,9 @@ drift.
 Each one installs with a single line. Copy the one you want:
 
 ```sh
-# an append-only work tracker
-uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init
+# an append-only work tracker, installed once per machine
+uv tool install 'git+https://github.com/niksavis/basicly@v0.18.15#subdirectory=packages/basicly-tracker'
+basicly-tracker init
 
 # a gate that refuses a prose comment in a code file
 uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-comments basicly-comments init
@@ -165,8 +166,14 @@ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly
 
 To let a coding agent install the tracker and its board, give it the [agent install prompt](packages/basicly-tracker/README.md#install-with-a-coding-agent).
 
-`init` **vendors** the kit into `.basicly/kit/<name>`, so plain `python3` runs it afterwards
-with no `uvx`, no network and nothing on `PATH`. It also writes the kit's **skill** into
+**The tracker and its board run from a user install.** `basicly-tracker init` writes only the
+ledger, the version pin, the git rules and the commit hook into the repository, and it
+refuses with the install command when no user install exists. `init --sandbox` writes one
+`.basicly/tracker.pyz` file instead, and needs no user install. To trial the tracker beside
+br, see [Trial the tracker beside br](docs/how-to/trial-the-tracker-beside-br.md).
+
+For the comments and tier kits, `init` **vendors** the kit into `.basicly/kit/<name>`, so
+plain `python3` runs it afterwards with no `uvx`, no network and nothing on `PATH`. It also writes the kit's **skill** into
 `.claude/skills/` and `.agents/skills/`, so an agent in that repository
 knows the kit exists and when to use it — a kit nothing calls is a kit nobody has. Add
 `--with-instructions` to place a short always-on block in the instruction files you already
@@ -249,6 +256,7 @@ Task-focused guides for the recurring operations:
 | [Upgrade, check drift, uninstall](docs/how-to/upgrade-and-check-drift.md) | re-running install *is* the upgrade |
 | [Run several lanes in parallel](docs/how-to/run-parallel-lanes.md) | decompose, preflight, grants, the serial merge queue |
 | [Resume or hand over a track](docs/how-to/resume-a-track.md) | after a crash, or onto a different agent family |
+| [Trial the tracker beside br](docs/how-to/trial-the-tracker-beside-br.md) | before you retire br, with br as the source of truth |
 
 Reference:
 
