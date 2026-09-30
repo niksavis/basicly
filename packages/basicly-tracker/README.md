@@ -6,34 +6,49 @@ append conflict never — which is the reason to replace a tracker whose file is
 every change. It needs no `basicly`: standard library only, no third-party package, no
 network.
 
+**Install the code once per machine, and keep only the ledger in each repository.** This
+is the default mode:
+
 ```console
-$ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init
+$ uv tool install 'git+https://github.com/niksavis/basicly@v0.18.15#subdirectory=packages/basicly-tracker'
+$ basicly-tracker init
 tracker: added to .gitattributes: events-*.jsonl -text merge=union
-tracker: 31 file(s) written, 0 unchanged, in .basicly/kit/tracker
-$ python3 .basicly/kit/tracker/cli.py ready .basicly/ledger
+tracker: created the ledger .basicly/ledger
+tracker: pinned the ledger to tracker 0.18.15
+tracker: commit-msg now refuses a code commit on a record you do not hold
+basicly-tracker: wrote the user skill to ~/.claude/skills/basicly-tracker/SKILL.md
+$ basicly-tracker ready .basicly/ledger
 {"count": 0, "records": [], "schema": "basicly.scheduler.v1", ...}
 ```
 
 That `.gitattributes` line is the point of the tracker: it is what makes two branches that
-each append an event merge clean instead of conflicting. `init` writes it before it writes
-a single kit file, and refuses to install at all if it cannot.
+each append an event merge clean instead of conflicting. `init` writes it first, and
+refuses to install at all if it cannot.
 
-`init` copies the kit into `.basicly/kit/tracker` so it runs from plain `python3`
-afterwards.
+`init` writes no kit code into the repository. It refuses, with the install command, when
+no `basicly-tracker` is installed for the user. `.basicly/ledger/.kit-version` pins the
+version, and every command refuses a ledger that pins another one, because an older reader
+drops the event kinds it does not know.
 
-**One file instead of `uvx`.** `bundle` writes `tracker.pyz`, a single archive that
-runs on any platform with Python 3.9 or later and needs no network after it is written:
+**One file per repository instead: the sandbox mode.** `init --sandbox` writes
+`.basicly/tracker.pyz`, a single archive that runs on any platform with Python 3.9 or later,
+and a repository skill that names it. It needs no user install:
 
-```console
-$ uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker bundle
-tracker: wrote tracker.pyz; run it as python tracker.pyz <verb>
-$ python tracker.pyz init
-$ python tracker.pyz ready .basicly/ledger
+```sh
+uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tracker basicly-tracker init --sandbox
+python3 .basicly/tracker.pyz ready .basicly/ledger
 ```
 
 On its first run the archive unpacks itself into a cache directory named after its own
 content (`%LOCALAPPDATA%`, else `$XDG_CACHE_HOME`, else `~/.cache`, under `basicly-kits`),
 and runs from there. It still needs Python: it is not a native executable.
+
+`init` and `init --sandbox` switch a repository between the modes and leave the files of
+one mode only. A repository that vendors the older `.basicly/kit/tracker/` folder moves with
+`update --sandbox`, or with `update`, which removes the folder only when the user install
+accepts the pinned version. The commit hook runs the tracker from `.basicly/tracker.pyz`,
+then `.basicly/kit/tracker/`, then `basicly-tracker` on PATH, and refuses the commit when it
+finds none.
 
 **A repository that already has a backlog brings it across with `import`**, rather than
 retyping it. It reads a JSONL export one record per line, keeps the ids, and carries the
@@ -41,7 +56,7 @@ comments and the dependency edges with them. Preview it first — `--dry-run` re
 same plan by the same code path and writes nothing:
 
 ```console
-$ python3 .basicly/kit/tracker/cli.py import .basicly/ledger issues.jsonl --dry-run
+$ basicly-tracker import .basicly/ledger issues.jsonl --dry-run
 {
   "absent": [],
   "diverged": [],

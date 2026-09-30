@@ -140,6 +140,37 @@ def _user(args: list) -> int:
     return modes.install_user(KIT.directory, USER_SKILL, home, sys.stdout)
 
 
+def _replacements(typed: str) -> tuple:
+    return (
+        ("python3 .basicly/kit/tracker/cli.py", typed),
+        (
+            "`.basicly/kit/tracker/REFERENCE.md` lists every command with one example.",
+            f"`{typed} --help` lists every command.",
+        ),
+        *((("`work-tracker` skill", "`basicly-tracker` skill"),) if typed == KIT.command else ()),
+    )
+
+
+def _bundle_into(out: Path) -> Path:
+    bundler = _sibling("basicly_kit_bundle", "bundle.py", "kit_bundle.py", "kit bundler")
+    return bundler.bundle(_HERE, out)
+
+
+PACKAGE = modes.Package(
+    installer=installer,
+    kit=KIT,
+    user=USER_SKILL,
+    source=installer.read_kit_constant(KIT.directory, "pin.py", "INSTALL_SOURCE").format(
+        version=installer.read_kit_constant(KIT.directory, "pin.py", "KIT_VERSION")
+    )
+    if (KIT.directory / "pin.py").is_file()
+    else "",
+    replacements=_replacements,
+    bundle=_bundle_into,
+    check=("stats", LEDGER_DIR),
+)
+
+
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args[:1] == ["bundle"]:
@@ -147,6 +178,14 @@ def main(argv=None) -> int:
     if args[:1] in (["init"], ["update"], ["uninstall"]) and USER_FLAG in args:
         return _user(args)
     passed = _configure_flags(args) if args[:1] in (["init"], ["update"]) else ()
-    if passed:
-        return installer.run(KIT._replace(configure_args=(*KIT.configure_args, *passed)), args)
-    return installer.run(KIT, args)
+    sandbox = modes.SANDBOX_FLAG in args
+    if sandbox:
+        args.remove(modes.SANDBOX_FLAG)
+    kit = KIT._replace(configure_args=(*KIT.configure_args, *passed))
+    package = PACKAGE._replace(kit=kit)
+    verbs = {
+        "init": lambda request: modes.install_mode(package, request, sandbox),
+        "update": lambda request: modes.install_mode(package, request, sandbox),
+        "uninstall": lambda request: modes.uninstall_mode(package, request),
+    }
+    return installer.run(kit, args, verbs)

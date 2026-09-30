@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import os
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -95,3 +97,121 @@ def test_a_skill_the_installer_did_not_write_is_kept(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="not written by this installer"):
         modes.uninstall_user(tracker.USER_SKILL, home, io.StringIO())
     assert path.read_text(encoding="utf-8") == "mine\n"
+
+
+def _package():
+    def bundle(out: Path) -> Path:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("pyz\n", encoding="utf-8")
+        return out
+
+    kit = tracker.KIT._replace(directory=KIT_ROOT / "tracker")
+    return tracker.PACKAGE._replace(kit=kit, bundle=bundle, source="SOURCE")
+
+
+def _repo(tmp_path: Path) -> Path:
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)  # nosec B603 B607
+    return root
+
+
+def _request(package, root: Path) -> object:
+    return tracker.installer.Request(package.kit, root, io.StringIO())
+
+
+def _user_tool(tmp_path: Path, body: str) -> Path:
+    bin_dir = tmp_path / "userbin"
+    bin_dir.mkdir()
+    command = bin_dir / "basicly-tracker"
+    command.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    command.chmod(0o755)
+    return bin_dir
+
+
+@pytest.fixture
+def machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("PATH", f"{Path(sys.executable).parent}{os.pathsep}/usr/bin{os.pathsep}/bin")
+    return tmp_path
+
+
+def test_user_command_skips_the_scripts_folder_of_the_running_environment(tmp_path: Path) -> None:
+    bin_dir = _user_tool(tmp_path, "exit 0")
+
+    assert modes.user_command("basicly-tracker", {"PATH": str(bin_dir)}, str(bin_dir)) is None
+    assert modes.user_command("basicly-tracker", {"PATH": str(bin_dir)}, str(tmp_path)) == str(
+        bin_dir / "basicly-tracker"
+    )
+
+
+def test_the_default_mode_refuses_with_the_install_command_when_no_user_install_exists(
+    machine: Path,
+) -> None:
+    package = _package()
+    root = _repo(machine)
+
+    with pytest.raises(SystemExit, match="uv tool install --force 'SOURCE'"):
+        modes.install_mode(package, _request(package, root), sandbox=False)
+    assert not (root / ".basicly").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the stand-in user tool is a POSIX script")
+def test_the_default_mode_writes_no_kit_code_and_the_sandbox_mode_one_file(
+    machine: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cli = KIT_ROOT / "tracker" / "cli.py"
+    bin_dir = _user_tool(machine, f'exec "{sys.executable}" "{cli}" "$@"')
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    package = _package()
+    root = _repo(machine)
+
+    modes.install_mode(package, _request(package, root), sandbox=True)
+    assert (root / ".basicly" / "tracker.pyz").is_file()
+    skill = (root / ".claude" / "skills" / "tracker" / "SKILL.md").read_text(encoding="utf-8")
+    assert "python3 .basicly/tracker.pyz ready" in skill and ".basicly/kit/" not in skill
+
+    modes.install_mode(package, _request(package, root), sandbox=False)
+    assert not (root / ".basicly" / "tracker.pyz").exists()
+    assert not (root / ".claude" / "skills" / "tracker").exists()
+    assert not (root / ".basicly" / "kit").exists()
+    assert (root / ".basicly" / "ledger" / ".kit-version").is_file()
+    assert "__pycache__" not in (root / ".gitignore").read_text(encoding="utf-8")
+    assert modes.user_skill_path(machine / "home", tracker.USER_SKILL).is_file()
+
+
+def _vendored(package, root: Path) -> None:
+    tracker.installer.install(_request(package, root))
+    ledger = root / ".basicly" / "ledger"
+    (ledger / "pending-main.jsonl").write_text('{"kept": true}\n', encoding="utf-8")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the stand-in user tool is a POSIX script")
+def test_the_vendored_copy_stays_when_the_user_install_refuses_the_pin(
+    machine: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bin_dir = _user_tool(machine, 'echo "this ledger pins another tracker" >&2; exit 1')
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    package = _package()
+    root = _repo(machine)
+    _vendored(package, root)
+
+    with pytest.raises(SystemExit, match="so the vendored copy was kept"):
+        modes.install_mode(package, _request(package, root), sandbox=False)
+    assert (root / ".basicly" / "kit" / "tracker" / "cli.py").is_file()
+
+
+def test_the_sandbox_mode_replaces_the_vendored_copy_and_keeps_the_ledger_bytes(
+    machine: Path,
+) -> None:
+    package = _package()
+    root = _repo(machine)
+    _vendored(package, root)
+    ledger = root / ".basicly" / "ledger" / "pending-main.jsonl"
+    before = ledger.read_bytes()
+
+    modes.install_mode(package, _request(package, root), sandbox=True)
+
+    assert not (root / ".basicly" / "kit").exists()
+    assert (root / ".basicly" / "tracker.pyz").is_file()
+    assert ledger.read_bytes() == before

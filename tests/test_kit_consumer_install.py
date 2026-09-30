@@ -9,6 +9,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PACKAGES = REPO_ROOT / "packages"
 KITS = ("comments", "tracker", "tier")
+INIT = {"tracker": ("init", "--sandbox")}
+INSTALLED = {"tracker": Path(".basicly") / "tracker.pyz"}
 
 
 def _wheel(kit: str, out_dir: Path) -> Path:
@@ -47,11 +49,11 @@ def test_a_consumer_installs_the_kit_from_a_built_wheel(
 
     wheel = _wheel(kit, tmp_path / "dist")
 
-    installed = _from_wheel(wheel, kit, consumer, "init")
+    installed = _from_wheel(wheel, kit, consumer, *INIT.get(kit, ("init",)))
 
     assert installed.returncode == 0, installed.stderr
-    vendored = consumer / ".basicly" / "kit" / kit
-    assert vendored.is_dir(), installed.stdout
+    vendored = consumer / INSTALLED.get(kit, Path(".basicly") / "kit" / kit)
+    assert vendored.exists(), installed.stdout
     assert (consumer / ".claude" / "skills" / kit / "SKILL.md").is_file()
 
 
@@ -139,8 +141,8 @@ def test_the_comments_kit_refuses_prose_and_removes_it_without_basicly(
 def test_the_tracker_kit_holds_a_record_without_basicly(consumer: Path, tmp_path: Path) -> None:
 
     wheel = _wheel("tracker", tmp_path / "dist")
-    assert _from_wheel(wheel, "tracker", consumer, "init").returncode == 0
-    cli = consumer / ".basicly" / "kit" / "tracker" / "cli.py"
+    assert _from_wheel(wheel, "tracker", consumer, *INIT["tracker"]).returncode == 0
+    cli = consumer / INSTALLED["tracker"]
     ledger = consumer / ".basicly" / "ledger"
 
     created = subprocess.run(  # nosec B603
@@ -177,11 +179,12 @@ def test_the_tracker_kit_holds_a_record_without_basicly(consumer: Path, tmp_path
 def test_uninstalling_leaves_no_residue(kit: str, consumer: Path, tmp_path: Path) -> None:
 
     wheel = _wheel(kit, tmp_path / "dist")
-    assert _from_wheel(wheel, kit, consumer, "init").returncode == 0
+    assert _from_wheel(wheel, kit, consumer, *INIT.get(kit, ("init",))).returncode == 0
 
     assert _from_wheel(wheel, kit, consumer, "uninstall").returncode == 0
 
     assert not (consumer / ".basicly" / "kit" / kit).exists()
+    assert not (consumer / INSTALLED.get(kit, Path(".basicly") / "kit" / kit)).exists()
     for root in (".claude/skills", ".agents/skills"):
         assert not (consumer / root / kit).exists(), f"{root} kept the skill"
     for name in (".gitignore", ".gitattributes"):

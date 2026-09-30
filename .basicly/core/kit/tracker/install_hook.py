@@ -186,9 +186,10 @@ def install(  # noqa: PLR0913 — one keyword per seam the host injects; a setti
     stream: Any,
     command: str = "",
     advice: str = "",
+    script: str = "",
 ) -> int:
 
-    script = "" if command else _within(_HERE / CLI_FILE, root)
+    script = "" if command else (script or _within(_HERE / CLI_FILE, root))
     within = ensure_ledger(root, ledger, dry_run=dry_run, stream=stream)
     directory = hooks_dir(root)
     if directory is None:
@@ -324,6 +325,20 @@ def uninstall_fold(root: Path, *, dry_run: bool, stream: Any) -> int:
     return 0
 
 
+def _fold_script(root: Path, args: argparse.Namespace) -> str:
+
+    if args.command or not args.tracker_at:
+        return ""
+    found = next((one for one in args.tracker_at if (root / one).is_file()), "")
+    if not found:
+        raise SystemExit(
+            "tracker: --fold-on-merge runs the tracker from a file in the repository, and "
+            f"none of {', '.join(args.tracker_at)} exists; install with --sandbox, or run "
+            "`compact` yourself after a merge"
+        )
+    return found
+
+
 def main(argv: Any = None) -> int:
 
     offer = _load("import_offer.py", "basicly_tracker_kit_import_offer")
@@ -394,6 +409,9 @@ def main(argv: Any = None) -> int:
         default=None,
         help="a repository path an install manages, not code; a trailing / names a folder",
     )
+    parser.add_argument(
+        "--runner", default="", help="the tracker command a person types in this install"
+    )
     args = parser.parse_args(None if argv is None else list(argv))
     root = Path(args.root).resolve()
     if args.uninstall:
@@ -401,7 +419,9 @@ def main(argv: Any = None) -> int:
     ledger = Path(args.ledger) if args.ledger else _HERE.parent.parent / "ledger"
     if not ledger.is_absolute():
         ledger = root / ledger
-    asked = offer.Install(root, ledger, args.import_source, args.import_command, args.dry_run)
+    asked = offer.Install(
+        root, ledger, args.import_source, args.import_command, args.dry_run, args.runner
+    )
     try:
         backlogs = offer.chosen_backlogs(asked)
     except offer.ImportOfferError as exc:
@@ -429,6 +449,7 @@ def main(argv: Any = None) -> int:
             stream=sys.stdout,
             command=args.command,
             advice=args.advice,
+            script=_fold_script(root, args),
         )
     terminal = sys.stdin is not None and sys.stdin.isatty()
     try:

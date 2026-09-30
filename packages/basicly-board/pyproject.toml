@@ -25,3 +25,4 @@ exclude = ["**/__pycache__", "**/*.pyc"]
 "../../.basicly/core/kit/tracker" = "basicly_board/tracker"
 "../kit_installer.py" = "basicly_board/installer.py"
 "../kit_modes.py" = "basicly_board/modes.py"
+"../kit_bundle.py" = "basicly_board/bundle.py"

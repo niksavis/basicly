@@ -56,6 +56,11 @@ def repo(tmp_path: Path) -> Path:
         f"uv tool install 'git+https://x/basicly@v{CURRENT}#subdirectory=packages/basicly-tracker'\n",
         encoding="utf-8",
     )
+    (root / "packages" / "basicly-board").mkdir(parents=True, exist_ok=True)
+    (root / "packages" / "basicly-board" / "README.md").write_text(
+        f"uv tool install 'git+https://x/basicly@v{CURRENT}#subdirectory=packages/basicly-board'\n",
+        encoding="utf-8",
+    )
     (root / "CHANGELOG.md").write_text(
         "# Changelog\n\n## [Unreleased]\n\nSummary.\n", encoding="utf-8"
     )
@@ -102,6 +107,7 @@ def test_plan_reports_the_tag_the_date_and_every_pin_site(repo: Path) -> None:
         ".scripts/bootstrap.ps1": 1,
         "docs/how-to/upgrade.md": 1,
         "packages/basicly-tracker/README.md": 1,
+        "packages/basicly-board/README.md": 1,
     }
 
 

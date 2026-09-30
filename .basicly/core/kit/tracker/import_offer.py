@@ -25,7 +25,7 @@ SEARCHED = {
     BEANS: f"bean file under {BEANS_DIR} and no {BEANS_CONFIG}",
 }
 
-KIT_IMPORT = "python3 {cli} import {ledger} {path} --from {source}"
+KIT_IMPORT = "{runner} import {ledger} {path} --from {source}"
 YES = frozenset({"y", "yes"})
 
 
@@ -62,6 +62,7 @@ class Install:
     chosen: str = ""
     import_command: str = KIT_IMPORT
     dry_run: bool = False
+    runner: str = ""
 
 
 def _shown(path: Path, root: Path) -> str:
@@ -124,10 +125,16 @@ def chosen_backlogs(install: Install) -> tuple[Backlog, ...]:
     return found
 
 
+def _runner(install: Install) -> str:
+
+    return install.runner or f"python3 {_shown(_HERE / 'cli.py', install.root)}"
+
+
 def _how_to_import(install: Install, backlog: Backlog) -> str:
 
     template = KIT_IMPORT if backlog.path == BEANS_FOLDER else install.import_command
     return template.format(
+        runner=_runner(install),
         cli=_shown(_HERE / "cli.py", install.root),
         ledger=_shown(install.ledger, install.root),
         path=backlog.path,
@@ -137,12 +144,11 @@ def _how_to_import(install: Install, backlog: Backlog) -> str:
 
 def _refine_note(install: Install) -> str:
 
-    cli = _shown(_HERE / "cli.py", install.root)
     ledger = _shown(install.ledger, install.root)
     return (
         "tracker: an imported open record lands in refine, not in ready: it has no Trigger, "
         "Acceptance Criteria or Requirements, so `ready` shows 0 until each one is shaped; "
-        f"list them with `python3 {cli} refine {ledger}`\n"
+        f"list them with `{_runner(install)} refine {ledger}`\n"
     )
 
 

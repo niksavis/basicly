@@ -54,7 +54,7 @@ def prune_retired_skill(target: Path, name: str, body: str, stream) -> int:
             continue
         path.unlink()
         removed += 1
-        _prune_empty(path.parent, target.resolve())
+        prune_empty(path.parent, target.resolve())
         stream.write(
             f"{name}: removed {path.relative_to(target)}; Copilot reads all three skill "
             "roots with no documented dedup, so a third copy is discovered a third time\n"
@@ -86,7 +86,7 @@ def drop_skill(target: Path, name: str, stream) -> int:
             continue
         path.unlink()
         removed += 1
-        _prune_empty(path.parent, target.resolve())
+        prune_empty(path.parent, target.resolve())
     if removed:
         stream.write(f"{name}: removed the skill from {removed} root(s)\n")
     return removed
@@ -221,6 +221,20 @@ def refuse_second_copy(target: Path, name: str, command: str) -> None:
     )
 
 
+def write_rules(request, rules=None) -> None:
+    for rule_file, lines in host_rules(request.kit) if rules is None else rules:
+        path = request.target / rule_file
+        try:
+            added = ensure_lines(path, lines)
+        except OSError as err:
+            raise SystemExit(
+                f"{request.kit.name}: cannot write {path}, which the kit's correctness "
+                f"depends on, so nothing was installed: {err}"
+            ) from err
+        for line in added:
+            request.stream.write(f"{request.kit.name}: added to {rule_file}: {line}\n")
+
+
 def install(request) -> int:
     kit_dir, target, name, stream = (
         request.kit.directory,
@@ -230,17 +244,7 @@ def install(request) -> int:
     )
     refuse_second_copy(target, name, request.kit.command)
     destination = vendored_root(target, name)
-    for rule_file, lines in host_rules(request.kit):
-        path = target / rule_file
-        try:
-            added = ensure_lines(path, lines)
-        except OSError as err:
-            raise SystemExit(
-                f"{name}: cannot write {path}, which the kit's correctness depends on, "
-                f"so nothing was installed: {err}"
-            ) from err
-        for line in added:
-            stream.write(f"{name}: added to {rule_file}: {line}\n")
+    write_rules(request)
     written = unchanged = 0
     for source in kit_files(kit_dir):
         relative = source.relative_to(kit_dir)
@@ -346,14 +350,14 @@ def uninstall(request) -> int:
         else:
             kept += 1
     if not kept:
-        _prune_empty(destination, target.resolve())
+        prune_empty(destination, target.resolve())
     stream.write(
         f"{name}: {removed} file(s) removed, {kept} left in place because we did not write them\n"
     )
     return 0
 
 
-def _prune_empty(directory: Path, stop_at: Path) -> None:
+def prune_empty(directory: Path, stop_at: Path) -> None:
     path = directory.resolve()
     while path != stop_at and path.is_dir() and not any(path.iterdir()):
         path.rmdir()
@@ -442,9 +446,10 @@ class Kit(NamedTuple):
     configure_args: tuple = ()
 
 
-def run(kit: Kit, argv=None) -> int:
+def run(kit: Kit, argv=None, modes=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     verbs = {"init": install, "update": install, "uninstall": uninstall, "status": status}
+    verbs.update(modes or {})
     if args and args[0] in verbs:
         parser = argparse.ArgumentParser(prog=f"{kit.command} {args[0]}")
         parser.add_argument(

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import re
 import subprocess  # nosec B404
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 
@@ -17,9 +18,17 @@ from tests.test_kit_consumer_install import _from_wheel, _wheel
 writers = _load(REPO_ROOT / KIT_RELATIVE / "writers.py", "consumer_journey_writers")
 
 LEDGER = ".basicly/ledger"
-TRACKER_CLI = Path(".basicly") / "kit" / "tracker" / "cli.py"
-BOARD_SERVER = Path(".basicly") / "kit" / "board" / "server.py"
+TRACKER_PYZ = Path(".basicly") / "tracker.pyz"
+BOARD_PYZ = Path(".basicly") / "board.pyz"
 BARE = (sys.executable, "-I", "-S")
+
+
+class Mode(NamedTuple):
+    tracker: tuple
+    board: tuple
+    env: dict | None
+
+
 BEAN = "---\ntitle: {title}\nstatus: todo\ntype: task\n---\n\nThe body.\n"
 BEANS = {"demo-aa01": "first bean", "demo-bb02": "second bean"}
 BANNER = re.compile(r"board: http://127\.0\.0\.1:(\d+)/ serves ")
@@ -38,39 +47,97 @@ def _fresh_repository(tmp_path: Path) -> Path:
     return repo
 
 
-def _kit(repo: Path, *argv: str) -> subprocess.CompletedProcess[str]:
+def _run(mode: Mode, argv: list, repo: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # nosec B603
-        [*BARE, str(TRACKER_CLI), *argv],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=False,
+        argv, cwd=repo, capture_output=True, text=True, check=False, env=mode.env
     )
 
 
-def _install(repo: Path, dist: Path) -> None:
+def _kit(repo: Path, mode: Mode, *argv: str) -> subprocess.CompletedProcess[str]:
+    return _run(mode, [*mode.tracker, *argv], repo)
+
+
+def _uv_dir(kind: str) -> str:
+    done = subprocess.run(  # nosec B603 B607
+        ["uv", kind, "dir"] if kind == "cache" else ["uv", "python", "dir"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return done.stdout.strip()
+
+
+def _sandbox(
+    repo: Path, dist: Path
+) -> tuple[Mode, subprocess.CompletedProcess[str], subprocess.CompletedProcess[str]]:
+    tracker = _from_wheel(
+        _wheel("tracker", dist / "tracker"),
+        "tracker",
+        repo,
+        "init",
+        "--sandbox",
+        "--import",
+        "beans",
+    )
+    board = _from_wheel(_wheel("board", dist / "board"), "board", repo, "init", "--sandbox")
+    mode = Mode((*BARE, str(TRACKER_PYZ)), (*BARE, str(BOARD_PYZ)), None)
+    return mode, tracker, board
+
+
+def _machine(
+    repo: Path, dist: Path
+) -> tuple[Mode, subprocess.CompletedProcess[str], subprocess.CompletedProcess[str]]:
+    tools = dist / "user"
+    env = {
+        **os.environ,
+        "HOME": str(tools / "home"),
+        "UV_TOOL_DIR": str(tools / "tools"),
+        "UV_TOOL_BIN_DIR": str(tools / "bin"),
+        "UV_PYTHON_INSTALL_DIR": _uv_dir("python"),
+        "UV_CACHE_DIR": _uv_dir("cache"),
+        "PATH": f"{tools / 'bin'}{os.pathsep}{os.environ['PATH']}",
+    }
+    for kit in ("tracker", "board"):
+        wheel = _wheel(kit, dist / kit)
+        installed = subprocess.run(  # nosec B603 B607
+            ["uv", "tool", "install", "-q", str(wheel)],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        assert installed.returncode == 0, f"install: uv tool install {kit}: {installed.stderr}"
+    mode = Mode(
+        (str(tools / "bin" / "basicly-tracker"),), (str(tools / "bin" / "basicly-board"),), env
+    )
+    tracker = _run(mode, [*mode.tracker, "init", "--import", "beans"], repo)
+    board = _run(mode, [*mode.board, "init"], repo)
+    assert (tools / "home" / ".claude" / "skills" / "basicly-tracker" / "SKILL.md").is_file()
+    return mode, tracker, board
+
+
+def _install(repo: Path, dist: Path, machine: bool) -> Mode:
     probe = subprocess.run(  # nosec B603
         [*BARE, "-c", "import basicly"], capture_output=True, check=False
     )
     assert probe.returncode != 0, "install: the interpreter the kit runs under imports basicly"
 
-    tracker = _from_wheel(
-        _wheel("tracker", dist / "tracker"), "tracker", repo, "init", "--import", "beans"
-    )
-    board = _from_wheel(_wheel("board", dist / "board"), "board", repo, "init")
+    mode, tracker, board = (_machine if machine else _sandbox)(repo, dist)
 
     assert tracker.returncode == 0, f"install: basicly-tracker init failed: {tracker.stderr}"
     assert "imported 2 record(s) from .beans into .basicly/ledger" in tracker.stdout, (
         f"install: the beans backlog was not imported: {tracker.stdout}"
     )
     assert board.returncode == 0, f"install: basicly-board init failed: {board.stderr}"
-    assert (repo / BOARD_SERVER).is_file(), f"install: no board server: {board.stdout}"
+    assert (repo / BOARD_PYZ).is_file() != machine, f"install: board layout: {board.stdout}"
+    assert not (repo / ".basicly" / "kit").exists(), "install: a mode vendored the kit folder"
     assert not (repo / ".basicly" / "core").exists(), "install: basicly manages this repository"
+    return mode
 
 
-def _configure(repo: Path) -> None:
-    written = _kit(repo, "config", LEDGER, "set", "prefix", "acme")
-    shown = _kit(repo, "config", LEDGER)
+def _configure(repo: Path, mode: Mode) -> None:
+    written = _kit(repo, mode, "config", LEDGER, "set", "prefix", "acme")
+    shown = _kit(repo, mode, "config", LEDGER)
 
     assert written.returncode == 0, f"configure: config set refused: {written.stdout}"
     settings = {row["name"]: row for row in json.loads(shown.stdout)["settings"]}
@@ -78,16 +145,16 @@ def _configure(repo: Path) -> None:
     assert settings["prefix"]["source"] == "ledger file", f"configure: {settings['prefix']}"
 
 
-def _use(repo: Path) -> str:
+def _use(repo: Path, mode: Mode) -> str:
     story = ("--description", "When a customer installs it, I want a record, so I can close it.")
     shaped = (*story, "--acceptance", "- it closes", "--requirements", "- stdlib")
-    created = _kit(repo, "create", LEDGER, "--title", "walk the customer path", *shaped)
+    created = _kit(repo, mode, "create", LEDGER, "--title", "walk the customer path", *shaped)
     assert created.returncode == 0, f"use: create refused: {created.stdout} {created.stderr}"
     record = json.loads(created.stdout)["record"]
     assert record.startswith("acme-"), f"use: {record} is not under the configured prefix"
 
-    claimed = _kit(repo, "claim", LEDGER, record, "--to", "alex")
-    closed = _kit(repo, "close", LEDGER, record, "--reason", "walked the customer path")
+    claimed = _kit(repo, mode, "claim", LEDGER, record, "--to", "alex")
+    closed = _kit(repo, mode, "close", LEDGER, record, "--reason", "walked the customer path")
 
     assert claimed.returncode == 0, f"use: claim refused: {claimed.stdout} {claimed.stderr}"
     assert closed.returncode == 0, f"use: close refused: {closed.stdout} {closed.stderr}"
@@ -122,11 +189,12 @@ def _api(port: int, path: str) -> dict[str, Any]:
     return json.loads(body)
 
 
-def _see(repo: Path, record: str, banner: Path) -> None:
+def _see(repo: Path, mode: Mode, record: str, banner: Path) -> None:
     with banner.open("w", encoding="utf-8") as log:
         server = subprocess.Popen(  # nosec B603
-            [*BARE, str(BOARD_SERVER), "serve", LEDGER, "--port", "0"],
+            [*mode.board, "serve", LEDGER, "--port", "0"],
             cwd=repo,
+            env=mode.env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=log,
@@ -154,8 +222,9 @@ def _see(repo: Path, record: str, banner: Path) -> None:
     assert imported["fields"]["title"] == BEANS["demo-aa01"], f"see: {imported}"
 
 
+@pytest.mark.parametrize("machine", [False, True], ids=["sandbox", "machine"])
 def test_a_customer_installs_configures_uses_and_sees_the_tracker_from_the_built_packages(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, machine: bool
 ) -> None:
     for marker in (*writers.AGENT_MARKERS, writers.CLAUDE_CODE_MARKER):
         monkeypatch.delenv(marker, raising=False)
@@ -163,7 +232,7 @@ def test_a_customer_installs_configures_uses_and_sees_the_tracker_from_the_built
         monkeypatch.setenv(name, str(tmp_path / "no-such-gitconfig"))
     repo = _fresh_repository(tmp_path)
 
-    _install(repo, tmp_path / "dist")
-    _configure(repo)
-    record = _use(repo)
-    _see(repo, record, tmp_path / "board.log")
+    mode = _install(repo, tmp_path / "dist", machine)
+    _configure(repo, mode)
+    record = _use(repo, mode)
+    _see(repo, mode, record, tmp_path / "board.log")

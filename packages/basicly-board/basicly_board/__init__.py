@@ -77,6 +77,43 @@ KIT = installer.Kit(
 )
 
 
+SOURCE = "git+https://github.com/niksavis/basicly@v{version}#subdirectory=packages/basicly-board"
+
+
+def _replacements(typed: str) -> tuple:
+    default = typed == USER_SKILL.command
+    return (
+        ("python3 .basicly/kit/board/server.py", typed),
+        ("`.basicly/kit/board/README.md` has the table", "The board README has the table"),
+        *((("`work-tracker` skill", "`basicly-tracker` skill"),) if default else ()),
+        *((("`tracker-board` skill", "`basicly-board` skill"),) if default else ()),
+    )
+
+
+def _bundle_into(out: Path) -> Path:
+    spec = importlib.util.spec_from_file_location("basicly_kit_bundle", _HERE / "bundle.py")
+    if spec is None or spec.loader is None:
+        raise SystemExit("the kit bundler is missing from beside this package")
+    bundler = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bundler)
+    return bundler.bundle(_HERE, out)
+
+
+def _version() -> str:
+    pin = _HERE / "tracker" / "pin.py"
+    return installer.read_kit_constant(pin.parent, "pin.py", "KIT_VERSION") if pin.is_file() else ""
+
+
+PACKAGE = modes.Package(
+    installer=installer,
+    kit=KIT,
+    user=USER_SKILL,
+    source=SOURCE.format(version=_version()),
+    replacements=_replacements,
+    bundle=_bundle_into,
+)
+
+
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args[:1] in (["init"], ["update"], ["uninstall"]) and USER_FLAG in args:
@@ -84,4 +121,12 @@ def main(argv=None) -> int:
         if args[0] == "uninstall":
             return modes.uninstall_user(USER_SKILL, home, sys.stdout)
         return modes.install_user(KIT.directory, USER_SKILL, home, sys.stdout)
-    return installer.run(KIT, args)
+    sandbox = modes.SANDBOX_FLAG in args
+    if sandbox:
+        args.remove(modes.SANDBOX_FLAG)
+    verbs = {
+        "init": lambda request: modes.install_mode(PACKAGE, request, sandbox),
+        "update": lambda request: modes.install_mode(PACKAGE, request, sandbox),
+        "uninstall": lambda request: modes.uninstall_mode(PACKAGE, request),
+    }
+    return installer.run(KIT, args, verbs)

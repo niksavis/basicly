@@ -52,8 +52,9 @@ def test_the_archive_installs_and_runs_the_tracker(pyz: Path, tmp_path: Path) ->
     subprocess.run(["git", "init", "-q", str(repo)], check=True)  # nosec B603 B607
     cache = tmp_path / "cache"
 
-    installed = _run(pyz, repo, cache, "init")
+    installed = _run(pyz, repo, cache, "init", "--sandbox")
     assert installed.returncode == 0, installed.stderr
+    assert (repo / ".basicly" / "tracker.pyz").is_file()
     assert "merge=union" in (repo / ".gitattributes").read_text(encoding="utf-8")
 
     ledger = str(Path(".basicly") / "ledger")
@@ -100,14 +101,14 @@ def test_the_fold_hook_is_wired_only_on_request(pyz: Path, tmp_path: Path) -> No
     cache = tmp_path / "cache"
     hook = repo / ".git" / "hooks" / "post-merge"
 
-    plain = _run(pyz, repo, cache, "init")
+    plain = _run(pyz, repo, cache, "init", "--sandbox")
     assert plain.returncode == 0, plain.stderr
     assert "no post-merge fold is wired" in plain.stdout
     assert not hook.exists()
 
-    folding = _run(pyz, repo, cache, "update", "--fold-on-merge")
+    folding = _run(pyz, repo, cache, "update", "--sandbox", "--fold-on-merge")
     assert folding.returncode == 0, folding.stderr
-    assert "compact" in hook.read_text(encoding="utf-8")
+    assert '.basicly/tracker.pyz" compact' in hook.read_text(encoding="utf-8")
 
 
 def test_init_offers_a_beads_backlog_and_imports_it_on_the_flag(pyz: Path, tmp_path: Path) -> None:
@@ -118,12 +119,13 @@ def test_init_offers_a_beads_backlog_and_imports_it_on_the_flag(pyz: Path, tmp_p
     (repo / ".beads" / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     cache = tmp_path / "cache"
 
-    offered = _run(pyz, repo, cache, "init")
-    imported = _run(pyz, repo, cache, "update", "--import", "beads")
+    offered = _run(pyz, repo, cache, "init", "--sandbox")
+    imported = _run(pyz, repo, cache, "update", "--sandbox", "--import", "beads")
 
     assert offered.returncode == 0, offered.stderr
     assert ".beads/issues.jsonl holds 3 record(s)" in offered.stdout
-    assert "run `basicly-tracker init --import beads`" in offered.stdout
+    assert "run `python3 .basicly/tracker.pyz init --sandbox --import beads`" in offered.stdout
+    assert "`python3 .basicly/tracker.pyz refine .basicly/ledger`" in offered.stdout
     assert imported.returncode == 0, imported.stderr
     assert "imported 3 record(s) from .beads/issues.jsonl" in imported.stdout
 
