@@ -43,6 +43,20 @@ def ledger_rules(directory: Path):
     )
 
 
+PLACES = (
+    installer.sandbox_file("tracker").as_posix(),
+    (installer.DEFAULT_ROOT / "tracker" / "cli.py").as_posix(),
+)
+MANAGED = (
+    f"{installer.DEFAULT_ROOT.as_posix()}/",
+    installer.sandbox_file("tracker").as_posix(),
+    installer.sandbox_file("board").as_posix(),
+)
+LAYOUT_ARGS = (
+    *(arg for place in PLACES for arg in ("--tracker-at", place)),
+    *(arg for path in MANAGED for arg in ("--managed", path)),
+)
+
 KIT = installer.Kit(
     command="basicly-tracker",
     name="tracker",
@@ -56,6 +70,7 @@ KIT = installer.Kit(
         "--pin",
         "--import-command",
         "basicly-tracker init --import {source}",
+        *LAYOUT_ARGS,
     ),
 )
 

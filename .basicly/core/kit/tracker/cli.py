@@ -225,6 +225,13 @@ def _fsck(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     return (EXIT_OK if report.clean else report.exit_code), {**report.as_dict(), **rebuilt}
 
 
+def _relative(path: Path) -> str:
+    try:
+        return path.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def _commit_check(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     message = Path(args.message).read_text(encoding="utf-8")
     changed = [line.strip() for line in sys.stdin] if args.stdin else list(args.path)
@@ -232,12 +239,8 @@ def _commit_check(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
     committer = commands.holders.default_holder(Path.cwd())
     ledger = Path(args.directory).resolve()
     here = Path(__file__).resolve()
-    try:
-        shown = ledger.relative_to(Path.cwd().resolve()).as_posix()
-        script = here.relative_to(Path.cwd().resolve()).as_posix()
-    except ValueError:
-        shown, script = ledger.as_posix(), here.as_posix()
-    runner = f"python3 {script}"
+    runner = args.runner or f"python3 {_relative(here)}"
+    shown = _relative(ledger)
     context = commands.claims.CommitContext(committer, shown, runner, tuple(args.installed))
     commands.claims.refuse_commit(states, message, changed, context)
     return EXIT_OK, {"committer": committer, "ids": commands.claims.named_ids(message, states)}

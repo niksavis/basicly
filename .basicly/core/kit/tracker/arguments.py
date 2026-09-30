@@ -96,6 +96,9 @@ def parser() -> argparse.ArgumentParser:
         default=[],
         help="a path an install manages, not code; a trailing / names a folder",
     )
+    claim_check.add_argument(
+        "--runner", default="", help="the tracker command a refusal tells the committer to type"
+    )
 
     check = sub.add_parser(
         "fsck", help="fold the whole log and report anything unparseable or broken"
