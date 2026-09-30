@@ -61,6 +61,16 @@ def test_validate_rejects_unknown_issue_id() -> None:
     assert "unknown issue id" in error
 
 
+def test_an_unknown_id_names_the_unstaged_ledger_first_with_the_command_that_stages_it() -> None:
+    module = _load_tracker_commit_msg_module()
+    _, error = module.validate("feat(basicly): add hook (basicly-zzz)", {"basicly-idr"})
+
+    unstaged = error.index("its ledger change is not staged")
+    elsewhere = error.index("created in another checkout")
+    assert unstaged < elsewhere
+    assert "  git add .basicly/ledger\n" in error
+
+
 def test_validate_ignores_hyphenated_words_when_a_valid_id_is_present() -> None:
 
     module = _load_tracker_commit_msg_module()

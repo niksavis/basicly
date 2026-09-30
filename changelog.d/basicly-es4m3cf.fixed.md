@@ -1,0 +1,1 @@
+- **The `tracker-commit-msg` refusal for an unknown id now names the likely local cause first.** pre-commit hides an unstaged ledger from the hook, so a record created in this checkout reads as unknown. The message says so and prints `git add .basicly/ledger` before it names a record from another checkout (basicly-es4m3cf).
