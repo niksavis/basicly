@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the standalone tracker and its board a product that you install once per machine, and lets you trial it beside br. `basicly-tracker init` and `basicly-board init` now run the code from a user install and write only the ledger, the pin, the git rules and the hook into a repository. `--sandbox` keeps one `.pyz` file per repository instead. `init --mirror beads` imports a br backlog and keeps br the source of truth until you end the trial.
+
+- **One install per machine, one file per repository as the fallback.** The default and sandbox modes, the user-level skills, the migration off the vendored folder, and one rule that finds the tracker for the commit hook (basicly-afz0sbp.2, basicly-afz0sbp.3, basicly-afz0sbp.4, basicly-afz0sbp.5).
+- **Trial the tracker beside br.** The mirror mode and `sync`, the br id prefix read from `.beads/config.yaml`, and a kit board that names br as the source of truth and keeps br dates (basicly-60468gt, basicly-6a5dkgu, basicly-9pyaygb).
+- **Fixes reported by a consumer.** The commit gate names an unstaged ledger first, two new evidence rules, and a Claude skill listing budget of 2% so that every shipped description stays visible (basicly-es4m3cf, basicly-94pv91u, basicly-4lnihzs, basicly-pbwegwo).
+
 ## v0.18.15 - 2026-09-25
 
 Delta: v0.18.14..v0.18.15
