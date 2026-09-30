@@ -90,6 +90,8 @@ IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a 
 
 ## Quality Gate
 
+- The person pays for two things: time and tokens. Choose the cheapest check that proves the step. Run the tests of what you touched while you iterate, and the whole suite once, before the commit.
+- In a long run, report the elapsed time, the tokens spent where the host shows them, and the items left.
 - Review the diff. Then run the change the way a consumer runs it, and read the output. Passing tests do not prove a working feature.
 - Run the repository checks on what you touched, after the last edit. A later edit can break what passed.
 - Read the pass or fail summary line. Truncated output hides failures.
