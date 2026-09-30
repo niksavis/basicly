@@ -76,6 +76,11 @@ terminal it imports nothing and prints the command, for example
 needs `bd export -o .beads/issues.jsonl` first. The imported records land in `refine`,
 because they carry no acceptance criteria yet, so `ready` shows 0 until you shape them.
 
+**Trial it beside br with a mirror.** `basicly-tracker init --mirror beads` imports
+`.beads/issues.jsonl` and installs no claim gate, because br stays the source of truth.
+`basicly-tracker sync .basicly/ledger` re-imports it, and br wins for status.
+`basicly-tracker init --end-mirror` ends the trial and installs the claim gate.
+
 A record the importer cannot name is **refused and reported, never dropped quietly**.
 Re-running the same export appends nothing, so an import can be repeated while the other
 tracker is still authoritative. Every imported record records where it came from, which

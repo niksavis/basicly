@@ -1,0 +1,1 @@
+- **`basicly-tracker init --mirror beads` runs the tracker beside br.** It imports `.beads/issues.jsonl`, writes `mirror.json` and installs no claim gate. `sync` re-imports br, reports status changes, diverged fields and records br no longer holds, and warns when `beads.db` is newer than the export. `init --end-mirror` ends it (basicly-60468gt).

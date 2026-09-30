@@ -412,6 +412,8 @@ def main(argv: Any = None) -> int:
     parser.add_argument(
         "--runner", default="", help="the tracker command a person types in this install"
     )
+    mirror = _load("mirror.py", "basicly_tracker_kit_mirror")
+    mirror.add_arguments(parser)
     args = parser.parse_args(None if argv is None else list(argv))
     root = Path(args.root).resolve()
     if args.uninstall:
@@ -419,9 +421,8 @@ def main(argv: Any = None) -> int:
     ledger = Path(args.ledger) if args.ledger else _HERE.parent.parent / "ledger"
     if not ledger.is_absolute():
         ledger = root / ledger
-    asked = offer.Install(
-        root, ledger, args.import_source, args.import_command, args.dry_run, args.runner
-    )
+    chosen = args.import_source or args.mirror
+    asked = offer.Install(root, ledger, chosen, args.import_command, args.dry_run, args.runner)
     try:
         backlogs = offer.chosen_backlogs(asked)
     except offer.ImportOfferError as exc:
@@ -429,7 +430,10 @@ def main(argv: Any = None) -> int:
     ensure_ledger(root, ledger, dry_run=args.dry_run, stream=sys.stdout)
     if args.pin:
         pin_ledger(ledger, dry_run=args.dry_run, stream=sys.stdout)
-    if not args.command:
+    wanted = args.dry_run or mirror.claim_wanted(ledger, args.mirror, args.end_mirror, sys.stdout)
+    if not wanted:
+        _uninstall_claim(hooks_dir(root), dry_run=args.dry_run)
+    elif not args.command:
         install_claim(
             root,
             ledger=ledger,

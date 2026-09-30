@@ -37,6 +37,7 @@ board = _load("board.py", "basicly_tracker_kit_board")
 fields = _load("fields.py", "basicly_tracker_kit_fields")
 arguments = _load("arguments.py", "basicly_tracker_kit_arguments")
 pin = _load("pin.py", "basicly_tracker_kit_pin")
+mirror = _load("mirror.py", "basicly_tracker_kit_mirror")
 settings = _load("settings.py", "basicly_tracker_kit_settings")
 beans = _load("beans.py", "basicly_tracker_kit_beans")
 events = snapshot.events
@@ -182,6 +183,7 @@ _VIEWS: dict[
         redact=r,
         dry_run=a.dry_run,
     ),
+    "sync": lambda a, _r: mirror.sync(a.directory, a.root, dry_run=a.dry_run),
     "scaffold": lambda a, _r: record_view.scaffold_of(a.directory, a.type),
     "fields": lambda a, _r: fields.table(record_view.templates.load(a.directory)),
     "refine": lambda a, _r: record_view.refine_queue(a.directory),

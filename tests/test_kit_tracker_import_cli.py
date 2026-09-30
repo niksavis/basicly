@@ -197,7 +197,7 @@ def test_a_ledger_prefix_that_differs_is_kept_and_both_are_reported(
         "outcome": "kept",
         "ledger": "mine",
         "source": "demo",
-        "from": (export.parent / "config.yaml").as_posix(),
+        "from": (export.parent / "config.yaml").resolve().as_posix(),
     }
     assert _root_create(capsys, ledger)["record"].startswith("mine-")
 

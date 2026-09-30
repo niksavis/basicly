@@ -111,22 +111,25 @@ def _bundle(args) -> int:
 
 
 FOLD_FLAG = "--fold-on-merge"
+END_MIRROR_FLAG = "--end-mirror"
 IMPORT_FLAG = "--import"
+MIRROR_FLAG = "--mirror"
 
 
 def _configure_flags(args: list) -> tuple:
     passed = []
-    if FOLD_FLAG in args:
-        args.remove(FOLD_FLAG)
-        passed.append(FOLD_FLAG)
-    if IMPORT_FLAG in args:
-        at = args.index(IMPORT_FLAG)
-        if at + 1 == len(args):
-            raise SystemExit(
-                f"{IMPORT_FLAG} needs a source: {IMPORT_FLAG} beads or {IMPORT_FLAG} beans"
-            )
-        passed += args[at : at + 2]
-        del args[at : at + 2]
+    for flag in (FOLD_FLAG, END_MIRROR_FLAG):
+        if flag in args:
+            args.remove(flag)
+            passed.append(flag)
+    for flag, sources in ((IMPORT_FLAG, ("beads", "beans")), (MIRROR_FLAG, ("beads",))):
+        if flag in args:
+            at = args.index(flag)
+            if at + 1 == len(args):
+                named = " or ".join(f"{flag} {source}" for source in sources)
+                raise SystemExit(f"{flag} needs a source: {named}")
+            passed += args[at : at + 2]
+            del args[at : at + 2]
     return tuple(passed)
 
 

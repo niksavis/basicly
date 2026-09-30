@@ -179,7 +179,11 @@ def adopt_prefix(ledger: Path, export: Path, *, dry_run: bool) -> dict[str, str]
         return {}
     settings = _load("settings.py", "basicly_tracker_kit_settings")
     held = settings.templates.load(ledger).prefix if Path(ledger).is_dir() else None
-    source = (Path(export).parent / CONFIG_FILE).as_posix()
+    config = (Path(export).parent / CONFIG_FILE).resolve()
+    try:
+        source = config.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        source = config.as_posix()
     if held == found:
         return {}
     if held:

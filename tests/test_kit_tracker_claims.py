@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess  # nosec B404
 import sys
@@ -106,3 +107,77 @@ def test_the_first_commit_of_an_install_passes_with_a_record_already_filed(repo:
     _git(repo, "add", "app.py")
     refused = _git(repo, "commit", "-q", "-m", "feat: add value")
     assert refused.returncode != 0 and "Claim the record first" in refused.stderr
+
+
+def _br_backlog(repo: Path, statuses: dict[str, str]) -> None:
+    beads = repo / ".beads"
+    beads.mkdir(exist_ok=True)
+    (beads / "config.yaml").write_text("issue_prefix: acme\n", encoding="utf-8")
+    lines = [
+        json.dumps({"id": record, "title": f"br {record}", "status": status})
+        for record, status in statuses.items()
+    ]
+    (beads / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _hook(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # nosec B603
+        [sys.executable, ".basicly/kit/tracker/install_hook.py", "--root", ".", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_a_mirror_of_br_imports_it_and_installs_no_claim_gate(repo: Path) -> None:
+    _br_backlog(repo, {"acme-aa11": "open", "acme-bb22": "in_progress"})
+
+    mirrored = _hook(repo, "--mirror", "beads")
+
+    assert mirrored.returncode == 0, mirrored.stderr
+    assert (repo / ".basicly" / "ledger" / "mirror.json").is_file()
+    assert "no claim gate is installed" in mirrored.stdout
+    assert not (repo / ".git" / "hooks" / "commit-msg").exists()
+    (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    landed = _git(repo, "commit", "-q", "-m", "feat: work claimed in br only acme-aa11")
+    assert landed.returncode == 0, landed.stderr
+
+
+def test_sync_follows_br_for_status_and_new_records(repo: Path) -> None:
+    _br_backlog(repo, {"acme-aa11": "open"})
+    assert _hook(repo, "--mirror", "beads").returncode == 0
+    _br_backlog(repo, {"acme-aa11": "closed", "acme-cc33": "open"})
+
+    report = _kit(repo, "sync", ".basicly/ledger")
+
+    assert report["imported"] == ["acme-cc33"]
+    assert report["status_changed"] == [{"record": "acme-aa11", "was": "open", "now": "closed"}]
+    assert _kit(repo, "show", ".basicly/ledger", "acme-aa11")["status"] == "closed"
+
+
+def test_sync_warns_when_the_br_database_is_newer_than_its_export(repo: Path) -> None:
+    _br_backlog(repo, {"acme-aa11": "open"})
+    assert _hook(repo, "--mirror", "beads").returncode == 0
+    database = repo / ".beads" / "beads.db"
+    database.write_text("", encoding="utf-8")
+    later = (repo / ".beads" / "issues.jsonl").stat().st_mtime + 60
+    os.utime(database, (later, later))
+
+    report = _kit(repo, "sync", ".basicly/ledger", "--dry-run")
+
+    assert "br sync --flush-only" in report["stale"]
+
+
+def test_ending_the_mirror_installs_the_claim_gate(repo: Path) -> None:
+    _br_backlog(repo, {"acme-aa11": "open"})
+    assert _hook(repo, "--mirror", "beads").returncode == 0
+    kept = _hook(repo)
+    assert "this ledger mirrors beads" in kept.stdout
+
+    ended = _hook(repo, "--end-mirror")
+
+    assert "the mirror ended" in ended.stdout
+    assert not (repo / ".basicly" / "ledger" / "mirror.json").exists()
+    assert "basicly-tracker claim" in (repo / ".git" / "hooks" / "commit-msg").read_text("utf-8")

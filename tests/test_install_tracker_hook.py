@@ -24,7 +24,7 @@ def _repo(tmp_path: Path, *, vendored: bool, folds: bool = True) -> Path:
     if vendored:
         target = tmp_path / INSTALLER
         target.parent.mkdir(parents=True)
-        for name in ("install_hook.py", "import_offer.py"):
+        for name in ("install_hook.py", "import_offer.py", "mirror.py"):
             source = (REPO_ROOT / KIT_RELATIVE / name).read_text(encoding="utf-8")
             target.with_name(name).write_text(source, encoding="utf-8")
         (tmp_path / ".basicly" / "core" / "kit" / "tracker" / "cli.py").write_text(

@@ -117,6 +117,8 @@ def parser() -> argparse.ArgumentParser:
     gate.add_argument("directory", help=DIRECTORY_HELP)
     gate.add_argument("record", help="the record id")
 
+    _add_sync_parser(sub)
+
     bring = sub.add_parser("import", help="import a foreign tracker's backlog into this ledger")
     bring.add_argument("directory", help=DIRECTORY_HELP)
     bring.add_argument(
@@ -245,3 +247,10 @@ def _add_config_parser(sub: Any) -> None:
     setting = actions.add_parser("set", help="set one setting in its one home")
     setting.add_argument("name", help="the setting, as config lists it")
     setting.add_argument("value", help="the value; a list or a number is read as JSON")
+
+
+def _add_sync_parser(sub: Any) -> None:
+    mirrored = sub.add_parser("sync", help="re-import the tracker this ledger mirrors")
+    mirrored.add_argument("directory", help=DIRECTORY_HELP)
+    mirrored.add_argument("--root", default=".", help="the repository that holds the source")
+    mirrored.add_argument("--dry-run", action="store_true", help="report and write nothing")
