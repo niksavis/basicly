@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -190,6 +191,44 @@ def test_bundled_source_denies_env_mutation_via_edit_only() -> None:
         assert not any(p.startswith(f"{tool}(") for p in patterns), (
             f"{tool}(...) file rules are not matched by Claude Code permission checks"
         )
+
+
+def _claude_bash_denies(command: str) -> bool:
+
+    patterns = permissions.claude_deny_patterns(permissions.load_deny_rules())
+    bodies = [p[len("Bash(") : -1] for p in patterns if p.startswith("Bash(")]
+    return any(
+        re.fullmatch(".*".join(map(re.escape, body.split("*"))), command, re.DOTALL)
+        for body in bodies
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git commit -m x --no-verify",
+        "git push --no-verify",
+        "git -c core.hooksPath=/dev/null commit -m x",
+        "git -c user.name=x commit -m x --no-verify",
+        "git -c core.hooksPath=/dev/null push",
+        "git -C . -c core.hookspath=/dev/null commit -m x",
+        "git -c core.hooksPath=/dev/null commit -q -m x --no-verify",
+    ],
+)
+def test_bundled_claude_deny_refuses_a_gate_bypass_with_options_before_the_subcommand(
+    command: str,
+) -> None:
+
+    assert _claude_bash_denies(command), f"no projected deny rule refuses {command!r}"
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["git commit -m x", "git -c user.name=x commit -m x", "git push", "git status"],
+)
+def test_bundled_claude_deny_admits_a_gated_commit_or_push(command: str) -> None:
+
+    assert not _claude_bash_denies(command), f"a deny rule refuses the gated {command!r}"
 
 
 def test_bundled_source_copilot_specs_cover_shell_rules_only() -> None:
