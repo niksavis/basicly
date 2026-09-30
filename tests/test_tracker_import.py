@@ -254,3 +254,31 @@ def test_a_dry_run_names_the_id_prefix_too(host: Path) -> None:
     )
 
     assert owned_store.set_prefix_command("acme") in "\n".join(lines)
+
+
+def _ledger_state(root: Path) -> tuple[dict[str, str], dict]:
+    kit = owned_store.kit(root, "events")
+    folded = kit.fold(kit.read_events(root / ".basicly" / "ledger")[0]).records
+    template = root / ".basicly" / "ledger" / "template.json"
+    held = json.loads(template.read_text(encoding="utf-8")) if template.is_file() else {}
+    return {record: str(state.status) for record, state in folded.items()}, held
+
+
+def test_the_engine_and_the_kit_import_leave_the_same_ledger_from_one_br_backlog(
+    tmp_path: Path,
+) -> None:
+    roots = []
+    for name in ("engine", "kit"):
+        root = tmp_path / name
+        shutil.copytree(REPO / KIT, root / KIT)
+        (root / ".basicly" / "ledger").mkdir(parents=True)
+        roots.append((root, _br_export(root)))
+    (engine, engine_export), (kit_root, kit_export) = roots
+
+    tracker_import.run_import(engine, engine_export, source_name="beads")
+    kit_cli = owned_store.kit(kit_root, "cli")
+    ledger = str(kit_root / ".basicly" / "ledger")
+    assert kit_cli.main(["import", ledger, str(kit_export), "--from", "beads"]) == 0
+
+    assert _ledger_state(engine) == _ledger_state(kit_root)
+    assert _ledger_state(engine)[1]["prefix"] == "acme"
