@@ -390,3 +390,26 @@ def test_the_page_server_writes_as_a_person_even_when_an_agent_starts_it() -> No
 
     assert environ == {"HOME": "/h"}
     assert cli.commands.writers.writer_class(environ) == cli.commands.writers.OPERATOR
+
+
+def test_the_index_names_the_mirror_so_the_page_can_say_br_stays_the_truth(
+    client: Client, ledger: Path
+) -> None:
+    _, plain = client.call("GET", "/api/v1")
+    (ledger / "mirror.json").write_text(
+        json.dumps({"source": "beads", "export": ".beads/issues.jsonl"}), encoding="utf-8"
+    )
+
+    _, mirrored = client.call("GET", "/api/v1")
+
+    assert plain["mirror"] is None
+    assert mirrored["mirror"] == {"source": "beads", "export": ".beads/issues.jsonl"}
+    assert 'id="mirror"' in PAGE and "stays the source of truth" in PAGE
+
+
+def test_the_page_icon_is_an_inline_svg_whose_colours_survive_the_url() -> None:
+    link = PAGE.split('rel="icon" type="image/svg+xml" href="', 1)[1].split('"', 1)[0]
+
+    assert link.startswith("data:image/svg+xml,")
+    assert "#" not in link, "an unescaped # ends the URL and cuts the image"
+    assert "%23818cf8" in link

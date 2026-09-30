@@ -1,0 +1,1 @@
+- **The kit board shows a mirror of br and keeps br dates.** A banner names br as the source of truth, the page opens on All open when nothing is ready, an imported status change keeps the br `updated_at`, and the page carries the basicly icon, so the browser logs no favicon error (basicly-9pyaygb).

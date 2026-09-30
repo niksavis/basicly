@@ -181,3 +181,23 @@ def test_ending_the_mirror_installs_the_claim_gate(repo: Path) -> None:
     assert "the mirror ended" in ended.stdout
     assert not (repo / ".basicly" / "ledger" / "mirror.json").exists()
     assert "basicly-tracker claim" in (repo / ".git" / "hooks" / "commit-msg").read_text("utf-8")
+
+
+def test_a_mirrored_record_keeps_the_br_update_time_not_the_import_time(repo: Path) -> None:
+    beads = repo / ".beads"
+    beads.mkdir()
+    (beads / "config.yaml").write_text("issue_prefix: acme\n", encoding="utf-8")
+    line = {
+        "id": "acme-aa11",
+        "title": "br record",
+        "status": "open",
+        "created_at": "2026-07-14T23:13:00Z",
+        "updated_at": "2026-07-15T08:00:00Z",
+    }
+    (beads / "issues.jsonl").write_text(json.dumps(line) + "\n", encoding="utf-8")
+
+    assert _hook(repo, "--mirror", "beads").returncode == 0
+
+    dates = _kit(repo, "show", ".basicly/ledger", "acme-aa11")["dates"]
+    assert dates["created"] == "2026-07-14T23:13:00Z"
+    assert dates["updated"] == "2026-07-15T08:00:00Z"
