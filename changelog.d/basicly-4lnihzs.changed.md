@@ -1,0 +1,1 @@
+- **The Quality Gate rules ask you to account for each file of a source system before you retire it.** A check of what an import carried cannot see a file the import never read (basicly-4lnihzs).
