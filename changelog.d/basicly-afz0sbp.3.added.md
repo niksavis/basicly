@@ -1,1 +1,0 @@
-- **`basicly-tracker init --user` and `basicly-board init --user` write one skill per user.** The skills go to `~/.claude/skills/basicly-tracker/` and `basicly-board/`. They apply only where `.basicly/ledger/` exists, and they tell the agent which tracker the repository holds. `uninstall --user` removes them (basicly-afz0sbp.3).

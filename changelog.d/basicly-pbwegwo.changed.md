@@ -1,1 +1,0 @@
-- **basicly now sets `skillListingBudgetFraction` to 0.02 in `.claude/settings.json` when the key is absent, and catalog lint measures against it.** Claude Code keeps every description of the 49 skills basicly ships (2651 tokens) instead of dropping the least-used ones at the 1% default (basicly-pbwegwo).

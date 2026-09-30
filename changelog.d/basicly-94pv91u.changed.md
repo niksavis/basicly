@@ -1,1 +1,0 @@
-- **The External Facts rules add two checks.** A positive control must also move the count of examined items, or the search never read it. A capability is absent only when its action is absent, not its name (basicly-94pv91u).

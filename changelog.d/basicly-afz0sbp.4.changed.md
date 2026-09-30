@@ -1,1 +1,0 @@
-- **`basicly-tracker init` and `basicly-board init` now run the kit from a user install and write no kit code into the repository.** `init` refuses, with the `uv tool install` command, when no user install exists. `init --sandbox` writes one `.basicly/tracker.pyz` or `board.pyz` file and a repository skill instead (basicly-afz0sbp.4).

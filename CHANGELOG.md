@@ -6,11 +6,43 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.19.0 - 2026-09-30
+
+Delta: v0.18.15..v0.19.0
+
 This release makes the standalone tracker and its board a product that you install once per machine, and lets you trial it beside br. `basicly-tracker init` and `basicly-board init` now run the code from a user install and write only the ledger, the pin, the git rules and the hook into a repository. `--sandbox` keeps one `.pyz` file per repository instead. `init --mirror beads` imports a br backlog and keeps br the source of truth until you end the trial.
 
 - **One install per machine, one file per repository as the fallback.** The default and sandbox modes, the user-level skills, the migration off the vendored folder, and one rule that finds the tracker for the commit hook (basicly-afz0sbp.2, basicly-afz0sbp.3, basicly-afz0sbp.4, basicly-afz0sbp.5).
 - **Trial the tracker beside br.** The mirror mode and `sync`, the br id prefix read from `.beads/config.yaml`, and a kit board that names br as the source of truth and keeps br dates (basicly-60468gt, basicly-6a5dkgu, basicly-9pyaygb).
 - **Fixes reported by a consumer.** The commit gate names an unstaged ledger first, two new evidence rules, and a Claude skill listing budget of 2% so that every shipped description stays visible (basicly-es4m3cf, basicly-94pv91u, basicly-4lnihzs, basicly-pbwegwo).
+
+### Added
+
+- **`basicly-tracker init --mirror beads` runs the tracker beside br.** It imports `.beads/issues.jsonl`, writes `mirror.json` and installs no claim gate. `sync` re-imports br, reports status changes, diverged fields and records br no longer holds, and warns when `beads.db` is newer than the export. `init --end-mirror` ends it (basicly-60468gt).
+
+- **`basicly-tracker init --user` and `basicly-board init --user` write one skill per user.** The skills go to `~/.claude/skills/basicly-tracker/` and `basicly-board/`. They apply only where `.basicly/ledger/` exists, and they tell the agent which tracker the repository holds. `uninstall --user` removes them (basicly-afz0sbp.3).
+
+### Changed
+
+- **The Quality Gate rules ask you to account for each file of a source system before you retire it.** A check of what an import carried cannot see a file the import never read (basicly-4lnihzs).
+
+- **The External Facts rules add two checks.** A positive control must also move the count of examined items, or the search never read it. A capability is absent only when its action is absent, not its name (basicly-94pv91u).
+
+- **The kit board shows a mirror of br and keeps br dates.** A banner names br as the source of truth, the page opens on All open when nothing is ready, an imported status change keeps the br `updated_at`, and the page carries the basicly icon, so the browser logs no favicon error (basicly-9pyaygb).
+
+- **The standalone tracker commit hook finds the tracker in one order and refuses when none is found.** It looks for `.basicly/tracker.pyz`, then the vendored `.basicly/kit/tracker/`, then `basicly-tracker` on PATH. Before, it skipped the claim check when the vendored folder was missing. Now it refuses the commit and prints the `uv tool install` command for the pinned version (basicly-afz0sbp.2).
+
+- **`basicly-tracker init` and `basicly-board init` now run the kit from a user install and write no kit code into the repository.** `init` refuses, with the `uv tool install` command, when no user install exists. `init --sandbox` writes one `.basicly/tracker.pyz` or `board.pyz` file and a repository skill instead (basicly-afz0sbp.4).
+
+- **`update` and `update --sandbox` move a repository off the vendored `.basicly/kit/tracker/` folder.** The ledger stays byte-identical. The default mode removes the folder only when the user install accepts the pinned version. Otherwise it keeps the folder and prints the reason (basicly-afz0sbp.5).
+
+- **basicly now sets `skillListingBudgetFraction` to 0.02 in `.claude/settings.json` when the key is absent, and catalog lint measures against it.** Claude Code keeps every description of the 49 skills basicly ships (2651 tokens) instead of dropping the least-used ones at the 1% default (basicly-pbwegwo).
+
+### Fixed
+
+- **A beads import now adopts the id prefix from `.beads/config.yaml`.** It reads br `issue_prefix` and bd `issue-prefix`. It sets the ledger prefix when none is set, reports both when they differ and changes neither, and names the reason when the ledger refuses the prefix. Before, the next root `create` failed (basicly-6a5dkgu).
+
+- **The `tracker-commit-msg` refusal for an unknown id now names the likely local cause first.** pre-commit hides an unstaged ledger from the hook, so a record created in this checkout reads as unknown. The message says so and prints `git add .basicly/ledger` before it names a record from another checkout (basicly-es4m3cf).
 
 ## v0.18.15 - 2026-09-25
 

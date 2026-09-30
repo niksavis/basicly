@@ -1,1 +1,0 @@
-- **`update` and `update --sandbox` move a repository off the vendored `.basicly/kit/tracker/` folder.** The ledger stays byte-identical. The default mode removes the folder only when the user install accepts the pinned version. Otherwise it keeps the folder and prints the reason (basicly-afz0sbp.5).
