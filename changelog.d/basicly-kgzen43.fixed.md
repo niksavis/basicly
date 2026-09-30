@@ -1,0 +1,1 @@
+- **The tracker claim gate names an id that the staged ledger does not hold, and prints `git add .basicly/ledger`.** Before, it said the commit named no record id (basicly-kgzen43).

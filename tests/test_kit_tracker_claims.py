@@ -201,3 +201,24 @@ def test_a_mirrored_record_keeps_the_br_update_time_not_the_import_time(repo: Pa
     dates = _kit(repo, "show", ".basicly/ledger", "acme-aa11")["dates"]
     assert dates["created"] == "2026-07-14T23:13:00Z"
     assert dates["updated"] == "2026-07-15T08:00:00Z"
+
+
+def test_an_id_the_staged_ledger_does_not_hold_is_named_with_the_command_that_stages_it(
+    repo: Path,
+) -> None:
+    _git(repo, "add", "-A")
+    assert _git(repo, "commit", "-q", "-m", "chore: install the tracker kit").returncode == 0
+    _kit(repo, "create", ".basicly/ledger", "--prefix", "acme", "--title", "x", *SHAPED)
+    _git(repo, "add", "-A")
+    assert _git(repo, "commit", "-q", "-m", "chore: file a record").returncode == 0
+    (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(repo, "add", "app.py")
+
+    unknown = _git(repo, "commit", "-q", "-m", "feat: add value acme-zz99")
+    unnamed = _git(repo, "commit", "-q", "-m", "feat: add-value with no id")
+
+    assert (
+        "names acme-zz99, which the staged ledger .basicly/ledger does not hold" in unknown.stderr
+    )
+    assert "git add .basicly/ledger" in unknown.stderr
+    assert "it names no record id" in unnamed.stderr
