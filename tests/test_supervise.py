@@ -1060,7 +1060,9 @@ def test_dispatch_lane_over_the_ceiling_lands_and_reports_both_numbers(
 ) -> None:
 
     codex = _codex()
-    tracker, _seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(250_000))
+    ceiling = int(codex.context_window * _sizing().context_ceiling)
+    occupancy = ceiling + 10_000
+    tracker, _seen = _worker_fixture(monkeypatch, tmp_path, stdout=_codex_events(occupancy))
 
     outcome = supervise._dispatch_lane(
         tmp_path, _session(_lane("epic.1")), _lane("epic.1"), codex, _sizing()
@@ -1068,8 +1070,8 @@ def test_dispatch_lane_over_the_ceiling_lands_and_reports_both_numbers(
 
     assert outcome.overrun is True
     assert outcome.detail == (
-        "finished; ready to land; context occupancy 250000 tokens is over the "
-        "240000-token ceiling (observed, not enforced)"
+        f"finished; ready to land; context occupancy {occupancy} tokens is over the "
+        f"{ceiling}-token ceiling (observed, not enforced)"
     )
     assert tracker.created == [], "no follow-up bead"
     assert tracker.comments == {}, "no [harness-overrun] marker either"

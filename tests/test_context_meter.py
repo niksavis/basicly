@@ -44,22 +44,25 @@ def test_ceiling_tokens_is_the_window_fraction() -> None:
 def test_meter_context_ceiling_over_the_ceiling_reads_the_tracker_not_at_all() -> None:
 
     codex = _codex()
+    ceiling = int(codex.context_window * _sizing().context_ceiling)
     verdict = context_meter.meter_context_ceiling(
-        codex, _finished(codex, _codex_events(250_000)), _sizing()
+        codex, _finished(codex, _codex_events(ceiling + 10_000)), _sizing()
     )
 
     assert verdict.overrun is True
-    assert verdict.occupancy == 250_000
-    assert verdict.ceiling == 240_000
+    assert verdict.occupancy == ceiling + 10_000
+    assert verdict.ceiling == ceiling
     assert verdict.observation == (
-        "context occupancy 250000 tokens is over the 240000-token ceiling (observed, not enforced)"
+        f"context occupancy {ceiling + 10_000} tokens is over the {ceiling}-token ceiling "
+        "(observed, not enforced)"
     )
 
 
 def test_meter_context_ceiling_under_the_ceiling_observes_nothing() -> None:
     codex = _codex()
+    ceiling = int(codex.context_window * _sizing().context_ceiling)
     verdict = context_meter.meter_context_ceiling(
-        codex, _finished(codex, _codex_events(239_999)), _sizing()
+        codex, _finished(codex, _codex_events(ceiling - 1)), _sizing()
     )
 
     assert verdict.overrun is False

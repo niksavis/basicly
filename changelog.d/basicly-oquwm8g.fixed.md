@@ -1,0 +1,1 @@
+- **The codex context ceiling sits under the window that Codex applies.** The codex runner fallback window drops from 400000 to 258400 tokens, the window that Codex 0.160.0 applied to `gpt-6-luna` on a ChatGPT account. The 0.6 ceiling was 93 percent of the real window and is now 60 percent (basicly-oquwm8g).

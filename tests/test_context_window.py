@@ -234,3 +234,11 @@ def test_the_recorded_evidence_names_the_field_it_was_read_from() -> None:
         assert isinstance(entry, AdapterWindow), name
         assert "contextWindow" in entry.evidence, name
         assert entry.tokens > 0, name
+
+
+def test_the_codex_fallback_is_no_larger_than_the_window_codex_applied_on_2026_10_02() -> None:
+    codex = next(spec for spec in BUILTIN_RUNNERS if spec.name == "codex")
+
+    assert codex.context_window_source == context_window.FALLBACK_WINDOW
+    assert codex.context_window is not None
+    assert codex.context_window <= 258_400

@@ -894,7 +894,7 @@ def test_only_a_family_that_reports_its_window_ships_one_as_checked() -> None:
 
     by_name = {s.name: (s.context_window, s.context_window_source) for s in BUILTIN_RUNNERS}
     assert by_name["claude"] == (1_000_000, runner.ADAPTER_WINDOW)
-    assert by_name["codex"] == (400_000, context_window.FALLBACK_WINDOW)
+    assert by_name["codex"] == (258_400, context_window.FALLBACK_WINDOW)
     assert by_name["copilot"] == (128_000, context_window.FALLBACK_WINDOW)
     assert runner.DEFAULT_CONTEXT_WINDOW == 128_000
 

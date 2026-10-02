@@ -139,7 +139,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         sandbox="workspace-write",
         approval="never",
         usage_format=CODEX_JSONL,
-        context_window=400_000,
+        context_window=258_400,
         context_window_source=FALLBACK_WINDOW,
     ),
     RunnerSpec(
