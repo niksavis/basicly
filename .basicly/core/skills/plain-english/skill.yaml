@@ -4,7 +4,7 @@ token_cost:
   listing: 37
 name: plain-english
 invocation: model
-description: "Writes plain prose for readers of any language: READMEs, release notes, design docs, records. Use when writing text that a person reads."
+description: "Writes plain prose for readers of any language: READMEs, release notes, design docs, records. Use when writing text for a person."
 instructions: |
   # Plain English
 

@@ -528,7 +528,7 @@ inputs = [
   "uv.lock",
 ]
 
-# `except` clause form, as PEP 758 states it. `python-guidelines` settles the house form —
+# `except` clause form, as PEP 758 states it. The `python` skill design reference settles the house form —
 # paren-free `except A, B:`, parentheses only where the clause binds — and that was the whole
 # enforcement: a parenthesised clause reached `.basicly/core/hooks/pre-push.py` in `0a0d669e`
 # and this entry's `ruff-format` neighbour rewrote it silently through its `fix_command`, so

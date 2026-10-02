@@ -5,7 +5,7 @@ token_cost:
 name: wsl
 invocation: model
 technologies: [wsl]
-description: "Operates WSL: wsl.exe, interop, PATH, slow /mnt/c access. Use when crossing Windows and Linux, or when a tool works in a terminal but not from a script."
+description: "Operates WSL: wsl.exe, interop, PATH, slow /mnt/c. Use when crossing Windows and Linux, or when a tool works in a terminal but not from a script."
 instructions: |
   # WSL
 

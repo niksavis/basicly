@@ -4,7 +4,7 @@ token_cost:
   listing: 47
 name: worktree-isolation
 invocation: model
-description: "Isolates work in a sibling git worktree with basicly worktree, then merges and cleans up. Use to keep a change out of the main checkout or when parallel tracks collide."
+description: "Isolates work in a sibling git worktree, then merges and cleans up. Use to keep a change out of the main checkout or when parallel tracks collide."
 covers:
   phases: [build, repair]
 instructions: |

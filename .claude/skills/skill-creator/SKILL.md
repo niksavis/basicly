@@ -1,6 +1,6 @@
 ---
 name: skill-creator
-description: 'Writes a new skill or improves one with evals: runs with and without it, a benchmark, graded versions, trigger tuning. Use when turning a workflow into a skill.'
+description: Writes a new skill or improves one with evals, a benchmark, graded versions and trigger tuning. Use when turning a workflow into a skill.
 license: Apache-2.0
 metadata:
   source: anthropics/skills skills/skill-creator

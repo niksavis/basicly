@@ -4,7 +4,7 @@ token_cost:
   listing: 44
 name: conventional-commits
 invocation: model
-description: "Writes a commit subject that passes the hooks: type, scope, breaking-change marker, record id. Use to write a commit message or after a hook refused one."
+description: "Writes a commit subject that passes the hooks: type, scope, breaking-change marker, record id. Use for a commit message or after a hook refused one."
 instructions: |
   # Conventional Commits
 

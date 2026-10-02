@@ -4,7 +4,7 @@ token_cost:
   listing: 39
 name: best-practices-audit
 invocation: model
-description: "Audits skills, instruction files, hooks, agents and permissions against the newest vendor docs. Use after a Claude Code or Codex release."
+description: "Audits skills, instructions, hooks, agents and permissions against the newest vendor docs. Use after a Claude Code or Codex release."
 instructions: |
   # Best-Practices Audit
 

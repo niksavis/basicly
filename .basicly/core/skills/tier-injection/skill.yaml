@@ -4,7 +4,7 @@ token_cost:
   listing: 42
 name: tier-injection
 invocation: model
-description: "Installs the tier kit so a subagent spawn runs on the model its tier names. Use when a host must pin the model of a spawn or a subagent ignores its tier."
+description: "Installs the tier kit so a subagent runs on the model its tier names. Use when a host must pin the model of a spawn or a subagent ignores its tier."
 instructions: |
   # Tier Injection
 
