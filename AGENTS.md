@@ -74,6 +74,13 @@ The deny-list blocks only some of these, and it differs per agent. A command tha
 
 IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`). Fix the cause.
 
+## Ownership
+
+- You own basicly. You are responsible for the harness and for the process that develops it.
+- Improve both continuously: during development, and after each report from a user or a consumer.
+- When a defect, a refusal or a report shows a gap, fix the cause. Then add the gate, the test or the rule that stops it from happening again.
+- Follow the current practice of the vendors and of community experts, unless it makes install, use or upgrade less safe for a person who makes a mistake.
+
 ## Project Overview
 
 - basicly distributes a harness for coding agents. One YAML catalog is projected into agent instruction files, skills and git hooks. Other repositories install it with `basicly install`.

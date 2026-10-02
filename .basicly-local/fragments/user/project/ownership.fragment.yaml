@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../../../.basicly/core/schemas/fragment.schema.json
+schema_version: 1
+id: ownership
+description: The agent owns basicly and improves it continuously.
+category: project
+priority: critical
+applies_to: [all]
+tags:
+- ownership
+- self-optimization
+status: active
+title: Ownership
+body: |
+  - You own basicly. You are responsible for the harness and for the process that develops it.
+  - Improve both continuously: during development, and after each report from a user or a consumer.
+  - When a defect, a refusal or a report shows a gap, fix the cause. Then add the gate, the test or the rule that stops it from happening again.
+  - Follow the current practice of the vendors and of community experts, unless it makes install, use or upgrade less safe for a person who makes a mistake.
