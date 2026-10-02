@@ -4,7 +4,7 @@ token_cost:
   listing: 83
 name: harness-loop
 invocation: model
-description: Drive tracked work through the basicly harness loop (intake, classify, decompose, build, verify, validate, ship) with `basicly loop`, for one issue or many lanes under a supervisor. Use when you start or resume non-trivial development, decide which phase an issue is in, or advance it past a checkpoint, gate or rework.
+description: Drive tracked work through the basicly harness loop (intake, classify, decompose, build, verify, validate, ship) with `basicly loop`, for one issue or many lanes under a supervisor. Use when a task starts or resumes non-trivial development, decides which phase an issue is in, or advances it past a checkpoint, gate or rework.
 instructions: |
   # Harness Loop
 

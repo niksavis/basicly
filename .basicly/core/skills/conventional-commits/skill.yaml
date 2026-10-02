@@ -4,7 +4,7 @@ token_cost:
   listing: 88
 name: conventional-commits
 invocation: model
-description: Construct a Conventional Commits subject that passes the commit-msg and tracker-commit-msg hooks on the first attempt - type, scope, the "!" breaking-change marker, the lowercase description and the trailing tracker record id. Use when you write or review a commit message, or when a hook rejected a commit.
+description: Construct a Conventional Commits subject that passes the commit-msg and tracker-commit-msg hooks on the first attempt - type, scope, the "!" breaking-change marker, the lowercase description and the trailing tracker record id. Use when a task writes or reviews a commit message, or when a hook rejected a commit.
 instructions: |
   # Conventional Commits
 

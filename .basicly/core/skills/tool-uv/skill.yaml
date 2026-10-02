@@ -1,14 +1,14 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 token_cost:
-  listing: 26
+  listing: 41
 name: tool-uv
 invocation: user
 technologies: [python]
 instructions: |
   # uv
 
-  Manage Python environments and dependencies, and run project commands in the managed environment.
+  Manage Python environments and dependencies, and run project commands in the managed environment. Use it instead of pip in a uv project.
 
   ## Rules
 

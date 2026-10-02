@@ -8,7 +8,7 @@ technologies: [zsh]
 instructions: |
   # zsh
 
-  Find the cause of zsh startup, alias, completion and prompt errors. Check a config change before you open a new shell.
+  Find the cause of zsh startup, alias, completion and prompt errors. Check a config change before a new shell opens.
 
   ## Rules
 

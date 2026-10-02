@@ -1,13 +1,13 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 token_cost:
-  listing: 33
+  listing: 44
 name: tool-git
 invocation: user
 instructions: |
   # git
 
-  Read the working tree state and history, review diffs, and stage focused changes. Set the commit identity for each remote.
+  Read the working tree state and history, review diffs, stage focused changes and set the commit identity for each remote. Use it before a commit.
 
   ## Rules
 

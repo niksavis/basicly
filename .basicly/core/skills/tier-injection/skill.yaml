@@ -4,7 +4,7 @@ token_cost:
   listing: 84
 name: tier-injection
 invocation: model
-description: Install the portable tier injection kit so a subagent spawns on the model its declared tier resolves to, not on the host default. Use when you set up tier injection in this or another repository, when a subagent ignores the tier its definition declares, or when you decide whether a host can pin the model of a spawn.
+description: Install the portable tier injection kit so a subagent spawns on the model its declared tier resolves to, not on the host default. Use when a task sets up tier injection in this or another repository, when a subagent ignores the tier its definition declares, or to decide whether a host can pin the model of a spawn.
 instructions: |
   # Tier Injection
 

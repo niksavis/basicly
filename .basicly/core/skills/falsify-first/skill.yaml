@@ -4,7 +4,7 @@ token_cost:
   listing: 83
 name: falsify-first
 invocation: model
-description: Attempt to break a claim - an invariant, a design premise, a measurement - with a concrete counterexample search before you defend or adopt it, and read each kill for the precondition that carried the weight. Use before an invariant enters a plan, a design note or a gate, or before a measured number becomes a claim.
+description: Attempt to break a claim - an invariant, a design premise, a measurement - with a concrete counterexample search before an agent defends or adopts it, and read each kill for the precondition that carried the weight. Use before an invariant enters a plan, a design note or a gate, or before a measured number becomes a claim.
 covers:
   work_types: [feature, epic]
   phases: [decompose]

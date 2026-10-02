@@ -6,8 +6,8 @@ name: node
 invocation: model
 technologies: [node]
 description: >-
-  Use Node and npm for the markdownlint git hook and other node tooling. Use when you
-  install npm packages, run npm or npx from a script or background job on WSL, or debug
+  Use Node and npm for the markdownlint git hook and other node tooling. Use when a task
+  installs npm packages, runs npm or npx from a script or background job on WSL, or debugs
   a node-based hook that resolves the wrong node binary.
 instructions: |
   # Node

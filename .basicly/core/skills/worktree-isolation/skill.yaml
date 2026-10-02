@@ -4,7 +4,7 @@ token_cost:
   listing: 80
 name: worktree-isolation
 invocation: model
-description: Isolate non-trivial work in a sibling git worktree on a harness branch with `basicly worktree`, with dependency and git-hook provisioning, merge and safe cleanup. Use when work must stay out of the main checkout, when parallel tracks would collide, or when you decide if a change needs its own worktree.
+description: Isolate non-trivial work in a sibling git worktree on a harness branch with `basicly worktree`, with dependency and git-hook provisioning, merge and safe cleanup. Use when work must stay out of the main checkout, when parallel tracks would collide, or to decide if a change needs its own worktree.
 covers:
   phases: [build, repair]
 instructions: |

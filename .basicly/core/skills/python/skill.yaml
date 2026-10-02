@@ -7,8 +7,8 @@ invocation: model
 technologies: [python]
 description: >-
   Write and edit Python with type hints, pathlib and cross-platform subprocess calls.
-  Use when you create or change .py files, wire up a subprocess call, chase a test that
-  fails only on Windows CI (a WinError 2 or a mangled backslash path), or doubt a
+  Use when a task creates or changes .py files, wires up a subprocess call, chases a test that
+  fails only on Windows CI (a WinError 2 or a mangled backslash path), or checks a
   multi-exception except clause that looks wrong for an older Python.
 instructions: |
   # Python

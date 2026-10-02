@@ -7,7 +7,7 @@ invocation: user
 instructions: |
   # ripgrep
 
-  Search file contents across a repository with `rg`. Use it first, before you open files or use a syntax-aware tool.
+  Search file contents across a repository with `rg`. Use it first, before a file read or a syntax-aware tool.
 
   ## Rules
 

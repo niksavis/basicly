@@ -8,7 +8,7 @@ description: >-
   Test whether this session still holds the repository's always-on instruction
   file in its context window. Use when a repo convention seems to have gone
   missing, at the start of work in a subagent or a fresh worktree, or after a
-  compaction, before you trust that project rules are loaded.
+  compaction, before an agent trusts that project rules are loaded.
 instructions: |
   # Retention Probe
 

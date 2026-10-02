@@ -35,6 +35,9 @@ from .schema import MODEL_TIERS, TECHNOLOGIES, ValidationError
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _DEEP_REF_RE = re.compile(r"(?:references|scripts|assets)/[^\s()\[\]]+/[^\s()\[\]]+")
 _MAX_SKILL_BODY_LINES = 500
+_MAX_DESCRIPTION_CHARS = 1024
+_DESCRIPTION_PERSON_RE = re.compile(r"\b(?:you|your|yours|I|we|our)\b", re.IGNORECASE)
+_DESCRIPTION_TAG_RE = re.compile(r"</?[A-Za-z][^>]*>")
 
 _AXIS_OWNED_REQUIRED = frozenset({"invocation"})
 
@@ -194,6 +197,8 @@ def lint_catalog(repo_root: Path) -> list[str]:
 
     violations.extend(_check_user_invoked_first_paragraph(repo_root))
 
+    violations.extend(_check_description_voice(repo_root))
+
     violations.extend(routing_evals.routing_outcome(repo_root).violations)
 
     violations.extend(_check_coverage_vocabulary(repo_root))
@@ -283,6 +288,39 @@ def _check_user_invoked_first_paragraph(repo_root: Path) -> list[str]:
             skills.routing_description(skill)
         except ValidationError as exc:
             violations.append(f"{rel(skill.source_path, repo_root)}: {exc.message}")
+    return violations
+
+
+def _check_description_voice(repo_root: Path) -> list[str]:
+
+    try:
+        catalog = skill_source.discover_skills(repo_root)
+    except ValidationError:
+        return []
+    violations: list[str] = []
+    for skill in catalog:
+        try:
+            description = skills.skill_description(skill)
+        except ValidationError:
+            continue
+        source = rel(skill.source_path, repo_root)
+        person = _DESCRIPTION_PERSON_RE.search(description)
+        if person:
+            violations.append(
+                f"{source}: the description says '{person.group(0)}'; the host injects it into "
+                "the system prompt, so write it in the third person: 'Use when a task <verb>s'"
+            )
+        tag = _DESCRIPTION_TAG_RE.search(description)
+        if tag:
+            violations.append(
+                f"{source}: the description carries the XML-like tag '{tag.group(0)}', which the "
+                "host refuses; write the placeholder in capitals, e.g. tool-NAME"
+            )
+        if len(description) > _MAX_DESCRIPTION_CHARS:
+            violations.append(
+                f"{source}: the description is {len(description)} characters; the host limit "
+                f"is {_MAX_DESCRIPTION_CHARS}"
+            )
     return violations
 
 

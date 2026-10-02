@@ -4,7 +4,7 @@ token_cost:
   listing: 75
 name: root-cause
 invocation: model
-description: Establish why something happened by asking why until the answer stops changing, with an observation for each link, and name the control that would have refused it. Use before you file a record or propose a gate after a failure, when a fix treats a symptom, or when a retro asks for a cause.
+description: Establish why something happened by asking why until the answer stops changing, with an observation for each link, and name the control that would have refused it. Use before an agent files a record or proposes a gate after a failure, when a fix treats a symptom, or when a retro asks for a cause.
 covers:
   work_types: [bug]
   phases: [build, repair]

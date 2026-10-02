@@ -8,7 +8,12 @@ import pytest
 import yaml
 
 from basicly import loop_state
-from basicly.catalog_lint import lint_catalog, listing_budget_warnings, skill_warnings
+from basicly.catalog_lint import (
+    _DESCRIPTION_PERSON_RE,
+    lint_catalog,
+    listing_budget_warnings,
+    skill_warnings,
+)
 from basicly.schema import MODEL_TIERS
 from basicly.skill_source import discover_skills
 
@@ -268,6 +273,58 @@ def test_a_model_invoked_entry_without_a_description_fails_the_lint(tmp_path: Pa
     violations = [v for v in lint_catalog(root) if "silent" in v]
 
     assert any("needs a description" in v for v in violations), violations
+
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("Pick a tool. Use when you search files.", "says 'you'"),
+        ("Pick a tool, then load tool-<name> for flags.", "XML-like tag '<name>'"),
+        ("Pick a tool. " + "x" * 1020, "the host limit is 1024"),
+    ],
+)
+def test_a_description_that_breaks_the_host_rules_fails_the_lint(
+    tmp_path: Path, description: str, expected: str
+) -> None:
+    root = _catalog(tmp_path)
+    _skill_source(
+        root,
+        "voice",
+        f"schema_version: 1\nname: voice\ninvocation: model\ndescription: '{description}'\n"
+        f"{_INSTRUCTIONS}",
+    )
+
+    violations = [v for v in lint_catalog(root) if "voice" in v]
+
+    assert any(expected in v for v in violations), violations
+
+
+def test_a_third_person_description_passes_the_voice_rule(tmp_path: Path) -> None:
+    root = _catalog(tmp_path)
+    _skill_source(
+        root,
+        "voice",
+        "schema_version: 1\nname: voice\ninvocation: model\n"
+        f"description: Pick a tool. Use when a task searches files, then load tool-NAME.\n"
+        f"{_INSTRUCTIONS}",
+    )
+
+    violations = [v for v in lint_catalog(root) if "voice" in v and "description" in v]
+
+    assert violations == []
+
+
+@pytest.mark.parametrize(
+    "guidance",
+    sorted((REPO / ".basicly/core/kit").glob("*/GUIDANCE.md")),
+    ids=lambda path: path.parent.name,
+)
+def test_every_kit_guidance_description_is_in_the_third_person(guidance: Path) -> None:
+    _, front, _ = guidance.read_text(encoding="utf-8").split("---\n", 2)
+    described = dict(line.split(":", 1) for line in front.strip().split("\n"))
+    description = described["description"]
+
+    assert not _DESCRIPTION_PERSON_RE.search(description), description
 
 
 def _tool(root: Path, tool_body: str) -> None:

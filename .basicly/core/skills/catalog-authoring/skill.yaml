@@ -7,8 +7,8 @@ invocation: model
 description: >-
   Author and improve basicly catalog sources — skills, fragments and output
   styles — in their YAML source format (never a discoverable .md), then project
-  and verify them. Use when you add or edit a skill or fragment, build a
-  catalog, or decide where guidance should live (always-on fragment or
+  and verify them. Use when a task adds or edits a skill or fragment, builds a
+  catalog, or decides where guidance should live (always-on fragment or
   on-demand skill).
 instructions: |
   # Catalog Authoring

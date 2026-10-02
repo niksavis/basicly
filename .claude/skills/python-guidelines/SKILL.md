@@ -1,6 +1,6 @@
 ---
 name: python-guidelines
-description: Make the design decisions that no linter checks, such as where an oversized file splits, whether an abstraction earns its keep and when to silence a warning. Use when a size or complexity gate fails, before you add a noqa or nosec suppression, when you decide what to raise and catch, or when concurrent lanes share state.
+description: Make the design decisions that no linter checks, such as where an oversized file splits, whether an abstraction earns its keep and when to silence a warning. Use when a size or complexity gate fails, before a noqa or nosec suppression goes in, when a change decides what to raise and catch, or when concurrent lanes share state.
 paths:
 - '**/*.py'
 ---
