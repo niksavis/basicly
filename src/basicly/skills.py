@@ -119,6 +119,11 @@ def _is_generated_skill(path: Path) -> bool:
     return path.is_file() and GENERATED_MARKER in path.read_text(encoding="utf-8", errors="ignore")
 
 
+def _is_bytecode(rel: Path) -> bool:
+
+    return "__pycache__" in rel.parts or rel.suffix == ".pyc"
+
+
 def _resource_files(skill: SkillDefinition) -> list[Path]:
 
     src_dir = skill.source_dir
@@ -128,7 +133,7 @@ def _resource_files(skill: SkillDefinition) -> list[Path]:
         if not candidate.is_file():
             continue
         rel = candidate.relative_to(src_dir)
-        if rel in skipped:
+        if rel in skipped or _is_bytecode(rel):
             continue
         files.append(rel)
     return files
@@ -277,7 +282,9 @@ def _check_projected_skill(skill: SkillDefinition, skill_dir: Path) -> list[tupl
         mismatches.extend(
             (candidate, "unexpected (not in source)")
             for candidate in sorted(skill_dir.rglob("*"))
-            if candidate.is_file() and candidate not in expected
+            if candidate.is_file()
+            and candidate not in expected
+            and not _is_bytecode(candidate.relative_to(skill_dir))
         )
 
     return mismatches

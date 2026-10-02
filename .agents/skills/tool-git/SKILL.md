@@ -13,7 +13,7 @@ Read the working tree state and history, review diffs, stage focused changes and
 - **Use `--no-pager` in a non-interactive shell.** The pager waits for a key.
 - **Stage only the files of the task.** Unrelated edits hide which change failed.
 - **Check `git status` before and after your edits.** It shows files that you did not mean to change.
-- **Set the identity for each repository, not globally.** Git without an email uses a `...@hostname.local` address.
+- **Set the identity for each repository, not globally.** Git without an email uses a `<user>@<hostname>.local` address.
 
 ## Commands
 

@@ -1,0 +1,1 @@
+- **The tool-git skill names the fallback commit address as `<user>@<hostname>.local`.** The old `...@hostname.local` example tripped a downstream privacy gate that read the dots as a real local part (basicly-6e4dix4).
