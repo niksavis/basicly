@@ -10,7 +10,6 @@ from . import (
     catalog_emphasis,
     catalog_token_cost,
     claude_settings,
-    read_cost,
     routing_evals,
     rubrics,
     skill_coverage,
@@ -337,14 +336,14 @@ def listing_budget_warnings(repo_root: Path) -> list[str]:
         listing = "".join(f"{skill.name}\n{skills.skill_description(skill)}\n" for skill in entries)
     except ValidationError:
         return []
-    tokens = read_cost._text_tokens(listing)
+    characters = len(listing)
     window = _LISTING_REFERENCE_WINDOW
     fraction = claude_settings.skill_listing_budget(repo_root)
     budget = int(window * fraction)
-    if tokens <= budget:
+    if characters <= budget:
         return []
     return [
-        f"skill listing is {tokens} tokens against a {budget}-token budget "
+        f"skill listing is {characters} characters against a {budget}-character budget "
         f"({fraction:.0%} of the {window}-token {_LISTING_REFERENCE_FAMILY} window, "
         f"{claude_settings.SKILL_LISTING_BUDGET_KEY} in {claude_settings.CLAUDE_SETTINGS_PATH}), "
         f"from {len(entries)} entries. The host drops descriptions "

@@ -1,0 +1,1 @@
+- **The skill listing budget is measured in characters, as Claude Code measures it.** `basicly catalog lint` compared a token estimate with a character budget, so a listing up to about four times the host budget passed. It now warns when the listing characters exceed `skillListingBudgetFraction` of a 200000-token window (basicly-dnb8b3t).

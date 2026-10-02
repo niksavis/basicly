@@ -556,9 +556,26 @@ def test_the_listing_budget_warning_reports_the_arithmetic(tmp_path: Path) -> No
 
     assert len(warnings) == 1
     assert "skill listing is" in warnings[0]
-    assert "token budget" in warnings[0]
+    assert "character budget" in warnings[0]
     assert f"{entries} entries" in warnings[0]
     assert "least-invoked first" in warnings[0]
+
+
+def test_the_listing_budget_counts_characters_as_the_host_does(tmp_path: Path) -> None:
+
+    root = _catalog(tmp_path)
+    for index in range(12):
+        _skill_source(
+            root,
+            f"filler-{index}",
+            f"schema_version: 1\nname: filler-{index}\ninvocation: model\n"
+            f'description: "{"x" * 400}"\n{_INSTRUCTIONS}',
+        )
+
+    warnings = listing_budget_warnings(root)
+
+    assert len(warnings) == 1, "about 4900 characters is over a 4000-character budget"
+    assert "4000-character budget" in warnings[0]
 
 
 def test_the_listing_budget_is_silent_when_it_fits(tmp_path: Path) -> None:
