@@ -1,0 +1,7 @@
+# Two `# noqa: S603` leave the skill-creator scripts (basicly-du41wub).
+#
+# A noqa in a script that a skill projects reaches a consumer whose ruff may not select S,
+# and RUF100 then fails there. .ruff.toml exempts the skill roots from S instead, as it
+# does for the hooks and the kit, and bandit still scans .basicly/core/skills.
+[ratchet.noqa_debt.frozen]
+S603 = -2

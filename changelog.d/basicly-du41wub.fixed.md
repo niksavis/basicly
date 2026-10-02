@@ -1,0 +1,1 @@
+- **Projected skill scripts carry no `noqa` directive.** A consumer whose ruff selects RUF but not S failed RUF100 on the two `# noqa: S603` in the `skill-creator` scripts. A test now refuses a `noqa` in any script that a skill ships (basicly-du41wub).

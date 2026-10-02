@@ -82,6 +82,9 @@ ignore = [
 ".scripts/**" = ["S"]
 ".basicly/core/hooks/**" = ["S"]
 ".basicly/core/kit/**" = ["S"]
+".basicly/core/skills/**" = ["S"]
+".claude/skills/**" = ["S"]
+".agents/skills/**" = ["S"]
 
 # Cyclomatic complexity (basicly-u2hl.5). 15, because that is what binds today at zero
 # cost: measured on 2026-08-07, this tree has 0 violations at 15 and 14 at 10. So the gate
@@ -90,7 +93,7 @@ ignore = [
 #
 # It is meant to be ratcheted down as the 14 are paid off, and there is a trap in how:
 # extracting `_part1()`/`_part2()` satisfies C901 and makes the code worse. Extract along a
-# nameable responsibility or leave it — the `python-guidelines` skill owns that judgment,
+# nameable responsibility or leave it — the design reference of the `python` skill owns that judgment,
 # because no linter can make it.
 [lint.mccabe]
 max-complexity = 15

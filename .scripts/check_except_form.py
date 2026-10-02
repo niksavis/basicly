@@ -31,7 +31,7 @@ _OPEN = frozenset("([{")
 _CLOSE = frozenset(")]}")
 
 _HOUSE_FORM = (
-    "paren-free `except A, B:` is the house form (PEP 758, `python-guidelines`); "
+    "paren-free `except A, B:` is the house form (PEP 758, the `python` skill); "
     "parentheses stay only where the clause binds"
 )
 

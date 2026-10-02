@@ -460,3 +460,21 @@ def test_python_bytecode_is_neither_projected_nor_reported(tmp_path: Path) -> No
     consumer_cache.parent.mkdir(parents=True)
     consumer_cache.write_bytes(b"consumer pyc")
     assert check_synced_skills(tmp_path, roots) == [], "a consumer run turned the check red"
+
+
+def test_no_python_file_a_skill_ships_carries_a_noqa_directive() -> None:
+    catalog = Path(__file__).resolve().parents[1] / ".basicly" / "core" / "skills"
+    shipped = sorted(catalog.glob("*/**/*.py"))
+    assert shipped, "the sweep found no skill script; the gate below would be inert"
+
+    carriers = [
+        f"{path.relative_to(catalog)}:{number}"
+        for path in shipped
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if "# noqa" in line
+    ]
+
+    assert carriers == [], (
+        "a consumer's ruff decides which codes are enabled, so a shipped noqa fails RUF100 "
+        f"there; exempt the path in .ruff.toml per-file-ignores instead: {carriers}"
+    )
