@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.20.0 - 2026-10-02
+
+Delta: v0.19.2..v0.20.0
+
 This minor release aligns the skills with the current Claude Code, Claude API and Codex guidance, and it makes the skill listing fit both hosts. The 25 `tool-*` skills become reference files of `cli-tools`, so a script that names a `tool-*` skill must now name `cli-tools`. `basicly install` removes the old generated `tool-*` folders, and `basicly skills-user cli-tools` does the same in the user home. Three new skills audit the harness against the newest vendor docs, create and measure skills, and find existing ones.
 
 - **Breaking: the `tool-*` skills are references of `cli-tools`, and `python-guidelines` is a reference of `python`.** Run `basicly skills-user cli-tools`; a `tool-` name is refused with that command (basicly-gdn5ndf, basicly-rfpukau).
@@ -13,6 +17,36 @@ This minor release aligns the skills with the current Claude Code, Claude API an
 - **New skills: `best-practices-audit`, `skill-creator` and `find-skills`** (basicly-rieesd8, basicly-hlbh6b9).
 - **Every skill description is in the third person, and the lint refuses a regression** (basicly-wzf3u0g).
 - **The board shows the cache read share, the session-start report fits the hook output cap, and the codex ceiling sits under the real window** (basicly-xmmvf7p, basicly-ap7lyr6, basicly-oquwm8g).
+
+### Added
+
+- **Two adapted skills: `skill-creator` and `find-skills`.** `skill-creator` (Apache-2.0, from anthropics/skills) drives the eval loop and writes `skill.yaml` sources. `find-skills` (MIT, from vercel-labs/skills) searches the installed catalog, then skills.sh, and installs only after consent (basicly-hlbh6b9).
+
+- **New `best-practices-audit` skill.** It downloads the current Claude Code and Claude API pages when the network is up, falls back to a sourced checklist offline, and audits skills, instruction files, hooks, subagents and permission rules. Its script needs only Python 3 and fetches HTTPS only (basicly-rieesd8).
+
+- **The board spend line shows the cache read share and the cache TTL split.** Each claude run records the cache writes billed at the 5-minute and the 1-hour rate when the host reports them. The board snapshot adds `cache_write_5m_tokens`, `cache_write_1h_tokens` and `cache_read_share`, and the footer draws the share as a percentage (basicly-xmmvf7p).
+
+### Changed
+
+- **`basicly catalog lint` measures the skill listing for Claude Code and for Codex separately.** Claude Code: name and description against `skillListingBudgetFraction` of the 1M window, without skills that set `disable-model-invocation`. Codex: each entry plus its skill path against 2 percent of the 258400-token window. Each overflow names its host and numbers (basicly-9k9xbvy).
+
+- **The 25 `tool-*` skills are now reference files of `cli-tools`.** The skill listing carries one entry instead of 26. `basicly install` removes the old generated `tool-*` folders and keeps a hand-written skill. Run `basicly skills-user cli-tools` for the user home; a `tool-` name is refused (basicly-gdn5ndf).
+
+- **Skill descriptions are about half as long, and `python-guidelines` is now a reference of `python`.** 27 descriptions say what the skill does, then when to use it, in at most 190 characters. The Python design rules moved to `python/references/design.md`. The full catalog now fits Codex (5112 of 5168 characters) and Claude Code (4119 of 20000) (basicly-rfpukau).
+
+### Fixed
+
+- **The tool-git skill names the fallback commit address as `<user>@<hostname>.local`.** The old `...@hostname.local` example tripped a downstream privacy gate that read the dots as a real local part (basicly-6e4dix4).
+
+- **The session-start hook keeps its report inside the Claude Code hook output cap.** A report over 10000 characters is cut to the cap with a pointer to `basicly session start`. Claude Code otherwise replaces an over-cap hook output with a 2000-character preview (basicly-ap7lyr6).
+
+- **The skill listing budget is measured in characters, as Claude Code measures it.** `basicly catalog lint` compared a token estimate with a character budget, so a listing up to about four times the host budget passed. The per-host measure in basicly-9k9xbvy builds on this (basicly-dnb8b3t).
+
+- **A skill can bundle Python scripts and stay checked clean.** `basicly skills-build` no longer copies `__pycache__` or `.pyc` files into a projected skill, and `basicly skills-check` no longer reports the cache that a consumer run writes as drift (basicly-g9pb92y).
+
+- **The codex context ceiling sits under the window that Codex applies.** The codex runner fallback window drops from 400000 to 258400 tokens, the window that Codex 0.160.0 applied to `gpt-6-luna` on a ChatGPT account. The 0.6 ceiling was 93 percent of the real window and is now 60 percent (basicly-oquwm8g).
+
+- **Skill descriptions follow the vendor skill authoring rules.** 23 descriptions now use the third person, and `cli-tools` no longer carries an XML-like tag. The board, comments and tracker kit guidance follow the same rule. `basicly catalog lint` refuses a description that says you, carries a tag or exceeds 1024 characters (basicly-wzf3u0g).
 
 ## v0.19.2 - 2026-09-30
 

@@ -1,1 +1,0 @@
-- **Two adapted skills: `skill-creator` and `find-skills`.** `skill-creator` (Apache-2.0, from anthropics/skills) drives the eval loop and writes `skill.yaml` sources. `find-skills` (MIT, from vercel-labs/skills) searches the installed catalog, then skills.sh, and installs only after consent (basicly-hlbh6b9).

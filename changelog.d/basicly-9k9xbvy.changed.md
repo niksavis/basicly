@@ -1,1 +1,0 @@
-- **`basicly catalog lint` measures the skill listing for Claude Code and for Codex separately.** Claude Code: name and description against `skillListingBudgetFraction` of the 1M window, without skills that set `disable-model-invocation`. Codex: each entry plus its skill path against 2 percent of the 258400-token window. Each overflow names its host and numbers (basicly-9k9xbvy).

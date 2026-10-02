@@ -1,1 +1,0 @@
-- **The session-start hook keeps its report inside the Claude Code hook output cap.** A report over 10000 characters is cut to the cap with a pointer to `basicly session start`. Claude Code otherwise replaces an over-cap hook output with a 2000-character preview (basicly-ap7lyr6).

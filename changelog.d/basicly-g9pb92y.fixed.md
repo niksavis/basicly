@@ -1,1 +1,0 @@
-- **A skill can bundle Python scripts and stay checked clean.** `basicly skills-build` no longer copies `__pycache__` or `.pyc` files into a projected skill, and `basicly skills-check` no longer reports the cache that a consumer run writes as drift (basicly-g9pb92y).

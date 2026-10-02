@@ -1,1 +1,0 @@
-- **Skill descriptions are about half as long, and `python-guidelines` is now a reference of `python`.** 27 descriptions say what the skill does, then when to use it, in at most 190 characters. The Python design rules moved to `python/references/design.md`. The full catalog now fits Codex (5112 of 5168 characters) and Claude Code (4119 of 20000) (basicly-rfpukau).

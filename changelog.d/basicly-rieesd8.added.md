@@ -1,1 +1,0 @@
-- **New `best-practices-audit` skill.** It downloads the current Claude Code and Claude API pages when the network is up, falls back to a sourced checklist offline, and audits skills, instruction files, hooks, subagents and permission rules. Its script needs only Python 3 and fetches HTTPS only (basicly-rieesd8).

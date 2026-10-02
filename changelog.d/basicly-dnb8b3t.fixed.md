@@ -1,1 +1,0 @@
-- **The skill listing budget is measured in characters, as Claude Code measures it.** `basicly catalog lint` compared a token estimate with a character budget, so a listing up to about four times the host budget passed. The per-host measure in basicly-9k9xbvy builds on this (basicly-dnb8b3t).
