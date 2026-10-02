@@ -125,3 +125,31 @@ def test_a_repository_with_no_owned_tracker_is_silent_end_to_end(tmp_path: Path)
         command, cwd=tmp_path, capture_output=True, text=True, check=False
     )
     assert report.stdout.startswith(module.NO_TRACKER_PREFIX)
+
+
+def test_a_report_over_the_hook_cap_is_cut_to_the_cap_with_a_pointer(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = _load_module()
+    long_report = REPORT + "\n" + "x" * 12_000 + "\nLAST LINE"
+    _stub_cli(module, f"print({long_report!r})", monkeypatch)
+
+    assert _run(module, CLAUDE_PAYLOAD, monkeypatch) == 0
+
+    out = capsys.readouterr().out.rstrip("\n")
+    assert len(out) == module.HOOK_OUTPUT_CAP
+    assert out.startswith(REPORT)
+    assert "LAST LINE" not in out
+    assert out.endswith("run `basicly session start` for the rest]")
+
+
+def test_a_report_at_the_cap_passes_whole(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = _load_module()
+    exact = "y" * module.HOOK_OUTPUT_CAP
+    _stub_cli(module, f"print({exact!r})", monkeypatch)
+
+    assert _run(module, CLAUDE_PAYLOAD, monkeypatch) == 0
+
+    assert capsys.readouterr().out == exact + "\n"
