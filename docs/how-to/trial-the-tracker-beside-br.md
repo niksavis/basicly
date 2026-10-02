@@ -8,8 +8,8 @@ of truth during the trial. The basicly ledger is a mirror that you re-import fro
 ## 1. Install the tracker and the board once per machine
 
 ```sh
-uv tool install 'git+https://github.com/niksavis/basicly@v0.20.0#subdirectory=packages/basicly-tracker'
-uv tool install 'git+https://github.com/niksavis/basicly@v0.20.0#subdirectory=packages/basicly-board'
+uv tool install 'git+https://github.com/niksavis/basicly@v0.20.1#subdirectory=packages/basicly-tracker'
+uv tool install 'git+https://github.com/niksavis/basicly@v0.20.1#subdirectory=packages/basicly-board'
 ```
 
 Each `init` also writes a skill to `~/.claude/skills/`, so an agent in any repository with a

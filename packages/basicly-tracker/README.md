@@ -10,7 +10,7 @@ network.
 is the default mode:
 
 ```console
-$ uv tool install 'git+https://github.com/niksavis/basicly@v0.20.0#subdirectory=packages/basicly-tracker'
+$ uv tool install 'git+https://github.com/niksavis/basicly@v0.20.1#subdirectory=packages/basicly-tracker'
 $ basicly-tracker init
 tracker: added to .gitattributes: events-*.jsonl -text merge=union
 tracker: created the ledger .basicly/ledger
@@ -109,8 +109,8 @@ https://github.com/niksavis/basicly/blob/main/packages/basicly-tracker/README.md
 describes. Do the four steps in order.
 
 1. Install. Run these commands in the repository root:
-   uv tool install 'git+https://github.com/niksavis/basicly@v0.20.0#subdirectory=packages/basicly-tracker'
-   uv tool install 'git+https://github.com/niksavis/basicly@v0.20.0#subdirectory=packages/basicly-board'
+   uv tool install 'git+https://github.com/niksavis/basicly@v0.20.1#subdirectory=packages/basicly-tracker'
+   uv tool install 'git+https://github.com/niksavis/basicly@v0.20.1#subdirectory=packages/basicly-board'
    basicly-tracker init
    basicly-board init
 2. Configure. When init reports a beads or beans backlog, tell me how many records it holds.
