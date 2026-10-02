@@ -20,6 +20,7 @@ UNPAIRED_EXEMPTIONS: dict[str, str] = {
     "release-process": "operator: a release is cut by a human, never dispatched to a lane",
     "session-finish": "operator: the driving session is the one that closes itself out",
     "catalog-authoring": "operator: catalog sources are authored in the driving session",
+    "best-practices-audit": "operator: the driving session aligns the harness with vendor docs",
     "tier-injection": "operator: installing the tier kit is host setup, not lane work",
     "retention-probe": (
         "diagnostic: any role runs it on itself when guidance looks missing, so it belongs "

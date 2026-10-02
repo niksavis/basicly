@@ -443,3 +443,20 @@ def test_every_root_writes_the_routing_description_of_a_tool_skill(tmp_path: Pat
     for root in roots:
         front = yaml.safe_load((root / "tool-t" / "SKILL.md").read_text().split("---\n")[1])
         assert front["description"] == "Find a thing. Use it instead of `find`.", root
+
+
+def test_python_bytecode_is_neither_projected_nor_reported(tmp_path: Path) -> None:
+    _write_skill(tmp_path, "audit", "audit", "Audit things.")
+    _write_resource(tmp_path, "audit", "scripts/run.py", b"print(1)\n")
+    _write_resource(tmp_path, "audit", "scripts/__pycache__/run.cpython-314.pyc", b"source pyc")
+    roots = resolve_skill_roots(tmp_path, roots=[".claude/skills"])
+    skill_dir = roots[0] / "audit"
+
+    sync_skills(tmp_path, roots)
+    assert (skill_dir / "scripts/run.py").is_file()
+    assert not (skill_dir / "scripts/__pycache__").exists(), "a source cache was projected"
+
+    consumer_cache = skill_dir / "scripts/__pycache__/run.cpython-314.pyc"
+    consumer_cache.parent.mkdir(parents=True)
+    consumer_cache.write_bytes(b"consumer pyc")
+    assert check_synced_skills(tmp_path, roots) == [], "a consumer run turned the check red"
