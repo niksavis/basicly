@@ -244,6 +244,7 @@ command = [
   ".scripts",
   ".basicly/core/hooks",
   ".basicly/core/kit",
+  ".basicly/core/skills",
   "packages",
 ]
 modes = ["fast", "full"]

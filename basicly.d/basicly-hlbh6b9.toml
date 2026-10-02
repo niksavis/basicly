@@ -1,0 +1,8 @@
+# Two `# noqa: S603` for the adapted skill-creator scripts (basicly-hlbh6b9).
+#
+# `run_eval.py` and `improve_description.py` measure a skill description against the real
+# host, and the only interface to the host is the `claude -p` command. Both pass a fixed
+# argv list with no shell, the prompt as one argument or on stdin. The rejected alternative
+# is an SDK client, which is a new dependency for a consumer who has none.
+[ratchet.noqa_debt.frozen]
+S603 = 2
