@@ -1,15 +1,11 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 token_cost:
-  listing: 80
+  listing: 39
 name: wsl
 invocation: model
 technologies: [wsl]
-description: >-
-  Configure and operate WSL (Windows Subsystem for Linux): wsl.exe management, Windows
-  and Linux interop, PATH, filesystem speed and non-interactive shells. Use when a task sets up
-  or troubleshoots WSL, crosses the Windows and Linux boundary, hits slow /mnt/c file access,
-  or when a tool works in an interactive terminal but not from a script.
+description: "Operates WSL: wsl.exe, interop, PATH, slow /mnt/c access. Use when crossing Windows and Linux, or when a tool works in a terminal but not from a script."
 instructions: |
   # WSL
 

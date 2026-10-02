@@ -1,10 +1,10 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 token_cost:
-  listing: 125
+  listing: 48
 name: cli-tools
 invocation: model
-description: Pick the installed command-line tool for a shell task instead of a slower default - rg to search text in files, fd to find or list files by name or extension, bat to read a file with line numbers, jq or yq to read a field from a JSON or YAML file, sd to replace text, ast-grep for code structure, xh or curl to call an HTTP endpoint, just for project recipes. Use for a shell task that searches, lists, reads or reshapes files or data or calls an API; then read the reference of the tool for its flags.
+description: "Picks the fast installed tool for a shell task: rg to find every file that mentions a word, fd to list files, jq or yq to read a JSON or YAML field, xh or curl for an HTTP endpoint."
 resource_technologies:
   references/starship.md: [starship]
   references/tmux.md: [tmux]

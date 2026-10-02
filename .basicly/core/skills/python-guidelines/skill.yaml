@@ -1,17 +1,13 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 token_cost:
-  listing: 85
+  listing: 44
 name: python-guidelines
 invocation: model
 technologies: [python]
 claude:
   paths: ["**/*.py"]
-description: >-
-  Make the design decisions that no linter checks, such as where an oversized file
-  splits, whether an abstraction earns its keep and when to silence a warning. Use when a
-  size or complexity gate fails, before a noqa or nosec suppression goes in, when a
-  change decides what to raise and catch, or when concurrent lanes share state.
+description: "Decides what no Python linter checks: where a file splits, whether an abstraction earns its keep, when to silence a warning. Use when a size gate fails."
 instructions: |
   # Python Guidelines
 

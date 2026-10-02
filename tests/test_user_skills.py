@@ -36,10 +36,7 @@ def test_the_projection_writes_the_selection_and_keeps_an_unmarked_skill(tmp_pat
     lines = user_skills.project(["cli-tools"], root)
 
     assert GENERATED_MARKER in (root / "cli-tools" / "SKILL.md").read_text()
-    assert (
-        "description: Pick the installed command-line tool"
-        in (root / "cli-tools" / "SKILL.md").read_text()
-    )
+    assert "Picks the fast installed tool" in (root / "cli-tools" / "SKILL.md").read_text()
     assert (root / "cli-tools" / "references" / "jq.md").is_file()
     assert mine.read_text() == before
     assert "wrote cli-tools" in lines

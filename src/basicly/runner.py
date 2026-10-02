@@ -18,7 +18,13 @@ from typing import IO
 
 from . import agents, context_window, models, run_record
 from .checkout import sanitised_colour_env, sanitised_git_env
-from .context_window import ADAPTER_WINDOW, ADAPTER_WINDOWS, DEFAULT_CONTEXT_WINDOW, FALLBACK_WINDOW
+from .context_window import (
+    ADAPTER_WINDOW,
+    ADAPTER_WINDOWS,
+    CODEX_FALLBACK_WINDOW,
+    DEFAULT_CONTEXT_WINDOW,
+    FALLBACK_WINDOW,
+)
 from .copilot_store import COPILOT_SESSION_STORE, shutdown_data, store_usage
 from .redact import redact_secrets
 from .runner_envelope import (
@@ -139,7 +145,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         sandbox="workspace-write",
         approval="never",
         usage_format=CODEX_JSONL,
-        context_window=258_400,
+        context_window=CODEX_FALLBACK_WINDOW,
         context_window_source=FALLBACK_WINDOW,
     ),
     RunnerSpec(

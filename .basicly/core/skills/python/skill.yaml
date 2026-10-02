@@ -1,15 +1,11 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 token_cost:
-  listing: 81
+  listing: 41
 name: python
 invocation: model
 technologies: [python]
-description: >-
-  Write and edit Python with type hints, pathlib and cross-platform subprocess calls.
-  Use when a task creates or changes .py files, wires up a subprocess call, chases a test that
-  fails only on Windows CI (a WinError 2 or a mangled backslash path), or checks a
-  multi-exception except clause that looks wrong for an older Python.
+description: "Writes typed Python with pathlib and cross-platform subprocess calls. Use for .py edits, Windows-only test failures or an except clause on older Python."
 instructions: |
   # Python
 
