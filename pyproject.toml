@@ -84,7 +84,7 @@ faulthandler_timeout = "60"
 [tool.pyright]
 extraPaths = ["src", "."]
 typeCheckingMode = "standard"
-include = ["src", "tests", ".scripts", ".basicly/core", "packages"]
+include = ["src", "tests", ".scripts", ".basicly/core", "packages", ".claude/skills", ".agents/skills"]
 exclude = ["**/node_modules", "**/__pycache__", "**/.venv"]
 
 [project.scripts]
