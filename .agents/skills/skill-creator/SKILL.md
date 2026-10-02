@@ -1,6 +1,6 @@
 ---
 name: skill-creator
-description: Drafts a new agent skill or improves one through an eval loop - eval prompts with and without the skill, graded assertions, a benchmark of success rate, time and tokens, a review page for human feedback, and trigger tuning of the description. Use when a task turns a workflow into a skill, measures whether a skill helps, compares two skill versions, or makes a skill trigger more reliably.
+description: 'Writes a new skill or improves one with evals: runs with and without it, a benchmark, graded versions, trigger tuning. Use when turning a workflow into a skill.'
 license: Apache-2.0
 metadata:
   source: anthropics/skills skills/skill-creator

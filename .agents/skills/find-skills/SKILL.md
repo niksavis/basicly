@@ -1,6 +1,6 @@
 ---
 name: find-skills
-description: Searches for an existing agent skill before one is built - the installed basicly catalog, then the skills.sh registry with npx skills find - checks installs, owner and stars, and installs a found skill only after the user agrees. Use when a task asks whether a skill exists for some job, wants to find or install a community skill, or needs a capability the agent lacks.
+description: 'Searches the catalog, then skills.sh, for an existing community skill out there, and installs one only after the user agrees. Use when asking: is there a skill for this?'
 license: MIT
 metadata:
   source: vercel-labs/skills skills/find-skills

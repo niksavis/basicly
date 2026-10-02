@@ -1,0 +1,1 @@
+- **Skill descriptions are about half as long.** 26 descriptions say what the skill does, then when to use it, in at most 180 characters. Codex lists skills in 2 percent of its window and shortens long descriptions first, which cut the trigger. Routing stays at 53 of 60 (basicly-rfpukau).

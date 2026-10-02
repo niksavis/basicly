@@ -1,14 +1,10 @@
 # yaml-language-server: $schema=../../schemas/skill.schema.json
 schema_version: 1
 token_cost:
-  listing: 80
+  listing: 39
 name: best-practices-audit
 invocation: model
-description: >-
-  Audit skills, instruction files, hooks, subagents and permission rules against the
-  current Claude Code and Claude API documentation, and pull the newest pages first when
-  the network is up. Use when a task aligns harness files with vendor best practices,
-  after a Claude Code release, or before a new skill ships.
+description: "Audits skills, instruction files, hooks, agents and permissions against the newest vendor docs. Use after a Claude Code or Codex release."
 instructions: |
   # Best-Practices Audit
 
