@@ -9,6 +9,7 @@ from .models import same_model
 from .runner_envelope import claude_result_event, forwarded, stream_events
 
 DEFAULT_CONTEXT_WINDOW = 128_000
+CODEX_FALLBACK_WINDOW = 258_400
 
 ADAPTER_WINDOW = "adapter default"
 FALLBACK_WINDOW = "conservative fallback"

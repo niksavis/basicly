@@ -554,11 +554,11 @@ def test_the_listing_budget_warning_reports_the_arithmetic(tmp_path: Path) -> No
 
     entries = len(discover_skills(root))
 
-    assert len(warnings) == 1
-    assert "skill listing is" in warnings[0]
-    assert "character budget" in warnings[0]
+    assert len(warnings) == 1, "40 entries fit Claude Code at 1M and overflow Codex"
+    assert warnings[0].startswith("Codex skill listing is")
+    assert "5168-character budget" in warnings[0]
     assert f"{entries} entries" in warnings[0]
-    assert "least-invoked first" in warnings[0]
+    assert "shortens descriptions first" in warnings[0]
 
 
 def test_the_listing_budget_counts_characters_as_the_host_does(tmp_path: Path) -> None:
@@ -574,8 +574,8 @@ def test_the_listing_budget_counts_characters_as_the_host_does(tmp_path: Path) -
 
     warnings = listing_budget_warnings(root)
 
-    assert len(warnings) == 1, "about 4900 characters is over a 4000-character budget"
-    assert "4000-character budget" in warnings[0]
+    assert len(warnings) == 1, "about 5300 characters with paths is over 5168"
+    assert "5168-character budget" in warnings[0]
 
 
 def test_the_listing_budget_is_silent_when_it_fits(tmp_path: Path) -> None:

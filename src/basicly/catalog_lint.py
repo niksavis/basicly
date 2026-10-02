@@ -9,7 +9,6 @@ from . import (
     agents,
     catalog_emphasis,
     catalog_token_cost,
-    claude_settings,
     routing_evals,
     rubrics,
     skill_coverage,
@@ -29,6 +28,7 @@ from .catalog_source import (
     schema_validator,
     schema_violations,
 )
+from .listing_budget import listing_budget_warnings
 from .schema import MODEL_TIERS, TECHNOLOGIES, ValidationError
 
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -321,35 +321,6 @@ def _check_description_voice(repo_root: Path) -> list[str]:
                 f"is {_MAX_DESCRIPTION_CHARS}"
             )
     return violations
-
-
-_LISTING_REFERENCE_FAMILY = "claude"
-_LISTING_REFERENCE_WINDOW = 200_000
-
-
-def listing_budget_warnings(repo_root: Path) -> list[str]:
-
-    entries = skill_source.discover_skills(repo_root)
-    if not entries:
-        return []
-    try:
-        listing = "".join(f"{skill.name}\n{skills.skill_description(skill)}\n" for skill in entries)
-    except ValidationError:
-        return []
-    characters = len(listing)
-    window = _LISTING_REFERENCE_WINDOW
-    fraction = claude_settings.skill_listing_budget(repo_root)
-    budget = int(window * fraction)
-    if characters <= budget:
-        return []
-    return [
-        f"skill listing is {characters} characters against a {budget}-character budget "
-        f"({fraction:.0%} of the {window}-token {_LISTING_REFERENCE_FAMILY} window, "
-        f"{claude_settings.SKILL_LISTING_BUDGET_KEY} in {claude_settings.CLAUDE_SETTINGS_PATH}), "
-        f"from {len(entries)} entries. The host drops descriptions "
-        f"least-invoked first, so the entries this overrun silences are the ones "
-        f"already hardest to reach. Retire a dead skill or shorten a description."
-    ]
 
 
 def skill_warnings(repo_root: Path) -> list[str]:
