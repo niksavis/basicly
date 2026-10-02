@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release fixes a consumer lint failure that v0.20.0 brought. The `skill-creator` scripts carried `# noqa: S603`, so a consumer whose ruff selects RUF but not S failed RUF100 on the projected skills. Run `basicly install` after the upgrade, and drop any ruff exclusion of `.claude/skills` or `.agents/skills` that you added for this.
+
+- **No shipped skill script carries a `noqa` directive, and a test refuses one** (basicly-du41wub).
+
 ## v0.20.0 - 2026-10-02
 
 Delta: v0.19.2..v0.20.0
