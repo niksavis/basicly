@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This minor release aligns the skills with the current Claude Code, Claude API and Codex guidance, and it makes the skill listing fit both hosts. The 25 `tool-*` skills become reference files of `cli-tools`, so a script that names a `tool-*` skill must now name `cli-tools`. `basicly install` removes the old generated `tool-*` folders, and `basicly skills-user cli-tools` does the same in the user home. Three new skills audit the harness against the newest vendor docs, create and measure skills, and find existing ones.
+
+- **Breaking: the `tool-*` skills are references of `cli-tools`.** Run `basicly skills-user cli-tools`; a `tool-` name is refused with that command (basicly-gdn5ndf).
+- **The skill listing fits Claude Code and a default Codex install.** The lint measures each host in its own unit and window, and 27 descriptions are about half as long (basicly-9k9xbvy, basicly-rfpukau).
+- **New skills: `best-practices-audit`, `skill-creator` and `find-skills`** (basicly-rieesd8, basicly-hlbh6b9).
+- **Every skill description is in the third person, and the lint refuses a regression** (basicly-wzf3u0g).
+- **The board shows the cache read share, the session-start report fits the hook output cap, and the codex ceiling sits under the real window** (basicly-xmmvf7p, basicly-ap7lyr6, basicly-oquwm8g).
+
 ## v0.19.2 - 2026-09-30
 
 Delta: v0.19.1..v0.19.2
