@@ -20,7 +20,7 @@ field: every skill root advertises its first body paragraph instead.
 | --- | --- | --- | --- |
 | `best-practices-audit` | `model` | any | Audit skills, instruction files, hooks, subagents and permission rules against the current Claude Code and Claude API documentation, and pull the newest pages first when the network is up. Use when a task aligns harness files with vendor best practices, after a Claude Code release, or before a new skill ships. |
 | `catalog-authoring` | `model` | any | Author and improve basicly catalog sources — skills, fragments and output styles — in their YAML source format (never a discoverable .md), then project and verify them. Use when a task adds or edits a skill or fragment, builds a catalog, or decides where guidance should live (always-on fragment or on-demand skill). |
-| `cli-tools` | `model` | any | Pick the installed command-line tool for a shell task instead of a slower default - rg to search text in files, fd to find or list files by name or extension, bat to read a file with line numbers, jq or yq to read a field from a JSON or YAML file, sd to replace text, ast-grep for code structure, xh or curl to call an HTTP endpoint, just for project recipes. Use for a shell task that searches, lists, reads or reshapes files or data or calls an API; then load tool-NAME for its flags. |
+| `cli-tools` | `model` | any | Pick the installed command-line tool for a shell task instead of a slower default - rg to search text in files, fd to find or list files by name or extension, bat to read a file with line numbers, jq or yq to read a field from a JSON or YAML file, sd to replace text, ast-grep for code structure, xh or curl to call an HTTP endpoint, just for project recipes. Use for a shell task that searches, lists, reads or reshapes files or data or calls an API; then read the reference of the tool for its flags. |
 | `conventional-commits` | `model` | any | Construct a Conventional Commits subject that passes the commit-msg and tracker-commit-msg hooks on the first attempt - type, scope, the "!" breaking-change marker, the lowercase description and the trailing tracker record id. Use when a task writes or reviews a commit message, or when a hook rejected a commit. |
 | `decompose-plan` | `model` | any | Cut a unit of work into children that the plan gate accepts, each with EARS acceptance criteria, disjoint or declared scope globs, acyclic dependencies, a token budget, an integrity level and an end-to-end demonstration command. Use at DECOMPOSE, when a plan gate refused a child, or when a child has no consumer-visible behaviour to check. |
 | `falsify-first` | `model` | any | Attempt to break a claim - an invariant, a design premise, a measurement - with a concrete counterexample search before an agent defends or adopts it, and read each kill for the precondition that carried the weight. Use before an invariant enters a plan, a design note or a gate, or before a measured number becomes a claim. |
@@ -41,31 +41,6 @@ field: every skill root advertises its first body paragraph instead.
 | `skill-creator` | `model` | any | Drafts a new agent skill or improves one through an eval loop - eval prompts with and without the skill, graded assertions, a benchmark of success rate, time and tokens, a review page for human feedback, and trigger tuning of the description. Use when a task turns a workflow into a skill, measures whether a skill helps, compares two skill versions, or makes a skill trigger more reliably. |
 | `test-discipline` | `model` | any | Write isolated, order-independent tests that assert on observable behavior, not private internals. Use when a task writes, reviews or debugs a test in any language, especially when tests share fixtures, touch global or filesystem state, fail by run order, or reach into implementation details. |
 | `tier-injection` | `model` | any | Install the portable tier injection kit so a subagent spawns on the model its declared tier resolves to, not on the host default. Use when a task sets up tier injection in this or another repository, when a subagent ignores the tier its definition declares, or to decide whether a host can pin the model of a spawn. |
-| `tool-ast-grep` | `user` | any | |
-| `tool-bat` | `user` | any | |
-| `tool-curl` | `user` | any | |
-| `tool-direnv` | `user` | any | |
-| `tool-fd` | `user` | any | |
-| `tool-fzf` | `user` | any | |
-| `tool-git` | `user` | any | |
-| `tool-git-delta` | `user` | any | |
-| `tool-git-lfs` | `user` | any | |
-| `tool-jq` | `user` | any | |
-| `tool-just` | `user` | any | |
-| `tool-lazygit` | `user` | any | |
-| `tool-ripgrep` | `user` | any | |
-| `tool-sd` | `user` | any | |
-| `tool-shellcheck` | `user` | any | |
-| `tool-starship` | `user` | `starship` | |
-| `tool-tmux` | `user` | `tmux` | |
-| `tool-tree` | `user` | any | |
-| `tool-typos` | `user` | any | |
-| `tool-uv` | `user` | `python` | |
-| `tool-wezterm` | `user` | `wezterm` | |
-| `tool-wget` | `user` | any | |
-| `tool-xh` | `user` | any | |
-| `tool-yq` | `user` | any | |
-| `tool-zsh` | `user` | `zsh` | |
 | `validate-as-consumer` | `model` | any | Exercise a verified change the way a consumer does, in the operational environment and against the requirement that asked for it, instead of re-running the gate suite. Use at VALIDATE, before a README or release note claims a capability, or when "the tests pass" stands in for "the feature works". |
 | `work-tracker` | `model` | any | Read, file, claim, refine and close records in the owned work tracker, the append-only event ledger in .basicly/ledger/. Use when a task plans work, checks what is ready to pick up, files a bug or issue, queries the tracker in bulk, or writes a commit that names a record id. |
 | `worktree-isolation` | `model` | any | Isolate non-trivial work in a sibling git worktree on a harness branch with `basicly worktree`, with dependency and git-hook provisioning, merge and safe cleanup. Use when work must stay out of the main checkout, when parallel tracks would collide, or to decide if a change needs its own worktree. |

@@ -44,7 +44,7 @@ def test_cli_usage_report_separates_unexercised_from_unwanted(work_repo: Path) -
     _, _, tail = result.stdout.partition("Never invoked through the Skill tool")
     delivered, _, unreachable = tail.partition("unreachable")
     assert "root-cause" in delivered and "worktree-isolation" in delivered
-    assert "tool-jq" in unreachable
+    assert "cli-tools" in unreachable
     assert "root-cause" not in unreachable
 
 

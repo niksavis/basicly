@@ -111,8 +111,8 @@ already exists.
 
 ## Ship less of it
 
-Technology-tagged sources (the `tool-*` skills, shell and platform fragments)
-are skipped at projection time when they fall outside your stack:
+Technology-tagged sources (the shell references of `cli-tools`, shell and platform
+fragments) are skipped at projection time when they fall outside your stack:
 
 ```sh
 uvx --from git+https://github.com/niksavis/basicly@v0.19.2 basicly install --technologies python,zsh

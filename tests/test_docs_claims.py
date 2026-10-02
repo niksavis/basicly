@@ -58,7 +58,7 @@ def test_check_names_the_block_and_file_when_a_generated_block_drifts(
 def test_fix_regenerates_a_drifted_block_and_the_check_then_passes(work_repo: Path) -> None:
     path = work_repo / SKILLS_README
     original = path.read_text(encoding="utf-8")
-    path.write_text(original.replace("| `tool-jq` |", "| `tool-nope` |"), encoding="utf-8")
+    path.write_text(original.replace("| `no-comments` |", "| `no-nope` |"), encoding="utf-8")
     assert _run(work_repo, "--check") == 1
 
     assert _run(work_repo, "--fix") == 0
@@ -71,7 +71,7 @@ def test_fix_scoped_to_one_block_leaves_the_other_documents_untouched(work_repo:
     skills = work_repo / SKILLS_README
     hooks = work_repo / claims.HOOKS_README
     current = skills.read_text(encoding="utf-8")
-    skills.write_text(current.replace("| `tool-jq` |", "| `tool-nope` |"), encoding="utf-8")
+    skills.write_text(current.replace("| `no-comments` |", "| `no-nope` |"), encoding="utf-8")
     drifted = hooks.read_text(encoding="utf-8").replace(
         "| `pre-push-script` |", "| `pre-push-nope` |"
     )

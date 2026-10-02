@@ -2335,7 +2335,7 @@ def cmd_skills_build(args: argparse.Namespace) -> int:
     roots = _resolve_skill_output_roots(args, repo_root)
     result, pruned = sync_skills(repo_root, roots, selection=load_technology_selection(repo_root))
     for path in pruned:
-        print(f"Removed {_format_path(path, repo_root)} (excluded by technology selection)")
+        print(f"Removed {_format_path(path, repo_root)} (no source or technology selects it)")
     _report_sync(result, repo_root, noun="skill files", label="Skill")
     return 0
 

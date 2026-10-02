@@ -32,6 +32,7 @@ GENERATED_MARKER = (
 )
 
 UNMANAGED_REASON_PREFIX = "unmanaged ("
+RETIRED_REASON_PREFIX = "retired ("
 
 USER_LEVEL_DESCRIPTION_MAX = 1536
 _BLOCK_OTHER_THAN_A_PARAGRAPH = re.compile(r"[-*+]\s|\d+[.)]\s|[>|<]|```|~~~")
@@ -82,14 +83,33 @@ def skill_description(skill: SkillDefinition) -> str:
     return routing_description(skill)
 
 
-def render_skill_md(skill: SkillDefinition, *, emit_claude_block: bool = False) -> str:
+def deselected_resources(skill: SkillDefinition, selection: frozenset[str] | None) -> set[str]:
+    return {
+        resource
+        for resource, technologies in skill.resource_technologies
+        if not technology_selected(technologies, selection)
+    }
+
+
+def _selected_instructions(skill: SkillDefinition, selection: frozenset[str] | None) -> str:
+    dropped = deselected_resources(skill, selection)
+    lines = skill.instructions.splitlines(keepends=True)
+    return "".join(line for line in lines if not any(resource in line for resource in dropped))
+
+
+def render_skill_md(
+    skill: SkillDefinition,
+    *,
+    emit_claude_block: bool = False,
+    selection: frozenset[str] | None = None,
+) -> str:
 
     description = yaml.safe_dump(
         {"description": skill_description(skill)}, allow_unicode=True, width=math.inf
     )
     optional = _optional_frontmatter(skill, emit_claude_block=emit_claude_block)
     header = f"---\nname: {skill.name}\n{description}{optional}---\n"
-    return f"{header}{GENERATED_MARKER}\n\n{skill.instructions}"
+    return f"{header}{GENERATED_MARKER}\n\n{_selected_instructions(skill, selection)}"
 
 
 def resolve_skill_roots(repo_root: Path, roots: list[str] | None) -> list[Path]:
@@ -124,10 +144,11 @@ def _is_bytecode(rel: Path) -> bool:
     return "__pycache__" in rel.parts or rel.suffix == ".pyc"
 
 
-def _resource_files(skill: SkillDefinition) -> list[Path]:
+def _resource_files(skill: SkillDefinition, selection: frozenset[str] | None) -> list[Path]:
 
     src_dir = skill.source_dir
     skipped = {Path(SKILL_SOURCE_FILE), Path(SKILL_FILE_NAME), Path(EVAL_SOURCE_FILE)}
+    skipped |= {Path(resource) for resource in deselected_resources(skill, selection)}
     files: list[Path] = []
     for candidate in sorted(src_dir.rglob("*")):
         if not candidate.is_file():
@@ -161,16 +182,21 @@ def _prune_orphans(skill_dir: Path, expected: set[Path]) -> list[Path]:
     return pruned
 
 
-def _project_skill(skill: SkillDefinition, skill_dir: Path, result: SyncResult) -> list[Path]:
+def _project_skill(
+    skill: SkillDefinition,
+    skill_dir: Path,
+    result: SyncResult,
+    selection: frozenset[str] | None = None,
+) -> list[Path]:
     expected: set[Path] = set()
 
     skill_md = skill_dir / SKILL_FILE_NAME
     fenced = root_emits_claude_block(skill_dir.parent)
-    rendered = render_skill_md(skill, emit_claude_block=fenced)
+    rendered = render_skill_md(skill, emit_claude_block=fenced, selection=selection)
     sync_file(skill_md, rendered.encode("utf-8"), result)
     expected.add(skill_md)
 
-    for rel in _resource_files(skill):
+    for rel in _resource_files(skill, selection):
         target = skill_dir / rel
         _sync_resource(skill.source_dir / rel, target, result)
         expected.add(target)
@@ -202,11 +228,28 @@ def sync_skills(
         for root in roots:
             skill_dir = root / skill.slug
             if selected:
-                pruned.extend(_project_skill(skill, skill_dir, result))
+                pruned.extend(_project_skill(skill, skill_dir, result, selection))
             else:
                 pruned.extend(_prune_skill_dir(skill_dir))
 
+    known_slugs = {skill.slug for skill in skills}
+    for root in roots:
+        for retired in _retired_skill_dirs(root, known_slugs):
+            pruned.extend(_prune_skill_dir(retired))
+
     return result, pruned
+
+
+def _retired_skill_dirs(root: Path, known_slugs: set[str]) -> list[Path]:
+    if not root.is_dir():
+        return []
+    return [
+        entry
+        for entry in sorted(root.iterdir())
+        if entry.is_dir()
+        and entry.name not in known_slugs
+        and _is_generated_skill(entry / SKILL_FILE_NAME)
+    ]
 
 
 def _unmanaged_entries(
@@ -225,6 +268,11 @@ def _unmanaged_entries(
             continue
         source = source_dir / entry.name / SKILL_SOURCE_FILE
         reason = f"{UNMANAGED_REASON_PREFIX}no skill source at {source.as_posix()})"
+        if _is_generated_skill(entry / SKILL_FILE_NAME):
+            reason = (
+                f"{RETIRED_REASON_PREFIX}generated, with no skill source at "
+                f"{source.as_posix()}; `basicly skills-build` removes it)"
+            )
         mismatches.extend((path, reason) for path in sorted(entry.rglob("*")) if path.is_file())
     return mismatches
 
@@ -247,7 +295,7 @@ def check_synced_skills(
                 if _is_generated_skill(skill_md):
                     mismatches.append((skill_md, "excluded by technology selection"))
                 continue
-            mismatches.extend(_check_projected_skill(skill, skill_dir))
+            mismatches.extend(_check_projected_skill(skill, skill_dir, selection))
 
     known_slugs = {skill.slug for skill in skills}
     for root in roots:
@@ -256,20 +304,22 @@ def check_synced_skills(
     return mismatches
 
 
-def _check_projected_skill(skill: SkillDefinition, skill_dir: Path) -> list[tuple[Path, str]]:
+def _check_projected_skill(
+    skill: SkillDefinition, skill_dir: Path, selection: frozenset[str] | None
+) -> list[tuple[Path, str]]:
     mismatches: list[tuple[Path, str]] = []
     expected: set[Path] = set()
 
     skill_md = skill_dir / SKILL_FILE_NAME
     expected.add(skill_md)
     fenced = root_emits_claude_block(skill_dir.parent)
-    rendered = render_skill_md(skill, emit_claude_block=fenced).encode("utf-8")
+    rendered = render_skill_md(skill, emit_claude_block=fenced, selection=selection).encode("utf-8")
     if not skill_md.exists():
         mismatches.append((skill_md, "missing"))
     elif skill_md.read_bytes() != rendered:
         mismatches.append((skill_md, "content mismatch"))
 
-    for rel in _resource_files(skill):
+    for rel in _resource_files(skill, selection):
         target = skill_dir / rel
         expected.add(target)
         content = (skill.source_dir / rel).read_bytes()

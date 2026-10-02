@@ -12,7 +12,7 @@ instructions: |
 
   This skill runs a unit of work in a sibling git worktree with `basicly worktree`.
   It covers placement, provisioning, merge and cleanup.
-  For tracker records see `work-tracker`. For commits see `tool-git` and `conventional-commits`.
+  For tracker records see `work-tracker`. For commits see the git reference of `cli-tools` and `conventional-commits`.
 
   ## Rules
 

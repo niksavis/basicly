@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
-import yaml
 
 from basicly import cli, user_skills
 from basicly.skill_source import SkillDefinition
@@ -17,41 +17,83 @@ def _own_skill(root: Path, name: str) -> Path:
     return folder / "SKILL.md"
 
 
+def _old_layout_skill(root: Path, name: str) -> Path:
+    folder = root / name
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(f"---\nname: {name}\n---\n{GENERATED_MARKER}\n\nbody\n")
+    return folder
+
+
+def _linked_references(skill_md: Path) -> set[str]:
+    return set(re.findall(r"\]\((references/[a-z-]+\.md)\)", skill_md.read_text()))
+
+
 def test_the_projection_writes_the_selection_and_keeps_an_unmarked_skill(tmp_path: Path) -> None:
     root = tmp_path / ".claude" / "skills"
     mine = _own_skill(root, "img-zoom")
     before = mine.read_text()
 
-    lines = user_skills.project(["cli-tools", "tool-jq"], root)
+    lines = user_skills.project(["cli-tools"], root)
 
     assert GENERATED_MARKER in (root / "cli-tools" / "SKILL.md").read_text()
     assert (
         "description: Pick the installed command-line tool"
         in (root / "cli-tools" / "SKILL.md").read_text()
     )
-    assert (root / "tool-jq" / "SKILL.md").is_file()
+    assert (root / "cli-tools" / "references" / "jq.md").is_file()
     assert mine.read_text() == before
     assert "wrote cli-tools" in lines
+
+
+def test_the_user_home_gets_every_reference_that_the_cli_tools_table_links(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / ".claude" / "skills"
+
+    user_skills.project(["cli-tools"], root)
+
+    projected = {
+        path.relative_to(root / "cli-tools").as_posix()
+        for path in (root / "cli-tools" / "references").glob("*.md")
+    }
+    assert projected == _linked_references(root / "cli-tools" / "SKILL.md")
+    assert len(projected) == 25
+    assert {"references/zsh.md", "references/uv.md", "references/git.md"} <= projected
+
+
+def test_an_upgrade_from_the_tool_skill_layout_prunes_them_and_keeps_an_unmarked_skill(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / ".claude" / "skills"
+    old = [_old_layout_skill(root, name) for name in ("tool-jq", "tool-fd", "tool-zsh")]
+    mine = _own_skill(root, "tool-mine")
+
+    lines = user_skills.project(["cli-tools"], root)
+
+    assert not any(folder.exists() for folder in old)
+    assert {"pruned tool-fd", "pruned tool-jq", "pruned tool-zsh"} <= set(lines)
+    assert "description: mine" in mine.read_text()
+    assert sorted(path.name for path in root.iterdir()) == ["cli-tools", "tool-mine"]
 
 
 def test_a_smaller_selection_prunes_only_marked_skills(tmp_path: Path) -> None:
     root = tmp_path / ".claude" / "skills"
     _own_skill(root, "img-zoom")
-    user_skills.project(["cli-tools", "tool-jq", "tool-fd"], root)
+    user_skills.project(["cli-tools", "no-comments"], root)
 
     lines = user_skills.project(["cli-tools"], root)
 
     assert sorted(path.name for path in root.iterdir()) == ["cli-tools", "img-zoom"]
-    assert "pruned tool-fd" in lines and "pruned tool-jq" in lines
+    assert "pruned no-comments" in lines
 
 
 def test_an_unmarked_skill_of_a_selected_name_is_never_overwritten(tmp_path: Path) -> None:
     root = tmp_path / ".claude" / "skills"
-    mine = _own_skill(root, "tool-jq")
+    mine = _own_skill(root, "cli-tools")
 
-    lines = user_skills.project(["tool-jq"], root)
+    lines = user_skills.project(["cli-tools"], root)
 
-    assert "kept tool-jq: an unmarked skill of that name is yours" in lines
+    assert "kept cli-tools: an unmarked skill of that name is yours" in lines
     assert "description: mine" in mine.read_text()
 
 
@@ -67,82 +109,71 @@ def test_a_selection_over_the_user_listing_budget_is_refused_with_its_cost(tmp_p
     assert not root.exists()
 
 
-def test_the_cli_tools_and_tool_selection_fits_the_budget_with_every_description_counted(
+def test_the_cli_tools_selection_costs_one_listing_entry_whatever_its_references(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / ".claude" / "skills"
-    chosen = user_skills.selected(["cli-tools", "tool-*"])
-    described = user_skills.listing_cost([s for s in chosen if s.slug == "cli-tools"])
+    chosen = user_skills.selected(["cli-tools"])
 
-    lines = user_skills.project(["cli-tools", "tool-*"], root)
+    lines = user_skills.project(["cli-tools"], root)
 
-    assert described < user_skills.listing_cost(chosen) <= user_skills.USER_LISTING_BUDGET
-    assert len(lines) == len(chosen) >= 26
+    assert [skill.slug for skill in chosen] == ["cli-tools"] and lines == ["wrote cli-tools"]
+    assert user_skills.listing_cost(chosen) <= user_skills.USER_LISTING_BUDGET // 4
 
 
 def test_a_personal_skill_that_shadows_a_project_skill_is_reported(tmp_path: Path) -> None:
     home = tmp_path / "home" / ".claude" / "skills"
     project = tmp_path / "repo" / ".claude" / "skills"
-    user_skills.project(["tool-jq"], home)
-    _own_skill(project, "tool-jq")
-    _own_skill(project, "tool-fd")
+    user_skills.project(["cli-tools"], home)
+    _own_skill(project, "cli-tools")
+    _own_skill(project, "img-zoom")
 
     found = user_skills.shadows(project, home)
 
     assert len(found) == 1
-    assert "shadows the project skill tool-jq (different content)" in found[0]
+    assert "shadows the project skill cli-tools (different content)" in found[0]
 
 
 def test_an_unknown_name_is_refused_with_the_known_names(tmp_path: Path) -> None:
-    with pytest.raises(user_skills.UserSkillsError, match="no catalog skill matches tool-nope"):
-        user_skills.project(["tool-nope"], tmp_path)
+    with pytest.raises(user_skills.UserSkillsError, match="no catalog skill matches nope"):
+        user_skills.project(["nope"], tmp_path)
 
 
 def test_an_unknown_name_beside_known_ones_is_refused_and_nothing_is_written(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(user_skills.UserSkillsError, match="no catalog skill matches nosuch"):
-        user_skills.project(["cli-tools", "tool-jq", "nosuch"], tmp_path)
+        user_skills.project(["cli-tools", "no-comments", "nosuch"], tmp_path)
 
     assert not tmp_path.exists() or not any(tmp_path.iterdir())
 
 
 def test_a_misspelled_name_names_the_close_catalog_skill(tmp_path: Path) -> None:
-    with pytest.raises(user_skills.UserSkillsError, match="did you mean: tool-jq"):
-        user_skills.project(["tool-jqq"], tmp_path)
+    with pytest.raises(user_skills.UserSkillsError, match="did you mean: cli-tools"):
+        user_skills.project(["cli-tool"], tmp_path)
 
 
-def _description_line(skill_md: Path) -> str:
-    frontmatter = skill_md.read_text(encoding="utf-8").split("---\n")[1]
-    return next(line for line in frontmatter.splitlines() if line.startswith("description:"))
-
-
-def test_every_tool_skill_gets_its_first_body_paragraph_as_its_description(
-    tmp_path: Path,
+@pytest.mark.parametrize("pattern", ["tool-*", "tool-ripgrep"])
+def test_a_folded_tool_skill_name_is_refused_with_the_cli_tools_command(
+    tmp_path: Path, pattern: str
 ) -> None:
-    root = tmp_path / ".claude" / "skills"
-    tools = user_skills.selected(["tool-*"])
+    with pytest.raises(user_skills.UserSkillsError) as refused:
+        user_skills.project(["cli-tools", pattern], tmp_path)
 
-    user_skills.project(["tool-*"], root)
-
-    assert len(tools) >= 25
-    for skill in tools:
-        first = [block for block in skill.instructions.split("\n\n") if block.strip()][1]
-        line = _description_line(root / skill.slug / "SKILL.md")
-        assert yaml.safe_load(line) == {"description": first.strip()}, skill.slug
-    assert _description_line(root / "tool-fd" / "SKILL.md") == (
-        "description: Find files by name, extension or type. Use it instead of `find` and to "
-        "feed paths to other tools."
+    assert f"no catalog skill matches {pattern}" in str(refused.value)
+    assert "select cli-tools, which carries every one: basicly skills-user cli-tools" in str(
+        refused.value
     )
+    assert not tmp_path.exists() or not any(tmp_path.iterdir())
 
 
-def test_a_second_projection_of_the_tool_skills_reports_no_drift(tmp_path: Path) -> None:
+def test_a_second_projection_of_cli_tools_reports_no_drift(tmp_path: Path) -> None:
     root = tmp_path / ".claude" / "skills"
-    user_skills.project(["tool-*"], root)
+    user_skills.project(["cli-tools"], root)
 
-    lines = user_skills.project(["tool-*"], root)
+    lines = user_skills.project(["cli-tools"], root)
 
-    assert lines and all(line.startswith("unchanged ") for line in lines), lines
+    assert lines == ["unchanged cli-tools"]
 
 
 def _tool_skill(slug: str, opening: str) -> SkillDefinition:

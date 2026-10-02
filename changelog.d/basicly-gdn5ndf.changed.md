@@ -1,0 +1,1 @@
+- **The 25 `tool-*` skills are now reference files of `cli-tools`.** The skill listing carries one entry instead of 26. `basicly install` removes the old generated `tool-*` folders and keeps a hand-written skill. Run `basicly skills-user cli-tools` for the user home; a `tool-` name is refused (basicly-gdn5ndf).

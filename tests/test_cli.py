@@ -179,7 +179,7 @@ def test_cli_piped_output_stays_plain_text(work_repo: Path) -> None:
     listing = run_basicly(work_repo, "catalog", "list", "skill")
     assert listing.returncode == 0
     assert "\x1b" not in listing.stdout
-    assert "tool-ripgrep" in listing.stdout
+    assert "cli-tools" in listing.stdout
 
 
 def test_cli_install_technology_selection_filters_and_prunes(tmp_path: Path) -> None:
@@ -189,18 +189,24 @@ def test_cli_install_technology_selection_filters_and_prunes(tmp_path: Path) -> 
     result = run_basicly_consumer(consumer, "install", "--technologies", "zsh")
     assert result.returncode == 0, result.stderr
     assert 'technologies = ["zsh"]' in (consumer / "basicly.toml").read_text(encoding="utf-8")
-    assert (consumer / ".claude" / "skills" / "tool-git" / "SKILL.md").is_file()
-    assert (consumer / ".claude" / "skills" / "tool-zsh" / "SKILL.md").is_file()
-    assert not (consumer / ".claude" / "skills" / "tool-uv").exists()
-    assert not (consumer / ".claude" / "skills" / "tool-tmux").exists()
-    assert (consumer / ".basicly" / "core" / "skills" / "tool-uv" / "skill.yaml").is_file()
+    cli_tools = consumer / ".claude" / "skills" / "cli-tools"
+    assert (cli_tools / "references" / "git.md").is_file()
+    assert (cli_tools / "references" / "zsh.md").is_file()
+    assert not (cli_tools / "references" / "uv.md").exists()
+    assert not (cli_tools / "references" / "tmux.md").exists()
+    assert "references/zsh.md" in (cli_tools / "SKILL.md").read_text(encoding="utf-8")
+    assert "references/uv.md" not in (cli_tools / "SKILL.md").read_text(encoding="utf-8")
+    core_cli_tools = consumer / ".basicly" / "core" / "skills" / "cli-tools"
+    assert (core_cli_tools / "references" / "uv.md").is_file()
 
     result = run_basicly_consumer(consumer, "install", "--technologies", "python")
     assert result.returncode == 0, result.stderr
-    assert (consumer / ".claude" / "skills" / "tool-uv" / "SKILL.md").is_file()
+    assert (cli_tools / "references" / "uv.md").is_file()
+    assert "references/uv.md" in (cli_tools / "SKILL.md").read_text(encoding="utf-8")
     result = run_basicly_consumer(consumer, "install", "--technologies", "zsh")
     assert result.returncode == 0, result.stderr
-    assert not (consumer / ".claude" / "skills" / "tool-uv").exists()
+    assert not (cli_tools / "references" / "uv.md").exists()
+    assert "references/uv.md" not in (cli_tools / "SKILL.md").read_text(encoding="utf-8")
 
     result = run_basicly_consumer(consumer, "install", "--technologies", "pyton")
     assert result.returncode == 1
@@ -418,6 +424,38 @@ def test_cli_install_upgrade_overwrites_upstream_changed_core_file(tmp_path: Pat
     assert result.returncode == 0, result.stderr
     assert "1 updated" in result.stdout
     assert target.read_text(encoding="utf-8") == bundled_content
+
+
+def test_cli_install_upgrade_from_the_tool_skill_layout_removes_only_generated_ones(
+    tmp_path: Path,
+) -> None:
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    run_basicly_consumer(consumer, "install")
+    source = consumer / ".basicly" / "core" / "skills" / "tool-jq" / "skill.yaml"
+    source.parent.mkdir()
+    source.write_text(
+        "schema_version: 1\nname: tool-jq\ninvocation: user\n"
+        "instructions: |\n  # jq\n\n  Read JSON fields.\n",
+        encoding="utf-8",
+    )
+    _record_in_state(consumer, "skills/tool-jq/skill.yaml")
+    assert run_basicly_consumer(consumer, "skills-build").returncode == 0
+    old = [
+        consumer / root / "tool-jq" / "SKILL.md" for root in (".claude/skills", ".agents/skills")
+    ]
+    assert all(path.is_file() for path in old)
+    mine = consumer / ".claude" / "skills" / "tool-mine" / "SKILL.md"
+    mine.parent.mkdir()
+    mine.write_text("---\nname: tool-mine\ndescription: mine\n---\n\nMine.\n", encoding="utf-8")
+
+    result = run_basicly_consumer(consumer, "install")
+
+    assert result.returncode == 0, result.stderr
+    assert not source.exists()
+    assert not any(path.parent.exists() for path in old)
+    assert "Removed .claude/skills/tool-jq/SKILL.md" in result.stdout
+    assert mine.read_text(encoding="utf-8").endswith("Mine.\n")
 
 
 def test_cli_install_upgrade_deletes_upstream_removed_core_file(tmp_path: Path) -> None:
@@ -652,7 +690,7 @@ def test_cli_uninstall_keeps_hand_written_skill(tmp_path: Path) -> None:
     result = run_basicly_consumer(consumer, "uninstall")
     assert result.returncode == 0, result.stderr
     assert mine.exists()
-    assert not (consumer / ".claude" / "skills" / "tool-git").exists()
+    assert not (consumer / ".claude" / "skills" / "cli-tools").exists()
 
 
 def test_cli_uninstall_twice_is_a_noop(tmp_path: Path) -> None:
@@ -1019,7 +1057,7 @@ def test_cli_skills_check_passes_after_build(work_repo: Path) -> None:
 def test_cli_skills_check_fails_after_manual_edit(work_repo: Path) -> None:
     run_basicly(work_repo, "skills-build")
 
-    projected_skill = work_repo / ".claude" / "skills" / "tool-ripgrep" / "SKILL.md"
+    projected_skill = work_repo / ".claude" / "skills" / "cli-tools" / "SKILL.md"
     projected_skill.write_text(
         projected_skill.read_text(encoding="utf-8") + "\n",
         encoding="utf-8",

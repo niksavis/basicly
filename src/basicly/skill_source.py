@@ -32,6 +32,7 @@ class SkillDefinition:
     covered_work_types: tuple[str, ...] = ()
     covered_phases: tuple[str, ...] = ()
     claude: tuple[tuple[str, object], ...] = ()
+    resource_technologies: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     @property
     def source_dir(self) -> Path:
@@ -119,6 +120,45 @@ def _load_covers(value: object, path: Path) -> tuple[tuple[str, ...], tuple[str,
     return axes[0], axes[1]
 
 
+RESOURCE_LINE_STARTS = ("|", "- ")
+
+
+def _load_resource_technologies(
+    value: object, path: Path, instructions: str
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+
+    if value is None:
+        return ()
+    if not isinstance(value, dict) or not value:
+        raise ValidationError(
+            "field 'resource_technologies' must map a resource path to its technologies", path
+        )
+    scoped: list[tuple[str, tuple[str, ...]]] = []
+    for resource, technologies in value.items():
+        if not isinstance(resource, str) or not (path.parent / resource).is_file():
+            raise ValidationError(
+                f"resource_technologies names {resource!r}, which is not a file beside "
+                f"{SKILL_SOURCE_FILE}",
+                path,
+            )
+        if not technologies:
+            raise ValidationError(
+                f"resource_technologies gives {resource} no technologies; an unscoped "
+                "resource ships everywhere, so drop the entry",
+                path,
+            )
+        for line in instructions.splitlines():
+            if resource in line and not line.lstrip().startswith(RESOURCE_LINE_STARTS):
+                raise ValidationError(
+                    f"the instructions name the scoped resource {resource} on a line that is "
+                    f"not a table row or a list item, so a build that drops the resource "
+                    f"cannot drop the line: {line.strip()!r}",
+                    path,
+                )
+        scoped.append((resource, tuple(validate_technologies(technologies, path))))
+    return tuple(scoped)
+
+
 def discover_skills(
     repo_root: Path,
     source_dir: Path = SKILLS_SOURCE_DIR,
@@ -155,14 +195,16 @@ def discover_skills(
         raw_description = data.get("description")
         description = raw_description.strip() if isinstance(raw_description, str) else ""
         covers = _load_covers(data.get("covers"), path)
+        name = _require_str(data.get("name"), "name", path).strip()
+        instructions = _require_str(data.get("instructions"), "instructions", path)
 
         skills.append(
             SkillDefinition(
                 slug=slug,
-                name=_require_str(data.get("name"), "name", path).strip(),
+                name=name,
                 invocation=invocation,
                 description=description,
-                instructions=_require_str(data.get("instructions"), "instructions", path),
+                instructions=instructions,
                 source_path=path,
                 technologies=tuple(technologies),
                 license=_optional_str(data.get("license"), "license", path),
@@ -174,6 +216,9 @@ def discover_skills(
                 covered_work_types=covers[0],
                 covered_phases=covers[1],
                 claude=_load_claude_passthrough(data.get("claude"), path),
+                resource_technologies=_load_resource_technologies(
+                    data.get("resource_technologies"), path, instructions
+                ),
             )
         )
 

@@ -17,6 +17,7 @@ from .skills import SKILL_FILE_NAME, _is_generated_skill, _project_skill, skill_
 USER_SKILLS = Path(".claude") / "skills"
 USER_LISTING_BUDGET = 900
 CATALOG_SKILLS = Path("skills")
+FOLDED_TOOL_PREFIX = "tool-"
 
 
 class UserSkillsError(ValueError):
@@ -44,6 +45,11 @@ def selected(patterns: Sequence[str]) -> list[skill_source.SkillDefinition]:
     if unmatched or not patterns:
         close = sorted({near for one in unmatched for near in get_close_matches(one, slugs)})
         hint = f"did you mean: {', '.join(close)}" if close else f"known: {', '.join(slugs)}"
+        if any(one.startswith(FOLDED_TOOL_PREFIX) for one in unmatched):
+            hint = (
+                "each tool skill is now a reference file of cli-tools, so select cli-tools, "
+                "which carries every one: basicly skills-user cli-tools"
+            )
         raise UserSkillsError(
             f"no catalog skill matches {', '.join(unmatched) or 'an empty selection'}, so "
             f"nothing was written; {hint}"

@@ -814,20 +814,25 @@ therefore a prerequisite for the routing evals, and not bookkeeping.
 **Every root writes the same description.** `skills.skill_description` is the one rule.
 A user-invoked skill gets its first body paragraph on `.claude/skills`, on
 `.agents/skills` and at user level, so a repo without the user-level copies still routes
-to it (`basicly-tvu17lj`). The 25 `tool-*` skills add about 700 listing tokens.
+to it (`basicly-tvu17lj`). The tool guidance is reference files of `cli-tools`, which add
+nothing to the listing (`basicly-gdn5ndf`).
 
 **The projected directory is mirrored and the root itself is owned by the projector.** A
 rebuild prunes a resource the source dropped. Deselection of a technology prunes the whole
 directory. The check also reports any entry in the root that no source accounts for. That
 covers a hand-authored skill file, a loose README and a projection whose source was
 deleted. Without the report, a skill the projector never knew about passes every gate and
-reaches only one agent. The check reports such an entry and never prunes it, because the
+reaches only one agent. A rebuild removes an entry that carries the generated marker and
+has no source, so an upgrade that retires a skill leaves no copy behind
+(`basicly-gdn5ndf`). The check reports an unmarked entry and never prunes it, because the
 projected copy is the only copy there is.
 
 **Technology scoping is the core-versus-optional axis.** An untagged skill is universal
 and always ships. A tagged skill ships only when the consumer selects that tag in
-configuration. Technology-specific and situational guidance belongs in an optional skill
-and never in an always-on file. Enforcement stays in the deterministic hooks. A skill
+configuration. A skill scopes one resource file with `resource_technologies`: a build
+that does not select the tag drops the file and each table row or list item that names it,
+and the loader refuses a mention on any other line. Technology-specific and situational
+guidance belongs in an optional skill and never in an always-on file. Enforcement stays in the deterministic hooks. A skill
 carries the judgment and the pointers a linter cannot.
 
 **A skill is not free, and the cost sits in the listing rather than the body.** The whole
@@ -869,7 +874,10 @@ repo, so the projection refuses a selection whose written descriptions exceed 90
 tokens; `cli-tools` with every `tool-*` skill measures 890 (`basicly-mh58it6`,
 `basicly-dj651ii`). Catalog lint refuses a user-invoked skill with no first body
 paragraph. Since `basicly-tvu17lj` the repo roots write the same description. The skill content stays in basicly; terminal-setup only
-calls the command.
+calls the command. **Amended (2026-10-02, `basicly-gdn5ndf`):** the 25 `tool-*` skills are
+now reference files under `cli-tools/references/`. `basicly skills-user cli-tools` writes
+one listing entry of 128 tokens with every reference, a rerun prunes the marked `tool-*`
+copies, and the command refuses a `tool-` name with the `cli-tools` command.
 
 **Lint enforces the specification's naming rules.** The name must match the directory. It
 must be 1 to 64 lowercase alphanumeric-or-hyphen characters, with no leading, trailing or
