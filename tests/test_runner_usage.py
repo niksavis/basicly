@@ -237,3 +237,24 @@ def test_extract_usage_none_when_nothing_executed() -> None:
     assert runner.extract_usage(RunnerSpec(MANUAL_RUNNER, HANDOFF), handoff) is None
     dry = RunResult("claude", ("claude",), executed=False)
     assert runner.extract_usage(_claude_spec(), dry) is None
+
+
+def test_extract_usage_claude_carries_the_cache_ttl_split() -> None:
+
+    payload = json.loads(_CLAUDE_RESULT)
+    payload["usage"]["cache_creation"] = {
+        "ephemeral_5m_input_tokens": 960,
+        "ephemeral_1h_input_tokens": 5000,
+    }
+    spec = _claude_json_spec()
+    usage = runner.extract_usage(spec, _executed(spec, json.dumps(payload)))
+    assert usage is not None
+    assert (usage.cache_write_5m_tokens, usage.cache_write_1h_tokens) == (960, 5000)
+
+
+def test_extract_usage_claude_without_a_ttl_split_records_none_not_zero() -> None:
+
+    spec = _claude_json_spec()
+    usage = runner.extract_usage(spec, _executed(spec, _CLAUDE_RESULT))
+    assert usage is not None
+    assert (usage.cache_write_5m_tokens, usage.cache_write_1h_tokens) == (None, None)

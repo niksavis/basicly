@@ -66,6 +66,8 @@ class RunRecord:
     cache_write_tokens: int | None = None
     reasoning_tokens: int | None = None
     credits: float | None = None
+    cache_write_5m_tokens: int | None = None
+    cache_write_1h_tokens: int | None = None
     adapter_version: str | None = None
     prompt_sha256: str | None = None
     phase: str | None = None
@@ -120,6 +122,8 @@ def build_record(  # noqa: PLR0913
     cache_write_tokens: int | None = None,
     reasoning_tokens: int | None = None,
     credits: float | None = None,  # noqa: A002 — the field it feeds is `credits`; renaming
+    cache_write_5m_tokens: int | None = None,
+    cache_write_1h_tokens: int | None = None,
     adapter_version: str | None = None,
     prompt_sha256: str | None = None,
     phase: str | None = None,
@@ -163,6 +167,8 @@ def build_record(  # noqa: PLR0913
         cache_write_tokens=cache_write_tokens,
         reasoning_tokens=reasoning_tokens,
         credits=credits,
+        cache_write_5m_tokens=cache_write_5m_tokens,
+        cache_write_1h_tokens=cache_write_1h_tokens,
         adapter_version=adapter_version,
         prompt_sha256=prompt_sha256,
         phase=phase,

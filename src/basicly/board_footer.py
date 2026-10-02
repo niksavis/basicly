@@ -156,6 +156,9 @@ def spend(reads: Mapping[str, Reading]) -> Cell:
         f"{(number if unit.startswith('usd') else compact)(held.get(key))} {unit}"
         for key, unit in _SPEND_UNITS.items()
     ]
+    share = held.get("cache_read_share")
+    if isinstance(share, int | float) and not isinstance(share, bool):
+        figures.append(f"{share:.0%} cache read")
     spelled = clip(DOT.join([str(held.get("scope", UNKNOWN)), *figures]), LINE_MAX)
     return Cell("spend", spelled, read.state)
 

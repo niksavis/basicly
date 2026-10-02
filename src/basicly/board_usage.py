@@ -63,13 +63,16 @@ def _sum(entries: Iterable[Mapping[str, object]], key: str) -> float:
     )
 
 
+CACHE_TTL_KEYS = ("cache_write_5m_tokens", "cache_write_1h_tokens")
+
+
 def spend(records: Mapping[str, list]) -> dict[str, object] | None:
 
     billed = _billed(records)
     if not billed:
         return None
     costs = [_sum([entry], "cost") for entry in billed]
-    return {
+    figures: dict[str, object] = {
         "scope": MACHINE_LOCAL,
         "lifetime_usd": sum(costs),
         "largest_dispatch_usd": max(costs, default=0.0),
@@ -78,6 +81,13 @@ def spend(records: Mapping[str, list]) -> dict[str, object] | None:
         "cache_read_tokens": int(_sum(billed, "cache_read_tokens")),
         "cache_write_tokens": int(_sum(billed, "cache_write_tokens")),
     }
+    for key in CACHE_TTL_KEYS:
+        if any(isinstance(entry.get(key), int) for entry in billed):
+            figures[key] = int(_sum(billed, key))
+    read, given = figures["cache_read_tokens"], figures["input_tokens"]
+    if isinstance(read, int) and isinstance(given, int) and given > 0 and read <= given:
+        figures["cache_read_share"] = round(read / given, 3)
+    return figures
 
 
 def health_rows(records: dict[str, list]) -> list[dict[str, object]]:

@@ -1280,6 +1280,8 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
         cache_write_tokens=usage.cache_write_tokens if usage else None,
         reasoning_tokens=usage.reasoning_tokens if usage else None,
         credits=usage.credits if usage else None,
+        cache_write_5m_tokens=usage.cache_write_5m_tokens if usage else None,
+        cache_write_1h_tokens=usage.cache_write_1h_tokens if usage else None,
         adapter_version=adapter_version(spec),
         prompt_sha256=digest,
         phase=phase,

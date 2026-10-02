@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from basicly import board_footer, board_wall, config
+from basicly import board_footer, board_schema, board_wall, config
 from tests.test_board_regions import _reads
 from tests.test_board_wall import REPO_ROOT, STAMPED, document, readings
 
@@ -208,3 +208,11 @@ def test_a_withheld_section_spells_its_own_violation_rather_than_the_bare_state_
     assert units.value == reads["units"].note
     assert "too long" in units.value, "the schema's own violation reason did not survive"
     assert units.value != "withheld"
+
+
+def test_the_spend_line_draws_the_cache_read_share_as_a_percentage() -> None:
+
+    parsed = document("wall-v1.json")
+    parsed["spend"]["cache_read_share"] = 0.874
+    reads = board_wall.readings(parsed, board_schema.verdict(REPO_ROOT, parsed))
+    assert "87% cache read" in board_footer.spend(reads).value

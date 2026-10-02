@@ -115,3 +115,29 @@ def test_the_gates_section_comes_from_the_verify_artifact(board_repo: Path) -> N
         {"name": "ruff", "status": "pass"},
         {"name": "docs", "status": "not_run"},
     ]
+
+
+def test_spend_carries_the_cache_ttl_split_and_the_cache_read_share(board_repo: Path) -> None:
+    _run_records(
+        board_repo,
+        {
+            "fx-root.1": [
+                _dispatch(
+                    input_tokens=1000,
+                    cache_read_tokens=900,
+                    cache_write_5m_tokens=10,
+                    cache_write_1h_tokens=60,
+                )
+            ]
+        },
+    )
+    spend = _built(board_repo, now=NOW)["spend"]
+    assert spend["cache_read_share"] == 0.9
+    assert (spend["cache_write_5m_tokens"], spend["cache_write_1h_tokens"]) == (10, 60)
+
+
+def test_spend_omits_the_share_when_input_excludes_the_cache_reads(board_repo: Path) -> None:
+    _run_records(board_repo, {"fx-root.1": [_dispatch()]})
+    spend = _built(board_repo, now=NOW)["spend"]
+    assert "cache_read_share" not in spend, "30 read against 10 input is not a share"
+    assert "cache_write_1h_tokens" not in spend, "no dispatch reported the split"

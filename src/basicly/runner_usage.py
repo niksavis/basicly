@@ -24,6 +24,8 @@ class Usage:
     cache_write_tokens: int | None = None
     reasoning_tokens: int | None = None
     credits: float | None = None
+    cache_write_5m_tokens: int | None = None
+    cache_write_1h_tokens: int | None = None
 
 
 _SPLIT_FIELDS = (
@@ -32,6 +34,8 @@ _SPLIT_FIELDS = (
     "cache_read_tokens",
     "cache_write_tokens",
     "reasoning_tokens",
+    "cache_write_5m_tokens",
+    "cache_write_1h_tokens",
 )
 
 _CODEX_USAGE_KEYS = {
@@ -151,21 +155,27 @@ def _codex_usage_split(usages: list[dict]) -> dict[str, int | None]:
     return split
 
 
+def _count(mapping: dict, key: str) -> int | None:
+
+    value = mapping.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def _claude_usage_split(usage: dict) -> dict[str, int | None]:
 
-    def count(key: str) -> int | None:
-        value = usage.get(key)
-        return value if isinstance(value, int) and not isinstance(value, bool) else None
-
     read, written, raw = (
-        count("cache_read_input_tokens"),
-        count("cache_creation_input_tokens"),
-        count("input_tokens"),
+        _count(usage, "cache_read_input_tokens"),
+        _count(usage, "cache_creation_input_tokens"),
+        _count(usage, "input_tokens"),
     )
     parts = [part for part in (raw, written, read) if part is not None]
+    creation = usage.get("cache_creation")
+    ttl = creation if isinstance(creation, dict) else {}
     return {
+        "cache_write_5m_tokens": _count(ttl, "ephemeral_5m_input_tokens"),
+        "cache_write_1h_tokens": _count(ttl, "ephemeral_1h_input_tokens"),
         "input_tokens": sum(parts) if parts else None,
-        "output_tokens": count("output_tokens"),
+        "output_tokens": _count(usage, "output_tokens"),
         "cache_read_tokens": read,
         "cache_write_tokens": written,
     }

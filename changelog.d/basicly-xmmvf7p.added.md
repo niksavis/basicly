@@ -1,0 +1,1 @@
+- **The board spend line shows the cache read share and the cache TTL split.** Each claude run records the cache writes billed at the 5-minute and the 1-hour rate when the host reports them. The board snapshot adds `cache_write_5m_tokens`, `cache_write_1h_tokens` and `cache_read_share`, and the footer draws the share as a percentage (basicly-xmmvf7p).
