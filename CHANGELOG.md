@@ -6,9 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.20.2 - 2026-10-05
+
+Delta: v0.20.1..v0.20.2
+
 This patch release corrects the yq reference of the `cli-tools` skill. It said that `-P` prints YAML from any input, but with yq v4.54.1 `yq -P file.json` prints JSON. Run `basicly install` after the upgrade to get the corrected reference.
 
 - **The yq reference names `-o yaml` for a JSON to YAML conversion, and `-P` for pretty-print only** (basicly-buk7gs0).
+
+### Fixed
+
+- **The cli-tools yq reference names the flag that converts JSON to YAML.** It now
+  shows `yq -o yaml file.json`, says that the output format follows the input format,
+  and says that `-P` only pretty-prints. With yq v4.54.1, `yq -P file.json` prints
+  JSON (basicly-buk7gs0).
 
 ## v0.20.1 - 2026-10-02
 

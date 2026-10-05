@@ -57,7 +57,7 @@ scripts that run inside your repo; older interpreters are not supported.
 Into any git repo, with [uv](https://docs.astral.sh/uv/) already on the machine:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.20.1 basicly install
+uvx --from git+https://github.com/niksavis/basicly@v0.20.2 basicly install
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -79,9 +79,9 @@ Windows (PowerShell):
 powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.ps1 | iex"
 ```
 
-Pin `@v0.20.1` for reproducible installs, or track `@main` for the latest. To
-pin through the shim, append `-s -- --ref v0.20.1` (POSIX) or download the
-script and pass `-Ref v0.20.1` (PowerShell). Where `git` is unavailable
+Pin `@v0.20.2` for reproducible installs, or track `@main` for the latest. To
+pin through the shim, append `-s -- --ref v0.20.2` (POSIX) or download the
+script and pass `-Ref v0.20.2` (PowerShell). Where `git` is unavailable
 (proxied or air-gapped environments), every
 [release](https://github.com/niksavis/basicly/releases) attaches a built
 wheel: download it and run `uvx --from ./basicly-*.whl basicly install`.
@@ -98,7 +98,7 @@ One command removes everything basicly manages; your overlay and
 `basicly.toml` survive:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.20.1 basicly uninstall
+uvx --from git+https://github.com/niksavis/basicly@v0.20.2 basicly uninstall
 ```
 
 Add `--purge` to also remove the user overlay, `basicly.toml`, and the
@@ -154,7 +154,7 @@ Each one installs with a single line. Copy the one you want:
 
 ```sh
 # an append-only work tracker, installed once per machine
-uv tool install 'git+https://github.com/niksavis/basicly@v0.20.1#subdirectory=packages/basicly-tracker'
+uv tool install 'git+https://github.com/niksavis/basicly@v0.20.2#subdirectory=packages/basicly-tracker'
 basicly-tracker init
 
 # a gate that refuses a prose comment in a code file
@@ -274,8 +274,8 @@ tasks wrap the same pinned commands. To inspect or re-sync by hand, run these
 from the consumer repo root with the same pin used to install:
 
 ```sh
-uvx --from git+https://github.com/niksavis/basicly@v0.20.1 basicly check   # exit non-zero when generated files drifted
-uvx --from git+https://github.com/niksavis/basicly@v0.20.1 basicly build   # regenerate agent instruction files
+uvx --from git+https://github.com/niksavis/basicly@v0.20.2 basicly check   # exit non-zero when generated files drifted
+uvx --from git+https://github.com/niksavis/basicly@v0.20.2 basicly build   # regenerate agent instruction files
 ```
 
 ## Roadmap
