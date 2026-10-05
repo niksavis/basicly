@@ -283,15 +283,17 @@ def test_the_loop_records_the_person_who_runs_it_as_the_holder(
 
 
 def test_resolve_keeps_the_current_value_of_a_status_conflict_and_fsck_is_clean(
-    story: tuple[Path, str], capsys: pytest.CaptureFixture[str]
+    story: tuple[Path, str], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ledger, record = story
+    monkeypatch.setenv("BASICLY_HOLDER", "sam")
     _run(capsys, "update", str(ledger), record, "--status", "in_progress")
     log = sorted(ledger.glob("*.jsonl"))[-1]
-    lines = log.read_text(encoding="utf-8").splitlines()
-    collided = json.loads(lines[-1])
-    collided["seq"] -= 1
-    log.write_text("\n".join([*lines[:-1], json.dumps(collided)]) + "\n", encoding="utf-8")
+    written = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    collided = next(event for event in written if event["payload"].get("status") == "in_progress")
+    for event in written[written.index(collided) :]:
+        event["seq"] -= 1
+    log.write_text("".join(json.dumps(event) + "\n" for event in written), encoding="utf-8")
     assert _run(capsys, "fsck", str(ledger))[1]["exit_code"] == 2
     assert _run(capsys, "show", str(ledger), record)[1]["conflicts"][0]["key"] == "status"
 
