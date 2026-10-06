@@ -1,1 +1,1 @@
-- Make tracker capture cancellable on desktop, retain browser drafts, show saving progress and prevent duplicate submissions; open saved cards before list refresh and provide authoritative readiness with an agent refinement handoff.
+- Improve tracker capture with cancellable forms, retained drafts and saving feedback; display authoritative readiness, recorded INVEST/C3 review and criterion results, with explicit completed or cancelled closure.
