@@ -361,3 +361,45 @@ def test_each_typed_criterion_must_be_filled(
 def test_a_wrapped_sentence_keeps_its_complete_outcome() -> None:
     wrapped = TRIGGER.replace(", I want", ",\nI want").replace(", so I can", ",\nso I can")
     assert shaping.trigger_sentence(wrapped) == TRIGGER
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "When I capture a todo, I want to save a task, so I can remember work.",
+        "When a task arrives, I want a todo saved, so I can remember work.",
+        "When a task arrives, I want it saved, so I can find the todo later.",
+        "As a todo app user, I want a task saved, so that I remember work.",
+    ],
+)
+def test_ordinary_todo_words_shape_a_card_that_can_start(
+    ledger: Path, capsys: pytest.CaptureFixture[str], description: str
+) -> None:
+    record, captured = _create(
+        capsys,
+        ledger,
+        "--description",
+        description,
+        "--acceptance",
+        "the saved task is readable",
+        "--requirements",
+        "standard library only",
+    )
+    assert captured["owed"] == []
+    assert shaping.trigger_sentence(description) == description
+    assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_OK
+    assert _run(capsys, "ready", str(ledger))[1]["count"] == 1
+    assert _run(capsys, "claim", str(ledger), record, "--to", "agent")[0] == cli.EXIT_OK
+
+
+@pytest.mark.parametrize("marker", ["TODO", "todo", "TBD", "tbd", "TBC", "tbc", "FIXME", "fixme"])
+@pytest.mark.parametrize("part", ["situation", "motivation", "outcome"])
+def test_a_bare_marker_cannot_state_a_trigger_part(marker: str, part: str) -> None:
+    intent = {
+        "situation": "a task arrives",
+        "motivation": "a task saved",
+        "outcome": "remember work",
+    }
+    intent[part] = marker
+    description = "When {situation}, I want {motivation}, so I can {outcome}.".format(**intent)
+    assert shaping.trigger_voice(description) is None

@@ -49,7 +49,7 @@ def _stated_intent(text: str, *, motivation: bool = False) -> bool:
     return (
         bool(re.search(r"[^\W_]", plain))
         and not unfilled(text)
-        and not _TRIGGER_PLACEHOLDER.search(plain)
+        and not _TRIGGER_PLACEHOLDER.fullmatch(plain)
     )
 
 
