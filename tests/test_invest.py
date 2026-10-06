@@ -198,3 +198,20 @@ def test_integrated_capture_ready_and_claim_use_shared_intent_rules(
     assert tracker_query.ready_report(tmp_path)["count"] == 1
     owned_write.append(tmp_path, ["update", record, "--status", "in_progress"])
     assert (tracker.read_record(tmp_path, record) or {})["status"] == "in_progress"
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "When I capture a todo, I want to save a task, so I can remember work.",
+        "As a todo app user, I want a task saved, so that I remember work.",
+    ],
+)
+def test_integrated_readiness_accepts_ordinary_todo_words(tmp_path: Path, description: str) -> None:
+    record = {
+        "description": description,
+        "acceptance_criteria": "the saved task is readable",
+        "requirements": "standard library only",
+    }
+    assert invest.trigger_sentence(description) == description
+    assert _missing(tmp_path, record) == ()
