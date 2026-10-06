@@ -1,0 +1,1 @@
+- Make tracker capture cancellable on desktop, retain browser drafts, show saving progress and prevent duplicate submissions; open saved cards before list refresh and provide authoritative readiness with an agent refinement handoff.

@@ -19,13 +19,14 @@
   button, input, select, textarea { font: inherit; color: inherit; }
   header { display: flex; align-items: center; gap: 1rem; padding: .6rem 1.2rem; border-bottom: 1px solid var(--line); background: var(--panel); }
   header h1 { font-size: 1.05rem; margin: 0; }
-  .search-box { flex: 0 1 28rem; }
+  header .search-box { flex: 0 1 28rem; min-width: 0; }
+  header #new { flex: none; white-space: nowrap; }
   #search { width: 100%; padding: .4rem .7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
   #counts { display: flex; gap: .9rem; color: var(--muted); font-size: .9rem; margin-left: auto; }
   #counts b { color: var(--text); }
   main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(22rem, 44%) 1fr; }
   #list-pane { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
-  #detail-pane { overflow: auto; padding: 1.2rem 1.6rem 3rem; }
+  #detail-pane { min-width: 0; overflow-wrap: anywhere; overflow: auto; padding: 1.2rem 1.6rem 3rem; }
   .toolbar { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; padding: .6rem 1rem; border-bottom: 1px solid var(--line); }
   .tab, .chip { border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: .15rem .7rem; cursor: pointer; color: var(--muted); }
   .tab[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: white; }
@@ -83,6 +84,7 @@
   details.more { position: relative; }
   details.more summary { list-style: none; cursor: pointer; border: 1px solid var(--line); border-radius: 7px; padding: .3rem .7rem; color: var(--muted); }
   details.more summary::-webkit-details-marker { display: none; }
+  details.more:not([open]) .menu { display: none; }
   details.more .menu { position: absolute; right: 0; z-index: 5; margin-top: .3rem; min-width: 15rem; padding: .3rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 6px 24px #0004; }
   details.more .menu button { all: unset; display: block; width: 100%; box-sizing: border-box; padding: .35rem .6rem; border-radius: 5px; cursor: pointer; }
   details.more .menu button:hover { background: var(--raise); }
@@ -96,6 +98,7 @@
   .notice.note { border-color: var(--line); color: var(--text); } .notice.bad { border-color: var(--bad); }
   section.block { margin: 1.1rem 0; }
   section.block > h3 { display: flex; align-items: baseline; gap: .8rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 .4rem; }
+  .md { overflow-wrap: anywhere; }
   .md p { margin: .3rem 0; } .md h4 { margin: .7rem 0 .2rem; font-size: .95rem; }
   .md ul { margin: .2rem 0; padding-left: 1.2rem; } .md li.check { list-style: none; margin-left: -1.2rem; }
   .md code { font-family: ui-monospace, monospace; font-size: .88em; background: var(--raise); padding: .05rem .25rem; border-radius: 4px; }
@@ -105,18 +108,19 @@
   .md pre { background: var(--raise); padding: .6rem; border-radius: 6px; overflow: auto; }
   .none { color: var(--muted); font-style: italic; }
   textarea, input.field { width: 100%; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
-  textarea { min-height: 7rem; resize: vertical; font-family: ui-monospace, monospace; font-size: .88rem; line-height: 1.5; overflow: hidden; }
-  textarea.tall { min-height: 16rem; }
-  .form-foot { position: sticky; bottom: -3rem; display: flex; gap: .6rem; align-items: center; padding: .7rem 0 3rem; background: var(--bg); border-top: 1px solid var(--line); margin-top: .6rem; }
+  textarea { min-height: 7rem; resize: vertical; font-family: ui-monospace, monospace; font-size: .88rem; line-height: 1.5; overflow: auto; }
+  textarea.tall { min-height: 10rem; }
+  .form-foot { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; padding: .7rem 0; background: var(--bg); border-top: 1px solid var(--line); margin-top: .6rem; }
   .row-actions { display: flex; gap: .5rem; margin-top: .4rem; align-items: center; }
   .links { list-style: none; margin: 0; padding: 0; }
-  .links li { display: flex; gap: .6rem; align-items: baseline; padding: .15rem 0; }
+  .links li { display: flex; flex-wrap: wrap; gap: .6rem; align-items: baseline; padding: .15rem 0; }
   .links .kind { width: 6.5rem; flex: none; color: var(--muted); font-size: .82rem; }
   .comments { list-style: none; margin: 0 0 .6rem; padding: 0; }
   .comments li { border-left: 3px solid var(--line); padding: .1rem 0 .1rem .7rem; margin: .6rem 0; }
   .comments .who { color: var(--muted); font-size: .8rem; }
   .comments .text { white-space: pre-wrap; }
   form.grid { display: grid; gap: .6rem; }
+  form.grid details:not([open]) > :not(summary) { display: none; }
   form.grid label { display: grid; gap: .2rem; color: var(--muted); font-size: .85rem; }
   form.grid select { min-width: 10rem; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); font-size: .9rem; }
   .inline { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
@@ -619,59 +623,69 @@ function labelInput(value) {
 const templates = new Map();
 
 async function templateFor(type) {
-  if (!templates.has(type)) templates.set(type, call("GET", "/scaffold?type=" + encodeURIComponent(type)).catch(() => ({ required: [] })));
+  if (!templates.has(type)) templates.set(type, call("GET", "/scaffold?type=" + encodeURIComponent(type)));
   return templates.get(type);
 }
 
-function has(form, name) {
-  const bare = name.replace(/^## /, "");
-  if (bare === "Trigger") return form.description.value.trim().length > 0;
-  if (bare === "Acceptance Criteria") return form.acceptance.value.trim().length > 0;
-  if (bare === "Requirements") return form.requirements.value.trim().length > 0;
-  return form.description.value.includes("## " + bare);
+async function drawChecklist(box, type) {
+  try {
+    const { required } = await templateFor(type || "task");
+    box.replaceChildren(el("span", {}, "Before work starts, a " + (type || "task") + " needs:"), ...(required || []).map((name) => {
+      const [bare, short, what] = sectionOf(name);
+      return el("span", { title: bare + ": " + what }, short);
+    }), el("span", {}, "Capture now; saved-card readiness comes from the tracker."));
+  } catch (error) {
+    box.textContent = "Readiness template unavailable: " + error.message + ". You can still capture an idea.";
+  }
 }
 
-async function drawChecklist(form, box, type) {
-  const { required } = await templateFor(type || "task");
-  box.replaceChildren(el("span", { title: "Definition of Ready: what a story needs before work can start" }, "Definition of Ready for a " + (type || "task") + ":"), ...(required || []).map((name) => {
-    const [bare, short, what] = sectionOf(name);
-    const ok = has(form, name);
-    return el("span", { class: ok ? "have" : "", title: bare + ": " + what }, (ok ? "✓ " : "○ ") + short);
-  }), el("span", {}, "An agent fills in what is missing."));
-}
-
-function storyForm(values, { status, submit, cancel, note }) {
+function storyForm(values, { status, submit, cancel, note, draft, revision }) {
+  try {
+    const saved = draft && localStorage.getItem("tracker-draft:" + draft);
+    if (saved) {
+      const retained = JSON.parse(saved);
+      values = { ...values, ...retained.values };
+      revision = retained.revision ?? revision;
+    }
+  } catch (error) { toast("The browser could not restore this draft: " + error.message, true); }
   const checklist = el("div", { class: "checklist", "aria-live": "polite" });
-  const type = select(TYPES.map((t) => [t, t]), values.issue_type, () => drawChecklist(form, checklist, type.value), "no type");
+  const type = select(TYPES.map((t) => [t, t]), values.issue_type, () => drawChecklist(checklist, type.value), "no type");
   const priority = select(PRIORITIES.map(([key, name]) => [key, "P" + key + " " + name]), values.priority, () => {}, "no priority");
-  const state_ = status ? select(STATUSES.map((one) => [one, one.replace("_", " ")]), status, () => {}) : null;
+  const state_ = status ? select(STATUSES.map((one) => [one, one.replace("_", " ")]), values.status || status, () => {}) : null;
   const area = (name, text, placeholder, tall) => grow(el("textarea", { name, placeholder, class: tall ? "tall" : null }, String(text || "")));
   const form = el("form", { class: "grid" },
     el("label", {}, "Title", el("input", { class: "field", name: "title", required: true, value: String(values.title || "") })),
     el("div", { class: "inline" }, el("label", {}, "Type", type), el("label", {}, "Priority", priority), state_ ? el("label", {}, "Status", state_) : null),
     el("label", {}, "Labels", labelInput(values.labels)),
-    el("label", {}, "Story", area("description", values.description, "When <situation>, I want to <motivation>, so I can <outcome>.", true)),
+    el("label", {}, "Idea / context", area("description", values.description, "Capture what you know. An agent can help shape the story later.", true)),
+    el("details", { open: Boolean(status) }, el("summary", {}, "Refinement details · optional for capture"),
     el("label", {}, "Acceptance criteria", area("acceptance", values.acceptance, "- [ ] a check a person can run")),
     el("label", {}, "Requirements", area("requirements", values.requirements, "- what the solution must hold to")),
-    checklist,
+    checklist),
     el("div", { class: "form-foot" }, el("button", { class: "btn", type: "submit" }, submit),
       el("button", { class: "btn plain", type: "button", onclick: cancel }, "Cancel"),
-      el("span", { class: "meta" }, note + "  ·  Ctrl+Enter saves")));
+      el("span", { class: "meta", role: "status", "aria-live": "polite" }, note + "  ·  Ctrl+Enter saves")));
   form.addEventListener("keydown", (event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) form.requestSubmit(); });
-  form.addEventListener("input", () => drawChecklist(form, checklist, type.value));
-  drawChecklist(form, checklist, type.value);
+  form.addEventListener("input", () => drawChecklist(checklist, type.value));
+  drawChecklist(checklist, type.value);
   form.read = () => ({
     title: form.title.value, description: form.description.value, acceptance: form.acceptance.value, requirements: form.requirements.value,
     issue_type: type.value, priority: priority.value, status: state_ ? state_.value : undefined,
     labels: labelsOf(form.labels.value),
   });
+  if (draft) form.addEventListener("input", () => {
+    try { localStorage.setItem("tracker-draft:" + draft, JSON.stringify({ values: form.read(), revision: form.revision })); }
+    catch (error) { toast("The browser could not retain this draft: " + error.message, true); }
+  });
+  form.draft = draft;
+  form.revision = revision;
   return form;
 }
 
 function edit(shown) {
   const f = shown.fields;
   const before = { title: f.title, description: f.description, acceptance: f.acceptance_criteria, requirements: f.requirements, issue_type: f.issue_type, priority: f.priority, labels: labelsOf(f.labels) };
-  const form = storyForm(before, { status: shown.status, submit: "Save", cancel: () => open(shown.record), note: "a change to the text asks for an agent refinement pass" });
+  const form = storyForm(before, { status: shown.status, submit: "Save", cancel: () => open(shown.record), draft: shown.record, revision: shown.max_seq, note: "Draft retained in this browser. Text changes ask for agent review." });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const after = form.read();
@@ -689,7 +703,7 @@ function edit(shown) {
     if (added.length) body.add_labels = added;
     if (removed.length) body.remove_labels = removed;
     if (!Object.keys(body).length) return open(shown.record);
-    body.if_seq = shown.max_seq;
+    body.if_seq = form.revision;
     saveEdit(form, shown.record, body, text ? "saved; an agent refinement pass owes it before it is ready" : "saved");
   });
   document.getElementById("detail-pane").replaceChildren(
@@ -698,17 +712,22 @@ function edit(shown) {
 }
 
 async function saveEdit(form, record, body, done) {
+  if (form.dataset.pending) return;
+  pendingForm(form, "Saving…");
   try {
     await call("PATCH", "/records/" + encodeURIComponent(record), body);
-    await load();
-    await open(record);
-    toast(done);
   } catch (error) {
+    pendingForm(form, "Save", false);
+    form.querySelector("[role=status]").textContent = "Save failed: " + error.message + ". Your draft is retained; retry or cancel.";
     form.querySelector(".notice")?.remove();
-    form.prepend(el("div", { class: "notice bad" }, error.message + ". Your text stays in the form, so copy what you need. ",
-      el("button", { class: "link", type: "button", onclick: () => open(record) }, "Discard my edit and reload")));
-    document.getElementById("detail-pane").scrollTop = 0;
+    form.prepend(el("div", { class: "notice bad" }, "To start again from the current saved card, ",
+      el("button", { class: "link", type: "button", onclick: () => { clearDraft(form.draft); open(record); } }, "Discard my retained draft and reload")));
+    return;
   }
+  clearDraft(form.draft);
+  await open(record);
+  toast(done);
+  load().catch((error) => toast("Saved. The list could not refresh: " + error.message, true));
 }
 
 function assignForm(bar, shown, cancel) {
@@ -861,11 +880,26 @@ function factsBlock(shown) {
 function commentsBlock(shown) {
   const log = shown.comment_log || shown.comments.map((text) => ({ text }));
   const text = el("textarea", { placeholder: "Add a comment", style: "min-height: 5rem" });
-  return el("section", { class: "block" }, el("h3", {}, "Comments", el("span", {}, String(log.length))),
+  return el("section", { class: "block" }, el("h3", {}, "Conversation", el("span", {}, String(log.length))),
     el("ul", { class: "comments" }, log.map((one) => el("li", {},
       one.writer ? el("div", { class: "who" }, writer(one.writer) + (one.at ? " · " + one.at.slice(0, 16).replace("T", " ") : "")) : null,
       el("div", { class: "text" }, one.text)))),
     text, el("div", { class: "row-actions" }, el("button", { class: "btn plain", type: "button", onclick: () => act("comments", { text: text.value }, "comment added") }, "Comment")));
+}
+
+function refinementBlock(shown, dor) {
+  const missing = (dor.blocking || []).map((name) => sectionOf(name)[0]);
+  const prompt = "Refine tracker record " + shown.record + ". Read its card and conversation using the installed tracker CLI. Preserve the person's raw context. Ask about missing facts instead of inventing them. Check INVEST: independent, negotiable, valuable, estimable, small, testable. Shape its trigger, requirements and acceptance criteria into the typed fields. "
+    + (missing.length ? "The tracker currently requires: " + missing.join(", ") + ". " : "")
+    + "Keep Card, Conversation and Confirmation linked: discuss decisions on the record, and make each acceptance criterion a check. Re-read authoritative readiness after updating; clear the refine label only after agent review.";
+  const text = grow(el("textarea", { readonly: true, "aria-label": "Agent refinement handoff" }, prompt));
+  const copy = el("button", { class: "btn plain", type: "button", onclick: async () => {
+    text.select();
+    try { await navigator.clipboard.writeText(prompt); toast("Agent handoff copied"); }
+    catch (error) { toast("Select and copy the handoff text: " + error.message, true); }
+  } }, "Copy agent handoff");
+  return el("section", { class: "block" }, el("h3", {}, "Refine with an agent"),
+    el("p", { class: "meta" }, "Give this handoff to your coding agent. The saved-card verdict above comes from the tracker."), text, copy);
 }
 
 function notices(shown, dor) {
@@ -873,7 +907,7 @@ function notices(shown, dor) {
   const labels = String(shown.fields.labels || "").split(",").map((one) => one.trim());
   if (shown.conflicts && shown.conflicts.length) found.push(el("div", { class: "notice bad" }, "Two branches set different values: " + shown.conflicts.map((c) => c.key + " = " + c.values.join(" / ")).join("; ") + ". Run the kit's resolve command to keep the current value."));
   if (labels.includes(REFINE)) found.push(el("div", { class: "notice note" }, "Needs agent review. A person wrote or changed this story, so an agent reviews it and fills in what is missing before work can start. Ask an agent to refine " + shown.record + "."));
-  if (shown.status !== "closed" && dor.blocking && dor.blocking.length) found.push(el("div", { class: "notice note" }, "Definition of Ready not met. Edit the story and add:", needsList(dor.blocking)));
+  if (shown.status !== "closed" && dor.blocking && dor.blocking.length) found.push(el("div", { class: "notice note" }, "Definition of Ready not met. The tracker requires:", needsList(dor.blocking)));
   if (shown.status !== "closed") found.push(doneBlock(shown));
   return found;
 }
@@ -907,7 +941,7 @@ async function open(record, quiet) {
   const path = "/records/" + encodeURIComponent(record);
   let shown, dor;
   try {
-    [shown, dor] = await Promise.all([call("GET", path), fetch(API + path + "/dor").then((r) => r.json())]);
+    [shown, dor] = await Promise.all([call("GET", path), call("GET", path + "/dor")]);
   } catch (error) {
     pane.replaceChildren(el("button", { class: "link back", type: "button", onclick: back }, "← back to the list"), el("p", { class: "bad" }, error.message));
     return;
@@ -920,8 +954,9 @@ async function open(record, quiet) {
     titleBlock(shown),
     shown.status === "closed" ? el("div", { class: "notice" }, "Closed: " + String(f.close_reason || "")) : actionsBar(shown, waitingReason(shown, dor)),
     ...notices(shown, dor),
-    section("Story", f.description, "no story yet: say when it happens, what the person wants, and what for"),
-    section("Acceptance criteria", f.acceptance_criteria, "no acceptance criteria yet"),
+    ...(shown.status !== "closed" && (!dor.ready || labelsOf(f.labels).includes(REFINE)) ? [refinementBlock(shown, dor)] : []),
+    section("Card · story / context", f.description, "no story yet: say when it happens, what the person wants, and what for"),
+    section("Confirmation · acceptance criteria", f.acceptance_criteria, "no acceptance criteria yet"),
     section("Requirements", f.requirements, "no requirements yet"),
     linksBlock(shown),
     commentsBlock(shown),
@@ -932,28 +967,56 @@ async function open(record, quiet) {
 
 function back() {
   document.body.classList.remove("reading");
+  state.current = null;
+  document.getElementById("detail-pane").replaceChildren(el("div", { class: "empty" }, "Pick a story from the list, or press New story."));
+  drawList();
   history.replaceState(null, "", location.pathname + location.search);
 }
 
+function clearDraft(draft) {
+  try { localStorage.removeItem("tracker-draft:" + draft); }
+  catch (error) { toast("Saved, but the browser could not clear the retained draft: " + error.message, true); }
+}
+
+function pendingForm(form, text, pending = true) {
+  form.dataset.pending = pending ? "true" : "";
+  form.setAttribute("aria-busy", String(pending));
+  for (const control of form.querySelectorAll("input, textarea, select, button")) control.disabled = pending;
+  form.querySelector('[type="submit"]').textContent = text;
+  if (pending) toast(text + " Your draft is retained.");
+  form.querySelector("[role=status]").textContent = pending ? text + " Your draft is retained." : "Your draft is retained; retry or cancel.";
+}
+
 function blank() {
+  const previous = state.current;
   document.body.classList.add("reading");
   state.current = null;
   drawList();
-  const form = storyForm({ issue_type: "task", priority: "2" }, { submit: "Create", cancel: back, note: "a new story waits for an agent refinement pass before it is ready" });
-  form.addEventListener("submit", (event) => {
+  const cancel = () => previous ? open(previous.record) : back();
+  const form = storyForm({ issue_type: "task", priority: "2" }, { submit: "Create", cancel, draft: "new", note: "Only a title is required. Draft retained in this browser, including after Cancel." });
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (form.dataset.pending) return;
     const made = form.read();
     const labels = [...new Set([...made.labels, REFINE])].join(",");
     const body = { title: made.title, description: made.description, fields: { issue_type: made.issue_type || "task", priority: Number(made.priority || 2), labels } };
     if (made.acceptance.trim()) body.acceptance = made.acceptance;
     if (made.requirements.trim()) body.requirements = made.requirements;
-    attempt(async () => {
-      const report = await call("POST", "/records", body);
-      await load();
-      go(report.record);
-    }, "created");
+    pendingForm(form, "Creating…");
+    let report;
+    try {
+      report = await call("POST", "/records", body);
+    } catch (error) {
+      pendingForm(form, "Create", false);
+      form.querySelector("[role=status]").textContent = "Create failed: " + error.message + ". Your draft is retained; retry or cancel.";
+      return;
+    }
+    clearDraft("new");
+    go(report.record);
+    toast("Created. Opening the card…");
+    load().catch((error) => toast("Created " + report.record + ". The list could not refresh: " + error.message, true));
   });
-  document.getElementById("detail-pane").replaceChildren(el("button", { class: "link back", type: "button", onclick: back }, "← back to the list"), el("h2", { class: "story-title" }, "New story"), form);
+  document.getElementById("detail-pane").replaceChildren(el("button", { class: "link back", type: "button", onclick: cancel }, "← back · draft retained"), el("h2", { class: "story-title" }, "New story"), form);
   form.title.focus();
 }
 

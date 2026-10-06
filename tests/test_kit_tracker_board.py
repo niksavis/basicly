@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -207,3 +209,157 @@ def test_a_title_with_markup_is_escaped_rather_than_rendered(ledger: Path) -> No
 
     assert "<script>" not in text
     assert "&lt;script&gt;" in text
+
+
+PAGE = (REPO_ROOT / ".basicly/core/kit/board/web/index.html").read_text(encoding="utf-8")
+
+
+def _run_page_behavior(script: str) -> None:
+    node = shutil.which("node")
+    assert node, "the configured Node technology is required to exercise the page"
+    start = PAGE.index("function back()")
+    end = PAGE.index("function routed()", start)
+    prelude = """
+const assert = require('node:assert/strict');
+const handlers = {};
+const button = { disabled: false, textContent: 'Create' };
+const progress = { textContent: '' };
+const form = {
+  dataset: {}, title: { focus() {} },
+  addEventListener(name, fn) { handlers[name] = fn; },
+  querySelector(selector) {
+    return selector === '.notice' ? null : selector.includes('submit') ? button : progress; },
+  querySelectorAll() { return [button]; },
+  read() { return { title: 'idea', description: 'raw context', labels: [],
+    acceptance: '', requirements: '', priority: '2' }; },
+  setAttribute() {}, prepend() {}
+};
+const pane = { children: [], replaceChildren(...nodes) { this.children = nodes; }, scrollTop: 0 };
+const document = { body: { classList: { add() {}, remove() {} } },
+  getElementById() { return pane; } };
+const history = { replaceState() {} };
+const location = { pathname: '/', search: '' };
+const state = { current: { record: 'demo-old' } };
+const localStorage = { removeItem() {} };
+const REFINE = 'refine';
+const CONTENT = ['title','description','acceptance','requirements'];
+let sentBody;
+let opened = [], posted = 0, refreshed = 0;
+const drawList = () => {};
+const storyForm = (_values, options) => { handlers.cancel = options.cancel; return form; };
+const el = (_tag, _attrs, ...text) => ({ text: text.filter(x => typeof x === 'string').join('') });
+const open = async (record) => { opened.push(record); };
+const go = (record) => { opened.push(record); };
+const toast = () => {};
+let resolvePost;
+let failPost = false;
+const call = async (_method, _path, body) => { sentBody = body; posted++;
+  if (failPost) throw new Error("offline");
+  return new Promise(resolve => { resolvePost = resolve; }); };
+let resolveRefresh;
+const load = async () => { refreshed++;
+  return new Promise(resolve => { resolveRefresh = resolve; }); };
+const attempt = async (work) => work();
+"""
+    completed = subprocess.run(
+        [
+            node,
+            "-e",
+            prelude
+            + PAGE[PAGE.index("function labelsOf(") : PAGE.index("function knownLabels(")]
+            + PAGE[PAGE.index("function edit(") : PAGE.index("function assignForm(")]
+            + PAGE[start:end]
+            + script,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_cancel_capture_restores_selected_card_without_creating() -> None:
+    _run_page_behavior("""
+blank(); handlers.cancel();
+assert.deepEqual(opened, ['demo-old']);
+assert.equal(posted, 0);
+""")
+
+
+def test_cancel_capture_without_selection_removes_the_desktop_form() -> None:
+    _run_page_behavior("""
+state.current = null; blank();
+assert.ok(pane.children.includes(form));
+handlers.cancel();
+assert.ok(!pane.children.includes(form));
+assert.equal(posted, 0);
+""")
+
+
+def test_capture_immediately_shows_progress_and_posts_only_once() -> None:
+    _run_page_behavior("""
+(async () => {
+blank(); const event = { preventDefault() {} };
+const first = handlers.submit(event); const second = handlers.submit(event);
+assert.equal(posted, 1);
+assert.equal(button.disabled, true);
+assert.match(button.textContent, /Creating/);
+resolvePost({ record: 'demo-new' }); await first; await second;
+assert.deepEqual(opened, ['demo-new']);
+})();
+""")
+
+
+def test_failed_capture_retains_draft_and_reenables_retry() -> None:
+    _run_page_behavior("""
+(async () => {
+blank(); failPost = true;
+await handlers.submit({ preventDefault() {} });
+assert.equal(button.disabled, false);
+assert.equal(button.textContent, 'Create');
+assert.equal(form.read().description, 'raw context');
+assert.match(progress.textContent, /Create failed.*offline.*retry/);
+failPost = false;
+const retry = handlers.submit({ preventDefault() {} });
+assert.equal(posted, 2);
+resolvePost({ record: 'demo-retry' }); await retry;
+assert.deepEqual(opened, ['demo-retry']);
+})();
+""")
+
+
+def test_created_card_opens_before_the_backlog_refresh_finishes() -> None:
+    _run_page_behavior("""
+(async () => {
+blank(); const submit = handlers.submit({ preventDefault() {} });
+resolvePost({ record: 'demo-new' }); await submit;
+assert.equal(refreshed, 1);
+assert.deepEqual(opened, ['demo-new']);
+})();
+""")
+
+
+def test_edit_save_prevents_duplicate_patch_and_restores_retry() -> None:
+    _run_page_behavior("""
+(async () => {
+const first = saveEdit(form, 'demo-old', { title: 'idea' }, 'saved');
+const second = saveEdit(form, 'demo-old', { title: 'idea' }, 'saved');
+assert.equal(posted, 1); assert.equal(button.disabled, true);
+resolvePost({ record: 'demo-old' }); await first; await second;
+assert.deepEqual(opened, ['demo-old']);
+form.dataset.pending = ''; failPost = true;
+await saveEdit(form, 'demo-old', { title: 'idea' }, 'saved');
+assert.equal(button.disabled, false);
+assert.match(progress.textContent, /Save failed.*offline.*retry/);
+})();
+""")
+
+
+def test_restored_edit_keeps_its_original_revision_for_conflict_detection() -> None:
+    _run_page_behavior("""
+form.revision = 7;
+const shown = { record: 'demo-old', max_seq: 20, status: 'open', fields: {
+  title: 'old', description: 'old context', priority: '2' } };
+edit(shown); handlers.submit({ preventDefault() {} });
+assert.equal(sentBody.if_seq, 7);
+""")
