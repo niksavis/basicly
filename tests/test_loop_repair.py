@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +16,7 @@ from basicly import (
     rubrics,
     runner,
     supervise,
+    tracker,
     verify,
     worktree,
 )
@@ -22,6 +24,8 @@ from basicly.config import PolicyConfig, RunnerConfig
 from basicly.loop_state import NodeState, WorktreeBinding
 from basicly.policy import GateStatus
 from basicly.worktree import Session
+from tests import flipped_tracker
+from tests.tracker_process_fixture import recorded_review
 
 CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 
@@ -317,3 +321,51 @@ def test_a_stale_brief_is_discarded_and_the_landing_runs_in_the_same_invocation(
     assert result.needs_input is None
     assert notes and "may already be fixed" in notes[0] and "discarding it" in notes[0]
     assert "worktree 'i'" in notes[0]
+
+
+def test_a_same_holder_resume_refuses_a_review_staled_by_changed_criteria(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(
+        tmp_path,
+        "fixture-i",
+        description="## Trigger\n\nWhen resuming, I want a current review, so I can build safely.",
+        acceptance_criteria="Given a held record when resumed then its current review is required",
+        requirements="A review must describe the current criterion",
+        issue_type="task",
+    )
+    kit = tracker.kit(tmp_path)
+    recorded_review(
+        SimpleNamespace(events=kit.events, commands=tracker.kit(tmp_path, "commands")),
+        tracker.ledger_dir(tmp_path),
+        "fixture-i",
+    )
+    kit.events.append(
+        tracker.ledger_dir(tmp_path),
+        [
+            kit.events.Draft("fixture-i", kit.events.KIND_STATUS, {"status": "in_progress"}),
+            kit.events.Draft(
+                "fixture-i",
+                kit.events.KIND_FIELD,
+                {"name": "assignee", "value": tracker.holder_name(tmp_path)},
+            ),
+            kit.events.Draft(
+                "fixture-i",
+                kit.events.KIND_FIELD,
+                {
+                    "name": "acceptance_criteria",
+                    "value": "Given changed criteria when resumed then refresh the review",
+                },
+            ),
+        ],
+    )
+    at(replace(_state(), issue_id="fixture-i"))
+    monkeypatch.setattr(
+        loop, "_verify_and_land", lambda ctx, _name: loop._moved(ctx, "verify", "landed")
+    )
+
+    result = loop.advance(tmp_path, "fixture-i", config=CONFIG)
+
+    assert result.blocked
+    assert "review" in result.detail.lower()

@@ -8,6 +8,7 @@ import textwrap
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,8 +21,9 @@ from basicly.config import (
     PolicyConfig,
     SizingConfig,
 )
-from tests import fake_tracker
+from tests import fake_tracker, flipped_tracker
 from tests.plan_fixtures import install_kit
+from tests.tracker_process_fixture import DEBTS, recorded_review
 
 
 class _Proc:
@@ -61,6 +63,7 @@ class _FakeBr:
         self.status = status
         self.records = records or {}
         self.gates_by_issue = gates_by_issue or {}
+        self.process_review: str | None = None
         self.comments: list[str] = []
         self.now = _EPOCH
         self.stamps: dict[int, str] = {}
@@ -71,6 +74,8 @@ class _FakeBr:
             if args[1] in self.records:
                 return _Proc(json.dumps([self.records[args[1]]]))
             record = {
+                "id": "fixture-i",
+                "process_review": self.process_review,
                 "acceptance_criteria": self.acceptance_criteria,
                 "requirements": self.requirements,
                 "description": self.description,
@@ -111,9 +116,35 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr) -> None:
     fake_tracker.install(monkeypatch, fake)
 
 
+def _install_reviewed(monkeypatch: pytest.MonkeyPatch, repo: Path, fake: _FakeBr) -> None:
+    fields = {
+        "acceptance_criteria": fake.acceptance_criteria,
+        "requirements": fake.requirements,
+        "description": fake.description,
+        "issue_type": fake.issue_type,
+    }
+    flipped_tracker.seed(
+        repo, "fixture-i", **{name: value for name, value in fields.items() if value is not None}
+    )
+    recorded_review(
+        SimpleNamespace(events=tracker.kit(repo, "events"), commands=tracker.kit(repo, "commands")),
+        tracker.ledger_dir(repo),
+        "fixture-i",
+    )
+    fake.process_review = (
+        tracker
+        .kit(repo, "events")
+        .fold(tracker.kit(repo, "events").read_events(tracker.ledger_dir(repo))[0])
+        .records["fixture-i"]
+        .fields["process_review"]
+    )
+    _install(monkeypatch, fake)
+
+
 def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _install(
+    _install_reviewed(
         monkeypatch,
+        tmp_path,
         _FakeBr(acceptance_criteria="given x then y", requirements="- r", description=_TRIGGER),
     )
     assert policy.definition_of_ready(tmp_path, "i").ready is True
@@ -121,7 +152,12 @@ def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     _install(monkeypatch, _FakeBr())
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
-    assert result.missing == ("## Trigger", "## Acceptance Criteria", "## Requirements")
+    assert result.missing == ((
+        "## Trigger",
+        "## Acceptance Criteria",
+        "## Requirements",
+        *DEBTS,
+    ))
 
 
 def test_dor_requires_acceptance_criteria_whatever_the_work_type(
@@ -131,7 +167,12 @@ def test_dor_requires_acceptance_criteria_whatever_the_work_type(
     _install(monkeypatch, _FakeBr(issue_type="chore", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
-    assert result.missing == ("## Trigger", "## Acceptance Criteria", "## Requirements")
+    assert result.missing == ((
+        "## Trigger",
+        "## Acceptance Criteria",
+        "## Requirements",
+        *DEBTS,
+    ))
 
 
 def test_dor_refuses_criteria_held_only_under_the_description_heading(
@@ -145,7 +186,10 @@ def test_dor_refuses_criteria_held_only_under_the_description_heading(
             description=_TRIGGER + "\n## Acceptance Criteria\n\n- given x then y\n",
         ),
     )
-    assert policy.definition_of_ready(tmp_path, "i").missing == ("## Acceptance Criteria",)
+    assert policy.definition_of_ready(tmp_path, "i").missing == ((
+        "## Acceptance Criteria",
+        *DEBTS,
+    ))
 
 
 def test_dor_keeps_other_missing_sections_when_adding_the_requirement(
@@ -153,12 +197,13 @@ def test_dor_keeps_other_missing_sections_when_adding_the_requirement(
 ) -> None:
     _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
-    assert result.missing == (
+    assert result.missing == ((
         "## Trigger",
         "## Steps to Reproduce",
         "## Acceptance Criteria",
         "## Requirements",
-    )
+        *DEBTS,
+    ))
 
 
 def test_dor_reads_the_required_sections_from_configuration(
@@ -169,12 +214,13 @@ def test_dor_reads_the_required_sections_from_configuration(
     )
     _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
-    assert result.missing == (
+    assert result.missing == ((
         "## Trigger",
         "## Repro",
         "## Acceptance Criteria",
         "## Requirements",
-    )
+        *DEBTS,
+    ))
 
 
 def _ledger_template(repo_root: Path, body: dict[str, object]) -> None:
@@ -192,14 +238,15 @@ def test_dor_reads_an_extending_ledger_template(
 
     result = policy.definition_of_ready(tmp_path, "i")
 
-    assert result.missing == (
+    assert result.missing == ((
         "## Trigger",
         "## Steps to Reproduce",
         "## Acceptance Criteria",
         "## Requirements",
         "## Risks",
         "## Impact",
-    )
+        *DEBTS,
+    ))
 
 
 def test_dor_reads_an_overriding_ledger_template(
@@ -207,10 +254,13 @@ def test_dor_reads_an_overriding_ledger_template(
 ) -> None:
     _ledger_template(tmp_path, {"mode": "override", "sections": ["## Goal"]})
     _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
-    assert policy.definition_of_ready(tmp_path, "i").missing == ("## Goal",)
+    assert policy.definition_of_ready(tmp_path, "i").missing == ((
+        "## Goal",
+        *DEBTS,
+    ))
 
     _install(monkeypatch, _FakeBr(issue_type="bug", description="## Goal\n\nship it\n"))
-    assert policy.definition_of_ready(tmp_path, "i").ready is True
+    assert policy.definition_of_ready(tmp_path, "i").missing == DEBTS
 
 
 def test_the_scaffold_emits_what_the_ledger_template_requires(tmp_path: Path) -> None:
@@ -238,8 +288,8 @@ def test_the_engine_and_the_kit_agree_on_a_template_section(
 
     engine = invest.missing_for(fields, "task", tmp_path, template=template)
 
-    assert engine == kit.owed(fields, template=template)
-    assert engine == (() if met else ("## Risks",))
+    assert engine == (*kit.owed(fields, template=template), *DEBTS)
+    assert engine == ((*(() if met else ("## Risks",)), *DEBTS))
 
 
 def test_dor_refuses_a_malformed_ledger_template(
@@ -255,8 +305,9 @@ def test_dor_refuses_a_malformed_ledger_template(
 def test_dor_structured_acceptance_field_satisfies_the_section(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _install(
+    _install_reviewed(
         monkeypatch,
+        tmp_path,
         _FakeBr(acceptance_criteria="the field is set", requirements="- r", description=_TRIGGER),
     )
     result = policy.definition_of_ready(tmp_path, "i")
@@ -273,7 +324,12 @@ def test_dor_structured_field_does_not_mask_other_missing_sections(
     )
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
-    assert result.missing == ("## Trigger", "## Steps to Reproduce", "## Requirements")
+    assert result.missing == ((
+        "## Trigger",
+        "## Steps to Reproduce",
+        "## Requirements",
+        *DEBTS,
+    ))
 
 
 def test_dor_empty_or_absent_acceptance_field_still_requires_the_section(
@@ -2924,8 +2980,9 @@ def test_definition_of_ready_still_answers_under_the_ban(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
-    _install(
+    _install_reviewed(
         monkeypatch,
+        tmp_path,
         _FakeBr(acceptance_criteria="given x then y", requirements="- r", description=_TRIGGER),
     )
     assert policy.definition_of_ready(tmp_path, "i").ready is True
