@@ -7,8 +7,8 @@ import json
 import mimetypes
 import os
 import sys
+import time
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
@@ -147,16 +147,18 @@ class LoadedKit:
     def __init__(self, restart: str) -> None:
         self.files = loaded_kit_files()
         self.stamps = kit_stamps(self.files)
-        self.started = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        self.started = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
         self.restart = restart
 
     def refuse_a_changed_kit(self) -> None:
 
         now = kit_stamps(self.files)
+        if len(self.files) != len(self.stamps) or len(self.stamps) != len(now):
+            raise ValueError("the loaded kit stamp counts do not match its files")
         changed = [
             f"{path.parent.name}/{path.name}"
-            for path, then, held in zip(self.files, self.stamps, now, strict=True)
-            if then != held
+            for index, path in enumerate(self.files)
+            if self.stamps[index] != now[index]
         ]
         if not changed:
             return
