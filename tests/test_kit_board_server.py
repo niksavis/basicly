@@ -87,10 +87,20 @@ def test_a_human_draft_waits_for_refinement_until_an_agent_pass_shapes_it(
     client: Client, ledger: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     status, made = client.call(
-        "POST", "/api/v1/records", {"title": "Keep comments", "fields": {"labels": "refine"}}
+        "POST",
+        "/api/v1/records",
+        {
+            "title": "Keep comments",
+            "description": "A raw thought to refine",
+            "fields": {"labels": "refine"},
+        },
     )
     assert status == 201
     record = made["record"]
+    _, shown = client.call("GET", f"/api/v1/records/{record}")
+    assert shown["fields"]["description"] == "A raw thought to refine"
+    _, verdict = client.call("GET", f"/api/v1/records/{record}/dor")
+    assert verdict["ready"] is False and "## Trigger" in verdict["blocking"]
     _, queue = client.call("GET", "/api/v1/refine")
     assert [row["record"] for row in queue["records"] if row["labelled"]] == [record]
 
