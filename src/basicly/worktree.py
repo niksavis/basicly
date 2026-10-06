@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import checkout, tracker_paths, usage, verify_artifact
+from . import checkout, tracker_paths, worktree_contents
 from .checkout import (
     current_branch,
     git,
@@ -23,8 +23,6 @@ from .hooks import PRECOMMIT_CONFIG, hook_stages, install_hooks, load_hook_specs
 BRANCH_PREFIX = "harness/"
 
 is_linked_checkout = checkout.is_linked_checkout
-
-DEP_DIRS = (".venv", "node_modules")
 
 NODE_LOCKFILE = "package-lock.json"
 
@@ -325,62 +323,8 @@ def cap_refusal(concurrency: int, cwd: Path | str | None = None) -> str:
     )
 
 
-@dataclass(frozen=True)
-class RemovalVerdict:
-    may_remove: bool
-    holds: str
-    indeterminate: bool = False
-
-
-def classify_worktree_tree(returncode: int, stdout: str) -> RemovalVerdict:
-
-    if returncode != 0:
-        return RemovalVerdict(
-            may_remove=False,
-            holds=(
-                f"git status could not be read in the worktree (exit {returncode}); "
-                "refusing to remove a tree whose contents are unknown — a lock held by "
-                "a concurrent lane is the usual cause, so retry, or pass force to "
-                "discard the tree regardless"
-            ),
-            indeterminate=True,
-        )
-    expected_noise = (
-        *DEP_DIRS,
-        (tracker_paths.LEDGER_DIR_NAME / tracker_paths.REDIRECT_NAME).as_posix(),
-    )
-    known_artifacts = {
-        usage.VERIFY_CHECKS_FILE.as_posix(),
-        verify_artifact.RUN_ARTIFACT.as_posix(),
-        (usage.VERIFY_CHECKS_FILE.parent / ".gitignore").as_posix(),
-    }
-    noise_prefixes = tuple(f"{d}/" for d in DEP_DIRS)
-    pending: list[str] = []
-    unparsable: list[str] = []
-    for line in stdout.splitlines():
-        if not line.strip():
-            continue
-        if len(line) < 4:
-            unparsable.append(line)
-            continue
-        path = line[3:].strip().strip('"')
-        if line[:2] in ("??", "!!") and (
-            path in expected_noise or path in known_artifacts or path.startswith(noise_prefixes)
-        ):
-            continue
-        pending.append(line)
-    if unparsable:
-        return RemovalVerdict(
-            may_remove=False,
-            holds=(
-                "git status returned a line this cannot parse, so the worktree's state "
-                "is unknown; refusing to remove it:\n" + "\n".join(unparsable)
-            ),
-            indeterminate=True,
-        )
-    if pending:
-        return RemovalVerdict(may_remove=False, holds="\n".join(pending))
-    return RemovalVerdict(may_remove=True, holds="")
+RemovalVerdict = worktree_contents.RemovalVerdict
+classify_worktree_tree = worktree_contents.classify_worktree_tree
 
 
 def _worktree_removal_verdict(worktree: Path) -> RemovalVerdict:
@@ -396,7 +340,15 @@ def _worktree_removal_verdict(worktree: Path) -> RemovalVerdict:
             ),
             indeterminate=True,
         )
-    return classify_worktree_tree(proc.returncode, proc.stdout)
+    try:
+        retained = "\n".join(
+            line
+            for line in proc.stdout.splitlines()
+            if not worktree_contents.owned_bytecode_cache(worktree, line)
+        )
+    except OSError as exc:
+        return RemovalVerdict(False, f"bytecode cache contents could not be read: {exc}", True)
+    return classify_worktree_tree(proc.returncode, retained)
 
 
 def _assert_removable_checkout(main: Path, worktree: Path, branch: str | None) -> None:

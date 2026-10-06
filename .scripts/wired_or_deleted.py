@@ -92,9 +92,6 @@ BASELINE: frozenset[str] = frozenset({
     "record-field:basicly.supervise.LaneOutcome.needs_fact",
     "record-field:basicly.supervise.LaneOutcome.transient",
     "record-field:basicly.supervise.LaneOutcome.provider_refusal",
-    "record-field:basicly.worktree.RemovalVerdict.may_remove",
-    "record-field:basicly.worktree.RemovalVerdict.holds",
-    "record-field:basicly.worktree.RemovalVerdict.indeterminate",
 })
 
 
