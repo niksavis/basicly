@@ -948,7 +948,7 @@ function notices(shown, dor) {
   if (shown.conflicts && shown.conflicts.length) found.push(el("div", { class: "notice bad" }, "Two branches set different values: " + shown.conflicts.map((c) => c.key + " = " + c.values.join(" / ")).join("; ") + ". Run the kit's resolve command to keep the current value."));
   if (labels.includes(REFINE)) found.push(el("div", { class: "notice note" }, "Needs agent review. A person wrote or changed this story, so an agent reviews it and fills in what is missing before work can start. Ask an agent to refine " + shown.record + "."));
   if (shown.status !== "closed" && dor.blocking && dor.blocking.length) found.push(el("div", { class: "notice note" }, "Definition of Ready not met. The tracker requires:", needsList(dor.blocking)));
-  if (shown.status !== "closed") found.push(doneBlock(shown));
+  if (shown.status !== "closed" || (shown.process && shown.process.review && shown.process.review.revision)) found.push(doneBlock(shown));
   return found;
 }
 

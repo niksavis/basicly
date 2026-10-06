@@ -47,7 +47,7 @@ function find(node, predicate) {
         prelude
         + PAGE[PAGE.index("function doneBlock(") : PAGE.index("function needsList(")]
         + PAGE[PAGE.index("function since(") : PAGE.index("function dependencyVerdict(")]
-        + PAGE[PAGE.index("function waitingReason(") : PAGE.index("function titleBlock(")]
+        + PAGE[PAGE.index("function notices(") : PAGE.index("function titleBlock(")]
         + script
     )
     result = subprocess.run([node, "-e", source], text=True, capture_output=True, check=False)
@@ -123,4 +123,15 @@ const waiting = waitingReason({fields:{}},{ready:false,blocking:['## INVEST Revi
 assert.match(waiting, /still needs INVEST Review/);
 const bar = actionsBar({record:'old-idea',holder:null}, waiting);
 assert.equal(find(bar, x => x.tag === 'button' && x.text === 'Claim').disabled, true);
+""")
+
+
+def test_completed_card_keeps_its_recorded_review_and_results_visible() -> None:
+    _run(r"""
+const shown = {status:'closed',fields:{},process:{revision:'current',owed:[],
+  review:{revision:'current',checks:[]},confirmation:{revision:'current'}}};
+const cards = notices(shown,{blocking:[]});
+assert.equal(cards.length, 1);
+assert.match(cards[0].text, /Confirmation: recorded for this card/);
+assert.equal(notices({status:'closed',fields:{}},{blocking:[]}).length, 0);
 """)
