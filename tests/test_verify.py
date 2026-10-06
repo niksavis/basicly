@@ -1258,3 +1258,15 @@ def test_the_remedy_a_ratchet_gate_printed_is_carried() -> None:
 
 def test_a_check_that_printed_no_labelled_line_yields_no_remedy() -> None:
     assert verify.check_remedy(_RELEASE_NOTES, "module-size") is None
+
+
+def test_successful_streamed_output_is_retained_for_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        verify, "_spawn", _as_spawn(lambda *_a, **_kw: _Proc(0, "actual output", "diagnostic"))
+    )
+    result = verify.run_check(_check("check", ("full",)), tmp_path, "full")
+    assert result.output == "actual outputdiagnostic"
+    assert result.command == ("check",)
+    assert result.returncode == 0

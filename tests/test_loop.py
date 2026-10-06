@@ -76,6 +76,7 @@ def at(monkeypatch: pytest.MonkeyPatch):
         shaped = {"requirements": "- A consumer runs it and reads the result"}
         monkeypatch.setattr(loop.validate_gate, "_read_record", lambda *_a, **_k: shaped)
         monkeypatch.setattr(loop, "_hold_for_this_session", lambda _ctx: None)
+        monkeypatch.setattr(loop.process_confirmation, "confirm", lambda *_a: None)
 
     return _pin
 
@@ -2527,6 +2528,7 @@ def _pin_provisioning(
     monkeypatch.setattr(worktree, "create", _create)
     monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
     monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
+    monkeypatch.setattr(loop, "_hold_for_this_session", lambda *_a: None)
     monkeypatch.setattr(
         loop.loop_state,
         "ready_ranked",
@@ -3286,3 +3288,148 @@ def test_a_halted_grant_still_pays_for_a_retrospective(
 
     assert claimed, "a spent budget still held the retrospective back"
     assert seen, "and the signal was never dispatched"
+
+
+def test_ship_missing_confirmation_preserves_worktree_and_tracker(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a: True)
+    monkeypatch.setattr(
+        loop.process_confirmation, "confirm", lambda *_a: "missing actual criterion check"
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(worktree, "cleanup", lambda *_a, **_k: calls.append("cleanup"))
+    monkeypatch.setattr(loop, "_write", lambda *_a, **_k: calls.append("write"))
+    result = _advance(tmp_path)
+    assert result.blocked
+    assert "missing actual criterion check" in result.detail
+    assert calls == []
+
+
+def test_subtask_missing_confirmation_refuses_before_gate_write_and_closure(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(loop, "_subtask_committed", lambda *_a: True)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a: verify.VerifyReport("fast", ()))
+    monkeypatch.setattr(
+        loop.process_confirmation, "confirm", lambda *_a: "missing subtask criterion check"
+    )
+    calls: list[str] = []
+    original_gate = loop._record_gate
+    monkeypatch.setattr(
+        loop, "_record_gate", lambda *args: calls.append("gate") or original_gate(*args)
+    )
+    monkeypatch.setattr(loop, "_write", lambda *_a: calls.append("close"))
+    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs())
+    result = loop._run_subtask(ctx, "i.1", _session("i"), position=1, total=1)
+    assert result.blocked
+    assert "missing subtask criterion check" in result.detail
+    assert calls == ["gate"]
+
+
+def test_start_claim_records_status_and_holder_atomically(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ctx = loop._Ctx(tmp_path, "i", _state("classify"), CONFIG, loop.Inputs())
+    monkeypatch.setattr(loop.tracker, "read_record", lambda *_a: {"status": "open"})
+    monkeypatch.setattr(loop.tracker, "held_by_another", lambda *_a: None)
+    monkeypatch.setattr(loop.tracker, "holder_name", lambda *_a: "Builder")
+    writes: list[list[str]] = []
+    monkeypatch.setattr(loop.tracker, "write", lambda _r, args: writes.append(args))
+    assert loop._hold_for_this_session(ctx) is None
+    assert writes == [["update", "i", "--status", "in_progress", "--assignee", "Builder"]]
+
+
+def test_start_claim_refusal_is_named_before_provisioning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ctx = loop._Ctx(tmp_path, "i", _state("classify"), CONFIG, loop.Inputs())
+    monkeypatch.setattr(loop.tracker, "read_record", lambda *_a: {"status": "open"})
+    monkeypatch.setattr(loop.tracker, "held_by_another", lambda *_a: None)
+    monkeypatch.setattr(loop.tracker, "holder_name", lambda *_a: "Builder")
+
+    def refused(*_a) -> None:
+        raise RuntimeError("start requires current INVEST review")
+
+    monkeypatch.setattr(loop.tracker, "write", refused)
+    result = loop._hold_for_this_session(ctx)
+    assert result and result.blocked and "INVEST review" in result.detail
+
+
+def test_nonleaf_claim_refuses_before_decomposition(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    at(_state("classify", issue_type="epic"))
+    monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
+    monkeypatch.setattr(
+        loop, "_hold_for_this_session", lambda ctx: loop._blocked(ctx, "missing review")
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(loop, "_proposed_children", lambda *_a: calls.append("propose"))
+    result = _advance(tmp_path)
+    assert result.blocked and "missing review" in result.detail
+    assert calls == []
+
+
+def test_another_holder_is_preserved_without_claim_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ctx = loop._Ctx(tmp_path, "i", _state("classify"), CONFIG, loop.Inputs())
+    monkeypatch.setattr(loop.tracker, "read_record", lambda *_a: {"status": "in_progress"})
+    monkeypatch.setattr(loop.tracker, "held_by_another", lambda *_a: "Other Builder")
+    writes: list[list[str]] = []
+    monkeypatch.setattr(loop.tracker, "write", lambda _r, args: writes.append(args))
+    result = loop._hold_for_this_session(ctx)
+    assert result and result.blocked and "Other Builder" in result.detail
+    assert writes == []
+
+
+def test_child_claim_refusal_prevents_provisioning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    created = _pin_provisioning(monkeypatch, ranked=("i.1",), concurrency=1)
+    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    monkeypatch.setattr(
+        loop,
+        "_hold_for_this_session",
+        lambda child: loop._blocked(child, "current review required for child"),
+    )
+    held = loop._ensure_child_worktrees(ctx, [("i.1", "open")])
+    assert held and held.blocked and "current review required for child" in held.detail
+    assert created == []
+
+
+def test_ship_authoritative_close_refusal_preserves_worktree(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    at(_state("ship", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(loop, "_worktree_landed", lambda *_a: True)
+
+    def refused(*_a, **_k) -> None:
+        raise RuntimeError("confirmation was invalidated during completion")
+
+    monkeypatch.setattr(loop, "_write", refused)
+    torn: list[str] = []
+    monkeypatch.setattr(worktree, "cleanup", lambda name, **_k: torn.append(name))
+    result = _advance(tmp_path)
+    assert result.blocked and "invalidated" in result.detail
+    assert torn == []
+
+
+def test_subtask_authoritative_close_refusal_returns_blocked(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    monkeypatch.setattr(loop, "_subtask_committed", lambda *_a: True)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a: verify.VerifyReport("fast", ()))
+    monkeypatch.setattr(loop, "_record_gate", lambda *_a: None)
+
+    def refused(*_a, **_k) -> None:
+        raise RuntimeError("subtask confirmation invalidated")
+
+    monkeypatch.setattr(loop, "_write", refused)
+    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs())
+    result = loop._run_subtask(ctx, "i.1", _session("i"), position=1, total=1)
+    assert result.blocked and "subtask confirmation invalidated" in result.detail

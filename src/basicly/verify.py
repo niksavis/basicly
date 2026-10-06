@@ -188,7 +188,7 @@ def _run(
         "fail" if failed else "pass",
         proc.returncode,
         detail=detail,
-        output=output if capture else "",
+        output=output if capture or not failed else "",
         command=tuple(command),
         duration_s=round(time.perf_counter() - started, 3),
     )

@@ -27,6 +27,7 @@ from . import (
     needs_input,
     plan_entry,
     policy,
+    process_confirmation,
     repair_brief,
     retrospective,
     roles,
@@ -144,6 +145,10 @@ def _evidence_block(ctx: _Ctx, root: Path | None = None) -> AdvanceResult | None
 
 def _record_gate(ctx: _Ctx, issue_id: str, report: verify.VerifyReport) -> str | None:
 
+    if report.passed:
+        refused = process_confirmation.confirm(ctx.repo_root, issue_id, report.results)
+        if refused is not None:
+            return refused
     record = run_record.latest_record(ctx.repo_root, issue_id)
     ok, message = verify.report_gate(
         ctx.repo_root, issue_id, report, actor=record.agent if record else None
@@ -191,6 +196,9 @@ def _on_classify(ctx: _Ctx) -> AdvanceResult:
         )
     if ctx.state.issue_type in _LEAF_TYPES:
         return _start_build_leaf(ctx)
+    held = _hold_for_this_session(ctx)
+    if held is not None:
+        return held
     children, attributed = ctx.inputs.children, ""
     if not children:
         proposal = _proposed_children(ctx)
@@ -220,13 +228,17 @@ def _on_decompose(ctx: _Ctx) -> AdvanceResult:
     plan = handoff.entry_verdict(ctx.repo_root, ctx.issue_id, handoff.IMPLEMENTATION_PLAN)
     if not plan.admitted:
         return _blocked(ctx, plan.reason, needs_input="artifact")
-    return _build_children(ctx)
+    held = _hold_for_this_session(ctx)
+    return held if held is not None else _build_children(ctx)
 
 
 def _on_build(ctx: _Ctx) -> AdvanceResult:
 
     if ctx.state.worktree is None:
         return _blocked(ctx, "build phase without a bound worktree")
+    held = _hold_for_this_session(ctx)
+    if held is not None:
+        return held
     if ctx.inputs.children and not ctx.state.has_children:
         return _decompose_lane(ctx, ctx.inputs.children)
     repaired = _repair_in_place(ctx, ctx.state.worktree)
@@ -394,18 +406,23 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
     if unrun:
         return _blocked(ctx, unrun, needs_input="demonstration")
     binding = ctx.state.worktree
-    if binding is not None:
-        if not _worktree_landed(ctx.repo_root, binding):
-            return _blocked(
-                ctx,
-                f"ship refuses to close: worktree branch {binding.branch!r} is not merged "
-                "into its base — the build->verify landing was skipped (was the verify gate "
-                "recorded out-of-band?); re-run the build->verify advance to land it first",
-            )
-        worktree.cleanup(binding.name, force=False, repo_root=ctx.repo_root, missing_ok=True)
+    if binding is not None and not _worktree_landed(ctx.repo_root, binding):
+        return _blocked(
+            ctx,
+            f"ship refuses to close: worktree branch {binding.branch!r} is not merged "
+            "into its base — the build->verify landing was skipped (was the verify gate "
+            "recorded out-of-band?); re-run the build->verify advance to land it first",
+        )
+    refused = process_confirmation.confirm(ctx.repo_root, ctx.issue_id)
+    if refused is not None:
+        return _blocked(ctx, refused, needs_input="confirmation")
     curated = _dispatch_curation(ctx)
     rolled = cost_rollup.record(ctx.repo_root, ctx.issue_id)
-    _write(ctx.repo_root, ["close", ctx.issue_id, "--reason", "shipped by the harness loop"])
+    refused = _close_record(ctx, ctx.issue_id, "shipped by the harness loop")
+    if refused is not None:
+        return _blocked(ctx, f"completion refused before worktree cleanup: {refused}")
+    if binding is not None:
+        worktree.cleanup(binding.name, force=False, repo_root=ctx.repo_root, missing_ok=True)
     committed = merge.commit_tracker_state(
         ctx.repo_root, ctx.issue_id, action="close the shipped track"
     )
@@ -477,8 +494,14 @@ def _hold_for_this_session(ctx: _Ctx) -> AdvanceResult | None:
             f"{ctx.issue_id} --take`",
         )
     me = tracker.holder_name(ctx.repo_root)
-    if me and record.get(tracker.HOLDER_FIELD) != me:
-        tracker.write(ctx.repo_root, ["update", ctx.issue_id, "--assignee", me])
+    if record.get("status") != "in_progress" or (me and record.get(tracker.HOLDER_FIELD) != me):
+        args = ["update", ctx.issue_id, "--status", "in_progress"]
+        if me:
+            args.extend(["--assignee", me])
+        try:
+            tracker.write(ctx.repo_root, args)
+        except RuntimeError as exc:
+            return _blocked(ctx, f"start claim for {ctx.issue_id} refused: {exc}")
     return None
 
 
@@ -1086,6 +1109,9 @@ def _run_lane(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceResult:
             f"lane sub-task(s) {', '.join(open_ids)} are all waiting on a dependency or a "
             "queued decision; answer the decision or unblock the graph, then advance again",
         )
+    held = _hold_for_this_session(replace(ctx, issue_id=runnable[0]))
+    if held is not None:
+        return held
     ordered = [cid for cid, _ in subtasks]
     return _run_subtask(
         ctx,
@@ -1150,17 +1176,25 @@ def _run_subtask(
             findings=report.failures,
             evidence=repair_brief.verify_evidence(report, cwd, _SUBTASK_VERIFY_MODE),
         )
-    _write(
-        ctx.repo_root,
-        ["close", subtask_id, "--reason", f"lane sub-task verified in {ctx.issue_id}"],
-    )
-    return AdvanceResult(
+    refused = _close_record(ctx, subtask_id, f"lane sub-task verified in {ctx.issue_id}")
+    result = AdvanceResult(
         ctx.issue_id,
         ctx.state.phase,
         ctx.state.phase,
         "sub-task",
         f"{where} verified and closed; advance again for the next lane step",
     )
+    return (
+        _blocked(ctx, f"{where}: completion refused: {refused}") if refused is not None else result
+    )
+
+
+def _close_record(ctx: _Ctx, record: str, reason: str) -> str | None:
+    try:
+        _write(ctx.repo_root, ["close", record, "--reason", reason])
+    except RuntimeError as exc:
+        return str(exc)
+    return None
 
 
 def references_bead(message: str, bead_id: str) -> bool:
@@ -1259,7 +1293,9 @@ def _build_children(ctx: _Ctx) -> AdvanceResult:
     children = _child_states(ctx)
     if not children:
         return _blocked(ctx, "decompose approved but no child tracks are recorded")
-    _ensure_child_worktrees(ctx, children)
+    held = _ensure_child_worktrees(ctx, children)
+    if held is not None:
+        return held
     still_open = [cid for cid, status in children if loop_state.is_dispatchable(status)]
     if still_open:
         return _blocked(ctx, f"building: {len(still_open)} child track(s) still open")
@@ -1500,7 +1536,7 @@ def _escalate_stalled_rework(
     )
 
 
-def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
+def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> AdvanceResult | None:
 
     wt_config = load_worktree_config(ctx.repo_root)
     sizing = load_sizing_config(ctx.repo_root)
@@ -1523,10 +1559,17 @@ def _ensure_child_worktrees(ctx: _Ctx, children: list[tuple[str, str]]) -> None:
             continue
         if working_set.admit_working_set(ctx.repo_root, cid, sizing).refused:
             continue
+        held = _hold_for_this_session(replace(ctx, issue_id=cid))
+        if held is not None:
+            return held
+        merge.commit_tracker_state(
+            ctx.repo_root, cid, action="record the claim before provisioning"
+        )
         session = worktree.create(name, base=wt_config.base_branch, repo_root=ctx.repo_root)
         _bind_worktree(ctx, name, session.branch, issue_id=cid)
         existing.add(name)
         room -= 1
+    return None
 
 
 def ensure_lane_worktrees(
@@ -1541,7 +1584,9 @@ def ensure_lane_worktrees(
     state = loop_state.read_node_state(repo_root, root_issue, config)
     ctx = _Ctx(repo_root, root_issue, state, config, Inputs())
     before = {session.name for session in worktree.list_sessions(repo_root)}
-    _ensure_child_worktrees(ctx, list(lanes))
+    held = _ensure_child_worktrees(ctx, list(lanes))
+    if held is not None:
+        raise RuntimeError(held.detail)
     after = {session.name for session in worktree.list_sessions(repo_root)}
     gained = after - before
     return tuple(issue_id for issue_id, _ in lanes if _worktree_name(issue_id) in gained)
