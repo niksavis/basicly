@@ -111,6 +111,34 @@ def _bundle(args) -> int:
     return 0
 
 
+def _plugin(args: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog=f"{KIT.command} plugin")
+    parser.add_argument("--out", type=Path, required=True, help="a new plugin directory")
+    parsed = parser.parse_args(args)
+    if not KIT.directory.is_dir():
+        raise SystemExit(
+            "plugin runs from the built tracker package, which carries the kit beside it"
+        )
+    exporter = _sibling("basicly_kit_plugin", "plugin.py", "kit_plugin.py", "plugin exporter")
+    bundler = _sibling("basicly_kit_bundle", "bundle.py", "kit_bundle.py", "kit bundler")
+    version = installer.read_kit_constant(KIT.directory, "pin.py", "KIT_VERSION")
+    try:
+        written = exporter.export(_HERE, parsed.out, version, bundler.bundle)
+    except ValueError as error:
+        sys.stderr.write(f"tracker: {error}\n")
+        return 1
+    sys.stdout.write(f"tracker: wrote plugin {written}\n")
+    return 0
+
+
+def _serve(args: list[str]) -> int:
+    if not (_HERE / "board" / "server.py").is_file():
+        raise SystemExit("serve runs from the built tracker package, which carries its human UI")
+    server = _sibling("basicly_tracker_ui", "board/server.py", "", "tracker UI")
+    server.routes.TRACKER_DIR = KIT.directory
+    return int(server.main(args))
+
+
 FOLD_FLAG = "--fold-on-merge"
 END_MIRROR_FLAG = "--end-mirror"
 IMPORT_FLAG = "--import"
@@ -177,8 +205,19 @@ PACKAGE = modes.Package(
 
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if not args or args[:1] in (["--help"], ["-h"]):
+        sys.stdout.write(
+            "Package commands:\n"
+            "  serve LEDGER [--port PORT]  run the human UI and HTTP API\n"
+            "  plugin --out DIRECTORY     export a portable agent plugin\n"
+            "  bundle [--out FILE]         export the standalone Python archive\n\n"
+        )
     if args[:1] == ["bundle"]:
         return _bundle(args[1:])
+    if args[:1] == ["plugin"]:
+        return _plugin(args[1:])
+    if args[:1] == ["serve"]:
+        return _serve(args)
     if args[:1] in (["init"], ["update"], ["uninstall"]) and USER_FLAG in args:
         return _user(args)
     passed = _configure_flags(args) if args[:1] in (["init"], ["update"]) else ()

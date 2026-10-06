@@ -1,0 +1,1 @@
+- Bundle the human tracker UI with the standalone CLI and export portable agent plugins with shared guidance, repository gates and a self-contained Python archive.
