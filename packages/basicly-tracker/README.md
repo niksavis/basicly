@@ -6,7 +6,7 @@ append conflict never — which is the reason to replace a tracker whose file is
 every change. It needs no `basicly`: standard library only, no third-party package, no
 network.
 
-**Install the code once per machine, and keep only the ledger in each repository.** This
+**Install the code once per machine; keep the ledger and agent guidance in each repository.** This
 is the default mode:
 
 ```console
@@ -14,9 +14,12 @@ $ uv tool install 'git+https://github.com/niksavis/basicly@v0.20.1#subdirectory=
 $ basicly-tracker init
 tracker: added to .gitattributes: events-*.jsonl -text merge=union
 tracker: created the ledger .basicly/ledger
-tracker: pinned the ledger to tracker 0.18.15
+tracker: pinned the ledger to tracker 0.20.1
 tracker: commit-msg now refuses a code commit on a record you do not hold
 basicly-tracker: wrote the user skill to ~/.claude/skills/basicly-tracker/SKILL.md
+basicly-tracker: wrote the user skill to ~/.agents/skills/basicly-tracker/SKILL.md
+tracker: wrote the skill to .claude/skills/tracker/SKILL.md
+tracker: wrote the skill to .agents/skills/tracker/SKILL.md
 $ basicly-tracker ready .basicly/ledger
 {"count": 0, "records": [], "schema": "basicly.scheduler.v1", ...}
 ```
@@ -129,3 +132,9 @@ describes. Do the four steps in order.
 
 The same commands at a terminal end in the same state. At a terminal, `init` asks the
 import question itself.
+
+The installer writes guidance in both `.claude/skills/` and `.agents/skills/`, in the
+repository and at user scope. Claude, Codex and Copilot can discover the same workflow.
+Unmanaged skills are kept; a colliding name refuses installation before replacing it.
+The commit hook checks the staged ledger, so stage a claim with its code. A linked
+worktree uses the effective Git hooks directory.

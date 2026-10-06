@@ -11,6 +11,7 @@ from typing import Any, NamedTuple
 
 KITS_ROOT = Path(".basicly")
 USER_SKILL_ROOT = Path(".claude") / "skills"
+USER_SKILL_ROOTS = (USER_SKILL_ROOT, Path(".agents") / "skills")
 USER_MARK = "<!-- written by {command} init --user; {command} uninstall --user removes it -->"
 SANDBOX_FLAG = "--sandbox"
 RENDERED = ("GUIDANCE.md", "INSTRUCTION.md")
@@ -67,34 +68,45 @@ def user_skill_body(guidance: str, skill: UserSkill) -> str:
     return f"---\n{front}---\n{mark}\n\n{title}\n\n{_where(skill)}{rest}"
 
 
+def user_skill_paths(home: Path, skill: UserSkill) -> list[Path]:
+    return [home / folder / skill.command / "SKILL.md" for folder in USER_SKILL_ROOTS]
+
+
+def _owned_user_skills(home: Path, skill: UserSkill) -> list[Path]:
+    paths = user_skill_paths(home, skill)
+    for path in paths:
+        if path.is_file() and USER_MARK.format(command=skill.command) not in path.read_text(
+            "utf-8"
+        ):
+            raise SystemExit(
+                f"{skill.command}: {path} holds a skill this installer did not write "
+                "(not written by this installer), so it was "
+                f"left alone; move it aside and re-run `{skill.command} init --user`"
+            )
+    return paths
+
+
 def install_user(kit_dir: Path, skill: UserSkill, home: Path, stream) -> int:
     body = user_skill_body((kit_dir / "GUIDANCE.md").read_text(encoding="utf-8"), skill)
-    path = user_skill_path(home, skill)
-    if path.is_file() and path.read_text(encoding="utf-8") == body:
-        stream.write(f"{skill.command}: the user skill at {path} is current; nothing changed\n")
-        return 0
-    if path.is_file() and USER_MARK.format(command=skill.command) not in path.read_text("utf-8"):
-        raise SystemExit(
-            f"{skill.command}: {path} holds a skill this installer did not write, so it was "
-            f"left alone; move it aside and re-run `{skill.command} init --user`"
-        )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body, encoding="utf-8")
-    stream.write(f"{skill.command}: wrote the user skill to {path}\n")
+    for path in _owned_user_skills(home, skill):
+        if path.is_file() and path.read_text(encoding="utf-8") == body:
+            stream.write(f"{skill.command}: the user skill at {path} is current; nothing changed\n")
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        stream.write(f"{skill.command}: wrote the user skill to {path}\n")
     return 0
 
 
 def uninstall_user(skill: UserSkill, home: Path, stream) -> int:
-    path = user_skill_path(home, skill)
-    if not path.is_file():
-        stream.write(f"{skill.command}: no user skill at {path}; nothing removed\n")
-        return 0
-    if USER_MARK.format(command=skill.command) not in path.read_text(encoding="utf-8"):
-        raise SystemExit(f"{skill.command}: {path} was not written by this installer; kept")
-    path.unlink()
-    if not any(path.parent.iterdir()):
-        path.parent.rmdir()
-    stream.write(f"{skill.command}: removed the user skill {path}\n")
+    for path in _owned_user_skills(home, skill):
+        if not path.is_file():
+            stream.write(f"{skill.command}: no user skill at {path}; nothing removed\n")
+            continue
+        path.unlink()
+        if not any(path.parent.iterdir()):
+            path.parent.rmdir()
+        stream.write(f"{skill.command}: removed the user skill {path}\n")
     return 0
 
 
@@ -201,9 +213,8 @@ def install_mode(package: Package, request, sandbox: bool) -> int:
     if found is not None:
         _check_version(package, request, found)
         _drop_file(target, Path(package.user.places[0]), stream, command)
-        installer.drop_skill(target, kit.name, stream)
         install_user(kit.directory, package.user, user_home(), stream)
-    _write_guidance(package, request, typed, skill=sandbox)
+    _write_guidance(package, request, typed, skill=True)
     drop_vendored(installer, request)
     return 0
 

@@ -4,6 +4,7 @@ import argparse
 import filecmp
 import importlib.util
 import shutil
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -27,6 +28,7 @@ ALWAYS_ON_FILES = (
 MANAGED_ROOT = Path(".basicly") / "core" / "kit"
 
 GUIDANCE_FILE = "GUIDANCE.md"
+SKILL_MARK = "<!-- basicly-kit:{name} skill -->"
 INSTRUCTION_FILE = "INSTRUCTION.md"
 
 SKIPPED_NAMES = frozenset({"__pycache__", ".basicly"})
@@ -66,7 +68,18 @@ def write_skill(kit_dir: Path, target: Path, name: str, stream) -> int:
     source = kit_dir / GUIDANCE_FILE
     if not source.is_file():
         return 0
-    body = source.read_text(encoding="utf-8")
+    original = source.read_text(encoding="utf-8")
+    mark = SKILL_MARK.format(name=name)
+    body = original.replace("\n---\n", f"\n---\n{mark}\n", 1)
+    for path in skill_paths(target, name):
+        if path.is_file():
+            current = path.read_text(encoding="utf-8")
+            if mark not in current and current != original:
+                raise SystemExit(
+                    f"{name}: {path} holds a skill this installer did not write; "
+                    "move it aside before installing"
+                )
+    prune_retired_skill(target, name, original, stream)
     prune_retired_skill(target, name, body, stream)
     written = 0
     for path in skill_paths(target, name):
@@ -83,6 +96,9 @@ def drop_skill(target: Path, name: str, stream) -> int:
     removed = 0
     for path in skill_paths(target, name, (*SKILL_ROOTS, *RETIRED_SKILL_ROOTS)):
         if not path.exists():
+            continue
+        if SKILL_MARK.format(name=name) not in path.read_text(encoding="utf-8"):
+            stream.write(f"{name}: kept the unmanaged skill {path}\n")
             continue
         path.unlink()
         removed += 1
@@ -272,6 +288,25 @@ def install(request) -> int:
     return 0
 
 
+def _host_configuration(request) -> list[str]:
+    if request.kit.name != "tracker":
+        return []
+    done = subprocess.run(  # noqa: S603 # nosec B603 B607 — local Git configuration
+        [shutil.which("git") or "git", "rev-parse", "--git-path", "hooks"],
+        cwd=request.target,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if done.returncode != 0:
+        raise SystemExit(
+            f"tracker: cannot resolve the effective Git hooks directory: {done.stderr.strip()}"
+        )
+    hooks = Path(done.stdout.strip())
+    hooks = hooks if hooks.is_absolute() else request.target / hooks
+    return ["--hooks-dir", str(hooks.resolve())]
+
+
 def unconfigure_host(request, destination: Path) -> int:
     name = request.kit.name
     file_name = request.kit.configure_file
@@ -285,6 +320,7 @@ def unconfigure_host(request, destination: Path) -> int:
         "--root",
         str(request.target),
         *request.kit.configure_args,
+        *_host_configuration(request),
         "--uninstall",
     ])
     if code != 0:
@@ -308,7 +344,12 @@ def configure_host(request, destination: Path) -> int:
         )
         return 0
     module = load_kit_module(destination, file_name, f"basicly_kit_configure_{name}")
-    code = module.main(["--root", str(request.target), *request.kit.configure_args])
+    code = module.main([
+        "--root",
+        str(request.target),
+        *request.kit.configure_args,
+        *_host_configuration(request),
+    ])
     if code != 0:
         request.stream.write(
             f"{name}: {file_name} exited {code}; the kit is vendored but the host is not "
@@ -326,6 +367,9 @@ def uninstall(request) -> int:
     )
     destination = vendored_root(target, name)
     unconfigure_host(request, destination)
+    guidance = kit_dir / GUIDANCE_FILE
+    if guidance.is_file():
+        prune_retired_skill(target, name, guidance.read_text(encoding="utf-8"), stream)
     drop_skill(target, name, stream)
     drop_block(target, name, stream)
     for rule_file, lines in host_rules(request.kit):
@@ -463,7 +507,12 @@ def run(kit: Kit, argv=None, modes=None) -> int:
             action="store_true",
             help="also write the always-on block into the agent instruction files present",
         )
-        parsed = parser.parse_args(args[1:])
+        if kit.name == "tracker" and args[0] == "update":
+            parsed, remaining = parser.parse_known_args(args[1:])
+            if remaining:
+                return load_kit_module(kit.directory, kit.cli_file, kit.module).main(args)
+        else:
+            parsed = parser.parse_args(args[1:])
         request = Request(kit, parsed.into, sys.stdout, parsed.with_instructions)
         return verbs[args[0]](request)
     if not args or args[0] in {"-h", "--help"}:

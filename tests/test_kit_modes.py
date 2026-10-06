@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import os
 import subprocess  # nosec B404
 import sys
@@ -173,7 +174,10 @@ def test_the_default_mode_writes_no_kit_code_and_the_sandbox_mode_one_file(
 
     modes.install_mode(package, _request(package, root), sandbox=False)
     assert not (root / ".basicly" / "tracker.pyz").exists()
-    assert not (root / ".claude" / "skills" / "tracker").exists()
+    for folder in (".claude", ".agents"):
+        guidance = (root / folder / "skills" / "tracker" / "SKILL.md").read_text("utf-8")
+        assert "basicly-tracker ready" in guidance
+        assert "python3 .basicly/tracker.pyz ready" not in guidance
     assert not (root / ".basicly" / "kit").exists()
     assert (root / ".basicly" / "ledger" / ".kit-version").is_file()
     assert "__pycache__" not in (root / ".gitignore").read_text(encoding="utf-8")
@@ -215,3 +219,71 @@ def test_the_sandbox_mode_replaces_the_vendored_copy_and_keeps_the_ledger_bytes(
     assert not (root / ".basicly" / "kit").exists()
     assert (root / ".basicly" / "tracker.pyz").is_file()
     assert ledger.read_bytes() == before
+
+
+def test_user_guidance_reaches_both_agent_skill_roots(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    modes.install_user(_kit_dir(tmp_path), tracker.USER_SKILL, home, io.StringIO())
+    paths = [
+        home / folder / "skills" / "basicly-tracker" / "SKILL.md"
+        for folder in (".claude", ".agents")
+    ]
+    assert all(path.is_file() for path in paths)
+    assert paths[0].read_bytes() == paths[1].read_bytes()
+    modes.uninstall_user(tracker.USER_SKILL, home, io.StringIO())
+    assert all(not path.exists() for path in paths)
+
+
+def test_unmanaged_second_user_skill_is_kept_without_partial_install(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    foreign = home / ".agents" / "skills" / "basicly-tracker" / "SKILL.md"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_text("my instructions\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="did not write"):
+        modes.install_user(_kit_dir(tmp_path), tracker.USER_SKILL, home, io.StringIO())
+    assert foreign.read_text() == "my instructions\n"
+    assert not modes.user_skill_path(home, tracker.USER_SKILL).exists()
+
+
+def test_repository_guidance_refuses_unmanaged_content_in_either_root(tmp_path: Path) -> None:
+    foreign = tmp_path / ".agents" / "skills" / "tracker" / "SKILL.md"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_text("my repository instructions\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="did not write"):
+        tracker.installer.write_skill(KIT_ROOT / "tracker", tmp_path, "tracker", io.StringIO())
+    assert foreign.read_text() == "my repository instructions\n"
+    assert not (tmp_path / ".claude" / "skills" / "tracker" / "SKILL.md").exists()
+
+
+def test_install_uses_the_effective_git_hooks_path(tmp_path: Path) -> None:
+    package = _package()
+    root = _repo(tmp_path)
+    subprocess.run(  # nosec B603 B607
+        ["git", "config", "core.hooksPath", "hooks shared"], cwd=root, check=True
+    )
+    modes.install_mode(package, _request(package, root), sandbox=True)
+    assert (root / "hooks shared" / "commit-msg").is_file()
+    assert not (root / ".git" / "hooks" / "commit-msg").exists()
+
+
+def test_the_package_routes_record_updates_to_the_tracker_not_the_installer(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    package = _package()
+    directory = _repo(tmp_path) / ".basicly" / "ledger"
+    assert (
+        tracker.installer.run(
+            package.kit, ["create", str(directory), "--prefix", "demo", "--title", "idea"]
+        )
+        == 0
+    )
+    record = json.loads(capsys.readouterr().out)["record"]
+    assert (
+        tracker.installer.run(
+            package.kit, ["update", str(directory), record, "--field", "title=refined"]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["appended"]
+    assert tracker.installer.run(package.kit, ["show", str(directory), record]) == 0
+    assert json.loads(capsys.readouterr().out)["fields"]["title"] == "refined"

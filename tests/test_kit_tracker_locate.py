@@ -122,7 +122,7 @@ def _install(root: Path) -> None:
 def _bare_path(tmp_path: Path) -> dict:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    for tool in ("git", "python3", "cat", "sh"):
+    for tool in ("git", "python3", "cat", "sh", "mktemp", "mkdir", "find"):
         found = shutil.which(tool)
         assert found is not None
         link = bin_dir / tool

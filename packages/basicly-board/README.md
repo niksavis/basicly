@@ -21,3 +21,6 @@ user install: `python3 .basicly/board.pyz serve .basicly/ledger`.
 
 The endpoints, the refinement flow and how to build your own client:
 [`kit/board/README.md`](../../.basicly/core/kit/board/README.md).
+
+User and repository guidance is installed into both `.claude/skills/` and
+`.agents/skills/`. Existing unmanaged skills are preserved.

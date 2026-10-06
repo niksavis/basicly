@@ -73,8 +73,13 @@ def refuse_commit(
         for path in changed
         if path.strip() and not path.startswith(folders) and path not in files
     ]
-    if not code or not states:
+    if not code:
         return
+    if not states:
+        raise UnclaimedError(
+            f"this code commit has no record in the staged ledger {ledger}. File and claim "
+            f"a record, then stage it with `git add {ledger}` and commit again"
+        )
     ids = named_ids(message, states)
     if not committer:
         raise UnclaimedError(
