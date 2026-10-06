@@ -41,7 +41,7 @@ concurrency = 4
 
 [[verify.checks]]
 name = "sentinel"
-command = [{Path(sys.executable).as_posix()!r}, "-c", {_PROBE!r}]
+command = [{Path(sys.executable).name!r}, "-c", {_PROBE!r}]
 modes = ["fast", "full"]
 
 [policy]
@@ -116,7 +116,7 @@ def _commit(cwd: Path, path: str, body: str, message: str) -> None:
 
 def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: str = _ROOT) -> str:
 
-    return tracker.create_record(
+    record = tracker.create_record(
         repo,
         [
             "create",
@@ -135,6 +135,37 @@ def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: st
             "--json",
         ],
     )
+
+    _review(repo, record)
+    return record
+
+
+def _review(repo: Path, record: str) -> None:
+    tracker.write(
+        repo,
+        [
+            "comments",
+            "add",
+            record,
+            "Agree to run the configured sentinel check for each criterion",
+        ],
+    )
+    shown = tracker.kit(repo, "record_view").read_record(tracker.ledger_dir(repo), record)
+    process = tracker.kit(repo, "process_evidence")
+    criteria = process.criteria(shown["fields"])
+    payload = {
+        "invest": dict.fromkeys(process.INVEST, "The fixture has one isolated measurable scope"),
+        "conversation": [shown["comment_log"][-1]["seq"]],
+        "checks": [
+            {
+                "criterion": criterion,
+                "command": [Path(sys.executable).name, "-c", _PROBE],
+                "expected": "Sentinel check exits successfully",
+            }
+            for criterion in criteria
+        ],
+    }
+    tracker.write(repo, ["review", record, "--evidence", json.dumps(payload)])
 
 
 def _show(repo: Path, issue_id: str) -> dict:
@@ -181,6 +212,7 @@ def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
     intake = loop.advance(repo, issue_id, inputs=loop.Inputs(work_type="task"))
     assert intake.checkpoint == "classify", intake.detail
+    _review(repo, issue_id)
     policy.approve_checkpoint(repo, issue_id, "classify")
     return loop.advance(repo, issue_id)
 
@@ -330,7 +362,9 @@ def test_a_lane_runs_its_sub_tasks_in_sequence_then_integrates(harness_repo: Pat
     assert len(by_title) == 2
     subtasks = [by_title[spec.title] for spec in plan]
 
+    _review(repo, lane)
     for index, subtask in enumerate(subtasks, start=1):
+        _review(repo, subtask)
         dispatched = loop.advance(repo, lane)
         assert dispatched.blocked, dispatched.detail
         assert subtask in dispatched.detail

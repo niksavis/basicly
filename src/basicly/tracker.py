@@ -99,12 +99,17 @@ def owed_of(repo_root: Path, record: str) -> dict[str, object]:
 
 
 def readiness(
-    repo_root: Path, record: Mapping[str, object], template: Any
+    repo_root: Path,
+    record: Mapping[str, object],
+    template: Any,
+    *,
+    found: Sequence[Any] | None = None,
 ) -> tuple[tuple[str, ...], frozenset[str]]:
 
     shaping = kit(repo_root, "shaping")
     process = kit(repo_root, "process_evidence")
-    found = kit(repo_root, "events").read_events(ledger_dir(repo_root))[0]
+    if found is None:
+        found = kit(repo_root, "events").read_events(ledger_dir(repo_root))[0]
     identity = str(record.get("id") or record.get("record") or "")
     debt = process.readiness(found, identity, record, template=template)
     required = (*shaping.required(record, template), *debt)

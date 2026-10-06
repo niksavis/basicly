@@ -43,6 +43,7 @@ layers =
     catalog_emphasis | catalog_token_cost | listing_budget | skill_coverage | retention
     decisions
     handoff
+    process_confirmation
     plan_gate | policy | routing_evals | tuning | verify
     capability_proof
     invest

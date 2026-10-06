@@ -65,7 +65,18 @@ def missing_for(
 
     declared = load_type_sections(repo_root) if declared is None else declared
     typed = {**record, "issue_type": work_type} if work_type else dict(record)
-    kit_order, shared = tracker.readiness(repo_root, typed, template)
+    readiness = tracker.readiness(repo_root, typed, template)
+    return _missing_for(record, work_type, declared, template, readiness)
+
+
+def _missing_for(
+    record: Mapping[str, object],
+    work_type: str,
+    declared: Mapping[str, Sequence[str]],
+    template: Any,
+    readiness: tuple[tuple[str, ...], frozenset[str]],
+) -> tuple[str, ...]:
+    kit_order, shared = readiness
     own = declared.get(work_type, ()) if template is None or template.extends else ()
     described = record.get("description")
     body = described if isinstance(described, str) else ""
@@ -79,13 +90,16 @@ def owed(states: Iterable[Any], repo_root: Path) -> dict[str, tuple[str, ...]]:
 
     declared = load_type_sections(repo_root)
     template = tracker.ledger_template(repo_root)
+    found = tracker.kit(repo_root, "events").read_events(tracker.ledger_dir(repo_root))[0]
     return {
-        state.record: missing_for(
+        state.record: _missing_for(
             {**state.fields, "id": state.record},
             str(state.fields.get("issue_type") or ""),
-            repo_root,
             declared,
             template,
+            tracker.readiness(
+                repo_root, {**state.fields, "id": state.record}, template, found=found
+            ),
         )
         for state in states
     }

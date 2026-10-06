@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -10,6 +11,31 @@ from tests.plan_fixtures import install_kit
 from tests.tracker_process_fixture import DEBTS, recorded_review
 
 KIT_DIR = Path(__file__).resolve().parent.parent / ".basicly" / "core" / "kit" / "tracker"
+
+
+def test_bulk_owed_reads_one_current_event_corpus_without_losing_process_debt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_kit(tmp_path)
+    ledger = tracker.ledger_dir(tmp_path)
+    ledger.mkdir(parents=True, exist_ok=True)
+    (ledger / "template.json").write_text('{"prefix":"test"}', encoding="utf-8")
+    records = [owned_write.create(tmp_path, ["create", title]) for title in ("first", "second")]
+    events = tracker.kit(tmp_path, "events")
+    states = events.fold(events.read_events(ledger)[0]).records
+    original = events.read_events
+    reads = []
+
+    def read_once(*args: Any, **kwargs: Any) -> Any:
+        reads.append(args)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(events, "read_events", read_once)
+    owed = invest.owed([states[record] for record in records], tmp_path)
+    assert len(reads) == 1
+    assert all(set(DEBTS) <= set(owed[record]) for record in records)
+    invest.missing_for({**states[records[0]].fields, "id": records[0]}, "task", tmp_path)
+    assert len(reads) == 2
 
 
 def _kit_shaping():
