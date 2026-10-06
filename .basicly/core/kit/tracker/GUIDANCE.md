@@ -20,8 +20,7 @@ Every command takes the ledger directory as its first argument and prints one JS
   drop it.
 - **Read `ready` before you propose work.** Take the top row that nobody holds. Do not
   invent a task.
-- **Run `dor` before you build.** `ready` leaves out a record labelled `refine` and a new
-  record that fails `dor`, but it keeps an older unshaped record. `dor` refuses a record
+- **Run `dor` before you build.** `ready` leaves out every record labelled `refine` or failing `dor`. `dor` refuses a record
   that has no trigger, acceptance criteria or requirements.
 - **Criteria and requirements are fields.** Pass them as `--acceptance` and
   `--requirements`. A description that holds either heading is refused.
@@ -32,6 +31,9 @@ Every command takes the ledger directory as its first argument and prints one JS
 - **Claim a record before you change code for it.** The `commit-msg` hook refuses a commit
   that changes files outside the ledger unless you hold a record it names in progress (or
   closed). Filing and closing commits that touch only the ledger pass.
+- **Stage the claim with its code.** The commit hook reads the Git index, not unsaved
+  ledger changes. In a shared-ledger worktree, publish the claim on the base and update
+  the lane from that committed base before committing its code.
 - **File what you notice.** A defect that you do not file is invisible to everyone else.
 
 ## Read

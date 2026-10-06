@@ -1,0 +1,1 @@
+- Deliver standalone tracker guidance to all agent skill roots, preserve unmanaged skills, route record updates correctly, enforce staged claims, and install hooks in the effective directory for linked worktrees.

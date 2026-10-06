@@ -222,3 +222,159 @@ def test_an_id_the_staged_ledger_does_not_hold_is_named_with_the_command_that_st
     )
     assert "git add .basicly/ledger" in unknown.stderr
     assert "it names no record id" in unnamed.stderr
+
+
+def _use_gate(repo: Path, gate: str) -> None:
+    if gate == "standalone":
+        return
+    source = KIT_DIR.parents[1] / "hooks" / "tracker-claim.py"
+    text = source.read_text("utf-8")
+    text = text.replace(
+        'PLACES = ((Path(".basicly") / "core" / "kit" / "tracker" / "cli.py").as_posix(),)',
+        'PLACES = ((Path(".basicly") / "kit" / "tracker" / "cli.py").as_posix(),)',
+    )
+    text = text.replace(
+        'LOCATE = Path(__file__).resolve().parent.parent / "kit" / "tracker" / "locate.py"',
+        'LOCATE = Path(__file__).resolve().parents[2] / ".basicly" / '
+        '"kit" / "tracker" / "locate.py"',
+    )
+    folder = repo / ".git" / "hooks"
+    (folder / "engine.py").write_text(text, encoding="utf-8")
+    hook = folder / "commit-msg"
+    hook.write_text(
+        f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" '
+        '"$(git rev-parse --git-path hooks)/engine.py" "$@"\n',
+        encoding="utf-8",
+    )
+    hook.chmod(hook.stat().st_mode | 0o111)
+
+
+@pytest.mark.parametrize("gate", ("standalone", "engine"))
+def test_an_unstaged_claim_cannot_authorize_a_code_commit(repo: Path, gate: str) -> None:
+    _git(repo, "add", "-A")
+    assert _git(repo, "commit", "-q", "-m", "chore: install tracker").returncode == 0
+    _use_gate(repo, gate)
+    record = _kit(repo, "create", ".basicly/ledger", "--prefix", "acme", "--title", "x", *SHAPED)[
+        "record"
+    ]
+    _git(repo, "add", ".basicly/ledger")
+    assert _git(repo, "commit", "-q", "-m", f"chore: file {record}").returncode == 0
+    _kit(repo, "claim", ".basicly/ledger", record)
+    (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(repo, "add", "app.py")
+    refused = _git(repo, "commit", "-q", "-m", f"feat: value {record}")
+    assert refused.returncode != 0
+    assert "Claim the record first" in refused.stderr
+    _git(repo, "add", ".basicly/ledger")
+    assert _git(repo, "commit", "-q", "-m", f"feat: value {record}").returncode == 0
+
+
+@pytest.mark.parametrize("gate", ("standalone", "engine"))
+def test_a_new_unstaged_record_cannot_authorize_the_first_code_commit(
+    repo: Path, gate: str
+) -> None:
+    _git(repo, "add", "-A")
+    assert _git(repo, "commit", "-q", "-m", "chore: install tracker").returncode == 0
+    _use_gate(repo, gate)
+    record = _kit(repo, "create", ".basicly/ledger", "--prefix", "acme", "--title", "x", *SHAPED)[
+        "record"
+    ]
+    _kit(repo, "claim", ".basicly/ledger", record)
+    (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(repo, "add", "app.py")
+    refused = _git(repo, "commit", "-q", "-m", f"feat: value {record}")
+    assert refused.returncode != 0
+    assert "git add .basicly/ledger" in refused.stderr
+
+
+def test_claim_gate_targets_the_common_hooks_in_a_linked_worktree(
+    repo: Path, tmp_path: Path
+) -> None:
+    _git(repo, "add", "-A")
+    assert _git(repo, "commit", "-q", "-m", "chore: install tracker").returncode == 0
+    record = _kit(
+        repo, "create", ".basicly/ledger", "--prefix", "acme", "--title", "linked", *SHAPED
+    )["record"]
+    _git(repo, "add", ".basicly/ledger")
+    assert _git(repo, "commit", "-q", "-m", f"chore: file {record}").returncode == 0
+    lane = tmp_path / "lane"
+    assert _git(repo, "worktree", "add", "-b", "lane", str(lane)).returncode == 0
+    assert _hook(lane).returncode == 0
+    hook_path = _git(lane, "rev-parse", "--git-path", "hooks/commit-msg").stdout.strip()
+    assert "basicly-tracker claim" in Path(hook_path).read_text("utf-8")
+    (lane / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(lane, "add", "app.py")
+    refused = _git(lane, "commit", "-q", "-m", f"feat: linked value {record}")
+    assert refused.returncode != 0 and "Claim the record first" in refused.stderr
+    _kit(lane, "claim", ".basicly/ledger", record)
+    _git(lane, "add", ".basicly/ledger")
+    assert _git(lane, "commit", "-q", "-m", f"feat: linked value {record}").returncode == 0
+
+
+def test_redirected_working_ledger_cannot_override_the_lane_index(
+    repo: Path, tmp_path: Path
+) -> None:
+    _git(repo, "add", "-A")
+    assert _git(repo, "commit", "-q", "-m", "chore: install tracker").returncode == 0
+    record = _kit(
+        repo, "create", ".basicly/ledger", "--prefix", "acme", "--title", "redirect", *SHAPED
+    )["record"]
+    _kit(repo, "claim", ".basicly/ledger", record)
+    _git(repo, "add", ".basicly/ledger")
+    assert _git(repo, "commit", "-q", "-m", f"chore: publish claim {record}").returncode == 0
+    lane = tmp_path / "redirected-lane"
+    assert _git(repo, "worktree", "add", "-b", "redirected-lane", str(lane)).returncode == 0
+    (lane / ".basicly/ledger/redirect").write_text(str(repo), encoding="utf-8")
+    (lane / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(lane, "add", "app.py")
+    assert _git(lane, "commit", "-q", "-m", f"feat: published value {record}").returncode == 0
+    _kit(repo, "unassign", ".basicly/ledger", record)
+    (lane / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _git(lane, "add", "app.py")
+    assert _git(lane, "commit", "-q", "-m", f"feat: staged claim value {record}").returncode == 0
+
+
+def test_an_unreadable_staged_ledger_cannot_authorize_code(repo: Path) -> None:
+    _git(repo, "add", "-A")
+    assert _git(repo, "commit", "-q", "-m", "chore: install tracker").returncode == 0
+    record = _kit(repo, "create", ".basicly/ledger", "--prefix", "acme", "--title", "x", *SHAPED)[
+        "record"
+    ]
+    _kit(repo, "claim", ".basicly/ledger", record)
+    log = next((repo / ".basicly/ledger").glob("pending-*.jsonl"))
+    log.write_text(log.read_text("utf-8") + "not an event\n", encoding="utf-8")
+    (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    refused = _git(repo, "commit", "-q", "-m", f"feat: value {record}")
+    assert refused.returncode != 0
+    assert "staged ledger .basicly/ledger has unreadable events" in refused.stderr
+
+
+@pytest.mark.parametrize("gate", ("standalone", "engine"))
+@pytest.mark.parametrize("symlinks", ("true", "false"))
+def test_a_staged_ledger_symlink_cannot_authorize_code(
+    repo: Path, tmp_path: Path, gate: str, symlinks: str
+) -> None:
+    _git(repo, "add", "-A")
+    assert _git(repo, "commit", "-q", "-m", "chore: install tracker").returncode == 0
+    _use_gate(repo, gate)
+    record = _kit(repo, "create", ".basicly/ledger", "--prefix", "acme", "--title", "x", *SHAPED)[
+        "record"
+    ]
+    _kit(repo, "claim", ".basicly/ledger", record)
+    log = next((repo / ".basicly/ledger").glob("pending-*.jsonl"))
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text(log.read_text("utf-8"), encoding="utf-8")
+    target = tmp_path / "target"
+    target.write_text(str(outside), encoding="utf-8")
+    blob = _git(repo, "hash-object", "-w", str(target)).stdout.strip()
+    (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    indexed = _git(
+        repo, "update-index", "--cacheinfo", f"120000,{blob},{log.relative_to(repo).as_posix()}"
+    )
+    assert indexed.returncode == 0, indexed.stderr
+    _git(repo, "config", "core.symlinks", symlinks)
+    refused = _git(repo, "commit", "-q", "-m", f"feat: value {record}")
+    assert refused.returncode != 0
+    assert "staged ledger" in refused.stderr and "symlink" in refused.stderr

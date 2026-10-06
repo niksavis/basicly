@@ -36,8 +36,8 @@ The tracker and board installers add these options to `init` and `update`:
 
 | Option | Behaviour |
 | --- | --- |
-| `--sandbox` | Write `.basicly/<name>.pyz` and a repository skill instead of using the user install; also moves a repository off the vendored folder |
-| `--user` | Write or, with `uninstall`, remove only the user skill in `~/.claude/skills/` |
+| `--sandbox` | Write `.basicly/<name>.pyz` and repository guidance instead of using the user install; also moves a repository off the vendored folder |
+| `--user` | Write or, with `uninstall`, remove the user skills in `~/.claude/skills/` and `~/.agents/skills/` |
 | `--mirror beads` | Tracker only: import `.beads/issues.jsonl`, mark the ledger as a mirror, and install no claim gate; `sync` re-imports it |
 | `--end-mirror` | Tracker only: end the mirror and install the claim gate |
 

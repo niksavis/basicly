@@ -83,22 +83,7 @@ def parser() -> argparse.ArgumentParser:
     page.add_argument("directory", help=DIRECTORY_HELP)
     page.add_argument("--out", default="tracker-board.html", help="the file to write")
 
-    claim_check = sub.add_parser(
-        "commit-check", help="refuse a code commit that names no record the committer holds"
-    )
-    claim_check.add_argument("directory", help=DIRECTORY_HELP)
-    claim_check.add_argument("message", help="the commit message file git passes to commit-msg")
-    claim_check.add_argument("path", nargs="*", help="the staged paths")
-    claim_check.add_argument("--stdin", action="store_true", help="read staged paths from stdin")
-    claim_check.add_argument(
-        "--installed",
-        action="append",
-        default=[],
-        help="a path an install manages, not code; a trailing / names a folder",
-    )
-    claim_check.add_argument(
-        "--runner", default="", help="the tracker command a refusal tells the committer to type"
-    )
+    _add_commit_check(sub)
 
     check = sub.add_parser(
         "fsck", help="fold the whole log and report anything unparseable or broken"
@@ -254,3 +239,25 @@ def _add_sync_parser(sub: Any) -> None:
     mirrored.add_argument("directory", help=DIRECTORY_HELP)
     mirrored.add_argument("--root", default=".", help="the repository that holds the source")
     mirrored.add_argument("--dry-run", action="store_true", help="report and write nothing")
+
+
+def _add_commit_check(sub: Any) -> None:
+    claim_check = sub.add_parser(
+        "commit-check", help="refuse a code commit that names no record the committer holds"
+    )
+    claim_check.add_argument("directory", help=DIRECTORY_HELP)
+    claim_check.add_argument("message", help="the commit message file git passes to commit-msg")
+    claim_check.add_argument("path", nargs="*", help="the staged paths")
+    claim_check.add_argument("--stdin", action="store_true", help="read staged paths from stdin")
+    claim_check.add_argument(
+        "--ledger-label", default="", help="the repository ledger shown in remedies"
+    )
+    claim_check.add_argument(
+        "--installed",
+        action="append",
+        default=[],
+        help="a path an install manages, not code; a trailing / names a folder",
+    )
+    claim_check.add_argument(
+        "--runner", default="", help="the tracker command a refusal tells the committer to type"
+    )
