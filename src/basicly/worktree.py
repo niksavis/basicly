@@ -224,6 +224,18 @@ def _resolve_worktree(
 
     session = load_session(name, repo_root)
     if session is not None:
+        validate_worktree_name(name)
+        identity = (
+            ("name", session.name, name),
+            ("worktree path", session.path.resolve(), (worktrees_root(main) / name).resolve()),
+            ("branch", session.branch, f"{BRANCH_PREFIX}{name}"),
+        )
+        for field, stored, expected in identity:
+            if stored != expected:
+                raise SystemExit(
+                    f"cleanup refuses session identity for {name!r}: its {field} must "
+                    f"be {expected!r}, got {stored!r}"
+                )
         return session.path, session.branch
 
     target = Path(name)
@@ -387,14 +399,19 @@ def _worktree_removal_verdict(worktree: Path) -> RemovalVerdict:
     return classify_worktree_tree(proc.returncode, proc.stdout)
 
 
-def _assert_removable_checkout(main: Path, worktree: Path) -> None:
+def _assert_removable_checkout(main: Path, worktree: Path, branch: str | None) -> None:
 
     target = worktree.resolve()
     if target == main.resolve():
         raise SystemExit("cleanup refuses to remove the primary checkout")
-    registered = {path.resolve() for path in registered_worktrees(main)}
+    registered = {path.resolve(): ref for path, ref in registered_worktrees(main).items()}
     if target not in registered:
         raise SystemExit(f"cleanup refuses an existing checkout that is not registered: {worktree}")
+    if registered[target] != branch:
+        raise SystemExit(
+            f"cleanup refuses {worktree}: its registered branch is {registered[target]!r}, "
+            f"expected {branch!r}"
+        )
     result = git(["rev-parse", "--git-path", "locked"], cwd=worktree)
     lock = Path(result.stdout.strip())
     if not lock.is_absolute():
@@ -421,7 +438,7 @@ def cleanup(
     worktree, branch = resolved
 
     if worktree.exists():
-        _assert_removable_checkout(main, worktree)
+        _assert_removable_checkout(main, worktree, branch)
         verdict = _worktree_removal_verdict(worktree)
         if not verdict.may_remove and not force:
             if verdict.indeterminate:

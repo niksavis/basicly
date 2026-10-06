@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import subprocess
+from dataclasses import asdict
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
@@ -139,7 +141,7 @@ def test_cleanup_refuses_a_session_redirected_to_an_unregistered_directory(
     innocent.mkdir()
     session.worktree_path = str(innocent)
     worktree.save_session(session, safety_repo)
-    with pytest.raises(SystemExit, match="registered"):
+    with pytest.raises(SystemExit, match=r"session identity.*worktree path"):
         worktree.cleanup("tampered", force=True, repo_root=safety_repo)
     assert innocent.is_dir()
 
@@ -193,3 +195,71 @@ def test_cleanup_distinguishes_verification_output_from_adjacent_user_data(
     else:
         worktree.cleanup("verified", repo_root=safety_repo)
         assert not session.path.exists()
+
+
+@pytest.mark.parametrize("tamper", ["path", "path-and-branch", "name", "branch"])
+@pytest.mark.parametrize("force", [False, True])
+def test_cleanup_refuses_a_session_redirected_to_a_registered_sibling(
+    safety_repo: Path, tamper: str, force: bool
+) -> None:
+    first = worktree.create("first", repo_root=safety_repo)
+    second = worktree.create("second", repo_root=safety_repo)
+    for session in (first, second):
+        (session.path / "README.md").write_text(session.name, encoding="utf-8")
+        _git(session.path, "add", "README.md")
+        _git(session.path, "commit", "-m", "fixture content")
+    payload = asdict(first)
+    if tamper in {"path", "path-and-branch"}:
+        payload["worktree_path"] = second.worktree_path
+    if tamper in {"branch", "path-and-branch"}:
+        payload["branch"] = second.branch
+    if tamper == "name":
+        payload["name"] = second.name
+    record = worktree.session_file(first.name, safety_repo)
+    record.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="session identity"):
+        worktree.cleanup(first.name, force=force, repo_root=safety_repo)
+
+    for session in (first, second):
+        assert (session.path / "README.md").read_text(encoding="utf-8") == session.name
+        assert session.path in worktree.registered_worktrees(safety_repo)
+        assert worktree.session_file(session.name, safety_repo).exists()
+        _git(safety_repo, "show-ref", "--verify", "refs/heads/" + session.branch)
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_missing_checkout_cannot_reclaim_a_different_sessions_branch(
+    safety_repo: Path, force: bool
+) -> None:
+    first = worktree.create("first", repo_root=safety_repo)
+    second = worktree.create("second", repo_root=safety_repo)
+    _git(safety_repo, "worktree", "remove", str(first.path))
+    _git(second.path, "switch", "--detach")
+    first.branch = second.branch
+    worktree.save_session(first, safety_repo)
+
+    with pytest.raises(SystemExit, match="session identity"):
+        worktree.cleanup(first.name, force=force, repo_root=safety_repo)
+
+    assert (second.path / "README.md").read_text(encoding="utf-8") == "hi\n"
+    assert worktree.session_file(first.name, safety_repo).exists()
+    assert worktree.session_file(second.name, safety_repo).exists()
+    for branch in ("harness/first", second.branch):
+        _git(safety_repo, "show-ref", "--verify", "refs/heads/" + branch)
+
+
+def test_cleanup_refuses_a_checkout_registered_under_a_different_git_branch(
+    safety_repo: Path,
+) -> None:
+    first = worktree.create("first", repo_root=safety_repo)
+    second = worktree.create("second", repo_root=safety_repo)
+    _git(first.path, "switch", "-c", "different")
+
+    with pytest.raises(SystemExit, match="registered branch"):
+        worktree.cleanup(first.name, force=True, repo_root=safety_repo)
+
+    assert (first.path / "README.md").read_text(encoding="utf-8") == "hi\n"
+    assert (second.path / "README.md").read_text(encoding="utf-8") == "hi\n"
+    assert worktree.load_session(first.name, safety_repo) is not None
+    assert worktree.load_session(second.name, safety_repo) is not None
