@@ -1,1 +1,1 @@
-- Worktree creation rejects unsafe names and stops copying dotenv files; failed provisioning retains recoverable metadata, and cleanup validates session identity and protects locked checkouts, ignored user files and tracked dependency changes.
+- Worktree creation rejects unsafe names and stops copying dotenv files; failed provisioning retains recoverable metadata, and cleanup validates session identity and protects locked checkouts, ignored user files and tracked dependency changes while recognizing owned caches containing only regular Python bytecode.
