@@ -23,6 +23,7 @@ GENERATED_IGNORES: tuple[tuple[str, str], ...] = (
         "Derived folds of the committed event log. The log is the truth; never commit a fold.",
     ),
     (".basicly/ledger/checkpoint-*.jsonl", ""),
+    (".basicly/ledger/.events.lock", ""),
     (
         "*.basicly-bak",
         "Your copy of a file basicly replaced; delete it once you have merged what you want.",

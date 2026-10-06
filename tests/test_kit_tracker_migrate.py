@@ -632,7 +632,7 @@ def test_an_import_reports_contention_rather_than_deciding_on_a_stale_read(
     tmp_path: Path,
 ) -> None:
 
-    lock = events.LedgerLock(tmp_path, pid=os.getpid(), is_alive=lambda _pid: True)
+    lock = events.LedgerLock(tmp_path)
     lock.acquire()
     try:
         with pytest.raises(events.LockUnavailableError) as caught:
@@ -652,7 +652,8 @@ def test_a_caller_can_hold_the_lock_across_an_import_and_its_own_work(tmp_path: 
 
     assert report.imported == [RECORD_A]
     assert lock.held is False
-    assert not lock.path.exists()
+    with events.LedgerLock(tmp_path, timeout_s=0) as next_owner:
+        assert next_owner.held
 
 
 def test_the_actor_and_the_clock_are_the_callers(tmp_path: Path) -> None:
@@ -751,7 +752,7 @@ def test_a_consumer_with_no_basicly_can_import_their_tracker(tmp_path: Path) -> 
 
     consumer = tmp_path / "consumer" / "kit" / "tracker"
     consumer.mkdir(parents=True)
-    for name in ("beads.py", "values.py", "fields.py", "shaping.py"):
+    for name in ("beads.py", "values.py", "fields.py", "shaping.py", "locking.py"):
         shutil.copy2(KIT_DIR / name, consumer / name)
     for source in (MIGRATE_SOURCE, EVENTS_SOURCE, IDS_SOURCE):
         shutil.copy2(source, consumer / source.name)
@@ -829,3 +830,10 @@ def test_the_module_imports_nothing_outside_the_standard_library() -> None:
     }
     assert "sys.path.insert" not in source
     assert "subprocess" not in imported
+
+
+def test_import_dry_run_does_not_create_a_missing_ledger(tmp_path: Path) -> None:
+    ledger = tmp_path / "missing"
+    report = _import(ledger, _snapshot(_record(RECORD_A)), dry_run=True)
+    assert report.imported == [RECORD_A]
+    assert not ledger.exists()

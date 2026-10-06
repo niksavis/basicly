@@ -1,0 +1,1 @@
+- Keep ledger ownership until the writer closes its OS lock, and reject malformed or oversized tracker and harness HTTP request framing before reading a body.

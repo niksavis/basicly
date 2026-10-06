@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, ModuleType
 
 
 class LedgerError(Exception):
@@ -29,21 +29,22 @@ _HERE = Path(__file__).resolve().parent
 _IDS_MODULE_NAME = "basicly_tracker_kit_ids"
 
 
-def _load_ids() -> object:
+def _load_sibling(file_name: str, module_name: str) -> ModuleType:
 
-    cached = sys.modules.get(_IDS_MODULE_NAME)
+    cached = sys.modules.get(module_name)
     if cached is not None:
         return cached
-    spec = importlib.util.spec_from_file_location(_IDS_MODULE_NAME, _HERE / "ids.py")
+    spec = importlib.util.spec_from_file_location(module_name, _HERE / file_name)
     if spec is None or spec.loader is None:
-        raise LedgerError("the tracker kit's ids.py is missing from beside events.py")
+        raise LedgerError(f"the tracker kit's {file_name} is missing from beside events.py")
     module = importlib.util.module_from_spec(spec)
-    sys.modules[_IDS_MODULE_NAME] = module
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
 
-ids = _load_ids()
+ids = _load_sibling("ids.py", _IDS_MODULE_NAME)
+locking = _load_sibling("locking.py", "basicly_tracker_kit_locking")
 
 
 LOG_GLOB = "events-*.jsonl"
@@ -93,10 +94,8 @@ BUFFER_CHUNK_BYTES = 8192
 MAX_TEXT_BYTES = 4096
 
 DEFAULT_LOCK_TIMEOUT_S = 5.0
-LOCK_STALE_AFTER_S = 30.0
 LOCK_POLL_S = 0.01
 
-MAX_LOCK_STEALS = 8
 
 KIND_CREATED = "created"
 KIND_FIELD = "field"
@@ -713,129 +712,62 @@ def append_target(directory: Path | str, *, writer: str | None = None) -> Path:
     return paths[-1] if paths else Path(directory) / INITIAL_LOG_NAME
 
 
-def default_pid_liveness(pid: int) -> bool | None:
-
-    if os.name == "nt":
-        return None
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
 class LedgerLock:
-    def __init__(  # noqa: PLR0913 — one keyword per injected seam; see the class docstring
+    def __init__(
         self,
         directory: Path | str,
         *,
         timeout_s: float = DEFAULT_LOCK_TIMEOUT_S,
-        stale_after_s: float = LOCK_STALE_AFTER_S,
         poll_s: float = LOCK_POLL_S,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
-        pid: int | None = None,
-        is_alive: Callable[[int], bool | None] = default_pid_liveness,
     ) -> None:
         self.path = Path(directory) / LOCK_NAME
         self._timeout_s = timeout_s
-        self._stale_after_s = stale_after_s
         self._poll_s = poll_s
         self._monotonic = monotonic
         self._sleep = sleep
-        self._pid = os.getpid() if pid is None else pid
-        self._is_alive = is_alive
-        self._held = False
-        self.steals = 0
+        self._handle: int | None = None
 
     @property
     def held(self) -> bool:
-        return self._held
+        return self._handle is not None
 
     def acquire(self) -> LedgerLock:
-
+        if self.held:
+            raise LedgerError(
+                f"this writer already owns {self.path}; release it before acquiring again"
+            )
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle = os.open(str(self.path), os.O_CREAT | os.O_RDWR, 0o600)
         deadline = self._monotonic() + self._timeout_s
-        while True:
-            if self._try_create():
-                self._held = True
-                return self
-            if self._steal_if_stale():
-                if self.steals > MAX_LOCK_STEALS:
-                    raise LockUnavailableError(
-                        f"{self.path} went stale {self.steals} times in one acquire: "
-                        f"the staleness answers are wrong, not the lock"
-                    )
-                continue
-            if self._monotonic() >= deadline:
-                raise LockUnavailableError(
-                    f"another writer holds {self.path} after {self._timeout_s}s"
-                )
-            self._sleep(self._poll_s)
+        acquired = False
+        try:
+            while not locking.try_exclusive(handle):
+                if self._monotonic() >= deadline:
+                    break
+                self._sleep(self._poll_s)
+            else:
+                acquired = True
+        finally:
+            if not acquired:
+                os.close(handle)
+        if not acquired:
+            raise LockUnavailableError(f"another writer holds {self.path} after {self._timeout_s}s")
+        self._handle = handle
+        return self
 
     def release(self) -> None:
-
-        self._held = False
-        record = self._read_holder()
-        if record is not None and record.get("pid") != self._pid:
+        if self._handle is None:
             return
-        try:
-            self.path.unlink()
-        except FileNotFoundError:
-            return
+        handle, self._handle = self._handle, None
+        os.close(handle)
 
     def __enter__(self) -> LedgerLock:
         return self.acquire()
 
     def __exit__(self, *_exc: object) -> None:
         self.release()
-
-    def _try_create(self) -> bool:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            handle = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
-            return False
-        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump({"pid": self._pid, "monotonic": self._monotonic()}, stream, sort_keys=True)
-        return True
-
-    def _read_holder(self) -> dict[str, object] | None:
-        try:
-            raw = self.path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return None
-        except OSError:
-            return None
-        try:
-            record = json.loads(raw)
-        except ValueError:
-            return None
-        return record if isinstance(record, dict) else None
-
-    def _steal_if_stale(self) -> bool:
-        record = self._read_holder()
-        if record is None:
-            return self._steal()
-        pid = record.get("pid")
-        if _is_int(pid) and self._is_alive(int(pid)) is False:  # type: ignore[arg-type]
-            return self._steal()
-        stamp = record.get("monotonic")
-        if not isinstance(stamp, (int, float)) or isinstance(stamp, bool):
-            return self._steal()
-        age = self._monotonic() - float(stamp)
-        if age < 0.0 or age > self._stale_after_s:
-            return self._steal()
-        return False
-
-    def _steal(self) -> bool:
-        self.steals += 1
-        try:
-            self.path.unlink()
-        except FileNotFoundError:
-            return True
-        return True
 
 
 def _stamp(seconds: float) -> str:

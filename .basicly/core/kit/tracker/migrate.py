@@ -370,8 +370,8 @@ def import_snapshot(  # noqa: PLR0913 — every keyword past the snapshot is an 
 ) -> ImportReport:
 
     ledger = Path(directory)
-    acquired = held_lock is None
-    lock = events.LedgerLock(ledger, timeout_s=lock_timeout_s) if acquired else held_lock
+    acquired = held_lock is None and not dry_run
+    lock = events.LedgerLock(ledger, timeout_s=lock_timeout_s) if held_lock is None else held_lock
     if acquired:
         lock.acquire()
     try:

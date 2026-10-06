@@ -56,52 +56,43 @@ def _ignored(relative: str) -> bool:
 def test_contention_is_named_when_a_live_writer_holds_the_ledger(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _lock(tmp_path, 4321)
-    monkeypatch.setattr(events, "default_pid_liveness", lambda _pid: True)
     monkeypatch.setattr(hook, "_kit_events", lambda: events)
-    assert hook.ledger_write_holder(tmp_path) == 4321
+    with events.LedgerLock(tmp_path / ".basicly" / "ledger"):
+        assert hook.ledger_write_in_flight(tmp_path)
 
 
-def test_a_quiet_tree_reports_no_holder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(hook, "_kit_events", lambda: events)
-    assert hook.ledger_write_holder(tmp_path) is None
-
-
-def test_a_quiet_tree_is_reported_when_the_holder_is_gone(
+def test_a_quiet_tree_reports_no_holder_without_creating_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _lock(tmp_path, 4321)
-    monkeypatch.setattr(events, "default_pid_liveness", lambda _pid: False)
     monkeypatch.setattr(hook, "_kit_events", lambda: events)
-    assert hook.ledger_write_holder(tmp_path) is None
+    assert not hook.ledger_write_in_flight(tmp_path)
+    assert list(tmp_path.iterdir()) == []
 
 
-def test_a_quiet_tree_is_reported_when_the_platform_cannot_judge(
+def test_a_quiet_tree_is_reported_after_the_owner_releases(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-
-    _lock(tmp_path, 4321)
-    monkeypatch.setattr(events, "default_pid_liveness", lambda _pid: None)
     monkeypatch.setattr(hook, "_kit_events", lambda: events)
-    assert hook.ledger_write_holder(tmp_path) is None
+    with events.LedgerLock(tmp_path / ".basicly" / "ledger"):
+        assert hook.ledger_write_in_flight(tmp_path)
+    assert not hook.ledger_write_in_flight(tmp_path)
 
 
 @pytest.mark.parametrize("body", ["", "not json", "[]", '{"pid": "4321"}'])
-def test_a_lock_file_it_cannot_read_is_quiet_rather_than_contention(
+def test_file_content_without_os_ownership_is_not_contention(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str
 ) -> None:
-    ledger = tmp_path / ".basicly" / "ledger"
-    ledger.mkdir(parents=True)
-    (ledger / events.LOCK_NAME).write_text(body, encoding="utf-8")
-    monkeypatch.setattr(events, "default_pid_liveness", lambda _pid: True)
+    path = _lock(tmp_path, 4321)
+    path.write_text(body, encoding="utf-8")
     monkeypatch.setattr(hook, "_kit_events", lambda: events)
-    assert hook.ledger_write_holder(tmp_path) is None
+    assert not hook.ledger_write_in_flight(tmp_path)
+    assert path.read_text(encoding="utf-8") == body
 
 
 def test_a_repo_without_the_kit_is_quiet(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _lock(tmp_path, 4321)
     monkeypatch.setattr(hook, "_kit_events", lambda: None)
-    assert hook.ledger_write_holder(tmp_path) is None
+    assert not hook.ledger_write_in_flight(tmp_path)
 
 
 def test_the_refusal_names_the_stash_message_an_operator_will_have_seen(
@@ -109,13 +100,13 @@ def test_the_refusal_names_the_stash_message_an_operator_will_have_seen(
 ) -> None:
 
     monkeypatch.setattr(hook, "project_root", lambda: tmp_path)
-    monkeypatch.setattr(hook, "ledger_write_holder", lambda _root: 4321)
+    monkeypatch.setattr(hook, "ledger_write_in_flight", lambda _root: True)
     monkeypatch.setattr(hook, "run_checks", lambda *_a, **_k: pytest.fail("ran the checks"))
 
     assert hook.main() == 1
 
     reported = capsys.readouterr().err
-    assert "pid 4321" in reported
+    assert "ledger write is in flight" in reported
     assert "Stashed changes conflicted with hook auto-fixes" in reported
     assert "commits are unaffected" in reported
 
@@ -125,7 +116,7 @@ def test_a_quiet_tree_runs_the_checks_unchanged(
 ) -> None:
     ran: list[tuple[Path, str]] = []
     monkeypatch.setattr(hook, "project_root", lambda: tmp_path)
-    monkeypatch.setattr(hook, "ledger_write_holder", lambda _root: None)
+    monkeypatch.setattr(hook, "ledger_write_in_flight", lambda _root: False)
     monkeypatch.setattr(hook, "run_checks", lambda root, mode: ran.append((root, mode)) or 0)
 
     assert hook.main() == 0

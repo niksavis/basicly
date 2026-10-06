@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
-import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -235,18 +234,16 @@ def test_replaying_one_identical_write_is_reported_and_exits_non_zero(
     assert (tracker.read_record(repo, ROOT) or {})["priority"] == 2
 
 
-def _hold_the_ledger_lock(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-
+def _hold_the_ledger_lock(repo: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     kit = tracker.kit(repo)
     real = kit.events.LedgerLock
+    owner = real(tracker.ledger_dir(repo)).acquire()
 
     def _no_wait(directory: Path, **_kwargs: object) -> object:
         return real(directory, timeout_s=0.0)
 
     monkeypatch.setattr(kit.events, "LedgerLock", _no_wait)
-    (tracker.ledger_dir(repo) / kit.events.LOCK_NAME).write_text(
-        json.dumps({"pid": os.getpid(), "monotonic": time.monotonic()}), encoding="utf-8"
-    )
+    return owner
 
 
 def test_a_landed_write_names_the_fact_it_appended_rather_than_the_argv(
@@ -288,9 +285,11 @@ def test_a_write_that_cannot_take_the_lock_says_so_and_that_it_may_be_retried(
     repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
 
-    _hold_the_ledger_lock(repo, monkeypatch)
-
-    assert cli.main(["tracker", "write", "--", "update", ROOT, "--assignee", "probe"]) == 1
+    owner = _hold_the_ledger_lock(repo, monkeypatch)
+    try:
+        assert cli.main(["tracker", "write", "--", "update", ROOT, "--assignee", "probe"]) == 1
+    finally:
+        owner.release()
 
     err = capsys.readouterr().err
     assert "not recorded" in err

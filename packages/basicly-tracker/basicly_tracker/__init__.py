@@ -35,12 +35,13 @@ def ledger_rules(directory: Path):
     log_glob = installer.read_kit_constant(directory, "events.py", "LOG_GLOB")
     pending_glob = installer.read_kit_constant(directory, "events.py", "PENDING_GLOB")
     derived = installer.read_kit_constant(directory, "snapshot.py", "DERIVED_PATTERNS")
+    lock_name = installer.read_kit_constant(directory, "events.py", "LOCK_NAME")
     return (
         (
             ".gitattributes",
             tuple(f"{glob} -text merge=union" for glob in (log_glob, pending_glob)),
         ),
-        (".gitignore", tuple(f"{LEDGER_DIR}/{pattern}" for pattern in derived)),
+        (".gitignore", tuple(f"{LEDGER_DIR}/{pattern}" for pattern in (*derived, lock_name))),
     )
 
 
