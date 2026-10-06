@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import statistics
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
@@ -796,9 +796,92 @@ def failed_lane_estimates(repo_root: Path) -> dict[str, int]:
     return _lane_estimates(repo_root, run_record.FAILED)
 
 
-def _ceiling_violations(repo_root: Path, ceiling: int) -> list[str]:
+_UNMEASURED_HISTORICAL_DISPATCHES = frozenset({
+    ("basicly-hxnf.2", "lane", "2026-07-26T09:59:31.047849+00:00"),
+    ("basicly-jr0l.10", "lane", "2026-08-31T19:57:29.149113+00:00"),
+    ("basicly-jr0l.35", "lane", "2026-08-01T15:35:15.695982+00:00"),
+    ("basicly-jr0l.40", "lane", "2026-08-01T12:15:51.444732+00:00"),
+    ("basicly-jr0l.43", "lane", "2026-08-01T15:36:42.950819+00:00"),
+    ("basicly-jr0l.44", "lane", "2026-08-01T15:35:51.598542+00:00"),
+    ("basicly-jr0l.45", "lane", "2026-08-01T15:36:26.416680+00:00"),
+    ("basicly-jr0l.60", "build", "2026-08-01T18:15:51.691339+00:00"),
+    ("basicly-rn0o.12", "build", "2026-08-19T19:24:08.551671+00:00"),
+    ("basicly-sco6", "lane", "2026-08-05T22:27:14.534960+00:00"),
+    ("basicly-sco6", "lane", "2026-08-05T22:49:24.541485+00:00"),
+    ("basicly-vkh0.9", "lane", "2026-08-06T17:39:09.781000+00:00"),
+})
 
-    completed = completed_lane_estimates(repo_root)
+
+@dataclass(frozen=True)
+class _RecordedLaneSize:
+    key: tuple[str, str, str]
+    outcome: str
+    estimate: int | None
+    source: str
+    class_source: str
+
+
+def _recorded_lane_sizes(
+    repo_root: Path, expected_unmeasured: frozenset[tuple[str, str, str]] = frozenset()
+) -> tuple[_RecordedLaneSize, ...]:
+    beads = _exported_class_and_scope(repo_root)
+    samples = []
+    for bead, history in run_record.dispatch_history(repo_root).items():
+        for entry in history:
+            phase, outcome = entry.get("phase"), entry.get("outcome")
+            if phase not in run_record.WRITE_PHASES or outcome not in (
+                run_record.EXECUTED,
+                run_record.FAILED,
+            ):
+                continue
+            stamp = entry.get("timestamp")
+            if not isinstance(stamp, str) or not stamp:
+                raise ValueError(f"{bead}: historical dispatch has no timestamp identity")
+            key = (bead, str(phase), stamp)
+            task_class = entry.get("task_class")
+            class_source = "recorded-task-class"
+            if not isinstance(task_class, str) or not task_class:
+                if bead not in beads:
+                    raise ValueError(f"{key}: no recorded task class or named ledger issue")
+                task_class = beads[bead][0]
+                class_source = "ledger-issue-type"
+            scope_tokens = entry.get("scope_tokens")
+            source = "recorded-scope"
+            if scope_tokens is not None and (
+                not isinstance(scope_tokens, int)
+                or isinstance(scope_tokens, bool)
+                or scope_tokens < 0
+            ):
+                raise ValueError(f"{key}: invalid measured scope_tokens {scope_tokens!r}")
+            if scope_tokens is None or scope_tokens == 0:
+                scope_tokens = read_cost.scope_read_cost(repo_root, beads.get(bead, ("", ()))[1])
+                source = "current-source-proxy" if scope_tokens > 0 else "unmeasured"
+            estimate = _lane_estimate(scope_tokens, task_class) if scope_tokens > 0 else None
+            samples.append(_RecordedLaneSize(key, str(outcome), estimate, source, class_source))
+    unmeasured = frozenset(sample.key for sample in samples if sample.estimate is None)
+    if unmeasured != expected_unmeasured:
+        raise ValueError(
+            f"unmeasured historical dispatches: {sorted(unmeasured - expected_unmeasured)}; "
+            f"stale historical debt: {sorted(expected_unmeasured - unmeasured)}"
+        )
+    return tuple(samples)
+
+
+def _recorded_estimates(samples: tuple[_RecordedLaneSize, ...], outcome: str) -> dict[str, int]:
+    return {
+        "#".join(sample.key): sample.estimate
+        for sample in samples
+        if sample.outcome == outcome and sample.estimate is not None
+    }
+
+
+def _ceiling_violations(repo_root: Path, ceiling: int) -> list[str]:
+    return _size_violations(
+        completed_lane_estimates(repo_root), failed_lane_estimates(repo_root), ceiling
+    )
+
+
+def _size_violations(completed: dict[str, int], failed: dict[str, int], ceiling: int) -> list[str]:
     proven = max(completed.values(), default=0)
     violations: list[str] = []
     over = {bead: estimate for bead, estimate in completed.items() if estimate > ceiling}
@@ -809,11 +892,7 @@ def _ceiling_violations(repo_root: Path, ceiling: int) -> list[str]:
             f"{ceiling:,}; raise it to at least {required:,}"
             for bead, estimate in sorted(over.items(), key=lambda item: -item[1])
         ]
-    admitted = {
-        bead: estimate
-        for bead, estimate in failed_lane_estimates(repo_root).items()
-        if proven < estimate <= ceiling
-    }
+    admitted = {bead: estimate for bead, estimate in failed.items() if proven < estimate <= ceiling}
     if admitted:
         allowed = (min(admitted.values()) - 1) // DEFAULT_WORKING_SET_MIN * DEFAULT_WORKING_SET_MIN
         violations += [
@@ -826,13 +905,20 @@ def _ceiling_violations(repo_root: Path, ceiling: int) -> list[str]:
 
 
 def test_the_ceiling_separates_the_sizes_that_completed_from_the_sizes_that_failed() -> None:
-
-    assert _ceiling_violations(REPO_ROOT, DEFAULT_WORKING_SET_MAX) == []
+    samples = _recorded_lane_sizes(REPO_ROOT, _UNMEASURED_HISTORICAL_DISPATCHES)
+    assert (
+        _size_violations(
+            _recorded_estimates(samples, run_record.EXECUTED),
+            _recorded_estimates(samples, run_record.FAILED),
+            DEFAULT_WORKING_SET_MAX,
+        )
+        == []
+    )
 
 
 def test_the_recorded_failures_are_visible_to_the_ceiling_gate() -> None:
-
-    assert failed_lane_estimates(REPO_ROOT)
+    samples = _recorded_lane_sizes(REPO_ROOT, _UNMEASURED_HISTORICAL_DISPATCHES)
+    assert _recorded_estimates(samples, run_record.FAILED)
 
 
 def test_no_lane_this_engine_completed_is_refused_by_the_band() -> None:
@@ -840,8 +926,9 @@ def test_no_lane_this_engine_completed_is_refused_by_the_band() -> None:
     sizing = _sizing(
         working_set_min=DEFAULT_WORKING_SET_MIN, working_set_max=DEFAULT_WORKING_SET_MAX
     )
-    completed = completed_lane_estimates(REPO_ROOT)
-    assert "basicly-kjc5.42" in completed
+    samples = _recorded_lane_sizes(REPO_ROOT, _UNMEASURED_HISTORICAL_DISPATCHES)
+    completed = _recorded_estimates(samples, run_record.EXECUTED)
+    assert any(key.startswith("basicly-kjc5.42#") for key in completed)
 
     refused = {
         bead: policy.check_working_set(bead, estimate, estimate, sizing)
@@ -868,6 +955,81 @@ def test_the_ceiling_gate_names_the_lane_and_the_value_it_requires(
     assert "b-1 completed at an estimate of 12,000" in violations[0]
     required = -(-12_000 // DEFAULT_WORKING_SET_MIN) * DEFAULT_WORKING_SET_MIN
     assert f"raise it to at least {required:,}" in violations[0]
+
+
+def test_historical_sizes_keep_measured_scope_when_matched_files_grow(tmp_path: Path) -> None:
+    _write(tmp_path, "src/a.py", 16_000)
+    body = decompose._child_body(_child("t", "src/*.py"))
+    _export(tmp_path, {"id": "b-1", "issue_type": "task", "description": body})
+    _record_run_tokens(tmp_path, "b-1", 1_000, scope_tokens=4_000)
+    before = _recorded_lane_sizes(tmp_path)
+
+    _write(tmp_path, "src/later.py", 160_000)
+    after = _recorded_lane_sizes(tmp_path)
+
+    assert before == after
+    assert after[0].estimate == 12_000
+    assert after[0].source == "recorded-scope"
+    assert after[0].class_source == "ledger-issue-type"
+    assert (
+        "completed"
+        in _size_violations(_recorded_estimates(after, run_record.EXECUTED), {}, 8_000)[0]
+    )
+    assert completed_lane_estimates(tmp_path)["b-1"] > after[0].estimate
+
+
+def test_historical_gate_keeps_positive_legacy_proxies_and_both_ceiling_boundaries(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "src/a.py", 16_000)
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _export(
+        tmp_path,
+        *({"id": bead, "issue_type": "task", "description": body} for bead in ("b-ran", "b-died")),
+    )
+    _record_run_tokens(tmp_path, "b-ran", 1_000)
+    _record_run_tokens(tmp_path, "b-died", 1_000, scope_tokens=40_000, returncode=143)
+    _record_run_tokens(tmp_path, "b-ignored", 1_000, phase="decide")
+
+    samples = _recorded_lane_sizes(tmp_path)
+    completed = _recorded_estimates(samples, run_record.EXECUTED)
+    failed = _recorded_estimates(samples, run_record.FAILED)
+
+    assert len(samples) == 2
+    assert (
+        next(sample for sample in samples if sample.key[0] == "b-ran").source
+        == "current-source-proxy"
+    )
+    assert _size_violations(completed, failed, 16_000) == []
+    assert "completed" in _size_violations(completed, failed, 8_000)[0]
+    assert "failed" in _size_violations(completed, failed, 120_000)[0]
+
+
+def test_new_unmeasured_dispatches_cannot_enter_the_historical_population(tmp_path: Path) -> None:
+    _export(tmp_path, {"id": "b-1", "issue_type": "task"})
+    _record_run_tokens(tmp_path, "b-1", 1_000)
+
+    with pytest.raises(ValueError, match=r"unmeasured.*b-1"):
+        _recorded_lane_sizes(tmp_path)
+
+
+@pytest.mark.parametrize("invalid_scope", [False, True, -1])
+def test_historical_sizes_refuse_invalid_measurements_before_trying_a_proxy(
+    tmp_path: Path, invalid_scope: int
+) -> None:
+    _write(tmp_path, "src/a.py", 16_000)
+    body = decompose._child_body(_child("t", "src/a.py"))
+    _export(tmp_path, {"id": "b-1", "issue_type": "task", "description": body})
+    _record_run_tokens(tmp_path, "b-1", 1_000, scope_tokens=invalid_scope)
+
+    with pytest.raises(ValueError, match=r"b-1.*invalid measured scope_tokens"):
+        _recorded_lane_sizes(tmp_path)
+
+
+def test_stale_unmeasured_dispatch_debt_is_refused(tmp_path: Path) -> None:
+    _export(tmp_path)
+    with pytest.raises(ValueError, match=r"stale.*b-1"):
+        _recorded_lane_sizes(tmp_path, frozenset({("b-1", "lane", "archived-stamp")}))
 
 
 def test_completing_a_scope_for_the_merge_gate_does_not_move_the_ceiling(
