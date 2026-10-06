@@ -1,0 +1,1 @@
+- Share complete trigger readiness between the tracker kit and engine, refuse incomplete intent and criteria, and teach INVEST with Card, Conversation, Confirmation evidence.

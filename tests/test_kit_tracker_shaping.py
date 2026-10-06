@@ -285,3 +285,79 @@ def test_an_empty_list_owes_the_section() -> None:
         "acceptance_criteria": [],
         "requirements": ["a requirement"],
     })
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "When, I want, so I can",
+        "When ... , I want ... , so I can ...",
+        "When a release starts, I want a patch, so I can TODO.",
+        "When a release starts, I want a patch, so I can tbd.",
+        "When a release starts, I want a patch, so I can `<outcome>`.",
+        "When, I want a patch, so I can ship safely.",
+        "When a release starts, I want, so I can ship safely.",
+        "When a release starts, I want to, so I can ship safely.",
+        "When a release starts, I want a patch, so I can.",
+        "When a release starts, I want a patch, so I can <outcome>.",
+        "As a, I want, so that",
+        "As a, I want a patch, so that releases are safe.",
+        "As a maintainer, I want, so that releases are safe.",
+        "As a maintainer, I want a patch, so that.",
+        "As a maintainer, I want a patch, so that <benefit>.",
+        "When a release starts, I want a patch, so I can\n\n## Evidence\n\nTests passed.",
+    ],
+)
+def test_incomplete_story_intent_stays_captured_but_cannot_start(
+    ledger: Path, capsys: pytest.CaptureFixture[str], description: str
+) -> None:
+    record, captured = _create(
+        capsys,
+        ledger,
+        "--description",
+        description,
+        "--acceptance",
+        "the gate exits zero",
+        "--requirements",
+        "standard library only",
+    )
+    assert captured["owed"] == [shaping.TRIGGER_HEADING]
+    assert shaping.trigger_voice(description) is None
+    assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
+    assert _run(capsys, "claim", str(ledger), record, "--to", "agent")[0] == cli.EXIT_REFUSED
+    assert (
+        _run(capsys, "update", str(ledger), record, "--status", "in_progress")[0]
+        == cli.EXIT_REFUSED
+    )
+    assert _run(capsys, "ready", str(ledger))[1]["count"] == 0
+
+
+@pytest.mark.parametrize("description", [TRIGGER, PERSONA])
+def test_trigger_sentence_keeps_the_outcome(description: str) -> None:
+    assert shaping.trigger_sentence(description) == description
+
+
+@pytest.mark.parametrize("criteria", [["one check", "TODO"], ["one check", ""], ["TODO"]])
+def test_each_typed_criterion_must_be_filled(
+    ledger: Path, capsys: pytest.CaptureFixture[str], criteria: list[str]
+) -> None:
+    record, captured = _create(
+        capsys,
+        ledger,
+        "--description",
+        TRIGGER,
+        "--field",
+        f"acceptance_criteria={json.dumps(criteria)}",
+        "--requirements",
+        "standard library only",
+    )
+    assert captured["owed"] == [shaping.ACCEPTANCE_HEADING]
+    assert _run(capsys, "ready", str(ledger))[1]["count"] == 0
+    assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
+    assert _run(capsys, "claim", str(ledger), record, "--to", "agent")[0] == cli.EXIT_REFUSED
+    assert _run(capsys, "show", str(ledger), record)[1]["status"] == "open"
+
+
+def test_a_wrapped_sentence_keeps_its_complete_outcome() -> None:
+    wrapped = TRIGGER.replace(", I want", ",\nI want").replace(", so I can", ",\nso I can")
+    assert shaping.trigger_sentence(wrapped) == TRIGGER

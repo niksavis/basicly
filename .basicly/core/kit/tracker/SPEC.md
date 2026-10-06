@@ -69,15 +69,24 @@ $ python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix demo --tit
 }
 $ python3 .basicly/kit/tracker/cli.py ready .basicly/ledger
 {
-  "count": 1,
-  "records": [{"rank": 1, "record": "demo-qeom", "score": 2000, "title": "try the tracker"}],
+  "count": 0,
+  "records": [],
   "schema": "basicly.scheduler.v1",
   "sort": "priority ASC, dependents DESC, id ASC"
 }
 ```
 
 Each write reports the sections of the definition of ready that the record still owes, and
-`dor` refuses a record that cannot be verified against.
+`dor` refuses a record that cannot be verified against. Raw capture still writes an
+unready card. Under the default template, `ready`, `dor`, `claim`, and a move to
+`in_progress` share the kit's shaping rules. The engine reads these same rules.
+
+A trigger sentence includes three filled parts: situation or persona, motivation or goal,
+and outcome or benefit. The parser retains the complete sentence, including its outcome.
+It refuses empty parts, punctuation alone, and named placeholders. A filled trigger does
+not prove value, independence, or testability. The agent reviews INVEST and records Card,
+Conversation, Confirmation as described in `GUIDANCE.md`. Acceptance criteria and
+requirements are typed fields. Every entry in a list must be filled.
 
 A hand copy of the files still runs, because the kit imports only the standard library. But
 a hand copy does not write the git attributes, so that repository keeps the merge conflicts

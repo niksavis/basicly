@@ -135,6 +135,11 @@ instructions: |
 
   ## Refine a record
 
+  Before refinement, read the **INVEST** and **Card, Conversation, Confirmation** sections
+  in `.basicly/core/kit/tracker/GUIDANCE.md`. They define the shared review and evidence
+  workflow. Use this skill's engine commands to record the same card, conversation and
+  confirmation. `dor` checks structure; the agent still reviews semantic quality.
+
   A person writes or edits a story, often in the served page, and the page adds the label
   `refine`. The record is not ready to build until a refinement pass:
 
