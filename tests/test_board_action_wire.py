@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import io
 import urllib.error
 import urllib.request
 from http import HTTPStatus
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
-from basicly import board_actions, board_serve
+from basicly import board_action_surface, board_actions, board_serve
 from tests.test_board_actions import PLANTED, TIMEOUT_S, _form, _post, _Spy, served
 
 __all__ = ["served"]
@@ -59,3 +63,39 @@ def test_a_post_to_the_page_route_is_still_405_on_an_acting_board(
         urllib.request.urlopen(request, timeout=TIMEOUT_S)
     assert refused.value.code == HTTPStatus.METHOD_NOT_ALLOWED
     assert refused.value.headers["Allow"] == "GET"
+
+
+@pytest.mark.parametrize("length", ["-1", "wat", "1000001"])
+def test_bad_framing_is_refused_without_reading_or_running_a_harness_action(
+    tmp_path: Path, length: str
+) -> None:
+    class Handler:
+        path = board_actions.ROUTE
+        status: HTTPStatus | None = None
+        sent_headers: dict[str, str]
+
+        def __init__(self) -> None:
+            self.sent_headers = {}
+            self.headers = {"Content-Length": length}
+            self.server = SimpleNamespace(server_address=("127.0.0.1", 1))
+            self.rfile = self
+            self.wfile = io.BytesIO()
+
+        def read(self, size: int) -> bytes:
+            pytest.fail(f"an invalid request attempted to read {size} bytes")
+
+        def send_response(self, status: HTTPStatus) -> None:
+            self.status = status
+
+        def send_header(self, name: str, value: str) -> None:
+            self.sent_headers[name] = value
+
+        def end_headers(self) -> None:
+            pass
+
+    handler: Any = Handler()
+    surface = board_action_surface.ActionSurface(tmp_path)
+    board_action_surface.handle_post(handler, surface)
+    assert handler.status in (HTTPStatus.BAD_REQUEST, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+    assert b"refused" in handler.wfile.getvalue()
+    assert handler.sent_headers["Connection"] == "close"

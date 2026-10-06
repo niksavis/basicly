@@ -294,6 +294,7 @@ def test_publication_is_atomic_and_leaves_no_temporary_file(tmp_path: Path) -> N
 
     assert list(tmp_path.glob("*.tmp")) == []
     assert sorted(path.name for path in tmp_path.iterdir()) == [
+        events.LOCK_NAME,
         events.INITIAL_LOG_NAME,
         snapshot.SNAPSHOT_NAME,
     ]
@@ -579,7 +580,7 @@ def test_rotation_reports_contention_rather_than_writing_under_another_writer(
 ) -> None:
 
     _build(tmp_path)
-    holder = events.LedgerLock(tmp_path, pid=os.getpid())
+    holder = events.LedgerLock(tmp_path)
     holder.acquire()
     try:
         with pytest.raises(events.LockUnavailableError):
@@ -848,7 +849,7 @@ def _pruned_env(tmp_path: Path) -> dict[str, str]:
 def _consumer_kit(tmp_path: Path) -> Path:
     consumer = tmp_path / "consumer" / "kit" / "tracker"
     consumer.mkdir(parents=True)
-    for source in (SNAPSHOT_SOURCE, EVENTS_SOURCE, IDS_SOURCE):
+    for source in (SNAPSHOT_SOURCE, EVENTS_SOURCE, IDS_SOURCE, KIT_DIR / "locking.py"):
         shutil.copy2(source, consumer / source.name)
     return consumer
 

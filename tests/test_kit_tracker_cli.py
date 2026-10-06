@@ -158,7 +158,8 @@ def test_two_creates_mint_distinct_records(tmp_path: Path) -> None:
 def test_the_ledger_lock_is_released_after_a_create(tmp_path: Path) -> None:
     ledger = tmp_path / "l"
     cli.create_record(ledger, {}, prefix="acme")
-    assert not (ledger / events.LOCK_NAME).exists()
+    with events.LedgerLock(ledger, timeout_s=0) as successor:
+        assert successor.held
 
 
 def test_a_field_value_that_is_json_keeps_its_type(tmp_path: Path) -> None:

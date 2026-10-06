@@ -5,7 +5,7 @@ import contextvars
 import json
 import os
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -570,22 +570,10 @@ def _event_generation(counts: dict[tuple[str, str, str], int], event: Mapping[st
     return counts[key]
 
 
-def _refuse_a_rename_past_the_hold(events: Any, tmp: Path, held_s: float) -> None:
-
-    if held_s <= events.LOCK_STALE_AFTER_S:
-        return
-    tmp.unlink(missing_ok=True)
-    raise TrackerDivergenceError(
-        f"{tmp.name}: the rewrite held the ledger lock {held_s:.1f}s, past the"
-        f" {events.LOCK_STALE_AFTER_S}s a waiter may steal it at, so nothing is renamed"
-    )
-
-
 def scrub_ledger(
     repo_root: Path,
     *,
     lock_timeout_s: float | None = None,
-    monotonic: Callable[[], float] = time.monotonic,
     display_name: str = "",
 ) -> int:
 
@@ -598,7 +586,6 @@ def scrub_ledger(
     timeout_s = events.DEFAULT_LOCK_TIMEOUT_S if lock_timeout_s is None else lock_timeout_s
     changed = 0
     with events.LedgerLock(ledger_dir(repo_root), timeout_s=timeout_s):
-        held_since = monotonic()
         stored: dict[tuple[str, str, str], int] = {}
         minted: dict[tuple[str, str, str], int] = {}
         for path in files:
@@ -641,7 +628,6 @@ def scrub_ledger(
             trailer = "\n" if raw.endswith("\n") else ""
             tmp = path.with_suffix(f".{os.getpid()}.jsonl.tmp")
             tmp.write_text("\n".join(lines) + trailer, encoding="utf-8")
-            _refuse_a_rename_past_the_hold(events, tmp, monotonic() - held_since)
             _publish(tmp, path)
     return changed
 

@@ -355,24 +355,19 @@ def test_no_wall_clock_is_read_outside_the_one_injected_default() -> None:
     )
 
 
-def test_the_lock_measures_its_staleness_on_a_monotonic_clock(tmp_path: Path) -> None:
-
+def test_contention_waits_on_an_injected_monotonic_clock(tmp_path: Path) -> None:
     clock = _FakeClock()
-    holder = events.LedgerLock(tmp_path, monotonic=clock.monotonic, sleep=clock.sleep, pid=4242)
-    holder.acquire()
-
-    clock.now += events.LOCK_STALE_AFTER_S + 1.0
-    taker = events.LedgerLock(
-        tmp_path,
-        monotonic=clock.monotonic,
-        sleep=clock.sleep,
-        pid=4243,
-        is_alive=lambda _pid: True,
-    )
-    taker.acquire()
-
-    assert taker.held
-    assert taker.steals == 1
+    with events.LedgerLock(tmp_path) as holder:
+        with pytest.raises(events.LockUnavailableError):
+            events.LedgerLock(
+                tmp_path,
+                timeout_s=0.03,
+                monotonic=clock.monotonic,
+                sleep=clock.sleep,
+            ).acquire()
+        assert holder.held
+    assert clock.now == pytest.approx(1000.03)
+    assert clock.slept
 
 
 def test_the_carried_totals_agree_with_the_folds_own_recomputation(tmp_path: Path) -> None:
@@ -836,7 +831,7 @@ def test_no_appended_event_can_carry_an_empty_actor(tmp_path: Path) -> None:
 def test_a_live_holder_makes_contention_a_retryable_failure(tmp_path: Path) -> None:
 
     clock = _FakeClock()
-    holder = events.LedgerLock(tmp_path, monotonic=clock.monotonic, sleep=clock.sleep, pid=101)
+    holder = events.LedgerLock(tmp_path, monotonic=clock.monotonic, sleep=clock.sleep)
     holder.acquire()
 
     with pytest.raises(events.LockUnavailableError) as caught:
@@ -845,8 +840,6 @@ def test_a_live_holder_makes_contention_a_retryable_failure(tmp_path: Path) -> N
             timeout_s=0.2,
             monotonic=clock.monotonic,
             sleep=clock.sleep,
-            pid=102,
-            is_alive=lambda _pid: True,
         ).acquire()
 
     assert caught.value.retryable is True
@@ -857,7 +850,7 @@ def test_a_live_holder_makes_contention_a_retryable_failure(tmp_path: Path) -> N
 
 def test_an_append_reports_contention_rather_than_writing_unlocked(tmp_path: Path) -> None:
 
-    events.LedgerLock(tmp_path).acquire()
+    holder = events.LedgerLock(tmp_path).acquire()
 
     with pytest.raises(events.LockUnavailableError):
         events.append(
@@ -867,6 +860,7 @@ def test_an_append_reports_contention_rather_than_writing_unlocked(tmp_path: Pat
             lock_timeout_s=0.0,
         )
 
+    holder.release()
     assert events.log_paths(tmp_path) == []
 
 
@@ -883,57 +877,9 @@ def test_a_held_lock_lets_a_caller_wrap_a_wider_critical_section(tmp_path: Path)
         assert lock.held
 
     assert [event.actor for event in minted] == ["lane:one"]
-    assert not (tmp_path / events.LOCK_NAME).exists()
-
-
-@pytest.mark.parametrize(
-    ("liveness", "stolen"),
-    [
-        pytest.param(False, True, id="known-dead-is-stolen"),
-        pytest.param(True, False, id="known-alive-is-respected"),
-        pytest.param(None, False, id="unknown-defers-to-the-age-rule"),
-    ],
-)
-def test_the_steal_rule_follows_the_platforms_liveness_answer(
-    tmp_path: Path, liveness: bool | None, stolen: bool
-) -> None:
-
-    clock = _FakeClock()
-    events.LedgerLock(tmp_path, monotonic=clock.monotonic, sleep=clock.sleep, pid=999).acquire()
-    taker = events.LedgerLock(
-        tmp_path,
-        timeout_s=0.05,
-        monotonic=clock.monotonic,
-        sleep=clock.sleep,
-        pid=1000,
-        is_alive=lambda _pid: liveness,
-    )
-
-    if stolen:
-        assert taker.acquire().held
-        assert taker.steals == 1
-    else:
-        with pytest.raises(events.LockUnavailableError):
-            taker.acquire()
-        assert taker.steals == 0
-
-
-def test_a_lock_stamped_before_a_reboot_is_stolen(tmp_path: Path) -> None:
-
-    clock = _FakeClock(start=50_000.0)
-    events.LedgerLock(tmp_path, monotonic=clock.monotonic, sleep=clock.sleep, pid=7).acquire()
-    rebooted = _FakeClock(start=12.0)
-
-    taker = events.LedgerLock(
-        tmp_path,
-        monotonic=rebooted.monotonic,
-        sleep=rebooted.sleep,
-        pid=8,
-        is_alive=lambda _pid: True,
-    )
-
-    assert taker.acquire().held
-    assert taker.steals == 1
+    assert not lock.held
+    with events.LedgerLock(tmp_path, timeout_s=0) as next_owner:
+        assert next_owner.held
 
 
 def test_a_lock_nobody_can_parse_is_stolen_rather_than_respected(tmp_path: Path) -> None:
@@ -947,40 +893,14 @@ def test_a_lock_nobody_can_parse_is_stolen_rather_than_respected(tmp_path: Path)
     assert [event.seq for event in minted] == [1]
 
 
-def test_releasing_never_removes_a_lock_that_was_stolen_from_us(tmp_path: Path) -> None:
-    clock = _FakeClock()
-    ours = events.LedgerLock(tmp_path, monotonic=clock.monotonic, sleep=clock.sleep, pid=11)
-    ours.acquire()
-    clock.now += events.LOCK_STALE_AFTER_S + 1.0
-    thief = events.LedgerLock(
-        tmp_path,
-        monotonic=clock.monotonic,
-        sleep=clock.sleep,
-        pid=12,
-        is_alive=lambda _pid: True,
-    )
-    thief.acquire()
-
-    ours.release()
-
-    assert (tmp_path / events.LOCK_NAME).exists()
-    assert json.loads((tmp_path / events.LOCK_NAME).read_text(encoding="utf-8"))["pid"] == 12
-
-
-def test_the_default_liveness_probe_never_signals_a_pid_on_windows(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-
-    monkeypatch.setattr(events.os, "kill", lambda *_: pytest.fail("os.kill reached on Windows"))
-    monkeypatch.setattr(events.os, "name", "nt")
-
-    assert events.default_pid_liveness(4242) is None
-
-
-def test_the_default_liveness_probe_answers_for_this_process_on_posix() -> None:
-    if os.name == "nt":
-        pytest.skip("the POSIX probe cannot exist here; the nt branch is covered above")
-    assert events.default_pid_liveness(os.getpid()) is True
+def test_a_released_owner_cannot_release_its_successor(tmp_path: Path) -> None:
+    first = events.LedgerLock(tmp_path).acquire()
+    first.release()
+    with events.LedgerLock(tmp_path) as successor:
+        first.release()
+        with pytest.raises(events.LockUnavailableError):
+            events.LedgerLock(tmp_path, timeout_s=0).acquire()
+        assert successor.held
 
 
 def test_the_log_glob_is_the_contract_rebuild_and_fsck_will_share() -> None:
@@ -1089,6 +1009,7 @@ def test_the_log_is_written_and_folded_with_no_basicly_importable(tmp_path: Path
     consumer.mkdir(parents=True)
     shutil.copy2(EVENTS_SOURCE, consumer / EVENTS_SOURCE.name)
     shutil.copy2(IDS_SOURCE, consumer / IDS_SOURCE.name)
+    shutil.copy2(KIT_DIR / "locking.py", consumer / "locking.py")
     driver = tmp_path / "drive.py"
     driver.write_text(_DRIVER, encoding="utf-8")
     ledger = tmp_path / "their-ledger"
@@ -1536,7 +1457,7 @@ def test_a_withdrawal_takes_the_writer_lock_a_plain_append_takes(tmp_path: Path)
     minted = _leaky(tmp_path)
     log = tmp_path / events.INITIAL_LOG_NAME
     before = log.read_text(encoding="utf-8")
-    lock = events.LedgerLock(tmp_path, pid=os.getpid())
+    lock = events.LedgerLock(tmp_path)
     lock.acquire()
 
     with pytest.raises(events.LockUnavailableError):
@@ -1544,6 +1465,7 @@ def test_a_withdrawal_takes_the_writer_lock_a_plain_append_takes(tmp_path: Path)
             tmp_path, minted[1].id, reason="leaked environment dump", lock_timeout_s=0.0
         )
 
+    lock.release()
     assert log.read_text(encoding="utf-8") == before
     assert LEAKED in before
 

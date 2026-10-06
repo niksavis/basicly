@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -122,16 +121,6 @@ def test_a_clean_ledger_is_left_byte_identical(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == before
 
 
-def _hold_the_lock(repo: Path) -> Path:
-
-    kit = tracker.kit(repo)
-    path = tracker.ledger_dir(repo) / kit.events.LOCK_NAME
-    path.write_text(
-        json.dumps({"pid": os.getpid(), "monotonic": time.monotonic()}), encoding="utf-8"
-    )
-    return path
-
-
 def _dirty_ledger(tmp_path: Path) -> tuple[Path, Path]:
     repo = _repo(tmp_path)
     events = [_event(repo, "basicly-a", 1, USERNAME, {"created_by": USERNAME})]
@@ -144,10 +133,12 @@ def test_a_rewrite_takes_the_writer_lock_and_touches_nothing_while_another_holds
 
     repo, path = _dirty_ledger(tmp_path)
     before = path.read_text(encoding="utf-8")
-    _hold_the_lock(repo)
     kit = tracker.kit(repo)
 
-    with pytest.raises(kit.events.LockUnavailableError):
+    with (
+        kit.events.LedgerLock(tracker.ledger_dir(repo)),
+        pytest.raises(kit.events.LockUnavailableError),
+    ):
         tracker.scrub_ledger(repo, lock_timeout_s=0.0)
 
     assert path.read_text(encoding="utf-8") == before
@@ -194,17 +185,28 @@ def test_an_append_queued_behind_a_rewrite_lands_once_the_lock_is_released(
     assert [event.id for event in landed] and all(event.id in ids for event in landed)
 
 
-def test_a_lock_hold_past_the_stale_bound_renames_nothing(tmp_path: Path) -> None:
-
-    repo, path = _dirty_ledger(tmp_path)
-    before = path.read_text(encoding="utf-8")
+def test_a_long_rewrite_keeps_ownership_until_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, _path = _dirty_ledger(tmp_path)
     kit = tracker.kit(repo)
-    readings = iter([0.0, kit.events.LOCK_STALE_AFTER_S + 1.0])
+    real_lock = kit.events.LedgerLock
+    real_publish = tracker._publish
+    now = [0.0]
 
-    with pytest.raises(TrackerDivergenceError):
-        tracker.scrub_ledger(repo, monotonic=lambda: next(readings))
+    def timed_lock(directory: Path, **kwargs: Any) -> Any:
+        return real_lock(directory, monotonic=lambda: now[0], **kwargs)
 
-    assert path.read_text(encoding="utf-8") == before
+    def publish_after_old_expiry(temporary: Path, target: Path) -> None:
+        now[0] += 60
+        with pytest.raises(kit.events.LockUnavailableError):
+            timed_lock(tracker.ledger_dir(repo), timeout_s=0).acquire()
+        real_publish(temporary, target)
+
+    monkeypatch.setattr(kit.events, "LedgerLock", timed_lock)
+    monkeypatch.setattr(tracker, "_publish", publish_after_old_expiry)
+    assert tracker.scrub_ledger(repo) == 1
+    assert now[0] == 60
     assert not list(tracker.ledger_dir(repo).glob("*.tmp"))
 
 

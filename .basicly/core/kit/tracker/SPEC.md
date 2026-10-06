@@ -301,10 +301,11 @@ is published by a write to a temporary file and an atomic rename. Contention is 
   replace the lock.
 - **No `fsync` for each event.** The push is the durability boundary. An `fsync` would
   destroy the short lock hold that makes one writer at a time practical.
-- **An orphaned lock must not block every lane.** The lock file holds a process id and a
-  monotonic clock reading. A writer steals the lock in three cases: the process is dead,
-  the reading is from another monotonic epoch, or the hold is older than 30 seconds. The lock uses `O_CREAT|O_EXCL` and this steal rule, because `fcntl.flock`
-  does not exist on Windows (§12).
+- **An orphaned lock must not block every lane.** The operating system owns the lock:
+  `flock` on POSIX and a one-byte `msvcrt.locking` region on Windows. Closing the
+  descriptor or exiting releases ownership. Age, a process id and malformed file content
+  never authorize a takeover. The `.events.lock` file remains in place and is ignored by
+  git; deleting it would let two writers lock different files under the same name.
 - **A writer that rewrites a whole log takes the same lock as an append.** A rewrite reads
   the file, writes a temporary file and renames it. Without the lock, it silently deletes an
   append made in between, and the log still parses.
@@ -607,8 +608,9 @@ Provenance is part of the schema, not a convention, for three reasons:
 - **LF and UTF-8, explicitly.** Mark the ledger in `.gitattributes`, not by `text=auto`.
   Write newlines and UTF-8 without platform defaults. Read tolerantly: a stray carriage
   return must not corrupt a fold.
-- **No POSIX-only locking.** The lock must work on Windows, so no bare `fcntl`. The
-  temporary write and atomic rename is portable and is the intended mechanism (§4.4).
+- **No POSIX-only locking.** The lock selects `fcntl.flock` on POSIX and
+  `msvcrt.locking` on Windows, both from the standard library. Snapshot publication uses
+  a temporary write and atomic rename (§4.4).
 - **No new runtime dependency.** A pure-Python store works on each platform that the host
   already tests (§4).
 - **Nothing machine-specific in any file that the kit writes or installs.** A tracked file

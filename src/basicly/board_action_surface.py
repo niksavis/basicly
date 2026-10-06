@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import importlib.util
 import secrets
 import shutil
 import subprocess
 import sys
 from http import HTTPStatus
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlsplit
 
-from . import ui
+from . import catalog, ui
 from .board_actions import (
     _ID,
     ACTIONS,
@@ -26,6 +28,24 @@ from .board_actions import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from http.server import BaseHTTPRequestHandler
+
+
+def _framing() -> ModuleType:
+    name = "basicly_board_kit_framing"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    source = catalog.bundled_catalog_root() / "kit" / "board" / "framing.py"
+    spec = importlib.util.spec_from_file_location(name, source)
+    if spec is None or spec.loader is None:
+        raise ImportError("the board kit's framing.py is missing")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+framing = _framing()
 
 
 def executable() -> str | None:
@@ -127,15 +147,25 @@ def handle_post(handler: BaseHTTPRequestHandler, surface: ActionSurface | None) 
         handler.send_header("Content-Length", "0")
         handler.end_headers()
         return
-    length = int(handler.headers.get("Content-Length") or 0)
-    outcome = surface.respond(
-        origin=handler.headers.get("Origin"),
-        port=int(handler.server.server_address[1]),  # type: ignore[index]
-        body=handler.rfile.read(length),
-    )
+    try:
+        length = framing.content_length(handler.headers)
+        handler.connection.settimeout(framing.BODY_TIMEOUT_S)
+        body = framing.read_body(handler.rfile, length)
+    except framing.FramingError as error:
+        close_connection = True
+        outcome = _refused(error.status, str(error))
+    else:
+        close_connection = False
+        outcome = surface.respond(
+            origin=handler.headers.get("Origin"),
+            port=int(handler.server.server_address[1]),  # type: ignore[index]
+            body=body,
+        )
     encoded = outcome.text.encode("utf-8")
     handler.send_response(outcome.status)
     handler.send_header("Content-Type", "text/plain; charset=utf-8")
     handler.send_header("Content-Length", str(len(encoded)))
+    if close_connection:
+        handler.send_header("Connection", "close")
     handler.end_headers()
     handler.wfile.write(encoded)

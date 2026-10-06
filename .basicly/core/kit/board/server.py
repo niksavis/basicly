@@ -33,6 +33,7 @@ def _load(file_name: str, module_name: str) -> Any:
 
 
 routes = _load("routes.py", "basicly_board_kit_routes")
+framing = _load("framing.py", "basicly_board_kit_framing")
 RequestError = routes.RequestError
 tracker_cli = routes.tracker_cli
 API = routes.API
@@ -50,7 +51,7 @@ EXIT_PORT_IN_USE = 1
 KIT_MODULES = ("basicly_tracker_kit_", "basicly_board_kit_")
 NAMED_CHANGES = 3
 JSON_TYPE = "application/json"
-MAX_BODY_BYTES = 1_000_000
+MAX_BODY_BYTES = framing.MAX_BODY_BYTES
 
 ENDPOINTS = (
     "GET  /api/v1/version",
@@ -213,12 +214,18 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.headers.get("Content-Type", "").split(";")[0].strip() != JSON_TYPE:
             raise routes.refuse(f"a write must send Content-Type {JSON_TYPE}")
-        size = int(self.headers.get("Content-Length") or 0)
-        if size > MAX_BODY_BYTES:
-            raise routes.refuse(f"the body is over {MAX_BODY_BYTES} bytes")
+        try:
+            size = framing.content_length(self.headers)
+        except framing.FramingError as error:
+            self.consumed = True
+            self.close_connection = True
+            raise routes.refuse(str(error), error.status) from error
         self.consumed = True
         try:
-            return json.loads(self.rfile.read(size) or b"{}")
+            return json.loads(framing.read_body(self.rfile, size) or b"{}")
+        except framing.FramingError as error:
+            self.close_connection = True
+            raise routes.refuse(str(error), error.status) from error
         except ValueError:
             raise routes.refuse("the body is not JSON") from None
 
@@ -227,15 +234,21 @@ class Handler(BaseHTTPRequestHandler):
         if getattr(self, "consumed", False):
             return
         try:
-            size = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
+            size = framing.content_length(self.headers)
+        except framing.FramingError:
+            self.close_connection = True
+            self.consumed = True
             return
-        if 0 < size <= MAX_BODY_BYTES:
-            self.rfile.read(size)
+        if size > 0:
+            try:
+                framing.read_body(self.rfile, size)
+            except framing.FramingError:
+                self.close_connection = True
         self.consumed = True
 
     def _handle(self, method: str) -> None:
 
+        self.connection.settimeout(framing.BODY_TIMEOUT_S)
         split = urlsplit(self.path)
         try:
             self._trusted()
