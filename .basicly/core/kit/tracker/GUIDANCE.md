@@ -20,8 +20,8 @@ Every command takes the ledger directory as its first argument and prints one JS
   drop it.
 - **Read `ready` before you propose work.** Take the top row that nobody holds. Do not
   invent a task.
-- **Run `dor` before you build.** `ready` leaves out every record labelled `refine` or failing `dor`. `dor` refuses a record
-  that has no trigger, acceptance criteria or requirements.
+- **Run `dor` before you build.** `ready` leaves out every record labelled `refine` or
+  failing `dor`. `dor` refuses an incomplete trigger, acceptance criteria or requirements.
 - **Criteria and requirements are fields.** Pass them as `--acceptance` and
   `--requirements`. A description that holds either heading is refused.
 - **A close reason is evidence.** Name what shipped, the command you ran and its result.
@@ -77,13 +77,65 @@ A shaped record carries three things:
 3. **Requirements** as `--requirements`. Name the standard that the result must obey, not
    the method.
 
-A placeholder counts as absent. One record is one change that a person can see. A record
-that needs more than one session is two records: split it with `child`.
+Each trigger part needs text: the situation or persona, motivation or goal, and outcome
+or benefit. Empty parts, punctuation alone, and placeholders such as `<outcome>`, `TODO`
+or `TBD` cannot shape a trigger. Each criterion and requirement must be filled.
+
+Capture a raw idea with `create --title` even when these parts are unknown. The reply names
+what it owes. `ready` leaves it out, and `claim` refuses it until refinement fills the gaps.
+One record is one change that a person can confirm.
 
 `scaffold --type <type>` prints what a record of that type must carry. A `template.json`
 beside the log adds sections (`extend`) or replaces them (`override`), for all records or
 for one `issue_type`. A field named after a section, such as `--field risks="<text>"`,
 satisfies it.
+
+## INVEST
+
+Before an agent starts a card, review these six qualities. Record the reason when a card
+fails a quality. `dor` checks stated fields and placeholders. It cannot prove these
+semantic qualities from sentence syntax.
+
+| Quality | Observable check | Action when it fails |
+| --- | --- | --- |
+| Independent | Read `show` and its dependencies. Can this change ship without an unfinished card? | Add a `dep` for real waiting work. Split coupled work with `child`. |
+| Negotiable | Can the implementation change while the outcome and required standard stay true? | Discuss the constraint in a `comment`. Keep a required method only when the person confirms why. |
+| Valuable | Does the outcome name an observable benefit to a person or system? | Ask who or what benefits. Keep the answer in the trigger. |
+| Estimable | Can the agent name the scope, unknowns, and check from evidence it has read? | Record the missing fact in a `comment`. Leave `refine` until the fact is resolved. |
+| Small | Does the card have one outcome that can be built and confirmed in one session? | Use `child` for each separately confirmable outcome. Preserve the parent intent. |
+| Testable | Does each criterion name an input or event and an observable response? | Rewrite `--acceptance`. Name the demonstration or test and its expected result before building. |
+
+A passing `dor` is necessary under the default template. It does not replace this review.
+A dependency can be valid and still keep a shaped card out of `ready`.
+
+## Card, Conversation, Confirmation
+
+Use all three parts of C3 throughout the card's life:
+
+1. **Card:** capture the person's intent, then fill the trigger, acceptance criteria, and
+   requirements with `update`. Run `show` to read the saved card. Keep scope and outcomes
+   small enough to confirm independently.
+2. **Conversation:** use `comment` for a question, its answer, an alternative, or an agreed
+   constraint. Read the comments in `show` before rewriting intent. When a fact is missing,
+   leave `refine` and ask the person. A saved comment records an answer; it does not grant
+   permission or settle an unanswered question.
+3. **Confirmation:** agree the observable checks in `--acceptance` before `claim`. After
+   implementation, run those checks and exercise the result as a consumer. Record the
+   commands, observed results, and any unmet criterion in a `comment`. Close only when
+   every criterion is met. Put the delivered outcome and evidence in `--reason`.
+
+These commands record a conversation and its confirmation on the same card:
+
+```sh
+python3 .basicly/kit/tracker/cli.py comment .basicly/ledger <id> "Question: should a held card appear in the ready list?"
+python3 .basicly/kit/tracker/cli.py comment .basicly/ledger <id> "Answer: show its holder and leave it reserved."
+python3 .basicly/kit/tracker/cli.py update .basicly/ledger <id> --acceptance "When a reserved card is listed, ready shall show its holder."
+python3 .basicly/kit/tracker/cli.py comment .basicly/ledger <id> "Confirmation: ready on the scratch ledger showed the reserved card and its holder."
+```
+
+The confirmation comment above illustrates the evidence format. Write it only after that
+check runs and prints the stated result. Preserve a failed check on the card and keep it
+open for repair.
 
 ## Refine a record
 

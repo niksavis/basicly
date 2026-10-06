@@ -1,52 +1,42 @@
 from __future__ import annotations
 
+import importlib.util
 import re
 from collections.abc import Iterable, Mapping, Sequence
+from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from . import tracker
+from .catalog import bundled_catalog_root
 from .config import DEFAULT_TYPE_SECTIONS, load_type_sections
 from .plan_record import ACCEPTANCE_HEADING, has_heading
 
 TRIGGER_HEADING = "## Trigger"
 
-JOB_STORY_EXAMPLE = "When <situation>, I want to <motivation>, so I can <outcome>."
-USER_STORY_EXAMPLE = "As a <persona>, I want <goal>, so that <benefit>."
 
-_SPAN = 400
-_JOB_STORY = re.compile(
-    rf"\bwhen\b.{{0,{_SPAN}}}?\bi want\b.{{0,{_SPAN}}}?\bso (?:i|we) can\b",
-    re.IGNORECASE | re.DOTALL,
-)
-_USER_STORY = re.compile(
-    rf"\bas an?\b.{{0,200}}?\bi want\b.{{0,{_SPAN}}}?\bso that\b",
-    re.IGNORECASE | re.DOTALL,
-)
-
-_PLACEHOLDER = re.compile(r"<[^>]+>|\bTODO\b")
-_CODE_SPAN = re.compile(r"`[^`\n]*`")
+@lru_cache(maxsize=1)
+def _shaping() -> ModuleType:
+    source = bundled_catalog_root() / "kit" / "tracker" / "shaping.py"
+    spec = importlib.util.spec_from_file_location("basicly_invest_shaping", source)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"the bundled tracker shaping rules cannot load from {source}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def unfilled(text: str) -> bool:
-    return bool(_PLACEHOLDER.search(_CODE_SPAN.sub("", text)))
+    return bool(_shaping().unfilled(text))
 
 
 def trigger_sentence(description: str) -> str:
-
-    for pattern in (_JOB_STORY, _USER_STORY):
-        for match in pattern.finditer(description):
-            if not unfilled(match.group(0)):
-                return match.group(0).strip()
-    return ""
+    return str(_shaping().trigger_sentence(description))
 
 
 def trigger_remedy() -> str:
-    return (
-        f"state the trigger in either voice - a situation, {JOB_STORY_EXAMPLE!r}, or a "
-        f"persona, {USER_STORY_EXAMPLE!r}. A persona is never required: where a situation "
-        "triggers the work and no person wants it, inventing a persona is the defect."
-    )
+    return str(_shaping().remedy((TRIGGER_HEADING,)))
 
 
 def _required(work_type: str, declared: Mapping[str, Sequence[str]], template: Any):

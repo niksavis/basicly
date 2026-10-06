@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import invest
+from basicly import invest, owned_store, owned_write, tracker, tracker_query
 from tests.plan_fixtures import install_kit
 
 KIT_DIR = Path(__file__).resolve().parent.parent / ".basicly" / "core" / "kit" / "tracker"
@@ -127,13 +127,74 @@ def test_a_trigger_is_missing_by_its_own_name(tmp_path: Path) -> None:
     assert _missing(tmp_path, record) == (invest.TRIGGER_HEADING,)
 
 
-def test_the_engine_story_patterns_are_the_kit_patterns() -> None:
-    assert invest._JOB_STORY.pattern == shaping._JOB_STORY.pattern
-    assert invest._USER_STORY.pattern == shaping._USER_STORY.pattern
-    assert invest._PLACEHOLDER.pattern == shaping._PLACEHOLDER.pattern
+@pytest.mark.parametrize("body", [_PATCHING, _USER_VOICE])
+def test_the_engine_keeps_the_complete_trigger_sentence(body: str) -> None:
+    expected = body.split("\n\n", 1)[1].strip()
+    assert invest.trigger_sentence(body) == expected
 
 
 def test_the_remedy_names_both_voices_and_demands_neither() -> None:
     remedy = invest.trigger_remedy()
-    assert invest.JOB_STORY_EXAMPLE in remedy
-    assert invest.USER_STORY_EXAMPLE in remedy
+    assert shaping.JOB_STORY_EXAMPLE in remedy
+    assert shaping.USER_STORY_EXAMPLE in remedy
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "When, I want, so I can",
+        "When a release starts, I want a patch, so I can <outcome>.",
+        "As a maintainer, I want a patch, so that <benefit>.",
+        "As a maintainer, I want a patch, so that.",
+    ],
+)
+def test_integrated_readiness_refuses_incomplete_story_intent(
+    tmp_path: Path, description: str
+) -> None:
+    record = {
+        "description": description,
+        "acceptance_criteria": "the gate exits zero",
+        "requirements": "standard library only",
+    }
+    assert invest.trigger_sentence(description) == ""
+    assert _missing(tmp_path, record) == (invest.TRIGGER_HEADING,)
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "When a release starts, I want a patch, so I can <outcome>.",
+        "As a maintainer, I want a patch, so that.",
+    ],
+)
+def test_integrated_capture_ready_and_claim_use_shared_intent_rules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, description: str
+) -> None:
+    install_kit(tmp_path)
+    tracker.ledger_dir(tmp_path).mkdir(parents=True)
+    tracker.set_ledger_prefix(tmp_path, "demo")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "agent")
+    record = owned_write.create(
+        tmp_path,
+        [
+            "create",
+            "capture an idea",
+            "--description",
+            description,
+            "--acceptance",
+            "the gate exits zero",
+            "--requirements",
+            "standard library only",
+        ],
+    )
+    before = tracker.kit(tmp_path).read_ledger(tracker.ledger_dir(tmp_path))
+    assert tracker.owed_of(tmp_path, record)["blocking"] == [invest.TRIGGER_HEADING]
+    assert tracker_query.ready_report(tmp_path)["count"] == 0
+    with pytest.raises(owned_store.TrackerDivergenceError, match="Trigger"):
+        owned_write.append(tmp_path, ["update", record, "--status", "in_progress"])
+    assert tracker.kit(tmp_path).read_ledger(tracker.ledger_dir(tmp_path)) == before
+    complete = "When a release starts, I want a patch, so I can ship safely."
+    owned_write.append(tmp_path, ["update", record, "--description", complete])
+    assert tracker_query.ready_report(tmp_path)["count"] == 1
+    owned_write.append(tmp_path, ["update", record, "--status", "in_progress"])
+    assert (tracker.read_record(tmp_path, record) or {})["status"] == "in_progress"
