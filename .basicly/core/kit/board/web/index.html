@@ -62,6 +62,7 @@
   .links-line .open-blocker { color: var(--bad); }
   .checklist { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .85rem; color: var(--muted); }
   .dod ul { list-style: none; padding-left: .2rem; }
+  .dod details:not([open]) > :not(summary) { display: none; }
   .needs { color: var(--muted); border-bottom: 1px dotted var(--muted); cursor: help; }
   .notice ul { margin: .3rem 0 0; padding-left: 1.2rem; }
   .notice li b { font-weight: 600; }
@@ -244,6 +245,31 @@ function needs(names) {
 
 function doneBlock(shown) {
   const f = shown.fields;
+  const process = shown.process;
+  if (process) {
+    const review = process.review || {};
+    const confirmation = process.confirmation || {};
+    const reviewed = Boolean(process.revision && review.revision === process.revision && !(process.owed || []).length);
+    const confirmed = reviewed && confirmation.revision === process.revision;
+    const debts = (process.owed || []).map((name) => el("li", {}, name.replace(/^## /, "")));
+    if (!confirmed) debts.push(el("li", {}, "Confirmation: record an observed result for each planned check."));
+    const details = el("details", {}, el("summary", {}, "Recorded review and checks"));
+    if (review.revision && !reviewed) details.append(el("p", {}, "The saved review does not cover the current card. Refine it with an agent."));
+    if (review.invest) details.append(el("ul", {}, Object.entries(review.invest).map(([name, reason]) => el("li", {}, el("b", {}, name), ": " + reason))));
+    if (review.conversation && review.conversation.length) details.append(el("p", {}, "Conversation references: " + review.conversation.join(", ")));
+    const results = new Map((confirmation.checks || []).map((check) => [check.criterion, check]));
+    details.append(el("ul", {}, (review.checks || []).map((check) => {
+      const result = results.get(check.criterion);
+      return el("li", {}, el("b", {}, check.criterion),
+        el("p", {}, "Expected: " + check.expected),
+        el("p", {}, "Command: " + JSON.stringify(check.command)),
+        result ? el("p", {}, "Recorded result: " + result.result + " (exit " + result.exit_code + ")" + (confirmed ? "" : "; current confirmation required")) : el("p", {}, "No observed result recorded."));
+    })));
+    return el("div", { class: "notice note dod" },
+      el("b", {}, "Card · Conversation · Confirmation"),
+      el("p", {}, "INVEST review: " + (reviewed ? "recorded for this card" : "required") + ". Confirmation: " + (confirmed ? "recorded for this card" : "required") + "."),
+      debts.length ? el("ul", {}, debts) : el("p", {}, "Review the recorded evidence before closing as completed."), details);
+  }
   const item = (present, name, what) => el("li", {}, el("b", {}, name), ": " + (present ? "available" : "missing") + ". " + what);
   return el("div", { class: "notice note dod" }, "Confirmation needs review and recorded evidence; available fields do not prove completion:",
     el("ul", {}, [
@@ -764,8 +790,23 @@ function actionsBar(shown, waiting) {
   const item = (label, handler) => menu.append(el("button", { type: "button", onclick: () => { more.open = false; handler(); } }, label));
   const cancel = () => el("button", { class: "btn plain", type: "button", onclick: () => open(shown.record) }, "Cancel");
   const closeForm = () => {
-    const reason = el("input", { class: "field", placeholder: "Why is it done? This is the permanent record of what shipped." });
-    bar.replaceChildren(reason, el("button", { class: "btn", type: "button", onclick: () => act("close", { reason: reason.value }, "closed") }, "Close story"), cancel());
+    const resolution = el("select", { class: "field", "aria-label": "Closure outcome" },
+      el("option", { value: "completed" }, "Completed: work delivered"),
+      el("option", { value: "cancelled" }, "Cancelled: work no longer needed"));
+    const reason = el("input", { class: "field", "aria-label": "Closure reason" });
+    const explanation = el("span", { class: "meta" });
+    const submit = el("button", { class: "btn", type: "button", disabled: true, onclick: () => act("close", { reason: reason.value, resolution: resolution.value }, "closed as " + resolution.value) }, "Close as completed");
+    const judge = () => {
+      const cancelled = resolution.value === "cancelled";
+      reason.placeholder = cancelled ? "Why is this work no longer needed?" : "What shipped and what evidence confirms it?";
+      explanation.textContent = cancelled ? "Cancellation preserves the idea and its history. It does not satisfy dependencies." : "Completion requires the current INVEST review and recorded results for every planned check.";
+      submit.textContent = cancelled ? "Cancel work" : "Close as completed";
+      submit.disabled = !reason.value.trim();
+    };
+    resolution.addEventListener("change", judge);
+    reason.addEventListener("input", judge);
+    judge();
+    bar.replaceChildren(resolution, reason, explanation, submit, cancel());
     reason.focus();
   };
   if (!held) {
@@ -913,7 +954,7 @@ function notices(shown, dor) {
 
 function waitingReason(shown, dor) {
   if (labelsOf(shown.fields.labels).includes(REFINE)) return "an agent reviews this story before work can start";
-  if (dor && !dor.ready && shown.fields.shaped_under) return "the story is not ready: it still needs " + (dor.blocking || []).map((name) => sectionOf(name)[1]).join(", ");
+  if (dor && !dor.ready) return "the story is not ready: it still needs " + (dor.blocking || []).map((name) => sectionOf(name)[1]).join(", ");
   return "";
 }
 
@@ -928,7 +969,7 @@ function crumbs(shown) {
     el("span", { class: "inline" }, statusMark(shown.status), el("span", { class: "s-" + shown.status }, STATUS_NAMES[shown.status] || shown.status)),
     priorityPill(f.priority, true),
     f.issue_type ? typePill(f.issue_type) : el("span", { class: "pill t-task" }, "no type"),
-    shown.dates && shown.dates.updated ? el("span", { title: shown.dates.updated }, "updated " + age(shown.dates.updated) + " ago") : null,
+    shown.dates && shown.dates.updated ? el("span", { title: shown.dates.updated }, "updated " + age(shown.dates.updated) + (age(shown.dates.updated) === "now" ? "" : " ago")) : null,
     ...labels.map((label) => el("span", { class: "label" }, label)),
     el("span", { class: "id" }, shown.record));
 }
@@ -951,7 +992,7 @@ async function open(record, quiet) {
     el("button", { class: "link back", type: "button", onclick: back }, "← back to the list"),
     crumbs(shown),
     titleBlock(shown),
-    shown.status === "closed" ? el("div", { class: "notice" }, "Closed: " + String(f.close_reason || "")) : actionsBar(shown, waitingReason(shown, dor)),
+    shown.status === "closed" ? el("div", { class: "notice" }, (f.close_resolution === "cancelled" ? "Cancelled: " : "Closed: ") + String(f.close_reason || "")) : actionsBar(shown, waitingReason(shown, dor)),
     ...notices(shown, dor),
     ...(shown.status !== "closed" && (!dor.ready || labelsOf(f.labels).includes(REFINE)) ? [refinementBlock(shown, dor)] : []),
     section("Card · story / context", f.description, "no story yet: say when it happens, what the person wants, and what for"),
