@@ -84,7 +84,7 @@ def test_create_persists_loadable_session(git_repo: Path, monkeypatch: pytest.Mo
     assert [s.name for s in worktree.list_sessions(git_repo)] == ["feat"]
 
 
-def test_create_copies_env_local_when_present(
+def test_create_never_copies_env_local_when_present(
     git_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (git_repo / ".env.local").write_text("SECRET=1\n", encoding="utf-8")
@@ -92,7 +92,7 @@ def test_create_copies_env_local_when_present(
     session = worktree.create("withenv")
 
     copied = session.path / ".env.local"
-    assert copied.read_text(encoding="utf-8") == "SECRET=1\n"
+    assert not copied.exists()
 
 
 def _seed_ledger(git_repo: Path, *lines: str) -> Path:

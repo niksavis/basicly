@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import checkout, tracker_paths
+from . import checkout, tracker_paths, usage, verify_artifact
 from .checkout import (
     current_branch,
     git,
@@ -129,58 +130,82 @@ def install_worktree_hooks(worktree: Path) -> str:
     if not stages:
         return "hooks: none defined"
     ok, message = install_hooks(worktree, stages)
-    prefix = "hooks" if ok else "hooks (FAILED)"
-    return f"{prefix}: {', '.join(stages)} — {message}"
+    if not ok:
+        raise RuntimeError(f"worktree hooks could not be installed: {message}")
+    return f"hooks: {', '.join(stages)} — {message}"
 
 
-def create(name: str, base: str | None = None, repo_root: Path | str | None = None) -> Session:
+def validate_worktree_name(name: str) -> None:
 
-    base = base or current_branch(repo_root)
-    branch = f"{BRANCH_PREFIX}{name}"
-    worktree = worktrees_root(repo_root) / name
+    reserved = {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+    if (
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,249}", name) is None
+        or ".." in name
+        or name.endswith(".")
+        or name.lower().endswith(".lock")
+        or name.split(".", 1)[0].upper() in reserved
+    ):
+        raise SystemExit(
+            f"invalid worktree name {name!r}: use one portable name starting with a letter "
+            "or digit, at most 250 characters long, and containing only letters, digits, "
+            "'.', '_' or '-'; reserved "
+            "device names, '..', trailing dots and '.lock' are not allowed"
+        )
 
-    if worktree.exists():
-        raise SystemExit(f"worktree path already exists: {worktree}")
-    if load_session(name, repo_root) is not None:
-        raise SystemExit(f"a worktree named {name!r} already exists; clean it up first")
 
-    base_head = git(["rev-parse", "--short", base], cwd=repo_root).stdout.strip()
-    worktree.parent.mkdir(parents=True, exist_ok=True)
-    git(["worktree", "add", str(worktree), "-b", branch, base], cwd=repo_root)
+def _provision_worktree(session: Session, repo_root: Path | str | None) -> list[str]:
 
-    notes: list[str] = []
+    worktree = session.path
     main = main_checkout(repo_root)
+    notes: list[str] = []
     if (main / tracker_paths.LEDGER_DIR_NAME).is_dir():
         target_ledger = worktree / tracker_paths.LEDGER_DIR_NAME
         target_ledger.mkdir(parents=True, exist_ok=True)
         (target_ledger / tracker_paths.REDIRECT_NAME).write_text(f"{main}\n", encoding="utf-8")
         notes.append(
             f"{(tracker_paths.LEDGER_DIR_NAME / tracker_paths.REDIRECT_NAME).as_posix()}: "
-            f"tracker shared with the base checkout"
+            "tracker shared with the base checkout"
         )
-
-    live = [session.path for session in list_sessions(repo_root) if not session.stale]
+    live = [
+        item.path
+        for item in list_sessions(repo_root)
+        if not item.stale and item.name != session.name
+    ]
     notes += provision_deps(worktree, [main, *live])
-
-    env_local = main / ".env.local"
-    if env_local.exists():
-        (worktree / ".env.local").write_text(
-            env_local.read_text(encoding="utf-8"), encoding="utf-8"
-        )
-        notes.append(".env.local: copied")
-
     notes.append(install_worktree_hooks(worktree))
+    return notes
 
-    session = Session(
-        name=name,
-        branch=branch,
-        base=base,
-        base_head=base_head,
-        worktree_path=str(worktree),
-        created_at=now_iso(),
-    )
+
+def create(name: str, base: str | None = None, repo_root: Path | str | None = None) -> Session:
+
+    validate_worktree_name(name)
+    base = base or current_branch(repo_root)
+    branch = f"{BRANCH_PREFIX}{name}"
+    worktree = worktrees_root(repo_root) / name
+    if worktree.exists():
+        raise SystemExit(f"worktree path already exists: {worktree}")
+    if load_session(name, repo_root) is not None:
+        raise SystemExit(f"a worktree named {name!r} already exists; clean it up first")
+    base_head = git(["rev-parse", "--short", base], cwd=repo_root).stdout.strip()
+    worktree.parent.mkdir(parents=True, exist_ok=True)
+    git(["worktree", "add", str(worktree), "-b", branch, base], cwd=repo_root)
+    session = Session(name, branch, base, base_head, str(worktree), now_iso())
     save_session(session, repo_root)
-
+    try:
+        notes = _provision_worktree(session, repo_root)
+    except (OSError, RuntimeError) as exc:
+        raise RuntimeError(
+            f"worktree {name!r} provisioning failed: {exc}. Checkout, branch and session "
+            f"are retained; inspect {worktree}, then run `basicly worktree cleanup {name}` "
+            "before recreating it. Preserve any work before cleanup."
+        ) from exc
     print(f"Created worktree {name!r}")
     print(f"  path:   {worktree}")
     print(f"  branch: {branch}  (base {base} @ {base_head})")
@@ -199,6 +224,18 @@ def _resolve_worktree(
 
     session = load_session(name, repo_root)
     if session is not None:
+        validate_worktree_name(name)
+        identity = (
+            ("name", session.name, name),
+            ("worktree path", session.path.resolve(), (worktrees_root(main) / name).resolve()),
+            ("branch", session.branch, f"{BRANCH_PREFIX}{name}"),
+        )
+        for field, stored, expected in identity:
+            if stored != expected:
+                raise SystemExit(
+                    f"cleanup refuses session identity for {name!r}: its {field} must "
+                    f"be {expected!r}, got {stored!r}"
+                )
         return session.path, session.branch
 
     target = Path(name)
@@ -312,7 +349,12 @@ def classify_worktree_tree(returncode: int, stdout: str) -> RemovalVerdict:
         *DEP_DIRS,
         (tracker_paths.LEDGER_DIR_NAME / tracker_paths.REDIRECT_NAME).as_posix(),
     )
-    noise_prefixes = tuple(f"{d}/" for d in expected_noise)
+    known_artifacts = {
+        usage.VERIFY_CHECKS_FILE.as_posix(),
+        verify_artifact.RUN_ARTIFACT.as_posix(),
+        (usage.VERIFY_CHECKS_FILE.parent / ".gitignore").as_posix(),
+    }
+    noise_prefixes = tuple(f"{d}/" for d in DEP_DIRS)
     pending: list[str] = []
     unparsable: list[str] = []
     for line in stdout.splitlines():
@@ -322,7 +364,9 @@ def classify_worktree_tree(returncode: int, stdout: str) -> RemovalVerdict:
             unparsable.append(line)
             continue
         path = line[3:].strip().strip('"')
-        if path in expected_noise or path.startswith(noise_prefixes):
+        if line[:2] in ("??", "!!") and (
+            path in expected_noise or path in known_artifacts or path.startswith(noise_prefixes)
+        ):
             continue
         pending.append(line)
     if unparsable:
@@ -342,7 +386,7 @@ def classify_worktree_tree(returncode: int, stdout: str) -> RemovalVerdict:
 def _worktree_removal_verdict(worktree: Path) -> RemovalVerdict:
 
     try:
-        proc = git(["status", "--porcelain"], cwd=worktree, check=False)
+        proc = git(["status", "--porcelain", "--ignored=matching"], cwd=worktree, check=False)
     except OSError, RuntimeError:
         return RemovalVerdict(
             may_remove=False,
@@ -353,6 +397,30 @@ def _worktree_removal_verdict(worktree: Path) -> RemovalVerdict:
             indeterminate=True,
         )
     return classify_worktree_tree(proc.returncode, proc.stdout)
+
+
+def _assert_removable_checkout(main: Path, worktree: Path, branch: str | None) -> None:
+
+    target = worktree.resolve()
+    if target == main.resolve():
+        raise SystemExit("cleanup refuses to remove the primary checkout")
+    registered = {path.resolve(): ref for path, ref in registered_worktrees(main).items()}
+    if target not in registered:
+        raise SystemExit(f"cleanup refuses an existing checkout that is not registered: {worktree}")
+    if registered[target] != branch:
+        raise SystemExit(
+            f"cleanup refuses {worktree}: its registered branch is {registered[target]!r}, "
+            f"expected {branch!r}"
+        )
+    result = git(["rev-parse", "--git-path", "locked"], cwd=worktree)
+    lock = Path(result.stdout.strip())
+    if not lock.is_absolute():
+        lock = worktree / lock
+    if lock.exists():
+        raise SystemExit(
+            f"worktree {worktree.name!r} is locked; finish its active session, then "
+            "unlock it explicitly before cleanup"
+        )
 
 
 def cleanup(
@@ -370,6 +438,7 @@ def cleanup(
     worktree, branch = resolved
 
     if worktree.exists():
+        _assert_removable_checkout(main, worktree, branch)
         verdict = _worktree_removal_verdict(worktree)
         if not verdict.may_remove and not force:
             if verdict.indeterminate:
