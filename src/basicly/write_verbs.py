@@ -187,6 +187,17 @@ def _close_drafts(kit_module: Any, args: Sequence[str], _stdout: str) -> list[ob
                 )
             )
         drafts.append(
+            events.Draft(
+                record,
+                events.KIND_FIELD,
+                _payload(
+                    kit_module,
+                    name="close_resolution",
+                    value=values.get("--resolution", "completed"),
+                ),
+            )
+        )
+        drafts.append(
             events.Draft(record, events.KIND_STATUS, _payload(kit_module, status="closed"))
         )
     return drafts

@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from basicly import cli, tracker, tracker_query
+from basicly import cli, owned_store, tracker, tracker_query
 from tests import flipped_tracker
+from tests.tracker_process_fixture import recorded_review
 
 ROOT = "tq-1"
 
@@ -44,6 +45,10 @@ def backlog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         repo, ["create", "render it", "-t", "task", "-p", "2", "--parent", ROOT, *SHAPED, "--json"]
     )
     tracker.write(repo, ["dep", "add", second, first, "-t", "blocks"])
+    for record in (first, second):
+        recorded_review(
+            owned_store.kit(repo, "commands"), tracker.ledger_dir(repo), record, completed=True
+        )
     monkeypatch.chdir(repo)
     return repo
 

@@ -169,15 +169,16 @@ def meets(record: Mapping[str, object], heading: str, *, closed: bool = False) -
     return _meets(record, heading, described if isinstance(described, str) else "", closed)
 
 
-def owed(record: Mapping[str, object], *, closed: bool = False, template=None) -> tuple:
+def owed(record: Mapping[str, object], *, closed: bool = False, template=None, process=()) -> tuple:
 
     described = record.get(DESCRIPTION_FIELD)
     body = described if isinstance(described, str) else ""
-    return tuple(
+    structural = tuple(
         heading
         for heading in required(record, template)
         if not _meets(record, heading, body, closed)
     )
+    return (*structural, *(() if closed else process))
 
 
 def minted_under_the_rule(record: Mapping[str, object]) -> bool:
@@ -185,12 +186,16 @@ def minted_under_the_rule(record: Mapping[str, object]) -> bool:
     return bool(record.get(SHAPED_UNDER_FIELD))
 
 
-def refused(record: Mapping[str, object], *, closed: bool = False, template=None) -> tuple:
-    return owed(record, closed=closed, template=template)
+def refused(
+    record: Mapping[str, object], *, closed: bool = False, template=None, process=()
+) -> tuple:
+    return owed(record, closed=closed, template=template, process=process)
 
 
-def held_from_ready(record: Mapping[str, object], *, labelled: bool, template=None) -> bool:
-    return labelled or bool(refused(record, template=template))
+def held_from_ready(
+    record: Mapping[str, object], *, labelled: bool, template=None, process=()
+) -> bool:
+    return labelled or bool(refused(record, template=template, process=process))
 
 
 def shaped(record: Mapping[str, object], *, closed: bool = False, template=None) -> bool:
@@ -219,6 +224,22 @@ def remedy(missing: Sequence[str]) -> str:
             parts.append(
                 "state the requirements as `--requirements`; they are the standard "
                 "validation judges the built thing against"
+            )
+        elif name.startswith("## INVEST Review"):
+            parts.append(
+                f"use review --evidence to record a text rationale for {name.partition(': ')[2]}"
+            )
+        elif name == "## Conversation":
+            parts.append(
+                "use review --evidence with actual same-card comment seqs from show comment_log"
+            )
+        elif name == "## Confirmation Plan":
+            parts.append(
+                "use review --evidence to map each criterion to command argv and expected result"
+            )
+        elif name == "## Completion Confirmation":
+            parts.append(
+                "use confirm --evidence with matching argv, observed results and exit_code 0"
             )
         else:
             parts.append(

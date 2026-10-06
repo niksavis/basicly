@@ -10,6 +10,8 @@ from typing import Any
 
 import pytest
 
+from tests.tracker_process_fixture import review_payload
+
 REPO_ROOT = Path(__file__).parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 TRIGGER = "When a user runs it, I want it done, so I can go on."
@@ -122,11 +124,24 @@ def test_a_consumer_without_the_engine_walks_a_whole_unit_of_work(consumer: Path
     second = kit("child", root, "--title", "render", "--field", "priority=1", *shaped)["record"]
     kit("dep", second, first, "--type", "blocks")
     kit("update", first, "--add-label", "cut-a")
+    for record in (first, second):
+        kit("comment", record, "Agree the observable check that it runs with the standard library.")
+        reference = kit("show", record)["comment_log"][-1]["seq"]
+        kit("review", record, "--evidence", json.dumps(review_payload(("it runs",), reference)))
 
     assert [row["record"] for row in kit("ready")["records"]] == [first]
     assert {row["record"] for row in kit("blocked")["records"]} == {root, second}
 
-    kit("close", first, "--reason", "landed")
+    checks = [
+        {
+            "criterion": "it runs",
+            "command": ["fixture-check", "it runs"],
+            "result": "it runs",
+            "exit_code": 0,
+        }
+    ]
+    kit("confirm", first, "--evidence", json.dumps({"checks": checks}))
+    kit("close", first, "--reason", "The parser runs using only the standard library.")
 
     assert [row["record"] for row in kit("ready")["records"]] == [second]
     assert kit("stats")["by_status"] == {"closed": 1, "open": 2}
@@ -199,7 +214,10 @@ def test_without_a_redactor_the_text_is_stored_as_typed(tmp_path: Path) -> None:
 def test_a_query_narrows_by_status_and_by_limit(tmp_path: Path) -> None:
     ledger = tmp_path / "l"
     open_record = cli.create_record(ledger, {}, prefix="acme")[0].record
-    cli.create_record(ledger, {"close_reason": "shipped"}, prefix="acme", status="closed")
+    cancelled = cli.create_record(ledger, {}, prefix="acme")[0].record
+    cli.commands.close(
+        ledger, [cancelled], reason="This fixture card is no longer needed.", resolution="cancelled"
+    )
     assert [held["record"] for held in cli.query_records(ledger, status="open")] == [open_record]
     assert len(cli.query_records(ledger)) == 2
     assert len(cli.query_records(ledger, limit=1)) == 1
@@ -221,17 +239,17 @@ def test_a_swallowed_write_is_reported_not_raised(
     ledger = tmp_path / "l"
     record = cli.create_record(ledger, {}, prefix="acme")[0].record
     skipped = {"record": record, "events": [], "appended": False}
-    for verb in (["update", "--status", "blocked"], ["close", "--reason", "done"]):
+    for verb in (
+        ["update", "--status", "blocked"],
+        ["close", "--reason", "No longer needed.", "--resolution", "cancelled"],
+    ):
         argv = [verb[0], str(ledger), record, *verb[1:]]
         assert cli.main(argv) == cli.EXIT_OK
         capsys.readouterr()
         assert cli.main(argv) == cli.EXIT_OK
         report = json.loads(capsys.readouterr().out)
         assert {key: report[key] for key in skipped} == skipped
-        assert report["owed"], (
-            "a swallowed write still reports what the record owes; this record was "
-            "created with no fields, so all three sections are outstanding"
-        )
+        assert report["owed"]
 
 
 def test_an_unknown_record_is_refused_and_named(

@@ -19,6 +19,8 @@ READ_SUBCOMMANDS = frozenset({
     "where",
 })
 WRITE_SUBCOMMANDS = frozenset({
+    "review",
+    "confirm",
     "close",
     "comments add",
     "config set",

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.kit_deployment_helpers import CLOCK, KIT_RELATIVE, REPO_ROOT, _load, events
+from tests.tracker_process_fixture import recorded_review
 
 cli = _load(REPO_ROOT / KIT_RELATIVE / "cli.py", "kit_board_test_cli")
 board = _load(REPO_ROOT / KIT_RELATIVE / "board.py", "kit_board_test_board")
@@ -109,6 +110,7 @@ def test_the_ready_row_and_the_blocked_row_agree_with_the_queries(populated: Pat
 def test_a_record_that_owes_a_section_is_marked_and_a_shaped_one_is_not(
     populated: Path,
 ) -> None:
+    recorded_review(cli, populated, "demo-bb22")
     text = board.page(populated)
     every = text[text.index("<h2>Every record</h2>") :]
 

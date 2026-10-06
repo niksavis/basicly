@@ -129,7 +129,7 @@ def _open_blockers(view: Any, views: Mapping[str, Any], vocabulary: Any) -> list
         target = views.get(edge.target)
         if target is None:
             found.append({"record": edge.target, "status": "unknown"})
-        elif target.status not in vocabulary.closed_statuses:
+        elif target.status not in vocabulary.closed_statuses or target.resolution == "cancelled":
             found.append({"record": edge.target, "status": target.status or ""})
     return sorted(found, key=lambda row: row["record"])
 
@@ -139,16 +139,21 @@ def stats(directory: Path | str) -> dict[str, object]:
     folded = events.fold(events.read_events(ledger)[0]).records
     by_status: dict[str, int] = {}
     tombstoned = 0
+    by_resolution: dict[str, int] = {}
     for state in folded.values():
         if state.tombstoned:
             tombstoned += 1
             continue
         key = state.status or "unset"
         by_status[key] = by_status.get(key, 0) + 1
+        if state.status == "closed":
+            resolution = str(state.fields.get("close_resolution") or "historical")
+            by_resolution[resolution] = by_resolution.get(resolution, 0) + 1
     return {
         "records": len(folded) - tombstoned,
         "tombstoned": tombstoned,
         "by_status": dict(sorted(by_status.items())),
+        "by_resolution": dict(sorted(by_resolution.items())),
         "ready": ready(ledger)["count"],
         "blocked": blocked(ledger)["count"],
     }

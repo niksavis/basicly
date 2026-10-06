@@ -12,6 +12,7 @@ import pytest
 from basicly import cli as engine_cli
 from basicly import tracker
 from tests import flipped_tracker
+from tests.tracker_process_fixture import recorded_review
 
 KIT_DIR = Path(__file__).parent.parent / ".basicly" / "core" / "kit" / "tracker"
 TRIGGER = "When a user files a record, I want it kept, so I can read it back."
@@ -108,7 +109,15 @@ def test_the_dates_are_derived_from_the_events_and_a_reopen_clears_closed(
     made: tuple[Path, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
     ledger, record = made
-    cli.main(["close", str(ledger), record, "--reason", "shipped"])
+    cli.main([
+        "close",
+        str(ledger),
+        record,
+        "--reason",
+        "No longer needed.",
+        "--resolution",
+        "cancelled",
+    ])
     capsys.readouterr()
     cli.main(["show", str(ledger), record])
     closed = _report(capsys)
@@ -268,6 +277,8 @@ def test_ready_holds_back_a_labelled_or_unshaped_new_record_and_an_unshaped_olde
     }
     older_shaped = cli.commands.create_root(ledger, older_fields, prefix="acme")[0].record
 
+    for record in (made["shaped"], made["labelled"], older_shaped):
+        recorded_review(cli, ledger, record)
     assert _ready_ids(ledger, capsys) == {made["shaped"], older_shaped}
 
     cli.main(["refine", str(ledger)])

@@ -7,6 +7,7 @@ import pytest
 
 from basicly import invest, owned_store, owned_write, tracker, tracker_query
 from tests.plan_fixtures import install_kit
+from tests.tracker_process_fixture import DEBTS, recorded_review
 
 KIT_DIR = Path(__file__).resolve().parent.parent / ".basicly" / "core" / "kit" / "tracker"
 
@@ -114,8 +115,8 @@ def test_only_the_typed_field_satisfies_testable_on_an_open_record(tmp_path: Pat
         "acceptance_criteria": "given x then y",
         "requirements": "- a requirement",
     }
-    assert _missing(tmp_path, in_body) == (invest.ACCEPTANCE_HEADING,)
-    assert _missing(tmp_path, in_field) == ()
+    assert _missing(tmp_path, in_body) == (invest.ACCEPTANCE_HEADING, *DEBTS)
+    assert _missing(tmp_path, in_field) == DEBTS
 
 
 def test_a_trigger_is_missing_by_its_own_name(tmp_path: Path) -> None:
@@ -124,7 +125,7 @@ def test_a_trigger_is_missing_by_its_own_name(tmp_path: Path) -> None:
         "acceptance_criteria": "given x then y",
         "requirements": "- a requirement",
     }
-    assert _missing(tmp_path, record) == (invest.TRIGGER_HEADING,)
+    assert _missing(tmp_path, record) == (invest.TRIGGER_HEADING, *DEBTS)
 
 
 @pytest.mark.parametrize("body", [_PATCHING, _USER_VOICE])
@@ -157,7 +158,7 @@ def test_integrated_readiness_refuses_incomplete_story_intent(
         "requirements": "standard library only",
     }
     assert invest.trigger_sentence(description) == ""
-    assert _missing(tmp_path, record) == (invest.TRIGGER_HEADING,)
+    assert _missing(tmp_path, record) == (invest.TRIGGER_HEADING, *DEBTS)
 
 
 @pytest.mark.parametrize(
@@ -188,13 +189,14 @@ def test_integrated_capture_ready_and_claim_use_shared_intent_rules(
         ],
     )
     before = tracker.kit(tmp_path).read_ledger(tracker.ledger_dir(tmp_path))
-    assert tracker.owed_of(tmp_path, record)["blocking"] == [invest.TRIGGER_HEADING]
+    assert tracker.owed_of(tmp_path, record)["blocking"] == [invest.TRIGGER_HEADING, *DEBTS]
     assert tracker_query.ready_report(tmp_path)["count"] == 0
     with pytest.raises(owned_store.TrackerDivergenceError, match="Trigger"):
         owned_write.append(tmp_path, ["update", record, "--status", "in_progress"])
     assert tracker.kit(tmp_path).read_ledger(tracker.ledger_dir(tmp_path)) == before
     complete = "When a release starts, I want a patch, so I can ship safely."
     owned_write.append(tmp_path, ["update", record, "--description", complete])
+    recorded_review(owned_store.kit(tmp_path, "commands"), tracker.ledger_dir(tmp_path), record)
     assert tracker_query.ready_report(tmp_path)["count"] == 1
     owned_write.append(tmp_path, ["update", record, "--status", "in_progress"])
     assert (tracker.read_record(tmp_path, record) or {})["status"] == "in_progress"
@@ -214,4 +216,4 @@ def test_integrated_readiness_accepts_ordinary_todo_words(tmp_path: Path, descri
         "requirements": "standard library only",
     }
     assert invest.trigger_sentence(description) == description
-    assert _missing(tmp_path, record) == ()
+    assert _missing(tmp_path, record) == DEBTS

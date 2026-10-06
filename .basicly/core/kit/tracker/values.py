@@ -25,6 +25,7 @@ def _load(file_name: str, module_name: str) -> Any:
 
 
 fields = _load("fields.py", "basicly_tracker_kit_fields")
+process = _load("process_evidence.py", "basicly_tracker_kit_process_evidence")
 
 WRITABLE_STATUSES = ("open", "in_progress", "blocked", "deferred", "closed")
 CLOSED = "closed"
@@ -110,7 +111,13 @@ def refuse(events: Any, drafts: Sequence[Any], template: Any = None) -> None:
     for draft in drafts:
         _refuse_typed_headings(events, draft)
         for name in _written_names(events, draft):
-            fields.refuse(name, template)
+            managed = (
+                name in process.MANAGED_FIELDS
+                and draft.kind == events.KIND_FIELD
+                and draft.payload.get(process.VERSION_FIELD) == process.VERSION
+            )
+            if not managed:
+                fields.refuse(name, template)
         if draft.kind == events.KIND_STATUS:
             _status(draft.payload.get("status"))
             if draft.payload.get("status") == CLOSED and draft.record not in reasoned:

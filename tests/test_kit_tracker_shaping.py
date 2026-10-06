@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.kit_deployment_helpers import KIT_RELATIVE, REPO_ROOT, _load
+from tests.tracker_process_fixture import DEBTS, recorded_review
 
 cli = _load(REPO_ROOT / KIT_RELATIVE / "cli.py", "kit_shaping_test_cli")
 shaping = _load(REPO_ROOT / KIT_RELATIVE / "shaping.py", "kit_shaping_test_shaping")
@@ -54,6 +55,7 @@ def test_a_bare_record_owes_all_three_sections(
         shaping.TRIGGER_HEADING,
         shaping.ACCEPTANCE_HEADING,
         shaping.REQUIREMENTS_HEADING,
+        *DEBTS,
     ]
     assert report["remedy"]
 
@@ -72,8 +74,8 @@ def test_the_flags_shape_a_record_with_no_prose_at_all(
         "standard library only",
     )
 
-    assert report["owed"] == []
-    assert report["remedy"] == ""
+    assert report["owed"] == list(DEBTS)
+    assert "review --evidence" in report["remedy"]
 
 
 def test_a_description_holding_a_typed_heading_is_refused_naming_the_flag(
@@ -100,7 +102,9 @@ def test_a_heading_still_reads_on_a_closed_record(
     )
     assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
 
-    _run(capsys, "close", str(ledger), record, "--reason", "shipped")
+    cli.events.append(
+        ledger, [cli.events.Draft(record, cli.events.KIND_STATUS, {"status": "closed"})]
+    )
 
     code, report = _run(capsys, "dor", str(ledger), record)
     assert code == cli.EXIT_OK
@@ -168,6 +172,7 @@ def test_the_gate_passes_a_shaped_record(ledger: Path, capsys: pytest.CaptureFix
         "standard library only",
     )
 
+    recorded_review(cli, ledger, record)
     code, report = _run(capsys, "dor", str(ledger), record)
 
     assert code == cli.EXIT_OK
@@ -194,7 +199,8 @@ def test_an_update_can_shape_a_record_the_gate_refused(
         "standard library only",
     )
 
-    assert updated["owed"] == []
+    assert updated["owed"] == list(DEBTS)
+    recorded_review(cli, ledger, record)
     assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_OK
 
 
@@ -218,7 +224,7 @@ def test_a_child_is_shaped_by_the_same_flags(
         "no engine import",
     )
 
-    assert report["owed"] == []
+    assert report["owed"] == list(DEBTS)
 
 
 LEGACY = {
@@ -264,6 +270,7 @@ def test_a_minted_record_still_owes_the_trigger_and_the_criteria(
         shaping.TRIGGER_HEADING,
         shaping.ACCEPTANCE_HEADING,
         shaping.REQUIREMENTS_HEADING,
+        *DEBTS,
     ]
     assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
 
@@ -321,7 +328,7 @@ def test_incomplete_story_intent_stays_captured_but_cannot_start(
         "--requirements",
         "standard library only",
     )
-    assert captured["owed"] == [shaping.TRIGGER_HEADING]
+    assert captured["owed"] == [shaping.TRIGGER_HEADING, *DEBTS]
     assert shaping.trigger_voice(description) is None
     assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
     assert _run(capsys, "claim", str(ledger), record, "--to", "agent")[0] == cli.EXIT_REFUSED
@@ -351,7 +358,7 @@ def test_each_typed_criterion_must_be_filled(
         "--requirements",
         "standard library only",
     )
-    assert captured["owed"] == [shaping.ACCEPTANCE_HEADING]
+    assert captured["owed"] == [shaping.ACCEPTANCE_HEADING, *DEBTS]
     assert _run(capsys, "ready", str(ledger))[1]["count"] == 0
     assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
     assert _run(capsys, "claim", str(ledger), record, "--to", "agent")[0] == cli.EXIT_REFUSED
@@ -385,7 +392,8 @@ def test_ordinary_todo_words_shape_a_card_that_can_start(
         "--requirements",
         "standard library only",
     )
-    assert captured["owed"] == []
+    assert captured["owed"] == list(DEBTS)
+    recorded_review(cli, ledger, record)
     assert shaping.trigger_sentence(description) == description
     assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_OK
     assert _run(capsys, "ready", str(ledger))[1]["count"] == 1

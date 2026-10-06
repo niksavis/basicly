@@ -10,6 +10,8 @@ from typing import Any
 
 import pytest
 
+from tests.tracker_process_fixture import recorded_review
+
 REPO_ROOT = Path(__file__).parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 
@@ -24,6 +26,7 @@ def _load(path: Path, name: str) -> Any:
 
 
 scheduler = _load(KIT_DIR / "scheduler.py", "tracker_scheduler")
+commands = _load(KIT_DIR / "commands.py", "scheduler_process_commands")
 differential = scheduler.differential
 events = scheduler.events
 migrate = differential.migrate
@@ -114,6 +117,9 @@ def test_two_clocks_move_the_age_ordering_and_leave_the_owned_ranking_identical(
     early, late = tmp_path / "early", tmp_path / "late"
     _write(early, CLOCK_A)
     _write(late, CLOCK_B)
+    for ledger in (early, late):
+        for record, _priority in GRAPH:
+            recorded_review(commands, ledger, record)
 
     events_early = differential.read_ledger(early)
     events_late = differential.read_ledger(late)
@@ -281,6 +287,7 @@ def test_ranking_reads_a_ledger_end_to_end(tmp_path: Path) -> None:
         ],
         clock=_fixed(CLOCK_A[0]),
     )
+    recorded_review(commands, tmp_path, "sched-leaf")
     ranking = scheduler.ranking(tmp_path)
 
     assert _order(ranking) == ["sched-leaf"]

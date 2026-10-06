@@ -108,9 +108,10 @@ def _append(
 ) -> list:
     template = templates.load(ledger)
     values.refuse(events, drafts, template)
-    states = events.fold(events.read_events(ledger)[0]).records
+    found = events.read_events(ledger)[0]
+    states = events.fold(found).records
     holders.refuse(states, drafts)
-    review.refuse(states, drafts, writers.writer_class(), template)
+    review.refuse(states, drafts, writers.writer_class(), template, found=found)
     resolved = recurrence.at_the_generation_this_write_needs(
         events, ledger, drafts, repeat=repeat, redact=redact
     )
@@ -202,6 +203,7 @@ def close(
     records: Sequence[str],
     *,
     reason: str = "",
+    resolution: str = "completed",
     redact: Callable[[str], str] | None = None,
 ) -> list:
 
@@ -220,6 +222,11 @@ def close(
                         {"name": CLOSE_REASON_FIELD, "value": reason},
                     )
                 )
+            drafts.append(
+                events.Draft(
+                    record, events.KIND_FIELD, {"name": "close_resolution", "value": resolution}
+                )
+            )
             drafts.append(events.Draft(record, events.KIND_STATUS, {"status": CLOSED_STATUS}))
         return _append(ledger, drafts, redact, lock)
 
@@ -460,3 +467,6 @@ def resolve(
         if not appended:
             raise TrackerCommandError(f"resolve {record} appended nothing, so the fork stays")
         return appended
+
+
+record_process = review.process.record_process

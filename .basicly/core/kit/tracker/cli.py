@@ -134,7 +134,15 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
         if_seq=a.if_seq,
         claimant=_holder(a),
     ),
-    "close": lambda a, r: commands.close(a.directory, a.record, reason=a.reason, redact=r),
+    "close": lambda a, r: commands.close(
+        a.directory, a.record, reason=a.reason, resolution=a.resolution, redact=r
+    ),
+    "review": lambda a, r: commands.record_process(
+        a.directory, a.record, json.loads(a.evidence), redact=r
+    ),
+    "confirm": lambda a, r: commands.record_process(
+        a.directory, a.record, json.loads(a.evidence), completed=True, redact=r
+    ),
     "comment": lambda a, r: commands.comment(a.directory, a.record, a.text, redact=r),
     "dep": lambda a, r: commands.add_dependency(
         a.directory, a.record, a.target, edge_type=a.edge_type, redact=r

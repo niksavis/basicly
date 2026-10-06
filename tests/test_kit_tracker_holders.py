@@ -10,11 +10,12 @@ from typing import Any
 import pytest
 
 from basicly import cli as engine_cli
-from basicly import loop, tracker
+from basicly import loop, owned_store, tracker
 from basicly.config import PolicyConfig
 from basicly.loop_state import NodeState
 from basicly.policy import GateStatus
 from tests import flipped_tracker
+from tests.tracker_process_fixture import recorded_review
 
 KIT_DIR = Path(__file__).parent.parent / ".basicly" / "core" / "kit" / "tracker"
 TRIGGER = "When a team shares a backlog, I want to see who holds a story, so I can avoid it."
@@ -44,6 +45,7 @@ def _run(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str,
 def story(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> tuple[Path, str]:
     ledger = tmp_path / "ledger"
     _, made = _run(capsys, "create", str(ledger), "--prefix", "acme", "--title", "s", *SHAPED)
+    recorded_review(cli, ledger, made["record"])
     return ledger, made["record"]
 
 
@@ -87,6 +89,7 @@ def test_a_claim_on_a_closed_record_is_refused_with_the_reopen_command_and_appen
     story: tuple[Path, str], capsys: pytest.CaptureFixture[str], take: tuple[str, ...]
 ) -> None:
     ledger, record = story
+    recorded_review(cli, ledger, record, completed=True)
     assert _run(capsys, "close", str(ledger), record, "--reason", "shipped")[0] == cli.EXIT_OK
     before = _ledger_bytes(ledger)
 
@@ -111,6 +114,7 @@ def test_a_claim_on_an_open_or_deferred_record_starts_it(
     ledger = tmp_path / "ledger"
     made = ("create", str(ledger), "--prefix", "acme", "--title", "s", "--status", status)
     record = _run(capsys, *made, *SHAPED)[1]["record"]
+    recorded_review(cli, ledger, record)
 
     assert _run(capsys, "claim", str(ledger), record, "--to", "sam")[0] == cli.EXIT_OK
 
@@ -218,6 +222,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         acceptance_criteria="- it is seen",
         requirements="- stdlib",
     )
+    recorded_review(owned_store.kit(root, "commands"), tracker.ledger_dir(root), "th-1")
     monkeypatch.chdir(root)
     return root
 
@@ -290,7 +295,9 @@ def test_resolve_keeps_the_current_value_of_a_status_conflict_and_fsck_is_clean(
     log = sorted(ledger.glob("*.jsonl"))[-1]
     lines = log.read_text(encoding="utf-8").splitlines()
     collided = json.loads(lines[-1])
-    collided["seq"] -= 1
+    collided["seq"] = next(
+        json.loads(line)["seq"] for line in lines[:-1] if json.loads(line)["kind"] == "status"
+    )
     log.write_text("\n".join([*lines[:-1], json.dumps(collided)]) + "\n", encoding="utf-8")
     assert _run(capsys, "fsck", str(ledger))[1]["exit_code"] == 2
     assert _run(capsys, "show", str(ledger), record)[1]["conflicts"][0]["key"] == "status"
