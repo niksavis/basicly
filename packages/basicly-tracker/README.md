@@ -89,10 +89,27 @@ Re-running the same export appends nothing, so an import can be repeated while t
 tracker is still authoritative. Every imported record records where it came from, which
 `--source` names if the file name is not the name you want.
 
-**A browser board and an HTTP API are an optional add-on.** The
-[`basicly-board`](../basicly-board/README.md) package serves a page on `127.0.0.1:8765`
-where a person reads, writes and edits stories, and an agent refinement pass shapes them
-before they are ready. Its API returns the same versioned JSON as these commands.
+**The tracker includes a human UI and an HTTP API.** Run
+`basicly-tracker serve .basicly/ledger` to open the page on `127.0.0.1:8765`.
+A person reads, writes and edits stories there, and an agent refinement pass shapes them
+before they are ready. The sandbox archive supports the same command:
+`python3 .basicly/tracker.pyz serve .basicly/ledger`. The separate
+[`basicly-board`](../basicly-board/README.md) package remains available; both reuse the
+same page, server and ledger rules.
+
+**Export a plugin from the installed tracker.** Run
+`basicly-tracker plugin --out ./tracker-plugin`, choosing a directory that does not
+exist. Export refuses an existing destination without changing its contents. The output
+contains a portable root `plugin.json`, a Claude compatibility manifest and the
+`basicly-tracker` skill with a bundled `scripts/tracker.pyz`. It needs Python 3.9 or
+later, without an installed engine or tracker package. The skill explains how to resolve
+its script path, install repository gates with `init --sandbox`, and serve the human UI.
+
+The package follows the [Agent Plugins 1.0 layout](https://agent-plugins.org/specification)
+accepted by [OpenAI plugins](https://developers.openai.com/plugins/build/plugins), with
+the [Claude plugin layout](https://code.claude.com/docs/en/plugins-reference) as a
+compatibility overlay. In a repository managed by basicly, keep its existing ledger and
+instructions and use `basicly tracker`; the plugin creates no second tracker.
 
 Every command, with one example each:
 [`kit/tracker/REFERENCE.md`](../../.basicly/core/kit/tracker/REFERENCE.md).
@@ -103,7 +120,7 @@ Full specification, including the collision budget the ids are sized from:
 ## Install with a coding agent
 
 Give a coding agent the link to this section, or copy the prompt into it. Run the agent
-in the root of your repository. The agent installs the tracker and the board, and it asks
+in the root of your repository. The agent installs the tracker and its UI, and it asks
 you before it imports a backlog.
 
 ```text
@@ -113,9 +130,7 @@ describes. Do the four steps in order.
 
 1. Install. Run these commands in the repository root:
    uv tool install 'git+https://github.com/niksavis/basicly@v0.20.1#subdirectory=packages/basicly-tracker'
-   uv tool install 'git+https://github.com/niksavis/basicly@v0.20.1#subdirectory=packages/basicly-board'
    basicly-tracker init
-   basicly-board init
 2. Configure. When init reports a beads or beans backlog, tell me how many records it holds.
    Then stop and ask me whether to import it. Never import without my yes.
    On yes, run the import command that init printed, for example `basicly-tracker init --import beans`.
@@ -124,7 +139,7 @@ describes. Do the four steps in order.
 3. Use. `basicly-tracker ready .basicly/ledger` lists the work that can start now.
    `basicly-tracker refine .basicly/ledger` lists the records that need acceptance criteria first.
    An imported record starts in refine. Tell me both counts.
-4. See. Start the board in the background with `basicly-board serve .basicly/ledger`.
+4. See. Start the board in the background with `basicly-tracker serve .basicly/ledger`.
    When port 8765 is taken, add `--port` with a free port.
    Check that the URL it prints answers, then give me the URL.
    The board can stop when this session ends. Give me the serve command that starts it again.
