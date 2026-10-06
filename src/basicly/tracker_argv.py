@@ -19,6 +19,8 @@ UPDATE_FIELD_FLAGS = {
     "--assignee": "assignee",
     "--owner": "owner",
     "--external-ref": "external_ref",
+    "--close-reason": "close_reason",
+    "--resolution": "close_resolution",
     "--labels": "labels",
 }
 UPDATE_STATUS_FLAGS = frozenset({"-s", "--status"})
@@ -60,7 +62,7 @@ CREATE_LONG_FLAGS = tuple(sorted(flag for flag in CREATE_FIELD_FLAGS if flag.sta
 VALUE_FLAGS: dict[str, frozenset[str]] = {
     "create": frozenset(CREATE_FIELD_FLAGS),
     "update": frozenset(UPDATE_FIELD_FLAGS) | UPDATE_STATUS_FLAGS | frozenset(UPDATE_LABEL_FLAGS),
-    "close": frozenset({"--reason"}),
+    "close": frozenset({"--reason", "--resolution"}),
     "dep add": frozenset({"-t", "--type"}),
     "dep remove": frozenset({"-t", "--type"}),
     "gate report": frozenset({"--gate", "--provider", "--status", "--note", "--actor"}),

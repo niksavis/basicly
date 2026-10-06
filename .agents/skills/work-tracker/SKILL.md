@@ -136,7 +136,11 @@ a section that `[policy.type_sections]` requires for its type.
 Before refinement, read the **INVEST** and **Card, Conversation, Confirmation** sections
 in `.basicly/core/kit/tracker/GUIDANCE.md`. They define the shared review and evidence
 workflow. Use this skill's engine commands to record the same card, conversation and
-confirmation. `dor` checks structure; the agent still reviews semantic quality.
+confirmation. `dor` enforces recorded evidence; the agent judges semantic quality.
+Use `basicly tracker write -- review <id> --evidence '<JSON>'` before claim and
+`basicly tracker write -- confirm <id> --evidence '<JSON>'` after the agreed checks.
+The shared guidance defines both JSON shapes. Completed close needs current evidence;
+use `--resolution cancelled` with an abandonment reason for work that will not ship.
 
 A person writes or edits a story, often in the served page, and the page adds the label
 `refine`. The record is not ready to build until a refinement pass:

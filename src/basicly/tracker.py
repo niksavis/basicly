@@ -103,8 +103,12 @@ def readiness(
 ) -> tuple[tuple[str, ...], frozenset[str]]:
 
     shaping = kit(repo_root, "shaping")
-    required = tuple(shaping.required(record, template))
-    return required, frozenset(shaping.refused(record, template=template))
+    process = kit(repo_root, "process_evidence")
+    found = kit(repo_root, "events").read_events(ledger_dir(repo_root))[0]
+    identity = str(record.get("id") or record.get("record") or "")
+    debt = process.readiness(found, identity, record, template=template)
+    required = (*shaping.required(record, template), *debt)
+    return tuple(required), frozenset(shaping.refused(record, template=template, process=debt))
 
 
 LEDGER_GLOBS = ("events-*.jsonl", "pending-*.jsonl")

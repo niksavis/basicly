@@ -184,6 +184,9 @@ def _add_write_parsers(sub: Any) -> None:
     closing.add_argument("directory", help=DIRECTORY_HELP)
     closing.add_argument("record", nargs="+", help="the record ids to close")
     closing.add_argument("--reason", default="", help="why, recorded as a field")
+    closing.add_argument("--resolution", choices=("completed", "cancelled"), default="completed")
+
+    _add_process_parsers(sub)
 
     note = sub.add_parser("comment", help="append one comment to a record")
     note.add_argument("directory", help=DIRECTORY_HELP)
@@ -261,3 +264,11 @@ def _add_commit_check(sub: Any) -> None:
     claim_check.add_argument(
         "--runner", default="", help="the tracker command a refusal tells the committer to type"
     )
+
+
+def _add_process_parsers(sub: Any) -> None:
+    for action in ("review", "confirm"):
+        process = sub.add_parser(action, help="record current INVEST/C3 process evidence")
+        process.add_argument("directory", help=DIRECTORY_HELP)
+        process.add_argument("record", help="the card id")
+        process.add_argument("--evidence", required=True, help="the structured evidence as JSON")

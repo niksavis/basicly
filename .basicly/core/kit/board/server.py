@@ -68,7 +68,9 @@ ENDPOINTS = (
     "PATCH /api/v1/records/<id>  {title, description, acceptance, requirements, fields, status, "
     "add_labels, remove_labels}",
     "POST /api/v1/records/<id>/comments  {text}",
-    "POST /api/v1/records/<id>/close  {reason}",
+    "POST /api/v1/records/<id>/review  {evidence}",
+    "POST /api/v1/records/<id>/confirm  {evidence}",
+    "POST /api/v1/records/<id>/close  {reason, resolution}",
     "POST /api/v1/records/<id>/deps  {target, type}",
     "POST /api/v1/records/<id>/undep  {target, type}",
     "POST /api/v1/records/<id>/assign  {to, take}",

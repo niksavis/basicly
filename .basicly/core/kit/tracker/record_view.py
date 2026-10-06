@@ -27,6 +27,7 @@ shaping = _load("shaping.py", "basicly_tracker_kit_shaping")
 templates = _load("templates.py", "basicly_tracker_kit_templates")
 label_shape = _load("label_shape.py", "basicly_tracker_kit_label_shape")
 forks = _load("forks.py", "basicly_tracker_kit_forks")
+process = _load("process_evidence.py", "basicly_tracker_kit_process_evidence")
 snapshot = queries.snapshot
 events = snapshot.events
 
@@ -45,8 +46,9 @@ def owed_of(directory: Path | str, record: str) -> dict[str, object]:
     held = dict(state.fields) if state is not None else {}
     closed = state is not None and is_closed(state)
     template = templates.load(directory)
-    missing = shaping.owed(held, closed=closed, template=template)
-    blocking = shaping.refused(held, closed=closed, template=template)
+    debt = () if closed else process.readiness(found, record, held, template=template)
+    missing = shaping.owed(held, closed=closed, template=template, process=debt)
+    blocking = shaping.refused(held, closed=closed, template=template, process=debt)
     return {
         "owed": list(missing),
         "blocking": list(blocking),
@@ -105,12 +107,22 @@ def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
     ordered = events.canonical_order(events.read_events(directory)[0])
     shown["conflicts"] = forks.of_record(ordered, record)
     shown["comment_log"] = [
-        {"text": event.payload["text"], "writer": event.actor, "at": event.ts}
+        {
+            "text": event.payload["text"],
+            "writer": event.actor,
+            "at": event.ts,
+            "seq": event.seq,
+            "id": event.id,
+        }
         for event in ordered
         if event.record == record
         and event.kind in events.PROSE_KINDS
         and isinstance(event.payload.get("text"), str)
     ]
+    shown["process"] = process.confirmation_report(
+        ordered, record, template=templates.load(directory)
+    )
+    shown.update(owed_of(directory, record))
     return shown
 
 
@@ -122,6 +134,7 @@ def refine_queue(directory: Path | str) -> dict[str, object]:
 
     template = templates.load(directory)
     states = queries.folded(directory)
+    found = events.read_events(directory)[0]
     now = queries.holders.newest(states)
     rows = []
     for record, state in sorted(states.items()):
@@ -129,7 +142,11 @@ def refine_queue(directory: Path | str) -> dict[str, object]:
             continue
         held = dict(state.fields)
         labelled = REFINE_LABEL in label_shape.labels_of(held.get(label_shape.LABELS_FIELD))
-        blocking = shaping.refused(held, template=template)
+        blocking = shaping.refused(
+            held,
+            template=template,
+            process=process.readiness(found, record, held, template=template),
+        )
         if labelled or blocking:
             rows.append({
                 "record": record,

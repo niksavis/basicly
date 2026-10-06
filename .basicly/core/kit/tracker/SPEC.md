@@ -29,7 +29,7 @@ tracker: added to .gitattributes: pending-*.jsonl -text merge=union
 tracker: added to .gitignore: .basicly/ledger/snapshot.jsonl
 tracker: added to .gitignore: .basicly/ledger/checkpoint-*.jsonl
 tracker: added to .gitignore: .basicly/kit/tracker/__pycache__/
-tracker: 31 file(s) written, 0 unchanged, in .basicly/kit/tracker
+tracker: 47 file(s) written, 0 unchanged, in .basicly/kit/tracker
 tracker: wrote the skill to .claude/skills/tracker/SKILL.md
 tracker: wrote the skill to .agents/skills/tracker/SKILL.md
 ```
@@ -87,6 +87,20 @@ It refuses empty parts, punctuation alone, and named placeholders. A filled trig
 not prove value, independence, or testability. The agent reviews INVEST and records Card,
 Conversation, Confirmation as described in `GUIDANCE.md`. Acceptance criteria and
 requirements are typed fields. Every entry in a list must be filled.
+
+New claims require six filled INVEST rationales, actual same-card comment sequence
+references, and one planned argv and expected result per criterion. `review --evidence`
+records these with an internally computed semantic revision and generic writer identity.
+Card, dependency edge or direct dependency contract edits invalidate the evidence; holder and status changes do not.
+These checks establish recorded evidence, not automated proof of semantic INVEST quality.
+
+A completed close requires a meaningful delivered reason and current `confirm --evidence`
+for every criterion: the agreed exact argv, a filled observed result, and exit code 0.
+Generic closed updates share this refusal before writing events. `close --resolution
+cancelled` requires a meaningful abandonment reason, retains closed history, and leaves
+blocking dependencies unmet. Existing imports and closed history remain readable without
+retroactive certification. Open legacy cards receive the same evidence debts as new cards.
+The API uses the same kit validators; planned argv is displayed and never executed.
 
 A hand copy of the files still runs, because the kit imports only the standard library. But
 a hand copy does not write the git attributes, so that repository keeps the merge conflicts

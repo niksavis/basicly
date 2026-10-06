@@ -11,6 +11,8 @@ from typing import Any
 
 import pytest
 
+from tests.tracker_process_fixture import review_payload
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 PACKAGE = REPO_ROOT / "packages" / "basicly-tracker"
@@ -97,7 +99,44 @@ def _record(repo: Path) -> str:
     shaped = ["--description", "When a seed is read, I want it shaped, so I can start it."]
     shaped += ["--acceptance", "- [ ] it starts", "--requirements", "- none"]
     made = _run(repo, ["create", ".basicly/ledger", "--prefix", "acme", "--title", "seed", *shaped])
-    return json.loads(made.stdout)["record"]
+    record = json.loads(made.stdout)["record"]
+    assert (
+        _run(
+            repo,
+            [
+                "comment",
+                ".basicly/ledger",
+                record,
+                "Agree the seeded criterion and its fixture check.",
+            ],
+        ).returncode
+        == 0
+    )
+    shown = json.loads(_run(repo, ["show", ".basicly/ledger", record]).stdout)
+    payload = review_payload(("it starts",), shown["comment_log"][-1]["seq"])
+    assert (
+        _run(
+            repo, ["review", ".basicly/ledger", record, "--evidence", json.dumps(payload)]
+        ).returncode
+        == 0
+    )
+    checks = [
+        {
+            "criterion": check["criterion"],
+            "command": check["command"],
+            "result": "The fixture starts.",
+            "exit_code": 0,
+        }
+        for check in payload["checks"]
+    ]
+    assert (
+        _run(
+            repo,
+            ["confirm", ".basicly/ledger", record, "--evidence", json.dumps({"checks": checks})],
+        ).returncode
+        == 0
+    )
+    return record
 
 
 def test_the_documents_name_commands_at_all() -> None:
@@ -109,6 +148,15 @@ def test_every_documented_command_runs_on_a_fresh_install(command: str, tmp_path
     repo = _consumer(tmp_path)
     first, second = _record(repo), _record(repo)
     names = {**dict.fromkeys(FIRST, first), **dict.fromkeys(SECOND, second), "<p>": "acme"}
+    shown = json.loads(_run(repo, ["show", ".basicly/ledger", first]).stdout)
+    saved_review = shown["process"]["review"]
+    review = {name: saved_review[name] for name in ("invest", "conversation", "checks")}
+    confirmation = {"checks": shown["process"]["confirmation"]["checks"]}
+    names.update({
+        "<review JSON>": json.dumps(review),
+        "<confirmation JSON>": json.dumps(confirmation),
+        "<what shipped, and the evidence>": "The seeded result is confirmed by its fixture check.",
+    })
     argv = [names.get(token, token) for token in shlex.split(command, comments=True)]
 
     done = _run(repo, argv)

@@ -122,6 +122,21 @@ def _refuse_a_retraction_of_an_absent_edge(
 
 def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
 
+    if args and args[0] in ("review", "confirm"):
+        if len(args) != 4 or args[2] != "--evidence":
+            raise TrackerDivergenceError("review and confirm take <id> --evidence <JSON>")
+        commands = owned_store.kit(repo_root, "commands")
+        try:
+            landed = commands.record_process(
+                owned_store.ledger_dir(repo_root),
+                args[1],
+                json.loads(args[3]),
+                completed=args[0] == "confirm",
+                redact=redact.redact_committed,
+            )
+        except (commands.events.LedgerError, ValueError, OSError) as exc:
+            raise TrackerDivergenceError(str(exc)) from exc
+        return list(landed), landed
     args, repeat = re_record.read_the_seams_own_flags(args)
     kit_module = owned_store.kit(repo_root)
     events = kit_module.events
@@ -137,7 +152,13 @@ def append(repo_root: Path, args: Sequence[str]) -> tuple[list[Any], list[Any]]:
             drafts = holders.claimed_by(held, drafts, holders.default_holder(repo_root))
             holders.refuse(held, drafts)
             review = owned_store.kit(repo_root, "review")
-            review.refuse(held, drafts, resolved_actor(repo_root), _template(repo_root))
+            review.refuse(
+                held,
+                drafts,
+                resolved_actor(repo_root),
+                _template(repo_root),
+                found=kit_module.read_ledger(ledger),
+            )
             stamped = _stamped(kit_module, drafts)
             owned_store.kit(repo_root, "values").refuse(events, stamped, _template(repo_root))
             stamped = owned_store.kit(repo_root, "recurrence").at_the_generation_this_write_needs(
@@ -183,6 +204,14 @@ def create(repo_root: Path, args: Sequence[str]) -> str:
                 else events.ids.mint_root_id(events.ids.validate_prefix(prefix or ""), minted)
             )
             drafts = mirror.drafts(kit_module, args, json.dumps({"id": record}))
+            found = events.read_events(ledger)[0]
+            owned_store.kit(repo_root, "review").refuse(
+                events.fold(found).records,
+                drafts,
+                resolved_actor(repo_root),
+                _template(repo_root),
+                found=found,
+            )
             owned_store.kit(repo_root, "values").refuse(events, drafts, _template(repo_root))
             events.append(
                 ledger,

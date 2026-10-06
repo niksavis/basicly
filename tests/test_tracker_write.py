@@ -7,8 +7,9 @@ from typing import Any
 
 import pytest
 
-from basicly import cli, policy, tracker
+from basicly import cli, owned_store, policy, tracker
 from tests import flipped_tracker
+from tests.tracker_process_fixture import recorded_review
 
 ROOT = "tw-1"
 
@@ -76,7 +77,7 @@ def test_a_create_that_owes_a_section_says_so_and_still_creates(
 
 
 @pytest.mark.usefixtures("repo")
-def test_a_create_that_owes_nothing_prints_no_warning(
+def test_a_shaped_capture_reports_process_evidence_it_still_owes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     body = "## Trigger\n\nWhen X happens, I want a record, so I can track it."
@@ -85,7 +86,7 @@ def test_a_create_that_owes_nothing_prints_no_warning(
 
     assert cli.main(argv) == 0
 
-    assert "owes" not in capsys.readouterr().err
+    assert "INVEST Review" in capsys.readouterr().err
 
 
 def test_a_close_prints_what_the_record_asked_for_before_claiming_it(
@@ -103,6 +104,20 @@ def test_a_close_prints_what_the_record_asked_for_before_claiming_it(
     ])
     capsys.readouterr()
 
+    tracker.write(
+        repo,
+        [
+            "update",
+            ROOT,
+            "--description",
+            "When a backlog is read, I want it ordered, so I can choose the next task.",
+            "--requirements",
+            "Use existing ordering.",
+        ],
+    )
+    recorded_review(
+        owned_store.kit(repo, "commands"), tracker.ledger_dir(repo), ROOT, completed=True
+    )
     assert cli.main(["tracker", "write", "--", "close", ROOT, "--reason", "shipped"]) == 0
 
     out = capsys.readouterr().out
@@ -194,7 +209,17 @@ def test_replaying_a_verb_that_writes_two_events_is_still_one_replay(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
-    argv = ["tracker", "write", "--", "close", ROOT, "--reason", "done"]
+    argv = [
+        "tracker",
+        "write",
+        "--",
+        "close",
+        ROOT,
+        "--reason",
+        "No longer needed.",
+        "--resolution",
+        "cancelled",
+    ]
     assert cli.main(argv) == 0
     capsys.readouterr()
     before = len(flipped_tracker.ledger_events(repo))

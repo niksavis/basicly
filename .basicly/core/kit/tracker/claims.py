@@ -58,7 +58,9 @@ def unknown_ids(message: str, states: Mapping[str, Any]) -> list[str]:
 def _describe(states: Mapping[str, Any], record: str) -> str:
     state = states[record]
     holder = str(state.fields.get(HOLDER_FIELD) or "") or "nobody"
-    return f"{record} is {state.status or 'open'} and held by {holder}"
+    status = state.status or "open"
+    status += " (cancelled)" if state.fields.get("close_resolution") == "cancelled" else ""
+    return f"{record} is {status} and held by {holder}"
 
 
 def refuse_commit(
@@ -87,6 +89,7 @@ def refuse_commit(
         )
     if any(
         states[record].status in HELD_STATUSES
+        and states[record].fields.get("close_resolution") != "cancelled"
         and str(states[record].fields.get(HOLDER_FIELD) or "") == committer
         for record in ids
     ):

@@ -21,10 +21,12 @@ Every command takes the ledger directory as its first argument and prints one JS
 - **Read `ready` before you propose work.** Take the top row that nobody holds. Do not
   invent a task.
 - **Run `dor` before you build.** `ready` leaves out every record labelled `refine` or
-  failing `dor`. `dor` refuses an incomplete trigger, acceptance criteria or requirements.
+  failing `dor`. `dor` names missing card fields, INVEST rationales, conversation references and planned checks.
 - **Criteria and requirements are fields.** Pass them as `--acceptance` and
   `--requirements`. A description that holds either heading is refused.
-- **A close reason is evidence.** Name what shipped, the command you ran and its result.
+- **Confirm before completing.** Record actual results with `confirm`, then name the delivered
+  outcome in `close --reason`. Use `--resolution cancelled` with an abandonment reason when
+  work will not be built. Cancellation does not satisfy a dependency.
 - **Put a finding on the record**, not in a code comment.
 - **Name the record id in the commit message.** It is the only link from a change to its
   reason.
@@ -92,9 +94,9 @@ satisfies it.
 
 ## INVEST
 
-Before an agent starts a card, review these six qualities. Record the reason when a card
-fails a quality. `dor` checks stated fields and placeholders. It cannot prove these
-semantic qualities from sentence syntax.
+Before an agent starts a card, review these six qualities and record a rationale for each
+with `review --evidence`. Resolve a failed quality before claiming. The tracker enforces
+recorded, filled evidence. It cannot prove that a rationale is semantically correct.
 
 | Quality | Observable check | Action when it fails |
 | --- | --- | --- |
@@ -105,8 +107,9 @@ semantic qualities from sentence syntax.
 | Small | Does the card have one outcome that can be built and confirmed in one session? | Use `child` for each separately confirmable outcome. Preserve the parent intent. |
 | Testable | Does each criterion name an input or event and an observable response? | Rewrite `--acceptance`. Name the demonstration or test and its expected result before building. |
 
-A passing `dor` is necessary under the default template. It does not replace this review.
-A dependency can be valid and still keep a shaped card out of `ready`.
+`dor`, `ready` and `claim` require this recorded review, references to actual same-card
+conversation comments, and a planned check for every criterion. A dependency can be valid
+and still keep a reviewed card out of `ready`.
 
 ## Card, Conversation, Confirmation
 
@@ -119,23 +122,70 @@ Use all three parts of C3 throughout the card's life:
    constraint. Read the comments in `show` before rewriting intent. When a fact is missing,
    leave `refine` and ask the person. A saved comment records an answer; it does not grant
    permission or settle an unanswered question.
-3. **Confirmation:** agree the observable checks in `--acceptance` before `claim`. After
-   implementation, run those checks and exercise the result as a consumer. Record the
-   commands, observed results, and any unmet criterion in a `comment`. Close only when
-   every criterion is met. Put the delivered outcome and evidence in `--reason`.
+3. **Confirmation:** agree a command argv and expected result for every criterion before
+   `claim`. After implementation, run those checks and exercise the result as a consumer.
+   Use `confirm --evidence` to record each exact argv, its observed result and exit code 0.
+   Close as completed only after every criterion is confirmed, with the delivered outcome
+   in `--reason`. A comment alone does not satisfy completion confirmation.
 
-These commands record a conversation and its confirmation on the same card:
+Read `show` first. Its `comment_log` gives each comment's `seq`; its `process` report gives
+stored review and confirmation evidence. `review` takes this JSON shape:
 
-```sh
-python3 .basicly/kit/tracker/cli.py comment .basicly/ledger <id> "Question: should a held card appear in the ready list?"
-python3 .basicly/kit/tracker/cli.py comment .basicly/ledger <id> "Answer: show its holder and leave it reserved."
-python3 .basicly/kit/tracker/cli.py update .basicly/ledger <id> --acceptance "When a reserved card is listed, ready shall show its holder."
-python3 .basicly/kit/tracker/cli.py comment .basicly/ledger <id> "Confirmation: ready on the scratch ledger showed the reserved card and its holder."
+```json
+{
+  "invest": {
+    "independent": "The save operation has no unfinished prerequisites.",
+    "negotiable": "Storage may change while saved tasks remain readable.",
+    "valuable": "A person can return to a captured task.",
+    "estimable": "The existing save and show paths bound the change.",
+    "small": "One saved title is the card's outcome.",
+    "testable": "The saved title can be observed through show."
+  },
+  "conversation": [3],
+  "checks": [{
+    "criterion": "When a task is saved, show shall return its title.",
+    "command": ["python3", "check_saved_title.py"],
+    "expected": "The saved title appears in show."
+  }]
+}
 ```
 
-The confirmation comment above illustrates the evidence format. Write it only after that
-check runs and prints the stated result. Preserve a failed check on the card and keep it
-open for repair.
+Replace `3` with an actual same-card comment sequence and the check with your actual
+criterion and planned argv. The tracker displays these commands; it does not execute them.
+Every criterion must appear once. Pass the JSON as one argument:
+
+```sh
+python3 .basicly/kit/tracker/cli.py review .basicly/ledger <id> --evidence '<review JSON>'
+python3 .basicly/kit/tracker/cli.py claim .basicly/ledger <id>
+```
+
+After running the agreed check, `confirm` takes the following shape. Record only output
+you actually observed; preserve a failed result in a comment and keep the card open.
+
+```json
+{
+  "checks": [{
+    "criterion": "When a task is saved, show shall return its title.",
+    "command": ["python3", "check_saved_title.py"],
+    "result": "The saved title appeared in show.",
+    "exit_code": 0
+  }]
+}
+```
+
+```sh
+python3 .basicly/kit/tracker/cli.py confirm .basicly/ledger <id> --evidence '<confirmation JSON>'
+python3 .basicly/kit/tracker/cli.py close .basicly/ledger <id> --reason "Saved tasks can be read again."
+python3 .basicly/kit/tracker/cli.py close .basicly/ledger <id> --resolution cancelled --reason "This work is no longer needed."
+```
+
+The tracker computes the review revision and generic writer identity itself. Editing the
+title, trigger, criteria, requirements, type, dependency edges or a direct dependency
+contract invalidates review and confirmation. Effective template headings and required
+custom field values also bind the review. Record updated evidence before the next claim
+or completed close. Holder
+and status changes preserve the review. Existing closed history remains readable, while
+legacy open cards need current evidence. `stats` reports closed dispositions separately.
 
 ## Refine a record
 
@@ -145,8 +195,9 @@ A person writes or edits a story, often in the served page. The page adds the la
 1. Run `refine` to list the open records that carry the label or fail `dor`.
 2. For each record, read it with `show` and rewrite it with `update`: the trigger, the
    acceptance criteria, the requirements, the type, the priority and the `dep` edges.
-3. Run `dor`. When it passes, remove the label: `update <id> --remove-label refine`. You
-   may fill the missing fields and remove the label in the same `update`.
+3. Record `review` evidence, then run `dor`. When it passes, remove the label with
+   `update <id> --remove-label refine`. Editing the reviewed fields requires a new review
+   before removing the label.
 
 Only an agent removes the label, and only when nothing is owed. The kit reads the writer
 class from `BR_AGENT_NAME` or `AI_AGENT` (set it to your agent's name), or from

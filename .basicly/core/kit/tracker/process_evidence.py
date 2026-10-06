@@ -1,0 +1,382 @@
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import re
+import sys
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+_HERE = Path(__file__).resolve().parent
+
+
+def _load(name: str) -> Any:
+    key = "basicly_tracker_kit_" + name
+    if key in sys.modules:
+        return sys.modules[key]
+    spec = importlib.util.spec_from_file_location(key, _HERE / (name + ".py"))
+    if spec is None or spec.loader is None:
+        raise ImportError("the tracker kit's " + name + ".py is missing from beside it")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[key] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+events = _load("events")
+shaping = _load("shaping")
+labels = _load("labels")
+REVIEW_FIELD = "process_review"
+CONFIRMATION_FIELD = "process_confirmation"
+RESOLUTION_FIELD = "close_resolution"
+VERSION_FIELD = "process_evidence_version"
+VERSION = 1
+INVEST = ("independent", "negotiable", "valuable", "estimable", "small", "testable")
+INVEST_HEADING = "## INVEST Review"
+CONVERSATION_HEADING = "## Conversation"
+PLAN_HEADING = "## Confirmation Plan"
+COMPLETION_HEADING = "## Completion Confirmation"
+SEMANTIC_FIELDS = frozenset({
+    "title",
+    "description",
+    "acceptance_criteria",
+    "requirements",
+    "issue_type",
+})
+MANAGED_FIELDS = frozenset({REVIEW_FIELD, CONFIRMATION_FIELD})
+_PLACEHOLDER = re.compile(r"(?:todo|tbd|tbc|fixme)", re.IGNORECASE)
+_BULLET = re.compile(r"^[-*]\s+(?:\[[ xX]\]\s*)?")
+
+
+class ProcessEvidenceError(events.LedgerError):
+    pass
+
+
+def _text(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(re.search(r"[^\W_]", value))
+        and not shaping.unfilled(value)
+        and not _PLACEHOLDER.fullmatch(value.strip(" ,.:;!?-_"))
+    )
+
+
+def criteria(fields: Mapping[str, object]) -> tuple[str, ...]:
+    value = fields.get("acceptance_criteria")
+    entries = (
+        value.splitlines()
+        if isinstance(value, str)
+        else value
+        if isinstance(value, (list, tuple))
+        else ()
+    )
+    return tuple(
+        _BULLET.sub("", entry.strip())
+        for entry in entries
+        if isinstance(entry, str) and entry.strip()
+    )
+
+
+def _semantic(event: Any, record: str, names=SEMANTIC_FIELDS) -> bool:
+    return event.record == record and (
+        event.kind == events.KIND_CREATED
+        or (event.kind == events.KIND_FIELD and event.payload.get("name") in names)
+        or event.kind in (events.KIND_EDGE, events.KIND_EDGE_RETRACTED)
+    )
+
+
+def revision(
+    found: Sequence[Any],
+    record: str,
+    fields: Mapping[str, object] | None = None,
+    drafts: Sequence[Any] = (),
+    *,
+    template=None,
+) -> str:
+    held = dict(fields) if fields is not None else dict(events.fold(found).records[record].fields)
+    headings = shaping.required(held, template)
+    names = SEMANTIC_FIELDS | frozenset(shaping.field_of(heading) for heading in headings)
+    semantic = sorted({event.id for event in found if _semantic(event, record, names)})
+    pending = [dict(draft.payload) for draft in drafts if _semantic(draft, record, names)]
+    content = {name: held.get(name) for name in sorted(names)}
+    edges = {}
+    for event in events.canonical_order(found):
+        if event.record == record and event.kind in (events.KIND_EDGE, events.KIND_EDGE_RETRACTED):
+            target_key, type_key = labels.DIALECT_KEYS[labels.edge_dialect(event.payload)]
+            edges[(event.payload.get(target_key), event.payload.get(type_key))] = (
+                event.kind == events.KIND_EDGE
+            )
+    targets = sorted({
+        target for (target, _kind), active in edges.items() if active and isinstance(target, str)
+    })
+    states = events.fold(found).records
+    dependencies = {}
+    for target in targets:
+        state = states.get(target)
+        fields = state.fields if state is not None else {}
+        target_headings = shaping.required(fields, template)
+        target_names = SEMANTIC_FIELDS | frozenset(
+            shaping.field_of(heading) for heading in target_headings
+        )
+        dependencies[target] = [
+            target_headings,
+            sorted({event.id for event in found if _semantic(event, target, target_names)}),
+        ]
+    packed = json.dumps(
+        [record, semantic, content, pending, dependencies, headings],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(packed.encode("utf-8")).hexdigest()
+
+
+def _saved(found: Sequence[Any], record: str, fields: Mapping[str, object], name: str) -> Mapping:
+    raw = fields.get(name)
+    if not isinstance(raw, str):
+        return {}
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return {}
+    if not isinstance(value, Mapping):
+        return {}
+    matching = [
+        event
+        for event in found
+        if event.record == record
+        and event.kind == events.KIND_FIELD
+        and event.payload.get("name") == name
+    ]
+    if not matching:
+        return {}
+    last = events.canonical_order(matching)[-1]
+    return (
+        value
+        if last.payload.get("value") == raw
+        and last.payload.get(VERSION_FIELD) == VERSION
+        and value.get("writer") == last.actor
+        else {}
+    )
+
+
+def _conversation(found: Sequence[Any], record: str, references: object) -> bool:
+    if not isinstance(references, list) or not references:
+        return False
+    for reference in references:
+        if not isinstance(reference, int) or isinstance(reference, bool) or reference <= 0:
+            return False
+        matching = [
+            event
+            for event in events.canonical_order(found)
+            if event.record == record and event.seq == reference
+        ]
+        if (
+            len(matching) != 1
+            or matching[0].kind not in events.PROSE_KINDS
+            or not _text(matching[0].payload.get("text"))
+        ):
+            return False
+    return len(set(references)) == len(references)
+
+
+def _command(value: object) -> bool:
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and isinstance(value[0], str)
+        and bool(value[0].strip())
+        and all(isinstance(part, str) and not shaping.unfilled(part) for part in value)
+    )
+
+
+def _checks(fields: Mapping[str, object], checks: object, *, completed: bool = False) -> bool:
+    expected = criteria(fields)
+    if not expected or len(set(expected)) != len(expected) or not isinstance(checks, list):
+        return False
+    held = []
+    keys = (
+        {"criterion", "command", "result", "exit_code"}
+        if completed
+        else {"criterion", "command", "expected"}
+    )
+    for check in checks:
+        if (
+            not isinstance(check, dict)
+            or set(check) != keys
+            or not _text(check.get("criterion"))
+            or not _command(check.get("command"))
+        ):
+            return False
+        if completed:
+            if (
+                not _text(check.get("result"))
+                or type(check.get("exit_code")) is not int
+                or check["exit_code"] != 0
+            ):
+                return False
+        elif not _text(check.get("expected")):
+            return False
+        held.append(check["criterion"])
+    return len(held) == len(set(held)) and set(held) == set(expected)
+
+
+def readiness(
+    found: Sequence[Any],
+    record: str,
+    fields: Mapping[str, object] | None = None,
+    drafts: Sequence[Any] = (),
+    *,
+    template=None,
+) -> tuple[str, ...]:
+    if fields is None:
+        state = events.fold(found).records.get(record)
+        held = dict(state.fields) if state is not None else {}
+    else:
+        held = dict(fields)
+    saved = _saved(found, record, held, REVIEW_FIELD)
+    current = bool(saved) and saved.get("revision") == revision(
+        found, record, held, drafts, template=template
+    )
+    rationales = saved.get("invest") if current else {}
+    rationales = rationales if isinstance(rationales, Mapping) else {}
+    missing = [
+        f"{INVEST_HEADING}: {quality}" for quality in INVEST if not _text(rationales.get(quality))
+    ]
+    if not current or not _conversation(found, record, saved.get("conversation")):
+        missing.append(CONVERSATION_HEADING)
+    if not current or not _checks(held, saved.get("checks")):
+        missing.append(PLAN_HEADING)
+    return tuple(missing)
+
+
+def _draft(record: str, name: str, value: Mapping[str, object], writer: str) -> Any:
+    return events.Draft(
+        record,
+        events.KIND_FIELD,
+        {
+            "name": name,
+            "value": json.dumps({**value, "writer": writer}, sort_keys=True),
+            VERSION_FIELD: VERSION,
+        },
+    )
+
+
+def review_draft(
+    found: Sequence[Any], record: str, payload: object, writer: str, *, template=None
+) -> Any:
+    state = events.fold(found).records.get(record)
+    if state is None or state.tombstoned:
+        raise ProcessEvidenceError("the ledger holds no record " + record)
+    if not isinstance(payload, dict) or set(payload) != {"invest", "conversation", "checks"}:
+        raise ProcessEvidenceError(
+            "review requires invest, conversation and checks; revision and writer are computed"
+        )
+    rationales = payload["invest"]
+    if (
+        not isinstance(rationales, dict)
+        or set(rationales) != set(INVEST)
+        or not all(_text(rationales.get(quality)) for quality in INVEST)
+    ):
+        raise ProcessEvidenceError(
+            "INVEST review requires a filled rationale for " + ", ".join(INVEST)
+        )
+    if not _conversation(found, record, payload["conversation"]):
+        raise ProcessEvidenceError(
+            "Conversation requires same-card comment seqs without forks; read show comment_log"
+        )
+    if not _checks(state.fields, payload["checks"]):
+        raise ProcessEvidenceError(
+            "Confirmation Plan requires each criterion once, command argv and expected result"
+        )
+    value = {**payload, "revision": revision(found, record, template=template)}
+    return _draft(record, REVIEW_FIELD, value, writer)
+
+
+def confirmation_report(found: Sequence[Any], record: str, *, template=None) -> dict[str, Any]:
+    state = events.fold(found).records.get(record)
+    fields = dict(state.fields) if state is not None else {}
+    return {
+        "revision": revision(found, record, fields, template=template),
+        "owed": list(readiness(found, record, fields, template=template)),
+        "review": dict(_saved(found, record, fields, REVIEW_FIELD)),
+        "confirmation": dict(_saved(found, record, fields, CONFIRMATION_FIELD)),
+    }
+
+
+def confirmation_draft(
+    found: Sequence[Any], record: str, payload: object, writer: str, *, template=None
+) -> Any:
+    report = confirmation_report(found, record, template=template)
+    if report["owed"]:
+        raise ProcessEvidenceError(
+            "confirm requires a current review: " + ", ".join(str(part) for part in report["owed"])
+        )
+    state = events.fold(found).records[record]
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"checks"}
+        or not _checks(state.fields, payload["checks"], completed=True)
+    ):
+        raise ProcessEvidenceError(
+            "Completion Confirmation requires each criterion, argv, result and exit_code 0"
+        )
+    review = report["review"]
+    if not isinstance(review, Mapping):
+        raise ProcessEvidenceError("confirm requires a recorded review")
+    planned = {check["criterion"]: check["command"] for check in review["checks"]}
+    if any(planned[check["criterion"]] != check["command"] for check in payload["checks"]):
+        raise ProcessEvidenceError(
+            "Completion Confirmation command argv must match the agreed plan for that criterion"
+        )
+    return _draft(record, CONFIRMATION_FIELD, {**payload, "revision": report["revision"]}, writer)
+
+
+def closing_owed(
+    found: Sequence[Any],
+    record: str,
+    fields: Mapping[str, object],
+    drafts: Sequence[Any] = (),
+    *,
+    template=None,
+) -> tuple[str, ...]:
+    missing = readiness(found, record, fields, drafts, template=template)
+    saved = _saved(found, record, fields, CONFIRMATION_FIELD)
+    complete = saved.get("revision") == revision(
+        found, record, fields, drafts, template=template
+    ) and _checks(fields, saved.get("checks"), completed=True)
+    review = _saved(found, record, fields, REVIEW_FIELD)
+    planned = {
+        check["criterion"]: check["command"]
+        for check in review.get("checks", [])
+        if isinstance(check, dict) and "criterion" in check and "command" in check
+    }
+    complete = complete and all(
+        planned.get(check["criterion"]) == check["command"] for check in saved.get("checks", [])
+    )
+    return (*missing, *((COMPLETION_HEADING,) if not complete else ()))
+
+
+def record_process(
+    directory: Path | str,
+    record: str,
+    evidence: object,
+    *,
+    completed: bool = False,
+    redact: Callable[[str], str] | None = None,
+) -> list:
+    commands = _load("commands")
+    ledger = commands._ledger(directory)
+    with events.LedgerLock(ledger) as lock:
+        commands._require(ledger, record)
+        found = events.read_events(ledger)[0]
+        builder = confirmation_draft if completed else review_draft
+        draft = builder(
+            found,
+            record,
+            evidence,
+            commands.writers.writer_class(),
+            template=commands.templates.load(ledger),
+        )
+        return commands._append(ledger, [draft], redact, lock)

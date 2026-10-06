@@ -81,7 +81,7 @@ def owed(states: Iterable[Any], repo_root: Path) -> dict[str, tuple[str, ...]]:
     template = tracker.ledger_template(repo_root)
     return {
         state.record: missing_for(
-            state.fields,
+            {**state.fields, "id": state.record},
             str(state.fields.get("issue_type") or ""),
             repo_root,
             declared,

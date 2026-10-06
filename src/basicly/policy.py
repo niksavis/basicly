@@ -827,7 +827,9 @@ def authorize_kill(repo_root: Path, issue_id: str, *, confirm: str | None = None
 def kill_lane(repo_root: Path, issue_id: str, reason: str) -> None:
 
     _add_comment(repo_root, issue_id, f"{_KILL_MARKER} {reason}")
-    _write(repo_root, ["close", issue_id, "--reason", f"killed: {reason}"])
+    _write(
+        repo_root, ["close", issue_id, "--resolution", "cancelled", "--reason", f"killed: {reason}"]
+    )
 
 
 GRANT_COVERAGE: dict[str, tuple[str, ...]] = {
