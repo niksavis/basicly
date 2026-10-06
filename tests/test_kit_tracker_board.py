@@ -247,7 +247,8 @@ let sentBody;
 let opened = [], posted = 0, refreshed = 0;
 const drawList = () => {};
 const storyForm = (_values, options) => { handlers.cancel = options.cancel; return form; };
-const el = (_tag, _attrs, ...text) => ({ text: text.filter(x => typeof x === 'string').join('') });
+const el = (_tag, _attrs, ...text) => ({
+  text: text.flat(Infinity).map(x => typeof x === 'string' ? x : x?.text || '').join('') });
 const open = async (record) => { opened.push(record); };
 const go = (record) => { opened.push(record); };
 const toast = () => {};
@@ -266,6 +267,7 @@ const attempt = async (work) => work();
             node,
             "-e",
             prelude
+            + PAGE[PAGE.index("function doneBlock(") : PAGE.index("function needsList(")]
             + PAGE[PAGE.index("function labelsOf(") : PAGE.index("function knownLabels(")]
             + PAGE[PAGE.index("function edit(") : PAGE.index("function assignForm(")]
             + PAGE[start:end]
@@ -362,4 +364,17 @@ const shown = { record: 'demo-old', max_seq: 20, status: 'open', fields: {
   title: 'old', description: 'old context', priority: '2' } };
 edit(shown); handlers.submit({ preventDefault() {} });
 assert.equal(sentBody.if_seq, 7);
+""")
+
+
+def test_confirmation_copy_does_not_claim_engine_checks_or_completion_from_fields() -> None:
+    _run_page_behavior("""
+const shown = { fields: { acceptance_criteria: 'a check', requirements: 'intended use' } };
+const text = doneBlock(shown).text;
+assert.ok(text.includes('acceptance criteria'));
+assert.ok(!text.includes('engine'));
+assert.ok(text.includes('recorded evidence'));
+assert.ok(text.includes('acceptance criteria: available'));
+assert.ok(!text.includes('✓'));
+assert.ok(doneBlock({fields:{}}).text.includes('acceptance criteria: missing'));
 """)

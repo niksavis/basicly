@@ -61,7 +61,6 @@
   .links-line { color: var(--muted); font-size: .8rem; display: flex; flex-wrap: wrap; gap: .1rem .7rem; }
   .links-line .open-blocker { color: var(--bad); }
   .checklist { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .85rem; color: var(--muted); }
-  .checklist .have, .dod li.have { color: var(--ok); }
   .dod ul { list-style: none; padding-left: .2rem; }
   .needs { color: var(--muted); border-bottom: 1px dotted var(--muted); cursor: help; }
   .notice ul { margin: .3rem 0 0; padding-left: 1.2rem; }
@@ -245,11 +244,11 @@ function needs(names) {
 
 function doneBlock(shown) {
   const f = shown.fields;
-  const item = (ok, name, what) => el("li", { class: ok ? "have" : "" }, (ok ? "✓ " : "○ ") , el("b", {}, name), ": " + what);
-  return el("div", { class: "notice note dod" }, "Definition of Done: closing needs a reason as evidence, and the engine checks:",
+  const item = (present, name, what) => el("li", {}, el("b", {}, name), ": " + (present ? "available" : "missing") + ". " + what);
+  return el("div", { class: "notice note dod" }, "Confirmation needs review and recorded evidence; available fields do not prove completion:",
     el("ul", {}, [
-      item(Boolean(String(f.acceptance_criteria || "").trim()), "acceptance criteria", "verify checks each one"),
-      item(Boolean(String(f.requirements || "").trim()), "requirements", "validation judges the result against them, and refuses without them"),
+      item(Boolean(String(f.acceptance_criteria || "").trim()), "acceptance criteria", "check each one against the result"),
+      item(Boolean(String(f.requirements || "").trim()), "requirements", "check the result against its intended use"),
     ]));
 }
 
