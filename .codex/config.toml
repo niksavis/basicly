@@ -1,0 +1,18 @@
+approval_policy = "on-request"
+approvals_reviewer = "user"
+default_permissions = "basicly-consent"
+
+[permissions.basicly-consent]
+extends = ":workspace"
+
+[permissions.basicly-consent.filesystem]
+glob_scan_max_depth = 16
+
+[permissions.basicly-consent.filesystem.":workspace_roots"]
+".env" = "deny"
+".env.*" = "deny"
+"**/.env" = "deny"
+"**/.env.*" = "deny"
+
+[permissions.basicly-consent.network]
+enabled = false
