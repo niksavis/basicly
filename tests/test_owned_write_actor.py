@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from basicly import config, owned_store, owned_write, redact
+from tests.tracker_process_fixture import recorded_review
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 KIT_SOURCE = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -83,11 +84,15 @@ def test_a_write_through_the_seam_carries_the_agent_onto_the_ledger(
     repo = owned_repo(tmp_path)
     seed(repo, RECORD)
 
+    recorded_review(owned_store.kit(repo, "commands"), owned_store.ledger_dir(repo), RECORD)
+    before = len(events_of(repo, RECORD))
+
     owned_write.append(repo, ["update", RECORD, "--status", "in_progress"])
 
     kit = owned_store.kit(repo)
     actors = [event.actor for event in events_of(repo, RECORD)]
-    assert actors == [kit.events.UNATTRIBUTED_ACTOR, kit.events.UNATTRIBUTED_ACTOR, "agent:codex"]
+    assert actors[:2] == [kit.events.UNATTRIBUTED_ACTOR, kit.events.UNATTRIBUTED_ACTOR]
+    assert actors[before:] == ["agent:codex"]
 
 
 @pytest.mark.usefixtures("no_br")

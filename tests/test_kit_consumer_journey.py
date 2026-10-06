@@ -14,6 +14,7 @@ import pytest
 
 from tests.kit_deployment_helpers import KIT_RELATIVE, REPO_ROOT, _load
 from tests.test_kit_consumer_install import _from_wheel, _wheel
+from tests.tracker_process_fixture import INVEST
 
 writers = _load(REPO_ROOT / KIT_RELATIVE / "writers.py", "consumer_journey_writers")
 
@@ -147,11 +148,50 @@ def _configure(repo: Path, mode: Mode) -> None:
 
 def _use(repo: Path, mode: Mode) -> str:
     story = ("--description", "When a customer installs it, I want a record, so I can close it.")
-    shaped = (*story, "--acceptance", "- it closes", "--requirements", "- stdlib")
+    shaped = (*story, "--acceptance", "- it shows the saved title", "--requirements", "- stdlib")
     created = _kit(repo, mode, "create", LEDGER, "--title", "walk the customer path", *shaped)
     assert created.returncode == 0, f"use: create refused: {created.stdout} {created.stderr}"
     record = json.loads(created.stdout)["record"]
     assert record.startswith("acme-"), f"use: {record} is not under the configured prefix"
+
+    agreed = _kit(
+        repo,
+        mode,
+        "comment",
+        LEDGER,
+        record,
+        "Agree that the packaged tracker shows the saved title.",
+    )
+    assert agreed.returncode == 0, agreed.stdout + agreed.stderr
+    shown = _kit(repo, mode, "show", LEDGER, record)
+    assert shown.returncode == 0, shown.stdout + shown.stderr
+    check = {
+        "criterion": "it shows the saved title",
+        "command": [*mode.tracker, "show", LEDGER, record],
+        "expected": "walk the customer path",
+    }
+    evidence = {
+        "invest": dict(INVEST),
+        "conversation": [json.loads(shown.stdout)["comment_log"][-1]["seq"]],
+        "checks": [check],
+    }
+    reviewed = _kit(repo, mode, "review", LEDGER, record, "--evidence", json.dumps(evidence))
+    assert reviewed.returncode == 0, reviewed.stdout + reviewed.stderr
+    observed = _kit(repo, mode, "show", LEDGER, record)
+    assert observed.returncode == 0, observed.stdout + observed.stderr
+    assert json.loads(observed.stdout)["fields"]["title"] == check["expected"]
+    confirmation = {
+        "checks": [
+            {
+                "criterion": check["criterion"],
+                "command": check["command"],
+                "result": observed.stdout,
+                "exit_code": observed.returncode,
+            }
+        ]
+    }
+    confirmed = _kit(repo, mode, "confirm", LEDGER, record, "--evidence", json.dumps(confirmation))
+    assert confirmed.returncode == 0, confirmed.stdout + confirmed.stderr
 
     claimed = _kit(repo, mode, "claim", LEDGER, record, "--to", "alex")
     closed = _kit(repo, mode, "close", LEDGER, record, "--reason", "walked the customer path")

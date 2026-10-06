@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from basicly import config, label_source, mirror, owned_store, owned_write, tracker
+from tests.tracker_process_fixture import recorded_review
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 KIT_SOURCE = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -53,6 +54,8 @@ def seed_ready(repo: Path, record: str) -> None:
             kit.events.Draft(record, kit.events.KIND_STATUS, {"status": "open"}),
         ],
     )
+
+    recorded_review(owned_store.kit(repo, "commands"), owned_store.ledger_dir(repo), record)
 
 
 @pytest.fixture

@@ -7,6 +7,8 @@ from typing import Any
 
 import pytest
 
+from tests.tracker_process_fixture import recorded_review
+
 REPO_ROOT = Path(__file__).parent.parent
 KIT_DIR = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
 
@@ -107,6 +109,8 @@ def test_a_decomposed_parent_leaves_the_ready_set_and_its_child_enters_it(ledger
     record = root_of(ledger)
     child = commands.create_child(ledger, record, {"title": "a child", **SHAPED})[0].record
 
+    recorded_review(commands, ledger, child)
+
     assert [row["record"] for row in queries.ready(ledger)["records"]] == [child]
     assert [row["record"] for row in queries.blocked(ledger)["records"]] == [record]
 
@@ -125,11 +129,14 @@ def test_a_blocking_edge_holds_the_dependent_until_the_blocker_closes(ledger: Pa
     record = root_of(ledger)
     first = commands.create_child(ledger, record, {"title": "first", **SHAPED})[0].record
     second = commands.create_child(ledger, record, {"title": "second", **SHAPED})[0].record
+    recorded_review(commands, ledger, first, completed=True)
+
     commands.add_dependency(ledger, second, first, edge_type="blocks")
 
     assert [row["record"] for row in queries.ready(ledger)["records"]] == [first]
 
     commands.close(ledger, [first], reason="landed")
+    recorded_review(commands, ledger, second)
 
     assert [row["record"] for row in queries.ready(ledger)["records"]] == [second]
 
@@ -173,6 +180,9 @@ def test_waiting_on_a_closed_record_is_refused_and_related_is_kept(ledger: Path)
     record = root_of(ledger)
     done = commands.create_child(ledger, record, {"title": "done"})[0].record
     other = commands.create_child(ledger, record, {"title": "other"})[0].record
+    commands.update(ledger, done, fields=SHAPED)
+    recorded_review(commands, ledger, done, completed=True)
+
     commands.close(ledger, [done], reason="shipped")
 
     with pytest.raises(events.LedgerError, match=f"{done} is closed"):
@@ -245,6 +255,9 @@ def test_an_empty_comment_is_refused(ledger: Path) -> None:
 def test_a_close_records_the_reason_beside_the_status(ledger: Path) -> None:
     record = root_of(ledger)
 
+    commands.update(ledger, record, fields=SHAPED)
+    recorded_review(commands, ledger, record, completed=True)
+
     commands.close(ledger, [record], reason="shipped")
 
     state = queries.folded(ledger)[record]
@@ -280,6 +293,9 @@ def test_stats_counts_by_status_and_leaves_the_tombstoned_out_of_the_total(
     record = root_of(ledger)
     first = commands.create_child(ledger, record, {"title": "first"})[0].record
     second = commands.create_child(ledger, record, {"title": "second"})[0].record
+    commands.update(ledger, first, fields=SHAPED)
+    recorded_review(commands, ledger, first, completed=True)
+
     commands.close(ledger, [first], reason="landed")
     commands.delete(ledger, second)
 
@@ -325,9 +341,12 @@ def test_undep_retracts_an_edge_and_the_dependent_is_ready_again(ledger: Path) -
     record = root_of(ledger)
     first = commands.create_child(ledger, record, {"title": "first", **SHAPED})[0].record
     second = commands.create_child(ledger, record, {"title": "second", **SHAPED})[0].record
+    recorded_review(commands, ledger, first)
+
     commands.add_dependency(ledger, second, first, edge_type="blocks")
 
     commands.remove_dependency(ledger, second, first, edge_type="blocks")
+    recorded_review(commands, ledger, second)
 
     assert second in [row["record"] for row in queries.ready(ledger)["records"]]
     listed = {row["record"]: row["dependencies"] for row in queries.query_records(ledger)}

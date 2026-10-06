@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+from tests.tracker_process_fixture import DEBTS, recorded_review
+
 KIT_DIR = Path(__file__).parent.parent / ".basicly" / "core" / "kit" / "tracker"
 
 
@@ -49,8 +51,8 @@ def test_without_a_template_the_default_rule_holds(
 ) -> None:
     ledger = tmp_path / "ledger"
 
-    assert _create(ledger, capsys)["owed"] == ["## Acceptance Criteria", "## Requirements"]
-    assert _create(ledger, capsys, *_shaped_args())["owed"] == []
+    assert _create(ledger, capsys)["owed"] == ["## Acceptance Criteria", "## Requirements", *DEBTS]
+    assert _create(ledger, capsys, *_shaped_args())["owed"] == list(DEBTS)
 
 
 def test_an_extending_template_adds_a_section_every_record_owes(
@@ -60,12 +62,12 @@ def test_an_extending_template_adds_a_section_every_record_owes(
     _template(ledger, {"mode": "extend", "sections": ["## Risks"]})
 
     record = _create(ledger, capsys, *_shaped_args())
-    assert record["owed"] == ["## Risks"]
+    assert record["owed"] == ["## Risks", *DEBTS]
     assert cli.main(["dor", str(ledger), record["record"]]) == cli.EXIT_REFUSED
     assert "--field risks=" in _report(capsys)["remedy"]
 
     by_field = _create(ledger, capsys, *_shaped_args("--field", "risks=none known"))
-    assert by_field["owed"] == []
+    assert by_field["owed"] == list(DEBTS)
 
 
 def test_a_section_in_the_description_satisfies_the_template(
@@ -77,7 +79,7 @@ def test_a_section_in_the_description_satisfies_the_template(
     body = f"{TRIGGER}\n\n## Risks\n\nThe import may time out.\n"
     argv = ["create", str(ledger), "--prefix", "acme", "--description", body, *_shaped_args()]
     assert cli.main(argv) == cli.EXIT_OK
-    assert _report(capsys)["owed"] == []
+    assert _report(capsys)["owed"] == list(DEBTS)
 
 
 def test_a_placeholder_does_not_satisfy_a_template_section(
@@ -86,7 +88,10 @@ def test_a_placeholder_does_not_satisfy_a_template_section(
     ledger = tmp_path / "ledger"
     _template(ledger, {"sections": ["## Risks"]})
 
-    assert _create(ledger, capsys, *_shaped_args("--field", "risks=<risk>"))["owed"] == ["## Risks"]
+    assert _create(ledger, capsys, *_shaped_args("--field", "risks=<risk>"))["owed"] == [
+        "## Risks",
+        *DEBTS,
+    ]
 
 
 def test_a_type_section_binds_only_records_of_that_type(
@@ -96,9 +101,9 @@ def test_a_type_section_binds_only_records_of_that_type(
     _template(ledger, {"types": {"bug": ["## Steps to Reproduce"]}})
 
     bug = _create(ledger, capsys, *_shaped_args("--field", "issue_type=bug"))
-    assert bug["owed"] == ["## Steps to Reproduce"]
+    assert bug["owed"] == ["## Steps to Reproduce", *DEBTS]
     task = _create(ledger, capsys, *_shaped_args("--field", "issue_type=task"))
-    assert task["owed"] == []
+    assert task["owed"] == list(DEBTS)
 
 
 def test_an_overriding_template_replaces_the_default_rule(
@@ -107,10 +112,20 @@ def test_an_overriding_template_replaces_the_default_rule(
     ledger = tmp_path / "ledger"
     _template(ledger, {"mode": "override", "sections": ["## Goal"]})
 
-    argv = ["create", str(ledger), "--prefix", "acme", "--field", "goal=ship it"]
+    argv = [
+        "create",
+        str(ledger),
+        "--prefix",
+        "acme",
+        "--field",
+        "goal=ship it",
+        "--acceptance",
+        "- it ships",
+    ]
     assert cli.main(argv) == cli.EXIT_OK
     record = _report(capsys)
-    assert record["owed"] == []
+    assert record["owed"] == list(DEBTS)
+    recorded_review(cli.commands, ledger, record["record"])
     assert cli.main(["dor", str(ledger), record["record"]]) == cli.EXIT_OK
 
 
@@ -120,8 +135,8 @@ def test_an_overriding_template_may_keep_a_default_section(
     ledger = tmp_path / "ledger"
     _template(ledger, {"mode": "override", "sections": ["## Trigger", "## Acceptance Criteria"]})
 
-    assert _create(ledger, capsys)["owed"] == ["## Acceptance Criteria"]
-    assert _create(ledger, capsys, "--acceptance", "- it lists")["owed"] == []
+    assert _create(ledger, capsys)["owed"] == ["## Acceptance Criteria", *DEBTS]
+    assert _create(ledger, capsys, "--acceptance", "- it lists")["owed"] == list(DEBTS)
 
 
 @pytest.mark.parametrize(
@@ -209,7 +224,7 @@ def test_a_template_pasted_unfilled_is_still_refused(
     argv = ["create", str(ledger), "--prefix", "acme", "--field", "issue_type=bug"]
     cli.main([*argv, "--description", shape["description"], *flags])
 
-    assert _report(capsys)["owed"] == shape["required"]
+    assert _report(capsys)["owed"] == [*shape["required"], *DEBTS]
 
 
 def test_a_filled_template_passes_the_gate(
@@ -223,4 +238,5 @@ def test_a_filled_template_passes_the_gate(
     cli.main([*argv, "--description", body, *_shaped_args()])
     record = _report(capsys)["record"]
 
+    recorded_review(cli.commands, ledger, record)
     assert cli.main(["dor", str(ledger), record]) == cli.EXIT_OK

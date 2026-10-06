@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from basicly import decompose, plan_entry, plan_record, policy
+from basicly import decompose, plan_entry, plan_record, policy, tracker
 from tests.plan_fixtures import DEMONSTRATION, FakeBr, Proc, install_kit
 from tests.plan_fixtures import install as _install
 from tests.plan_fixtures import planned as _planned
+from tests.tracker_process_fixture import recorded_review
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -143,15 +144,25 @@ def _dor_verdict(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body: str) -> 
 
 
 def _dor_verdict_of(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fields: dict[str, str]
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    fields: dict[str, str],
+    *,
+    reviewed: bool = False,
 ) -> policy.DoRResult:
 
     install_kit(tmp_path)
-    record = {"id": "feat.1", "labels": [], **fields}
-    _install(monkeypatch, FakeBr(records={"feat.1": record}))
+    if reviewed:
+        kit = tracker.kit(tmp_path, "commands")
+        ledger = tracker.ledger_dir(tmp_path)
+        kit.events.append(ledger, [kit.events.Draft("feat-1.1", kit.events.KIND_CREATED, fields)])
+        recorded_review(kit, ledger, "feat-1.1")
+        fields = kit.events.fold(kit.events.read_events(ledger)[0]).records["feat-1.1"].fields
+    record = {"id": "feat-1.1", "labels": [], **fields}
+    _install(monkeypatch, FakeBr(records={"feat-1.1": record}))
     lint = Proc(json.dumps({"results": [{"missing": []}]}))
     monkeypatch.setattr(policy, "_write", lambda _root, _args, **_kw: lint)
-    return policy.definition_of_ready(tmp_path, "feat.1")
+    return policy.definition_of_ready(tmp_path, "feat-1.1")
 
 
 def test_a_heading_quoted_mid_sentence_is_declared_to_neither_reader(
@@ -185,6 +196,7 @@ def test_an_open_record_is_ready_on_the_typed_field_and_not_on_the_heading_alone
             plan_record.ACCEPTANCE_FIELD: criterion,
             "requirements": "- a requirement",
         },
+        reviewed=True,
     )
 
     assert heading in heading_only.missing

@@ -6,6 +6,7 @@ import pytest
 
 from basicly import owned_store, owned_write, re_record, tracker, tracker_argv
 from tests.test_owned_write import events_of, no_br, owned_repo, seed
+from tests.tracker_process_fixture import recorded_review
 
 __all__ = ["no_br"]
 
@@ -152,6 +153,20 @@ def test_a_flag_the_verb_reads_nothing_from_is_refused(tmp_path: Path, argv: lis
 def test_the_repeat_flag_itself_is_not_read_as_a_misspelling(tmp_path: Path) -> None:
     repo = owned_repo(tmp_path)
     seed(repo, RECORD)
+
+    kit = owned_store.kit(repo, "commands")
+    kit.update(
+        owned_store.ledger_dir(repo),
+        RECORD,
+        fields={
+            "description": (
+                "When a close is repeated, I want it accepted, so I can record it again."
+            ),
+            "acceptance_criteria": "- the repeat is accepted",
+            "requirements": "- standard library only",
+        },
+    )
+    recorded_review(kit, owned_store.ledger_dir(repo), RECORD, completed=True)
 
     owned_write.append(repo, ["close", RECORD, "--reason", "shipped", "--again"])
 

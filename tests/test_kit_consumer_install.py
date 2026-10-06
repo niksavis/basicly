@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import subprocess  # nosec B404
+import sys
 from pathlib import Path
 
 import pytest
+
+from tests.tracker_process_fixture import INVEST
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PACKAGES = REPO_ROOT / "packages"
@@ -166,6 +169,33 @@ def test_the_tracker_kit_holds_a_record_without_basicly(consumer: Path, tmp_path
         text=True,
         check=False,
     )
+    assert created.returncode == 0, created.stderr
+    record = json.loads(created.stdout)["record"]
+
+    def run(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(cli), *args], capture_output=True, text=True, check=False
+        )
+
+    agreed = run(
+        "comment", str(ledger), record, "Agree that the packaged tracker shows the saved title."
+    )
+    assert agreed.returncode == 0, agreed.stdout + agreed.stderr
+    shown = run("show", str(ledger), record)
+    assert shown.returncode == 0, shown.stdout + shown.stderr
+    check = {
+        "criterion": "it is kept",
+        "command": [sys.executable, str(cli), "show", str(ledger), record],
+        "expected": "a record",
+    }
+    evidence = {
+        "invest": dict(INVEST),
+        "conversation": [json.loads(shown.stdout)["comment_log"][-1]["seq"]],
+        "checks": [check],
+    }
+    reviewed = run("review", str(ledger), record, "--evidence", json.dumps(evidence))
+    assert reviewed.returncode == 0, reviewed.stdout + reviewed.stderr
+
     ready = subprocess.run(  # nosec B603
         ["python3", str(cli), "ready", str(ledger)], capture_output=True, text=True, check=False
     )
