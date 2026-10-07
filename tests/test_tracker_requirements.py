@@ -11,6 +11,7 @@ import pytest
 from basicly import merge, policy, tracker, tracker_paths, verify
 from tests import flipped_tracker
 from tests.plan_fixtures import install_kit
+from tests.tracker_process_fixture import recorded_review
 
 REPO_ROOT = Path(__file__).parent.parent
 COMMIT_MSG_HOOK = REPO_ROOT / ".basicly" / "core" / "hooks" / "tracker-commit-msg.py"
@@ -120,6 +121,11 @@ def test_r4_multi_line_acceptance_criteria_satisfy_the_gate_from_the_field(
         "description": body,
     }
     install_kit(tmp_path)
+    kit = tracker.kit(tmp_path, "commands")
+    ledger = tracker.ledger_dir(tmp_path)
+    kit.events.append(ledger, [kit.events.Draft("basicly-x", kit.events.KIND_CREATED, record)])
+    recorded_review(kit, ledger, "basicly-x")
+    record.update(kit.events.fold(kit.events.read_events(ledger)[0]).records["basicly-x"].fields)
     monkeypatch.setattr(tracker, "read_record", lambda *_a, **_k: record)
     result = policy.definition_of_ready(tmp_path, "basicly-x")
 

@@ -752,7 +752,15 @@ def test_a_consumer_with_no_basicly_can_import_their_tracker(tmp_path: Path) -> 
 
     consumer = tmp_path / "consumer" / "kit" / "tracker"
     consumer.mkdir(parents=True)
-    for name in ("beads.py", "values.py", "fields.py", "shaping.py", "locking.py"):
+    for name in (
+        "beads.py",
+        "values.py",
+        "fields.py",
+        "shaping.py",
+        "locking.py",
+        "process_evidence.py",
+        "labels.py",
+    ):
         shutil.copy2(KIT_DIR / name, consumer / name)
     for source in (MIGRATE_SOURCE, EVENTS_SOURCE, IDS_SOURCE):
         shutil.copy2(source, consumer / source.name)

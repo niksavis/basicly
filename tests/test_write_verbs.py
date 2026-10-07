@@ -36,11 +36,13 @@ def test_the_close_reason_field_matches_the_one_the_kit_writes() -> None:
 
 def test_a_close_reason_lands_as_the_field_the_fold_reads(kit: Any) -> None:
     drafts: list[Any] = mirror.drafts(kit, ["close", "b-1", "--reason", "shipped it"], "")
-    field, status = drafts
+    field, resolution, status = drafts
 
     assert field.kind == kit.events.KIND_FIELD
     assert field.payload["name"] == write_verbs.CLOSE_REASON_FIELD
     assert field.payload["value"] == "shipped it"
+    assert resolution.payload["name"] == "close_resolution"
+    assert resolution.payload["value"] == "completed"
     assert status.kind == kit.events.KIND_STATUS
 
 
@@ -48,15 +50,18 @@ def test_a_close_carrying_no_reason_appends_exactly_what_it_did_before(kit: Any)
 
     drafts: list[Any] = mirror.drafts(kit, ["close", "b-1"], "")
 
-    assert len(drafts) == 1
-    assert drafts[0].kind == kit.events.KIND_STATUS
+    assert len(drafts) == 2
+    assert drafts[0].payload["name"] == "close_resolution"
+    assert drafts[0].payload["value"] == "completed"
+    assert drafts[1].kind == kit.events.KIND_STATUS
 
 
 @pytest.mark.parametrize("reason", ["", "   "])
 def test_a_blank_reason_is_not_recorded_as_a_field(kit: Any, reason: str) -> None:
     drafts: list[Any] = mirror.drafts(kit, ["close", "b-1", "--reason", reason], "")
 
-    assert [draft.kind for draft in drafts] == [kit.events.KIND_STATUS]
+    assert [draft.kind for draft in drafts] == [kit.events.KIND_FIELD, kit.events.KIND_STATUS]
+    assert drafts[0].payload["name"] == "close_resolution"
 
 
 def test_create_without_a_title_is_refused_before_anything_is_appended(kit: Any) -> None:

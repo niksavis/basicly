@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.kit_deployment_helpers import KIT_RELATIVE, REPO_ROOT, _load
+from tests.tracker_process_fixture import recorded_review
 
 cli = _load(REPO_ROOT / KIT_RELATIVE / "cli.py", "kit_import_test_cli")
 
@@ -85,6 +86,9 @@ def test_the_imported_graph_answers_the_ready_query(
     ledger: Path, export: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _run(capsys, "import", str(ledger), str(export))
+
+    recorded_review(cli.commands, ledger, "demo-aa11")
+    recorded_review(cli.commands, ledger, "demo-bb22")
 
     ready = _run(capsys, "ready", str(ledger))
 

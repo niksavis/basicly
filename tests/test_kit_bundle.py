@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.tracker_process_fixture import INVEST
+
 PACKAGE = Path(__file__).parent.parent / "packages" / "basicly-tracker"
 
 
@@ -63,6 +65,31 @@ def test_the_archive_installs_and_runs_the_tracker(pyz: Path, tmp_path: Path) ->
     created = _run(pyz, repo, cache, "create", ledger, "--prefix", "acme", "--title", "a", *shaped)
     assert created.returncode == 0, created.stderr
     record = json.loads(created.stdout)["record"]
+
+    agreed = _run(
+        pyz,
+        repo,
+        cache,
+        "comment",
+        ledger,
+        record,
+        "Agree that the packaged tracker shows the saved title.",
+    )
+    assert agreed.returncode == 0, agreed.stdout + agreed.stderr
+    shown = _run(pyz, repo, cache, "show", ledger, record)
+    assert shown.returncode == 0, shown.stdout + shown.stderr
+    check = {
+        "criterion": "it runs",
+        "command": [sys.executable, str(pyz), "show", ledger, record],
+        "expected": "a",
+    }
+    evidence = {
+        "invest": dict(INVEST),
+        "conversation": [json.loads(shown.stdout)["comment_log"][-1]["seq"]],
+        "checks": [check],
+    }
+    reviewed = _run(pyz, repo, cache, "review", ledger, record, "--evidence", json.dumps(evidence))
+    assert reviewed.returncode == 0, reviewed.stdout + reviewed.stderr
 
     ready = _run(pyz, repo, cache, "ready", ledger)
     assert [row["record"] for row in json.loads(ready.stdout)["records"]] == [record]

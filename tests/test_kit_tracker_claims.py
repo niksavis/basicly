@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.tracker_claims_fixture import _kit, _review
+
 KIT_DIR = Path(__file__).parent.parent / ".basicly" / "core" / "kit" / "tracker"
 SHAPED = [
     "--description",
@@ -24,17 +26,6 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # nosec B603 B607
         ["git", *args], cwd=repo, capture_output=True, text=True, check=False
     )
-
-
-def _kit(repo: Path, *args: str) -> dict:
-    done = subprocess.run(  # nosec B603
-        [sys.executable, ".basicly/kit/tracker/cli.py", *args],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return json.loads(done.stdout)
 
 
 @pytest.fixture
@@ -73,6 +64,7 @@ def test_a_standalone_repository_refuses_code_on_a_record_nobody_holds(repo: Pat
     assert refused.returncode != 0
     assert "Claim the record first" in refused.stderr
 
+    _review(repo, record["record"])
     _kit(repo, "claim", ".basicly/ledger", record["record"])
     _git(repo, "add", "-A")
     landed = _git(repo, "commit", "-q", "-m", f"feat: add value {record['record']}")
@@ -259,6 +251,7 @@ def test_an_unstaged_claim_cannot_authorize_a_code_commit(repo: Path, gate: str)
     ]
     _git(repo, "add", ".basicly/ledger")
     assert _git(repo, "commit", "-q", "-m", f"chore: file {record}").returncode == 0
+    _review(repo, record)
     _kit(repo, "claim", ".basicly/ledger", record)
     (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
     _git(repo, "add", "app.py")
@@ -306,6 +299,7 @@ def test_claim_gate_targets_the_common_hooks_in_a_linked_worktree(
     _git(lane, "add", "app.py")
     refused = _git(lane, "commit", "-q", "-m", f"feat: linked value {record}")
     assert refused.returncode != 0 and "Claim the record first" in refused.stderr
+    _review(lane, record)
     _kit(lane, "claim", ".basicly/ledger", record)
     _git(lane, "add", ".basicly/ledger")
     assert _git(lane, "commit", "-q", "-m", f"feat: linked value {record}").returncode == 0
@@ -319,6 +313,7 @@ def test_redirected_working_ledger_cannot_override_the_lane_index(
     record = _kit(
         repo, "create", ".basicly/ledger", "--prefix", "acme", "--title", "redirect", *SHAPED
     )["record"]
+    _review(repo, record)
     _kit(repo, "claim", ".basicly/ledger", record)
     _git(repo, "add", ".basicly/ledger")
     assert _git(repo, "commit", "-q", "-m", f"chore: publish claim {record}").returncode == 0
