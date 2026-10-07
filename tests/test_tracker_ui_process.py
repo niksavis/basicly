@@ -48,6 +48,7 @@ function find(node, predicate) {
         + PAGE[PAGE.index("function doneBlock(") : PAGE.index("function needsList(")]
         + PAGE[PAGE.index("function since(") : PAGE.index("function dependencyVerdict(")]
         + PAGE[PAGE.index("function notices(") : PAGE.index("function titleBlock(")]
+        + PAGE[PAGE.index("function busy()") : PAGE.index("async function watchVersion()")]
         + script
     )
     result = subprocess.run([node, "-e", source], text=True, capture_output=True, check=False)
@@ -134,4 +135,35 @@ const cards = notices(shown,{blocking:[]});
 assert.equal(cards.length, 1);
 assert.match(cards[0].text, /Confirmation: recorded for this card/);
 assert.equal(notices({status:'closed',fields:{}},{blocking:[]}).length, 0);
+""")
+
+
+def test_readonly_refinement_handoff_does_not_block_background_refresh() -> None:
+    _run(r"""
+const pane = {querySelector(){return null;},querySelectorAll(){return [
+  {readOnly:true,value:'Refine the selected card'}, {readOnly:false,value:''}];}};
+const document = {hidden:false,getElementById(){return pane;}};
+let refreshed = 0;
+const load = async () => {refreshed++;};
+const toast = () => {};
+(async()=>{
+  assert.equal(busy(), false);
+  await refreshQuietly();
+  assert.equal(refreshed, 1);
+})();
+""")
+
+
+def test_editable_comment_draft_still_blocks_detail_refresh() -> None:
+    _run(r"""
+const pane = {querySelector(){return null;},querySelectorAll(){return [
+  {readOnly:true,value:'Refine the selected card'}, {readOnly:false,value:'Unsaved comment'}];}};
+const document = {hidden:false,getElementById(){return pane;}};
+let refreshed = 0;
+const load = async () => {refreshed++;};
+(async()=>{
+  assert.equal(busy(), true);
+  await refreshQuietly();
+  assert.equal(refreshed, 0);
+})();
 """)

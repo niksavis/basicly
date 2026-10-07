@@ -1072,7 +1072,7 @@ search.after(suggest(search, { source: (text) => matching(text, ""), choose: (on
 function busy() {
   const pane = document.getElementById("detail-pane");
   return document.hidden || Boolean(pane.querySelector("form, .bar input, details[open]"))
-    || [...pane.querySelectorAll("textarea")].some((area) => area.value.trim());
+    || [...pane.querySelectorAll("textarea")].some((area) => !area.readOnly && area.value.trim());
 }
 
 async function refreshQuietly() {
