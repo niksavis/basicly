@@ -223,7 +223,11 @@ def floor_violations(rate: float, floor: float | None, high_water: float | None)
     if rate < floor:
         violations.append(
             f"rank-1 rate {rate:.1%} is below the declared floor {floor:.1%} — routing "
-            "regressed. Fix the descriptions the positive prompts miss; do not lower the floor"
+            "regressed. The descriptions live in the managed core under .basicly/core/skills, "
+            "which basicly install overwrites: where this repository installs basicly, upgrade "
+            "to a release that meets the floor or report the shortfall upstream; where it "
+            "authors the catalog, fix the descriptions the positive prompts miss. Never lower "
+            "the floor"
         )
     return violations
 

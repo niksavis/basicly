@@ -4,7 +4,7 @@ token_cost:
   listing: 41
 name: work-tracker
 invocation: model
-description: "Reads, files, claims and closes records in the ledger tracker. Use to plan work, check what is ready, file a bug or claim an issue."
+description: "Reads, files, claims and closes records in the ledger tracker. Use to plan work, check what is ready, file a bug, or claim an issue before work on it starts."
 instructions: |
   # Work Tracker
 

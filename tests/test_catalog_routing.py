@@ -105,6 +105,15 @@ def test_a_rate_below_the_declared_floor_is_a_violation() -> None:
     assert routing.floor_violations(0.90, 0.85, 0.85) == []
 
 
+def test_a_rate_below_floor_names_the_managed_core_and_the_upgrade_remedy() -> None:
+    (message,) = routing.floor_violations(0.867, 0.891, 0.891)
+
+    assert ".basicly/core/skills" in message
+    assert "upgrade to a release that meets the floor" in message
+    assert "report the shortfall upstream" in message
+    assert "Never lower the floor" in message
+
+
 def test_a_floor_below_its_high_water_mark_is_refused() -> None:
 
     violations = routing.floor_violations(0.86, 0.70, 0.85)

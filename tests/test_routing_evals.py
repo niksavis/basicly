@@ -160,3 +160,13 @@ def test_the_missing_floor_advice_states_the_unit_it_wants() -> None:
 
     assert "fraction between 0 and 1, not a percentage" in advice
     assert "write 0.87, not 89.1" in advice
+
+
+BURNDOWN_CHART_RANK1_FLOOR = 0.891
+
+
+def test_the_shipped_catalog_meets_the_burndown_floor() -> None:
+    outcome = routing_outcome(REPO)
+
+    assert outcome.report.positives > 0
+    assert outcome.report.rank1_rate >= BURNDOWN_CHART_RANK1_FLOOR, outcome.summary()
