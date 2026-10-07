@@ -436,6 +436,12 @@ async function closedRecords() {
 }
 
 async function pick(key) {
+  const hash = routeHash(key, state.current && state.current.record);
+  if (location.hash !== hash) location.hash = hash;
+  else await showView(key);
+}
+
+async function showView(key) {
   state.tab = key;
   if (key === "closed") await attempt(closedRecords);
   drawList();
@@ -555,7 +561,8 @@ function markdown(text) {
 }
 
 function go(record) {
-  if (location.hash !== "#/record/" + record) location.hash = "#/record/" + record;
+  const hash = routeHash(state.tab, record);
+  if (location.hash !== hash) location.hash = hash;
   else open(record);
 }
 
@@ -1016,11 +1023,16 @@ async function open(record, quiet) {
 }
 
 function back() {
+  const hash = routeHash(state.tab);
+  if (location.hash !== hash) location.hash = hash;
+  else closeDetail();
+}
+
+function closeDetail() {
   document.body.classList.remove("reading");
   state.current = null;
   document.getElementById("detail-pane").replaceChildren(el("div", { class: "empty" }, "Pick a story from the list, or press New story."));
   drawList();
-  history.replaceState(null, "", location.pathname + location.search);
 }
 
 function clearDraft(draft) {
@@ -1070,9 +1082,22 @@ function blank() {
   form.title.focus();
 }
 
-function routed() {
-  const match = location.hash.match(/^#\/record\/(.+)$/);
-  if (match) open(decodeURIComponent(match[1]));
+function parseRoute(hash) {
+  const match = String(hash || "").match(/^#\/(?:([a-z_]+)\/?)?(?:record\/(.+))?$/);
+  if (!match) return { view: null, record: null };
+  const view = TABS.some(([key]) => key === match[1]) ? match[1] : null;
+  return { view, record: match[2] ? decodeURIComponent(match[2]) : null };
+}
+
+function routeHash(view, record) {
+  return "#/" + view + (record ? "/record/" + encodeURIComponent(record) : "");
+}
+
+async function routed() {
+  const route = parseRoute(location.hash);
+  if (route.view && route.view !== state.tab) await showView(route.view);
+  if (route.record && (!state.current || state.current.record !== route.record)) await open(route.record);
+  else if (!route.record) closeDetail();
 }
 
 const search = document.getElementById("search");

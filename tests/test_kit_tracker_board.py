@@ -220,7 +220,7 @@ def _run_page_behavior(script: str) -> None:
     node = shutil.which("node")
     assert node, "the configured Node technology is required to exercise the page"
     start = PAGE.index("function back()")
-    end = PAGE.index("function routed()", start)
+    end = PAGE.index("const search =", start)
     prelude = """
 const assert = require('node:assert/strict');
 const handlers = {};
@@ -239,9 +239,10 @@ const form = {
 const pane = { children: [], replaceChildren(...nodes) { this.children = nodes; }, scrollTop: 0 };
 const document = { body: { classList: { add() {}, remove() {} } },
   getElementById() { return pane; } };
-const history = { replaceState() {} };
-const location = { pathname: '/', search: '' };
-const state = { current: { record: 'demo-old' } };
+const TABS = [['ready', 'Ready']];
+const location = { pathname: '/', search: '', value: '',
+  get hash() { return this.value; }, set hash(next) { this.value = next; routed(); } };
+const state = { current: { record: 'demo-old' }, tab: 'ready' };
 const localStorage = { removeItem() {} };
 const REFINE = 'refine';
 const CONTENT = ['title','description','acceptance','requirements'];
