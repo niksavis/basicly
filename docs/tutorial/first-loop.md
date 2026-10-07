@@ -94,7 +94,8 @@ basicly catalog lint
 ```
 
 ```text
-catalog lint: routing: rank-1 rate 52/60 = 86.7% (no floor declared)
+...
+catalog lint: routing: rank-1 rate 56/60 = 93.3% (no floor declared)
 catalog lint: OK
 ```
 
@@ -129,7 +130,7 @@ basicly policy scaffold --type task
 ```text
 ## Trigger
 
-TODO: state the trigger in either voice - a situation, 'When <situation>, I want to <motivation>, so I can <outcome>.', or a persona, 'As a <persona>, I want <goal>, so that <benefit>.'. A persona is never required: where a situation triggers the work and no person wants it, inventing a persona is the defect.
+TODO: state a complete trigger with a situation/persona, motivation/goal and outcome/benefit; each part must contain text without placeholders. Use either voice - a situation, 'When <situation>, I want to <motivation>, so I can <outcome>.', or a persona, 'As a <persona>, I want <goal>, so that <benefit>.'. A persona is never required: where a situation triggers the work and no person wants it, inventing a persona is the defect
 
 ## Scope
 
@@ -185,6 +186,53 @@ When a reader opens the repo, I want a one line getting started note, so I can r
 
 ```text
 created: myrepo-rq9r
+myrepo-rq9r is not ready: it owes ## INVEST Review: independent, ## INVEST Review: negotiable, ## INVEST Review: valuable, ## INVEST Review: estimable, ## INVEST Review: small, ## INVEST Review: testable, ## Conversation, ## Confirmation Plan; claim refuses it
+...
+```
+
+The record is filed, but the claim refuses it until someone has reviewed it. A review
+records three things: a rationale for each INVEST quality, the comments in which the work
+was agreed, and a check for each acceptance criterion. Write the agreement on the card
+first:
+
+```sh
+python3 .basicly/core/kit/tracker/cli.py comment .basicly/ledger myrepo-rq9r 'Agreed: one line in NOTES.md that points a reader at basicly status.'
+python3 .basicly/core/kit/tracker/cli.py show .basicly/ledger myrepo-rq9r
+```
+
+`show` lists the comment with its sequence number in `comment_log`:
+
+```text
+...
+  "comment_log": [
+    {
+      ...
+      "seq": 3,
+      "text": "Agreed: one line in NOTES.md that points a reader at basicly status.",
+      ...
+    }
+  ],
+...
+```
+
+Then record the review. `conversation` names that sequence number, and each check repeats
+an acceptance criterion word for word, with the command that proves it and the result you
+expect:
+
+```sh
+python3 .basicly/core/kit/tracker/cli.py review .basicly/ledger myrepo-rq9r --evidence '{"invest": {"independent": "No other record touches NOTES.md.", "negotiable": "The wording of the note is open.", "valuable": "A reader finds the first command without reading the tree.", "estimable": "One line in one file.", "small": "One commit.", "testable": "grep counts the line."}, "conversation": [3], "checks": [{"criterion": "Given a reader who opens the repo when they read NOTES.md then a one line getting started note is present", "command": ["grep", "-c", "basicly status", "NOTES.md"], "expected": "1"}]}'
+```
+
+```text
+{
+  "appended": true,
+  "blocking": [],
+  ...
+  "owed": [],
+  "record": "myrepo-rq9r",
+  "remedy": "",
+  "schema": "basicly.tracker.review.v1"
+}
 ```
 
 Check the gate agrees:
@@ -197,9 +245,10 @@ basicly policy dor myrepo-rq9r
 DoR: READY (myrepo-rq9r)
 ```
 
-If it says `NOT READY` it names what is missing and repeats the scaffold command.
+If it says `NOT READY` it names what is missing.
 Add a missing section with `basicly tracker write -- update myrepo-rq9r -d '...'`, and a
-missing field with `--acceptance '...'` or `--requirements '...'`.
+missing field with `--acceptance '...'` or `--requirements '...'`. A change to either one
+makes the review stale, so record the review again after it.
 
 Now the install output has an id to reference. The `tracker-claim` hook refuses a
 commit that changes files outside the ledger unless you hold the record it names, so
@@ -294,7 +343,10 @@ cd ../myrepo.worktrees/myrepo-rq9r
 printf '# Notes\n\nRun `basicly status` to see what the harness installed.\n' > NOTES.md
 git add NOTES.md
 git commit -m "docs: add a getting started note (myrepo-rq9r)"
+grep -c "basicly status" NOTES.md
 ```
+
+The last command is the check the review planned, and it prints `1`.
 
 **The loop never commits your work for you.** Landing rebases the branch, so an
 uncommitted change (or a branch with no commit) makes the next step stop with
@@ -307,8 +359,13 @@ worktree strands the merge:
 
 ```sh
 cd ../../myrepo
+python3 .basicly/core/kit/tracker/cli.py confirm .basicly/ledger myrepo-rq9r --evidence '{"checks": [{"criterion": "Given a reader who opens the repo when they read NOTES.md then a one line getting started note is present", "command": ["grep", "-c", "basicly status", "NOTES.md"], "result": "1", "exit_code": 0}]}'
 basicly loop run myrepo-rq9r --runner manual
 ```
+
+`confirm` records the result of each planned check; the loop will not close the bead
+without it. Record it from the base checkout, because the tracker that `cli.py` writes in
+the worktree is not the shared one.
 
 ```text
 override: runner.default=manual
