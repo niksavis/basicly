@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the work tracker enforce INVEST and Card, Conversation, Confirmation evidence, and makes its page behave more like an app. **Upgrade note:** a record is now ready only with a recorded review, so an existing backlog shows 0 ready records until each record is reviewed with `cli.py review <ledger> <record> --evidence <json>`. `create` reports what a new record still owes.
+
+- **Process gates:** a claim needs a current INVEST review, a same-card conversation and a check plan, and a completed close needs matching command results (basicly-hxagpn8, basicly-nr815mq, basicly-jspelr5).
+- **Tracker app:** the URL keeps the view and the open card, and the server restarts itself when its kit changes (basicly-cmv2jgq.1, basicly-cmv2jgq.7, basicly-02nml8h.5).
+- **Routing:** shipped skills route 93.3% of the eval prompts at rank 1, so a consumer with a 0.891 floor can install (basicly-vgbylo5).
+- **Distribution and safety:** a standalone tracker UI and portable plugins, safer worktrees and bounded tracker HTTP (basicly-u2hl.24, basicly-02nml8h.2, basicly-02nml8h.3).
+
 ## v0.20.2 - 2026-10-05
 
 Delta: v0.20.1..v0.20.2
