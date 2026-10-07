@@ -13,6 +13,9 @@ from typing import Any
 
 import pytest
 
+from tests.kit_board_client import Client
+from tests.tracker_process_fixture import recorded_review
+
 KIT_DIR = Path(__file__).parent.parent / ".basicly" / "core" / "kit" / "board"
 TRIGGER = "When an export holds a comment, I want it kept, so I can import it back."
 
@@ -28,28 +31,6 @@ def _load(path: Path, name: str) -> Any:
 
 server = _load(KIT_DIR / "server.py", "basicly_tracker_kit_server")
 cli = server.tracker_cli()
-
-
-class Client:
-    def __init__(self, port: int) -> None:
-        self.port = port
-
-    def call(
-        self,
-        method: str,
-        path: str,
-        body: object = None,
-        headers: dict[str, str] | None = None,
-    ) -> tuple[int, dict[str, Any]]:
-        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
-        sent = {"Content-Type": "application/json"} if body is not None else {}
-        sent.update(headers or {})
-        data = None if body is None else json.dumps(body).encode()
-        conn.request(method, path, body=data, headers=sent)
-        response = conn.getresponse()
-        text = response.read().decode()
-        conn.close()
-        return response.status, json.loads(text) if text.startswith("{") else {"text": text}
 
 
 @pytest.fixture
@@ -112,9 +93,11 @@ def test_a_human_draft_waits_for_refinement_until_an_agent_pass_shapes_it(
     assert status == 422 and "cannot start" in refused["refused"]
 
     monkeypatch.setenv("AI_AGENT", "refiner")
-    argv = ["update", str(ledger), record, "--description", TRIGGER, "--remove-label", "refine"]
+    argv = ["update", str(ledger), record, "--description", TRIGGER]
     shaped = [*argv, "--acceptance", "- The export keeps every comment"]
     assert cli.main([*shaped, "--requirements", "- Standard library only"]) == cli.EXIT_OK
+    recorded_review(cli, ledger, record)
+    assert cli.main(["update", str(ledger), record, "--remove-label", "refine"]) == cli.EXIT_OK
 
     _, queue = client.call("GET", "/api/v1/refine")
     assert record not in {row["record"] for row in queue["records"]}
@@ -216,7 +199,9 @@ def test_a_custom_page_directory_replaces_the_default_page(ledger: Path, tmp_pat
     assert page["text"] == "<p>our own board</p>"
 
 
-def test_a_second_person_reserving_through_the_api_is_refused_by_name(client: Client) -> None:
+def test_a_second_person_reserving_through_the_api_is_refused_by_name(
+    client: Client, ledger: Path
+) -> None:
     shaped = {
         "title": "reserve me",
         "description": TRIGGER,
@@ -225,6 +210,7 @@ def test_a_second_person_reserving_through_the_api_is_refused_by_name(client: Cl
     }
     _, made = client.call("POST", "/api/v1/records", shaped)
     record = made["record"]
+    recorded_review(cli, ledger, record)
 
     status, _ = client.call("POST", f"/api/v1/records/{record}/assign", {"to": "alex"})
     assert status == 200

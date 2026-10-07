@@ -90,7 +90,7 @@ def owed(states: Iterable[Any], repo_root: Path) -> dict[str, tuple[str, ...]]:
 
     declared = load_type_sections(repo_root)
     template = tracker.ledger_template(repo_root)
-    found = tracker.kit(repo_root, "events").read_events(tracker.ledger_dir(repo_root))[0]
+    found = tracker.ledger_events(repo_root)[0]
     return {
         state.record: _missing_for(
             {**state.fields, "id": state.record},

@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from tests.tracker_process_fixture import recorded_review
+from tests.tracker_process_fixture import INVEST, recorded_review
 
 KIT_DIR = Path(__file__).parent.parent / ".basicly" / "core" / "kit" / "tracker"
 TRIGGER = "When a person drafts a story, I want an agent to review it, so I can trust it."
@@ -64,6 +64,41 @@ def test_an_agent_clears_the_mark_only_when_nothing_is_owed(
 
     assert "still owes" in early["refused"]
     assert not isinstance(done.get("refused"), str), done
+
+
+def test_a_plan_naming_a_machine_path_is_refused_before_the_ledger_redacts_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    record = _create(capsys, ledger, *SHAPED)
+    _run(capsys, "comment", str(ledger), record, "Agree the check.")
+    seq = _run(capsys, "show", str(ledger), record)["comment_log"][-1]["seq"]
+    interpreter = "/" + "home/alex/.venv/bin/python"
+    evidence = {
+        "invest": dict(INVEST),
+        "conversation": [seq],
+        "checks": [
+            {"criterion": "it is reviewed", "command": [interpreter, "-c", "pass"], "expected": "0"}
+        ],
+    }
+
+    refused = _run(capsys, "review", str(ledger), record, "--evidence", json.dumps(evidence))
+
+    assert "machine path" in refused["refused"]
+    assert "python3" in refused["refused"]
+
+
+def test_a_shaped_draft_owing_only_its_review_is_told_to_record_the_review(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = tmp_path / "ledger"
+    record = _create(capsys, ledger, *SHAPED, "--field", "labels=refine")
+    monkeypatch.setenv("AI_AGENT", "refiner")
+
+    refused = _run(capsys, "update", str(ledger), record, "--remove-label", "refine")["refused"]
+
+    assert f"review <ledger> {record} --evidence" in refused
+    assert "same update" not in refused
 
 
 @pytest.mark.parametrize(

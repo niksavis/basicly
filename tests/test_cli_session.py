@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from basicly import cli, policy, run_record, tracker
 from tests.flipped_tracker import flipped_repo, seed_records
+from tests.tracker_process_fixture import recorded_review
 
 if TYPE_CHECKING:
     import pytest
@@ -69,6 +70,8 @@ def _seeded(tmp_path: Path) -> Path:
             },
         ],
     )
+    for record in ("basicly-aaa", "basicly-ccc"):
+        recorded_review(tracker.kit(repo, "commands"), tracker.ledger_dir(repo), record)
     return repo
 
 

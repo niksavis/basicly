@@ -25,6 +25,8 @@ def at(monkeypatch: pytest.MonkeyPatch):
 
     def _pin(state: NodeState) -> None:
         monkeypatch.setattr(loop.loop_state, "read_node_state", lambda *_a, **_k: state)
+        monkeypatch.setattr(loop, "_hold_for_this_session", lambda _ctx: None)
+        monkeypatch.setattr(loop.process_confirmation, "confirm", lambda *_a: None)
 
     return _pin
 

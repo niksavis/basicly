@@ -107,6 +107,8 @@ def landing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(worktree, "load_session", lambda *_a, **_k: None)
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
     monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "ok"))
+    monkeypatch.setattr(loop, "_hold_for_this_session", lambda _ctx: None)
+    monkeypatch.setattr(loop.process_confirmation, "confirm", lambda *_a: None)
 
 
 def _advance(repo_root: Path, state: NodeState, monkeypatch: pytest.MonkeyPatch):

@@ -32,7 +32,7 @@ def _review(repo: Path, record: str) -> None:
             {
                 "criterion": "it knows",
                 "command": [
-                    sys.executable,
+                    Path(sys.executable).name,
                     ".basicly/kit/tracker/cli.py",
                     "show",
                     ".basicly/ledger",

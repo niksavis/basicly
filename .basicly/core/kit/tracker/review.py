@@ -61,6 +61,18 @@ def _starts(drafts: Sequence[Any], record: str) -> bool:
     )
 
 
+def _unreviewed(record: str, owed: Sequence[str], debt: Sequence[str]) -> str:
+
+    shape = [heading for heading in owed if heading not in debt]
+    review = [heading for heading in owed if heading in debt]
+    told = f"{record} still owes {', '.join(owed)}, so the review is not done; "
+    if not review:
+        return told + f"fill them in the same update that removes {REVIEW_LABEL}"
+    steps = [f"fill {', '.join(shape)} with update"] if shape else []
+    steps.append(f"record {', '.join(review)} with `review <ledger> {record} --evidence <json>`")
+    return told + ", then ".join(steps) + f", then remove {REVIEW_LABEL}"
+
+
 def refuse(
     states: Mapping[str, Any],
     drafts: Sequence[Any],
@@ -75,11 +87,8 @@ def refuse(
         before = _labels(state.fields) if state is not None else set()
         fields = _after(state, drafts, record)
         marked = REVIEW_LABEL in _labels(fields)
-        owed = shaping.refused(
-            fields,
-            template=template,
-            process=process.readiness(found, record, fields, drafts, template=template),
-        )
+        debt = process.readiness(found, record, fields, drafts, template=template)
+        owed = shaping.refused(fields, template=template, process=debt)
         if REVIEW_LABEL in before and not marked:
             if not writer.startswith(writers.AGENT):
                 raise UnreviewedError(
@@ -87,10 +96,7 @@ def refuse(
                     f"{REVIEW_LABEL} label, after it fills the missing detail"
                 )
             if owed:
-                raise UnreviewedError(
-                    f"{record} still owes {', '.join(owed)}, so the review is not done; fill "
-                    f"them in the same update that removes {REVIEW_LABEL}"
-                )
+                raise UnreviewedError(_unreviewed(record, owed, debt))
         if _starts(drafts, record) and (marked or owed):
             why = f"it waits for an agent review ({REVIEW_LABEL})" if marked else "it owes "
             why += "" if marked else ", ".join(owed)

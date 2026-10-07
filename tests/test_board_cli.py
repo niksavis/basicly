@@ -21,6 +21,7 @@ from basicly import (
     tracker,
 )
 from tests.board_offline import assert_offline
+from tests.tracker_process_fixture import recorded_review
 
 REPO_ROOT = Path(__file__).parent.parent
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "board"
@@ -76,6 +77,8 @@ def _owned_repo(root: Path, *records: str) -> Path:
             )
         ],
     )
+    for record in records:
+        recorded_review(tracker.kit(root, "commands"), tracker.ledger_dir(root), record)
     return root
 
 

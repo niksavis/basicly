@@ -107,6 +107,7 @@ def install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., Any]) -> None:
         (tracker, "try_add_comment", lambda root, rid, body: _soft_add(fake, root, rid, body)),
         (tracker, "create_record", lambda root, args: _create(fake, root, args)),
         (tracker, "read_ranking", lambda root, limit=None: _ranking(fake, root, limit)),
+        (tracker, "holder_name", lambda _root: str(getattr(fake, "holder", ""))),
         (gate_source, "read_gates", lambda root, rid: _gates(fake, root, rid)),
         (dependency_graph, "blocking_cycles", lambda root: _cycles(fake, root)),
     ]

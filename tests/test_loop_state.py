@@ -11,6 +11,7 @@ from basicly.config import VERIFY_GATE_PROVIDER, PolicyConfig
 from basicly.loop_state import WorktreeBinding
 from basicly.policy import GateStatus
 from tests import fake_tracker
+from tests.tracker_process_fixture import recorded_review
 
 CONFIG = PolicyConfig(required_gates=("verify",), max_rework=2)
 
@@ -298,6 +299,8 @@ def _seed_ledger(repo: Path) -> None:
         ],
         clock=lambda: CLOCK,
     )
+    for record in ("rank-aa01", "rank-cc03"):
+        recorded_review(tracker.kit(repo, "commands"), tracker.ledger_dir(repo), record)
 
 
 def test_ready_ranking_reads_the_owned_scorer_after_the_flip(tmp_path: Path) -> None:

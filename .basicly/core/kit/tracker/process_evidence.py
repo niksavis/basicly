@@ -263,6 +263,15 @@ def _draft(record: str, name: str, value: Mapping[str, object], writer: str) -> 
     )
 
 
+def _machine_path(checks: Sequence[Mapping[str, Any]]) -> str | None:
+
+    rules = _load("beads").MACHINE_PATH_RULES
+    for check in checks:
+        if any(pattern.search(part) for part in check["command"] for _, pattern in rules):
+            return str(check["criterion"])
+    return None
+
+
 def review_draft(
     found: Sequence[Any], record: str, payload: object, writer: str, *, template=None
 ) -> Any:
@@ -289,6 +298,12 @@ def review_draft(
     if not _checks(state.fields, payload["checks"]):
         raise ProcessEvidenceError(
             "Confirmation Plan requires each criterion once, command argv and expected result"
+        )
+    if (criterion := _machine_path(payload["checks"])) is not None:
+        raise ProcessEvidenceError(
+            f"Confirmation Plan command for {criterion!r} holds a machine path that the ledger "
+            "redacts, which would void the review; name the program on PATH, such as python3 "
+            "or uv run, or a path relative to the repository"
         )
     value = {**payload, "revision": revision(found, record, template=template)}
     return _draft(record, REVIEW_FIELD, value, writer)

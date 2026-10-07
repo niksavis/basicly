@@ -1,0 +1,1 @@
+- Block a held in-progress resume whose review is stale; keep a review when classify repeats the same type; refuse a check command with a machine path the ledger would redact; name the `review` command when a refine draft owes only its review.

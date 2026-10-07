@@ -5,10 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from basicly import cli, decisions, policy
+from basicly import cli, decisions, policy, tracker
 from basicly.config import PolicyConfig
-from tests import fake_tracker
+from tests import fake_tracker, flipped_tracker
 from tests.plan_fixtures import install_kit
+from tests.tracker_process_fixture import recorded_review
 
 
 class _Proc:
@@ -462,6 +463,17 @@ def test_dor_refusal_names_the_scaffold_command_for_the_issues_own_type(
 _TRIGGER = "## Trigger\n\nWhen gated, I want a trigger, so I can validate it.\n\n"
 
 
+def _reviewed(fields: dict[str, str]) -> dict[str, object]:
+
+    repo = Path.cwd()
+    flipped_tracker.seed(repo, "basicly-x", **fields)
+    commands = tracker.kit(repo, "commands")
+    ledger = tracker.ledger_dir(repo)
+    recorded_review(commands, ledger, "basicly-x")
+    folded = commands.events.fold(commands.events.read_events(ledger)[0])
+    return {**folded.records["basicly-x"].fields, "id": "basicly-x"}
+
+
 def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_verdict(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -473,7 +485,7 @@ def test_dor_warns_about_a_scope_that_parsed_to_nothing_without_changing_the_ver
         "acceptance_criteria": "- x",
         "requirements": "- r",
     }
-    record = _Proc(json.dumps([fields]))
+    record = _Proc(json.dumps([_reviewed(fields)]))
     fake_tracker.install(monkeypatch, lambda _root, _args: record)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 0
@@ -492,7 +504,7 @@ def test_dor_stays_quiet_when_the_scope_parsed(
         "acceptance_criteria": "- x",
         "requirements": "- r",
     }
-    record = _Proc(json.dumps([fields]))
+    record = _Proc(json.dumps([_reviewed(fields)]))
     fake_tracker.install(monkeypatch, lambda _root, _args: record)
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 0

@@ -185,7 +185,7 @@ def test_the_tracker_kit_holds_a_record_without_basicly(consumer: Path, tmp_path
     assert shown.returncode == 0, shown.stdout + shown.stderr
     check = {
         "criterion": "it is kept",
-        "command": [sys.executable, str(cli), "show", str(ledger), record],
+        "command": [Path(sys.executable).name, str(cli), "show", str(ledger), record],
         "expected": "a record",
     }
     evidence = {

@@ -280,7 +280,16 @@ def test_the_loop_stops_on_a_story_someone_else_holds(
 def test_the_loop_records_the_person_who_runs_it_as_the_holder(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    flipped_tracker.seed(repo, "th-2", title="a free story")
+    flipped_tracker.seed(
+        repo,
+        "th-2",
+        title="a free story",
+        description="## Trigger\n\nWhen I run the loop, I want to hold the story, so I can work.",
+        acceptance_criteria="Given a free story when the loop runs then it records the holder",
+        requirements="The holder is the person who runs the loop",
+        issue_type="task",
+    )
+    recorded_review(owned_store.kit(repo, "commands"), owned_store.ledger_dir(repo), "th-2")
     monkeypatch.setenv("GIT_AUTHOR_NAME", "sam")
 
     assert loop._hold_for_this_session(_ctx(repo, "th-2")) is None

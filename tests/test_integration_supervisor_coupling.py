@@ -8,6 +8,7 @@ import pytest
 
 from basicly import loop, loop_state, merge, policy, runner, supervise, tracker, worktree
 from tests import flipped_tracker
+from tests.tracker_process_fixture import recorded_review
 
 SENTINEL = "BROKEN"
 _PROBE = f"import pathlib,sys; sys.exit(1 if pathlib.Path({SENTINEL!r}).exists() else 0)"
@@ -19,7 +20,7 @@ concurrency = 4
 
 [[verify.checks]]
 name = "sentinel"
-command = [{Path(sys.executable).as_posix()!r}, "-c", {_PROBE!r}]
+command = [{Path(sys.executable).name!r}, "-c", {_PROBE!r}]
 modes = ["fast", "full"]
 
 [policy]
@@ -69,7 +70,7 @@ def _commit(cwd: Path, path: str, body: str, message: str) -> None:
 
 def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: str = _ROOT) -> str:
 
-    return tracker.create_record(
+    record = tracker.create_record(
         repo,
         [
             "create",
@@ -87,6 +88,17 @@ def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: st
             parent,
             "--json",
         ],
+    )
+    _review(repo, record)
+    return record
+
+
+def _review(repo: Path, record: str) -> None:
+    recorded_review(
+        tracker.kit(repo, "commands"),
+        tracker.ledger_dir(repo),
+        record,
+        command=[Path(sys.executable).name, "-c", _PROBE],
     )
 
 

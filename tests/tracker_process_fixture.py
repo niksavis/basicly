@@ -18,18 +18,31 @@ DEBTS = (
 )
 
 
-def review_payload(criteria: tuple[str, ...], reference: int) -> dict[str, Any]:
+def review_payload(
+    criteria: tuple[str, ...], reference: int, command: list[str] | None = None
+) -> dict[str, Any]:
     return {
         "invest": dict(INVEST),
         "conversation": [reference],
         "checks": [
-            {"criterion": criterion, "command": ["fixture-check", criterion], "expected": criterion}
+            {
+                "criterion": criterion,
+                "command": command or ["fixture-check", criterion],
+                "expected": criterion,
+            }
             for criterion in criteria
         ],
     }
 
 
-def recorded_review(kit: Any, ledger: Path, record: str, *, completed: bool = False) -> None:
+def recorded_review(
+    kit: Any,
+    ledger: Path,
+    record: str,
+    *,
+    completed: bool = False,
+    command: list[str] | None = None,
+) -> None:
     commands = getattr(kit, "commands", kit)
     process = commands.review.process
     commands.comment(
@@ -42,7 +55,7 @@ def recorded_review(kit: Any, ledger: Path, record: str, *, completed: bool = Fa
         for event in found
         if event.record == record and event.kind in kit.events.PROSE_KINDS
     )
-    payload = review_payload(process.criteria(state.fields), reference)
+    payload = review_payload(process.criteria(state.fields), reference, command)
     commands.record_process(ledger, record, payload)
     if completed:
         checks = [

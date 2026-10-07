@@ -98,6 +98,26 @@ def owed_of(repo_root: Path, record: str) -> dict[str, object]:
     return kit(repo_root, "record_view").owed_of(ledger_dir(repo_root), record)
 
 
+def ledger_events(repo_root: Path) -> tuple[list[Any], list[Any]]:
+    return kit(repo_root, "events").read_events(ledger_dir(repo_root))
+
+
+def confirmation_evidence(repo_root: Path, record: str) -> tuple[dict[str, Any], bool] | str:
+
+    events = kit(repo_root, "events")
+    process = kit(repo_root, "process_evidence")
+    found, quarantine = ledger_events(repo_root)
+    if quarantine:
+        return f"confirmation for {record} refuses quarantined tracker evidence"
+    state = events.fold(found).records.get(record)
+    if state is None:
+        return f"confirmation requires existing record {record}"
+    template = kit(repo_root, "templates").load(ledger_dir(repo_root))
+    report = process.confirmation_report(found, record, template=template)
+    closing = bool(process.closing_owed(found, record, state.fields, template=template))
+    return report, closing
+
+
 def readiness(
     repo_root: Path,
     record: Mapping[str, object],

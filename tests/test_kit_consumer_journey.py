@@ -21,7 +21,7 @@ writers = _load(REPO_ROOT / KIT_RELATIVE / "writers.py", "consumer_journey_write
 LEDGER = ".basicly/ledger"
 TRACKER_PYZ = Path(".basicly") / "tracker.pyz"
 BOARD_PYZ = Path(".basicly") / "board.pyz"
-BARE = (sys.executable, "-I", "-S")
+BARE = (Path(sys.executable).name, "-I", "-S")
 
 
 class Mode(NamedTuple):

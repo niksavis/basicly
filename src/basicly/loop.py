@@ -494,15 +494,33 @@ def _hold_for_this_session(ctx: _Ctx) -> AdvanceResult | None:
             f"{ctx.issue_id} --take`",
         )
     me = tracker.holder_name(ctx.repo_root)
-    if record.get("status") != "in_progress" or (me and record.get(tracker.HOLDER_FIELD) != me):
-        args = ["update", ctx.issue_id, "--status", "in_progress"]
-        if me:
-            args.extend(["--assignee", me])
-        try:
-            tracker.write(ctx.repo_root, args)
-        except RuntimeError as exc:
-            return _blocked(ctx, f"start claim for {ctx.issue_id} refused: {exc}")
+    held = not me or record.get(tracker.HOLDER_FIELD) == me
+    if record.get("status") == "in_progress" and held:
+        return _stale_review(ctx, record)
+    args = ["update", ctx.issue_id, "--status", "in_progress"]
+    if me:
+        args.extend(["--assignee", me])
+    try:
+        tracker.write(ctx.repo_root, args)
+    except RuntimeError as exc:
+        return _blocked(ctx, f"start claim for {ctx.issue_id} refused: {exc}")
     return None
+
+
+def _stale_review(ctx: _Ctx, record: Mapping[str, object]) -> AdvanceResult | None:
+
+    required, refused = tracker.readiness(
+        ctx.repo_root, {**record, "id": ctx.issue_id}, tracker.ledger_template(ctx.repo_root)
+    )
+    owed = [heading for heading in required if heading in refused]
+    if not owed:
+        return None
+    return _blocked(
+        ctx,
+        f"{ctx.issue_id} cannot resume: its review is stale and owes {', '.join(owed)}; "
+        f"record a current review with `python3 .basicly/core/kit/tracker/cli.py review "
+        f".basicly/ledger {ctx.issue_id} --evidence ...` first",
+    )
 
 
 def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:

@@ -22,6 +22,7 @@ from basicly import (
 from basicly.config import VERIFY_GATE_PROVIDER, PolicyConfig
 from tests.plan_fixtures import planned
 from tests.test_owned_write import no_br
+from tests.tracker_process_fixture import recorded_review
 
 __all__ = ["no_br"]
 
@@ -70,6 +71,10 @@ def _children() -> tuple[decompose.ChildSpec, ...]:
     )
 
 
+def _review(repo: Path, record: str) -> None:
+    recorded_review(owned_store.kit(repo, "commands"), owned_store.ledger_dir(repo), record)
+
+
 @pytest.mark.usefixtures("no_br")
 def test_a_decomposition_creates_types_and_wires_its_children_from_the_ledger_alone(
     flipped: Path,
@@ -115,6 +120,7 @@ def test_the_blocked_set_the_ready_set_and_the_cycles_all_answer(flipped: Path) 
 
     first, second = _children()
     decompose.decompose(flipped, ROOT, (first, replace(second, depends_on=(first.title,))))
+    _review(flipped, f"{ROOT}.1")
 
     assert loop_state.blocked_ids(flipped) == (f"{ROOT}.2",)
     assert dependency_graph.blocking_cycles(flipped) == ()
@@ -140,6 +146,10 @@ def test_typing_gating_and_closing_a_bead_all_land_in_the_ledger(flipped: Path) 
 
     classify.classify(flipped, ROOT, "feature", scope=("src/basicly/**",))
     validate_gate.record_verdict(flipped, ROOT, passed=True)
+    commands = owned_store.kit(flipped, "commands")
+    ledger = owned_store.ledger_dir(flipped)
+    commands.update(ledger, ROOT, fields={"acceptance_criteria": "- the close lands"})
+    recorded_review(commands, ledger, ROOT, completed=True)
     tracker.write(flipped, ["close", ROOT, "--reason", "shipped by the harness loop"])
 
     record = tracker.read_record(flipped, ROOT)
@@ -158,6 +168,7 @@ def test_a_decomposed_child_carries_typed_criteria_and_the_parent_requirements(
 ) -> None:
 
     decompose.decompose(flipped, ROOT, _children())
+    _review(flipped, f"{ROOT}.1")
     child = tracker.read_record(flipped, f"{ROOT}.1") or {}
 
     assert child["acceptance_criteria"].startswith("- ")

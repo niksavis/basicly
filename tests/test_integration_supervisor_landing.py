@@ -10,6 +10,7 @@ import pytest
 
 from basicly import cli, loop, loop_state, merge, policy, repair_brief, supervise, tracker, worktree
 from tests import flipped_tracker
+from tests.tracker_process_fixture import recorded_review
 
 _BASE_CONFIG = f"""\
 [worktree]
@@ -18,7 +19,7 @@ concurrency = 4
 
 [[verify.checks]]
 name = "always-green"
-command = [{Path(sys.executable).as_posix()!r}, "-c", "pass"]
+command = [{Path(sys.executable).name!r}, "-c", "pass"]
 modes = ["fast", "full"]
 
 [policy]
@@ -50,7 +51,7 @@ def _commit(cwd: Path, path: str, body: str, message: str) -> None:
 
 
 def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: str = _ROOT) -> str:
-    return tracker.create_record(
+    record = tracker.create_record(
         repo,
         [
             "create",
@@ -68,6 +69,17 @@ def _create_bead(repo: Path, title: str, *, issue_type: str = "task", parent: st
             parent,
             "--json",
         ],
+    )
+    _review(repo, record)
+    return record
+
+
+def _review(repo: Path, record: str) -> None:
+    recorded_review(
+        tracker.kit(repo, "commands"),
+        tracker.ledger_dir(repo),
+        record,
+        command=[Path(sys.executable).name, "-c", "pass"],
     )
 
 

@@ -157,7 +157,14 @@ def test_kill_with_a_relayed_code_tears_the_worktree_down_then_closes(
     assert torn_down == [(_WORKTREE, False)]
     assert f"{policy.MARKER} kill superseded by basicly-y2" in fake_br.comments
     assert fake_br.argv_for("close") == [
-        ["close", _ISSUE, "--reason", "killed: superseded by basicly-y2"]
+        [
+            "close",
+            _ISSUE,
+            "--resolution",
+            "cancelled",
+            "--reason",
+            "killed: superseded by basicly-y2",
+        ]
     ]
 
 
@@ -272,7 +279,9 @@ def test_kill_with_discard_forces_the_teardown_and_closes(
 
     assert rc == 0
     assert torn_down == [(_WORKTREE, True)]
-    assert fake_br.argv_for("close") == [["close", _ISSUE, "--reason", "killed: abandoned"]]
+    assert fake_br.argv_for("close") == [
+        ["close", _ISSUE, "--resolution", "cancelled", "--reason", "killed: abandoned"]
+    ]
 
 
 def test_kill_closes_a_lane_that_never_provisioned_a_worktree(
@@ -294,7 +303,7 @@ def test_kill_closes_a_lane_that_never_provisioned_a_worktree(
     assert rc == 0
     assert torn_down == []
     assert fake_br.argv_for("close") == [
-        ["close", _ISSUE, "--reason", "killed: requirement withdrawn"]
+        ["close", _ISSUE, "--resolution", "cancelled", "--reason", "killed: requirement withdrawn"]
     ]
 
 

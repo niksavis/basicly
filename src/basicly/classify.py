@@ -7,6 +7,7 @@ from . import integrity, policy
 from .config import WORK_TYPES
 from .tracker import add_comment as _add_comment
 from .tracker import read_comments as _read_comments
+from .tracker import read_record as _read_record
 from .tracker import write as _write
 
 CLASSIFICATION_MARKER = integrity.CLASSIFICATION_MARKER
@@ -30,7 +31,8 @@ def classify(
 
     if work_type not in WORK_TYPES:
         raise ValueError(f"unknown work type {work_type!r}; expected one of {list(WORK_TYPES)}")
-    _write(repo_root, ["update", issue_id, "-t", work_type])
+    if (_read_record(repo_root, issue_id) or {}).get("issue_type") != work_type:
+        _write(repo_root, ["update", issue_id, "-t", work_type])
     assignment = integrity.assign(scope)
     _record_classification(repo_root, issue_id, assignment)
     dor = policy.definition_of_ready(repo_root, issue_id)

@@ -5,10 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from basicly import classify, tracker
+from basicly import classify, policy, tracker
 from basicly.config import WORK_TYPES
 from tests import fake_tracker, flipped_tracker
 from tests.plan_fixtures import install_kit
+from tests.tracker_process_fixture import DEBTS, recorded_review
 
 
 class _Proc:
@@ -96,15 +97,18 @@ _TRIGGER = "## Trigger\n\nWhen gated, I want a trigger, so I can validate it.\n\
 
 def test_classify_reports_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
-    _install(
-        monkeypatch,
-        _FakeBr(
-            acceptance_criteria="given x then y",
-            requirements="- a requirement",
-            description=_TRIGGER,
-        ),
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(
+        repo,
+        "cls-1",
+        acceptance_criteria="given x then y",
+        requirements="- a requirement",
+        description=_TRIGGER,
+        issue_type="feature",
     )
-    result = classify.classify(tmp_path, "i", "feature")
+    recorded_review(tracker.kit(repo, "commands"), tracker.ledger_dir(repo), "cls-1")
+    flipped_tracker.refuse_spawn(monkeypatch)
+    result = classify.classify(repo, "cls-1", "feature")
     assert result.dor.ready is True
     assert result.can_leave_classify is True
 
@@ -114,7 +118,12 @@ def test_classify_reports_not_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_pat
     result = classify.classify(tmp_path, "i", "feature")
     assert result.work_type == "feature"
     assert result.can_leave_classify is False
-    assert result.dor.missing == ("## Trigger", "## Acceptance Criteria", "## Requirements")
+    assert result.dor.missing == (
+        "## Trigger",
+        "## Acceptance Criteria",
+        "## Requirements",
+        *DEBTS,
+    )
 
 
 def test_classify_assigns_and_records_the_integrity_level(
@@ -164,7 +173,9 @@ def test_the_type_and_the_marker_land_in_the_owned_ledger_with_br_absent(
         description=_TRIGGER,
         acceptance_criteria="- given x",
         requirements="- a requirement",
+        issue_type="task",
     )
+    recorded_review(tracker.kit(repo, "commands"), tracker.ledger_dir(repo), "seam-1")
     flipped_tracker.refuse_spawn(monkeypatch)
 
     result = classify.classify(repo, "seam-1", "task", ("src/basicly/policy.py",))
@@ -173,7 +184,7 @@ def test_the_type_and_the_marker_land_in_the_owned_ledger_with_br_absent(
     assert record is not None
     assert record["issue_type"] == "task"
     assert result.dor.ready is True
-    marker = tracker.read_comments(repo, "seam-1")[0]["text"]
+    marker = tracker.read_comments(repo, "seam-1")[-1]["text"]
     assert marker.startswith(f"{classify.CLASSIFICATION_MARKER} level=L2")
 
 
@@ -182,17 +193,38 @@ def test_the_dor_verdict_comes_out_of_the_owned_record_with_br_absent(
 ) -> None:
 
     repo = flipped_tracker.flipped_repo(tmp_path)
-    for bead in ("ready-1", "bug-1"):
+    for bead, kind in (("ready-1", "task"), ("bug-1", "bug")):
         flipped_tracker.seed(
             repo,
             bead,
             description=_TRIGGER,
             acceptance_criteria="- given x",
             requirements="- a requirement",
+            issue_type=kind,
         )
+    recorded_review(tracker.kit(repo, "commands"), tracker.ledger_dir(repo), "ready-1")
     flipped_tracker.refuse_spawn(monkeypatch)
 
     assert classify.classify(repo, "ready-1", "task").dor.ready is True
     verdict = classify.classify(repo, "bug-1", "bug").dor
     assert verdict.ready is False
-    assert verdict.missing == ("## Steps to Reproduce",)
+    assert verdict.missing == ("## Steps to Reproduce", *DEBTS)
+
+
+def test_a_classify_that_keeps_the_type_keeps_a_current_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(
+        repo,
+        "seam-2",
+        description=_TRIGGER,
+        acceptance_criteria="- given x",
+        requirements="- a requirement",
+        issue_type="task",
+    )
+    recorded_review(tracker.kit(repo, "commands"), tracker.ledger_dir(repo), "seam-2")
+    flipped_tracker.refuse_spawn(monkeypatch)
+    assert policy.definition_of_ready(repo, "seam-2").ready is True
+
+    assert classify.classify(repo, "seam-2", "task").dor.ready is True

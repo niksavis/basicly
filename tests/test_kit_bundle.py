@@ -80,7 +80,7 @@ def test_the_archive_installs_and_runs_the_tracker(pyz: Path, tmp_path: Path) ->
     assert shown.returncode == 0, shown.stdout + shown.stderr
     check = {
         "criterion": "it runs",
-        "command": [sys.executable, str(pyz), "show", ledger, record],
+        "command": [Path(sys.executable).name, str(pyz), "show", ledger, record],
         "expected": "a",
     }
     evidence = {

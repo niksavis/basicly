@@ -28,6 +28,8 @@ def _no_tracker_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(loop.rubrics, "load_rubrics", lambda *_a, **_k: [])
     monkeypatch.setattr(policy, "record_rework", lambda *_a, **_k: 1)
     monkeypatch.setattr(loop, "lane_rework_spent", lambda *_a, **_k: 1)
+    monkeypatch.setattr(loop, "_hold_for_this_session", lambda _ctx: None)
+    monkeypatch.setattr(loop.process_confirmation, "confirm", lambda *_a: None)
     monkeypatch.setattr(
         policy,
         "record_finding_set",
