@@ -34,6 +34,7 @@ def _load(file_name: str, module_name: str) -> Any:
 
 routes = _load("routes.py", "basicly_board_kit_routes")
 framing = _load("framing.py", "basicly_board_kit_framing")
+reload = _load("reload.py", "basicly_board_kit_reload")
 RequestError = routes.RequestError
 tracker_cli = routes.tracker_cli
 API = routes.API
@@ -132,17 +133,7 @@ def loaded_kit_files() -> tuple[Path, ...]:
     return tuple(sorted(files))
 
 
-def kit_stamps(files: Sequence[Path]) -> tuple[tuple[int, int] | None, ...]:
-
-    stamps: list[tuple[int, int] | None] = []
-    for path in files:
-        try:
-            held = path.stat()
-        except OSError:
-            stamps.append(None)
-            continue
-        stamps.append((held.st_mtime_ns, held.st_size))
-    return tuple(stamps)
+kit_stamps = reload.kit_stamps
 
 
 class LoadedKit:
@@ -298,6 +289,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class LookupFreeServer(ThreadingHTTPServer):
+    kit: LoadedKit
+
     def server_bind(self) -> None:
         super(HTTPServer, self).server_bind()
 
@@ -310,12 +303,14 @@ def make_server(  # noqa: PLR0913 - one keyword per fact the handler binds; a se
     web: Path = WEB_DIR,
     redact: Any = None,
     restart: str = "",
-) -> ThreadingHTTPServer:
+) -> LookupFreeServer:
 
     kit = LoadedKit(restart or relaunch(str(_HERE / "server.py"), str(ledger)))
     bound = {"ledger": ledger, "web": web, "bound": host, "kit": kit}
     handler = type("BoundHandler", (Handler,), {**bound, "redact": staticmethod(redact)})
-    return LookupFreeServer((host, port), handler)
+    served = LookupFreeServer((host, port), handler)
+    served.kit = kit
+    return served
 
 
 def address_in_use(error: OSError) -> bool:
@@ -377,12 +372,16 @@ def run(args: Any, redact: Callable[[str], str] | None = None) -> int:
     if args.host not in LOOPBACK:
         sys.stderr.write(f"board: {args.host} is not loopback; the network can write\n")
     sys.stderr.write(f"board: http://{host}:{port}/ serves {ledger}; API at {API}\n")
+    watcher = reload.Watcher(server, server.kit).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         sys.stderr.write("board: stopped\n")
     finally:
+        watcher.stop()
         server.server_close()
+    if watcher.due:
+        reload.restart()
     return 0
 
 

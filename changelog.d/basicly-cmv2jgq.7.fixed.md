@@ -1,0 +1,1 @@
+- The tracker server restarts itself on the new kit when its kit files change and the new kit loads; a kit that fails to load keeps the old server refusing with the named file, and the page shows that refusal in a banner instead of looking dead.

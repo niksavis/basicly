@@ -126,6 +126,7 @@
   .inline { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
   #toast { position: fixed; right: 1rem; bottom: 1rem; max-width: 34rem; padding: .6rem .9rem; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 24px #0004; display: none; }
   #outage { margin: .6rem 1.2rem 0; }
+  #stale { position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: .6rem 1rem; background: var(--panel); border-bottom: 2px solid var(--bad); color: var(--bad); }
   #toast.show { display: block; } #toast.bad { border-color: var(--bad); color: var(--bad); }
   .back { display: none; }
   @media (max-width: 900px) {
@@ -161,6 +162,7 @@
   </div>
   <div id="detail-pane" aria-live="polite"></div>
 </main>
+<div id="stale" role="alert" hidden></div>
 <div id="toast" role="status"></div>
 <script>
 "use strict";
@@ -194,9 +196,17 @@ async function call(method, path, body) {
   }
   const response = await fetch(API + path, init);
   const report = await response.json();
+  kitBanner(document.getElementById("stale"), response.status, report.refused);
   if (report.found === false) throw new Error("no story " + (report.record || "") + " in this ledger");
   if (!response.ok || typeof report.refused === "string") throw new Error(report.refused || JSON.stringify(report.blocking || report));
   return report;
+}
+
+function kitBanner(node, status, refused) {
+  const stale = status === 503 && typeof refused === "string";
+  node.hidden = !stale;
+  node.textContent = stale ? refused : "";
+  return stale;
 }
 
 function toast(text, bad) {

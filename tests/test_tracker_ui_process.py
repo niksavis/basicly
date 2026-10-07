@@ -49,6 +49,7 @@ function find(node, predicate) {
         + PAGE[PAGE.index("function since(") : PAGE.index("function dependencyVerdict(")]
         + PAGE[PAGE.index("function notices(") : PAGE.index("function titleBlock(")]
         + PAGE[PAGE.index("function busy()") : PAGE.index("async function watchVersion()")]
+        + PAGE[PAGE.index("function kitBanner(") : PAGE.index("function toast(")]
         + script
     )
     result = subprocess.run([node, "-e", source], text=True, capture_output=True, check=False)
@@ -166,4 +167,19 @@ const load = async () => {refreshed++;};
   await refreshQuietly();
   assert.equal(refreshed, 0);
 })();
+""")
+
+
+def test_a_stale_kit_refusal_shows_a_banner_until_the_server_answers_again() -> None:
+    _run(r"""
+const node = { hidden: true, textContent: '' };
+assert.equal(kitBanner(node, 503, 'the kit files changed on disk since this server started'), true);
+assert.equal(node.hidden, false);
+assert.match(node.textContent, /kit files changed/);
+assert.equal(kitBanner(node, 422, 'an ordinary refusal'), false);
+assert.equal(node.hidden, true);
+assert.equal(kitBanner(node, 503, 'the kit files changed again'), true);
+assert.equal(kitBanner(node, 200, undefined), false);
+assert.equal(node.hidden, true);
+assert.equal(node.textContent, '');
 """)
