@@ -1,1 +1,0 @@
-- Shipped skill descriptions route 56 of 60 eval prompts to the right skill (93.3%, was 86.7%), so a consumer with a 0.891 rank-1 floor can install; a below-floor refusal now says the descriptions live in the managed core and to upgrade or report upstream, never lower the floor.

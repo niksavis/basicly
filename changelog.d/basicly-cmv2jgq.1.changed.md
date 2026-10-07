@@ -1,1 +1,0 @@
-- The tracker page keeps its place in the URL: each view and open card has a route, a reload restores both, and back and forward move between views and cards without a page load.

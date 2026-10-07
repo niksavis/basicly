@@ -1,1 +1,0 @@
-- Require recorded INVEST rationales, same-card conversation and criterion checks before claims; confirm matching command results before completed closes, with explicit reasoned cancellation and shared kit, CLI and API refusals.

@@ -6,12 +6,48 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.21.0 - 2026-10-07
+
+Delta: v0.20.2..v0.21.0
+
 This release makes the work tracker enforce INVEST and Card, Conversation, Confirmation evidence, and makes its page behave more like an app. **Upgrade note:** a record is now ready only with a recorded review, so an existing backlog shows 0 ready records until each record is reviewed with `cli.py review <ledger> <record> --evidence <json>`. `create` reports what a new record still owes.
 
 - **Process gates:** a claim needs a current INVEST review, a same-card conversation and a check plan, and a completed close needs matching command results (basicly-hxagpn8, basicly-nr815mq, basicly-jspelr5).
 - **Tracker app:** the URL keeps the view and the open card, and the server restarts itself when its kit changes (basicly-cmv2jgq.1, basicly-cmv2jgq.7, basicly-02nml8h.5).
 - **Routing:** shipped skills route 93.3% of the eval prompts at rank 1, so a consumer with a 0.891 floor can install (basicly-vgbylo5).
 - **Distribution and safety:** a standalone tracker UI and portable plugins, safer worktrees and bounded tracker HTTP (basicly-u2hl.24, basicly-02nml8h.2, basicly-02nml8h.3).
+
+### Added
+
+- Bundle the human tracker UI with the standalone CLI and export portable agent plugins with shared guidance, repository gates and a self-contained Python archive, preserving Python 3.9 server interfaces. (basicly-u2hl.24)
+
+### Changed
+
+- Improve tracker capture with cancellable forms, retained drafts and saving feedback; display authoritative readiness, recorded INVEST/C3 review and criterion results, with explicit completed or cancelled closure. Keep lists refreshing when a read-only agent handoff is shown. (basicly-02nml8h.5)
+
+- The tracker page keeps its place in the URL: each view and open card has a route, a reload restores both, and back and forward move between views and cards without a page load. (basicly-cmv2jgq.1)
+
+- Require recorded INVEST rationales, same-card conversation and criterion checks before claims; confirm matching command results before completed closes, with explicit reasoned cancellation and shared kit, CLI and API refusals. (basicly-hxagpn8)
+
+- Engine claims reviewed work before implementation, records actual successful command evidence against the current confirmation plan, and refuses closure before worktree cleanup when proof is missing. (basicly-jspelr5)
+
+- Share complete trigger readiness between the tracker kit and engine, refuse incomplete intent and criteria, and teach INVEST with Card, Conversation, Confirmation evidence. Preserve ordinary todo words in a filled trigger. (basicly-nr815mq)
+
+### Fixed
+
+- Deliver standalone tracker guidance to all agent skill roots, preserve unmanaged skills, route record updates correctly, enforce staged claims, and install hooks in the effective directory for linked worktrees. (basicly-02nml8h.4)
+
+- The tracker server restarts itself on the new kit when its kit files change and the new kit loads; a kit that fails to load keeps the old server refusing with the named file, and the page shows that refusal in a banner instead of looking dead. (basicly-cmv2jgq.7)
+
+- Block a held in-progress resume whose review is stale; keep a review when classify repeats the same type; refuse a check command with a machine path the ledger would redact; name the `review` command when a refine draft owes only its review. (basicly-hxagpn8)
+
+- Shipped skill descriptions route 56 of 60 eval prompts to the right skill (93.3%, was 86.7%), so a consumer with a 0.891 rank-1 floor can install; a below-floor refusal now says the descriptions live in the managed core and to upgrade or report upstream, never lower the floor. (basicly-vgbylo5)
+
+### Security
+
+- Worktree creation rejects unsafe names and stops copying dotenv files; failed provisioning retains recoverable metadata, and cleanup validates session identity and protects locked checkouts, ignored user files and tracked dependency changes while recognizing owned caches containing only regular Python bytecode. (basicly-02nml8h.2)
+
+- Keep ledger ownership until the writer closes its OS lock, and reject malformed or oversized tracker and harness HTTP request framing before reading a body. (basicly-02nml8h.3)
 
 ## v0.20.2 - 2026-10-05
 

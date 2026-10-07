@@ -1,1 +1,0 @@
-- Engine claims reviewed work before implementation, records actual successful command evidence against the current confirmation plan, and refuses closure before worktree cleanup when proof is missing.
