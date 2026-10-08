@@ -203,6 +203,26 @@ def test_a_rerecorded_tutorial_does_not_refuse_the_cut(repo: Path) -> None:
     assert not any("not clean" in reason for reason in reasons), reasons
 
 
+def test_a_lagging_pin_refuses_the_cut(repo: Path) -> None:
+    readme = repo / "packages" / "basicly-tracker" / "README.md"
+    readme.write_text(
+        "uv tool install 'git+https://x/basicly@v0.5.0#subdirectory=packages/basicly-tracker'\n",
+        encoding="utf-8",
+    )
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+
+    reasons = release.blocking_reasons(repo, plan, issue_id="fx-1")
+
+    assert any(
+        reason.startswith("packages/basicly-tracker/README.md:1: the install pin names v0.5.0")
+        for reason in reasons
+    ), reasons
+
+
+def test_current_pins_raise_no_lagging_pin(repo: Path) -> None:
+    assert release.lagging_pins(repo, CURRENT) == ()
+
+
 def test_an_existing_tag_is_refused(repo: Path) -> None:
     _git(repo, "tag", "-a", "v0.6.0", "-m", "v0.6.0")
     plan = release.plan_release(repo, "0.6.0", date="2026-07-26")

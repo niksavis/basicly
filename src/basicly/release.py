@@ -37,6 +37,7 @@ PIN_GLOBS = ("docs/how-to/*.md", "docs/tutorial/*.md")
 
 RERECORDED_PATHS = ("docs/tutorial/",)
 TRANSCRIPT_VERSION_RE = re.compile(r"basicly (?P<version>\d+\.\d+\.\d+)")
+INSTALL_PIN_RE = re.compile(r"basicly@v(?P<version>\d+\.\d+\.\d+)")
 PIN_RE_TEMPLATE = r"(?<![\w.])v{version}(?!\w|\.\d)"
 
 CHANGELOG_SCRIPT = Path(".scripts") / "generate_release_changelog.py"
@@ -423,6 +424,25 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
     reasons.extend(_release_note_reasons(repo_root))
     reasons.extend(unexercised_capabilities(repo_root))
     reasons.extend(stale_transcripts(repo_root, plan.version))
+    reasons.extend(lagging_pins(repo_root, plan.current_version))
+    return tuple(reasons)
+
+
+def lagging_pins(repo_root: Path, current: str) -> tuple[str, ...]:
+
+    reasons: list[str] = []
+    for rel in pin_paths(repo_root):
+        path = repo_root / rel
+        if not path.is_file():
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            reasons.extend(
+                f"{rel.as_posix()}:{number}: the install pin names v{found.group('version')}, "
+                f"not the current v{current}; the pin rewrite moves only v{current}, so set "
+                f"this pin to v{current} before cutting"
+                for found in INSTALL_PIN_RE.finditer(line)
+                if found.group("version") != current
+            )
     return tuple(reasons)
 
 

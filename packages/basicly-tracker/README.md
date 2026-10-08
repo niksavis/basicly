@@ -6,27 +6,18 @@ append conflict never — which is the reason to replace a tracker whose file is
 every change. It needs no `basicly`: standard library only, no third-party package, no
 network.
 
-The human UI, plugin exporter and recorded INVEST/C3 gates described below are
-unreleased changes in the current checkout. The stable `v0.20.1` installation does
-not include them. To try this checkout, build and install its local wheel:
-
-```sh
-uv build packages/basicly-tracker --wheel --out-dir /tmp/basicly-tracker-dist
-uv tool install --force /tmp/basicly-tracker-dist/basicly_tracker-0.2.1-py3-none-any.whl
-```
-
-Run the build from this repository's root. The wheel includes the tracker, shared
-human UI, agent guidance and plugin exporter; it needs no basicly engine.
+The install includes the tracker, the human UI, the agent guidance and the plugin
+exporter. It needs no basicly engine.
 
 **Install the code once per machine; keep the ledger and agent guidance in each repository.** This
 is the default mode:
 
 ```console
-$ uv tool install 'git+https://github.com/niksavis/basicly@v0.20.1#subdirectory=packages/basicly-tracker'
+$ uv tool install 'git+https://github.com/niksavis/basicly@v0.21.0#subdirectory=packages/basicly-tracker'
 $ basicly-tracker init
 tracker: added to .gitattributes: events-*.jsonl -text merge=union
 tracker: created the ledger .basicly/ledger
-tracker: pinned the ledger to tracker 0.20.1
+tracker: pinned the ledger to tracker 0.21.0
 tracker: commit-msg now refuses a code commit on a record you do not hold
 basicly-tracker: wrote the user skill to ~/.claude/skills/basicly-tracker/SKILL.md
 basicly-tracker: wrote the user skill to ~/.agents/skills/basicly-tracker/SKILL.md
@@ -140,10 +131,8 @@ Install the basicly work tracker and its board in this repository, as
 https://github.com/niksavis/basicly/blob/main/packages/basicly-tracker/README.md#install-with-a-coding-agent
 describes. Do the four steps in order.
 
-1. Install. These UI and process-gate changes are unreleased. From a current basicly
-   checkout, build its wheel with `uv build packages/basicly-tracker --wheel --out-dir /tmp/basicly-tracker-dist`.
-   Install that artifact with `uv tool install --force /tmp/basicly-tracker-dist/basicly_tracker-0.2.1-py3-none-any.whl`.
-   Then run this command in the target repository root:
+1. Install. Run these commands in the target repository root:
+   uv tool install 'git+https://github.com/niksavis/basicly@v0.21.0#subdirectory=packages/basicly-tracker'
    basicly-tracker init
 2. Configure. When init reports a beads or beans backlog, tell me how many records it holds.
    Then stop and ask me whether to import it. Never import without my yes.
