@@ -41,11 +41,13 @@ def is_closed(state: Any) -> bool:
 
 def owed_of(directory: Path | str, record: str) -> dict[str, object]:
 
-    found, _ = events.read_events(directory)
+    return _owed(events.read_events(directory)[0], record, templates.load(directory))
+
+
+def _owed(found: list[Any], record: str, template: Any) -> dict[str, object]:
     state = events.fold(found).records.get(record)
     held = dict(state.fields) if state is not None else {}
     closed = state is not None and is_closed(state)
-    template = templates.load(directory)
     debt = () if closed else process.readiness(found, record, held, template=template)
     missing = shaping.owed(held, closed=closed, template=template, process=debt)
     blocking = shaping.refused(held, closed=closed, template=template, process=debt)
@@ -98,13 +100,14 @@ def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
     state = states.get(record)
     if state is None:
         return None
-    views, _ = queries.views_and_children(directory)
+    found = events.read_events(directory)[0]
+    template = templates.load(directory)
+    views = queries.differential.views_from_events(found)
     shown = snapshot.record_to_dict(state)
     shown.update(_edges(record, views, states))
-    stale_days = templates.load(directory).stale_days
     now = queries.holders.newest(states)
-    shown["holder"] = queries.holders.holding(state, stale_days, now)
-    ordered = events.canonical_order(events.read_events(directory)[0])
+    shown["holder"] = queries.holders.holding(state, template.stale_days, now)
+    ordered = events.canonical_order(found)
     shown["conflicts"] = forks.of_record(ordered, record)
     shown["comment_log"] = [
         {
@@ -119,10 +122,8 @@ def read_record(directory: Path | str, record: str) -> dict[str, object] | None:
         and event.kind in events.PROSE_KINDS
         and isinstance(event.payload.get("text"), str)
     ]
-    shown["process"] = process.confirmation_report(
-        ordered, record, template=templates.load(directory)
-    )
-    shown.update(owed_of(directory, record))
+    shown["process"] = process.confirmation_report(found, record, template=template)
+    shown.update(_owed(found, record, template))
     return shown
 
 

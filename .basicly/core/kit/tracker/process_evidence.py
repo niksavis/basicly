@@ -95,7 +95,8 @@ def revision(
     *,
     template=None,
 ) -> str:
-    held = dict(fields) if fields is not None else dict(events.fold(found).records[record].fields)
+    states = events.fields_by_record(found)
+    held = dict(fields) if fields is not None else dict(states[record])
     headings = shaping.required(held, template)
     names = SEMANTIC_FIELDS | frozenset(shaping.field_of(heading) for heading in headings)
     semantic = sorted({event.id for event in found if _semantic(event, record, names)})
@@ -111,11 +112,9 @@ def revision(
     targets = sorted({
         target for (target, _kind), active in edges.items() if active and isinstance(target, str)
     })
-    states = events.fold(found).records
     dependencies = {}
     for target in targets:
-        state = states.get(target)
-        fields = state.fields if state is not None else {}
+        fields = states.get(target, {})
         target_headings = shaping.required(fields, template)
         target_names = SEMANTIC_FIELDS | frozenset(
             shaping.field_of(heading) for heading in target_headings
