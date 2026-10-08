@@ -219,3 +219,21 @@ def test_the_renderer_imports_nothing_that_could_read_engine_state() -> None:
         assert imported <= allowed, f"{name} imports {sorted(imported - allowed)}"
         for literal in _literals(ast.parse(source)):
             assert ".basicly/" not in literal, f"{name} carries an engine path: {literal}"
+
+
+def test_the_wall_at_1440_by_900_draws_a_ready_record_beside_claimed_and_parked_rows() -> None:
+    parsed = document("wall-v1.json")
+    units = parsed["units"]
+    units[next(n for n, unit in enumerate(units) if not unit.get("ready"))]["status"] = "deferred"
+    claimed = [unit for unit in units if unit.get("status") == "in_progress"]
+    assert claimed, "the probe needs a claimed row to reserve height"
+    ready = {unit["id"] for unit in units if unit.get("ready")}
+    html = board_render.page(
+        parsed,
+        board_schema.verdict(REPO_ROOT, parsed),
+        now=STAMPED + timedelta(seconds=8),
+        templates_dir=TEMPLATES,
+        viewport=(900, 1440),
+    )
+    region = html.split('<section class="region ready', 1)[1].split("</section>", 1)[0]
+    assert any(ident in region for ident in ready), "the ready region drew no ready record"

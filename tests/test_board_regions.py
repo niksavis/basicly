@@ -182,6 +182,19 @@ def test_next_up_draws_more_of_the_reclaimed_width_at_a_taller_viewport() -> Non
     assert len(short_wall.rows) + len(short_wall.groups) <= board_regions.ready_capacity(900)
 
 
+def test_the_ready_region_draws_a_row_at_every_reserve_while_anything_is_ready() -> None:
+    reads = _reads("wall-v1.json")
+    ready = sum(1 for unit in reads["units"].dicts if unit.get("ready"))
+    for reserved in range(0, 601, 50):
+        listing = board_regions.next_up(
+            reads, viewport_height=900, viewport_width=1440, reserved=reserved
+        )
+        drawn = sum(len(group.rows) for group in listing.groups)
+        assert drawn >= 1, f"no ready row at {reserved} px reserved"
+        assert drawn <= max(1, board_regions.ready_capacity(900, 1440, reserved))
+        assert listing.more == board_wall.more(ready - drawn, "ready")
+
+
 def test_the_ready_region_tells_three_absences_apart_and_none_of_them_is_a_zero() -> None:
     absent = board_regions.next_up(_absent("units", _reads("wall-v1.json")))
     assert absent.note == board_wall.ABSENT_TEXT

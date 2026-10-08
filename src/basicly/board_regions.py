@@ -467,7 +467,7 @@ def next_up(
     bound = READY_TITLE_WIDE if wide else TITLE_MAX
     ready = sorted((unit for unit in flagged if unit["ready"]), key=_rank)
     names = _feature_names(reads, units, ready)
-    slots = max(slots // 2, slots - len(set(names[:slots])))
+    slots = max(1, slots // 2, slots - len(set(names[:slots])))
     rows = tuple(
         Item(
             str(unit.get("priority") or UNKNOWN),
