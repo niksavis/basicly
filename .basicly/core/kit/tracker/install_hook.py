@@ -63,6 +63,7 @@ ON_DEFAULT_BRANCH = (
     '[ -n "$tracker_default" ] || tracker_default=main',
     '[ "$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" = "$tracker_default" ] &&',
 )
+HAS_WORK_TO_PUSH = "  [ \"$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 1)\" != 0 ] &&"
 
 
 def body(interpreter: str, script: str, ledger: str, command: str = "", advice: str = "") -> str:
@@ -72,6 +73,7 @@ def body(interpreter: str, script: str, ledger: str, command: str = "", advice: 
             BEGIN,
             *ON_DEFAULT_BRANCH[:-1],
             f"if {ON_DEFAULT_BRANCH[-1]}",
+            HAS_WORK_TO_PUSH,
             f'  [ -z "$(git status --porcelain -- . ":(exclude){ledger}")" ]; then',
             f"  {command} >/dev/null 2>&1 ||",
             f"    echo 'tracker: the pending shards are not folded; run {advice or command}' >&2",
@@ -84,6 +86,7 @@ def body(interpreter: str, script: str, ledger: str, command: str = "", advice: 
         BEGIN,
         *ON_DEFAULT_BRANCH[:-1],
         f'if {ON_DEFAULT_BRANCH[-1]} [ -f "{script}" ] &&',
+        HAS_WORK_TO_PUSH,
         f'  [ -z "$(git status --porcelain -- . ":(exclude){ledger}")" ]',
         "then",
         '  tracker_run=""',

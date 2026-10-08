@@ -357,7 +357,6 @@ def _commit_tracker_state(
     shards = tracker.pending_shards(repo_root)
     if not paths and not shards:
         return False
-    tracker.scrub_ledger(repo_root)
     tracker.fold_pending_shards(repo_root)
     dirty = [
         tree for tree in ENGINE_TRACKER_PATHS if shards or any(_under(path, tree) for path in paths)

@@ -3127,9 +3127,11 @@ unredacted.
 **Redaction covers the whole path, not only the user-identifying head.** The leak that
 produced the Windows rule was a directory layout with no username in it at all.
 
-**Redaction binds in two distinct places.** Every ledger append is redacted at the write.
-The engine's only tracker-commit path also scrubs the store immediately after the flush,
-and before it stages it.
+**Redaction binds at the write, never on a commit.** Every ledger append is redacted at
+the write. The tracker-commit path and the fold move events unchanged: a scrub there
+redacted with the username of whichever host ran it and re-minted event ids, so two clones
+folded the same input to different trunks (basicly-r2zfnsz). An event already committed is
+redacted only by the explicit `basicly tracker scrub`.
 
 **The deterministic floor is two pre-commit hooks.** They are standalone
 standard-library scripts, copied to consumers, so they **cannot import** the engine's rule
