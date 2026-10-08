@@ -6,7 +6,17 @@ from dataclasses import dataclass, field, replace
 from functools import cache
 from pathlib import Path
 
-from . import __version__, dropin, owned_store, permissions, session, tracker, tree_schema, ui
+from . import (
+    __version__,
+    dropin,
+    owned_store,
+    permissions,
+    session,
+    state,
+    tracker,
+    tree_schema,
+    ui,
+)
 from .context_window import (
     AGENT_WINDOW,
     DECLARED_WINDOW,
@@ -590,8 +600,15 @@ def load_tracker_mode(repo_root: Path) -> str:
     return mode
 
 
+def installed_kit_version(repo_root: Path) -> str | None:
+
+    found = state.read_install_state(repo_root / load_project_paths(repo_root).state_path)
+    return None if found is None else found.basicly_version
+
+
 tracker.set_mode_reader(load_tracker_mode)
 owned_store.set_prefix_reader(load_tracker_prefix)
+owned_store.set_kit_version_reader(installed_kit_version)
 
 
 @dataclass(frozen=True)

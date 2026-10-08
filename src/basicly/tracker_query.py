@@ -4,25 +4,33 @@ import argparse
 import importlib.util
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from basicly import owned_store, redact, tracker, ui
+from basicly import __version__, owned_store, redact, tracker, ui
 
 QUERIES_KIT_MODULE = "queries"
 BOARD_KIT = "board"
 BOARD_ENTRY = "server.py"
 SERVE_COMMAND = "basicly tracker serve"
+CONTRACT_VERSION = 1
+ITEM_SOURCE = "basicly"
+OTHER_STATUS = "other"
+OPEN_STATUSES = ("open", "in_progress", "blocked", "deferred")
+ITEM_STATUSES = (*OPEN_STATUSES, "closed", OTHER_STATUS)
+WATCH = (owned_store.LEDGER_DIR / "*.jsonl").as_posix()
+WRITES = (("tracker", "write"),)
+RUNS_REPOSITORY_KIT = " (runs this repository's tracker kit code)"
 
 
 class BoardKitMissingError(LookupError):
     pass
 
 
-def _queries(repo_root: Path) -> Any:
+def _queries() -> Any:
 
-    return owned_store.kit(repo_root, QUERIES_KIT_MODULE)
+    return owned_store.packaged_kit(QUERIES_KIT_MODULE)
 
 
 def _report(payload: object) -> None:
@@ -31,11 +39,11 @@ def _report(payload: object) -> None:
 
 def ready_report(repo_root: Path, limit: int | None = None) -> dict[str, Any]:
 
-    return _queries(repo_root).ready(owned_store.ledger_dir(repo_root), limit=limit)
+    return _queries().ready(owned_store.present_ledger(repo_root), limit=limit)
 
 
 def blocked_report(repo_root: Path) -> dict[str, Any]:
-    return _queries(repo_root).blocked(owned_store.ledger_dir(repo_root))
+    return _queries().blocked(owned_store.present_ledger(repo_root))
 
 
 def cmd_ready(args: argparse.Namespace) -> int:
@@ -77,7 +85,7 @@ def cmd_blocked(args: argparse.Namespace) -> int:
 
 def cmd_stats(args: argparse.Namespace) -> int:
     repo_root = Path.cwd()
-    report = _queries(repo_root).stats(owned_store.ledger_dir(repo_root))
+    report = _queries().stats(owned_store.present_ledger(repo_root))
     if getattr(args, "json", False):
         _report(report)
         return 0
@@ -95,7 +103,7 @@ def cmd_stats(args: argparse.Namespace) -> int:
 def cmd_show(args: argparse.Namespace) -> int:
 
     repo_root = Path.cwd()
-    found = _queries(repo_root).read_record(owned_store.ledger_dir(repo_root), args.record)
+    found = _queries().read_record(owned_store.present_ledger(repo_root), args.record)
     if found is None:
         _report({"record": args.record, "found": False})
         return 1
@@ -106,12 +114,74 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 def cmd_list(args: argparse.Namespace) -> int:
     repo_root = Path.cwd()
-    records = _queries(repo_root).query_records(
-        owned_store.ledger_dir(repo_root),
+    records = _queries().query_records(
+        owned_store.present_ledger(repo_root),
         status=getattr(args, "status", None),
         limit=getattr(args, "limit", None),
     )
     _report({"count": len(records), "records": records})
+    return 0
+
+
+def status_map() -> dict[str, str]:
+
+    return {
+        status: status if status in ITEM_STATUSES else OTHER_STATUS
+        for status in owned_store.packaged_kit("values").WRITABLE_STATUSES
+    }
+
+
+def _priority(value: object) -> int | None:
+    if isinstance(value, int):
+        return value
+    text = str(value or "").strip()
+    return int(text) if text.isdigit() else None
+
+
+def _item(state: Any, statuses: Mapping[str, str]) -> dict[str, object]:
+    fields = state.fields
+    return {
+        "id": state.record,
+        "title": str(fields.get("title") or ""),
+        "status": statuses.get(str(state.status), OTHER_STATUS),
+        "rawStatus": state.status,
+        "priority": _priority(fields.get("priority")),
+        "type": fields.get("issue_type") or None,
+        "assignee": fields.get("assignee") or None,
+        "updatedAt": state.dates.get("updated") or None,
+        "source": ITEM_SOURCE,
+    }
+
+
+def items_report(repo_root: Path, statuses: Sequence[str]) -> list[dict[str, object]]:
+
+    mapping = status_map()
+    states = (
+        owned_store.packaged_kit("snapshot").load(owned_store.present_ledger(repo_root)).records
+    )
+    items = [_item(states[key], mapping) for key in sorted(states) if not states[key].tombstoned]
+    return [item for item in items if item["status"] in statuses]
+
+
+def cmd_items(args: argparse.Namespace) -> int:
+    items = items_report(Path.cwd(), args.status or OPEN_STATUSES)
+    print(json.dumps(items, ensure_ascii=False, separators=(",", ":")))
+    return 0
+
+
+def describe_report() -> dict[str, object]:
+    return {
+        "name": ITEM_SOURCE,
+        "version": __version__,
+        "contract": CONTRACT_VERSION,
+        "watch": [WATCH],
+        "writes": [list(prefix) for prefix in WRITES],
+        "statusMap": status_map(),
+    }
+
+
+def cmd_describe(_args: argparse.Namespace) -> int:
+    print(json.dumps(describe_report(), ensure_ascii=False, separators=(",", ":")))
     return 0
 
 
@@ -144,6 +214,8 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
     "stats": cmd_stats,
     "show": cmd_show,
     "list": cmd_list,
+    "items": cmd_items,
+    "describe": cmd_describe,
     "serve": cmd_serve,
 }
 
@@ -166,7 +238,27 @@ def add_parsers(tracker_sub: Any) -> None:
     listing.add_argument("--status", default=None, help="Only records at this status")
     listing.add_argument("--limit", type=int, default=None, help="At most this many records")
 
-    served = tracker_sub.add_parser("serve", help="Serve the HTTP API and the board page")
+    items = tracker_sub.add_parser(
+        "items",
+        help=f"Print each record as one work item (adapter contract v{CONTRACT_VERSION})",
+    )
+    items.add_argument("--json", action="store_true", required=True, help="Print JSON")
+    items.add_argument(
+        "--status",
+        action="append",
+        choices=ITEM_STATUSES,
+        default=None,
+        help=f"Only items at this status; repeat it for more (default: {', '.join(OPEN_STATUSES)})",
+    )
+
+    described = tracker_sub.add_parser(
+        "describe", help=f"Print this tracker's adapter description (contract v{CONTRACT_VERSION})"
+    )
+    described.add_argument("--json", action="store_true", required=True, help="Print JSON")
+
+    served = tracker_sub.add_parser(
+        "serve", help="Serve the HTTP API and the board page" + RUNS_REPOSITORY_KIT
+    )
     served.add_argument("--host", default="127.0.0.1", help="The address to bind")
     served.add_argument("--port", type=int, default=8765, help="The port to bind")
     served.add_argument("--web", default="", help="Serve your own page directory instead")
