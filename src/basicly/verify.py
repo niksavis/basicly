@@ -29,7 +29,11 @@ def linked_worktree_guard(repo_root: Path) -> str | None:
     root = Path(repo_root).resolve()
     if main == root:
         return None
-    if tracker_paths.tracker_root(root).resolve() == main:
+    try:
+        shared = tracker_paths.tracker_root(root).resolve()
+    except tracker_paths.RedirectError as exc:
+        return str(exc)
+    if shared == main:
         return None
     redirect = (tracker_paths.LEDGER_DIR_NAME / tracker_paths.REDIRECT_NAME).as_posix()
     return (

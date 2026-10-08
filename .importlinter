@@ -80,9 +80,9 @@ layers =
     board_fields | board_schema
     worktree_contents
     verify_log
-    automode_trust | base_lock | catalog | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_usage | tree_schema | ui | usage | verify_artifact
+    automode_trust | base_lock | catalog_routing | catalog_source | checkout | copilot_tools | dropin | integrity | needs_input | plan_record | precommit_config | projection | read_cost | redact | review | roles | scaffolds | schema | session | tracker_usage | tree_schema | ui | usage | verify_artifact
     tracker_paths
-    stemmer
+    catalog | stemmer
 # One cycle survives as a function-level import carrying `# noqa: PLC0415`; the
 # top-level direction is the one the tiers encode. Listing it here is not a
 # weakening: `unmatched_ignore_imports_alerting` defaults to `error`, so when the cycle
