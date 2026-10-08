@@ -1,1 +1,0 @@
-- **The board wall always draws a ready record under NEXT UP.** With a claimed lane or a parked strip on a 1440x900 wall, the region drew an empty box under "+3 more ready"; it now draws at least one row while anything is ready, and the count agrees with the rows drawn (basicly-lc2bd3v.10).

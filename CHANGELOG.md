@@ -6,10 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.21.2 - 2026-10-08
+
+Delta: v0.21.1..v0.21.2
+
 This patch release removes the warning that every fresh install printed, and makes the board wall name the next record to start while a lane is claimed.
 
 - **Install:** the Codex skill listing fits its budget again, and the budget warning names only remedies that the host honours (basicly-mx5pay9, basicly-zr83l2c).
 - **Board:** the NEXT UP region draws at least one ready record at every reserved height (basicly-lc2bd3v.10).
+
+### Fixed
+
+- **The board wall always draws a ready record under NEXT UP.** With a claimed lane or a parked strip on a 1440x900 wall, the region drew an empty box under "+3 more ready"; it now draws at least one row while anything is ready, and the count agrees with the rows drawn (basicly-lc2bd3v.10).
+
+- **A fresh install no longer warns that the Codex skill listing is over budget.** Six skill descriptions lost filler words, so the listing fits the 5168-character budget again, and the routing rate stays at 93.3% (basicly-mx5pay9).
+
+- **The Codex listing budget warning names only remedies that work.** It no longer offers `disable-model-invocation`, which Codex ignores, and says to retire a skill or shorten a description; the Claude Code warning still offers it (basicly-zr83l2c).
 
 ## v0.21.1 - 2026-10-08
 
