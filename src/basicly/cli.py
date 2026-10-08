@@ -36,6 +36,7 @@ from . import (
     dispatch_brief,
     fleet,
     health,
+    kit_load,
     lane_log,
     lane_split,
     loop,
@@ -53,6 +54,7 @@ from . import (
     rubrics,
     run_record,
     runner,
+    shipped_core,
     state,
     supervise,
     tracker,
@@ -1106,7 +1108,7 @@ def _sync_catalog(
 ) -> _CatalogSyncReport:
 
     report = _CatalogSyncReport()
-    recorded = previous.core_hashes if previous else {}
+    owned = _owned_digests(previous)
     bundled = {path.relative_to(src).as_posix(): path for path in iter_catalog_files(src)}
 
     for rel_path, src_path in bundled.items():
@@ -1121,7 +1123,7 @@ def _sync_catalog(
         if target.read_bytes() == src_bytes:
             report.unchanged += 1
             continue
-        if force or state.sha256_of_file(target) == recorded.get(rel_path):
+        if force or state.sha256_of_file(target) in owned.get(rel_path, frozenset()):
             if not dry_run:
                 shutil.copy2(src_path, target)
             report.updated.append(rel_path)
@@ -1129,15 +1131,23 @@ def _sync_catalog(
             report.skipped_edits.append(rel_path)
 
     if dst.exists():
-        _prune_catalog(dst, bundled, recorded, report, dry_run=dry_run)
+        _prune_catalog(dst, bundled, owned, report, dry_run=dry_run)
 
     return report
+
+
+def _owned_digests(previous: state.InstallState | None) -> dict[str, frozenset[str]]:
+
+    owned = dict(shipped_core.shipped_digests())
+    for rel_path, digest in (previous.core_hashes if previous else {}).items():
+        owned[rel_path] = owned.get(rel_path, frozenset()) | {digest}
+    return owned
 
 
 def _prune_catalog(
     dst: Path,
     bundled: dict[str, Path],
-    recorded: Mapping[str, str],
+    owned: Mapping[str, frozenset[str]],
     report: _CatalogSyncReport,
     *,
     dry_run: bool,
@@ -1147,7 +1157,7 @@ def _prune_catalog(
         rel_path = target.relative_to(dst).as_posix()
         if rel_path in bundled:
             continue
-        if state.sha256_of_file(target) != recorded.get(rel_path):
+        if state.sha256_of_file(target) not in owned.get(rel_path, frozenset()):
             report.kept_unknown.append(rel_path)
             continue
         report.deleted.append(rel_path)
@@ -1438,7 +1448,13 @@ def _sync_core(repo_root: Path, paths: ProjectPaths, *, force: bool, dry_run: bo
             file=sys.stderr,
         )
         previous_state = None
-    report = _sync_catalog(core_src, core_dst, previous_state, force=force, dry_run=dry_run)
+    report = _sync_catalog(core_src, core_dst, previous_state, force=force, dry_run=True)
+    if unloadable := kit_load.unloadable_kits(
+        core_src, core_dst, [*report.skipped_edits, *report.kept_unknown]
+    ):
+        raise SystemExit(kit_load.refusal(_format_path(core_dst, repo_root), unloadable))
+    if not dry_run:
+        report = _sync_catalog(core_src, core_dst, previous_state, force=force)
     _report_catalog_sync(report, core_dst, repo_root, dry_run=dry_run)
 
     _migrate_legacy_layout(repo_root, paths)

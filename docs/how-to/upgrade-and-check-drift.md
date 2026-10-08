@@ -31,6 +31,13 @@ Warning: files of unknown origin in the managed core were kept
 (move yours to the overlay; core is managed by basicly install)
 ```
 
+A repository that an old release installed can have no `.basicly/state/install.json`.
+Install then compares each managed file with every version that an earlier release
+shipped. It updates a file that matches one, and it removes the file when this release
+dropped it. A file that matches no shipped version is a hand edit, and it is kept
+unless you pass `--force`. When a kept file would mix kit modules that cannot load
+together, install refuses before it writes anything and names the kept files.
+
 Confirm the repo actually converged. The version that wrote your generated files
 is recorded in `.basicly/state/install.json`, and `basicly status` compares it
 against the engine you just ran — `(matches engine)` is the line to look for:

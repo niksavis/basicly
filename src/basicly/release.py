@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import checkout, merge, policy, verify, worktree
+from . import checkout, merge, policy, shipped_core, verify, worktree
 from . import commit as commit_mod
 from .capability_proof import unexercised_capabilities
 
@@ -501,6 +501,7 @@ def _rewrite_pins(repo_root: Path, plan: ReleasePlan) -> None:
 
 def _regenerate(repo_root: Path) -> None:
 
+    shipped_core.write_digests(repo_root, read_version(repo_root))
     env = dict(os.environ)
     src = str(repo_root / "src")
     existing = env.get("PYTHONPATH")
@@ -564,6 +565,7 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
     pins = ", ".join(f"{site.path.as_posix()} ({site.occurrences})" for site in plan.pins)
     steps = [
         f"bump {VERSION_FILE.as_posix()}: {plan.current_version} -> {plan.version}",
+        f"regenerate {shipped_core.SOURCE_DIGESTS_FILE.as_posix()} from every earlier release tag",
         "regenerate projected files so their headers carry the new version",
         f"rewrite install pins {plan.current_tag} -> {plan.tag}: {pins or '(none found)'}",
     ]
