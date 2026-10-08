@@ -183,6 +183,9 @@ change two different paths, and the forge has nothing to flag.
 - The kit derives the writer name from `.git/HEAD` by a file read, not a subprocess.
 - In a linked worktree, the kit follows the `.git` file to that worktree's own `HEAD`, so
   each lane is its own writer.
+- A ledger directory that holds a `redirect` file names the base checkout. Every read and
+  write then uses the ledger at the same place under that checkout, and the writer is the
+  base checkout's `HEAD`. The kit refuses a redirect that names no ledger.
 - A directory outside a repository keeps the single trunk log, so an existing ledger reads
   and writes as before.
 - `events.append` accepts `writer=` for a caller that knows the writer better.

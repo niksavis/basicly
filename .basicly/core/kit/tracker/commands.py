@@ -34,6 +34,7 @@ forks = _load("forks.py", "basicly_tracker_kit_forks")
 edges = _load("edges.py", "basicly_tracker_kit_edges")
 review = _load("review.py", "basicly_tracker_kit_review")
 claims = _load("claims.py", "basicly_tracker_kit_claims")
+git_layout = _load("git_layout.py", "basicly_tracker_kit_git_layout")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -65,15 +66,14 @@ def _holds_ledger(path: Path) -> bool:
 
 def resolve_ledger(directory: Path | str, *, starts: bool = False) -> Path:
 
-    given = Path(directory)
+    given = git_layout.shared_ledger(directory)
     if _is_repository(given):
         raise TrackerCommandError(
             f"{given} is a repository, not a ledger; name the ledger directory inside it"
         )
     if starts:
         return given
-    if not given.is_dir():
-        raise TrackerCommandError(f"{given} is not a ledger directory")
+    _ledger(given)
     if _holds_ledger(given) or not any(one.name != pin.PIN_FILE for one in given.iterdir()):
         return given
     raise TrackerCommandError(

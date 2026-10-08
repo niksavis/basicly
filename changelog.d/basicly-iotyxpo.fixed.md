@@ -1,0 +1,1 @@
+- **The tracker kit follows the worktree ledger redirect.** In a lane worktree, every kit CLI read and write now uses the shared ledger that `.basicly/ledger/redirect` names. A redirect that names no ledger is refused by name, in the kit and in the engine, which now reuse one rule (basicly-iotyxpo).

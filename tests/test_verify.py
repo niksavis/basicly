@@ -458,13 +458,14 @@ def test_linked_worktree_guard_allows_redirected_tracker(
     linked_worktree: tuple[Path, Path],
 ) -> None:
     repo, linked = linked_worktree
+    (repo / tracker_paths.LEDGER_DIR_NAME).mkdir(parents=True)
     ledger = linked / tracker_paths.LEDGER_DIR_NAME
     ledger.mkdir(parents=True)
     (ledger / tracker_paths.REDIRECT_NAME).write_text(f"{repo}\n", encoding="utf-8")
     assert verify.linked_worktree_guard(linked) is None
 
     (ledger / tracker_paths.REDIRECT_NAME).write_text(str(linked / "elsewhere"), encoding="utf-8")
-    assert verify.linked_worktree_guard(linked) is not None
+    assert "ledger redirect" in (verify.linked_worktree_guard(linked) or "")
 
 
 def test_cli_verify_refuses_to_record_gate_from_linked_worktree(

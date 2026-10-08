@@ -45,16 +45,16 @@ def test_a_checkout_with_no_redirect_owns_its_own_tracker(base: Path) -> None:
 
 
 @pytest.mark.parametrize("target", ["/nonexistent/elsewhere", ""])
-def test_an_unusable_redirect_falls_back_to_the_checkouts_own_ledger(
-    tmp_path: Path, target: str
-) -> None:
+def test_an_unusable_redirect_is_refused_by_name(tmp_path: Path, target: str) -> None:
 
     ledger = tmp_path / LEDGER_DIR
     ledger.mkdir(parents=True)
     (ledger / REDIRECT).write_text(f"{target}\n", encoding="utf-8")
 
-    assert tracker_paths.tracker_root(tmp_path) == tmp_path
-    assert tracker_paths.tracker_root(tmp_path) == tmp_path
+    with pytest.raises(tracker_paths.RedirectError, match="ledger redirect"):
+        tracker_paths.tracker_root(tmp_path)
+    with pytest.raises(tracker_paths.RedirectError, match="ledger redirect"):
+        tracker_paths.ledger_dir(tmp_path)
 
 
 def test_known_bead_ids_reads_the_redirected_ledger(tmp_path: Path, base: Path) -> None:

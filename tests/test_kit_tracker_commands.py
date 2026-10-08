@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import shutil
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 from typing import Any
@@ -361,3 +364,35 @@ def test_undep_of_an_edge_the_record_does_not_hold_is_refused(ledger: Path) -> N
         commands.remove_dependency(ledger, child, record, edge_type="blocks")
     with pytest.raises(events.LedgerError, match="not retractable"):
         commands.remove_dependency(ledger, child, record, edge_type="parent-child")
+
+
+def _kit_cli(cwd: Path, *argv: str) -> tuple[int, dict]:
+    done = subprocess.run(  # nosec B603
+        [sys.executable, str(KIT_DIR / "cli.py"), *argv],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return done.returncode, json.loads(done.stdout)
+
+
+def test_redirect_routes_worktree_reads_and_writes_to_the_shared_ledger(tmp_path: Path) -> None:
+    base_ledger = tmp_path / "base" / ".basicly" / "ledger"
+    commands.create_root(base_ledger, {"title": "root"}, prefix="acme")
+    record = root_of(base_ledger)
+    lane = tmp_path / "lane"
+    lane_ledger = lane / ".basicly" / "ledger"
+    shutil.copytree(base_ledger, lane_ledger)
+    (lane / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    (lane_ledger / "redirect").write_text(f"{tmp_path / 'base'}\n", encoding="utf-8")
+    before = {one.name: one.read_bytes() for one in lane_ledger.iterdir()}
+
+    wrote, _ = _kit_cli(lane, "comment", ".basicly/ledger", record, "from the lane")
+    commands.comment(base_ledger, record, "from the base")
+    read, shown = _kit_cli(lane, "show", ".basicly/ledger", record)
+
+    assert (wrote, read) == (0, 0)
+    assert queries.folded(base_ledger)[record].comments == ["from the lane", "from the base"]
+    assert shown["comments"] == ["from the lane", "from the base"]
+    assert {one.name: one.read_bytes() for one in lane_ledger.iterdir()} == before

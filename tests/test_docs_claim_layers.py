@@ -120,7 +120,9 @@ def test_a_band_boundary_the_contract_no_longer_declares_is_refused(work_repo: P
 
 
 def test_a_tier_below_the_last_band_belongs_to_no_band_and_is_named(work_repo: Path) -> None:
-    _edit_contract(work_repo, "\n    stemmer\n", "\n    stemmer\n    planted_leaf\n")
+    _edit_contract(
+        work_repo, "\n    catalog | stemmer\n", "\n    catalog | stemmer\n    planted_leaf\n"
+    )
     with pytest.raises(layers.ClaimError, match="planted_leaf"):
         layers.grouped(layers.tiers(work_repo))
 
