@@ -1,0 +1,1 @@
+- **A fresh install no longer warns that the Codex skill listing is over budget.** Six skill descriptions lost filler words, so the listing fits the 5168-character budget again, and the routing rate stays at 93.3% (basicly-mx5pay9).
