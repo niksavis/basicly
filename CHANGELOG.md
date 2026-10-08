@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release removes the warning that every fresh install printed, and makes the board wall name the next record to start while a lane is claimed.
+
+- **Install:** the Codex skill listing fits its budget again, and the budget warning names only remedies that the host honours (basicly-mx5pay9, basicly-zr83l2c).
+- **Board:** the NEXT UP region draws at least one ready record at every reserved height (basicly-lc2bd3v.10).
+
 ## v0.21.1 - 2026-10-08
 
 Delta: v0.21.0..v0.21.1
