@@ -1,0 +1,1 @@
+- The tracker card shows its story first: one line says what a card still needs, the agent handoff is one copy button with its text folded, and the review detail is folded below the story; list rows say "needs an agent review" instead of naming eight review items.

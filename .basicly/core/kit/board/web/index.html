@@ -127,6 +127,8 @@
   #toast { position: fixed; right: 1rem; bottom: 1rem; max-width: 34rem; padding: .6rem .9rem; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 24px #0004; display: none; }
   #outage { margin: .6rem 1.2rem 0; }
   #stale { position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: .6rem 1rem; background: var(--panel); border-bottom: 2px solid var(--bad); color: var(--bad); }
+  .ready-line { padding: .4rem .7rem; } .dod.folded summary { cursor: pointer; color: var(--muted); }
+  .handoff { display: flex; flex-wrap: wrap; gap: .6rem; align-items: baseline; } .handoff details { flex: 1 1 100%; }
   #toast.show { display: block; } #toast.bad { border-color: var(--bad); color: var(--bad); }
   .back { display: none; }
   @media (max-width: 900px) {
@@ -250,7 +252,7 @@ function sectionOf(name) {
 
 function needs(names) {
   const parts = (names || []).map(sectionOf);
-  return el("span", { class: "needs", title: parts.map(([bare, , what]) => bare + ": " + what).join("\n") }, "DoR: " + parts.map(([, short]) => short).join(", "));
+  return el("span", { class: "needs", title: parts.map(([bare, , what]) => bare + ": " + what).join("\n") }, "needs " + stillNeeds(names));
 }
 
 function doneBlock(shown) {
@@ -261,9 +263,7 @@ function doneBlock(shown) {
     const confirmation = process.confirmation || {};
     const reviewed = Boolean(process.revision && review.revision === process.revision && !(process.owed || []).length);
     const confirmed = reviewed && confirmation.revision === process.revision;
-    const debts = (process.owed || []).map((name) => el("li", {}, name.replace(/^## /, "")));
-    if (!confirmed) debts.push(el("li", {}, "Confirmation: record an observed result for each planned check."));
-    const details = el("details", {}, el("summary", {}, "Recorded review and checks"));
+    const details = el("details", {}, el("summary", {}, "Review and confirmation · INVEST review: " + (reviewed ? "recorded for this card" : "required") + ". Confirmation: " + (confirmed ? "recorded for this card" : "required") + "."));
     if (review.revision && !reviewed) details.append(el("p", {}, "The saved review does not cover the current card. Refine it with an agent."));
     if (review.invest) details.append(el("ul", {}, Object.entries(review.invest).map(([name, reason]) => el("li", {}, el("b", {}, name), ": " + reason))));
     if (review.conversation && review.conversation.length) details.append(el("p", {}, "Conversation references: " + review.conversation.join(", ")));
@@ -275,10 +275,8 @@ function doneBlock(shown) {
         el("p", {}, "Command: " + JSON.stringify(check.command)),
         result ? el("p", {}, "Recorded result: " + result.result + " (exit " + result.exit_code + ")" + (confirmed ? "" : "; current confirmation required")) : el("p", {}, "No observed result recorded."));
     })));
-    return el("div", { class: "notice note dod" },
-      el("b", {}, "Card · Conversation · Confirmation"),
-      el("p", {}, "INVEST review: " + (reviewed ? "recorded for this card" : "required") + ". Confirmation: " + (confirmed ? "recorded for this card" : "required") + "."),
-      debts.length ? el("ul", {}, debts) : el("p", {}, "Review the recorded evidence before closing as completed."), details);
+    if (reviewed && confirmed) details.append(el("p", {}, "Review the recorded evidence before closing as completed."));
+    return el("div", { class: "dod folded" }, details);
   }
   const item = (present, name, what) => el("li", {}, el("b", {}, name), ": " + (present ? "available" : "missing") + ". " + what);
   return el("div", { class: "notice note dod" }, "Confirmation needs review and recorded evidence; available fields do not prove completion:",
@@ -955,23 +953,32 @@ function refinementBlock(shown, dor) {
     try { await navigator.clipboard.writeText(prompt); toast("Agent handoff copied"); }
     catch (error) { toast("Select and copy the handoff text: " + error.message, true); }
   } }, "Copy agent handoff");
-  return el("section", { class: "block" }, el("h3", {}, "Refine with an agent"),
-    el("p", { class: "meta" }, "Give this handoff to your coding agent. The saved-card verdict above comes from the tracker."), text, copy);
+  return el("section", { class: "block handoff" }, copy,
+    el("details", {}, el("summary", {}, "Show handoff text"), text));
 }
 
 function notices(shown, dor) {
   const found = [];
   const labels = String(shown.fields.labels || "").split(",").map((one) => one.trim());
   if (shown.conflicts && shown.conflicts.length) found.push(el("div", { class: "notice bad" }, "Two branches set different values: " + shown.conflicts.map((c) => c.key + " = " + c.values.join(" / ")).join("; ") + ". Run the kit's resolve command to keep the current value."));
-  if (labels.includes(REFINE)) found.push(el("div", { class: "notice note" }, "Needs agent review. A person wrote or changed this story, so an agent reviews it and fills in what is missing before work can start. Ask an agent to refine " + shown.record + "."));
-  if (shown.status !== "closed" && dor.blocking && dor.blocking.length) found.push(el("div", { class: "notice note" }, "Definition of Ready not met. The tracker requires:", needsList(dor.blocking)));
+  const needs = shown.status !== "closed" ? stillNeeds(dor.blocking) : "";
+  if (labels.includes(REFINE) || needs) found.push(el("div", { class: "notice note ready-line" }, "Not ready: needs " + (needs || "an agent review") + ". Copy the agent handoff below the story to refine it."));
   if (shown.status !== "closed" || (shown.process && shown.process.review && shown.process.review.revision)) found.push(doneBlock(shown));
   return found;
 }
 
+const REVIEW_DEBT = /^## (INVEST Review|Conversation$|Confirmation Plan$)/;
+
+function stillNeeds(blocking) {
+  const names = blocking || [];
+  const gaps = names.filter((name) => !REVIEW_DEBT.test(name)).map((name) => name.replace(/^## /, ""));
+  const parts = [...gaps, ...(names.some((name) => REVIEW_DEBT.test(name)) ? ["an agent review"] : [])];
+  return parts.length > 1 ? parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] : parts.join("");
+}
+
 function waitingReason(shown, dor) {
   if (labelsOf(shown.fields.labels).includes(REFINE)) return "an agent reviews this story before work can start";
-  if (dor && !dor.ready) return "the story is not ready: it still needs " + (dor.blocking || []).map((name) => sectionOf(name)[1]).join(", ");
+  if (dor && !dor.ready) return "the story is not ready: it still needs " + stillNeeds(dor.blocking);
   return "";
 }
 
@@ -1005,16 +1012,19 @@ async function open(record, quiet) {
   }
   state.current = shown;
   const f = shown.fields;
+  const cards = notices(shown, dor);
+  const reviewed = (card) => Boolean(card.classList && card.classList.contains("dod"));
   pane.replaceChildren(
     el("button", { class: "link back", type: "button", onclick: back }, "← back to the list"),
     crumbs(shown),
     titleBlock(shown),
     shown.status === "closed" ? el("div", { class: "notice" }, (f.close_resolution === "cancelled" ? "Cancelled: " : "Closed: ") + String(f.close_reason || "")) : actionsBar(shown, waitingReason(shown, dor)),
-    ...notices(shown, dor),
-    ...(shown.status !== "closed" && (!dor.ready || labelsOf(f.labels).includes(REFINE)) ? [refinementBlock(shown, dor)] : []),
+    ...cards.filter((card) => !reviewed(card)),
     section("Card · story / context", f.description, "no story yet: say when it happens, what the person wants, and what for"),
     section("Confirmation · acceptance criteria", f.acceptance_criteria, "no acceptance criteria yet"),
     section("Requirements", f.requirements, "no requirements yet"),
+    ...(shown.status !== "closed" && (!dor.ready || labelsOf(f.labels).includes(REFINE)) ? [refinementBlock(shown, dor)] : []),
+    ...cards.filter(reviewed),
     linksBlock(shown),
     commentsBlock(shown),
     factsBlock(shown));

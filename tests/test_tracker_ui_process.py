@@ -122,7 +122,7 @@ assert.ok(!text.includes('recorded for this card'));
 def test_legacy_unshaped_card_is_blocked_by_authoritative_review_debt() -> None:
     _run(r"""
 const waiting = waitingReason({fields:{}},{ready:false,blocking:['## INVEST Review']});
-assert.match(waiting, /still needs INVEST Review/);
+assert.match(waiting, /still needs an agent review/);
 const bar = actionsBar({record:'old-idea',holder:null}, waiting);
 assert.equal(find(bar, x => x.tag === 'button' && x.text === 'Claim').disabled, true);
 """)
