@@ -1,1 +1,0 @@
-- **A tracker kit of another basicly version is refused by name.** A write now stops before the first kit call, names the kit version from `.basicly/state/install.json` and the engine version, and says to run `basicly install`, in place of a Python signature error (basicly-neoh1tj).

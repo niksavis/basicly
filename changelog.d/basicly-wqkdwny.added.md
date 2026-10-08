@@ -1,1 +1,0 @@
-- **`basicly tracker items --json` and `basicly tracker describe --json`.** They serve the handily adapter contract v1: one slim item per record, filtered by a repeatable `--status`, and the adapter description. On this repository the items are about 0.4 MB, against 8.5 MB for `tracker list` (basicly-wqkdwny).

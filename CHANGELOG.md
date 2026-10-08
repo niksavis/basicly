@@ -6,12 +6,44 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.21.1 - 2026-10-08
+
+Delta: v0.21.0..v0.21.1
+
 This patch release makes the tracker safer to read and faster to open, and makes an upgrade from an old core work without `--force`. **Upgrade note:** a tracker kit of another basicly version now refuses a write by name; run `basicly install` to align it.
 
 - **Safety:** read-only tracker commands run no repository code, and a fold no longer rewrites committed events with the local username (basicly-c5vxpvf, basicly-r2zfnsz).
 - **Upgrade:** install updates core files that an earlier release shipped, refuses a mixed kit before it writes, and refuses a kit of another version by name (basicly-nuwqlve, basicly-neoh1tj).
 - **Tracker:** a card opens in about 0.5 s and shows its story first, the kit follows the worktree ledger redirect, and `items --json` and `describe --json` serve the handily adapter (basicly-cmv2jgq.8, basicly-cmv2jgq.9, basicly-iotyxpo, basicly-wqkdwny).
 - **Fixes:** the tracker README installs the current release, and the comments kit reads a JSX closing tag (basicly-ruzpmdn, basicly-x5orgwc).
+
+### Added
+
+- **`basicly tracker items --json` and `basicly tracker describe --json`.** They serve the handily adapter contract v1: one slim item per record, filtered by a repeatable `--status`, and the adapter description. On this repository the items are about 0.4 MB, against 8.5 MB for `tracker list` (basicly-wqkdwny).
+
+### Changed
+
+- The tracker card shows its story first: one line says what a card still needs, the agent handoff is one copy button with its text folded, and the review detail is folded below the story; list rows say "needs an agent review" instead of naming eight review items. (basicly-cmv2jgq.9)
+
+### Fixed
+
+- **A tracker card on the board opens in under 1 s.** The tracker kit parses each ledger file and folds the events once per file version, and reuses that work until the size, time or content of a file changes. On a ledger of 1610 records, a card that opened in 4.3 s while the page loaded now opens in 0.5 s (basicly-cmv2jgq.8).
+
+- **The tracker kit follows the worktree ledger redirect.** In a lane worktree, every kit CLI read and write now uses the shared ledger that `.basicly/ledger/redirect` names. A redirect that names no ledger is refused by name, in the kit and in the engine, which now reuse one rule (basicly-iotyxpo).
+
+- **A tracker kit of another basicly version is refused by name.** A write now stops before the first kit call, names the kit version from `.basicly/state/install.json` and the engine version, and says to run `basicly install`, in place of a Python signature error (basicly-neoh1tj).
+
+- **Install upgrades a core that an old release wrote without install state.** A file byte-identical to an earlier shipped version is updated, or removed when this release dropped it; a real hand-edit still needs `--force`. Install refuses before it writes when kept files would leave kit modules that cannot load together, and names them (basicly-nuwqlve).
+
+- **The tracker README installs the current release.** It pinned v0.20.1 and told its coding agent to build a wheel in `/tmp`. `basicly release` now refuses while a pin file names an install pin older than the current version, because the pin rewrite moves only the current one (basicly-ruzpmdn).
+
+- **The comments kit reads a JSX closing tag.** A `/` after `<`, or a `/>` after `}`, no longer opens a regex literal in `.js`, `.jsx`, `.ts` and `.tsx` files, so a `.tsx` file with `</Text>` is read instead of refused, and a trailing `// note` on a JSX line is reported (basicly-x5orgwc).
+
+### Security
+
+- **Read-only tracker commands run no repository code.** `basicly tracker list`, `show`, `ready`, `blocked`, `stats`, `items` and `describe` load the tracker kit inside the installed basicly, not `.basicly/core/kit/tracker/` of the clone. The help names the commands that still run the repository kit (basicly-c5vxpvf).
+
+- A tracker fold or commit no longer rewrites committed events with the local username and new event ids, so every clone folds the same input to the same trunk; the post-merge hook folds and commits only when the branch has work to push, so a plain pull creates no commit. (basicly-r2zfnsz)
 
 ## v0.21.0 - 2026-10-07
 

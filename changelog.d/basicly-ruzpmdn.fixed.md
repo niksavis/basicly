@@ -1,1 +1,0 @@
-- **The tracker README installs the current release.** It pinned v0.20.1 and told its coding agent to build a wheel in `/tmp`. `basicly release` now refuses while a pin file names an install pin older than the current version, because the pin rewrite moves only the current one (basicly-ruzpmdn).

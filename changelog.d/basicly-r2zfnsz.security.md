@@ -1,1 +1,0 @@
-- A tracker fold or commit no longer rewrites committed events with the local username and new event ids, so every clone folds the same input to the same trunk; the post-merge hook folds and commits only when the branch has work to push, so a plain pull creates no commit.

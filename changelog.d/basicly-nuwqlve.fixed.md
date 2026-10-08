@@ -1,1 +1,0 @@
-- **Install upgrades a core that an old release wrote without install state.** A file byte-identical to an earlier shipped version is updated, or removed when this release dropped it; a real hand-edit still needs `--force`. Install refuses before it writes when kept files would leave kit modules that cannot load together, and names them (basicly-nuwqlve).
