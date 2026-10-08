@@ -64,7 +64,12 @@ basicly tracker blocked                   # each dispatchable record that is not
 basicly tracker stats                     # totals by status
 basicly tracker show <id>                 # one record's folded state and dates, as JSON
 basicly tracker list --status open        # the set, as JSON
+basicly tracker items --json              # one slim item per record, for a tool that reads them
+basicly tracker describe --json           # the adapter description: watch globs, writes, statuses
 ```
+
+These reads run no code from the repository. `write`, `import`, `scrub`, `fold` and
+`serve` run the repository's tracker kit.
 
 `ready` ranks by priority, then by the number of records that depend on each one. A
 record with children is an anchor, not the work, so it is never ready. `ready` leaves

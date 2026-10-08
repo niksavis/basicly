@@ -1,0 +1,1 @@
+- **Read-only tracker commands run no repository code.** `basicly tracker list`, `show`, `ready`, `blocked`, `stats`, `items` and `describe` load the tracker kit inside the installed basicly, not `.basicly/core/kit/tracker/` of the clone. The help names the commands that still run the repository kit (basicly-c5vxpvf).

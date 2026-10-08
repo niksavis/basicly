@@ -5201,13 +5201,23 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     tracker_parser = subparsers.add_parser(
         "tracker",
         help="The owned work tracker: read the backlog, write to it, run its cutover",
+        description=(
+            "Reads (ready, blocked, stats, show, list, items, describe) load only the tracker "
+            "kit inside the installed basicly, never this repository's code. write, import, "
+            "scrub, fold and serve run this repository's tracker kit code."
+        ),
     )
     tracker_sub = tracker_parser.add_subparsers(dest="tracker_command", required=True)
     tracker_query.add_parsers(tracker_sub)
-    t_write = tracker_sub.add_parser("write", help="Make a tracker write through the engine seam")
+    t_write = tracker_sub.add_parser(
+        "write",
+        help="Make a tracker write through the engine seam" + tracker_query.RUNS_REPOSITORY_KIT,
+    )
     t_write.add_argument("argv", nargs=argparse.REMAINDER, help="The subcommand, after `--`")
     t_import = tracker_sub.add_parser(
-        "import", help="Import a beads issues.jsonl export or a beans backlog into the ledger"
+        "import",
+        help="Import a beads issues.jsonl export or a beans backlog into the ledger"
+        + tracker_query.RUNS_REPOSITORY_KIT,
     )
     t_import.add_argument(
         "export",
@@ -5230,10 +5240,15 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
         metavar="ID",
         help="A record you confirmed deleted out of band; absence alone never means deleted",
     )
-    tracker_sub.add_parser("scrub", help="Rewrite the ledger without machine paths or usernames")
+    tracker_sub.add_parser(
+        "scrub",
+        help="Rewrite the ledger without machine paths or usernames"
+        + tracker_query.RUNS_REPOSITORY_KIT,
+    )
     tracker_sub.add_parser(
         "fold",
-        help="Fold pending writer shards into the trunk log and commit them",
+        help="Fold pending writer shards into the trunk log and commit them"
+        + tracker_query.RUNS_REPOSITORY_KIT,
     )
 
 

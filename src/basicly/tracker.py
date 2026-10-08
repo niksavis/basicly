@@ -216,7 +216,7 @@ def _edge_status(views: Mapping[str, Any], issue_id: str) -> str:
 def record_edges(repo_root: Path, issue_id: str) -> dict[str, list]:
 
     try:
-        kit_module = kit(repo_root)
+        kit_module = owned_store.packaged_kit()
         found = kit_module.read_ledger(ledger_dir(repo_root))
         states = kit_module.events.fold(found).records
         views = kit_module.views_from_events(found)
@@ -663,8 +663,10 @@ def scrub_ledger(
 
 def all_views(repo_root: Path) -> dict[str, Any]:
 
-    kit_module = kit(repo_root)
-    views = kit_module.views_from_events(kit_module.read_ledger(ledger_dir(repo_root)))
+    kit_module = owned_store.packaged_kit()
+    views = kit_module.views_from_events(
+        kit_module.read_ledger(owned_store.present_ledger(repo_root))
+    )
     return {record: view for record, view in views.items() if not view.tombstoned}
 
 
