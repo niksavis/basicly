@@ -297,3 +297,67 @@ def test_languages_prints_the_claimed_extensions(capsys) -> None:
     assert ".py" in printed
     assert ".ts" in printed
     assert ".yaml" not in printed
+
+
+TSX = """\
+import { Box, Text } from "ink";
+const quote = /"/;
+const ok = check(/'/.test(s), /<\\/x>/);
+export const A = () => <Text>x</Text>;
+// first prose
+export const B = () => (
+  <Box>
+    <Text color="red" href="a/b//c">y</Text>
+    <Spacer />
+    <Input value={v} />
+    <>{/* inside prose */}</>
+  </Box>
+); /* block prose */
+"""
+
+
+def _prose(name: str, source: str, tmp_path: Path) -> list[str]:
+    return [finding.text for finding in scan.findings(tmp_path / name, source)]
+
+
+def test_a_jsx_closing_tag_is_read(tmp_path: Path) -> None:
+    source = "export const A = () => <Text>x</Text>;\n// the prose\n"
+
+    assert _prose("a.tsx", source, tmp_path) == ["// the prose"]
+
+
+def test_a_jsx_line_with_a_trailing_comment_reports_it(tmp_path: Path) -> None:
+    source = "export const A = () => <Text>x</Text>; // a note\n"
+
+    assert _prose("b.tsx", source, tmp_path) == ["// a note"]
+
+
+@pytest.mark.parametrize("name", ["c.tsx", "c.jsx"])
+def test_jsx_shapes_report_exactly_their_prose_and_keep_regex_literals(
+    name: str, tmp_path: Path
+) -> None:
+    assert _prose(name, TSX, tmp_path) == [
+        "// first prose",
+        "/* inside prose */",
+        "/* block prose */",
+    ]
+
+    stripped = strip.strip_source(tmp_path / name, TSX)
+
+    for kept in [
+        '/"/',
+        "/'/",
+        "/<\\/x>/",
+        "</Text>",
+        "<Spacer />",
+        "<Input value={v} />",
+        '"a/b//c"',
+        "<>{}</>",
+    ]:
+        assert kept in stripped, kept
+    assert strip.strip_source(tmp_path / name, stripped) == stripped
+
+
+def test_an_unclosed_regex_in_tsx_is_still_refused(tmp_path: Path) -> None:
+    with pytest.raises(scan.LexError, match="regex literal never closes"):
+        _prose("d.tsx", "const re = /never closed;\n// prose\n", tmp_path)

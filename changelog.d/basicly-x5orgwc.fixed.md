@@ -1,0 +1,1 @@
+- **The comments kit reads a JSX closing tag.** A `/` after `<`, or a `/>` after `}`, no longer opens a regex literal in `.js`, `.jsx`, `.ts` and `.tsx` files, so a `.tsx` file with `</Text>` is read instead of refused, and a trailing `// note` on a JSX line is reported (basicly-x5orgwc).
