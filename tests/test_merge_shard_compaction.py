@@ -33,6 +33,7 @@ def repo(tmp_path: Path) -> Path:
     _git(root.parent, "init", "-q", "-b", "main", str(root))
     _git(root, "config", "user.email", "t@t")
     _git(root, "config", "user.name", "t")
+    _git(root, "config", "maintenance.auto", "false")
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "seed")
     return root
@@ -52,6 +53,10 @@ def _records(repo: Path) -> set[str]:
     found, quarantined = events.read_events(repo / LEDGER_DIR)
     assert quarantined == []
     return set(events.fold(found).records)
+
+
+def test_the_fixture_repo_starts_no_background_maintenance(repo: Path) -> None:
+    assert _git(repo, "config", "maintenance.auto").stdout.strip() == "false"
 
 
 def test_folding_moves_a_shard_into_the_trunk_and_reports_it(repo: Path) -> None:
