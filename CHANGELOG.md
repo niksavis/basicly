@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release makes the tracker safer to read and faster to open, and makes an upgrade from an old core work without `--force`. **Upgrade note:** a tracker kit of another basicly version now refuses a write by name; run `basicly install` to align it.
+
+- **Safety:** read-only tracker commands run no repository code, and a fold no longer rewrites committed events with the local username (basicly-c5vxpvf, basicly-r2zfnsz).
+- **Upgrade:** install updates core files that an earlier release shipped, refuses a mixed kit before it writes, and refuses a kit of another version by name (basicly-nuwqlve, basicly-neoh1tj).
+- **Tracker:** a card opens in about 0.5 s and shows its story first, the kit follows the worktree ledger redirect, and `items --json` and `describe --json` serve the handily adapter (basicly-cmv2jgq.8, basicly-cmv2jgq.9, basicly-iotyxpo, basicly-wqkdwny).
+- **Fixes:** the tracker README installs the current release, and the comments kit reads a JSX closing tag (basicly-ruzpmdn, basicly-x5orgwc).
+
 ## v0.21.0 - 2026-10-07
 
 Delta: v0.20.2..v0.21.0
