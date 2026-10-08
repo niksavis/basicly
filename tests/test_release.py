@@ -823,6 +823,26 @@ def test_the_projection_rebuild_forces_the_target_repo_onto_pythonpath(
     assert seen["cwd"] == repo
 
 
+def test_the_regeneration_rewrites_the_shipped_core_hashes_for_the_bumped_version(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    written: list[tuple[Path, str]] = []
+    monkeypatch.setattr(
+        release.shipped_core, "write_digests", lambda root, version: written.append((root, version))
+    )
+    monkeypatch.setattr(
+        release.worktree, "run", lambda cmd, **_k: subprocess.CompletedProcess(cmd, 0, "", "")
+    )
+    monkeypatch.setattr(release, "_refresh_generated_docs", lambda _root: None)
+    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
+    release._bump_version_file(repo, plan)
+
+    release._regenerate(repo)
+
+    assert written == [(repo, "0.6.0")]
+
+
 def test_a_transcript_naming_the_old_version_refuses_before_the_write(tmp_path: Path) -> None:
     tutorial = tmp_path / "docs" / "tutorial"
     tutorial.mkdir(parents=True)
