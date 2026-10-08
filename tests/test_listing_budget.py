@@ -64,3 +64,24 @@ def test_a_skill_only_a_person_starts_leaves_the_claude_listing_only(tmp_path: P
 
     assert listing_budget.listing_characters(entries, hosts["Claude Code"]) == 0
     assert listing_budget.listing_characters(entries, hosts["Codex"]) > 0
+
+
+def test_the_codex_remedy_names_only_cuts_that_shrink_the_codex_listing(tmp_path: Path) -> None:
+    for index in range(40):
+        _skill(tmp_path, f"filler-{index}", "x" * 100)
+
+    (codex,) = listing_budget.listing_budget_warnings(tmp_path)
+
+    assert codex.startswith("Codex skill listing")
+    assert "or set disable-model-invocation" not in codex
+    assert "Codex lists a skill marked disable-model-invocation too" in codex
+
+
+def test_the_claude_code_remedy_still_offers_disable_model_invocation(tmp_path: Path) -> None:
+    for index in range(60):
+        _skill(tmp_path, f"filler-{index}", "x" * 400)
+
+    claude, _codex = listing_budget.listing_budget_warnings(tmp_path)
+
+    assert claude.startswith("Claude Code skill listing")
+    assert "set disable-model-invocation on a skill that only a person starts" in claude

@@ -1,0 +1,1 @@
+- **The Codex listing budget warning names only remedies that work.** It no longer offers `disable-model-invocation`, which Codex ignores, and says to retire a skill or shorten a description; the Claude Code warning still offers it (basicly-zr83l2c).

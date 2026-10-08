@@ -22,6 +22,7 @@ class _Host:
     entry: Callable[[skill_source.SkillDefinition, str], str]
     listed: Callable[[skill_source.SkillDefinition], bool]
     overflow: str
+    remedy: str
 
 
 def _claude_entry(skill: skill_source.SkillDefinition, description: str) -> str:
@@ -46,6 +47,8 @@ def hosts(repo_root: Path) -> tuple[_Host, ...]:
             _claude_entry,
             model_invoked,
             "drops descriptions least-invoked first",
+            f"Retire a dead skill, shorten a description, or set {DISABLE_MODEL_INVOCATION} "
+            "on a skill that only a person starts.",
         ),
         _Host(
             "Codex",
@@ -55,6 +58,8 @@ def hosts(repo_root: Path) -> tuple[_Host, ...]:
             _codex_entry,
             lambda _skill: True,
             "shortens descriptions first, then leaves skills out",
+            f"Retire a dead skill or shorten a description. Codex lists a skill marked "
+            f"{DISABLE_MODEL_INVOCATION} too, so that key does not shrink this listing.",
         ),
     )
 
@@ -86,8 +91,7 @@ def listing_budget_warnings(repo_root: Path) -> list[str]:
             f"{host.name} skill listing is {characters} characters against a "
             f"{budget}-character budget ({host.fraction:.0%} of the {host.window}-token window, "
             f"{host.fraction_source}), from {listed} entries. The host {host.overflow}, so "
-            f"the entries this overrun silences are the ones already hardest to reach. Retire "
-            f"a dead skill, shorten a description, or set {DISABLE_MODEL_INVOCATION} on a skill "
-            f"that only a person starts."
+            f"the entries this overrun silences are the ones already hardest to reach. "
+            f"{host.remedy}"
         )
     return warnings

@@ -836,10 +836,12 @@ guidance belongs in an optional skill and never in an always-on file. Enforcemen
 carries the judgment and the pointers a linter cannot.
 
 **A skill is not free, and the cost sits in the listing rather than the body.** The whole
-skill listing is budgeted against a fraction of the context window. On overflow the host
+skill listing is budgeted against a fraction of the context window. On overflow Claude Code
 drops descriptions **starting with the least-invoked skills**. That is a feedback loop and
 not a flat cost. The host truncates a rarely-invoked skill first, which makes that skill
-harder to invoke. Both the per-entry cap and the listing budget are gated.
+harder to invoke. Codex shortens descriptions first and then leaves skills out. It lists
+every skill, also one marked `disable-model-invocation`, so only a shorter or a retired
+skill shrinks the Codex listing. Both the per-entry cap and the listing budget are gated.
 
 **A skill's frontmatter can take a path glob.** The glob limits the skill, and it also
 triggers automatic activation. It buys always-loads-on-a-matching-file behaviour at
