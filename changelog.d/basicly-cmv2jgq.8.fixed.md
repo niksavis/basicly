@@ -1,0 +1,1 @@
+- **A tracker card on the board opens in under 1 s.** The tracker kit parses each ledger file and folds the events once per file version, and reuses that work until the size, time or content of a file changes. On a ledger of 1610 records, a card that opened in 4.3 s while the page loaded now opens in 0.5 s (basicly-cmv2jgq.8).

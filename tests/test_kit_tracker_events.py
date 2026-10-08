@@ -1053,6 +1053,7 @@ def test_the_module_imports_nothing_outside_the_standard_library() -> None:
         "pathlib",
         "re",
         "sys",
+        "threading",
         "time",
         "types",
     }

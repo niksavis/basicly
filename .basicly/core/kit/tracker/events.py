@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -273,6 +274,17 @@ def canonical_key(event: Event) -> tuple[str, int, str]:
 
 def canonical_order(events: Iterable[Event]) -> list[Event]:
 
+    collected = list(events)
+    if len(collected) < MEMO_MIN_EVENTS:
+        return _ordered(collected)
+    held = _memo(collected)
+    with _MEMO_LOCK:
+        if held.ordered is None:
+            held.ordered = _ordered(held.events)
+    return list(held.ordered)
+
+
+def _ordered(events: list[Event]) -> list[Event]:
     seen: set[str] = set()
     ordered = []
     for event in sorted(events, key=canonical_key):
@@ -474,7 +486,7 @@ def classify_kind(kind: str) -> str:
     return UNKNOWN
 
 
-def _resumed(state: RecordState) -> RecordState:
+def copy_state(state: RecordState) -> RecordState:
     return RecordState(
         record=state.record,
         status=state.status,
@@ -550,12 +562,74 @@ def _hold(state: RecordState, event: Event) -> None:
         state.dates[DATE_ASSIGNED] = event.ts if after else None
 
 
+MEMO_ENTRIES = 16
+MEMO_MIN_EVENTS = 64
+_MEMO_LOCK = threading.RLock()
+
+
+@dataclass
+class _Memo:
+    events: list[Event]
+    ordered: list[Event] | None = None
+    folded: FoldResult | None = None
+
+
+_MEMOS: dict[tuple[int, ...], _Memo] = {}
+
+
+def _memo(collected: list[Event]) -> _Memo:
+
+    key = tuple(map(id, collected))
+    with _MEMO_LOCK:
+        held = _MEMOS.pop(key, None) or _Memo(collected)
+        _MEMOS[key] = held
+        while len(_MEMOS) > MEMO_ENTRIES:
+            del _MEMOS[next(iter(_MEMOS))]
+    return held
+
+
+def _copied(result: FoldResult) -> FoldResult:
+    return FoldResult(
+        records={name: copy_state(state) for name, state in result.records.items()},
+        delegated_kinds=dict(result.delegated_kinds),
+        unknown_kinds=dict(result.unknown_kinds),
+        duplicate_ids=list(result.duplicate_ids),
+        forked=list(result.forked),
+        mismatched_totals=list(result.mismatched_totals),
+        withdrawals=list(result.withdrawals),
+    )
+
+
+def _shared_fold(collected: list[Event]) -> FoldResult:
+    if len(collected) < MEMO_MIN_EVENTS:
+        return _folded(collected)
+    held = _memo(collected)
+    with _MEMO_LOCK:
+        if held.folded is None:
+            held.folded = _folded(held.events)
+    return held.folded
+
+
 def fold(events: Iterable[Event], *, seed: Mapping[str, RecordState] | None = None) -> FoldResult:
 
     collected = list(events)
+    if seed is not None or len(collected) < MEMO_MIN_EVENTS:
+        return _folded(collected, seed)
+    return _copied(_shared_fold(collected))
+
+
+def fields_by_record(events: Iterable[Event]) -> Mapping[str, Mapping[str, object]]:
+
+    folded = _shared_fold(list(events))
+    return MappingProxyType({
+        name: MappingProxyType(state.fields) for name, state in folded.records.items()
+    })
+
+
+def _folded(collected: list[Event], seed: Mapping[str, RecordState] | None = None) -> FoldResult:
     result = FoldResult()
     if seed is not None:
-        result.records = {name: _resumed(state) for name, state in seed.items()}
+        result.records = {name: copy_state(state) for name, state in seed.items()}
     counts: dict[str, int] = {}
     for event in collected:
         counts[event.id] = counts.get(event.id, 0) + 1
@@ -666,13 +740,73 @@ def derive_writer(directory: Path | str) -> str | None:
     return _slug(branch)
 
 
+Stamp = tuple[int, int, int, int]
+
+
+def file_stamp(path: Path) -> Stamp | None:
+    try:
+        held = path.stat()
+    except FileNotFoundError:
+        return None
+    return held.st_dev, held.st_ino, held.st_size, held.st_mtime_ns
+
+
+def _decoded(data: bytes) -> str:
+    return data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
+class StampedFiles:
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self._held: dict[Path, tuple[Stamp, str | bytes, object]] = {}
+        self._lock = threading.Lock()
+
+    def held(self, path: Path, stamp: Stamp, content: str | bytes) -> object | None:
+        entry = self._held.get(path.absolute())
+        if entry is None or entry[0] != stamp or entry[1] != content:
+            return None
+        return entry[2]
+
+    def keep(self, path: Path, stamp: Stamp, content: str | bytes, value: object) -> None:
+        key = path.absolute()
+        with self._lock:
+            self._held.pop(key, None)
+            self._held[key] = (stamp, content, value)
+            while len(self._held) > self.limit:
+                del self._held[next(iter(self._held))]
+
+
+PARSED_LOGS = 32
+
+
+@dataclass(frozen=True)
+class _Parsed:
+    events: tuple[Event, ...]
+    quarantined: tuple[Quarantine, ...]
+
+
+_PARSED = StampedFiles(PARSED_LOGS)
+
+
 def read_log(path: Path | str) -> tuple[list[Event], list[Quarantine]]:
 
     file_path = Path(path)
+    stamp = file_stamp(file_path)
+    if stamp is None:
+        return [], []
     try:
-        text = file_path.read_text(encoding="utf-8")
+        data = file_path.read_bytes()
     except FileNotFoundError:
         return [], []
+    parsed = _PARSED.held(file_path, stamp, data)
+    if not isinstance(parsed, _Parsed):
+        found, quarantined = _parse_log(file_path, _decoded(data))
+        parsed = _Parsed(tuple(found), tuple(quarantined))
+        _PARSED.keep(file_path, stamp, data, parsed)
+    return list(parsed.events), [replace(bad, path=file_path) for bad in parsed.quarantined]
+
+
+def _parse_log(file_path: Path, text: str) -> tuple[list[Event], list[Quarantine]]:
     complete = text.endswith("\n")
     lines = text.splitlines()
     events: list[Event] = []
