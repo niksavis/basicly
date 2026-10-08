@@ -98,7 +98,7 @@ def test_a_mixed_core_is_refused_before_writing(tmp_path: Path) -> None:
     assert result.returncode != 0
     assert "would mix kit modules that cannot load together" in result.stderr
     assert f"kept: {KIT_EVENTS}" in result.stderr
-    assert "has no attribute 'HOLDER_FIELD'" in result.stderr
+    assert "module 'basicly_tracker_kit_events' has no attribute" in result.stderr
     assert _every_file(consumer) == before
 
 
