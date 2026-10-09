@@ -47,7 +47,7 @@ SEMANTIC_FIELDS = frozenset({
 })
 MANAGED_FIELDS = frozenset({REVIEW_FIELD, CONFIRMATION_FIELD})
 _PLACEHOLDER = re.compile(r"(?:todo|tbd|tbc|fixme)", re.IGNORECASE)
-_BULLET = re.compile(r"^[-*]\s+(?:\[[ xX]\]\s*)?")
+_LIST_MARKER = re.compile(r"^(?:[-*]|\d+[.)])\s+(?:\[[ xX]\]\s*)?")
 
 
 class ProcessEvidenceError(events.LedgerError):
@@ -63,6 +63,10 @@ def _text(value: object) -> bool:
     )
 
 
+def criterion_key(text: object) -> str:
+    return _LIST_MARKER.sub("", str(text).strip())
+
+
 def criteria(fields: Mapping[str, object]) -> tuple[str, ...]:
     value = fields.get("acceptance_criteria")
     entries = (
@@ -73,9 +77,7 @@ def criteria(fields: Mapping[str, object]) -> tuple[str, ...]:
         else ()
     )
     return tuple(
-        _BULLET.sub("", entry.strip())
-        for entry in entries
-        if isinstance(entry, str) and entry.strip()
+        criterion_key(entry) for entry in entries if isinstance(entry, str) and entry.strip()
     )
 
 
@@ -232,7 +234,7 @@ def _check_fault(
     for index, check in enumerate(checks):
         if fault := _entry_fault(check, keys, completed):
             return f"check {index} {fault}"
-    held = [check["criterion"] for check in checks]
+    held = [criterion_key(check["criterion"]) for check in checks]
     faults = (
         ([item for item in held if held.count(item) > 1], "checks repeat the criterion"),
         ([item for item in held if item not in expected], "no acceptance criterion reads"),
@@ -360,8 +362,11 @@ def confirmation_draft(
     review = report["review"]
     if not isinstance(review, Mapping):
         raise ProcessEvidenceError("confirm requires a recorded review")
-    planned = {check["criterion"]: check["command"] for check in review["checks"]}
-    if any(planned[check["criterion"]] != check["command"] for check in payload["checks"]):
+    planned = {criterion_key(check["criterion"]): check["command"] for check in review["checks"]}
+    if any(
+        planned[criterion_key(check["criterion"])] != check["command"]
+        for check in payload["checks"]
+    ):
         raise ProcessEvidenceError(
             "Completion Confirmation command argv must match the agreed plan for that criterion"
         )
@@ -383,12 +388,13 @@ def closing_owed(
     ) and _checks(fields, saved.get("checks"), completed=True)
     review = _saved(found, record, fields, REVIEW_FIELD)
     planned = {
-        check["criterion"]: check["command"]
+        criterion_key(check["criterion"]): check["command"]
         for check in review.get("checks", [])
         if isinstance(check, dict) and "criterion" in check and "command" in check
     }
     complete = complete and all(
-        planned.get(check["criterion"]) == check["command"] for check in saved.get("checks", [])
+        planned.get(criterion_key(check["criterion"])) == check["command"]
+        for check in saved.get("checks", [])
     )
     return (*missing, *((COMPLETION_HEADING,) if not complete else ()))
 
