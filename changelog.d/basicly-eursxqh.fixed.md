@@ -1,0 +1,1 @@
+- **The beads and beans imports keep a type their tables do not map.** `issue_type: handoff` now imports as `handoff`, as `create --field issue_type=handoff` already allowed; known types map as before and an unknown status is still refused (basicly-eursxqh).

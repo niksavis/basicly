@@ -169,7 +169,6 @@ def test_a_dry_run_writes_nothing_and_reports_the_same_summary(tmp_path: Path) -
         ("type: bug\n", "estimate: 3\n", "names the key 'estimate'"),
         ("type: bug\n", "type: bug\ntype: bug\n", "names the key 'type' twice"),
         ("status: draft\n", "status: someday\n", "holds status 'someday', which is not one of"),
-        ("type: bug\n", "type: chore\n", "holds type 'chore'"),
         ("type: bug\n", "order: yes\n", "holds the plain value 'yes'"),
         ("type: bug\n", "parent: demo-zz99\n", "links to 'demo-zz99'"),
         ("title: 'It''s quoted'\n", "title: 'open\n", "holds the single-quoted value"),

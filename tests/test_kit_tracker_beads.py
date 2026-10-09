@@ -188,13 +188,11 @@ def test_a_status_outside_the_table_is_refused_by_name_and_not_imported(
     assert "which the bd table does not map" in refusal.reason
 
 
-def test_a_type_outside_the_table_is_refused_by_name_and_not_imported(tmp_path: Path) -> None:
+def test_a_type_outside_the_table_is_kept_as_it_is(tmp_path: Path) -> None:
     report = _import(tmp_path, _text(_br_line("acme-br01", issue_type="gate")))
 
-    assert report.imported == []
-    [refusal] = report.unreadable
-    assert "'acme-br01' has issue_type 'gate'" in refusal.reason
-    assert "which the br table does not map" in refusal.reason
+    assert report.unreadable == []
+    assert _state(tmp_path, "acme-br01").fields["issue_type"] == "gate"
 
 
 def test_a_br_tombstone_is_refused_as_a_deletion_not_imported_live(tmp_path: Path) -> None:
