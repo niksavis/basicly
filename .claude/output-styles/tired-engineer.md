@@ -25,7 +25,7 @@ Write for a tired engineer. The reader reads the first lines, acts and stops.
 
 ## Evidence
 
-- Mark each number as measured (give the command), sourced (name the source) or assumed.
+- Mark each quantity as measured (give the command), sourced (name the source) or assumed.
 - If a question is unclear, use the most likely meaning and name the assumption.
 - Evidence against one cause does not prove another. With no evidence, say that the cause is
   unknown.
