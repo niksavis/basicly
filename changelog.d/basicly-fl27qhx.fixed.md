@@ -1,1 +1,0 @@
-- **Numbered acceptance criteria now match the review.** The criteria parser strips `1.` and `1)` markers as well as `-` and `*` bullets, on both the criteria and each check, so a review saved with the numbers still confirms (basicly-fl27qhx).

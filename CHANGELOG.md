@@ -6,12 +6,40 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.22.0 - 2026-10-09
+
+Delta: v0.21.5..v0.22.0
+
 A minor release that fixes the tracker defects found in a beads migration and in consumer sessions. Three changes refuse input that 0.21.5 accepted: a duplicate `external_ref`, a bare `basicly-tracker update`, and an unknown status in `tracker list`.
 
 - **Migration keeps more of the source** (`basicly-qfmdbbz`, `basicly-afly2hy`, `basicly-eursxqh`): the redaction no longer damages text that only looks like a Windows path, slug ids import unchanged, and an unmapped type is kept.
 - **One shape and one rule per field** (`basicly-vm8tlue`, `basicly-75m6jnd`, `basicly-fl27qhx`): labels always read as a list, `external_ref` is unique, and numbered criteria match the review.
 - **Refusals name the real cause** (`basicly-ui7uain`, `basicly-s65zzcq`, `basicly-jzve5c1`): claim says whether a review is missing or void, `tracker list` refuses an unknown status, and a bare `update` refuses instead of reinstalling.
 - **Faster and portable output** (`basicly-yeuj2lg`, `basicly-77s80o9`): `--version` and the tracker reads skip the full CLI, and JSON is UTF-8 on a Windows pipe.
+
+### Fixed
+
+- **`external_ref` is unique, as in beads.** `create`, `update` and `import` refuse a write that sets an `external_ref` another live record holds, and name that record; an import refuses the whole batch. A duplicate already in a ledger blocks only a write that sets `external_ref` (basicly-75m6jnd).
+
+- **`basicly-tracker` and `basicly tracker` write UTF-8 JSON on every host.** On Windows a piped stdout used cp1252, so the kit crashed with `UnicodeEncodeError` and the engine replaced a character with `?`; both now reconfigure stdout to UTF-8 before they print (basicly-77s80o9).
+
+- **The beads import keeps slug ids.** A record id may now carry hyphen segments after the prefix, as `br create --slug` mints them (`dev-memory-audit-multi-target-2zx`); commit messages and the commit check resolve such an id, and `dev-abc-related` still names `dev-abc` (basicly-afly2hy).
+
+- **The beads and beans imports keep a type their tables do not map.** `issue_type: handoff` now imports as `handoff`, as `create --field issue_type=handoff` already allowed; known types map as before and an unknown status is still refused (basicly-eursxqh).
+
+- **Numbered acceptance criteria now match the review.** The criteria parser strips `1.` and `1)` markers as well as `-` and `*` bullets, on both the criteria and each check, so a review saved with the numbers still confirms (basicly-fl27qhx).
+
+- **`basicly-tracker update` with no record refuses instead of reinstalling.** It names `basicly-tracker init` and `update <ledger> <record>`. In the default mode the installer now writes only the user skill and drops its repository copy, so agents no longer see the tracker skill twice; the sandbox mode keeps the repository skill (basicly-jzve5c1).
+
+- **The beads import no longer damages text that only looks like a Windows path.** The `windows-drive-path` rule now needs a drive letter at a word boundary and a path after the backslash, so `provision_lefthook.py:\n1.` and a bare `C:\` stay unchanged; `C:\Users\name` is still redacted (basicly-qfmdbbz).
+
+- **`tracker list` takes several statuses and refuses an unknown one.** Repeat `--status` (`--status open --status in_progress`) in `basicly tracker list` and in the kit `list`; an unknown status now refuses by name instead of returning an empty list (basicly-s65zzcq).
+
+- **`claim` and `review` name the real cause of a missing review.** `claim` now says whether no review is recorded or a change voided the recorded one; a criterion mismatch lists the criteria the record holds; the key-shape hint appears only for a key fault; and `--acceptance` help says one criterion per line (basicly-ui7uain).
+
+- **`labels` always reads as a list.** The fold now settles a `labels` value into a list for created and field events and for snapshot records, so `show`, `list` and every reader return `["a", "b"]` after `--add-label`, `--remove-label` or `--labels a,b` too (basicly-vm8tlue).
+
+- **`basicly --version` and the `basicly tracker` read commands start without loading the whole CLI.** A light entry module answers them, so `--version` drops from about 0.21 s to 0.02 s and `tracker list` from about 0.25 s to 0.12 s on a warm WSL machine (basicly-yeuj2lg).
 
 ## v0.21.5 - 2026-10-09
 

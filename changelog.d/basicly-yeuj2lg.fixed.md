@@ -1,1 +1,0 @@
-- **`basicly --version` and the `basicly tracker` read commands start without loading the whole CLI.** A light entry module answers them, so `--version` drops from about 0.21 s to 0.02 s and `tracker list` from about 0.25 s to 0.12 s on a warm WSL machine (basicly-yeuj2lg).

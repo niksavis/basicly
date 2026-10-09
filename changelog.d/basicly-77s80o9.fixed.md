@@ -1,1 +1,0 @@
-- **`basicly-tracker` and `basicly tracker` write UTF-8 JSON on every host.** On Windows a piped stdout used cp1252, so the kit crashed with `UnicodeEncodeError` and the engine replaced a character with `?`; both now reconfigure stdout to UTF-8 before they print (basicly-77s80o9).

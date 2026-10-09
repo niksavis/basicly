@@ -1,1 +1,0 @@
-- **`basicly-tracker update` with no record refuses instead of reinstalling.** It names `basicly-tracker init` and `update <ledger> <record>`. In the default mode the installer now writes only the user skill and drops its repository copy, so agents no longer see the tracker skill twice; the sandbox mode keeps the repository skill (basicly-jzve5c1).

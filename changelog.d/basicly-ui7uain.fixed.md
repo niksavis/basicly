@@ -1,1 +1,0 @@
-- **`claim` and `review` name the real cause of a missing review.** `claim` now says whether no review is recorded or a change voided the recorded one; a criterion mismatch lists the criteria the record holds; the key-shape hint appears only for a key fault; and `--acceptance` help says one criterion per line (basicly-ui7uain).

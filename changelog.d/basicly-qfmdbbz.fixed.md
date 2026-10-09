@@ -1,1 +1,0 @@
-- **The beads import no longer damages text that only looks like a Windows path.** The `windows-drive-path` rule now needs a drive letter at a word boundary and a path after the backslash, so `provision_lefthook.py:\n1.` and a bare `C:\` stay unchanged; `C:\Users\name` is still redacted (basicly-qfmdbbz).
