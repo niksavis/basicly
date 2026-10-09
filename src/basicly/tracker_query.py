@@ -34,6 +34,9 @@ def _queries() -> Any:
 
 
 def _report(payload: object) -> None:
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8")
     print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
 
 

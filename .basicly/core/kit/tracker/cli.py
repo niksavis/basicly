@@ -339,6 +339,9 @@ def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | No
 
     args = arguments.parser().parse_args(argv)
     code, report = invoke(args, redact)
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8")
     print(json.dumps(report, sort_keys=True, indent=2, ensure_ascii=False))
     return code
 
