@@ -1,1 +1,0 @@
-- **The tired-engineer style keeps tables narrow and the answer on top.** Four new rules: at most 3 columns and about 40 characters a cell, the answer in the first 30 lines, one command per fenced block, and no emoji or box-drawing characters (basicly-0gt5hxz).
