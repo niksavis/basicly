@@ -235,11 +235,11 @@ def remedy(missing: Sequence[str]) -> str:
             )
         elif name == "## Confirmation Plan":
             parts.append(
-                "use review --evidence to map each criterion to command argv and expected result"
+                "use review --evidence: checks of criterion, command (an argv list) and expected"
             )
         elif name == "## Completion Confirmation":
             parts.append(
-                "use confirm --evidence with matching argv, observed results and exit_code 0"
+                "use confirm --evidence: checks of criterion, planned command, result, exit_code 0"
             )
         else:
             parts.append(

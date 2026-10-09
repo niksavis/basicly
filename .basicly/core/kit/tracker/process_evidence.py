@@ -190,35 +190,59 @@ def _command(value: object) -> bool:
     )
 
 
-def _checks(fields: Mapping[str, object], checks: object, *, completed: bool = False) -> bool:
-    expected = criteria(fields)
-    if not expected or len(set(expected)) != len(expected) or not isinstance(checks, list):
-        return False
-    held = []
-    keys = (
-        {"criterion", "command", "result", "exit_code"}
-        if completed
-        else {"criterion", "command", "expected"}
+PLANNED_CHECK_KEYS = ("criterion", "command", "expected")
+COMPLETED_CHECK_KEYS = ("criterion", "command", "result", "exit_code")
+
+
+def check_shape(*, completed: bool = False) -> str:
+    keys = COMPLETED_CHECK_KEYS if completed else PLANNED_CHECK_KEYS
+    return "each check holds exactly the keys " + ", ".join(keys) + "; command is an argv list"
+
+
+def _entry_fault(check: object, keys: set[str], completed: bool) -> str | None:
+    if not isinstance(check, dict):
+        return "is not an object"
+    parts = [f"lacks the key {', '.join(sorted(keys - set(check)))}"] if keys - set(check) else []
+    if extra := sorted(set(check) - keys):
+        parts.append(f"holds the unknown key {', '.join(extra)}")
+    if parts:
+        return " and ".join(parts)
+    faults = (
+        (not _text(check["criterion"]), "has no criterion text"),
+        (not _command(check["command"]), "command is not a filled argv list of strings"),
+        (completed and not _text(check["result"]), "has no observed result text"),
+        (
+            completed and (type(check["exit_code"]) is not int or check["exit_code"] != 0),
+            "exit_code is not the integer 0",
+        ),
+        (not completed and not _text(check["expected"]), "has no expected result text"),
     )
-    for check in checks:
-        if (
-            not isinstance(check, dict)
-            or set(check) != keys
-            or not _text(check.get("criterion"))
-            or not _command(check.get("command"))
-        ):
-            return False
-        if completed:
-            if (
-                not _text(check.get("result"))
-                or type(check.get("exit_code")) is not int
-                or check["exit_code"] != 0
-            ):
-                return False
-        elif not _text(check.get("expected")):
-            return False
-        held.append(check["criterion"])
-    return len(held) == len(set(held)) and set(held) == set(expected)
+    return next((text for failed, text in faults if failed), None)
+
+
+def _check_fault(
+    fields: Mapping[str, object], checks: object, *, completed: bool = False
+) -> str | None:
+    expected = criteria(fields)
+    if not expected or len(set(expected)) != len(expected):
+        return "the record holds no unique acceptance criteria"
+    if not isinstance(checks, list):
+        return "checks must be a list"
+    keys: set[str] = set(COMPLETED_CHECK_KEYS if completed else PLANNED_CHECK_KEYS)
+    for index, check in enumerate(checks):
+        if fault := _entry_fault(check, keys, completed):
+            return f"check {index} {fault}"
+    held = [check["criterion"] for check in checks]
+    faults = (
+        ([item for item in held if held.count(item) > 1], "checks repeat the criterion"),
+        ([item for item in held if item not in expected], "no acceptance criterion reads"),
+        ([item for item in expected if item not in held], "no check covers the criterion"),
+    )
+    return next((f"{text} {items[0]!r}" for items, text in faults if items), None)
+
+
+def _checks(fields: Mapping[str, object], checks: object, *, completed: bool = False) -> bool:
+    return _check_fault(fields, checks, completed=completed) is None
 
 
 def readiness(
@@ -294,10 +318,8 @@ def review_draft(
         raise ProcessEvidenceError(
             "Conversation requires same-card comment seqs without forks; read show comment_log"
         )
-    if not _checks(state.fields, payload["checks"]):
-        raise ProcessEvidenceError(
-            "Confirmation Plan requires each criterion once, command argv and expected result"
-        )
+    if fault := _check_fault(state.fields, payload["checks"]):
+        raise ProcessEvidenceError(f"Confirmation Plan refused: {fault}; {check_shape()}")
     if (criterion := _machine_path(payload["checks"])) is not None:
         raise ProcessEvidenceError(
             f"Confirmation Plan command for {criterion!r} holds a machine path that the ledger "
@@ -328,14 +350,13 @@ def confirmation_draft(
             "confirm requires a current review: " + ", ".join(str(part) for part in report["owed"])
         )
     state = events.fold(found).records[record]
-    if (
-        not isinstance(payload, dict)
-        or set(payload) != {"checks"}
-        or not _checks(state.fields, payload["checks"], completed=True)
-    ):
+    shape = check_shape(completed=True)
+    if not isinstance(payload, dict) or set(payload) != {"checks"}:
         raise ProcessEvidenceError(
-            "Completion Confirmation requires each criterion, argv, result and exit_code 0"
+            f"Completion Confirmation refused: evidence holds the one key checks; {shape}"
         )
+    if fault := _check_fault(state.fields, payload["checks"], completed=True):
+        raise ProcessEvidenceError(f"Completion Confirmation refused: {fault}; {shape}")
     review = report["review"]
     if not isinstance(review, Mapping):
         raise ProcessEvidenceError("confirm requires a recorded review")
