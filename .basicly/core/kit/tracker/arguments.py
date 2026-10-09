@@ -15,7 +15,7 @@ def _add_shape_arguments(parser: Any) -> None:
         "--acceptance",
         default="",
         metavar="TEXT",
-        help="the acceptance criteria a check is derived from",
+        help="the acceptance criteria a check is derived from; one criterion per line",
     )
     parser.add_argument(
         "--requirements",

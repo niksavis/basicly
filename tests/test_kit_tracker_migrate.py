@@ -759,6 +759,7 @@ def test_a_consumer_with_no_basicly_can_import_their_tracker(tmp_path: Path) -> 
         "shaping.py",
         "locking.py",
         "process_evidence.py",
+        "evidence_checks.py",
         "labels.py",
     ):
         shutil.copy2(KIT_DIR / name, consumer / name)

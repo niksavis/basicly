@@ -100,6 +100,12 @@ def refuse(
         if _starts(drafts, record) and (marked or owed):
             why = f"it waits for an agent review ({REVIEW_LABEL})" if marked else "it owes "
             why += "" if marked else ", ".join(owed)
+            note = (
+                ""
+                if marked or not debt
+                else process.review_note(found, record, fields, drafts, template=template)
+            )
+            why += f" ({note})" if note else ""
             raise UnreviewedError(
                 f"{record} cannot start: {why}; an agent reviews it and fills the missing "
                 f"detail first"
