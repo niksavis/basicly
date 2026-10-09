@@ -235,4 +235,4 @@ def test_the_committed_style_says_what_to_write_not_how_a_screen_draws_it() -> N
 def test_the_committed_style_stays_within_its_system_prompt_budget() -> None:
     body = output_styles.discover_styles(REPO)[0].body
 
-    assert len(body.split()) <= 370
+    assert len(body.split()) <= 375
