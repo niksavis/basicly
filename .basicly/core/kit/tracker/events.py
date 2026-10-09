@@ -394,15 +394,32 @@ class FoldResult:
     withdrawals: list[Withdrawal] = field(default_factory=list)
 
 
+LABELS_FIELD = "labels"
+LABEL_SEPARATOR = ","
+
+
+def labels_of(value: object) -> tuple:
+
+    if isinstance(value, str):
+        return tuple(part for part in (raw.strip() for raw in value.split(LABEL_SEPARATOR)) if part)
+    if isinstance(value, (list, tuple)):
+        return tuple(str(item) for item in value)
+    return ()
+
+
+def settled_field(name: str, value: object) -> object:
+    return list(labels_of(value)) if name == LABELS_FIELD else value
+
+
 def _apply_created(state: RecordState, payload: Mapping[str, object]) -> None:
-    state.fields.update(payload)
+    state.fields.update({name: settled_field(name, value) for name, value in payload.items()})
 
 
 def _apply_field(state: RecordState, payload: Mapping[str, object]) -> None:
     name = payload.get("name")
     if not isinstance(name, str):
         raise InvalidEventError(f"a {KIND_FIELD} event needs a string name, got {name!r}")
-    state.fields[name] = payload.get("value")
+    state.fields[name] = settled_field(name, payload.get("value"))
 
 
 def _apply_status(state: RecordState, payload: Mapping[str, object]) -> None:

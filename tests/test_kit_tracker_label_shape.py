@@ -77,11 +77,11 @@ def test_a_label_written_through_the_kit_seam_reads_back_as_the_whole_word(
     commands.update(ledger, record, add_labels=["phase-2"])
 
     stored = commands.queries.folded(ledger)[record].fields["labels"]
-    assert isinstance(stored, str), "the field event stores the joined shape, not a list"
+    assert stored == ["phase-2"]
     assert label_shape.labels_of(stored) == ("phase-2",)
 
 
-def test_the_reproduction_that_filed_this_reads_a_healthy_record_as_seven_labels(
+def test_iterating_the_folded_labels_yields_whole_words_not_characters(
     ledger: Path,
 ) -> None:
     record = _root(ledger)
@@ -89,8 +89,8 @@ def test_the_reproduction_that_filed_this_reads_a_healthy_record_as_seven_labels
 
     stored = commands.queries.folded(ledger)[record].fields["labels"]
 
-    assert list(stored) == ["p", "h", "a", "s", "e", "-", "2"]
-    assert label_shape.labels_of(stored) != tuple(stored)
+    assert list(stored) == ["phase-2"]
+    assert label_shape.labels_of(stored) == tuple(stored)
 
 
 def test_a_log_whose_labels_are_whole_words_is_clean(tmp_path: Path) -> None:
@@ -144,5 +144,5 @@ def test_a_corrected_record_still_reports_the_write_that_corrupted_it(
     ledger = _seed(tmp_path / "ledger", "p,h,a,s,e,-,2", kind="field")
     _append(ledger, [events.Draft(RECORD, "field", {"name": "labels", "value": "phase-2"})])
 
-    assert commands.queries.folded(ledger)[RECORD].fields["labels"] == "phase-2"
+    assert commands.queries.folded(ledger)[RECORD].fields["labels"] == ["phase-2"]
     assert _split_findings(fsck.check(ledger)) != []

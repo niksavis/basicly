@@ -1,0 +1,1 @@
+- **`labels` always reads as a list.** The fold now settles a `labels` value into a list for created and field events and for snapshot records, so `show`, `list` and every reader return `["a", "b"]` after `--add-label`, `--remove-label` or `--labels a,b` too (basicly-vm8tlue).

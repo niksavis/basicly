@@ -161,7 +161,7 @@ def record_from_dict(raw: Mapping[str, object]) -> Any:
     return events.RecordState(
         record=record,
         status=status,
-        fields=dict(fields),
+        fields={name: events.settled_field(name, value) for name, value in fields.items()},
         comments=list(comments),
         checkpoints=dict(checkpoints),
         artifacts=dict(artifacts),
