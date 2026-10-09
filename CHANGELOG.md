@@ -6,9 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.21.4 - 2026-10-09
+
+Delta: v0.21.3..v0.21.4
+
 A patch release for a defect that a consumer reported. When a global `basicly` is older or newer than the kit a repository installed, `session start` now prints the version refusal and its fix, not `handover: none`.
 
 - **A version refusal no longer hides the handover** (`basicly-gusepif`).
+
+### Fixed
+
+- **`session start` no longer hides a handover behind a version refusal.** When the engine refuses the tracker kit of another version, the handover line now prints that refusal and the command that fixes it, not `handover: none` (basicly-gusepif).
 
 ## v0.21.3 - 2026-10-09
 

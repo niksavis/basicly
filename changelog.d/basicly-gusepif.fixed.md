@@ -1,1 +1,0 @@
-- **`session start` no longer hides a handover behind a version refusal.** When the engine refuses the tracker kit of another version, the handover line now prints that refusal and the command that fixes it, not `handover: none` (basicly-gusepif).

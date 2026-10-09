@@ -10,7 +10,7 @@ The board installs the same two ways as the tracker. The default mode runs it fr
 install and writes no board code into the repository:
 
 ```console
-$ uv tool install 'git+https://github.com/niksavis/basicly@v0.21.3#subdirectory=packages/basicly-board'
+$ uv tool install 'git+https://github.com/niksavis/basicly@v0.21.4#subdirectory=packages/basicly-board'
 $ basicly-board init
 $ basicly-board serve .basicly/ledger
 board: http://127.0.0.1:8765/ serves .basicly/ledger; API at /api/v1
