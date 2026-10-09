@@ -413,7 +413,34 @@ def cmd_build(args: argparse.Namespace) -> int:
     ui.say(f"Updated {_format_path(manifest_path, repo_root)}", style="ok")
     if changed_count == 0:
         ui.say("No files changed.", style="muted")
+    stale = _stale_projections(repo_root) if getattr(args, "report_stale", True) else []
+    for projection_name, build_command in stale:
+        ui.warn(f"{projection_name} are stale. Run `basicly {build_command}`.")
     return 0
+
+
+def _stale_projections(repo_root: Path) -> list[tuple[str, str]]:
+    selection = load_technology_selection(repo_root)
+    checks = (
+        (
+            "Output styles",
+            "styles-build",
+            lambda: check_synced_styles(
+                repo_root, resolve_style_roots(repo_root, None), selection=selection
+            ),
+        ),
+        (
+            "Skills",
+            "skills-build",
+            lambda: check_synced_skills(
+                repo_root, resolve_skill_roots(repo_root=repo_root, roots=None), selection=selection
+            ),
+        ),
+        ("Agents", "agents-build", lambda: agents.check_synced_agents(repo_root, selection)),
+        ("Hooks", "hooks-build", lambda: _hook_mismatches(repo_root)),
+        ("Permissions", "permissions-build", lambda: _permission_mismatches(repo_root)),
+    )
+    return [(name, command) for name, command, mismatches in checks if mismatches()]
 
 
 def cmd_check(_args: argparse.Namespace) -> int:
@@ -1554,7 +1581,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 1
 
     steps: list[tuple[str, Any, argparse.Namespace]] = [
-        ("build", cmd_build, argparse.Namespace(target=None, verify=False)),
+        ("build", cmd_build, argparse.Namespace(target=None, verify=False, report_stale=False)),
         (
             "skills-build",
             cmd_skills_build,
@@ -1995,8 +2022,7 @@ def _hooks_stale_message(mismatches: list[tuple[Path, str]], core_hooks_dir: Pat
     return f"{HOOKS_SCRIPT_REMEDY} The remaining wiring drift is fixed by `basicly hooks-build`."
 
 
-def cmd_hooks_check(_args: argparse.Namespace) -> int:
-    repo_root = _repo_root()
+def _hook_mismatches(repo_root: Path) -> list[tuple[Path, str]]:
     paths = load_project_paths(repo_root)
     selection = load_technology_selection(repo_root)
     mismatches = check_hooks(repo_root, _core_hooks_dir(paths), selection)
@@ -2015,6 +2041,23 @@ def cmd_hooks_check(_args: argparse.Namespace) -> int:
         mismatches.append((settings_path, reason))
 
     mismatches.extend(check_copilot_hooks(repo_root, _core_hooks_dir(paths), selection))
+    return mismatches
+
+
+def _permission_mismatches(repo_root: Path) -> list[tuple[Path, str]]:
+    settings_path = repo_root / claude_settings.CLAUDE_SETTINGS_PATH
+    managed = permissions.load_claude_permissions()
+    return [
+        (settings_path, reason)
+        for reason in claude_settings.permission_mismatches(repo_root, managed)
+    ]
+
+
+def cmd_hooks_check(_args: argparse.Namespace) -> int:
+    repo_root = _repo_root()
+    paths = load_project_paths(repo_root)
+    selection = load_technology_selection(repo_root)
+    mismatches = _hook_mismatches(repo_root)
 
     if _report_mismatches(
         mismatches,
@@ -2079,12 +2122,7 @@ def cmd_permissions_build(_args: argparse.Namespace) -> int:
 
 def cmd_permissions_check(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
-    managed = permissions.load_claude_permissions()
-    settings_path = repo_root / claude_settings.CLAUDE_SETTINGS_PATH
-    mismatches = [
-        (settings_path, reason)
-        for reason in claude_settings.permission_mismatches(repo_root, managed)
-    ]
+    mismatches = _permission_mismatches(repo_root)
     for line in automode_trust.single_repository_findings(user_skills.user_home()):
         ui.say(line, style="warn")
     if _report_mismatches(

@@ -1,0 +1,1 @@
+- **`basicly build` names a stale projection.** It projects the instruction files only, and it said "No files changed" while a style, skill, agent, hook or permissions projection was stale. Now it names each stale one and the command that syncs it, for example `basicly styles-build` (basicly-khv2kc1).
