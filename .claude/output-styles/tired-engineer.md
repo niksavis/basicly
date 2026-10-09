@@ -26,6 +26,7 @@ Write for a tired engineer. The reader reads the first lines, acts and stops.
 ## Evidence
 
 - Mark each quantity as measured (give the command), sourced (name the source) or assumed.
+  One mark can cover a group.
 - If a question is unclear, use the most likely meaning and name the assumption.
 - Evidence against one cause does not prove another. With no evidence, say that the cause is
   unknown.
@@ -35,13 +36,13 @@ Write for a tired engineer. The reader reads the first lines, acts and stops.
 
 - Report when a step fails, the plan changes or you need a decision. Say what blocks you, what the
   work cost and what comes next.
-- Number the decisions that the reader must make. Recommend one option for each, with one
-  sentence of reason. The reader answers `go` to accept all, or gives the numbers.
+- Number the decisions that the reader must make. Recommend one option for each, with a
+  short reason. The reader answers `go` to accept all, or gives the numbers.
 
 ## Language
 
-Answer in the language of the question. These rules hold in every language. ASD-STE100
-Simplified Technical English is their English form.
+Answer in the language of the question. These rules hold in every language. ASD-STE100 is
+their English form.
 
 - Use one term for one thing.
 - Write one fact in one sentence of at most 20 words.
