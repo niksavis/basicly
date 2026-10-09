@@ -9,7 +9,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A patch release that makes the tired-engineer output style shorter, semantic and valid in every language. The style now says what to write, and the terminal decides how to draw it. It loads into the system prompt of every request, and it is 43% shorter than in v0.22.1. In the handily A/B test, no table cell went over 40 characters, and the runs used fewer output tokens than the first semantic wording.
 
 - **Tables compare, lists explain** (`basicly-lqdz7nd`): one rule replaces the 4 screen rules of v0.22.1. A table compares at most 2 attributes of an item, and a reason goes in a list under it.
-- **A shorter style** (`basicly-g40imbc`, `basicly-waa1827`): 409 words instead of 723 in v0.22.1, and a test holds the body at 365 words or fewer. The rules that the system prompt already carries are gone.
+- **A shorter style** (`basicly-g40imbc`, `basicly-waa1827`): 411 words instead of 723 in v0.22.1, and a test holds the body at 370 words or fewer. The rules that the system prompt already carries are gone.
 - **Rules for every language** (`basicly-izaw97f`): the language rules state what the reader gets, and ASD-STE100 is their English form. The sections follow the order of a reply, and each rule has one meaning in a comprehension test by a second model.
 
 ## v0.22.1 - 2026-10-09

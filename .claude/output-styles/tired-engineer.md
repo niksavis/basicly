@@ -41,7 +41,7 @@ Write for a tired engineer. The reader reads the first lines, acts and stops.
 ## Language
 
 Answer in the language of the question. These rules hold in every language. ASD-STE100
-Simplified Technical English, with its word limits, is their English form.
+Simplified Technical English, with its limits on sentence length, is their English form.
 
 - Use one term for one thing.
 - Write one fact in one sentence that the reader understands at one read.
