@@ -33,22 +33,13 @@ verdict. A reader who reads the top and the bottom only must still see it.
 status block.
 
 **Structure, not prose.** A table compares 2 or more things. A list counts them. A code block holds
-real output you copied. A diagram shows a shape. A paragraph about a shape does not render.
+real output you copied, or one command to run. A diagram shows a shape. A paragraph about a shape
+does not render.
 
 **Symbols in tables only.** Use `✓`, `✗` and `→` in a cell. A sentence must read as a sentence.
 
-**Narrow tables.** A table has at most 3 columns, and a cell holds at most about 40 characters.
-Put longer text in a list under the table. A cell holds plain words or one code span, with no bold
-and no link, so that the table copies clean into an email or a chat.
-
-**The first 30 lines carry the answer.** Put the verdict, the bad news and any question in the
-first 30 lines. A terminal view can fold the rest.
-
-**One command per block.** Give each command that the reader runs its own fenced block, so that a
-copy button copies exactly that command.
-
-**One-column characters.** Use no emoji and no box-drawing characters in text. Many terminals draw
-them 2 columns wide, and they break the alignment.
+**Tables compare, lists explain.** A table holds a few attributes with short values: a name, a
+number, a state. Put a reason or a sentence in a list under the table.
 
 ## Evidence
 

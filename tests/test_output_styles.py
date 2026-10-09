@@ -215,15 +215,16 @@ def test_the_committed_style_keeps_the_coding_instructions() -> None:
     assert output_styles.discover_styles(REPO)[0].keep_coding_instructions is True
 
 
-def test_the_committed_style_keeps_tables_narrow_and_the_answer_on_top() -> None:
+def test_the_committed_style_says_what_to_write_not_how_a_screen_draws_it() -> None:
     body = output_styles.discover_styles(REPO)[0].body
-    rules = [
+    screen_rules = [
         "**Narrow tables.**",
         "**The first 30 lines carry the answer.**",
         "**One command per block.**",
         "**One-column characters.**",
     ]
 
-    positions = [body.index(rule) for rule in rules]
-    assert positions == sorted(positions)
-    assert body.index("**Symbols in tables only.**") < positions[0] < body.index("## Evidence")
+    assert [rule for rule in screen_rules if rule in body] == []
+    assert "real output you copied, or one command to run." in " ".join(body.split())
+    position = body.index("**Tables compare, lists explain.**")
+    assert body.index("**Symbols in tables only.**") < position < body.index("## Evidence")

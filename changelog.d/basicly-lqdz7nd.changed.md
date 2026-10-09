@@ -1,0 +1,1 @@
+- **The tired-engineer style says what to write, not how a screen draws it.** One rule, "Tables compare, lists explain", replaces the four table and terminal rules of v0.22.1. A code block may now hold one command to run. The terminal draws the table (basicly-lqdz7nd).
