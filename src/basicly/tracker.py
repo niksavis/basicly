@@ -383,16 +383,16 @@ def try_read_comments(repo_root: Path, issue_id: str) -> list[dict]:
 
 def all_comment_texts(repo_root: Path) -> dict[str, list[str]]:
 
-    rows = all_comment_rows(repo_root)
+    try:
+        rows = all_comment_rows(repo_root)
+    except TrackerDivergenceError, OSError, ValueError:
+        return {}
     return {record: [str(row[COMMENT_TEXT_KEY]) for row in found] for record, found in rows.items()}
 
 
 def all_comment_rows(repo_root: Path) -> dict[str, list[dict]]:
 
-    try:
-        return _owned_comment_rows(repo_root)
-    except TrackerDivergenceError, OSError, ValueError:
-        return {}
+    return _owned_comment_rows(repo_root)
 
 
 ARTIFACT_KIND_KEY = "artifact"

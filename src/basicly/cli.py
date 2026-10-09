@@ -812,7 +812,11 @@ def _decision_targets(repo_root: Path) -> dict[str, Any]:
 def _latest_handover(repo_root: Path) -> dict[str, Any]:
 
     latest: dict[str, Any] | None = None
-    for record, rows in tracker.all_comment_rows(repo_root).items():
+    try:
+        found = tracker.all_comment_rows(repo_root)
+    except (owned_store.TrackerDivergenceError, OSError, ValueError) as exc:
+        return {"present": False, "marker": HANDOVER_MARKER, "note": None, "refused": str(exc)}
+    for record, rows in found.items():
         for row in rows:
             text = str(row[tracker.COMMENT_TEXT_KEY])
             if not text.startswith(HANDOVER_MARKER):
@@ -876,6 +880,9 @@ def _session_report(repo_root: Path) -> dict[str, Any]:
 def _say_session_handover(report: dict[str, Any]) -> None:
     handover = report["handover"]
     note = handover["note"]
+    if "refused" in handover:
+        ui.say(f"handover: unknown - the ledger was not read: {handover['refused']}")
+        return
     if note is None:
         ui.say(
             f"handover: none - no note starts with `{handover['marker']}`; "
