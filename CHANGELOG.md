@@ -6,9 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.21.3 - 2026-10-09
+
+Delta: v0.21.2..v0.21.3
+
 A patch release for a defect that a consumer reported. When the tracker refuses `review --evidence` or `confirm --evidence`, the message now names the key or value that is wrong.
 
 - **Evidence refusals name the real key** (`basicly-ywt4snr`). The old message said `argv`, but the tracker reads `command`.
+
+### Fixed
+
+- **Evidence refusals name the wrong key.** `review --evidence` and `confirm --evidence` now name the first missing or unknown key, or the bad value, and print the exact key set of a check. The old message said `argv` where the tracker reads `command` (basicly-ywt4snr).
 
 ## v0.21.2 - 2026-10-08
 

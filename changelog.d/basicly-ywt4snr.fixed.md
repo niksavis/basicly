@@ -1,1 +1,0 @@
-- **Evidence refusals name the wrong key.** `review --evidence` and `confirm --evidence` now name the first missing or unknown key, or the bad value, and print the exact key set of a check. The old message said `argv` where the tracker reads `command` (basicly-ywt4snr).
