@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+A patch release for a defect that a consumer reported. A repository can now commit generated files that its top-level pre-commit `exclude:` names. `secret-scan` skips only its generic assignment rule in those paths and still refuses a real token or key.
+
+- **`secret-scan` honours the pre-commit exclude for its generic rule** (`basicly-uokg8gd`).
+- **The comments kit README names the exclude, and a test pins that install keeps it** (`basicly-juw9oz7`).
+
 ## v0.21.4 - 2026-10-09
 
 Delta: v0.21.3..v0.21.4
