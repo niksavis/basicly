@@ -1,0 +1,1 @@
+- **The tired-engineer style is 28% shorter.** It loads into the system prompt of every request. The rules keep their behaviour in 465 words instead of 644, and a test holds the body at 430 words or fewer (basicly-g40imbc).
