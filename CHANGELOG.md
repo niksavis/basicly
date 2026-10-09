@@ -6,11 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.22.2 - 2026-10-09
+
+Delta: v0.22.1..v0.22.2
+
 A patch release that makes the tired-engineer output style shorter, semantic and valid in every language. The style now says what to write, and the terminal decides how to draw it. It loads into the system prompt of every request, and it is 42% shorter than in v0.22.1. In the handily A/B test, no table cell went over 40 characters, and the runs used fewer output tokens than the first semantic wording.
 
 - **Tables compare, lists explain** (`basicly-lqdz7nd`): one rule replaces the 4 screen rules of v0.22.1. A table compares at most 2 attributes of an item, and a reason goes in a list under it.
 - **A shorter style** (`basicly-g40imbc`, `basicly-waa1827`): 419 words instead of 723 in v0.22.1, and a test holds the body at 375 words or fewer. The rules that the system prompt already carries are gone.
 - **Rules for every language** (`basicly-izaw97f`): the language rules state what the reader gets, and ASD-STE100 is their English form. The sections follow the order of a reply, and each rule has one meaning in a comprehension test by a second model.
+
+### Changed
+
+- **The tired-engineer style is 36% shorter.** It loads into the system prompt of every request. The rules keep their behaviour in 465 words instead of 723 in v0.22.1, and a test holds the body at 430 words or fewer (basicly-g40imbc).
+
+- **The tired-engineer style holds in every language.** The language rules state what the reader gets, not an English mechanism, and ASD-STE100 is their English form. The sections follow the order of a reply, and 8 unclear rules have one meaning now (basicly-izaw97f).
+
+- **The tired-engineer style says what to write, not how a screen draws it.** One rule, "Tables compare, lists explain", replaces the four table and terminal rules of v0.22.1. A code block may now hold one command to run. The terminal draws the table (basicly-lqdz7nd).
+
+- **The tired-engineer style drops what the system prompt already says.** The picker rule, 2 examples and most of the status rule are gone. The file is 425 words, and a test holds the body at 390 words or fewer (basicly-waa1827).
 
 ## v0.22.1 - 2026-10-09
 

@@ -1,1 +1,0 @@
-- **The tired-engineer style drops what the system prompt already says.** The picker rule, 2 examples and most of the status rule are gone. The file is 425 words, and a test holds the body at 390 words or fewer (basicly-waa1827).
