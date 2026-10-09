@@ -175,9 +175,8 @@ def test_the_default_mode_writes_no_kit_code_and_the_sandbox_mode_one_file(
     modes.install_mode(package, _request(package, root), sandbox=False)
     assert not (root / ".basicly" / "tracker.pyz").exists()
     for folder in (".claude", ".agents"):
-        guidance = (root / folder / "skills" / "tracker" / "SKILL.md").read_text("utf-8")
-        assert "basicly-tracker ready" in guidance
-        assert "python3 .basicly/tracker.pyz ready" not in guidance
+        assert not (root / folder / "skills" / "tracker" / "SKILL.md").exists()
+        assert modes.user_skill_paths(machine / "home", tracker.USER_SKILL)[0].is_file()
     assert not (root / ".basicly" / "kit").exists()
     assert (root / ".basicly" / "ledger" / ".kit-version").is_file()
     assert "__pycache__" not in (root / ".gitignore").read_text(encoding="utf-8")
@@ -287,3 +286,10 @@ def test_the_package_routes_record_updates_to_the_tracker_not_the_installer(
     assert json.loads(capsys.readouterr().out)["appended"]
     assert tracker.installer.run(package.kit, ["show", str(directory), record]) == 0
     assert json.loads(capsys.readouterr().out)["fields"]["title"] == "refined"
+
+
+def test_a_bare_update_refuses_and_names_both_forms(capsys: pytest.CaptureFixture[str]) -> None:
+    assert tracker.main(["update"]) == 2
+    refusal = capsys.readouterr().err
+    assert "basicly-tracker update <ledger> <record> --field name=value" in refusal
+    assert "basicly-tracker init" in refusal

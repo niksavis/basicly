@@ -218,6 +218,13 @@ def main(argv=None) -> int:
         return _plugin(args[1:])
     if args[:1] == ["serve"]:
         return _serve(args)
+    if args == ["update"]:
+        sys.stderr.write(
+            "basicly-tracker: update needs a ledger and a record, so nothing ran. Update a "
+            "record with `basicly-tracker update <ledger> <record> --field name=value`; "
+            "install or upgrade the kit in this repository with `basicly-tracker init`\n"
+        )
+        return 2
     if args[:1] in (["init"], ["update"], ["uninstall"]) and USER_FLAG in args:
         return _user(args)
     passed = _configure_flags(args) if args[:1] in (["init"], ["update"]) else ()

@@ -21,8 +21,6 @@ tracker: pinned the ledger to tracker 0.21.0
 tracker: commit-msg now refuses a code commit on a record you do not hold
 basicly-tracker: wrote the user skill to ~/.claude/skills/basicly-tracker/SKILL.md
 basicly-tracker: wrote the user skill to ~/.agents/skills/basicly-tracker/SKILL.md
-tracker: wrote the skill to .claude/skills/tracker/SKILL.md
-tracker: wrote the skill to .agents/skills/tracker/SKILL.md
 $ basicly-tracker ready .basicly/ledger
 {"count": 0, "records": [], "schema": "basicly.scheduler.v1", ...}
 ```

@@ -214,7 +214,9 @@ def install_mode(package: Package, request, sandbox: bool) -> int:
         _check_version(package, request, found)
         _drop_file(target, Path(package.user.places[0]), stream, command)
         install_user(kit.directory, package.user, user_home(), stream)
-    _write_guidance(package, request, typed, skill=True)
+    _write_guidance(package, request, typed, skill=found is None)
+    if found is not None:
+        installer.drop_skill(target, kit.name, stream)
     drop_vendored(installer, request)
     return 0
 
