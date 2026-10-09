@@ -213,3 +213,17 @@ def test_the_committed_style_round_trips_through_the_source() -> None:
 
 def test_the_committed_style_keeps_the_coding_instructions() -> None:
     assert output_styles.discover_styles(REPO)[0].keep_coding_instructions is True
+
+
+def test_the_committed_style_keeps_tables_narrow_and_the_answer_on_top() -> None:
+    body = output_styles.discover_styles(REPO)[0].body
+    rules = [
+        "**Narrow tables.**",
+        "**The first 30 lines carry the answer.**",
+        "**One command per block.**",
+        "**One-column characters.**",
+    ]
+
+    positions = [body.index(rule) for rule in rules]
+    assert positions == sorted(positions)
+    assert body.index("**Symbols in tables only.**") < positions[0] < body.index("## Evidence")
