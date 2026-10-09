@@ -1,0 +1,1 @@
+- **`external_ref` is unique, as in beads.** `create`, `update` and `import` refuse a write that sets an `external_ref` another live record holds, and name that record; an import refuses the whole batch. A duplicate already in a ledger blocks only a write that sets `external_ref` (basicly-75m6jnd).

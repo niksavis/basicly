@@ -107,9 +107,9 @@ def _append(
     repeat: bool = False,
 ) -> list:
     template = templates.load(ledger)
-    values.refuse(events, drafts, template)
     found = events.read_events(ledger)[0]
     states = events.fold(found).records
+    values.refuse(events, drafts, template, states)
     holders.refuse(states, drafts)
     review.refuse(states, drafts, writers.writer_class(), template, found=found)
     resolved = recurrence.at_the_generation_this_write_needs(
@@ -139,7 +139,7 @@ def _split_all(values: Iterable[str]) -> list[str]:
     return found
 
 
-def update(  # noqa: PLR0913 — one argument per thing an update can set; see the docstring
+def update(  # noqa: PLR0913 — one argument per thing an update can set
     directory: Path | str,
     record: str,
     *,

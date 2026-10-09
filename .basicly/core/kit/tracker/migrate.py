@@ -423,6 +423,7 @@ def import_snapshot(  # noqa: PLR0913 — every keyword past the snapshot is an 
         drafts.extend(tombstones)
         report.rejected.extend(refused)
 
+        beads.values.refuse_external_refs(events, events.fold(existing).records, drafts)
         if dry_run:
             report.imported = sorted(
                 draft.record for draft in drafts if draft.kind == events.KIND_CREATED

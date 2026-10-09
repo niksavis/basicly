@@ -32,6 +32,7 @@ CLOSED = "closed"
 PRIORITY_FIELD = "priority"
 PRIORITIES = range(5)
 CLOSE_REASON_FIELD = "close_reason"
+EXTERNAL_REF_FIELD = "external_ref"
 
 
 RefusedValueError = fields.RefusedFieldError
@@ -99,7 +100,40 @@ def _refuse_typed_headings(events: Any, draft: Any) -> None:
             )
 
 
-def refuse(events: Any, drafts: Sequence[Any], template: Any = None) -> None:
+def external_ref_conflicts(events: Any, states: Any, drafts: Sequence[Any]) -> list[str]:
+
+    held = {
+        record: str(state.fields.get(EXTERNAL_REF_FIELD) or "")
+        for record, state in states.items()
+        if not state.tombstoned
+    }
+    written: dict[str, str] = {}
+    for draft in drafts:
+        if draft.kind == events.KIND_CREATED and EXTERNAL_REF_FIELD in draft.payload:
+            written[draft.record] = str(draft.payload.get(EXTERNAL_REF_FIELD) or "")
+        elif _named(events, draft, EXTERNAL_REF_FIELD):
+            written[draft.record] = str(draft.payload.get("value") or "")
+    held.update(written)
+    return [
+        f"{record} sets external_ref {ref!r}, which {', '.join(others)} already holds"
+        for record, ref in sorted(written.items())
+        if ref and (others := sorted(o for o, v in held.items() if v == ref and o != record))
+    ]
+
+
+def refuse_external_refs(events: Any, states: Any, drafts: Sequence[Any]) -> None:
+
+    if conflicts := external_ref_conflicts(events, states, drafts):
+        raise RefusedValueError(
+            "external_ref is unique, as in beads: "
+            + "; ".join(conflicts)
+            + "; clear or change one of them first"
+        )
+
+
+def refuse(events: Any, drafts: Sequence[Any], template: Any = None, states: Any = None) -> None:
+
+    refuse_external_refs(events, states or {}, drafts)
 
     reasoned = {
         draft.record
