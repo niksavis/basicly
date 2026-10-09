@@ -13,7 +13,7 @@ exporter. It needs no basicly engine.
 is the default mode:
 
 ```console
-$ uv tool install 'git+https://github.com/niksavis/basicly@v0.21.4#subdirectory=packages/basicly-tracker'
+$ uv tool install 'git+https://github.com/niksavis/basicly@v0.21.5#subdirectory=packages/basicly-tracker'
 $ basicly-tracker init
 tracker: added to .gitattributes: events-*.jsonl -text merge=union
 tracker: created the ledger .basicly/ledger
@@ -132,7 +132,7 @@ https://github.com/niksavis/basicly/blob/main/packages/basicly-tracker/README.md
 describes. Do the four steps in order.
 
 1. Install. Run these commands in the target repository root:
-   uv tool install 'git+https://github.com/niksavis/basicly@v0.21.4#subdirectory=packages/basicly-tracker'
+   uv tool install 'git+https://github.com/niksavis/basicly@v0.21.5#subdirectory=packages/basicly-tracker'
    basicly-tracker init
 2. Configure. When init reports a beads or beans backlog, tell me how many records it holds.
    Then stop and ask me whether to import it. Never import without my yes.

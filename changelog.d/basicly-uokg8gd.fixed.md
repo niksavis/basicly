@@ -1,1 +1,0 @@
-- **`secret-scan` no longer refuses generic false positives in files that pre-commit excludes.** In a path that the top-level `exclude:` of `.pre-commit-config.yaml` matches, it skips only the `generic-secret-assignment` rule; a token or a private key is still refused, and an invalid exclude regex refuses by name (basicly-uokg8gd).

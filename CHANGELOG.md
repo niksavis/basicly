@@ -6,10 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.21.5 - 2026-10-09
+
+Delta: v0.21.4..v0.21.5
+
 A patch release for a defect that a consumer reported. A repository can now commit generated files that its top-level pre-commit `exclude:` names. `secret-scan` skips only its generic assignment rule in those paths and still refuses a real token or key.
 
 - **`secret-scan` honours the pre-commit exclude for its generic rule** (`basicly-uokg8gd`).
 - **The comments kit README names the exclude, and a test pins that install keeps it** (`basicly-juw9oz7`).
+
+### Added
+
+- **The comments kit README names how to skip generated files.** A top-level `exclude:` regex in `.pre-commit-config.yaml` keeps generated files out of the `no-comments` hook, and `basicly install` keeps that key; a test now pins it (basicly-juw9oz7).
+
+### Fixed
+
+- **`secret-scan` no longer refuses generic false positives in files that pre-commit excludes.** In a path that the top-level `exclude:` of `.pre-commit-config.yaml` matches, it skips only the `generic-secret-assignment` rule; a token or a private key is still refused, and an invalid exclude regex refuses by name (basicly-uokg8gd).
 
 ## v0.21.4 - 2026-10-09
 
