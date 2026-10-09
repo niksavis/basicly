@@ -464,10 +464,10 @@ def test_a_malformed_edge_event_is_named_and_never_becomes_an_edge(
             id="edge-type-shape",
         ),
         pytest.param(
-            provenance.EdgeKey(RECORD_A, "blocks", "basicly-fix-the-thing"),
+            provenance.EdgeKey(RECORD_A, "blocks", "basicly_fix_the_thing"),
             provenance.EXTRACTED,
             "not a record id",
-            id="slug-shaped-target",
+            id="underscore-target",
         ),
         pytest.param(
             provenance.EdgeKey(RECORD_A, "blocks", RECORD_A),

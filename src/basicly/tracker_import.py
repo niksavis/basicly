@@ -28,16 +28,7 @@ def _lines(report: Any, *, source: str) -> list[str]:
     return lines
 
 
-def _source_prefix(record: str, valid: Any) -> str | None:
-
-    parts = record.split("-")
-    for cut in range(2, len(parts)):
-        if valid("".join(parts[:cut]) + "-" + "-".join(parts[cut:])):
-            return "-".join(parts[:cut])
-    return None
-
-
-def _refusal_lines(bad: list[Any], valid: Any) -> list[str]:
+def _refusal_lines(bad: list[Any]) -> list[str]:
 
     if not bad:
         return []
@@ -45,17 +36,10 @@ def _refusal_lines(bad: list[Any], valid: Any) -> list[str]:
     for record in bad:
         if not isinstance(record, str):
             cause = f"the id is not a string but a {type(record).__name__}"
-        elif (prefix := _source_prefix(record, valid)) is not None:
-            cause = (
-                f"a record id is <prefix>-<suffix> and the prefix may not carry a hyphen, "
-                f"so these read as prefix {prefix.split('-')[0]!r} with a hyphen left in the "
-                f"suffix. The source prefix is {prefix!r}: a hyphenated one is not importable, "
-                f"and the ids cannot be preserved under it"
-            )
         else:
             cause = (
-                "the id does not match <prefix>-<suffix> with lowercase letters and digits, "
-                "an optional dotted child index, and no other punctuation"
+                "the id does not match <prefix>-<suffix> with lowercase letters, digits and "
+                "hyphens, an optional dotted child index, and no other punctuation"
             )
         causes.setdefault(cause, []).append(str(record))
     lines = []
@@ -125,7 +109,7 @@ def preview(
     for label, ids in (("new", fresh), ("held", known)):
         if ids:
             lines.append(f"  {label}: {', '.join(sorted(ids))}")
-    lines.extend(_refusal_lines(bad, valid))
+    lines.extend(_refusal_lines(bad))
     lines.extend(_prefix_note(repo_root, fresh) if advise else [])
     lines.extend(f"  unreadable: {i.subject} — {i.reason}" for i in snapshot.unreadable)
     return (1 if bad or snapshot.unreadable else 0), lines

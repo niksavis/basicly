@@ -269,7 +269,7 @@ def test_a_mint_with_no_free_candidate_raises_rather_than_reusing() -> None:
 
 def test_next_child_id_refuses_a_parent_that_is_not_a_record_id() -> None:
     with pytest.raises(ids.IdError):
-        ids.next_child_id("basicly-my-slug", set())
+        ids.next_child_id("basicly_my_slug", set())
 
 
 def test_the_evidence_id_reproduces_decision_id_for() -> None:
@@ -373,14 +373,11 @@ def test_an_evidence_id_needs_a_fact_to_derive_from() -> None:
     assert ids.is_evidence_id(ids.evidence_id("basicly-ab12", "reopened"))
 
 
-def test_a_hyphenated_id_really_is_refused_by_the_gate() -> None:
+def test_an_imported_slug_id_passes_the_gate() -> None:
 
     slug_id = "basicly-my-slug"
-    is_valid, error = gate.validate(f"fix(tracker): work ({slug_id})", {slug_id})
-    assert not is_valid
-    assert "unknown issue id" in error
-    assert "basicly-my" in error
-    assert not ids.is_record_id(slug_id)
+    assert gate.validate(f"fix(tracker): work ({slug_id})", {slug_id}) == (True, "")
+    assert ids.is_record_id(slug_id)
 
 
 def test_a_minted_record_id_passes_the_commit_message_gate() -> None:

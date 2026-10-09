@@ -447,7 +447,7 @@ def test_an_unparseable_line_is_reported_by_number_and_the_rest_still_imports(
     assert sorted(report.imported) == [RECORD_A, RECORD_B]
 
 
-def test_a_slug_id_the_commit_gate_would_refuse_is_rejected_rather_than_written(
+def test_a_slug_id_is_imported_unchanged(
     tmp_path: Path,
 ) -> None:
 
@@ -455,9 +455,8 @@ def test_a_slug_id_the_commit_gate_would_refuse_is_rejected_rather_than_written(
 
     report = _import(tmp_path, snapshot)
 
-    assert [rejection.subject for rejection in report.rejected] == [repr("basicly-my-slug")]
-    assert report.imported == [RECORD_A]
-    assert set(_fold(tmp_path).records) == {RECORD_A}
+    assert report.rejected == []
+    assert set(_fold(tmp_path).records) == {RECORD_A, "basicly-my-slug"}
 
 
 def test_a_source_field_this_version_never_heard_of_is_imported_verbatim(

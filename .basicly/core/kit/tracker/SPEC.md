@@ -535,8 +535,10 @@ an unrecorded rank.
 - **Evidence does not change.** A decision, a found fact or a dispatch marker records one
   moment. So its id **is** derived from content, and a second recording of the same evidence
   changes nothing.
-- **No slugs in ids.** A slug adds hyphens that read as a prefix boundary, and that breaks a
-  commit-message gate that parses the prefix.
+- **No slugs in minted ids.** A minted id never carries a slug. An imported id keeps the slug
+  its source gave it, such as `dev-memory-audit-multi-target-2zx` from `br create --slug`, so a
+  commit that cites it still resolves. The commit-message gates resolve the longest hyphen
+  prefix that the ledger holds, so `dev-abc-related` still names `dev-abc`.
 
 ### 9.4.1 The declared collision budget, derived
 

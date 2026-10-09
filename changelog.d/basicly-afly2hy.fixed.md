@@ -1,0 +1,1 @@
+- **The beads import keeps slug ids.** A record id may now carry hyphen segments after the prefix, as `br create --slug` mints them (`dev-memory-audit-multi-target-2zx`); commit messages and the commit check resolve such an id, and `dev-abc-related` still names `dev-abc` (basicly-afly2hy).

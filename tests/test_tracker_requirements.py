@@ -133,12 +133,14 @@ def test_r4_multi_line_acceptance_criteria_satisfy_the_gate_from_the_field(
     assert result.missing == ()
 
 
-def test_r5_a_slug_shaped_id_is_truncated_by_the_prefix_anchored_gate() -> None:
+def test_r5_the_gate_resolves_an_imported_slug_id_and_a_dotted_child() -> None:
 
     hook = _load_hook(COMMIT_MSG_HOOK, "tracker_commit_msg_hook")
     known = {"basicly-fix-the-thing", "basicly-m4zv.10"}
 
-    assert hook._candidate_ids("fix(x): do it (basicly-fix-the-thing)", known) == {"basicly-fix"}
+    assert hook._candidate_ids("fix(x): do it (basicly-fix-the-thing)", known) == {
+        "basicly-fix-the-thing"
+    }
     assert hook._candidate_ids("fix(x): do it (basicly-m4zv.10)", known) == {"basicly-m4zv.10"}
     assert hook._candidate_ids("fix(x): a well-known problem", known) == set()
 

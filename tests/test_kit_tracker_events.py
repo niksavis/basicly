@@ -932,7 +932,7 @@ def test_a_record_id_and_a_kind_are_validated_before_anything_is_written(
 ) -> None:
     with pytest.raises(Exception, match="not a record id"):
         events.append(
-            tmp_path, [events.Draft("basicly-fix-the-thing", "created", {})], clock=lambda: 0.0
+            tmp_path, [events.Draft("basicly_fix_the_thing", "created", {})], clock=lambda: 0.0
         )
     with pytest.raises(events.InvalidEventError, match="must match"):
         events.append(tmp_path, [events.Draft(RECORD_A, "Status", {})], clock=lambda: 0.0)

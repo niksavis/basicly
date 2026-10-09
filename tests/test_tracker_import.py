@@ -227,24 +227,23 @@ def test_the_engine_dry_run_still_advises_when_br_names_no_prefix(host: Path) ->
     assert "declares no id prefix" in "\n".join(lines)
 
 
-HYPHENATED = [
-    {"id": f"burndown-chart-{index:03d}", "title": f"t{index}", "status": "open"}
-    for index in range(1, 9)
+UPPERCASE = [
+    {"id": f"Burndown-{index:03d}", "title": f"t{index}", "status": "open"} for index in range(1, 9)
 ]
 
 
 def test_a_refusal_names_its_cause_once_not_every_id(host: Path) -> None:
 
-    export = _export(host, [*HYPHENATED, {"id": "Not An Id", "title": "bad"}])
+    export = _export(host, [*UPPERCASE, {"id": "Not An Id", "title": "bad"}])
 
     code, lines = tracker_import.run_import(host, export, source_name="beads", dry_run=True)
 
     report = "\n".join(lines)
     assert code == 1
-    assert "the prefix may not carry a hyphen" in report
-    assert "The source prefix is 'burndown-chart'" in report
-    assert report.count("burndown-chart-00") == _REFUSALS_SHOWN, "one line per id, not per cause"
-    assert "and 3 more" in report
+    assert report.count("the id does not match <prefix>-<suffix>") == 1
+    assert "refused, 9:" in report
+    assert report.count("Burndown-00") == _REFUSALS_SHOWN, "one line per id, not per cause"
+    assert "and 4 more" in report
 
 
 def test_a_dry_run_names_the_id_prefix_too(host: Path) -> None:

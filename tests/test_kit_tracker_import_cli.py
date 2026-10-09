@@ -26,7 +26,7 @@ EXPORT = [
         "dependencies": [{"issue_id": "demo-aa11", "depends_on_id": "demo-bb22", "type": "blocks"}],
     },
     {"id": "demo-bb22", "title": "a record the first one waits on", "status": "open", **SHAPED},
-    {"id": "not-an-id", "title": "this one cannot be a record id"},
+    {"id": "not_an_id", "title": "this one cannot be a record id"},
 ]
 
 
@@ -79,7 +79,7 @@ def test_a_record_the_export_cannot_name_is_refused_rather_than_dropped(
     report = _run(capsys, "import", str(ledger), str(export))
 
     refused = {one["subject"]: one["reason"] for one in report["rejected"]}
-    assert refused == {"'not-an-id'": "not a record id"}
+    assert refused == {"'not_an_id'": "not a record id"}
 
 
 def test_the_imported_graph_answers_the_ready_query(
