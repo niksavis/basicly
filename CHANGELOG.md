@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+A patch release that changes how the tired-engineer output style shapes a reply. A terminal view that folds a long reply now shows the answer, and a table copies clean into an email or a chat.
+
+- **Narrow tables and the answer on top** (`basicly-0gt5hxz`): at most 3 columns and about 40 characters a cell, the answer in the first 30 lines, one command per fenced block, and no emoji or box-drawing characters.
+
 ## v0.22.0 - 2026-10-09
 
 Delta: v0.21.5..v0.22.0
