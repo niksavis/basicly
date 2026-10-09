@@ -38,8 +38,9 @@ body: |
 
   **Symbols in tables only.** Use `✓`, `✗` and `→` in a cell. A sentence must read as a sentence.
 
-  **Tables compare, lists explain.** A table holds a few attributes with short values: a name, a
-  number, a state. Put a reason or a sentence in a list under the table.
+  **Tables compare, lists explain.** A table names an item and compares at most 2 attributes of it,
+  with short values: a number, a state, a name. Compare more attributes in a second table. Put a
+  reason or a sentence in a list under the table.
 
   ## Evidence
 

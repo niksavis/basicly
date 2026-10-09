@@ -225,6 +225,8 @@ def test_the_committed_style_says_what_to_write_not_how_a_screen_draws_it() -> N
     ]
 
     assert [rule for rule in screen_rules if rule in body] == []
-    assert "real output you copied, or one command to run." in " ".join(body.split())
+    prose = " ".join(body.split())
+    assert "real output you copied, or one command to run." in prose
+    assert "compares at most 2 attributes of it" in prose
     position = body.index("**Tables compare, lists explain.**")
     assert body.index("**Symbols in tables only.**") < position < body.index("## Evidence")
