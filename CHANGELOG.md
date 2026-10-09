@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+A minor release that fixes the tracker defects found in a beads migration and in consumer sessions. Three changes refuse input that 0.21.5 accepted: a duplicate `external_ref`, a bare `basicly-tracker update`, and an unknown status in `tracker list`.
+
+- **Migration keeps more of the source** (`basicly-qfmdbbz`, `basicly-afly2hy`, `basicly-eursxqh`): the redaction no longer damages text that only looks like a Windows path, slug ids import unchanged, and an unmapped type is kept.
+- **One shape and one rule per field** (`basicly-vm8tlue`, `basicly-75m6jnd`, `basicly-fl27qhx`): labels always read as a list, `external_ref` is unique, and numbered criteria match the review.
+- **Refusals name the real cause** (`basicly-ui7uain`, `basicly-s65zzcq`, `basicly-jzve5c1`): claim says whether a review is missing or void, `tracker list` refuses an unknown status, and a bare `update` refuses instead of reinstalling.
+- **Faster and portable output** (`basicly-yeuj2lg`, `basicly-77s80o9`): `--version` and the tracker reads skip the full CLI, and JSON is UTF-8 on a Windows pipe.
+
 ## v0.21.5 - 2026-10-09
 
 Delta: v0.21.4..v0.21.5
