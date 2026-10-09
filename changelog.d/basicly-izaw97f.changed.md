@@ -1,0 +1,1 @@
+- **The tired-engineer style holds in every language.** The language rules state what the reader gets, not an English mechanism, and ASD-STE100 is their English form. The sections follow the order of a reply, and 8 unclear rules have one meaning now (basicly-izaw97f).

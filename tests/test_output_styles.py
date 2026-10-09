@@ -226,13 +226,13 @@ def test_the_committed_style_says_what_to_write_not_how_a_screen_draws_it() -> N
 
     assert [rule for rule in screen_rules if rule in body] == []
     prose = " ".join(body.split())
-    assert "real output you copied, or one command to run." in prose
+    assert "Put code, copied output or one command in a code block." in prose
     assert "compares at most 2 attributes of it" in prose
-    position = body.index("**Tables compare, lists explain.**")
-    assert body.index("## Shape") < position < body.index("## Evidence")
+    position = body.index("Tables compare, lists explain.")
+    assert body.index("## Format") < position < body.index("## Evidence")
 
 
 def test_the_committed_style_stays_within_its_system_prompt_budget() -> None:
     body = output_styles.discover_styles(REPO)[0].body
 
-    assert len(body.split()) <= 390
+    assert len(body.split()) <= 365
