@@ -44,9 +44,14 @@ def _status(value: object) -> None:
     near = difflib.get_close_matches(str(value).replace("-", "_"), WRITABLE_STATUSES, n=1)
     hint = f"; did you mean {near[0]!r}?" if near else ""
     raise RefusedValueError(
-        f"status {value!r} is not one of {', '.join(WRITABLE_STATUSES)}{hint} "
+        f"status {value!r} is not one of {', '.join(WRITABLE_STATUSES)}{hint}. "
         f"A record at an unknown status is neither ready nor closed, so it would vanish"
     )
+
+
+def require_status(value: object) -> None:
+
+    _status(value)
 
 
 def _priority(value: object) -> None:

@@ -1,0 +1,1 @@
+- **`tracker list` takes several statuses and refuses an unknown one.** Repeat `--status` (`--status open --status in_progress`) in `basicly tracker list` and in the kit `list`; an unknown status now refuses by name instead of returning an empty list (basicly-s65zzcq).

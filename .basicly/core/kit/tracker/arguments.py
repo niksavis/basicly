@@ -61,7 +61,9 @@ def parser() -> argparse.ArgumentParser:
 
     listing = sub.add_parser("list", help="query the records the ledger holds")
     listing.add_argument("directory", help=DIRECTORY_HELP)
-    listing.add_argument("--status", default=None, help="only records at this status")
+    listing.add_argument(
+        "--status", action="append", default=None, help="only records at this status; repeat it"
+    )
     listing.add_argument("--limit", type=int, default=None, help="at most this many records")
 
     compaction = sub.add_parser(

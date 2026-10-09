@@ -235,7 +235,9 @@ def add_parsers(tracker_sub: Any) -> None:
     show.add_argument("record", help="The record id")
 
     listing = tracker_sub.add_parser("list", help="Print the records the ledger holds")
-    listing.add_argument("--status", default=None, help="Only records at this status")
+    listing.add_argument(
+        "--status", action="append", default=None, help="Only records at this status; repeat it"
+    )
     listing.add_argument("--limit", type=int, default=None, help="At most this many records")
 
     items = tracker_sub.add_parser(
