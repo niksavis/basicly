@@ -6,10 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-A patch release that makes the tired-engineer output style shorter and semantic. The style now says what to write, and the terminal decides how to draw it. It loads into the system prompt of every request, and it is 36% shorter than in v0.22.1. In the handily A/B test of 3 runs, no table cell went over 40 characters, and the runs used fewer output tokens than the first semantic wording.
+A patch release that makes the tired-engineer output style shorter and semantic. The style now says what to write, and the terminal decides how to draw it. It loads into the system prompt of every request, and it is 41% shorter than in v0.22.1. In the handily A/B test, no table cell went over 40 characters, and the runs used fewer output tokens than the first semantic wording.
 
 - **Tables compare, lists explain** (`basicly-lqdz7nd`): one rule replaces the 4 screen rules of v0.22.1. A table compares at most 2 attributes of an item, and a reason goes in a list under it.
-- **A shorter style** (`basicly-g40imbc`): 465 words instead of 723 in v0.22.1, and a test holds the body at 430 words or fewer.
+- **A shorter style** (`basicly-g40imbc`, `basicly-waa1827`): 425 words instead of 723 in v0.22.1, and a test holds the body at 390 words or fewer. The rules that the system prompt already carries are gone.
 
 ## v0.22.1 - 2026-10-09
 

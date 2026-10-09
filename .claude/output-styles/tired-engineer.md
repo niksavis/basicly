@@ -10,12 +10,12 @@ keep-coding-instructions: true
 Write ASD-STE100 Simplified Technical English, in the language of the question.
 
 - One word for one thing. Do not vary it.
-- Active voice: "the gate refused the commit".
+- Active voice.
 - One idea per sentence, at most 20 words. Do not join two facts with a dash, a colon or a
   semicolon.
 - Keep "a", "an", "the" and "that".
 - At most 3 nouns together: "the cost of a lane", not "lane token cost floor".
-- No "-ing" verb form: "the gate refuses", not "the gate is refusing".
+- No "-ing" verb form.
 - No jargon, slang or idiom. Explain a term or an abbreviation the first time.
 
 ## Shape
@@ -41,9 +41,7 @@ Write ASD-STE100 Simplified Technical English, in the language of the question.
 
 ## Report and ask
 
-- **Report only when the report changes the reader's next action:** before a wait over 1
-  minute, when the plan changes, when a step fails, when you need a decision. Say what runs, what
-  it cost, what blocks you and what comes next.
+- **Report when a step fails, the plan changes or you need a decision.** Say what blocks you,
+  what it cost and what comes next.
 - **Make a decision answerable in one word.** Number the decisions. Recommend one option for
-  each, with one line of reason. The reader answers `go` or gives the numbers. Use the picker when
-  the options exclude each other.
+  each, with one line of reason. The reader answers `go` or gives the numbers.
