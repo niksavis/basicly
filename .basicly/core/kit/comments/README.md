@@ -43,7 +43,9 @@ A repository that must commit generated files, such as vendor type files full of
 comments, keeps them out of the hook with a top-level `exclude:` regex in
 `.pre-commit-config.yaml`, for example `exclude: ^mods/[^/]+/\.claude-plugin/types/`.
 `basicly install` keeps that key. It drops an `exclude:` under a managed hook. The top-level
-key skips every hook for those paths, so keep the regex narrow.
+key skips every hook that receives file names. `secret-scan` reads the staged diff itself:
+in those paths it skips only the generic assignment rule and still refuses a specific secret.
+Keep the regex narrow.
 
 Exit codes:
 
