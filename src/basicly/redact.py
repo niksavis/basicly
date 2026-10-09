@@ -62,7 +62,7 @@ _PATH_TAIL = r"[^\s\"'`,;)\]}]*"
 MACHINE_PATH_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("posix-home-path", re.compile(rf"/(?:home|Users)/[A-Za-z0-9._-]+{_PATH_TAIL}")),
     ("windows-unc-path", re.compile(rf"\\\\\?\\[A-Za-z]:\\{_PATH_TAIL}")),
-    ("windows-drive-path", re.compile(rf"[A-Za-z]:\\{_PATH_TAIL}")),
+    ("windows-drive-path", re.compile(r"(?<![A-Za-z0-9_])[A-Za-z]:\\[^\s\"'`,;)\]}]+")),
 )
 
 

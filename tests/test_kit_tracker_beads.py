@@ -224,3 +224,23 @@ def test_the_kit_machine_path_rules_mirror_the_package_exactly() -> None:
     assert [(name, p.pattern) for name, p in beads.MACHINE_PATH_RULES] == [
         (name, p.pattern) for name, p in redact.MACHINE_PATH_RULES
     ]
+
+
+def test_import_keeps_a_drive_letter_inside_a_word(tmp_path: Path) -> None:
+    notes = "see provision_lefthook.py:" + "\\" + "n1. PINNED_VERSION"
+    _import(tmp_path, _text(_br_line("acme-br01", notes=notes)))
+    assert _state(tmp_path, "acme-br01").fields["notes"] == notes
+
+
+def test_import_keeps_a_bare_drive_root(tmp_path: Path) -> None:
+    text = "Use a literal C:" + "\\" + " path as an example."
+    _import(tmp_path, _text(_br_line("acme-br01", description=text)))
+    assert _state(tmp_path, "acme-br01").fields["description"] == text
+
+
+def test_import_still_redacts_a_real_drive_path(tmp_path: Path) -> None:
+    text = "seen under C:" + "\\" + "Users" + "\\" + "ada" + "\\" + "repo"
+    _import(tmp_path, _text(_br_line("acme-br01", description=text)))
+    assert _state(tmp_path, "acme-br01").fields["description"] == (
+        "seen under <redacted:windows-drive-path>"
+    )
