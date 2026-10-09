@@ -88,7 +88,7 @@ include = ["src", "tests", ".scripts", ".basicly/core", "packages", ".claude/ski
 exclude = ["**/node_modules", "**/__pycache__", "**/.venv"]
 
 [project.scripts]
-basicly = "basicly.cli:main"
+basicly = "basicly.entry:main"
 
 [tool.bandit]
 exclude_dirs = ["tests"]

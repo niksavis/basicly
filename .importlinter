@@ -21,6 +21,7 @@ containers =
 exhaustive = True
 layers =
     cli
+    entry
     board_cli
     board_facts
     board_advance

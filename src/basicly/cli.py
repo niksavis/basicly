@@ -96,6 +96,9 @@ from .config import (
     retire_legacy_tracker_prefix,
     unknown_config_keys,
 )
+from .entry import guarded
+from .entry import line_buffer_stdout as _line_buffer_stdout
+from .entry import tolerate_narrow_consoles as _tolerate_narrow_consoles
 from .hooks import (
     AGENT_HOOK_HOSTS,
     PRE_PUSH_STAGE,
@@ -5275,21 +5278,6 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
-def _tolerate_narrow_consoles() -> None:
-
-    for stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is not None:
-            reconfigure(errors="replace")
-
-
-def _line_buffer_stdout() -> None:
-
-    reconfigure = getattr(sys.stdout, "reconfigure", None)
-    if reconfigure is not None:
-        reconfigure(line_buffering=True)
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="basicly",
@@ -5450,15 +5438,7 @@ def main(argv: list[str] | None = None) -> int:
     _tolerate_narrow_consoles()
     _line_buffer_stdout()
     args = _build_parser().parse_args(argv)
-
-    try:
-        return _dispatch(args, "command", _handlers())
-    except ValidationError as exc:
-        print(f"Validation error: {exc}", file=sys.stderr)
-        return 1
-    except Exception as exc:  # noqa: BLE001 — process boundary, reported not swallowed
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
+    return guarded(lambda: _dispatch(args, "command", _handlers()))
 
 
 if __name__ == "__main__":
