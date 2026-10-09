@@ -1,0 +1,1 @@
+- **The comments kit README names how to skip generated files.** A top-level `exclude:` regex in `.pre-commit-config.yaml` keeps generated files out of the `no-comments` hook, and `basicly install` keeps that key; a test now pins it (basicly-juw9oz7).

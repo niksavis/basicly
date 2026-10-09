@@ -5,7 +5,11 @@ from pathlib import Path
 import yaml
 
 from basicly.hooks import HookSpec
-from basicly.precommit_config import merge_precommit_config, render_precommit_config
+from basicly.precommit_config import (
+    managed_hook_mismatches,
+    merge_precommit_config,
+    render_precommit_config,
+)
 
 CORE_HOOKS_DIR = Path(".basicly/core/hooks")
 
@@ -75,3 +79,20 @@ def test_rewrite_preserves_unmanaged_hook_comments() -> None:
     assert "markdownlint" in _local_hook_ids(loaded)
     assert "pre-commit-script" in _local_hook_ids(loaded)
     assert render_precommit_config(rendered, specs, CORE_HOOKS_DIR.as_posix()) == rendered
+
+
+def test_rewrite_keeps_a_top_level_exclude() -> None:
+    existing = (
+        "exclude: ^mods/[^/]+/\\.claude-plugin/types/\n"
+        "repos:\n"
+        "  - repo: local\n"
+        "    hooks:\n"
+        "      - id: pre-commit-script\n"
+        "        entry: echo stale\n"
+    )
+    specs = [HookSpec(id="pre-commit-script", script="pre-commit.py", stage="pre-commit")]
+    rendered = render_precommit_config(existing, specs, CORE_HOOKS_DIR.as_posix())
+
+    loaded = yaml.safe_load(rendered)
+    assert loaded["exclude"] == "^mods/[^/]+/\\.claude-plugin/types/"
+    assert managed_hook_mismatches(loaded, specs, CORE_HOOKS_DIR.as_posix()) == []
