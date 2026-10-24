@@ -39,6 +39,13 @@ instructions: |
   | *node_modules/markdownlint-cli2/... is missing* | Run `npm ci` when the package is locked. Otherwise get approval, then run `npm install --save-dev markdownlint-cli2` and commit the package files. |
   | *no usable node found on PATH, under nvm, or in /usr/bin* | Install a Linux node, for example `nvm install --lts`. |
 
+  The enabled hook reads inputs from the repository's `.markdownlint-cli2.jsonc`,
+  `.markdownlint-cli2.yaml`, `.markdownlint-cli2.cjs` or `.markdownlint-cli2.mjs`.
+  A style-only `.markdownlint.json` file does not select CLI2 inputs. Keep existing input and
+  rule choices; install creates no Markdown policy. Before a first commit, configure
+  real consumer Markdown inputs. The first-loop tutorial explicitly chooses `README.md`
+  and `NOTES.md`, with a clean README and every default rule enabled.
+
   Only an explicit configuration opts out. The hook then prints `markdownlint: opted out by
   hooks.markdownlint.enabled=false` and exits 0:
 

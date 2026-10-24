@@ -31,6 +31,24 @@ Commit the package files. For a missing Node runtime, install Node, for example 
 `nvm install --lts`. On WSL, the hook refuses a Windows Node reached through `/mnt`.
 Install never adds dependencies or opts out automatically.
 
+The enabled hook runs without positional file arguments, so the repository must select
+inputs in `.markdownlint-cli2.jsonc`, `.markdownlint-cli2.yaml`, `.markdownlint-cli2.cjs`
+or `.markdownlint-cli2.mjs`. Keep an existing configuration and its input and rule choices.
+Style-only `.markdownlint.json` files configure rules, not CLI2 inputs. Installation creates
+no Markdown input or style policy.
+
+For a throwaway tutorial repository with a clean `README.md`, an explicit owner choice is:
+
+```json
+{"globs": ["README.md", "NOTES.md"]}
+```
+
+Put this in `.markdownlint-cli2.jsonc` only when no CLI2 configuration already exists.
+It keeps every default rule enabled and selects only these consumer files. Choose the
+inputs for your real repository deliberately; this example does not claim coverage of
+all Markdown or generated files. The first commit lints the real README; the later
+`NOTES.md` change is also checked. Commit the configuration with your package files.
+
 A repository owner can explicitly opt out in configuration:
 
 ```toml

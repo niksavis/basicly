@@ -58,9 +58,11 @@ The default markdown gate also needs Node and a local `markdownlint-cli2` packag
 install. If your repository already locks the package, run `npm ci`. Otherwise, get the
 repository owner's approval, then run `npm install --save-dev markdownlint-cli2` and commit
 the package files. Install and `--dry-run` refuse missing tools before writing files.
-They do not add dependencies automatically. See
-[markdown gate prerequisites](docs/how-to/upgrade-and-check-drift.md#markdown-gate-prerequisites)
-for the explicit opt-out.
+They do not add dependencies automatically. Before the first commit, select Markdown
+inputs in your repository-owned `.markdownlint-cli2` configuration. A style-only
+`.markdownlint.json` configuration does not select inputs. Keep existing input and rule choices.
+See [markdown gate prerequisites](docs/how-to/upgrade-and-check-drift.md#markdown-gate-prerequisites)
+for an explicit scratch setup and the opt-out.
 
 Into any git repo, with [uv](https://docs.astral.sh/uv/) already on the machine:
 
