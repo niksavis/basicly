@@ -40,6 +40,7 @@ from . import (
     dispatch_brief,
     fleet,
     health,
+    integration_record,
     kit_load,
     lane_log,
     lane_split,
@@ -2334,7 +2335,7 @@ def cmd_brief(args: argparse.Namespace) -> int:
     if tracker.read_record(repo_root, args.issue_id) is None:
         ui.fail(f"No tracked issue {args.issue_id}")
         return 1
-    prompt = dispatch_brief.dispatch_prompt(args.issue_id)
+    prompt = dispatch_brief.task_prompt(repo_root, args.issue_id)
     ui.say(contention.with_scope_fence(repo_root, args.issue_id, prompt))
     return 0
 
@@ -4049,6 +4050,9 @@ def _supervise_rounds(
             limit=getattr(args, "max_passes", None),
             carried=carried,
         ):
+            for issue_id in sorted(carried):
+                integration_record.enqueue(repo_root, issue_id, "committed work awaits integration")
+                integration_record.record(repo_root, issue_id, "waiting", ended)
             say(ended)
             return 1
         routed = _supervise_pass(repo_root, state, hb=hb, carried=carried, say=say)
@@ -4078,6 +4082,8 @@ def _supervise_pass(
     say: Callable[[str], None],
 ) -> tuple[supervise.RoutedOutcome, ...]:
 
+    if carried:
+        return supervise.route_outcomes(repo_root, state, (), beat=hb.check, carried=carried)
     admission = supervise.session_spend_status(repo_root, state)
     delegated = supervise.delegate_decisions(repo_root, state, beat=hb.check, admission=admission)
     supervise.say_delegated(delegated, say)

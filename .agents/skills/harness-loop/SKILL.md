@@ -211,6 +211,36 @@ Push cadence:
 - **Team repository:** push each engine tracker commit at once, most of all the claim, so nobody takes claimed work.
   A claimed record with no live worktree shows a race. Compare `basicly loop status <id>` with `basicly worktree list`.
 
+## Bounded specialist work
+
+Give each specialist one task. Its brief names relevant instructions, requirements,
+acceptance criteria, source locations and a completion condition. Preview the recorded
+task facts and valid durable artifacts with:
+
+```sh
+basicly brief <issue>
+```
+
+Start a fresh context for unrelated work. Pass the brief and required facts instead of
+the parent conversation. Resume a saved context only for the same task; do not replay
+another task's conversation. Each writer uses its own worktree.
+Keep review and integration with the main orchestrator. Integrate reviewed commits on
+a linear branch and preserve the specialist's source branch.
+
+Queue completed implementation before assigning optional work. The supervisor records
+completion and queue admission when a runner returns successfully. It waits for the
+active batch before serial landing. Previously committed lanes land before optional
+decisions, new lanes or another dispatch batch. Required gates still apply.
+
+Record integration completion or a concrete wait reason. The engine appends UTC progress
+facts as `[harness-policy] integration` comments. For delegation outside the engine,
+record actual implementation completion and integration start times on the task too.
+Read the record without reconstructing a conversation:
+
+```sh
+basicly tracker show <issue>
+```
+
 ## Many lanes
 
 Use `preflight` and `supervise` over an epic for parallel work.

@@ -16,6 +16,8 @@ import pytest
 from basicly import (
     decisions,
     decompose,
+    dispatch_brief,
+    integration_record,
     loop,
     loop_state,
     merge,
@@ -37,6 +39,12 @@ class _Proc:
         self.stdout = stdout
         self.stderr = ""
         self.returncode = returncode
+
+
+@pytest.fixture(autouse=True)
+def isolated_integration_progress(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(integration_record, "read", lambda *_a: ())
+    monkeypatch.setattr(integration_record, "record", lambda *_a, **_k: None)
 
 
 def _lock_path(repo: Path) -> Path:
@@ -614,7 +622,7 @@ def test_build_bundle_folds_records_by_id_and_scope_overlap(
         "keep the loader split",
         "core file is shared",
     ]
-    assert bundle.prompt.startswith(loop.dispatch_prompt("epic.1"))
+    assert bundle.prompt.startswith(dispatch_brief.dispatch_prompt("epic.1"))
     assert "keep the loader split" in bundle.prompt
     assert "docs only" not in bundle.prompt
 
@@ -3048,7 +3056,8 @@ def test_build_bundle_folds_the_lanes_answered_questions(
     assert [i.decision_id for i in bundle.answers] == [item.decision_id]
     assert "which db? → postgres (answered by human)" in bundle.prompt
     assert "do not re-ask" in bundle.prompt
-    assert still_open.question not in bundle.prompt
+    answered_section = bundle.prompt.split("Questions this work already blocked on", 1)[1]
+    assert still_open.question not in answered_section
 
 
 def test_build_bundle_omits_the_answers_section_when_there_are_none(
@@ -3060,7 +3069,8 @@ def test_build_bundle_omits_the_answers_section_when_there_are_none(
     bundle = supervise.build_bundle(tmp_path, "epic.1")
 
     assert bundle.answers == ()
-    assert bundle.prompt == loop.dispatch_prompt("epic.1")
+    assert bundle.prompt.startswith(dispatch_brief.dispatch_prompt("epic.1"))
+    assert "Questions this work already blocked on" not in bundle.prompt
 
 
 def test_lane_activity_changes_on_a_commit_and_on_a_file_write(tmp_path: Path) -> None:
@@ -4660,7 +4670,7 @@ def test_the_stall_flag_names_the_bound_a_quiet_lane_will_actually_reach(
 _CLAUDE = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "claude")
 
 
-def test_a_lane_build_dispatch_inherits_the_features_seed(tmp_path: Path) -> None:
+def test_a_lane_build_dispatch_resumes_its_own_task_seed(tmp_path: Path) -> None:
     runner.record_session_seed(tmp_path, "basicly-2kh170", "claude", "s-1")
 
     seed = supervise._lane_seed(tmp_path, "basicly-2kh170", _CLAUDE)
@@ -4686,6 +4696,32 @@ def test_a_family_that_cannot_fork_is_never_handed_a_seed(tmp_path: Path) -> Non
     codex = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "codex")
 
     assert supervise._lane_seed(tmp_path, "basicly-2kh170", codex) is None
+
+
+def test_unrelated_lanes_never_fork_the_roots_or_each_others_conversation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake, _seen = _worker_fixture(monkeypatch, tmp_path, stdout="")
+    fake.issues["epic.2"] = {**fake.issues["epic.1"], "id": "epic.2"}
+    runner.record_session_seed(tmp_path, "epic", "claude", "unrelated-old-conversation")
+    selected: dict[str, runner.SessionSeed | None] = {}
+    original = supervise._lane_seed
+
+    def capture(root: Path, issue: str, spec: runner.RunnerSpec) -> runner.SessionSeed | None:
+        selected[issue] = original(root, issue, spec)
+        return selected[issue]
+
+    monkeypatch.setattr(supervise, "_lane_seed", capture)
+    for issue in ("epic.1", "epic.2"):
+        supervise._dispatch_lane(tmp_path, _session(_lane(issue)), _lane(issue), _CLAUDE, _sizing())
+
+    assert set(selected) == {"epic.1", "epic.2"}
+    seeds = tuple(selected.values())
+    assert all(seed is not None and not seed.exists for seed in seeds)
+    assert len({seed.session_id for seed in seeds if seed is not None}) == 2
+    assert all(
+        seed.session_id != "unrelated-old-conversation" for seed in seeds if seed is not None
+    )
 
 
 def _refused_tracker_sync(issue_id: str):

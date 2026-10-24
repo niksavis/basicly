@@ -43,7 +43,7 @@ def test_brief_prints_the_assemblers_own_output(work_repo: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.rstrip("\n") == contention.with_scope_fence(
-        work_repo, issue, dispatch_brief.dispatch_prompt(issue)
+        work_repo, issue, dispatch_brief.task_prompt(work_repo, issue)
     )
 
 

@@ -49,7 +49,7 @@ from .config import (
     load_sizing_config,
     load_worktree_config,
 )
-from .dispatch_brief import child_plan_prompt, dispatch_prompt, work_type_prompt
+from .dispatch_brief import child_plan_prompt, work_type_prompt
 from .tracker import try_add_comment as _add_comment
 from .tracker import write as _write
 
@@ -612,7 +612,7 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
 
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
-    prompt = prompt if prompt is not None else dispatch_prompt(issue_id)
+    prompt = prompt if prompt is not None else dispatch_brief.task_prompt(ctx.repo_root, issue_id)
     sizing = sizing_at_dispatch(ctx.repo_root, issue_id)
     intended_role = role or roles.role_for_phase(phase)
     role = (

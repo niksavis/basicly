@@ -13,7 +13,8 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(autouse=True)
-def _no_standings() -> Iterator[None]:
+def _no_standings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setattr(supervise.integration_record, "record", lambda *_a, **_k: None)
     supervise.clear_standings()
     yield
     supervise.clear_standings()

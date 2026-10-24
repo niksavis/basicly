@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
-from basicly import dispatch_brief, needs_input, review, roles, skill_coverage
+from basicly import dispatch_brief, handoff, needs_input, review, roles, skill_coverage, tracker
 from basicly.config import WORK_TYPES, SizingConfig
 from basicly.skill_source import SKILLS_SOURCE_DIR
+from tests import flipped_tracker
 
 SIZING = SizingConfig(
     working_set_min=9_000,
@@ -13,6 +15,66 @@ SIZING = SizingConfig(
     calibration_min_samples=10,
     calibration_window=50,
 )
+
+
+def test_bounded_task_brief_carries_the_current_record_without_a_conversation(
+    tmp_path: Path,
+) -> None:
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(
+        repo,
+        "basicly-task",
+        title="Fix the bounded parser",
+        description="## Scope\n\n- `src/parser.py`\n",
+        acceptance_criteria="When parsing an empty token, the parser shall reject it.",
+        requirements="Preserve valid tokens.",
+    )
+    tracker.add_comment(repo, "basicly-task", "Owner clarification: reject whitespace too.")
+    prompt = dispatch_brief.task_prompt(repo, "basicly-task")
+    for fact in (
+        "Fix the bounded parser",
+        "src/parser.py",
+        "the parser shall reject it",
+        "Preserve valid tokens",
+        "Owner clarification: reject whitespace too.",
+        "AGENTS.md",
+        "Completion condition",
+        "Do not start another task",
+    ):
+        assert fact in prompt
+    assert "previous conversation" not in prompt
+
+
+def test_bounded_brief_reuses_valid_durable_artifacts_and_names_unusable_ones(
+    tmp_path: Path,
+) -> None:
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(repo, "basicly-task", title="planned task")
+    shutil.copytree(
+        Path(__file__).parent.parent / ".basicly/core/schemas", repo / ".basicly/core/schemas"
+    )
+    payload = {
+        "schema_version": 1,
+        "feature": "basicly-task",
+        "tasks": [
+            {
+                "issue_id": "basicly-task.1",
+                "title": "durable-plan-witness",
+                "acceptance": ["When run, the parser shall reject empty input."],
+                "scope": ["src/parser.py"],
+                "depends_on": [],
+                "demonstration": "`python -m pytest` checks the parser",
+            }
+        ],
+        "groups": [["basicly-task.1"]],
+    }
+    handoff.record(repo, "basicly-task", handoff.IMPLEMENTATION_PLAN, payload)
+    assert "durable-plan-witness" in dispatch_brief.task_prompt(repo, "basicly-task")
+    tracker.add_artifact(repo, "basicly-task", handoff.IMPLEMENTATION_PLAN, {"damaged": True})
+    prompt = dispatch_brief.task_prompt(repo, "basicly-task")
+    assert "Unusable recorded artifacts" in prompt
+    assert "implementation-plan" in prompt
+    assert "durable-plan-witness" not in prompt
 
 
 def test_the_dispatch_prompt_documents_the_needs_input_protocol() -> None:
