@@ -1,0 +1,1 @@
+- Specialist briefs carry current task facts and durable artifacts. Build contexts are scoped to one task. Committed lanes enter integration before optional work, and append-only tracker facts record completion, queue admission, integration start and completion or a concrete wait reason.

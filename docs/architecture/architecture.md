@@ -2073,6 +2073,18 @@ one.
 
 ### 28.4 Serial landing and pre-emption
 
+Committed lanes enter serial landing before the supervisor delegates optional decisions,
+seeds new lanes or dispatches another batch. A successful runner return records reported
+implementation completion and queue admission while the active batch finishes. Landing
+records its start and either completion or a concrete wait reason. These UTC facts are
+append-only tracker comments under `[harness-policy] integration`; a review needs no
+transcript to recover them. Reported implementation completion does not replace the gates.
+
+Build session seeds are keyed by the lane's task id. A sibling task cannot inherit the
+feature root's or another task's conversation. Task briefs carry current record facts,
+source locations, a completion condition and valid artifacts read through the existing
+handoff API. They introduce no separate brief store.
+
 **Landing is serial, and it does not stop at the first failure.** A stable topological sort
 over the issues in hand gives the order. Carried lanes go first, so they land ahead of
 freshly dispatched lanes at equal rank. A conflicted landing **bounces**. The base stays
@@ -3692,7 +3704,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 74 tiers hold 163 modules and group into 9 bands. Every band may import every band below
+The 74 tiers hold 164 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3706,7 +3718,7 @@ flowchart TB
   b4["4 · configuration and isolation — 3<br/>config · worktree"]
   b5["5 · agent runtime — 9<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 16<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
-  b7["7 · records and telemetry — 16<br/>run_record · artifact_record · lens_review · spend_calibration"]
+  b7["7 · records and telemetry — 17<br/>run_record · artifact_record · lens_review · spend_calibration"]
   b8["8 · tracker seam — 26<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
   b9["9 · leaf data and pure helpers — 37<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
 

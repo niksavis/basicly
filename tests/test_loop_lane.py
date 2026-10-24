@@ -81,6 +81,11 @@ def at(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture(autouse=True)
 def tracker_commits(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
+    monkeypatch.setattr(
+        loop.dispatch_brief,
+        "task_prompt",
+        lambda _root, issue: loop.dispatch_brief.dispatch_prompt(issue),
+    )
     calls: list[tuple[str, str | None]] = []
 
     def _record(_repo_root, bead, **kwargs):

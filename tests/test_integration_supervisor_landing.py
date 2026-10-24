@@ -8,7 +8,18 @@ from typing import cast
 
 import pytest
 
-from basicly import cli, loop, loop_state, merge, policy, repair_brief, supervise, tracker, worktree
+from basicly import (
+    cli,
+    integration_record,
+    loop,
+    loop_state,
+    merge,
+    policy,
+    repair_brief,
+    supervise,
+    tracker,
+    worktree,
+)
 from tests import flipped_tracker
 from tests.tracker_process_fixture import recorded_review
 
@@ -144,6 +155,14 @@ def test_a_pass_lands_a_hand_committed_lane_without_dispatching_it(
     monkeypatch.setattr(
         supervise, "_dispatch_lane", lambda *_a, **_k: pytest.fail("the lane was re-dispatched")
     )
+    monkeypatch.setattr(
+        supervise,
+        "delegate_decisions",
+        lambda *_a, **_k: pytest.fail("optional work preceded integration"),
+    )
+    monkeypatch.setattr(
+        supervise, "seed_lanes", lambda *_a, **_k: pytest.fail("new work preceded integration")
+    )
     say: list[str] = []
 
     session_state = supervise.derive_session(repo, root)
@@ -160,6 +179,32 @@ def test_a_pass_lands_a_hand_committed_lane_without_dispatching_it(
     assert tracker.require_record(repo, child)["status"] == "closed"
     assert (repo / "done.txt").exists()
     assert loop_state.read_node_state(repo, child).gates.required_passed == ("verify",)
+    facts = integration_record.read(repo, child)
+    assert [row["event"] for row in facts] == [
+        "implementation-completed",
+        "queued",
+        "started",
+        "completed",
+    ]
+
+
+def test_a_pass_limit_records_the_wait_reason_for_committed_work(harness_repo: Path) -> None:
+    root, child, _lane = _committed_lane(
+        harness_repo, "the stopped root", "the committed implementation"
+    )
+    say: list[str] = []
+    result = cli._supervise_rounds(
+        harness_repo,
+        argparse.Namespace(issue=root, label=None, max_passes=0),
+        hb=cast("supervise.HeartbeatThread", _StubHeartbeat()),
+        say=say.append,
+        session_id=f"{root}:limited",
+    )
+    assert result == 1
+    facts = integration_record.read(harness_repo, child)
+    assert [row["event"] for row in facts] == ["implementation-completed", "queued", "waiting"]
+    assert facts[-1]["detail"] == say[-1]
+    assert "--max-passes 0" in facts[-1]["detail"]
 
 
 def test_a_lane_briefed_for_repair_is_dispatched_rather_than_landed(harness_repo: Path) -> None:

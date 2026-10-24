@@ -62,7 +62,7 @@ layers =
     provider_limit | runner_usage
     decider_contract
     corpus_drift | decision_marker
-    artifact_record | lens_review | run_record | skill_source
+    artifact_record | integration_record | lens_review | run_record | skill_source
     spend_calibration
     demonstration_proof
     dependency_graph | gate_source | label_source

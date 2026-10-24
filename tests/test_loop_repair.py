@@ -187,13 +187,15 @@ def test_a_supervised_dispatch_repairs_in_the_same_worktree_the_lane_has(
     monkeypatch.setattr(supervise, "_show_issue", lambda *_a, **_k: {})
     monkeypatch.setattr(supervise, "found_info_records", lambda *_a, **_k: ())
     monkeypatch.setattr(supervise, "answered_decisions", lambda *_a, **_k: ())
+    default_prompt = loop.dispatch_brief.dispatch_prompt("i")
+    monkeypatch.setattr(loop.dispatch_brief, "task_prompt", lambda *_a: default_prompt)
 
     bundle = supervise.build_bundle(tmp_path, "i", cwd=cwd)
 
     assert bundle.prompt == repair_brief.repair_prompt(brief)
-    assert bundle.prompt != loop.dispatch_prompt("i")
+    assert bundle.prompt != default_prompt
     assert not (cwd / repair_brief.REPAIR_BRIEF_FILE).exists()
-    assert supervise.build_bundle(tmp_path, "i", cwd=cwd).prompt == loop.dispatch_prompt("i")
+    assert supervise.build_bundle(tmp_path, "i", cwd=cwd).prompt == default_prompt
 
 
 def test_a_supervised_landing_leaves_the_repair_to_the_dispatch_step(

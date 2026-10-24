@@ -22,6 +22,7 @@ from . import (
     decisions,
     decompose,
     health,
+    integration_record,
     label_source,
     lane_log,
     loop,
@@ -619,7 +620,9 @@ def build_bundle(
     folded = tuple(matching[-_MAX_FOLDED_RECORDS:])
     repair = repair_brief.take_repair_brief(cwd) if cwd is not None else None
     prompt = (
-        repair_brief.repair_prompt(repair) if repair is not None else loop.dispatch_prompt(issue_id)
+        repair_brief.repair_prompt(repair)
+        if repair is not None
+        else loop.dispatch_brief.task_prompt(repo_root, issue_id)
     )
     if folded:
         lines = []
@@ -1478,26 +1481,24 @@ def record_unstarted_dispatch(
 
 
 def _lane_seed(
-    repo_root: Path, root_issue: str, spec: runner.RunnerSpec
+    repo_root: Path, issue_id: str, spec: runner.RunnerSpec
 ) -> runner.SessionSeed | None:
 
     if spec.resume_style is None or not roles.phase_inherits_context("build"):
         return None
-    return runner.session_seed(repo_root, root_issue, runner.model_family(spec))
+    return runner.session_seed(repo_root, issue_id, runner.model_family(spec))
 
 
 def _keep_lane_seed(
     repo_root: Path,
-    root_issue: str,
+    issue_id: str,
     spec: runner.RunnerSpec,
     seed: runner.SessionSeed | None,
     result: runner.RunResult,
 ) -> None:
 
     if seed is not None and not seed.exists and result.returncode == 0:
-        runner.record_session_seed(
-            repo_root, root_issue, runner.model_family(spec), seed.session_id
-        )
+        runner.record_session_seed(repo_root, issue_id, runner.model_family(spec), seed.session_id)
 
 
 def _finished_detail(
@@ -1564,7 +1565,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         cwd = Path(record.worktree_path)
         bundle = build_bundle(repo_root, lane.issue_id, known_ids=known, cwd=cwd)
         runner_config = load_runner_config(repo_root)
-        seed = _lane_seed(repo_root, session.root_issue, spec)
+        seed = _lane_seed(repo_root, lane.issue_id, spec)
         stream = LaneStream(
             agent=spec.name, model=runner.resolve_model(spec, repo_root=cwd).model or ""
         )
@@ -1596,7 +1597,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
                 role=roles.resolve_role(repo_root, spec, "build"),
                 seed=seed,
             )
-        _keep_lane_seed(repo_root, session.root_issue, spec, seed, result)
+        _keep_lane_seed(repo_root, lane.issue_id, spec, seed, result)
     except (RuntimeError, OSError, ValueError) as exc:
         record_unstarted_dispatch(repo_root, lane.issue_id, spec, exc)
         raise
@@ -1659,7 +1660,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
     refused = provider_limit.refusal(spec.usage_format, result.stdout)
     detail = _finished_detail(result, refused, needs, verdict)
     resolution = result.model_resolution
-    return LaneOutcome(
+    outcome = LaneOutcome(
         issue_id=lane.issue_id,
         runner_name=spec.name,
         result=result,
@@ -1675,6 +1676,17 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         provider_refusal=refused.said if refused is not None else "",
         spend=runner.extract_usage(spec, result),
     )
+    if _is_green(outcome):
+        integration_record.record(
+            repo_root,
+            lane.issue_id,
+            "implementation-completed",
+            "runner reported completion; landing checks pending",
+        )
+        integration_record.enqueue(
+            repo_root, lane.issue_id, "runner returned; waiting for serial landing"
+        )
+    return outcome
 
 
 DISPATCH_GATE = "dispatch"
@@ -1764,6 +1776,9 @@ def route_outcomes(
 
     pass_outcomes = _carried_outcomes(repo_root, session, carried, outcomes) + outcomes
     ordered = _landing_order(repo_root, pass_outcomes)
+    for outcome in ordered:
+        if _is_green(outcome) or outcome.salvaged:
+            integration_record.enqueue(repo_root, outcome.issue_id, "ready for serial integration")
     queue = _note_landing_queue(ordered)
     try:
         return _land_in_order(repo_root, session, ordered, beat)
@@ -1797,6 +1812,12 @@ def _land_in_order(
             beat()
         lands = _is_green(outcome) or outcome.salvaged
         if landing_blocked and lands:
+            integration_record.record(
+                repo_root,
+                outcome.issue_id,
+                "waiting",
+                "landing paused after an earlier failure this pass",
+            )
             routed.append(
                 RoutedOutcome(
                     outcome.issue_id,
@@ -1808,6 +1829,7 @@ def _land_in_order(
         before = merge.head_sha(repo_root) if lands else ""
         try:
             if lands:
+                integration_record.record(repo_root, outcome.issue_id, "started")
                 note_standing(LANE_LANDING, "the supervisor is landing this lane", outcome.issue_id)
             one = _route_one(repo_root, session, outcome, landed, collisions)
         except merge.TrackerCommitRefusedError as exc:
@@ -1819,6 +1841,12 @@ def _land_in_order(
         except (RuntimeError, OSError, ValueError) as exc:
             one = RoutedOutcome(outcome.issue_id, "error", f"routing failed: {exc}")
         if lands:
+            integration_record.record(
+                repo_root,
+                outcome.issue_id,
+                "completed" if one.progressed else "waiting",
+                one.detail or one.route,
+            )
             if one.progressed:
                 forget_standing(outcome.issue_id)
             elif one.route in ("held", READY_TO_LAND):
