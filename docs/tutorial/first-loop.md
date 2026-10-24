@@ -24,6 +24,7 @@ use the [how-to guides](../how-to/) instead; the authoritative reference is
 | --- | --- | --- |
 | A git repo with at least one commit | The loop branches from a base commit | `git log --oneline` |
 | [uv](https://docs.astral.sh/uv/) on `PATH`, Python 3.14+ | The CLI and every projected git hook run through it | `uv --version` |
+| Node and local `markdownlint-cli2` | The default markdown gate refuses missing tools | `node --version` |
 
 Do this on a throwaway repo the first time. The loop rewrites hooks, adds
 generated files, and makes commits; you want to see all of that somewhere you
@@ -43,6 +44,19 @@ uvx --from https://github.com/niksavis/basicly/releases/download/v0.26.11/basicl
 `basicly` on `PATH`.
 
 ## Step 1 — install the harness
+
+Prepare the markdown gate in the scratch repository first. If the repository already
+locks `markdownlint-cli2`, run `npm ci`. Otherwise, approve this dependency addition for
+your scratch repository, then run:
+
+```sh
+npm install --save-dev markdownlint-cli2
+```
+
+Commit the package files with the install output. The default install refuses missing
+Node or markdownlint before writing files. See
+[markdown gate prerequisites](../how-to/upgrade-and-check-drift.md#markdown-gate-prerequisites)
+if the repository owner chooses an explicit opt-out.
 
 From the repo root:
 

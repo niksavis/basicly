@@ -81,6 +81,11 @@ manifest = ".basicly/generated-manifest.json"
 #
 #   python3 .basicly/core/kit/tracker/cli.py config .basicly/ledger set prefix acme
 
+# Markdown linting is enabled by default and needs Node and markdownlint-cli2.
+# Only an explicit false opts out.
+# [hooks.markdownlint]
+# enabled = false
+
 # Sibling git-worktree isolation for harness tracks.
 [worktree]
 # Branch new harness/<name> worktrees fork from. Empty = the current branch.
@@ -385,6 +390,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
         tables={"context_windows": _OPEN_TABLE},
         arrays={"agents": _RUNNER_AGENT_TABLE},
     ),
+    "hooks": Table(tables={"markdownlint": Table(keys=frozenset({"enabled"}))}),
     "tracker": Table(keys=frozenset({"mode", "prefix", "fold_on_merge"})),
     "privacy": Table(arrays={"denied": Table(keys=frozenset({"name", "token"}))}),
 }

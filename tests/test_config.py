@@ -1444,3 +1444,18 @@ def test_the_tree_schema_is_reread_when_the_tree_changes(tmp_path: Path) -> None
     _engine_tree(tmp_path, _lane_source("added_late"))
 
     assert unknown_config_keys(tmp_path) == []
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_markdownlint_configuration_is_part_of_the_project_schema(
+    tmp_path: Path, enabled: bool
+) -> None:
+    (tmp_path / CONFIG_FILE).write_text(
+        f"[hooks.markdownlint]\nenabled={str(enabled).lower()}\n", encoding="utf-8"
+    )
+    assert unknown_config_keys(tmp_path) == []
+
+
+def test_a_misspelled_markdownlint_setting_is_not_accepted(tmp_path: Path) -> None:
+    (tmp_path / CONFIG_FILE).write_text("[hooks.markdownlint]\nenable=false\n", encoding="utf-8")
+    assert any("enable" in problem for problem in unknown_config_keys(tmp_path))

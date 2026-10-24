@@ -56,6 +56,7 @@ layers =
     pyright_inputs
     claude_settings | codex_hooks | codex_permissions | runner
     context_window
+    markdownlint
     agents | catalog_verify | copilot_store | fleet | hooks | kit_load | loader | models | permissions | output_styles | planner | renderers | shipped_core | skills | state
     skill_pairing
     provider_limit | runner_usage

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from basicly import cli
 from basicly.catalog import bundled_catalog_root, iter_catalog_files
+from tests.markdownlint_runtime_fixture import provision_markdownlint_double
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OLD_RELEASE = "v0.12.2"
@@ -61,6 +62,7 @@ def _every_file(root: Path) -> dict[str, bytes]:
 def test_old_shipped_files_update_without_force(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     core = _old_core(consumer)
+    provision_markdownlint_double(consumer)
     assert not (consumer / STATE).exists()
     assert (core / DROPPED_SKILL).is_file()
     assert (core / KIT_EVENTS).read_bytes() != (bundled_catalog_root() / KIT_EVENTS).read_bytes()
@@ -75,6 +77,7 @@ def test_old_shipped_files_update_without_force(tmp_path: Path) -> None:
 
 
 def test_upgrade_preserves_consumer_runtime_without_claiming_it(tmp_path: Path) -> None:
+    provision_markdownlint_double(tmp_path)
     installed = _install(tmp_path)
     assert installed.returncode == 0, installed.stdout + installed.stderr
     relative = "kit/tracker/.basicly/usage/tool-usage.json"
@@ -106,6 +109,7 @@ def test_a_real_hand_edit_is_still_kept_without_force(tmp_path: Path) -> None:
 def test_a_mixed_core_is_refused_before_writing(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     core = _old_core(consumer)
+    provision_markdownlint_double(consumer)
     events = core / KIT_EVENTS
     events.write_text(events.read_text(encoding="utf-8") + "LOCAL_NOTE = 1\n", encoding="utf-8")
     before = _every_file(consumer)
@@ -122,6 +126,7 @@ def test_a_mixed_core_is_refused_before_writing(tmp_path: Path) -> None:
 def test_force_replaces_the_hand_edited_kit_module_of_a_mixed_core(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     core = _old_core(consumer)
+    provision_markdownlint_double(consumer)
     events = core / KIT_EVENTS
     events.write_text(events.read_text(encoding="utf-8") + "LOCAL_NOTE = 1\n", encoding="utf-8")
 

@@ -54,6 +54,14 @@ alone cannot offer.
 
 basicly requires **Python 3.14+** — for the CLI and for the projected hook
 scripts that run inside your repo; older interpreters are not supported.
+The default markdown gate also needs Node and a local `markdownlint-cli2` package before
+install. If your repository already locks the package, run `npm ci`. Otherwise, get the
+repository owner's approval, then run `npm install --save-dev markdownlint-cli2` and commit
+the package files. Install and `--dry-run` refuse missing tools before writing files.
+They do not add dependencies automatically. See
+[markdown gate prerequisites](docs/how-to/upgrade-and-check-drift.md#markdown-gate-prerequisites)
+for the explicit opt-out.
+
 Into any git repo, with [uv](https://docs.astral.sh/uv/) already on the machine:
 
 ```sh

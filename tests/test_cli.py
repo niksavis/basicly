@@ -29,6 +29,7 @@ from basicly.config import (
 from basicly.scaffolds import CONSUMER_CI_WORKFLOW, GENERATED_IGNORES, VSCODE_TASKS_JSON
 from basicly.skills import GENERATED_MARKER
 from tests.conftest import WORK_REPO_LEFT_OUT
+from tests.markdownlint_runtime_fixture import provision_markdownlint_double
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -122,6 +123,7 @@ def test_the_work_repo_fixture_leaves_out_the_state_that_differed_per_machine(
 def test_cli_install_converges_fresh_consumer(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
 
     result = run_basicly_consumer(consumer, "install")
     assert result.returncode == 0, result.stderr
@@ -153,6 +155,7 @@ def test_cli_install_honors_custom_core_paths(tmp_path: Path) -> None:
 
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     (consumer / "basicly.toml").write_text(
         "[paths]\n"
         'core_fragments = "conf/basicly/core/fragments"\n'
@@ -175,6 +178,7 @@ def test_cli_install_honors_custom_core_paths(tmp_path: Path) -> None:
 def test_cli_install_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     config = consumer / "basicly.toml"
@@ -194,6 +198,7 @@ def test_install_refuses_a_protected_codex_destination_before_syncing_the_core(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     consumer = tmp_path / "consumer"
+    provision_markdownlint_double(consumer)
     (consumer / ".codex").mkdir(parents=True)
     target = consumer / ".codex" / "hooks.json"
     target.write_text('{"foreign": true}\n', encoding="utf-8")
@@ -232,6 +237,7 @@ def test_install_preflight_ignores_unchanged_protected_configuration_and_foreign
 ) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     installed = run_basicly_consumer(consumer, "install")
     assert installed.returncode == 0, installed.stderr
     foreign = consumer / ".agents" / "skills" / "consumer-owned" / "SKILL.md"
@@ -258,6 +264,7 @@ def test_upgrade_preflights_incoming_skill_content_before_updating_its_owned_sou
 ) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     assert run_basicly_consumer(consumer, "install").returncode == 0
     source = consumer / ".basicly/core/skills/harness-loop/skill.yaml"
     source.write_text(
@@ -546,6 +553,7 @@ def _record_in_state(consumer: Path, rel_path: str) -> None:
 def test_cli_install_upgrade_overwrites_upstream_changed_core_file(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     target = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
@@ -564,6 +572,7 @@ def test_cli_install_upgrade_from_the_tool_skill_layout_removes_only_generated_o
 ) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
     source = consumer / ".basicly" / "core" / "skills" / "tool-jq" / "skill.yaml"
     source.parent.mkdir()
@@ -594,6 +603,7 @@ def test_cli_install_upgrade_from_the_tool_skill_layout_removes_only_generated_o
 def test_cli_install_upgrade_deletes_upstream_removed_core_file(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     ghost = consumer / ".basicly" / "core" / "fragments" / "project" / "ghost.fragment.yaml"
@@ -610,6 +620,7 @@ def test_cli_install_upgrade_deletes_upstream_removed_core_file(tmp_path: Path) 
 def test_cli_install_keeps_hand_edited_core_file_unless_forced(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     target = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
@@ -630,6 +641,7 @@ def test_cli_install_keeps_hand_edited_core_file_unless_forced(tmp_path: Path) -
 def test_cli_install_keeps_unknown_core_file_with_warning(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     stray = consumer / ".basicly" / "core" / "notes.txt"
@@ -644,6 +656,7 @@ def test_cli_install_keeps_unknown_core_file_with_warning(tmp_path: Path) -> Non
 def test_cli_install_upgrade_preserves_overlay_and_config(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     overlay_fragment = consumer / ".basicly-local" / "fragments" / "user" / "mine.fragment.yaml"
@@ -675,6 +688,7 @@ def test_cli_install_upgrade_preserves_overlay_and_config(tmp_path: Path) -> Non
 def test_cli_install_writes_provenance_state(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
 
     result = run_basicly_consumer(consumer, "install")
     assert result.returncode == 0, result.stderr
@@ -696,6 +710,7 @@ def test_cli_install_writes_provenance_state(tmp_path: Path) -> None:
 def test_cli_install_refreshes_provenance_state(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     state_path = consumer / ".basicly" / "state" / "install.json"
@@ -710,6 +725,7 @@ def test_cli_install_refreshes_provenance_state(tmp_path: Path) -> None:
 
 
 def test_cli_install_authoring_repo_writes_no_state(work_repo: Path) -> None:
+    provision_markdownlint_double(work_repo)
     result = run_basicly(work_repo, "install")
     assert result.returncode == 0, result.stderr
     assert "its own authoring source" in result.stdout
@@ -720,6 +736,7 @@ def test_cli_check_refuses_a_rewritten_managed_core(tmp_path: Path) -> None:
 
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     hook = consumer / ".basicly" / "core" / "hooks" / "pre-commit.py"
@@ -735,6 +752,7 @@ def test_cli_check_refuses_a_rewritten_managed_core(tmp_path: Path) -> None:
 def test_cli_check_refuses_a_catalog_another_version_installed(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     state_path = consumer / ".basicly" / "state" / "install.json"
@@ -752,6 +770,7 @@ def test_cli_check_refuses_a_catalog_another_version_installed(tmp_path: Path) -
 def test_cli_uninstall_removes_everything_managed(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     result = run_basicly_consumer(consumer, "uninstall")
@@ -775,6 +794,7 @@ def test_cli_uninstall_removes_everything_managed(tmp_path: Path) -> None:
 def test_cli_uninstall_preserves_foreign_hooks(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     config = consumer / "lefthook.yml"
@@ -793,6 +813,7 @@ def test_cli_uninstall_preserves_foreign_hooks(tmp_path: Path) -> None:
 def test_cli_uninstall_purge_removes_user_content_too(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     result = run_basicly_consumer(consumer, "uninstall", "--purge")
@@ -804,6 +825,7 @@ def test_cli_uninstall_purge_removes_user_content_too(tmp_path: Path) -> None:
 def test_cli_uninstall_keeps_hand_written_skill(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     mine = consumer / ".claude" / "skills" / "my-skill" / "SKILL.md"
@@ -822,6 +844,7 @@ def test_cli_uninstall_keeps_hand_written_skill(tmp_path: Path) -> None:
 def test_cli_uninstall_twice_is_a_noop(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
     run_basicly_consumer(consumer, "uninstall")
 
@@ -1076,6 +1099,7 @@ def test_cli_review_handoff_is_advisory(work_repo: Path) -> None:
 
 
 def test_cli_install_migrates_legacy_fragments(work_repo: Path) -> None:
+    provision_markdownlint_double(work_repo)
     legacy_core = work_repo / ".basicly" / "fragments" / "project"
     legacy_core.mkdir(parents=True, exist_ok=True)
     legacy_overlay = work_repo / ".basicly" / "fragments" / "user"
@@ -1117,6 +1141,7 @@ def test_cli_install_migrates_legacy_fragments(work_repo: Path) -> None:
 
 def test_cli_install_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
+    provision_markdownlint_double(consumer)
     skill_dir = consumer / ".basicly" / "core" / "skills" / "tool-x"
     frag_dir = consumer / ".basicly" / "core" / "fragments" / "project"
     skill_dir.mkdir(parents=True)
@@ -1153,6 +1178,7 @@ def test_cli_install_prunes_legacy_catalog_sources(tmp_path: Path) -> None:
 def test_cli_install_removes_legacy_vendored_engine(tmp_path: Path) -> None:
 
     consumer = tmp_path / "consumer"
+    provision_markdownlint_double(consumer)
     engine_dir = consumer / ".basicly" / "basicly"
     engine_dir.mkdir(parents=True)
     (engine_dir / "cli.py").write_text("# legacy vendored engine\n", encoding="utf-8")
@@ -1233,6 +1259,7 @@ def test_cli_agents_new_build_check_roundtrip(work_repo: Path) -> None:
 def test_cli_uninstall_sweeps_generated_agents_keeps_hand_written(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     run_basicly_consumer(consumer, "install")
 
     agents_dir = consumer / ".claude" / "agents"
@@ -1253,6 +1280,7 @@ def test_cli_uninstall_sweeps_generated_agents_keeps_hand_written(tmp_path: Path
 def test_cli_install_prunes_retired_github_skills_root(tmp_path: Path) -> None:
 
     consumer = tmp_path / "consumer"
+    provision_markdownlint_double(consumer)
     generated = consumer / ".github" / "skills" / "tool-x"
     generated.mkdir(parents=True)
     (generated / "SKILL.md").write_text(f"{GENERATED_MARKER}\n\n# x\n", encoding="utf-8")
@@ -1356,6 +1384,7 @@ def test_cli_permissions_build_and_check_are_idempotent(work_repo: Path) -> None
 def test_cli_install_projects_permissions_deny_list(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     assert run_basicly_consumer(consumer, "install").returncode == 0
 
     settings = json.loads((consumer / ".claude" / "settings.json").read_text(encoding="utf-8"))
@@ -1376,6 +1405,7 @@ def test_cli_install_leaves_a_consumer_bash_edit_and_webfetch_untouched(
     tmp_path: Path,
 ) -> None:
     consumer = tmp_path / "consumer"
+    provision_markdownlint_double(consumer)
     (consumer / ".claude").mkdir(parents=True)
     own_allows = ["Bash", "Edit", "WebFetch", "Bash(make lint)"]
     consumer_rules = {
@@ -1452,6 +1482,7 @@ def test_cli_status_fleet_rolls_up_the_workspace(work_repo: Path) -> None:
 def test_cli_status_json_consumer_reports_install_and_drift(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     install = run_basicly_consumer(consumer, "install")
     assert install.returncode == 0, install.stderr
 
@@ -1484,6 +1515,7 @@ def test_cli_status_json_consumer_reports_install_and_drift(tmp_path: Path) -> N
 def test_cli_status_never_writes(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     install = run_basicly_consumer(consumer, "install")
     assert install.returncode == 0, install.stderr
 

@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests.markdownlint_runtime_fixture import provision_markdownlint_double
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -13,6 +15,7 @@ def test_default_install_ignores_the_persistent_lock_and_preserves_existing_rule
 ) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     ignored = consumer / ".gitignore"
     ignored.write_text("mine/\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q", str(consumer)], check=True, capture_output=True)
