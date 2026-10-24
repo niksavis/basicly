@@ -2,7 +2,7 @@
 schema_version: 1
 token_cost:
   claude: 136
-  codex: 136
+  codex: 137
   copilot: 136
 id: knowledge-priming
 description: Load task-relevant repository context, and know which instruction wins.

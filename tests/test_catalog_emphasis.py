@@ -150,9 +150,9 @@ def test_the_committed_catalog_is_within_budget() -> None:
 
 
 def test_the_committed_catalog_actually_carries_a_marker() -> None:
-    body = (
-        REPO / ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml"
-    ).read_text(encoding="utf-8")
+    body = (REPO / ".basicly/core/fragments/design/code-is-authoritative.fragment.yaml").read_text(
+        encoding="utf-8"
+    )
 
     assert emphasis.markers_in(body) == ["IMPORTANT"]
 

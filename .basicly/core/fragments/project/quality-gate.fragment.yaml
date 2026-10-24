@@ -2,7 +2,7 @@
 schema_version: 1
 token_cost:
   claude: 322
-  codex: 322
+  codex: 323
   copilot: 322
 id: quality-gate
 description: How to verify a change before you report it done.

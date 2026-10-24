@@ -185,7 +185,7 @@ Tool access does not grant approval. Apply this list even when commands run unbl
 
 ### Code Is Authoritative
 
-- Never put prose comments or docstrings in code. Keep tool directives (example: `type: ignore`) and licence headers. For every code edit, read `.agents/skills/no-comments/SKILL.md` for the exceptions, fact placement and hook repair command.
+- Never add prose to code: no comment and no docstring. Keep tool directives (example: `noqa`) and licence headers. The `no-comments` hook enforces the ban. For every code edit, read `.agents/skills/no-comments/SKILL.md` for the exceptions, fact placement and hook repair command.
 
 IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`). Fix the cause.
 

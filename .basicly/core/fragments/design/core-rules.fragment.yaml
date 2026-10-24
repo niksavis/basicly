@@ -2,7 +2,7 @@
 schema_version: 1
 token_cost:
   claude: 148
-  codex: 148
+  codex: 149
   copilot: 148
 id: core-rules
 description: The engineering rules every change follows.

@@ -42,9 +42,9 @@ newline. These are this story's input and output, rather than older filing-time 
 
 | Target | Bytes before | Bytes after | Lines before | Lines after |
 | --- | --- | --- | --- | --- |
-| `AGENTS.md` | 14771 | 11962 | 234 | 198 |
-| `.claude/CLAUDE.md` | 11892 | 11762 | 186 | 198 |
-| `.github/copilot-instructions.md` | 11984 | 11854 | 187 | 199 |
+| `AGENTS.md` | 14771 | 12001 | 234 | 198 |
+| `.claude/CLAUDE.md` | 11892 | 11801 | 186 | 198 |
+| `.github/copilot-instructions.md` | 11984 | 11893 | 187 | 199 |
 
 Claude and Copilot gain section headings and specialist triggers; their line counts rise
 while bytes fall. Codex loses the inlined full specialist procedures. No cap was raised.
@@ -88,3 +88,12 @@ it. The focused suite passed 100 tests. Catalog lint passed its unchanged routin
 All projection checks passed. Retention scorer controls passed (100% verbatim, 0% noise);
 its old positional paraphrase calibration missed all five surviving entries, so no
 lexical retention score is used as behavioral evidence.
+
+The first native full run found three integration failures: the condensed comment-ban
+wording omitted the explicit directive example expected by its coverage test, the marker
+test still read the confirmation fragment after its marker moved, and the audit document
+was absent from the documentation index. All three reproduced together before repair.
+The baseline now explicitly states the ban, names its enforcing hook and gives `noqa` as
+the directive example. The marker test retains its exact assertion at the new canonical
+source. The documentation index names this audit. The 66 focused repair tests and the
+fresh consumer projection pass; final native verification remains mandatory.

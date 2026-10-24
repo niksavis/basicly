@@ -207,6 +207,11 @@ re-derive it from the tree — the CLI reference has five, listed in §7.
 | Explanation | the decision records, `architecture.md` §38 | why one question was settled the way it was, with the measurement and its date; a research document is absorbed into a record and deleted, its last commit cited | anyone changing a decision |
 | Order | the work tracker: `basicly session start`, `basicly tracker ready` | which records get built next, and why in that order | whoever is planning the next release |
 
+The [basicly-a3ab.4-instruction-review.md](../design/basicly-a3ab.4-instruction-review.md)
+audit and its companion JSON record the prior instruction inventory, dispositions,
+measurements and decision probes. They are evidence for that bounded change, not another
+source of current instructions.
+
 **Three companion files sit beside the architecture document, and none is reference
 material.**
 
