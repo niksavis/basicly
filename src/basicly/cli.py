@@ -99,6 +99,7 @@ from .config import (
     load_verify_config,
     load_worktree_config,
     record_technology_selection,
+    refuse_ignored_tracker_prefix,
     retire_legacy_tracker_prefix,
     unknown_config_keys,
 )
@@ -1264,6 +1265,7 @@ def _tracker_prefix(repo_root: Path) -> str:
 
 def _setup_tracker(repo_root: Path, *, dry_run: bool = False) -> None:
 
+    refuse_ignored_tracker_prefix(repo_root)
     ledger = repo_root / owned_store.LEDGER_DIR
     if ledger.is_dir():
         print("Tracker ledger exists; left unchanged.")
@@ -1674,6 +1676,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     paths = load_project_paths(repo_root)
 
+    refuse_ignored_tracker_prefix(repo_root)
     if not dry_run:
         try:
             _preflight_install(repo_root, paths, args, technologies)
