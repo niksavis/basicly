@@ -2,7 +2,7 @@
 schema_version: 1
 token_cost:
   claude: 157
-  codex: 156
+  codex: 157
   copilot: 157
 id: non-interactive-shell
 description: Shell rules for a non-interactive agent.

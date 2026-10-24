@@ -1,0 +1,1631 @@
+{
+  "baseline_commit": "fe43097c00d3ae3c9968cbceaf0ec3a731b079b8",
+  "inventory_method": "All selected fragments from loader and planner for the three baseline outputs and scoped rules; every nonempty Markdown paragraph, bullet and fenced example accounted by source-body line range and SHA-256. Headings are labels.",
+  "measurement_method": "Path.read_bytes length and newline byte count; independently checked with wc -lc. All outputs end in a newline.",
+  "sources": [
+    {
+      "id": "catalog-authoring",
+      "source": ".basicly/core/fragments/project/catalog-authoring.fragment.yaml",
+      "before_body_sha256": "ab3d41ec023d8dbc8a9828e52a0c6277d2ade5a204627d85a55cbf127fdea3ed",
+      "before_unit_count": 2,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "8661168e3aa2c693ae3e0517a6a3345252e1741a202601feefd71de0f417027d",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/catalog-authoring.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "37c414d4a4b26c3d316449a4b31373c9114d1fa9356ba9985d0c24ff3ffd4948",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/catalog-authoring.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "claude-defaults",
+      "source": ".basicly/core/fragments/project/claude-defaults.fragment.yaml",
+      "before_body_sha256": "0c4364ab2eb6a1cf773a4a549879254982f9cddeeaf01a785c51bd3667a0a938",
+      "before_unit_count": 2,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "012eb028a49860dc2ce24a8a331bcd3b832e1c0088b07df1d64bfd5f7a86d797",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/claude-defaults.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "efba59f7ef5b9dd8ac8d6a5b6a8ede2bfbc6b49abb7c2dbc0db7d87f10b1471a",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/claude-defaults.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "code-is-authoritative",
+      "source": ".basicly/core/fragments/design/code-is-authoritative.fragment.yaml",
+      "before_body_sha256": "6c19b9a695d36e4a8c5469c362df26191edcd9be511947cbad934e2a68f0c142",
+      "before_unit_count": 5,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "e647a08486935aceb51c4106909b7957ea1566131dfcca2a760717a37f6debb5",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/no-comments/skill.yaml",
+          "reason": "Universal prohibition and directive/licence exceptions remain in Never do; existing skill already owns full directive list, fact placement and exact repair command."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "2b2c11ff110f2720da48556a4bebffd4e2ce20c779beec403aaf48dc951db30b",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/no-comments/skill.yaml",
+          "reason": "Universal prohibition and directive/licence exceptions remain in Never do; existing skill already owns full directive list, fact placement and exact repair command."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "523b0dbb7047c6d4f3d131c464eff9092246e0befd8f5440971e6016bc7b5373",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/no-comments/skill.yaml",
+          "reason": "Universal prohibition and directive/licence exceptions remain in Never do; existing skill already owns full directive list, fact placement and exact repair command."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "93579f72f196636094132c8a972d0be9e83e248907d074d0feec4f15cfecfa27",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/no-comments/skill.yaml",
+          "reason": "Universal prohibition and directive/licence exceptions remain in Never do; existing skill already owns full directive list, fact placement and exact repair command."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            6,
+            8
+          ],
+          "sha256": "b4f40255f859565b231611bbe519ff93079fe5bd5918a0f4afd74bbf20f92ad9",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/no-comments/skill.yaml",
+          "reason": "Universal prohibition and directive/licence exceptions remain in Never do; existing skill already owns full directive list, fact placement and exact repair command."
+        }
+      ]
+    },
+    {
+      "id": "commands",
+      "source": ".basicly-local/fragments/user/commands/commands.fragment.yaml",
+      "before_body_sha256": "7904237d353e55d1fbb5674fd5bb2519ed96fb74833e433f18f08b77ea48ba52",
+      "before_unit_count": 11,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "baa4983272e074ec3f75ef96d993a9fe56dd0daaeea6d208f0027469ddc09a7e",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "e21aff14fa33714c9ed594ccafb65008a263981c0f1b1f358adcb1b9227ce398",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            5,
+            9
+          ],
+          "sha256": "05262f3cdb306ee2dd51a7de7b602fd01582db8e9d4a80d45c162d53b63583e0",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            11,
+            11
+          ],
+          "sha256": "c003f830d8da6ecf7cfaa99b34dcbc507a1d1c1951fef582a5ed0eb88c030839",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            13,
+            15
+          ],
+          "sha256": "997223826dc1e02ddb28cf71ef077ce30f7d69c79fa01dbaec4a7ffe9cda5315",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 6,
+          "body_lines": [
+            17,
+            17
+          ],
+          "sha256": "b5fc3187486d8746b3c49b02770aa2eb7f43dac2b2f0639ff3d4ef46c310aefe",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 7,
+          "body_lines": [
+            19,
+            21
+          ],
+          "sha256": "218bf1ff2efbea9c72f14e8497169879882974d32e1012334608570899dd7218",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 8,
+          "body_lines": [
+            23,
+            23
+          ],
+          "sha256": "2f2dcf3b50632ca6d50fd619a70603c3f249b5e25ff7f405e7e044524bb231b0",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 9,
+          "body_lines": [
+            25,
+            28
+          ],
+          "sha256": "df8334e0a9623236ade60026fc706b5f27a2c99bdce0810d019774e447dc7558",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 10,
+          "body_lines": [
+            30,
+            30
+          ],
+          "sha256": "315a9ef8a2c577b81c158d728dddab91717ea35535f90dd8c3d36bab17b0d2b6",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 11,
+          "body_lines": [
+            32,
+            39
+          ],
+          "sha256": "7e0d8bdfcc2f1e8ba1e2ecc49818d4842d230147d99f62a05a8a58e148993f58",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/commands/commands.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "copilot-defaults",
+      "source": ".basicly/core/fragments/project/copilot-defaults.fragment.yaml",
+      "before_body_sha256": "04db3cb2f489026de8b074fdf6de716a889004e7281d7641ffdbfbe1696ce30d",
+      "before_unit_count": 3,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "8683c1fd0eda9fa540b94d968f064376d2b499feb1c6ceafbb448e45abe4da3c",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/copilot-defaults.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "4df3311e5817e8b9b74cfa8304218da03c1df1ec87e9171df8af6719e7d4d32c",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/copilot-defaults.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "aefe9d056b291af3b844c827f892a6127858f622e2de41c07ad6bb0beeec3ccd",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/copilot-defaults.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "core-rules",
+      "source": ".basicly/core/fragments/design/core-rules.fragment.yaml",
+      "before_body_sha256": "8855877080f39cdd6926f08cfcab774d76f893aa8a0c0fabb814405efd4aa0f9",
+      "before_unit_count": 8,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "a182e18c03d28715517ab5c7ffb8cda6b943878e6451597129e2e4823d9d8614",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/core-rules.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "05d4aade3596b3570bd421ee7c497f7d7e2d1a2b7b8b1df1f4027d1f10e1c4d2",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/core-rules.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "80674dc08583dd4ff463b2b5b9d22aeda9ab669d05beda3f8d2de428b602baaf",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/core-rules.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "5e84545bb2231d8b65a039a3d42735a96be423e5f1104cfe0362e47fee3e0fc8",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/core-rules.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "4ec211745244b4c6b10af23e7d86bf4d256defcafcd46784324e01b7953d851a",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/core-rules.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 6,
+          "body_lines": [
+            6,
+            6
+          ],
+          "sha256": "30ff72185d1478286ddc43e68053e4f47f4dc4730e11b6bbf9dd0d665781beab",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/core-rules.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 7,
+          "body_lines": [
+            7,
+            7
+          ],
+          "sha256": "a31eb8bea25166042e9399913f40db6724268fd253d0857913f40f588ca17e26",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/core-rules.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 8,
+          "body_lines": [
+            8,
+            8
+          ],
+          "sha256": "6249936c8d5c2d0fa8cead60c1565b325b0a07998aa9f36fe78a4d700eae88bf",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/core-rules.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "decision-protocol",
+      "source": ".basicly/core/fragments/decisions/decision-protocol.fragment.yaml",
+      "before_body_sha256": "0ef86b356bca83026d7ad17d10c3705f341ab10dfa65ea994f6b8f4b31e8b36c",
+      "before_unit_count": 6,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "1278156ef7b6eecdd17c33e56a26ac4d50cfa38009c37db940042f0c065d66c6",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/decisions/decision-protocol.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "2de3f661794b8bae4e83ff3157bfc8dd11ec1aa1e9476b1d74c4623514bc02b1",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/decisions/decision-protocol.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "376c0b670002b630826feeb1f7990b9ec88a4e2e48e4313755732ce8463f55f6",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/decisions/decision-protocol.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "d9b767f47468e6c1f9b9935cf96a1aad2dc66d09bee0c7588cec912aa7df334b",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/decisions/decision-protocol.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "7c3ffc19c7045a19f48eb65d3983863d00c00ec5c28c46cd646de2068c03222a",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/decisions/decision-protocol.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 6,
+          "body_lines": [
+            6,
+            6
+          ],
+          "sha256": "9f7790521aa66790239478cbe26212fe836d93968df6d7ed640fb94761490122",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/decisions/decision-protocol.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "external-facts",
+      "source": ".basicly/core/fragments/decisions/external-facts.fragment.yaml",
+      "before_body_sha256": "50589b63ce2068e570fa0b36482da74384ed5e0d931ab61e713849e20a01c675",
+      "before_unit_count": 5,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "5900a57ac9d465ee6755a9a3c70467eac6d9107f1ecce482f35f563e8ac51da8",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/decisions/external-facts.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "4e325d0e080099467aaf10197352846aa280dbd6b38e1996f1e9bd469408f295",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/decisions/external-facts.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "3c091ed071a4c07b6a93dfe7af7abc4b15040483a36a02363be847c7d8e08043",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/decisions/external-facts.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "8f19148b4acd7841f1403265163f1824a00994527ce9107942e0b4bcbf42b955",
+          "disposition": "corrected",
+          "destination": ".basicly/core/fragments/decisions/external-facts.fragment.yaml#body",
+          "reason": "Routine observed counts need their checked source; independent derivation remains mandatory for high-risk quantities and material calculations. Absence controls remain mandatory."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "57d6edaf248df492c57478b0855664bed969e00d7bac05696c40f9dde40eb4f2",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/decisions/external-facts.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "external-review",
+      "source": ".basicly-local/fragments/user/design/external-review.fragment.yaml",
+      "before_body_sha256": "c37ace188b26e8aaef3fe48fa019a00032e5f77e787ae2eac036ffdbe2598951",
+      "before_unit_count": 7,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "371f64bfd9232eb20958188a7cd09df2dd40aa1db2016cc5536d6575ea879b41",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/falsify-first/skill.yaml#Before recommending a third-party project",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "62a6d63be965a8c0b438aacc44adf2dc9f574fc55f6a457af36fa342f387ebbb",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/falsify-first/skill.yaml#Before recommending a third-party project",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "396efc72589ccc3ae41f9e3be102fa283a08db1fed70011ef2bba02d5728b816",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/falsify-first/skill.yaml#Before recommending a third-party project",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "4a5579fbf9d0f97c114d07d6cb07af6eae933aa5a29bb42ed1046715ad0f9b5b",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/falsify-first/skill.yaml#Before recommending a third-party project",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            6,
+            6
+          ],
+          "sha256": "5cde6b8f5e919186a7846045c8eb524f5f4c1a1aae1a3d0729a0e2306348a94f",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/falsify-first/skill.yaml#Before recommending a third-party project",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 6,
+          "body_lines": [
+            7,
+            7
+          ],
+          "sha256": "52a67c910b5a2e9a3941082be496b6e59b774d573fa1e36565483718483bfaed",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/falsify-first/skill.yaml#Before recommending a third-party project",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 7,
+          "body_lines": [
+            8,
+            8
+          ],
+          "sha256": "ab01b3ecd9f149522a8f3685da6d0fa1fe0b428d5554a66ad5b64ad24df8abfe",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/falsify-first/skill.yaml#Before recommending a third-party project",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        }
+      ]
+    },
+    {
+      "id": "git-discipline",
+      "source": ".basicly/core/fragments/commands/git-discipline.fragment.yaml",
+      "before_body_sha256": "8a0faddadb1e5f88570c56e1e32462f9fbee4393cf8748e2672819c88beb9008",
+      "before_unit_count": 3,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "7e16da13272b10d7f7d40b4165f127c2e0ec90b0f92f9451ac27467cd6fd3eb6",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/commands/git-discipline.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "2253e6a5097344a2daf81961b24453eb0bfe1beadc5169a9c5bf6a3248f9fd17",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/commands/git-discipline.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "217e9f87d6dbce05f0dfb1e098dbb1f34f8de3889f18910f82abf004e1dfe29f",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/commands/git-discipline.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "harness-loop",
+      "source": ".basicly/core/fragments/project/harness-loop.fragment.yaml",
+      "before_body_sha256": "a869e97d62c8605fbb9f916eb3cf9593a04a88ccd7d8a9cb7435f3b5d38350e9",
+      "before_unit_count": 6,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "011e6ddd31e0ba1a9935d458f0c6f89544c59f21e24cdee3f6709654033404a8",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/harness-loop.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "8df60f9609175d9347e32cc30bdb687d0ae3bae3bcf252ad1577aeb10c619991",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/harness-loop.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "bf595f56beb37b6e0a6318292999924cc1f2a53b253c928f866f7b062b75ed36",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/harness-loop.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "1a3f03d6fd847ed8f14d9309c20e63cb0f226ff37ccb7ffd4d519422729c549f",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/harness-loop.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "c50781a6e11dd2ad947f312965005fb00ed4bdd4084016290385de3484b70d64",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/harness-loop.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 6,
+          "body_lines": [
+            6,
+            6
+          ],
+          "sha256": "b9d89b3b85cb2f741742c0fe4857ece2ef275601518725afcf61b125d2027b6d",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/harness-loop.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "knowledge-priming",
+      "source": ".basicly/core/fragments/design/knowledge-priming.fragment.yaml",
+      "before_body_sha256": "b80197f369240a4f36c22137dda30043fb9aa893bc12dcda63ef875448dadb76",
+      "before_unit_count": 3,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "5c31b6301b5c4330a6d6289a6803a2b810e25c87f8d0fb608cdcc663dac643fe",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/knowledge-priming.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "7004c9daa82fa27c223d7dfe933aca5f8c50ee0ef16fdf42fd00cf9a03a325e6",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/knowledge-priming.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "352e9157a3baf5cf518d53e93b58a6c7dfd1a8db986ecd6facd1c8719dde5c4b",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/knowledge-priming.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "mistake-proofing",
+      "source": ".basicly/core/fragments/design/mistake-proofing.fragment.yaml",
+      "before_body_sha256": "4352a6ec338b1e2b7dd01135553ff34e5a144ee3b7ffcf44975ff50b62e6b4cd",
+      "before_unit_count": 5,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "614af723c484264a2356ef9570312970613c36e4064208f1b2ab7eedaaeacf4a",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/mistake-proofing.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "921d1dfc0fcdf2359dd88d8ac5a2829412df17269f176451914b66a270986f77",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/mistake-proofing.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "be8921434427c6e6c9ec31fbdb69f4d84002f130cf2b29c20e41c680fd059008",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/mistake-proofing.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "2574fb390309b6474d37d61e81a441b6213cdeb4c754353a2c1563a05371f9df",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/mistake-proofing.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            6,
+            6
+          ],
+          "sha256": "c60fcd4899e0096cb9fb0107b1f5bfc110f3cd02a1878ad4d590fa5c9f533207",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/mistake-proofing.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "model-tier-routing",
+      "source": ".basicly-local/fragments/user/decisions/model-tier-routing.fragment.yaml",
+      "before_body_sha256": "0531a05b4bcb2e4b8b537416d9e39da566df89695afefd3193f94d5976f509b6",
+      "before_unit_count": 4,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "753359849d485f21038d84a7d95e78710b492b72313d96d5746a6a78cf8399dd",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/tier-injection/skill.yaml#When the repository requires tier-only dispatch",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "c8d4a7a154bc12d281b5853ba57798017ed64a6fc2c383ee7877b7942bcae288",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/tier-injection/skill.yaml#When the repository requires tier-only dispatch",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "4d7135789cdef558b548a24f17f1beaa8f1dc11fa67202162152b64c23efb595",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/tier-injection/skill.yaml#When the repository requires tier-only dispatch",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "5fcd1ecf1a6f98b27b5d6d54e3f82f328f88a2c17ec0c48b3bfdfe63f6f3f21b",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/tier-injection/skill.yaml#When the repository requires tier-only dispatch",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        }
+      ]
+    },
+    {
+      "id": "non-interactive-shell",
+      "source": ".basicly/core/fragments/tools/non-interactive-shell.fragment.yaml",
+      "before_body_sha256": "392d28ca2c28d75aa8c18e14e8d7bc95989ce97badaccb93046fc8af9453562a",
+      "before_unit_count": 4,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "2ffb9aca205dd71b5c78ec75408dd4451f344dfb7904a9982aacc54fa9ac7c51",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/tools/non-interactive-shell.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "8e35e819e01d4bc883c7cb39b9b72df7a2cce8ba81c56f4d776bc68bc1d3c33a",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/tools/non-interactive-shell.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "e40c7853c0cf88e39be35e9a3d4029c2b6c4af3a51919a229ce69998c7382b1c",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/tools/non-interactive-shell.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "ae849cde05a41c35d477834618cd1817df3d3eb4996f338992af70e0825f0b06",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/tools/non-interactive-shell.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "ownership",
+      "source": ".basicly-local/fragments/user/project/ownership.fragment.yaml",
+      "before_body_sha256": "df29f208261228c1144bfec5d124e9a69eabf1862d4895292389d1968606ff33",
+      "before_unit_count": 4,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "0979076aff1095393d130eed14fd0fb722135e60058aa53e42e33bbff3d7d038",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/ownership.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "d20b2c105a41e089be14417f5d190c80fb6357f99cf2263c14929d330e0f0ab2",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/ownership.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "09cb7a7650f14f37db3657772e9596485fc32f28d0e8784e27a4c94be85fe22e",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/ownership.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "16a405b8d9bd5a82c315d605c54e1785d484fa339305d4c56db094dd522f3155",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/ownership.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "platform-hermetic-tests",
+      "source": ".basicly/core/fragments/testing/platform-hermetic-tests.fragment.yaml",
+      "before_body_sha256": "b88a86cc5326a7ed3f199a9c7025fb9a1c42d8e052fca1ddfdc43c3a0a4d8a8e",
+      "before_unit_count": 6,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "3ecc565627d09fba7db4a4676a1e02d613c4eb24719a027dbe750fee3cdde52e",
+          "disposition": "corrected",
+          "destination": ".basicly/core/skills/test-discipline/skill.yaml#Platform-hermetic tests",
+          "reason": "Retain platform-as-input requirement; remove the unsupported claim that CI necessarily tests the other operating systems. This repository currently tests Linux in CI."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "74e1b64f81fa1796ab76d4576ab906822b84fa509b31b46889a9d39ecadb3e27",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/test-discipline/skill.yaml#Platform-hermetic tests",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "71239e590ce780966409e9b17ac36eb234cfe3f8b4efeb560243c1d5b0e40b98",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/test-discipline/skill.yaml#Platform-hermetic tests",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "45d1a5ddf5c77470a140a8e88724fffd36f87c5288de9f8a60463cc7a06f033d",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/test-discipline/skill.yaml#Platform-hermetic tests",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            6,
+            6
+          ],
+          "sha256": "f29551712e2e02923f8d1f2ba03ace469357879931c67917bf11a77158c4f414",
+          "disposition": "deduplicated",
+          "destination": ".basicly/core/skills/test-discipline/skill.yaml#Rules",
+          "reason": "The existing condition-wait rule already requires a monotonic clock and condition-based waits; keep one canonical rule instead of appending a duplicate."
+        },
+        {
+          "unit": 6,
+          "body_lines": [
+            7,
+            7
+          ],
+          "sha256": "2fa03620bcf92ec0aee746d0b138b67e292260565e2a90855d3b4a7406f2f7b3",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/test-discipline/skill.yaml#Platform-hermetic tests",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        }
+      ]
+    },
+    {
+      "id": "project-overview",
+      "source": ".basicly-local/fragments/user/project/project-overview.fragment.yaml",
+      "before_body_sha256": "8542f1c774cef4afcaca3574d6add09ae37c693a3752ded9cb5ee95874addc63",
+      "before_unit_count": 5,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "629782814eb895edb9b17e592ed43a534dfeb9ab0f4f191f6cb147cdf1dd0294",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/project-overview.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "3e571dffb901bac779028d3a5f605b9233ae5f7c453709ca23187a50ad595ee6",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/project-overview.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "5050f4f6731fe3b692bfef2dedd3eb4a8b7cb3dbcbe65b091072be38c147f4e5",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/project-overview.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "5ea40e73d9e8477de7ea175f77d6e5110ae6d5df80ba7e94b1371cb9326acd6e",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/project-overview.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "2c033ec35703e8544890d174c1b4fd99d78af87f8347935492d44acb7fbd0785",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/project-overview.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "quality-gate",
+      "source": ".basicly/core/fragments/project/quality-gate.fragment.yaml",
+      "before_body_sha256": "48e2c8a2526e1f11d360b8770946a883ee4f36ec75912a179a6a5797834974f2",
+      "before_unit_count": 12,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "7518f4b7afff71bb5fe3eebca95a736dd98a43a7d8b37a261469a0e101a8875f",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "4be4268bc237ad91ba042841da70f132be457febaa9751d5b9a74c9eb6bd5f80",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "1ef42b704c22085702a9ad963925f8c6a2ddeeb13fd824b8e7a57148a9a509f1",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "b3841b69caeb3faa8e93158017dcc701fef75622277e948d1ff5861990e0938e",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "4b3245ecba53fc658e8b8e823f9cd2d62cca418c3d7a8227cd58c2582928bc74",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 6,
+          "body_lines": [
+            6,
+            6
+          ],
+          "sha256": "471ac564a2cf9787f0fcf750a7cfeea7076bf6e78e7a476f65fd43ba08873bd7",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 7,
+          "body_lines": [
+            7,
+            7
+          ],
+          "sha256": "ea60804cae38fc89387ab0227e3c7980e123575dccae66c7f7aa6daf94d90c09",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 8,
+          "body_lines": [
+            8,
+            8
+          ],
+          "sha256": "867862885859ca2fb24ad2bac7083c60a3136dcedda6d9ef848a6a37c525d668",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 9,
+          "body_lines": [
+            9,
+            9
+          ],
+          "sha256": "de6a353d08c04e7c9e2f8e58884a37836b9ad6c0865e34cc2a8f3cfd54f51f29",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 10,
+          "body_lines": [
+            10,
+            10
+          ],
+          "sha256": "976cf24ac42b30274d39aed5b5ae795ab1017cb3c267f0dfb3d0770dad3e2158",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 11,
+          "body_lines": [
+            11,
+            11
+          ],
+          "sha256": "6f17f00ab347880e69c721f08d5d797190e85dcabbeee9fe7e1ed650d05177f3",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 12,
+          "body_lines": [
+            12,
+            12
+          ],
+          "sha256": "d6a8c5b96322a6c8d624951225fec2f2240d5dff2e033b0701c8c14c0514c0a7",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/quality-gate.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "release-fragments",
+      "source": ".basicly-local/fragments/user/project/release-fragments.fragment.yaml",
+      "before_body_sha256": "757b76fedf804ee93feca64042b14fc5f27f135b47fd7b9bfe0013a0e1da2bb9",
+      "before_unit_count": 2,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "3a087a5f87d7a2d14324bd24f5c8c1c6b1288f390150ebf642c49d15cad365c7",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/release-fragments.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "e309ff273f7f0289ead63a72d13697b667289a0e380dc7ca1baa59986c929dc9",
+          "disposition": "retained",
+          "destination": ".basicly-local/fragments/user/project/release-fragments.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "rendered-surfaces",
+      "source": ".basicly-local/fragments/user/project/rendered-surfaces.fragment.yaml",
+      "before_body_sha256": "d1e32b516426c3da2ac46006fb591204aaf3378fa31c5d737a0ab0489ff57a17",
+      "before_unit_count": 8,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "6d87b4d42aa2e486b41964691e406061c95933f8e5108ddbeb9253670386d764",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/validate-as-consumer/skill.yaml#Rendered pages",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "af3e0cdaae6033c3aa009806ed022a4c7c72554a26e562670ba3c6ee36785a00",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/validate-as-consumer/skill.yaml#Rendered pages",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            5,
+            7
+          ],
+          "sha256": "ae9499cdc0bc808a943a5da8d61ee65ec86917ea56255598a39df2f9da792cfa",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/validate-as-consumer/skill.yaml#Rendered pages",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            9,
+            9
+          ],
+          "sha256": "81fe8abcf51951223924a970e2681743cb783ac87749bfd812e8d11856c87ea7",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/validate-as-consumer/skill.yaml#Rendered pages",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            10,
+            10
+          ],
+          "sha256": "0b25cc12d9da809ca6e2765816d1203f125bfe4127ed98864442ed02e8f58d91",
+          "disposition": "corrected",
+          "destination": ".basicly/core/skills/validate-as-consumer/skill.yaml#Rendered pages",
+          "reason": "Preserve both overflow signals and the source-checkout command; consumers use the repository-supplied checker when present rather than assuming a private script is installed."
+        },
+        {
+          "unit": 6,
+          "body_lines": [
+            11,
+            11
+          ],
+          "sha256": "d3567e84fcbdcb73ba0ef882c43106f1ddc5a8462b49cf5be8e676395f11bd31",
+          "disposition": "corrected",
+          "destination": ".basicly/core/skills/validate-as-consumer/skill.yaml#Rendered pages",
+          "reason": "Preserve both overflow signals and the source-checkout command; consumers use the repository-supplied checker when present rather than assuming a private script is installed."
+        },
+        {
+          "unit": 7,
+          "body_lines": [
+            13,
+            15
+          ],
+          "sha256": "60c9d1ed09d8acacb45adbfb211d1eb746686ba916a710836c4225c2241761cd",
+          "disposition": "corrected",
+          "destination": ".basicly/core/skills/validate-as-consumer/skill.yaml#Rendered pages",
+          "reason": "Preserve both overflow signals and the source-checkout command; consumers use the repository-supplied checker when present rather than assuming a private script is installed."
+        },
+        {
+          "unit": 8,
+          "body_lines": [
+            17,
+            17
+          ],
+          "sha256": "c728f4303660a13b8911721d3acec9d2c9bd9d9aab640eb5953efe43d613ec6a",
+          "disposition": "routed",
+          "destination": ".basicly/core/skills/validate-as-consumer/skill.yaml#Rendered pages",
+          "reason": "Procedure retained once in the existing skill; an unconditional baseline fragment names the task trigger and readable skill path on all targets."
+        }
+      ]
+    },
+    {
+      "id": "require-explicit-confirmation",
+      "source": ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml",
+      "before_body_sha256": "187624cb3d0a4282d873bbacdc52dd9fe1e674ea7d06a5929ec584a07f4ebf58",
+      "before_unit_count": 9,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "da219ee75ee05f948b8faef51538ec758bf3c9639062f75b58300090a0ea5e5b",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "d6364b64c8a2b3a4cb9d088cf997fffc9dea56ce31d249cda439218faba90674",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "c597a9e33c681d44cc3d5922f9ee8cc9e6886c0beb730d878925eb4c96109964",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "d9f9592e1509daa34cd0c323fbffe73944d68e813758dc31e5ff36c387fe6e6a",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            6,
+            6
+          ],
+          "sha256": "f630fc70271cb03bc5f5cead22abc08da1cb151caa54a6f52a32191d6d79db6b",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 6,
+          "body_lines": [
+            7,
+            7
+          ],
+          "sha256": "c19486d077b996ada32204fb3280ac4a4fb7f081807356ae73a2bd7e0115e65b",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 7,
+          "body_lines": [
+            8,
+            8
+          ],
+          "sha256": "cb4b51b78b9e8b4739805fd643e106938ee0316c06afadebe109df873afe575d",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 8,
+          "body_lines": [
+            10,
+            10
+          ],
+          "sha256": "ff2842af664ddb27a1c72eae3de6dea4464e528d6cc646b27bef18da2532dcf3",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 9,
+          "body_lines": [
+            12,
+            12
+          ],
+          "sha256": "f1f627fc8a4204b93cc4e193ade334915e4d7c9aa485b82c604a8fb19ecef990",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/design/code-is-authoritative.fragment.yaml#body",
+          "reason": "Exact gate prohibition moved to Never do; approval categories and reuse conditions are unchanged."
+        }
+      ]
+    },
+    {
+      "id": "secure-coding",
+      "source": ".basicly/core/fragments/security/secure-coding.fragment.yaml",
+      "before_body_sha256": "9cc5751501f86a1c8970fb6fea2c1f9474e4ae9539ecfb970f633a151ccb9fea",
+      "before_unit_count": 5,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "a4d4c50c48cc20a1254979b6abd32492019e611d81193691841695ac97fd4e41",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/security/secure-coding.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "d68a72698145fb854b28f8996939e99092dc488403711859aeddc641352fc369",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/security/secure-coding.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 3,
+          "body_lines": [
+            3,
+            3
+          ],
+          "sha256": "a1137d95c9476f20fffd6dacdc1b3f06a341a364c005347febfdef94ae082c0f",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/security/secure-coding.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 4,
+          "body_lines": [
+            4,
+            4
+          ],
+          "sha256": "60812be599e42382c79539a367decf389b591767e59f1bfec474abde869cf49c",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/security/secure-coding.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 5,
+          "body_lines": [
+            5,
+            5
+          ],
+          "sha256": "78a7e665693149094625cf7fe9dea5af6ddda132bc60dd20d12615b77d1153db",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/security/secure-coding.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    },
+    {
+      "id": "session-completion",
+      "source": ".basicly/core/fragments/project/session-completion.fragment.yaml",
+      "before_body_sha256": "2bb0b89737551d528435234b4f0e0841e3f6ac31b747faad2d0862fa305e2f3e",
+      "before_unit_count": 2,
+      "units": [
+        {
+          "unit": 1,
+          "body_lines": [
+            1,
+            1
+          ],
+          "sha256": "d5337ca22ec041651b2d1aaf8d13f5036d6e37d06e0dff00950c14b5ae19a934",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/session-completion.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        },
+        {
+          "unit": 2,
+          "body_lines": [
+            2,
+            2
+          ],
+          "sha256": "833e6eaaafb360fcad32870a267fb599831306dc7d2b9676ec86f3e2f418ebe6",
+          "disposition": "retained",
+          "destination": ".basicly/core/fragments/project/session-completion.fragment.yaml#body",
+          "reason": "Same requirement; layout and wording may be condensed without changing the action."
+        }
+      ]
+    }
+  ],
+  "measurements": [
+    {
+      "target": "AGENTS.md",
+      "before": {
+        "bytes": 14771,
+        "lines": 234
+      },
+      "after": {
+        "bytes": 12001,
+        "lines": 198
+      }
+    },
+    {
+      "target": ".claude/CLAUDE.md",
+      "before": {
+        "bytes": 11892,
+        "lines": 186
+      },
+      "after": {
+        "bytes": 11801,
+        "lines": 198
+      }
+    },
+    {
+      "target": ".github/copilot-instructions.md",
+      "before": {
+        "bytes": 11984,
+        "lines": 187
+      },
+      "after": {
+        "bytes": 11893,
+        "lines": 199
+      }
+    }
+  ]
+}

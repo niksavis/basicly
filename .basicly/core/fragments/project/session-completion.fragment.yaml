@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
 token_cost:
-  claude: 103
-  codex: 102
-  copilot: 103
+  claude: 100
+  codex: 101
+  copilot: 100
 id: session-completion
 description: How to end a session, including the retro after a mistake.
 category: project

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -43,7 +44,7 @@ def test_commands_put_focused_checks_before_required_full_verification(baseline:
 def test_quality_gate_states_the_required_action_for_each_scenario(
     baseline: str, required: tuple[str, ...]
 ) -> None:
-    quality = baseline.split("## Quality Gate\n", 1)[1].split("\n## ", 1)[0]
+    quality = re.split(r"\n#{2,3} ", baseline.split("### Quality Gate\n", 1)[1], maxsplit=1)[0]
     assert any(all(term in line for term in required) for line in quality.splitlines())
 
 

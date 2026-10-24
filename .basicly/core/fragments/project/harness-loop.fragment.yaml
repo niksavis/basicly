@@ -2,7 +2,7 @@
 schema_version: 1
 token_cost:
   claude: 188
-  codex: 187
+  codex: 188
   copilot: 188
 id: harness-loop
 description: Session start, session end and the harness loop.

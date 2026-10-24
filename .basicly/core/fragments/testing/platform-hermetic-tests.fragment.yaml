@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
 token_cost:
-  claude: 0
-  codex: 160
-  copilot: 0
+  claude: 46
+  codex: 46
+  copilot: 46
 id: platform-hermetic-tests
 description: Make a platform difference an input to a test, so every OS is tested locally.
 category: testing
@@ -14,15 +14,6 @@ tags:
 - testing
 - portability
 status: active
-scope:
-  paths:
-  - tests/**
 title: Platform-Hermetic Tests
 body: |
-  The local gate runs on one OS, and CI runs the others only after the push. So make the platform an input to the test:
-
-  - Test a path rule with both `PureWindowsPath` and `PurePosixPath`. `Path` takes the form of the host.
-  - Compare paths as `Path` objects, or render both sides with the same `as_posix()`.
-  - Do not use `select` or `selectors` on a pipe, because on Windows they accept only sockets. Read in a thread and bound the read with `join(timeout=...)`.
-  - Wait for a condition, not a duration. Measure time with a monotonic clock.
-  - Use `skipif` only when the behaviour cannot exist on the other platform.
+  - For platform-dependent tests, exercise both platform forms rather than only the host. Read `.agents/skills/test-discipline/SKILL.md` before proceeding.

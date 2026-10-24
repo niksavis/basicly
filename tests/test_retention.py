@@ -250,3 +250,10 @@ def test_a_blank_line_ends_a_bullet() -> None:
 
 def test_a_star_bullet_counts_too() -> None:
     assert len(retention.derive_rules("## A\n\n* starred rule here\n")) == 1
+
+
+def test_constraint_group_headings_preserve_leaf_rule_identity() -> None:
+    nested = BASELINE.replace("## Core Rules", "## Always do\n\n### Core Rules").replace(
+        "## Secure Coding", "## Never do\n\n### Secure Coding"
+    )
+    assert retention.derive_rules(nested) == retention.derive_rules(BASELINE)

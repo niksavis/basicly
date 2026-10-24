@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
 token_cost:
-  claude: 240
-  codex: 240
-  copilot: 240
+  claude: 205
+  codex: 205
+  copilot: 205
 id: external-facts
 description: Establish external facts and numbers from evidence, never from recall.
 category: decisions
@@ -15,8 +15,7 @@ tags:
 status: active
 title: External Facts
 body: |
-  - Do not answer from memory about a third-party interface. A flag, field, model id, price, limit or version can change. Read our own adapter first, then the vendor's current documentation. The `interface-facts` skill gives the steps.
-  - An empty search result does not prove absence. Before you report a zero, run a positive control: a search that must match a case you have seen. When the control is also empty, the search is wrong. When it matches, check that the count of examined items moved. If the count did not move, the search never read the control.
-  - A capability is absent only when its action is absent, not its name. Before you report that a tool cannot do something, search for what it does, not only for the name you expected.
-  - Derive a number twice, by two paths that share no step. When they disagree, suspect the instrument first.
-  - When two causes predict the same result, say so and change the probe until they differ.
+  - For third-party interfaces, never rely on memory. Read our adapter, then current vendor documentation; follow `.agents/skills/interface-facts/SKILL.md` for flags, fields, models, prices, limits and versions.
+  - Before claiming absence or zero, search for the action, not only its name. Run a known-match positive control through the same search. An empty control invalidates the search; a matching control must also increase the examined-item count.
+  - For a routine observed count, name the checked source or command. Independently derive high-risk quantitative claims and calculations affecting material decisions by two paths sharing no calculation step. Investigate the instrument when they disagree.
+  - When two causes predict the same result, state both and change the probe until they differ.

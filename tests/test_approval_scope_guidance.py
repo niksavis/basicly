@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,11 @@ TARGETS = ("AGENTS.md", ".claude/CLAUDE.md", ".github/copilot-instructions.md")
 
 def _section(target: str, heading: str) -> str:
     text = (ROOT / target).read_text(encoding="utf-8")
-    return text.split(f"## {heading}\n", 1)[1].split("\n## ", 1)[0]
+    return re.split(
+        r"\n#{2,3} ",
+        re.split(rf"(?m)^#{{2,3}} {re.escape(heading)}\n", text, maxsplit=1)[1],
+        maxsplit=1,
+    )[0]
 
 
 @pytest.mark.parametrize("target", TARGETS)
@@ -71,6 +76,7 @@ def test_prior_approval_changes_neither_confirmation_categories_nor_gate_protect
     )
     assert "Tool access does not grant approval" in rule
     assert "Apply this list even when commands run unblocked" in rule
-    assert "never defeat a gate" in rule
-    assert "Do not skip or weaken a test, a lint or a type check" in rule
-    assert "do not bypass a hook (`--no-verify`, `--no-gpg-sign`)" in rule
+    gate = _section(target, "Code Is Authoritative")
+    assert "never defeat a gate" in gate
+    assert "Do not skip or weaken a test, a lint or a type check" in gate
+    assert "do not bypass a hook (`--no-verify`, `--no-gpg-sign`)" in gate

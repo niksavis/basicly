@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,7 @@ ROOT = Path(__file__).parent.parent
 )
 def test_baselines_authorize_the_task_and_preserve_real_protections(path: str) -> None:
     text = (ROOT / path).read_text(encoding="utf-8")
-    section = text.split("## Harness Loop\n", 1)[1].split("\n## ", 1)[0]
+    section = re.split(r"\n#{2,3} ", text.split("### Harness Loop\n", 1)[1], maxsplit=1)[0]
     assert "user task request authorizes its scope" in section
     assert "Do not request an L-level grant or mandatory token budget" in section
     assert "verification gates and destructive-action protections" in section

@@ -1,0 +1,1 @@
+- Group shared instructions into Always do, Ask first and Never do, put project commands first, and route specialist procedures through explicit skill links. Routine observed counts now require a checked source; high-risk quantities and absence claims retain independent controls.
