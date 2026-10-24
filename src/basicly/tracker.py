@@ -596,15 +596,18 @@ def git_display_name(repo_root: Path) -> str:
 
 def _validated_scrub_events(contents: Mapping[Path, str], events: Any) -> dict[str, dict]:
     originals: dict[str, dict] = {}
+    identities: dict[str, str] = {}
     paths: dict[str, Path] = {}
     for path, raw in contents.items():
         for line in raw.splitlines():
             if not line.strip():
                 continue
+            parsed = events.from_json(line)
+            identity = events.to_json(parsed)
             event = json.loads(line)
             previous = originals.setdefault(event["id"], event)
             paths[event["id"]] = path
-            if event != previous:
+            if event != previous or identities.setdefault(parsed.id, identity) != identity:
                 raise TrackerDivergenceError(
                     f"{path.name}: {event['id']} has different stored content; "
                     "repair the conflicting copies before scrubbing"

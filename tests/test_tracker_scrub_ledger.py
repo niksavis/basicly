@@ -253,3 +253,68 @@ def test_a_later_invalid_shard_leaves_every_earlier_file_unchanged(tmp_path: Pat
         tracker.scrub_ledger(repo)
 
     assert {one: one.read_bytes() for one in before} == before
+
+
+@pytest.mark.parametrize("sequence", [True, 1.0])
+def test_a_malformed_duplicate_sequence_refuses_scrub_before_any_rewrite(
+    tmp_path: Path, sequence: object
+) -> None:
+    repo = _repo(tmp_path)
+    original = _event(repo, "basicly-a", 1, "", {"title": "safe"})
+    dirty = _event(repo, "basicly-b", 1, USERNAME, {"title": "needs redaction"})
+    path = _write_events(repo, [original, dirty])
+    duplicate = {**original, "seq": sequence}
+    assert duplicate == original
+    pending = tracker.ledger_dir(repo) / "pending-copy.jsonl"
+    pending.write_text(json.dumps(duplicate) + "\n", encoding="utf-8")
+    before = {one: one.read_bytes() for one in (path, pending)}
+    events = tracker.kit(repo).events
+
+    with pytest.raises(events.InvalidEventError, match="seq must be an integer"):
+        tracker.scrub_ledger(repo, display_name=USERNAME)
+
+    assert {one: one.read_bytes() for one in before} == before
+
+
+@pytest.mark.parametrize("value", [True, 1.0])
+@pytest.mark.parametrize("location", ["payload", "extra"])
+def test_typed_duplicate_content_refuses_scrub_before_any_rewrite(
+    tmp_path: Path, value: object, location: str
+) -> None:
+    repo = _repo(tmp_path)
+    original = _event(repo, "basicly-a", 1, "", {"title": "safe", "count": 1})
+    original["extra"] = 1
+    dirty = _event(repo, "basicly-b", 1, USERNAME, {"title": "needs redaction"})
+    path = _write_events(repo, [original, dirty])
+    duplicate = {**original}
+    if location == "payload":
+        duplicate["payload"] = {**original["payload"], "count": value}
+    else:
+        duplicate["extra"] = value
+    assert duplicate == original
+    pending = tracker.ledger_dir(repo) / "pending-copy.jsonl"
+    pending.write_text(json.dumps(duplicate) + "\n", encoding="utf-8")
+    before = {one: one.read_bytes() for one in (path, pending)}
+
+    with pytest.raises(TrackerDivergenceError, match="different stored content"):
+        tracker.scrub_ledger(repo, display_name=USERNAME)
+
+    assert {one: one.read_bytes() for one in before} == before
+
+
+def test_duplicate_optional_field_presence_still_refuses_scrub_before_any_rewrite(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    original = _event(repo, "basicly-a", 1, "", {"title": "safe"})
+    dirty = _event(repo, "basicly-b", 1, USERNAME, {"title": "needs redaction"})
+    path = _write_events(repo, [original, dirty])
+    duplicate = {**original, "totals": tracker.kit(repo).events.Totals().as_dict()}
+    pending = tracker.ledger_dir(repo) / "pending-copy.jsonl"
+    pending.write_text(json.dumps(duplicate) + "\n", encoding="utf-8")
+    before = {one: one.read_bytes() for one in (path, pending)}
+
+    with pytest.raises(TrackerDivergenceError, match="different stored content"):
+        tracker.scrub_ledger(repo, display_name=USERNAME)
+
+    assert {one: one.read_bytes() for one in before} == before

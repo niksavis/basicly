@@ -1,0 +1,1 @@
+- Validate every stored event copy before ledger scrubbing, so malformed sequence values and conflicting JSON types refuse without rewriting any file.
