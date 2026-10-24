@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import shutil
 from typing import TYPE_CHECKING
 
+from . import board_output
+
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
     from pathlib import Path
 
 DIRNAME = "vendor"
@@ -31,12 +32,22 @@ def read(templates_root: Path, name: str) -> tuple[bytes, str] | None:
     return source(templates_root, name).read_bytes(), content_type
 
 
-def write_beside(templates_root: Path, out_dir: Path) -> list[Path]:
+def write_beside(
+    templates_root: Path,
+    out_dir: Path,
+    *,
+    on_refusal: Callable[[Path, OSError], None] | None = None,
+) -> list[Path]:
     target = out_dir / DIRNAME
-    target.mkdir(parents=True, exist_ok=True)
     written = []
     for name in ASSETS:
         landing = target / name
-        shutil.copyfile(source(templates_root, name), landing)
+        try:
+            board_output.write_bytes(landing, source(templates_root, name).read_bytes())
+        except OSError as error:
+            if on_refusal is None:
+                raise
+            on_refusal(landing, error)
+            continue
         written.append(landing)
     return written
