@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Task requests now authorize normal workflow steps without separate permission levels or required budgets. Shared instructions clarify approval reuse, frozen scope and verification. Specialist assignments carry task-specific context, and completed work enters integration before optional work.
+
+- **Task authorization:** use the user request as approval for normal phases while preserving verification, destructive-action checks and explicit user limits (basicly-bhrls77).
+- **Focused verification:** run affected checks while editing and reuse passing results only when the engine establishes equivalent inputs (basicly-hp06epo).
+- **Approval and scope:** reuse approval for the same action and scope, resolve facts with safe reads, and record unrelated findings without expanding frozen work (basicly-l5pvyjj).
+- **Specialist work:** carry current task facts and durable artifacts, scope saved context to one task, and prioritize committed work for integration (basicly-42pn387).
+- **Shared instructions:** put Commands first, group constraints into Always do, Ask first and Never do, and link specialist procedures explicitly. Routine observed counts name a checked source; high-risk quantities and absence claims retain independent controls (basicly-a3ab.4).
+
 ## v0.26.12 - 2026-10-24
 
 Delta: v0.26.11..v0.26.12
