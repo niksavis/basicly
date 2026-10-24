@@ -4,7 +4,7 @@ This is a walkthrough, not a reference. Follow it top to bottom on a **scratch
 git repo** and you will end with one unit of work filed, built in its own
 worktree, merged, and closed by the harness — one sitting, no agent spend.
 Every command and quoted output below was checked against a fresh repo using
-basicly 0.26.11 in a real terminal. Bead ids, commit hashes and paths are normalized
+basicly 0.26.12 in a real terminal. Bead ids, commit hashes and paths are normalized
 for readability. `...` marks omitted output.
 
 When you want to look something up rather than learn the shape, stop here and
@@ -34,7 +34,7 @@ Every command below is written as bare `basicly`. Run it as the pinned form so
 you always get the version you chose:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.26.11/basicly-0.26.11-py3-none-any.whl basicly <args>
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.26.12/basicly-0.26.12-py3-none-any.whl basicly <args>
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -92,7 +92,7 @@ if the repository owner chooses an explicit opt-out.
 From the repo root:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.26.11/basicly-0.26.11-py3-none-any.whl basicly install
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.26.12/basicly-0.26.12-py3-none-any.whl basicly install
 ```
 
 It ends with:
@@ -355,6 +355,7 @@ Created worktree 'myrepo-2i3r'
   path:   /path/to/myrepo.worktrees/myrepo-2i3r
   branch: harness/myrepo-2i3r  (base main @ 35284db)
   .basicly/ledger/redirect: tracker shared with the base checkout
+  node_modules: copied from myrepo (identical package-lock.json)
   hooks: post-merge, pre-commit, commit-msg, pre-push — repository-local Lefthook hooks installed
   ...
 [blocked] intake -> intake: recorded work type 'task'; classify checkpoint awaiting approval
@@ -448,8 +449,8 @@ git log --oneline -6
 ```text
 58ba56c chore(tracker): close the shipped track (myrepo-2i3r)
 8b65704 chore(worktree): merge a harness worktree back to its base
-b8d7b80 docs: add a getting started note (myrepo-2i3r)
 5d37092 chore(tracker): sync tracker state for the harness loop (myrepo-2i3r)
+b8d7b80 docs: add a getting started note (myrepo-2i3r)
 35284db chore(tracker): record the claim before provisioning (myrepo-2i3r)
 e1e08ac chore: install basicly (myrepo-2i3r)
 ```

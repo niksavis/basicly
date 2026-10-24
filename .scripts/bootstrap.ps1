@@ -35,7 +35,7 @@ if ($Ref -eq "latest") {
     $Ref = $uri.Segments[-1]
 }
 if ($Ref -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
-    throw "bootstrap: -Ref must name a release such as v0.26.11; source branches require artifact preparation"
+    throw "bootstrap: -Ref must name a release such as v0.26.12; source branches require artifact preparation"
 }
 $version = $Ref.Substring(1)
 $wheel = "$RepoUrl/releases/download/$Ref/basicly-$version-py3-none-any.whl"

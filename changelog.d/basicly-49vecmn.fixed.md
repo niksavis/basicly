@@ -1,1 +1,0 @@
-- Refuse tracker prefix migration when Git ignores its destination, preserve the original configuration, and name the matching rule and negations needed before retrying installation.

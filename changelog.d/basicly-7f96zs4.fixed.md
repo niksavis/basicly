@@ -1,1 +1,0 @@
-- Keep board asset output writing outside the renderer dependency graph while preserving linked-destination refusals and independent exports.

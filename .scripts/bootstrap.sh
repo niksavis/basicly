@@ -50,7 +50,7 @@ if [ "$REF" = latest ]; then
     REF=${release_url##*/}
 fi
 printf '%s\n' "$REF" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-    || fail "--ref must name a release such as v0.26.11; source branches require artifact preparation"
+    || fail "--ref must name a release such as v0.26.12; source branches require artifact preparation"
 version=${REF#v}
 wheel="$REPO_URL/releases/download/$REF/basicly-$version-py3-none-any.whl"
 printf 'bootstrap: installing basicly@%s\n' "$REF"

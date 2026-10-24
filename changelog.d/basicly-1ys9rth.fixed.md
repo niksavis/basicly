@@ -1,1 +1,0 @@
-- Build shipped-file ownership hashes from committed published releases, so private local tags cannot overwrite consumer edits. Release preparation audits origin before refreshing the history and inventory.

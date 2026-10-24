@@ -1,1 +1,0 @@
-- Exercise the documented loss acknowledgment against a real fixture gap and verify that healthy history refuses without changes.

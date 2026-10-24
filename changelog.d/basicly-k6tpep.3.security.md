@@ -1,1 +1,0 @@
-- Refuse linked board destinations and existing linked parent components before writing pages or assets. Report each refusal, continue independent outputs, and publish accepted files through the shared atomic writer. This does not protect against concurrent parent-directory replacement.

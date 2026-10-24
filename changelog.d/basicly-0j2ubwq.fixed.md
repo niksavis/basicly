@@ -1,1 +1,0 @@
-- Allow audited withdrawal of prose field values while preserving structural fields. Refuse invalid audit reasons and duplicate target copies before changing the ledger.

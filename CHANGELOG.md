@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.26.12 - 2026-10-24
+
+Delta: v0.26.11..v0.26.12
+
 This release protects recorded history, comment fixes and exported files. Install checks now require their tools, and release ownership history matches published tags across checkouts (basicly-wyp2tln).
 
 - **Ledger integrity:** preserve event identifiers during scrub and field withdrawal. Refuse corrupt copies before writes, and keep historical loss explicit (basicly-jho04rg, basicly-npk7lw8, basicly-x5q5t56, basicly-0j2ubwq).
@@ -14,6 +18,42 @@ This release protects recorded history, comment fixes and exported files. Instal
 - **Installation and checks:** preserve tracker prefixes and require markdown tools unless the repository explicitly opts out (basicly-49vecmn, basicly-6ip8ao9).
 - **Release history:** derive packaged ownership hashes from canonical published tags across checkouts (basicly-1ys9rth).
 - **Repository defaults:** preserve the approved Codex defaults during cleanup and worktree setup (basicly-17b2q31).
+
+### Changed
+
+- Commit the approved repository Codex defaults and verify that cleanup, installation and fresh worktrees preserve them while clean-tree gates still reject uncommitted changes. (basicly-17b2q31)
+
+### Fixed
+
+- Allow audited withdrawal of prose field values while preserving structural fields. Refuse invalid audit reasons and duplicate target copies before changing the ledger. (basicly-0j2ubwq)
+
+- Build shipped-file ownership hashes from committed published releases, so private local tags cannot overwrite consumer edits. Release preparation audits origin before refreshing the history and inventory. (basicly-1ys9rth)
+
+- Refuse tracker prefix migration when Git ignores its destination, preserve the original configuration, and name the matching rule and negations needed before retrying installation. (basicly-49vecmn)
+
+- Keep marker-prefixed tool directives after prose when removing comments, including noqa, nosec, type ignores, coverage pragmas and formatter controls. Remove the prose prefix while preserving directive text and reasons. (basicly-5rx5pn9)
+
+- Refuse missing markdownlint or Node tools instead of passing an unchecked markdown gate, check prerequisites before install writes, and support an explicit reported configuration opt-out. (basicly-6ip8ao9)
+
+- Keep board asset output writing outside the renderer dependency graph while preserving linked-destination refusals and independent exports. (basicly-7f96zs4)
+
+- Preserve JSX and TSX element text during comment checks and fixes, including URLs, apostrophes and generic components. Keep TypeScript generic arrows as code, remove actual comments inside expressions, and refuse uncertain JSX without changing the file. (basicly-gcs3bu1)
+
+- Preserve conflicting ledger copies during compaction, report identical duplicates, validate every shard before scrubbing, and support an explicit history-bound acknowledgment of unrecoverable sequence loss. (basicly-jho04rg)
+
+- Preserve surviving event identifiers after withdrawal and scrubbing, keep withdrawal audits valid, and prevent later writes from reusing retired identifiers. (basicly-npk7lw8)
+
+- Document repository-owned Markdown inputs before the first commit, with a strict-rule scratch setup and a real-hook regression proving valid commits pass and invalid consumer Markdown is refused. (basicly-rj8kogk)
+
+- Exercise the documented loss acknowledgment against a real fixture gap and verify that healthy history refuses without changes. (basicly-ws0h4m5)
+
+- Validate every stored event copy before ledger scrubbing, so malformed sequence values and conflicting JSON types refuse without rewriting any file. (basicly-x5q5t56)
+
+### Security
+
+- Publish projected files through unpredictable temporary files created exclusively. Planted temporary links and collisions cannot overwrite their targets, and failed publication removes only the temporary file created by that write. (basicly-gc08fbk)
+
+- Refuse linked board destinations and existing linked parent components before writing pages or assets. Report each refusal, continue independent outputs, and publish accepted files through the shared atomic writer. This does not protect against concurrent parent-directory replacement. (basicly-k6tpep.3)
 
 ## v0.26.11 - 2026-10-20
 
