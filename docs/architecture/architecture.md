@@ -457,51 +457,32 @@ oversight.
 
 ## 9. Autonomy and integrity
 
-The system assigns two independent levels to a unit of work. Autonomy bounds what the
-engine may approve. Integrity bounds how much verification the change must pass.
-
-| Ladder | Question it answers | Set by | Values |
-| --- | --- | --- | --- |
-| Autonomy | How much may the engine approve while no human watches? | A human, at grant time | 4 |
-| Integrity | How far does a defect in this change reach? | A deterministic rule over declared paths | 3 |
-
-The two are independent. A typo fix in the tutorial, run under a grant that needs no
-human, is `docs-and-tests` integrity at `unattended` autonomy.
-
-Both scales once used the letter `L`. Autonomy ran `L0` to `L3` and integrity ran `L1`
-to `L3`, so a bare `L2` named neither one. Each level now has a name. The `Code today`
-column below carries the identifier the engine still writes.
+The user task request authorizes work within its declared scope. Normal phase transitions need no grant or additional approval.
+The engine still selects required verification from the paths a change affects.
 
 ### 9.1 Autonomy: how much the engine may approve alone
 
-| Name | Code today | The engine may approve | A human must still approve |
-| --- | --- | --- | --- |
-| `attended` | `L0` | nothing | classify, decompose, ship |
-| `assisted` | `L1` | decompose | classify, ship |
-| `supervised` | `L2` | classify, decompose | ship |
-| `unattended` | `L3` | classify, decompose, ship | a kill, at every level |
+The task prompt is the authorization. Classification, decomposition and completion proceed within that scope without another consent ceremony.
+The workflow does not issue a hidden grant or require a token ceiling to start.
 
-Source: `policy.GRANT_COVERAGE`.
+Readiness, verification, consumer validation, integration checks and genuine destructive-action confirmations remain enforced.
+A task prompt does not authorize unrelated destructive actions or override host permissions.
+If a fact or a new action exceeds the requested scope, ask the user for that missing decision.
 
-**Originating a proposal is one level stricter than approving one.** Only `supervised`
-and above may originate a work type or a child set. Source: `policy.PROPOSAL_COVERAGE`.
+An explicit user token limit is optional. Record it with `basicly policy budget <issue> --tokens N`.
+Without such a limit, report measured usage and forecasts without turning them into mandatory budgeting questions.
 
-**`attended` is the default.** A repository that configures nothing cannot run an
-unattended pass at all. Raising the ceiling is an edit to `basicly.toml`, so opting in
-leaves a diff.
-
-**The names describe how much a human watches.** They do not reuse a phase name, a
-command name or a gate name, because a level named `ship` and a phase named `ship` would
-be one word with two meanings. Four rejected name sets are in
-[D-31](#d-31--the-two-ladders-are-named-not-lettered).
+Old autonomy levels, grant markers and confirm-code records remain readable as history.
+Their presence does not add a new permission question when authorized work resumes.
+The earlier permission ladder is recorded in [D-31](#d-31--the-two-ladders-are-named-not-lettered).
 
 ### 9.2 Integrity: how far a defect reaches
 
 | Name | Code today | Paths it claims | Verify mode | Extra gates | Model tier | Rework | Ship |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `docs-and-tests` | `L1` | documentation, tests, the site, changelog fragments, every `.md` file | fast | — | medium | 1 | may be delegated |
-| `engine` | `L2` | engine code, the scripts, and every path no clause claims | full | — | high | 2 | may be delegated |
-| `consumer-surface` | `L3` | the five frozen consumer surfaces | full | validate-as-consumer, evidence-binding | maximum | 2 | human only |
+| `docs-and-tests` | `L1` | documentation, tests, the site, changelog fragments, every `.md` file | fast | — | medium | 1 | task-authorized |
+| `engine` | `L2` | engine code, the scripts, and every path no clause claims | full | — | high | 2 | task-authorized |
+| `consumer-surface` | `L3` | the five frozen consumer surfaces | full | validate-as-consumer, evidence-binding | maximum | 2 | task-authorized after required gates |
 
 Sources: `integrity.LEVELS`, `integrity._RULES`, `integrity._SELECTIONS`.
 
@@ -514,10 +495,8 @@ read here are the same word.
 repository. An `engine` defect changes how the tool behaves. A `consumer-surface` defect
 breaks something a consumer's own code or configuration is pinned to.
 
-**The engine still writes `L0` to `L3`** in the classification marker, in the plan
-gate's vocabulary check, in `basicly.toml` and in every `--autonomy` flag value. Those
-spellings are a frozen consumer surface, so a rename needs a deprecation window. The
-rename is filed as basicly-3iaw0x.
+The `L1` to `L3` identifiers in classification history describe internal risk, not permission levels the user must choose.
+Required checks derive from scope. Historical plan fields and flags remain compatibility data.
 
 [36.5](#365-integrity-assignment) covers the rule that assigns a level and how much of
 the assignment anything reads back.
@@ -696,9 +675,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | size | cap | headroom | lines | line cap |
 | --- | --- | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 11636 characters | 12000 | 364 | 182 | 200 |
-| `AGENTS.md` (codex) | 14515 bytes | 24576 | 10061 | 230 | 320 |
-| `.github/copilot-instructions.md` (copilot) | 11728 characters | 12000 | 272 | 183 | 200 |
+| `.claude/CLAUDE.md` (claude) | 11801 characters | 12000 | 199 | 184 | 200 |
+| `AGENTS.md` (codex) | 14680 bytes | 24576 | 9896 | 232 | 320 |
+| `.github/copilot-instructions.md` (copilot) | 11893 characters | 12000 | 107 | 185 | 200 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -1478,9 +1457,8 @@ repository, **catalog** for an author of catalog sources, and **harness** for th
 loop in either repository.
 
 **Two properties of the harness surface are decisions.** First, every fully deterministic
-step is reachable as **one command** an agent triggers and waits on. Second, a command
-that changes the world irreversibly stops for a human even when a grant is live. Three
-commands do that. They publish a release, kill a lane and approve a ship.
+step is reachable as **one command** an agent triggers and waits on. Second, genuine destructive actions retain their explicit safety checks.
+The user request authorizes normal task completion and a specifically requested release; neither needs a separate permission ladder.
 
 **The release command regenerates in a fresh interpreter, with the target repository
 forced onto the import path.** The command-line entry point binds the version at import,
@@ -1533,7 +1511,7 @@ Two kinds of transition exist. A reader who confuses them misreads the whole mac
 | Marker | Who decides | What it takes to pass |
 | --- | --- | --- |
 | GATE | engine code | a computed verdict. The engine refuses on a red one |
-| checkpoint | a human, or a covering autonomy grant | an approval marker exists. Nothing is computed |
+| checkpoint | the engine, within the user-requested task | the phase authorization is recorded; required gates still must pass |
 
 ```mermaid
 stateDiagram-v2
@@ -2012,6 +1990,9 @@ the tracker for children of the root that carry a worktree binding.
 
 ### 28.2 Admission: five conditions and six gates
 
+The user task request authorizes the selected lanes. Missing grants and unspecified token budgets do not block admission.
+The diagram below retains the former grant-dependent admission model for historical context; current spend admission honors explicit limits only.
+
 **Five conditions must all hold before a lane is even a candidate.**
 
 1. It is live and dispatchable.
@@ -2048,8 +2029,7 @@ flowchart LR
   class g1,g2,g3,g4,g5,g6,spawn,hold shipped
 ```
 
-**Each worker re-reads the spend status.** A lane that waited in the pool queue can find the
-grant exhausted by the time it starts.
+**Each worker re-reads explicit spending limits.** A lane that waited in the pool queue can find a user-set limit exhausted.
 
 **Nothing interrupts a running dispatch.** A pool shutdown cancels only the lanes that have
 not started.
@@ -2060,12 +2040,8 @@ bounds how much finished work waits for review. A pass can exhaust the downstrea
 stay well inside the concurrency cap. A lower downstream limit makes review the binding
 constraint, instead of slots or tokens.
 
-**Gate 3 asks for a budget, not for delegation coverage.** It refuses a pass whose configured
-runner meters spend while the session's grant carries no token budget, because both halves of
-the spend ceiling are keyed on that budget and with none there is no bound at all. Whether the
-grant's *level* delegates a given decision is asked at checkpoint approval and at decider
-delegation, never here. Sources: `supervise.metered_without_a_budget` against
-`policy.GRANT_COVERAGE` [verified 2026-08-31].
+The former mandatory metered-runner budget condition has been removed. A runner may start without an invented spending limit.
+If the user explicitly sets a limit, exhausted or unmeasurable spend remains a named refusal.
 
 **Gate 4 counts work that already stands downstream, not the pass's own admissions.** Below
 the limit, every ready lane is admitted and the concurrency cap decides how many run at
@@ -2085,12 +2061,12 @@ Sources: `decision_marker.KINDS`, `supervise.DELEGABLE_KINDS`, and the filter at
 | --- | --- | --- |
 | `needs-input` — a missing fact | **yes** | the intake corpus can answer a fact question |
 | `escalation` — a rework escalation | **yes** | triage of a rework escalation is the decider's stated job |
-| `checkpoint` | no | the delegable-checkpoint path is the grant approval itself, and it already ran and refused before the item was enqueued. Answering the item would clear the hold without the checkpoint ever being approved |
+| `checkpoint` | no | normal phase authorization comes from the task request; legacy queued checkpoints are reconciled without replacing required gate results |
 | `validate` | no | a judged NO re-judged by another agent is the consensus-voting shape this design rejects by name. A human decides an unmet acceptance criterion |
 | `stall` | no | a hard-killed runner is an operational fact about a process, not a question a corpus can answer |
 
-Delegation needs two further conditions. The grant must sit at `supervised` or above, and
-the budget must not be spent. The decider runs serially, in a confined runner. **The engine
+Delegation stays inside the requested session scope and honors an explicit spending limit. No autonomy grant is required.
+The decider runs serially, in a confined runner. **The engine
 does not dispatch an agent family it cannot confine.** A hard cap bounds delegated
 decisions, and the engine re-checks that cap inside the queue lock before it records each
 one.
@@ -2406,6 +2382,10 @@ That is the price of reaching all three families.
 
 ### 31.1 The grant lifecycle
 
+This subsection documents historical grant records and their compatibility reader. It is not the current task authorization procedure.
+Normal work uses the task request. Optional token limits use `basicly policy budget <issue> --tokens N`; `--clear` removes a withdrawn limit.
+The old records below remain append-only and readable without creating a replacement grant.
+
 **An autonomy grant is a marker on the session's root issue.** It records a level. Above
 `assisted` it also records a token budget, a spend baseline and an unmetered count.
 
@@ -2522,9 +2502,8 @@ characters long. At face value that estimate *bought* budget.
 engine **halts** a session that took a dispatch its adapter could not meter, and it surfaces
 the reason. The remaining budget then reads zero, because what is left is unknown rather
 than free. The engine baselines the count of unmeterable dispatches on the grant marker,
-exactly as it baselines spend. A new grant clears the halt, and a new grant means a human
-saw the reason and accepted it. Any adapter with no usage format inherits the refusal
-instead of a silent under-count.
+exactly as it baselines spend. When an explicit user limit cannot be measured, further dispatch stops until the user changes that limit or reliable usage becomes available.
+Without an explicit limit, missing metering is reported as unknown rather than becoming a mandatory budget question.
 
 ### 31.4 Tuning: the parameters in force, held against the outcomes
 
@@ -3961,9 +3940,9 @@ surface them one dispatch at a time.
 | --- | --- |
 | an empty plan | — |
 | a duplicated child title | the graph is title-keyed |
-| a child missing acceptance criteria, a scope, a dependency declaration, a token budget or an integrity level | five separate fields, each required |
-| an integrity level outside the vocabulary | — |
-| a non-positive token budget | — |
+| a child missing acceptance criteria, a scope or a dependency declaration | required planning fields |
+| a supplied historical integrity value outside the vocabulary | optional metadata still validates when supplied |
+| a supplied non-positive token budget | optional explicit limits still validate when supplied |
 | a dependency naming a title the plan does not contain | — |
 | any cycle in the declared graph | — |
 
@@ -3971,8 +3950,7 @@ surface them one dispatch at a time.
 is a statement. Omitting the field is not.
 
 **A second, narrower gate re-reads the plan at entry to BUILD.** `plan_entry` reads the
-recorded body and refuses the dispatch when the plan section is missing one of the five
-fields. It sits there because inspection belongs before the expensive stage, and BUILD is
+recorded body and refuses the dispatch when required plan fields are missing. Spending limits and historical integrity metadata are optional. It sits there because inspection belongs before the expensive stage, and BUILD is
 where nearly all the tokens go. Three things separate it from the plan gate above, and
 each is deliberate. It
 ratchets on the `## Plan` heading, so a body written before the gate existed is admitted

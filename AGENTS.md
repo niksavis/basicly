@@ -92,9 +92,11 @@ IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a 
 ## Harness Loop
 
 - If an agent hook reports a missing Lefthook runtime after a clone, run the repository's pinned basicly command with `hooks-build --runtime-only`, then `hooks-check`, and retry. In a basicly source checkout, use `uv run basicly`. Keep the hooks enabled.
-- Start a session with `basicly session start`. End it with a note tagged `[session handover <date>]` on the root record.
+- Start with `basicly session start`. Leave a final `[session handover <date>]` note on the root record.
 - The tracker ledger is the source of truth for the work.
-- Drive non-trivial work through the harness loop. The `harness-loop` skill describes the phases, the commands and the checkpoints.
+- The user task request authorizes its scope. Do not request an L-level grant or mandatory token budget.
+- Keep verification gates and destructive-action protections enabled. Honor limits the user explicitly sets.
+- Use `basicly loop` for non-trivial work. The `harness-loop` skill describes its phases and gates.
 
 ## Quality Gate
 

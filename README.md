@@ -276,7 +276,7 @@ Task-focused guides for the recurring operations:
 | [Wire up the verify gate](docs/how-to/wire-up-the-verify-gate.md) | declare your checks; an empty gate passes vacuously |
 | [Unblock a commit a hook refused](docs/how-to/unblock-a-commit.md) | the refusals you will actually meet, and the one-line fixes |
 | [Upgrade, check drift, uninstall](docs/how-to/upgrade-and-check-drift.md) | re-running install *is* the upgrade |
-| [Run several lanes in parallel](docs/how-to/run-parallel-lanes.md) | decompose, preflight, grants, the serial merge queue |
+| [Run several lanes in parallel](docs/how-to/run-parallel-lanes.md) | decompose, preflight, optional spending limits, the serial merge queue |
 | [Resume or hand over a track](docs/how-to/resume-a-track.md) | after a crash, or onto a different agent family |
 | [Trial the tracker beside br](docs/how-to/trial-the-tracker-beside-br.md) | before you retire br, with br as the source of truth |
 
@@ -322,7 +322,7 @@ capability sits under the pillar it belongs to, grouped by what it currently is:
 | --- | --- | --- | --- |
 | **01 · guidance** | one catalog → 3 agent families<br>drift gate in CI<br>path-scoped rules tier<br>invocation axis per entry<br>model tiers · committed model map<br>lexical routing evals · rank-1 floor<br>tutorial and how-to layer | an eval case per entry<br>always-on baseline relief | `?` do entries change behaviour |
 | **02 · gates** | git hooks · commit · push<br>agent hooks · Claude · Copilot<br>verify pipeline · 3 modes<br>severity on judged output<br>rework convergence check | gate taxonomy by type<br>install reports its tier | `◇` enforcement at the tool-call boundary<br>`◇` a plan gate that runs its demonstration |
-| **03 · the loop** | single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>autonomy grants · spend cap<br>release automation<br>scope sized by what a lane reads<br>measured context per dispatch<br>a named role per judgment step | per-model spend forecast<br>unattended multi-lane run | `◇` the judged-output contract<br>`?` cost per landed package<br>`?` deterministic AST localisation |
+| **03 · the loop** | single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>task authorization · optional spend cap<br>release automation<br>scope sized by what a lane reads<br>measured context per dispatch<br>a named role per judgment step | per-model spend forecast<br>unattended multi-lane run | `◇` the judged-output contract<br>`?` cost per landed package<br>`?` deterministic AST localisation |
 | **04 · the work graph** | issues · deps · gates<br>phase derived from state<br>atomic shared-export publish<br>dispatch score and rank recorded | owned in-process event log | `◐` provenance on every edge<br>`◐` fsck and rebuild |
 
 Some things are **not planned**, so absence here is not an oversight: an LLM

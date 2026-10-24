@@ -4,7 +4,7 @@ This is a walkthrough, not a reference. Follow it top to bottom on a **scratch
 git repo** and you will end with one unit of work filed, built in its own
 worktree, merged, and closed by the harness — one sitting, no agent spend.
 Every command and quoted output below was checked against a fresh repo using
-basicly 0.26.12 in a real terminal. Bead ids, commit hashes and paths are normalized
+basicly 0.26.12 from a development checkout in a non-interactive shell. Bead ids, commit hashes and paths are normalized
 for readability. `...` marks omitted output.
 
 When you want to look something up rather than learn the shape, stop here and
@@ -342,12 +342,11 @@ a `task` (or `bug`/`chore`) builds directly, a `feature` stops and demands a
 child plan. Classify by shape, not ambition — one coherent change is a `task`.
 
 `--runner manual` means **you** write the code in the worktree. Leave it off and
-the harness dispatches a headless coding agent instead, which meters spend and
-needs an autonomy grant; see
+the harness dispatches a headless coding agent instead. The task request authorizes
+normal phases without another grant or mandatory token budget; see
 [run several lanes in parallel](../how-to/run-parallel-lanes.md).
 
-The command reaches a human checkpoint — **classify** — and your terminal is what
-answers it:
+The command classifies the task and provisions its worktree without asking for another approval:
 
 ```text
 override: runner.default=manual
@@ -358,17 +357,13 @@ Created worktree 'myrepo-2i3r'
   node_modules: copied from myrepo (identical package-lock.json)
   hooks: post-merge, pre-commit, commit-msg, pre-push — repository-local Lefthook hooks installed
   ...
-[blocked] intake -> intake: recorded work type 'task'; classify checkpoint awaiting approval
-checkpoint classify: APPROVED (myrepo-2i3r)
+[classified] intake -> classify: recorded work type 'task'
 [blocked] classify -> classify: worktree 'myrepo-2i3r' provisioned; awaiting the agent's work
 ```
 
-A checkpoint is a *human* decision, and running the command yourself at a terminal **is**
-the human. Drive the loop from something with no terminal — a script, a CI job, a coding
-agent's tool call — and this command stops instead, printing a one-time code to echo back
-on the whole reprinted command; that relay is
-[resume or hand over a track](../how-to/resume-a-track.md)'s table, and on this page it
-never appears.
+The task request already authorizes work within its scope. The same command works
+without a terminal, grant, mandatory token budget or phase confirmation code.
+Required readiness and verification gates still apply.
 
 The exit code here is `1` and nothing failed: `loop run` exits non-zero at *every* phase
 boundary it stops on. Read the last line, not `$?`.
@@ -417,24 +412,22 @@ the worktree is not the shared one.
 override: runner.default=manual
   ...
 Cleaned up worktree 'myrepo-2i3r' (worktree + branch + metadata).
-[merged] build -> verify: merged harness/myrepo-2i3r @ b8d7b80790cd (1 commit(s)) into main @ 8b65704; landing 0.9s (tracker-commit 0.6s, merge 0.2s)
-[blocked] verify -> verify: ship checkpoint awaiting human approval
-checkpoint ship: APPROVED (myrepo-2i3r)
+[merged] build -> verify: merged harness/myrepo-2i3r @ b8d7b80790cd (1 commit(s)) into main @ 8b65704; landing 1.0s (tracker-commit 0.7s, merge 0.3s)
+[shipped] verify -> ship: ship checkpoint satisfied
 [tore-down] ship -> done: worktree torn down and issue closed; cost rollup recorded; the curator bound no claims; tracker state committed
 ```
 
 One command rebased the branch, ran the verify gate, recorded the result on the bead,
-merged, took your terminal as the **ship** approval, tore the worktree down and closed the
+merged, completed the authorized ship step, tore the worktree down and closed the
 bead. This one exits `0`, because it reached `done` rather than stopping.
 
 Do not read the transcript top to bottom as the order things happened in: the `[...]` and
-`checkpoint` lines print together at the end, after the work they describe, which is why
+phase lines print together at the end, after the work they describe, which is why
 the cleanup line sits above the `[merged]` line that preceded it.
 
-Those two decisions arrived together because one command made both. There is no
-un-approve, and a ship approved with the work *unmerged* wedges the bead with its commits
-stranded — so the `[merged]` line above the approval is the thing to check, and off a
-terminal the one-time code is what forces you to check it before relaying.
+The `[merged]` line proves that the branch landed before cleanup and closure.
+The task request covers those normal transitions. A failed required gate still blocks them.
+The remaining `checkpoint` names in status output are compatibility records, not another consent request.
 
 Your verify gate passed vacuously here: a fresh `basicly.toml` declares no
 checks, so there was nothing to run. Before you use this on a real repo, wire
@@ -449,8 +442,8 @@ git log --oneline -6
 ```text
 58ba56c chore(tracker): close the shipped track (myrepo-2i3r)
 8b65704 chore(worktree): merge a harness worktree back to its base
-5d37092 chore(tracker): sync tracker state for the harness loop (myrepo-2i3r)
 b8d7b80 docs: add a getting started note (myrepo-2i3r)
+5d37092 chore(tracker): sync tracker state for the harness loop (myrepo-2i3r)
 35284db chore(tracker): record the claim before provisioning (myrepo-2i3r)
 e1e08ac chore: install basicly (myrepo-2i3r)
 ```
@@ -476,9 +469,9 @@ checkpoints: classify, ship
 rework:      verify=0
 ```
 
-Two human decisions (classify, ship), one automated gate (verify), one merge.
-That is the whole loop; a hundred-file feature runs the same shape with a
-decompose step in the middle.
+The user task request authorized the normal phases. The verify gate and merge still ran.
+No L-level grant, mandatory budget or repeated phase approval was needed. A larger feature
+uses the same workflow with a decomposition step in the middle.
 
 ## Where to go next
 

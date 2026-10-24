@@ -682,31 +682,32 @@ def _pin_code(monkeypatch: pytest.MonkeyPatch, code: str, now: float = 1000.0) -
 def test_guarded_approve_interactive_records_directly(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    fake = _FakeBr()
+    fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=True)
     assert result.status == "approved"
     assert policy.checkpoint_approved(tmp_path, "i", "ship")
 
 
-def test_guarded_approve_non_interactive_challenges_without_recording(
+def test_guarded_approve_non_interactive_records_the_task_request(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    fake = _FakeBr()
+    fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     _pin_code(monkeypatch, "deadbeef")
     result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
-    assert result.status == "challenge" and result.code == "deadbeef"
-    assert not policy.checkpoint_approved(tmp_path, "i", "ship")
+    assert result.status == "approved" and result.code is None
+    assert policy.checkpoint_approved(tmp_path, "i", "ship")
+    assert policy.active_grant(tmp_path, "i") is None
 
 
 def test_guarded_approve_valid_confirm_records(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    fake = _FakeBr()
+    fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     _pin_code(monkeypatch, "abc123")
-    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    policy._issue_confirm_code(tmp_path, "i", "ship")
     ok = policy.approve_checkpoint_guarded(
         tmp_path, "i", "ship", interactive=False, confirm="abc123"
     )
@@ -733,11 +734,11 @@ def test_a_confirm_code_approval_settles_the_queued_checkpoint_ask(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
-    fake = _FakeBr()
+    fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     _pin_code(monkeypatch, "abc123")
     item = _queued_ship_ask(tmp_path)
-    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    policy._issue_confirm_code(tmp_path, "i", "ship")
 
     ok = policy.approve_checkpoint_guarded(
         tmp_path, "i", "ship", interactive=False, confirm="abc123"
@@ -746,23 +747,22 @@ def test_a_confirm_code_approval_settles_the_queued_checkpoint_ask(
     assert ok.status == "approved"
     settled = decisions.get(tmp_path, item.decision_id)
     assert settled is not None and not settled.pending, "the ask must not outlive its approval"
-    assert settled.answered_by == policy.HUMAN_BY, "a relayed code is a human's decision"
+    assert settled.answered_by == "task-request"
 
 
 def test_a_settled_ask_closes_its_wait_interval_exactly_once(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
-    fake = _FakeBr()
+    fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     _pin_code(monkeypatch, "abc123")
     item = _queued_ship_ask(tmp_path)
     policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
-    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False, confirm="abc123")
 
     again = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=True)
 
-    assert again.detail == "already approved"
+    assert again.detail == "already recorded"
     closes = _decision_waits(tmp_path, "i", item.decision_id)
     assert len(closes) == 1, f"the ask's interval closed {len(closes)} times, not once"
 
@@ -771,14 +771,14 @@ def test_an_already_approved_checkpoint_settles_a_stale_ask_as_the_engine(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
-    fake = _FakeBr()
+    fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     policy.approve_checkpoint(tmp_path, "i", "ship")
     item = _queued_ship_ask(tmp_path)
 
     result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
 
-    assert result.detail == "already approved"
+    assert result.detail == "already recorded"
     settled = decisions.get(tmp_path, item.decision_id)
     assert settled is not None and not settled.pending
     assert settled.answered_by == decisions.ENGINE_BY
@@ -788,7 +788,7 @@ def test_a_pending_ask_for_another_checkpoint_survives_this_approval(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
-    fake = _FakeBr()
+    fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     classify_ask = decisions.enqueue(
         tmp_path, "i", "checkpoint", "approve the classify checkpoint for i"
@@ -809,7 +809,7 @@ def test_guarded_approve_wrong_code_rejected(
     fake = _FakeBr()
     _install(monkeypatch, fake)
     _pin_code(monkeypatch, "abc123")
-    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    policy._issue_confirm_code(tmp_path, "i", "ship")
     bad = policy.approve_checkpoint_guarded(
         tmp_path, "i", "ship", interactive=False, confirm="nope"
     )
@@ -824,7 +824,7 @@ def test_guarded_approve_expired_code_rejected(
     _install(monkeypatch, fake)
     monkeypatch.setattr(policy, "_new_code", lambda: "abc123")
     monkeypatch.setattr(policy, "_now", lambda: 1000.0)
-    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    policy._issue_confirm_code(tmp_path, "i", "ship")
     monkeypatch.setattr(policy, "_now", lambda: 1000.0 + policy.CONFIRM_TTL_SECONDS + 1)
     stale = policy.approve_checkpoint_guarded(
         tmp_path, "i", "ship", interactive=False, confirm="abc123"
@@ -833,14 +833,15 @@ def test_guarded_approve_expired_code_rejected(
     assert not policy.checkpoint_approved(tmp_path, "i", "ship")
 
 
-def test_guarded_approve_already_approved_short_circuits(
+def test_guarded_approve_already_recorded_still_checks_required_gates(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake = _FakeBr()
     _install(monkeypatch, fake)
     policy.approve_checkpoint(tmp_path, "i", "ship")
     result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
-    assert result.status == "approved"
+    assert result.status == "rejected"
+    assert "verify" in result.detail
 
 
 def test_guarded_approve_unknown_checkpoint_rejected(
@@ -925,27 +926,31 @@ def test_parse_grant_skips_malformed_markers(
     assert policy.active_grant(tmp_path, "root") is None
 
 
-def test_issue_grant_interactive_records_the_marker(
+def test_legacy_grant_command_records_only_an_explicit_limit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake = _FakeBr()
     _install(monkeypatch, fake)
     result = policy.issue_grant_guarded(tmp_path, "root", "L2", 50_000, L3_CONFIG, interactive=True)
-    assert result.status == "approved"
-    assert policy.active_grant(tmp_path, "root") == policy.Grant(level="L2", token_budget=50_000)
+    assert result.status == "approved" and result.code is None
+    assert policy.active_grant(tmp_path, "root") is None
+    limit = policy.active_token_limit(tmp_path, "root")
+    assert limit is not None and limit.token_budget == 50_000
+    assert not any("grant level=" in text for text in fake.comments)
 
 
-def test_issue_grant_refuses_above_the_autonomy_ceiling(
+def test_old_autonomy_ceiling_does_not_restrict_task_authorization(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _install(monkeypatch, _FakeBr())
-    l0 = PolicyConfig(required_gates=("verify",), max_rework=2)
-    result = policy.issue_grant_guarded(tmp_path, "root", "L1", None, l0, interactive=True)
-    assert result.status == "rejected"
-    assert "autonomy ceiling" in result.detail
+    config = PolicyConfig(required_gates=("verify",), max_rework=2)
+    result = policy.issue_grant_guarded(tmp_path, "root", "L1", None, config, interactive=True)
+    assert result.status == "approved"
+    assert policy.active_grant(tmp_path, "root") is None
+    assert policy.active_token_limit(tmp_path, "root") is None
 
 
-def test_issue_grant_refuses_l2_plus_without_token_budget(
+def test_no_old_level_requires_an_invented_token_budget(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _install(monkeypatch, _FakeBr())
@@ -953,46 +958,42 @@ def test_issue_grant_refuses_l2_plus_without_token_budget(
         result = policy.issue_grant_guarded(
             tmp_path, "root", level, None, L3_CONFIG, interactive=True
         )
-        assert result.status == "rejected"
-        assert "token_budget" in result.detail
+        assert result.status == "approved" and result.code is None
+        assert policy.active_token_limit(tmp_path, "root") is None
+        assert policy.active_grant(tmp_path, "root") is None
 
 
-def test_issue_grant_non_interactive_needs_a_relayed_code(
+def test_legacy_grant_invocation_does_not_create_a_reconfirmation_ceremony(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake = _FakeBr()
     _install(monkeypatch, fake)
-    _pin_code(monkeypatch, "cafe0123")
-    first = policy.issue_grant_guarded(tmp_path, "root", "L1", None, L3_CONFIG, interactive=False)
-    assert first.status == "challenge" and first.code == "cafe0123"
+    monkeypatch.setattr(policy, "_new_code", lambda: pytest.fail("no grant challenge is needed"))
+    result = policy.issue_grant_guarded(tmp_path, "root", "L1", None, L3_CONFIG, interactive=False)
+    assert result.status == "approved" and result.code is None
     assert policy.active_grant(tmp_path, "root") is None
-
-    second = policy.issue_grant_guarded(
-        tmp_path, "root", "L1", None, L3_CONFIG, interactive=False, confirm="cafe0123"
-    )
-    assert second.status == "approved"
-    assert policy.active_grant(tmp_path, "root") == policy.Grant(level="L1", token_budget=None)
+    assert policy.active_token_limit(tmp_path, "root") is None
 
 
-def test_grant_delegates_only_covered_checkpoints(
+def test_old_grant_levels_do_not_restrict_task_authorized_phases(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    fake = _FakeBr()
+    fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     fake.comments.append("[harness-policy] grant level=L2 budget=100000")
 
     for name in ("classify", "decompose"):
         result = policy.approve_checkpoint_guarded(tmp_path, "i", name, interactive=False)
         assert result.status == "approved"
-        assert "delegated under L2 grant" in result.detail
+        assert "task request" in result.detail
         assert policy.checkpoint_approved(tmp_path, "i", name)
 
     result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
-    assert result.status == "challenge"
-    assert not policy.checkpoint_approved(tmp_path, "i", "ship")
+    assert result.status == "approved"
+    assert policy.checkpoint_approved(tmp_path, "i", "ship")
 
 
-def test_a_grant_that_approves_the_checkpoint_may_not_originate_the_proposal(
+def test_an_old_low_level_grant_does_not_block_a_task_proposal(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -1004,29 +1005,33 @@ def test_a_grant_that_approves_the_checkpoint_may_not_originate_the_proposal(
     proposal = policy.proposal_delegated(tmp_path, "i", "children", "i")
 
     assert approval.status == "approved"
-    assert not proposal.allowed
-    assert "approves the checkpoint but does not originate" in proposal.reason
+    assert proposal.allowed
+    assert not proposal.reason
 
 
-def test_l2_originates_both_proposals(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_a_task_request_originates_both_proposals(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     fake = _FakeBr()
     _install(monkeypatch, fake)
     fake.comments.append("[harness-policy] grant level=L2 budget=100000")
 
     for kind in ("work_type", "children"):
         verdict = policy.proposal_delegated(tmp_path, "i", kind, "i")
-        assert verdict.allowed and verdict.level == "L2"
+        assert verdict.allowed and verdict.level == "task request"
 
 
-def test_no_grant_originates_nothing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_a_proposal_outside_the_requested_task_is_refused_without_a_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _install(monkeypatch, _FakeBr())
 
     verdict = policy.proposal_delegated(tmp_path, "i", "work_type", "root")
 
-    assert not verdict.allowed and "no active grant on root" in verdict.reason
+    assert not verdict.allowed and "outside requested task root" in verdict.reason
 
 
-def test_a_spend_halted_grant_still_originates_a_proposal(
+def test_an_explicit_spent_legacy_budget_stops_a_new_proposal(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -1040,8 +1045,8 @@ def test_a_spend_halted_grant_still_originates_a_proposal(
 
     verdict = policy.proposal_delegated(tmp_path, "root", "children", "root")
 
-    assert verdict.allowed, "a spent budget no longer stops a proposal being originated"
-    assert verdict.level == "L2", "and it is still attributed to the grant that allowed it"
+    assert not verdict.allowed
+    assert "150/100 tokens" in verdict.reason
 
 
 def test_a_grant_originates_nothing_outside_its_own_session(
@@ -1054,7 +1059,7 @@ def test_a_grant_originates_nothing_outside_its_own_session(
     verdict = policy.proposal_delegated(tmp_path, "stranger", "children", "root")
 
     assert not verdict.allowed
-    assert "not in that session's issue tree" in verdict.reason
+    assert "outside requested task root" in verdict.reason
 
 
 def test_an_unknown_proposal_kind_is_loud(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -1064,7 +1069,7 @@ def test_an_unknown_proposal_kind_is_loud(monkeypatch: pytest.MonkeyPatch, tmp_p
         policy.proposal_delegated(tmp_path, "i", "work-type", "i")
 
 
-def test_a_spent_budget_still_approves_a_checkpoint_its_level_covers(
+def test_an_explicit_spent_budget_refuses_the_next_task_checkpoint(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -1080,8 +1085,8 @@ def test_a_spent_budget_still_approves_a_checkpoint_its_level_covers(
     result = policy.approve_checkpoint_guarded(
         tmp_path, "root", "classify", interactive=False, grant_root="root"
     )
-    assert result.status == "approved", "a spent budget returned the checkpoint to a human"
-    assert policy.checkpoint_approved(tmp_path, "root", "classify")
+    assert result.status == "rejected"
+    assert not policy.checkpoint_approved(tmp_path, "root", "classify")
     assert "150/100 tokens" in result.detail, "and the figure is reported rather than dropped"
 
 
@@ -1118,7 +1123,7 @@ def test_spend_status_is_the_one_halt_predicate(
     at_budget = policy.spend_status(tmp_path, "root")
     assert (at_budget.spent_tokens, at_budget.halted) == (100, True)
     assert "100/100 tokens" in at_budget.detail
-    assert "until re-granted" in at_budget.detail
+    assert "until the limit is changed" in at_budget.detail
 
 
 def test_spend_status_without_a_budget_is_never_halted(
@@ -1140,8 +1145,9 @@ def test_spend_status_without_a_budget_is_never_halted(
 
     fake.comments.append("[harness-policy] grant level=L1")
     unbudgeted = policy.spend_status(tmp_path, "root")
-    assert unbudgeted.grant is not None
-    assert (unbudgeted.grant.level, unbudgeted.halted) == ("L1", False)
+    assert unbudgeted.grant is None
+    assert policy.active_grant(tmp_path, "root") is not None
+    assert not unbudgeted.halted
 
 
 def test_session_spend_sums_the_children_too(
@@ -1221,10 +1227,10 @@ def test_l3_ship_delegates_only_when_preconditions_hold(
 
     result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
     assert result.status == "approved"
-    assert "delegated under L3 grant" in result.detail
+    assert "task request" in result.detail
 
 
-def test_a_grant_delegated_ship_settles_the_ask_attributed_to_the_grant(
+def test_a_task_authorized_ship_settles_the_ask_attributed_to_the_task(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -1238,7 +1244,7 @@ def test_a_grant_delegated_ship_settles_the_ask_attributed_to_the_grant(
     assert result.status == "approved"
     settled = decisions.get(tmp_path, item.decision_id)
     assert settled is not None and not settled.pending
-    assert settled.answered_by == "grant:L3"
+    assert settled.answered_by == "task-request"
 
 
 def test_l3_ship_refuses_on_any_wrinkle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -1247,20 +1253,20 @@ def test_l3_ship_refuses_on_any_wrinkle(monkeypatch: pytest.MonkeyPatch, tmp_pat
     fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
     policy.record_needs_input(tmp_path, "root", "which API version")
     result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
-    assert result.status == "challenge"
+    assert result.status == "rejected"
 
     fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
     fake.comments += ["[harness-policy] rework gate=verify"] * 2
     result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
-    assert result.status == "challenge"
+    assert result.status == "rejected"
 
     fake = _FakeBr(gates=[])
     _install(monkeypatch, fake)
     fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
     result = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
-    assert result.status == "challenge"
+    assert result.status == "rejected"
 
 
 def _open_epic_with_green_child(**gates: object) -> _FakeBr:
@@ -1286,7 +1292,7 @@ def test_l3_delegates_a_green_childs_ship_while_the_root_is_open(
     )
 
     assert result.status == "approved"
-    assert "delegated under L3 grant" in result.detail
+    assert "task request" in result.detail
     assert policy.checkpoint_approved(tmp_path, "root.1", "ship")
 
 
@@ -1304,7 +1310,7 @@ def test_l3_still_refuses_a_child_whose_own_gates_are_not_green(
         tmp_path, "root.1", "ship", interactive=False, grant_root="root"
     )
 
-    assert result.status == "challenge"
+    assert result.status == "rejected"
     assert not policy.checkpoint_approved(tmp_path, "root.1", "ship")
 
 
@@ -1320,7 +1326,7 @@ def test_l3_child_ship_still_refuses_on_a_session_wide_wrinkle(
         tmp_path, "root.1", "ship", interactive=False, grant_root="root"
     )
 
-    assert result.status == "challenge"
+    assert result.status == "rejected"
 
 
 class _PerIssueBr(_FakeBr):
@@ -1370,11 +1376,9 @@ def test_a_declined_child_ship_names_the_precondition_and_its_sibling_bead(
         tmp_path, "root.1", "ship", interactive=False, grant_root="root"
     )
 
-    assert result.status == "challenge"
-    assert "the active L3 grant covers ship but declined it" in result.detail
-    assert "lights-out preconditions across session root" in result.detail
+    assert result.status == "rejected"
     assert "rework escalation on root.2 (gate verify: 2/2)" in result.detail
-    assert result.code
+    assert result.code is None
     assert not policy.checkpoint_approved(tmp_path, "root.1", "ship")
 
 
@@ -1462,7 +1466,7 @@ def test_an_answered_wrinkle_lets_the_grant_delegate_the_child_ship(
     )
 
     assert result.status == "approved"
-    assert result.detail == "delegated under L3 grant"
+    assert result.detail == "authorized by task request"
     assert policy.checkpoint_approved(tmp_path, "root.1", "ship")
 
 
@@ -1489,22 +1493,22 @@ def test_a_closed_siblings_escalation_lets_the_grant_delegate_the_child_ship(
     )
 
     assert result.status == "approved"
-    assert result.detail == "delegated under L3 grant"
+    assert result.detail == "authorized by task request"
     assert policy.checkpoint_approved(tmp_path, "root.1", "ship")
 
 
-def test_a_challenge_with_no_grant_carries_no_reason(
+def test_task_authorized_ship_names_its_missing_verification(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _install(monkeypatch, _FakeBr(gates=_VERIFY_GREEN))
+    _install(monkeypatch, _FakeBr(gates=[]))
 
     result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
 
-    assert result.status == "challenge"
-    assert result.detail == ""
+    assert result.status == "rejected"
+    assert "verify" in result.detail
 
 
-def test_a_spend_halted_grant_says_so_on_the_approval(
+def test_an_explicit_spent_legacy_budget_refuses_the_phase(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake = _FakeBr()
@@ -1522,12 +1526,12 @@ def test_a_spend_halted_grant_says_so_on_the_approval(
         tmp_path, "root", "classify", interactive=False, grant_root="root"
     )
 
-    assert result.status == "approved", "spend no longer declines a covered checkpoint"
-    assert "150/100 tokens" in result.detail, "the figure travels on the approval instead"
-    assert "token_budget spent (150/100 tokens" in result.detail
+    assert result.status == "rejected"
+    assert "150/100 tokens" in result.detail
+    assert "token limit spent (150/100 tokens" in result.detail
 
 
-def test_a_grant_that_does_not_delegate_the_checkpoint_says_which_level_it_is(
+def test_an_old_level_does_not_require_another_ship_approval(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake = _FakeBr(gates=_VERIFY_GREEN)
@@ -1536,8 +1540,8 @@ def test_a_grant_that_does_not_delegate_the_checkpoint_says_which_level_it_is(
 
     result = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
 
-    assert result.status == "challenge"
-    assert "the active L2 grant on i does not delegate ship" in result.detail
+    assert result.status == "approved"
+    assert "task request" in result.detail
 
 
 def test_a_grant_outside_its_session_says_the_issue_is_not_in_the_tree(
@@ -1551,9 +1555,9 @@ def test_a_grant_outside_its_session_says_the_issue_is_not_in_the_tree(
         tmp_path, "unrelated", "classify", interactive=False, grant_root="root"
     )
 
-    assert result.status == "challenge"
-    assert "the active L2 grant on root does not cover unrelated" in result.detail
-    assert "not in that session's issue tree" in result.detail
+    assert result.status == "rejected"
+    assert "unrelated" in result.detail
+    assert "outside requested task root" in result.detail
 
 
 def test_lights_out_gate_check_defaults_to_the_root(
@@ -1593,7 +1597,7 @@ def test_grant_never_authorizes_outside_its_session(
     foreign = policy.approve_checkpoint_guarded(
         tmp_path, "unrelated", "classify", interactive=False, grant_root="root"
     )
-    assert foreign.status == "challenge"
+    assert foreign.status == "rejected"
     assert not policy.checkpoint_approved(tmp_path, "unrelated", "classify")
 
     fake.dependents.append({"id": "unrelated", "dependency_type": "parent-child"})
@@ -1668,7 +1672,7 @@ def test_a_grant_covers_a_track_assembled_from_gating_edges(
             tmp_path, issue, "classify", interactive=False, grant_root="root"
         )
         assert result.status == "approved", issue
-        assert "delegated under L2 grant" in result.detail
+        assert "task request" in result.detail
 
 
 def test_a_gating_dependent_stays_outside_the_session(
@@ -1692,8 +1696,8 @@ def test_a_gating_dependent_stays_outside_the_session(
         tmp_path, "downstream", "classify", interactive=False, grant_root="root"
     )
 
-    assert result.status == "challenge"
-    assert "not in that session's issue tree" in result.detail
+    assert result.status == "rejected"
+    assert "outside requested task root" in result.detail
 
 
 def test_session_coverage_counts_the_whole_track(
@@ -1717,28 +1721,20 @@ def test_gating_spend_counts_toward_the_budget(
     assert policy.session_spend(tmp_path, "root").measured_tokens == 70
 
 
-def test_grant_confirm_code_binds_level_and_budget(
+def test_legacy_grant_arguments_record_the_explicit_cap_without_issuing_levels(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake = _FakeBr()
     _install(monkeypatch, fake)
-    _pin_code(monkeypatch, "beef4242")
-    challenge = policy.issue_grant_guarded(
-        tmp_path, "root", "L2", 5_000, L3_CONFIG, interactive=False
-    )
-    assert challenge.status == "challenge"
-
-    swapped = policy.issue_grant_guarded(
-        tmp_path, "root", "L2", 999_999, L3_CONFIG, interactive=False, confirm="beef4242"
-    )
-    assert swapped.status == "rejected"
-    assert policy.active_grant(tmp_path, "root") is None
-
-    exact = policy.issue_grant_guarded(
-        tmp_path, "root", "L2", 5_000, L3_CONFIG, interactive=False, confirm="beef4242"
-    )
-    assert exact.status == "approved"
-    assert policy.active_grant(tmp_path, "root") == policy.Grant(level="L2", token_budget=5_000)
+    for level, budget in (("L2", 5_000), ("L3", 9_000)):
+        result = policy.issue_grant_guarded(
+            tmp_path, "root", level, budget, L3_CONFIG, interactive=False
+        )
+        assert result.status == "approved" and result.code is None
+        limit = policy.active_token_limit(tmp_path, "root")
+        assert limit is not None and limit.token_budget == budget
+        assert policy.active_grant(tmp_path, "root") is None
+    assert not any("grant level=" in text for text in fake.comments)
 
 
 def test_an_unreliable_gate_event_is_recorded_and_counted(
@@ -2145,7 +2141,7 @@ def test_the_budget_halts_once_spend_under_this_grant_reaches_it(
     status = policy.spend_status(tmp_path, "root", grant=grant)
 
     assert status.halted is True
-    assert "5000000/5000000 tokens under this grant" in status.detail
+    assert "5000000/5000000 tokens under this limit" in status.detail
     assert "35705839 lifetime" in status.detail
 
 
@@ -2170,35 +2166,28 @@ def test_lost_run_records_cannot_buy_extra_budget(
     status = policy.spend_status(tmp_path, "root", grant=grant)
 
     assert status.halted is False
-    assert "0/5000 tokens under this grant" in status.detail or not status.detail
+    assert "0/5000 tokens under this limit" in status.detail or not status.detail
 
 
-def test_the_baseline_round_trips_through_the_grant_marker(
+def test_the_historical_baseline_still_reads_from_a_legacy_grant_marker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _install(monkeypatch, _FakeBr())
-    monkeypatch.setattr(
-        policy, "session_spend", lambda *_a, **_k: policy.SpendMeter(30_705_839, 0, 0)
-    )
-    result = policy.issue_grant_guarded(
-        tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True
-    )
-    assert result.status == "approved"
-
+    fake = _FakeBr()
+    _install(monkeypatch, fake)
+    fake.comments.append("[harness-policy] grant level=L1 budget=5000000 baseline=30705839")
     grant = policy.active_grant(tmp_path, "root")
     assert grant is not None
     assert grant.spent_at_issue == 30_705_839
     assert grant.token_budget == 5_000_000
 
 
-def test_a_grant_with_no_prior_spend_records_no_baseline(
+def test_an_explicit_limit_with_no_prior_spend_records_a_zero_baseline(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _install(monkeypatch, _FakeBr())
-    monkeypatch.setattr(policy, "session_spend", lambda *_a, **_k: policy.SpendMeter(0, 0, 0))
-    policy.issue_grant_guarded(tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True)
-
-    assert "baseline=" not in policy._write.comments[-1]  # type: ignore[attr-defined]
+    policy.set_token_limit(tmp_path, "root", 5_000_000)
+    limit = policy.active_token_limit(tmp_path, "root")
+    assert limit is not None and limit.spent_at_issue == 0
 
 
 def test_nothing_in_the_spend_gate_reads_a_clock() -> None:
@@ -2274,7 +2263,7 @@ def test_a_fully_measured_session_meters_exactly_as_before(
     _dispatch(tmp_path, 10, estimated=False)
     at_budget = policy.spend_status(tmp_path, "root")
     assert (at_budget.spent_tokens, at_budget.halted) == (100, True)
-    assert "token_budget spent (100/100 tokens" in at_budget.detail
+    assert "token limit spent (100/100 tokens" in at_budget.detail
 
 
 def test_a_legacy_record_with_no_usage_provenance_still_meters(
@@ -2310,7 +2299,7 @@ def test_without_a_ceiling_an_unmeterable_dispatch_halts_nothing(
     assert policy.spend_status(tmp_path, "root").halted is False
 
 
-def test_re_granting_answers_for_the_dispatches_already_unmetered(
+def test_resetting_an_explicit_limit_accounts_for_prior_unmetered_dispatches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -2318,27 +2307,28 @@ def test_re_granting_answers_for_the_dispatches_already_unmetered(
     _install(monkeypatch, fake)
     _dispatch(tmp_path, 1_378, estimated=True)
 
-    policy.issue_grant_guarded(tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True)
+    policy.set_token_limit(tmp_path, "root", 5_000_000)
     assert "unmetered=1" in fake.comments[-1]
 
-    grant = policy.active_grant(tmp_path, "root")
-    assert grant is not None and grant.unmetered_at_issue == 1
+    limit = policy.active_token_limit(tmp_path, "root")
+    assert limit is not None and limit.token_budget == 5_000_000
     assert policy.spend_status(tmp_path, "root").halted is False
 
     _dispatch(tmp_path, 2_000, estimated=True)
     assert policy.spend_status(tmp_path, "root").halted is True
 
 
-def test_a_session_with_nothing_unmetered_records_no_unmetered_baseline(
+def test_an_explicit_limit_records_the_absence_of_unmetered_dispatches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake = _FakeBr()
     _install(monkeypatch, fake)
     _dispatch(tmp_path, 24_210, estimated=False)
-
-    policy.issue_grant_guarded(tmp_path, "root", "L1", 5_000_000, L3_CONFIG, interactive=True)
-
-    assert "unmetered=" not in fake.comments[-1]
+    policy.set_token_limit(tmp_path, "root", 5_000_000)
+    limit = policy.active_token_limit(tmp_path, "root")
+    assert limit is not None and limit.token_budget == 5_000_000
+    assert "unmetered=0" in fake.comments[-1]
+    assert policy.spend_status(tmp_path, "root").unmetered_dispatches == 0
 
 
 def test_a_dispatch_that_never_started_an_agent_does_not_halt_the_grant(
@@ -2403,45 +2393,50 @@ def _pin_clocks(monkeypatch: pytest.MonkeyPatch, fake: _FakeBr, *, waited_s: int
     monkeypatch.setattr(policy, "_now", lambda: _ASKED_AT.timestamp() + waited_s)
 
 
-def test_a_checkpoint_challenge_starts_the_clock_a_relayed_code_stops_it(
+def test_a_legacy_checkpoint_wait_ends_when_the_task_resumes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    fake = _FakeBr()
+    fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     _pin_clocks(monkeypatch, fake, waited_s=420)
 
-    challenge = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
-    assert challenge.status == "challenge"
+    tracker.add_comment(tmp_path, "i", "[harness-wait] id=i#wait-ship kind=checkpoint requested")
+    code = policy._issue_confirm_code(tmp_path, "i", "ship")
     assert policy.wait_events(tmp_path, "i") == ()
 
     approved = policy.approve_checkpoint_guarded(
-        tmp_path, "i", "ship", interactive=False, confirm=challenge.code
+        tmp_path, "i", "ship", interactive=False, confirm=code
     )
     assert approved.status == "approved"
 
     (event,) = policy.wait_events(tmp_path, "i")
     assert (event.kind, event.subject, event.waited_s) == ("checkpoint", "ship", 420)
-    assert (event.answered_by, event.delegated) == (policy.HUMAN_BY, False)
+    assert (event.answered_by, event.delegated) == ("task-request", False)
     assert event.wait_id == policy.wait_id_for_checkpoint("i", "ship")
 
 
-def test_a_reissued_challenge_neither_duplicates_nor_restarts_the_wait(
+def test_a_legacy_reissued_challenge_neither_duplicates_nor_restarts_the_wait(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
-    fake = _FakeBr()
+    fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     _pin_clocks(monkeypatch, fake, waited_s=7_200)
 
-    first = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    tracker.add_comment(tmp_path, "i", "[harness-wait] id=i#wait-ship kind=checkpoint requested")
+    first = policy._issue_confirm_code(tmp_path, "i", "ship")
     fake.now = "2026-07-26T13:30:00Z"
-    again = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
-    assert (first.status, again.status) == ("challenge", "challenge")
+    again = policy._issue_confirm_code(tmp_path, "i", "ship")
+    assert first == again
     assert sum(1 for text in fake.comments if "kind=checkpoint requested" in text) == 1
 
-    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False, confirm=again.code)
+    policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False, confirm=again)
     (event,) = policy.wait_events(tmp_path, "i")
     assert event.waited_s == 7_200
+    resumed = policy.approve_checkpoint_guarded(tmp_path, "i", "ship", interactive=False)
+    assert resumed.status == "approved"
+    assert policy.wait_events(tmp_path, "i") == (event,)
+    assert sum(1 for text in fake.comments if "kind=checkpoint requested" in text) == 1
 
 
 def test_a_covering_grant_records_no_wait_because_it_removed_it(
@@ -2460,23 +2455,24 @@ def test_a_covering_grant_records_no_wait_because_it_removed_it(
     assert (summary.human_wait_s, summary.delegated_wait_s) == (0, 0)
 
 
-def test_a_grant_that_ends_an_open_wait_is_recorded_as_delegated(
+def test_task_authorization_ends_an_open_legacy_wait_without_grant_delegation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake = _FakeBr(gates=_VERIFY_GREEN)
     _install(monkeypatch, fake)
     _pin_clocks(monkeypatch, fake, waited_s=900)
 
-    asked = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
-    assert asked.status == "challenge"
+    tracker.add_comment(
+        tmp_path, "root", "[harness-wait] id=root#wait-ship kind=checkpoint requested"
+    )
     fake.comments.append("[harness-policy] grant level=L3 budget=1000000")
     approved = policy.approve_checkpoint_guarded(tmp_path, "root", "ship", interactive=False)
     assert approved.status == "approved"
 
     (event,) = policy.wait_events(tmp_path, "root")
-    assert (event.answered_by, event.delegated, event.waited_s) == ("grant:L3", True, 900)
+    assert (event.answered_by, event.delegated, event.waited_s) == ("task-request", False, 900)
     summary = policy.session_wait_summary(tmp_path, "root")
-    assert (summary.human_wait_s, summary.delegated_wait_s) == (0, 900)
+    assert (summary.human_wait_s, summary.delegated_wait_s) == (900, 0)
 
 
 def test_the_session_rollup_reports_wait_apart_from_dispatch(
@@ -2485,10 +2481,10 @@ def test_the_session_rollup_reports_wait_apart_from_dispatch(
     fake = _FakeBr()
     _install(monkeypatch, fake)
     _pin_clocks(monkeypatch, fake, waited_s=1_800)
-    challenge = policy.approve_checkpoint_guarded(tmp_path, "root", "classify", interactive=False)
-    policy.approve_checkpoint_guarded(
-        tmp_path, "root", "classify", interactive=False, confirm=challenge.code
+    tracker.add_comment(
+        tmp_path, "root", "[harness-wait] id=root#wait-classify kind=checkpoint requested"
     )
+    policy.approve_checkpoint_guarded(tmp_path, "root", "classify", interactive=False)
     for duration in (12.5, 30.0):
         run_record.record(
             tmp_path,
@@ -2528,7 +2524,7 @@ def _wait_marker(wait_id: str, requested_at: str, answered_at: str, /, **overrid
     assert start is not None and end is not None
     payload: dict[str, object] = {
         "answered_at": answered_at,
-        "by": policy.HUMAN_BY,
+        "by": "human",
         "delegated": False,
         "kind": "checkpoint",
         "requested_at": requested_at,
@@ -2595,7 +2591,7 @@ def test_a_clock_that_steps_backwards_records_no_negative_wait(
         kind="checkpoint",
         subject="ship",
         requested_at=fake.now,
-        by=policy.HUMAN_BY,
+        by="human",
         delegated=False,
     )
 
@@ -2617,7 +2613,7 @@ def test_an_unmeasurable_start_records_nothing(
             kind="checkpoint",
             subject="ship",
             requested_at="",
-            by=policy.HUMAN_BY,
+            by="human",
             delegated=False,
         )
         is None
@@ -2637,7 +2633,7 @@ def test_record_wait_rejects_an_unknown_kind(
             kind="vibes",
             subject="ship",
             requested_at=_EPOCH,
-            by=policy.HUMAN_BY,
+            by="human",
             delegated=False,
         )
 

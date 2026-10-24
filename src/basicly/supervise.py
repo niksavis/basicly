@@ -39,7 +39,6 @@ from . import (
     worktree,
 )
 from .config import (
-    AUTONOMY_LEVELS,
     SizingConfig,
     load_runner_config,
     load_sizing_config,
@@ -458,11 +457,23 @@ class Observation:
         return self.holder is not None and self.holder_on_this_root and not self.holder_stale
 
 
+def session_spend_status(repo_root: Path, session: SessionState) -> policy.SpendStatus:
+
+    if session.lane_label is None:
+        return policy.spend_status(repo_root, session.root_issue)
+    selected = dict.fromkeys(policy.session_issue_ids(repo_root, session.root_issue))
+    for issue_id, _status in session.children:
+        selected.update(dict.fromkeys(policy.session_issue_ids(repo_root, issue_id)))
+    return policy.spend_status(repo_root, session.root_issue, ids=tuple(selected))
+
+
 def observe(repo_root: Path, root_issue: str, *, lane_label: str | None = None) -> Observation:
 
     state = derive_session(repo_root, root_issue, lane_label=lane_label)
     holder = read_holder(repo_root)
     grant = policy.active_grant(repo_root, root_issue)
+    spend = session_spend_status(repo_root, state)
+    limit = policy.active_token_limit(repo_root, root_issue)
     wait = policy.session_wait_summary(repo_root, root_issue)
     return Observation(
         root_issue=state.root_issue,
@@ -477,8 +488,8 @@ def observe(repo_root: Path, root_issue: str, *, lane_label: str | None = None) 
         holder_stale=holder is not None and holder.age_s >= STALE_AFTER_S,
         holder_on_this_root=holder is not None and holder.root_issue == root_issue,
         grant_level=grant.level if grant is not None else None,
-        token_budget=grant.token_budget if grant is not None else None,
-        spent_tokens=policy.session_spend(repo_root, root_issue).measured_tokens,
+        token_budget=limit.token_budget if limit is not None else None,
+        spent_tokens=spend.spent_tokens,
         human_wait_s=wait.human_wait_s,
         delegated_wait_s=wait.delegated_wait_s,
         dispatch_s=wait.dispatch_s,
@@ -839,15 +850,6 @@ PARKED_LANE_QUESTION = (
 )
 
 
-def metered_without_a_budget(repo_root: Path, admission: policy.SpendStatus) -> str | None:
-
-    if admission.grant is not None and admission.grant.token_budget is not None:
-        return None
-    config = load_runner_config(repo_root)
-    spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
-    return spec.name if spec.kind == runner.HEADLESS else None
-
-
 @dataclass(frozen=True)
 class LaneOutcome:
     issue_id: str
@@ -991,8 +993,6 @@ def configure_budget(repo_root: Path) -> runner.ProcessBudget:
 
 DELEGABLE_KINDS = ("escalation", "needs-input")
 
-_MIN_DELEGATION_LEVEL = "L2"
-
 
 @dataclass(frozen=True)
 class DelegatedDecision:
@@ -1001,15 +1001,6 @@ class DelegatedDecision:
     kind: str
     answered: bool
     detail: str
-
-
-def _delegation_allowed(grant: policy.Grant | None) -> bool:
-    if grant is None:
-        return False
-    levels = AUTONOMY_LEVELS
-    if grant.level not in levels:
-        return False
-    return levels.index(grant.level) >= levels.index(_MIN_DELEGATION_LEVEL)
 
 
 def delegate_decisions(
@@ -1021,8 +1012,8 @@ def delegate_decisions(
 ) -> tuple[DelegatedDecision, ...]:
 
     if admission is None:
-        admission = policy.spend_status(repo_root, session.root_issue)
-    if not _delegation_allowed(admission.grant):
+        admission = session_spend_status(repo_root, session)
+    if admission.halted:
         return ()
     delegated: list[DelegatedDecision] = []
     for item in decisions.pending(repo_root, session.root_issue):
@@ -1150,19 +1141,17 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     if not lanes:
         return ()
     if admission is None:
-        admission = policy.spend_status(repo_root, session.root_issue)
+        admission = session_spend_status(repo_root, session)
     if admission.halted:
         _say(report, f"spend:    {admission.detail}")
+        return tuple(
+            _unstarted(lane.issue_id, "", admission.detail, Unstarted.REFUSED) for lane in lanes
+        )
     if cap is None:
         cap = load_worktree_config(repo_root).concurrency
     config = load_runner_config(repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     sizing = load_sizing_config(repo_root)
-
-    if spec.kind == runner.HEADLESS and (
-        admission.grant is None or admission.grant.token_budget is None
-    ):
-        _say(report, f"spend:    the {spec.name} runner is metered and no budget covers it")
 
     lanes, held = _admit_wip(repo_root, session, lanes, spec.name, report)
     if not lanes:
@@ -1173,6 +1162,11 @@ def dispatch_lanes(  # noqa: PLR0913 — each arg is one independent pass-scoped
     _report_coverage(report, repo_root, working_sets, pass_spend)
     if pass_spend.warning is not None:
         _say(report, f"spend:    {pass_spend.warning} ({pass_spend.coverage})")
+        if admission.remaining_tokens is not None:
+            return held + tuple(
+                _unstarted(lane.issue_id, spec.name, pass_spend.warning, Unstarted.REFUSED)
+                for lane in lanes
+            )
     banded = {item.issue_id: item for item in working_sets}
 
     ranking = loop_state.ready_ranking(repo_root)
@@ -1948,19 +1942,10 @@ def _seeding_declined(
         leaf = not session.children and loop_state.is_dispatchable(session.root_status)
         if not leaf:
             return ()
-    if admission is None:
-        return None
-    blocked_runner = metered_without_a_budget(repo_root, admission)
-    if blocked_runner is None:
-        return None
-    return (
-        RoutedOutcome(
-            session.root_issue,
-            "seed-blocked",
-            f"not provisioning lanes for the {blocked_runner!r} runner: "
-            "no grant with a token budget covers this session",
-        ),
-    )
+    admission = admission or session_spend_status(repo_root, session)
+    if admission.halted:
+        return (RoutedOutcome(session.root_issue, "seed-blocked", admission.detail),)
+    return None
 
 
 def seed_lanes(
@@ -2080,12 +2065,9 @@ def _unauthorized_detail(ceremony: loop.CeremonyResult | None, root_issue: str) 
     name, _code = ceremony.challenge
     if ceremony.challenge_reason:
         return f"; the {name} checkpoint was not delegated: {ceremony.challenge_reason}"
-    covering = next((level for level, names in policy.GRANT_COVERAGE.items() if name in names), "")
-    if not covering:
-        return f"; no autonomy level delegates the {name} checkpoint, so it needs a human"
     return (
-        f"; no grant covers the {name} checkpoint - an {covering} grant delegates it: "
-        f"basicly policy grant {root_issue} --level {covering}"
+        f"; retry the requested task {root_issue}; "
+        f"the legacy {name} challenge is no longer required"
     )
 
 
@@ -2127,7 +2109,11 @@ def advance_parked(
             mini_loop = phase == "build" and _has_subtasks(repo_root, lane.issue_id)
             if phase not in wip.DOWNSTREAM_PHASES and not mini_loop:
                 continue
-            steps = loop.run_until_blocked(repo_root, lane.issue_id, grant_root=session.root_issue)
+            steps = loop.run_until_blocked(
+                repo_root,
+                lane.issue_id,
+                grant_root=None if session.lane_label is not None else session.root_issue,
+            )
         except (RuntimeError, OSError, ValueError) as exc:
             routed.append(
                 RoutedOutcome(lane.issue_id, "error", f"advancing parked lane failed: {exc}")
@@ -2411,22 +2397,19 @@ def _land_green(
         outcome.issue_id,
         "ship",
         interactive=False,
-        grant_root=session.root_issue,
+        grant_root=None if session.lane_label is not None else session.root_issue,
     )
     if approval.status != "approved":
-        item = decisions.enqueue(
-            repo_root,
-            outcome.issue_id,
-            "checkpoint",
-            f"approve the ship checkpoint for {outcome.issue_id}",
-            "; ".join(part for part in (landing.detail, approval.detail) if part),
-        )
         return RoutedOutcome(
             outcome.issue_id,
             "merged",
-            f"landed; ship awaits a human ({item.decision_id})",
+            f"landed; completion checks refused: {approval.detail}",
         )
-    shipped = loop.run_until_blocked(repo_root, outcome.issue_id, grant_root=session.root_issue)
+    shipped = loop.run_until_blocked(
+        repo_root,
+        outcome.issue_id,
+        grant_root=None if session.lane_label is not None else session.root_issue,
+    )
     final = shipped[-1] if shipped else landing
     if final.to_phase == "done":
         return RoutedOutcome(outcome.issue_id, "shipped", final.detail)

@@ -26,10 +26,6 @@ modes = ["fast", "full"]
 [policy]
 required_gates = ["verify"]
 max_rework = 2
-# Raised so the stand-in section can issue the L2 grant a supervisor pass needs
-# to dispatch a metered runner at all. Inert for every other test here: without a
-# grant on the bead, the ceiling this opts into is never reached.
-autonomy = "L2"
 
 [policy.sizing]
 # The fixture's files are tiny; without this floor the sizing governor refuses
@@ -132,8 +128,11 @@ def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
     intake = loop.advance(repo, issue_id, inputs=loop.Inputs(work_type="task"))
-    assert intake.checkpoint == "classify", intake.detail
-    policy.approve_checkpoint(repo, issue_id, "classify")
+    assert intake.action == "classified", intake.detail
+    assert intake.to_phase == "classify"
+    assert intake.checkpoint is None
+    assert policy.checkpoint_approved(repo, issue_id, "classify")
+    assert policy.active_grant(repo, issue_id) is None
     return loop.advance(repo, issue_id)
 
 
@@ -173,7 +172,7 @@ def test_a_landing_cancels_the_lane_it_broke_and_tells_it_why(harness_repo: Path
     session_state = supervise.derive_session(repo, root)
     routed = supervise.route_outcomes(repo, session_state, (_green(first), _green(second)))
 
-    assert [r.route for r in routed] == ["merged", "re-dispatch"], [r.detail for r in routed]
+    assert [r.route for r in routed] == ["shipped", "re-dispatch"], [r.detail for r in routed]
     assert first in routed[1].detail
     assert (repo / "shared.txt").read_text(encoding="utf-8") == "the first lane wrote this\n"
     merges = [

@@ -90,7 +90,6 @@ def test_the_classification_schema_accepts_what_the_engine_actually_computes() -
             "gates": list(selects.gates),
             "model_tier": selects.model_tier,
             "rework_allowance": selects.rework_allowance,
-            "ship": selects.ship,
         },
     }
     assert list(Draft202012Validator(_schema("classification")).iter_errors(payload)) == []
@@ -112,7 +111,8 @@ def test_the_classification_schema_admits_every_level_the_rule_can_assign() -> N
                 "gates": list(selects.gates),
                 "model_tier": selects.model_tier,
                 "rework_allowance": selects.rework_allowance,
-                "ship": selects.ship,
             },
         }
         assert list(validator.iter_errors(payload)) == [], assignment.level
+        payload["selects"]["ship"] = "human"
+        assert list(validator.iter_errors(payload)) == [], "legacy classification remains readable"

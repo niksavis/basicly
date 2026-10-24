@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from basicly import loop, loop_state, merge, policy, runner, supervise, tracker, worktree
-from basicly.config import load_policy_config
 from tests import flipped_tracker
 from tests.tracker_process_fixture import recorded_review
 
@@ -27,10 +26,6 @@ modes = ["fast", "full"]
 [policy]
 required_gates = ["verify"]
 max_rework = 2
-# Raised so the stand-in section can issue the L2 grant a supervisor pass needs
-# to dispatch a metered runner at all. Inert for every other test here: without a
-# grant on the bead, the ceiling this opts into is never reached.
-autonomy = "L2"
 
 [policy.sizing]
 # The fixture's files are tiny; without this floor the sizing governor refuses
@@ -132,8 +127,11 @@ def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
     intake = loop.advance(repo, issue_id, inputs=loop.Inputs(work_type="task"))
-    assert intake.checkpoint == "classify", intake.detail
-    policy.approve_checkpoint(repo, issue_id, "classify")
+    assert intake.action == "classified", intake.detail
+    assert intake.to_phase == "classify"
+    assert intake.checkpoint is None
+    assert policy.checkpoint_approved(repo, issue_id, "classify")
+    assert policy.active_grant(repo, issue_id) is None
     return loop.advance(repo, issue_id)
 
 
@@ -175,7 +173,7 @@ def test_a_supervisor_pass_lands_two_lanes_in_dependency_order(harness_repo: Pat
 
     routed = supervise.route_outcomes(repo, session_state, (_green(second), _green(first)))
     assert [r.issue_id for r in routed] == [first, second]
-    assert [r.route for r in routed] == ["merged", "merged"], [r.detail for r in routed]
+    assert [r.route for r in routed] == ["shipped", "shipped"], [r.detail for r in routed]
 
     assert (repo / "first.txt").exists()
     assert (repo / "second.txt").exists()
@@ -184,6 +182,8 @@ def test_a_supervisor_pass_lands_two_lanes_in_dependency_order(harness_repo: Pat
     assert len(merges) == 2
 
     for child in (first, second):
+        assert _show(repo, child)["status"] == "closed"
+        assert not any("grant level=" in row["text"] for row in tracker.read_comments(repo, child))
         assert loop_state.read_node_state(repo, child).gates.required_passed == ("verify",)
 
 
@@ -209,7 +209,7 @@ def test_a_landing_pass_invents_no_coupling_from_the_shared_tracker(harness_repo
 
     session_state = supervise.derive_session(repo, root)
     routed = supervise.route_outcomes(repo, session_state, (_green(first), _green(second)))
-    assert [r.route for r in routed] == ["merged", "merged"], [r.detail for r in routed]
+    assert [r.route for r in routed] == ["shipped", "shipped"], [r.detail for r in routed]
 
     for child in (first, second):
         blocking = {
@@ -255,37 +255,25 @@ def test_a_pass_attributes_the_coupling_the_same_way_whichever_lane_bounced(
         assert coupled == expected
 
 
-@pytest.mark.parametrize("granted", [True, False], ids=["covered", "uncovered"])
-def test_a_decomposed_root_seeds_a_lane_only_under_a_covering_grant(
-    harness_repo: Path, granted: bool
+@pytest.mark.parametrize("explicit_limit", [True, False], ids=["limited", "unlimited"])
+def test_a_decomposed_root_seeds_without_a_level_grant(
+    harness_repo: Path, explicit_limit: bool
 ) -> None:
 
     epic = _create_bead(harness_repo, "the decomposed epic", issue_type="epic")
     child = _create_bead(harness_repo, "the ready child", parent=epic)
-    if granted:
-        issued = policy.issue_grant_guarded(
-            harness_repo,
-            epic,
-            "L1",
-            100_000_000,
-            load_policy_config(harness_repo),
-            interactive=True,
-        )
-        assert issued.status == "approved", issued.detail
+    if explicit_limit:
+        policy.set_token_limit(harness_repo, epic, 100_000_000)
+    assert policy.active_grant(harness_repo, epic) is None
     assert loop_state.read_node_state(harness_repo, epic).phase == "decompose"
     assert not policy.checkpoint_approved(harness_repo, epic, "decompose")
 
     routed = supervise.seed_lanes(harness_repo, supervise.derive_session(harness_repo, epic))
 
-    if not granted:
-        assert [r.route for r in routed] == ["seed-blocked"], [r.detail for r in routed]
-        assert "decompose" in routed[0].detail
-        assert "L1" in routed[0].detail, "the refusal must name the level that would cover it"
-        assert not worktree.list_sessions(harness_repo)
-        return
     assert [r.route for r in routed] == ["seeded"], [r.detail for r in routed]
     assert supervise.should_continue(routed)
     assert loop_state.read_node_state(harness_repo, child).phase == "build"
     assert [session.name for session in worktree.list_sessions(harness_repo)] == [
         child.replace(".", "-")
     ]
+    assert policy.active_grant(harness_repo, epic) is None

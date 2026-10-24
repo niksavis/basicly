@@ -475,11 +475,9 @@ def autonomy_refusal(
     shipping: str | None = None,
 ) -> str | None:
 
-    grant = policy.active_grant(repo_root, root_issue)
-    if grant is None:
-        return f"no active autonomy grant on {root_issue}; a release needs L3"
-    if grant.level != "L3":
-        return f"grant on {root_issue} is {grant.level}; a release needs L3"
+    spend = policy.spend_status(repo_root, root_issue)
+    if spend.halted:
+        return spend.detail
     violations = policy.lights_out_violations(
         repo_root,
         root_issue,
@@ -487,7 +485,7 @@ def autonomy_refusal(
         shipping=shipping or root_issue,
     )
     if violations:
-        return "L3 preconditions not green: " + "; ".join(violations)
+        return "release preconditions not green: " + "; ".join(violations)
     return None
 
 
@@ -579,12 +577,9 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
 
     refusals: list[str] = []
     if autonomous:
-        if root_issue is None:
-            refusals.append("autonomous release needs a session root issue for the D3 check")
-        else:
-            refused = autonomy_refusal(repo_root, root_issue, shipping=shipping)
-            if refused is not None:
-                refusals.append(refused)
+        refused = autonomy_refusal(repo_root, root_issue or issue_id, shipping=shipping)
+        if refused is not None:
+            refusals.append(refused)
     refusals.extend(blocking_reasons(repo_root, plan, issue_id=issue_id))
     if refusals:
         return ReleaseResult(

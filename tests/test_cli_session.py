@@ -161,7 +161,9 @@ def test_a_grant_on_a_closed_root_is_not_live(
 
     assert _run(repo, monkeypatch) == 0
 
-    assert "grants: none live" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "task requests authorize work; no grant or budget is required" in out
+    assert "basicly-ddd" not in out
 
 
 def test_the_remaining_budget_is_the_budget_less_what_this_checkout_recorded(

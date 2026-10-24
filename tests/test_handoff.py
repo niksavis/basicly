@@ -114,11 +114,21 @@ def test_a_plan_far_over_the_marker_cap_is_admitted_by_the_entry_predicate(
 
 def test_a_plan_missing_a_gated_field_is_refused_before_it_is_written(work_repo: Path) -> None:
     payload = handoff.plan_payload(decomposition())
-    del payload["tasks"][0]["budget_tokens"]
+    del payload["tasks"][0]["depends_on"]
     with pytest.raises(handoff.ArtifactError) as caught:
         handoff.record(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
-    assert "budget_tokens" in caught.value.verdict.reason
+    assert "depends_on" in caught.value.verdict.reason
     assert _artifact_bodies(work_repo, "proj-feat") == []
+
+
+def test_a_plan_can_omit_optional_budget_and_integrity(work_repo: Path) -> None:
+    payload = handoff.plan_payload(decomposition())
+    for task in payload["tasks"]:
+        task.pop("budget_tokens")
+        task.pop("integrity")
+    handoff.record(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN, payload)
+    assert _artifact_bodies(work_repo, "proj-feat") == [payload]
+    assert handoff.entry_verdict(work_repo, "proj-feat", handoff.IMPLEMENTATION_PLAN).admitted
 
 
 def test_recording_the_same_artifact_twice_writes_one_event(work_repo: Path) -> None:

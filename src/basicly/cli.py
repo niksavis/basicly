@@ -986,10 +986,10 @@ def _say_session_blocked(report: dict[str, Any], rows: int) -> None:
 def _say_session_grants(report: dict[str, Any]) -> None:
     grants = report["grants"]
     if not grants["count"]:
-        ui.say("grants: none live - every dispatch needs `basicly policy grant` first")
+        ui.say("authority: task requests authorize work; no grant or budget is required")
         return
     ui.table(
-        f"Grants ({grants['count']} live)",
+        f"Historical grants ({grants['count']} readable)",
         ["root", "level", "budget", "spent", "remaining"],
         [
             [
@@ -3029,6 +3029,7 @@ def cmd_policy(args: argparse.Namespace) -> int:
         "gate": _cmd_policy_gate,
         "checkpoint": _cmd_policy_checkpoint,
         "grant": _cmd_policy_grant,
+        "budget": _cmd_policy_budget,
         "rework": _cmd_policy_rework,
     }
     return _dispatch(args, "policy_command", handlers, group="policy")
@@ -3170,26 +3171,42 @@ def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
     return 1
 
 
-def _coverage_phrase(repo_root: Path, issue: str) -> str:
-
-    count = policy.session_coverage(repo_root, issue)
-    if count == 1:
-        return "covers 1 bead (this issue only)"
-    return f"covers {count} beads"
-
-
 def _report_active_grant(repo_root: Path, issue: str) -> int:
 
     grant = policy.active_grant(repo_root, issue)
     if grant is None:
-        print(f"grant: NONE ({issue}) - every checkpoint is human (L0)")
+        print(f"grant: no historical grant ({issue}); task requests require no permission level")
         return 1
     budget = f", token budget {grant.token_budget}" if grant.token_budget is not None else ""
-    covers = ", ".join(policy.GRANT_COVERAGE[grant.level]) or "(nothing)"
-    proposes = ", ".join(policy.PROPOSAL_COVERAGE[grant.level]) or "(nothing)"
-    coverage = _coverage_phrase(repo_root, issue)
-    print(f"grant: {grant.level} ({issue}){budget}, {coverage}")
-    print(f"       approves checkpoints: {covers} - originates proposals: {proposes}")
+    print(
+        f"grant: historical {grant.level} ({issue}){budget}; "
+        f"{policy.session_coverage(repo_root, issue)} recorded task(s) in the session graph"
+    )
+    print("       permission levels no longer control task authorization")
+    return 0
+
+
+def _cmd_policy_budget(args: argparse.Namespace) -> int:
+
+    repo_root = _repo_root()
+    if tracker.read_record(repo_root, args.issue) is None:
+        print(f"budget: refused - task {args.issue} does not exist", file=sys.stderr)
+        return 1
+    try:
+        if args.tokens is not None or args.clear:
+            policy.set_token_limit(repo_root, args.issue, None if args.clear else args.tokens)
+        limit = policy.active_token_limit(repo_root, args.issue)
+    except (ValueError, RuntimeError) as exc:
+        print(f"budget: refused - {exc}", file=sys.stderr)
+        return 1
+    if limit is None:
+        print(f"budget: no explicit limit ({args.issue})")
+    else:
+        status = policy.spend_status(repo_root, args.issue)
+        print(
+            f"budget: {limit.token_budget} tokens, {status.remaining_tokens} remaining "
+            f"({args.issue})"
+        )
     return 0
 
 
@@ -3219,8 +3236,7 @@ def _cmd_policy_grant(args: argparse.Namespace) -> int:
         confirm=args.confirm,
     )
     if result.status == "approved":
-        coverage = _coverage_phrase(repo_root, args.issue)
-        print(f"grant: ISSUED {args.level} ({args.issue}) - {coverage}")
+        print(f"grant: compatibility request accepted ({args.issue}); no level grant issued")
         return 0
     if result.status == "challenge":
         rerun = (
@@ -3563,9 +3579,6 @@ def _provisioning_blockers(
     return []
 
 
-_SEEDING_CHECKPOINT = {"intake": "classify", "decompose": "decompose"}
-
-
 def _preflight_session(repo_root: Path, args: argparse.Namespace) -> supervise.SessionState | None:
 
     try:
@@ -3582,57 +3595,25 @@ def _preflight_session(repo_root: Path, args: argparse.Namespace) -> supervise.S
     return state
 
 
-def _print_preflight_coverage(
-    repo_root: Path, state: supervise.SessionState, grant: policy.Grant | None
-) -> None:
+def _print_preflight_coverage(state: supervise.SessionState) -> None:
 
-    if state.lane_label is None or grant is None:
-        return
-    covered = frozenset(policy.session_issue_ids(repo_root, state.root_issue))
-    outside = [issue_id for issue_id, _ in state.children if issue_id not in covered]
-    if not outside:
-        print(
-            f"coverage:  all {len(state.children)} selected lane(s) under the {grant.level} grant"
-        )
+    if state.lane_label is None:
         return
     print(
-        f"coverage:  {len(outside)} of {len(state.children)} selected lane(s) outside the "
-        f"{grant.level} grant's session - their checkpoints are a human's"
+        f"coverage:  {len(state.children)} lane(s) explicitly selected "
+        f"by label {state.lane_label!r}"
     )
-    print(f"           cover each: br dep add {state.root_issue} <id> -t blocks")
-    print(f"           uncovered: {', '.join(outside)}")
 
 
-def _print_preflight_checkpoints(
-    repo_root: Path, root_issue: str, grant: policy.Grant | None, *, seeds_from_root: bool = True
-) -> list[str]:
+def _print_preflight_checkpoints(repo_root: Path, root_issue: str) -> list[str]:
 
     node = loop_state.read_node_state(repo_root, root_issue)
-    blocking = _SEEDING_CHECKPOINT.get(node.phase) if seeds_from_root else None
-    delegated = policy.GRANT_COVERAGE.get(grant.level, ()) if grant is not None else ()
-    if blocking in delegated:
-        blocking = None
-    delegates = f"the live {grant.level} grant" if grant is not None else ""
-    blockers: list[str] = []
     pending = [name for name in CHECKPOINTS if name not in node.checkpoints]
     if not pending:
-        print("checkpts:  all approved")
-        return blockers
-    for name in pending:
-        if name != blocking:
-            served = f"{delegates} delegates it" if name in delegated else ""
-            print(f"checkpts:  {name} pending - {served or 'a human, when the pass reaches it'}")
-            continue
-        why = "the root's own advance provisions the lanes, and no grant delegates this"
-        covers = next(
-            (level for level, names in policy.GRANT_COVERAGE.items() if name in names), ""
-        )
-        print(f"checkpts:  {name} UNAPPROVED - blocks provisioning: {why}")
-        print(f"           approve: basicly policy checkpoint {root_issue} {name} --approve")
-        if covers:
-            print(f"           or delegate it: basicly policy grant {root_issue} --level {covers}")
-        blockers.append(f"the root's {name} checkpoint blocks provisioning")
-    return blockers
+        print("checkpts:  all recorded")
+    else:
+        print(f"checkpts:  {', '.join(pending)} checked within the requested workflow")
+    return []
 
 
 def _print_preflight_calibration(repo_root: Path, sizing: SizingConfig) -> None:
@@ -3725,16 +3706,12 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
     print(f"runner:    {spec.name} ({spec.kind}), timeout {config.runner_timeout:.0f}s")
 
-    status = policy.spend_status(repo_root, args.issue)
-    grant = status.grant
-    if grant is None:
-        print("grant:     NONE - every checkpoint is human")
+    status = supervise.session_spend_status(repo_root, state)
+    if status.remaining_tokens is None:
+        print("budget:    no explicit limit")
     else:
-        spent = policy.tokens_under_grant(status.spent_tokens, grant)
-        remaining = (
-            "no ceiling" if status.remaining_tokens is None else f"{status.remaining_tokens}"
-        )
-        print(f"grant:     {grant.level}, spent {spent} under it, remaining {remaining}")
+        print(f"budget:    {status.remaining_tokens} tokens remaining under the explicit limit")
+    print("authority: requested task; no permission level required")
     if status.halted:
         unmetered = (
             f"; could not be metered: {', '.join(status.unmetered_labels)}"
@@ -3742,13 +3719,8 @@ def _cmd_loop_preflight(args: argparse.Namespace) -> int:
             else ""
         )
         print(f"halted:    {status.detail}{unmetered}")
-    if (metered := supervise.metered_without_a_budget(repo_root, status)) is not None:
-        print(f"budget:    MISSING - the {metered!r} runner meters spend and no budget covers it")
-
-    _print_preflight_coverage(repo_root, state, grant)
-    blockers += _print_preflight_checkpoints(
-        repo_root, args.issue, grant, seeds_from_root=state.lane_label is None
-    )
+    _print_preflight_coverage(state)
+    blockers += _print_preflight_checkpoints(repo_root, args.issue)
     blockers += _print_preflight_spend(repo_root, state, status)
     _print_preflight_contention(repo_root, state)
     _print_preflight_calibration(repo_root, load_sizing_config(repo_root))
@@ -4106,7 +4078,7 @@ def _supervise_pass(
     say: Callable[[str], None],
 ) -> tuple[supervise.RoutedOutcome, ...]:
 
-    admission = policy.spend_status(repo_root, state.root_issue)
+    admission = supervise.session_spend_status(repo_root, state)
     delegated = supervise.delegate_decisions(repo_root, state, beat=hb.check, admission=admission)
     supervise.say_delegated(delegated, say)
     for bead, coupled_to, dep_type in supervise.propose_coupling_edges(repo_root, state):
@@ -4145,15 +4117,24 @@ def _cmd_loop_session(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     view = supervise.observe(repo_root, args.issue, lane_label=args.label)
     grant = policy.active_grant(repo_root, args.issue)
+    limit = policy.active_token_limit(repo_root, args.issue)
     if args.json:
         payload = (
             asdict(view)
             | {"supervised": view.supervised}
             | _spend_payload(view.spent_tokens, grant)
+            | {
+                "limit_spent_tokens": (
+                    policy.tokens_under_grant(view.spent_tokens, limit)
+                    if limit is not None
+                    else None
+                ),
+                "limit_baseline_tokens": limit.spent_at_issue if limit is not None else None,
+            }
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
-    _print_observation(view, grant)
+    _print_observation(view, limit)
     return 0
 
 
@@ -4163,7 +4144,7 @@ SPEND_WINDOWS = {
         "work it gates - across every grant and all time"
     ),
     "grant_spent_tokens": "spent_tokens since the active grant was issued, null when there is none",
-    "token_budget": "the ceiling on grant_spent_tokens alone, never on spent_tokens",
+    "token_budget": "optional ceiling on limit_spent_tokens, independent of lifetime spent_tokens",
 }
 
 
@@ -4219,7 +4200,9 @@ def _supervisor_line(view: supervise.Observation) -> str:
     return f"{who} - {beat}"
 
 
-def _print_observation(view: supervise.Observation, grant: policy.Grant | None) -> None:
+def _print_observation(
+    view: supervise.Observation, grant: policy.Grant | policy.TokenLimit | None
+) -> None:
     print(f"root:       {view.root_issue} ({view.root_status})")
     print(f"supervisor: {_supervisor_line(view)}")
     if view.lane_label is not None:
@@ -4248,15 +4231,13 @@ def _print_observation(view: supervise.Observation, grant: policy.Grant | None) 
     else:
         print("decisions:  none pending")
     if grant is None:
-        print(
-            f"grant:      (none) - {view.spent_tokens} tokens over this session's track, all time"
-        )
+        print(f"budget:     no explicit limit; {view.spent_tokens} measured tokens over this task")
     else:
         budget = view.token_budget if view.token_budget is not None else "unbounded"
         under = policy.tokens_under_grant(view.spent_tokens, grant)
         print(
-            f"grant:      {view.grant_level}, {under}/{budget} tokens under this grant "
-            f"(issued at {grant.spent_at_issue} spent)"
+            f"budget:     {under}/{budget} tokens under the explicit limit "
+            f"(set at {grant.spent_at_issue} measured tokens)"
         )
         print(
             f"lifetime:   {view.spent_tokens} tokens over this session's track - its "
@@ -4999,12 +4980,12 @@ def _add_release_parser(subparsers: argparse._SubParsersAction) -> None:
     release_parser.add_argument(
         "--autonomous",
         action="store_true",
-        help="Non-interactive invocation: refused unless --root carries a green L3 grant",
+        help="Non-interactive invocation; all release verification checks remain required",
     )
     release_parser.add_argument(
         "--root",
         metavar="ISSUE",
-        help="Session root issue the L3 grant is checked against (requires --autonomous)",
+        help="Requested task root whose required gates are checked (requires --autonomous)",
     )
     release_parser.add_argument(
         "--shipping",
@@ -5034,22 +5015,29 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
         "gate", help="Show required/advisory gate status and the advance decision"
     )
     p_gate.add_argument("issue")
-    p_ck = policy_sub.add_parser("checkpoint", help="Show or approve a human checkpoint")
+    p_budget = policy_sub.add_parser("budget", help="Show or set an optional explicit token limit")
+    p_budget.add_argument("issue")
+    budget_options = p_budget.add_mutually_exclusive_group()
+    budget_options.add_argument("--tokens", type=int, metavar="N")
+    budget_options.add_argument("--clear", action="store_true")
+    p_ck = policy_sub.add_parser("checkpoint", help="Show or record a task workflow checkpoint")
     p_ck.add_argument("issue")
     p_ck.add_argument("name", choices=CHECKPOINTS)
-    p_ck.add_argument("--approve", action="store_true", help="Record human approval")
+    p_ck.add_argument(
+        "--approve", action="store_true", help="Record the authorized transition after checks"
+    )
     p_ck.add_argument(
         "--root",
         metavar="ISSUE",
-        help="Session root carrying the grant ledger (default: the issue itself)",
+        help="Requested task root (default: the issue itself)",
     )
     p_ck.add_argument(
         "--confirm",
         metavar="CODE",
-        help="One-time code from a prior non-interactive --approve (required off a TTY)",
+        help="Compatibility code from a prior checkpoint request; ordinary work needs no code",
     )
     p_gr = policy_sub.add_parser(
-        "grant", help="Show, issue, or revoke a session autonomy grant (L1-L3)"
+        "grant", help="Inspect historical grants or accept legacy optional-limit requests"
     )
     p_gr.add_argument("issue", help="The session root issue carrying the grant ledger")
     p_gr.add_argument(
@@ -5059,7 +5047,7 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
         "--token-budget",
         type=int,
         metavar="TOKENS",
-        help="Session spend ceiling in run-record tokens (required for L2+)",
+        help="Optional explicit token limit; prefer policy budget --tokens",
     )
     p_gr.add_argument("--revoke", action="store_true", help="Revoke the active grant")
     p_gr.add_argument(
@@ -5111,8 +5099,7 @@ def _add_session_override_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--autonomy",
         choices=AUTONOMY_LEVELS,
-        help="Grantable autonomy ceiling for this invocation only, overriding "
-        "[policy] autonomy without editing any committed config",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--tier",
@@ -5131,7 +5118,7 @@ def _add_lane_selector_arg(parser: argparse.ArgumentParser) -> None:
         metavar="LABEL",
         help="Fan out over the beads carrying LABEL instead of the root's parent-child "
         "children, so a release cut can be assembled from beads that already have an "
-        "epic of origin (br permits one parent); the root then anchors the grant, the "
+        "epic of origin (br permits one parent); the root then anchors the limit, the "
         "lock and the decision queue only",
     )
 
@@ -5224,8 +5211,8 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     l_status.add_argument("issue")
     l_pre = loop_sub.add_parser(
         "preflight",
-        help="Check everything a supervised run needs before it starts: clean base, "
-        "runner, grant, budget, lane count and forecast spend (read-only)",
+        help="Check the clean base, runner, required gates, lane count and optional spend limit "
+        "before a supervised run (read-only)",
     )
     l_pre.add_argument("issue", help="Root issue the session would be bound to")
     _add_lane_selector_arg(l_pre)
@@ -5244,12 +5231,11 @@ def _add_loop_parser(subparsers: argparse._SubParsersAction) -> None:
     l_run.add_argument(
         "--confirm",
         metavar="CODE",
-        help="One-time confirm code relayed by a human, optionally 'checkpoint=CODE'",
+        help="Legacy checkpoint code; ordinary task execution needs no confirmation code",
     )
     l_run.add_argument(
         "--root",
-        help="Session root issue whose autonomy grant may cover the checkpoints "
-        "(default: the issue itself)",
+        help="Requested task root (default: the issue itself)",
     )
     _add_detach_arg(l_run)
     l_supervise = loop_sub.add_parser(

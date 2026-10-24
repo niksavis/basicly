@@ -4,6 +4,7 @@ from pathlib import Path
 
 from basicly import policy, run_record, runner
 from basicly.runner import BUILTIN_RUNNERS, RunResult
+from tests import flipped_tracker
 
 _KILLED_STREAM = "\n".join([
     '{"type":"system","subtype":"init","tools":[]}',
@@ -36,6 +37,13 @@ def _killed(stdout: str) -> RunResult:
     )
 
 
+def _limited(repo_root: Path) -> None:
+    flipped_tracker.flipped_repo(repo_root)
+    for record in ("basicly-root", _LANE):
+        flipped_tracker.seed(repo_root, record, title="metered task")
+    policy.set_token_limit(repo_root, "basicly-root", 100_000)
+
+
 def _recorded(repo_root: Path, stdout: str) -> None:
     spec = _claude()
     result = _killed(stdout)
@@ -60,12 +68,14 @@ def _recorded(repo_root: Path, stdout: str) -> None:
     )
 
 
-def test_a_killed_streaming_lane_leaves_its_grant_delegable(tmp_path: Path) -> None:
+def test_a_killed_streaming_lane_keeps_measured_spend_within_its_explicit_limit(
+    tmp_path: Path,
+) -> None:
 
+    _limited(tmp_path)
     _recorded(tmp_path, _KILLED_STREAM)
-    grant = policy.Grant(level="L3", token_budget=100_000)
 
-    status = policy.spend_status(tmp_path, "root", grant=grant, ids=(_LANE,))
+    status = policy.spend_status(tmp_path, "basicly-root", ids=(_LANE,))
 
     assert status.unmetered_dispatches == 0
     assert status.halted is False
@@ -77,10 +87,10 @@ def test_a_dispatch_that_reported_nothing_is_named_with_its_model_in_the_decline
     tmp_path: Path,
 ) -> None:
 
+    _limited(tmp_path)
     _recorded(tmp_path, '{"type":"system","subtype":"init","tools":[]}')
-    grant = policy.Grant(level="L3", token_budget=100_000)
 
-    status = policy.spend_status(tmp_path, "root", grant=grant, ids=(_LANE,))
+    status = policy.spend_status(tmp_path, "basicly-root", ids=(_LANE,))
 
     assert status.unmetered_dispatches == 1
     assert status.halted is True
@@ -106,7 +116,7 @@ def test_an_unstarted_dispatch_is_named_by_nothing_because_it_halts_nothing(
         ),
     )
 
-    meter = policy.session_spend(tmp_path, "root", ids=(_LANE,))
+    meter = policy.session_spend(tmp_path, "basicly-root", ids=(_LANE,))
 
     assert (meter.unmetered_dispatches, meter.unmetered_labels) == (0, ())
     assert (meter.measured_tokens, meter.estimated_tokens) == (0, 12)

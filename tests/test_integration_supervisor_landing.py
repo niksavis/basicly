@@ -25,7 +25,6 @@ modes = ["fast", "full"]
 [policy]
 required_gates = ["verify"]
 max_rework = 2
-autonomy = "L2"
 
 [policy.sizing]
 # The fixture's files are tiny; without this floor the sizing governor refuses
@@ -106,8 +105,11 @@ def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
     intake = loop.advance(repo, issue_id, inputs=loop.Inputs(work_type="task"))
-    assert intake.checkpoint == "classify", intake.detail
-    policy.approve_checkpoint(repo, issue_id, "classify")
+    assert intake.action == "classified", intake.detail
+    assert intake.to_phase == "classify"
+    assert intake.checkpoint is None
+    assert policy.checkpoint_approved(repo, issue_id, "classify")
+    assert policy.active_grant(repo, issue_id) is None
     return loop.advance(repo, issue_id)
 
 
@@ -154,7 +156,8 @@ def test_a_pass_lands_a_hand_committed_lane_without_dispatching_it(
         session_id=f"{root}:0001",
     )
 
-    assert f"routed:   {child} -> merged" in "\n".join(say), say
+    assert f"routed:   {child} -> shipped" in "\n".join(say), say
+    assert tracker.require_record(repo, child)["status"] == "closed"
     assert (repo / "done.txt").exists()
     assert loop_state.read_node_state(repo, child).gates.required_passed == ("verify",)
 

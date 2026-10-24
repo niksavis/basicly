@@ -230,10 +230,26 @@ def _ask(kind: str, issue: str, subject: str = "") -> dict[str, str]:
 def test_visible_asks_matches_each_acceptance_case() -> None:
     filt, both = board_facts._visible_asks, frozenset({"bd-1", "bd-2"})
     classify, decision = _ask("checkpoint", "bd-1", "classify"), _ask("decision", "bd-2")
-    assert [a["issue"] for a in filt([classify, decision], both, "L3")] == ["bd-2"]
-    assert filt([classify], frozenset({"bd-2"}), "") == []
-    assert filt([classify], both, "L1") == [classify]
-    assert filt([decision], both, "L3") == [decision]
+    assert [a["issue"] for a in filt([classify, decision], both)] == ["bd-2"]
+    assert filt([classify], frozenset({"bd-2"})) == []
+    assert filt([classify], both) == []
+    assert filt([decision], both) == [decision]
+
+
+@pytest.mark.parametrize("level", ["", "L0", "L1", "L2", "L3"])
+def test_automatic_phase_asks_are_hidden_without_hiding_destructive_or_missing_fact_asks(
+    level: str,
+) -> None:
+    phases = [_ask("checkpoint", "bd-1", phase) for phase in ("classify", "decompose", "ship")]
+    kill = _ask("checkpoint", "bd-1", "kill")
+    fact = _ask("decision", "bd-1", "needs-input")
+
+    built = {
+        "asks": [*phases, kill, fact],
+        "units": [{"id": "bd-1"}],
+        "session": {"grant_level": level},
+    }
+    assert board_facts._hide_unanswerable(built)["asks"] == [kill, fact]
 
 
 def test_hide_unanswerable_reads_the_grant_and_the_units_off_the_document() -> None:

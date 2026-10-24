@@ -38,10 +38,10 @@ def test_a_body_carrying_the_heading_and_every_field_is_admitted() -> None:
 
 
 def test_a_body_carrying_the_heading_but_missing_a_field_is_refused() -> None:
-    without_integrity = PLANNED.replace("- integrity: `L2`\n", "")
-    verdict = entry_verdict_for("basicly-new", _record(without_integrity, ACCEPTANCE))
+    without_dependencies = PLANNED.replace("- depends on: none\n", "")
+    verdict = entry_verdict_for("basicly-new", _record(without_dependencies, ACCEPTANCE))
     assert not verdict.admitted
-    assert "integrity" in verdict.reason
+    assert "depends_on" in verdict.reason
     assert "basicly-new" in verdict.reason
 
 
@@ -49,8 +49,14 @@ def test_the_refusal_names_every_missing_field_at_once() -> None:
     bare = "## Plan\n\n- depends on: none\n"
     verdict = entry_verdict_for("basicly-new", _record(bare))
     assert not verdict.admitted
-    assert "integrity" in verdict.reason
-    assert "budget" in verdict.reason
+    assert "acceptance" in verdict.reason
+    assert "scope" in verdict.reason
+
+
+def test_a_record_without_a_budget_or_permission_level_is_admitted() -> None:
+    body = PLANNED.replace("- integrity: `L2`\n", "").replace("- budget: `50000`\n", "")
+
+    assert entry_verdict_for("basicly-new", _record(body, ACCEPTANCE)).admitted
 
 
 def test_the_heading_ratchet_discriminates_rather_than_admitting_everything() -> None:

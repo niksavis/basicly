@@ -22,7 +22,7 @@ field: every skill root advertises its first body paragraph instead.
 | `catalog-authoring` | `model` | any | Authors catalog sources (skills, fragments, styles) in YAML and projects them. Use when adding a new skill or fragment to the catalog. |
 | `cli-tools` | `model` | any | Picks the fast tool for a shell task: rg to find each file that mentions a word, fd to list files, jq or yq for a JSON or YAML field, curl for an HTTP endpoint. |
 | `conventional-commits` | `model` | any | Writes a commit subject that passes the hooks: type, scope, breaking-change marker, record id. Use for a commit message or after a hook refused one. |
-| `decompose-plan` | `model` | any | Cuts work into children the plan gate accepts: EARS criteria, scope globs, budgets, a demo command. Use at DECOMPOSE or when a plan gate refuses a child. |
+| `decompose-plan` | `model` | any | Cuts work into children the plan gate accepts: EARS criteria, scope globs, dependencies, a demo command. Use at DECOMPOSE or when a plan gate refuses a child. |
 | `falsify-first` | `model` | any | Tries to break a claim, invariant or measurement with a concrete counterexample. Use before it enters a plan, a design or a gate. |
 | `find-skills` | `model` | any | Searches the catalog, then skills.sh, for an existing community skill out there, and installs one only after the user agrees. Use when asking: is there a skill for this? |
 | `harness-client` | `model` | any | Attaches to a running supervisor: shows what the factory does and records answers to its decisions. Use while a supervisor runs or a lane waits on a human judgment. |

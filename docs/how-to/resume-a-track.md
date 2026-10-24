@@ -57,10 +57,10 @@ that is the whole procedure.
 | `phase:` | What it is waiting for | Next command |
 | --- | --- | --- |
 | `intake` | your work-type call | `basicly loop run <id> --work-type task` |
-| `classify` with `worktree: (none)` | the classify checkpoint | re-run the reprinted command with `--confirm <code>` |
+| `classify` with `worktree: (none)` | readiness and worktree provisioning | resolve the named readiness issue, then run `basicly loop run <id>` |
 | `classify` with a worktree bound | the coding — the branch has no commit yet | do the work and `git commit` it on the branch |
 | `build` | the landing | `basicly loop run <id>` from the base checkout |
-| `verify` | the ship checkpoint | check `[merged]` happened, then relay the ship code |
+| `verify` | required gates and completion | check `[merged]` happened, then run `basicly loop run <id>` |
 | `done` | nothing; it is closed | — |
 
 A track parked at `classify` with a live worktree is the common resume case:
@@ -81,7 +81,7 @@ If landing stopped because a planned destination is protected, the refusal names
 the normal merge command and the path that needs access. For an already-authorized
 landing, request task-scoped execution review for that command in the base
 checkout, inspect its result, then resume the loop. Keep the ordinary hooks and
-checkpoints active. See [protected agent configuration](upgrade-and-check-drift.md#protected-agent-configuration).
+safety protections active. See [protected agent configuration](upgrade-and-check-drift.md#protected-agent-configuration).
 
 Because state lives in the tracker rather than in a session, a track can start
 under Claude and finish under Codex or Copilot. The new agent reads the same

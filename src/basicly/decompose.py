@@ -1018,8 +1018,8 @@ def _child_body(spec: ChildSpec, trigger: str = "", repo_root: Path | None = Non
             plan_record.SCOPE_HEADING: "\n".join(f"- `{glob}`" for glob in spec.scope),
             plan_record.PLAN_HEADING: plan_record.render_plan_section(
                 spec.depends_on or (),
-                spec.budget_tokens or 0,
-                spec.integrity or "",
+                spec.budget_tokens,
+                spec.integrity,
                 spec.demonstration or "",
             ),
         },

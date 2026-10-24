@@ -287,13 +287,15 @@ def rework_charged(repo_root: Path, issue_id: str, gate: str) -> int:
 
 def record_rework(repo_root: Path, issue_id: str, gate: str) -> int:
 
-    _add_comment(repo_root, issue_id, _rework_marker(gate))
+    _add_comment(repo_root, issue_id, f"{_rework_marker(gate)} event={secrets.token_hex(16)}")
     return rework_charged(repo_root, issue_id, gate)
 
 
 def grant_rework_allowance(repo_root: Path, issue_id: str, gate: str) -> int:
 
-    _add_comment(repo_root, issue_id, _rework_allowance_marker(gate))
+    _add_comment(
+        repo_root, issue_id, f"{_rework_allowance_marker(gate)} event={secrets.token_hex(16)}"
+    )
     return rework_charged(repo_root, issue_id, gate)
 
 
@@ -785,30 +787,33 @@ def _checkpoint_approval(  # noqa: PLR0913 — the guarded surface it was split 
     grant_root: str,
 ) -> tuple[ApprovalResult, str]:
 
-    if checkpoint_approved(repo_root, issue_id, name):
-        return ApprovalResult("approved", detail="already approved"), _RECONCILED_BY
-    if interactive:
-        approve_checkpoint(repo_root, issue_id, name)
-        record_checkpoint_wait(repo_root, issue_id, name, by=HUMAN_BY, delegated=False)
-        return ApprovalResult("approved"), HUMAN_BY
-    if confirm is None:
-        delegated, declined, granted_by = _grant_approval(repo_root, issue_id, name, grant_root)
-        if delegated is not None:
-            return delegated, granted_by
-        record_wait_request(repo_root, issue_id, name)
-        return (
-            ApprovalResult(
-                "challenge",
-                code=_issue_confirm_code(repo_root, issue_id, name),
-                detail=declined,
-            ),
-            "",
+    session_ids = session_issue_ids(repo_root, grant_root)
+    if issue_id not in session_ids:
+        return ApprovalResult(
+            "rejected", detail=f"{issue_id} is outside requested task {grant_root}"
+        ), ""
+    if tracker.read_record(repo_root, issue_id) is None:
+        return ApprovalResult("rejected", detail=f"task {issue_id} does not exist"), ""
+    if confirm is not None and (
+        interactive or not _consume_confirm_code(repo_root, issue_id, name, confirm)
+    ):
+        return ApprovalResult("rejected", detail="invalid or expired confirm code"), ""
+    spend = spend_status(repo_root, grant_root, ids=session_ids)
+    if spend.halted:
+        return ApprovalResult("rejected", detail=spend.detail), ""
+    if name == "ship":
+        violations = lights_out_violations(
+            repo_root, grant_root, load_policy_config(repo_root), ids=session_ids, shipping=issue_id
         )
-    if _consume_confirm_code(repo_root, issue_id, name, confirm):
+        if violations:
+            return ApprovalResult("rejected", detail="; ".join(violations)), ""
+    if checkpoint_approved(repo_root, issue_id, name):
+        result, by = ApprovalResult("approved", detail="already recorded"), _RECONCILED_BY
+    else:
         approve_checkpoint(repo_root, issue_id, name)
-        record_checkpoint_wait(repo_root, issue_id, name, by=HUMAN_BY, delegated=False)
-        return ApprovalResult("approved"), HUMAN_BY
-    return ApprovalResult("rejected", detail="invalid or expired confirm code"), ""
+        record_checkpoint_wait(repo_root, issue_id, name, by="task-request", delegated=False)
+        result, by = ApprovalResult("approved", detail="authorized by task request"), "task-request"
+    return result, by
 
 
 def _settle_checkpoint_queue(repo_root: Path, issue_id: str, name: str, *, by: str) -> None:
@@ -841,13 +846,6 @@ def kill_lane(repo_root: Path, issue_id: str, reason: str) -> None:
     )
 
 
-GRANT_COVERAGE: dict[str, tuple[str, ...]] = {
-    "L0": (),
-    "L1": ("decompose",),
-    "L2": ("classify", "decompose"),
-    "L3": ("classify", "decompose", "ship"),
-}
-
 _GRANT_PREFIX = f"{MARKER} grant level="
 _REVOKE_MARKER = f"{MARKER} grant revoked"
 _NEEDS_INPUT_KIND = "needs-input"
@@ -860,17 +858,6 @@ class Grant:
     token_budget: int | None
     spent_at_issue: int = 0
     unmetered_at_issue: int = 0
-
-
-def _grant_marker(grant: Grant) -> str:
-    text = f"{_GRANT_PREFIX}{grant.level}"
-    if grant.token_budget is not None:
-        text += f" budget={grant.token_budget}"
-    if grant.spent_at_issue:
-        text += f" baseline={grant.spent_at_issue}"
-    if grant.unmetered_at_issue:
-        text += f" unmetered={grant.unmetered_at_issue}"
-    return text
 
 
 _GRANT_INT_FIELDS = ("budget", "baseline", "unmetered")
@@ -927,21 +914,13 @@ def active_grant(repo_root: Path, root_issue: str) -> Grant | None:
     return grant
 
 
-def _grant_refusal(level: str, token_budget: int | None, config: PolicyConfig) -> str | None:
+def _grant_refusal(level: str, token_budget: int | None, _config: PolicyConfig) -> str | None:
 
     if level not in AUTONOMY_LEVELS or level == "L0":
         grantable = [lvl for lvl in AUTONOMY_LEVELS if lvl != "L0"]
         return f"grant level must be one of {grantable}"
-    if AUTONOMY_LEVELS.index(level) > AUTONOMY_LEVELS.index(config.autonomy):
-        return (
-            f"level {level} exceeds the [policy] autonomy ceiling "
-            f"({config.autonomy}); raise it in basicly.toml to opt in"
-        )
-    if level in ("L2", "L3") and not (isinstance(token_budget, int) and token_budget > 0):
-        return (
-            f"an {level} grant requires a positive token_budget "
-            "(unbounded lights-out is unreachable by design)"
-        )
+    if token_budget is not None and (type(token_budget) is not int or token_budget <= 0):
+        return "token budget must be a positive whole number"
     return None
 
 
@@ -959,98 +938,27 @@ def issue_grant_guarded(  # noqa: PLR0913 — mirrors the CLI surface
     refusal = _grant_refusal(level, token_budget, config)
     if refusal is not None:
         return ApprovalResult("rejected", detail=refusal)
-    if interactive:
-        _write_grant(repo_root, root_issue, level, token_budget)
-        return ApprovalResult("approved")
-    checkpoint_name = f"grant-{level}-{token_budget}"
-    if confirm is None:
-        return ApprovalResult(
-            "challenge", code=_issue_confirm_code(repo_root, root_issue, checkpoint_name)
+    if confirm is not None and (
+        interactive
+        or not _consume_confirm_code(
+            repo_root, root_issue, f"grant-{level}-{token_budget}", confirm
         )
-    if _consume_confirm_code(repo_root, root_issue, checkpoint_name, confirm):
-        _write_grant(repo_root, root_issue, level, token_budget)
-        return ApprovalResult("approved")
-    return ApprovalResult("rejected", detail="invalid or expired confirm code")
-
-
-def _write_grant(repo_root: Path, root_issue: str, level: str, token_budget: int | None) -> None:
-
-    meter = session_spend(repo_root, root_issue)
-    grant = Grant(
-        level=level,
-        token_budget=token_budget,
-        spent_at_issue=meter.measured_tokens,
-        unmetered_at_issue=meter.unmetered_dispatches,
+    ):
+        return ApprovalResult("rejected", detail="invalid or expired legacy confirm code")
+    if tracker.read_record(repo_root, root_issue) is None:
+        return ApprovalResult("rejected", detail=f"task {root_issue} does not exist")
+    if token_budget is not None:
+        set_token_limit(repo_root, root_issue, token_budget)
+    return ApprovalResult(
+        "approved", detail="legacy levels are no longer required for task requests"
     )
-    _add_comment(repo_root, root_issue, _grant_marker(grant))
 
 
 def revoke_grant(repo_root: Path, root_issue: str) -> None:
     _add_comment(repo_root, root_issue, _REVOKE_MARKER)
 
 
-def _grant_declined(grant: Grant, name: str, reasons: Sequence[str], *, scope: str = "") -> str:
-
-    where = f" ({scope})" if scope else ""
-    return (
-        f"the active {grant.level} grant covers {name} but declined it{where}, so the "
-        f"decision returns to a human: {'; '.join(reasons)}"
-    )
-
-
-def _grant_approval(
-    repo_root: Path, issue_id: str, name: str, root_issue: str
-) -> tuple[ApprovalResult | None, str, str]:
-
-    grant = active_grant(repo_root, root_issue)
-    if grant is None:
-        return None, "", ""
-    if name not in GRANT_COVERAGE.get(grant.level, ()):
-        return None, f"the active {grant.level} grant on {root_issue} does not delegate {name}", ""
-    session_ids = session_issue_ids(repo_root, root_issue)
-    if issue_id not in session_ids:
-        return (
-            None,
-            (
-                f"the active {grant.level} grant on {root_issue} does not cover {issue_id}: "
-                "it is not in that session's issue tree"
-            ),
-            "",
-        )
-    config = load_policy_config(repo_root)
-    spend = spend_status(repo_root, root_issue, grant=grant, ids=session_ids)
-    if name == "ship":
-        violations = lights_out_violations(
-            repo_root, root_issue, config, ids=session_ids, shipping=issue_id
-        )
-        if violations:
-            return (
-                None,
-                _grant_declined(
-                    grant,
-                    name,
-                    violations,
-                    scope=f"lights-out preconditions across session {root_issue}",
-                ),
-                "",
-            )
-    marker = f"{_checkpoint_marker(name)} under grant {grant.level}"
-    _add_comment(repo_root, issue_id, marker)
-    record_checkpoint_wait(repo_root, issue_id, name, by=f"grant:{grant.level}", delegated=True)
-    over = f"; {spend.detail}" if spend.halted else ""
-    return (
-        ApprovalResult("approved", detail=f"delegated under {grant.level} grant{over}"),
-        "",
-        f"grant:{grant.level}",
-    )
-
-
-PROPOSAL_COVERAGE: dict[str, tuple[str, ...]] = {
-    "L0": (),
-    "L1": (),
-    "L2": ("work_type", "children"),
-    "L3": ("work_type", "children"),
-}
+PROPOSAL_KINDS = ("work_type", "children")
 
 
 @dataclass(frozen=True)
@@ -1062,27 +970,18 @@ class ProposalGrant:
 
 def proposal_delegated(repo_root: Path, issue_id: str, kind: str, root_issue: str) -> ProposalGrant:
 
-    if kind not in PROPOSAL_COVERAGE["L3"]:
-        raise ValueError(
-            f"unknown proposal kind {kind!r}; expected one of {list(PROPOSAL_COVERAGE['L3'])}"
-        )
-    grant = active_grant(repo_root, root_issue)
-    if grant is None:
-        return ProposalGrant(False, f"no active grant on {root_issue} to delegate it under")
-    if kind not in PROPOSAL_COVERAGE.get(grant.level, ()):
-        return ProposalGrant(
-            False,
-            f"the active {grant.level} grant on {root_issue} approves the checkpoint but does "
-            f"not originate the {kind} proposal",
-        )
+    if kind not in PROPOSAL_KINDS:
+        raise ValueError(f"unknown proposal kind {kind!r}; expected one of {list(PROPOSAL_KINDS)}")
     session_ids = session_issue_ids(repo_root, root_issue)
     if issue_id not in session_ids:
         return ProposalGrant(
             False,
-            f"the active {grant.level} grant on {root_issue} does not cover {issue_id}: "
-            "it is not in that session's issue tree",
+            f"{issue_id} is outside requested task {root_issue}",
         )
-    return ProposalGrant(True, level=grant.level)
+    spend = spend_status(repo_root, root_issue, ids=session_ids)
+    if spend.halted:
+        return ProposalGrant(False, spend.detail)
+    return ProposalGrant(True, level="task request")
 
 
 def records_by_id(repo_root: Path) -> dict[str, dict]:
@@ -1127,7 +1026,75 @@ class SpendMeter:
     dispatches_seen: int = 0
 
 
-def tokens_under_grant(spent_tokens: int, grant: Grant) -> int:
+@dataclass(frozen=True)
+class TokenLimit:
+    token_budget: int
+    spent_at_issue: int = 0
+    _unmetered_at_issue: int = 0
+
+
+_TOKEN_LIMIT_PREFIX = f"{MARKER} token-limit "
+
+
+def active_token_limit(
+    repo_root: Path, root_issue: str, *, grant: Grant | None = None
+) -> TokenLimit | None:
+
+    if _issue_is_closed(repo_root, root_issue):
+        return None
+    limit = (
+        TokenLimit(grant.token_budget, grant.spent_at_issue, grant.unmetered_at_issue)
+        if grant is not None and grant.token_budget is not None
+        else None
+    )
+    for text in _comment_texts(repo_root, root_issue):
+        if _marker_matches(text, _REVOKE_MARKER) or _marker_matches(
+            text, f"{_TOKEN_LIMIT_PREFIX}cleared"
+        ):
+            limit = None
+        elif (legacy := _parse_grant(text)) is not None:
+            limit = (
+                TokenLimit(legacy.token_budget, legacy.spent_at_issue, legacy.unmetered_at_issue)
+                if legacy.token_budget is not None
+                else None
+            )
+        elif text.startswith(_TOKEN_LIMIT_PREFIX):
+            fields = _grant_fields(text[len(_TOKEN_LIMIT_PREFIX) :].split())
+            if (
+                fields is None
+                or fields.get("budget", 0) <= 0
+                or any(v < 0 for v in fields.values())
+            ):
+                raise ValueError(f"invalid explicit token limit on {root_issue}")
+            limit = TokenLimit(
+                fields["budget"], fields.get("baseline", 0), fields.get("unmetered", 0)
+            )
+    return limit
+
+
+def set_token_limit(repo_root: Path, root_issue: str, token_budget: int | None) -> None:
+
+    if token_budget is not None and (type(token_budget) is not int or token_budget <= 0):
+        raise ValueError("token limit must be a positive whole number; use --clear to remove it")
+    if tracker.read_record(repo_root, root_issue) is None:
+        raise ValueError(f"task {root_issue} does not exist")
+    if _issue_is_closed(repo_root, root_issue):
+        raise ValueError(f"task {root_issue} is closed")
+    if token_budget is None:
+        _add_comment(
+            repo_root, root_issue, f"{_TOKEN_LIMIT_PREFIX}cleared event={secrets.token_hex(16)}"
+        )
+        return
+    meter = session_spend(repo_root, root_issue)
+    _add_comment(
+        repo_root,
+        root_issue,
+        f"{_TOKEN_LIMIT_PREFIX}budget={token_budget} baseline={meter.measured_tokens} "
+        f"unmetered={meter.unmetered_dispatches} event={secrets.token_hex(16)}",
+    )
+
+
+def tokens_under_grant(spent_tokens: int, grant: Grant | TokenLimit) -> int:
 
     return max(0, spent_tokens - grant.spent_at_issue)
 
@@ -1140,15 +1107,17 @@ class SpendStatus:
     detail: str = ""
     unmetered_dispatches: int = 0
     unmetered_labels: tuple[str, ...] = ()
+    token_limit: TokenLimit | None = None
 
     @property
     def remaining_tokens(self) -> int | None:
 
-        if self.grant is None or self.grant.token_budget is None:
+        limit = self.token_limit or self.grant
+        if limit is None or limit.token_budget is None:
             return None
         if self.unmetered_dispatches:
             return 0
-        return max(0, self.grant.token_budget - tokens_under_grant(self.spent_tokens, self.grant))
+        return max(0, limit.token_budget - tokens_under_grant(self.spent_tokens, limit))
 
 
 def check_pass_spend(forecast_tokens: int, status: SpendStatus) -> str | None:
@@ -1156,17 +1125,15 @@ def check_pass_spend(forecast_tokens: int, status: SpendStatus) -> str | None:
     remaining = status.remaining_tokens
     if remaining is None or forecast_tokens <= remaining:
         return None
-    level = status.grant.level if status.grant is not None else "active"
     if status.unmetered_dispatches:
         return (
             f"this pass forecasts {forecast_tokens} tokens against an unknown remainder "
-            f"under the {level} grant: {status.unmetered_dispatches} dispatch(es) reported "
+            f"under the explicit limit: {status.unmetered_dispatches} dispatch(es) reported "
             "no measurable usage, so nothing says what is left"
         )
     return (
         f"this pass forecasts {forecast_tokens} tokens against {remaining} remaining "
-        f"under the {level} grant; it starts anyway. Re-scope the lanes or re-grant "
-        "if that figure is not the one you meant to spend"
+        "under the explicit limit; this pass will not start. Reduce the scope or change the limit"
     )
 
 
@@ -1182,37 +1149,45 @@ def spend_status(
         grant = active_grant(repo_root, root_issue)
     meter = session_spend(repo_root, root_issue, ids=ids)
     spent = meter.measured_tokens
-    if grant is None or grant.token_budget is None:
-        return SpendStatus(grant=grant, spent_tokens=spent, halted=False)
-    budget = grant.token_budget
-    under_grant = tokens_under_grant(spent, grant)
-    unmetered = max(0, meter.unmetered_dispatches - grant.unmetered_at_issue)
+    limit = active_token_limit(repo_root, root_issue, grant=grant)
+    if limit is None:
+        return SpendStatus(
+            grant=None,
+            spent_tokens=spent,
+            halted=False,
+            unmetered_dispatches=meter.unmetered_dispatches,
+            unmetered_labels=meter.unmetered_labels,
+        )
+    budget = limit.token_budget
+    under_grant = tokens_under_grant(spent, limit)
+    unmetered = max(0, meter.unmetered_dispatches - limit._unmetered_at_issue)
     if unmetered:
         return SpendStatus(
             grant=grant,
             spent_tokens=spent,
             halted=True,
+            token_limit=limit,
             unmetered_dispatches=unmetered,
             unmetered_labels=meter.unmetered_labels,
             detail=(
-                f"{grant.level} grant cannot be metered: {unmetered} dispatch(es) under it "
+                f"explicit token limit cannot be metered: {unmetered} dispatch(es) under it "
                 f"reported no measurable usage, so only a chars/4 floor over their captured "
                 f"output exists ({meter.estimated_tokens} estimated, far below real spend) "
-                f"and {under_grant}/{budget} tokens is not what this grant has cost; the "
-                "session is human-only until re-granted or the runner is configured with a "
+                f"and {under_grant}/{budget} tokens is not the complete measured spend; "
+                "dispatch stops until the limit is changed or the runner has a "
                 f"usage format. Unmeasured here: {', '.join(meter.unmetered_labels)}"
             ),
         )
     if under_grant < budget:
-        return SpendStatus(grant=grant, spent_tokens=spent, halted=False)
+        return SpendStatus(grant=grant, spent_tokens=spent, halted=False, token_limit=limit)
     return SpendStatus(
         grant=grant,
         spent_tokens=spent,
         halted=True,
+        token_limit=limit,
         detail=(
-            f"{grant.level} grant token_budget spent ({under_grant}/{budget} tokens "
-            f"under this grant; {spent} lifetime); the session is human-only until "
-            "re-granted"
+            f"explicit token limit spent ({under_grant}/{budget} tokens "
+            f"under this limit; {spent} lifetime); dispatch stops until the limit is changed"
         ),
     )
 
@@ -1333,8 +1308,6 @@ WAIT_MARKER = "[harness-wait]"
 
 WAIT_KINDS = ("checkpoint", "decision")
 
-HUMAN_BY = "human"
-
 _RECONCILED_BY = "engine"
 
 
@@ -1411,15 +1384,6 @@ def wait_events(repo_root: Path, issue_id: str) -> tuple[WaitEvent, ...]:
         for comment in _comments(repo_root, issue_id)
     )
     return tuple(event for event in events if event is not None)
-
-
-def record_wait_request(repo_root: Path, issue_id: str, name: str) -> str | None:
-
-    wait_id = wait_id_for_checkpoint(issue_id, name)
-    if _open_wait_stamp(repo_root, issue_id, wait_id) is not None:
-        return None
-    _add_comment(repo_root, issue_id, f"{WAIT_MARKER} id={wait_id} kind=checkpoint requested")
-    return wait_id
 
 
 def _open_wait_stamp(repo_root: Path, issue_id: str, wait_id: str) -> str | None:

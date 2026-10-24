@@ -47,7 +47,7 @@ def _record_classification(
     body = (
         f"{CLASSIFICATION_MARKER} level={assignment.level} rule={assignment.rule} "
         f"gates={','.join(selects.gates)} tier={selects.model_tier} "
-        f"rework={selects.rework_allowance} ship={selects.ship} "
+        f"rework={selects.rework_allowance} "
         f"reason={assignment.reason}"
     )
     if any(

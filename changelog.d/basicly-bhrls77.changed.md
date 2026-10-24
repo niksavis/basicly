@@ -1,0 +1,1 @@
+- Authorize normal task workflows from the task request without level grants, checkpoint reconfirmation or required budgets. Keep verification and destructive-action checks, optional explicit token limits, and readable historical grants. Count repair attempts and explicit retries independently so rework limits remain effective.

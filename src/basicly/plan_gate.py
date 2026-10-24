@@ -6,7 +6,7 @@ from typing import Protocol, runtime_checkable
 
 INTEGRITY_LEVELS = ("L1", "L2", "L3")
 
-PLAN_FIELDS = ("acceptance", "scope", "depends_on", "budget_tokens", "integrity")
+PLAN_FIELDS = ("acceptance", "scope", "depends_on")
 
 DEMONSTRATION_FIELD = "demonstration"
 

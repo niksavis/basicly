@@ -87,4 +87,5 @@ def test_the_build_entry_predicate_does_not_require_a_demonstration() -> None:
 
     assert plan_record.parse_plan_section(body).demonstration is None
     assert plan_entry.entry_verdict_for("feat.1", _recorded()).admitted
-    assert not plan_entry.entry_verdict_for("feat.1", _recorded(integrity=None)).admitted
+    assert plan_entry.entry_verdict_for("feat.1", _recorded(integrity=None)).admitted
+    assert not plan_entry.entry_verdict_for("feat.1", _recorded(depends_on=None)).admitted

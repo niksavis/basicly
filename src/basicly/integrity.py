@@ -83,19 +83,17 @@ class Selection:
     gates: tuple[str, ...]
     model_tier: str
     rework_allowance: int
-    ship: str
 
 
 VALIDATE_GATE = "validate-as-consumer"
 
 _SELECTIONS: dict[str, Selection] = {
-    "L1": Selection(gates=("fast",), model_tier="medium", rework_allowance=1, ship="delegable"),
-    "L2": Selection(gates=("full",), model_tier="high", rework_allowance=2, ship="delegable"),
+    "L1": Selection(gates=("fast",), model_tier="medium", rework_allowance=1),
+    "L2": Selection(gates=("full",), model_tier="high", rework_allowance=2),
     "L3": Selection(
         gates=("full", VALIDATE_GATE, "evidence-binding"),
         model_tier="maximum",
         rework_allowance=2,
-        ship="human",
     ),
 }
 

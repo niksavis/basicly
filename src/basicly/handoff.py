@@ -142,8 +142,12 @@ def plan_payload(result: RecordedDecomposition) -> dict:
                 "acceptance": list(child.spec.acceptance),
                 "scope": list(child.spec.scope),
                 "depends_on": list(child.depends_on),
-                "budget_tokens": child.spec.budget_tokens,
-                "integrity": child.spec.integrity,
+                **(
+                    {"budget_tokens": child.spec.budget_tokens}
+                    if child.spec.budget_tokens is not None
+                    else {}
+                ),
+                **({"integrity": child.spec.integrity} if child.spec.integrity is not None else {}),
                 "demonstration": child.spec.demonstration,
             }
             for child in result.children

@@ -787,11 +787,11 @@ def _patch_grant(
 
 
 @pytest.mark.parametrize(
-    ("level", "expected"),
-    [(None, "no active autonomy grant"), ("L1", "is L1"), ("L2", "is L2")],
+    "level",
+    [None, "L1", "L2"],
 )
-def test_an_autonomous_release_is_refused_below_l3(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, level: str | None, expected: str
+def test_a_verified_release_does_not_require_an_autonomy_grant(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, level: str | None
 ) -> None:
     _patch_grant(monkeypatch, level)
     plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
@@ -800,7 +800,7 @@ def test_an_autonomous_release_is_refused_below_l3(
         repo, plan, issue_id="fx-1", autonomous=True, root_issue="epic", dry_run=True
     )
 
-    assert result.refused and any(expected in reason for reason in result.refusals)
+    assert not result.refused
 
 
 def test_an_autonomous_release_is_refused_when_l3_preconditions_are_not_green(
@@ -817,15 +817,22 @@ def test_an_autonomous_release_is_refused_when_l3_preconditions_are_not_green(
     assert any("preconditions not green" in reason for reason in result.refusals)
 
 
-def test_an_autonomous_release_needs_a_root_to_check_the_grant_against(
+def test_an_autonomous_release_uses_the_requested_issue_when_no_root_is_supplied(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _patch_grant(monkeypatch, "L3")
+    _patch_grant(monkeypatch, None)
+    checked: list[str] = []
+    monkeypatch.setattr(
+        release.policy,
+        "lights_out_violations",
+        lambda _r, issue, *_a, **_k: checked.append(issue) or (),
+    )
     plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
 
     result = release.run_release(repo, plan, issue_id="fx-1", autonomous=True, dry_run=True)
 
-    assert result.refused and any("session root issue" in r for r in result.refusals)
+    assert not result.refused
+    assert checked == ["fx-1"]
 
 
 def test_a_green_l3_grant_permits_an_autonomous_release(

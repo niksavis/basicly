@@ -6,14 +6,13 @@ drives a single bead.
 
 Prerequisite: you have shipped a single track first
 ([tutorial](../tutorial/first-loop.md)). Everything below assumes you know what
-a checkpoint and a landing look like.
+a phase transition and a landing look like.
 
 ## 1. Write the child plan
 
 Children come from a plan file, not from the model's memory. The **plan gate**
-refuses the plan unless every entry carries all six of: a **list** of acceptance
-criteria, a scope, a declared dependency list, a token budget, an integrity
-level, and an end-to-end demonstration.
+requires a **list** of acceptance criteria, a scope, a declared dependency list and an end-to-end demonstration.
+The engine derives required verification from scope. A token limit is optional and comes only from an explicit user request.
 
 ```toml
 [[children]]
@@ -21,8 +20,6 @@ title = "Add an install note"
 acceptance = ["Given a reader when they open docs/install.md then the install command is shown"]
 scope = ["docs/install.md"]
 depends_on = []
-budget_tokens = 40000
-integrity = "L1"
 demonstration = "open `docs/install.md` and run the command it shows"
 
 [[children]]
@@ -30,8 +27,6 @@ title = "Add a loop note"
 acceptance = ["Given a reader when they open docs/loop.md then the loop commands are shown"]
 scope = ["docs/loop.md"]
 depends_on = []
-budget_tokens = 40000
-integrity = "L1"
 demonstration = "run `basicly loop status <issue>` as `docs/loop.md` documents it"
 ```
 
@@ -41,9 +36,8 @@ demonstration = "run `basicly loop status <issue>` as `docs/loop.md` documents i
   carries the ordering even between children whose scopes never overlap and
   nothing would otherwise serialize. `[]` is a declaration ("nothing blocks
   this"); omitting the key is not, and is refused.
-- `budget_tokens` is what the unit is worth spending.
-- `integrity` is `L1` (docs, comments, test-only), `L2` (engine code behind no
-  consumer surface) or `L3` (a consumer surface).
+- `budget_tokens` optionally carries an explicit user limit. Omit it when no limit was requested.
+- Historical `integrity` metadata is optional. The engine selects required checks from the actual scope.
 - `demonstration` is how the child is exercised end to end — a command to run, a
   request to make, or a test that goes through the consumer surface — with the
   runnable part in backticks. A child that cannot name one has no
@@ -58,12 +52,7 @@ demonstration = "run `basicly loop status <issue>` as `docs/loop.md` documents i
 Error: children[0] 'acceptance' must be a non-empty list of non-empty strings
 ```
 
-A missing gate field is refused before anything is created, naming every field
-it is missing:
-
-```text
-Error: children[0] ('Add a loop note') declares no depends_on, budget_tokens, integrity; the plan gate refuses a unit BUILD cannot be held to
-```
+A missing required field is refused before the engine creates children. Optional spending and historical classification fields do not require user input.
 
 A demonstration is refused twice over — once for being absent, and once for
 naming nothing anybody could run:
@@ -130,81 +119,28 @@ decompose: created 2 children under myrepo-9vf in 2 parallel group(s)
 basicly loop preflight myrepo-9vf
 ```
 
-```text
-config:    recognised
-base:      DIRTY - 7 path(s); a landing will refuse until committed
-worktrees: 0 live
-runner:    claude (headless), timeout 3600s
-grant:     NONE - every checkpoint is human
-budget:    MISSING - the 'claude' runner meters spend and no budget covers it
-checkpts:  decompose UNAPPROVED - blocks provisioning: the root's own advance provisions the lanes, and no grant delegates this
-           approve: basicly policy checkpoint myrepo-9vf decompose --approve
-           or delegate it: basicly policy grant myrepo-9vf --level L1
-lanes:     0 dispatchable now, 2 open child(ren)
-per-lane:  4000000 tokens assumed for an unsizeable lane (seed)
-forecast:  ~8000000 tokens if all 2 lanes start (per-lane x min(cap 5, 2 open))
-band:      8000..132000 working-set tokens
-  myrepo-9vf.2      unsized      no scope the estimator can read
-contend:   no append-only path declared ([worktree] append_only_paths)
-regen:     no generated path declared ([worktree.regenerate_commands])
-VERDICT:   not ready - base checkout is dirty; a metered runner needs a grant with a token budget; the root's decompose checkpoint blocks provisioning
-```
+Read the final `VERDICT` and each named blocker. Preflight writes nothing.
+Run it from the base checkout so it can read recorded usage and forecast evidence.
 
-That one screen answers every question a failed pass would have charged you for.
-Run it **from the base checkout** — `.basicly/usage/` is git-ignored, so a
-worktree sees no run records and the forecast loses its measured prior.
-
-`lanes: 0 dispatchable now` before any worktree exists is normal: it counts
-*adopted* lanes, and the supervisor provisions from the ranked open children at
-pass start.
+`lanes: 0 dispatchable now` can mean that worktrees are not provisioned yet.
+The supervisor provisions from the ranked open children when the pass starts.
 
 ## 4. Clear what the verdict named
 
-**Dirty base**: commit it. Every grant, checkpoint and answer writes a tracker
-marker that dirties the committed ledger, so expect to commit between steps.
+Commit unrelated base changes before landing. The engine owns the tracker commits for loop work.
+Resolve readiness, dependency, scope and work-in-progress refusals using the details in the verdict.
+The task request already authorizes normal classification, decomposition and completion within that scope.
+Do not request an L-level grant or mandatory budget to clear those transitions.
 
-**The root's decompose checkpoint**: preflight names it only when no grant
-delegates it, so there are two remedies and either clears the verdict. Approve it
-once by hand:
-
-```sh
-basicly policy checkpoint myrepo-9vf decompose --approve
-```
-
-Or issue a grant that delegates it — `assisted` (`L1`) is the lowest level that
-does, and seeding then resolves the checkpoint itself, the same way `basicly loop
-run` resolves one:
+If the user explicitly requests a token ceiling, record it:
 
 ```sh
-basicly policy grant myrepo-9vf --level L1 --token-budget 30000000
+basicly policy budget myrepo-9vf --tokens 30000000
 ```
 
-**Budget**: a metered runner needs a grant carrying a token ceiling.
-
-```sh
-basicly policy grant myrepo-9vf --level L3 --token-budget 30000000
-```
-
-Size that number off recorded dispatches, never off how big the work looks —
-`mean tokens per lane × lanes`, plus headroom for **one** lane that dies at its
-runner timeout, because a killed lane still spends everything it burned before
-the kill:
-
-```sh
-uv run python -c "
-import json, statistics
-d = json.load(open('.basicly/usage/run-records.json'))
-ok = [r.get('tokens') or 0 for rs in d.values() for r in rs
-      if r.get('agent') != 'manual' and r.get('outcome') == 'executed']
-print('lanes', len(ok), 'mean', f'{statistics.mean(ok):,.0f}', 'max', f'{max(ok):,}')"
-```
-
-Two failure modes are recorded, both from real runs. *"I will do the coding
-myself" is not a budget* — `supervise` dispatches a metered runner regardless;
-the grant level covers the **checkpoints**, it does not decide who writes the
-code. And the ceiling **cannot stop a dispatch it has already started**: spend
-is consulted before a pass and recorded after it, so budget for the overshoot
-instead of expecting the ceiling to catch it.
+The number is an example, not a default budget. Without an explicit limit, omit that command.
+Observed usage and forecasts remain available without turning either into consent questions.
+An explicit exhausted limit remains a blocker until the user changes or removes it.
 
 ## 5. Run the pass
 
@@ -217,7 +153,7 @@ concurrency`, routes each outcome, and lands green work through a **serial**
 merge queue. Re-run preflight and re-run supervise until it reports done.
 
 Confirm a landing from the `[merged]` line, never from the exit code —
-`supervise` exits non-zero at any checkpoint, which is not a failure. Read the
+`supervise` can stop at a named missing fact or failed gate. Read the
 run's own summary block; `grep`-ing the output for `[merged]` hides a failure
 whose message you did not predict.
 

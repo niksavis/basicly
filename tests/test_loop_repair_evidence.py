@@ -31,6 +31,9 @@ def _no_tracker_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(loop, "_hold_for_this_session", lambda _ctx: None)
     monkeypatch.setattr(loop.process_confirmation, "confirm", lambda *_a: None)
     monkeypatch.setattr(
+        policy, "spend_status", lambda *_a, **_k: policy.SpendStatus(None, 0, False)
+    )
+    monkeypatch.setattr(
         policy,
         "record_finding_set",
         lambda _r, _i, _g, found: policy.Convergence(

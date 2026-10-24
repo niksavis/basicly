@@ -62,9 +62,7 @@ def test_a_tutorial_claim_naming_an_older_version_fails_naming_the_line(
     path = work_repo / TUTORIAL_MD
     current = claims._released_version(work_repo)
     text = path.read_text(encoding="utf-8")
-    older = text.replace(
-        f"basicly {current} in a real terminal", "basicly 0.0.1 in a real terminal"
-    )
+    older = text.replace(f"basicly {current}", "basicly 0.0.1", 1)
     assert older != text, "the control: the claim names the released version to begin with"
     path.write_text(older, encoding="utf-8")
 

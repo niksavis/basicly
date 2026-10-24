@@ -165,21 +165,20 @@ def test_downgrade_never_applies_below_l3() -> None:
 
 
 @pytest.mark.parametrize(
-    ("level", "gates", "tier", "rework", "ship"),
+    ("level", "gates", "tier", "rework"),
     [
-        ("L1", ("fast",), "medium", 1, "delegable"),
-        ("L2", ("full",), "high", 2, "delegable"),
-        ("L3", ("full", "validate-as-consumer", "evidence-binding"), "maximum", 2, "human"),
+        ("L1", ("fast",), "medium", 1),
+        ("L2", ("full",), "high", 2),
+        ("L3", ("full", "validate-as-consumer", "evidence-binding"), "maximum", 2),
     ],
 )
 def test_selects_the_gate_set_tier_and_rework_allowance(
-    level: str, gates: tuple[str, ...], tier: str, rework: int, ship: str
+    level: str, gates: tuple[str, ...], tier: str, rework: int
 ) -> None:
     selection = integrity.selection_for(level)
     assert selection.gates == gates
     assert selection.model_tier == tier
     assert selection.rework_allowance == rework
-    assert selection.ship == ship
 
 
 def test_an_assignment_selects_without_a_second_lookup() -> None:
