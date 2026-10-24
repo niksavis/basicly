@@ -97,4 +97,15 @@ is `basicly catalog dump`.
 | `basicly board --out FILE` | Write the harness board as one self-contained HTML page, with the `harness-board/v1` snapshot beside it as `board-snapshot.json`. The page references no external origin and every panel carries the snapshot's age, so a value is never drawn without it |
 | `basicly board validate` | Read a board snapshot and say whether this consumer can render it. A major-version mismatch refuses; an unknown key is reported and admitted |
 | `basicly board serve [--port N] [--bind ADDR] [--refresh S] [--no-actions]` | Serve the board for a wall display. GET reads; **one POST route** runs a `basicly` command an operator submitted, behind a one-time confirm code the operator types and this server never holds. `--no-actions` registers no action route and every POST is then 405 — the recommended flag for an unattended wall. `--bind` takes a literal IPv4 interface address, refusing a wildcard or a hostname, and defaults to the loopback. While a supervisor lock is fresh it serves that producer's snapshot bytes and folds nothing; otherwise it folds for itself on `--refresh` and keeps the result in memory. It takes no lock and writes no file, so it blocks no gate |
-| `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Bump the single-sourced version, regenerate version-stamped projections in a fresh interpreter, rewrite install pins on the consumer surfaces, fold the per-lane changelog fragments into a dated section, commit, and create the annotated tag. **Never pushes** |
+| `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Audit published tags on origin, refresh the committed release history and shipped-file inventory, bump the single-sourced version, regenerate version-stamped projections in a fresh interpreter, rewrite install pins on the consumer surfaces, fold the per-lane changelog fragments into a dated section, commit, and create the annotated tag. **Never pushes** |
+
+Release preparation checks origin before it writes. `--dry-run` reports newly published earlier
+versions without changing files. A missing or moved published tag, an unavailable origin, or
+a missing or moved local canonical tag refuses the release. Fetch the published tags with
+`git fetch origin --tags`, then verify their commits before retrying.
+
+`src/basicly/release_history.json` records published version tags and their peeled commits.
+Ordinary builds, tests and `uv run python -m basicly.shipped_core` use this committed input
+offline. They ignore unlisted local tags and refuse missing or moved canonical refs. Release
+preparation commits both the refreshed input and the complete inventory. A failed preparation
+restores the previous input with the other tracked release files.

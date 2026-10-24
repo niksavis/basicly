@@ -3,33 +3,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess  # nosec B404
 from collections.abc import Iterable
 from pathlib import Path
 
-from . import __version__, checkout
+from . import __version__, checkout, release_history
 
 DIGESTS_FILE = Path(__file__).with_name("shipped_core.json")
 SOURCE_DIGESTS_FILE = Path("src") / "basicly" / DIGESTS_FILE.name
 CORE_TREE = ".basicly/core"
-RELEASE_TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 SCHEMA_VERSION = 1
-
-
-def _version_key(version: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in version.split("."))
-
-
-def release_tags_before(repo_root: Path, version: str) -> list[str]:
-
-    bound = _version_key(version)
-    listed = checkout.git(["tag", "--list", "v*"], cwd=repo_root).stdout.split()
-    earlier = [
-        name for name in listed if RELEASE_TAG_RE.match(name) and _version_key(name[1:]) < bound
-    ]
-    return sorted(earlier, key=lambda name: _version_key(name[1:]))
 
 
 def _core_blobs(repo_root: Path, tag: str) -> list[tuple[str, str]]:
@@ -73,15 +57,15 @@ def _blob_digests(repo_root: Path, oids: Iterable[str]) -> dict[str, str]:
 
 def build_digests(repo_root: Path, version: str) -> dict[str, object]:
 
-    release_tags = release_tags_before(repo_root, version)
-    pairs = [pair for tag in release_tags for pair in _core_blobs(repo_root, tag)]
+    history = release_history.references(repo_root, version)
+    pairs = [pair for commit in history.values() for pair in _core_blobs(repo_root, commit)]
     digests = _blob_digests(repo_root, (oid for _path, oid in pairs))
     core: dict[str, set[str]] = {}
     for path, oid in pairs:
         core.setdefault(path, set()).add(digests[oid])
     return {
         "schema_version": SCHEMA_VERSION,
-        "tags": release_tags,
+        "tags": list(history),
         "core": {path: sorted(core[path]) for path in sorted(core)},
     }
 

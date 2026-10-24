@@ -167,7 +167,6 @@ ignore_names = [
   "stale_sessions",
   "stuck",
   "tagged",
-  "tags",
   "tone",
   "untiered_metered_runners",
   "window_violations",

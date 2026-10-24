@@ -58,7 +58,7 @@ layers =
     context_window
     markdownlint
     agents | catalog_verify | copilot_store | fleet | hooks | kit_load | loader | models | permissions | output_styles | planner | renderers | shipped_core | skills | state
-    skill_pairing
+    release_history | skill_pairing
     provider_limit | runner_usage
     decider_contract
     corpus_drift | decision_marker

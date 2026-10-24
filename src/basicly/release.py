@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import checkout, merge, policy, shipped_core, verify, worktree
+from . import checkout, merge, policy, release_history, shipped_core, verify, worktree
 from . import commit as commit_mod
 from .capability_proof import unexercised_capabilities
 
@@ -591,10 +591,20 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
             plan=plan, steps=(), dry_run=dry_run, tagged=False, refusals=tuple(refusals)
         )
 
+    try:
+        history = release_history.audit(repo_root, plan.version)
+    except release_history.HistoryError as exc:
+        return ReleaseResult(
+            plan=plan, steps=(), dry_run=dry_run, tagged=False, refusals=(str(exc),)
+        )
+
     pins = ", ".join(f"{site.path.as_posix()} ({site.occurrences})" for site in plan.pins)
+    additions = ", ".join(history.added) or "(no additions)"
     steps = [
+        f"audit origin and refresh {release_history.SOURCE_FILE.as_posix()}: {additions}",
         f"bump {VERSION_FILE.as_posix()}: {plan.current_version} -> {plan.version}",
-        f"regenerate {shipped_core.SOURCE_DIGESTS_FILE.as_posix()} from every earlier release tag",
+        f"regenerate {shipped_core.SOURCE_DIGESTS_FILE.as_posix()} "
+        "from canonical published releases",
         "regenerate projected files so their headers carry the new version",
         f"rewrite install pins {plan.current_tag} -> {plan.tag}: {pins or '(none found)'}",
     ]
@@ -614,6 +624,7 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
         return ReleaseResult(plan=plan, steps=tuple(steps), dry_run=True, tagged=False)
 
     try:
+        release_history.write(repo_root, history.tags)
         _bump_version_file(repo_root, plan)
         _regenerate(repo_root)
         _rewrite_pins(repo_root, plan)
@@ -621,7 +632,7 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
         _write_changelog(repo_root, plan)
         _git(repo_root, ["add", "-A"])
         _git(repo_root, ["commit", "-m", commit_message(plan, issue_id)])
-    except (RuntimeError, OSError, SystemExit) as exc:
+    except (RuntimeError, OSError, SystemExit, release_history.HistoryError) as exc:
         _restore(repo_root)
         raise SystemExit(f"release failed and the tree was restored: {exc}") from exc
     _git(repo_root, ["tag", "-a", plan.tag, "-m", f"{plan.tag} ({plan.date})"])
