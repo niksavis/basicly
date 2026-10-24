@@ -43,11 +43,15 @@ def session_facts(repo_root: Path) -> board_snapshot.SessionFacts | None:
     if facts is None:
         return None
     grant = active_grant(repo_root, facts.root_issue)
+    try:
+        limit = policy.active_token_limit(repo_root, facts.root_issue)
+    except UNREADABLE:
+        limit = None
     return replace(
         facts,
         grant_level=grant.level if grant is not None else "",
-        token_budget=grant.token_budget if grant is not None else None,
-        spent_tokens=grant_spend(repo_root, facts.root_issue, grant),
+        token_budget=limit.token_budget if limit is not None else None,
+        spent_tokens=grant_spend(repo_root, facts.root_issue, limit),
     )
 
 
@@ -86,7 +90,7 @@ def spend_sources(repo_root: Path) -> SpendSources:
 def grant_split(
     repo_root: Path,
     root_issue: str,
-    grant: policy.Grant | None,
+    grant: policy.Grant | policy.TokenLimit | None,
     *,
     sources: SpendSources | None = None,
 ) -> SpendSplit | None:
@@ -119,7 +123,7 @@ def grant_split(
 def grant_spend(
     repo_root: Path,
     root_issue: str,
-    grant: policy.Grant | None,
+    grant: policy.Grant | policy.TokenLimit | None,
     *,
     sources: SpendSources | None = None,
 ) -> int | None:
@@ -363,15 +367,14 @@ def _whole(held: object) -> int | None:
 
 
 def _visible_asks(
-    asks: Sequence[Mapping[str, Any]], live_ids: frozenset[str], grant_level: str
+    asks: Sequence[Mapping[str, Any]], live_ids: frozenset[str]
 ) -> list[dict[str, object]]:
 
-    covered = policy.GRANT_COVERAGE.get(grant_level, ())
     visible = []
     for ask in asks:
         if str(ask.get("issue", "")) not in live_ids:
             continue
-        if ask.get("kind") == "checkpoint" and ask.get("subject") in covered:
+        if ask.get("kind") == "checkpoint" and ask.get("subject") in policy.CHECKPOINTS:
             continue
         visible.append(dict(ask))
     return visible
@@ -387,9 +390,7 @@ def _hide_unanswerable(built: dict[str, object]) -> dict[str, object]:
         if isinstance(units, list)
         else frozenset()
     )
-    session = built.get("session")
-    grant_level = str(session.get("grant_level", "")) if isinstance(session, dict) else ""
-    built["asks"] = _visible_asks(asks, live_ids, grant_level)
+    built["asks"] = _visible_asks(asks, live_ids)
     return built
 
 

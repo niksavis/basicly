@@ -143,9 +143,10 @@ def test_the_engine_carries_every_marker_family_with_br_absent(tmp_path: Path) -
     assert policy.gate_override_spent(repo, "seam-0001", "verify") is True
     assert policy.unreliable_gate_events(repo, "seam-0001", "verify") == 1
     assert grant.status == "approved"
-    active = policy.active_grant(repo, "seam-0001")
+    active = policy.active_token_limit(repo, "seam-0001")
     assert active is not None
-    assert (active.level, active.token_budget) == ("L3", 8_000_000)
+    assert active.token_budget == 8_000_000
+    assert policy.active_grant(repo, "seam-0001") is None
     assert charged == 1
     assert policy.rework_charged(repo, "seam-0001", "verify") == 1
     assert ident is not None and other is not None
@@ -171,8 +172,10 @@ def test_the_marker_stamp_survives_the_flip_so_a_wait_stays_measurable(tmp_path:
 
     repo = _owned_repo(tmp_path, "seam-0001")
 
-    wait_id = policy.record_wait_request(repo, "seam-0001", "ship")
-    assert wait_id is not None
+    wait_id = policy.wait_id_for_checkpoint("seam-0001", "ship")
+    tracker.add_comment(
+        repo, "seam-0001", f"{policy.WAIT_MARKER} id={wait_id} kind=checkpoint requested"
+    )
     event = policy.record_checkpoint_wait(repo, "seam-0001", "ship", by="human", delegated=False)
 
     assert event is not None

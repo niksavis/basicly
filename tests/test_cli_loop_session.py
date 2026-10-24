@@ -11,12 +11,15 @@ _GRANT = policy.Grant(level="L2", token_budget=5000, spent_at_issue=800)
 
 
 @pytest.fixture(autouse=True)
-def _no_ambient_grant(monkeypatch: pytest.MonkeyPatch) -> None:
+def _no_ambient_policy(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(policy, "active_grant", lambda *_a, **_k: None)
+    monkeypatch.setattr(policy, "active_token_limit", lambda *_a, **_k: None)
 
 
 def _grant(monkeypatch: pytest.MonkeyPatch, grant: policy.Grant | None = _GRANT) -> None:
     monkeypatch.setattr(policy, "active_grant", lambda *_a, **_k: grant)
+    limit = None if grant is None else policy.TokenLimit(5000, spent_at_issue=800)
+    monkeypatch.setattr(policy, "active_token_limit", lambda *_a, **_k: limit)
 
 
 def _observation(**overrides: object) -> supervise.Observation:
@@ -78,7 +81,9 @@ def test_loop_session_prints_the_attach_surface(
     assert "last run: claude executed at 2026-07-25T10:00:00+00:00, 1200 tokens" in out
     assert "decisions:  1 pending" in out
     assert "ship without the migration?" in out
-    assert "grant:      L2, 400/5000 tokens under this grant (issued at 800 spent)" in out
+    assert (
+        "budget:     400/5000 tokens under the explicit limit (set at 800 measured tokens)" in out
+    )
 
 
 def test_loop_session_never_offers_lifetime_spend_against_the_budget(
@@ -91,7 +96,9 @@ def test_loop_session_never_offers_lifetime_spend_against_the_budget(
     assert cli.main(["loop", "session", "basicly-epic"]) == 0
     out = capsys.readouterr().out
     assert "1200/5000" not in out
-    assert "grant:      L2, 400/5000 tokens under this grant (issued at 800 spent)" in out
+    assert (
+        "budget:     400/5000 tokens under the explicit limit (set at 800 measured tokens)" in out
+    )
     assert "lifetime:   1200 tokens over this session's track" in out
 
 
@@ -107,7 +114,8 @@ def test_loop_session_json_names_the_window_each_spend_figure_covers(
     assert (payload["grant_spent_tokens"], payload["grant_baseline_tokens"]) == (400, 800)
     assert set(payload["spend_windows"]) == {"spent_tokens", "grant_spent_tokens", "token_budget"}
     assert "all time" in payload["spend_windows"]["spent_tokens"]
-    assert "grant_spent_tokens" in payload["spend_windows"]["token_budget"]
+    assert "limit_spent_tokens" in payload["spend_windows"]["token_budget"]
+    assert (payload["limit_spent_tokens"], payload["limit_baseline_tokens"]) == (400, 800)
 
 
 def test_loop_session_json_reports_no_grant_window_when_there_is_no_grant(
@@ -118,6 +126,7 @@ def test_loop_session_json_reports_no_grant_window_when_there_is_no_grant(
     assert cli.main(["loop", "session", "basicly-epic", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert (payload["grant_spent_tokens"], payload["grant_baseline_tokens"]) == (None, None)
+    assert (payload["limit_spent_tokens"], payload["limit_baseline_tokens"]) == (None, None)
 
 
 def test_loop_session_reports_human_wait_apart_from_dispatch(
@@ -170,7 +179,7 @@ def test_loop_session_names_an_unsupervised_root(
     assert "supervisor: (none running" in out
     assert "lane:       (no in-flight lanes)" in out
     assert "decisions:  none pending" in out
-    assert "grant:      (none) - 0 tokens over this session's track, all time" in out
+    assert "budget:     no explicit limit; 0 measured tokens over this task" in out
 
 
 def test_loop_session_warns_that_a_stale_holder_may_be_taken_over(

@@ -140,7 +140,7 @@ def test_classify_assigns_and_records_the_integrity_level(
     assert "gates=full,validate-as-consumer,evidence-binding" in body
     assert "tier=maximum" in body
     assert "rework=2" in body
-    assert "ship=human" in body
+    assert "ship=" not in body
 
 
 def test_classify_records_the_classification_once(

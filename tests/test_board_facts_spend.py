@@ -4,7 +4,6 @@ import shutil
 from pathlib import Path
 
 from basicly import board_facts, policy, run_record, tracker
-from basicly.config import PolicyConfig
 
 REPO_ROOT = Path(__file__).parent.parent
 KIT_SOURCE = REPO_ROOT / ".basicly" / "core" / "kit" / "tracker"
@@ -30,14 +29,7 @@ def _owned_repo(root: Path, *records: str) -> Path:
 
 def _granted(root: Path, record: str, budget: int) -> policy.Grant:
     _owned_repo(root, record)
-    policy.issue_grant_guarded(
-        root,
-        record,
-        "L3",
-        budget,
-        PolicyConfig(required_gates=(), max_rework=2, autonomy="L3"),
-        interactive=True,
-    )
+    tracker.add_comment(root, record, f"[harness-policy] grant level=L3 budget={budget}")
     grant = policy.active_grant(root, record)
     assert grant is not None
     return grant

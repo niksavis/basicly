@@ -20,14 +20,12 @@ from basicly import (
     tracker,
     worktree,
 )
-from basicly.config import VERIFY_GATE_PROVIDER, load_policy_config
+from basicly.config import VERIFY_GATE_PROVIDER
 from basicly.decompose import ChildSpec
 from tests import flipped_tracker, standin_agent
 
 _GATED = {
     "depends_on": (),
-    "budget_tokens": 40_000,
-    "integrity": "L2",
     "demonstration": "run `basicly loop status` and read the lane phase",
 }
 
@@ -47,10 +45,6 @@ modes = ["fast", "full"]
 [policy]
 required_gates = ["verify"]
 max_rework = 2
-# Raised so the stand-in section can issue the L2 grant a supervisor pass needs
-# to dispatch a metered runner at all. Inert for every other test here: without a
-# grant on the bead, the ceiling this opts into is never reached.
-autonomy = "L2"
 
 [policy.sizing]
 # The fixture's files are tiny; without this floor the sizing governor refuses
@@ -211,9 +205,12 @@ def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
     intake = loop.advance(repo, issue_id, inputs=loop.Inputs(work_type="task"))
-    assert intake.checkpoint == "classify", intake.detail
+    assert intake.action == "classified", intake.detail
+    assert intake.to_phase == "classify"
+    assert intake.checkpoint is None
+    assert policy.checkpoint_approved(repo, issue_id, "classify")
+    assert policy.active_grant(repo, issue_id) is None
     _review(repo, issue_id)
-    policy.approve_checkpoint(repo, issue_id, "classify")
     return loop.advance(repo, issue_id)
 
 
@@ -246,7 +243,8 @@ def test_a_leaf_lands_records_its_gate_and_closes(harness_repo: Path) -> None:
     assert gates.required_passed == ("verify",)
     assert gates.can_advance
 
-    policy.approve_checkpoint(repo, issue, "ship")
+    authorized = loop.advance(repo, issue)
+    assert authorized.action == "shipped", authorized.detail
     assert loop_state.read_node_state(repo, issue).phase == "ship"
     shipped = loop.advance(repo, issue)
     assert shipped.action == "tore-down", shipped.detail
@@ -258,29 +256,25 @@ def test_a_leaf_lands_records_its_gate_and_closes(harness_repo: Path) -> None:
     assert _git(repo, "status", "--porcelain").strip() == ""
 
 
-def test_the_printed_ship_code_survives_the_native_ceremony_retry(harness_repo: Path) -> None:
+def test_native_ceremony_ships_without_a_confirmation_retry(harness_repo: Path) -> None:
     repo = harness_repo
-    issue = _create_bead(repo, "answer the ship challenge")
+    issue = _create_bead(repo, "complete the authorized task")
     _to_build(repo, issue)
     state = loop_state.read_node_state(repo, issue)
     assert state.worktree is not None
     session = worktree.load_session(state.worktree.name, repo)
     assert session is not None
     tree = Path(session.worktree_path)
-    _commit(tree, "app.txt", "confirmed\n", f"feat: answer the challenge ({issue})")
+    _commit(tree, "app.txt", "authorized\n", f"feat: complete the task ({issue})")
 
-    first = loop.run_ceremony(repo, issue)
-    assert first.challenge is not None
-    checkpoint, code = first.challenge
-    assert checkpoint == "ship"
-    assert _status(repo, issue) != "closed"
+    completed = loop.run_ceremony(repo, issue)
 
-    retry = loop.run_ceremony(repo, issue, confirms={"ship": code})
-
-    assert retry.refused is None
-    assert not retry.blocked
+    assert completed.challenge is None
+    assert completed.refused is None
+    assert not completed.blocked
     assert _status(repo, issue) == "closed"
-    assert (repo / "app.txt").read_text() == "confirmed\n"
+    assert (repo / "app.txt").read_text() == "authorized\n"
+    assert policy.active_grant(repo, issue) is None
     assert not tree.exists()
 
 
@@ -310,7 +304,8 @@ def test_ship_refuses_a_leaf_whose_branch_never_merged(harness_repo: Path) -> No
         "pass",
     )
     assert loop_state.read_node_state(repo, issue).phase == "verify"
-    policy.approve_checkpoint(repo, issue, "ship")
+    authorized = loop.advance(repo, issue)
+    assert authorized.action == "shipped", authorized.detail
     assert loop_state.read_node_state(repo, issue).phase == "ship"
 
     refused = loop.advance(repo, issue)
@@ -523,7 +518,8 @@ def test_a_dispatched_agent_cli_commits_and_the_loop_lands_it(standin_repo: Path
     assert records[0]["estimated"] is False
     assert records[0]["tokens"] == standin_agent.DEFAULT_OCCUPANCY
 
-    policy.approve_checkpoint(repo, issue, "ship")
+    authorized = loop.advance(repo, issue)
+    assert authorized.action == "shipped", authorized.detail
     shipped = loop.advance(repo, issue)
     assert shipped.action == "tore-down", shipped.detail
     assert _status(repo, issue) == "closed"
@@ -594,10 +590,7 @@ def test_a_supervisor_pass_runs_two_agent_processes_and_lands_both(
         provisioned = _to_build(repo, child)
         assert provisioned.blocked, provisioned.detail
 
-    granted = policy.issue_grant_guarded(
-        repo, root, "L2", 100_000_000, load_policy_config(repo), interactive=True
-    )
-    assert granted.status == "approved", granted.detail
+    assert policy.active_grant(repo, root) is None
 
     _set_modes(monkeypatch, default=standin_agent.COMMIT)
     session_state = supervise.derive_session(repo, root)
@@ -615,9 +608,11 @@ def test_a_supervisor_pass_runs_two_agent_processes_and_lands_both(
 
     routed = supervise.route_outcomes(repo, session_state, outcomes)
     assert {r.issue_id for r in routed} == {first, second}
-    assert [r.route for r in routed] == ["merged", "merged"], [r.detail for r in routed]
+    assert [r.route for r in routed] == ["shipped", "shipped"], [r.detail for r in routed]
 
     for child in (first, second):
+        assert _status(repo, child) == "closed"
+        assert not any("grant level=" in row["text"] for row in tracker.read_comments(repo, child))
         assert (repo / f"{child}.txt").read_text(encoding="utf-8") == f"work for {child}\n"
         assert loop_state.read_node_state(repo, child).gates.required_passed == ("verify",)
         assert [record["outcome"] for record in _dispatches(repo, child)] == [

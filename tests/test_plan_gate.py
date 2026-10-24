@@ -40,7 +40,7 @@ def test_loading_a_plan_missing_one_field_is_refused_naming_it(field: str) -> No
     assert "children[0]" in str(caught.value)
 
 
-@pytest.mark.parametrize("field", ["depends_on", "budget_tokens", "integrity"])
+@pytest.mark.parametrize("field", ["depends_on"])
 def test_the_gate_owns_the_refusal_for_the_fields_it_added(field: str) -> None:
     payload = _child_payload("a")
     del payload[field]
@@ -55,7 +55,18 @@ def test_the_gate_owns_the_refusal_for_the_fields_it_added(field: str) -> None:
 def test_a_plan_gate_refusal_is_a_value_error() -> None:
 
     with pytest.raises(ValueError):
-        decompose.parse_children(_plan_payload(_child_payload("a", integrity=None)))
+        decompose.parse_children(_plan_payload(_child_payload("a", depends_on=None)))
+
+
+@pytest.mark.parametrize("field", ["budget_tokens", "integrity"])
+def test_a_plan_without_an_optional_budget_or_level_loads(field: str) -> None:
+    payload = _child_payload("a")
+    del payload[field]
+
+    (child,) = decompose.parse_children(_plan_payload(payload))
+
+    assert getattr(child, field) is None
+    assert plan_gate.missing_fields(child) == ()
 
 
 def test_a_declared_empty_dependency_list_is_not_a_missing_one() -> None:
@@ -195,7 +206,7 @@ def test_decompose_refuses_a_plan_missing_a_field_and_creates_no_issue(
     _install(monkeypatch, fake)
     bare = ChildSpec(title="a", acceptance=("does the thing",), scope=("src/a.py",))
 
-    with pytest.raises(plan_gate.PlanGateError, match="integrity"):
+    with pytest.raises(plan_gate.PlanGateError, match="depends_on"):
         decompose.decompose(tmp_path, "feat", (bare,))
 
     assert fake.created == []
@@ -214,8 +225,6 @@ def test_a_fully_planned_unit_is_admitted_to_build_entry() -> None:
         ("acceptance", ()),
         ("scope", ()),
         ("depends_on", None),
-        ("budget_tokens", None),
-        ("integrity", None),
     ],
 )
 def test_build_entry_refuses_a_unit_missing_a_plan_field_naming_it(

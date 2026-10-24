@@ -78,6 +78,11 @@ def at(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(loop, "_hold_for_this_session", lambda _ctx: None)
         monkeypatch.setattr(loop.process_confirmation, "confirm", lambda *_a: None)
         monkeypatch.setattr(loop.tracker, "check_close", lambda *_a: None)
+        monkeypatch.setattr(
+            policy,
+            "approve_checkpoint_guarded",
+            lambda *_a, **_k: policy.ApprovalResult("approved"),
+        )
 
     return _pin
 
@@ -91,6 +96,7 @@ def tracker_commits(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | No
         return True
 
     monkeypatch.setattr(loop.merge, "commit_tracker_state", _record)
+    monkeypatch.setattr(policy, "spend_status", lambda *_a, **_k: _unhalted())
     return calls
 
 
@@ -125,7 +131,7 @@ def test_intake_blocks_without_work_type(at, tmp_path: Path) -> None:
     assert result.blocked and result.needs_input == "work_type"
 
 
-def test_intake_records_type_then_waits_for_checkpoint(
+def test_intake_records_type_without_another_checkpoint_approval(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     at(_state("intake"))
@@ -138,7 +144,7 @@ def test_intake_records_type_then_waits_for_checkpoint(
     monkeypatch.setattr(classify, "classify", _classify)
     result = _advance(tmp_path, work_type="feature")
     assert recorded["wt"] == "feature"
-    assert result.blocked and "classify checkpoint" in result.detail
+    assert not result.blocked and result.to_phase == "classify"
 
 
 def test_classify_blocks_when_dor_incomplete(
@@ -259,7 +265,7 @@ def _never_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_a_halted_grant_does_not_refuse_the_interactive_dispatch(
+def test_an_explicit_spent_limit_refuses_even_an_interactive_dispatch(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -285,21 +291,19 @@ def test_a_halted_grant_does_not_refuse_the_interactive_dispatch(
 
     result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
 
-    assert spawned == ["claude"], "a spent budget still refused the dispatch"
-    assert result.needs_input != "grant"
-    assert "refused before it started" not in result.detail
+    assert spawned == []
+    assert result.blocked and result.needs_input == "budget"
 
 
-def test_a_dispatch_with_no_session_root_is_ungated_as_before(
+def test_a_single_requested_task_uses_its_own_optional_limit(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
     _ready_leaf(at, monkeypatch)
     _pin_runner(monkeypatch, "claude")
+    checked: list[str] = []
     monkeypatch.setattr(
-        loop.policy,
-        "spend_status",
-        lambda *_a, **_k: pytest.fail("no session root means no ledger to consult"),
+        loop.policy, "spend_status", lambda _repo, root, **_k: checked.append(root) or _unhalted()
     )
     monkeypatch.setattr(
         runner,
@@ -312,6 +316,7 @@ def test_a_dispatch_with_no_session_root_is_ungated_as_before(
     result = _advance(tmp_path)
 
     assert result.blocked and "finished in worktree" in result.detail
+    assert checked == ["i"]
 
 
 def test_an_oversized_bead_is_refused_by_the_band_at_the_interactive_dispatch(
@@ -464,7 +469,9 @@ def test_a_single_track_dispatch_over_the_ceiling_observes_and_spins_nothing(
     assert fake.deps == [], "no gating edge"
     written = [text for texts in fake.comments.values() for text in texts]
     assert not any(text.startswith("[harness-overrun]") for text in written)
-    assert '"context_tokens": 12000' in written[0] and '"context_window": 1000000' in written[0]
+    runs = [text for text in written if text.startswith(run_record.MARKER)]
+    assert len(runs) == 1
+    assert '"context_tokens": 12000' in runs[0] and '"context_window": 1000000' in runs[0]
     assert result.blocked
     assert "12000" in result.detail and "10000" in result.detail
     assert "observed, not enforced" in result.detail
@@ -514,6 +521,14 @@ def test_dispatch_blocks_on_needs_input_sentinel(
     monkeypatch.setattr(policy, "definition_of_ready", lambda *_a: DoRResult(True, ()))
     monkeypatch.setattr(worktree, "list_sessions", lambda *_a, **_k: [])
     monkeypatch.setattr(loop, "_write", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        loop.plan_entry, "build_entry_verdict", lambda *_a: loop.plan_entry.EntryVerdict("i")
+    )
+    monkeypatch.setattr(
+        working_set,
+        "admit_working_set",
+        lambda *_a, **_k: WorkingSetAdmission("i", None, None, refused=False),
+    )
 
     def _create(name: str, **_k) -> Session:
         return Session(
@@ -789,14 +804,14 @@ def _proposer(monkeypatch: pytest.MonkeyPatch, stdout: str, **spec_kw) -> dict:
     return calls
 
 
-def _delegated(monkeypatch: pytest.MonkeyPatch, level: str = "L3") -> None:
+def _delegated(monkeypatch: pytest.MonkeyPatch, level: str = "task request") -> None:
     monkeypatch.setattr(
         policy, "proposal_delegated", lambda *_a, **_k: policy.ProposalGrant(True, level=level)
     )
     monkeypatch.setattr(decisions, "intake_corpus", lambda *_a: "Ship the parser.")
 
 
-def test_intake_proposes_the_work_type_under_a_grant(
+def test_intake_proposes_the_requested_work_type_without_another_approval(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     at(_state("intake"))
@@ -813,8 +828,8 @@ def test_intake_proposes_the_work_type_under_a_grant(
     result = _advance(tmp_path)
 
     assert recorded["wt"] == "epic"
-    assert result.blocked and result.checkpoint == "classify"
-    assert "proposed under the L3 grant" in result.detail
+    assert not result.blocked and result.to_phase == "classify"
+    assert "proposed for the task request" in result.detail
 
 
 def test_intake_falls_back_to_the_block_when_no_grant_delegates_it(
@@ -837,7 +852,7 @@ def test_intake_falls_back_to_the_block_when_no_grant_delegates_it(
     assert "does not originate it" in result.detail
 
 
-def test_an_unreadable_grant_ledger_blocks_rather_than_failing_the_advance(
+def test_a_missing_task_corpus_blocks_rather_than_inventing_a_proposal(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -847,7 +862,7 @@ def test_an_unreadable_grant_ledger_blocks_rather_than_failing_the_advance(
     result = _advance(tmp_path)
 
     assert result.blocked and result.needs_input == "work_type"
-    assert "grant ledger could not be read" in result.detail
+    assert "carries no description" in result.detail
 
 
 def test_an_invalid_proposed_work_type_never_reaches_the_tracker(
@@ -1051,7 +1066,7 @@ def test_classify_proposes_the_child_plan_under_a_grant(
         ),
     )
     assert result.to_phase == "decompose" and result.action == "decomposed"
-    assert "proposed under the L3 grant" in result.detail
+    assert "proposed for the task request" in result.detail
 
 
 def test_a_plan_failing_the_schema_falls_back_to_the_block(
@@ -1079,7 +1094,7 @@ def test_a_proposal_missing_a_plan_gate_field_blocks_rather_than_crashes(
     _feature_at_classify(at, monkeypatch)
     _delegated(monkeypatch)
     proposed = json.loads(json.dumps(_PLAN))
-    del proposed["children"][0]["integrity"]
+    del proposed["children"][0]["depends_on"]
     _proposer(monkeypatch, json.dumps(proposed))
     monkeypatch.setattr(
         decompose, "decompose", lambda *_a: pytest.fail("an ungated plan must not be recorded")
@@ -1088,7 +1103,7 @@ def test_a_proposal_missing_a_plan_gate_field_blocks_rather_than_crashes(
     result = _advance(tmp_path)
 
     assert result.blocked and result.needs_input == "children"
-    assert "integrity" in result.detail
+    assert "depends_on" in result.detail
 
 
 def test_a_plan_under_the_working_set_floor_falls_back_to_the_block(
@@ -1125,13 +1140,18 @@ def test_a_plan_under_the_working_set_floor_falls_back_to_the_block(
     assert f"below working_set_min {DEFAULT_WORKING_SET_MIN}" in result.detail
 
 
-def test_decompose_blocks_on_pending_checkpoint(
+def test_decompose_starts_children_without_another_phase_approval(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     at(_state("decompose", has_children=True))
     monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: False)
+    monkeypatch.setattr(
+        loop,
+        "_build_children",
+        lambda _ctx: loop.AdvanceResult("i", "decompose", "build", "children-started"),
+    )
     result = _advance(tmp_path)
-    assert result.blocked and "decompose checkpoint" in result.detail
+    assert result.to_phase == "build" and not result.blocked
 
 
 def test_decompose_builds_children_and_blocks_while_open(
@@ -1976,7 +1996,7 @@ def test_a_failed_validation_repairs_against_the_brief_then_re_lands_the_commit(
     monkeypatch.setattr(loop.merge, "is_ancestor", lambda *_a: False)
     reland = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
 
-    assert roots == [], "spend is consulted on the repair path again"
+    assert roots == ["root", "root"]
     assert [call["cwd"] for call in seen] == [tmp_path / "wt", tmp_path]
     assert "off-by-one" in seen[0]["prompt"] and "shell injection" in seen[0]["prompt"]
     assert seen[1]["prompt"] == dispatch_brief.validate_prompt("i")
@@ -1984,17 +2004,17 @@ def test_a_failed_validation_repairs_against_the_brief_then_re_lands_the_commit(
     assert _VGATE in repair.detail and reland.to_phase == "validate"
 
 
-def test_verify_blocks_on_pending_ship_checkpoint(
+def test_verify_blocks_when_the_required_quality_condition_is_refused(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     at(_state("verify"))
     monkeypatch.setattr(
         policy,
         "approve_checkpoint_guarded",
-        lambda *_a, **_k: policy.ApprovalResult("challenge", code="abc"),
+        lambda *_a, **_k: policy.ApprovalResult("rejected", detail="required verify gate failed"),
     )
     result = _advance(tmp_path)
-    assert result.blocked and "ship checkpoint" in result.detail
+    assert result.blocked and "required verify gate failed" in result.detail
 
 
 def test_verify_advances_to_ship_when_approved(
@@ -2727,6 +2747,9 @@ def test_the_default_configuration_records_no_evidence(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     at(_state("verify"))
+    monkeypatch.setattr(
+        policy, "approve_checkpoint_guarded", lambda *_a, **_k: policy.ApprovalResult("approved")
+    )
     monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
     monkeypatch.setattr(
         policy, "record_evidence", lambda *_a: pytest.fail("nothing was declared to record")
@@ -2752,6 +2775,9 @@ def test_a_present_artifact_lets_the_phase_advance_and_records_its_path(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     at(_state("verify"))
+    monkeypatch.setattr(
+        policy, "approve_checkpoint_guarded", lambda *_a, **_k: policy.ApprovalResult("approved")
+    )
     (tmp_path / "run.log").write_text("2 passed", encoding="utf-8")
     monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: True)
     recorded: list[tuple[str, str]] = []
@@ -3270,7 +3296,7 @@ def test_a_session_that_named_no_root_reads_no_ledger(
     assert seen == []
 
 
-def test_a_halted_grant_still_pays_for_a_retrospective(
+def test_an_explicit_spent_limit_stops_the_retrospective_dispatch(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -3285,10 +3311,11 @@ def test_a_halted_grant_still_pays_for_a_retrospective(
         lambda *_a, **_k: replace(_unhalted(), halted=True, detail="grant exhausted"),
     )
 
-    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
 
-    assert claimed, "a spent budget still held the retrospective back"
-    assert seen, "and the signal was never dispatched"
+    assert claimed == []
+    assert seen == []
+    assert result.blocked and result.needs_input == "budget"
 
 
 def test_ship_missing_confirmation_preserves_worktree_and_tracker(

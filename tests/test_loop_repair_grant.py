@@ -27,6 +27,9 @@ def at(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(loop.loop_state, "read_node_state", lambda *_a, **_k: state)
         monkeypatch.setattr(loop, "_hold_for_this_session", lambda _ctx: None)
         monkeypatch.setattr(loop.process_confirmation, "confirm", lambda *_a: None)
+        monkeypatch.setattr(
+            policy, "spend_status", lambda *_a, **_k: policy.SpendStatus(None, 0, False)
+        )
 
     return _pin
 
@@ -47,7 +50,7 @@ def _status(*, halted: bool) -> policy.SpendStatus:
     )
 
 
-def test_a_repair_dispatches_even_when_the_grant_is_spent(
+def test_a_repair_stops_when_the_explicit_limit_is_spent(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -65,9 +68,10 @@ def test_a_repair_dispatches_even_when_the_grant_is_spent(
 
     second = loop.advance(tmp_path, "i", config=CONFIG, grant_root="epic")
 
-    assert seen, "a spent grant still refused to spawn the repair"
-    assert second.needs_input != "grant"
-    assert "repaired i.1 in place" in second.detail
+    assert not seen
+    assert second.blocked
+    assert second.needs_input == "budget"
+    assert (cwd / repair_brief.REPAIR_BRIEF_FILE).is_file()
 
 
 def test_a_repair_dispatches_normally_while_the_grant_covers_it(

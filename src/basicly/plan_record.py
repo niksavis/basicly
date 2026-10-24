@@ -60,13 +60,16 @@ class RecordedPlan:
 
 
 def render_plan_section(
-    depends_on: tuple[str, ...], budget_tokens: int, integrity: str, demonstration: str
+    depends_on: tuple[str, ...],
+    budget_tokens: int | None,
+    integrity: str | None,
+    demonstration: str,
 ) -> str:
 
     declared = ", ".join(f"`{dep}`" for dep in depends_on) if depends_on else NOTHING_DECLARED
     return "\n".join((
-        f"- integrity: `{integrity}`",
-        f"- budget: `{budget_tokens}`",
+        *((f"- integrity: `{integrity}`",) if integrity is not None else ()),
+        *((f"- budget: `{budget_tokens}`",) if budget_tokens is not None else ()),
         f"- depends on: {declared}",
         f"- demonstration: {demonstration}",
     ))

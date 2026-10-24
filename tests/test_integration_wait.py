@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from basicly import decisions, policy, tracker, tracker_paths
+from basicly.config import VERIFY_GATE_PROVIDER
 from tests import flipped_tracker
 
 ANSWERER = "an-operator"
@@ -54,23 +55,38 @@ def test_the_tracker_stamps_and_reports_a_parseable_created_at(
 
 
 @pytest.mark.usefixtures("answered_late")
-def test_a_checkpoint_wait_round_trips_through_the_real_tracker(
+def test_a_legacy_checkpoint_wait_resumes_under_task_authorization_in_the_real_tracker(
     probe_repo: Path, issue_id: str
 ) -> None:
     started = time.monotonic()
-    challenge = policy.approve_checkpoint_guarded(probe_repo, issue_id, "ship", interactive=False)
-    assert challenge.status == "challenge"
-
-    approved = policy.approve_checkpoint_guarded(
-        probe_repo, issue_id, "ship", interactive=False, confirm=challenge.code
+    tracker.add_comment(
+        probe_repo,
+        issue_id,
+        f"[harness-wait] id={issue_id}#wait-ship kind=checkpoint requested",
     )
-    assert approved.status == "approved"
+    kit = tracker.kit(probe_repo)
+    gates = tracker.kit(probe_repo, "gates")
+    kit.events.append(
+        tracker.ledger_dir(probe_repo),
+        [gates.gate_draft(issue_id, "verify", provider=VERIFY_GATE_PROVIDER, passed=True)],
+    )
+
+    approved = policy.approve_checkpoint_guarded(probe_repo, issue_id, "ship", interactive=False)
+    assert approved.status == "approved", approved.detail
+    assert approved.code is None
+    assert policy.active_grant(probe_repo, issue_id) is None
+    assert all(
+        "grant level=" not in row["text"] for row in tracker.read_comments(probe_repo, issue_id)
+    )
     elapsed = time.monotonic() - started
 
     (event,) = policy.wait_events(probe_repo, issue_id)
     assert (event.kind, event.subject) == ("checkpoint", "ship")
-    assert (event.answered_by, event.delegated) == (policy.HUMAN_BY, False)
+    assert (event.answered_by, event.delegated) == ("task-request", False)
     _assert_interval(event.waited_s, elapsed)
+    resumed = policy.approve_checkpoint_guarded(probe_repo, issue_id, "ship", interactive=False)
+    assert resumed.status == "approved"
+    assert policy.wait_events(probe_repo, issue_id) == (event,)
 
 
 @pytest.mark.usefixtures("answered_late")

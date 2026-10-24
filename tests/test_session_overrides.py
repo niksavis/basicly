@@ -7,6 +7,7 @@ import pytest
 
 from basicly import cli, run_record, runner, session
 from basicly.config import load_policy_config, load_runner_config
+from tests import flipped_tracker
 
 CONFIG = """\
 [runner]
@@ -193,13 +194,19 @@ def test_the_grant_parser_exposes_the_autonomy_flag() -> None:
     assert args.autonomy == "L1" and args.level == "L1" and args.token_budget == 1000
 
 
-def test_the_grant_challenge_reprints_the_autonomy_override(
+def test_a_legacy_grant_request_sets_only_its_explicit_limit_without_a_challenge(
     monkeypatch: pytest.MonkeyPatch, repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
     monkeypatch.chdir(repo)
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
-    monkeypatch.setattr(cli.policy, "_new_code", lambda: "cafe1234")
+    flipped_tracker.flipped_repo(repo)
+    flipped_tracker.seed(repo, "basicly-root", title="requested task")
+
+    def unexpected_challenge() -> str:
+        pytest.fail("task authorization must not generate a grant challenge")
+
+    monkeypatch.setattr(cli.policy, "_new_code", unexpected_challenge)
 
     assert (
         cli.main([
@@ -213,13 +220,15 @@ def test_the_grant_challenge_reprints_the_autonomy_override(
             "--autonomy",
             "L1",
         ])
-        == 1
+        == 0
     )
 
-    rerun = capsys.readouterr().err
-    assert "--autonomy L1" in rerun
-    assert "--confirm cafe1234" in rerun
-    assert "--token-budget 1000000" in rerun
+    captured = capsys.readouterr()
+    assert "--confirm" not in captured.out + captured.err
+    assert cli.policy.active_grant(repo, "basicly-root") is None
+    limit = cli.policy.active_token_limit(repo, "basicly-root")
+    assert limit is not None and limit.token_budget == 1_000_000
+    assert session.overrides_for("policy")["autonomy"] == "L1"
 
 
 @pytest.mark.parametrize("command", ["advance", "run", "supervise"])

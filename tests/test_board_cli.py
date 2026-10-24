@@ -171,7 +171,9 @@ def test_mode_a_refuses_to_write_a_page_with_no_destination(
 def test_the_caller_supplies_every_derivation_the_producer_refuses(tmp_path: Path) -> None:
 
     repo = _owned_repo(tmp_path, "bd-1", "bd-2")
-    policy.record_wait_request(repo, "bd-1", "ship")
+    tracker.add_comment(
+        repo, "bd-1", f"{policy.WAIT_MARKER} id=bd-1#wait-ship kind=checkpoint requested"
+    )
     decisions.enqueue(
         repo, "bd-1", "checkpoint", "approve the ship checkpoint for bd-1?", human_required=False
     )
@@ -189,10 +191,8 @@ def test_the_caller_supplies_every_derivation_the_producer_refuses(tmp_path: Pat
     assert rows["bd-1"]["phase"] == loop_state.read_node_state(repo, "bd-1", config).phase
     assert rows["bd-1"]["ready"] is True
     assert document["backlog"]["ready"] == 2
-    assert document["asks"][0]["wait_id"] == "bd-1#wait-ship"
-    assert document["asks"][0]["question"] == "approve the ship checkpoint for bd-1?"
-    assert document["asks"][0]["waiting_s"] >= 0
-    assert document["session"]["grant_level"] == "L2"
+    assert document["asks"] == []
+    assert "grant_level" not in document["session"]
     assert document["session"]["token_budget"] == 8_000_000
     assert "spent_tokens" not in document["session"]
     assert board_schema.verdict(REPO_ROOT, document).exit_code == 0

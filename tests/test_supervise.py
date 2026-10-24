@@ -1311,7 +1311,7 @@ def test_route_green_lane_lands_and_ships_under_a_grant(
     assert grants == ["epic"]
 
 
-def test_route_green_lane_without_a_grant_queues_the_ship_checkpoint(
+def test_completion_gate_refusal_is_reported_without_another_human_approval(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(
@@ -1322,7 +1322,7 @@ def test_route_green_lane_without_a_grant_queues_the_ship_checkpoint(
     monkeypatch.setattr(
         supervise.policy,
         "approve_checkpoint_guarded",
-        lambda *_a, **_k: policy.ApprovalResult("challenge", code="abc"),
+        lambda *_a, **_k: policy.ApprovalResult("rejected", detail="required verify gate failed"),
     )
     queued: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -1339,11 +1339,11 @@ def test_route_green_lane_without_a_grant_queues_the_ship_checkpoint(
     )
 
     assert routed[0].route == "merged"
-    assert queued == [("epic.1", "checkpoint")]
-    assert "awaits a human" in routed[0].detail
+    assert queued == []
+    assert "completion checks refused: required verify gate failed" in routed[0].detail
 
 
-def test_a_queued_ship_item_carries_why_the_grant_declined(
+def test_a_post_landing_completion_refusal_preserves_the_concrete_blocker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -1356,9 +1356,8 @@ def test_a_queued_ship_item_carries_why_the_grant_declined(
         supervise.policy,
         "approve_checkpoint_guarded",
         lambda *_a, **_k: policy.ApprovalResult(
-            "challenge",
-            code="abc",
-            detail="the active L3 grant covers ship but declined it: escalation on epic.2",
+            "rejected",
+            detail="rework escalation on epic.2",
         ),
     )
     details: list[str] = []
@@ -1371,11 +1370,13 @@ def test_a_queued_ship_item_carries_why_the_grant_declined(
         )[1],
     )
 
-    supervise.route_outcomes(tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),))
+    routed = supervise.route_outcomes(
+        tmp_path, _session(_lane("epic.1")), (_executed_outcome("epic.1"),)
+    )
 
-    assert details == [
-        "landed; the active L3 grant covers ship but declined it: escalation on epic.2"
-    ]
+    assert details == []
+    assert routed[0].route == "merged"
+    assert "completion checks refused: rework escalation on epic.2" in routed[0].detail
 
 
 def decisions_item(issue: str, kind: str) -> supervise.decisions.DecisionItem:
@@ -2710,7 +2711,7 @@ def test_observe_reports_the_holder_lanes_decisions_and_spend(
         kind="checkpoint",
         subject="ship",
         requested_at="1970-01-01T00:00:00Z",
-        by=policy.HUMAN_BY,
+        by="human",
         delegated=False,
     )
     supervise.acquire(tmp_path, "epic:live", "epic")
@@ -2944,25 +2945,30 @@ def test_delegate_decisions_never_offers_a_checkpoint_validate_or_stall(
 
 
 @pytest.mark.parametrize("level", ["L0", "L1"])
-def test_delegate_decisions_needs_an_l2_grant(monkeypatch: pytest.MonkeyPatch, level: str) -> None:
-    offered = _delegation_env(monkeypatch, pending=(_item("epic.1#a", "needs-input"),), outcomes={})
-
-    assert (
-        supervise.delegate_decisions(
-            Path(), _session(_lane("epic.1")), admission=_granted(level, None, 0)
-        )
-        == ()
+def test_fact_resolution_does_not_require_an_old_permission_level(
+    monkeypatch: pytest.MonkeyPatch, level: str
+) -> None:
+    item = _item("epic.1#a", "needs-input", answer="postgres")
+    offered = _delegation_env(
+        monkeypatch, pending=(_item("epic.1#a", "needs-input"),), outcomes={"epic.1#a": item}
     )
-    assert offered == []
-
-
-def test_delegate_decisions_needs_any_grant_at_all(monkeypatch: pytest.MonkeyPatch) -> None:
-    offered = _delegation_env(monkeypatch, pending=(_item("epic.1#a", "needs-input"),), outcomes={})
-
-    assert (
-        supervise.delegate_decisions(Path(), _session(_lane("epic.1")), admission=_UNGRANTED) == ()
+    answered = supervise.delegate_decisions(
+        Path(), _session(_lane("epic.1")), admission=_granted(level, None, 0)
     )
-    assert offered == []
+    assert offered == ["epic.1#a"]
+    assert len(answered) == 1 and answered[0].answered
+
+
+def test_fact_resolution_needs_no_grant_when_the_answer_is_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    item = _item("epic.1#a", "needs-input", answer="postgres")
+    offered = _delegation_env(
+        monkeypatch, pending=(_item("epic.1#a", "needs-input"),), outcomes={"epic.1#a": item}
+    )
+    answered = supervise.delegate_decisions(Path(), _session(_lane("epic.1")), admission=_UNGRANTED)
+    assert offered == ["epic.1#a"]
+    assert len(answered) == 1 and answered[0].answered
 
 
 def test_delegate_decisions_reports_an_abstention_as_still_the_humans(
@@ -4026,7 +4032,7 @@ def test_provisioned_lanes_that_cannot_dispatch_say_so_instead_of_claiming_none_
     assert "epic.1" in routed[0].detail
 
 
-def test_a_seeding_refusal_names_the_level_that_would_delegate_the_checkpoint(
+def test_a_legacy_seeding_challenge_recommends_resuming_without_another_grant(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -4039,9 +4045,9 @@ def test_a_seeding_refusal_names_the_level_that_would_delegate_the_checkpoint(
     routed = supervise.seed_lanes(tmp_path, _cold_session())
 
     assert [r.route for r in routed] == ["seed-blocked"]
-    assert "no grant covers the decompose checkpoint" in routed[0].detail
-    assert "an L1 grant delegates it" in routed[0].detail
-    assert "basicly policy grant epic --level L1" in routed[0].detail
+    assert "retry the requested task epic" in routed[0].detail
+    assert "legacy decompose challenge is no longer required" in routed[0].detail
+    assert "policy grant" not in routed[0].detail
     assert "A1B2C3" not in routed[0].detail, "a one-time code is not routing detail"
 
 
@@ -4152,7 +4158,7 @@ def _ungranted() -> policy.SpendStatus:
     return policy.SpendStatus(grant=None, spent_tokens=0, halted=False)
 
 
-def test_a_metered_dispatch_runs_and_says_no_budget_covers_it(
+def test_a_metered_dispatch_runs_without_a_mandatory_budget_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -4172,7 +4178,7 @@ def test_a_metered_dispatch_runs_and_says_no_budget_covers_it(
 
     assert outcomes, "an ungranted metered pass was still refused"
     assert queued == [], "and it still queued a refusal nobody has to answer"
-    assert any("metered and no budget covers it" in line for line in lines)
+    assert not any("no budget covers it" in line for line in lines)
 
 
 def test_a_handoff_dispatch_needs_no_budget_because_it_spends_nothing(
@@ -4207,23 +4213,18 @@ def test_a_metered_dispatch_proceeds_once_a_budget_covers_it(
     assert [o.issue_id for o in outcomes] == ["epic.1"]
 
 
-def test_seeding_does_not_provision_for_a_dispatch_that_cannot_start(
+def test_seeding_without_a_budget_provisions_the_requested_lanes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-
-    _patch_readiness(monkeypatch)
-    monkeypatch.setattr(supervise, "metered_without_a_budget", lambda *_a: "claude")
-    monkeypatch.setattr(
-        supervise.loop,
-        "run_until_blocked",
-        lambda *_a: pytest.fail("nothing may be provisioned for a dispatch that cannot start"),
+    advanced = _seed_fixture(
+        monkeypatch,
+        steps=(_step("worktree-created"),),
+        derived=_session(_lane("epic.1")),
     )
-
     routed = supervise.seed_lanes(tmp_path, _cold_session(), admission=_ungranted())
-
-    assert [r.route for r in routed] == ["seed-blocked"]
-    assert not supervise.should_continue(routed)
-    assert "no grant with a token budget" in routed[0].detail
+    assert advanced == ["epic@epic"]
+    assert [item.route for item in routed] == ["seeded"]
+    assert supervise.should_continue(routed)
 
 
 def test_the_dispatch_note_names_the_tier_and_the_resolved_model() -> None:

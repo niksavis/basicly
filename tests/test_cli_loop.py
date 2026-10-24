@@ -391,7 +391,6 @@ class _Preflight:
     dirty: str = ""
     grant: Grant | None = None
     halted: bool = False
-    metered: str | None = None
     unmetered: tuple[str, ...] = ()
     lanes: tuple[object, ...] = ()
     children: tuple[tuple[str, str], ...] = (("c.1", "open"),)
@@ -421,11 +420,10 @@ def _calibration(**overrides) -> decompose.CalibrationStatus:
 
 
 def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> None:
-    dirty, grant, halted, metered, lanes, unmetered = (
+    dirty, grant, halted, lanes, unmetered = (
         pinned.dirty,
         pinned.grant,
         pinned.halted,
-        pinned.metered,
         pinned.lanes,
         pinned.unmetered,
     )
@@ -461,7 +459,6 @@ def _preflight_fixture(monkeypatch: pytest.MonkeyPatch, pinned: _Preflight) -> N
             unmetered_labels=unmetered,
         ),
     )
-    monkeypatch.setattr(cli.supervise, "metered_without_a_budget", lambda *_a: metered)
     monkeypatch.setattr(cli.supervise, "ready_lanes", lambda *_a, **_k: lanes)
     cap, generated = pinned.cap, pinned.generated
     monkeypatch.setattr(
@@ -824,16 +821,16 @@ def test_preflight_does_not_count_the_trees_the_landing_sweeps(
     assert "base checkout is dirty" not in out
 
 
-def test_preflight_names_a_metered_runner_with_no_budget_and_still_reads_ready(
+def test_preflight_needs_no_budget_for_a_metered_runner(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
-    _preflight_fixture(monkeypatch, _Preflight(metered="claude"))
+    _preflight_fixture(monkeypatch, _Preflight())
 
     code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
-    assert "budget:    MISSING" in out, "the hazard is no longer named"
+    assert "budget:    no explicit limit" in out
     assert code == 0, "a metered runner with no budget still refuses the pass"
 
 
@@ -927,7 +924,7 @@ def test_preflight_says_an_unresolved_model_can_key_no_sample_at_all(
     assert "task 0/10" in out
 
 
-def test_preflight_refuses_a_seeding_checkpoint_the_live_grant_does_not_delegate(
+def test_preflight_needs_no_additional_seeding_approval_at_an_old_low_level(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
@@ -943,14 +940,13 @@ def test_preflight_refuses_a_seeding_checkpoint_the_live_grant_does_not_delegate
     code = cli._cmd_loop_preflight(_preflight_args())
 
     out = capsys.readouterr().out
-    assert code == 1
-    assert "checkpts:  decompose UNAPPROVED" in out
-    assert "basicly policy checkpoint epic decompose --approve" in out
-    assert "basicly policy grant epic --level L1" in out
-    assert "VERDICT:   not ready" in out
+    assert code == 0
+    assert "checkpts:  decompose, ship checked within the requested workflow" in out
+    assert "policy grant" not in out
+    assert "VERDICT:   ready" in out
 
 
-def test_preflight_reports_a_grant_delegated_seeding_checkpoint_as_no_blocker(
+def test_preflight_uses_task_authorization_instead_of_a_historical_grant_level(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
@@ -967,8 +963,7 @@ def test_preflight_reports_a_grant_delegated_seeding_checkpoint_as_no_blocker(
 
     out = capsys.readouterr().out
     assert code == 0
-    assert "checkpts:  decompose pending - the live L3 grant delegates it" in out
-    assert "checkpts:  ship pending - the live L3 grant delegates it" in out
+    assert "checkpts:  decompose, ship checked within the requested workflow" in out
     assert "UNAPPROVED" not in out
     assert "VERDICT:   ready" in out
 
@@ -991,7 +986,7 @@ def test_preflight_over_a_labelled_cut_reports_it_and_keeps_the_roots_checkpoint
     out = capsys.readouterr().out
     assert code == 0, out
     assert "select:    1 bead(s) carry label 'release-v0.7.0'; 1 still open" in out
-    assert "checkpts:  decompose pending" in out
+    assert "checkpts:  decompose, ship checked within the requested workflow" in out
     assert "UNAPPROVED" not in out
     assert "VERDICT:   ready" in out
 
@@ -1014,7 +1009,7 @@ def test_preflight_refuses_a_lane_selector_no_bead_carries(
     assert "VERDICT:   not ready - the lane selector names no bead to run" in out
 
 
-def test_preflight_names_a_selected_lane_the_grant_does_not_cover(
+def test_preflight_reports_the_lanes_explicitly_selected_by_label_without_a_grant(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
@@ -1030,10 +1025,10 @@ def test_preflight_names_a_selected_lane_the_grant_does_not_cover(
     code = cli._cmd_loop_preflight(_preflight_args(label="release-v0.7.0"))
 
     out = capsys.readouterr().out
-    assert code == 0, "an uncovered lane still dispatches, so the verdict stands"
-    assert "coverage:  1 of 2 selected lane(s) outside the L3 grant's session" in out
-    assert "cover each: br dep add epic <id> -t blocks" in out
-    assert "uncovered: origin.7" in out
+    assert code == 0
+    assert "coverage:  2 lane(s) explicitly selected by label 'release-v0.7.0'" in out
+    assert "uncovered:" not in out
+    assert "policy grant" not in out
 
 
 def test_preflight_says_when_every_selected_lane_is_covered(
@@ -1048,7 +1043,7 @@ def test_preflight_says_when_every_selected_lane_is_covered(
     cli._cmd_loop_preflight(_preflight_args(label="release-v0.7.0"))
 
     out = capsys.readouterr().out
-    assert "coverage:  all 1 selected lane(s) under the L3 grant" in out
+    assert "coverage:  1 lane(s) explicitly selected by label 'release-v0.7.0'" in out
 
 
 def test_preflight_is_ready_when_the_blocking_checkpoint_is_approved(

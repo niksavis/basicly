@@ -20,7 +20,7 @@ def instructions() -> str:
     return source["instructions"]
 
 
-def _approval_rows(instructions: str) -> dict[str, str]:
+def _phase_rows(instructions: str) -> dict[str, str]:
 
     rows: dict[str, str] = {}
     for line in instructions.splitlines():
@@ -30,16 +30,17 @@ def _approval_rows(instructions: str) -> dict[str, str]:
         if len(cells) != 3:
             continue
         name = re.search(r"[a-z][a-z-]+", cells[0])
-        if name is None or "approv" not in " ".join(cells[1:]).lower():
+        if name is None:
             continue
         rows[name.group()] = cells[2]
     return rows
 
 
 @pytest.fixture(scope="module")
-def approval_rows(instructions: str) -> dict[str, str]:
-    rows = _approval_rows(instructions)
-    assert set(rows) == {"classify", "decompose", "verify"}, rows
+def phase_rows(instructions: str) -> dict[str, str]:
+    rows = _phase_rows(instructions)
+    assert {"classify", "decompose", "verify"} <= set(rows), rows
+    rows = {phase: rows[phase] for phase in ("classify", "decompose", "verify")}
     return rows
 
 
@@ -54,24 +55,16 @@ def test_ship_phase_only_tears_down_and_closes() -> None:
     assert "merge_worktree" not in inspect.getsource(loop._on_ship)
 
 
-def test_checkpoint_rows_name_the_loop_run_form(approval_rows: dict[str, str]) -> None:
-    missing = sorted(
-        phase for phase, cell in approval_rows.items() if "basicly loop run" not in cell
-    )
+def test_phase_rows_name_the_loop_run_form(phase_rows: dict[str, str]) -> None:
+    missing = sorted(phase for phase, cell in phase_rows.items() if "basicly loop run" not in cell)
     assert not missing, f"phases table rows not naming the loop run form: {missing}"
 
 
-def test_checkpoint_rows_mark_policy_checkpoint_as_inspection_only(
-    approval_rows: dict[str, str],
-) -> None:
-    unwarned = sorted(
-        phase
-        for phase, cell in approval_rows.items()
-        if "--approve" in cell and "not on a bare" not in cell
-    )
-    assert not unwarned, (
-        f"phases table offers a bare approve with no parked-loop warning: {unwarned}"
-    )
+def test_phase_rows_do_not_request_repeated_approval(phase_rows: dict[str, str]) -> None:
+    for phase, cell in phase_rows.items():
+        assert "--confirm" not in cell, phase
+        assert "--approve" not in cell, phase
+        assert "policy grant" not in cell, phase
 
 
 def test_verify_guidance_does_not_require_an_unconditional_second_full_run(

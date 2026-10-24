@@ -175,11 +175,13 @@ def _on_intake(ctx: _Ctx) -> AdvanceResult:
             )
         work_type, attributed = proposal.work_type, f" ({proposal.by})"
     result = classify.classify(ctx.repo_root, ctx.issue_id, work_type, _declared_scope(ctx))
-    return _blocked(
-        ctx,
-        f"recorded work type {result.work_type!r}{attributed}; "
-        "classify checkpoint awaiting approval",
-        checkpoint="classify",
+    approval = policy.approve_checkpoint_guarded(
+        ctx.repo_root, ctx.issue_id, "classify", interactive=False, grant_root=ctx.grant_root
+    )
+    if approval.status != "approved":
+        return _blocked(ctx, approval.detail, needs_input="authorization")
+    return _moved(
+        ctx, "classify", "classified", f"recorded work type {result.work_type!r}{attributed}"
     )
 
 
@@ -224,7 +226,11 @@ def _on_classify(ctx: _Ctx) -> AdvanceResult:
 def _on_decompose(ctx: _Ctx) -> AdvanceResult:
 
     if not policy.checkpoint_approved(ctx.repo_root, ctx.issue_id, "decompose"):
-        return _blocked(ctx, "decompose checkpoint awaiting human approval", checkpoint="decompose")
+        approval = policy.approve_checkpoint_guarded(
+            ctx.repo_root, ctx.issue_id, "decompose", interactive=False, grant_root=ctx.grant_root
+        )
+        if approval.status != "approved":
+            return _blocked(ctx, approval.detail, needs_input="authorization")
     plan = handoff.entry_verdict(ctx.repo_root, ctx.issue_id, handoff.IMPLEMENTATION_PLAN)
     if not plan.admitted:
         return _blocked(ctx, plan.reason, needs_input="artifact")
@@ -273,10 +279,7 @@ def _on_verify(ctx: _Ctx) -> AdvanceResult:
         ctx.repo_root, ctx.issue_id, "ship", interactive=False, grant_root=ctx.grant_root
     )
     if approval.status != "approved":
-        detail = "; ".join(
-            part for part in ("ship checkpoint awaiting human approval", approval.detail) if part
-        )
-        return _blocked(ctx, detail, checkpoint="ship")
+        return _blocked(ctx, approval.detail, needs_input="verification")
     return _moved(ctx, "ship", "shipped", "ship checkpoint satisfied")
 
 
@@ -573,8 +576,6 @@ def _observe_context_ceiling(ctx: _Ctx, dispatch: _Dispatch) -> str:
 
 def _dispatch_refused(ctx: _Ctx, name: str) -> AdvanceResult | None:
 
-    if ctx.grant_root is None:
-        return None
     entry = plan_entry.build_entry_verdict(ctx.repo_root, ctx.issue_id)
     if not entry.admitted:
         return _blocked(ctx, entry.reason, needs_input="plan")
@@ -807,7 +808,7 @@ def _proposal_grant(ctx: _Ctx, kind: str) -> policy.ProposalGrant:
             ctx.repo_root, ctx.issue_id, kind, ctx.grant_root or ctx.issue_id
         )
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        return policy.ProposalGrant(False, f"the grant ledger could not be read: {exc}")
+        return policy.ProposalGrant(False, f"task authorization could not be read: {exc}")
 
 
 def _proposed_work_type(ctx: _Ctx) -> _Proposal:
@@ -829,7 +830,7 @@ def _proposed_work_type(ctx: _Ctx) -> _Proposal:
         return _Proposal(
             reason=f"the proposed work type {proposed!r} is not one of {list(WORK_TYPES)}"
         )
-    return _Proposal(work_type=proposed, by=f"proposed under the {grant.level} grant")
+    return _Proposal(work_type=proposed, by=f"proposed for the {grant.level}")
 
 
 def _proposed_children(  # noqa: PLR0911 — one return per distinct fall-back-to-human cause
@@ -860,7 +861,7 @@ def _proposed_children(  # noqa: PLR0911 — one return per distinct fall-back-t
         return _Proposal(
             reason="the sizing governor refused the proposed plan: " + "; ".join(verdict.violations)
         )
-    return _Proposal(children=children, by=f"proposed under the {grant.level} grant")
+    return _Proposal(children=children, by=f"proposed for the {grant.level}")
 
 
 def _build_evidence_block(ctx: _Ctx, worktree_name: str) -> AdvanceResult | None:
@@ -1707,6 +1708,9 @@ def advance(  # noqa: PLR0913 — one keyword per independent driver choice
         return AdvanceResult(issue_id, "done", "done", "done", "already shipped")
 
     ctx = _Ctx(repo_root, issue_id, state, config, inputs, grant_root, repair_dispatch)
+    spend = policy.spend_status(repo_root, grant_root or issue_id)
+    if spend.halted:
+        return _blocked(ctx, spend.detail, needs_input="budget")
     if state.phase in _BASE_CHECKOUT_PHASES and worktree.is_linked_checkout(repo_root):
         return _blocked(
             ctx,
