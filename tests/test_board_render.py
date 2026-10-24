@@ -4,6 +4,7 @@ import ast
 import json
 import re
 import shutil
+from collections.abc import Iterator
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -20,7 +21,7 @@ SITE = REPO_ROOT / "site" / "index.html"
 SOURCES = (
     "board_render", "board_regions", "board_diagram", "board_graph",
     "board_loop", "board_footer", "board_record", "board_wall", "board_icons",
-    "board_assets",
+    "board_assets", "board_fields", "catalog", "redact",
 )
 # fmt: on
 
@@ -205,20 +206,73 @@ def test_the_roster_follows_the_schema_rather_than_the_layout(tmp_path: Path) ->
     assert "events" not in _ROSTER.findall(page)
 
 
-def test_the_renderer_imports_nothing_that_could_read_engine_state() -> None:
+def _runtime_nodes(node: ast.AST) -> Iterator[ast.AST]:
+    if (
+        isinstance(node, ast.If)
+        and isinstance(node.test, ast.Name)
+        and node.test.id == "TYPE_CHECKING"
+    ):
+        for child in node.orelse:
+            yield from _runtime_nodes(child)
+        return
+    yield node
+    for child in ast.iter_child_nodes(node):
+        yield from _runtime_nodes(child)
 
-    allowed = {*SOURCES, "board_fields", "catalog"}
+
+def _assert_renderer_boundary(sources: Path) -> None:
+
     for name in SOURCES:
-        source = (REPO_ROOT / "src" / "basicly" / f"{name}.py").read_text(encoding="utf-8")
-        imported = {
-            alias.name
-            for node in ast.walk(ast.parse(source))
-            if isinstance(node, ast.ImportFrom) and node.level == 1 and node.module is None
-            for alias in node.names
-        }
-        assert imported <= allowed, f"{name} imports {sorted(imported - allowed)}"
-        for literal in _literals(ast.parse(source)):
+        tree = ast.parse((sources / f"{name}.py").read_text(encoding="utf-8"))
+        imported: set[str] = set()
+        for node in _runtime_nodes(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.level == 1:
+                    imported.update(
+                        [node.module.split(".")[0]]
+                        if node.module
+                        else [alias.name for alias in node.names]
+                    )
+                elif node.module == "basicly":
+                    imported.update(alias.name for alias in node.names)
+                elif node.module and node.module.startswith("basicly."):
+                    imported.add(node.module.split(".")[1])
+            elif isinstance(node, ast.Import):
+                imported.update(
+                    alias.name.split(".")[1] if "." in alias.name else alias.name
+                    for alias in node.names
+                    if alias.name == "basicly" or alias.name.startswith("basicly.")
+                )
+        assert imported <= set(SOURCES), f"{name} imports {sorted(imported - set(SOURCES))}"
+        for literal in _literals(tree):
             assert ".basicly/" not in literal, f"{name} carries an engine path: {literal}"
+
+
+def test_the_renderer_imports_nothing_that_could_read_engine_state() -> None:
+    _assert_renderer_boundary(REPO_ROOT / "src" / "basicly")
+
+
+@pytest.mark.parametrize("module", ["board_assets", "board_fields", "catalog", "redact"])
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "from . import board_output",
+        "from .projection import atomic_write_bytes",
+        "from basicly import owned_store",
+        "import basicly.owned_store",
+        "if TYPE_CHECKING:\n    pass\nelse:\n    from . import board_output",
+    ],
+)
+def test_the_renderer_boundary_rejects_writer_and_state_imports_in_its_helpers(
+    tmp_path: Path, module: str, statement: str
+) -> None:
+    for name in SOURCES:
+        shutil.copyfile(REPO_ROOT / "src" / "basicly" / f"{name}.py", tmp_path / f"{name}.py")
+    changed = tmp_path / f"{module}.py"
+    changed.write_text(changed.read_text(encoding="utf-8") + f"\n{statement}\n", encoding="utf-8")
+
+    with pytest.raises(AssertionError, match=rf"{module} imports"):
+        _assert_renderer_boundary(tmp_path)
 
 
 def test_the_wall_at_1440_by_900_draws_a_ready_record_beside_claimed_and_parked_rows() -> None:

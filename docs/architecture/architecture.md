@@ -3728,8 +3728,8 @@ flowchart TB
   b5["5 · agent runtime — 9<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 16<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
   b7["7 · records and telemetry — 16<br/>run_record · artifact_record · lens_review · spend_calibration"]
-  b8["8 · tracker seam — 25<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
-  b9["9 · leaf data and pure helpers — 38<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
+  b8["8 · tracker seam — 26<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
+  b9["9 · leaf data and pure helpers — 37<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
 
   b1 --> b2 --> b3 --> b4 --> b5 --> b6 --> b7 --> b8 --> b9
   b3 -.->|"declared exemption:<br/>policy imports decisions"| b3

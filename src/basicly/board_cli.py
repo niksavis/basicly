@@ -159,7 +159,7 @@ def cmd_emit(args: argparse.Namespace) -> int:
             ui.say(f"board: wrote {destination} ({_kb(destination)}) - {description}")
         else:
             refused += 1
-    assets = board_assets.write_beside(
+    assets = board_output.write_assets_beside(
         board_render.root(), args.out.parent, on_refusal=_refuse_output
     )
     refused += len(board_assets.ASSETS) - len(assets)

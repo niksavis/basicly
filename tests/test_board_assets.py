@@ -33,19 +33,6 @@ def test_every_asset_in_the_table_is_a_file_in_the_catalog() -> None:
     assert board_assets.read(board_render.root(), "../board_page.html.j2") is None
 
 
-def test_a_page_at_the_root_and_a_record_page_both_resolve_to_the_written_file(
-    tmp_path: Path,
-) -> None:
-    written = board_assets.write_beside(board_render.root(), tmp_path)
-
-    assert [path.name for path in written] == list(board_assets.ASSETS)
-    root_href = board_assets.href(board_assets.STYLESHEET)
-    nested_href = board_assets.href(board_assets.STYLESHEET, nested=True)
-    assert (tmp_path / root_href).is_file()
-    assert (tmp_path / "record" / nested_href).resolve() == (tmp_path / root_href).resolve()
-    assert (tmp_path / root_href).read_bytes() == (VENDOR / board_assets.STYLESHEET).read_bytes()
-
-
 @pytest.mark.parametrize("name", list(board_assets.ASSETS))
 def test_read_answers_the_bytes_and_the_type_the_server_sends(name: str) -> None:
     held = board_assets.read(board_render.root(), name)
@@ -53,45 +40,3 @@ def test_read_answers_the_bytes_and_the_type_the_server_sends(name: str) -> None
     body, content_type = held
     assert body == (VENDOR / name).read_bytes()
     assert content_type == board_assets.ASSETS[name]
-
-
-def test_a_linked_asset_is_not_silently_omitted_without_a_reporter(tmp_path: Path) -> None:
-    target = tmp_path / board_assets.DIRNAME / board_assets.STYLESHEET
-    target.parent.mkdir()
-    victim = tmp_path / "victim.bin"
-    victim.write_bytes(b"preserved victim\n")
-    target.symlink_to(victim)
-
-    with pytest.raises(OSError, match="linked"):
-        board_assets.write_beside(board_render.root(), tmp_path)
-
-    assert victim.read_bytes() == b"preserved victim\n"
-    assert target.is_symlink()
-
-
-def test_an_asset_reporter_records_refusal_and_other_assets_continue(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    templates = tmp_path / "templates"
-    vendor = templates / board_assets.DIRNAME
-    vendor.mkdir(parents=True)
-    (vendor / "first.css").write_bytes(b"first stylesheet\n")
-    (vendor / "second.css").write_bytes(b"second stylesheet\n")
-    monkeypatch.setattr(board_assets, "ASSETS", {"first.css": "text/css", "second.css": "text/css"})
-    out = tmp_path / "output"
-    target = out / board_assets.DIRNAME / "first.css"
-    target.parent.mkdir(parents=True)
-    victim = tmp_path / "victim.bin"
-    victim.write_bytes(b"preserved victim\n")
-    target.symlink_to(victim)
-    refused: list[tuple[Path, OSError]] = []
-
-    written = board_assets.write_beside(
-        templates, out, on_refusal=lambda path, error: refused.append((path, error))
-    )
-
-    assert written == [target.with_name("second.css")]
-    assert len(refused) == 1
-    assert refused[0][0] == target and "linked" in str(refused[0][1])
-    assert victim.read_bytes() == b"preserved victim\n"
-    assert written[0].read_bytes() == b"second stylesheet\n"
