@@ -325,6 +325,8 @@ python3 .basicly/kit/tracker/cli.py fsck .basicly/ledger
 Record proven unrecoverable history without inventing a missing event.
 Pass the exact missing sequence set in ascending order. Repeat `--sequence`
 and `--evidence` as needed. The reason and each historical reference must be nonempty.
+The example requires a confirmed missing sequence 9 with later surviving history.
+On healthy history, the command refuses with a nonzero exit and writes nothing.
 
 ```sh
 python3 .basicly/kit/tracker/cli.py acknowledge-loss .basicly/ledger acme-a1b2 --sequence 9 --reason "Original content unavailable" --evidence "git:COMMIT"

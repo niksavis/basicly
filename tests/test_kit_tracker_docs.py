@@ -139,6 +139,69 @@ def _record(repo: Path) -> str:
     return record
 
 
+def _ledger_bytes(repo: Path) -> dict[Path, bytes]:
+    return {
+        path: path.read_bytes() for path in (repo / ".basicly/ledger").rglob("*") if path.is_file()
+    }
+
+
+def _logs(repo: Path) -> list[Path]:
+    ledger = repo / ".basicly/ledger"
+    return sorted([*ledger.glob("events-*.jsonl"), *ledger.glob("pending-*.jsonl")])
+
+
+def _stored_events(repo: Path) -> list[dict]:
+    return [
+        json.loads(line)
+        for path in _logs(repo)
+        for line in path.read_bytes().splitlines()
+        if line.strip()
+    ]
+
+
+def _seed_documented_loss(repo: Path, argv: list[str]) -> Any:
+    args = cli.arguments.parser().parse_args(argv)
+    maximum = max(one["seq"] for one in _stored_events(repo) if one["record"] == args.record)
+    for number in range(maximum, max(args.sequence) + 1):
+        made = _run(
+            repo,
+            ["comment", args.directory, args.record, f"Documented loss fixture fact {number}"],
+        )
+        assert made.returncode == 0, made.stdout + made.stderr
+    removed = []
+    for path in _logs(repo):
+        kept = []
+        for line in path.read_bytes().splitlines(keepends=True):
+            event = json.loads(line)
+            if event["record"] == args.record and event["seq"] in args.sequence:
+                removed.append(event["seq"])
+            else:
+                kept.append(line)
+        path.write_bytes(b"".join(kept))
+    assert sorted(removed) == args.sequence
+    return args
+
+
+def test_the_documented_loss_command_refuses_healthy_history_without_writes(tmp_path: Path) -> None:
+    repo = _consumer(tmp_path)
+    record = _record(repo)
+    examples = [
+        command
+        for command in _commands(KIT_DIR / "REFERENCE.md")
+        if command.startswith("acknowledge-loss ")
+    ]
+    assert len(examples) == 1
+    argv = [record if token == "acme-a1b2" else token for token in shlex.split(examples[0])]
+    before = _ledger_bytes(repo)
+
+    done = _run(repo, argv)
+
+    assert done.returncode != 0
+    report = json.loads(done.stdout)
+    assert "current missing sequences are [], not [9]" in report["refused"]
+    assert _ledger_bytes(repo) == before
+
+
 def test_the_documents_name_commands_at_all() -> None:
     assert len(DOCUMENTED) >= 30
 
@@ -158,6 +221,7 @@ def test_every_documented_command_runs_on_a_fresh_install(command: str, tmp_path
         "<what shipped, and the evidence>": "The seeded result is confirmed by its fixture check.",
     })
     argv = [names.get(token, token) for token in shlex.split(command, comments=True)]
+    loss = _seed_documented_loss(repo, argv) if argv[0] == "acknowledge-loss" else None
 
     done = _run(repo, argv)
 
@@ -168,6 +232,25 @@ def test_every_documented_command_runs_on_a_fresh_install(command: str, tmp_path
         return
     assert not isinstance(report.get("refused"), str), report
     assert done.returncode == 0 or argv[0] in REFUSING, done.stdout
+    if loss is not None:
+        assert report["appended"]
+        history = [one for one in _stored_events(repo) if one["record"] == loss.record]
+        assert not any(one["seq"] in loss.sequence for one in history)
+        losses = [
+            one["payload"]["body"]
+            for one in history
+            if one["kind"] == "artifact" and one["payload"].get("artifact") == "sequence-loss"
+        ]
+        assert len(losses) == 1
+        assert losses[0]["missing_sequences"] == loss.sequence
+        assert losses[0]["reason"] == loss.reason
+        assert losses[0]["evidence"] == loss.evidence
+        checked = _run(repo, ["fsck", loss.directory])
+        assert checked.returncode == 0, checked.stdout + checked.stderr
+        findings = json.loads(checked.stdout)["findings"]
+        assert [(one["kind"], one["severity"]) for one in findings] == [
+            ("acknowledged-sequence-loss", "warning")
+        ]
     assert {path.name for path in repo.iterdir()} <= LEFT_BEHIND
 
 
