@@ -219,6 +219,81 @@ def test_generic_arrows_remain_code(source: str, tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "header",
+    [
+        "async <T extends {map: <U>(value: U) => U}>",
+        "async <const T extends {map: <U>(value: U) => U}>",
+        "async <T, U extends {map: <V>(value: V) => V}>",
+        "async <T = {map: <U>(value: U) => U}>",
+        "async <T, U = {map: <V>(value: V) => V}>",
+        "async<T extends {map: <U>(value: U) => U}>",
+        "async /* actual prose */ <T extends {map: <U>(value: U) => U}>",
+        "async <T, U /* type prose */ extends {map: <V>(value: V) => V}>",
+    ],
+)
+def test_async_generic_headers_remain_code(header: str, tmp_path: Path) -> None:
+    path = tmp_path / "view.tsx"
+    source = f"const f = {header}(value: T) => value; // actual prose\n"
+    path.write_text(source, encoding="utf-8")
+
+    fixed = _run("fix", path)
+
+    assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+    assert path.read_text(encoding="utf-8") == source.replace("// actual prose", "").replace(
+        "/* actual prose */", ""
+    ).replace("/* type prose */", "")
+
+
+@pytest.mark.parametrize(
+    "continuation",
+    [
+        "(value: T): Promise<T> => value",
+        r"(value: T = /\)/ as unknown as T) => value",
+        "(value: T = <Text>http://x</Text> as unknown as T) => value",
+        "(value: T = (() => {return /* atom prose */ <Text>http://x</Text>;})() "
+        "as unknown as T) => value",
+    ],
+)
+def test_async_generic_lookahead_keeps_parameter_atoms(continuation: str, tmp_path: Path) -> None:
+    path = tmp_path / "view.tsx"
+    source = (
+        "const f = async <T, U extends {map: <V>(value: V) => V}>"
+        f"{continuation}; // actual prose\n"
+    )
+    path.write_text(source, encoding="utf-8")
+
+    fixed = _run("fix", path)
+
+    assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+    assert path.read_text(encoding="utf-8") == source.replace("// actual prose", "").replace(
+        "/* atom prose */", ""
+    )
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "(async <T, <Text>http://x</Text>)",
+        "(async <T, <Text>(value) => http://x</Text>)",
+        "(compare <T, <Text>http://x</Text>)",
+        "(async <T, U = () => <Text>http://x</Text>)",
+        "(async <T, U > (value) ? <Text>http://x</Text> : null)",
+        "async<T, U>(value)",
+        "async<T>0",
+    ],
+)
+def test_async_identifiers_do_not_create_generic_arrows(expression: str, tmp_path: Path) -> None:
+    path = tmp_path / "view.tsx"
+    source = f"const view = {expression}; // actual prose\n"
+    path.write_text(source, encoding="utf-8")
+
+    fixed = _run("fix", path)
+
+    assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+    assert path.read_text(encoding="utf-8") == source.replace("// actual prose", "")
+
+
+@pytest.mark.parametrize(
     "element",
     [
         "<Text extends>Don't remove http://x</Text>",

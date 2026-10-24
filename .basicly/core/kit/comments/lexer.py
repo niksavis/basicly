@@ -83,6 +83,22 @@ def _within(index: int, ranges: tuple[tuple[int, int], ...]) -> bool:
     return any(start <= index < end for start, end in ranges)
 
 
+def atom_end(source: str, index: int, language: Language, previous: str) -> tuple[int, str] | None:
+    line = source.count("\n", 0, index) + 1
+    block = _block_at(source, index, language)
+    if block is not None:
+        return _comment_end(source, index, *block, line), ""
+    opener = _line_comment_at(source, index, language, previous)
+    if opener is not None:
+        return _comment_end(source, index, opener, "\n", line), previous
+    rule = _string_at(source, index, language)
+    if rule is not None:
+        return _skip_string(source, index, rule, line), '"'
+    if language.regex_literals and source[index] == "/" and _regex_here(previous):
+        return _skip_regex(source, index, line), "v"
+    return None
+
+
 def _comment_end(source: str, index: int, opener: str, closer: str, line: int) -> int:
     end = source.find(closer, index + len(opener))
     if closer == "\n":

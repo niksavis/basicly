@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 _IDENTIFIER = r"(?:[^\W\d]|[$])[\w$]*"
@@ -8,7 +9,9 @@ _NAME = _IDENTIFIER + r"(?:[.:-][\w$]+)*"
 _OPEN = re.compile(r"<(" + _NAME + r")(?=[\s/<>])")
 _CLOSE = re.compile(r"</(" + _NAME + r")?\s*>")
 _TRIVIA = re.compile(r"(?:\s|/\*[\s\S]*?\*/|//[^\r\n]*(?:\r?\n|$))*")
+_ASYNC = re.compile(r"\basync" + _TRIVIA.pattern + r"$")
 _PARAMETER = re.compile(_IDENTIFIER)
+_CLOSING = {")": "(", "]": "[", "}": "{", ">": "<"}
 _EXPRESSION_PRECEDERS = frozenset("=([{,:;!&|?<>+-*/%^~")
 _EXPRESSION_KEYWORD = re.compile(
     r"\b(?:return|yield|throw|await|case|typeof|void|delete|in|instanceof|of|else|do)\s*$"
@@ -28,9 +31,17 @@ class _Frame:
 
 
 class State:
-    def __init__(self, *, typescript: bool) -> None:
+    def __init__(
+        self,
+        *,
+        typescript: bool,
+        atom_end: Callable[[str, int, str], tuple[int, str] | None],
+        lex_error: type[Exception],
+    ) -> None:
         self.frames = [_Frame("code")]
         self.typescript = typescript
+        self.atom_end = atom_end
+        self.lex_error = lex_error
 
     def advance(self, source: str, index: int, previous: str) -> tuple[int, str] | None:
         frame = self.frames[-1]
@@ -50,12 +61,92 @@ class State:
             if frame.depth == 0:
                 self.frames.pop()
                 return index + 1, "v"
-        if char == "<" and self._starts_expression(source, index, previous):
-            if self.typescript and _generic_arrow(source, index):
+        if char == "<":
+            starts_expression = self._starts_expression(source, index, previous)
+            if self.typescript and (
+                (starts_expression and _generic_arrow(source, index))
+                or self._try_async_arrow(source, index)
+            ):
                 self.frames.append(_Frame("type", depth=1))
                 return index + 1, "<"
-            return self._open(source, index)
+            if starts_expression:
+                return self._open(source, index)
         return None
+
+    def _try_async_arrow(self, source: str, index: int) -> bool:
+        if _ASYNC.search(source[:index]) is None or not _generic_arrow(source, index):
+            return False
+        try:
+            end = self._balanced_end(source, index, angles=True)
+            if end is None:
+                return False
+            index = _after_trivia(source, end)
+            if source[index : index + 1] != "(":
+                return False
+            end = self._balanced_end(source, index, angles=False)
+            if end is None:
+                return False
+            index = _after_trivia(source, end)
+            return source.startswith("=>", index) or (
+                source.startswith(":", index) and self._return_arrow(source, index + 1)
+            )
+        except self.lex_error, JSXError:
+            return False
+
+    def _balanced_end(self, source: str, index: int, *, angles: bool) -> int | None:
+        stack = [source[index]]
+        for position, char in self._head_tokens(source, index + 1, jsx=not angles):
+            if char in "([{" or (char == "<" and angles):
+                stack.append(char)
+            elif char in ")]}":
+                if stack[-1] != _CLOSING[char]:
+                    return None
+                stack.pop()
+            elif char == ">" and angles and source[position - 1] != "=":
+                if stack[-1] != "<":
+                    return None
+                stack.pop()
+            if not stack:
+                return position + 1
+        return None
+
+    def _return_arrow(self, source: str, index: int) -> bool:
+        stack: list[str] = []
+        for position, char in self._head_tokens(source, index, jsx=False):
+            if not stack and source.startswith("=>", position):
+                return True
+            if char in "([{<":
+                stack.append(char)
+            elif char in ")]}" or (char == ">" and source[position - 1] != "="):
+                if not stack or stack[-1] != _CLOSING[char]:
+                    return False
+                stack.pop()
+            elif char == ";" and not stack:
+                return False
+        return False
+
+    def _head_tokens(self, source: str, index: int, *, jsx: bool) -> Iterator[tuple[int, str]]:
+        state = (
+            State(typescript=self.typescript, atom_end=self.atom_end, lex_error=self.lex_error)
+            if jsx
+            else None
+        )
+        previous = ""
+        while index < len(source):
+            transition = state.advance(source, index, previous) if state is not None else None
+            atom = transition or self.atom_end(source, index, previous)
+            if atom is not None:
+                index, previous = atom
+                continue
+            char = source[index]
+            yield index, char
+            if char == "\n":
+                previous = ""
+            elif not char.isspace():
+                previous = char
+            index += 1
+        if state is not None:
+            state.finish()
 
     def finish(self) -> None:
         if len(self.frames) > 1:
