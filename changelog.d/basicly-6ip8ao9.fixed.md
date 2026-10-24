@@ -1,0 +1,1 @@
+- Refuse missing markdownlint or Node tools instead of passing an unchecked markdown gate, check prerequisites before install writes, and support an explicit reported configuration opt-out.

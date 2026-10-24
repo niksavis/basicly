@@ -46,6 +46,7 @@ from . import (
     lefthook_binary,
     loop,
     loop_state,
+    markdownlint,
     merge,
     owned_store,
     owned_write,
@@ -1677,6 +1678,8 @@ def cmd_install(args: argparse.Namespace) -> int:
     paths = load_project_paths(repo_root)
 
     refuse_ignored_tracker_prefix(repo_root)
+    selection = frozenset(technologies) if technologies else load_technology_selection(repo_root)
+    markdownlint.require_prerequisites(repo_root, selection)
     if not dry_run:
         try:
             _preflight_install(repo_root, paths, args, technologies)

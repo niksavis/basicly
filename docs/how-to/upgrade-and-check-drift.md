@@ -9,6 +9,40 @@ silently switch to an unreviewed upstream version.
 
 ## Upgrade
 
+### Markdown gate prerequisites
+
+The markdown gate is enabled by default. The hook refuses a missing `markdownlint-cli2`
+entry point or an unusable Node runtime. Install runs the same prerequisite check before
+writing files, including with `--dry-run`.
+
+If your repository already declares and locks `markdownlint-cli2`, restore its packages:
+
+```sh
+npm ci
+```
+
+Otherwise, get the repository owner's approval before adding the dependency:
+
+```sh
+npm install --save-dev markdownlint-cli2
+```
+
+Commit the package files. For a missing Node runtime, install Node, for example with
+`nvm install --lts`. On WSL, the hook refuses a Windows Node reached through `/mnt`.
+Install never adds dependencies or opts out automatically.
+
+A repository owner can explicitly opt out in configuration:
+
+```toml
+[hooks.markdownlint]
+enabled = false
+```
+
+The hook and install then print `markdownlint: opted out by hooks.markdownlint.enabled=false`.
+They read `basicly.toml`, sorted `basicly.d/*.toml`, then `basicly.local.toml`. Later settings
+win. A malformed setting refuses. A technology selection excluding Node omits this gate
+and needs no markdown runtime. `hooks-build --runtime-only` also remains available without Node.
+
 ### Optional compiler verification cache
 
 Existing consumers continue to execute verification freshly. To enable local

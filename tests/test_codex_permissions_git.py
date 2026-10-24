@@ -7,6 +7,7 @@ import tomllib
 from pathlib import Path
 
 from basicly import codex_permissions, runner
+from tests.markdownlint_runtime_fixture import provision_markdownlint_double
 from tests.test_codex_permissions import (
     GENERATED_USER_CONFIG,
     config,
@@ -46,6 +47,7 @@ def test_permissions_build_removes_the_policy_and_the_check_then_passes(tmp_path
 def test_install_removes_the_policy_and_replays_without_a_change(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
+    provision_markdownlint_double(consumer)
     generated(consumer)
     home = tmp_path / "codex-home"
     home.mkdir()
