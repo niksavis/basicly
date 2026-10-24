@@ -66,9 +66,23 @@ def all_spans(path: Path, source: str) -> list:
 
 
 def findings(path: Path, source: str) -> list:
+    spans = all_spans(path, source)
+    if languages.is_python(path.suffix.lower()):
+        openers = ("#",)
+    else:
+        language = languages.for_suffix(path.suffix.lower())
+        openers = language.line_comments + tuple(opener for opener, _ in language.block_comments)
     return [
-        Finding(path, span.line, span.text(source), span)
-        for span in all_spans(path, source)
+        Finding(
+            path,
+            span.line,
+            span.text(source),
+            span._replace(
+                replacement=directives.retained_suffix(span.text(source), openers)
+                or span.replacement
+            ),
+        )
+        for span in spans
         if not directives.is_directive(span.text(source))
     ]
 
