@@ -271,8 +271,8 @@ def _bullets(baseline: str) -> list[tuple[str, str]]:
     for line in baseline.splitlines():
         if line.startswith("#"):
             flush()
-            if line.startswith("## "):
-                section = re.sub(r"[^a-z0-9]+", "-", line[3:].strip().lower()).strip("-")
+            if re.match(r"^#{2,3} ", line):
+                section = re.sub(r"[^a-z0-9]+", "-", line.lstrip("#").strip().lower()).strip("-")
             continue
         stripped = line.strip()
         if stripped.startswith(("- ", "* ")):

@@ -655,8 +655,9 @@ everything downstream.
 3. **No duplication across the three files.** The shared always-applicable set feeds all
    three. Each family's file adds only content that differs.
 4. **Each file is self-contained.** Two of the three families do not reliably import a
-   shared file, so each file inlines the shared content. An agent never needs a second
-   file to understand the baseline.
+   shared file, so each file inlines universal constraints. Specialist procedures may live
+   in projected skills
+   when every baseline gives an explicit task trigger and a readable repository path.
 5. **A scoped fragment stays out of the baseline** for the two families that can scope. A
    language-specific rule then costs no context budget on an unrelated task.
 6. **Stable ordering**, so a diff stays minimal.
@@ -666,8 +667,17 @@ vendor basis at all, and all three counted the wrong unit. Anthropic states its 
 lines and skips a `CLAUDE.md` above 4 MiB. GitHub removed its 4000-character limit in June
 2026 and documents no size for the file today. Codex enforces `project_doc_max_bytes`,
 32768 by default and configurable, and it counts **bytes** — so the codex cap counts bytes
-and the other two count characters. **A cap breach means split into a scoped rule. It does
-not mean shrink the prose.**
+and the other two count characters. **A cap breach requires source restructuring, never
+a raised limit or a weakened check.** Route specialist procedures through existing skills
+with explicit triggers shared by all targets; scoped rules alone do not reduce Codex input.
+Account for every prior instruction and test decisions as well as size.
+
+The three baseline templates share `templates/common/baseline.j2`. A Commands fragment
+appears first. Fragments tagged `ask-first` or `never-do` form those constraint groups;
+remaining fragments form Always do. Original order stays stable within each group.
+Untagged custom catalogs retain their flat layout. This layout changes no target filter.
+The retrieval review for `basicly-a3ab.4` records the instruction inventory, routing,
+before/after measurements and decision probes under `docs/design/`.
 
 Measured from the projected files, and regenerated and gated on every commit:
 
@@ -675,9 +685,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | size | cap | headroom | lines | line cap |
 | --- | --- | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 11892 characters | 12000 | 108 | 186 | 200 |
-| `AGENTS.md` (codex) | 14771 bytes | 24576 | 9805 | 234 | 320 |
-| `.github/copilot-instructions.md` (copilot) | 11984 characters | 12000 | 16 | 187 | 200 |
+| `.claude/CLAUDE.md` (claude) | 11762 characters | 12000 | 238 | 198 | 200 |
+| `AGENTS.md` (codex) | 11962 bytes | 24576 | 12614 | 198 | 320 |
+| `.github/copilot-instructions.md` (copilot) | 11854 characters | 12000 | 146 | 199 | 200 |
 
 <!-- docs-claims:end always-on-sizes -->
 

@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
 token_cost:
-  claude: 111
-  codex: 110
-  copilot: 111
+  claude: 136
+  codex: 136
+  copilot: 136
 id: git-discipline
 description: How to commit through the repository gates.
 category: commands
@@ -16,4 +16,4 @@ title: Git Discipline
 body: |
   - Run `git commit` as its own command. Do not chain `git push`, a tag or a tracker update after it, because a refused commit leaves the chain half done.
   - The `commit-msg` hooks require a Conventional Commits subject and a trailing record id. The `conventional-commits` skill writes the message, and the `work-tracker` skill claims the record first.
-  - When a hook refuses a commit, fix the cause it names and commit again.
+  - When a hook refuses a commit, fix the cause it names and commit again. Example subject: `feat(dispatch): bound task context and prioritize integration (basicly-42pn387)`.

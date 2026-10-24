@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
 token_cost:
-  claude: 188
-  codex: 187
-  copilot: 188
+  claude: 187
+  codex: 188
+  copilot: 187
 id: harness-loop
 description: Session start, session end and the harness loop.
 category: project
