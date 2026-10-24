@@ -405,26 +405,14 @@ def _unfolded_kind_findings(folded: Any, ordered: Sequence[Any]) -> list[Finding
     ]
 
 
-def _minted_at_some_generation(event: Any, bound: int) -> bool:
-
-    for generation in range(1, bound + 1):
-        if event.id == events.event_id_for(
-            event.record, event.kind, event.payload, generation=generation
-        ):
-            return True
-    return False
-
-
 def _unminted_id_findings(ordered: Sequence[Any]) -> list[Finding]:
 
-    per_record: dict[str, int] = {}
-    for event in ordered:
-        per_record[event.record] = per_record.get(event.record, 0) + 1
+    per_record = events.generation_bounds(ordered)
     findings = []
     for event in ordered:
         if not events.ids.is_record_id(event.record):
             continue
-        if _minted_at_some_generation(event, per_record[event.record]):
+        if events.generation_of(event, per_record[event.record]) is not None:
             continue
         findings.append(
             Finding(

@@ -594,14 +594,30 @@ def git_display_name(repo_root: Path) -> str:
     return found.stdout.strip() if found.returncode == 0 else ""
 
 
-def _event_generation(counts: dict[tuple[str, str, str], int], event: Mapping[str, object]) -> int:
-    key = (
-        str(event.get("record", "")),
-        str(event.get("kind", "")),
-        json.dumps(event.get("payload") or {}, sort_keys=True, separators=(",", ":")),
-    )
-    counts[key] = counts.get(key, 0) + 1
-    return counts[key]
+def _validated_scrub_events(contents: Mapping[Path, str], events: Any) -> dict[str, dict]:
+    originals: dict[str, dict] = {}
+    paths: dict[str, Path] = {}
+    for path, raw in contents.items():
+        for line in raw.splitlines():
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            previous = originals.setdefault(event["id"], event)
+            paths[event["id"]] = path
+            if event != previous:
+                raise TrackerDivergenceError(
+                    f"{path.name}: {event['id']} has different stored content; "
+                    "repair the conflicting copies before scrubbing"
+                )
+    stored = [events.from_json(_dump_record(event)) for event in originals.values()]
+    bounds = events.generation_bounds(stored)
+    for event in stored:
+        if events.generation_of(event, bounds[event.record]) is None:
+            raise TrackerDivergenceError(
+                f"{paths[event.id].name}: {event.id} does not re-mint from its own content, so"
+                " the generation cannot be derived and nothing is rewritten"
+            )
+    return originals
 
 
 def scrub_ledger(
@@ -611,69 +627,55 @@ def scrub_ledger(
     display_name: str = "",
 ) -> int:
 
-    name = display_name
     files = sorted(found for glob in LEDGER_GLOBS for found in ledger_dir(repo_root).glob(glob))
     if not files:
         return 0
-    kit_module = kit(repo_root)
-    events = kit_module.events
+    events = kit(repo_root).events
     timeout_s = events.DEFAULT_LOCK_TIMEOUT_S if lock_timeout_s is None else lock_timeout_s
     changed = 0
     with events.LedgerLock(ledger_dir(repo_root), timeout_s=timeout_s):
-        stored: dict[tuple[str, str, str], int] = {}
-        minted: dict[tuple[str, str, str], int] = {}
-        copies: dict[str, tuple[dict, dict]] = {}
+        contents = {path: path.read_text(encoding="utf-8") for path in files}
+        originals = _validated_scrub_events(contents, events)
+        stored = [events.from_json(_dump_record(event)) for event in originals.values()]
+        taken = events.reserved_ids(stored)
+        scrubbed: dict[str, dict] = {}
+        for event in sorted(
+            originals.values(), key=lambda item: item["kind"] == events.KIND_WITHDRAWN
+        ):
+            clean = dict(event)
+            clean["actor"] = redact.redact_name(
+                redact.redact_committed(str(event.get("actor") or "")), display_name
+            )
+            clean["payload"] = _redact_name_outside_holder(
+                _redact_paths(event["payload"]), display_name
+            )
+            payload = clean["payload"]
+            if event["kind"] == events.KIND_WITHDRAWN and isinstance(payload, dict):
+                target = payload.get(events.WITHDRAWN_TARGET)
+                if isinstance(target, str) and target in scrubbed:
+                    payload[events.WITHDRAWN_TARGET] = scrubbed[target]["id"]
+            if clean["payload"] != event["payload"]:
+                generation = events.available_generation(
+                    clean["record"], clean["kind"], clean["payload"], taken
+                )
+                clean["id"] = events.event_id_for(
+                    clean["record"], clean["kind"], clean["payload"], generation=generation
+                )
+                taken.add(clean["id"])
+            scrubbed[event["id"]] = clean
         planned: list[tuple[Path, str]] = []
-        for path in files:
-            raw = path.read_text(encoding="utf-8")
+        for path, raw in contents.items():
             lines: list[str] = []
             for line in raw.splitlines():
-                if not line.strip():
+                event = json.loads(line) if line.strip() else None
+                if event is None or scrubbed[event["id"]] == event:
                     lines.append(line)
                     continue
-                event = json.loads(line)
-                if event["id"] in copies:
-                    original, scrubbed = copies[event["id"]]
-                    if event != original:
-                        raise TrackerDivergenceError(
-                            f"{path.name}: {event['id']} has different stored content; "
-                            "repair the conflicting copies before scrubbing"
-                        )
-                    lines.append(line if scrubbed == event else _dump_record(scrubbed))
-                    changed += scrubbed != event
-                    continue
-                generation = _event_generation(stored, event)
-                expected = events.event_id_for(
-                    event["record"], event["kind"], event["payload"], generation=generation
-                )
-                if expected != event["id"]:
-                    raise TrackerDivergenceError(
-                        f"{path.name}: {event['id']} does not re-mint from its own content, so"
-                        " the generation cannot be derived and nothing is rewritten"
-                    )
-                scrubbed = dict(event)
-                scrubbed["actor"] = redact.redact_name(
-                    redact.redact_committed(str(event.get("actor") or "")), name
-                )
-                scrubbed["payload"] = _redact_name_outside_holder(
-                    _redact_paths(event["payload"]), name
-                )
-                scrubbed["id"] = events.event_id_for(
-                    scrubbed["record"],
-                    scrubbed["kind"],
-                    scrubbed["payload"],
-                    generation=_event_generation(minted, scrubbed),
-                )
-                copies[event["id"]] = event, scrubbed
-                if scrubbed == event:
-                    lines.append(line)
-                    continue
-                lines.append(_dump_record(scrubbed))
+                lines.append(_dump_record(scrubbed[event["id"]]))
                 changed += 1
-            if not changed:
-                continue
-            trailer = "\n" if raw.endswith("\n") else ""
-            planned.append((path, "\n".join(lines) + trailer))
+            text = "\n".join(lines) + ("\n" if raw.endswith("\n") else "")
+            if text != raw:
+                planned.append((path, text))
         for path, text in planned:
             tmp = path.with_suffix(f".{os.getpid()}.jsonl.tmp")
             tmp.write_text(text, encoding="utf-8")

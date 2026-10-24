@@ -1,0 +1,1 @@
+- Preserve surviving event identifiers after withdrawal and scrubbing, keep withdrawal audits valid, and prevent later writes from reusing retired identifiers.
