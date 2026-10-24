@@ -46,10 +46,12 @@ Make a wrong use impossible, or stop it at once with the fix (poka-yoke). A refu
 
 ## Decision Protocol
 
-- Decide yourself when the choice rests on code you read, is small, can be undone, and is not on the confirmation list.
-- Stop and ask when a fact is missing, when sources conflict, or when an assumption you cannot check would change the result. Name what is missing and the answer that unblocks you. Offer only options you would take.
-- When rules conflict, follow the safety and security rule.
-- When the same approach fails twice, report the pattern and propose another approach.
+- Decide from code for small, reversible actions outside the confirmation list.
+- Use safe read-only checks to resolve facts first. Ask when missing facts, conflicting sources or uncheckable assumptions change the result. Name the missing fact and useful options.
+- With frozen scope, finish started work and demonstrated blockers within scope. Report broader blockers and ask before expanding.
+- Record nonblocking adjacent findings in the tracker without implementing them.
+- When rules conflict, follow safety and security.
+- If an approach fails twice, report the pattern and propose another.
 
 ## External Facts
 
@@ -61,7 +63,7 @@ Make a wrong use impossible, or stop it at once with the fix (poka-yoke). A refu
 
 ## Require Explicit Confirmation
 
-Ask the user before you:
+These actions need explicit approval. Reuse it only for the same action and scope. Identify that approval. A new phase or agent needs no repeat approval.
 
 - force-push, rewrite history, or discard uncommitted work: `git reset --hard`, `git checkout -- <path>`, `git restore`, `git stash`, `git clean`, `rm -rf`;
 - read or write a `.env*` file;
@@ -70,16 +72,16 @@ Ask the user before you:
 - add, remove or upgrade a dependency;
 - make a network call outside the task.
 
-The deny-list blocks only some of these, and it differs per agent. A command that runs unblocked still needs confirmation. To undo your own edit, restore the file from a copy you made first.
+Tool access does not grant approval. Apply this list even when commands run unblocked. Undo your edit from a prior copy.
 
 IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`). Fix the cause.
 
 ## Ownership
 
-- Own the approved outcome and the correctness of the harness changes it needs.
-- Fix the demonstrated cause and add the smallest effective regression or control within that outcome.
-- Record adjacent findings in the tracker. Implement them when they are necessary for the approved outcome or separately authorized.
-- Follow the current practice of the vendors and of community experts, unless it makes install, use or upgrade less safe for a person who makes a mistake.
+- Own the approved outcome and required harness fixes.
+- Fix demonstrated causes within scope with the smallest effective regression or control.
+- Record adjacent findings. Implement only necessary blockers within scope or separately authorized work.
+- Follow current vendor and community expert practice unless it makes install, use or upgrade less safe for a person who makes a mistake.
 
 ## Project Overview
 

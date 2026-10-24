@@ -1,0 +1,1 @@
+- Agent instructions reuse explicit approval for the same action and scope, resolve facts with safe read-only checks, and keep frozen work within scope. Nonblocking adjacent findings are recorded without implementation. Confirmation categories and verification gates remain unchanged.
