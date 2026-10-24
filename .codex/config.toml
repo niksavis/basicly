@@ -1,2 +1,2 @@
-["features"]
-"network_proxy" = true
+approval_policy = "on-request"
+default_permissions = ":danger-full-access"

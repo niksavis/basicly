@@ -1,0 +1,1 @@
+- Commit the approved repository Codex defaults and verify that cleanup, installation and fresh worktrees preserve them while clean-tree gates still reject uncommitted changes.
