@@ -98,7 +98,10 @@ IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a 
 
 ## Quality Gate
 
-- Run focused checks while editing and cheap gates first. Run required full verification on the integrated candidate. Reuse passing evidence only for equivalent trusted inputs; a commit, tracker update or phase transition alone does not invalidate it.
+- Run focused checks while editing and cheap gates first. Run required full verification on the integrated candidate.
+- For tracker-only or phase-only changes, rerun affected checks. Reuse passing evidence only when the existing engine establishes equivalent trusted inputs.
+- If source or environment inputs change, rerun affected checks. A commit or phase transition alone does not invalidate equivalent evidence.
+- If a check fails, fix its cause and rerun affected checks. Keep all required gates enabled.
 - In a long run, report the elapsed time, the tokens spent where the host shows them, and the items left.
 - Review the diff. Then run the change the way a consumer runs it, and read the output. Passing tests do not prove a working feature.
 - Run the repository checks on what you touched, after the last edit. A later edit can break what passed.
@@ -130,11 +133,16 @@ uv run python src/basicly/lefthook_artifacts.py --download
 uv run basicly hooks-build
 ```
 
-Test, whole suite then one file:
+While editing, run the affected test file (example):
 
 ```sh
-uv run pytest -q -n 4
 uv run pytest tests/test_cli.py -q
+```
+
+On the integrated candidate, run required full verification:
+
+```sh
+uv run basicly verify --mode full
 ```
 
 Lint / format:

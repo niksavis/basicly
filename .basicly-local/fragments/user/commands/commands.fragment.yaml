@@ -18,11 +18,16 @@ body: |
   uv run basicly hooks-build
   ```
 
-  Test, whole suite then one file:
+  While editing, run the affected test file (example):
 
   ```sh
-  uv run pytest -q -n 4
   uv run pytest tests/test_cli.py -q
+  ```
+
+  On the integrated candidate, run required full verification:
+
+  ```sh
+  uv run basicly verify --mode full
   ```
 
   Lint / format:

@@ -72,3 +72,13 @@ def test_checkpoint_rows_mark_policy_checkpoint_as_inspection_only(
     assert not unwarned, (
         f"phases table offers a bare approve with no parked-loop warning: {unwarned}"
     )
+
+
+def test_verify_guidance_does_not_require_an_unconditional_second_full_run(
+    instructions: str,
+) -> None:
+    section = instructions.split("### Verify gate\n", 1)[1].split("\n## ", 1)[0]
+    assert "After the landing merged, re-run the gate" not in section
+    assert "equivalent trusted inputs" in section
+    assert "affected checks" in section
+    assert "from the base checkout only" in section

@@ -137,7 +137,8 @@ Split the shared file where you can, because serial lanes are slower.
 The build-to-verify `loop advance` rebases, runs verify, records the required gate and merges.
 If you record the gate first (`basicly verify --issue`), the phase jumps to verify without the merge.
 Ship refuses to close an issue whose branch has not landed.
-After the landing merged, re-run the gate from the base checkout only:
+After landing, reuse passing evidence only when the existing engine establishes equivalent trusted inputs.
+If inputs changed or a check failed, rerun affected checks from the base checkout only:
 
 ```sh
 basicly verify --mode full --issue <id>
