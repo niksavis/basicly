@@ -1,0 +1,1 @@
+- Document repository-owned Markdown inputs before the first commit, with a strict-rule scratch setup and a real-hook regression proving valid commits pass and invalid consumer Markdown is refused.

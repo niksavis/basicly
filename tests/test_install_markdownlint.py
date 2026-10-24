@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -8,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from tests.markdownlint_runtime_fixture import (
+    REPO_ROOT,
     copy_locked_markdownlint_runtime,
     provision_markdownlint_double,
 )
@@ -158,3 +161,147 @@ def test_enabled_dry_run_accepts_tools_without_writing(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert "opted out" not in result.stdout
     assert _files(tmp_path) == before
+
+
+def _claim_install_record(consumer: Path, environment: dict[str, str]) -> str:
+    prepared = subprocess.run(
+        [
+            sys.executable,
+            ".basicly/core/kit/tracker/cli.py",
+            "config",
+            ".basicly/ledger",
+            "set",
+            "prefix",
+            "myrepo",
+        ],
+        cwd=consumer,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+    criterion = "When README.md is read, its heading shall name the scratch repository."
+    created = run_basicly_consumer(
+        consumer,
+        "tracker",
+        "write",
+        "--",
+        "create",
+        "Install the harness",
+        "-t",
+        "task",
+        "-d",
+        "## Trigger\n\nWhen readers open this repository, I want the harness installed, "
+        "so I can verify Markdown.\n\n## Scope\n\n- `README.md`\n- `NOTES.md`\n",
+        "--acceptance",
+        "- " + criterion,
+        "--requirements",
+        "Keep Markdown rules enabled.",
+    )
+    assert created.returncode == 0, created.stdout + created.stderr
+    match = re.search(r"created: (myrepo-[a-z0-9]+)", created.stdout)
+    assert match is not None
+    issue = match.group(1)
+    review = {
+        "checks": [
+            {
+                "criterion": criterion,
+                "command": ["grep", "-c", "Scratch repo", "README.md"],
+                "expected": "1",
+            }
+        ]
+    }
+    reviewed = subprocess.run(
+        [
+            sys.executable,
+            ".basicly/core/kit/tracker/cli.py",
+            "review",
+            ".basicly/ledger",
+            issue,
+            "--evidence",
+            json.dumps(review),
+        ],
+        cwd=consumer,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert reviewed.returncode == 0, reviewed.stdout + reviewed.stderr
+    claimed = run_basicly_consumer(
+        consumer, "tracker", "write", "--", "update", issue, "--status", "in_progress"
+    )
+    assert claimed.returncode == 0, claimed.stdout + claimed.stderr
+    return issue
+
+
+@pytest.mark.fresh_runtime
+def test_documented_markdown_inputs_pass_real_commit_and_refuse_bad_consumer_markdown(
+    tmp_path: Path,
+) -> None:
+    tutorial = (REPO_ROOT / "docs/tutorial/first-loop.md").read_text(encoding="utf-8")
+    configurations = [
+        json.loads(block)
+        for block in re.findall(r"```json\n(.*?)\n```", tutorial, re.DOTALL)
+        if '"globs"' in block
+    ]
+    assert configurations == [{"globs": ["README.md", "NOTES.md"]}]
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    environment = {
+        **os.environ,
+        "PYTHONPATH": str(REPO_ROOT / "src"),
+        "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"],
+    }
+    entry = Path(sys.executable).parent / ("basicly.exe" if sys.platform == "win32" else "basicly")
+    assert entry.is_file(), "the current project environment must provide its real basicly CLI"
+
+    def git(*arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *arguments],
+            cwd=consumer,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    assert git("init", "-q", "-b", "main").returncode == 0
+    assert git("config", "user.name", "Fixture Operator").returncode == 0
+    assert git("config", "user.email", "fixture@example.invalid").returncode == 0
+    (consumer / "README.md").write_text("# Scratch repo\n", encoding="utf-8")
+    assert git("add", "README.md").returncode == 0
+    seeded = git("commit", "-m", "chore: initialize scratch repository")
+    assert seeded.returncode == 0, seeded.stdout + seeded.stderr
+    (consumer / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    copy_locked_markdownlint_runtime(consumer)
+    configuration = consumer / ".markdownlint-cli2.jsonc"
+    owner_bytes = (json.dumps(configurations[0], indent=2) + "\n").encode()
+    configuration.write_bytes(owner_bytes)
+
+    installed = run_basicly_consumer(consumer, "install")
+    assert installed.returncode == 0, installed.stdout + installed.stderr
+    assert configuration.read_bytes() == owner_bytes
+
+    issue = _claim_install_record(consumer, environment)
+    assert git("add", "-A").returncode == 0
+    committed = git("commit", "-m", f"chore: install basicly ({issue})")
+    initial_output = committed.stdout + committed.stderr
+
+    assert committed.returncode == 0, initial_output
+    assert "Linting: 1 file(s)" in initial_output
+    assert "Summary: 0 error(s)" in initial_output
+    assert "catalog lint: OK" in initial_output
+    assert configuration.read_bytes() == owner_bytes
+    before = git("rev-parse", "HEAD").stdout
+    (consumer / "NOTES.md").write_text("# Notes\n\nBad trailing spaces.   \n", encoding="utf-8")
+    assert git("add", "NOTES.md").returncode == 0
+
+    refused = git("commit", "-m", f"docs: add notes ({issue})")
+
+    assert refused.returncode != 0
+    assert "Linting: 2 file(s)" in refused.stdout + refused.stderr
+    assert "MD009" in refused.stdout + refused.stderr
+    assert git("rev-parse", "HEAD").stdout == before
+    assert configuration.read_bytes() == owner_bytes

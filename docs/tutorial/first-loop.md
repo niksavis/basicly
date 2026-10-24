@@ -60,8 +60,32 @@ your scratch repository, then run:
 npm install --save-dev markdownlint-cli2
 ```
 
-Commit the package files with the install output. The default install refuses missing
-Node or markdownlint before writing files. See
+The enabled hook reads repository-owned Markdown inputs. Keep an existing
+`.markdownlint-cli2.jsonc`, `.markdownlint-cli2.yaml`, `.markdownlint-cli2.cjs` or
+`.markdownlint-cli2.mjs` and its input and rule choices. A style-only `.markdownlint.json`
+configuration sets rules but does not select CLI2 inputs. Installation does not create
+an input or style policy for your repository.
+
+For this throwaway walkthrough, choose `README.md` and `NOTES.md` explicitly. If no CLI2
+configuration exists, create `.markdownlint-cli2.jsonc` with:
+
+```json
+{"globs": ["README.md", "NOTES.md"]}
+```
+
+This example keeps every default rule enabled and selects only those two consumer files.
+It does not claim to lint generated files or every Markdown file in another repository.
+If a configuration already exists, keep it and ensure the walkthrough's files are included
+in the inputs you choose.
+
+Start with a clean `README.md`. Keep an existing file; only create one when it is absent:
+
+```sh
+test -e README.md || printf '# Scratch repo\n' > README.md
+```
+
+Commit the configuration and package files with the install output. The default install
+refuses missing Node or markdownlint before writing files. See
 [markdown gate prerequisites](../how-to/upgrade-and-check-drift.md#markdown-gate-prerequisites)
 if the repository owner chooses an explicit opt-out.
 
@@ -132,17 +156,16 @@ rank1_floor = 0.85
 
 ## Step 3 — file the bead you are about to work on
 
-Commit the install output now and it lands: the `tracker-commit-msg` hook passes
-while the ledger holds no records, because there is no id to reference yet. From
-the first record onward it refuses every commit that names none:
+File and claim a record before committing the install output. The `tracker-claim`
+hook requires a named record you hold in progress for that code commit. Once the ledger
+holds a record, `tracker-commit-msg` also refuses a commit that names none:
 
 ```text
 ERROR: Commit message does not reference a tracked issue id.
 ```
 
-So file a bead before the commit after this one. A bead has to pass the
-**Definition of Ready** gate before the loop will build it, and you do not have
-to guess what that means — ask for the shape:
+A bead has to pass the **Definition of Ready** gate before the loop will build it.
+Ask for the shape before filing the record:
 
 ```sh
 basicly policy scaffold --type task
