@@ -313,6 +313,14 @@ cap's exact rules.
 under the ledger lock and appends a `withdrawn` event that names the new line and the reason.
 Git history still holds the old line.
 
+For a `field` event, withdrawal clears a string value only when the field table
+marks it as prose or an unknown field is a declared template section.
+Known structural fields remain protected even when a template names them.
+The fold reads the placeholder, and the audit keeps the field name and event identity.
+Withdrawal validates its audit reason before rewriting. It refuses duplicate target
+copies with the `compact` remedy, so successful withdrawal cannot leave another
+stored copy of that event's disclosed text behind.
+
 ### 4.3 The ten requirements, and the weakest link in each
 
 | # | Requirement | Weakest link |

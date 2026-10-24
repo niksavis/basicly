@@ -497,7 +497,7 @@ def _withdrawal_facts(payload: Mapping[str, object]) -> tuple[str, str]:
         raise InvalidEventError(
             f"a {KIND_WITHDRAWN} event needs the {WITHDRAWN_TARGET} event id, got {target!r}"
         )
-    if not isinstance(reason, str) or not reason:
+    if not isinstance(reason, str) or not reason.strip():
         raise InvalidEventError(
             f"a {KIND_WITHDRAWN} event needs a {WITHDRAWN_REASON}, got {reason!r}"
         )
@@ -1144,11 +1144,25 @@ def append(  # noqa: PLR0913 — every keyword is an injected dependency the kit
             lock.release()
 
 
-def _withdrawn_payload(event: Event) -> dict[str, object]:
+def _withdrawn_payload(event: Event, ledger: Path) -> dict[str, object]:
+
+    prose_value = False
+    name = event.payload.get("name")
+    if (
+        event.kind == KIND_FIELD
+        and isinstance(name, str)
+        and isinstance(event.payload.get("value"), str)
+    ):
+        fields = _load_sibling("fields.py", "basicly_tracker_kit_fields")
+        template = None
+        if fields.known_field(name) is None:
+            templates = _load_sibling("templates.py", "basicly_tracker_kit_templates")
+            template = templates.load(ledger)
+        prose_value = fields.permits_text_withdrawal(name, template)
 
     payload: dict[str, object] = {WITHDRAWN_FROM: event.id}
     for key, value in event.payload.items():
-        if key in FOLD_READ_KEYS:
+        if key in FOLD_READ_KEYS and not (key == "value" and prose_value):
             payload[key] = value
             continue
         payload[key] = WITHDRAWN_PLACEHOLDER
@@ -1158,15 +1172,24 @@ def _withdrawn_payload(event: Event) -> dict[str, object]:
 
 def _find_line(ledger: Path, event_id: str) -> tuple[Path, str, int, Event]:
 
+    found = None
     for path in ledger_paths(ledger):
         text = path.read_text(encoding="utf-8")
         for index, line in enumerate(text.splitlines()):
             try:
-                event = from_json(line)
-            except InvalidEventError:
+                raw = json.loads(line)
+            except ValueError:
                 continue
-            if event.id == event_id:
-                return path, text, index, event
+            if not isinstance(raw, dict) or raw.get("id") != event_id:
+                continue
+            if found is not None:
+                raise InvalidEventError(
+                    f"{event_id} has duplicate stored copies; run the tracker kit's `compact` "
+                    "command before withdrawing it so no disclosed copy can remain"
+                )
+            found = path, text, index, from_json(line)
+    if found is not None:
+        return found
     raise InvalidEventError(f"no event in the log carries the id {event_id!r}")
 
 
@@ -1223,6 +1246,7 @@ def withdraw(  # noqa: PLR0913 - `append`'s injected seams, plus which event and
     lock_timeout_s: float = DEFAULT_LOCK_TIMEOUT_S,
 ) -> Event:
 
+    _withdrawal_facts({WITHDRAWN_TARGET: event_id, WITHDRAWN_REASON: reason})
     ledger = Path(directory)
     with LedgerLock(ledger, timeout_s=lock_timeout_s) as lock:
         path, text, index, target = _find_line(ledger, event_id)
@@ -1233,7 +1257,7 @@ def withdraw(  # noqa: PLR0913 - `append`'s injected seams, plus which event and
             )
         if WITHDRAWN_FROM in target.payload:
             raise InvalidEventError(f"{event_id} has already been withdrawn")
-        payload = _withdrawn_payload(target)
+        payload = _withdrawn_payload(target, ledger)
         if len(payload) == len(target.payload) + 1:
             raise InvalidEventError(
                 f"every key on {event_id} is one the fold reads by name, so there is no free "
@@ -1245,6 +1269,14 @@ def withdraw(  # noqa: PLR0913 - `append`'s injected seams, plus which event and
             raise InvalidEventError(
                 f"withdrawing {event_id} would mint {minted}, which the log already holds"
             )
+        audit = prepare_payload(
+            {WITHDRAWN_TARGET: minted, WITHDRAWN_REASON: reason}, kind=KIND_WITHDRAWN, redact=redact
+        )
+        _withdrawal_facts(audit)
+        if audit[WITHDRAWN_TARGET] != minted:
+            raise InvalidEventError(
+                "the redactor changed the withdrawal target; nothing was rewritten"
+            )
         lines = text.splitlines()
         lines[index] = to_json(replace(target, id=minted, payload=payload))
         _publish_text(path, "\n".join(lines) + ("\n" if text.endswith("\n") else ""))
@@ -1254,12 +1286,11 @@ def withdraw(  # noqa: PLR0913 - `append`'s injected seams, plus which event and
                 Draft(
                     target.record,
                     KIND_WITHDRAWN,
-                    {WITHDRAWN_TARGET: minted, WITHDRAWN_REASON: reason},
+                    audit,
                 )
             ],
             actor=actor,
             clock=clock,
-            redact=redact,
             held_lock=lock,
         )
         return recorded[0]
