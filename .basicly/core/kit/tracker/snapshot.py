@@ -531,6 +531,17 @@ class Compaction:
     duplicates: int = 0
 
 
+def _stored_id(line: bytes) -> str | None:
+    try:
+        payload = json.loads(line)
+    except ValueError, UnicodeDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    ident = payload.get("id")
+    return ident if isinstance(ident, str) else None
+
+
 def _stored_lines(directory: Path) -> tuple[dict[str, bytes], dict[Path, bytes], int]:
     known: dict[str, bytes] = {}
     rewritten: dict[Path, bytes] = {}
@@ -539,7 +550,7 @@ def _stored_lines(directory: Path) -> tuple[dict[str, bytes], dict[Path, bytes],
         original = path.read_bytes()
         kept: list[bytes] = []
         for line in original.splitlines(keepends=True):
-            ident = _event_id(line)
+            ident = _stored_id(line)
             if ident is not None and ident in known:
                 if known[ident] != line:
                     raise events.LedgerError(f"{ident} has different stored content")
@@ -594,7 +605,7 @@ def compact(
             for line in path.read_bytes().splitlines(keepends=True):
                 if not line.strip():
                     continue
-                ident = _event_id(line)
+                ident = _stored_id(line)
                 if ident is not None and ident in known:
                     if known[ident] != line:
                         raise events.LedgerError(f"{ident} has different stored content")

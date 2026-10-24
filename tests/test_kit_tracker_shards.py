@@ -167,7 +167,7 @@ def test_compaction_is_a_no_op_on_a_ledger_holding_no_shard(tmp_path: Path) -> N
     assert done.appended == 0
 
 
-@pytest.mark.parametrize("key,value", [("actor", "different"), ("seq", 8)])
+@pytest.mark.parametrize("key,value", [("actor", "different"), ("seq", 8), ("seq", True)])
 def test_compaction_preserves_conflicting_copies_and_every_shard(
     tmp_path: Path, key: str, value: str | int
 ) -> None:
