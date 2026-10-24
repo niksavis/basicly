@@ -7,6 +7,9 @@ import subprocess  # nosec B404
 from dataclasses import dataclass
 from pathlib import Path
 
+if os.name == "nt":
+    import _winapi
+
 
 @dataclass(frozen=True)
 class Snapshot:
@@ -37,7 +40,18 @@ def link_directory(source: Path, destination: Path) -> None:
     try:
         destination.symlink_to(source, target_is_directory=True)
     except OSError:
-        shutil.copytree(source, destination)
+        if not _junction(source, destination):
+            shutil.copytree(source, destination)
+
+
+def _junction(source: Path, destination: Path) -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        _winapi.CreateJunction(str(source.resolve()), str(destination))
+    except OSError:
+        return False
+    return True
 
 
 def reuse_prepared_environment(snapshot: Path, env: dict[str, str]) -> None:

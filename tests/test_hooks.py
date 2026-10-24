@@ -152,7 +152,7 @@ def test_copilot_hooks_sync_check_and_remove_roundtrip(tmp_path: Path) -> None:
     entry = config["hooks"]["postToolUse"][0]
     assert entry["type"] == "command"
     assert (
-        entry["bash"] == "uv run --no-project --no-python-downloads python "
+        entry["bash"] == "uv run --no-project --no-python-downloads --python 3.14 python "
         ".basicly/core/hooks/lefthook-runtime.py copilot posttooluse"
     )
     assert "lefthook-runtime.py" in entry["powershell"]

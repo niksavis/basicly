@@ -3,7 +3,7 @@ min_version: 2.2.2
 post-merge:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: false
       env:
@@ -16,7 +16,7 @@ post-merge:
 basicly-claude-pretooluse:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
@@ -45,7 +45,7 @@ basicly-claude-pretooluse:
 basicly-codex-pretooluse:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
@@ -57,7 +57,7 @@ basicly-codex-pretooluse:
 basicly-codex-sessionstart:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
@@ -69,7 +69,7 @@ basicly-codex-sessionstart:
 pre-commit:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: false
       env:
@@ -108,7 +108,7 @@ pre-commit:
 commit-msg:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: false
       env:
@@ -127,7 +127,7 @@ commit-msg:
 pre-push:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: false
       env:
@@ -140,7 +140,7 @@ pre-push:
 basicly-claude-posttooluse:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
@@ -152,7 +152,7 @@ basicly-claude-posttooluse:
 basicly-copilot-posttooluse:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
@@ -164,7 +164,7 @@ basicly-copilot-posttooluse:
 basicly-claude-sessionstart:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
@@ -176,7 +176,7 @@ basicly-claude-sessionstart:
 basicly-copilot-sessionstart:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads --python 3.14 python ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:

@@ -18,6 +18,8 @@ def git_config(key: str, repo_root: Path) -> str:
         cwd=repo_root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )  # nosec
     return result.stdout.strip()
@@ -30,6 +32,8 @@ def effective_identity(role: str, repo_root: Path) -> tuple[str, str]:
         cwd=repo_root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )  # nosec
     match = IDENT_PATTERN.match(result.stdout.strip())
@@ -73,6 +77,8 @@ def added_lines(repo_root: Path) -> list[tuple[str, str]]:
         cwd=repo_root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )  # nosec
     return net_added(result.stdout)

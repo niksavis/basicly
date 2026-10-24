@@ -117,6 +117,13 @@ def _mode_entries(repo_root: Path, mode: str | None) -> list[dict]:
     return entries
 
 
+def resolve_command(command: list[str], repo_root: Path) -> list[str]:
+    program = command[0] if command else ""
+    if ("/" in program or "\\" in program) and not Path(program).is_absolute():
+        return [str(repo_root / program), *command[1:]]
+    return command
+
+
 def load_checks(repo_root: Path, mode: str) -> list[tuple[str, list[str]]]:
     return [
         (str(entry["name"]).strip(), list(entry["command"]))
@@ -196,6 +203,8 @@ def _git_output(repo_root: Path, *args: str) -> str | None:
             cwd=repo_root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
     except OSError:
@@ -256,7 +265,9 @@ def _run_fixers(
         if suffix and not targets:
             continue
         try:
-            result = subprocess.run(command + targets, cwd=repo_root, check=False)  # nosec B603
+            result = subprocess.run(  # nosec B603
+                resolve_command(command, repo_root) + targets, cwd=repo_root, check=False
+            )
         except OSError as exc:
             print(f"auto-fix {name} could not run: {exc.strerror or exc}", file=sys.stderr)
             continue
@@ -326,7 +337,9 @@ def run_checks(repo_root: Path, mode: str, *, scope_to_diff: bool = False) -> in
         print(f"==> {name}", flush=True)
         start = time.perf_counter()
         try:
-            result = subprocess.run(command, cwd=repo_root, check=False)  # nosec B603
+            result = subprocess.run(  # nosec B603
+                resolve_command(command, repo_root), cwd=repo_root, check=False
+            )
             code = result.returncode
         except FileNotFoundError:
             print(

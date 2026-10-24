@@ -25,7 +25,7 @@ SUBAGENT_CACHE_TTL = "1h"
 SKILL_LISTING_BUDGET_KEY = "skillListingBudgetFraction"
 SKILL_LISTING_BUDGET = 0.02
 PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
-HOOK_INTERPRETER = "uv run --no-project --no-python-downloads python"
+HOOK_INTERPRETER = "uv run --no-project --no-python-downloads --python 3.14 python"
 AGENT_HOOK_EVENTS = {
     "pretooluse": "PreToolUse",
     "posttooluse": "PostToolUse",

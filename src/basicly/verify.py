@@ -197,10 +197,19 @@ def _run(
     )
 
 
+def _repo_relative(command: Sequence[str], repo_root: Path) -> list[str]:
+
+    program = command[0] if command else ""
+    if ("/" in program or "\\" in program) and not Path(program).is_absolute():
+        return [str(repo_root / program), *command[1:]]
+    return list(command)
+
+
 def _spawn(
     command: Sequence[str], repo_root: Path, *, capture: bool, controlled: str = ""
 ) -> subprocess.CompletedProcess[str]:
 
+    command = _repo_relative(command, repo_root)
     env = sanitised_project_env(affected.environment(repo_root), repo_root)
     if controlled == "pyright":
         env = pyright_inputs.execution_environment(repo_root, env)

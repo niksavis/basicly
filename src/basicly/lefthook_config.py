@@ -18,7 +18,7 @@ from .scaffolds import UVX_COMMAND
 CONFIG = "lefthook.yml"
 MANAGED_CONFIG = ".basicly/lefthook.yml"
 RUNTIME = "lefthook-runtime.py"
-INTERPRETER = "uv run --no-project --no-python-downloads python"
+INTERPRETER = "uv run --no-project --no-python-downloads --python 3.14 python"
 
 
 @dataclass(frozen=True)

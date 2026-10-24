@@ -88,7 +88,7 @@ GUARD = HookSpec(
 )
 HOOKS_RELPATH = ".basicly/core/hooks"
 EXPECTED_COMMAND = (
-    "uv run --no-project --no-python-downloads python "
+    "uv run --no-project --no-python-downloads --python 3.14 python "
     '"${CLAUDE_PROJECT_DIR}/.basicly/core/hooks/lefthook-runtime.py" claude pretooluse'
 )
 
@@ -172,7 +172,7 @@ def test_posttooluse_spec_lands_in_its_own_event_with_its_matcher(tmp_path: Path
                 {
                     "type": "command",
                     "command": (
-                        "uv run --no-project --no-python-downloads python "
+                        "uv run --no-project --no-python-downloads --python 3.14 python "
                         '"${CLAUDE_PROJECT_DIR}/.basicly/core/hooks/lefthook-runtime.py" '
                         "claude posttooluse"
                     ),
