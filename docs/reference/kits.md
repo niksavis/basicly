@@ -107,11 +107,12 @@ argument, and `create` makes that directory if it does not exist.
 | `basicly-tracker comment DIR RECORD TEXT` | Append a comment |
 | `basicly-tracker dep DIR RECORD TARGET [--type EDGE_TYPE]` | Add an edge. The types in use are `parent-child`, `blocks`, `related` and `discovered-from` |
 | `basicly-tracker delete DIR RECORD` | Tombstone a record |
-| `basicly-tracker compact DIR [--writer W]` | Fold every pending writer shard into the trunk log and unlink it. `--writer` narrows it to one and repeats |
+| `basicly-tracker compact DIR [--writer W]` | Fold pending writer shards into the trunk log and remove byte-identical copies from shards and trunk logs. Refuse differing copies before changing any file. `--writer` narrows the pending shards to one and repeats |
 | `basicly-tracker shards DIR` | The pending writer shards the ledger holds, with the warn and refuse thresholds |
 | `basicly-tracker import DIR EXPORT [--source NAME] [--dry-run]` | Import a foreign tracker's JSONL export, keeping ids, comments and dependency edges. `--dry-run` reports the same plan and writes nothing; a re-run appends nothing |
 | `basicly-tracker dor DIR RECORD` | The definition of ready. Exit 0 when the record carries a trigger, acceptance criteria and requirements; exit 1 naming what is missing and how to state it |
 | `basicly-tracker fsck DIR [--rebuild]` | Fold the whole log and report anything unparseable, broken or disagreeing with a derivative. Exit 0 clean, 1 a stale derivative, 2 a broken log. `--rebuild` writes every derivative again from the log first |
+| `basicly-tracker acknowledge-loss DIR RECORD --sequence N --reason TEXT --evidence REF` | Append an audit of unrecoverable history. Repeat `--sequence` for the exact missing sequence set in ascending order. Repeat `--evidence` for historical references. The audit binds surviving history to its digest. `fsck` retains a warning; changed history and new gaps still fail |
 | `basicly-tracker board DIR [--out PATH]` | Write one self-contained HTML page: the counts, the ranked ready set, what is blocked and what holds it, a bounded dependency drawing, and every record with what it owes |
 
 A `--field` value is read as JSON when it parses as JSON, and as a string otherwise.

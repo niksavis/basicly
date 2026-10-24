@@ -167,6 +167,78 @@ def test_compaction_is_a_no_op_on_a_ledger_holding_no_shard(tmp_path: Path) -> N
     assert done.appended == 0
 
 
+@pytest.mark.parametrize("key,value", [("actor", "different"), ("seq", 8), ("seq", True)])
+def test_compaction_preserves_conflicting_copies_and_every_shard(
+    tmp_path: Path, key: str, value: str | int
+) -> None:
+    _append(tmp_path, "demo-trunk", writer="")
+    _append(tmp_path, "demo-one", writer=WRITER)
+    trunk = events.append_target(tmp_path, writer="")
+    conflicting = json.loads(trunk.read_text(encoding="utf-8"))
+    conflicting[key] = value
+    shard = events.pending_path(tmp_path, OTHER)
+    shard.write_text(json.dumps(conflicting) + "\n", encoding="utf-8")
+    before = {one: one.read_bytes() for one in tmp_path.glob("*.jsonl")}
+
+    with pytest.raises(events.LedgerError, match=r"different.*content"):
+        snapshot.compact(tmp_path)
+
+    assert {one: one.read_bytes() for one in before} == before
+
+
+def test_compaction_removes_identical_trunk_copies_without_changing_surviving_bytes(
+    tmp_path: Path,
+) -> None:
+    _append(tmp_path, "demo-trunk", writer="")
+    trunk = events.append_target(tmp_path, writer="")
+    original = trunk.read_bytes().replace(b"\n", b"\r\n")
+    trunk.write_bytes(original + original)
+    before = events.fold(events.read_events(tmp_path)[0]).records
+
+    compacted = snapshot.compact(tmp_path)
+
+    assert compacted.duplicates == 1
+    assert trunk.read_bytes() == original
+    assert events.fold(events.read_events(tmp_path)[0]).records == before
+
+
+def test_a_pending_conflict_prevents_planned_trunk_deduplication(tmp_path: Path) -> None:
+    _append(tmp_path, "demo-trunk", writer="")
+    trunk = events.append_target(tmp_path, writer="")
+    original = trunk.read_bytes()
+    trunk.write_bytes(original + original)
+    conflicting = json.loads(original)
+    conflicting["actor"] = "different"
+    shard = events.pending_path(tmp_path, WRITER)
+    shard.write_text(json.dumps(conflicting) + "\n", encoding="utf-8")
+    before = {one: one.read_bytes() for one in (trunk, shard)}
+
+    with pytest.raises(events.LedgerError, match="different stored content"):
+        snapshot.compact(tmp_path)
+
+    assert {one: one.read_bytes() for one in before} == before
+
+
+def test_compaction_keeps_distinct_generations_of_the_same_logical_payload(tmp_path: Path) -> None:
+    payload = {"text": "repeated fact"}
+    events.append(
+        tmp_path,
+        [
+            events.Draft("demo-a", "created", {"title": "record"}),
+            events.Draft("demo-a", "comment", payload),
+            events.Draft("demo-a", "comment", payload, generation=2),
+        ],
+        writer=WRITER,
+    )
+
+    compacted = snapshot.compact(tmp_path)
+
+    assert compacted.duplicates == 0
+    held = events.canonical_order(events.read_events(tmp_path)[0])
+    assert len(held) == 3
+    assert [one.payload for one in held if one.kind == "comment"] == [payload, payload]
+
+
 def test_rotation_refuses_while_a_shard_holds_uncompacted_events(tmp_path: Path) -> None:
     _append(tmp_path, "demo-trunk", writer="")
     _append(tmp_path, "demo-one", writer=WRITER)

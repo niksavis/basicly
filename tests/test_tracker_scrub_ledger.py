@@ -227,3 +227,29 @@ def test_a_status_repeated_in_a_later_ledger_file_scrubs_at_its_ledger_generatio
 
     assert tracker.scrub_ledger(repo) == 0
     assert _read(pending)[0]["id"].endswith("-2")
+
+
+def test_identical_events_in_two_shards_keep_one_generation(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    path = _write_events(repo, [_event(repo, "basicly-a", 1, "", {"title": "safe"})])
+    pending = tracker.ledger_dir(repo) / "pending-main.jsonl"
+    pending.write_bytes(path.read_bytes())
+    before = {one: one.read_bytes() for one in (path, pending)}
+
+    assert tracker.scrub_ledger(repo) == 0
+
+    assert {one: one.read_bytes() for one in before} == before
+
+
+def test_a_later_invalid_shard_leaves_every_earlier_file_unchanged(tmp_path: Path) -> None:
+    repo, path = _dirty_ledger(tmp_path)
+    bad = _event(repo, "basicly-b", 1, "", {"title": "bad"})
+    bad["id"] = "basicly-b#ev-notthisone"
+    pending = tracker.ledger_dir(repo) / "pending-main.jsonl"
+    pending.write_text(json.dumps(bad) + "\n", encoding="utf-8")
+    before = {one: one.read_bytes() for one in (path, pending)}
+
+    with pytest.raises(TrackerDivergenceError):
+        tracker.scrub_ledger(repo)
+
+    assert {one: one.read_bytes() for one in before} == before

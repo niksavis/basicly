@@ -1,0 +1,1 @@
+- Preserve conflicting ledger copies during compaction, report identical duplicates, validate every shard before scrubbing, and support an explicit history-bound acknowledgment of unrecoverable sequence loss.
