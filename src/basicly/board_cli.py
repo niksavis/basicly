@@ -13,6 +13,7 @@ from . import (
     board_bodies,
     board_facts,
     board_kanban,
+    board_output,
     board_record,
     board_render,
     board_schema,
@@ -52,6 +53,19 @@ def _kb(path: Path) -> str:
     return f"{path.stat().st_size / _BYTES_PER_KB:.0f} KB"
 
 
+def _refuse_output(path: Path, error: OSError) -> None:
+    ui.warn(f"board: refused {path}: {error}")
+
+
+def _write_output(path: Path, content: str) -> bool:
+    try:
+        board_output.write_bytes(path, content.encode("utf-8"))
+    except OSError as error:
+        _refuse_output(path, error)
+        return False
+    return True
+
+
 def _write_records(
     document: dict[str, object],
     verdict: board_schema.SnapshotVerdict,
@@ -64,6 +78,7 @@ def _write_records(
     for ident in board_record.ids(document):
         if not board_record.writable(ident):
             refused += 1
+            ui.warn(f"board: refused record {ident!r}: not a safe file name")
             continue
         filled = board_record.context(
             document,
@@ -79,9 +94,10 @@ def _write_records(
         if filled is None:
             continue
         landing = out.parent / board_record.href(ident)
-        landing.parent.mkdir(parents=True, exist_ok=True)
-        landing.write_text(board_render.render_record(filled), encoding="utf-8")
-        written += 1
+        if _write_output(landing, board_render.render_record(filled)):
+            written += 1
+        else:
+            refused += 1
     return written, refused
 
 
@@ -107,47 +123,68 @@ def cmd_emit(args: argparse.Namespace) -> int:
         return verdict.exit_code
     now = datetime.now(UTC)
     page = board_render.page(document, verdict, now=now, viewport=(args.height, args.width))
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(page, encoding="utf-8")
     sidecar = args.out.parent / SNAPSHOT_NAME
-    sidecar.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     ui.say(f"board: {board_schema.VERSION} snapshot built in {took:.0f} ms")
     ui.say(
         f"board: sections  {len(verdict.renderable)} rendered, "
         f"{len(verdict.withheld)} withheld, {len(verdict.absent)} not emitted"
     )
-    ui.say(f"board: wrote {args.out} ({_kb(args.out)}) - open it in a browser")
-    ui.say(f"board: wrote {sidecar} ({_kb(sidecar)}) - the contract, for any other consumer")
     loop_page = args.out.parent / KANBAN_NAME
-    loop_page.write_text(
-        board_render.render_kanban(
-            board_kanban.context(document, verdict, now, back=args.out.name)
-        ),
-        encoding="utf-8",
-    )
-    ui.say(f"board: wrote {loop_page} ({_kb(loop_page)}) - a column per phase, naming its records")
     plan_page = args.out.parent / BACKLOG_NAME
-    plan_page.write_text(
-        board_render.render_backlog(
-            board_backlog.context(document, verdict, now, back=args.out.name)
+    outputs = (
+        (args.out, page, "open it in a browser"),
+        (
+            sidecar,
+            json.dumps(document, indent=2, sort_keys=True) + "\n",
+            "the contract, for any other consumer",
         ),
-        encoding="utf-8",
+        (
+            loop_page,
+            board_render.render_kanban(
+                board_kanban.context(document, verdict, now, back=args.out.name)
+            ),
+            "a column per phase, naming its records",
+        ),
+        (
+            plan_page,
+            board_render.render_backlog(
+                board_backlog.context(document, verdict, now, back=args.out.name)
+            ),
+            "every record, grouped by feature",
+        ),
     )
-    ui.say(f"board: wrote {plan_page} ({_kb(plan_page)}) - every record, grouped by feature")
-    for asset in board_assets.write_beside(board_render.root(), args.out.parent):
+    refused = 0
+    for destination, body, description in outputs:
+        if _write_output(destination, body):
+            ui.say(f"board: wrote {destination} ({_kb(destination)}) - {description}")
+        else:
+            refused += 1
+    assets = board_assets.write_beside(
+        board_render.root(), args.out.parent, on_refusal=_refuse_output
+    )
+    refused += len(board_assets.ASSETS) - len(assets)
+    for asset in assets:
         ui.say(
             f"board: wrote {asset} ({_kb(asset)}) - bootstrap {board_assets.BOOTSTRAP_VERSION}, "
             "the vendored stylesheet the pages link"
         )
-    written, refused = _write_records(
+    written, records_refused = _write_records(
         document, verdict, args.out, now, board_bodies.bodies(repo_root)
     )
-    denied = f", {refused} id(s) refused as a file name" if refused else ""
+    denied = f", {records_refused} record page(s) refused" if records_refused else ""
+    detail = (
+        "refused destinations were left unchanged"
+        if records_refused
+        else "every id on the page links to one"
+    )
     ui.say(
         f"board: wrote {written} record pages under "
-        f"{args.out.parent / board_record.HREF_DIR}{denied} - every id on the page links to one"
+        f"{args.out.parent / board_record.HREF_DIR}{denied} - {detail}"
     )
-    return verdict.exit_code
+    refused += records_refused
+    if refused:
+        ui.warn(f"board: {refused} output(s) refused")
+    return verdict.exit_code or (1 if refused else 0)
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
