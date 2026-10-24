@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import ast
 import json
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,21 @@ from tests.kit_deployment_helpers import KIT_RELATIVE, REPO_ROOT, events, fsck
 
 recovery = fsck.recovery
 RECORD = "demo-a"
+
+
+@pytest.mark.parametrize(
+    "name", ["arguments.py", "cli.py", "fsck.py", "recovery.py", "snapshot.py"]
+)
+def test_recovery_sources_parse_at_the_standalone_packages_python_floor(name: str) -> None:
+    manifest = tomllib.loads(
+        (REPO_ROOT / "packages" / "basicly-tracker" / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    major, minor = map(int, manifest["project"]["requires-python"].removeprefix(">=").split("."))
+
+    ast.parse(
+        (REPO_ROOT / KIT_RELATIVE / name).read_text(encoding="utf-8"),
+        feature_version=(major, minor),
+    )
 
 
 def _ledger(directory: Path) -> Path:

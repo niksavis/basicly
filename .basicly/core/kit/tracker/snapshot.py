@@ -534,7 +534,7 @@ class Compaction:
 def _stored_id(line: bytes) -> str | None:
     try:
         payload = json.loads(line)
-    except ValueError, UnicodeDecodeError:
+    except ValueError:
         return None
     if not isinstance(payload, dict):
         return None
