@@ -305,6 +305,41 @@ def event_id_for(
     )
 
 
+def generation_bounds(existing: Sequence[Event]) -> dict[str, int]:
+    bounds: dict[str, int] = {}
+    for event in canonical_order(existing):
+        bounds[event.record] = bounds.get(event.record, 0) + 1
+    return bounds
+
+
+def generation_of(event: Event, bound: int) -> int | None:
+    for generation in range(1, bound + 1):
+        if event.id == event_id_for(event.record, event.kind, event.payload, generation=generation):
+            return generation
+    return None
+
+
+def retired_ids(existing: Iterable[Event]) -> set[str]:
+    return {
+        retired
+        for event in existing
+        if isinstance(retired := event.payload.get(WITHDRAWN_FROM), str)
+    }
+
+
+def reserved_ids(existing: Sequence[Event]) -> set[str]:
+    return {event.id for event in existing} | retired_ids(existing)
+
+
+def available_generation(
+    record: str, kind: str, payload: Mapping[str, object], taken: set[str]
+) -> int:
+    generation = 1
+    while event_id_for(record, kind, payload, generation=generation) in taken:
+        generation += 1
+    return generation
+
+
 def to_json(event: Event) -> str:
 
     obj: dict[str, object] = dict(event.extra)
@@ -1068,12 +1103,18 @@ def append(  # noqa: PLR0913 — every keyword is an injected dependency the kit
         existing, _ = read_events(ledger)
         state = fold(existing)
         seen = {event.id for event in existing}
+        retired = retired_ids(existing)
         minted: list[Event] = []
         for draft in pending:
             payload = prepare_payload(
                 draft.payload, kind=draft.kind, redact=redact, max_text_bytes=max_text_bytes
             )
             event_id = event_id_for(draft.record, draft.kind, payload, generation=draft.generation)
+            if event_id in retired:
+                raise InvalidEventError(
+                    f"{event_id} is retired by a withdrawal; "
+                    "resolve a fresh generation before append"
+                )
             if event_id in seen:
                 continue
             item = state.records.setdefault(draft.record, RecordState(record=draft.record))
