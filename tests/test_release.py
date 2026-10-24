@@ -9,11 +9,20 @@ from pathlib import Path
 
 import pytest
 
-from basicly import capability_proof, release, tracker_paths, usage, verify
+from basicly import (
+    capability_proof,
+    release,
+    release_history,
+    shipped_core,
+    tracker_paths,
+    usage,
+    verify,
+)
 from basicly import commit as commit_mod
 from basicly import policy as policy_mod
 from basicly.capability_proof import CAPABILITY_VERIFY_CHECK
 from basicly.config import PolicyConfig
+from tests.release_history_fixture import HISTORY, git, manifest, published
 
 CURRENT = "0.5.1"
 
@@ -86,6 +95,10 @@ def repo(tmp_path: Path) -> Path:
     _git(root, "add", "-A")
     _git(root, "commit", "-m", "chore: seed")
     _git(root, "tag", "-a", f"v{CURRENT}", "-m", f"v{CURRENT}")
+    manifest(root, {f"v{CURRENT}": _git(root, "rev-parse", f"v{CURRENT}^{{commit}}").strip()})
+    _git(root, "add", "-A")
+    _git(root, "commit", "-m", "chore: record published history")
+    published(root, tmp_path / "publisher.git", [f"v{CURRENT}"])
     return root
 
 
@@ -853,6 +866,7 @@ def test_the_projection_rebuild_forces_the_target_repo_onto_pythonpath(
         seen["cwd"] = kwargs.get("cwd")
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
+    monkeypatch.setattr(release.shipped_core, "write_digests", lambda *_args: None)
     monkeypatch.setattr(release.subprocess, "run", fake_run)
 
     release._regenerate(repo)
@@ -907,3 +921,96 @@ def test_a_transcript_naming_the_target_version_is_accepted(tmp_path: Path) -> N
     )
 
     assert release.stale_transcripts(tmp_path, "0.15.0") == ()
+
+
+def _publish_earlier(root: Path) -> str:
+    commit = git(root, "rev-parse", f"v{CURRENT}^{{commit}}")
+    git(root, "tag", "v0.4.0", commit)
+    git(root, "push", "-q", "origin", "refs/tags/v0.4.0")
+    return commit
+
+
+def test_release_dry_run_reports_published_additions_without_any_writes(repo: Path) -> None:
+    _publish_earlier(repo)
+    before = (repo / HISTORY).read_bytes()
+    head = git(repo, "rev-parse", "HEAD")
+
+    result = release.run_release(
+        repo, release.plan_release(repo, "0.6.0", date="2026-07-26"), issue_id="fx-1", dry_run=True
+    )
+
+    assert not result.refused
+    assert any("audit origin" in step and "v0.4.0" in step for step in result.steps)
+    assert (repo / HISTORY).read_bytes() == before
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "status", "--porcelain") == ""
+
+
+def test_release_commits_audited_history_and_the_complete_refreshed_inventory(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    earlier = _publish_earlier(repo)
+    monkeypatch.setattr(
+        release,
+        "_regenerate",
+        lambda root: shipped_core.write_digests(root, release.read_version(root)),
+    )
+
+    result = release.run_release(
+        repo, release.plan_release(repo, "0.6.0", date="2026-07-26"), issue_id="fx-1"
+    )
+
+    assert result.tagged and not result.refused
+    assert release_history.read(repo) == {"v0.4.0": earlier, "v0.5.1": earlier}
+    assert (repo / shipped_core.SOURCE_DIGESTS_FILE).read_text(encoding="utf-8") == (
+        shipped_core.render_digests(shipped_core.build_digests(repo, "0.6.0"))
+    )
+    assert git(repo, "show", f"HEAD:{HISTORY.as_posix()}") == (repo / HISTORY).read_text().strip()
+    assert git(repo, "status", "--porcelain") == ""
+    assert "v0.6.0" not in release_history.advertised(repo)
+
+
+def test_release_failure_restores_the_canonical_input_and_inventory(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _publish_earlier(repo)
+    shipped_core.write_digests(repo, CURRENT)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "seed inventory")
+    before = {
+        path: (repo / path).read_bytes() for path in (HISTORY, shipped_core.SOURCE_DIGESTS_FILE)
+    }
+    head = git(repo, "rev-parse", "HEAD")
+
+    def fail(root: Path) -> None:
+        shipped_core.write_digests(root, release.read_version(root))
+        raise RuntimeError("projection failed")
+
+    monkeypatch.setattr(release, "_regenerate", fail)
+
+    with pytest.raises(SystemExit, match=r"tree was restored.*projection failed"):
+        release.run_release(
+            repo, release.plan_release(repo, "0.6.0", date="2026-07-26"), issue_id="fx-1"
+        )
+
+    assert {path: (repo / path).read_bytes() for path in before} == before
+    assert release.read_version(repo) == CURRENT
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "status", "--porcelain") == ""
+
+
+def test_release_origin_failure_refuses_before_any_write(repo: Path) -> None:
+    git(repo, "remote", "set-url", "origin", str(repo / "absent.git"))
+    before = (repo / HISTORY).read_bytes()
+    head = git(repo, "rev-parse", "HEAD")
+
+    result = release.run_release(
+        repo, release.plan_release(repo, "0.6.0", date="2026-07-26"), issue_id="fx-1"
+    )
+
+    assert result.refused and not result.tagged
+    assert any("cannot audit origin" in reason for reason in result.refusals)
+    assert (repo / HISTORY).read_bytes() == before
+    assert release.read_version(repo) == CURRENT
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "status", "--porcelain") == ""

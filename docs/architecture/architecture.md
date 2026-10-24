@@ -3713,7 +3713,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 73 tiers hold 161 modules and group into 9 bands. Every band may import every band below
+The 73 tiers hold 162 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3727,7 +3727,7 @@ flowchart TB
   b4["4 · configuration and isolation — 3<br/>config · worktree"]
   b5["5 · agent runtime — 9<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 16<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
-  b7["7 · records and telemetry — 15<br/>run_record · artifact_record · lens_review · spend_calibration"]
+  b7["7 · records and telemetry — 16<br/>run_record · artifact_record · lens_review · spend_calibration"]
   b8["8 · tracker seam — 25<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
   b9["9 · leaf data and pure helpers — 37<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
 

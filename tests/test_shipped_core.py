@@ -7,6 +7,7 @@ import tarfile
 from pathlib import Path
 
 from basicly import __version__, shipped_core, state
+from tests.release_history_fixture import manifest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CROSS_CHECKED_RELEASE = "v0.12.2"
@@ -55,8 +56,9 @@ def test_the_shipped_hash_list_is_current_with_every_earlier_release_tag() -> No
     fresh = shipped_core.render_digests(shipped_core.build_digests(REPO_ROOT, __version__))
 
     assert committed == fresh, (
-        f"{shipped_core.SOURCE_DIGESTS_FILE.as_posix()} is stale against the release tags; "
-        "run `git fetch --tags` and then `uv run python -m basicly.shipped_core`, "
+        f"{shipped_core.SOURCE_DIGESTS_FILE.as_posix()} is stale "
+        "against the canonical published releases; "
+        "run `git fetch origin --tags` and then `uv run python -m basicly.shipped_core`, "
         "and commit the result"
     )
 
@@ -87,6 +89,13 @@ def test_the_list_holds_every_version_of_a_file_from_release_tags_older_than_the
     _release(tmp_path, "backup/v0.2.1", "backup\n")
     _release(tmp_path, "v0.3.0", "current\n")
 
+    manifest(
+        tmp_path,
+        {
+            name: _git(tmp_path, "rev-parse", f"{name}^{{commit}}").strip()
+            for name in ("v0.1.0", "v0.2.0")
+        },
+    )
     payload = shipped_core.build_digests(tmp_path, "0.3.0")
 
     assert payload["tags"] == ["v0.1.0", "v0.2.0"]
