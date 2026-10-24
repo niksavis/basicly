@@ -155,6 +155,32 @@ def test_a_repository_exclusion_reports_a_repository_ignore_remedy(tmp_path: Pat
     assert config.legacy_tracker_prefix(root) is None
 
 
+@pytest.mark.parametrize("nested", [False, True])
+def test_install_in_a_git_subdirectory_reports_a_usable_ignore_remedy(
+    tmp_path: Path, nested: bool
+) -> None:
+    repository = _consumer(tmp_path / "repository", "")
+    root = repository / "project"
+    root.mkdir()
+    (root / config.CONFIG_FILE).write_bytes(LEGACY_CONFIG)
+    ignore = root / ".basicly/ledger/.gitignore" if nested else repository / ".gitignore"
+    ignore.parent.mkdir(parents=True, exist_ok=True)
+    ignore.write_text("*.json\n", encoding="utf-8")
+    refused = _install(root)
+
+    assert refused.returncode != 0
+    assert "ignored" in refused.stderr
+    assert (".basicly/ledger/.gitignore" if nested else "../.gitignore") in refused.stderr
+    negations = [line for line in refused.stderr.splitlines() if line.startswith("!/")]
+    assert negations
+    ignore.write_text("*.json\n" + "\n".join(negations) + "\n", encoding="utf-8")
+
+    installed = _install(root)
+
+    assert installed.returncode == 0, installed.stdout + installed.stderr
+    assert config.legacy_tracker_prefix(root) is None
+
+
 @pytest.mark.parametrize("operation", [config.retire_legacy_tracker_prefix, cli._setup_tracker])
 def test_direct_prefix_migration_refuses_an_ignored_destination_without_writes(
     tmp_path: Path, operation: Callable[[Path], object]

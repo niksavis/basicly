@@ -555,8 +555,8 @@ def legacy_tracker_prefix(repo_root: Path) -> str | None:
 def refuse_ignored_tracker_prefix(repo_root: Path) -> None:
     if legacy_tracker_prefix(repo_root) is None:
         return
-    inside = checkout.git(["rev-parse", "--is-inside-work-tree"], cwd=repo_root, check=False)
-    if inside.returncode != 0 or inside.stdout.strip() != "true":
+    inside = checkout.git(["rev-parse", "--show-toplevel"], cwd=repo_root, check=False)
+    if inside.returncode != 0:
         return
     home = owned_store.LEDGER_DIR / owned_store.TEMPLATE_FILE
     ignored = checkout.git(
@@ -577,7 +577,11 @@ def refuse_ignored_tracker_prefix(repo_root: Path) -> None:
     ignore_file = Path(source)
     if ignore_file.name != ".gitignore" or ignore_file.is_absolute():
         ignore_file = Path(".gitignore")
-    relative = home.relative_to(ignore_file.parent)
+        relative = home
+    else:
+        ignore_file = Path(inside.stdout.strip()).resolve() / ignore_file
+        relative = (repo_root.resolve() / home).relative_to(ignore_file.parent)
+        ignore_file = ignore_file.relative_to(repo_root.resolve(), walk_up=True)
     negations = [
         f"!/{parent.as_posix()}/" for parent in reversed(relative.parents) if parent != Path()
     ]
