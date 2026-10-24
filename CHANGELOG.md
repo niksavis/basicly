@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release protects recorded history, comment fixes and exported files. Install checks now require their tools, and release ownership history matches published tags across checkouts.
+
+- **Ledger integrity:** preserve event identifiers during scrub and field withdrawal. Refuse corrupt copies before writes, and keep historical loss explicit (basicly-jho04rg, basicly-npk7lw8, basicly-x5q5t56, basicly-0j2ubwq).
+- **Comment fixes:** preserve JSX and TSX text and tool directives when removing comments (basicly-gcs3bu1, basicly-5rx5pn9).
+- **Safe output:** refuse linked board destinations and create projection temporary files exclusively (basicly-k6tpep.3, basicly-gc08fbk).
+- **Installation and checks:** preserve tracker prefixes and require markdown tools unless the repository explicitly opts out (basicly-49vecmn, basicly-6ip8ao9).
+- **Release history:** derive packaged ownership hashes from canonical published tags across checkouts (basicly-1ys9rth).
+- **Repository defaults:** preserve the approved Codex defaults during cleanup and worktree setup (basicly-17b2q31).
+
 ## v0.26.11 - 2026-10-20
 
 Delta: v0.26.10..v0.26.11

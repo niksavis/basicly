@@ -45,6 +45,13 @@ uvx --from https://github.com/niksavis/basicly/releases/download/v0.26.11/basicl
 
 ## Step 1 — install the harness
 
+Keep `node_modules/` out of Git before committing the install output. If the repository
+does not already ignore it, approve this ignore-file change, then run:
+
+```sh
+printf 'node_modules/\n' >> .gitignore
+```
+
 Prepare the markdown gate in the scratch repository first. If the repository already
 locks `markdownlint-cli2`, run `npm ci`. Otherwise, approve this dependency addition for
 your scratch repository, then run:
