@@ -675,9 +675,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | size | cap | headroom | lines | line cap |
 | --- | --- | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 11801 characters | 12000 | 199 | 184 | 200 |
-| `AGENTS.md` (codex) | 14680 bytes | 24576 | 9896 | 232 | 320 |
-| `.github/copilot-instructions.md` (copilot) | 11893 characters | 12000 | 107 | 185 | 200 |
+| `.claude/CLAUDE.md` (claude) | 11892 characters | 12000 | 108 | 186 | 200 |
+| `AGENTS.md` (codex) | 14771 bytes | 24576 | 9805 | 234 | 320 |
+| `.github/copilot-instructions.md` (copilot) | 11984 characters | 12000 | 16 | 187 | 200 |
 
 <!-- docs-claims:end always-on-sizes -->
 
