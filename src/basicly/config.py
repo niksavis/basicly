@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -10,6 +11,7 @@ from typing import Any
 from . import (
     __version__,
     affected,
+    checkout,
     dropin,
     owned_store,
     permissions,
@@ -550,11 +552,54 @@ def legacy_tracker_prefix(repo_root: Path) -> str | None:
     return str(prefix) if prefix else None
 
 
+def refuse_ignored_tracker_prefix(repo_root: Path) -> None:
+    if legacy_tracker_prefix(repo_root) is None:
+        return
+    inside = checkout.git(["rev-parse", "--show-toplevel"], cwd=repo_root, check=False)
+    if inside.returncode != 0:
+        return
+    home = owned_store.LEDGER_DIR / owned_store.TEMPLATE_FILE
+    ignored = checkout.git(
+        ["check-ignore", "--verbose", "--", home.as_posix()], cwd=repo_root, check=False
+    )
+    if ignored.returncode == 1:
+        return
+    if ignored.returncode != 0:
+        raise ValueError(
+            f"Cannot check whether {home.as_posix()} is ignored: {ignored.stderr.strip()}"
+        )
+    rule = re.fullmatch(r"(.+?):([0-9]+):(.*)\t.*", ignored.stdout.strip())
+    if rule is None:
+        raise ValueError(f"Git returned no readable ignore rule for {home.as_posix()}")
+    source, number, pattern = rule.groups()
+    if pattern.startswith("!"):
+        return
+    ignore_file = Path(source)
+    if ignore_file.name != ".gitignore" or ignore_file.is_absolute():
+        ignore_file = Path(".gitignore")
+        relative = home
+    else:
+        ignore_file = Path(inside.stdout.strip()).resolve() / ignore_file
+        relative = (repo_root.resolve() / home).relative_to(ignore_file.parent)
+        ignore_file = ignore_file.relative_to(repo_root.resolve(), walk_up=True)
+    negations = [
+        f"!/{parent.as_posix()}/" for parent in reversed(relative.parents) if parent != Path()
+    ]
+    negations.append(f"!/{relative.as_posix()}")
+    raise ValueError(
+        f"Refusing to move the tracker prefix: {home.as_posix()} is ignored by "
+        f"{source}:{number}:{pattern}. The prefix stays in {CONFIG_FILE}. "
+        f"Append these negations at the end of {ignore_file.as_posix()}, "
+        "then run basicly install again:\n" + "\n".join(negations)
+    )
+
+
 def retire_legacy_tracker_prefix(repo_root: Path) -> str | None:
 
     legacy = legacy_tracker_prefix(repo_root)
     if legacy is None:
         return None
+    refuse_ignored_tracker_prefix(repo_root)
     held = _ledger_prefix(repo_root)
     prefix = _one_prefix(held, legacy) or legacy
     if not held:
