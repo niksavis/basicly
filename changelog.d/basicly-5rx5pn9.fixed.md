@@ -1,0 +1,1 @@
+- Keep marker-prefixed tool directives after prose when removing comments, including noqa, nosec, type ignores, coverage pragmas and formatter controls. Remove the prose prefix while preserving directive text and reasons.
