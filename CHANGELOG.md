@@ -6,7 +6,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-This release protects recorded history, comment fixes and exported files. Install checks now require their tools, and release ownership history matches published tags across checkouts.
+This release protects recorded history, comment fixes and exported files. Install checks now require their tools, and release ownership history matches published tags across checkouts (basicly-wyp2tln).
 
 - **Ledger integrity:** preserve event identifiers during scrub and field withdrawal. Refuse corrupt copies before writes, and keep historical loss explicit (basicly-jho04rg, basicly-npk7lw8, basicly-x5q5t56, basicly-0j2ubwq).
 - **Comment fixes:** preserve JSX and TSX text and tool directives when removing comments (basicly-gcs3bu1, basicly-5rx5pn9).
