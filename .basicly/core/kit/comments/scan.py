@@ -50,7 +50,11 @@ def all_spans(path: Path, source: str) -> list:
     language = languages.for_suffix(suffix)
     if language is None:
         raise ValueError(f"{path}: the comments kit claims no language for {suffix!r}")
-    jsx_state = jsx.State() if language.jsx_tags and suffix not in {".ts", ".mts", ".cts"} else None
+    jsx_state = (
+        jsx.State(typescript=suffix == ".tsx")
+        if language.jsx_tags and suffix not in {".ts", ".mts", ".cts"}
+        else None
+    )
     try:
         return lexer.comment_spans(source, language, jsx_state=jsx_state)
     except jsx.JSXError as err:

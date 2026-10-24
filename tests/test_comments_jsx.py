@@ -51,6 +51,9 @@ def test_jsx_text_is_not_reported_or_changed(suffix: str, content: str, tmp_path
         "throw <Text>Don't http://x</Text>;\n",
         "const value = typeof <Text>Don't http://x</Text>;\n",
         "const value = <Ä>Don't http://x</Ä>;\n",
+        "const value = 1 / <Text>see http://x</Text>;\n",
+        "const value = 1 < <Text>see http://x</Text>;\n",
+        "const value = !!<Text>see http://x</Text>;\n",
     ],
 )
 def test_jsx_expression_contexts_preserve_their_text(source: str, tmp_path: Path) -> None:
@@ -61,6 +64,47 @@ def test_jsx_expression_contexts_preserve_their_text(source: str, tmp_path: Path
 
     assert fixed.returncode == 0, fixed.stdout + fixed.stderr
     assert path.read_text(encoding="utf-8") == source
+
+
+@pytest.mark.parametrize(
+    "operator",
+    [
+        "/",
+        "*",
+        "**",
+        "%",
+        "+",
+        "-",
+        "<<",
+        ">>",
+        ">>>",
+        "<",
+        "<=",
+        ">",
+        ">=",
+        "==",
+        "===",
+        "!=",
+        "!==",
+        "&",
+        "|",
+        "^",
+        "&&",
+        "||",
+        "??",
+        "in",
+        "instanceof",
+    ],
+)
+def test_jsx_binary_operands_preserve_text(operator: str, tmp_path: Path) -> None:
+    path = tmp_path / "view.tsx"
+    source = f"const view = value {operator} <Text>http://x</Text>; // actual prose\n"
+    path.write_text(source, encoding="utf-8")
+
+    fixed = _run("fix", path)
+
+    assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+    assert path.read_text(encoding="utf-8") == source.replace("// actual prose", "")
 
 
 @pytest.mark.parametrize("suffix", ["jsx", "tsx"])
@@ -101,6 +145,10 @@ def test_comments_in_jsx_expressions_are_removed_without_changing_children(
         ("ts", "<Thing>input"),
         ("mts", "<Thing>input"),
         ("tsx", "factory<Thing>(input)"),
+        ("tsx", "left <<T> 0"),
+        ("tsx", "left++ <T> 0"),
+        ("tsx", "left! <T> 0"),
+        ("tsx", "/value/ <T> 0"),
     ],
 )
 def test_non_jsx_angle_brackets_keep_their_code(
@@ -114,6 +162,121 @@ def test_non_jsx_angle_brackets_keep_their_code(
 
     assert fixed.returncode == 0, fixed.stdout + fixed.stderr
     assert path.read_text(encoding="utf-8") == source.replace("// actual prose", "")
+
+
+@pytest.mark.parametrize(
+    "type_arguments",
+    [
+        "string",
+        "Array<string>",
+        "Map<string, Array<number>>",
+        "{label: string}",
+        '"x>y"',
+        "() => string",
+        "<T>(value: T) => T",
+    ],
+)
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("content", ["see http://x", "Don't remove http://x"])
+def test_generic_jsx_elements_preserve_text(
+    type_arguments: str, nested: bool, content: str, tmp_path: Path
+) -> None:
+    path = tmp_path / "view.tsx"
+    element = f"<Select<{type_arguments}>>{content}</Select>"
+    source = f"const view = {('<Box>' + element + '</Box>') if nested else element};\n"
+    path.write_text(source, encoding="utf-8")
+
+    checked = _run("check", path)
+    fixed = _run("fix", path)
+
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+    assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+    assert path.read_text(encoding="utf-8") == source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "const choose = <T extends string>(value: T) => value; // actual prose\n",
+        "const choose = <T /* type prose */ extends string>(value: T) => value;\n",
+        "const choose = <T extends Array<string>>(value: T) => value; // actual prose\n",
+        "const choose = <T = string>(value: T) => value; // actual prose\n",
+        "const choose = <const T extends string>(value: T) => value; // actual prose\n",
+        "const choose = <T extends {map: <U>(value: U) => U}>(value: T) => value; "
+        "// actual prose\n",
+    ],
+)
+def test_generic_arrows_remain_code(source: str, tmp_path: Path) -> None:
+    path = tmp_path / "view.tsx"
+    path.write_text(source, encoding="utf-8")
+
+    fixed = _run("fix", path)
+
+    assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+    assert path.read_text(encoding="utf-8") == source.replace("// actual prose", "").replace(
+        "/* type prose */", ""
+    )
+
+
+@pytest.mark.parametrize(
+    "element",
+    [
+        "<Text extends>Don't remove http://x</Text>",
+        "<Text extends={value}>Don't remove http://x</Text>",
+        "<Text>() => Don't remove http://x</Text>",
+    ],
+)
+def test_generic_arrow_disambiguation_keeps_actual_jsx(element: str, tmp_path: Path) -> None:
+    path = tmp_path / "view.tsx"
+    source = f"const view = {element};\n"
+    path.write_text(source, encoding="utf-8")
+
+    fixed = _run("fix", path)
+
+    assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+    assert path.read_text(encoding="utf-8") == source
+
+
+def test_javascript_jsx_boolean_attributes_are_not_type_constraints(tmp_path: Path) -> None:
+    path = tmp_path / "view.jsx"
+    source = "const view = <Text extends label>http://x</Text>;\n"
+    path.write_text(source, encoding="utf-8")
+
+    fixed = _run("fix", path)
+
+    assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+    assert path.read_text(encoding="utf-8") == source
+
+
+def test_generic_jsx_type_comments_are_removed_without_changing_children(tmp_path: Path) -> None:
+    path = tmp_path / "view.tsx"
+    source = (
+        "const view = <Box><Select<Array< /* type prose */ string>>>"
+        "http://x</Select><Select<string> value={value} /></Box>;\n"
+    )
+    path.write_text(source, encoding="utf-8")
+
+    checked = _run("check", path)
+    fixed = _run("fix", path)
+
+    assert checked.returncode == 1, checked.stdout + checked.stderr
+    assert "1 prose comments" in checked.stdout
+    assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+    assert path.read_text(encoding="utf-8") == source.replace("/* type prose */", "")
+
+
+def test_comments_between_jsx_attributes_remain_code(tmp_path: Path) -> None:
+    path = tmp_path / "view.tsx"
+    source = (
+        'const view = <Select<string> /* attribute prose */ title="http://label">'
+        "http://x</Select>;\n"
+    )
+    path.write_text(source, encoding="utf-8")
+
+    fixed = _run("fix", path)
+
+    assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+    assert path.read_text(encoding="utf-8") == source.replace("/* attribute prose */", "")
 
 
 @pytest.mark.parametrize("suffix", ["jsx", "tsx"])

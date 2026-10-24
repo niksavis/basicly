@@ -69,7 +69,7 @@ def comment_spans(source: str, language: Language, *, jsx_state: State | None = 
             continue
         if language.regex_literals and char == "/" and _regex_here(previous):
             index = _skip_regex(source, index, line)
-            previous = "/"
+            previous = "v"
             continue
         if not char.isspace():
             previous = char
