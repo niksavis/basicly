@@ -1,0 +1,1 @@
+- Publish projected files through unpredictable temporary files created exclusively. Planted temporary links and collisions cannot overwrite their targets, and failed publication removes only the temporary file created by that write.
