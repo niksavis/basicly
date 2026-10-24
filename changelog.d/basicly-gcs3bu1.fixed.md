@@ -1,0 +1,1 @@
+- Preserve JSX and TSX element text during comment checks and fixes, including URLs and apostrophes. Continue removing actual comments inside expressions and refuse uncertain JSX without changing the file.
