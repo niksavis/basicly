@@ -1,1 +1,0 @@
-- Align agent instructions on focused checks before full verification, affected checks after changes, and engine-validated reuse after landing.

@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.27.0 - 2026-10-25
+
+Delta: v0.26.12..v0.27.0
+
 Task requests now authorize normal workflow steps without separate permission levels or required budgets. Shared instructions clarify approval reuse, frozen scope and verification. Specialist assignments carry task-specific context, and completed work enters integration before optional work (basicly-a3ab.14).
 
 - **Task authorization:** use the user request as approval for normal phases while preserving verification, destructive-action checks and explicit user limits (basicly-bhrls77).
@@ -13,6 +17,20 @@ Task requests now authorize normal workflow steps without separate permission le
 - **Approval and scope:** reuse approval for the same action and scope, resolve facts with safe reads, and record unrelated findings without expanding frozen work (basicly-l5pvyjj).
 - **Specialist work:** carry current task facts and durable artifacts, scope saved context to one task, and prioritize committed work for integration (basicly-42pn387).
 - **Shared instructions:** put Commands first, group constraints into Always do, Ask first and Never do, and link specialist procedures explicitly. Routine observed counts name a checked source; high-risk quantities and absence claims retain independent controls (basicly-a3ab.4).
+
+### Changed
+
+- Specialist briefs carry current task facts and durable artifacts. Build contexts are scoped to one task. Committed lanes enter integration before optional work, and append-only tracker facts record completion, queue admission, integration start and completion or a concrete wait reason. (basicly-42pn387)
+
+- Group shared instructions into Always do, Ask first and Never do, put project commands first, and route specialist procedures through explicit skill links. Routine observed counts now require a checked source; high-risk quantities and absence claims retain independent controls. (basicly-a3ab.4)
+
+- Authorize normal task workflows from the task request without level grants, checkpoint reconfirmation or required budgets. Keep verification and destructive-action checks, optional explicit token limits, and readable historical grants. Count repair attempts and explicit retries independently so rework limits remain effective. (basicly-bhrls77)
+
+- Agent instructions reuse explicit approval for the same action and scope, resolve facts with safe read-only checks, and keep frozen work within scope. Nonblocking adjacent findings are recorded without implementation. Confirmation categories and verification gates remain unchanged. (basicly-l5pvyjj)
+
+### Fixed
+
+- Align agent instructions on focused checks before full verification, affected checks after changes, and engine-validated reuse after landing. (basicly-hp06epo)
 
 ## v0.26.12 - 2026-10-24
 
