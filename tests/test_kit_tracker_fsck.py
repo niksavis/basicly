@@ -399,7 +399,11 @@ def test_one_id_on_identical_lines_is_the_union_merge_case_and_stays_clean(
 
     report = fsck.check(ledger)
 
-    assert _of_kind(report, fsck.DUPLICATE_ID) == []
+    found = _of_kind(report, fsck.DUPLICATE_ID)
+    assert len(found) == 1
+    assert found[0].severity == fsck.WARNING
+    assert found[0].subject == json.loads(lines[4])["id"]
+    assert "compact" in found[0].detail
     assert report.clean is True
 
 

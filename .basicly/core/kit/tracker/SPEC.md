@@ -238,6 +238,12 @@ fold silently falls back to the whole history. Shards also use their own
 `pending-*` namespace. `period_of` reads all text after `events-` as a period, so a writer
 name there would corrupt both `period_of` and `rotate`.
 
+Compaction validates every stored copy before it changes a log or deletes a shard.
+It removes a duplicate only when another stored line holds the same bytes.
+It also removes identical copies already present in trunk logs. A differing copy
+with the same event id refuses the whole operation. `fsck` reports identical copies
+as a warning and differing copies as broken history.
+
 ### 4.1 Ordering — the per-item sequence
 
 Each event carries a **per-item integer sequence number**. The writer reads the item's
@@ -259,6 +265,25 @@ warning when its events set nothing in common, such as two comments. It is broke
 `conflicting-fork`, when two of its events set one status or one field to different values
 and no later event sets that key again. `resolve` appends that later event with the current
 value, so the tie becomes a decision.
+
+A missing sequence blocks `fsck`. Recover the original event when evidence permits.
+When the content cannot be recovered, explicitly record the known loss:
+
+```sh
+basicly-tracker acknowledge-loss DIR RECORD --sequence 9 --reason "Original content unavailable" --evidence "git:COMMIT"
+```
+
+Repeat `--sequence` for the exact missing sequence set, in ascending order.
+Repeat `--evidence` for each historical reference. The command refuses an unknown
+record, an incomplete sequence set, or an empty reason or evidence reference.
+It appends a present-day `sequence-loss` artifact. Its body binds the record,
+missing sequences, reason, evidence, sequence boundary, and surviving history digest.
+It does not recreate the missing event or claim to know its content.
+
+`fsck` retains a visible warning for acknowledged loss. Changed surviving history
+invalidates the acknowledgment. New gaps and malformed acknowledgments still block.
+Carried totals remain void across the historical gap; acknowledgment does not make
+those cached totals authoritative.
 
 ### 4.2 Secrets, size, and the committed-ledger trust boundary
 

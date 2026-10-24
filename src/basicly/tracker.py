@@ -622,6 +622,8 @@ def scrub_ledger(
     with events.LedgerLock(ledger_dir(repo_root), timeout_s=timeout_s):
         stored: dict[tuple[str, str, str], int] = {}
         minted: dict[tuple[str, str, str], int] = {}
+        copies: dict[str, tuple[dict, dict]] = {}
+        planned: list[tuple[Path, str]] = []
         for path in files:
             raw = path.read_text(encoding="utf-8")
             lines: list[str] = []
@@ -630,6 +632,16 @@ def scrub_ledger(
                     lines.append(line)
                     continue
                 event = json.loads(line)
+                if event["id"] in copies:
+                    original, scrubbed = copies[event["id"]]
+                    if event != original:
+                        raise TrackerDivergenceError(
+                            f"{path.name}: {event['id']} has different stored content; "
+                            "repair the conflicting copies before scrubbing"
+                        )
+                    lines.append(line if scrubbed == event else _dump_record(scrubbed))
+                    changed += scrubbed != event
+                    continue
                 generation = _event_generation(stored, event)
                 expected = events.event_id_for(
                     event["record"], event["kind"], event["payload"], generation=generation
@@ -652,6 +664,7 @@ def scrub_ledger(
                     scrubbed["payload"],
                     generation=_event_generation(minted, scrubbed),
                 )
+                copies[event["id"]] = event, scrubbed
                 if scrubbed == event:
                     lines.append(line)
                     continue
@@ -660,8 +673,10 @@ def scrub_ledger(
             if not changed:
                 continue
             trailer = "\n" if raw.endswith("\n") else ""
+            planned.append((path, "\n".join(lines) + trailer))
+        for path, text in planned:
             tmp = path.with_suffix(f".{os.getpid()}.jsonl.tmp")
-            tmp.write_text("\n".join(lines) + trailer, encoding="utf-8")
+            tmp.write_text(text, encoding="utf-8")
             _publish(tmp, path)
     return changed
 
