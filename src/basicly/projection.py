@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -13,9 +14,16 @@ class SyncResult:
 def atomic_write_bytes(path: Path, content: bytes) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".basicly-tmp")
-    tmp.write_bytes(content)
-    tmp.replace(path)
+    temporary = path.with_name(f".{uuid.uuid4().hex}.basicly-tmp")
+    created = False
+    try:
+        with temporary.open("xb") as stream:
+            created = True
+            stream.write(content)
+        temporary.replace(path)
+    finally:
+        if created:
+            temporary.unlink(missing_ok=True)
 
 
 def atomic_write_text(path: Path, content: str) -> None:
