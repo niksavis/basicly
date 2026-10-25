@@ -1,19 +1,20 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
 token_cost:
-  claude: 46
-  codex: 46
-  copilot: 46
+  claude: 0
+  codex: 0
+  copilot: 0
 id: platform-hermetic-tests
 description: Make a platform difference an input to a test, so every OS is tested locally.
 category: testing
 priority: high
+phase: build
 applies_to: [all]
 technologies: [python]
 tags:
 - testing
 - portability
-status: active
+status: deprecated
 title: Platform-Hermetic Tests
 body: |
-  - For platform-dependent tests, exercise both platform forms rather than only the host. Read `.agents/skills/test-discipline/SKILL.md` before proceeding.
+  - For platform-dependent tests, exercise both platform forms, not only the host. Read `.agents/skills/test-discipline/SKILL.md` first.

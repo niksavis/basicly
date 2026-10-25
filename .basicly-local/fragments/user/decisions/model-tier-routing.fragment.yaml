@@ -8,6 +8,7 @@ id: model-tier-routing
 description: Declare a model tier, never a provider model id.
 category: decisions
 priority: high
+phase: build
 applies_to: [all]
 tags:
 - models

@@ -210,7 +210,10 @@ re-derive it from the tree — the CLI reference has five, listed in §7.
 The [basicly-a3ab.4-instruction-review.md](../design/basicly-a3ab.4-instruction-review.md)
 audit and its companion JSON record the prior instruction inventory, dispositions,
 measurements and decision probes. They are evidence for that bounded change, not another
-source of current instructions.
+source of current instructions. The
+[basicly-tgenbu5-always-on-flow.md](../design/basicly-tgenbu5-always-on-flow.md) record
+states the admission rule for an always-on instruction, the workflow order and the
+accounting for each instruction that moved into a skill.
 
 **Three companion files sit beside the architecture document, and none is reference
 material.**

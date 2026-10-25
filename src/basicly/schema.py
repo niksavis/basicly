@@ -30,6 +30,8 @@ CATEGORY_ORDER = (
 
 CATEGORIES = frozenset(CATEGORY_ORDER)
 
+PHASE_ORDER = ("start", "plan", "build", "verify", "ship", "finish")
+
 STATUSES = {"active", "draft", "deprecated"}
 
 TECHNOLOGIES = {
@@ -81,6 +83,7 @@ class Fragment:
     category: str
     applies_to: list[str]
     priority: str = "medium"
+    phase: str | None = None
     scope_paths: list[str] = field(default_factory=lambda: list(DEFAULT_SCOPE))
     tags: list[str] = field(default_factory=list)
     technologies: list[str] = field(default_factory=list)
@@ -104,6 +107,10 @@ class Fragment:
     @property
     def priority_value(self) -> int:
         return PRIORITY_MAP.get(self.priority, 2)
+
+    @property
+    def phase_rank(self) -> int:
+        return PHASE_ORDER.index(self.phase) if self.phase in PHASE_ORDER else -1
 
     @property
     def is_scoped(self) -> bool:

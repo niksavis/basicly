@@ -49,6 +49,41 @@ def test_sort_order() -> None:
     assert ids == ["project-defaults", "core-rules", "python-style"]
 
 
+def test_phase_orders_the_workflow_after_unphased_fragments() -> None:
+    def fragment(fragment_id: str, category: str, phase: str | None) -> Fragment:
+        return Fragment(
+            id=fragment_id,
+            description=fragment_id,
+            category=category,
+            applies_to=["all"],
+            phase=phase,
+            body="- rule",
+        )
+
+    targets = load_targets(FIXTURES / "targets")
+    fragments = [
+        fragment("finish", "design", "finish"),
+        fragment("ship", "commands", "ship"),
+        fragment("verify", "project", "verify"),
+        fragment("build", "design", "build"),
+        fragment("plan", "decisions", "plan"),
+        fragment("start", "project", "start"),
+        fragment("own-facts", "tools", None),
+    ]
+    planned = plan_outputs(fragments, targets, Path("/repo"))
+
+    agents = next(p for p in planned if p.output_path == Path("/repo/AGENTS.md"))
+    assert [f.id for f in agents.fragments] == [
+        "own-facts",
+        "start",
+        "plan",
+        "build",
+        "verify",
+        "ship",
+        "finish",
+    ]
+
+
 def test_exclude_scoped_keeps_scoped_fragments_out_of_baseline() -> None:
     unscoped = Fragment(
         id="core-rules",

@@ -8,6 +8,7 @@ id: rendered-surfaces
 description: Check a rendered page by its picture, not by its HTML.
 category: project
 priority: high
+phase: verify
 applies_to: [all]
 tags:
 - rendering

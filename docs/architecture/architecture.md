@@ -672,9 +672,14 @@ a raised limit or a weakened check.** Route specialist procedures through existi
 with explicit triggers shared by all targets; scoped rules alone do not reduce Codex input.
 Account for every prior instruction and test decisions as well as size.
 
-The three baseline templates share `templates/common/baseline.j2`. A Commands fragment
-appears first. Fragments tagged `ask-first` or `never-do` form those constraint groups;
-remaining fragments form Always do. Original order stays stable within each group.
+The three baseline templates share `templates/common/baseline.j2`. Never do and Ask first
+come first, because the retention measurement loses the tail of a file and these hold the
+gates, security and confirmation rules. A Commands fragment follows them. The remaining
+fragments form Always do in workflow order: a fragment without a `phase` renders first, so a
+consumer's own facts lead, then `start`, `plan`, `build`, `verify`, `ship` and `finish`.
+Category, priority and id order the fragments inside one phase, and the order stays stable.
+The shipped core alone renders at most 150 lines on every target, so a consumer keeps at
+least 50 lines of the 200-line cap for its own fragments. A test refuses a larger core.
 Untagged custom catalogs retain their flat layout. This layout changes no target filter.
 The retrieval review for `basicly-a3ab.4` records the instruction inventory, routing,
 before/after measurements and decision probes under `docs/design/`.
@@ -685,9 +690,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | size | cap | headroom | lines | line cap |
 | --- | --- | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 11810 characters | 12000 | 190 | 198 | 200 |
-| `AGENTS.md` (codex) | 12010 bytes | 24576 | 12566 | 198 | 320 |
-| `.github/copilot-instructions.md` (copilot) | 11902 characters | 12000 | 98 | 199 | 200 |
+| `.claude/CLAUDE.md` (claude) | 9735 characters | 12000 | 2265 | 176 | 200 |
+| `AGENTS.md` (codex) | 10108 bytes | 24576 | 14468 | 181 | 320 |
+| `.github/copilot-instructions.md` (copilot) | 9735 characters | 12000 | 2265 | 176 | 200 |
 
 <!-- docs-claims:end always-on-sizes -->
 

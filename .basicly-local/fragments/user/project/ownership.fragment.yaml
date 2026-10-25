@@ -4,6 +4,7 @@ id: ownership
 description: Own the approved outcome and keep adjacent improvements separately tracked.
 category: project
 priority: critical
+phase: plan
 applies_to: [all]
 tags:
 - ownership
