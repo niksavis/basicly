@@ -1,1 +1,0 @@
-- Bound current task envelopes to 16 KiB with snapshot and contract digests, explicit full and history views, and complete contract delivery before dispatch when the current view cannot hold it.

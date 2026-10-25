@@ -1,1 +1,0 @@
-- Ordinary pytest verification now selects the checkout runtime for tests and child processes. Fingerprints inspect that runtime's interpreter and packages. Missing local launchers fail instead of falling back to another checkout, and external imports still refuse reuse.

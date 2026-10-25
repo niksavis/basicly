@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.29.0 - 2026-10-25
+
+Delta: v0.28.0..v0.29.0
+
 This release reorders the always-on instruction files so the rules a model must not lose
 come first, and it leaves an installing repository room for its own rules. It also makes
 ordinary pytest verification select and fingerprint the checkout's own runtime, and it
@@ -19,6 +23,22 @@ bounds the task context a dispatched lane receives.
   (basicly-rxxtx9k, basicly-ejg4jyk, basicly-0o8pefl, basicly-alcj6vu).
 - **Dispatch:** task envelopes stay within 16 KiB, with digests and explicit full and
   history views (basicly-mwf2o75).
+
+### Changed
+
+- Recorded why a loop landing cannot yet reuse ordinary pytest evidence across checkouts. External editable imports, the execution environment and prepared artifacts remain material inputs. Verification safeguards are unchanged. (basicly-alcj6vu)
+
+- Bound current task envelopes to 16 KiB with snapshot and contract digests, explicit full and history views, and complete contract delivery before dispatch when the current view cannot hold it. (basicly-mwf2o75)
+
+- **Always-on files:** Never do and Ask first now come first, then Commands, then Always do in workflow order. A new optional fragment `phase` (start, plan, build, verify, ship, finish) sets that order. The shipped core is shorter, and a test keeps it at or under 150 lines so a repository keeps 50 lines for its own rules (basicly-tgenbu5).
+
+### Fixed
+
+- Refresh installed basicly metadata when its source version changes during uv setup, and document how to align older environment bootstrap files without changing dependency versions. (basicly-0o8pefl)
+
+- Apply absent hook runtime defaults to the reviewed pytest environment so equivalent CLI and Git-hook checks reuse evidence. Explicit environment overrides and changed interpreter or dependency inputs still invalidate reuse. (basicly-ejg4jyk)
+
+- Ordinary pytest verification now selects the checkout runtime for tests and child processes. Fingerprints inspect that runtime's interpreter and packages. Missing local launchers fail instead of falling back to another checkout, and external imports still refuse reuse. (basicly-rxxtx9k)
 
 ## v0.28.0 - 2026-10-25
 

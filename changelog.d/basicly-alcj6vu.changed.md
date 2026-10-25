@@ -1,1 +1,0 @@
-- Recorded why a loop landing cannot yet reuse ordinary pytest evidence across checkouts. External editable imports, the execution environment and prepared artifacts remain material inputs. Verification safeguards are unchanged.
