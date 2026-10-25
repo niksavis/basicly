@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import policy, repair_brief, verify, verify_artifact
+from basicly import policy, repair_brief, verify, verify_artifact, verify_execution
 from basicly.config import PolicyConfig, VerifyCheck, VerifyConfig
 
 
@@ -23,7 +23,7 @@ def _as_spawn(fake_run):
         return fake_run(
             command,
             cwd=repo_root,
-            env=verify.sanitised_project_env(os.environ, repo_root),
+            env=verify_execution.sanitised_project_env(os.environ, repo_root),
             check=False,
             capture_output=capture,
             text=capture or None,

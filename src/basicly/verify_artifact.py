@@ -35,6 +35,7 @@ class VerifyReport:
     receipts: tuple[CheckReceipt, ...] = ()
     duration_s: float = 0.0
     selection: dict | None = None
+    subject_fingerprint: str = ""
 
     @property
     def passed(self) -> bool:
@@ -55,7 +56,9 @@ def receipt_result(
     if source is None or not source.passed or not inputs:
         return None
     receipt = next((r for r in source.receipts if r.name == name), None)
-    if receipt != CheckReceipt(name, command, mode, inputs, source.run_id):
+    if receipt != CheckReceipt(
+        name, command, mode, inputs, source.run_id, receipt.components if receipt else ()
+    ):
         return None
     original = next((r for r in source.results if r.name == name), None)
     if (
@@ -149,6 +152,7 @@ def write_run_artifact(repo_root: Path, report: RunVerdict) -> Path | None:
         "recorded_at": datetime.now(UTC).isoformat(),
         "passed": report.passed,
         "selection": getattr(report, "selection", None),
+        "subject_fingerprint": getattr(report, "subject_fingerprint", ""),
         "run_id": report.run_id,
         "duration_s": report.duration_s,
         "receipts": [
@@ -158,6 +162,7 @@ def write_run_artifact(repo_root: Path, report: RunVerdict) -> Path | None:
                 "mode": r.mode,
                 "inputs": r.inputs,
                 "origin": r.origin,
+                **({"components": dict(r.components)} if r.components else {}),
             }
             for r in report.receipts
         ],

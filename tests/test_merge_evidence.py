@@ -7,7 +7,17 @@ from pathlib import Path
 import pytest
 
 from basicly import merge, verify
-from tests.test_merge import _HAS_WORK, _FakeGit, _patch_git, _Proc, _session
+from tests.test_merge import (
+    _HAS_WORK,
+    _add_source,
+    _FakeGit,
+    _git_here,
+    _lane_worktree,
+    _patch_git,
+    _Proc,
+    _seed_repo,
+    _session,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -86,3 +96,56 @@ def test_a_failed_landing_does_not_execute_a_diagnostic_rerun(
     assert result.checks[0].command == command
     assert result.checks[0].output == "original failure\n"
     assert result.checks[0].returncode == 7
+
+
+@pytest.mark.parametrize("change", ["candidate", "destination", "filesystem", "runtime", "policy"])
+def test_real_landing_refuses_movement_during_verification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    repo = _seed_repo(tmp_path)
+    session = _lane_worktree(tmp_path, repo)
+    _add_source(session.path, "b")
+    monkeypatch.setattr(merge, "load_session", lambda *_a: session)
+    destination = _git_here(repo, "rev-parse", "HEAD")
+
+    def verify_then_move(cwd, *_args, **_kwargs):
+        assert cwd == session.path
+        if change == "candidate":
+            _git_here(session.path, "commit", "--allow-empty", "-m", "candidate moved")
+        elif change == "destination":
+            _git_here(repo, "commit", "--allow-empty", "-m", "destination moved")
+        elif change == "filesystem":
+            (session.path / "sources/a.txt").write_text("user correction")
+        elif change == "runtime":
+            runtime = session.path / ".venv/Lib/site-packages"
+            runtime.mkdir(parents=True)
+            (runtime / "runtime.py").write_text("changed runtime")
+        else:
+            with (session.path / "basicly.toml").open("a") as stream:
+                stream.write("\n[verify]\nfail_fast=false\n")
+        return verify.VerifyReport("full", (verify.CheckResult("check", "pass", 0),))
+
+    monkeypatch.setattr(verify, "run_verify", verify_then_move)
+    result = merge.merge_worktree(repo, "feat", bead="basicly-fixture")
+    assert result.status == merge.STALE_BRANCH
+    assert not result.merged
+    if change != "destination":
+        assert _git_here(repo, "rev-parse", "HEAD") == destination
+    if change == "filesystem":
+        assert (session.path / "sources/a.txt").read_text() == "user correction"
+
+
+def test_real_unchanged_landing_proves_the_captured_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _seed_repo(tmp_path)
+    session = _lane_worktree(tmp_path, repo)
+    _add_source(session.path, "b")
+    candidate = _git_here(session.path, "rev-parse", "HEAD")
+    monkeypatch.setattr(merge, "load_session", lambda *_a: session)
+    monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
+    result = merge.merge_worktree(repo, "feat", bead="basicly-fixture")
+    assert result.merged, result.detail
+    assert result.landed_head == candidate
+    assert _git_here(repo, "rev-parse", "HEAD^2") == candidate
+    assert not _git_here(repo, "status", "--porcelain")

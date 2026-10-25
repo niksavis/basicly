@@ -11,6 +11,7 @@ from pathlib import Path, PurePath, PureWindowsPath
 
 from . import checkout, hook_python, pyright_inputs
 from .runner import sanitised_project_env
+from .verify_receipt import InputFingerprint, implementation_digest
 
 _COMMAND = (
     "pytest",
@@ -203,7 +204,8 @@ def fingerprint(repo_root: Path) -> str:
             raise pyright_inputs.UnsupportedInputsError("unsupported pytest interpreter")
         runtime = _runtime_paths(interpreter, path.parent, environment)
         payload = {
-            "recipe": "pytest-ledger-independent-v3",
+            "recipe": "pytest-ledger-independent-v4",
+            "implementation": implementation_digest(),
             "workspace": _workspace(root),
             "environment": environment,
             "launcher": hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -223,6 +225,61 @@ def fingerprint(repo_root: Path) -> str:
                 ["tag", "--list", "--format=%(refname) %(objectname)"], cwd=root
             ).stdout,
         }
-        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        return InputFingerprint(payload)
     except (OSError, ValueError, RuntimeError, UnicodeError) as exc:
         raise pyright_inputs.UnsupportedInputsError(f"pytest inputs unavailable: {exc}") from exc
+
+
+def landing_fingerprint(
+    repo_root: Path,
+    commands: Sequence[str],
+    candidate: str,
+    configuration: dict[str, object],
+) -> InputFingerprint:
+    root = repo_root.resolve()
+    environment = execution_environment(sanitised_project_env(dict(os.environ), root), root)
+    label = f"GITHEAD_{candidate}"
+    if label in environment and environment[label] != candidate:
+        raise pyright_inputs.UnsupportedInputsError("conflicting Git merge label")
+    environment[label] = candidate
+    runtime: dict[str, str] = {}
+    for relative in (".venv/pyvenv.cfg", ".venv/bin", ".venv/Scripts"):
+        path = root / relative
+        if path.is_file():
+            runtime[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        elif path.is_dir():
+            for entry in sorted(path.iterdir()):
+                if entry.is_file():
+                    if entry.name.startswith(".env"):
+                        raise pyright_inputs.UnsupportedInputsError("protected landing runtime")
+                    runtime[entry.relative_to(root).as_posix()] = hashlib.sha256(
+                        str(entry.resolve()).encode() + entry.read_bytes()
+                    ).hexdigest()
+    for site in [
+        *sorted((root / ".venv/lib").glob("python*/site-packages")),
+        root / ".venv/Lib/site-packages",
+    ]:
+        if site.is_dir():
+            runtime[site.relative_to(root).as_posix()] = _dependency(site, root)
+    return InputFingerprint({
+        "recipe": "landing-v1",
+        "configuration": configuration,
+        "workspace": _workspace(root),
+        "runtime": runtime,
+        "environment": environment,
+        "tools": {
+            name: {
+                "path": str(Path(found).resolve()),
+                "content": hashlib.sha256(Path(found).read_bytes()).hexdigest(),
+            }
+            if (found := shutil.which(name, path=environment.get("PATH")))
+            else None
+            for name in sorted(set(commands) | {"git", "uv", "node", "python", "python3"})
+        },
+        "implementation": implementation_digest(),
+        "platform": platform.platform(),
+        "git_config": checkout.git(["config", "--list", "--show-origin"], cwd=root).stdout,
+        "tags": checkout.git(
+            ["tag", "--list", "--format=%(refname) %(objectname)"], cwd=root
+        ).stdout,
+    })

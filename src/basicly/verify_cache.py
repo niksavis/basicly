@@ -9,7 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from . import __version__
-from .verify_receipt import CachedCheck
+from .verify_receipt import CachedCheck, implementation_digest
 
 CACHE_PATH = Path(".basicly/usage/verify-cache.json")
 _MAX_BYTES = 2 * 1024 * 1024
@@ -17,28 +17,17 @@ _MAX_CHECKS = 128
 
 
 def _identity(root: Path) -> str:
-    source = Path(__file__).parent
     payload = {
         "version": __version__,
         "repository": str(root.resolve()),
-        "recipe": 1,
-        "engine": {
-            name: hashlib.sha256((source / name).read_bytes()).hexdigest()
-            for name in (
-                "verify.py",
-                "verify_cache.py",
-                "verify_receipt.py",
-                "pyright_inputs.py",
-                "pytest_inputs.py",
-                "hook_python.py",
-            )
-        },
+        "recipe": 2,
+        "engine": implementation_digest(),
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 def _entry(value: object) -> CachedCheck:
-    if not isinstance(value, dict) or set(value) != {
+    if not isinstance(value, dict) or set(value) - {"components"} != {
         "name",
         "command",
         "mode",
@@ -60,8 +49,28 @@ def _entry(value: object) -> CachedCheck:
     duration = value["duration_s"]
     if type(duration) not in {float, int} or not math.isfinite(duration) or duration < 0:
         raise ValueError("invalid cache duration")
+    raw_components = value.get("components", [])
+    if (
+        not isinstance(raw_components, list)
+        or len(raw_components) > 32
+        or any(
+            not isinstance(row, list)
+            or len(row) != 2
+            or not all(isinstance(item, str) for item in row)
+            or len(row[1]) != 64
+            or any(char not in "0123456789abcdef" for char in row[1])
+            for row in raw_components
+        )
+    ):
+        raise ValueError("invalid cache components")
     return CachedCheck(
-        value["name"], tuple(command), value["mode"], value["inputs"], value["origin"], duration
+        value["name"],
+        tuple(command),
+        value["mode"],
+        value["inputs"],
+        value["origin"],
+        duration,
+        tuple((row[0], row[1]) for row in raw_components),
     )
 
 

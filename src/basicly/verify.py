@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 import time
 import uuid
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from . import (
     affected,
+    landing_guard,
     pyright_inputs,
     pytest_inputs,
     tracker,
@@ -20,8 +19,6 @@ from . import (
     worktree,
 )
 from .config import VERIFY_GATE_PROVIDER, VerifyCheck, VerifyConfig, load_verify_config
-from .hook_runtime import load as _hook_runtime
-from .runner import sanitised_project_env
 from .verify_artifact import (
     CheckResult,
     VerifyReport,
@@ -30,10 +27,8 @@ from .verify_artifact import (
     receipt_result,
     write_run_artifact,
 )
-from .verify_receipt import CheckReceipt, supported_command
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
+from .verify_execution import spawn as _spawn
+from .verify_receipt import CheckReceipt, changed_components, components, supported_command
 
 DEFAULT_GATE = "verify"
 GATE_PROVIDER = VERIFY_GATE_PROVIDER
@@ -198,46 +193,6 @@ def _run(
     )
 
 
-def _spawn(
-    command: Sequence[str], repo_root: Path, *, capture: bool, controlled: str = ""
-) -> subprocess.CompletedProcess[str]:
-
-    command = _hook_runtime("command_paths").resolve_command(command, repo_root)
-    env = sanitised_project_env(affected.environment(repo_root), repo_root)
-    if controlled == "pyright":
-        env = pyright_inputs.execution_environment(repo_root, env)
-    elif controlled == "pytest":
-        command, env = pytest_inputs.execution(repo_root, command, env)
-    if capture:
-        return subprocess.run(  # noqa: S603 — repo-declared argv, list form, no shell
-            command,
-            cwd=repo_root,
-            env=env,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="backslashreplace",
-        )
-    with subprocess.Popen(  # noqa: S603 — same argv, same trust boundary
-        command,
-        cwd=repo_root,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="backslashreplace",
-        bufsize=1,
-    ) as proc:
-        kept: list[str] = []
-        for line in proc.stdout or ():
-            sys.stdout.write(line)
-            kept.append(line)
-        sys.stdout.flush()
-    return subprocess.CompletedProcess(list(command), proc.returncode, "".join(kept), "")
-
-
 def _inputs(repo_root: Path, recipe: str = "pyright") -> tuple[str, str]:
     try:
         provider = pytest_inputs if recipe == "pytest" else pyright_inputs
@@ -294,6 +249,24 @@ def _finish_input_proof(
     return False
 
 
+def _observe_result(results: list[CheckResult], result: CheckResult) -> None:
+    if result.reuse_reason and not result.reused_from:
+        print(f"{result.name}: {result.reuse_reason}", flush=True)
+    results.append(result)
+
+
+def _selection_refusal(root: Path, mode: str, selection: dict | None) -> VerifyReport | None:
+    if not selection or not selection["invalid_snapshot"]:
+        return None
+    report = VerifyReport(
+        mode,
+        (CheckResult("affected-provider", "fail", 1, selection["fallback"]),),
+        selection=selection,
+    )
+    write_run_artifact(root, report)
+    return report
+
+
 def run_verify(
     repo_root: Path,
     mode: str,
@@ -311,14 +284,9 @@ def run_verify(
         if affected.active(repo_root)
         else None
     )
-    if selection and selection["invalid_snapshot"]:
-        report = VerifyReport(
-            mode,
-            (CheckResult("affected-provider", "fail", 1, selection["fallback"]),),
-            selection=selection,
-        )
-        write_run_artifact(repo_root, report)
-        return report
+    if refusal := _selection_refusal(repo_root, mode, selection):
+        return refusal
+    subject_before = landing_guard.before_verification(repo_root, mode, config)
     eligible = {
         check.name
         for check in checks
@@ -333,12 +301,14 @@ def run_verify(
     blocked_by = ""
     for check in checks:
         if selection is not None and check.name not in selection["selected"]:
-            results.append(CheckResult(check.name, "skip", 0, selection["reasons"][check.name]))
+            _observe_result(
+                results, CheckResult(check.name, "skip", 0, selection["reasons"][check.name])
+            )
             continue
         if blocked_by:
             result = blocked_result(check.name, check.command, blocked_by)
             print(f"==> {check.name} NOT RUN: {result.detail}", flush=True)
-            results.append(result)
+            _observe_result(results, result)
             continue
         if check.name in eligible and (capture_receipts or reuse is not None or caching):
             before, reason = _proof_inputs(repo_root, check.reuse or "", proofs)
@@ -352,7 +322,7 @@ def run_verify(
             borrowed = cached_result(check.name, check.command, (mode, before), cached)
         if borrowed is not None:
             print(f"{check.name}: reused verified result from {borrowed.reused_from}", flush=True)
-            results.append(borrowed)
+            _observe_result(results, borrowed)
             continue
         print(f"==> {check.name}", flush=True)
         result = run_check(check, repo_root, mode)
@@ -361,6 +331,12 @@ def run_verify(
             if check.name in eligible:
                 explanation = (
                     reason
+                    or changed_components(
+                        before,
+                        next((r.components for r in reuse.receipts if r.name == check.name), ())
+                        if reuse is not None
+                        else next((r.components for r in cached if r.name == check.name), ()),
+                    )
                     or cache_reason
                     or (
                         "missing or changed receipt inputs"
@@ -369,7 +345,7 @@ def run_verify(
                     )
                 )
             result = replace(result, reuse_reason=explanation, input_fingerprint=before)
-        results.append(result)
+        _observe_result(results, result)
         if config.fail_fast and result.status == "fail":
             blocked_by = check.name
     stable = {
@@ -380,7 +356,14 @@ def run_verify(
     passed = all(r.status == "pass" for r in results)
     receipts = (
         tuple(
-            CheckReceipt(check.name, check.command, mode, proofs[check.reuse or ""][0], run_id)
+            CheckReceipt(
+                check.name,
+                check.command,
+                mode,
+                str(proofs[check.reuse or ""][0]),
+                run_id,
+                components(proofs[check.reuse or ""][0]),
+            )
             for check, result in zip(checks, results, strict=True)
             if check.name in eligible and stable.get(check.reuse or "", False)
         )
@@ -390,8 +373,8 @@ def run_verify(
     report = VerifyReport(
         mode, tuple(results), run_id, receipts, round(time.perf_counter() - started, 3), selection
     )
-    write_run_artifact(repo_root, report)
-    if caching and stable and passed:
+    report = landing_guard.finish_verification(repo_root, report, subject_before, config)
+    if caching and stable and report.passed:
         verify_cache.write(
             repo_root,
             tuple(
@@ -399,9 +382,10 @@ def run_verify(
                     check.name,
                     check.command,
                     mode,
-                    proofs[check.reuse or ""][0],
+                    str(proofs[check.reuse or ""][0]),
                     result.reused_from or run_id,
                     result.source_duration_s if result.reused_from else result.duration_s,
+                    components(proofs[check.reuse or ""][0]),
                 )
                 for check, result in zip(checks, results, strict=True)
                 if check.name in eligible and stable.get(check.reuse or "", False)
@@ -482,6 +466,10 @@ def report_gate(
         appended = tracker.write(repo_root, args)
     except RuntimeError as exc:
         return False, f"gate {gate} NOT recorded on {issue_id}: {exc}"
+    if report.passed and report.mode == "full" and report.results and report.selection is None:
+        landing_guard.record_verification(
+            repo_root, issue_id, passed=True, proof=report.subject_fingerprint
+        )
     if not appended:
         return True, f"gate {gate}={status} on {issue_id} was already held; kept the first"
     return True, f"recorded gate {gate}={status} on {issue_id}"

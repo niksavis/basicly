@@ -511,6 +511,25 @@ def read_snapshot(repo_root: Path, issue_id: str) -> dict | None:
     return queries.read_record(owned_store.present_ledger(repo_root), issue_id)
 
 
+def artifact_states(repo_root: Path, kind: str) -> dict[str, object]:
+    ledger = ledger_dir(repo_root)
+    if not ledger.is_dir():
+        return {}
+    events = owned_store.packaged_kit("events")
+    found, refused = events.read_events(ledger)
+    if refused:
+        raise TrackerDivergenceError(
+            "Ledger events were refused; run uv run python "
+            ".basicly/core/kit/tracker/cli.py fsck .basicly/ledger"
+        )
+    states = events.fold(found).records
+    return {
+        identity: state.artifacts.get(kind)
+        for identity, state in states.items()
+        if not state.tombstoned
+    }
+
+
 def read_record(repo_root: Path, issue_id: str) -> dict | None:
 
     return owned_record(repo_root, issue_id)

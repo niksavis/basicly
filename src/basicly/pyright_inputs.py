@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .runner import sanitised_project_env
+from .verify_receipt import InputFingerprint, implementation_digest
 
 _IGNORED = frozenset({".git", ".venv", "node_modules", "__pycache__"})
 _CONFIG_KEYS = frozenset({
@@ -274,14 +275,15 @@ def fingerprint(repo_root: Path) -> str:
         if len(sites) != 1 or not sites[0].is_dir():
             raise UnsupportedInputsError("unsupported analysis environment layout")
         payload = {
-            "recipe": "pyright-1.1.411-v4",
+            "recipe": "pyright-1.1.411-v5",
+            "implementation": implementation_digest(),
             "source": _digest_files(root, sources=True),
             "analysis": _digest_files(sites[0], sources=True, workspace=root),
             "analysis_layout": sites[0].relative_to(root).as_posix(),
             "analysis_python": hashlib.sha256((root / ".venv/pyvenv.cfg").read_bytes()).hexdigest(),
             "runtime": _runtime(root),
         }
-        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        return InputFingerprint(payload)
     except (OSError, UnicodeError, ValueError, TypeError, AttributeError) as exc:
         raise UnsupportedInputsError(
             f"Pyright inputs unavailable: {type(exc).__name__}: {exc}"
