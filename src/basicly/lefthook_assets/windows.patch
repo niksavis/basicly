@@ -1,0 +1,22 @@
+--- a/internal/run/controller/exec/exec_windows.go
++++ b/internal/run/controller/exec/exec_windows.go
+@@ -7,7 +7,6 @@
+ 	"os"
+ 	"os/exec"
+ 	"path/filepath"
+-	"syscall"
+ 
+ 	"github.com/evilmartians/lefthook/v2/internal/logger"
+ 	"github.com/evilmartians/lefthook/v2/internal/system"
+@@ -79,10 +78,7 @@
+ 	cmdLine := "\"" + sh + "\"" + " -c " + "\"" + cmdstr + "\""
+ 	e.logger.Debug("[lefthook] run: ", cmdLine)
+ 
+-	command := exec.CommandContext(ctx, sh)
+-	command.SysProcAttr = &syscall.SysProcAttr{
+-		CmdLine: cmdLine,
+-	}
++	command := exec.CommandContext(ctx, sh, "-c", cmdstr)
+ 	command.Dir = args.root
+ 	command.Env = append(os.Environ(), args.envs...)
+ 

@@ -47,7 +47,7 @@ def test_installed_git_hook_ignores_an_unsupported_consumer_version_pin(tmp_path
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     source = tmp_path / ".basicly/core/hooks"
     source.mkdir(parents=True)
-    for name in ("lefthook-runtime.py", "windows_runner.py"):
+    for name in ("lefthook-runtime.py",):
         shutil.copyfile(ROOT / ".basicly/core/hooks" / name, source / name)
     (source / "runtime.py").write_text(
         "import json,sys\nfrom pathlib import Path\n"

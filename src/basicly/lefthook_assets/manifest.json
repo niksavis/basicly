@@ -23,13 +23,17 @@
     },
     {
       "name": "lefthook_2.2.2_Windows_arm64.gz",
-      "sha256": "87fe02d0ead34d28f2241ecd974d46a633838636e20148b221242c9ee41880a9",
-      "url": "https://github.com/evilmartians/lefthook/releases/download/v2.2.2/lefthook_2.2.2_Windows_arm64.gz"
+      "upstream_sha256": "87fe02d0ead34d28f2241ecd974d46a633838636e20148b221242c9ee41880a9",
+      "upstream_url": "https://github.com/evilmartians/lefthook/releases/download/v2.2.2/lefthook_2.2.2_Windows_arm64.gz",
+      "bundled": "windows/lefthook_2.2.2_Windows_arm64.gz",
+      "sha256": "4da489c3d28b0978ba8cd28fb6a762cad5deb21d4cafb78279d127ce9ed5475f"
     },
     {
       "name": "lefthook_2.2.2_Windows_x86_64.gz",
-      "sha256": "980579c96db6df0064f7d831dd409cb9eac1c993a13bc936574507e9e075be52",
-      "url": "https://github.com/evilmartians/lefthook/releases/download/v2.2.2/lefthook_2.2.2_Windows_x86_64.gz"
+      "upstream_sha256": "980579c96db6df0064f7d831dd409cb9eac1c993a13bc936574507e9e075be52",
+      "upstream_url": "https://github.com/evilmartians/lefthook/releases/download/v2.2.2/lefthook_2.2.2_Windows_x86_64.gz",
+      "bundled": "windows/lefthook_2.2.2_Windows_x86_64.gz",
+      "sha256": "dca265861a6ad272cfd275a30be4e015c61629e8e2c0e2a692181c97abb9b838"
     },
     {
       "name": "source.tar.gz",
@@ -41,5 +45,11 @@
       "sha256": "9b21b391288bbeb04eb3a2848a5a6bece90e5a0353b3e70064fd5e593b9775ce",
       "url": "https://github.com/evilmartians/lefthook/releases/download/v2.2.2/lefthook_checksums.txt"
     }
-  ]
+  ],
+  "windows_patch": {
+    "revision": "basicly-windows.1",
+    "go": "go1.27.3",
+    "file": "windows.patch",
+    "sha256": "326ba919015866e96fc25f663a1c3c77c435883080b766b2f7f020ccb63ca3bf"
+  }
 }

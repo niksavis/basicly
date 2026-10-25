@@ -610,10 +610,10 @@ declared_count = 1
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/basicly"]
-exclude = ["**/__pycache__", "**/*.pyc"]
+exclude = ["**/__pycache__", "**/*.pyc", "/src/basicly/lefthook_assets/windows/*.gz"]
 
 [tool.hatch.build.targets.sdist]
-exclude = ["/.basicly/core", "/.basicly/usage", "/.basicly/bin", "/.import_linter_cache"]
+exclude = ["/.basicly/core", "/.basicly/usage", "/.basicly/bin", "/.import_linter_cache", "/src/basicly/lefthook_assets/windows/*.gz"]
 
 [tool.hatch.build.hooks.custom]
 path = "hatch_build.py"

@@ -23,6 +23,8 @@ def verified_bytes(directory: Path, name: str) -> bytes:
     if name not in entries:
         raise ValueError(f"Unknown pinned Lefthook artifact: {name}")
     path = directory / name
+    if not path.is_file() and "bundled" in entries[name]:
+        path = METADATA / entries[name]["bundled"]
     if not path.is_file():
         raise FileNotFoundError(f"Missing Lefthook artifact {name}; run {PREPARE}")
     data = path.read_bytes()
@@ -50,7 +52,15 @@ def prepare(root: Path, source: Path | None) -> Path:
         staged = Path(temporary)
         for entry in MANIFEST["assets"]:
             name = entry["name"]
-            if source is None:
+            if source is None and "bundled" in entry:
+                bundled = METADATA / entry["bundled"]
+                data = (
+                    bundled.read_bytes()
+                    if bundled.is_file()
+                    else verified_bytes(artifact_directory(), name)
+                )
+                (staged / name).write_bytes(data)
+            elif source is None:
                 url = entry["url"]
                 if not url.startswith("https://"):
                     raise ValueError(f"Lefthook artifact URL must use HTTPS: {name}")
