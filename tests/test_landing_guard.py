@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import io
+import json
+import os
 import shlex
+import shutil
+import subprocess
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
+import yaml
 
 from basicly import checkout, landing_guard, tracker
 from tests import flipped_tracker
@@ -155,3 +162,127 @@ def test_disabling_the_reference_event_after_probe_cannot_bypass_publication_gua
     )
     assert result.returncode != 0
     assert _git_here(repo, "rev-parse", "HEAD") == subject.destination
+
+
+@pytest.mark.parametrize("value", [{}, [], {"components": None}, {"base": 3}])
+def test_malformed_subject_is_refused_without_publishing(
+    landing, monkeypatch: pytest.MonkeyPatch, value, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, _session, subject = landing
+    directory = checkout.git_common_dir(repo) / "basicly-landing"
+    directory.mkdir()
+    path = directory / ("a" * 32 + ".json")
+    path.write_text(json.dumps(value))
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    assert landing_guard.main([str(path), "prepared"]) == 1
+    assert "Landing publication refused" in capsys.readouterr().err
+    assert _git_here(repo, "rev-parse", "HEAD") == subject.destination
+
+
+def test_interrupted_publication_keeps_a_durable_unverified_barrier(
+    landing, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, _session, original = landing
+    flipped_tracker.flipped_repo(repo)
+    flipped_tracker.seed(repo, "basicly-owner", title="interrupted landing")
+    subject = landing_guard.capture(repo, _session, "full", record="basicly-owner")
+    directory = checkout.git_common_dir(repo) / "basicly-landing"
+    directory.mkdir()
+    path = directory / ("b" * 32 + ".json")
+    path.write_text(json.dumps(asdict(subject)))
+    tree = _git_here(repo, "rev-parse", f"{subject.candidate}^{{tree}}")
+    proposed = _git_here(
+        repo,
+        "commit-tree",
+        tree,
+        "-p",
+        subject.destination,
+        "-p",
+        subject.candidate,
+        "-m",
+        "publication interrupted",
+    )
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(
+        sys, "stdin", io.StringIO(f"{subject.destination} {proposed} refs/heads/main\n")
+    )
+    write = Path.write_text
+
+    def interrupted(target, *args, **kwargs):
+        if target.suffix == ".receipt":
+            raise OSError("publication interrupted")
+        return write(target, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", interrupted)
+    assert landing_guard.main([str(path), "prepared"]) == 1
+    assert "basicly-owner" in landing_guard.blocker(repo, "basicly-other")
+    assert _git_here(repo, "rev-parse", "HEAD") == original.destination
+
+
+@pytest.mark.parametrize("origin", ["destination", "candidate"])
+def test_self_hosted_engine_update_uses_a_stable_candidate_engine(
+    tmp_path: Path, origin: str
+) -> None:
+    repo = _seed_repo(tmp_path)
+    package = repo / "src/basicly"
+    shutil.copytree(
+        Path(landing_guard.__file__).parent,
+        package,
+        ignore=shutil.ignore_patterns("__pycache__", "lefthook_assets"),
+    )
+    shutil.copytree(
+        Path(landing_guard.__file__).resolve().parents[2] / ".basicly/core",
+        repo / ".basicly/core",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    _git_here(repo, "add", "src", ".basicly/core")
+    _git_here(repo, "commit", "-m", "seed engine")
+    lane = _lane_worktree(tmp_path, repo)
+    (lane.path / "src/basicly/verify_receipt.py").write_text(
+        (package / "verify_receipt.py").read_text() + "\nSELF_HOSTED_GENERATION = 2\n"
+    )
+    _git_here(lane.path, "commit", "-am", "update engine")
+    runtime = tmp_path / "runtime"
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(runtime)], check=True)
+    site = (
+        next(runtime.glob("lib/python*/site-packages"))
+        if os.name != "nt"
+        else runtime / "Lib/site-packages"
+    )
+    shutil.copytree(
+        Path(yaml.__file__).parent.parent,
+        site,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("*.pth", "__pycache__"),
+    )
+    interpreter = runtime / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    source = repo if origin == "destination" else lane.path
+    program = (
+        "from basicly import landing_guard;from types import SimpleNamespace;"
+        "from pathlib import Path;"
+        f"s=SimpleNamespace(base='main',branch='harness/feat',path=Path({str(lane.path)!r}));"
+        "r=Path.cwd();s=landing_guard.capture(r,s,'full');"
+        "p=landing_guard.guarded_merge(r,s,['merge','--no-ff',s.candidate,'-m','self update']);"
+        "print('published',p.returncode);raise SystemExit(p.returncode)"
+    )
+    result = subprocess.run(
+        [str(interpreter), "-c", program],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": str(source / "src"),
+            "PATH": str(interpreter.parent) + os.pathsep + os.environ["PATH"],
+        },
+    )
+    if origin == "candidate":
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert _git_here(repo, "rev-parse", "HEAD^2") == _git_here(lane.path, "rev-parse", "HEAD")
+    else:
+        assert result.returncode != 0
+        assert "rerun from the candidate worktree" in result.stderr
+        assert not _git_here(repo, "status", "--porcelain")

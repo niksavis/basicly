@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -286,3 +287,24 @@ def test_material_environment_changes_invalidate_real_fingerprint(
     before = pytest_inputs.fingerprint(fingerprint_repository)
     monkeypatch.setenv(name, "different")
     assert pytest_inputs.fingerprint(fingerprint_repository) != before
+
+
+def test_external_standard_library_changes_invalidate_landing(
+    repository: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    library = tmp_path_factory.mktemp("external-stdlib")
+    module = library / "runtime.py"
+    module.write_text("before")
+    original = pytest_inputs.checkout.run
+
+    def metadata(arguments, **kwargs):
+        if arguments[1:3] == ["-I", "-c"]:
+            return subprocess.CompletedProcess(arguments, 0, json.dumps([str(library)]), "")
+        return original(arguments, **kwargs)
+
+    monkeypatch.setattr(pytest_inputs.checkout, "run", metadata)
+    before = pytest_inputs.landing_fingerprint(repository, ["python"], "a" * 40, {})
+    assert before == pytest_inputs.landing_fingerprint(repository, ["python"], "a" * 40, {})
+    module.write_text("after")
+    after = pytest_inputs.landing_fingerprint(repository, ["python"], "a" * 40, {})
+    assert after != before

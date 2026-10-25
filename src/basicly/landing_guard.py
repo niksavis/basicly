@@ -198,6 +198,26 @@ class GuardUnavailableError(ValueError):
 def guarded_merge(
     root: Path, subject: LandingSubject, command: list[str]
 ) -> subprocess.CompletedProcess[str]:
+    engine = Path(__file__).resolve().parent
+    if (
+        engine.is_relative_to(root.resolve())
+        and checkout.git(
+            [
+                "diff",
+                "--quiet",
+                subject.destination,
+                subject.candidate,
+                "--",
+                engine.relative_to(root.resolve()).as_posix(),
+            ],
+            cwd=root,
+            check=False,
+        ).returncode
+    ):
+        raise GuardUnavailableError(
+            "Landing changes the executing engine; rerun from the candidate worktree "
+            "engine with the destination as the working directory"
+        )
     enabled = checkout.git(
         ["config", "--type=bool", "--get", "hook.reference-transaction.enabled"],
         cwd=root,
@@ -264,19 +284,41 @@ def guarded_merge(
     return result
 
 
-def _prepare(path: Path) -> None:
+def _read_subject(path: Path) -> LandingSubject:
     with path.open("rb") as stream:
         encoded = stream.read(65537)
     if len(encoded) > 65536:
         raise ValueError("Landing subject exceeds its size limit")
     raw = json.loads(encoded)
-    raw["components"] = tuple(tuple(row) for row in raw["components"])
+    required = {"base", "branch", "destination", "candidate", "tree", "workspace", "mode", "inputs"}
+    if (
+        not isinstance(raw, dict)
+        or not required.issubset(raw)
+        or any(not isinstance(raw[key], str) or not raw[key] for key in required)
+    ):
+        raise ValueError("Malformed landing subject")
+    for key in ("destination", "candidate", "tree", "inputs"):
+        if len(raw[key]) not in ({64} if key == "inputs" else {40, 64}) or any(
+            char not in "0123456789abcdef" for char in raw[key]
+        ):
+            raise ValueError("Malformed landing subject identity")
+    raw["components"] = tuple(tuple(row) for row in raw.get("components", ()))
     subject = LandingSubject(**raw)
     if subject.mode not in {"full", "fast", "staged"}:
         raise ValueError("Unknown landing verification mode")
+    if not Path(subject.workspace).is_absolute() or not isinstance(subject.record, str):
+        raise ValueError("Malformed landing subject workspace or record")
+    return subject
+
+
+def _prepare(path: Path) -> None:
+    subject = _read_subject(path)
     if checkout.git_common_dir(Path(subject.workspace)) != checkout.git_common_dir(Path.cwd()):
         raise ValueError("Candidate workspace belongs to another repository")
-    rows = [line.split() for line in sys.stdin.read().splitlines()]
+    transaction = sys.stdin.read(65537)
+    if len(transaction) > 65536:
+        raise ValueError("Reference transaction exceeds its size limit")
+    rows = [line.split() for line in transaction.splitlines()]
     if any(len(row) != 3 for row in rows):
         raise ValueError("Malformed reference transaction")
     protected = [

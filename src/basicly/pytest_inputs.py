@@ -6,6 +6,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path, PurePath, PureWindowsPath
 
@@ -52,7 +53,7 @@ def _workspace(root: Path) -> dict[str, str]:
     return result
 
 
-def _dependency(root: Path, workspace: Path | None = None) -> str:
+def _dependency(root: Path, workspace: Path | None = None, *, engine: Path | None = None) -> str:
     digest = hashlib.sha256()
     for directory, dirs, files in root.walk(on_error=pyright_inputs._unreadable):
         dirs[:] = sorted(name for name in dirs if name not in {"__pycache__", ".cache"})
@@ -68,8 +69,12 @@ def _dependency(root: Path, workspace: Path | None = None) -> str:
                 for line in path.read_text().splitlines():
                     if line.strip() and not line.startswith(("#", "import ", "import\t")):
                         target = (path.parent / line.strip()).resolve()
-                        if not target.is_relative_to(root.resolve()) and not (
-                            workspace is not None and target in {workspace, workspace / "src"}
+                        if (
+                            target != engine
+                            and not target.is_relative_to(root.resolve())
+                            and not (
+                                workspace is not None and target in {workspace, workspace / "src"}
+                            )
                         ):
                             raise pyright_inputs.UnsupportedInputsError(
                                 "external pytest import path"
@@ -230,6 +235,45 @@ def fingerprint(repo_root: Path) -> str:
         raise pyright_inputs.UnsupportedInputsError(f"pytest inputs unavailable: {exc}") from exc
 
 
+def _landing_python(interpreter: Path, root: Path, environment: dict[str, str]) -> str:
+    program = (
+        "import json,sysconfig;"
+        "from pathlib import Path;"
+        "p=sysconfig.get_paths();"
+        "v=[p[k] for k in ('stdlib','platstdlib','purelib','platlib')];"
+        "d=sysconfig.get_config_var('LIBDIR');"
+        "n=sysconfig.get_config_var('LDLIBRARY');"
+        "v.extend([str(Path(d)/n)] if d and n else []);"
+        "print(json.dumps(sorted(set(v))))"
+    )
+    result = checkout.run(
+        [str(interpreter), "-I", "-c", program],
+        cwd=root,
+        env=environment,
+        check=False,
+        timeout=10,
+    )
+    if result.returncode:
+        raise pyright_inputs.UnsupportedInputsError("landing Python runtime unavailable")
+    paths = json.loads(result.stdout)
+    if (
+        not isinstance(paths, list)
+        or not paths
+        or any(not isinstance(path, str) or not Path(path).is_absolute() for path in paths)
+    ):
+        raise pyright_inputs.UnsupportedInputsError("invalid landing Python runtime metadata")
+    contents = {str(interpreter.resolve()): hashlib.sha256(interpreter.read_bytes()).hexdigest()}
+    for value in paths:
+        path = Path(value)
+        if path.is_dir():
+            contents[value] = _dependency(path, root, engine=Path(__file__).resolve().parent.parent)
+        elif path.is_file():
+            contents[value] = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            raise pyright_inputs.UnsupportedInputsError("missing landing Python runtime input")
+    return hashlib.sha256(json.dumps(contents, sort_keys=True).encode()).hexdigest()
+
+
 def landing_fingerprint(
     repo_root: Path,
     commands: Sequence[str],
@@ -261,11 +305,19 @@ def landing_fingerprint(
     ]:
         if site.is_dir():
             runtime[site.relative_to(root).as_posix()] = _dependency(site, root)
+    interpreters = {str(Path(sys.executable).absolute())}
+    for name in ("python", "python3"):
+        if found := shutil.which(name, path=environment.get("PATH")):
+            interpreters.add(str(Path(found).absolute()))
     return InputFingerprint({
-        "recipe": "landing-v1",
+        "recipe": "landing-v2",
         "configuration": configuration,
         "workspace": _workspace(root),
         "runtime": runtime,
+        "python_runtime": {
+            interpreter: _landing_python(Path(interpreter), root, environment)
+            for interpreter in sorted(interpreters)
+        },
         "environment": environment,
         "tools": {
             name: {
