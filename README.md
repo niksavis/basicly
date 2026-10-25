@@ -86,14 +86,16 @@ Agents that need explicit download-failure handling, arguments or a pinned versi
 save the script first:
 
 ```sh
-installer=$(mktemp) && curl -fsSL https://niksavis.github.io/basicly/install.sh -o "$installer" && sh "$installer" --ref v0.27.0
+installer=$(mktemp) && curl -fsSL https://niksavis.github.io/basicly/install.sh -o "$installer" && sh "$installer"
 ```
 
 ```powershell
 $installer = Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString()) + '.ps1')
 Invoke-WebRequest https://niksavis.github.io/basicly/install.ps1 -OutFile $installer -ErrorAction Stop
-& $installer -Ref v0.27.0
+& $installer
 ```
+
+Append `--ref v0.27.0` (POSIX) or `-Ref v0.27.0` (PowerShell) to select a release.
 
 The versioned wheel remains available for reproducible installs with `uv` already installed:
 

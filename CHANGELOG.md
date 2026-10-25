@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Windows repositories can use the verified hook fixes while strict no-comments remains the default. This release adds an optional transition ratchet and permanent installers for the latest published wheel (basicly-idzqhax, basicly-md9jkg5).
+
+- **Portable hooks:** preserve UTF-8 diagnostics and failure status, resolve check and fixer paths correctly, select Python 3.14 or later, and share Windows snapshots through safe junctions (basicly-idzqhax).
+- **Windows arguments:** pin a reproducible Windows-only Lefthook patch that preserves literals and expanded filenames. Official Linux and macOS archives stay unchanged (basicly-idzqhax).
+- **Comment migration:** opt into `no-comment-ratchet` to retain unchanged legacy prose while refusing new, rewritten or duplicated comments and docstrings. The default stays strict (basicly-idzqhax).
+- **Installation:** use permanent latest-release shell and PowerShell URLs. Keep pinned and offline wheel options, explicit prerequisites and unattended failure handling (basicly-idzqhax, basicly-md9jkg5).
+- **Consumer evidence:** native platform checks cover real commits, deliberate refusals, fresh wheel installs and upgrades from v0.27.0. The source distribution rebuilds offline (basicly-idzqhax).
+
 ## v0.27.0 - 2026-10-25
 
 Delta: v0.26.12..v0.27.0
