@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release reorders the always-on instruction files so the rules a model must not lose
+come first, and it leaves an installing repository room for its own rules. It also makes
+ordinary pytest verification select and fingerprint the checkout's own runtime, and it
+bounds the task context a dispatched lane receives.
+
+- **Always-on files:** Never do and Ask first lead, then Commands, then Always do in
+  workflow order. The shipped core renders at most 150 lines, so a repository keeps 50
+  lines for its own fragments (basicly-tgenbu5).
+- **Verification evidence:** pytest runs use the checkout runtime, hook defaults match the
+  CLI so equal checks reuse evidence, and uv setup refreshes stale basicly metadata
+  (basicly-rxxtx9k, basicly-ejg4jyk, basicly-0o8pefl, basicly-alcj6vu).
+- **Dispatch:** task envelopes stay within 16 KiB, with digests and explicit full and
+  history views (basicly-mwf2o75).
+
 ## v0.28.0 - 2026-10-25
 
 Delta: v0.27.0..v0.28.0

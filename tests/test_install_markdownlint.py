@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -305,3 +306,27 @@ def test_documented_markdown_inputs_pass_real_commit_and_refuse_bad_consumer_mar
     assert "MD009" in refused.stdout + refused.stderr
     assert git("rev-parse", "HEAD").stdout == before
     assert configuration.read_bytes() == owner_bytes
+
+
+def test_the_repository_lint_config_skips_markdown_that_git_ignores(tmp_path: Path) -> None:
+    copy_locked_markdownlint_runtime(tmp_path)
+    shutil.copyfile(REPO_ROOT / ".markdownlint-cli2.yaml", tmp_path / ".markdownlint-cli2.yaml")
+    (tmp_path / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# Repository\n\nClean Markdown.\n", encoding="utf-8")
+    preserved = tmp_path / ".basicly/usage/preserved/.venv/package"
+    preserved.mkdir(parents=True)
+    (preserved / "README.md").write_text("# Vendored\n\nBad trailing spaces.   \n")
+    (tmp_path / ".basicly/usage/.gitignore").write_text("*\n", encoding="utf-8")
+    hook = REPO_ROOT / ".basicly/core/hooks/markdownlint.py"
+
+    def lint() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(hook)], cwd=tmp_path, capture_output=True, text=True, check=False
+        )
+
+    ignored = lint()
+    assert ignored.returncode == 0, ignored.stdout + ignored.stderr
+    (tmp_path / ".basicly/usage/.gitignore").unlink()
+    tracked = lint()
+    assert tracked.returncode != 0
+    assert "MD009" in tracked.stdout + tracked.stderr

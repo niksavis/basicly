@@ -14,6 +14,7 @@ config:
   # again. The three catalog sources and the one generator that failed it are
   # fixed; if an aligned table ever makes jaz4's pain real, normalise the
   # delimiter row in --fix rather than turning this off a second time.
+gitignore: true
 globs:
   - "**/*.md"
 ignores:
