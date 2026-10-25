@@ -5,13 +5,21 @@ import subprocess  # nosec B404
 from pathlib import Path
 
 
+def _quote_command(command: str) -> str:
+    encoded = subprocess.list2cmdline([command])
+    if not command or " " in command or "\t" in command:
+        return encoded[1:-1]
+    trailing = len(command) - len(command.rstrip("\\"))
+    return encoded + "\\" * trailing
+
+
 def _quote_jobs(section: dict) -> None:
     jobs = [*section.get("commands", {}).values(), *section.get("jobs", [])]
     for job in jobs:
         if not isinstance(job, dict):
             raise ValueError("Lefthook jobs must be mappings")
         if isinstance(job.get("run"), str):
-            job["run"] = job["run"].replace('"', '\\"')
+            job["run"] = _quote_command(job["run"])
         if isinstance(job.get("group"), dict):
             _quote_jobs(job["group"])
 

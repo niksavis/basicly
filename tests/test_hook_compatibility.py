@@ -85,7 +85,18 @@ def test_native_jobs_preserve_quoted_literals_and_original_configuration(tmp_pat
         "Path('arguments.json').write_text(json.dumps(sys.argv[1:]))\n",
         encoding="utf-8",
     )
-    arguments = ["two words", "apostrophe's", 'a"quote', r"back\slash", "$value", ">=3.14"]
+    arguments = [
+        r"back\"quote",
+        r'two\\"quote',
+        "end\\",
+        '"',
+        "two words",
+        "apostrophe's",
+        'a"quote',
+        r"back\slash",
+        "$value",
+        ">=3.14",
+    ]
     command = shlex.join([Path(sys.executable).as_posix(), script.as_posix(), *arguments])
     config = repo / "lefthook.yml"
     config.write_text(
