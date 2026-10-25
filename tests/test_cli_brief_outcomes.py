@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basicly import contention, dispatch_brief, run_record, tracker_paths, usage_report
+from basicly import contention, dispatch_brief, run_record, tracker, tracker_paths, usage_report
 from tests.test_cli import run_basicly
 
 if TYPE_CHECKING:
@@ -144,3 +144,25 @@ def test_outcomes_counts_a_record_with_no_outcome_field(
     out = capsys.readouterr().out
     assert usage_report.UNLABELLED in out
     assert "1/2 = 50.0%" in out
+
+
+def test_brief_views_share_a_snapshot_and_refuse_stale_retrieval(work_repo: Path) -> None:
+    issue = _a_tracked_id(work_repo)
+    current_result = run_basicly(work_repo, "brief", issue, "--view", "current")
+    assert current_result.returncode == 0, current_result.stderr
+    assert len(current_result.stdout.encode("utf-8")) <= 16384
+    current = json.loads(current_result.stdout)
+    for view in ("full", "history"):
+        result = run_basicly(
+            work_repo, "brief", issue, "--view", view, "--snapshot", current["snapshot_identity"]
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["snapshot_identity"] == current["snapshot_identity"]
+    tracker.add_comment(work_repo, issue, "A fresh correction invalidates the snapshot")
+    for view in ("dispatch", "full", "history"):
+        stale = run_basicly(
+            work_repo, "brief", issue, "--view", view, "--snapshot", current["snapshot_identity"]
+        )
+        assert stale.returncode == 1
+        assert "snapshot changed" in stale.stderr
+        assert not stale.stdout

@@ -106,7 +106,7 @@ def cmd_stats(args: argparse.Namespace) -> int:
 def cmd_show(args: argparse.Namespace) -> int:
 
     repo_root = Path.cwd()
-    found = _queries().read_record(owned_store.present_ledger(repo_root), args.record)
+    found = tracker.read_snapshot(repo_root, args.record)
     if found is None:
         _report({"record": args.record, "found": False})
         return 1

@@ -93,10 +93,24 @@ def _all_texts(fake: Callable[..., Any], _repo_root: Path) -> dict[str, list[str
     return {record: found for record, found in texts.items() if record}
 
 
+def _snapshot(fake: Callable[..., Any], repo_root: Path, issue_id: str) -> dict | None:
+    record = read_record(fake, repo_root, issue_id)
+    if record is None:
+        return None
+    return {
+        "record": issue_id,
+        "status": record.get("status"),
+        "fields": record,
+        "comments": [str(row.get("text", "")) for row in _comments(fake, repo_root, issue_id)],
+        "tombstoned": False,
+    }
+
+
 def install(monkeypatch: pytest.MonkeyPatch, fake: Callable[..., Any]) -> None:
 
     replacements: list[tuple[Any, str, Callable[..., Any]]] = [
         (tracker, "read_record", lambda root, rid: read_record(fake, root, rid)),
+        (tracker, "read_snapshot", lambda root, rid: _snapshot(fake, root, rid)),
         (tracker, "require_record", _require),
         (tracker, "read_comments", lambda root, rid: _comments(fake, root, rid)),
         (tracker, "try_read_comments", lambda root, rid: _soft_comments(fake, root, rid)),
