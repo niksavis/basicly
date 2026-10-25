@@ -89,6 +89,13 @@ def test_an_explicit_env_is_scrubbed_too(git_repo: Path, tmp_path: Path) -> None
     assert _identity(git_repo) == before
 
 
+def test_run_refuses_a_process_that_exceeds_the_requested_timeout(tmp_path: Path) -> None:
+    with pytest.raises(subprocess.TimeoutExpired):
+        checkout.run(
+            [sys.executable, "-c", "import time; time.sleep(30)"], cwd=tmp_path, timeout=0.01
+        )
+
+
 def test_is_linked_checkout_distinguishes_worktree_from_base(git_repo: Path) -> None:
 
     linked = git_repo.parent / "linked"

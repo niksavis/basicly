@@ -40,6 +40,7 @@ def run(
     cwd: Path | str | None = None,
     check: bool = True,
     env: dict[str, str] | None = None,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
 
     proc = subprocess.run(  # noqa: S603 — argv list built by this module, no shell
@@ -50,6 +51,7 @@ def run(
         text=True,
         encoding="utf-8",
         capture_output=True,
+        timeout=timeout,
     )
     if check and proc.returncode != 0:
         raise RuntimeError(_failure(args, proc, cwd))

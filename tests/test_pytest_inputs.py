@@ -230,8 +230,16 @@ def fingerprint_repository(repository: Path, monkeypatch: pytest.MonkeyPatch) ->
         (runtime / name).mkdir()
         (runtime / name / "module.py").write_text("value = 1\n")
     original_which = pytest_inputs.shutil.which
-    monkeypatch.setattr(pytest_inputs.sys, "executable", str(interpreter))
-    monkeypatch.setattr(pytest_inputs.sysconfig, "get_path", lambda name: str(runtime / name))
+    monkeypatch.setattr(
+        pytest_inputs,
+        "_runtime_paths",
+        lambda *_args: {
+            "executable": str(interpreter),
+            "purelib": str(runtime / "purelib"),
+            "stdlib": str(runtime / "stdlib"),
+            "pytest": str(runtime / "purelib/pytest/__init__.py"),
+        },
+    )
     monkeypatch.setattr(
         pytest_inputs.shutil,
         "which",
