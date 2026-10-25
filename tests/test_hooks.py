@@ -152,7 +152,8 @@ def test_copilot_hooks_sync_check_and_remove_roundtrip(tmp_path: Path) -> None:
     entry = config["hooks"]["postToolUse"][0]
     assert entry["type"] == "command"
     assert (
-        entry["bash"] == "uv run --no-project --no-python-downloads python "
+        entry["bash"]
+        == "uv run --no-project --no-python-downloads --python '>=3.14' python -X utf8 "
         ".basicly/core/hooks/lefthook-runtime.py copilot posttooluse"
     )
     assert "lefthook-runtime.py" in entry["powershell"]
@@ -571,6 +572,7 @@ def test_staged_checks_reuse_prepared_uv_environment_without_building(
         ],
         cwd=tmp_path,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )
@@ -640,6 +642,7 @@ def test_native_gate_runs_once_without_changing_foreign_file_filters(
         cwd=tmp_path,
         input="",
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )

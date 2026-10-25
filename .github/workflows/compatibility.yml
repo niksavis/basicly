@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: compatibility
+
+"on":
+  push:
+    branches: [main, "harness/**"]
+    paths-ignore: [".basicly/ledger/**"]
+  pull_request:
+    branches: [main]
+    paths-ignore: [".basicly/ledger/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  consumer:
+    name: Consumer hooks on ${{ matrix.os }} with Python ${{ matrix.python }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.14"]
+        include:
+          - os: ubuntu-latest
+            python: "3.15"
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+      - name: Prepare the test environment
+        shell: bash
+        run: |
+          uv sync --frozen --group dev
+          uv run python src/basicly/lefthook_artifacts.py --download
+          uv run basicly hooks-build
+      - name: Run focused regressions
+        shell: bash
+        run: >-
+          uv run pytest
+          tests/test_comments_ratchet.py tests/test_no_comments_hook.py
+          tests/test_hook_compatibility.py tests/test_hook_python_request.py
+          tests/test_relative_check_commands.py
+          tests/test_git_hooks/test_hook_subprocess_encoding.py
+          tests/test_git_hooks/test_staged_snapshot_link.py
+          tests/test_lefthook_config.py tests/test_lefthook_migration.py
+          tests/test_verify_progress.py
+          -q
+      - name: Build and exercise the wheel as a consumer
+        shell: bash
+        run: |
+          uv build --wheel
+          uv run python .scripts/compatibility_smoke.py dist/basicly-*-py3-none-any.whl \
+            --baseline-wheel https://github.com/niksavis/basicly/releases/download/v0.27.0/basicly-0.27.0-py3-none-any.whl

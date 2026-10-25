@@ -60,7 +60,7 @@ flag `init` says the block is available and where to read it.
 
 | Kit | Files vendored | Skill roots | Host or repository configuration |
 | --- | --- | --- | --- |
-| `comments` | 10 | `.claude/skills/comments`, `.agents/skills/comments` | none |
+| `comments` | 12 | `.claude/skills/comments`, `.agents/skills/comments` | none |
 | `tracker` | 24 | `.claude/skills/tracker`, `.agents/skills/tracker` | `.gitattributes` gains `events-*.jsonl` and `pending-*.jsonl`, each `-text merge=union`; `.gitignore` gains the snapshot, checkpoint and vendored-cache paths; an optional read-only `post-merge` reminder reports pending shards |
 | `tier` | 7 | `.claude/skills/tier`, `.agents/skills/tier` | a `PreToolUse`/`Agent` hook in `.claude/settings.json`, pointing at the vendored hook |
 
@@ -229,3 +229,23 @@ not know.
 ([architecture D-09](../architecture/architecture.md#d-09--a-provider-model-id-never-appears-in-an-agent-file)),
 because a pinned id is not portable across agent families and a projected `model:` line would
 disable injection rather than implement it.
+
+## Transition with no-comment-ratchet
+
+The default `no-comments` policy refuses all prose in each selected code file. A repository
+can select a transition policy in `basicly.toml`:
+
+```toml
+[hooks.comments]
+policy = "no-comment-ratchet"
+```
+
+Unchanged legacy comments can remain. New, rewritten or duplicated prose is refused.
+The hook compares full parsed spans in HEAD and the staged index. It checks multiline
+edits, deletion-created docstrings, renames and initial commits. A scanner or Git failure
+refuses the commit. Working files remain unchanged.
+
+The standalone command is `basicly-comments ratchet [paths...]`. It requires Git and uses
+the same pure comparison module as the managed hook. The existing vendored `check`, `fix`
+and `languages` commands remain independent of Git. Remove the transition setting when
+strict enforcement can apply to the whole repository.

@@ -24,3 +24,19 @@ their comments are the only place a why can live.
 
 Full reference, including the three proofs every strip must pass:
 [`kit/README.md`](../../.basicly/core/kit/comments/README.md).
+
+## Transition existing repositories
+
+Strict refusal remains the default and goal. `basicly-comments ratchet` compares HEAD
+with staged code and permits only unchanged legacy prose. It refuses added, changed or
+duplicated comments and docstrings. It also refuses unreadable input. This optional
+Git-backed command needs Git; the pure kit still starts no subprocess.
+
+Repositories that use basicly can select the same transition policy explicitly:
+
+```toml
+[hooks.comments]
+policy = "no-comment-ratchet"
+```
+
+Remove this setting when the repository has no prose comments.

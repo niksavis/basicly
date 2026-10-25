@@ -1,31 +1,16 @@
 from __future__ import annotations
 
-import importlib.util
 import os
-import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from functools import cache
 from pathlib import Path
 from typing import Any
 
-from .catalog import bundled_catalog_root
+from .hook_runtime import load as _module
 
 _STATE: ContextVar[Any] = ContextVar("affected_snapshot", default=None)
-
-
-@cache
-def _module(name: str) -> Any:
-    source = bundled_catalog_root() / "hooks" / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(f"basicly_affected_{name}", source)
-    if spec is None or spec.loader is None:
-        raise ValueError("affected verification runtime is missing; reinstall basicly")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 def parse_provider(section: object, names: list[str]) -> dict[str, Any] | None:

@@ -25,7 +25,7 @@ def test_generated_auto_fixes_publish_only_validated_index_bytes(
     assert os.environ["UV_CACHE_DIR"] == str(tmp_path / "uv-cache")
     repo = repository(tmp_path)
     source = bundled_catalog_root() / "hooks"
-    for name in ("pre-commit.py", "check_runner.py"):
+    for name in ("pre-commit.py", "check_runner.py", "command_paths.py"):
         shutil.copyfile(source / name, repo / ".basicly/core/hooks" / name)
     fixer = 'from pathlib import Path; Path("generated.txt").write_text("fresh")'
     check = 'from pathlib import Path; assert Path("generated.txt").read_text()=="fresh";'

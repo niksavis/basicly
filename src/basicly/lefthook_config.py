@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 from ruamel.yaml import YAML
 
-from . import lefthook_artifacts
+from . import hook_python, lefthook_artifacts
 from .legacy_hooks import foreign_git_hook
 from .projection import SyncResult, sync_file
 from .scaffolds import UVX_COMMAND
@@ -18,7 +18,7 @@ from .scaffolds import UVX_COMMAND
 CONFIG = "lefthook.yml"
 MANAGED_CONFIG = ".basicly/lefthook.yml"
 RUNTIME = "lefthook-runtime.py"
-INTERPRETER = "uv run --no-project --no-python-downloads python"
+INTERPRETER = hook_python.COMMAND
 
 
 @dataclass(frozen=True)
@@ -55,9 +55,10 @@ def managed_config(specs: list[HookSpec], hooks_relpath: str, secret_exclude: st
         data[name] = {
             "commands": {
                 "basicly-dispatch": {
-                    "run": f'{INTERPRETER} "{hooks_relpath}/{RUNTIME}" dispatch',
+                    "run": f'{hook_python.DISPATCH_COMMAND} "{hooks_relpath}/{RUNTIME}" dispatch',
                     "use_stdin": entries[0]["manager"] != "git",
                     "env": {
+                        **hook_python.ENVIRONMENT,
                         "BASICLY_HOOK_SPECS": json.dumps(entries),
                         **({"BASICLY_SECRET_EXCLUDE": secret_exclude} if secret_exclude else {}),
                         "BASICLY_FOLD_COMMAND": json.dumps([
@@ -149,7 +150,10 @@ def sync_config(
     path = repo_root / CONFIG
     current = path.read_text(encoding="utf-8") if path.exists() else ""
     rendered = root_config(current, secret_exclude)
-    sync_file(path, rendered.encode(), result)
+    if path.is_file() and rendered == current:
+        result.unchanged.append(path)
+    else:
+        sync_file(path, rendered.encode(), result)
     sync_file(repo_root / MANAGED_CONFIG, managed_config(specs, hooks_relpath).encode(), result)
     return result
 

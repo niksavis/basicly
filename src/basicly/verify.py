@@ -20,6 +20,7 @@ from . import (
     worktree,
 )
 from .config import VERIFY_GATE_PROVIDER, VerifyCheck, VerifyConfig, load_verify_config
+from .hook_runtime import load as _hook_runtime
 from .runner import sanitised_project_env
 from .verify_artifact import (
     CheckResult,
@@ -201,6 +202,7 @@ def _spawn(
     command: Sequence[str], repo_root: Path, *, capture: bool, controlled: str = ""
 ) -> subprocess.CompletedProcess[str]:
 
+    command = _hook_runtime("command_paths").resolve_command(command, repo_root)
     env = sanitised_project_env(affected.environment(repo_root), repo_root)
     if controlled == "pyright":
         env = pyright_inputs.execution_environment(repo_root, env)
@@ -208,7 +210,14 @@ def _spawn(
         env = pytest_inputs.execution_environment(env)
     if capture:
         return subprocess.run(  # noqa: S603 — repo-declared argv, list form, no shell
-            command, cwd=repo_root, env=env, check=False, capture_output=True, text=True
+            command,
+            cwd=repo_root,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="backslashreplace",
         )
     with subprocess.Popen(  # noqa: S603 — same argv, same trust boundary
         command,
@@ -217,6 +226,8 @@ def _spawn(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="backslashreplace",
         bufsize=1,
     ) as proc:
         kept: list[str] = []
