@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import checkout, pyright_inputs, pytest_inputs, verify
+from basicly import checkout, hook_python, pyright_inputs, pytest_inputs, verify
 
 
 @pytest.fixture
@@ -81,6 +81,7 @@ def test_only_the_reviewed_full_suite_command_is_eligible() -> None:
 def test_execution_and_proof_share_the_scrubbed_environment() -> None:
     environment = {"PATH": "tools", "GIT_DIR": "elsewhere", "SHLVL": "9", "CUSTOM": "kept"}
     assert pytest_inputs.execution_environment(environment) == {
+        **hook_python.ENVIRONMENT,
         "PATH": "tools",
         "CUSTOM": "kept",
         "NO_COLOR": "1",
@@ -172,7 +173,7 @@ def test_rotating_tool_transport_is_absent_from_the_actual_pytest_environment(na
     base = {"PATH": "tools", "NO_PROXY": "localhost", "CUSTOM": "kept"}
     before = {**base, name: "transport-before"}
     after = {**base, name: "transport-after"}
-    expected = {**base, "NO_COLOR": "1", "UV_OFFLINE": "1"}
+    expected = {**base, **hook_python.ENVIRONMENT, "NO_COLOR": "1", "UV_OFFLINE": "1"}
     assert pytest_inputs.execution_environment(before) == expected
     assert pytest_inputs.execution_environment(after) == expected
     assert before[name] == "transport-before"
@@ -190,3 +191,90 @@ def test_previous_command_is_fresh_and_cached_execution_forces_uv_offline() -> N
     previous = ("pytest", "-q", "-n", "4", "--durations=25", "-m", "not live_ledger")
     assert not pytest_inputs.supported_command(previous, "full")
     assert pytest_inputs.execution_environment({"UV_OFFLINE": "0"})["UV_OFFLINE"] == "1"
+
+
+def test_absent_hook_runtime_defaults_match_the_installed_hook_environment() -> None:
+    base = {"PATH": "tools", "CUSTOM": "kept"}
+    hook = {
+        **base,
+        "UV_PYTHON": ">=3.14",
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8",
+    }
+    assert pytest_inputs.execution_environment(base) == pytest_inputs.execution_environment(hook)
+
+
+@pytest.mark.parametrize(
+    "name, value",
+    [("UV_PYTHON", "3.15"), ("PYTHONUTF8", "0"), ("PYTHONIOENCODING", "ascii")],
+)
+def test_explicit_runtime_overrides_remain_material_inputs(name: str, value: str) -> None:
+    base = {"PATH": "tools"}
+    changed = {**base, name: value}
+    assert pytest_inputs.execution_environment(changed)[name] == value
+    assert pytest_inputs.execution_environment(base) != pytest_inputs.execution_environment(changed)
+
+
+@pytest.fixture
+def fingerprint_repository(repository: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    if os.name != "posix":
+        pytest.skip("the reviewed pytest launcher requires POSIX")
+    runtime = repository / ".runtime"
+    runtime.mkdir()
+    (repository / ".gitignore").write_text(".runtime/\n")
+    interpreter = runtime / "python"
+    interpreter.write_bytes(b"interpreter-before")
+    launcher = runtime / "pytest"
+    launcher.write_text(f"#!{interpreter}\n")
+    for name in ("purelib", "stdlib"):
+        (runtime / name).mkdir()
+        (runtime / name / "module.py").write_text("value = 1\n")
+    original_which = pytest_inputs.shutil.which
+    monkeypatch.setattr(pytest_inputs.sys, "executable", str(interpreter))
+    monkeypatch.setattr(pytest_inputs.sysconfig, "get_path", lambda name: str(runtime / name))
+    monkeypatch.setattr(
+        pytest_inputs.shutil,
+        "which",
+        lambda name, **kwargs: (
+            str(launcher) if name == "pytest" else original_which(name, **kwargs)
+        ),
+    )
+    return repository
+
+
+def test_hook_defaults_preserve_real_fingerprint(
+    fingerprint_repository: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in hook_python.ENVIRONMENT:
+        monkeypatch.delenv(name, raising=False)
+    before = pytest_inputs.fingerprint(fingerprint_repository)
+    for name, value in hook_python.ENVIRONMENT.items():
+        monkeypatch.setenv(name, value)
+    assert pytest_inputs.fingerprint(fingerprint_repository) == before
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "source.py",
+        "basicly.toml",
+        ".runtime/python",
+        ".runtime/purelib/module.py",
+        ".runtime/stdlib/module.py",
+    ],
+)
+def test_material_file_changes_invalidate_real_fingerprint(
+    fingerprint_repository: Path, name: str
+) -> None:
+    before = pytest_inputs.fingerprint(fingerprint_repository)
+    (fingerprint_repository / name).write_bytes(b"changed")
+    assert pytest_inputs.fingerprint(fingerprint_repository) != before
+
+
+@pytest.mark.parametrize("name", ["UV_PYTHON", "PYTHONUTF8", "PYTHONIOENCODING", "CUSTOM"])
+def test_material_environment_changes_invalidate_real_fingerprint(
+    fingerprint_repository: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    before = pytest_inputs.fingerprint(fingerprint_repository)
+    monkeypatch.setenv(name, "different")
+    assert pytest_inputs.fingerprint(fingerprint_repository) != before

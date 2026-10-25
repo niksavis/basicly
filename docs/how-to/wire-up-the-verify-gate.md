@@ -297,6 +297,10 @@ removing them from the actual test environment prevents false cache misses.
 `NO_PROXY`, certificate settings, Python options and other material environment
 inputs remain part of the proof. Remove `reuse = "pytest"` for a suite that
 needs inherited proxy settings: ordinary checks keep their inherited environment.
+The reviewed suite applies the hook runtime defaults when their variables are absent.
+These defaults are `UV_PYTHON=>=3.14`, `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8`.
+Fingerprinting and execution use the same defaults, so equivalent CLI and hook runs can share evidence.
+Explicit values remain unchanged and affect the proof.
 Unsupported commands and modes also retain their ordinary environment. The
 previous command selecting only `not live_ledger` now runs fresh; update it to
 the two-marker expression above after classifying external-runtime tests.

@@ -1,0 +1,1 @@
+- Apply absent hook runtime defaults to the reviewed pytest environment so equivalent CLI and Git-hook checks reuse evidence. Explicit environment overrides and changed interpreter or dependency inputs still invalidate reuse.
