@@ -1,0 +1,73 @@
+{
+  "record": "basicly-alcj6vu",
+  "parent": "basicly-h79lott.5",
+  "date": "2026-10-25",
+  "outcome": "Trusted equivalence was not established. Preserve fresh execution and all existing safeguards.",
+  "historical_observation": {
+    "source": ".basicly/usage/reuse-slice/landing-verified.log",
+    "ordinary_pytest_executions": 2,
+    "ordinary_pytest_reuses": 0,
+    "ordinary_pytest_wall_s": [150.57, 151.49],
+    "fresh_pytest_executions": 2,
+    "fresh_pytest_wall_s": [31.62, 36.25],
+    "whole_command_timing_source": ".basicly/usage/reuse-slice/landing.time",
+    "whole_command_wall_s": 531.62,
+    "whole_command_user_cpu_s": 1043.87,
+    "whole_command_system_cpu_s": 235.02,
+    "limit": "Historical per-run fingerprint payloads were not retained. Current reproduction does not reconstruct those payloads."
+  },
+  "current_reproduction": {
+    "source": ".basicly/usage/landing-reuse/inputs.json",
+    "command": ["uv", "run", "python", ".basicly/usage/landing-reuse/probe.py"],
+    "source_commit": "2bec92ff",
+    "stage": "Immediately after loop provisioning, before local artifact preparation or the report edit.",
+    "workspace_inventory": "git ls-files --cached --others --exclude-standard, excluding the ledger, plus build/lefthook and node_modules when present",
+    "base_workspace_entries": 1406,
+    "lane_workspace_entries": 1405,
+    "workspace_differences": ["build/lefthook"],
+    "environment_differences": ["VIRTUAL_ENV"],
+    "git_configuration_difference": "The shared configuration origin is relative in the base checkout and absolute in the linked checkout. The fingerprint preserves this spelling.",
+    "same_inputs": ["launcher bytes", "Git tags", "all other enumerated workspace entries", "all other controlled environment variables"],
+    "base_proof": "valid fingerprint",
+    "lane_under_base_engine_proof": "pytest inputs unavailable: external pytest import path",
+    "lane_under_base_engine_child_import": "base/src/basicly/__init__.py",
+    "lane_under_lane_engine_proof": "valid different fingerprint",
+    "lane_under_lane_engine_child_import": "lane/src/basicly/__init__.py",
+    "probe_wall_s": [5.234540727997228, 2.289052341999195, 5.064812734002771],
+    "probe_self_cpu_s": [4.019509, 2.2629730000000006, 4.079315],
+    "probe_order": ["base", "lane under base engine", "lane under lane engine"]
+  },
+  "mechanism": [
+    "merge._verify_for_landing calls the verifier in the base engine process with the lane as the repository root.",
+    "The base runtime editable .pth points to base/src. The lane proof refuses that external import path.",
+    "A successful suite with an unavailable proof cannot produce a trusted pytest receipt.",
+    "loop._record_verify already passes the landing report into the base verifier.",
+    "The base verifier must execute when neither the receipt nor its local cache proves matching inputs.",
+    "The work_repo fixture copies build/lefthook when present. Its presence is an actual test input."
+  ],
+  "artifact_control": {
+    "observed_failure": "The commit hook refused projection-hooks because the new lane lacked pinned Lefthook archives.",
+    "repair": "Prepared the lane archives with lefthook_artifacts.py --from-dir using the existing local verified version directory.",
+    "limit": "This removes one preparation difference. It does not establish runtime or environment equivalence."
+  },
+  "counterexample": {
+    "command": ["uv", "run", "python", ".basicly/usage/landing-reuse/import-control.py"],
+    "source": ".basicly/usage/landing-reuse/import-control.json",
+    "own_workspace_import_accepted": true,
+    "external_import_refused": true,
+    "lane_workspace_unchanged": true,
+    "child_results_after_external_source_change": ["1", "222"],
+    "conclusion": "Ignoring the external import refusal can reuse evidence after a material source change."
+  },
+  "existing_regressions": {
+    "command": ["uv", "run", "pytest", "tests/test_pytest_inputs.py", "tests/test_verify_pytest.py", "tests/test_verify_receipt.py", "-q"],
+    "passed": 77,
+    "wall_s": 3.47
+  },
+  "decision": {
+    "implementation": "No verifier or cache change is justified by this evidence.",
+    "next_boundary": "Establish an explicit execution and dependency contract across checkouts before extending receipt eligibility.",
+    "excluded_claims": ["redundant historical execution", "cross-checkout equivalence", "wall-time improvement", "CPU improvement", "billed-token saving"],
+    "parent_state": "Leave the parent open. Do not reopen completed children or cut a release."
+  }
+}
