@@ -4,7 +4,7 @@ token_cost:
   listing: 42
 name: test-discipline
 invocation: model
-description: "Writes isolated, order-independent tests that assert what the caller sees, not private helpers. Use for tests with shared fixtures, leaked state or run order."
+description: "Writes isolated, order-independent tests that assert what the caller sees, not private helpers. Use for tests with shared fixtures, leaked state, run order or platform differences."
 instructions: |
   # Test Discipline
 

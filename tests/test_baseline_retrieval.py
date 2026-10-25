@@ -8,26 +8,41 @@ from pathlib import Path
 import pytest
 from jinja2 import Environment, FileSystemLoader
 
+from basicly import __version__
+from basicly.loader import load_fragments, load_targets
+from basicly.planner import plan_outputs
+from basicly.renderers import claude, codex, copilot
 from basicly.schema import Fragment
 
 ROOT = Path(__file__).parent.parent
 TARGETS = ("AGENTS.md", ".claude/CLAUDE.md", ".github/copilot-instructions.md")
+CUSTOMER_LINES = 50
+CORE = ROOT / ".basicly/core"
+RENDERERS = {"claude": claude, "codex": codex, "copilot": copilot}
 ROUTES = {
     "External Review": ("third-party project", "falsify-first"),
     "Model Tier Routing": ("specialist dispatch", "tier-injection"),
-    "Platform-Hermetic Tests": ("platform-dependent tests", "test-discipline"),
     "Rendered Surfaces": ("rendered page", "validate-as-consumer"),
 }
 
 
 @pytest.mark.parametrize("target", TARGETS)
-def test_commands_precede_explicit_constraint_groups(target: str) -> None:
+def test_constraint_groups_precede_commands_and_the_workflow(target: str) -> None:
     text = (ROOT / target).read_text()
-    assert re.findall(r"(?m)^## (.+)$", text) == ["Commands", "Always do", "Ask first", "Never do"]
+    assert re.findall(r"(?m)^## (.+)$", text) == ["Never do", "Ask first", "Commands", "Always do"]
+    workflow = [
+        "Knowledge Priming",
+        "Decision Protocol",
+        "Core Rules",
+        "Quality Gate",
+        "Git Discipline",
+        "Session Completion",
+    ]
+    positions = [text.index(f"### {title}\n") for title in workflow]
+    assert positions == sorted(positions)
     assert text.index("### Require Explicit Confirmation") > text.index("## Ask first")
     assert text.index("### Secure Coding") > text.index("## Never do")
     assert text.count("never defeat a gate") == 1
-    assert "feat(dispatch): bound task context and prioritize integration (basicly-42pn387)" in text
 
 
 @pytest.mark.parametrize("target", TARGETS)
@@ -44,13 +59,18 @@ def test_specialist_triggers_reach_real_skills_without_host_scope_discovery(targ
 
 
 @pytest.mark.parametrize("target", TARGETS)
-def test_observed_counts_keep_risk_based_and_absence_controls(target: str) -> None:
+def test_absence_controls_stay_always_on_and_risk_controls_route_to_falsify_first(
+    target: str,
+) -> None:
     text = (ROOT / target).read_text()
-    assert "routine observed count" in text
-    assert "high-risk quantitative claims" in text
-    assert "two paths sharing no calculation step" in text
     assert "known-match positive control through the same search" in text
     assert "must also increase the examined-item count" in text
+    facts = text.split("### External Facts\n", 1)[1].split("\n### ", 1)[0]
+    assert "high-risk number" in facts and ".agents/skills/falsify-first/SKILL.md" in facts
+    skill = (ROOT / ".agents/skills/falsify-first/SKILL.md").read_text()
+    assert "two paths that share no calculation step" in skill
+    assert "name the list that the code reads" in skill
+    assert "account for every original file" in skill
 
 
 def test_prior_instruction_inventory_has_a_destination_for_every_unit() -> None:
@@ -103,3 +123,17 @@ def test_decision_grader_rejects_missing_answers_and_wrong_actions() -> None:
         module.grade(cases, "{}")
     with pytest.raises(ValueError):
         module.grade(cases, "not json")
+
+
+def test_the_shipped_core_leaves_a_consumer_fifty_lines_of_the_vendor_cap() -> None:
+    targets = load_targets(CORE / "targets")
+    fragments = load_fragments(CORE / "fragments", {target.name for target in targets})
+    lines = {
+        item.output_name: len(
+            RENDERERS[item.target_name].render(item, CORE / "templates", __version__).splitlines()
+        )
+        for item in plan_outputs(fragments, targets, ROOT)
+        if item.output_name in {"claude_wrapper", "agents_baseline", "copilot_baseline"}
+    }
+    assert len(lines) == 3
+    assert all(count <= 200 - CUSTOMER_LINES for count in lines.values()), lines

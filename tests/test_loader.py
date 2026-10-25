@@ -50,6 +50,23 @@ def test_unknown_category(tmp_path: Path) -> None:
         load_fragments(tmp_path, {"claude"})
 
 
+def test_an_unknown_phase_is_refused_with_the_allowed_phases(tmp_path: Path) -> None:
+    _wf(
+        tmp_path / "bad.fragment.yaml",
+        "id: bad\ndescription: x\ncategory: design\napplies_to: [all]\nphase: deploy",
+    )
+    with pytest.raises(ValidationError, match="start, plan, build, verify, ship, finish"):
+        load_fragments(tmp_path, {"claude"})
+
+
+def test_a_phase_is_parsed(tmp_path: Path) -> None:
+    _wf(
+        tmp_path / "ok.fragment.yaml",
+        "id: ok\ndescription: x\ncategory: design\napplies_to: [all]\nphase: verify",
+    )
+    assert [f.phase for f in load_fragments(tmp_path, {"claude"})] == ["verify"]
+
+
 def test_quirks_category_loads(tmp_path: Path) -> None:
     _wf(
         tmp_path / "quirks.fragment.yaml",

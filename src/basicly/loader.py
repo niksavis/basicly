@@ -8,6 +8,7 @@ import yaml
 from .schema import (
     CATEGORIES,
     DEFAULT_SCOPE,
+    PHASE_ORDER,
     PRIORITY_MAP,
     SOURCE_SCHEMA_VERSION,
     STATUSES,
@@ -139,6 +140,7 @@ def _load_fragment(path: Path, root: Path, source_hint: str | None = None) -> Fr
         category=front.get("category", ""),
         applies_to=front.get("applies_to", []),
         priority=front.get("priority", "medium"),
+        phase=front.get("phase"),
         scope_paths=scope_paths,
         tags=front.get("tags", []),
         technologies=front.get("technologies") or [],
@@ -202,6 +204,13 @@ def _validate_fragment(
 
     if fragment.priority not in PRIORITY_MAP:
         raise ValidationError(f"unknown priority '{fragment.priority}'", path)
+
+    if fragment.phase is not None and fragment.phase not in PHASE_ORDER:
+        raise ValidationError(
+            f"unknown phase '{fragment.phase}' (allowed: {', '.join(PHASE_ORDER)}); "
+            "omit phase to place the fragment before the workflow phases",
+            path,
+        )
 
     if fragment.status not in STATUSES:
         raise ValidationError(f"unknown status '{fragment.status}'", path)

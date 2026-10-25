@@ -15,7 +15,7 @@ def test_baselines_authorize_the_task_and_preserve_real_protections(path: str) -
     text = (ROOT / path).read_text(encoding="utf-8")
     section = re.split(r"\n#{2,3} ", text.split("### Harness Loop\n", 1)[1], maxsplit=1)[0]
     assert "user task request authorizes its scope" in section
-    assert "Do not request an L-level grant or mandatory token budget" in section
+    assert "Do not request a grant or a mandatory token budget" in section
     assert "verification gates and destructive-action protections" in section
     assert "Honor limits the user explicitly sets" in section
     assert "never defeat a gate" in text

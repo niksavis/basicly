@@ -1,0 +1,1 @@
+- **Always-on files:** Never do and Ask first now come first, then Commands, then Always do in workflow order. A new optional fragment `phase` (start, plan, build, verify, ship, finish) sets that order. The shipped core is shorter, and a test keeps it at or under 150 lines so a repository keeps 50 lines for its own rules (basicly-tgenbu5).

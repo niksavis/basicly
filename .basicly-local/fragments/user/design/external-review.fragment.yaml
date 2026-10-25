@@ -8,6 +8,7 @@ id: external-review
 description: Check the code and the licence before a research document recommends a third-party project.
 category: design
 priority: high
+phase: plan
 applies_to: [all]
 tags:
 - research

@@ -137,5 +137,11 @@ def _applies_to_matches(fragment_applies_to: list[str], filter_values: list[str]
 def _sort_fragments(fragments: list[Fragment]) -> list[Fragment]:
     return sorted(
         fragments,
-        key=lambda f: (f.is_scoped, CATEGORY_ORDER.index(f.category), -f.priority_value, f.id),
+        key=lambda f: (
+            f.is_scoped,
+            f.phase_rank,
+            CATEGORY_ORDER.index(f.category),
+            -f.priority_value,
+            f.id,
+        ),
     )
