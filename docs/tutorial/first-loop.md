@@ -4,7 +4,7 @@ This is a walkthrough, not a reference. Follow it top to bottom on a **scratch
 git repo** and you will end with one unit of work filed, built in its own
 worktree, merged, and closed by the harness — one sitting, no agent spend.
 Every command and quoted output below was checked against a fresh repo using
-basicly 0.27.0 from a locally built release wheel in a non-interactive shell. Bead ids, commit hashes and paths are normalized
+basicly 0.28.0 from a locally built release wheel in a non-interactive shell. Bead ids, commit hashes and paths are normalized
 for readability. `...` marks omitted output.
 
 When you want to look something up rather than learn the shape, stop here and
@@ -34,7 +34,7 @@ Every command below is written as bare `basicly`. Run it as the pinned form so
 you always get the version you chose:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.27.0/basicly-0.27.0-py3-none-any.whl basicly <args>
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.28.0/basicly-0.28.0-py3-none-any.whl basicly <args>
 ```
 
 `uvx` is one of three ways to reach the same verb, not the command itself:
@@ -92,7 +92,7 @@ if the repository owner chooses an explicit opt-out.
 From the repo root:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.27.0/basicly-0.27.0-py3-none-any.whl basicly install
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.28.0/basicly-0.28.0-py3-none-any.whl basicly install
 ```
 
 It ends with:

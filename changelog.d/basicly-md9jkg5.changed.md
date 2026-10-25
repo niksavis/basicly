@@ -1,1 +1,0 @@
-- Document permanent latest-release commands for attended and unattended installation, retain explicit version pins, and record the tested v0.28.0 release journey.

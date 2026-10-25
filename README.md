@@ -95,12 +95,12 @@ Invoke-WebRequest https://niksavis.github.io/basicly/install.ps1 -OutFile $insta
 & $installer
 ```
 
-Append `--ref v0.27.0` (POSIX) or `-Ref v0.27.0` (PowerShell) to select a release.
+Append `--ref v0.28.0` (POSIX) or `-Ref v0.28.0` (PowerShell) to select a release.
 
 The versioned wheel remains available for reproducible installs with `uv` already installed:
 
 ```sh
-uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.27.0/basicly-0.27.0-py3-none-any.whl basicly install
+uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.28.0/basicly-0.28.0-py3-none-any.whl basicly install
 ```
 
 `uv run basicly install` works inside a basicly source checkout. A bare `basicly install`
@@ -110,7 +110,7 @@ it does not put the executable on `PATH`.
 For offline installation, transfer the
 [release wheel](https://github.com/niksavis/basicly/releases) and pre-provision
 its Python dependencies, then run
-`uvx --offline --from ./basicly-0.27.0-py3-none-any.whl basicly install`.
+`uvx --offline --from ./basicly-0.28.0-py3-none-any.whl basicly install`.
 Lefthook's pinned platform binaries ship inside the package; install extracts
 only this checkout's executable and MIT license into ignored `.basicly/bin/`.
 
@@ -130,7 +130,7 @@ One command removes everything basicly manages; your overlay and
 `basicly.toml` survive:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.27.0/basicly-0.27.0-py3-none-any.whl basicly uninstall
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.28.0/basicly-0.28.0-py3-none-any.whl basicly uninstall
 ```
 
 Add `--purge` to also remove the user overlay, `basicly.toml`, and the
@@ -189,7 +189,7 @@ Each one installs with a single line. Copy the one you want:
 
 ```sh
 # an append-only work tracker, installed once per machine
-uv tool install 'git+https://github.com/niksavis/basicly@v0.27.0#subdirectory=packages/basicly-tracker'
+uv tool install 'git+https://github.com/niksavis/basicly@v0.28.0#subdirectory=packages/basicly-tracker'
 basicly-tracker init
 
 # a gate that refuses a prose comment in a code file
@@ -315,8 +315,8 @@ tasks wrap the same pinned commands. To inspect or re-sync by hand, run these
 from the consumer repo root with the same pin used to install:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.27.0/basicly-0.27.0-py3-none-any.whl basicly check   # exit non-zero when generated files drifted
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.27.0/basicly-0.27.0-py3-none-any.whl basicly build   # regenerate agent instruction files
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.28.0/basicly-0.28.0-py3-none-any.whl basicly check   # exit non-zero when generated files drifted
+uvx --from https://github.com/niksavis/basicly/releases/download/v0.28.0/basicly-0.28.0-py3-none-any.whl basicly build   # regenerate agent instruction files
 ```
 
 ## Roadmap

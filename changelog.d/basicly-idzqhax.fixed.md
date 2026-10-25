@@ -1,1 +1,0 @@
-- Fix hook encoding, interpreter selection, paths and snapshots. Pin a reproducible Windows Lefthook quoting patch with native consumer checks. Credit PR #1 by @markustuma-netizen (basicly-idzqhax).

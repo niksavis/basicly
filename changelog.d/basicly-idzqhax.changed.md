@@ -1,1 +1,0 @@
-- Install or upgrade through permanent shell and PowerShell URLs that select the latest released wheel and Python 3.14 or later. Retain pinned and offline wheel commands; propagate failures and keep project prerequisites explicit.

@@ -1,1 +1,0 @@
-- Add the explicit no-comment-ratchet transition policy while keeping strict no-comments as the default and goal (basicly-idzqhax).
