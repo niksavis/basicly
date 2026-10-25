@@ -24,10 +24,22 @@ All commands run through [uv](https://docs.astral.sh/uv/) in a checkout; the
 is needed:
 
 ```sh
-uv sync --group dev        # one-time: create the dev environment
+uv sync --group dev        # create or sync the dev environment
 uv run python src/basicly/lefthook_artifacts.py --download
 uv run basicly hooks-build # activate the git gates
 ```
+
+Repeat `uv sync --group dev` after source updates. The project cache key includes
+`src/basicly/__init__.py`, so a version change also refreshes installed metadata.
+
+Use the same `uv --version` and Python interpreter when comparing base and lane environments.
+`uv sync` preserves an existing environment's bootstrap files. For example, uv 0.13 stops
+installing the distutils startup patch on Python 3.10 and later. It leaves older environments unchanged.
+See the [uv release notes](https://github.com/astral-sh/uv/releases/tag/0.13.0).
+To align an older environment, stop its processes, move `.venv` to an unused backup path,
+then repeat setup with the same uv and Python versions as the lane. Keep the backup until validation passes.
+Do not copy a virtual environment between checkouts. Editable paths and launchers refer to its original location.
+Matching setup does not prove that verification inputs match. Receipts still require the full runtime fingerprint.
 
 Artifact preparation verifies the committed Lefthook version and SHA-256
 manifest. To use previously supplied archives without network access, replace

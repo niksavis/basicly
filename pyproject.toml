@@ -620,6 +620,7 @@ path = "hatch_build.py"
 
 [tool.uv]
 package = true
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/basicly/__init__.py" }, { dir = "src" }]
 
 # The spend-accuracy ratchet (basicly-helmej). `decompose.spend_accuracy` holds every lane's
 # recorded spend forecast against its actual; a pair outside the 10x band is a finding about

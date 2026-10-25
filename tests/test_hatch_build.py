@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import runpy
 import subprocess
 import tarfile
 import zipfile
@@ -11,6 +12,40 @@ from pathlib import Path
 import pytest
 
 pytestmark = pytest.mark.fresh_runtime
+
+
+def test_source_version_change_refreshes_editable_metadata(work_repo: Path) -> None:
+    version_file = work_repo / "src/basicly/__init__.py"
+    project = work_repo / "pyproject.toml"
+    original_project = project.read_bytes()
+    original_source = version_file.read_text(encoding="utf-8")
+    source_stat = version_file.stat()
+    initial_version = runpy.run_path(str(version_file))["__version__"]
+    program = (
+        "import basicly,importlib.metadata,json;"
+        "print(json.dumps([basicly.__version__,importlib.metadata.version('basicly')]))"
+    )
+    for index, version in enumerate((initial_version, "99.0.0"), start=1):
+        version_file.write_text(original_source.replace(initial_version, version), encoding="utf-8")
+        os.utime(version_file, (source_stat.st_atime, source_stat.st_mtime + index * 10))
+        sync = subprocess.run(
+            ["uv", "sync", "--offline", "--no-dev"],
+            cwd=work_repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert sync.returncode == 0, sync.stdout + sync.stderr
+        observed = subprocess.run(
+            ["uv", "run", "--no-sync", "python", "-c", program],
+            cwd=work_repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert observed.returncode == 0, observed.stdout + observed.stderr
+        assert json.loads(observed.stdout) == [version, version]
+        assert project.read_bytes() == original_project
 
 
 @pytest.mark.parametrize("dirty", [False, True])
