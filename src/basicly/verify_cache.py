@@ -30,6 +30,7 @@ def _identity(root: Path) -> str:
                 "verify_receipt.py",
                 "pyright_inputs.py",
                 "pytest_inputs.py",
+                "hook_python.py",
             )
         },
     }

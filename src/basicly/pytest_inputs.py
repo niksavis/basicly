@@ -9,7 +9,7 @@ import sys
 import sysconfig
 from pathlib import Path
 
-from . import checkout, pyright_inputs
+from . import checkout, hook_python, pyright_inputs
 from .runner import sanitised_project_env
 
 _COMMAND = (
@@ -113,6 +113,8 @@ def execution_environment(environment: dict[str, str]) -> dict[str, str]:
         )
     cleaned["UV_OFFLINE"] = "1"
     cleaned["NO_COLOR"] = "1"
+    for name, value in hook_python.ENVIRONMENT.items():
+        cleaned.setdefault(name, value)
     return cleaned
 
 
