@@ -207,7 +207,7 @@ def _spawn(
     if controlled == "pyright":
         env = pyright_inputs.execution_environment(repo_root, env)
     elif controlled == "pytest":
-        env = pytest_inputs.execution_environment(env)
+        command, env = pytest_inputs.execution(repo_root, command, env)
     if capture:
         return subprocess.run(  # noqa: S603 — repo-declared argv, list form, no shell
             command,
