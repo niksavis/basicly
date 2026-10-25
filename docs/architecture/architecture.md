@@ -1127,9 +1127,10 @@ staged Git objects, including renames. New, changed and duplicated prose is refu
 Scanner and Git failures refuse the operation. The transition policy changes no ledger
 history or merge rules.
 
-**Windows executes the same configured jobs.** The runtime reads Lefthook's resolved
-configuration and writes a temporary JSON view with command quotes escaped for the pinned
-Windows shell boundary. Consumer configuration stays unchanged. Snapshot normalization
+**Windows executes the same configured jobs.** Its bundled Lefthook has a pinned,
+Windows-only source patch that passes shell arguments through Go's argument encoder.
+It preserves literals and filenames expanded by Lefthook without rewriting consumer
+configuration. Official Linux and macOS binaries remain unchanged. Snapshot normalization
 refreshes CRLF index metadata only when the staged tree hash remains identical. Directory
 junctions share dependencies when native symlinks are unavailable. A failed link refuses
 the snapshot instead of copying a large environment or losing shared usage writes.

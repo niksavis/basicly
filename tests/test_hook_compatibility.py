@@ -97,7 +97,13 @@ def test_native_jobs_preserve_quoted_literals_and_original_configuration(tmp_pat
         "$value",
         ">=3.14",
     ]
+    filenames = ["two words.py", "apostrophe's.py", "Ő.py"]
+    for filename in filenames:
+        (repo / filename).write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", *filenames], cwd=repo, check=True)
     command = shlex.join([Path(sys.executable).as_posix(), script.as_posix(), *arguments])
+    command += " {all_files}"
+    arguments += sorted(filenames)
     config = repo / "lefthook.yml"
     config.write_text(
         "post-merge:\n  commands:\n    consumer:\n      run: " + json.dumps(command) + "\n",
@@ -114,6 +120,8 @@ def test_native_jobs_preserve_quoted_literals_and_original_configuration(tmp_pat
     result = subprocess.run(
         ["git", "hook", "run", "post-merge"], cwd=repo, capture_output=True, check=False
     )
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 0, (result.stdout + result.stderr).decode(
+        "utf-8", "backslashreplace"
+    )
     assert json.loads((repo / "arguments.json").read_text()) == arguments
     assert config.read_bytes() == before

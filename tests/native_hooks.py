@@ -16,7 +16,7 @@ def repository(path: Path) -> Path:
         subprocess.run(["git", "config", key, value], cwd=path, check=True)
     destination = path / ".basicly/core/hooks"
     destination.mkdir(parents=True)
-    for name in ("lefthook-runtime.py", "staged-snapshot.py", "windows_runner.py"):
+    for name in ("lefthook-runtime.py", "staged-snapshot.py"):
         shutil.copyfile(bundled_catalog_root() / "hooks" / name, destination / name)
     lefthook_binary.sync_binary(path)
     return path

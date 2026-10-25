@@ -1,1 +1,1 @@
-- Fix portable hook encoding, supported interpreter selection, Windows snapshot sharing and quoting, and executable paths; add native consumer checks, building on PR #1 by @markustuma-netizen (basicly-idzqhax).
+- Fix hook encoding, interpreter selection, paths and snapshots. Pin a reproducible Windows Lefthook quoting patch with native consumer checks. Credit PR #1 by @markustuma-netizen (basicly-idzqhax).

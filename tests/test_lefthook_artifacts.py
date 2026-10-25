@@ -75,3 +75,49 @@ def test_download_refuses_non_https_artifact_urls(tmp_path: Path) -> None:
     artifacts.MANIFEST["assets"][0]["url"] = "file:///private/artifact"
     with pytest.raises(ValueError, match="must use HTTPS"):
         artifacts.prepare(tmp_path / "checkout", None)
+
+
+def test_bundled_windows_artifact_is_verified_and_never_downloaded(
+    tmp_path: Path, supplied: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    metadata = tmp_path / "metadata"
+    metadata.mkdir()
+    (metadata / "patched.gz").write_bytes(b"binary")
+    entry = artifacts.MANIFEST["assets"][0]
+    entry["bundled"] = "patched.gz"
+    entry.pop("url")
+    monkeypatch.setattr(artifacts, "METADATA", metadata)
+    seen = []
+
+    def download(url: str, *, timeout: int):
+        seen.append(url)
+        assert timeout == 60
+        return io.BytesIO((supplied / url.rsplit("/", 1)[1]).read_bytes())
+
+    monkeypatch.setattr(artifacts.urllib.request, "urlopen", download)
+    destination = artifacts.prepare(tmp_path / "checkout", None)
+    assert (destination / "binary.gz").read_bytes() == b"binary"
+    assert seen == [artifacts.MANIFEST["assets"][1]["url"]]
+    (metadata / "patched.gz").write_bytes(b"corrupt")
+    with pytest.raises(ValueError, match=r"checksum mismatch: binary\.gz"):
+        artifacts.prepare(tmp_path / "checkout", None)
+    assert (destination / "binary.gz").read_bytes() == b"binary"
+
+
+def test_packaged_windows_fallback_refuses_corruption(
+    tmp_path: Path, supplied: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts.MANIFEST["assets"][0]["bundled"] = "patched.gz"
+    metadata = tmp_path / "metadata"
+    metadata.mkdir()
+    (metadata / "patched.gz").write_bytes(b"binary")
+    monkeypatch.setattr(artifacts, "METADATA", metadata)
+    assert artifacts.verified_bytes(tmp_path, "binary.gz") == b"binary"
+    (metadata / "patched.gz").write_bytes(b"corrupt")
+    with pytest.raises(ValueError, match=r"checksum mismatch: binary\.gz"):
+        artifacts.verified_bytes(tmp_path, "binary.gz")
+    destination = artifacts.prepare(tmp_path / "checkout", supplied)
+    assert (destination / "binary.gz").read_bytes() == b"binary"
+    (supplied / "binary.gz").write_bytes(b"corrupt")
+    with pytest.raises(ValueError, match=r"checksum mismatch: binary\.gz"):
+        artifacts.prepare(tmp_path / "checkout", supplied)

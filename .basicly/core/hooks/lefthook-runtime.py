@@ -149,14 +149,6 @@ def runtime_module(name: str):
     return module
 
 
-def windows_environment(
-    binary: Path, root: Path, directory: Path, env: dict[str, str]
-) -> dict[str, str]:
-    if os.name != "nt":
-        return env
-    return runtime_module("windows_runner").configuration(binary, root, directory, env)
-
-
 def launch(manager: str, stage: str, arguments: list[str]) -> int:
     root = project_root()
     suffix = ".exe" if os.name == "nt" else ""
@@ -185,7 +177,6 @@ def launch(manager: str, stage: str, arguments: list[str]) -> int:
             snapshot_state = (module, state)
             run_root = state.tree
             env.update(state.env)
-        env = windows_environment(binary, run_root, Path(directory), env)
         result_path = Path(directory) / "result.json"
         env["BASICLY_HOOK_RESULT"] = str(result_path)
         command = [str(binary), "run", name, "--no-auto-install", "--no-tty"]

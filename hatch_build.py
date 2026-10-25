@@ -36,6 +36,8 @@ def get_build_hook() -> type:
                 else f"basicly/lefthook_assets/{artifacts['VERSION']}"
             )
             for entry in artifacts["MANIFEST"]["assets"]:
+                if "bundled" in entry:
+                    continue
                 name = entry["name"]
                 build_data["force_include"][str(directory / name)] = f"{destination}/{name}"
 
