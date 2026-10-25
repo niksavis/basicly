@@ -506,6 +506,11 @@ def dependency_edge(dep: object) -> tuple[str, str] | None:
     return dep_id, dep_type if isinstance(dep_type, str) else ""
 
 
+def read_snapshot(repo_root: Path, issue_id: str) -> dict | None:
+    queries = owned_store.packaged_kit("queries")
+    return queries.read_record(owned_store.present_ledger(repo_root), issue_id)
+
+
 def read_record(repo_root: Path, issue_id: str) -> dict | None:
 
     return owned_record(repo_root, issue_id)

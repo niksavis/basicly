@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
+
+import pytest
 
 from basicly import dispatch_brief, handoff, needs_input, review, roles, skill_coverage, tracker
 from basicly.config import WORK_TYPES, SizingConfig
@@ -280,3 +283,56 @@ def test_reviews_do_not_claim_that_failed_validation_is_green() -> None:
 def test_issue_curation_does_not_authorize_release_publication() -> None:
     prompt = dispatch_brief.curate_prompt("i")
     assert "does not tag, publish or push a release" in prompt
+
+
+def test_large_history_keeps_the_envelope_bounded_and_delivers_early_corrections(
+    tmp_path: Path,
+) -> None:
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(repo, "basicly-task", title="bounded task", requirements="界" * 6000)
+    tracker.add_comment(repo, "basicly-task", "Active correction: preserve whitespace.")
+    for index in range(1000):
+        tracker.add_comment(repo, "basicly-task", f"Historical note {index}: " + "x" * 30)
+    current = dispatch_brief.task_view(repo, "basicly-task", view="current")
+    full = dispatch_brief.task_view(repo, "basicly-task", view="full")
+    history = dispatch_brief.task_view(repo, "basicly-task", view="history")
+    assert len(json.dumps(current, ensure_ascii=False, indent=2).encode("utf-8")) <= 16384
+    assert current["snapshot_identity"] == full["snapshot_identity"] == history["snapshot_identity"]
+    assert current["required_hydration"]
+    prompt = dispatch_brief.task_prompt(repo, "basicly-task")
+    assert "Mandatory full contract delivery" in prompt
+    assert "Active correction: preserve whitespace." in prompt
+    assert "Historical note 999:" in prompt
+    assert "界" * 6000 in prompt
+    assert len(history["comments"]) == 1001
+
+
+def test_small_contract_is_inline_and_stale_snapshot_is_refused(tmp_path: Path) -> None:
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(repo, "basicly-task", title="small task")
+    current = dispatch_brief.task_view(repo, "basicly-task", view="current")
+    assert current["required_hydration"] == []
+    assert current["contract"]["title"] == "small task"
+    assert "Mandatory full contract delivery" not in dispatch_brief.task_prompt(
+        repo, "basicly-task"
+    )
+    tracker.add_comment(repo, "basicly-task", "New correction")
+    with pytest.raises(ValueError, match="snapshot changed"):
+        dispatch_brief.task_view(
+            repo, "basicly-task", view="full", snapshot=current["snapshot_identity"]
+        )
+
+
+def test_brief_refuses_a_record_changed_during_artifact_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(repo, "basicly-task", title="changing task")
+
+    def concurrent_note(_repo: Path, _kind: str) -> bool:
+        tracker.add_comment(repo, "basicly-task", "Concurrent correction")
+        return False
+
+    monkeypatch.setattr(handoff, "adopted", concurrent_note)
+    with pytest.raises(ValueError, match="snapshot changed while assembling"):
+        dispatch_brief.task_prompt(repo, "basicly-task")

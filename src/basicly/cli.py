@@ -2335,8 +2335,24 @@ def cmd_brief(args: argparse.Namespace) -> int:
     if tracker.read_record(repo_root, args.issue_id) is None:
         ui.fail(f"No tracked issue {args.issue_id}")
         return 1
-    prompt = dispatch_brief.task_prompt(repo_root, args.issue_id)
-    ui.say(contention.with_scope_fence(repo_root, args.issue_id, prompt))
+    try:
+        if args.view == "dispatch":
+            prompt = dispatch_brief.task_prompt(repo_root, args.issue_id, snapshot=args.snapshot)
+            ui.say(contention.with_scope_fence(repo_root, args.issue_id, prompt))
+        else:
+            ui.say(
+                json.dumps(
+                    dispatch_brief.task_view(
+                        repo_root, args.issue_id, view=args.view, snapshot=args.snapshot
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+    except ValueError as error:
+        ui.fail(str(error))
+        return 1
     return 0
 
 
@@ -5492,6 +5508,20 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_brief_parser(subparsers: argparse._SubParsersAction) -> None:
+    brief_parser = subparsers.add_parser(
+        "brief", help="Print the dispatch brief the loop would send for one issue"
+    )
+    brief_parser.add_argument("issue_id", help="The tracked issue to brief")
+    brief_parser.add_argument(
+        "--view",
+        choices=("dispatch", "current", "full", "history"),
+        default="dispatch",
+        help="Complete dispatch, bounded current JSON, full contract JSON or notes JSON",
+    )
+    brief_parser.add_argument("--snapshot", help="Refuse a view from a different snapshot digest")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="basicly",
@@ -5521,10 +5551,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     _add_session_parser(subparsers)
 
-    brief_parser = subparsers.add_parser(
-        "brief", help="Print the dispatch brief the loop would send for one issue"
-    )
-    brief_parser.add_argument("issue_id", help="The tracked issue to brief")
+    _add_brief_parser(subparsers)
 
     board_cli.add_parsers(subparsers)
     _add_tracker_parser(subparsers)
