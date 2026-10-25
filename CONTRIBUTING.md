@@ -36,7 +36,7 @@ Use the same `uv --version` and Python interpreter when comparing base and lane 
 `uv sync` preserves an existing environment's bootstrap files. For example, uv 0.13 stops
 installing the distutils startup patch on Python 3.10 and later. It leaves older environments unchanged.
 See the [uv release notes](https://github.com/astral-sh/uv/releases/tag/0.13.0).
-To align an older environment, stop its processes, move `.venv` to an unused backup path,
+To align an older environment, stop its processes, move `.venv` to an unused backup path outside the checkout,
 then repeat setup with the same uv and Python versions as the lane. Keep the backup until validation passes.
 Do not copy a virtual environment between checkouts. Editable paths and launchers refer to its original location.
 Matching setup does not prove that verification inputs match. Receipts still require the full runtime fingerprint.
