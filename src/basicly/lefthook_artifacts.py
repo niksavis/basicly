@@ -53,7 +53,13 @@ def prepare(root: Path, source: Path | None) -> Path:
         for entry in MANIFEST["assets"]:
             name = entry["name"]
             if source is None and "bundled" in entry:
-                shutil.copyfile(METADATA / entry["bundled"], staged / name)
+                bundled = METADATA / entry["bundled"]
+                data = (
+                    bundled.read_bytes()
+                    if bundled.is_file()
+                    else verified_bytes(artifact_directory(), name)
+                )
+                (staged / name).write_bytes(data)
             elif source is None:
                 url = entry["url"]
                 if not url.startswith("https://"):

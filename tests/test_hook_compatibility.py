@@ -77,7 +77,10 @@ def test_program_resolution_preserves_each_platform_path_form(
     assert module.resolve_command([program, "argument"], root) == [expected, "argument"]
 
 
-def test_native_jobs_preserve_quoted_literals_and_original_configuration(tmp_path: Path) -> None:
+@pytest.mark.parametrize("placeholder", ["{all_files}", "{staged_files}"])
+def test_native_jobs_preserve_quoted_literals_and_original_configuration(
+    tmp_path: Path, placeholder: str
+) -> None:
     repo = repository(tmp_path)
     script = repo / ".basicly/core/hooks/arguments.py"
     script.write_text(
@@ -102,7 +105,7 @@ def test_native_jobs_preserve_quoted_literals_and_original_configuration(tmp_pat
         (repo / filename).write_text("x = 1\n", encoding="utf-8")
     subprocess.run(["git", "add", "--", *filenames], cwd=repo, check=True)
     command = shlex.join([Path(sys.executable).as_posix(), script.as_posix(), *arguments])
-    command += " {all_files}"
+    command += " " + placeholder
     arguments += sorted(filenames)
     config = repo / "lefthook.yml"
     config.write_text(

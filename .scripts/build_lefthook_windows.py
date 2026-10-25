@@ -85,8 +85,8 @@ def build(source_dir: Path, output: Path, *, check: bool) -> None:
             data = gzip.compress(binary.read_bytes(), compresslevel=9, mtime=0)
             digest = hashlib.sha256(data).hexdigest()
             if check:
-                pinned = METADATA / entry["bundled"]
-                if digest != entry["sha256"] or data != pinned.read_bytes():
+                pinned = artifacts["verified_bytes"](source_dir, entry["name"])
+                if digest != entry["sha256"] or data != pinned:
                     raise ValueError(
                         f"Rebuilt Windows archive differs from the pin: {entry['name']}"
                     )

@@ -121,3 +121,25 @@ def test_packaged_windows_fallback_refuses_corruption(
     (supplied / "binary.gz").write_bytes(b"corrupt")
     with pytest.raises(ValueError, match=r"checksum mismatch: binary\.gz"):
         artifacts.prepare(tmp_path / "checkout", supplied)
+
+
+def test_download_reuses_verified_packaged_windows_archive_without_git_copy(
+    tmp_path: Path, supplied: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    metadata = tmp_path / "metadata"
+    metadata.mkdir()
+    artifacts.MANIFEST["assets"][0]["bundled"] = "patched.gz"
+    artifacts.MANIFEST["assets"][0].pop("url")
+    monkeypatch.setattr(artifacts, "METADATA", metadata)
+    monkeypatch.setattr(artifacts, "artifact_directory", lambda: supplied)
+    seen = []
+
+    def download(url: str, *, timeout: int):
+        seen.append(url)
+        assert timeout == 60
+        return io.BytesIO((supplied / url.rsplit("/", 1)[1]).read_bytes())
+
+    monkeypatch.setattr(artifacts.urllib.request, "urlopen", download)
+    destination = artifacts.prepare(tmp_path / "checkout", None)
+    assert (destination / "binary.gz").read_bytes() == b"binary"
+    assert seen == [artifacts.MANIFEST["assets"][1]["url"]]

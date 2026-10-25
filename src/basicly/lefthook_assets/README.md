@@ -11,6 +11,8 @@ configuration. The verbose version includes the patch revision.
 
 The patched Windows archives are vendored under `windows/`. The manifest records their
 SHA-256 hashes and retains the original upstream URLs and hashes for provenance.
+Distributions keep every archive under the existing `2.2.2/` layout and exclude duplicate
+Git copies. Rebuilding from a source distribution uses its prepared archives.
 Normal artifact preparation copies these files and verifies them. Wheel and source
 builds never download or compile implicitly. Consumers need neither Go nor a global
 Lefthook installation.
