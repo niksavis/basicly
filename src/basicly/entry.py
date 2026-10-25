@@ -17,7 +17,7 @@ def tolerate_narrow_consoles() -> None:
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
-            reconfigure(errors="replace")
+            reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def line_buffer_stdout() -> None:

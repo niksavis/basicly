@@ -36,4 +36,19 @@ KIT = installer.Kit(
 
 
 def main(argv=None) -> int:
-    return installer.run(KIT, argv)
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "ratchet":
+        for source, kit_root in (
+            (_HERE / "git_adapter.py", KIT.directory),
+            (
+                _HERE.parents[2] / ".basicly/core/hooks/comment_ratchet.py",
+                _HERE.parents[2] / ".basicly/core/kit/comments",
+            ),
+        ):
+            if source.is_file():
+                adapter = installer.load_kit_module(
+                    source.parent, source.name, "basicly_comments_git_adapter"
+                )
+                return adapter.main(args[1:], kit_root)
+        raise SystemExit("the comments ratchet adapter is missing from beside this package")
+    return installer.run(KIT, args)

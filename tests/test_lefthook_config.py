@@ -97,10 +97,11 @@ def test_foreign_commit_message_job_receives_original_git_arguments(
     message = work_repo / filename
     message.write_text("message")
     result = subprocess.run(
-        ["sh", str(work_repo / ".git/hooks/commit-msg"), str(message)],
+        ["git", "hook", "run", "commit-msg", "--", str(message)],
         cwd=work_repo,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr

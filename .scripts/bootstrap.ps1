@@ -1,6 +1,7 @@
 
 
 
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$Ref = "latest",
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$InstallArgs = @()
@@ -39,5 +40,7 @@ if ($Ref -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
 }
 $version = $Ref.Substring(1)
 $wheel = "$RepoUrl/releases/download/$Ref/basicly-$version-py3-none-any.whl"
-uv tool run --from $wheel basicly install @InstallArgs
-exit $LASTEXITCODE
+uv tool run --python '>=3.14' --from $wheel basicly install @InstallArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "bootstrap: basicly install failed with exit code $LASTEXITCODE"
+}

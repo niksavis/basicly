@@ -4,6 +4,7 @@ import json
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
+from . import hook_python
 from .projection import atomic_write_text
 
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ SUBAGENT_CACHE_TTL = "1h"
 SKILL_LISTING_BUDGET_KEY = "skillListingBudgetFraction"
 SKILL_LISTING_BUDGET = 0.02
 PROJECT_DIR_PLACEHOLDER = "${CLAUDE_PROJECT_DIR}"
-HOOK_INTERPRETER = "uv run --no-project --no-python-downloads python"
+HOOK_INTERPRETER = hook_python.COMMAND
 AGENT_HOOK_EVENTS = {
     "pretooluse": "PreToolUse",
     "posttooluse": "PostToolUse",

@@ -13,6 +13,7 @@ from . import (
     affected,
     checkout,
     dropin,
+    hook_runtime,
     owned_store,
     permissions,
     session,
@@ -390,7 +391,12 @@ CONFIG_SCHEMA: dict[str, Table] = {
         tables={"context_windows": _OPEN_TABLE},
         arrays={"agents": _RUNNER_AGENT_TABLE},
     ),
-    "hooks": Table(tables={"markdownlint": Table(keys=frozenset({"enabled"}))}),
+    "hooks": Table(
+        tables={
+            "markdownlint": Table(keys=frozenset({"enabled"})),
+            "comments": Table(keys=frozenset({"policy"})),
+        }
+    ),
     "tracker": Table(keys=frozenset({"mode", "prefix", "fold_on_merge"})),
     "privacy": Table(arrays={"denied": Table(keys=frozenset({"name", "token"}))}),
 }
@@ -507,6 +513,8 @@ def _validated_documents(repo_root: Path) -> dict[str, dict]:
             "if it comes from a newer version."
             + (f"\n{tree_schema.ORDERING_RULE}" if unreadable else "")
         )
+    if any("comments" in data.get("hooks", {}) for data in documents.values()):
+        hook_runtime.load("no-comments").comment_policy(repo_root)
     return documents
 
 

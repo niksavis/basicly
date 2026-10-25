@@ -54,4 +54,4 @@ printf '%s\n' "$REF" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
 version=${REF#v}
 wheel="$REPO_URL/releases/download/$REF/basicly-$version-py3-none-any.whl"
 printf 'bootstrap: installing basicly@%s\n' "$REF"
-exec uv tool run --from "$wheel" basicly install "$@"
+exec uv tool run --python '>=3.14' --from "$wheel" basicly install "$@"

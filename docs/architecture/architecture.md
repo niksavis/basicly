@@ -685,9 +685,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | size | cap | headroom | lines | line cap |
 | --- | --- | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 11800 characters | 12000 | 200 | 198 | 200 |
-| `AGENTS.md` (codex) | 12000 bytes | 24576 | 12576 | 198 | 320 |
-| `.github/copilot-instructions.md` (copilot) | 11892 characters | 12000 | 108 | 199 | 200 |
+| `.claude/CLAUDE.md` (claude) | 11810 characters | 12000 | 190 | 198 | 200 |
+| `AGENTS.md` (codex) | 12010 bytes | 24576 | 12566 | 198 | 320 |
+| `.github/copilot-instructions.md` (copilot) | 11902 characters | 12000 | 98 | 199 | 200 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -1119,6 +1119,20 @@ empty, the outer launcher selects only the managed job and requests execution
 without the empty-file skip. Completed jobs never run again, foreign job filters
 remain intact, and a missing completion record blocks the operation. Original
 Git arguments reach native consumer commands as well as the managed dispatcher.
+
+**Strict comment enforcement remains the default and goal.** An explicit
+`[hooks.comments] policy = "no-comment-ratchet"` permits unchanged legacy prose during
+adoption. The pure comments kit compares parsed spans. The host adapter reads HEAD and
+staged Git objects, including renames. New, changed and duplicated prose is refused.
+Scanner and Git failures refuse the operation. The transition policy changes no ledger
+history or merge rules.
+
+**Windows executes the same configured jobs.** The runtime reads Lefthook's resolved
+configuration and writes a temporary JSON view with command quotes escaped for the pinned
+Windows shell boundary. Consumer configuration stays unchanged. Snapshot normalization
+refreshes CRLF index metadata only when the staged tree hash remains identical. Directory
+junctions share dependencies when native symlinks are unavailable. A failed link refuses
+the snapshot instead of copying a large environment or losing shared usage writes.
 
 **Git validates the staged snapshot.** Pre-commit checks run in an isolated
 checkout of a copied index, with the installed runtime and untracked non-dotenv
@@ -3714,7 +3728,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 74 tiers hold 164 modules and group into 9 bands. Every band may import every band below
+The 75 tiers hold 166 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3730,7 +3744,7 @@ flowchart TB
   b6["6 · projection — 16<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
   b7["7 · records and telemetry — 17<br/>run_record · artifact_record · lens_review · spend_calibration"]
   b8["8 · tracker seam — 26<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]
-  b9["9 · leaf data and pure helpers — 37<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
+  b9["9 · leaf data and pure helpers — 39<br/>integrity · schema · redact · roles · read_cost · ui · stemmer"]
 
   b1 --> b2 --> b3 --> b4 --> b5 --> b6 --> b7 --> b8 --> b9
   b3 -.->|"declared exemption:<br/>policy imports decisions"| b3
@@ -3861,7 +3875,7 @@ can be skipped. The order is strictly linear.
 | 1 · tool-call boundary | before a tool runs | the only layer that can refuse an edit before it exists |
 | 2 · git hooks | at commit and at push | the deterministic floor, agent-independent |
 | 3 · the verify runner | at the loop's verify step | one command, recorded as a tracker gate |
-| 4 · continuous integration | on push and on a tag | the same checks on three platforms, plus a fresh-consumer smoke install at a tag |
+| 4 · continuous integration | on push and on a tag | the full checks on Linux, focused consumer checks on Windows and macOS, and a fresh-consumer smoke install at a tag |
 
 Layer 3 runs the same `full` mode as layer 2's **pre-push** stage, so a green loop step
 predicts a green build. Layer 2's **pre-commit** stage runs the narrower `fast` mode, so a
@@ -4146,7 +4160,8 @@ contract both hold.
 | Workflow | Trigger | What it runs |
 | --- | --- | --- |
 | projection drift | push and PR on the trunk | the projection staleness check |
-| quality gates | push and PR on the trunk, plus manual | first, every commit message in range replayed through both message hooks; then the full check set on three platforms, fail-fast off |
+| quality gates | push and PR on the trunk, plus manual | first, every commit message in range replayed through both message hooks; then the full check set on Linux |
+| compatibility | code pushes and PRs, plus manual | focused native hook regressions and wheel consumer commits on Linux, Windows and macOS |
 | release | a version tag | lint and both check sets, a **fresh-consumer smoke install** from the tag into an empty repository, then a version-tag match, changelog extraction, a build, and a published release |
 | pages | a push touching the site | build and deploy the landing page |
 | improvement loop | manual dispatch only | the improvement controller in dry-run mode |

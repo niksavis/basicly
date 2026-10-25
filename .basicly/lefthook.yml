@@ -3,10 +3,13 @@ min_version: 2.2.2
 post-merge:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: false
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "tracker-fold", "script": ".basicly/core/hooks/tracker-fold.py",
           "stage": "post-merge", "pass_filenames": false, "always_run": true, "files":
           "", "manager": "git", "technologies": [], "matcher": ""}]'
@@ -16,10 +19,13 @@ post-merge:
 basicly-claude-pretooluse:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "tier-injection", "script": ".basicly/core/hooks/../kit/tier/claude_tier_hook.py",
           "stage": "pretooluse", "pass_filenames": false, "always_run": false, "files":
           "", "manager": "claude", "technologies": [], "matcher": "Agent"}, {"id":
@@ -45,10 +51,13 @@ basicly-claude-pretooluse:
 basicly-codex-pretooluse:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "protect-generated-codex", "script": ".basicly/core/hooks/protect-generated.py",
           "stage": "pretooluse", "pass_filenames": false, "always_run": false, "files":
           "", "manager": "codex", "technologies": [], "matcher": "apply_patch"}]'
@@ -57,10 +66,13 @@ basicly-codex-pretooluse:
 basicly-codex-sessionstart:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "session-start-codex", "script": ".basicly/core/hooks/session-start.py",
           "stage": "sessionstart", "pass_filenames": false, "always_run": false, "files":
           "", "manager": "codex", "technologies": [], "matcher": "*"}]'
@@ -69,10 +81,13 @@ basicly-codex-sessionstart:
 pre-commit:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: false
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "markdownlint", "script": ".basicly/core/hooks/markdownlint.py",
           "stage": "pre-commit", "pass_filenames": false, "always_run": false, "files":
           "\\.md$", "manager": "git", "technologies": ["node"], "matcher": ""}, {"id":
@@ -108,10 +123,13 @@ pre-commit:
 commit-msg:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: false
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "commit-msg-script", "script": ".basicly/core/hooks/commit-msg.py",
           "stage": "commit-msg", "pass_filenames": true, "always_run": false, "files":
           "", "manager": "git", "technologies": [], "matcher": ""}, {"id": "tracker-commit-msg-script",
@@ -127,10 +145,13 @@ commit-msg:
 pre-push:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: false
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "pre-push-script", "script": ".basicly/core/hooks/pre-push.py",
           "stage": "pre-push", "pass_filenames": false, "always_run": true, "files":
           "", "manager": "git", "technologies": [], "matcher": ""}]'
@@ -140,10 +161,13 @@ pre-push:
 basicly-claude-posttooluse:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "tool-usage", "script": ".basicly/core/hooks/tool-usage.py",
           "stage": "posttooluse", "pass_filenames": false, "always_run": false, "files":
           "", "manager": "claude", "technologies": [], "matcher": "Bash|Skill"}]'
@@ -152,10 +176,13 @@ basicly-claude-posttooluse:
 basicly-copilot-posttooluse:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "tool-usage-copilot", "script": ".basicly/core/hooks/tool-usage.py",
           "stage": "posttooluse", "pass_filenames": false, "always_run": false, "files":
           "", "manager": "copilot", "technologies": [], "matcher": ""}]'
@@ -164,10 +191,13 @@ basicly-copilot-posttooluse:
 basicly-claude-sessionstart:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "session-start", "script": ".basicly/core/hooks/session-start.py",
           "stage": "sessionstart", "pass_filenames": false, "always_run": false, "files":
           "", "manager": "claude", "technologies": [], "matcher": "*"}]'
@@ -176,10 +206,13 @@ basicly-claude-sessionstart:
 basicly-copilot-sessionstart:
   commands:
     basicly-dispatch:
-      run: uv run --no-project --no-python-downloads python ".basicly/core/hooks/lefthook-runtime.py"
+      run: uv run --no-project --no-python-downloads python -X utf8 ".basicly/core/hooks/lefthook-runtime.py"
         dispatch
       use_stdin: true
       env:
+        UV_PYTHON: '>=3.14'
+        PYTHONUTF8: '1'
+        PYTHONIOENCODING: utf-8
         BASICLY_HOOK_SPECS: '[{"id": "session-start-copilot", "script": ".basicly/core/hooks/session-start.py",
           "stage": "sessionstart", "pass_filenames": false, "always_run": false, "files":
           "", "manager": "copilot", "technologies": [], "matcher": ""}]'

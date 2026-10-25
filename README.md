@@ -64,34 +64,47 @@ inputs in your repository-owned `.markdownlint-cli2` configuration. A style-only
 See [markdown gate prerequisites](docs/how-to/upgrade-and-check-drift.md#markdown-gate-prerequisites)
 for an explicit scratch setup and the opt-out.
 
-Into any git repo, with [uv](https://docs.astral.sh/uv/) already on the machine:
+From inside a git repository, install the latest release on Linux, WSL or macOS:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.27.0/basicly-0.27.0-py3-none-any.whl basicly install
-```
-
-`uvx` is one of three ways to reach the same verb, not the command itself:
-`uv run basicly install` works inside a checkout of basicly itself, and a bare
-`basicly install` works once the executable is on `PATH` (put it there with
-`uv tool install`). Install syncs the catalog into your repo; it never puts
-`basicly` on `PATH`.
-
-No `uv` or Python yet? The bootstrap shim installs `uv` first, then runs the
-same command:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.sh | sh
+curl -fsSL https://niksavis.github.io/basicly/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/niksavis/basicly/main/.scripts/bootstrap.ps1 | iex"
+irm https://niksavis.github.io/basicly/install.ps1 | iex
 ```
 
-Use a versioned release wheel for reproducible installs. The bootstrap shim
-defaults to the latest release; append `-s -- --ref v0.27.0` (POSIX), or
-download the script and pass `-Ref v0.27.0` (PowerShell), to pin it.
+These permanent URLs serve scripts from the latest published release. They install `uv`
+when needed and select Python 3.14 or later. They resolve a versioned release wheel before
+running `basicly install`. They do not install unreleased code from `main`.
+Re-run the same command to upgrade. The scripts do not prompt or add project dependencies.
+Install failures return a nonzero exit status.
+
+Agents that need explicit download-failure handling, arguments or a pinned version can
+save the script first:
+
+```sh
+installer=$(mktemp) && curl -fsSL https://niksavis.github.io/basicly/install.sh -o "$installer" && sh "$installer" --ref v0.27.0
+```
+
+```powershell
+$installer = Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString()) + '.ps1')
+Invoke-WebRequest https://niksavis.github.io/basicly/install.ps1 -OutFile $installer -ErrorAction Stop
+& $installer -Ref v0.27.0
+```
+
+The versioned wheel remains available for reproducible installs with `uv` already installed:
+
+```sh
+uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.27.0/basicly-0.27.0-py3-none-any.whl basicly install
+```
+
+`uv run basicly install` works inside a basicly source checkout. A bare `basicly install`
+works after `uv tool install` puts it on `PATH`. Install syncs the catalog into your repo;
+it does not put the executable on `PATH`.
+
 For offline installation, transfer the
 [release wheel](https://github.com/niksavis/basicly/releases) and pre-provision
 its Python dependencies, then run
@@ -105,7 +118,7 @@ Package builds and `basicly install` never download Lefthook implicitly.
 
 ### Upgrade
 
-Re-run the install command with the new pin — install is idempotent and
+Re-run the latest-release install command — install is idempotent and
 converges the repo to the selected version. There is no separate `update`
 command.
 
@@ -152,6 +165,10 @@ scaffolded VS Code tasks/CI workflow (only when still unedited).
 Customize via YAML fragments in `.basicly-local/fragments/user/` — install
 never touches them. Scope the catalog to your stack with
 `--technologies` (for example `--technologies python,zsh`).
+
+A repository with existing comments can opt into `no-comment-ratchet`. It permits unchanged
+legacy prose and refuses new, rewritten or duplicated prose. Strict `no-comments` remains
+the default and goal. See [the transition policy](docs/reference/kits.md#transition-with-no-comment-ratchet).
 
 ## Take one piece without the harness
 

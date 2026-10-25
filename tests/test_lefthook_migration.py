@@ -10,6 +10,7 @@ import pytest
 
 from basicly import hooks, lefthook_binary, lefthook_config
 from basicly.catalog import bundled_catalog_root
+from tests.native_hooks import invoke, repository
 
 
 @pytest.fixture(autouse=True)
@@ -17,31 +18,6 @@ def isolated_uv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "uv-cache"))
     monkeypatch.setenv("UV_PYTHON", sys.executable)
     monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
-
-
-def repository(path: Path) -> Path:
-    subprocess.run(["git", "init", "-q", str(path)], check=True)
-    for key, value in (("user.name", "Test"), ("user.email", "test@example.invalid")):
-        subprocess.run(["git", "config", key, value], cwd=path, check=True)
-    destination = path / ".basicly/core/hooks"
-    destination.mkdir(parents=True)
-    for name in ("lefthook-runtime.py", "staged-snapshot.py"):
-        shutil.copyfile(bundled_catalog_root() / "hooks" / name, destination / name)
-    lefthook_binary.sync_binary(path)
-    return path
-
-
-def invoke(
-    repo: Path, manager: str, stage: str, payload: dict | None = None
-) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, str(repo / ".basicly/core/hooks/lefthook-runtime.py"), manager, stage],
-        cwd=repo,
-        input=json.dumps(payload or {}),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
 
 
 def test_native_runner_changes_exit_two_and_frames_stdout(tmp_path: Path) -> None:
@@ -55,6 +31,7 @@ def test_native_runner_changes_exit_two_and_frames_stdout(tmp_path: Path) -> Non
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     assert result.returncode == 1
@@ -165,7 +142,12 @@ def test_staged_snapshot_validates_index_and_preserves_unstaged_bytes(tmp_path: 
     assert result.returncode == 0, result.stdout + result.stderr
     assert target.read_text() == "unstaged"
     staged = subprocess.run(
-        ["git", "show", ":file.txt"], cwd=repo, text=True, capture_output=True, check=True
+        ["git", "show", ":file.txt"],
+        cwd=repo,
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=True,
     )
     assert staged.stdout == "staged"
 
@@ -177,6 +159,7 @@ def test_unchanged_dotenv_index_entry_does_not_block_other_staged_files(tmp_path
         cwd=repo,
         input="synthetic fixture\n",
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=True,
     ).stdout.strip()
@@ -210,7 +193,14 @@ def test_foreign_git_hook_executes_after_reinstallation(tmp_path: Path) -> None:
     )
     (repo / ".basicly/core/hooks/allow.py").write_text("raise SystemExit(0)\n")
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
-    result = subprocess.run([str(original)], cwd=repo, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        ["git", "hook", "run", "pre-commit"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     assert (repo / "foreign-output").read_text() == "ran"
 
@@ -290,7 +280,12 @@ def test_invalid_staged_bytes_are_refused_even_when_working_bytes_pass(tmp_path:
     assert result.returncode != 0
     assert target.read_text() == "valid"
     staged = subprocess.run(
-        ["git", "show", ":file.txt"], cwd=repo, text=True, capture_output=True, check=True
+        ["git", "show", ":file.txt"],
+        cwd=repo,
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=True,
     )
     assert staged.stdout == "invalid"
 
@@ -315,7 +310,12 @@ def test_staged_fixes_preserve_a_partially_staged_working_file(tmp_path: Path) -
     assert result.returncode == 0, result.stdout + result.stderr
     assert target.read_text() == "working-only"
     staged = subprocess.run(
-        ["git", "show", ":file.txt"], cwd=repo, text=True, capture_output=True, check=True
+        ["git", "show", ":file.txt"],
+        cwd=repo,
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=True,
     )
     assert staged.stdout == "fixed"
 
@@ -337,7 +337,12 @@ def test_ordinary_git_commit_runs_lefthook_and_preserves_message_refusal(tmp_pat
     assert hooks.install_hooks(repo, hooks.hook_stages(specs))[0]
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     blocked = subprocess.run(
-        ["git", "commit", "-m", "wrong"], cwd=repo, text=True, capture_output=True, check=False
+        ["git", "commit", "-m", "wrong"],
+        cwd=repo,
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
     )
     assert blocked.returncode != 0
     assert "lefthook" in blocked.stdout + blocked.stderr
@@ -345,6 +350,7 @@ def test_ordinary_git_commit_runs_lefthook_and_preserves_message_refusal(tmp_pat
         ["git", "commit", "-m", "chore: allowed"],
         cwd=repo,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )
@@ -374,6 +380,7 @@ def test_linked_worktree_uses_its_own_binary_and_respects_shared_hooks_path(tmp_
         ["git", "commit", "--allow-empty", "-m", "lane"],
         cwd=lane,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )

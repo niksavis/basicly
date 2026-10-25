@@ -121,3 +121,19 @@ def test_publication_requires_quality_gates_and_a_successful_default_smoke() -> 
     assert not jobs["verify"].get("continue-on-error")
     assert not jobs["smoke-install"].get("continue-on-error")
     assert "always()" not in jobs["release"].get("if", "")
+
+
+def test_permanent_installers_are_published_assets_and_pages_uses_releases() -> None:
+    release = yaml.safe_load(_RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    commands = "\n".join(step.get("run", "") for step in release["jobs"]["release"]["steps"])
+    assert "cp .scripts/bootstrap.sh dist/install.sh" in commands
+    assert "cp .scripts/bootstrap.ps1 dist/install.ps1" in commands
+    assert {"dist/install.sh", "dist/install.ps1"} <= set(_upload_files_glob().split())
+    pages = yaml.safe_load((_RELEASE_WORKFLOW.parent / "pages.yml").read_text(encoding="utf-8"))
+    assert pages["on"]["workflow_run"] == {"workflows": ["release"], "types": ["completed"]}
+    deploy = pages["jobs"]["deploy"]
+    assert "github.event.workflow_run.conclusion == 'success'" in deploy["if"]
+    commands = "\n".join(step.get("run", "") for step in deploy["steps"])
+    assert "gh release download" in commands
+    assert "--pattern 'install.*' --dir site" in commands
+    assert "bootstrap.sh" not in commands

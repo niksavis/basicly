@@ -101,6 +101,7 @@ def test_progress_arrives_before_child_exit_and_preserves_all_checks(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
     ) as process:
 
         def read() -> None:

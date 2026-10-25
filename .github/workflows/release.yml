@@ -141,6 +141,11 @@ jobs:
           uvx --from ./packages/basicly-tracker basicly-tracker bundle --out dist/tracker.pyz
           python3 dist/tracker.pyz --help >/dev/null
 
+      - name: Prepare stable installer assets from this release
+        run: |
+          cp .scripts/bootstrap.sh dist/install.sh
+          cp .scripts/bootstrap.ps1 dist/install.ps1
+
       - name: Create or update GitHub release
         uses: softprops/action-gh-release@v3
         with:
@@ -153,3 +158,5 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
             dist/tracker.pyz
+            dist/install.sh
+            dist/install.ps1
