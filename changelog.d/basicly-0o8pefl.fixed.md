@@ -1,0 +1,1 @@
+- Refresh installed basicly metadata when its source version changes during uv setup, and document how to align older environment bootstrap files without changing dependency versions.
