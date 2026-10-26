@@ -45,19 +45,25 @@ def test_a_recorded_seed_comes_back_for_every_later_dispatch_on_that_feature(
 
 
 def test_one_familys_seed_is_never_offered_to_another(tmp_path: Path) -> None:
-    runner.record_session_seed(tmp_path, "basicly-2kh170", "claude", "a-claude-session")
+    runner.record_session_seed(
+        tmp_path, "basicly-2kh170", "claude", "33333333-3333-4333-8333-333333333333"
+    )
 
     assert runner.session_seed(tmp_path, "basicly-2kh170", "copilot").exists is False
     assert runner.session_seed(tmp_path, "basicly-2kh170", "claude").exists is True
 
 
 def test_two_features_never_share_a_seed(tmp_path: Path) -> None:
-    runner.record_session_seed(tmp_path, "basicly-aaa", "claude", "session-a")
-    runner.record_session_seed(tmp_path, "basicly-bbb", "claude", "session-b")
+    runner.record_session_seed(
+        tmp_path, "basicly-aaa", "claude", "44444444-4444-4444-8444-444444444444"
+    )
+    runner.record_session_seed(
+        tmp_path, "basicly-bbb", "claude", "55555555-5555-4555-8555-555555555555"
+    )
 
     assert _seeds(tmp_path) == {
-        "basicly-aaa": {"claude": "session-a"},
-        "basicly-bbb": {"claude": "session-b"},
+        "basicly-aaa": {"claude": "44444444-4444-4444-8444-444444444444"},
+        "basicly-bbb": {"claude": "55555555-5555-4555-8555-555555555555"},
     }
 
 
@@ -70,48 +76,68 @@ def test_an_unreadable_store_mints_rather_than_raising(tmp_path: Path) -> None:
 
 
 def test_an_uncreated_seed_mints_the_session_under_the_id_the_harness_chose() -> None:
-    argv = format_command(CLAUDE, "go", seed=SessionSeed("s-1", exists=False))
+    argv = format_command(
+        CLAUDE, "go", seed=SessionSeed("11111111-1111-4111-8111-111111111111", exists=False)
+    )
 
-    assert argv[:3] == ["claude", "--session-id", "s-1"]
+    assert argv[:3] == ["claude", "--session-id", "11111111-1111-4111-8111-111111111111"]
     assert "--fork-session" not in argv
 
 
-def test_a_created_seed_is_forked_rather_than_re_entered() -> None:
-    argv = format_command(CLAUDE, "go", seed=SessionSeed("s-1", exists=True))
+def test_a_created_seed_continues_the_same_conversation() -> None:
+    argv = format_command(
+        CLAUDE, "go", seed=SessionSeed("11111111-1111-4111-8111-111111111111", exists=True)
+    )
 
-    assert argv[:4] == ["claude", "--resume", "s-1", "--fork-session"]
+    assert argv[:3] == ["claude", "--resume", "11111111-1111-4111-8111-111111111111"]
+    assert "--fork-session" not in argv
 
 
 def test_no_seed_leaves_the_argv_exactly_as_it_was_before_inheritance_existed() -> None:
     assert format_command(CLAUDE, "go") == format_command(CLAUDE, "go", seed=None)
 
 
-def test_a_family_that_cannot_fork_drops_the_seed_instead_of_emitting_a_flag() -> None:
+def test_codex_resumes_the_explicit_task_session() -> None:
     codex = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "codex")
 
-    argv = format_command(codex, "go", seed=SessionSeed("s-1", exists=True))
+    argv = format_command(
+        codex, "go", seed=SessionSeed("11111111-1111-4111-8111-111111111111", exists=True)
+    )
 
-    assert "--resume" not in argv
+    assert argv == ["codex", "exec", "resume", "11111111-1111-4111-8111-111111111111", "go"]
 
 
 def test_an_unknown_resume_style_raises_rather_than_dispatching_unseeded() -> None:
     spec = RunnerSpec("odd", HEADLESS, ("odd", PROMPT_PLACEHOLDER), resume_style="telepathy")
 
     with pytest.raises(ValueError, match="resume_style"):
-        format_command(spec, "go", seed=SessionSeed("s-1", exists=True))
+        format_command(
+            spec, "go", seed=SessionSeed("11111111-1111-4111-8111-111111111111", exists=True)
+        )
 
 
 def test_the_role_flag_still_reads_first_on_a_seeded_argv() -> None:
-    argv = format_command(CLAUDE, "go", role="implementer", seed=SessionSeed("s-1", exists=True))
+    argv = format_command(
+        CLAUDE,
+        "go",
+        role="implementer",
+        seed=SessionSeed("11111111-1111-4111-8111-111111111111", exists=True),
+    )
 
     assert argv[:2] == ["claude", "--agent"]
     assert argv.index("--resume") > argv.index("implementer")
 
 
 def test_the_seed_rides_back_on_the_result_so_a_caller_can_record_it() -> None:
-    result = runner.run(CLAUDE, "go", Path.cwd(), dry_run=True, seed=SessionSeed("s-1", False))
+    result = runner.run(
+        CLAUDE,
+        "go",
+        Path.cwd(),
+        dry_run=True,
+        seed=SessionSeed("11111111-1111-4111-8111-111111111111", False),
+    )
 
-    assert result.seed == SessionSeed("s-1", exists=False)
+    assert result.seed == SessionSeed("11111111-1111-4111-8111-111111111111", exists=False)
 
 
 def test_only_a_lost_seed_is_retried() -> None:
@@ -119,11 +145,16 @@ def test_only_a_lost_seed_is_retried() -> None:
     real = runner.RunResult(
         "claude", (), executed=True, returncode=1, stderr=f"{runner.LOST_SESSION_MARKER}: s-1"
     )
-    forked = SessionSeed("s-1", exists=True)
+    forked = SessionSeed("11111111-1111-4111-8111-111111111111", exists=True)
 
     assert runner._seed_was_lost(forked, real) is True
     assert runner._seed_was_lost(None, real) is False
-    assert runner._seed_was_lost(SessionSeed("s-1", exists=False), real) is False
+    assert (
+        runner._seed_was_lost(
+            SessionSeed("11111111-1111-4111-8111-111111111111", exists=False), real
+        )
+        is False
+    )
     assert runner._seed_was_lost(forked, lost) is False
     assert (
         runner._seed_was_lost(
@@ -171,17 +202,21 @@ def test_a_pruned_seed_costs_a_re_read_and_not_the_round(
         "stub", HEADLESS, ("stubcli", PROMPT_PLACEHOLDER), resume_style=RESUME_FORK_FLAGS
     )
 
-    result = runner.run(spec, "go", tmp_path, seed=SessionSeed("gone", exists=True))
+    result = runner.run(
+        spec, "go", tmp_path, seed=SessionSeed("22222222-2222-4222-8222-222222222222", exists=True)
+    )
 
     first, second = json.loads((bin_dir / "calls.json").read_text())
-    assert first[:3] == ["--resume", "gone", "--fork-session"]
+    assert first[:3] == ["--resume", "22222222-2222-4222-8222-222222222222", "--fork-session"]
     assert second[0] == "--session-id"
-    assert second[1] != "gone"
+    assert second[1] != "22222222-2222-4222-8222-222222222222"
     assert result.returncode == 0
     assert result.seed == SessionSeed(second[1], exists=False)
 
 
 def test_the_store_ignores_itself_on_creation(tmp_path: Path) -> None:
-    runner.record_session_seed(tmp_path, "basicly-2kh170", "claude", "s-1")
+    runner.record_session_seed(
+        tmp_path, "basicly-2kh170", "claude", "11111111-1111-4111-8111-111111111111"
+    )
 
     assert (tmp_path / runner.SESSION_SEEDS_FILE).parent.joinpath(".gitignore").read_text() == "*\n"

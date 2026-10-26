@@ -35,6 +35,7 @@ from . import (
     rubrics,
     run_record,
     runner,
+    task_context,
     tracker,
     validate_gate,
     verify,
@@ -649,6 +650,8 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
 
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
+    if not roles.phase_inherits_context(phase) and task_context.has_continuation(spec):
+        raise ValueError("independent phases require a fresh session; remove continuation flags")
     prompt = prompt if prompt is not None else dispatch_brief.task_prompt(ctx.repo_root, issue_id)
     sizing = sizing_at_dispatch(ctx.repo_root, issue_id)
     intended_role = role or roles.role_for_phase(phase)
@@ -658,8 +661,10 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
         else roles.resolve_named_role(ctx.repo_root, spec, role)
     )
     prompt = _with_role_skills(ctx, spec, intended_role, prompt, phase)
-    with runner.process_budget().slot(runner.LANE):
-        result = runner.run(
+    if roles.phase_inherits_context(phase):
+        result = task_context.run_task(
+            ctx.repo_root,
+            issue_id,
             spec,
             prompt,
             cwd,
@@ -667,6 +672,16 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
             timeout=config.runner_timeout,
             role=role,
         )
+    else:
+        with runner.process_budget().slot(runner.LANE):
+            result = runner.run(
+                spec,
+                prompt,
+                cwd,
+                capture_usage=True,
+                timeout=config.runner_timeout,
+                role=role,
+            )
     record_run(
         ctx.repo_root,
         issue_id,

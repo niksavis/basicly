@@ -4670,58 +4670,23 @@ def test_the_stall_flag_names_the_bound_a_quiet_lane_will_actually_reach(
 _CLAUDE = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "claude")
 
 
-def test_a_lane_build_dispatch_resumes_its_own_task_seed(tmp_path: Path) -> None:
-    runner.record_session_seed(tmp_path, "basicly-2kh170", "claude", "s-1")
-
-    seed = supervise._lane_seed(tmp_path, "basicly-2kh170", _CLAUDE)
-
-    assert seed == runner.SessionSeed("s-1", exists=True)
-
-
-def test_only_a_lane_that_returned_clean_records_its_new_seed(tmp_path: Path) -> None:
-    minted = runner.SessionSeed("s-new", exists=False)
-    failed = runner.RunResult("claude", (), executed=True, returncode=1)
-
-    supervise._keep_lane_seed(tmp_path, "basicly-2kh170", _CLAUDE, minted, failed)
-    assert runner.session_seed(tmp_path, "basicly-2kh170", "claude").exists is False
-
-    ok = runner.RunResult("claude", (), executed=True, returncode=0)
-    supervise._keep_lane_seed(tmp_path, "basicly-2kh170", _CLAUDE, minted, ok)
-    assert runner.session_seed(tmp_path, "basicly-2kh170", "claude") == runner.SessionSeed(
-        "s-new", exists=True
-    )
-
-
-def test_a_family_that_cannot_fork_is_never_handed_a_seed(tmp_path: Path) -> None:
-    codex = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "codex")
-
-    assert supervise._lane_seed(tmp_path, "basicly-2kh170", codex) is None
-
-
-def test_unrelated_lanes_never_fork_the_roots_or_each_others_conversation(
+def test_lane_context_is_bound_to_each_task_and_its_worktree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake, _seen = _worker_fixture(monkeypatch, tmp_path, stdout="")
     fake.issues["epic.2"] = {**fake.issues["epic.1"], "id": "epic.2"}
-    runner.record_session_seed(tmp_path, "epic", "claude", "unrelated-old-conversation")
-    selected: dict[str, runner.SessionSeed | None] = {}
-    original = supervise._lane_seed
+    selected = []
 
-    def capture(root: Path, issue: str, spec: runner.RunnerSpec) -> runner.SessionSeed | None:
-        selected[issue] = original(root, issue, spec)
-        return selected[issue]
+    def run_task(root, issue, spec, prompt, cwd, **kwargs):
+        selected.append((root, issue, cwd))
+        return runner.run(spec, prompt, cwd, **kwargs)
 
-    monkeypatch.setattr(supervise, "_lane_seed", capture)
+    monkeypatch.setattr(supervise.task_context, "run_task", run_task)
     for issue in ("epic.1", "epic.2"):
         supervise._dispatch_lane(tmp_path, _session(_lane(issue)), _lane(issue), _CLAUDE, _sizing())
-
-    assert set(selected) == {"epic.1", "epic.2"}
-    seeds = tuple(selected.values())
-    assert all(seed is not None and not seed.exists for seed in seeds)
-    assert len({seed.session_id for seed in seeds if seed is not None}) == 2
-    assert all(
-        seed.session_id != "unrelated-old-conversation" for seed in seeds if seed is not None
-    )
+    assert [issue for _, issue, _ in selected] == ["epic.1", "epic.2"]
+    assert all(root == tmp_path for root, _, _ in selected)
+    assert all(cwd == tmp_path / "wt" for _, _, cwd in selected)
 
 
 def _refused_tracker_sync(issue_id: str):
