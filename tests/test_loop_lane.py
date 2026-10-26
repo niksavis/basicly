@@ -108,7 +108,7 @@ def _session(name: str = "i") -> Session:
 
 
 def _advance(tmp_path: Path, **kw) -> loop.AdvanceResult:
-    return loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(**kw))
+    return loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker", **kw))
 
 
 def _pin_runner(monkeypatch: pytest.MonkeyPatch, default: str) -> None:
@@ -240,7 +240,7 @@ def test_lane_dispatches_the_next_subtask_fresh_and_fast_verifies_it(
         return runner.RunResult(spec.name, tuple(spec.command), executed=True, returncode=0)
 
     monkeypatch.setattr(runner, "run", _run)
-    result = loop.advance(tmp_path, "i", config=CONFIG)
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert "i.1" in dispatched["prompt"] and dispatched["cwd"] == Path("/tmp/i")
     assert calls["verify"] == ["fast"] and calls["gates"] == [("i.1", "fast")]
@@ -296,7 +296,7 @@ def test_lane_subtask_without_a_commit_reworks_the_subtask(
     monkeypatch.setattr(
         policy, "record_rework", lambda _r, issue, gate: reworked.append((issue, gate)) or 1
     )
-    result = loop.advance(tmp_path, "i", config=CONFIG)
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
     assert reworked == [("i.1", "verify")]
     assert result.blocked and "without committing anything referencing i.1" in result.detail
 

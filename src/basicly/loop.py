@@ -71,6 +71,11 @@ class Inputs:
     work_type: str | None = None
     children: tuple[ChildSpec, ...] | None = None
     verify_mode: str = "full"
+    execution: str = "session"
+
+    def __post_init__(self) -> None:
+        if self.execution not in ("session", "worker"):
+            raise ValueError("execution must be session or worker")
 
 
 @dataclass(frozen=True)
@@ -108,6 +113,10 @@ class _Ctx:
     inputs: Inputs
     grant_root: str | None = None
     repair_dispatch: bool = True
+
+    @property
+    def worker_dispatch(self) -> bool:
+        return self.repair_dispatch and self.inputs.execution == "worker"
 
 
 def _blocked(  # noqa: PLR0913 — one keyword per block shape, all mutually exclusive
@@ -167,6 +176,10 @@ def _declared_scope(ctx: _Ctx) -> tuple[str, ...]:
 def _on_intake(ctx: _Ctx) -> AdvanceResult:
 
     work_type, attributed = ctx.inputs.work_type, ""
+    if not work_type and ctx.inputs.execution == "session":
+        work_type = ctx.state.issue_type if ctx.state.issue_type in WORK_TYPES else None
+        if work_type is None:
+            return _blocked(ctx, "the task owner must choose --work-type", needs_input="work_type")
     if not work_type:
         proposal = _proposed_work_type(ctx)
         if proposal.work_type is None:
@@ -198,7 +211,12 @@ def _on_classify(ctx: _Ctx) -> AdvanceResult:
             f" — emit the required structure with `basicly policy scaffold"
             f" --type {ctx.state.issue_type}`{voices}",
         )
-    if ctx.state.issue_type in _LEAF_TYPES:
+    if ctx.state.issue_type in _LEAF_TYPES or (
+        ctx.inputs.execution == "session"
+        and ctx.state.issue_type == "feature"
+        and not ctx.state.has_children
+        and not ctx.inputs.children
+    ):
         return _start_build_leaf(ctx)
     held = _hold_for_this_session(ctx)
     if held is not None:
@@ -331,7 +349,7 @@ def _repair_from_validate(ctx: _Ctx, gate: str) -> AdvanceResult | None:
 
 def _dispatch_validation(ctx: _Ctx, gate: str) -> AdvanceResult | None:
 
-    if not ctx.repair_dispatch or validate_gate.has_foreign_result(ctx.state.gates):
+    if not ctx.worker_dispatch or validate_gate.has_foreign_result(ctx.state.gates):
         return None
     if (refused := validate_gate.requirements_refusal(ctx.repo_root, ctx.issue_id)) is not None:
         return _blocked(ctx, refused, needs_input="validation")
@@ -474,7 +492,7 @@ def _cleanup_then_close(ctx: _Ctx, binding: loop_state.WorktreeBinding | None) -
 
 def _dispatch_curation(ctx: _Ctx) -> str:
 
-    if not ctx.repair_dispatch or not handoff.adopted(ctx.repo_root, handoff.RELEASE_RECORD):
+    if not ctx.worker_dispatch or not handoff.adopted(ctx.repo_root, handoff.RELEASE_RECORD):
         return ""
     run = _run_agent(
         ctx,
@@ -565,7 +583,11 @@ def _dispatch_runner(ctx: _Ctx, name: str, cwd: Path) -> AdvanceResult:
         return refused
     dispatch = _run_agent(ctx, ctx.issue_id, cwd)
     if dispatch.result.handoff:
-        return _blocked(ctx, f"worktree {name!r} provisioned; awaiting the agent's work")
+        return _blocked(
+            ctx,
+            f"continue as task owner in {cwd}; worktree {name!r} is provisioned",
+            needs_input="implementation",
+        )
     held = _runner_block(ctx, dispatch, issue_id=ctx.issue_id, target=f"worktree {name!r}")
     if held is not None:
         return held
@@ -619,6 +641,11 @@ def _run_agent(  # noqa: PLR0913 — one keyword per independent fact about the 
     phase: str = "build",
     role: str | None = None,
 ) -> _Dispatch:
+
+    if ctx.inputs.execution == "session":
+        spec = runner.RunnerSpec("session", runner.HANDOFF)
+        result = runner.RunResult("session", (), executed=False, handoff=True)
+        return _Dispatch(spec=spec, result=result, cwd=cwd, timeout=0)
 
     config = load_runner_config(ctx.repo_root)
     spec = runner.select_runner(config.specs, config.default, capable=runner.is_capable)
@@ -758,6 +785,11 @@ def _proposal_payload(text: str) -> dict | None:
 
 def _run_proposer(ctx: _Ctx, kind: str, prompt: str, *, phase: str) -> tuple[str, str]:
 
+    if ctx.inputs.execution == "session":
+        return (
+            "",
+            f"the task owner must supply {kind}; automatic delegation requires --execution worker",
+        )
     config = load_runner_config(ctx.repo_root)
     selected = runner.select_runner(config.specs, config.decider or config.default)
     if selected.kind == runner.HANDOFF:
@@ -1099,10 +1131,22 @@ def _repair_in_place(ctx: _Ctx, binding: loop_state.WorktreeBinding) -> AdvanceR
     if session is None:
         return None
     cwd = Path(session.worktree_path)
-    brief = repair_brief.take_repair_brief(cwd)
+    brief = (
+        repair_brief.read_repair_brief(cwd)
+        if ctx.inputs.execution == "session"
+        else repair_brief.take_repair_brief(cwd)
+    )
     where = f"worktree {binding.name!r}"
     before = merge.branch_head(ctx.repo_root, session.branch)
     stale = repair_brief.stale_against(brief, before) if brief is not None else ""
+    if ctx.inputs.execution == "session":
+        if brief is None or stale:
+            return None
+        return _blocked(
+            ctx,
+            f"continue repair as task owner in {cwd}: {repair_brief.repair_prompt(brief)}",
+            needs_input="repair",
+        )
     if stale:
         _add_comment(ctx.repo_root, ctx.issue_id, f"{stale} ({where})")
     if brief is None or stale:
@@ -1490,7 +1534,7 @@ def _rework(  # noqa: PLR0913 — one parameter per recorded fact
 def _retrospective(ctx: _Ctx) -> str:
 
     root = ctx.grant_root
-    if root is None or not ctx.repair_dispatch:
+    if root is None or not ctx.worker_dispatch:
         return ""
     signal = retrospective.evaluate(retrospective.read_ledger(ctx.repo_root, root))
     if not signal.fires:

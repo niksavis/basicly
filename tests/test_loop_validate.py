@@ -89,7 +89,7 @@ def test_a_validator_verdict_records_a_gate_event_on_the_ledger(
     )
     assert gate_events(repo) == [], "the fixture ledger must start with no verdict"
 
-    result = loop.advance(repo, RECORD, config=CONFIG, inputs=loop.Inputs())
+    result = loop.advance(repo, RECORD, config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     recorded = gate_events(repo)
     assert len(recorded) == 1
@@ -104,7 +104,7 @@ def test_a_reply_with_no_verdict_blocks_on_a_queued_decision(
 
     _validator_says(monkeypatch, "I could not launch the CLI and I am not sure why")
 
-    result = loop.advance(repo, RECORD, config=CONFIG, inputs=loop.Inputs())
+    result = loop.advance(repo, RECORD, config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     queued = [item for item in decisions.items_by_id(repo, RECORD).values() if item.pending]
     assert len(queued) == 1
@@ -118,7 +118,9 @@ def test_a_reply_with_no_verdict_blocks_on_a_queued_decision(
 
 def test_an_undispatched_validator_records_no_gate_event(repo: Path) -> None:
 
-    result = loop.advance(repo, RECORD, config=CONFIG, inputs=loop.Inputs(), repair_dispatch=False)
+    result = loop.advance(
+        repo, RECORD, config=CONFIG, inputs=loop.Inputs(execution="worker"), repair_dispatch=False
+    )
 
     assert gate_events(repo) == []
     assert decisions.items_by_id(repo, RECORD) == {}
@@ -135,7 +137,7 @@ def test_the_engine_and_not_the_agent_is_the_provider_of_record(
 
     _validator_says(monkeypatch, "VALIDATION: PASS")
 
-    loop.advance(repo, RECORD, config=CONFIG, inputs=loop.Inputs())
+    loop.advance(repo, RECORD, config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert gate_events(repo)[0].payload["provider"] in policy.ENGINE_GATE_PROVIDERS
 
@@ -161,7 +163,7 @@ def test_a_record_with_no_requirements_is_refused_before_the_validator_runs(
 
     monkeypatch.setattr(runner, "run", never)
 
-    result = loop.advance(root, RECORD, config=CONFIG, inputs=loop.Inputs())
+    result = loop.advance(root, RECORD, config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert result.blocked and result.to_phase == "validate"
     assert "states no `requirements`" in result.detail
