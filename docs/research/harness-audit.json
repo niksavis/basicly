@@ -1928,9 +1928,11 @@
       "path": ".basicly/core/hooks/affected_checks.py",
       "sha256": "4c056883fd480acab5be76b1f917724dfcaadcba2c983b4097af8716829b8558",
       "bytes": 9215,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Existing snapshot-bound selective verification validates complete provider response, reasons, input identity and mutation; uncertainty retains broad checks and mutation refuses. Reuse this mechanism instead of a second affected-check framework. Provider diagnostics use shared fixed filenames; retain per-run evidence when concurrent verification matters.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".basicly/core/hooks/bare-var-guard.py",
@@ -1964,9 +1966,11 @@
       "path": ".basicly/core/hooks/check_runner.py",
       "sha256": "7f51c684d6178e2d611a2e0d36d22f9fb101542e1c6644ef821b401b81339db8",
       "bytes": 14902,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Keep standalone configured checks, fail-fast reporting, affected selection and broad fallback. Config documents are repeatedly parsed by individual loaders; check commands run sequentially. Consolidate validated configuration reads before considering safe parallel checks. Declared input globs are correctness contracts, not proof by themselves; inspect renamed old/new paths and fixer changes.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".basicly/core/hooks/command_paths.py",
@@ -2068,9 +2072,11 @@
       "path": ".basicly/core/hooks/kit-boundary.py",
       "sha256": "b5029021520d5c2cfcbcbac1f71d680b7d80538df1c92d6b48d435fd6a5b586d",
       "bytes": 8761,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve standalone-kit dependency direction with AST checks. Current scan is full-tree each invocation and import/string heuristics are incomplete capability enforcement. Cache/select only with complete affected inputs; consumer install tests remain necessary.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".basicly/core/hooks/lefthook-runtime.py",
@@ -2243,9 +2249,11 @@
       "path": ".basicly/core/hooks/staged-snapshot.py",
       "sha256": "d3beaafaae530b275ae1d2441fed8c87ce6e39abaf22d4c3b1bd9738d6729a84",
       "bytes": 6881,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve index isolation, safe publishing and concurrent index-change refusal. Snapshot setup copies tracked and untracked files and links prepared environments; measure setup cost separately. Untracked inputs correctly prevent complete index-only affected selection. Reuse trusted snapshots only with equivalent content/environment, never bypass snapshot protection.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".basicly/core/hooks/tool-usage.py",
@@ -3197,9 +3205,11 @@
       "path": ".scripts/check_always_on_size.py",
       "sha256": "6cb09b6bcf3df088e47c7dc320717abe6d3db223484bfbffb8a4d975f1d8579a",
       "bytes": 3931,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Keep bounded effective instructions and clear byte/character units. Cap rationale cites single-sample lexical retention measurements as a flat-zone boundary; that evidence cannot establish robust behavior thresholds. Refresh vendor constraints and use repeated task outcomes, not these historical percentages, to justify policy.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/check_code_citations.py",
@@ -3245,9 +3255,11 @@
       "path": ".scripts/check_except_form.py",
       "sha256": "c9fd26d14e762cd99ac15d7446ff555c4ca237ce46d2b98272c2dedf8840a6e6",
       "bytes": 4530,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Full-tree tokenizer enforces only house parentheses style for Python exceptions. Determine whether existing formatter/linter covers the chosen policy; this is a simplification candidate rather than a correctness gate justified by behavior. Do not bypass it while still required.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/check_ledger_fsck.py",
@@ -3300,9 +3312,11 @@
       "path": ".scripts/check_release_fragments.py",
       "sha256": "300eaa3373995a41b3b0e2539f5e0e349b1caf28153f420585a874e605e6fbc7",
       "bytes": 2474,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Useful bounded release-note format check. One git show per fragment and repeated baseline reads are modest batching opportunities; preserve consumer-visible note requirements and do not equate this format check with content completeness.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/check_release_notes.py",
@@ -3324,17 +3338,21 @@
       "path": ".scripts/check_spend_accuracy.py",
       "sha256": "79675c1e2c6c00c9d60de889dd91fcc4b2ef524b4bc2818d0651fed8d3990268",
       "bytes": 3790,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Checks estimator-versus-actual historical ratios against frozen exceptions. Preserve honest unknown/aborted distinctions but do not interpret this as task performance or a user budget. Assess whether repeated full ledger reads belong on every unrelated commit and retain correctness if scoping.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/check_test_naming.py",
       "sha256": "95cba31c9f69968d284dbc394d1e9ae0390540f885c8155f2c47a3b3c9db2000",
       "bytes": 3847,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Filename correspondence helps navigation but is not proof of test coverage and can force restructuring during module extraction. Evaluate value versus maintenance alongside behavior-based regression tests; preserve required checks until intentional policy redesign.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/check_tree_growth.py",
@@ -3348,9 +3366,11 @@
       "path": ".scripts/check_waivers.py",
       "sha256": "6ed249faff51c25a3629214b04e434834be8b25bb7aebef906d86c5ac72862da",
       "bytes": 2842,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Keeps debt waivers tied to live tracker records. Repeats full tracked-source and ledger scans already needed elsewhere; consolidate shared immutable inputs when useful without losing expiration checks.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/compatibility_smoke.py",
@@ -3412,9 +3432,11 @@
       "path": ".scripts/eval_baseline_decisions.py",
       "sha256": "79eec936b0f96e9a6f5c1dc8fc8e7a3a4a8ad0e9927581224d261c1ccf51dd7b",
       "bytes": 5059,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Existing isolated family-specific decision probes provide useful behavior cases and explicit errors. One trial per before/after family and multiple-choice answers do not prove real task behavior. Extend repeated trials, actual usage and artifact provenance rather than inventing a parallel evaluator; verify confinement and global instruction contamination.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/generate_model_map.py",
@@ -3459,9 +3481,11 @@
       "path": ".scripts/improvement_controller.py",
       "sha256": "4b6fd72747b43972732adfb49f830983a80a31610ac737e6322ab6b24041b565",
       "bytes": 7305,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Creates work from module-size excess with hardcoded L2 and 70000-token planning values. This conflicts with outcome-driven redesign and user-only budgets; splitting to hit a metric is not itself evidence of faster work. Check actual invocation and backlog use before retirement, preserving explicit tasks and existing history.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/kit_deployment.py",
@@ -3475,25 +3499,31 @@
       "path": ".scripts/ledger_bodies.py",
       "sha256": "31c709171e4ac932c71451562d5c0f3b1e941df9f5519ef08f5537ab98083e07",
       "bytes": 3339,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve created-body coverage for durable backlog. It checks existence of a created event, not semantic completeness, and reads the ledger again through kit differential. Reuse one validated folded snapshot where possible; do not remove history protection.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/measure_card_open.py",
       "sha256": "a92b101d92244c46842bbd22c9b66b30e1b048be286e086dff0a9a5a6bc33b99",
       "bytes": 3991,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Useful existing HTTP contention probe with five warmed trials and a one-second budget. It does not render the UI, test closed backlog visibility or establish cold-start/interaction latency. Reuse as a component of board baseline; bound startup waiting and preserve explicit child cleanup.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/measure_workflows.py",
       "sha256": "e0441dd119442538565d2caf8a5f9a2e68848627ef20148866bb221df3fef3ba",
       "bytes": 14999,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Reuse offline install/upgrade and manual change-lifecycle probes with wheel hashes and separated setup timing. Explicitly no model latency or token claim. Main returns zero even when workflows are reported blocked; inspect completed flags. Shared last_output can race during concurrent build calls. Fixture implementation still needs review before running.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/model_map_anchors.py",
@@ -3546,9 +3576,11 @@
       "path": ".scripts/retention_eval.py",
       "sha256": "5626ff60f2eca7df61a3f2000ff5ca4a131ad3752d68f955f2cd1670faa11321",
       "bytes": 9863,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Lexical recall is not semantic compliance. Self-check prints paraphrase misses but does not fail on them; current gate output shows 0/5 paraphrases pass. Rendering embeds an older one-in-six false-negative claim, and live path scores raw stdout without checking process errors. Do not use as redesign success metric; retain only if a narrow diagnostic earns its cost.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/setup_git_identity.py",
@@ -3578,9 +3610,11 @@
       "path": ".scripts/waivers.py",
       "sha256": "a06b989d37d79a903354df6e30c79ddaa74f41789f6bb1d68fa95610e34ea152",
       "bytes": 3337,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; entrypoint and consumer discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Reusable deterministic waiver parsing already shared by module-size and waiver checks. Retain explicit cohesion/debt distinction and expiry requirements; avoid a second exception mechanism.",
+      "risk": "Detailed test/consumer reconciliation remains pending. Required gates stay enabled; no observed runtime removal is authorized by static analysis alone."
     },
     {
       "path": ".scripts/wired_or_deleted.py",
