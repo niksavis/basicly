@@ -131,6 +131,15 @@ def test_the_committed_manifest_pins_only_official_upstream_release_archives() -
         assert re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]), entry["name"]
 
 
+def test_compatibility_ci_uses_official_artifacts_without_a_private_builder() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/compatibility.yml").read_text(encoding="utf-8")
+    assert "tests/test_hook_compatibility.py" in workflow
+    assert "Build and exercise the wheel as a consumer" in workflow
+    assert "build_lefthook_windows.py" not in workflow
+    assert "actions/setup-go" not in workflow
+
+
 @pytest.mark.live_ledger
 def test_no_executable_or_archive_is_committed_in_the_tracked_tree(tmp_path: Path) -> None:
     planted = tmp_path / "lefthook_Windows_x86_64.gz"
