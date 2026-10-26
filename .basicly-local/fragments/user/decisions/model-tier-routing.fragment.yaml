@@ -16,4 +16,4 @@ tags:
 status: active
 title: Model Tier Routing
 body: |
-  - For a specialist dispatch in this repository, apply the tier-only routing policy (example: `tier: high`). Read `.agents/skills/tier-injection/SKILL.md` before proceeding.
+  - Before specialist dispatch, use `tier-injection` and this repository's tier-only routing (e.g. `tier: high`).

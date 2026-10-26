@@ -58,3 +58,30 @@ def test_optional_budget_command_is_documented_without_grants() -> None:
     assert "basicly policy budget <epic> --tokens N" in text
     assert "basicly policy budget <epic> --clear" in text
     assert "basicly policy grant" not in text
+
+
+@pytest.mark.parametrize(
+    "path", ["AGENTS.md", ".claude/CLAUDE.md", ".github/copilot-instructions.md"]
+)
+def test_baselines_keep_one_owner_and_make_orchestration_explicit(path: str) -> None:
+    text = (ROOT / path).read_text(encoding="utf-8")
+    section = re.split(r"\n#{2,3} ", text.split("### Harness Loop\n", 1)[1], maxsplit=1)[0]
+    assert "one responsible owner" in section
+    assert (
+        "independent work, context pressure, independent review or specialist capabilities"
+        in section
+    )
+    assert "`--execution worker`" in section
+    assert "when useful" in section
+    assert "Use `basicly loop` for non-trivial work" not in section
+
+
+@pytest.mark.parametrize(
+    "path", ["AGENTS.md", ".claude/CLAUDE.md", ".github/copilot-instructions.md"]
+)
+def test_observer_repair_does_not_depend_on_a_working_controller(path: str) -> None:
+    text = (ROOT / path).read_text(encoding="utf-8")
+    assert "unless the user explicitly requests observer repair" in text
+    assert "work outside the harness controller" in text
+    assert "run affected checks directly" in text
+    assert "report bypasses and unfinished verification" in text

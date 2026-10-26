@@ -16,4 +16,4 @@ tags:
 status: active
 title: Rendered Surfaces
 body: |
-  - For a rendered page, inspect screenshots against each acceptance criterion, real data and every claimed viewport. Read `.agents/skills/validate-as-consumer/SKILL.md` before proceeding.
+  - For rendered pages, use `validate-as-consumer`; inspect screenshots against each acceptance criterion with real data at every claimed viewport.
