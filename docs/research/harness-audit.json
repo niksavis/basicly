@@ -1936,17 +1936,29 @@
       "path": ".basicly/core/hooks/bare-var-guard.py",
       "sha256": "594eff36889eb18fa13337efaa7e88051ec61273beff40ceb9bf4fa1467347e5",
       "bytes": 2893,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "merge",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Useful narrow diagnostic can share shell parsing and process invocation with other guards. Shell-specific behavior and handwritten parser need false-positive controls; remove historical anecdote from routine refusal output.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/catalog-lint.py",
       "sha256": "a7578aa1bfebe9e7cb696ae8400827d3f7914c49085fbc44f8ea7334a8e451a3",
       "bytes": 2170,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Scoped catalog check preserves source validity. PATH engine preference may select a version different from installed consumer; uvx fallback can introduce network/startup cost. Do not assume CI backstop exists in every consumer when command unavailable; make supported no-engine behavior explicit.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/check_runner.py",
@@ -1960,57 +1972,97 @@
       "path": ".basicly/core/hooks/command_paths.py",
       "sha256": "b83406f176168d3e85280ceb51b651eb187abc569195003937749a6da3b49467",
       "bytes": 892,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Small deterministic argv path resolver preserves relative executable behavior and rejects ambiguous Windows drive-relative paths. Runtime check-runner consumer still needs full audit.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/comment_ratchet.py",
       "sha256": "d7f4766f673c5cff4f0c430511c9e54126620b30caec8f723f5c6bfd1d2ece89",
       "bytes": 4692,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; kit consumers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Useful existing less disruptive policy alternative. Reads staged trees, handles rename/copy semantics and refuses Git failures. Preserve these semantics when consolidating repeated Git subprocesses; inspect comments kit separately before changing enforcement.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml"
+      ],
+      "risk": "Ownership, staged evidence and selected policy remain enforced; inspect standalone kit consumers before implementation."
     },
     {
       "path": ".basicly/core/hooks/commit-msg.py",
       "sha256": "f8670d91b7c7f77bb913d768b94cb25f64200b1abacfdb5e05bedcfee376525b",
       "bytes": 3497,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; kit consumers pending",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Conventional structure and issue linkage are useful, but lowercase-only description grammar creates extra repair work without established outcome benefit. Keep required gate enabled while evaluating an intentional policy change, and prefer one authoritative format implementation.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml"
+      ],
+      "risk": "Ownership, staged evidence and selected policy remain enforced; inspect standalone kit consumers before implementation."
     },
     {
       "path": ".basicly/core/hooks/engine_verify.py",
       "sha256": "fa8edfb9aa80d4db2c7a9b571356b4f4f68196c6d70f661349112bee7348009b",
       "bytes": 2140,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Compatibility seam checks cache setting, full check inventory and fail-fast before engine reuse. Reads bounded cost hints; those hints are not validity evidence. Preserve native fallback and verify actual receipt binding in engine.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/headroom-guard.py",
       "sha256": "a639faa8003a305af9a89f5da7c91f14925a0a83b2827c4b02c50722f74e189f",
       "bytes": 2660,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "For a single Python edit, room_for calls headroom.measure over all tracked modules. Cache or directly measure the target with correct ratchet invalidation; keep advisory status separate from permission approval. Missing project measurement support returns silently, which is appropriate only for optional advice.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/identity-guard.py",
       "sha256": "206ba59e9e7e680c9fb1d4f3a67d653092684a59ca867e3774f2f3c480c8badc",
       "bytes": 5751,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve intended Git author/committer and holder controls. Several configuration subprocesses plus another staged diff are a batching opportunity. Net-added accounting matches removed lines globally across paths; assess move semantics before changing policy.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/internal-info-scan.py",
       "sha256": "c8bea918986d6f2221015725bfbdea000390e8b716dc3c0e7f0955b04aac3f6b",
       "bytes": 3192,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve optional local privacy rules without publishing tokens. Invalid or unreadable configured rules silently become no rules. Shares staged-diff parser with secret scan; use one validated snapshot where practical.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/kit-boundary.py",
@@ -2024,97 +2076,168 @@
       "path": ".basicly/core/hooks/lefthook-runtime.py",
       "sha256": "d3731e62acbf8c36d63e645c25262e7dc1a7266c4ffd44681928e241670e5728",
       "bytes": 9287,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve staged snapshot, foreign hooks and host protocol; measure dispatcher launch per event. Current wildcard host launcher starts Python/Lefthook/dispatcher before filtering leaf hooks. Internal matching prevents leaf execution but not launcher cost. Narrow generated host matchers or consolidate dispatch only after equivalent guard coverage is demonstrated.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/markdownlint.py",
       "sha256": "785138872e0177c29fd1e51bb2c43a15702fae62d9a1ce0ae8fcf1d270662df7",
       "bytes": 4426,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Existing launcher resolves Linux Node without npx and honors explicit consumer config. This makes the skill PATH workaround potentially redundant. Preserve declared tools/locks and diagnostics; avoid installing dependencies from a hook.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/no-comments.py",
       "sha256": "eaf44deefe6e8e98fd33d5baf21335ef232badfb3553907ae6c62d3ff351e684",
       "bytes": 2903,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-and-hook-manifest-reviewed; kit consumers pending",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserves consumer-selected strict or ratchet policy through standalone kit. Blanket prose prohibition is a project policy, not established universal optimization. Avoid asking model to repeat mechanically checked formatting; retain existing policy until explicitly redesigned under approved scope.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml"
+      ],
+      "risk": "Ownership, staged evidence and selected policy remain enforced; inspect standalone kit consumers before implementation."
     },
     {
       "path": ".basicly/core/hooks/pipe-status-guard.py",
       "sha256": "e2ed1f10c6ea04b3f45da4f23dac572424fccaf0f5d8cdd0c87ed11f9a58728e",
       "bytes": 4803,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "merge",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve explicit failing-command status; consolidate common payload/parsing. Any occurrence of pipefail or PIPESTATUS suppresses diagnosis even in text, and guidance states leftmost failure wins. Validate semantics and avoid suggesting semicolon chains as a substitute when success matters.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/pre-commit.py",
       "sha256": "23b28a2a423ef0678783bd8668deb13dbdbd27246ccdfadd8f6abd2df0de9eb0",
       "bytes": 391,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Thin native consumer entrypoint delegates configured fixes and affected checks. Preserve staged-snapshot semantics; optimize underlying selection and trusted reuse rather than bypass.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/pre-push.py",
       "sha256": "bd3e550dff0fd8dc307b801ef8bc74e192829caeb16608ac563ce19f44b5aa63",
       "bytes": 2123,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Existing cache-aware engine path with native full-check fallback should be reused. Preserve writer-lock checks and standalone no-engine behavior; coordinate with receipt owner rather than duplicate verification implementation.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/protect-generated-commit.py",
       "sha256": "ff9cfcafd1f2901a2d5f2618503103f9e72cdc226df3d4bd48d416a420ec8751",
       "bytes": 3094,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Retain staged generated-content validation but malformed/absent manifest and failed Git reads currently become empty success. Repeated git show per output is a batching candidate. Check deletion/rename coverage and treat this as consistency enforcement, not authoritative source validation alone.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/protect-generated.py",
       "sha256": "c9dd96ba40b91b2a5e15604d4bfe395a2233d8f225ec1f3f475558a65283c552",
       "bytes": 2624,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Useful early source-ownership protection with commit backstop. Reads only initial lines and patch headers; not a complete security boundary. Retain path/cwd and host-payload tests while optimizing dispatch.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/rg-replace-guard.py",
       "sha256": "1748c96b9aa073ad7c75bfd93cabfa21780443c7e2afe8570c0327b946056e8d",
       "bytes": 2424,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "merge",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Keep narrow accidental replacement diagnostic if measured benefit survives. Consolidate parsing/launch costs, keep valid explicit replacement cases, and remove old usage statistics from every refusal.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/secret-scan.py",
       "sha256": "d1198f3257877f75d27cbede7d23a165da3b0546e4b1bdab0ef0b39c1433d642",
       "bytes": 5482,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve secret blocking. Duplicate staged-diff parsing with privacy/identity checks can be consolidated safely; Git failure currently becomes empty output. Review quoted paths and rename handling; keep diagnostics free of secret values.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/session-start.py",
       "sha256": "0f47ebc6f953ade3d929a790a2fec36891048bb8d49844182d4f374e101e57cf",
       "bytes": 2435,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Keep durable tracker orientation; avoid repeated manual session-start when injection already supplied current context. Caps output at 10000 characters and has 10-second subprocess timeout. Installed CLI precedence and silent fallback need version/standalone checks; measure relevant compact orientation rather than expanding histories.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/shell_tokens.py",
       "sha256": "2f148beb5b8cb6c70381aaddccbb1ab7d50ffbfdab53b4fb1e7d5a359c84e034",
       "bytes": 4379,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Shared lightweight shell heuristic already reused by telemetry and guards. It is not a full shell parser; nested substitution, quoting, heredocs and wrappers need bounded honest coverage rather than security claims.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/staged-snapshot.py",
@@ -2128,49 +2251,83 @@
       "path": ".basicly/core/hooks/tool-usage.py",
       "sha256": "c3ee917a9fd294abcbe248b979529c3bd12dfc2b72f05ba4cbef15a597c7ff97",
       "bytes": 2761,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Telemetry must be cheap and honest. Shared read-modify-write JSON plus a fixed temporary filename has no lock, so concurrent processes can lose counts or race replacement. Missing/corrupt data resets counters; tool extraction is heuristic, not proof of nonuse. Scope invocation to useful tool types and consider existing runtime telemetry before retaining this writer.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/tracker-claim.py",
       "sha256": "6640c6016c6e4954a219c1193fe2fb2ba1ad2c3e11bca27b8dcb6088dd179ef2",
       "bytes": 4669,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; kit consumers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve staged ownership and scope checks against a regular-file snapshot; do not use mutable shared ledger as candidate proof. Multiple Git queries and tracker CLI launch are reuse/batching candidates only with exact snapshot equivalence.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml"
+      ],
+      "risk": "Ownership, staged evidence and selected policy remain enforced; inspect standalone kit consumers before implementation."
     },
     {
       "path": ".basicly/core/hooks/tracker-commit-msg.py",
       "sha256": "319fca03cfd0d1d56cf19184f62a9814950e295cddc4436b2e6167135d1d9e0e",
       "bytes": 6188,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; kit consumers pending",
+      "disposition": "merge",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Overlaps claim validation and repeatedly reads ledger blobs. Redirected worktrees read live shared ledger here while claim hook builds staged ledger; absent/empty known ids allow success. Consolidate authoritative staged lookup with claim enforcement while preserving no-tracker consumer behavior and explicit errors.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml"
+      ],
+      "risk": "Ownership, staged evidence and selected policy remain enforced; inspect standalone kit consumers before implementation."
     },
     {
       "path": ".basicly/core/hooks/tracker-fold.py",
       "sha256": "236c48b46303b1ee1f1b02f39da7448018e9d9392b86f9e007769b69a35cb0f1",
       "bytes": 1792,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Read-only post-merge advice preserves ledger history and never creates a hidden commit. Several Git calls occur only after explicit configuration; measure before adding complexity.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/tracker-path-scan.py",
       "sha256": "85fa533d047d1fe386338fc517751ced016e9632355d3ee690f3b805411d6dcd",
       "bytes": 3607,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Protection scope matches only events-*.jsonl, while active writer shards are pending-*.jsonl. Preserve append-only history and holder exceptions; do not recommend rewriting history as a normal fix. Git failures become empty reads and full-file rescans may be costly.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/hooks/unsplit-loop-guard.py",
       "sha256": "aaeba8b66ae0717aae67a71771de3872f0fbe8a2e3ee0587a2c8f07d78ddcdc4",
       "bytes": 1951,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-hook-manifest-reviewed; detailed callers pending",
+      "disposition": "merge",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve demonstrated scalar-loop mistake detection where relevant; regex scans raw command without heredoc stripping and assumes zsh semantics. Compare supported shell behavior and shared parser before blanket enforcement.",
+      "consumers": [
+        ".basicly/core/hooks/hooks.yaml",
+        ".basicly/core/hooks/lefthook-runtime.py"
+      ],
+      "risk": "Do not delete enforcement based on static review; preserve host parity and standalone consumers. Tests and detailed import consumers remain to reconcile."
     },
     {
       "path": ".basicly/core/skills/best-practices-audit/evals.yaml",
@@ -3120,9 +3277,16 @@
       "path": ".scripts/check_module_size.py",
       "sha256": "09463adcdbb6a381b68beef891e39ecbc825901847873425f178c33a7e3c59a8",
       "bytes": 5619,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-headroom-callchain-reviewed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Shared module-size implementation preserves configured ratchets. Headroom performs a complete tracked-source scan even for one requested path; add a targeted query only with equivalent target/config evidence. No gate reduction is implied.",
+      "consumers": [
+        ".basicly/core/hooks/headroom-guard.py",
+        ".scripts/headroom.py",
+        ".scripts/check_module_size.py"
+      ],
+      "risk": "Changes to read-cost estimates are not measured model-token reductions; keep enforcement and advisory measurements distinct."
     },
     {
       "path": ".scripts/check_noqa_debt.py",
@@ -3280,9 +3444,16 @@
       "path": ".scripts/headroom.py",
       "sha256": "de37e8b734636f147b504be7cf14a0e0d198b6af59aa0dd7bc3f95a4cde0b01f",
       "bytes": 3067,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-headroom-callchain-reviewed",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Shared module-size implementation preserves configured ratchets. Headroom performs a complete tracked-source scan even for one requested path; add a targeted query only with equivalent target/config evidence. No gate reduction is implied.",
+      "consumers": [
+        ".basicly/core/hooks/headroom-guard.py",
+        ".scripts/headroom.py",
+        ".scripts/check_module_size.py"
+      ],
+      "risk": "Changes to read-cost estimates are not measured model-token reductions; keep enforcement and advisory measurements distinct."
     },
     {
       "path": ".scripts/improvement_controller.py",
@@ -3344,9 +3515,16 @@
       "path": ".scripts/ratchet.py",
       "sha256": "66560a98e8a15578f145cda49b4773b83c1beb81d00ab31179c86f5b1114c54a",
       "bytes": 4500,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-and-headroom-callchain-reviewed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Shared module-size implementation preserves configured ratchets. Headroom performs a complete tracked-source scan even for one requested path; add a targeted query only with equivalent target/config evidence. No gate reduction is implied.",
+      "consumers": [
+        ".basicly/core/hooks/headroom-guard.py",
+        ".scripts/headroom.py",
+        ".scripts/check_module_size.py"
+      ],
+      "risk": "Changes to read-cost estimates are not measured model-token reductions; keep enforcement and advisory measurements distinct."
     },
     {
       "path": ".scripts/release_note_standing.py",
@@ -3467,6 +3645,36 @@
         "test_count": 2
       },
       "result": "Confirmed parser mismatch and empty training split; no paid evaluation."
+    },
+    {
+      "subject": "Claude PreToolUse launcher overhead",
+      "method": "Five sequential subprocess runs per read-only synthetic payload using project Python and lefthook-runtime.py claude pretooluse. Underlying requested tools were not executed. Timing excludes outer uv startup, model latency and post-tool hook; working tree at 27aec99d on this Linux environment.",
+      "observed": {
+        "read_ms": [
+          75.94,
+          70.91,
+          65.96,
+          66.32,
+          65.18
+        ],
+        "shell_ms": [
+          123.03,
+          124.8,
+          121.31,
+          122.89,
+          122.47
+        ],
+        "python_edit_ms": [
+          288.81,
+          282.44,
+          277.67,
+          278.48,
+          281.38
+        ],
+        "all_exit_codes": 0,
+        "all_stdout_chars": 0
+      },
+      "result": "Nonzero launcher overhead even for unmatched Read, and higher Python-edit path cost. This is a local microbenchmark, not proof of overall task speed or the cause of Codex latency."
     }
   ]
 }
