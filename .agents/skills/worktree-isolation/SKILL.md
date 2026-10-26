@@ -6,7 +6,8 @@ description: Isolates work in a sibling git worktree, then merges and cleans up.
 
 # Worktree Isolation
 
-This skill runs a unit of work in a sibling git worktree with `basicly worktree`.
+Isolate a unit of work in a sibling Git worktree. Ordinary Git is sufficient;
+`basicly worktree` is an optional provisioning and landing convenience.
 It covers placement, provisioning, merge and cleanup.
 For tracker records see `work-tracker`. For commits see the git reference of `cli-tools` and `conventional-commits`.
 
@@ -15,8 +16,8 @@ For tracker records see `work-tracker`. For commits see the git reference of `cl
 - **Isolate every non-trivial change.** This includes multi-file work, work that runs the gates, and work parallel to another track.
 - **Skip isolation for a trivial edit, such as a typo.** A worktree has a real setup cost.
 - **Put the worktree at the sibling path `<repo>.worktrees/<name>`.** The sibling checkout stays outside repository scans. Git hooks share the common Git directory regardless of checkout placement.
-- **Never pass `-c core.hooksPath=...` in a worktree.** A relative path skips every hook with no message.
-- **Do not resolve a merge conflict by hand.** A conflict means the scopes missed a coupling, so the lane applies its intent again on the new base.
+- **Avoid accidental hook bypasses.** A relative `core.hooksPath` can silently skip hooks. For explicit user-requested observer repair, use a command-scoped bypass, run affected checks directly and disclose what did not run. Never disable hooks permanently.
+- **Resolve conflicts against the whole task intent.** Inspect both changes, preserve unrelated work and rerun affected checks; do not restart the plan merely because branches coupled.
 - **Run merge commands from the base checkout.** Git refuses to update a branch that another worktree has checked out.
 
 ## Protected destinations
@@ -30,7 +31,18 @@ In Codex, use the execution tool's `require_escalated` permission with the prote
 The CLI cannot escalate itself. Preserve dotenv denials, normal hooks, signing and loop checkpoints; do not broaden a machine profile.
 Read the retry result and verify the repository state before continuing the loop.
 
-## Lifecycle
+## Direct owner work
+
+```sh
+git worktree add ../<repo>.worktrees/<name> -b <branch>
+```
+
+Work and run affected checks there; review the diff and consumer behavior before
+committing. Integrate from the base checkout with ordinary Git. Preserve shared
+tracker history. Inspect existing branches and worktrees first; do not replace or
+discard another session's work. Setup only the dependencies the task actually needs.
+
+## Optional managed lifecycle
 
 ```sh
 basicly worktree create <name> [--base <branch>]           # add and provision

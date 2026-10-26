@@ -24,6 +24,10 @@ def test_baselines_authorize_the_task_and_preserve_real_protections(path: str) -
 @pytest.mark.parametrize("root", [".agents/skills", ".claude/skills"])
 def test_loop_skill_does_not_reintroduce_grant_ceremonies(root: str) -> None:
     text = (ROOT / root / "harness-loop/SKILL.md").read_text(encoding="utf-8")
+    assert "[operations](references/operations.md)" in text
+    text += "\n" + (ROOT / root / "harness-loop/references/operations.md").read_text(
+        encoding="utf-8"
+    )
     assert "task request authorizes classification, decomposition and completion" in text
     assert "Do not create a synthetic grant" in text
     assert "basicly policy grant" not in text

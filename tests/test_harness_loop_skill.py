@@ -17,7 +17,11 @@ SKILL_YAML = (
 @pytest.fixture(scope="module")
 def instructions() -> str:
     source = yaml.safe_load(SKILL_YAML.read_text(encoding="utf-8"))
-    return source["instructions"]
+    entry = source["instructions"]
+    assert "[operations](references/operations.md)" in entry
+    return (
+        entry + "\n" + (SKILL_YAML.parent / "references/operations.md").read_text(encoding="utf-8")
+    )
 
 
 def _phase_rows(instructions: str) -> dict[str, str]:
