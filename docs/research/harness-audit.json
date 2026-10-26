@@ -1,0 +1,3368 @@
+{
+  "schema_version": 1,
+  "record": "basicly-gtb19bg.1",
+  "revision": "9300d9d9b1d964e5aa1ea6d8f4dcb9dec7f73c98",
+  "date": "2026-10-26",
+  "status": "in_progress",
+  "coverage": {
+    "source_discovery": "Independent git ls-files and pathlib source walks agree. Positive controls AGENTS.md and .claude/CLAUDE.md are present.",
+    "semantic": "All 26 skill entry bodies, 12 agent bodies, 28 fragment bodies, 5 shared blocks and the output style have been read across the research and audit turns. Resource/script body and callsite review remains pending unless explicitly advanced.",
+    "runtime": "Static loading/dispatch code inspected. No host behavior trials or latency attribution yet. Project projection equality is checked by existing gates; personal/plugin precedence requires further inspection.",
+    "counts": {
+      "skills": 26,
+      "agents": 12,
+      "fragments": 28,
+      "blocks": 5,
+      "resource_and_script_files": 146
+    },
+    "unknown_usage": "No absence or zero-use claim follows from missing telemetry.",
+    "missing_requested_locations": [
+      "CLAUDE.md",
+      "claude.md",
+      "copilot-instructions.md",
+      ".basicly-local/agents",
+      ".basicly-local/skills"
+    ],
+    "actual_instruction_locations": [
+      "AGENTS.md",
+      ".claude/CLAUDE.md",
+      ".github/copilot-instructions.md"
+    ]
+  },
+  "skills": [
+    {
+      "path": ".basicly/core/skills/best-practices-audit/skill.yaml",
+      "sha256": "511f22ede3cf39e3c7d0e87d1e1655f7569cccff285907ad61ce156e60d18257",
+      "bytes": 3720,
+      "name": "best-practices-audit",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Keep vendor verification; replace mandatory bulk fetching and repeated URL approval with task-specific retrieval. Separate live findings from the offline checklist and avoid adding a gate for every observation.",
+      "body_lines": 85,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/best-practices-audit/SKILL.md",
+          "sha256": "b9a28ab8c6d80cf40f3ee302090d9038146aa62e7c87da3c667848a822ceab28",
+          "bytes": 3547
+        },
+        {
+          "path": ".agents/skills/best-practices-audit/SKILL.md",
+          "sha256": "b9a28ab8c6d80cf40f3ee302090d9038146aa62e7c87da3c667848a822ceab28",
+          "bytes": 3547
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/best-practices-audit/evals.yaml",
+        ".basicly/core/skills/best-practices-audit/references/checklist.md",
+        ".basicly/core/skills/best-practices-audit/scripts/fetch_docs.py"
+      ],
+      "evidence": [
+        ".basicly/core/skills/best-practices-audit/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/catalog-authoring/skill.yaml",
+      "sha256": "29b768aa7cd140cd02c4693276a7627c9ab47f6eac52edde1d0550d456f687e9",
+      "bytes": 6585,
+      "name": "catalog-authoring",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Retain source ownership and generation commands. Move schema/frontmatter and output-style detail into references; verify host substitution claims before repeating them.",
+      "body_lines": 88,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/catalog-authoring/SKILL.md",
+          "sha256": "bd2c0c6c4a5185511345e85133ac6c2f82244834a5034d569d7d6771c71e8f40",
+          "bytes": 6416
+        },
+        {
+          "path": ".agents/skills/catalog-authoring/SKILL.md",
+          "sha256": "bd2c0c6c4a5185511345e85133ac6c2f82244834a5034d569d7d6771c71e8f40",
+          "bytes": 6416
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/catalog-authoring/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/catalog-authoring/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/skill.yaml",
+      "sha256": "7a60b0377d6d82d9736e60e31b197d177681c43276990efbae011e3acfa5a1fc",
+      "bytes": 3187,
+      "name": "cli-tools",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "keep",
+      "reason": "Existing short entry point and task-to-reference routing are a useful model. Audit individual references and platform assumptions; an inventory of tools does not establish installed availability.",
+      "body_lines": 38,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/cli-tools/SKILL.md",
+          "sha256": "576e38ed1ff91747e47ad69d4d75f25fa888b260663414f7181c3e7ebae3af1b",
+          "bytes": 2583
+        },
+        {
+          "path": ".agents/skills/cli-tools/SKILL.md",
+          "sha256": "576e38ed1ff91747e47ad69d4d75f25fa888b260663414f7181c3e7ebae3af1b",
+          "bytes": 2583
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/cli-tools/evals.yaml",
+        ".basicly/core/skills/cli-tools/references/ast-grep.md",
+        ".basicly/core/skills/cli-tools/references/bat.md",
+        ".basicly/core/skills/cli-tools/references/curl.md",
+        ".basicly/core/skills/cli-tools/references/direnv.md",
+        ".basicly/core/skills/cli-tools/references/fd.md",
+        ".basicly/core/skills/cli-tools/references/fzf.md",
+        ".basicly/core/skills/cli-tools/references/git-delta.md",
+        ".basicly/core/skills/cli-tools/references/git-lfs.md",
+        ".basicly/core/skills/cli-tools/references/git.md",
+        ".basicly/core/skills/cli-tools/references/jq.md",
+        ".basicly/core/skills/cli-tools/references/just.md",
+        ".basicly/core/skills/cli-tools/references/lazygit.md",
+        ".basicly/core/skills/cli-tools/references/ripgrep.md",
+        ".basicly/core/skills/cli-tools/references/sd.md",
+        ".basicly/core/skills/cli-tools/references/shellcheck.md",
+        ".basicly/core/skills/cli-tools/references/starship.md",
+        ".basicly/core/skills/cli-tools/references/tmux.md",
+        ".basicly/core/skills/cli-tools/references/tree.md",
+        ".basicly/core/skills/cli-tools/references/typos.md",
+        ".basicly/core/skills/cli-tools/references/uv.md",
+        ".basicly/core/skills/cli-tools/references/wezterm.md",
+        ".basicly/core/skills/cli-tools/references/wget.md",
+        ".basicly/core/skills/cli-tools/references/xh.md",
+        ".basicly/core/skills/cli-tools/references/yq.md",
+        ".basicly/core/skills/cli-tools/references/zsh.md"
+      ],
+      "evidence": [
+        ".basicly/core/skills/cli-tools/skill.yaml:14"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/conventional-commits/skill.yaml",
+      "sha256": "fdb393a47a9f7c02fc6bfab9191c0b31758bfc6280042122bf9ce43ec954981c",
+      "bytes": 5579,
+      "name": "conventional-commits",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Prefer the existing basicly commit command. Move message grammar/examples and hook mechanics into a reference; evaluate the incidental lowercase/punctuation restrictions separately without bypassing current hooks.",
+      "body_lines": 93,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/conventional-commits/SKILL.md",
+          "sha256": "a3746cc9a964622324a81cbeb74f5d0aa5aedb8729422b4b79bcda3640735551",
+          "bytes": 5400
+        },
+        {
+          "path": ".agents/skills/conventional-commits/SKILL.md",
+          "sha256": "a3746cc9a964622324a81cbeb74f5d0aa5aedb8729422b4b79bcda3640735551",
+          "bytes": 5400
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/conventional-commits/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/conventional-commits/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/decompose-plan/skill.yaml",
+      "sha256": "c68a3c2d9de38ea5b758d6401b369e952461dd94a15923578da7853d2601642f",
+      "bytes": 4522,
+      "name": "decompose-plan",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "merge",
+      "reason": "Use only when decomposition is warranted; combine with the decomposer procedure in the current task owner. Preserve explicit scope, dependencies and demonstration; reconsider unconditional flattening rather than forcing arbitrary task sizes.",
+      "body_lines": 74,
+      "technologies": [],
+      "declared_coverage": {
+        "phases": [
+          "decompose"
+        ]
+      },
+      "outputs": [
+        {
+          "path": ".claude/skills/decompose-plan/SKILL.md",
+          "sha256": "65b1d9b1d79e2560366a4ea5f0135aac26f6c64fc47d934ebf1f91b6185a2fab",
+          "bytes": 4341
+        },
+        {
+          "path": ".agents/skills/decompose-plan/SKILL.md",
+          "sha256": "65b1d9b1d79e2560366a4ea5f0135aac26f6c64fc47d934ebf1f91b6185a2fab",
+          "bytes": 4341
+        }
+      ],
+      "resources": [],
+      "evidence": [
+        ".basicly/core/skills/decompose-plan/skill.yaml:10"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/falsify-first/skill.yaml",
+      "sha256": "fe4868440a0fc8d3c950b88c705964536fb2a30c4ffb535b19784abd2b4215b8",
+      "bytes": 6206,
+      "name": "falsify-first",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Retain counterexamples, honest baselines and positive controls. Move measurement and third-party-project diligence detail to references; scale effort to claim consequence instead of repeating the full method on small tasks.",
+      "body_lines": 78,
+      "technologies": [],
+      "declared_coverage": {
+        "work_types": [
+          "feature",
+          "epic"
+        ],
+        "phases": [
+          "decompose"
+        ]
+      },
+      "outputs": [
+        {
+          "path": ".claude/skills/falsify-first/SKILL.md",
+          "sha256": "1c11260dad57551b2648faf40f51efb92aab6efbff2131e717b1d26d097f303f",
+          "bytes": 5993
+        },
+        {
+          "path": ".agents/skills/falsify-first/SKILL.md",
+          "sha256": "1c11260dad57551b2648faf40f51efb92aab6efbff2131e717b1d26d097f303f",
+          "bytes": 5993
+        }
+      ],
+      "resources": [],
+      "evidence": [
+        ".basicly/core/skills/falsify-first/skill.yaml:11"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/find-skills/skill.yaml",
+      "sha256": "ec28d3d6d7c1f10ee4757cadfe623be3cbdd4a651ee012435337002d48b8462f",
+      "bytes": 5881,
+      "name": "find-skills",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Restrict discovery to an actual capability gap. Remove automatic searches for ordinary how-to requests and numeric popularity heuristics. Resolve contradictory network-consent guidance and interactive install requirements; preserve explicit dependency consent.",
+      "body_lines": 130,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/find-skills/SKILL.md",
+          "sha256": "4c8ec7585fc936c2d75c187153c881f9a732a1ec2b52e2ebce64cdaf811c9ce8",
+          "bytes": 5327
+        },
+        {
+          "path": ".agents/skills/find-skills/SKILL.md",
+          "sha256": "4c8ec7585fc936c2d75c187153c881f9a732a1ec2b52e2ebce64cdaf811c9ce8",
+          "bytes": 5327
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/find-skills/LICENSE.txt",
+        ".basicly/core/skills/find-skills/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/find-skills/skill.yaml:17"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/harness-client/skill.yaml",
+      "sha256": "819c2b67947bbc2fd1fb7d2c03effa87246976af81ee604a7291f3017704d221",
+      "bytes": 4795,
+      "name": "harness-client",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Keep shared supervisor observation and scoped decisions. Move board and multi-lane detail to references; distinguish stale telemetry from a proven dead process and refresh historical grant language.",
+      "body_lines": 93,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/harness-client/SKILL.md",
+          "sha256": "5da54f5f71ed16e7cd6b70ca1d6a991d95297535079ef5c80de6b4a6cffb5ecb",
+          "bytes": 4618
+        },
+        {
+          "path": ".agents/skills/harness-client/SKILL.md",
+          "sha256": "5da54f5f71ed16e7cd6b70ca1d6a991d95297535079ef5c80de6b4a6cffb5ecb",
+          "bytes": 4618
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/harness-client/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/harness-client/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/harness-loop/skill.yaml",
+      "sha256": "e724f57a7e6abb17f0c54944a278755394bf4ef45c9911a4b5bf45949749326b",
+      "bytes": 15892,
+      "name": "harness-loop",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Make a short current-task entry point. Move multi-lane operations, policy escalation, ledger publication and release conventions to direct references. Correct conflicts over gate bypass, branch preservation, serial batch landing and who limits concurrency.",
+      "body_lines": 274,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/harness-loop/SKILL.md",
+          "sha256": "94a596f4f01c4c03a9b48357bbbd9253fb7cc34b2dc8539cfa53aebb9fabf434",
+          "bytes": 15443
+        },
+        {
+          "path": ".agents/skills/harness-loop/SKILL.md",
+          "sha256": "94a596f4f01c4c03a9b48357bbbd9253fb7cc34b2dc8539cfa53aebb9fabf434",
+          "bytes": 15443
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/harness-loop/evals.yaml",
+        ".basicly/core/skills/harness-loop/references/many-lanes.md"
+      ],
+      "evidence": [
+        ".basicly/core/skills/harness-loop/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/interface-facts/skill.yaml",
+      "sha256": "07e6eab48dc1535928321a4d89c56f8348ae633993d80f6f5c9e0ba9a4d9d95b",
+      "bytes": 5468,
+      "name": "interface-facts",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "keep",
+      "reason": "Useful host-interface boundary; narrow to facts that affect the task. Move vendor route tables to a reference and avoid mandatory manual metadata writes when existing evidence records suffice.",
+      "body_lines": 69,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/interface-facts/SKILL.md",
+          "sha256": "a6c100d6cecf9a841077c9b3c8391cf61b9e401e80bdcd071213f74305305ca5",
+          "bytes": 5327
+        },
+        {
+          "path": ".agents/skills/interface-facts/SKILL.md",
+          "sha256": "a6c100d6cecf9a841077c9b3c8391cf61b9e401e80bdcd071213f74305305ca5",
+          "bytes": 5327
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/interface-facts/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/interface-facts/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/no-comments/skill.yaml",
+      "sha256": "ce566b2860e7e0d56a271537b51984dde3814c5c9f0595ace238a4bbaa7cc2b7",
+      "bytes": 3560,
+      "name": "no-comments",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "investigate",
+      "reason": "Preserve the current policy until explicitly changed through the redesign. It duplicates deterministic enforcement and can demand unrelated code restructuring; audit policy selection and consumer preference rather than claiming comments are universally harmful.",
+      "body_lines": 66,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/no-comments/SKILL.md",
+          "sha256": "b660cb424e04ffbfd8d576062a903df9d41748a1873721e673a329971da98188",
+          "bytes": 3419
+        },
+        {
+          "path": ".agents/skills/no-comments/SKILL.md",
+          "sha256": "b660cb424e04ffbfd8d576062a903df9d41748a1873721e673a329971da98188",
+          "bytes": 3419
+        }
+      ],
+      "resources": [],
+      "evidence": [
+        ".basicly/core/skills/no-comments/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/node/skill.yaml",
+      "sha256": "a67fc60ccbb461ddea27cd8a9712e85242cb5c871a99acb4810de659e9266d0c",
+      "bytes": 3117,
+      "name": "node",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Keep prerequisite diagnosis and locked installs. Move markdownlint configuration and WSL runtime lookup detail to references; qualify Linux-only guidance to the platform.",
+      "body_lines": 57,
+      "technologies": [
+        "node"
+      ],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/node/SKILL.md",
+          "sha256": "b4f70b6af7ebd6503d7d4d6508b15d3fb9ba330bed0d4dbea8b48b5276f627c9",
+          "bytes": 2967
+        },
+        {
+          "path": ".agents/skills/node/SKILL.md",
+          "sha256": "b4f70b6af7ebd6503d7d4d6508b15d3fb9ba330bed0d4dbea8b48b5276f627c9",
+          "bytes": 2967
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/node/evals.yaml",
+        ".basicly/core/skills/node/references/wsl-node-path.md"
+      ],
+      "evidence": [
+        ".basicly/core/skills/node/skill.yaml:9"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/plain-english/skill.yaml",
+      "sha256": "145ae4aad925b3d832e83b1317b571d3b8a8556e7d68ce93a05850f067baf39f",
+      "bytes": 3350,
+      "name": "plain-english",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Keep clear factual prose and claim checking. Remove mechanical sentence limits, compulsory visualizations and per-number labelling where they add no reader value; consolidate overlap with output style.",
+      "body_lines": 56,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/plain-english/SKILL.md",
+          "sha256": "c9df902810e0477c027f590ba58b11a12522e24a15c235a0498968d7c241cea8",
+          "bytes": 3227
+        },
+        {
+          "path": ".agents/skills/plain-english/SKILL.md",
+          "sha256": "c9df902810e0477c027f590ba58b11a12522e24a15c235a0498968d7c241cea8",
+          "bytes": 3227
+        }
+      ],
+      "resources": [],
+      "evidence": [
+        ".basicly/core/skills/plain-english/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/python/skill.yaml",
+      "sha256": "8faf75ac07d8f6bb76265c6fb3e852cc611a6fd893f1ab6b7ba404cb7c0a82af",
+      "bytes": 2988,
+      "name": "python",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Keep non-obvious Python 3.14 and cross-platform traps. Load only for Python tasks. Move type-double details to reference and avoid commit-driven type-error discovery when a focused check suffices.",
+      "body_lines": 48,
+      "technologies": [
+        "python"
+      ],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/python/SKILL.md",
+          "sha256": "5ad9ad222e6a0c69ff9550b2d86afae098348b76a408e7949ef4b4938f377841",
+          "bytes": 2836
+        },
+        {
+          "path": ".agents/skills/python/SKILL.md",
+          "sha256": "a16908dd7ef58586393c8949a34eb4f6bccca0f91f2cbc0268796bad8d98def2",
+          "bytes": 2817
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/python/evals.yaml",
+        ".basicly/core/skills/python/references/cross-platform.md",
+        ".basicly/core/skills/python/references/design.md"
+      ],
+      "evidence": [
+        ".basicly/core/skills/python/skill.yaml:11"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/release-process/skill.yaml",
+      "sha256": "94972d2f0ccf1d26a4ae9b6fb4b2efafd48749fe841e7aaa8b41cd1f2f6980c5",
+      "bytes": 6784,
+      "name": "release-process",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Keep authorized release and evidence sequence. Move basicly-specific refusal catalog and rehearsal steps to references. Measure repeated full/fast/scratch checks and use trustworthy reuse, not gate removal.",
+      "body_lines": 110,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/release-process/SKILL.md",
+          "sha256": "61c3d5e335602ee5397f07ff54d3fc51a670cca11d8b79cd63b199b06be43e66",
+          "bytes": 6593
+        },
+        {
+          "path": ".agents/skills/release-process/SKILL.md",
+          "sha256": "61c3d5e335602ee5397f07ff54d3fc51a670cca11d8b79cd63b199b06be43e66",
+          "bytes": 6593
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/release-process/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/release-process/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/repair-in-place/skill.yaml",
+      "sha256": "38bc4b77ed8d72ff1b576c05d8ee5a170f666046a04001c35b0b600ebb4190ea",
+      "bytes": 1937,
+      "name": "repair-in-place",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "merge",
+      "reason": "Preserve reproduce/fix/retest in the current worker. Repair must retain the acceptance contract and adapt a disproven plan within scope; forbid new scope, not all replanning or all redispatch after process loss.",
+      "body_lines": 28,
+      "technologies": [],
+      "declared_coverage": {
+        "phases": [
+          "repair"
+        ]
+      },
+      "outputs": [
+        {
+          "path": ".claude/skills/repair-in-place/SKILL.md",
+          "sha256": "80fc52ba86d1e311b4fd9063b546bd18adab609b46c562576b4658b1be7cfa1d",
+          "bytes": 1823
+        },
+        {
+          "path": ".agents/skills/repair-in-place/SKILL.md",
+          "sha256": "80fc52ba86d1e311b4fd9063b546bd18adab609b46c562576b4658b1be7cfa1d",
+          "bytes": 1823
+        }
+      ],
+      "resources": [],
+      "evidence": [
+        ".basicly/core/skills/repair-in-place/skill.yaml:10"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/retention-probe/skill.yaml",
+      "sha256": "5f016b53671964df9a2323e902b80f55a4c4cfba09ee4f141673d4685d4e044e",
+      "bytes": 3011,
+      "name": "retention-probe",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "investigate",
+      "reason": "The text overstates lexical recall as proof of loaded context while admitting paraphrase sensitivity. Keep as optional diagnostic only pending measured validity; use behavioral compliance evals for optimization decisions.",
+      "body_lines": 55,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/retention-probe/SKILL.md",
+          "sha256": "7baf8de7783a65a825c20baade592b22030254ac7919f933bb32693303853211",
+          "bytes": 2892
+        },
+        {
+          "path": ".agents/skills/retention-probe/SKILL.md",
+          "sha256": "7baf8de7783a65a825c20baade592b22030254ac7919f933bb32693303853211",
+          "bytes": 2892
+        }
+      ],
+      "resources": [],
+      "evidence": [
+        ".basicly/core/skills/retention-probe/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/root-cause/skill.yaml",
+      "sha256": "c3af731084a3475c8d6e53c99eed6ff6ad4397036fc1c12fbe146ebc275ac435",
+      "bytes": 3892,
+      "name": "root-cause",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Keep reproducible failure and causal discrimination. Move deeper analysis/examples to references; do not require a new process control for every ordinary fix.",
+      "body_lines": 58,
+      "technologies": [],
+      "declared_coverage": {
+        "work_types": [
+          "bug"
+        ],
+        "phases": [
+          "build",
+          "repair"
+        ]
+      },
+      "outputs": [
+        {
+          "path": ".claude/skills/root-cause/SKILL.md",
+          "sha256": "f1ca4f384f338dab8a22b6337ae73840f7e544c0f9343c24bd853652d3de4b8d",
+          "bytes": 3715
+        },
+        {
+          "path": ".agents/skills/root-cause/SKILL.md",
+          "sha256": "f1ca4f384f338dab8a22b6337ae73840f7e544c0f9343c24bd853652d3de4b8d",
+          "bytes": 3715
+        }
+      ],
+      "resources": [],
+      "evidence": [
+        ".basicly/core/skills/root-cause/skill.yaml:11"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/session-finish/skill.yaml",
+      "sha256": "3f9a94918b2baa70c55dcf84dea305cb280bbe442cc6ae6d82977e0be602fb33",
+      "bytes": 4888,
+      "name": "session-finish",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Keep unresolved blockers, evidence and actual state. Eliminate repeated reports or new retrospectives when tracker facts already suffice; reconcile durable-artifact requirements with scratch cleanup.",
+      "body_lines": 77,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/session-finish/SKILL.md",
+          "sha256": "53efa9ed7e1a7f51a0380d2b65bb560d5ca78b26f972e267ab6cea16a6f1ef6b",
+          "bytes": 4735
+        },
+        {
+          "path": ".agents/skills/session-finish/SKILL.md",
+          "sha256": "53efa9ed7e1a7f51a0380d2b65bb560d5ca78b26f972e267ab6cea16a6f1ef6b",
+          "bytes": 4735
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/session-finish/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/session-finish/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/skill.yaml",
+      "sha256": "74d3a203e996d2aeddf95e9e11d8336e15f2cb82d834d4473da8ae352ed0b0a0",
+      "bytes": 18626,
+      "name": "skill-creator",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Separate authoring, behavior evaluation, description optimization and optional human review into references. Do not mandate new confirmation, multi-agent pairs or a feedback UI for every small revision. Preserve licenses and real evals; inspect all bundled scripts before reuse.",
+      "body_lines": 402,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/skill-creator/SKILL.md",
+          "sha256": "8a733f1660a1adb95ab7768ba2c0a98064d1b8d9a8f79e2174c7081900bdc67b",
+          "bytes": 17601
+        },
+        {
+          "path": ".agents/skills/skill-creator/SKILL.md",
+          "sha256": "8a733f1660a1adb95ab7768ba2c0a98064d1b8d9a8f79e2174c7081900bdc67b",
+          "bytes": 17601
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/skill-creator/LICENSE.txt",
+        ".basicly/core/skills/skill-creator/assets/eval_review.html",
+        ".basicly/core/skills/skill-creator/assets/viewer.html",
+        ".basicly/core/skills/skill-creator/evals.yaml",
+        ".basicly/core/skills/skill-creator/references/analyzer.md",
+        ".basicly/core/skills/skill-creator/references/comparator.md",
+        ".basicly/core/skills/skill-creator/references/grader.md",
+        ".basicly/core/skills/skill-creator/references/schemas.md",
+        ".basicly/core/skills/skill-creator/scripts/aggregate_benchmark.py",
+        ".basicly/core/skills/skill-creator/scripts/generate_report.py",
+        ".basicly/core/skills/skill-creator/scripts/generate_review.py",
+        ".basicly/core/skills/skill-creator/scripts/improve_description.py",
+        ".basicly/core/skills/skill-creator/scripts/run_eval.py",
+        ".basicly/core/skills/skill-creator/scripts/run_loop.py",
+        ".basicly/core/skills/skill-creator/scripts/skill_md.py"
+      ],
+      "evidence": [
+        ".basicly/core/skills/skill-creator/skill.yaml:17"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/test-discipline/skill.yaml",
+      "sha256": "2b7ad60ba694f09d6b7b3786040ba26055c6e7cf33ee5e6db2bd0479d4063047",
+      "bytes": 4446,
+      "name": "test-discipline",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Retain isolated fixtures, behavioral assertions and deterministic tests. Qualify unconditional filesystem/network stubbing, twice-slowest timeout and mutation requirements to relevant cases; preserve real consumer integration tests.",
+      "body_lines": 71,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/test-discipline/SKILL.md",
+          "sha256": "9fb7b07636b97958d11617fbbca1205d5875fcc6646c6c7b9601497e659e3293",
+          "bytes": 4291
+        },
+        {
+          "path": ".agents/skills/test-discipline/SKILL.md",
+          "sha256": "9fb7b07636b97958d11617fbbca1205d5875fcc6646c6c7b9601497e659e3293",
+          "bytes": 4291
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/test-discipline/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/test-discipline/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/tier-injection/skill.yaml",
+      "sha256": "5bc3f4ab10890150c86816103038bc830f9817500ab5d350c83868edc7c1dd69",
+      "bytes": 4397,
+      "name": "tier-injection",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Keep task-appropriate model selection and explicit resolution. Move installation and host-specific details to references. Separate model tier from reasoning effort and verify actual dispatched settings; never infer enforcement from declared tier alone.",
+      "body_lines": 67,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/tier-injection/SKILL.md",
+          "sha256": "8f8648181c43d7b95703721dd486d5b093d34c4f2fc62fb330ae880dababe9ab",
+          "bytes": 4260
+        },
+        {
+          "path": ".agents/skills/tier-injection/SKILL.md",
+          "sha256": "8f8648181c43d7b95703721dd486d5b093d34c4f2fc62fb330ae880dababe9ab",
+          "bytes": 4260
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/tier-injection/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/tier-injection/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/validate-as-consumer/skill.yaml",
+      "sha256": "ae4d5b4d78b330825c0192662978afac591f34c19bdc45c26fb225b7a2fff5d4",
+      "bytes": 2666,
+      "name": "validate-as-consumer",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "keep",
+      "reason": "Preserve actual requirement-based consumer exercise. Move WSL screenshot commands to a reference and bound transcript output. Distinguish independent validation from the main worker running a consumer smoke test.",
+      "body_lines": 45,
+      "technologies": [],
+      "declared_coverage": {
+        "phases": [
+          "validate"
+        ]
+      },
+      "outputs": [
+        {
+          "path": ".claude/skills/validate-as-consumer/SKILL.md",
+          "sha256": "f1787647155bd1fcedd253f844d0fa84364397a5bbc1e8ebf153037a3c26e894",
+          "bytes": 2532
+        },
+        {
+          "path": ".agents/skills/validate-as-consumer/SKILL.md",
+          "sha256": "f1787647155bd1fcedd253f844d0fa84364397a5bbc1e8ebf153037a3c26e894",
+          "bytes": 2532
+        }
+      ],
+      "resources": [],
+      "evidence": [
+        ".basicly/core/skills/validate-as-consumer/skill.yaml:10"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/work-tracker/skill.yaml",
+      "sha256": "59dc1cdc04f731878d7682332ca348eae9d626b8bfb508094be54d5156fa024f",
+      "bytes": 14138,
+      "name": "work-tracker",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Retain one shared append-only tracker and concrete claim/read/update commands. Move schemas, imports, fold administration and query recipes to references; remove routine large orientation output and unneeded publication ceremony where safe.",
+      "body_lines": 265,
+      "technologies": [],
+      "declared_coverage": {},
+      "outputs": [
+        {
+          "path": ".claude/skills/work-tracker/SKILL.md",
+          "sha256": "2066fff0526f3428276402c25f33fd235cfbcd80e79c0aaa459e4bf655a6a1cf",
+          "bytes": 13675
+        },
+        {
+          "path": ".agents/skills/work-tracker/SKILL.md",
+          "sha256": "2066fff0526f3428276402c25f33fd235cfbcd80e79c0aaa459e4bf655a6a1cf",
+          "bytes": 13675
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/work-tracker/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/work-tracker/skill.yaml:8"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/worktree-isolation/skill.yaml",
+      "sha256": "32224bec2522d7e12f63846d611cab490ade6eab4c12256843fb776a1d23f6d9",
+      "bytes": 5597,
+      "name": "worktree-isolation",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "trim",
+      "reason": "Keep independent writer ownership and safe cleanup. Move host/platform lifecycle details to references. Reconsider no-manual-conflict-resolution and relaunch guidance against current host behavior; avoid resetting shared hooks unnecessarily.",
+      "body_lines": 79,
+      "technologies": [],
+      "declared_coverage": {
+        "phases": [
+          "build",
+          "repair"
+        ]
+      },
+      "outputs": [
+        {
+          "path": ".claude/skills/worktree-isolation/SKILL.md",
+          "sha256": "a6a2eec0cc5a29a11a46878e4c4ecdce8d7030784fe62e0a53596994c8fbc427",
+          "bytes": 5398
+        },
+        {
+          "path": ".agents/skills/worktree-isolation/SKILL.md",
+          "sha256": "a6a2eec0cc5a29a11a46878e4c4ecdce8d7030784fe62e0a53596994c8fbc427",
+          "bytes": 5398
+        }
+      ],
+      "resources": [
+        ".basicly/core/skills/worktree-isolation/evals.yaml"
+      ],
+      "evidence": [
+        ".basicly/core/skills/worktree-isolation/skill.yaml:10"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    },
+    {
+      "path": ".basicly/core/skills/wsl/skill.yaml",
+      "sha256": "2e4d085fdf5af3fc886142e14fcbe423559e0ecdd4b63b2dca8452e414bd4833",
+      "bytes": 1752,
+      "name": "wsl",
+      "review": "body-reviewed; resources tracked separately",
+      "disposition": "keep",
+      "reason": "Keep technology-scoped interop reference. Correct shell-startup generalizations after authoritative verification; a login shell does not universally read an interactive rc file.",
+      "body_lines": 28,
+      "technologies": [
+        "wsl"
+      ],
+      "declared_coverage": {},
+      "outputs": [],
+      "resources": [
+        ".basicly/core/skills/wsl/evals.yaml",
+        ".basicly/core/skills/wsl/references/commands.md"
+      ],
+      "evidence": [
+        ".basicly/core/skills/wsl/skill.yaml:9"
+      ],
+      "risk": "Proposed disposition requires behavior/routing and consumer checks before removal or migration."
+    }
+  ],
+  "agents": [
+    {
+      "path": ".basicly/core/agents/architect/agent.yaml",
+      "sha256": "e26f0ae38c9dc4a0eb59f408a9647cd29fd0da7e65a10752621476bf3406acd2",
+      "bytes": 5235,
+      "name": "architect",
+      "review": "body-reviewed",
+      "disposition": "convert",
+      "reason": "Move structural-audit procedure into an on-demand skill; delegate only substantial independent exploration. Maximum tier and an architecture-writing persona do not establish necessity. Preserve evidence and dependency-ordered findings.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash",
+        "Write",
+        "Edit"
+      ],
+      "tier": "maximum",
+      "preloaded_skills": [
+        "decompose-plan",
+        "root-cause",
+        "falsify-first"
+      ],
+      "outputs": [
+        {
+          "path": ".claude/agents/architect.md",
+          "sha256": "35530bfef04db7ce8a48e67fd6fc9fca4f12163e89172c2f5ff80ed3979744f9",
+          "bytes": 5365
+        },
+        {
+          "path": ".github/agents/architect.agent.md",
+          "sha256": "995c8625a81ba04d5416b44b10dd04f124feb8b07fbd23423e465149206a9546",
+          "bytes": 5298
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/architect/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/auditor/agent.yaml",
+      "sha256": "b68326d319210c5c25785033879e5ac3ab3ed1f7a46e506d94537921250608cc",
+      "bytes": 2357,
+      "name": "auditor",
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "reason": "Potential useful restricted-tool boundary: unlike reviewer this role omits Bash. Preserve that distinction until host enforcement is verified; put security method in a shared skill/reference.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "tier": "high",
+      "preloaded_skills": [
+        "falsify-first",
+        "interface-facts"
+      ],
+      "outputs": [
+        {
+          "path": ".claude/agents/auditor.md",
+          "sha256": "9f13ecdc157681c1caafb02982500a3fa7977da420fe9eafab5b8d87892222f1",
+          "bytes": 2956
+        },
+        {
+          "path": ".github/agents/auditor.agent.md",
+          "sha256": "0936daec3ebc7724547113b057994e8346df3665304ccc39c157dfa398caf8c2",
+          "bytes": 2914
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/auditor/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/curator/agent.yaml",
+      "sha256": "58e64d84a9c08b5b4cca0e3d1798fd64b0141a22dfbd25535831392785601842",
+      "bytes": 2805,
+      "name": "curator",
+      "review": "body-reviewed",
+      "disposition": "merge",
+      "reason": "Consolidate consumer-claim checking with independent acceptance review where evidence permits; avoid a new model call for every ship. Preserve evidence binding and flag unsupported claims.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "tier": "medium",
+      "preloaded_skills": [
+        "falsify-first"
+      ],
+      "outputs": [
+        {
+          "path": ".claude/agents/curator.md",
+          "sha256": "d2085dc50a073e4b68b1d3c0b511ef5b2d5baf04a7886a5af4c4cc7c50ece237",
+          "bytes": 3794
+        },
+        {
+          "path": ".github/agents/curator.agent.md",
+          "sha256": "55f8cfcaa251076942fe0c3bf0dc992d45e57e2a2be3080a953c227478367ef8",
+          "bytes": 3770
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/curator/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/decider/agent.yaml",
+      "sha256": "4d6f14cc110b1fd732512bad157355b495b514ec9565fbc16e761c6e44a3c75d",
+      "bytes": 2347,
+      "name": "decider",
+      "review": "body-reviewed",
+      "disposition": "convert",
+      "reason": "Fold ordinary classification into task-owner skills and deterministic policy; retain restricted decisions only where needed. Remove stale integrity/L-level contract and the claim that existing code outranks requirements.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "tier": "medium",
+      "preloaded_skills": [
+        "work-tracker",
+        "root-cause"
+      ],
+      "outputs": [
+        {
+          "path": ".claude/agents/decider.md",
+          "sha256": "a02bddf2edd7e262b5cce5f39887befa35ff2550be9094301bdfa5590f6f7baa",
+          "bytes": 2554
+        },
+        {
+          "path": ".github/agents/decider.agent.md",
+          "sha256": "052483f6ec4a6813df99f51c27baf00c9a765906ce32ab49982991ca1ab12034",
+          "bytes": 2518
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/decider/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/decomposer/agent.yaml",
+      "sha256": "0cb7d70a263cff497d0d56e092a20485a79ac1b68cc82d3a0744aef77c3e6c8e",
+      "bytes": 3259,
+      "name": "decomposer",
+      "review": "body-reviewed",
+      "disposition": "merge",
+      "reason": "Merge procedure with decompose-plan skill; invoke in the current context for coupled work. Preserve independently testable acceptance and scope ownership, not unconditional persona separation.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "tier": "high",
+      "preloaded_skills": [
+        "decompose-plan",
+        "falsify-first"
+      ],
+      "outputs": [
+        {
+          "path": ".claude/agents/decomposer.md",
+          "sha256": "d124aeefd0ab6dd6780709ba6dc12cc3ab366306459e55147a8615b9f09b1c1b",
+          "bytes": 3376
+        },
+        {
+          "path": ".github/agents/decomposer.agent.md",
+          "sha256": "e8e73076d1b3b6c39cbcac24515a8b708d1a973db37959cf41ea55d7b5674e13",
+          "bytes": 3322
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/decomposer/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/designer/agent.yaml",
+      "sha256": "854c84cba12c61c5ee4b43def66976d9396b165b71effe030ced6f610e86c350",
+      "bytes": 5302,
+      "name": "designer",
+      "review": "body-reviewed",
+      "disposition": "convert",
+      "reason": "Use a design skill with terminal/web/desktop/mobile references. Remove unconditional mock approval and exhaustive states unrelated to the task; retain accessibility and useful independent design review when requested.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "tier": "high",
+      "preloaded_skills": [],
+      "outputs": [
+        {
+          "path": ".claude/agents/designer.md",
+          "sha256": "ded1ee358a055f917a1c9ae5ef9e5699b816d57a3404150af3f669ffa5b0254e",
+          "bytes": 4972
+        },
+        {
+          "path": ".github/agents/designer.agent.md",
+          "sha256": "ded1ee358a055f917a1c9ae5ef9e5699b816d57a3404150af3f669ffa5b0254e",
+          "bytes": 4972
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/designer/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/implementer/agent.yaml",
+      "sha256": "e234d5c9c799d303dcf719a827a7cbcb84a5570010cb6fb03c74adff80ca4b8e",
+      "bytes": 2954,
+      "name": "implementer",
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "reason": "The headless worker remains necessary. Interactive tasks need no duplicate worker. Retain build/repair continuity and approved scope; replace unconditional Python and other skill preloads with relevant loading.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash",
+        "Edit",
+        "Write"
+      ],
+      "tier": "high",
+      "preloaded_skills": [
+        "python",
+        "no-comments",
+        "repair-in-place",
+        "test-discipline",
+        "conventional-commits",
+        "plain-english"
+      ],
+      "outputs": [
+        {
+          "path": ".claude/agents/implementer.md",
+          "sha256": "47aa9fefe1b2ce05063636cfda334296f889d211333cd1d8a993b9103952d0c8",
+          "bytes": 2904
+        },
+        {
+          "path": ".github/agents/implementer.agent.md",
+          "sha256": "59b56114177efcacce336277bed1d7f327edfd29120aff9a1b7b1972695bf4cf",
+          "bytes": 2785
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/implementer/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/researcher/agent.yaml",
+      "sha256": "e64a5dd58407f9960b1e37f11234bfd3398f84d4e7b3d6d3ff0130c4966c4587",
+      "bytes": 3997,
+      "name": "researcher",
+      "review": "body-reviewed",
+      "disposition": "convert",
+      "reason": "Reuse interface-facts/falsify-first procedures in the owner by default. Delegate large independent/noisy research. Existing adapter code is evidence about our integration, not authority over actual vendor behavior.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash",
+        "WebFetch",
+        "WebSearch"
+      ],
+      "tier": "high",
+      "preloaded_skills": [
+        "root-cause",
+        "falsify-first",
+        "interface-facts"
+      ],
+      "outputs": [
+        {
+          "path": ".claude/agents/researcher.md",
+          "sha256": "b2f581360138dab46ba9a8932beb53bad8f4069cdc0a059c0e2f9e1a641742f1",
+          "bytes": 3811
+        },
+        {
+          "path": ".github/agents/researcher.agent.md",
+          "sha256": "f30333db281d04a26b9becaae527ec4b322654e326d915449c6fd8fdc6e192d1",
+          "bytes": 3756
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/researcher/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/retrospector/agent.yaml",
+      "sha256": "c4a67ac2f0dce552ee69fc5e81ee00b476e1974e1478f4f28c277f243a27e54f",
+      "bytes": 2623,
+      "name": "retrospector",
+      "review": "body-reviewed",
+      "disposition": "merge",
+      "reason": "Use root-cause after recurring or unclear failures, preferably in the current context. Retain statistical signals only if measured/valid; resolve human-only catalog-edit prohibition against authorized fixes.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "tier": "high",
+      "preloaded_skills": [
+        "root-cause",
+        "falsify-first"
+      ],
+      "outputs": [
+        {
+          "path": ".claude/agents/retrospector.md",
+          "sha256": "ee7fc6374db0ab8f683dacdd2805cbdf3557536c526b7d67fbbe4738b0360cd9",
+          "bytes": 2804
+        },
+        {
+          "path": ".github/agents/retrospector.agent.md",
+          "sha256": "befca9038e5397ab6d8d65e77f842efc7afbd9263fd7b525c20519eb29546d91",
+          "bytes": 2754
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/retrospector/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/reviewer/agent.yaml",
+      "sha256": "a59a5ecb7381e791be9d3e11f00f9dda5dc3bfd624a6ab2e4c71dea42047148e",
+      "bytes": 2424,
+      "name": "reviewer",
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "reason": "Preserve fresh-context judgment and permission confinement. Compare consolidated versus independent lenses; allow demonstrable analytical defects without requiring unsafe reproduction. Bind results to a candidate and record finding disposition.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "tier": "high",
+      "preloaded_skills": [
+        "falsify-first",
+        "root-cause"
+      ],
+      "outputs": [
+        {
+          "path": ".claude/agents/reviewer.md",
+          "sha256": "01f1dbb33f0d20b6f6179c49cec4fae24e20e16a4f91a41e537bac3a52e3af6a",
+          "bytes": 3021
+        },
+        {
+          "path": ".github/agents/reviewer.agent.md",
+          "sha256": "e191b16cb74c828185ef10b0ffe52ca7447f9ff7dce34b8a8db9a6866b06174c",
+          "bytes": 2971
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/reviewer/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/tester/agent.yaml",
+      "sha256": "a8fabcc1c37e902e1ada559d9b73f5875d9360d0c1f6f969926f3622656943aa",
+      "bytes": 1869,
+      "name": "tester",
+      "review": "body-reviewed",
+      "disposition": "convert",
+      "reason": "Use a direct deterministic test command with bounded structured output. Delegate only substantial independent failure analysis or noisy output that demonstrably harms context.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "tier": "low",
+      "preloaded_skills": [],
+      "outputs": [
+        {
+          "path": ".claude/agents/tester.md",
+          "sha256": "bb4f537d8d1f8404a010eb10792bb3519e5e20e07292548171c8d3e80780cbaf",
+          "bytes": 1768
+        },
+        {
+          "path": ".github/agents/tester.agent.md",
+          "sha256": "bb4f537d8d1f8404a010eb10792bb3519e5e20e07292548171c8d3e80780cbaf",
+          "bytes": 1768
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/tester/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    },
+    {
+      "path": ".basicly/core/agents/validator/agent.yaml",
+      "sha256": "9ee4e512a6dd947643b646b1db2ad858c312df9b55179ddafd1f89a7c8c53583",
+      "bytes": 2697,
+      "name": "validator",
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "reason": "Preserve independent consumer validation where valuable. Compare combination with reviewer, not deletion of consumer exercise. Bound transcript size and keep disposable consumer writes distinct from repository read-only posture.",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "tier": "medium",
+      "preloaded_skills": [
+        "validate-as-consumer"
+      ],
+      "outputs": [
+        {
+          "path": ".claude/agents/validator.md",
+          "sha256": "35b111a7b22535ae287d10e9e85f8bbe485fbc6ae7d15258725cc7049fbb3b42",
+          "bytes": 3094
+        },
+        {
+          "path": ".github/agents/validator.agent.md",
+          "sha256": "3f210935251abe2bc8fcde5d42366686ec0e509b78ee079dabb004bae16824a4",
+          "bytes": 3063
+        }
+      ],
+      "evidence": [
+        ".basicly/core/agents/validator/agent.yaml:4"
+      ],
+      "risk": "Persona prose does not enforce permissions; verify effective host capabilities and dispatch consumers."
+    }
+  ],
+  "fragments": [
+    {
+      "path": ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml",
+      "sha256": "ee891c97aa358efd3abc78ff7be585a832ad1b0662cbd54f76100ac8d855057f",
+      "bytes": 1081,
+      "id": "require-explicit-confirmation",
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "reason": "Preserve authority, repository facts, source ownership or concrete commands; optimize wording without removing the required behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/boundaries/require-explicit-confirmation.fragment.yaml:18"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/commands/git-discipline.fragment.yaml",
+      "sha256": "668b9157b1d0453e58bee7aa32e8e4d11c42da6519b20c1cb1ad96aa2c7fd789",
+      "bytes": 765,
+      "id": "git-discipline",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/commands/git-discipline.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/decisions/decision-protocol.fragment.yaml",
+      "sha256": "09b53e66a84acc3199d95c2cb814b50290f9a0ab560c1636e005a717de6a94b5",
+      "bytes": 961,
+      "id": "decision-protocol",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/decisions/decision-protocol.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/decisions/external-facts.fragment.yaml",
+      "sha256": "3e4cf2e194572d80a2a64609ce1a160ac635756fb4f425a645af020d2d14ec85",
+      "bytes": 924,
+      "id": "external-facts",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/decisions/external-facts.fragment.yaml:18"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/design/code-is-authoritative.fragment.yaml",
+      "sha256": "60bd3fceae78ab6a41191baf354db03356c46b2112c9649d197e930df33106b7",
+      "bytes": 799,
+      "id": "code-is-authoritative",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/design/code-is-authoritative.fragment.yaml:18"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/design/core-rules.fragment.yaml",
+      "sha256": "3e8be70dcbe55df06c0f2d3e229d175c1ebf87ce3d644b2b3d3affe571a4e5ce",
+      "bytes": 977,
+      "id": "core-rules",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/design/core-rules.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/design/knowledge-priming.fragment.yaml",
+      "sha256": "4b57592466855551dd0b1f2626244651e0bf4fd39965ee9f390ce7cb8d73f49a",
+      "bytes": 726,
+      "id": "knowledge-priming",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/design/knowledge-priming.fragment.yaml:18"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/design/mistake-proofing.fragment.yaml",
+      "sha256": "a87ef0022ce0e60e5c92af31e9980b89ddef20fc2c0a5152c1e0213bda129261",
+      "bytes": 805,
+      "id": "mistake-proofing",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/design/mistake-proofing.fragment.yaml:18"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/project/catalog-authoring.fragment.yaml",
+      "sha256": "9c820921abdbb01eb794620c030a323880d46d0076e43603b9864323c66191ec",
+      "bytes": 547,
+      "id": "catalog-authoring",
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "reason": "Preserve authority, repository facts, source ownership or concrete commands; optimize wording without removing the required behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/project/catalog-authoring.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/project/claude-defaults.fragment.yaml",
+      "sha256": "f0ad7598999ff943c3ed74c70bd4daaf0cf9f59c60b168f47e1da3bf2b1d91f2",
+      "bytes": 483,
+      "id": "claude-defaults",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "deprecated",
+      "applies_to": [
+        "claude"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/project/claude-defaults.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/project/copilot-defaults.fragment.yaml",
+      "sha256": "39623bef91f38c824428f83802cda337f771fa480c412e4e55c0ee5fa669fba5",
+      "bytes": 583,
+      "id": "copilot-defaults",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "deprecated",
+      "applies_to": [
+        "copilot"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/project/copilot-defaults.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/project/harness-loop.fragment.yaml",
+      "sha256": "05b3756c84550c3bc775b5579887991f83c450c6b2dd23d69f385d0361dda76d",
+      "bytes": 763,
+      "id": "harness-loop",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/project/harness-loop.fragment.yaml:18"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/project/quality-gate.fragment.yaml",
+      "sha256": "fdae64ad5aceda9efa50c772c5683f10842770a517acc5aae07f10055b784617",
+      "bytes": 1164,
+      "id": "quality-gate",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/project/quality-gate.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/project/self-improvement-retro.fragment.yaml",
+      "sha256": "486d020f0745465dcb181592eb18551d00d6cc3953b17d660777950a4547fd97",
+      "bytes": 622,
+      "id": "self-improvement-retro",
+      "review": "body-reviewed",
+      "disposition": "investigate",
+      "reason": "Potential stale or duplicated source; establish catalog selection and consumers before removal. Project defaults contradict the current overview on Windows/macOS CI coverage.",
+      "selection_status": "deprecated",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/project/self-improvement-retro.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/project/session-completion.fragment.yaml",
+      "sha256": "2a415387df6b91fef29cce035c7c80dbfa59629fa9355a392a852dcf2395018a",
+      "bytes": 816,
+      "id": "session-completion",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/project/session-completion.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/project/use.fragment.yaml",
+      "sha256": "17f15c12134ccadc1313a40126e002aab6718bc35658c51374a9cd2898250674",
+      "bytes": 421,
+      "id": "use",
+      "review": "body-reviewed",
+      "disposition": "investigate",
+      "reason": "Potential stale or duplicated source; establish catalog selection and consumers before removal. Project defaults contradict the current overview on Windows/macOS CI coverage.",
+      "selection_status": "deprecated",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/project/use.fragment.yaml:16"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/security/secure-coding.fragment.yaml",
+      "sha256": "23d6cf8d2701c949980bda4d4c88f2e09f09b0108078245d711042c7f0ed08d1",
+      "bytes": 852,
+      "id": "secure-coding",
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "reason": "Preserve authority, repository facts, source ownership or concrete commands; optimize wording without removing the required behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/security/secure-coding.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/testing/platform-hermetic-tests.fragment.yaml",
+      "sha256": "66bde6652109091b1f64404dfb89708362bd2a7ae8f8a51417d4ddd689cdbcda",
+      "bytes": 564,
+      "id": "platform-hermetic-tests",
+      "review": "body-reviewed",
+      "disposition": "investigate",
+      "reason": "Potential stale or duplicated source; establish catalog selection and consumers before removal. Project defaults contradict the current overview on Windows/macOS CI coverage.",
+      "selection_status": "deprecated",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/testing/platform-hermetic-tests.fragment.yaml:19"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/tools/non-interactive-shell.fragment.yaml",
+      "sha256": "1a67f9551eabc7cc09c9a319d034aaaf8558cfd20192d8d784c6c22c236a3ea2",
+      "bytes": 834,
+      "id": "non-interactive-shell",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/tools/non-interactive-shell.fragment.yaml:17"
+      ]
+    },
+    {
+      "path": ".basicly/core/fragments/tools/tool-usage.fragment.yaml",
+      "sha256": "e6e2443d357fdad7e24744c31399d00d1b21b742664d997e19d2ba31227ae0ee",
+      "bytes": 499,
+      "id": "tool-usage",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "deprecated",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly/core/fragments/tools/tool-usage.fragment.yaml:19"
+      ]
+    },
+    {
+      "path": ".basicly-local/fragments/user/commands/commands.fragment.yaml",
+      "sha256": "df8d84a5a00caae17dabd0e5550166fa34733e6cf19d686b18698d438dce2c1a",
+      "bytes": 938,
+      "id": "commands",
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "reason": "Preserve authority, repository facts, source ownership or concrete commands; optimize wording without removing the required behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly-local/fragments/user/commands/commands.fragment.yaml:10"
+      ]
+    },
+    {
+      "path": ".basicly-local/fragments/user/decisions/model-tier-routing.fragment.yaml",
+      "sha256": "80281a6cdc81d4b3afc5668724f815d8274a2ccf3305314346a62abb2b59be8d",
+      "bytes": 553,
+      "id": "model-tier-routing",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly-local/fragments/user/decisions/model-tier-routing.fragment.yaml:18"
+      ]
+    },
+    {
+      "path": ".basicly-local/fragments/user/design/external-review.fragment.yaml",
+      "sha256": "454c7ba79f1fb474c8db7d7e79028838af29af4b5060e87658960e5e8f097a7a",
+      "bytes": 618,
+      "id": "external-review",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly-local/fragments/user/design/external-review.fragment.yaml:18"
+      ]
+    },
+    {
+      "path": ".basicly-local/fragments/user/project/ownership.fragment.yaml",
+      "sha256": "9ddd559ecac8faf1e67f76e8c9c63967e04f1e00012ba5028a00bf412baddd6a",
+      "bytes": 750,
+      "id": "ownership",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly-local/fragments/user/project/ownership.fragment.yaml:14"
+      ]
+    },
+    {
+      "path": ".basicly-local/fragments/user/project/project-defaults.fragment.yaml",
+      "sha256": "4d08bf38dc853edfc9fd1b96b1137570904a9bd893a015a9ebfd6a1b2fa01f1e",
+      "bytes": 326,
+      "id": "project-defaults",
+      "review": "body-reviewed",
+      "disposition": "investigate",
+      "reason": "Potential stale or duplicated source; establish catalog selection and consumers before removal. Project defaults contradict the current overview on Windows/macOS CI coverage.",
+      "selection_status": "deprecated",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly-local/fragments/user/project/project-defaults.fragment.yaml:12"
+      ]
+    },
+    {
+      "path": ".basicly-local/fragments/user/project/project-overview.fragment.yaml",
+      "sha256": "655a78fbd4dea5b997c24901caf255b16210f55113556b42d14c22f3cd0d1d99",
+      "bytes": 1136,
+      "id": "project-overview",
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "reason": "Preserve authority, repository facts, source ownership or concrete commands; optimize wording without removing the required behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly-local/fragments/user/project/project-overview.fragment.yaml:16"
+      ]
+    },
+    {
+      "path": ".basicly-local/fragments/user/project/release-fragments.fragment.yaml",
+      "sha256": "ce778690e2201994fb61fdb07ffb9bfe0025f499aecee8d356ac3dadd56cad55",
+      "bytes": 792,
+      "id": "release-fragments",
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "reason": "Preserve authority, repository facts, source ownership or concrete commands; optimize wording without removing the required behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": {
+        "paths": [
+          "changelog.d/**",
+          "src/**",
+          ".basicly/core/**"
+        ]
+      },
+      "evidence": [
+        ".basicly-local/fragments/user/project/release-fragments.fragment.yaml:21"
+      ]
+    },
+    {
+      "path": ".basicly-local/fragments/user/project/rendered-surfaces.fragment.yaml",
+      "sha256": "87ea4203c7eaf46c881a23bffc28cef84fb7e16cf012cced8c8216de1b32f778",
+      "bytes": 578,
+      "id": "rendered-surfaces",
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep task-relevant invariant; consolidate overlap and move conditional procedure to the owning skill. Verify the composed host output before changing behavior.",
+      "selection_status": "active",
+      "applies_to": [
+        "all"
+      ],
+      "scope": null,
+      "evidence": [
+        ".basicly-local/fragments/user/project/rendered-surfaces.fragment.yaml:18"
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "path": ".basicly/core/agents/blocks/artifact-field-set.block.yaml",
+      "sha256": "ffbf4eee9b5e7e6bbc8ac058571ff6b452ff2c75efb27500d4ded9507e63e54c",
+      "bytes": 698,
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep output/authority/evidence invariants once; remove redundant wording after evaluating consumers."
+    },
+    {
+      "path": ".basicly/core/agents/blocks/context-priming.block.yaml",
+      "sha256": "5b1327c491255211520853db9b2fc9cbbc65b61c0ccc730c5887da64fc61755c",
+      "bytes": 415,
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep output/authority/evidence invariants once; remove redundant wording after evaluating consumers."
+    },
+    {
+      "path": ".basicly/core/agents/blocks/escalation-honesty.block.yaml",
+      "sha256": "7ba131152ff681e5481f4430482479d4760b10c1edd83d6847e000c50881e2c6",
+      "bytes": 437,
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep output/authority/evidence invariants once; remove redundant wording after evaluating consumers."
+    },
+    {
+      "path": ".basicly/core/agents/blocks/evidence-discipline.block.yaml",
+      "sha256": "456340c4d1d3705cc65193822a3ba8e8dc8d141b55ec228d849afee257cabf50",
+      "bytes": 678,
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep output/authority/evidence invariants once; remove redundant wording after evaluating consumers."
+    },
+    {
+      "path": ".basicly/core/agents/blocks/read-only-discipline.block.yaml",
+      "sha256": "9db6240a52d9061faf7757386f8e96bd7f73bbecf8eb405316324845794d4328",
+      "bytes": 399,
+      "review": "body-reviewed",
+      "disposition": "trim",
+      "reason": "Keep output/authority/evidence invariants once; remove redundant wording after evaluating consumers."
+    }
+  ],
+  "effective_surfaces": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "a695b9f324044862b8784cab0b0a29b051f8467e16cd9946d8379c0f1d74db2d",
+      "bytes": 10108,
+      "review": "body-reviewed",
+      "disposition": "trim"
+    },
+    {
+      "path": ".claude/CLAUDE.md",
+      "sha256": "54690cece6f2275bf6fd0e64981f6433b605bc5cef7862383386215fe2e8baad",
+      "bytes": 9735,
+      "review": "body-reviewed",
+      "disposition": "trim"
+    },
+    {
+      "path": ".github/copilot-instructions.md",
+      "sha256": "54690cece6f2275bf6fd0e64981f6433b605bc5cef7862383386215fe2e8baad",
+      "bytes": 9735,
+      "review": "body-reviewed",
+      "disposition": "trim"
+    },
+    {
+      "path": ".claude/settings.json",
+      "sha256": "94324cb351c5a3e6f1ad05eaa7b5c6dd773f9a5c5bd7627f1c7c3ac7030781cc",
+      "bytes": 3156,
+      "review": "loading-configuration-inspected",
+      "disposition": "investigate"
+    },
+    {
+      "path": ".codex/config.toml",
+      "sha256": "3f3afad7d69ce72d44c726acd4c8d27674b64fe76a33a518562f9a847963533f",
+      "bytes": 75,
+      "review": "loading-configuration-inspected",
+      "disposition": "investigate"
+    },
+    {
+      "path": ".basicly/core/targets/claude.yaml",
+      "sha256": "ab761f21138b7dbcd9d5bd5148c8b83cdd526820e7e3a8d90feee1f5f43d7e55",
+      "bytes": 1720,
+      "review": "body-reviewed",
+      "disposition": "investigate"
+    },
+    {
+      "path": ".basicly/core/targets/codex.yaml",
+      "sha256": "f5c8fb2b5e8c7e408585a3b8bc7c38da2c34c1b19116d69c8f7cc800cedc2960",
+      "bytes": 1619,
+      "review": "body-reviewed",
+      "disposition": "investigate"
+    },
+    {
+      "path": ".basicly/core/targets/copilot.yaml",
+      "sha256": "5502a7139c94e28c4fc102d704a5a74d95cfb26fa6c29ef07764b186fba68c22",
+      "bytes": 1556,
+      "review": "body-reviewed",
+      "disposition": "investigate"
+    },
+    {
+      "path": ".basicly/core/output-styles/tired-engineer/style.yaml",
+      "sha256": "1e004ac74ff9199e9e5e50432eaaa662f3e7c700fef8575ab562b648fd72c30b",
+      "bytes": 2373,
+      "review": "body-reviewed",
+      "disposition": "trim"
+    }
+  ],
+  "resources_and_scripts": [
+    {
+      "path": ".basicly/core/hooks/affected_checks.py",
+      "sha256": "4c056883fd480acab5be76b1f917724dfcaadcba2c983b4097af8716829b8558",
+      "bytes": 9215,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/bare-var-guard.py",
+      "sha256": "594eff36889eb18fa13337efaa7e88051ec61273beff40ceb9bf4fa1467347e5",
+      "bytes": 2893,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/catalog-lint.py",
+      "sha256": "a7578aa1bfebe9e7cb696ae8400827d3f7914c49085fbc44f8ea7334a8e451a3",
+      "bytes": 2170,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/check_runner.py",
+      "sha256": "7f51c684d6178e2d611a2e0d36d22f9fb101542e1c6644ef821b401b81339db8",
+      "bytes": 14902,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/command_paths.py",
+      "sha256": "b83406f176168d3e85280ceb51b651eb187abc569195003937749a6da3b49467",
+      "bytes": 892,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/comment_ratchet.py",
+      "sha256": "d7f4766f673c5cff4f0c430511c9e54126620b30caec8f723f5c6bfd1d2ece89",
+      "bytes": 4692,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/commit-msg.py",
+      "sha256": "f8670d91b7c7f77bb913d768b94cb25f64200b1abacfdb5e05bedcfee376525b",
+      "bytes": 3497,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/engine_verify.py",
+      "sha256": "fa8edfb9aa80d4db2c7a9b571356b4f4f68196c6d70f661349112bee7348009b",
+      "bytes": 2140,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/headroom-guard.py",
+      "sha256": "a639faa8003a305af9a89f5da7c91f14925a0a83b2827c4b02c50722f74e189f",
+      "bytes": 2660,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/identity-guard.py",
+      "sha256": "206ba59e9e7e680c9fb1d4f3a67d653092684a59ca867e3774f2f3c480c8badc",
+      "bytes": 5751,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/internal-info-scan.py",
+      "sha256": "c8bea918986d6f2221015725bfbdea000390e8b716dc3c0e7f0955b04aac3f6b",
+      "bytes": 3192,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/kit-boundary.py",
+      "sha256": "b5029021520d5c2cfcbcbac1f71d680b7d80538df1c92d6b48d435fd6a5b586d",
+      "bytes": 8761,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/lefthook-runtime.py",
+      "sha256": "d3731e62acbf8c36d63e645c25262e7dc1a7266c4ffd44681928e241670e5728",
+      "bytes": 9287,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/markdownlint.py",
+      "sha256": "785138872e0177c29fd1e51bb2c43a15702fae62d9a1ce0ae8fcf1d270662df7",
+      "bytes": 4426,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/no-comments.py",
+      "sha256": "eaf44deefe6e8e98fd33d5baf21335ef232badfb3553907ae6c62d3ff351e684",
+      "bytes": 2903,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/pipe-status-guard.py",
+      "sha256": "e2ed1f10c6ea04b3f45da4f23dac572424fccaf0f5d8cdd0c87ed11f9a58728e",
+      "bytes": 4803,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/pre-commit.py",
+      "sha256": "23b28a2a423ef0678783bd8668deb13dbdbd27246ccdfadd8f6abd2df0de9eb0",
+      "bytes": 391,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/pre-push.py",
+      "sha256": "bd3e550dff0fd8dc307b801ef8bc74e192829caeb16608ac563ce19f44b5aa63",
+      "bytes": 2123,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/protect-generated-commit.py",
+      "sha256": "ff9cfcafd1f2901a2d5f2618503103f9e72cdc226df3d4bd48d416a420ec8751",
+      "bytes": 3094,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/protect-generated.py",
+      "sha256": "c9dd96ba40b91b2a5e15604d4bfe395a2233d8f225ec1f3f475558a65283c552",
+      "bytes": 2624,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/rg-replace-guard.py",
+      "sha256": "1748c96b9aa073ad7c75bfd93cabfa21780443c7e2afe8570c0327b946056e8d",
+      "bytes": 2424,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/secret-scan.py",
+      "sha256": "d1198f3257877f75d27cbede7d23a165da3b0546e4b1bdab0ef0b39c1433d642",
+      "bytes": 5482,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/session-start.py",
+      "sha256": "0f47ebc6f953ade3d929a790a2fec36891048bb8d49844182d4f374e101e57cf",
+      "bytes": 2435,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/shell_tokens.py",
+      "sha256": "2f148beb5b8cb6c70381aaddccbb1ab7d50ffbfdab53b4fb1e7d5a359c84e034",
+      "bytes": 4379,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/staged-snapshot.py",
+      "sha256": "d3beaafaae530b275ae1d2441fed8c87ce6e39abaf22d4c3b1bd9738d6729a84",
+      "bytes": 6881,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/tool-usage.py",
+      "sha256": "c3ee917a9fd294abcbe248b979529c3bd12dfc2b72f05ba4cbef15a597c7ff97",
+      "bytes": 2761,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/tracker-claim.py",
+      "sha256": "6640c6016c6e4954a219c1193fe2fb2ba1ad2c3e11bca27b8dcb6088dd179ef2",
+      "bytes": 4669,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/tracker-commit-msg.py",
+      "sha256": "319fca03cfd0d1d56cf19184f62a9814950e295cddc4436b2e6167135d1d9e0e",
+      "bytes": 6188,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/tracker-fold.py",
+      "sha256": "236c48b46303b1ee1f1b02f39da7448018e9d9392b86f9e007769b69a35cb0f1",
+      "bytes": 1792,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/tracker-path-scan.py",
+      "sha256": "85fa533d047d1fe386338fc517751ced016e9632355d3ee690f3b805411d6dcd",
+      "bytes": 3607,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/hooks/unsplit-loop-guard.py",
+      "sha256": "aaeba8b66ae0717aae67a71771de3872f0fbe8a2e3ee0587a2c8f07d78ddcdc4",
+      "bytes": 1951,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".basicly/core/skills/best-practices-audit/evals.yaml",
+      "sha256": "9be9dad9471f99240c4462a412889f457d5c9fcbf2bc5a3cd70291fab9a1f1aa",
+      "bytes": 527,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/best-practices-audit/references/checklist.md",
+      "sha256": "a90829fb5e79641228f64a370f24310b8951bf8c9e554d437fc977117e68cf31",
+      "bytes": 6196,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Retain source mapping and API-versus-CLI separation. Revalidate numeric vendor limits and distinguish recommendations from hard requirements; blanket side-effect/manual-invocation and smaller-model advice are too broad for general policy.",
+      "consumers": [
+        ".basicly/core/skills/best-practices-audit/skill.yaml:12",
+        "tests/test_best_practices_fetch.py"
+      ],
+      "risk": "Source-key tests establish linkage, not whether vendor claims remain true."
+    },
+    {
+      "path": ".basicly/core/skills/best-practices-audit/scripts/fetch_docs.py",
+      "sha256": "495db887e274fc75e34f7ee2cc9a947745d47f128111de6eb3dc215ba582d6d0",
+      "bytes": 4662,
+      "review": "body-and-callsite-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Entrypoint invokes an all-source sequential download. No page selection or redirect handling; partial reuse leaves old page files beside a newly written shared timestamp. Keep only if scoped retrieval with per-source provenance earns its maintenance cost.",
+      "consumers": [
+        ".basicly/core/skills/best-practices-audit/skill.yaml:42",
+        "tests/test_best_practices_fetch.py"
+      ],
+      "risk": "Existing tests cover fresh-directory complete/offline/partial cases, not stale-cache provenance. Network latency has not been measured."
+    },
+    {
+      "path": ".basicly/core/skills/catalog-authoring/evals.yaml",
+      "sha256": "dc5c6560e714fc9e484a05fa8d484c1ad6fb66b081625e13d095661b2f6f4f57",
+      "bytes": 645,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/evals.yaml",
+      "sha256": "b017af0acc2410df2392c0da391e7f565de75b3fbae35905927c8fcf0ed467aa",
+      "bytes": 658,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/ast-grep.md",
+      "sha256": "f85166140112c162ba6d97727d9aa5fed2ff6ebd379ee146da0ba062d5fe90d7",
+      "bytes": 1417,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep syntax-search guidance; interactive rewrite must be clearly human-only. Verify current alias/deprecation claim before retaining it.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/bat.md",
+      "sha256": "b99a407df62401bae68d90be286c32fe9bee108fe1d39550ed2e58c474a0383c",
+      "bytes": 710,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/curl.md",
+      "sha256": "5dfec7ff4372c887aef0b81b6172da8469cd1cf4d90acacf69d1042f089cf736",
+      "bytes": 1146,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/direnv.md",
+      "sha256": "9d8ac726c6c792b8c356aa57538ca40e8092f3770685034927a1499bbf24fc9e",
+      "bytes": 1198,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep explicit environment execution guidance. Avoid env dumps that can reveal secrets; separate inspecting configuration from executing it and respect existing authorization.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/fd.md",
+      "sha256": "55b784028da9a271c075dfd47c06197b1eff81970bfc4eb84f85d374d5f6df6e",
+      "bytes": 804,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/fzf.md",
+      "sha256": "ba719839b084900d0fc66d42f94622f14e0feb30966d72d507a2c6137719515c",
+      "bytes": 856,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/git-delta.md",
+      "sha256": "7e3c8f759413002fbdcdb8bc1b155fe32cc0f3d7e15bad24bdb72776f45e27a6",
+      "bytes": 774,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep display-versus-parser distinction. Examples use global configuration despite recommending local settings; align the example with scoped intent.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/git-lfs.md",
+      "sha256": "269f1dabaa51f8e9c170be514bb665bcd9a3c3c225e0130ab68d0dd073c3c52e",
+      "bytes": 1352,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep migration/history warning but qualify blanket force-push assertion by publication state; validate current command flags before editing.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/git.md",
+      "sha256": "5426df087d36ea8a30c91f0af2057ca5778844db0dcd05241d9b999461af6c8c",
+      "bytes": 1682,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep focused staging and plain output; avoid requiring identity reads every commit when the guard already checks it.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/jq.md",
+      "sha256": "d39e4238e9cf6c90ab33d90024a03c07e1f29ca03a24f612180336c881045202",
+      "bytes": 925,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep compact data-query reference. Do not require dumping entire JSON before every targeted query; validate shape with bounded output.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/just.md",
+      "sha256": "7a2d6a0a016edaa9614483fe6f0b1b41a37cd5ba06304f9b0b4d497ab32f6126",
+      "bytes": 1196,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/lazygit.md",
+      "sha256": "c9138a7adc6304ac5c63e7f5487955e76f872d8f7aeb5e4bb9dd940255ea302e",
+      "bytes": 1039,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/ripgrep.md",
+      "sha256": "b557a7422f3a449c58578a755560e62dff4f027f41ac1ee7c0535bfa0a141cf4",
+      "bytes": 895,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/sd.md",
+      "sha256": "8459abb7161e1ee9ef902d4344838ec1166fe3fbb98c3f2a3d99d25783190b92",
+      "bytes": 813,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep preview and exact-scope guidance. Replace the newline/xargs example with a NUL-delimited path pipeline; spaces and newlines split filenames.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/shellcheck.md",
+      "sha256": "7717a5d8945d6ffd0c3a39cb455126b935f0cab7e34f8b976a4e183119beaab0",
+      "bytes": 795,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/starship.md",
+      "sha256": "26112fb990ae11f5551e97774585e73b7709fda854a02b37dbc367dd011bf3a5",
+      "bytes": 890,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep diagnostic commands and repeatable configuration; remove unsolicited one-line prompt aesthetic rule.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/tmux.md",
+      "sha256": "94f2e507a44d4e852610f2d5249f003b5ec6b49ea8c5b3a71b4fe5d79228d8e8",
+      "bytes": 989,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/tree.md",
+      "sha256": "83eafe02f419a0c6fa2893db1a1d77f3a7c7f3977ac20968cb95ad9395d6d344",
+      "bytes": 727,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/typos.md",
+      "sha256": "1ddd3563004cd391d70423b59e573ed2554e6bbd6220dc1e605d0c6388a22190",
+      "bytes": 733,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/uv.md",
+      "sha256": "1fc1f96eb2c86d50c917d9f32ac1b0f8549525877874610a28495557fc014685",
+      "bytes": 1003,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/wezterm.md",
+      "sha256": "bb881bd82be6c6e12a751a93c3d2a053496e2632020b41d88fff0e81ec8ef3ac",
+      "bytes": 826,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/wget.md",
+      "sha256": "3a95d7059437d73455f9979913301a7549617f1bcd7fd446b280e7327d88c58f",
+      "bytes": 1014,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/xh.md",
+      "sha256": "6d46f9ae014c995153dcef28b7c01dce81c38a3ca40d03ac9ed5b6a648de2ee6",
+      "bytes": 1383,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep HTTP syntax reference. Correct the secret-handling example: shell expansion of $TOKEN still places the secret in process arguments. Make noninteractive flags consistent in executable examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/yq.md",
+      "sha256": "9b0c5f727a6480def9915d26151577841577202c6d1c1ba5be4256e3f03cfed3",
+      "bytes": 853,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/cli-tools/references/zsh.md",
+      "sha256": "5c5d66d41f5867cfc026df63b79701423e9111b3e02d5e082a862b1d5a47a4c4",
+      "bytes": 1027,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded command reference; preserve concise task-specific routing and verify vendor flags when changing examples.",
+      "consumers": [
+        ".basicly/core/skills/cli-tools/skill.yaml",
+        "tests/test_skill_references.py",
+        "tests/test_user_skills.py"
+      ],
+      "risk": "Reference read does not verify every external flag; live vendor validation remains required for changed commands."
+    },
+    {
+      "path": ".basicly/core/skills/conventional-commits/evals.yaml",
+      "sha256": "038b912fec8749c9731ecb2213df1d101e6f1dd92eec1e519ee59d27754ce7d8",
+      "bytes": 614,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/find-skills/LICENSE.txt",
+      "sha256": "661142e53c313d2bb5e1b055f5c0a39001450ff1b5e27b89dc4bc7de9a6352ca",
+      "bytes": 1069,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/find-skills/evals.yaml",
+      "sha256": "8b8a62a744572ffeee04534251aa09c802940a9963253f5ebd20c4d2a5495b31",
+      "bytes": 656,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/harness-client/evals.yaml",
+      "sha256": "200e94ac6ef0b9eb80a4d31d2b0d14869295ac3974cb090cf0911c28dd0ef179",
+      "bytes": 614,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/harness-loop/evals.yaml",
+      "sha256": "8de01af3530ad46b76b18598518862489d75b7857ab1046f407ea43465899db1",
+      "bytes": 621,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/harness-loop/references/many-lanes.md",
+      "sha256": "6eada82683b32940a2a4e50599cb23770e7e9f377ee38b4f881255e69e2202ce",
+      "bytes": 4183,
+      "review": "body-and-entrypoint-reviewed; runtime claims pending",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep optional budget and scope-estimate caveats. Replace absolute prohibition on process polling with safe process-handle verification; a log or marker alone cannot prove liveness. Validate stop/wait behavior against supervisor code.",
+      "consumers": [
+        ".basicly/core/skills/harness-loop/skill.yaml:268"
+      ],
+      "risk": "Incorrect liveness guidance can strand work or cause duplicate dispatch."
+    },
+    {
+      "path": ".basicly/core/skills/interface-facts/evals.yaml",
+      "sha256": "99b1813636fc62fd8184cb2cf32ab614db9890886c6373eba96b4a33c092cd94",
+      "bytes": 742,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/node/evals.yaml",
+      "sha256": "9451d2454bdc498d743afaec7fb36a6129c2e8a9b25d7feef7802650cc408a94",
+      "bytes": 596,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/node/references/wsl-node-path.md",
+      "sha256": "bc080cc4a08c2b3fa76f462ca99498ed2529937224857963c3212ddb78d7f4e3",
+      "bytes": 1174,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Preserve wrong-runtime diagnosis but use installed project-selected Node. Alphabetical tail selection is not version selection, and login shells do not guarantee nvm initialization. Verify platform-specific recipe before shipping.",
+      "consumers": [
+        ".basicly/core/skills/node/skill.yaml:65"
+      ],
+      "risk": "A universal PATH fix can silently select the wrong runtime."
+    },
+    {
+      "path": ".basicly/core/skills/python/evals.yaml",
+      "sha256": "7320a5fbac97f12aa6354d33c07a91cdf7ff8d8afac38e8efb857cf36acb02a7",
+      "bytes": 880,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/python/references/cross-platform.md",
+      "sha256": "207f89df097934089250fd5d5153714c8f7adc2d154a6b91e691a3207d960d97",
+      "bytes": 1746,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep argv arrays and deliberate child environments. Forward-slash normalization alone does not make an unquoted path with spaces safe for shlex.split; remove that purported safe fallback or demonstrate correct quoting.",
+      "consumers": [
+        ".basicly/core/skills/python/skill.yaml:52"
+      ],
+      "risk": "Retain real Windows consumer coverage; Linux success is insufficient."
+    },
+    {
+      "path": ".basicly/core/skills/python/references/design.md",
+      "sha256": "17c7a50badeceaf1865f34bb047d376fb46b89dd47395773fa0bb27cb3be93fd",
+      "bytes": 4916,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep cohesion, locks, explicit exceptions and scoped suppressions. Remove mechanical sentence-with-and and two-caller rules; they do not establish design quality. Resolve baseline-waiver advice against gate policy rather than silently weakening gates.",
+      "consumers": [
+        ".basicly/core/skills/python/skill.yaml:58"
+      ],
+      "risk": "Preserve enforced invariants while reducing speculative restructuring."
+    },
+    {
+      "path": ".basicly/core/skills/release-process/evals.yaml",
+      "sha256": "27ffbe106b019554561624372d0ee76339067f477a036a89a56ae339e84cd963",
+      "bytes": 591,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/session-finish/evals.yaml",
+      "sha256": "dc557e3c0e6fbf0927f13bd409591ad34af5db87710677222cdcdf7f5a82f2f4",
+      "bytes": 571,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/LICENSE.txt",
+      "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362",
+      "bytes": 11345,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/assets/eval_review.html",
+      "sha256": "2fae8c5a7200c4c5d53ead70a697b0ebd54b10f2f7665323e4da6e640774285c",
+      "bytes": 7087,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/assets/viewer.html",
+      "sha256": "ce8ddc2a87b4ab23eed9eb8d4ff00be815922f27a547b73f971f97e2de03a7c2",
+      "bytes": 40540,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/evals.yaml",
+      "sha256": "75b7b2b6dc1f06fc88050bc958c0570657f4b2fb1dcee773d9fd09b3e3a881b9",
+      "bytes": 780,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/references/analyzer.md",
+      "sha256": "72a0e0428c51522d996c95a716b4e5831fbad089cb68171a31475a27bd411805",
+      "bytes": 10857,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/references/comparator.md",
+      "sha256": "f0497fa88b7b0ab38c3da18ada354a7d0aeb81fc3b5405954ea1be27c4924712",
+      "bytes": 7650,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/references/grader.md",
+      "sha256": "d0776d047c678ad315565642bf5137f7b263c50b180044282e47777996b0bf7d",
+      "bytes": 9421,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/references/schemas.md",
+      "sha256": "673676e51e4b2f0a23062e6c89bccbe893255d4f5c3a78945ae69ec3c650d6f3",
+      "bytes": 12592,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/scripts/aggregate_benchmark.py",
+      "sha256": "88028c4719b22cd3be9561b82f0be871a03efc54d9f251053bab32cf80f86db6",
+      "bytes": 10771,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/scripts/generate_report.py",
+      "sha256": "2630e75c8804158a7eab58640e89a5076e7b6b9ace2d0340425a3c9ad4f860f0",
+      "bytes": 11489,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/scripts/generate_review.py",
+      "sha256": "2cdb1c700f8de54ffaf9f99b3f4cb66dbb984e86a4e17a432c42de307bf1820e",
+      "bytes": 12159,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/scripts/improve_description.py",
+      "sha256": "40e9ac87f4c8e6fb22886ca2333e8790740b0cc918e8203460444dfd951f2ab9",
+      "bytes": 9687,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/scripts/run_eval.py",
+      "sha256": "9c7274957191cabb3ff9d440ce48cede1b7cd5cdc3c3c69e2fb4663ee139b4f8",
+      "bytes": 10484,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/scripts/run_loop.py",
+      "sha256": "fc2a5c6f0dabab0b6bb9ac5f554a2a6437a20f7daddc5f30237e9fb2178fdbf2",
+      "bytes": 11229,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/skill-creator/scripts/skill_md.py",
+      "sha256": "4698515946e0c988cbb9e6cbe1c6e54d7c2986df3558941d432a382b55a678fe",
+      "bytes": 1642,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "skill-resource"
+    },
+    {
+      "path": ".basicly/core/skills/test-discipline/evals.yaml",
+      "sha256": "3f031d640fbd368e9817288eee110b2300ab45a320960432696e71f245685047",
+      "bytes": 629,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/tier-injection/evals.yaml",
+      "sha256": "27e5f5cab7940c5fe5f99beaa7833f3b26b8f4b0d572fbb44882d123009181fe",
+      "bytes": 616,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/work-tracker/evals.yaml",
+      "sha256": "bea7f46863d86a650d98122be3bc503132ef1e88ef475cfb402834b0245e8e8d",
+      "bytes": 600,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/worktree-isolation/evals.yaml",
+      "sha256": "ed4b7523b84306b5d0c5c057d50056d147ff9a903d8e69fc6fa581fd511b75ea",
+      "bytes": 594,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/wsl/evals.yaml",
+      "sha256": "0f3aeed286c125354b17d65a8348986fe8bbc3135a0db09b40cd20c81819ddf8",
+      "bytes": 588,
+      "review": "body-reviewed; evaluator consumer pending",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Positive and negative routing prompts are useful starting fixtures, not evidence of task quality, latency or successful execution. Extend changed skills with behavior checks and avoid optimizing repeatedly on held-out tasks.",
+      "risk": "Current routing labels may encode obsolete phase ownership; reconcile after role conversion."
+    },
+    {
+      "path": ".basicly/core/skills/wsl/references/commands.md",
+      "sha256": "b5140ab144319f3250ae95600a77001e7b7fbb5dcf59676a73d943757f472ad3",
+      "bytes": 1429,
+      "review": "body-and-entrypoint-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Useful selectively loaded platform command table. Clearly distinguish observation from shutdown/update commands that can disrupt other sessions; verify current platform documentation when changing it.",
+      "consumers": [
+        ".basicly/core/skills/wsl/skill.yaml:14"
+      ],
+      "risk": "Never execute lifecycle commands merely to validate a reference during a concurrent session."
+    },
+    {
+      "path": ".scripts/bootstrap.ps1",
+      "sha256": "35e3080f459301005f81c0b8810adcf5c571997cf4a8be23921dd1f34e594ba4",
+      "bytes": 1724,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/bootstrap.sh",
+      "sha256": "42297c46a63a59a9ab37edcb50c22bf12012f4262719d4ac627f5797fa996435",
+      "bytes": 1787,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/build_lefthook_windows.py",
+      "sha256": "f8cc44cfb9a1120bbfacce693f0015e63e399c9f4eebd5310463dc463b1d3ca2",
+      "bytes": 4612,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_always_on_size.py",
+      "sha256": "6cb09b6bcf3df088e47c7dc320717abe6d3db223484bfbffb8a4d975f1d8579a",
+      "bytes": 3931,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_code_citations.py",
+      "sha256": "7634d19c1bd285f5eb02ad9de0c42850f031efdd23119a486e609ecc35289c99",
+      "bytes": 9300,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_corpus_drift.py",
+      "sha256": "2a2c9ca000ee075112779037f613905630594dfc575eaedd0c4cbad8306da5a5",
+      "bytes": 5528,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_declared_dependencies.py",
+      "sha256": "c71d801ed544ad39a3b3d74365d0805d869c9c83610822c20f652b2aae793340",
+      "bytes": 5281,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_design_tokens.py",
+      "sha256": "8af7c4915cb468dd9afc481a08e7d8e7c35e7ca61d2f785db632d51fcc3ddcdb",
+      "bytes": 11827,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_docs_citations.py",
+      "sha256": "7e7b43755cb96b0a70cce78a42b2ce7a2e98f2faed322cd052240d856b9487e4",
+      "bytes": 8986,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_except_form.py",
+      "sha256": "c9fd26d14e762cd99ac15d7446ff555c4ca237ce46d2b98272c2dedf8840a6e6",
+      "bytes": 4530,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_ledger_fsck.py",
+      "sha256": "e4e835652a4750f12fba5fab9eae929da4142e4c0f42772a8593a78697dafc87",
+      "bytes": 5557,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_marker_families.py",
+      "sha256": "b7480aff0ddcd0dcc911c8dfdf54754cbe520ee721ef9aa44bc8a789609a8456",
+      "bytes": 9557,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_mermaid.py",
+      "sha256": "a71c2dd1d1b24ae553668ecc4e0d3edf6795171d3382d21abe585d9a24736a27",
+      "bytes": 5635,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_module_size.py",
+      "sha256": "09463adcdbb6a381b68beef891e39ecbc825901847873425f178c33a7e3c59a8",
+      "bytes": 5619,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_noqa_debt.py",
+      "sha256": "42e65f0552773f223f91336b8db7ea229163fb77851680cf2c182e1a4a8da9b6",
+      "bytes": 6575,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_release_fragments.py",
+      "sha256": "300eaa3373995a41b3b0e2539f5e0e349b1caf28153f420585a874e605e6fbc7",
+      "bytes": 2474,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_release_notes.py",
+      "sha256": "833e4e02f499d6fc6fa9c35341b7b2b647d02ac9cdba4847190037743b5236f6",
+      "bytes": 8719,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_render_overflow.py",
+      "sha256": "ec47af1b636a943ee0b1f0abfb23332a785edd6873d40dacf606a3b3433e4ae6",
+      "bytes": 10686,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_spend_accuracy.py",
+      "sha256": "79675c1e2c6c00c9d60de889dd91fcc4b2ef524b4bc2818d0651fed8d3990268",
+      "bytes": 3790,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_test_naming.py",
+      "sha256": "95cba31c9f69968d284dbc394d1e9ae0390540f885c8155f2c47a3b3c9db2000",
+      "bytes": 3847,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_tree_growth.py",
+      "sha256": "2e72d160785652b1c315e899c19f0102f9081d29858bb2a2c4abe1c64428e423",
+      "bytes": 5526,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/check_waivers.py",
+      "sha256": "6ed249faff51c25a3629214b04e434834be8b25bb7aebef906d86c5ac72862da",
+      "bytes": 2842,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/compatibility_smoke.py",
+      "sha256": "d1bb041d6b4e5309045a1165daa6f7914a8f9d030d40ebee29f5b9d84329e1e5",
+      "bytes": 9904,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/docs_claim_layers.py",
+      "sha256": "8ced1f2d6382d0ad5daf22bb7510f35011ff8b478de8a4b179ceba4896c87a77",
+      "bytes": 6564,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/docs_claim_sources.py",
+      "sha256": "a72f91bb2f52382c40902cfb1754765b18b97538cc76a83014cd69d1fcdede51",
+      "bytes": 828,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/docs_claim_status.py",
+      "sha256": "066cba4caef683530ff8d1e5680132b13af69b95bec47b3cd81dfdd09170d05a",
+      "bytes": 6597,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/docs_claim_surfaces.py",
+      "sha256": "abeb66122ae857e6c9069a445222e1cfbab9fe14765887c2fffdeac540dab577",
+      "bytes": 2513,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/docs_claim_work_types.py",
+      "sha256": "7629980b6a0a80a39855850a42d02bf918d4574e3762a09024142cf85d265230",
+      "bytes": 1270,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/docs_claims.py",
+      "sha256": "51dce1abcefc2d4f3ceb5c0466bb12b1c3be0d3eed145f8912d2d9c973b7d2ad",
+      "bytes": 13327,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/eval_baseline_decisions.py",
+      "sha256": "79eec936b0f96e9a6f5c1dc8fc8e7a3a4a8ad0e9927581224d261c1ccf51dd7b",
+      "bytes": 5059,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/generate_model_map.py",
+      "sha256": "b3a2e7a4af9b70c2664bfd9a4a79626ae36f2498b1407f35d854eb0c07705496",
+      "bytes": 9824,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/generate_release_changelog.py",
+      "sha256": "37c693902f29ff0e57cb43c5a5ffa60c3957f9b947fe08355bfe620de6c3603d",
+      "bytes": 6987,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/generate_release_notes.py",
+      "sha256": "75d0155c144fce32c1166c1c44004656ec1e7ae5172fd487749e75e921c81945",
+      "bytes": 4699,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/headroom.py",
+      "sha256": "de37e8b734636f147b504be7cf14a0e0d198b6af59aa0dd7bc3f95a4cde0b01f",
+      "bytes": 3067,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/improvement_controller.py",
+      "sha256": "4b6fd72747b43972732adfb49f830983a80a31610ac737e6322ab6b24041b565",
+      "bytes": 7305,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/kit_deployment.py",
+      "sha256": "52a7cb405a5f3f18397a7568f603b45c984498f7d31a9ff0f888a2f5c2bdeb3f",
+      "bytes": 7426,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/ledger_bodies.py",
+      "sha256": "31c709171e4ac932c71451562d5c0f3b1e941df9f5519ef08f5537ab98083e07",
+      "bytes": 3339,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/measure_card_open.py",
+      "sha256": "a92b101d92244c46842bbd22c9b66b30e1b048be286e086dff0a9a5a6bc33b99",
+      "bytes": 3991,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/measure_workflows.py",
+      "sha256": "e0441dd119442538565d2caf8a5f9a2e68848627ef20148866bb221df3fef3ba",
+      "bytes": 14999,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/model_map_anchors.py",
+      "sha256": "fa9bf7b2da05d6cf8a3089b9fa0fa8e2c39ad80db9a78b07cfee6c32f95bfc4c",
+      "bytes": 8773,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/model_map_resolve.py",
+      "sha256": "2537d02258a70cd7aeff77cce216041455b2d05031d79335f1cb63cb19c9baa0",
+      "bytes": 4676,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/ratchet.py",
+      "sha256": "66560a98e8a15578f145cda49b4773b83c1beb81d00ab31179c86f5b1114c54a",
+      "bytes": 4500,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/release_note_standing.py",
+      "sha256": "cc4aac0b3f17aece0e3978be027a194e34aec9af761ca81fce085153a8e3caa8",
+      "bytes": 3182,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/render_mermaid.mjs",
+      "sha256": "61eae625a8006e627b1266cf86272b805c552868476f50ef72a987f2beb706f7",
+      "bytes": 2579,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/retention_eval.py",
+      "sha256": "5626ff60f2eca7df61a3f2000ff5ca4a131ad3752d68f955f2cd1670faa11321",
+      "bytes": 9863,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/setup_git_identity.py",
+      "sha256": "08a5e5c76c80badcd9d052331fa7a3c8299cf30e14587ac586dea607af929c1b",
+      "bytes": 2642,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/validate_affected_consumer.py",
+      "sha256": "772a3d9aad04df9d08c8eeafecfeed36c16015f462b1e2dd6f4dda503b6e5ef6",
+      "bytes": 14745,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/validate_check_cache.py",
+      "sha256": "a3ff17ebdc4a9ff31cda4bacdb7c33b8ccfac324c6a7c1a14f2570a2b59c2a6f",
+      "bytes": 7753,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/waivers.py",
+      "sha256": "a06b989d37d79a903354df6e30c79ddaa74f41789f6bb1d68fa95610e34ea152",
+      "bytes": 3337,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    },
+    {
+      "path": ".scripts/wired_or_deleted.py",
+      "sha256": "861aa14789bbc5aae54ba192c994ae4838668c25323fd58210e05af6e941788c",
+      "bytes": 14395,
+      "review": "pending-body-and-callsite-review",
+      "disposition": "investigate",
+      "kind": "hook-or-maintenance-script"
+    }
+  ],
+  "next_checks": [
+    "Read each bundled reference/script/eval and trace callers; retain licensing notices.",
+    "Map selected and inactive fragments to each effective host output and inspect personal shadowing without editing user configuration.",
+    "Trace every configured hook and handoff artifact producer/consumer; distinguish deterministic work from model dispatch.",
+    "Reconcile related backlog against current implementations and owners.",
+    "Complete measured baseline before interpreting prompt size as latency."
+  ],
+  "source_guidance": [
+    "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices",
+    "https://code.claude.com/docs/en/skills",
+    "https://code.claude.com/docs/en/sub-agents",
+    "https://learn.chatgpt.com/docs/build-skills",
+    "https://learn.chatgpt.com/docs/agent-configuration/subagents"
+  ],
+  "concurrent_work": [
+    {
+      "record": "basicly-bl1y0ii",
+      "handling": "Do not take over; inspect landed S2 implementation before proposing receipt changes."
+    },
+    {
+      "record": "basicly-g5ic8mo",
+      "handling": "Do not edit owned Lefthook packaging scope; use documented local prerequisite preparation."
+    }
+  ]
+}
