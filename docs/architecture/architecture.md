@@ -281,7 +281,7 @@ cannot be reviewed.
 | model vendors | model ids, prices, per-surface caps | a committed model map, generated from a reviewed anchors file | the drift check reports and never writes, so an upstream edit can never change which model runs someone's code |
 | GitHub Actions | five workflows on three platforms | the workflow files in this repository | CI failing does not block a local landing; the loop's verify step runs the same checks |
 | `uv` and CPython | the runtime every projected hook shells out to | `requires-python` in `pyproject.toml` | a consumer without the runtime on `PATH` reaches the bootstrap shim |
-| Lefthook | the shared runner for Git and agent hooks | bundled 2.2.2 release archives for six platform variants, checked before materialization | a missing or altered repository binary fails the hook check |
+| Lefthook | the shared runner for Git and agent hooks | official upstream 2.2.2 release archives for six platform variants, hash-checked before materialization | a missing or altered repository binary fails the hook check |
 | ~~the external tracker binary~~ | **none. It was removed 2026-08-18 and no code path spawns it** | — | §37 is the closing account of it |
 
 **The projected guidance is the one contract every agent family does standardize.** That
@@ -1091,11 +1091,13 @@ the installed script. A foreign pre-commit configuration is refused before hook
 projection; its owner must migrate those checks to Lefthook first.
 
 **The runner is bundled in distributions.** Git stores the Lefthook version,
-SHA-256 manifest, MIT license and preparation code. Explicit preparation accepts
-local artifacts or downloads the pinned release and verifies every hash into
+SHA-256 manifest, MIT license and preparation code, and never a binary or an
+archive. Every manifest entry names the official upstream release URL and the
+hash upstream publishes. Explicit preparation accepts local artifacts or
+downloads the pinned release and verifies every hash into
 ignored `build/lefthook/`. Package builds require those artifacts and perform no
-downloads. Wheel and source distributions carry all six compressed binaries,
-upstream checksums and source archive outside the projected catalog. Install
+downloads. Wheel and source distributions carry all six compressed binaries
+and the upstream checksum file outside the projected catalog. Install
 verifies and materializes only `.basicly/bin/lefthook[.exe]` and its license,
 without fetching or requiring a global runner. Consumers receive no vendor
 archive directory. Source developers prepare artifacts explicitly; consumers
@@ -1132,10 +1134,15 @@ staged Git objects, including renames. New, changed and duplicated prose is refu
 Scanner and Git failures refuse the operation. The transition policy changes no ledger
 history or merge rules.
 
-**Windows executes the same configured jobs.** Its bundled Lefthook has a pinned,
-Windows-only source patch that passes shell arguments through Go's argument encoder.
-It preserves literals and filenames expanded by Lefthook without rewriting consumer
-configuration. Official Linux and macOS binaries remain unchanged. Snapshot normalization
+**Windows executes the same configured jobs.** Every platform runs the official upstream
+Lefthook release, and the repository owns no binary, archive or patch. Official Lefthook
+2.2.2 starts a job on Windows as the raw command line `"sh" -c "<job>"`, so Windows removes
+a double quote inside the job before `sh` reads it. basicly's managed job is not exposed to
+that. It uses no filename placeholder, it carries its specification in the environment, and
+`lefthook-runtime.py` reads the staged file list from Git and hands each name to the hook
+script as a separate argument. A consumer job that expands `{staged_files}` over a filename
+holding an apostrophe gets upstream's behaviour, which a global Lefthook install gets too:
+the mangled line fails the hook rather than running a different command. Snapshot normalization
 refreshes CRLF index metadata only when the staged tree hash remains identical. Directory
 junctions share dependencies when native symlinks are unavailable. A failed link refuses
 the snapshot instead of copying a large environment or losing shared usage writes.

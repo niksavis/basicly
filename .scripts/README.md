@@ -15,9 +15,12 @@ Cross-platform scripts for this repository.
   checksum-verified Lefthook release for source development and packaging.
   Use `--from-dir <directory>` for supplied local artifacts. Assets stay in
   ignored `build/lefthook/`; builds and consumer installs never download them.
+  Every entry names the official upstream release URL, so the repository holds no
+  binary, archive or patch.
   To bump Lefthook, update `src/basicly/lefthook_assets/manifest.json` with the
-  chosen version, upstream URLs and verified SHA-256 hashes for all six binaries,
-  source archive and checksum file. Review the new source license, prepare with
+  chosen version, official release URLs and the SHA-256 hashes that upstream
+  publishes in `lefthook_checksums.txt`, for all six binaries and the checksum
+  file. Review the new license, prepare with
   `--download`, and test the built distributions before releasing basicly.
   The manifest also sets the generated configuration's minimum version.
   Consumers receive and replace the old executable when they rerun install with

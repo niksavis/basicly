@@ -1,35 +1,43 @@
 # Lefthook distribution
 
-The manifest pins upstream Lefthook 2.2.2, its MIT licence, source and archives.
-Linux and macOS use the official archives without changes.
+`manifest.json` pins upstream Lefthook 2.2.2. Every supported platform uses the official
+release archive from `github.com/evilmartians/lefthook`, without a change. This directory
+holds the pin, the MIT licence and this page. It holds no executable and no archive, and
+nothing here is compiled.
 
-Windows uses `basicly-windows.1`. The source is the pinned upstream archive plus
-`windows.patch`. The patch replaces the raw Windows `CmdLine` override with Go's
-argument-list API. Lefthook still expands placeholders and applies its own job filters.
-The patch preserves literal arguments and expanded filenames without rewriting user
-configuration. The verbose version includes the patch revision.
-
-The patched Windows archives are vendored under `windows/`. The manifest records their
-SHA-256 hashes and retains the original upstream URLs and hashes for provenance.
-Distributions keep every archive under the existing `2.2.2/` layout and exclude duplicate
-Git copies. Rebuilding from a source distribution uses its prepared archives.
-Normal artifact preparation copies these files and verifies them. Wheel and source
-builds never download or compile implicitly. Consumers need neither Go nor a global
-Lefthook installation.
-
-To reproduce both Windows architectures, prepare the upstream source archive first,
-then run from the repository root:
+Each manifest entry carries the upstream HTTPS URL and the SHA-256 hash that upstream
+publishes in `lefthook_checksums.txt`. `lefthook_artifacts.py` downloads every entry into
+the ignored cache `build/lefthook/2.2.2/` and verifies each hash before any build or
+install reads it. A hash that disagrees refuses the preparation and keeps the previously
+prepared cache. Preparation is explicit:
 
 ```sh
-uv run python .scripts/build_lefthook_windows.py --out /tmp/lefthook-rebuild --check
+uv run python src/basicly/lefthook_artifacts.py --download
+uv run python src/basicly/lefthook_artifacts.py --from-dir <directory>
 ```
 
-The rebuild requires Git and Go. It selects the pinned Go toolchain through `GOTOOLCHAIN`;
-Go can download that toolchain and the modules pinned by the upstream `go.sum`.
-Supply those caches in advance for an offline rebuild. The command verifies the source
-and patch hashes, disables CGO and workspace settings, removes build paths and build IDs,
-and writes deterministic gzip archives. `--check` compares their hashes and bytes with
-the committed pins. A different existing output is refused.
+Wheel and source builds never download. They read the prepared cache and refuse when it is
+missing, so a consumer install needs no network and no global Lefthook.
 
-Compatibility CI rebuilds the pins and tests native Windows behavior. Remove this patch
-only after an upstream release passes the same literal and placeholder regression tests.
+## Windows argument handling
+
+Official Lefthook 2.2.2 runs a job on Windows as the raw command line
+`"sh" -c "<job>"`. Windows removes a double quote inside `<job>` before `sh` sees it. Two
+consequences follow, and both are upstream behavior that a global Lefthook install has
+too:
+
+- A job whose `run` string contains a literal double quote reaches `sh` with that quote
+  removed.
+- `{staged_files}` and `{all_files}` escape a filename that holds an apostrophe as
+  `'name'"'"'s.py'`. The embedded double quotes are removed, so `sh` reports a syntax
+  error and the hook fails.
+
+basicly's own managed job is not exposed to this. It uses no filename placeholder, so no
+filename reaches the command line. It carries its specification in the environment, which
+Windows passes through unchanged, and `lefthook-runtime.py` reads the staged file list
+from `git diff --cached -z` itself. `tests/test_hook_compatibility.py` measures both
+routes on native Windows.
+
+To change the pinned version, replace the version, the URLs and the hashes in
+`manifest.json` from the upstream release and its `lefthook_checksums.txt`, then run the
+download command again.

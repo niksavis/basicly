@@ -64,13 +64,6 @@ def test_distributions_bundle_verified_assets_and_sdist_rebuilds_offline(
     expected_source = {
         path.relative_to(work_repo).as_posix() for path in work_repo.rglob("*") if path.is_file()
     }
-    manifest = json.loads((work_repo / "src/basicly/lefthook_assets/manifest.json").read_text())
-    bundled = {
-        f"src/basicly/lefthook_assets/{entry['bundled']}"
-        for entry in manifest["assets"]
-        if "bundled" in entry
-    }
-    expected_source -= bundled
     assert "kit/tracker/events.py" in expected
     if dirty:
         for relative in ["kit/tracker", "kit/tier", "templates"]:
