@@ -1124,8 +1124,8 @@ the operation.
 Git completion. When 2.2.2 skips a command because its native file selection is
 empty, the outer launcher selects only the managed job and requests execution
 without the empty-file skip. Completed jobs never run again, foreign job filters
-remain intact, and a missing completion record blocks the operation. Original
-Git arguments reach native consumer commands as well as the managed dispatcher.
+remain intact, and a missing completion record blocks the operation. The launcher
+forwards the original Git argument list to both Lefthook and the managed dispatcher.
 
 **Strict comment enforcement remains the default and goal.** An explicit
 `[hooks.comments] policy = "no-comment-ratchet"` permits unchanged legacy prose during
@@ -1140,9 +1140,10 @@ Lefthook release, and the repository owns no binary, archive or patch. Official 
 a double quote inside the job before `sh` reads it. basicly's managed job is not exposed to
 that. It uses no filename placeholder, it carries its specification in the environment, and
 `lefthook-runtime.py` reads the staged file list from Git and hands each name to the hook
-script as a separate argument. A consumer job that expands `{staged_files}` over a filename
-holding an apostrophe gets upstream's behaviour, which a global Lefthook install gets too:
-the mangled line fails the hook rather than running a different command. Snapshot normalization
+script as a separate argument. A consumer job that expands a filename placeholder or Git
+argument with unsafe shell characters gets upstream's behaviour, which a global Lefthook
+install gets too. A command that uses the argument as a file path fails the hook because the
+mangled path does not exist. Snapshot normalization
 refreshes CRLF index metadata only when the staged tree hash remains identical. Directory
 junctions share dependencies when native symlinks are unavailable. A failed link refuses
 the snapshot instead of copying a large environment or losing shared usage writes.

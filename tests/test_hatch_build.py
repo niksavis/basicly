@@ -102,6 +102,7 @@ def test_distributions_bundle_verified_assets_and_sdist_rebuilds_offline(
         assert not any(
             name.startswith("basicly/lefthook_assets/windows/") for name in archive.namelist()
         )
+        assert "basicly/lefthook_assets/README.md" not in archive.namelist()
         for entry in manifest["assets"]:
             data = archive.read(f"basicly/lefthook_assets/{manifest['version']}/{entry['name']}")
             assert hashlib.sha256(data).hexdigest() == entry["sha256"]
@@ -112,6 +113,9 @@ def test_distributions_bundle_verified_assets_and_sdist_rebuilds_offline(
         } == expected_source | {"PKG-INFO"}
         assert not any(name.endswith("unrelated.bin") for name in archive.getnames())
         assert not any("/.basicly/usage/" in name for name in archive.getnames())
+        assert not any(
+            name.endswith("/src/basicly/lefthook_assets/README.md") for name in archive.getnames()
+        )
         archive.extractall(extracted, filter="data")
     source = next(extracted.iterdir())
     rebuild = subprocess.run(

@@ -1,0 +1,1 @@
+- Stop packaging the redundant Lefthook asset README and keep the Windows compatibility regression aligned with the official runner's fail-closed argument behavior.
