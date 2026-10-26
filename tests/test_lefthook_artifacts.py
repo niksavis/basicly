@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
 import io
+import json
+import re
+import subprocess  # nosec B404
 from pathlib import Path
 
 import pytest
@@ -77,69 +81,74 @@ def test_download_refuses_non_https_artifact_urls(tmp_path: Path) -> None:
         artifacts.prepare(tmp_path / "checkout", None)
 
 
-def test_bundled_windows_artifact_is_verified_and_never_downloaded(
-    tmp_path: Path, supplied: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    metadata = tmp_path / "metadata"
-    metadata.mkdir()
-    (metadata / "patched.gz").write_bytes(b"binary")
-    entry = artifacts.MANIFEST["assets"][0]
-    entry["bundled"] = "patched.gz"
-    entry.pop("url")
-    monkeypatch.setattr(artifacts, "METADATA", metadata)
-    seen = []
-
-    def download(url: str, *, timeout: int):
-        seen.append(url)
-        assert timeout == 60
-        return io.BytesIO((supplied / url.rsplit("/", 1)[1]).read_bytes())
-
-    monkeypatch.setattr(artifacts.urllib.request, "urlopen", download)
-    destination = artifacts.prepare(tmp_path / "checkout", None)
-    assert (destination / "binary.gz").read_bytes() == b"binary"
-    assert seen == [artifacts.MANIFEST["assets"][1]["url"]]
-    (metadata / "patched.gz").write_bytes(b"corrupt")
-    with pytest.raises(ValueError, match=r"checksum mismatch: binary\.gz"):
-        artifacts.prepare(tmp_path / "checkout", None)
-    assert (destination / "binary.gz").read_bytes() == b"binary"
+RELEASE_PREFIX = "https://github.com/evilmartians/lefthook/releases/download/v"
+PLATFORM_ARCHIVES = {
+    f"lefthook_{artifacts.VERSION}_{system}_{machine}.gz"
+    for system in ("Linux", "MacOS", "Windows")
+    for machine in ("x86_64", "arm64")
+}
+EXECUTABLE_MAGIC = {
+    b"\x1f\x8b": "gzip archive",
+    b"PK\x03\x04": "zip archive",
+    b"BZh": "bzip2 archive",
+    b"\xfd7zXZ": "xz archive",
+    b"\x28\xb5\x2f\xfd": "zstd archive",
+    b"!<arch>": "ar archive",
+    b"MZ": "Windows executable",
+    b"\x7fELF": "ELF executable",
+    b"\xcf\xfa\xed\xfe": "Mach-O executable",
+}
 
 
-def test_packaged_windows_fallback_refuses_corruption(
-    tmp_path: Path, supplied: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    artifacts.MANIFEST["assets"][0]["bundled"] = "patched.gz"
-    metadata = tmp_path / "metadata"
-    metadata.mkdir()
-    (metadata / "patched.gz").write_bytes(b"binary")
-    monkeypatch.setattr(artifacts, "METADATA", metadata)
-    assert artifacts.verified_bytes(tmp_path, "binary.gz") == b"binary"
-    (metadata / "patched.gz").write_bytes(b"corrupt")
-    with pytest.raises(ValueError, match=r"checksum mismatch: binary\.gz"):
-        artifacts.verified_bytes(tmp_path, "binary.gz")
-    destination = artifacts.prepare(tmp_path / "checkout", supplied)
-    assert (destination / "binary.gz").read_bytes() == b"binary"
-    (supplied / "binary.gz").write_bytes(b"corrupt")
-    with pytest.raises(ValueError, match=r"checksum mismatch: binary\.gz"):
-        artifacts.prepare(tmp_path / "checkout", supplied)
+def _committed_binaries(paths: list[Path]) -> dict[str, str]:
+    found = {}
+    for path in paths:
+        if not path.is_file():
+            continue
+        with path.open("rb") as handle:
+            head = handle.read(8)
+        for magic, kind in EXECUTABLE_MAGIC.items():
+            if head.startswith(magic):
+                found[path.as_posix()] = kind
+    return found
 
 
-def test_download_reuses_verified_packaged_windows_archive_without_git_copy(
-    tmp_path: Path, supplied: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    metadata = tmp_path / "metadata"
-    metadata.mkdir()
-    artifacts.MANIFEST["assets"][0]["bundled"] = "patched.gz"
-    artifacts.MANIFEST["assets"][0].pop("url")
-    monkeypatch.setattr(artifacts, "METADATA", metadata)
-    monkeypatch.setattr(artifacts, "artifact_directory", lambda: supplied)
-    seen = []
+def _tracked_paths(root: Path) -> list[Path]:
+    listing = subprocess.run(  # nosec B603 B607
+        ["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True
+    )
+    return [root / name.decode() for name in listing.stdout.split(b"\0") if name]
 
-    def download(url: str, *, timeout: int):
-        seen.append(url)
-        assert timeout == 60
-        return io.BytesIO((supplied / url.rsplit("/", 1)[1]).read_bytes())
 
-    monkeypatch.setattr(artifacts.urllib.request, "urlopen", download)
-    destination = artifacts.prepare(tmp_path / "checkout", None)
-    assert (destination / "binary.gz").read_bytes() == b"binary"
-    assert seen == [artifacts.MANIFEST["assets"][1]["url"]]
+def test_the_committed_manifest_pins_only_official_upstream_release_archives() -> None:
+    committed = json.loads((artifacts.METADATA / "manifest.json").read_text(encoding="utf-8"))
+    assert set(committed) == {"version", "assets"}
+    names = {entry["name"] for entry in committed["assets"]}
+    assert names >= PLATFORM_ARCHIVES
+    for entry in committed["assets"]:
+        assert set(entry) == {"name", "sha256", "url"}, entry["name"]
+        assert entry["url"] == f"{RELEASE_PREFIX}{committed['version']}/{entry['name']}"
+        assert re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]), entry["name"]
+
+
+def test_compatibility_ci_uses_official_artifacts_without_a_private_builder() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/compatibility.yml").read_text(encoding="utf-8")
+    assert "tests/test_hook_compatibility.py" in workflow
+    assert "Build and exercise the wheel as a consumer" in workflow
+    assert "build_lefthook_windows.py" not in workflow
+    assert "actions/setup-go" not in workflow
+
+
+@pytest.mark.live_ledger
+def test_no_executable_or_archive_is_committed_in_the_tracked_tree(tmp_path: Path) -> None:
+    planted = tmp_path / "lefthook_Windows_x86_64.gz"
+    planted.write_bytes(gzip.compress(b"MZ" + b"\x00" * 64))
+    assert _committed_binaries([planted]) == {planted.as_posix(): "gzip archive"}
+
+    root = Path(__file__).resolve().parents[1]
+    tracked = _tracked_paths(root)
+    assert len(tracked) > 100, "git ls-files returned too little to be the repo"
+    assert _committed_binaries(tracked) == {}
+    assert not list((artifacts.METADATA).glob("**/*.gz"))
+    assert not list((artifacts.METADATA).glob("**/*.patch"))

@@ -9,6 +9,7 @@ import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
+import yaml
 
 from basicly import hooks, lefthook_config, verify
 from basicly.config import VerifyCheck
@@ -77,54 +78,102 @@ def test_program_resolution_preserves_each_platform_path_form(
     assert module.resolve_command([program, "argument"], root) == [expected, "argument"]
 
 
-@pytest.mark.parametrize("placeholder", ["{all_files}", "{staged_files}"])
-def test_native_jobs_preserve_quoted_literals_and_original_configuration(
-    tmp_path: Path, placeholder: str
-) -> None:
+STAGED_FILENAMES = ["two words.py", "apostrophe's.py", "Ő.py"]
+RECORDER = (
+    "import json,sys\nfrom pathlib import Path\n"
+    "Path('arguments.json').write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
+)
+
+
+def _prepared(tmp_path: Path) -> tuple[Path, Path]:
     repo = repository(tmp_path)
     script = repo / ".basicly/core/hooks/arguments.py"
-    script.write_text(
-        "import json,sys\nfrom pathlib import Path\n"
-        "Path('arguments.json').write_text(json.dumps(sys.argv[1:]))\n",
-        encoding="utf-8",
-    )
-    arguments = [
-        r"back\"quote",
-        r'two\\"quote',
-        "end\\",
-        '"',
-        "two words",
-        "apostrophe's",
-        'a"quote',
-        r"back\slash",
-        "$value",
-        ">=3.14",
-    ]
-    filenames = ["two words.py", "apostrophe's.py", "Ő.py"]
-    for filename in filenames:
+    script.write_text(RECORDER, encoding="utf-8")
+    for filename in STAGED_FILENAMES:
         (repo / filename).write_text("x = 1\n", encoding="utf-8")
-    subprocess.run(["git", "add", "--", *filenames], cwd=repo, check=True)
-    command = shlex.join([Path(sys.executable).as_posix(), script.as_posix(), *arguments])
-    command += " " + placeholder
-    arguments += sorted(filenames)
-    config = repo / "lefthook.yml"
-    config.write_text(
-        "post-merge:\n  commands:\n    consumer:\n      run: " + json.dumps(command) + "\n",
-        encoding="utf-8",
+    subprocess.run(["git", "add", "--", *STAGED_FILENAMES], cwd=repo, check=True)
+    return repo, script
+
+
+def _run_post_merge(repo: Path) -> subprocess.CompletedProcess[bytes]:
+    assert hooks.install_hooks(repo, ["post-merge"])[0]
+    return subprocess.run(
+        ["git", "hook", "run", "post-merge"], cwd=repo, capture_output=True, check=False
     )
+
+
+def _recorded(repo: Path) -> list[str] | None:
+    path = repo / "arguments.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+def test_the_managed_job_hands_every_staged_filename_to_the_hook_unchanged(
+    tmp_path: Path,
+) -> None:
+    repo, _ = _prepared(tmp_path)
+    lefthook_config.sync_config(
+        repo,
+        [hooks.HookSpec("arguments", "arguments.py", "post-merge", pass_filenames=True)],
+        ".basicly/core/hooks",
+    )
+    result = _run_post_merge(repo)
+    assert result.returncode == 0, (result.stdout + result.stderr).decode(
+        "utf-8", "backslashreplace"
+    )
+    assert _recorded(repo) == sorted(STAGED_FILENAMES)
+
+
+def test_the_managed_job_puts_no_filename_on_the_command_line() -> None:
+    generated = lefthook_config.managed_config(
+        [hooks.HookSpec("arguments", "arguments.py", "post-merge", pass_filenames=True)],
+        ".basicly/core/hooks",
+    )
+    jobs = yaml.safe_load(generated)["post-merge"]["commands"]
+    assert jobs, "the managed configuration declares no job"
+    placeholders = ("{staged_files}", "{push_files}", "{all_files}", "{files}")
+    for name, job in jobs.items():
+        for placeholder in placeholders:
+            assert placeholder not in job["run"], f"{name} expands {placeholder}"
+        for filename in STAGED_FILENAMES:
+            assert filename not in job["run"], f"{name} names {filename}"
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        pytest.param("{staged_files}", id="expanded-filenames"),
+        pytest.param('a"quote', id="literal-quote"),
+    ],
+)
+def test_a_minimal_consumer_job_keeps_the_upstream_argument_behaviour(
+    tmp_path: Path, argument: str
+) -> None:
+    repo, script = _prepared(tmp_path)
     (repo / ".basicly/core/hooks/allow.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
     lefthook_config.sync_config(
         repo,
         [hooks.HookSpec("allow", "allow.py", "post-merge", always_run=True)],
         ".basicly/core/hooks",
     )
-    assert hooks.install_hooks(repo, ["post-merge"])[0]
+    command = shlex.join([Path(sys.executable).as_posix(), script.as_posix(), argument])
+    config = repo / "lefthook.yml"
     before = config.read_bytes()
-    result = subprocess.run(
-        ["git", "hook", "run", "post-merge"], cwd=repo, capture_output=True, check=False
+    config.write_bytes(
+        before
+        + (
+            "post-merge:\n  commands:\n    consumer:\n      run: " + json.dumps(command) + "\n"
+        ).encode("utf-8")
     )
-    assert result.returncode == 0, (result.stdout + result.stderr).decode(
-        "utf-8", "backslashreplace"
-    )
-    assert json.loads((repo / "arguments.json").read_text()) == arguments
-    assert config.read_bytes() == before
+    amended = config.read_bytes()
+    result = _run_post_merge(repo)
+    assert config.read_bytes() == amended
+
+    intended = sorted(STAGED_FILENAMES) if argument == "{staged_files}" else [argument]
+    if os.name == "nt":
+        assert result.returncode != 0, "upstream Lefthook 2.2.2 now carries the quote on Windows"
+        assert _recorded(repo) is None
+    else:
+        assert result.returncode == 0, (result.stdout + result.stderr).decode(
+            "utf-8", "backslashreplace"
+        )
+        assert _recorded(repo) == intended

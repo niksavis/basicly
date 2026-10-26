@@ -150,9 +150,10 @@ scaffolded VS Code tasks/CI workflow (only when still unedited).
 - Projected skills at `.claude/skills/` and `.agents/skills/`, and subagents at
   `.claude/agents/` and `.github/agents/`.
 - Activated Git, Claude, Codex and Copilot hooks, orchestrated through shared
-  Lefthook configuration. The harness ships Lefthook 2.2.2 for Linux, macOS and
-  Windows on x86_64 and arm64. Install materializes `.basicly/bin/lefthook[.exe]`
-  with its MIT license without a separate download or global installation.
+  Lefthook configuration. The harness ships the official Lefthook 2.2.2 release
+  for Linux, macOS and Windows on x86_64 and arm64. Install materializes
+  `.basicly/bin/lefthook[.exe]` with its MIT license without a separate download
+  or global installation.
 - An owned work tracker — an append-only event ledger under `.basicly/ledger/`, read
   and written by `basicly tracker` — plus VS Code tasks and a CI gates workflow.
 - A gate that refuses a prose comment in a code file. The code is the source of truth, so
