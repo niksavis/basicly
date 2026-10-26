@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 import yaml
 
-from basicly import cli, dropin, policy, tracker, tracker_paths, usage, verify
+from basicly import cli, dropin, policy, tracker, tracker_paths, usage, verify, verify_execution
 from basicly.config import (
     VerifyCheck,
     VerifyConfig,
@@ -35,7 +35,7 @@ def _as_spawn(fake_run):
         return fake_run(
             command,
             cwd=repo_root,
-            env=verify.sanitised_project_env(os.environ, repo_root),
+            env=verify_execution.sanitised_project_env(os.environ, repo_root),
             check=False,
             capture_output=capture,
             text=capture or None,

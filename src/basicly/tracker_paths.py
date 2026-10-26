@@ -32,3 +32,7 @@ def tracker_root(repo_root: Path) -> Path:
 
 def ledger_dir(repo_root: Path) -> Path:
     return tracker_root(repo_root) / LEDGER_DIR_NAME
+
+
+def is_ledger_path(path: str) -> bool:
+    return path.startswith(f"{LEDGER_DIR_NAME.as_posix()}/")

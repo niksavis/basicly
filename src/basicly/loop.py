@@ -21,6 +21,7 @@ from . import (
     handoff,
     invest,
     landing_gate,
+    landing_guard,
     lens_review,
     loop_state,
     merge,
@@ -415,6 +416,8 @@ def _worktree_landed(repo_root: Path, binding: loop_state.WorktreeBinding) -> bo
 
 def _on_ship(ctx: _Ctx) -> AdvanceResult:
 
+    if reason := landing_guard.blocker(ctx.repo_root, ctx.issue_id, allow_owner=False):
+        return _blocked(ctx, reason)
     unrun = demonstration_proof.unrun_reason(ctx.repo_root, ctx.issue_id)
     if unrun:
         return _blocked(ctx, unrun, needs_input="demonstration")
@@ -426,13 +429,8 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
             "into its base — the build->verify landing was skipped (was the verify gate "
             "recorded out-of-band?); re-run the build->verify advance to land it first",
         )
-    refused = process_confirmation.confirm(ctx.repo_root, ctx.issue_id)
-    if refused is not None:
-        return _blocked(ctx, refused, needs_input="confirmation")
-    try:
-        tracker.check_close(ctx.repo_root, ctx.issue_id, "shipped by the harness loop")
-    except RuntimeError as exc:
-        return _blocked(ctx, f"completion refused before worktree cleanup: {exc}")
+    if refused := _completion_refusal(ctx):
+        return refused
     curated = _dispatch_curation(ctx)
     rolled = cost_rollup.record(ctx.repo_root, ctx.issue_id)
     refused = _cleanup_then_close(ctx, binding)
@@ -450,6 +448,17 @@ def _on_ship(ctx: _Ctx) -> AdvanceResult:
     else:
         detail += _skipped_tracker_suffix(ctx)
     return _moved(ctx, "done", "tore-down", detail)
+
+
+def _completion_refusal(ctx: _Ctx) -> AdvanceResult | None:
+    refused = process_confirmation.confirm(ctx.repo_root, ctx.issue_id)
+    if refused is not None:
+        return _blocked(ctx, refused, needs_input="confirmation")
+    try:
+        tracker.check_close(ctx.repo_root, ctx.issue_id, "shipped by the harness loop")
+    except RuntimeError as exc:
+        return _blocked(ctx, f"completion refused before worktree cleanup: {exc}")
+    return None
 
 
 def _cleanup_then_close(ctx: _Ctx, binding: loop_state.WorktreeBinding | None) -> str | None:

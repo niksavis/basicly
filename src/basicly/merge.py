@@ -12,6 +12,7 @@ from pathlib import Path
 from . import (
     base_lock,
     decompose,
+    landing_guard,
     owned_store,
     policy,
     process_confirmation,
@@ -297,18 +298,13 @@ def _worktree_land_readiness(repo_root: Path, session: Session) -> MergeResult |
     )
 
 
-ENGINE_TRACKER_PATHS = (owned_store.LEDGER_DIR.as_posix(),)
+ENGINE_TRACKER_PATHS = (tracker_paths.LEDGER_DIR_NAME.as_posix(),)
 
 LEDGER_GLOBS = ("events-*.jsonl", "pending-*.jsonl")
 
 
-def _under(path: str, tree: str) -> bool:
-    return path.startswith(f"{tree}/")
-
-
 def is_engine_tracker_path(path: str) -> bool:
-
-    return any(_under(path, tree) for tree in ENGINE_TRACKER_PATHS)
+    return tracker_paths.is_ledger_path(path)
 
 
 def foreign_dirt(repo_root: Path) -> tuple[str, ...]:
@@ -357,10 +353,7 @@ def _commit_tracker_state(
     if not paths and not shards:
         return False
     tracker.fold_pending_shards(repo_root)
-    dirty = [
-        tree for tree in ENGINE_TRACKER_PATHS if shards or any(_under(path, tree) for path in paths)
-    ]
-    git(["add", *dirty], cwd=repo_root)
+    git(["add", *ENGINE_TRACKER_PATHS], cwd=repo_root)
     _commit_staged_tracker_state(repo_root, f"chore(tracker): {action} ({bead})", on_retry)
     return True
 
@@ -443,25 +436,43 @@ def _pre_merge_state(
 
 
 def _merge_and_prove(
-    repo_root: Path, name: str, *, base: str, branch: str, bead: str
+    repo_root: Path,
+    name: str,
+    *,
+    bead: str,
+    subject: landing_guard.LandingSubject,
 ) -> MergeResult:
 
+    base, branch = subject.base, subject.branch
     record = run_record.latest_record(repo_root, bead)
-    carried = carried_commits(repo_root, base, branch)
-    proc = git(
-        ["merge", "--no-ff", branch, "-m", _merge_message(name, branch, base, bead, record)],
-        cwd=repo_root,
-        check=False,
-    )
+    carried = carried_commits(repo_root, subject.destination, subject.candidate)
+    try:
+        proc = landing_guard.guarded_merge(
+            repo_root,
+            subject,
+            [
+                "merge",
+                "--no-ff",
+                subject.candidate,
+                "-m",
+                _merge_message(name, branch, base, bead, record),
+            ],
+        )
+    except landing_guard.GuardUnavailableError as error:
+        return MergeResult(name, "not-ready", str(error))
+    except (OSError, ValueError, RuntimeError) as error:
+        landing_guard.record_verification(repo_root, bead, passed=False)
+        return MergeResult(name, MERGE_UNPROVEN, str(error))
     if proc.returncode != 0:
-        git(["merge", "--abort"], cwd=repo_root, check=False)
+        landing_guard.record_verification(repo_root, bead, passed=False)
         return MergeResult(
             name,
-            "merge-failed",
-            f"git merge of {branch} exited {proc.returncode}; aborted, base left clean",
+            MERGE_UNPROVEN,
+            f"git merge of captured {subject.candidate[:12]} exited {proc.returncode}; "
+            "publication refused; preserve checkout and index for inspection",
         )
-    landed_head = branch_head(repo_root, branch)
-    if landed_head is None or not is_ancestor(repo_root, landed_head, base):
+    landed_head = subject.candidate
+    if not is_ancestor(repo_root, landed_head, base):
         where = landed_head[:12] if landed_head else "(unresolvable)"
         return MergeResult(
             name,
@@ -560,6 +571,9 @@ def _write_landing_timing(repo_root: Path, bead: str, entry: dict[str, object]) 
 def record_post_merge_verification(
     repo_root: Path, bead: str, report: verify.VerifyReport, source: verify.VerifyReport | None
 ) -> None:
+    landing_guard.record_verification(
+        repo_root, bead, passed=report.passed, proof=report.subject_fingerprint
+    )
     _write_landing_timing(
         repo_root,
         bead,
@@ -591,6 +605,8 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
             "merge needs a bead id for the merge commit (the commit-msg hook requires one)"
         )
     clock = _Landing(repo_root, bead)
+    if reason := landing_guard.blocker(repo_root, bead):
+        return MergeResult(name, "not-ready", reason)
     known = known_bead_ids(repo_root)
     if known is not None and bead not in known:
         raise SystemExit(
@@ -653,9 +669,12 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     _assert_base_ready(repo_root, session.base)
     clock.mark("tracker-commit")
 
-    landed = _replay_verify_merge(
-        session, verify_mode=verify_mode, override_gate=override_gate, clock=clock
-    )
+    try:
+        landed = _replay_verify_merge(
+            session, verify_mode=verify_mode, override_gate=override_gate, clock=clock
+        )
+    except landing_guard.SubjectUnavailableError as error:
+        return clock.close(MergeResult(name, "not-ready", str(error)))
     if retried:
         landed = replace(landed, detail=f"{landed.detail}; {retried[0]}")
     return clock.close(landed)
@@ -676,6 +695,7 @@ def _replay_verify_merge(
     regenerated = replayed.regenerated + rebase.refresh_generated(repo_root, worktree_path, bead)
     clock.mark("regenerate")
 
+    subject = landing_guard.capture(repo_root, session, verify_mode, record=bead)
     if not override_gate:
         gate = _verify_for_landing(name, worktree_path, verify_mode, clock)
         clock.mark("verify")
@@ -693,7 +713,9 @@ def _replay_verify_merge(
                 "'<actual successful check evidence JSON>'` before landing",
             )
 
-    probe = probe_merge(repo_root, base, branch)
+    if reason := landing_guard.changed(repo_root, subject):
+        return MergeResult(name, STALE_BRANCH, reason)
+    probe = probe_merge(repo_root, subject.destination, subject.candidate)
     clock.mark("probe")
     if not probe.safe:
         return MergeResult(
@@ -703,7 +725,7 @@ def _replay_verify_merge(
             conflicts=probe.conflicts,
         )
 
-    landed = _merge_and_prove(repo_root, name, base=base, branch=branch, bead=bead)
+    landed = _merge_and_prove(repo_root, name, bead=bead, subject=subject)
     clock.mark("merge")
     if landed.merged and regenerated:
         landed = replace(landed, detail=f"{landed.detail} (regenerated {', '.join(regenerated)})")

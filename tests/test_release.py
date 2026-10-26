@@ -11,6 +11,7 @@ import pytest
 
 from basicly import (
     capability_proof,
+    owned_store,
     release,
     release_history,
     shipped_core,
@@ -85,9 +86,8 @@ def repo(tmp_path: Path) -> Path:
     (root / release.RELEASE_NOTES_SCRIPT).write_text("", encoding="utf-8")
     ledger = root / tracker_paths.LEDGER_DIR_NAME
     ledger.mkdir(parents=True)
-    (ledger / "events-0001.jsonl").write_text(
-        '{"record": "fx-1", "kind": "created"}\n', encoding="utf-8"
-    )
+    events = owned_store.packaged_kit("events")
+    events.append(ledger, [events.Draft("fx-1", events.KIND_STATUS, {"status": "open"})])
     _git(root, "init", "-b", "main")
     _git(root, "config", "user.name", "Test")
     _git(root, "config", "user.email", "test@example.invalid")

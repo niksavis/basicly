@@ -46,9 +46,11 @@ layers =
     handoff
     process_confirmation
     plan_gate | policy | routing_evals | tuning | verify
+    verify_execution
     capability_proof
     invest
     worktree
+    landing_guard
     config
     lane_split
     lane_log

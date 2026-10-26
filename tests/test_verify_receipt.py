@@ -10,6 +10,7 @@ import pytest
 from basicly import verify
 from basicly.config import VerifyCheck, VerifyConfig
 from basicly.verify_artifact import RUN_ARTIFACT
+from basicly.verify_receipt import InputFingerprint
 
 
 def _config() -> VerifyConfig:
@@ -162,3 +163,26 @@ def test_revoked_reuse_preserves_the_fresh_failure(
     landed = verify.run_verify(tmp_path, "full", _config(), reuse=origin)
     assert not landed.passed
     assert landed.failures == ("types",)
+
+
+@pytest.mark.parametrize("component", ["workspace", "runtime", "environment", "policy"])
+def test_receipt_miss_explains_actual_changed_components_without_secret_values(
+    tmp_path: Path, runs: list[str], monkeypatch: pytest.MonkeyPatch, component: str
+) -> None:
+    payload = {
+        "workspace": "source",
+        "runtime": "runtime",
+        "environment": "secret-original",
+        "policy": "policy",
+    }
+    monkeypatch.setattr(
+        verify.pyright_inputs, "fingerprint", lambda _root: InputFingerprint(payload)
+    )
+    origin = verify.run_verify(tmp_path, "full", _config(), capture_receipts=True)
+    payload[component] = "secret-new-value"
+    current = verify.run_verify(tmp_path, "full", _config(), reuse=origin)
+    assert current.results[0].reuse_reason == f"changed input components: {component}"
+    assert runs == ["pyright", "pytest", "pyright", "pytest"]
+    artifact = (tmp_path / RUN_ARTIFACT).read_text()
+    assert "secret-new-value" not in artifact
+    assert "secret-original" not in artifact

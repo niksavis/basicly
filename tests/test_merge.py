@@ -4,11 +4,22 @@ import errno
 import json
 import subprocess  # nosec B404
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 
-from basicly import merge, policy, rebase, run_record, verify, write_preflight
+from basicly import (
+    landing_guard,
+    merge,
+    owned_store,
+    policy,
+    rebase,
+    run_record,
+    verify,
+    write_preflight,
+)
 from basicly.config import PolicyConfig
 from basicly.worktree import Session
 from tests import fake_tracker, flipped_tracker
@@ -78,6 +89,42 @@ def _patch_git[T](monkeypatch: pytest.MonkeyPatch, fake: T) -> T:
             fake.responses["merge-tree"] = _Proc(0, "merged-tree\n")
     monkeypatch.setattr(merge, "git", fake)
     monkeypatch.setattr(rebase, "git", fake)
+    candidate = "def456"
+    if isinstance(fake, _FakeGit):
+        response = fake.responses.get(
+            "rev-parse --verify refs/heads/harness/feat",
+            fake.responses.get("rev-parse", _Proc(0, "def456")),
+        )
+        candidate = response.stdout.strip()
+        fake.responses.setdefault(
+            f"rev-list --count abc123..{candidate}",
+            fake.responses.get(_AHEAD_OF_BASE, _Proc(0, "1")),
+        )
+
+    def capture(*_args, **_kwargs):
+        if not candidate:
+            raise landing_guard.SubjectUnavailableError("candidate ref is unavailable")
+        return landing_guard.LandingSubject(
+            "main",
+            "harness/feat",
+            "abc123",
+            candidate,
+            "merged-tree",
+            "/tmp/repo.worktrees/feat",
+            "full",
+            "fixed",
+        )
+
+    monkeypatch.setattr(landing_guard, "capture", capture)
+    monkeypatch.setattr(landing_guard, "changed", lambda *_a: "")
+    monkeypatch.setattr(landing_guard, "record_verification", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        landing_guard,
+        "guarded_merge",
+        lambda root, _subject, command: cast("Callable[..., _Proc]", fake)(
+            command, cwd=root, check=False
+        ),
+    )
     return fake
 
 
@@ -114,7 +161,7 @@ def test_merge_worktree_happy_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
     assert result.merged is True
     merge_calls = [c for c in fake.calls if c[0] == "merge"]
-    assert merge_calls and merge_calls[0][:3] == ["merge", "--no-ff", "harness/feat"]
+    assert merge_calls and merge_calls[0][:3] == ["merge", "--no-ff", "def456"]
 
 
 def _record(agent: str, model: str | None = None) -> run_record.RunRecord:
@@ -589,16 +636,17 @@ def test_a_merge_git_calls_successful_is_not_merged_until_it_is_proved(
 
 
 @pytest.mark.usefixtures("base_ready")
-def test_a_merge_whose_branch_ref_will_not_resolve_is_not_proved(
+def test_an_unresolvable_candidate_ref_is_refused_before_merge(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _patch_git(monkeypatch, _landing_git(**{"rev-parse": _Proc(128, "")}))
+    fake = _patch_git(monkeypatch, _landing_git(**{"rev-parse": _Proc(128, "")}))
     monkeypatch.setattr(verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", ()))
 
     result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
 
-    assert result.status == merge.MERGE_UNPROVEN
-    assert "unresolvable" in result.detail
+    assert result.status == "not-ready"
+    assert "candidate ref is unavailable" in result.detail
+    assert not fake.ran("merge")
 
 
 @pytest.mark.usefixtures("base_ready")
@@ -1127,7 +1175,8 @@ def test_merge_worktree_rejects_an_unknown_bead(
 ) -> None:
     ledger = tmp_path / ".basicly" / "ledger"
     ledger.mkdir(parents=True)
-    (ledger / "events-0001.jsonl").write_text('{"record":"proj-abc"}\n', encoding="utf-8")
+    events = owned_store.packaged_kit("events")
+    events.append(ledger, [events.Draft("proj-abc", events.KIND_STATUS, {"status": "open"})])
     fake = _FakeGit({"status": _Proc(0, "")})
     _patch_git(monkeypatch, fake)
 
@@ -1137,7 +1186,7 @@ def test_merge_worktree_rejects_an_unknown_bead(
 
 
 @pytest.mark.usefixtures("base_ready")
-def test_merge_worktree_aborts_when_the_merge_commit_fails(
+def test_merge_worktree_preserves_checkout_when_publication_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _FakeGit({
@@ -1156,8 +1205,9 @@ def test_merge_worktree_aborts_when_the_merge_commit_fails(
 
     result = merge.merge_worktree(tmp_path, "feat", bead="proj-abc")
 
-    assert result.status == "merge-failed"
-    assert ["merge", "--abort"] in [c[:2] for c in fake.calls]
+    assert result.status == merge.MERGE_UNPROVEN
+    assert "preserve checkout and index" in result.detail
+    assert ["merge", "--abort"] not in [c[:2] for c in fake.calls]
 
 
 _FAILED = verify.VerifyReport("full", (verify.CheckResult("pytest", "fail", 1),))
@@ -1318,8 +1368,9 @@ def confirmed_process_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
 def _tracker(tmp_path: Path, *bead_ids: str) -> None:
     ledger = tmp_path / ".basicly" / "ledger"
     ledger.mkdir(parents=True, exist_ok=True)
-    ledger.joinpath("events-0001.jsonl").write_text(
-        "".join(json.dumps({"record": one}) + "\n" for one in bead_ids), encoding="utf-8"
+    events = owned_store.packaged_kit("events")
+    events.append(
+        ledger, [events.Draft(one, events.KIND_STATUS, {"status": "open"}) for one in bead_ids]
     )
 
 
