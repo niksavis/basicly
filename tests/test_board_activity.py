@@ -58,12 +58,12 @@ def activity_repo(work_repo: Path) -> Path:
     return work_repo
 
 
-def _append(repo: Path, text: str) -> None:
+def _append(repo: Path, text: str, record: str = "acme-root.1") -> None:
     kit = owned_store.kit(repo)
     kit.events.append(
         owned_store.ledger_dir(repo),
         [
-            kit.events.Draft("acme-root.1", kit.events.KIND_COMMENT, {"text": text}),
+            kit.events.Draft(record, kit.events.KIND_COMMENT, {"text": text}),
         ],
         actor="agent:fixture",
     )
@@ -158,7 +158,9 @@ def test_served_activity_updates_without_document_reload(activity_repo: Path) ->
 
 def test_handover_is_preserved_without_replacing_the_meaningful_action(activity_repo: Path) -> None:
     _append(activity_repo, "[model handoff] Resume the remaining acceptance checks.")
+    _append(activity_repo, "[session handover 2026-10-26] Administrative note.", "acme-root")
     body, _ = board_activity.Feed(activity_repo).payload("acme-root")
     row = next(item for item in json.loads(body)["items"] if item["id"] == "acme-root.1")
+    assert json.loads(body)["items"][0]["id"] == "acme-root.1"
     assert row["action"] == "Editing the activity view"
     assert row["logs"][-1]["text"].startswith("[model handoff]")

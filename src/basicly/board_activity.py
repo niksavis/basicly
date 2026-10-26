@@ -154,7 +154,14 @@ def document(events: list[Any], kit: Any, root: str = "") -> dict[str, object]:
             "evidence": report.get("evidence", "Open task history for recorded checks"),
             "logs": log,
         })
-    rows.sort(key=lambda row: (str(row["updated_at"] or ""), str(row["id"])), reverse=True)
+    rows.sort(
+        key=lambda row: (
+            str(row["action_at"] or row["started_at"] or ""),
+            str(row["updated_at"] or ""),
+            str(row["id"]),
+        ),
+        reverse=True,
+    )
     return {
         "schema": "basicly.activity.v1",
         "root": root,
