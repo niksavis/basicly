@@ -1,0 +1,1 @@
+- Record the harness source audit and keep one evidence-backed disposition per source, with regression checks for duplicate and missing targets.
