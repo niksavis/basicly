@@ -141,6 +141,10 @@ def test_the_two_get_routes_answer_and_a_post_is_405(board_repo: Path) -> None:
 
         status, page, headers = _get(listener.url + "/")
         assert status == 200
+        assert "Work activity" in page.decode("utf-8")
+        assert "Refresh" not in headers
+        status, page, headers = _get(listener.url + "/wall")
+        assert status == 200
         assert board_schema.VERSION in page.decode("utf-8")
         assert headers["Refresh"] == "15"
 

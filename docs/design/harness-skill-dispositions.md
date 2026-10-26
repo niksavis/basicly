@@ -4,7 +4,7 @@ Task basicly-gtb19bg.4 accounts for all 26 catalog skills discovered in this che
 No skill description or routing corpus is shortened. Five large entries gain selective
 procedural references; short or cohesive workflows stay simple. No skill is converted
 into a separate owner. Independent review and specialist capabilities remain available;
-role topology is tracked separately by .5.
+role topology is tracked separately by .7 and .10.
 
 | Skill | Before entry bytes | After entry bytes | Disposition |
 | --- | ---: | ---: | --- |
