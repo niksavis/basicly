@@ -6,12 +6,12 @@ description: Closes a session with a usage report, a retro and a handover of wha
 
 # Session Finish
 
-Close a session in three steps: report what the session used, run the retro, and leave the repository clean for the next session. Run it after the work has landed. For commits, gates and record closure, use `harness-loop`, `work-tracker` and `conventional-commits`.
+Close a session in three steps: report what the session used, run the retro, and leave the repository clean for the next session. Run it after the work has landed. Use `work-tracker` for history and record closure and `conventional-commits` for commits. Use `harness-loop` only for loop-managed work.
 
 ## Rules
 
 - **Write the handover as a ledger note, never as a file.** `basicly session start` prints the newest note first, and nothing reads a `HANDOVER.md`.
-- **Stop every background process before you summarise.** A watcher that outlives the session reports a stale state.
+- **Stop task-owned temporary processes before handover.** Preserve services the user explicitly asked to keep running; record their URLs and ownership. Never stop another session's process.
 - **Keep every durable artifact in the repository.** The host cleans the scratchpad without warning.
 - **Write scratch files to a subdirectory unique to your lane.** A concurrent lane can overwrite a file at a shared path.
 - **Apply a retro fix within the approved scope.** Record other recommendations for approval; do not ask again for work the owner already authorized.
@@ -72,7 +72,7 @@ basicly usage outcomes
 
 1. Run `git status`. Remove partial edits, debug output and stray files. Name in the summary anything that you leave on purpose.
 2. Check the state of records whose implementation changed. Close completed claimed work, or record its true state. Do not repeat gates or reopen closed work for a handover.
-3. List the running background processes and stop them.
+3. List task-owned background processes; stop temporary ones and identify user-requested services left running.
 4. Before you restore a file from a backup, compare the backup with `git show HEAD:<path>`.
 5. Write the handover note on the root record of the session:
 

@@ -131,3 +131,43 @@ def test_the_cli_tools_table_links_every_reference_it_ships() -> None:
     assert len(shipped) == 25
     assert {resource for resource, _ in cli_tools.resource_technologies} <= shipped
     assert not [s.slug for s in discover_skills(REPO_ROOT) if s.slug.startswith("tool-")]
+
+
+@pytest.mark.parametrize("host_root", [".agents/skills", ".claude/skills"])
+def test_selective_procedures_are_retrievable_in_a_fresh_consumer(
+    tmp_path: Path, host_root: str
+) -> None:
+    consumer_root = tmp_path / host_root
+    result, pruned = sync_skills(REPO_ROOT, [consumer_root])
+    assert result.written
+    assert not pruned
+    for slug in (
+        "catalog-authoring",
+        "conventional-commits",
+        "harness-loop",
+        "work-tracker",
+        "skill-creator",
+    ):
+        folder = consumer_root / slug
+        body = (folder / "SKILL.md").read_text(encoding="utf-8")
+        linked = set(re.findall(r"\]\((references/[^)#]+\.md)(?:#[^)]*)?\)", body))
+        assert linked, slug
+        installed = {path.relative_to(folder).as_posix() for path in folder.rglob("*.md")}
+        assert linked <= installed
+        assert {name for name in installed if name.startswith("references/")} <= linked
+        for relative in linked:
+            text = (folder / relative).read_text(encoding="utf-8")
+            assert text.strip(), relative
+            assert (REPO_ROOT / SKILLS_SOURCE_DIR / slug / relative).read_text(
+                encoding="utf-8"
+            ) == text
+    tracker = consumer_root / "work-tracker"
+    tracker_entry = (tracker / "SKILL.md").read_text(encoding="utf-8")
+    assert "references/write.md" in tracker_entry
+    contract = (tracker / "references/write.md").read_text(encoding="utf-8")
+    assert "Requirements add distinct" in contract
+    assert "Leave Requirements empty when no distinct constraints apply" in contract
+    assert "comments add <id>" in contract
+    loop_entry = (consumer_root / "harness-loop/SKILL.md").read_text(encoding="utf-8")
+    assert "Ordinary work stays with one owner" in loop_entry
+    assert "work outside the controller" in loop_entry
