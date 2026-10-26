@@ -127,7 +127,7 @@ def _session(name: str = "i") -> Session:
 
 
 def _advance(tmp_path: Path, **kw) -> loop.AdvanceResult:
-    return loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(**kw))
+    return loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker", **kw))
 
 
 def test_intake_blocks_without_work_type(at, tmp_path: Path) -> None:
@@ -241,7 +241,7 @@ def test_classify_leaf_provisions_worktree(
     assert created["n"] == "i"
     assert tracker_commits == [("i", "record the claim before provisioning")]
     assert result.blocked and "provisioned" in result.detail
-    assert "awaiting the agent's work" in result.detail
+    assert "continue as task owner" in result.detail
 
 
 def test_classify_leaf_dispatches_headless_runner(
@@ -294,7 +294,9 @@ def test_an_explicit_spent_limit_refuses_even_an_interactive_dispatch(
         ),
     )
 
-    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
+    result = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="epic"
+    )
 
     assert spawned == []
     assert result.blocked and result.needs_input == "budget"
@@ -341,7 +343,9 @@ def test_an_oversized_bead_is_refused_by_the_band_at_the_interactive_dispatch(
     )
     monkeypatch.setattr(working_set, "escalate_working_set", lambda *_a, **_k: None)
 
-    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
+    result = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="epic"
+    )
 
     assert result.blocked and result.needs_input == "scope"
     assert "900000 working-set tokens" in result.detail
@@ -379,7 +383,9 @@ def test_a_scopeless_bead_still_dispatches_but_is_escalated(
         ),
     )
 
-    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
+    result = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="epic"
+    )
 
     assert escalated == ["i"], "the never-checked notice must be recorded here too"
     assert result.blocked and "finished in worktree" in result.detail
@@ -1491,7 +1497,7 @@ def test_a_killed_dispatch_commits_its_worktree_and_points_at_the_next_advance(
         return loop.commit.Salvage("committed", "the worktree was committed as abc1234")
 
     monkeypatch.setattr(loop.commit, "salvage", fake_salvage)
-    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs(execution="worker"))
 
     held = loop._runner_block(
         ctx, _killed_dispatch(tmp_path / "wt"), issue_id="i", target="worktree 'i'"
@@ -1512,7 +1518,7 @@ def test_a_killed_dispatch_the_salvage_refused_still_asks_for_a_re_dispatch(
         "salvage",
         lambda *_a, **_k: loop.commit.Salvage("empty", "the worktree held no uncommitted work"),
     )
-    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs(execution="worker"))
 
     held = loop._runner_block(
         ctx, _killed_dispatch(tmp_path / "wt"), issue_id="i", target="worktree 'i'"
@@ -1731,7 +1737,9 @@ def test_a_missing_validation_spends_no_rework(
     charged: list[tuple] = []
     monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: charged.append(a) or 1)
 
-    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), repair_dispatch=False)
+    result = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), repair_dispatch=False
+    )
 
     assert result.blocked and result.needs_input == "validation"
     assert charged == []
@@ -1758,7 +1766,7 @@ def test_validator_argv_carries_the_role_and_a_non_write_phase(
     )
     monkeypatch.setattr(policy, "gate_status", lambda *_a: _validate_gates())
 
-    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert seen[0]["role"] == "role-for-validate"
     assert "Do NOT re-run the gate suite" in seen[0]["prompt"]
@@ -1785,7 +1793,7 @@ def test_validate_dispatches_one_reviewer_per_lens_each_carrying_its_own_lens(
     monkeypatch.setattr(loop, "record_run", lambda *_a, **kw: recorded.append(kw.get("phase")))
     monkeypatch.setattr(policy, "gate_status", lambda *_a: _validate_gates())
 
-    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     reviews = [call for call in seen if call["role"] == "reviewer"]
     assert len(reviews) == len(roles.REVIEW_LENSES)
@@ -1818,7 +1826,7 @@ def test_each_lens_records_its_own_findings_and_nothing_merges_them(
         loop.lens_review.tracker, "add_comment", lambda _r, _i, b: comments.append(b)
     )
 
-    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert len(comments) == len(roles.REVIEW_LENSES)
     for body, lens in zip(comments, roles.REVIEW_LENSES, strict=True):
@@ -1853,7 +1861,7 @@ def test_a_validate_dispatch_that_records_nothing_leaves_the_unit_in_validate(
     monkeypatch.setattr(loop, "record_run", lambda *_a, **_k: None)
     monkeypatch.setattr(policy, "gate_status", lambda *_a: _validate_gates())
 
-    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert result.blocked and result.to_phase == "validate"
     assert "recorded no" in result.detail
@@ -2026,9 +2034,13 @@ def test_a_failed_validation_repairs_against_the_brief_then_re_lands_the_commit(
     monkeypatch.setattr(loop, "_dispatch_reviews", lambda _ctx: None)
     monkeypatch.setattr(policy, "gate_status", lambda *_a: _validate_gates())
 
-    repair = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+    repair = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="root"
+    )
     monkeypatch.setattr(loop.merge, "is_ancestor", lambda *_a: False)
-    reland = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+    reland = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="root"
+    )
 
     assert roots == ["root", "root"]
     assert [call["cwd"] for call in seen] == [tmp_path / "wt", tmp_path]
@@ -2076,7 +2088,9 @@ def test_verify_asks_the_grant_not_only_the_marker(
     monkeypatch.setattr(policy, "approve_checkpoint_guarded", _guarded)
     monkeypatch.setattr(policy, "checkpoint_approved", lambda *_a: False)
 
-    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="epic")
+    result = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="epic"
+    )
 
     assert result.to_phase == "ship" and asked == ["epic"]
 
@@ -2385,7 +2399,13 @@ def test_child_states_parses_parent_child_dependents(
         returncode = 0
 
     fake_tracker.install(monkeypatch, lambda *_a, **_k: _Proc())
-    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(
+        tmp_path,
+        "i",
+        _state("decompose", has_children=True),
+        CONFIG,
+        loop.Inputs(execution="worker"),
+    )
     assert loop._child_states(ctx) == [("i.1", "open")]
 
 
@@ -2532,7 +2552,13 @@ def test_ensure_child_worktrees_publishes_claims_first(
     tmp_path: Path,
     tracker_commits: list[tuple[str, str | None]],
 ) -> None:
-    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(
+        tmp_path,
+        "i",
+        _state("decompose", has_children=True),
+        CONFIG,
+        loop.Inputs(execution="worker"),
+    )
     monkeypatch.setattr(
         loop,
         "load_worktree_config",
@@ -2600,7 +2626,13 @@ def _pin_provisioning(
 def test_ensure_child_worktrees_provisions_in_ranked_order(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(
+        tmp_path,
+        "i",
+        _state("decompose", has_children=True),
+        CONFIG,
+        loop.Inputs(execution="worker"),
+    )
     created = _pin_provisioning(monkeypatch, ranked=("i.9", "i.1"), concurrency=1)
 
     loop._ensure_child_worktrees(ctx, [("i.1", "in_progress"), ("i.9", "in_progress")])
@@ -2611,7 +2643,13 @@ def test_ensure_child_worktrees_provisions_in_ranked_order(
 def test_ensure_child_worktrees_skips_a_child_the_band_refuses(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(
+        tmp_path,
+        "i",
+        _state("decompose", has_children=True),
+        CONFIG,
+        loop.Inputs(execution="worker"),
+    )
     created = _pin_provisioning(
         monkeypatch, ranked=("i.1", "i.2"), concurrency=1, refused=frozenset({"i.1"})
     )
@@ -2624,7 +2662,13 @@ def test_ensure_child_worktrees_skips_a_child_the_band_refuses(
 def test_ensure_child_worktrees_provisions_an_unsizeable_child(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(
+        tmp_path,
+        "i",
+        _state("decompose", has_children=True),
+        CONFIG,
+        loop.Inputs(execution="worker"),
+    )
     created = _pin_provisioning(
         monkeypatch, ranked=("i.1",), concurrency=2, unsized=frozenset({"i.1"})
     )
@@ -2637,7 +2681,13 @@ def test_ensure_child_worktrees_provisions_an_unsizeable_child(
 def test_ensure_child_worktrees_skips_a_closed_child(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(
+        tmp_path,
+        "i",
+        _state("decompose", has_children=True),
+        CONFIG,
+        loop.Inputs(execution="worker"),
+    )
     created = _pin_provisioning(monkeypatch, ranked=("i.1", "i.2"), concurrency=2)
 
     loop._ensure_child_worktrees(ctx, [("i.1", "closed"), ("i.2", "in_progress")])
@@ -3125,7 +3175,11 @@ def test_the_dispatch_records_its_forecast_beside_the_scope_it_measured(
     )
     monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: pytest.fail("no landing here"))
 
-    loop._run_agent(loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs()), "i", tmp_path)
+    loop._run_agent(
+        loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs(execution="worker")),
+        "i",
+        tmp_path,
+    )
 
     assert recorded["scope_tokens"] == 9_000
     assert recorded["forecast_tokens"] == 21_000
@@ -3163,7 +3217,11 @@ def test_the_interactive_dispatch_records_a_write_phase_and_a_seeded_factor(
         ),
     )
 
-    loop._run_agent(loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs()), "i", tmp_path)
+    loop._run_agent(
+        loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs(execution="worker")),
+        "i",
+        tmp_path,
+    )
 
     assert recorded["phase"] == run_record.BUILD_PHASE
     assert run_record.is_write_phase(recorded["phase"])
@@ -3198,7 +3256,11 @@ def test_a_dispatch_that_failed_still_records_the_scope_it_was_sized_on(
     )
     monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: pytest.fail("no landing here"))
 
-    loop._run_agent(loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs()), "i", tmp_path)
+    loop._run_agent(
+        loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs(execution="worker")),
+        "i",
+        tmp_path,
+    )
 
     assert recorded["scope_tokens"] == 9_000
     assert recorded["forecast_tokens"] == 21_000
@@ -3256,7 +3318,9 @@ def test_a_special_cause_dispatches_the_retrospector_and_prices_it_as_a_read(
     recorded: list[object] = []
     monkeypatch.setattr(loop, "record_run", lambda *_a, **kw: recorded.append(kw.get("phase")))
 
-    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+    result = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="root"
+    )
 
     assert [call["role"] for call in seen] == ["retrospector"]
     assert "rule: beyond-limits" in seen[0]["prompt"] and "point: u9" in seen[0]["prompt"]
@@ -3277,7 +3341,9 @@ def test_a_single_gate_failure_dispatches_no_retrospective(
     monkeypatch.setattr(loop.retrospective, "claim", lambda *a: claimed.append(a) or True)
     _ledger(monkeypatch, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)
 
-    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+    result = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="root"
+    )
 
     assert seen == [] and claimed == []
     assert "retrospective" not in result.detail
@@ -3291,7 +3357,9 @@ def test_a_claimed_signal_is_never_dispatched_twice(
     monkeypatch.setattr(loop.retrospective, "claim", lambda *_a: False)
     _ledger(monkeypatch, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3)
 
-    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+    loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="root"
+    )
 
     assert seen == []
 
@@ -3308,7 +3376,7 @@ def test_the_supervised_landing_pass_fires_no_retrospective(
         tmp_path,
         "i",
         config=CONFIG,
-        inputs=loop.Inputs(),
+        inputs=loop.Inputs(execution="worker"),
         grant_root="root",
         repair_dispatch=False,
     )
@@ -3325,7 +3393,7 @@ def test_a_session_that_named_no_root_reads_no_ledger(
         loop.retrospective, "read_ledger", lambda *_a: pytest.fail("no session, no ledger")
     )
 
-    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert seen == []
 
@@ -3345,7 +3413,9 @@ def test_an_explicit_spent_limit_stops_the_retrospective_dispatch(
         lambda *_a, **_k: replace(_unhalted(), halted=True, detail="grant exhausted"),
     )
 
-    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(), grant_root="root")
+    result = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="root"
+    )
 
     assert claimed == []
     assert seen == []
@@ -3384,7 +3454,7 @@ def test_subtask_missing_confirmation_refuses_before_gate_write_and_closure(
         loop, "_record_gate", lambda *args: calls.append("gate") or original_gate(*args)
     )
     monkeypatch.setattr(loop, "_write", lambda *_a: calls.append("close"))
-    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs(execution="worker"))
     result = loop._run_subtask(ctx, "i.1", _session("i"), position=1, total=1)
     assert result.blocked
     assert "missing subtask criterion check" in result.detail
@@ -3394,7 +3464,7 @@ def test_subtask_missing_confirmation_refuses_before_gate_write_and_closure(
 def test_start_claim_records_status_and_holder_atomically(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    ctx = loop._Ctx(tmp_path, "i", _state("classify"), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(tmp_path, "i", _state("classify"), CONFIG, loop.Inputs(execution="worker"))
     monkeypatch.setattr(loop.tracker, "read_record", lambda *_a: {"status": "open"})
     monkeypatch.setattr(loop.tracker, "held_by_another", lambda *_a: None)
     monkeypatch.setattr(loop.tracker, "holder_name", lambda *_a: "Builder")
@@ -3407,7 +3477,7 @@ def test_start_claim_records_status_and_holder_atomically(
 def test_start_claim_refusal_is_named_before_provisioning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    ctx = loop._Ctx(tmp_path, "i", _state("classify"), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(tmp_path, "i", _state("classify"), CONFIG, loop.Inputs(execution="worker"))
     monkeypatch.setattr(loop.tracker, "read_record", lambda *_a: {"status": "open"})
     monkeypatch.setattr(loop.tracker, "held_by_another", lambda *_a: None)
     monkeypatch.setattr(loop.tracker, "holder_name", lambda *_a: "Builder")
@@ -3438,7 +3508,7 @@ def test_nonleaf_claim_refuses_before_decomposition(
 def test_another_holder_is_preserved_without_claim_write(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    ctx = loop._Ctx(tmp_path, "i", _state("classify"), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(tmp_path, "i", _state("classify"), CONFIG, loop.Inputs(execution="worker"))
     monkeypatch.setattr(loop.tracker, "read_record", lambda *_a: {"status": "in_progress"})
     monkeypatch.setattr(loop.tracker, "held_by_another", lambda *_a: "Other Builder")
     writes: list[list[str]] = []
@@ -3452,7 +3522,13 @@ def test_child_claim_refusal_prevents_provisioning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     created = _pin_provisioning(monkeypatch, ranked=("i.1",), concurrency=1)
-    ctx = loop._Ctx(tmp_path, "i", _state("decompose", has_children=True), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(
+        tmp_path,
+        "i",
+        _state("decompose", has_children=True),
+        CONFIG,
+        loop.Inputs(execution="worker"),
+    )
     monkeypatch.setattr(
         loop,
         "_hold_for_this_session",
@@ -3492,7 +3568,7 @@ def test_subtask_authoritative_close_refusal_returns_blocked(
         raise RuntimeError("subtask confirmation invalidated")
 
     monkeypatch.setattr(loop, "_write", refused)
-    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs())
+    ctx = loop._Ctx(tmp_path, "i", _state("build"), CONFIG, loop.Inputs(execution="worker"))
     result = loop._run_subtask(ctx, "i.1", _session("i"), position=1, total=1)
     assert result.blocked and "subtask confirmation invalidated" in result.detail
 
@@ -3517,9 +3593,21 @@ def test_codex_receives_each_delivered_role_body_without_a_native_agent_flag(
     monkeypatch.setattr(runner, "run", run)
     monkeypatch.setattr(loop, "record_run", lambda *_a, **_k: None)
     monkeypatch.setattr(policy, "gate_status", lambda *_a: _validate_gates())
-    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs())
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
     assert "<role name='validator'>" in seen[0][0]
     assert "disposable consumer directory" in seen[0][0]
     assert all("<role name='reviewer'>" in prompt for prompt, _ in seen[1:])
     assert len(seen) == 3
     assert all(role is None for _, role in seen)
+
+
+def test_default_session_provisions_without_starting_configured_headless_runner(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    created = _ready_leaf(at, monkeypatch)
+    _pin_runner(monkeypatch, "claude")
+    _never_runs(monkeypatch)
+    result = loop.advance(tmp_path, "i", config=CONFIG)
+    assert created["n"] == "i"
+    assert result.needs_input == "implementation"
+    assert "continue as task owner in /tmp/i" in result.detail

@@ -122,6 +122,15 @@ def write_repair_brief(cwd: Path, brief: RepairBrief) -> bool:
     return True
 
 
+def read_repair_brief(cwd: Path) -> RepairBrief | None:
+
+    try:
+        data = json.loads((cwd / REPAIR_BRIEF_FILE).read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return None
+    return _parse_repair_brief(data)
+
+
 def take_repair_brief(cwd: Path) -> RepairBrief | None:
 
     path = cwd / REPAIR_BRIEF_FILE

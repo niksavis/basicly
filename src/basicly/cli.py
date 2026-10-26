@@ -3524,7 +3524,12 @@ def _cmd_loop_improve(args: argparse.Namespace) -> int:
 
 def _loop_inputs(args: argparse.Namespace) -> loop.Inputs:
     children = decompose.load_plan_file(Path(args.children)) if args.children else None
-    return loop.Inputs(work_type=args.work_type, children=children, verify_mode=args.mode)
+    return loop.Inputs(
+        work_type=args.work_type,
+        children=children,
+        verify_mode=args.mode,
+        execution=getattr(args, "execution", "session"),
+    )
 
 
 def _format_advance(result: loop.AdvanceResult) -> str:
@@ -3813,6 +3818,8 @@ def _ceremony_rerun(args: argparse.Namespace, code: str) -> str:
         parts += ["--work-type", args.work_type]
     if args.children:
         parts += ["--children", args.children]
+    if getattr(args, "execution", "session") != "session":
+        parts += ["--execution", args.execution]
     if args.mode != "full":
         parts += ["--mode", args.mode]
     if args.root:
@@ -3923,6 +3930,7 @@ SUPERVISE_FORWARDED_FLAGS = {
 }
 
 RUN_FORWARDED_FLAGS = {
+    "execution": "--execution",
     "work_type": "--work-type",
     "children": "--children",
     "mode": "--mode",
@@ -5157,6 +5165,13 @@ def _add_detach_arg(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_loop_input_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--execution",
+        choices=("session", "worker"),
+        default="session",
+        help="Keep work with the current session owner (default), "
+        "or explicitly dispatch headless workers",
+    )
     parser.add_argument(
         "--work-type",
         choices=WORK_TYPES,

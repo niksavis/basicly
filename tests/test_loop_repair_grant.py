@@ -60,13 +60,15 @@ def test_a_repair_stops_when_the_explicit_limit_is_spent(
     _pin_rework(monkeypatch)
     seen = _pin_runner(monkeypatch)
 
-    first = loop.advance(tmp_path, "i", config=CONFIG)
+    first = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
     assert first.blocked and "briefed a repair" in first.detail
     assert (cwd / repair_brief.REPAIR_BRIEF_FILE).is_file()
 
     monkeypatch.setattr(policy, "spend_status", lambda *_a, **_k: _status(halted=True))
 
-    second = loop.advance(tmp_path, "i", config=CONFIG, grant_root="epic")
+    second = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="epic"
+    )
 
     assert not seen
     assert second.blocked
@@ -85,8 +87,10 @@ def test_a_repair_dispatches_normally_while_the_grant_covers_it(
     seen = _pin_runner(monkeypatch)
     monkeypatch.setattr(policy, "spend_status", lambda *_a, **_k: _status(halted=False))
 
-    loop.advance(tmp_path, "i", config=CONFIG)
-    second = loop.advance(tmp_path, "i", config=CONFIG, grant_root="epic")
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
+    second = loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), grant_root="epic"
+    )
 
     assert [c for _p, c in seen] == [cwd]
     assert "repaired i.1 in place" in second.detail

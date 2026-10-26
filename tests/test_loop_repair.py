@@ -146,11 +146,11 @@ def test_a_failed_gate_repairs_in_the_same_worktree_the_lane_already_has(
     _pin_rework(monkeypatch)
     seen = _pin_runner(monkeypatch)
 
-    first = loop.advance(tmp_path, "i", config=CONFIG)
+    first = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
     assert first.blocked and "briefed a repair" in first.detail
     assert (cwd / repair_brief.REPAIR_BRIEF_FILE).is_file()
 
-    second = loop.advance(tmp_path, "i", config=CONFIG)
+    second = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert [c for _p, c in seen] == [cwd]
     assert "repaired i.1 in place" in second.detail and second.blocked
@@ -165,8 +165,8 @@ def test_a_repair_brief_is_consumed_so_one_failure_cannot_dispatch_twice(
     _pin_rework(monkeypatch)
     _pin_runner(monkeypatch)
 
-    loop.advance(tmp_path, "i", config=CONFIG)
-    loop.advance(tmp_path, "i", config=CONFIG)
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert not (cwd / repair_brief.REPAIR_BRIEF_FILE).exists()
     assert repair_brief.take_repair_brief(cwd) is None
@@ -209,7 +209,9 @@ def test_a_supervised_landing_leaves_the_repair_to_the_dispatch_step(
         runner, "run", lambda *_a, **_k: pytest.fail("a landing pass must not dispatch")
     )
 
-    loop.advance(tmp_path, "i", config=CONFIG, repair_dispatch=False)
+    loop.advance(
+        tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"), repair_dispatch=False
+    )
 
     assert (cwd / repair_brief.REPAIR_BRIEF_FILE).is_file()
 
@@ -225,8 +227,8 @@ def test_the_repair_prompt_carries_the_gates_findings_not_the_build_text(
     _pin_rework(monkeypatch)
     seen = _pin_runner(monkeypatch)
 
-    loop.advance(tmp_path, "i", config=CONFIG)
-    loop.advance(tmp_path, "i", config=CONFIG)
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
+    loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     prompt = seen[-1][0]
     assert f"Gate: {verify.DEFAULT_GATE}" in prompt
@@ -276,7 +278,7 @@ def test_per_gate_allowances_stop_compounding_at_the_lane_ceiling(
         decisions, "enqueue", lambda _r, issue, kind, *_a, **_k: queued.append((issue, kind))
     )
 
-    result = loop.advance(tmp_path, "i", config=CONFIG)
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert result.action == "escalated"
     assert "total ceiling of 4" in result.detail
@@ -292,7 +294,7 @@ def test_a_lane_inside_the_ceiling_keeps_repairing(
     _pin_rework(monkeypatch, charged=1, spent=loop.lane_rework_ceiling(CONFIG) - 1)
     monkeypatch.setattr(decisions, "enqueue", lambda *_a, **_k: pytest.fail("nothing to escalate"))
 
-    result = loop.advance(tmp_path, "i", config=CONFIG)
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert result.action == "blocked"
     assert (cwd / repair_brief.REPAIR_BRIEF_FILE).is_file()
@@ -322,7 +324,7 @@ def test_a_stale_brief_is_discarded_and_the_landing_runs_in_the_same_invocation(
     )
     monkeypatch.setattr(runner, "run", lambda *_a, **_k: pytest.fail("no repair on a stale brief"))
 
-    result = loop.advance(tmp_path, "i", config=CONFIG)
+    result = loop.advance(tmp_path, "i", config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert merged == ["i"], "the landing must run in this same invocation"
     assert result.needs_input is None
@@ -374,7 +376,9 @@ def test_a_same_holder_resume_refuses_a_review_staled_by_changed_criteria(
         loop, "_verify_and_land", lambda ctx, _name: loop._moved(ctx, "verify", "landed")
     )
 
-    result = loop.advance(tmp_path, "fixture-i", config=CONFIG)
+    result = loop.advance(
+        tmp_path, "fixture-i", config=CONFIG, inputs=loop.Inputs(execution="worker")
+    )
 
     assert result.blocked
     assert "review" in result.detail.lower()

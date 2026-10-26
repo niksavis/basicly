@@ -2417,7 +2417,9 @@ def _land_green(
     invalidated = _invalidated_by(repo_root, session, outcome.issue_id, landed)
     if invalidated:
         return _preempt_lane(repo_root, outcome.issue_id, invalidated)
-    landing = loop.advance(repo_root, outcome.issue_id, repair_dispatch=False)
+    landing = loop.advance(
+        repo_root, outcome.issue_id, inputs=loop.Inputs(execution="worker"), repair_dispatch=False
+    )
     if landing.blocked:
         return _route_blocked_landing(repo_root, outcome, landing, collisions)
     approval = policy.approve_checkpoint_guarded(

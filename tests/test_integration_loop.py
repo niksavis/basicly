@@ -203,7 +203,7 @@ def harness_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return _seed_repo(tmp_path, _MANUAL_RUNNER_CONFIG)
 
 
-def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
+def _to_build(repo: Path, issue_id: str, *, execution: str = "session") -> loop.AdvanceResult:
     intake = loop.advance(repo, issue_id, inputs=loop.Inputs(work_type="task"))
     assert intake.action == "classified", intake.detail
     assert intake.to_phase == "classify"
@@ -211,15 +211,17 @@ def _to_build(repo: Path, issue_id: str) -> loop.AdvanceResult:
     assert policy.checkpoint_approved(repo, issue_id, "classify")
     assert policy.active_grant(repo, issue_id) is None
     _review(repo, issue_id)
-    return loop.advance(repo, issue_id)
+    return loop.advance(repo, issue_id, inputs=loop.Inputs(execution=execution))
 
 
-def test_a_leaf_lands_records_its_gate_and_closes(harness_repo: Path) -> None:
-    repo = harness_repo
+def test_a_leaf_lands_records_its_gate_and_closes(standin_repo: Path) -> None:
+    repo = standin_repo
     issue = _create_bead(repo, "add the greeting")
 
     provisioned = _to_build(repo, issue)
     assert provisioned.blocked
+    assert provisioned.needs_input == "implementation"
+    assert _dispatches(repo, issue) == []
     state = loop_state.read_node_state(repo, issue)
     assert state.phase == "build"
     assert state.worktree is not None
@@ -490,7 +492,7 @@ def test_a_dispatched_agent_cli_commits_and_the_loop_lands_it(standin_repo: Path
     repo = standin_repo
     issue = _create_bead(repo, "let the agent do the work")
 
-    dispatched = _to_build(repo, issue)
+    dispatched = _to_build(repo, issue, execution="worker")
     assert dispatched.blocked
     assert "advance again to land it" in dispatched.detail, dispatched.detail
 
@@ -533,7 +535,7 @@ def test_a_dispatched_agent_that_exits_non_zero_blocks_and_lands_nothing(
     _set_modes(monkeypatch, default=standin_agent.FAIL)
     issue = _create_bead(repo, "watch the agent fall over")
 
-    blocked = _to_build(repo, issue)
+    blocked = _to_build(repo, issue, execution="worker")
     assert blocked.blocked
     assert f"exit {standin_agent.FAIL_CODE}" in blocked.detail, blocked.detail
     assert standin_agent.FAIL_MESSAGE in blocked.detail, blocked.detail
@@ -561,7 +563,7 @@ def test_a_dispatched_agent_that_cannot_resolve_a_fact_surfaces_it(
     _set_modes(monkeypatch, default=standin_agent.NEEDS_INPUT)
     issue = _create_bead(repo, "make the agent block")
 
-    blocked = _to_build(repo, issue)
+    blocked = _to_build(repo, issue, execution="worker")
     assert blocked.needs_input == standin_agent.NEEDS_FACT, blocked.detail
     assert standin_agent.NEEDS_DETAIL in blocked.detail
 
