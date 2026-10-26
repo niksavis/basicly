@@ -6153,7 +6153,7 @@
   },
   "baseline_plan": {
     "record": "basicly-gtb19bg.2",
-    "status": "designed; fixtures and trials not executed",
+    "status": "Seven fixtures validated. Codex viability smoke: baseline timed out at 180 seconds with passing function acceptance; harness-loop candidate passed at 146 seconds. One attempt per arm on a busy machine is not speedup evidence. Remaining protocols and repeated trials are incomplete.",
     "starting_revision": "Pin the baseline after Lefthook ships, so completed S1/S2 and artifact fixes are not misattributed to this redesign. Record repository SHA, wheel SHA, host binary/version, actual model/effort, selected skills, prompt/context size and machine conditions.",
     "comparison": "Within each family, interleave baseline/candidate runs using the same model, effort, permissions and initial fixture. Compare Claude and Codex separately; do not attribute differences between models to harness architecture. Separate interactive guidance trials from headless-loop trials.",
     "sampling": "Start with three independent repetitions per case/arm/family, expand to five and beyond when a regression or uncertainty changes the decision. Retain every attempt, failure, timeout and intervention. A few trials support directional findings, not a reliable p95 estimate.",
@@ -6228,7 +6228,20 @@
       ".scripts/compatibility_smoke.py"
     ],
     "exclusions": "Do not use unchanged skill-creator run_eval or aggregate_benchmark as baseline authority: controls already confirmed failure-as-success, wrong run counts and token units. Lexical retention is a supplementary probe, not task quality.",
-    "execution_boundary": "Use isolated temporary consumer ledgers and worktrees; never run task trials against the shared production tracker or modify concurrent-session branches. Respect host credentials and permissions without dumping configuration secrets."
+    "execution_boundary": "Use isolated temporary consumer ledgers and worktrees; never run task trials against the shared production tracker or modify concurrent-session branches. Respect host credentials and permissions without dumping configuration secrets.",
+    "remaining_trial_protocols": {
+      "consumer-upgrade": "Reuse real foreign-hook and consumer-upgrade coverage; add a pinned older-version installation with existing ledger history. Reinstalling the same version is not upgrade evidence.",
+      "permission-boundary": "Use an interactive approval/denial script and inspect tool actions. Final file equality cannot prove a protected file was never edited or that approval was requested before a write.",
+      "resume": "Record a real pending process handle, interrupt the agent, then resume. Observe the same process and count launches; a final-file assertion does not prove continuity."
+    },
+    "fixture_isolation": "Require trial output outside repository/instruction ancestors. Install a fresh Python consumer before each task, then apply the selected guidance snapshot. Use consumer projections, not this repository’s contributor instructions. User-level host configuration remains inherited and must be recorded before causal claims.",
+    "provisional_snapshot": {
+      "artifact": ".basicly/usage/harness-redesign/consumer-guidance-provisional.json",
+      "files": 133,
+      "bytes": 715711,
+      "instruction_bytes_per_host": 7222,
+      "status": "Fresh consumer installation verified; regenerate after shipping handoff. Skill/reference bytes are not an always-loaded context estimate."
+    }
   },
   "configured_hook_matrix": [
     {
@@ -6544,11 +6557,64 @@
     }
   ],
   "audit_acceptance_checkpoint": {
-    "status": "source audit acceptance satisfied locally; tracker publication pending shared-write handoff",
+    "status": "Source audit acceptance satisfied locally; ready for audit landing. Shared shipping window returned after Lefthook closed at ef12a081.",
     "dispositions": "Every inventoried entry has a disposition; investigate explicitly means unresolved and does not authorize deletion.",
     "evidence": "Source hashes, exact selected fragment projections, skill/agent output paths, configured hook matrix, candidate caller paths, static findings and targeted local controls.",
     "cost": "Cost hypotheses are separated from measurements. No body-size or telemetry-absence inference is treated as measured speed or zero usage.",
     "scope_limit": "Native host precedence, behavior trials and task regression evidence belong to baseline/adapter validation. Personal configuration was observed, not modified. Remaining uncertainties are explicit investigation items.",
     "shared_state": "Tracker .1 remains in_progress until audit acceptance is checked and the shared-write window returns. No synthetic completion or progress events have been appended during the freeze."
+  },
+  "tracker_usability_direction": {
+    "source": "User feedback after reading the live tracker, 2026-10-26",
+    "records": [
+      "basicly-gtb19bg.13",
+      "basicly-gtb19bg.14",
+      "basicly-gtb19bg.9"
+    ],
+    "problem": "Cards contain excessive text, repeated process instructions and internal 3C/INVEST terminology. Humans cannot quickly understand current work or judge the result.",
+    "human_default": "Short title, status, one-line current activity/next step, then Context and Acceptance criteria. Show Requirements only when it adds distinct purpose or constraints. Concise plain language aligned with the useful parts of Tired Engineer; no arbitrary word cap that harms clarity.",
+    "context": "State the user problem, intended outcome and essential scope. Remove repeated Trigger/Reason/Proposed work prose and stale approval boilerplate from the current card view; preserve append-only history.",
+    "acceptance_criteria": "Observable behavior that demonstrates correctness. Link checks/evidence where available; automated tests are one verification method, not the definition of acceptance.",
+    "requirements": "Retain only distinct user outcomes, constraints and invariants needed to judge fitness for purpose. If this duplicates Context/Acceptance criteria, collapse or derive the presentation rather than require filler. Evaluate field usefulness through real cards and consumers before a schema change.",
+    "validation": "Independent reviewer/consumer validation uses the whole user contract. Check whether the feature solves the problem, including real UI journeys and screenshots where appropriate, and real CLI/API/consumer journeys otherwise. Do not mechanically require a separate agent for every card or equate screenshots with complete UX proof.",
+    "progress": "Show what is happening now, latest meaningful result and what comes next without reading a comment stream. Separate activity from historical protocol logs.",
+    "details": "Keep detailed test output, provenance, review forms, 3C/INVEST assessments and machine artifacts accessible on demand. They remain available to agents and reviewers without dominating the human default view.",
+    "agent_contract": "Use the same canonical facts with selective structured retrieval; no separate contradictory human and agent task definitions.",
+    "demonstration": "Use actual epic/child cards with planned, running, blocked and done work. A human should identify purpose, current state, next step and how to validate from the default view. Confirm hidden detail remains accessible, history is preserved and status freshness stays honest.",
+    "status": "Context readiness, readable-card guidance and UI candidates tested in the candidates worktree. Live card rewrites pending tracker migration and landing.",
+    "example_card": {
+      "title": "Make tracker cards easy to understand",
+      "context": "People cannot tell what is happening or how to assess completion because cards repeat process text.",
+      "requirements": [
+        "Use the same task facts for people and agents.",
+        "Preserve history and access to detailed evidence."
+      ],
+      "acceptance_criteria": [
+        "Default view shows purpose, status, current activity and next step.",
+        "Hide internal 3C/INVEST assessments and raw logs behind details.",
+        "Show concise acceptance checks with links to their results."
+      ],
+      "validation": "Ask an independent reviewer to use real planned, active, blocked and finished cards to explain the work and how to assess it. Exercise the browser journey and inspect screenshots; report confusing or missing information."
+    },
+    "content_policy": "Rewrite current card content as well as presentation; collapsing verbose prose alone is insufficient. Keep decision-relevant constraints and evidence, remove duplication, and preserve historical events.",
+    "preview_evidence": {
+      "artifact": ".basicly/usage/harness-redesign/card-preview",
+      "isolation": "Copied ledger segments without redirect; separate server on port 8766. Shared ledger and production page untouched.",
+      "desktop": "Inspected 1440x1000 Chrome screenshot: concise context, progress, evidence and acceptance criteria visible together.",
+      "narrow": "Corrected measurement: ordinary Windows Chrome window-size=390 produced a 500px viewport and cropped screenshot. CDP mobile emulation measured inner/client/scroll/body widths all 390px; inspected mobile-emulated.png with no horizontal overflow. No responsive defect established.",
+      "admission_conflict": "Updating only the copied card to plain Context returned blocking Trigger and Confirmation Plan. Readiness rules must assess useful content without requiring internal methodology headings.",
+      "state": "Worktree source now uses plain section headings, omits empty Requirements display and collapses conversation history. All comments/authors and the visible composer are retained. Not committed or shipped; concise live card rewrites await shared-ledger handoff.",
+      "readiness_prototype": "Source change accepts explicit Context prose without story-formula syntax; empty/placeholder contexts rejected. 287 shaping/policy tests pass. Copied card now owes only its completion-check plan; no shared record updated.",
+      "ui_checks": "118 combined shaping/UI/server tests passed. History regression fails against the old page. Desktop 1440px and CDP-emulated 390px screenshots inspected. Display strips a duplicate leading Context heading without changing stored text."
+    }
+  },
+  "skill_implementation_candidate": {
+    "record": "basicly-gtb19bg.4",
+    "skill": "harness-loop",
+    "entry_body_bytes_before": 15172,
+    "entry_body_bytes_after": 1920,
+    "mechanism": "Operational procedures moved to linked references/operations.md; essential boundaries and selective routing stay in entrypoint. Both host projections regenerated and fresh-consumer links verified.",
+    "rejected_change": "Shortened four descriptions; rank-1 routing fell from 56/60 to 52/60 despite passing the 85% gate. Restored original descriptions. Listing budget overrun remains to solve through evidence-backed pruning/restructuring.",
+    "status": "Uncommitted candidate; live model comparison pending. Text reduction does not establish runtime speedup."
   }
 }
