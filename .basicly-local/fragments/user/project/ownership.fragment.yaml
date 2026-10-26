@@ -12,7 +12,5 @@ tags:
 status: active
 title: Ownership
 body: |
-  - Own the approved outcome and required harness fixes.
-  - Fix demonstrated causes within scope with the smallest effective regression or control.
-  - Record adjacent findings. Implement only necessary blockers within scope or separately authorized work.
-  - Follow current vendor and community expert practice unless it makes install, use or upgrade less safe for a person who makes a mistake.
+  - Own the approved outcome and necessary harness fixes; fix demonstrated causes with the smallest effective regression or control.
+  - Use current vendor and expert practice unless it makes install, use or upgrade less safe for a person who makes a mistake.

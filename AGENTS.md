@@ -3,9 +3,11 @@
 
 ### Code Is Authoritative
 
-IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`). Fix the cause.
+IMPORTANT: never defeat a gate to make it pass. Do not skip or weaken a test, a lint or a type check, and do not bypass a hook (`--no-verify`, `--no-gpg-sign`) unless the user explicitly requests observer repair. Fix the cause.
 
-- Never add prose to code: no comment and no docstring. Keep tool directives (example: `noqa`) and licence headers. The `no-comments` hook enforces the ban. Before a code edit, read `.agents/skills/no-comments/SKILL.md`.
+- For observer repair, work outside the harness controller; run affected checks directly and report bypasses and unfinished verification. Never report a bypassed check as passing.
+
+- Never add prose to code: no comment and no docstring. Keep tool directives (example: `noqa`) and licence headers. The `no-comments` hook enforces the ban. Use `no-comments` for enforcement details.
 
 ### Secure Coding
 
@@ -84,14 +86,14 @@ uv run basicly permissions-check
 
 ### Knowledge Priming
 
-- Before non-trivial work, read the README, the local instructions and the relevant architecture sections.
-- When repository evidence and general practice disagree, follow the repository and say so.
-- An instruction from the user in the current task overrides this file. A path-scoped instruction overrides it for the files it matches.
+- Read the README, local instructions and relevant architecture before non-trivial work. Follow repository evidence over general practice and explain the difference.
+- The current user's instruction overrides this file; path-scoped instructions override it for matching files.
 
 ### Harness Loop
 
-- Start with `basicly session start`. The tracker ledger is the source of truth for the work.
-- Use `basicly loop` for non-trivial work. The `harness-loop` skill describes its phases and gates.
+- Keep one responsible owner from task to completion; the tracker ledger and latest handover preserve shared history.
+- Delegate only for independent work, context pressure, independent review or specialist capabilities.
+- Use `basicly session start` when useful for orientation. Direct work needs no phase controller; `basicly loop` supports owner handoffs, and explicit `--execution worker` selects headless orchestration. Read the `harness-loop` skill when using that orchestration.
 - The user task request authorizes its scope. Do not request a grant or a mandatory token budget.
 - Keep verification gates and destructive-action protections enabled. Honor limits the user explicitly sets.
 
@@ -101,81 +103,72 @@ uv run basicly permissions-check
 
 ### Decision Protocol
 
-- Decide from code for small, reversible actions outside the confirmation list.
-- Use safe read-only checks to resolve facts first. Ask when missing facts, conflicting sources or uncheckable assumptions change the result. Name the missing fact and useful options.
-- With frozen scope, finish started work and demonstrated blockers within scope. Report broader blockers and ask before expanding.
-- Record nonblocking adjacent findings in the tracker without implementing them.
-- When rules conflict, follow safety and security. If an approach fails twice, report the pattern and propose another.
+- Decide small, reversible actions outside the confirmation list from code. Use safe read-only checks to resolve facts first. Ask when missing facts, conflicting sources or uncheckable assumptions change the result. Name the missing fact and useful options.
+- With frozen scope, finish started work and demonstrated blockers within scope. Report broader blockers and ask before expanding. Record nonblocking adjacent findings in the tracker without implementing them.
+- Resolve conflicting rules in favor of safety and security. After two failed approaches, report the pattern and propose another.
 
 ### External Facts
 
-- For a third-party interface, never rely on memory. Read our adapter, then the current vendor documentation, and follow `.agents/skills/interface-facts/SKILL.md`.
-- Before claiming absence or zero, search for the action, not only its name. Run a known-match positive control through the same search. An empty control invalidates the search, and a matching control must also increase the examined-item count.
-- Before a high-risk number, a root cause or a coverage claim enters a decision, follow `.agents/skills/falsify-first/SKILL.md`.
+- For third-party interfaces, read our adapter and current vendor docs; use `interface-facts`, never memory.
+- Before absence/zero claims, search for the action and run a known-match control through the same search. An empty control invalidates it; a match must increase the examined count.
+- Use `falsify-first` before high-risk numbers, root causes or coverage claims enter a decision.
 
 ### Ownership
 
-- Own the approved outcome and required harness fixes.
-- Fix demonstrated causes within scope with the smallest effective regression or control.
-- Record adjacent findings. Implement only necessary blockers within scope or separately authorized work.
-- Follow current vendor and community expert practice unless it makes install, use or upgrade less safe for a person who makes a mistake.
+- Own the approved outcome and necessary harness fixes; fix demonstrated causes with the smallest effective regression or control.
+- Use current vendor and expert practice unless it makes install, use or upgrade less safe for a person who makes a mistake.
 
 ### Core Rules
 
-- Make the smallest diff that meets the requirement. Build only the requested capability.
-- Reuse before building. Establish absence from the code that would use the capability, not from documentation or `--help`.
-- Fix the root cause and check every call site. Match the edited file's style and names.
-- Leave no dead code or debug output. Never swallow errors.
-- Keep tests deterministic. A bug fix ships with a regression test. Before writing or changing tests, read `.agents/skills/test-discipline/SKILL.md`.
-- Back every claim with evidence: the file, command or passing test. Mark a claim from unread code as an assumption.
+- Build the smallest requested change. Check consumer code for reuse before building; documentation or `--help` alone does not establish absence.
+- Fix demonstrated causes across call sites; match local style and names. Leave no dead code, debug output or swallowed errors.
+- Keep tests deterministic; bug fixes need regression tests. Read the `test-discipline` skill for isolation, ordering or platform-sensitive tests.
+- Support claims with files, commands or passing tests; mark unread-code claims as assumptions.
 
 ### Mistake Proofing
 
-- Make wrong use impossible, or refuse wrong input by name before damage and give the correct command. Never return a default or empty success.
-- Default to safe behaviour. A mode that can damage shared state needs an explicit flag.
-- Keep each rule in one place and call it from every side.
-- Prevent recurrence with a gate or test. A document warning alone does not stop it.
+- Prevent wrong use or refuse wrong input by name before damage; give the correct command, never a default or empty success.
+- Default to safety; shared-state damage needs an explicit flag.
+- Keep each rule in one place, call it from every side, and prevent recurrence with a test or gate. A warning alone is insufficient.
 
 ### Model Tier Routing
 
-- For a specialist dispatch in this repository, apply the tier-only routing policy (example: `tier: high`). Read `.agents/skills/tier-injection/SKILL.md` before proceeding.
+- Before specialist dispatch, use `tier-injection` and this repository's tier-only routing (e.g. `tier: high`).
 
 ### Catalog Authoring
 
-- A generated file comes from a catalog source, and `basicly install` overwrites `.basicly/core/`. Before you edit a generated file or a catalog source, read `.agents/skills/catalog-authoring/SKILL.md`.
+- Edit generated files through catalog sources using `catalog-authoring`. `basicly install` overwrites `.basicly/core/`; consumer overrides belong in `.basicly-local/`.
 
 ### Non-Interactive Shell
 
-- Prefer a cross-platform command. Pass a non-interactive flag to a command that can wait for an answer: `cp -f`, `mv -f`, `rm -f`, `-y`, `ssh -o BatchMode=yes`.
-- Never loop over an unquoted variable (`for x in $LIST`). zsh does not split it, so the loop runs once and looks like success. Use an array or an inline list, and check that the count changed.
-- Before a scripted replace across many sites, state the expected count and compare it after. A different count is a stop.
+- Prefer cross-platform, non-interactive commands: `cp -f`, `mv -f`, `rm -f`, `-y`, `ssh -o BatchMode=yes`.
+- Use arrays or inline lists, never `for x in $LIST`: zsh does not split unquoted variables. Check the processed count.
+- Before a multisite scripted replacement, state the expected count; compare afterwards and stop on a mismatch.
 
 ### Quality Gate
 
-- Run focused checks while editing and cheap gates first. Run required full verification on the integrated candidate.
-- If source or environment inputs change, or a check fails, fix its cause and rerun affected checks. Keep all required gates enabled.
+- Run focused checks while editing and cheap gates first; run required full verification on the integrated candidate.
+- If source or environment inputs change or a check fails, fix its cause and rerun affected checks. Keep all required gates enabled.
 - For tracker-only or phase-only changes, rerun affected checks unless the existing engine establishes equivalent trusted inputs. A commit or phase transition alone does not invalidate equivalent evidence.
-- Review the diff. Then run the change the way a consumer runs it, and read the output. Passing tests do not prove a working feature.
-- After the last edit, run the repository checks for what you touched. Read the pass or fail summary, because truncated output hides failures.
-- Report what ran and what did not. Expectation is not verification.
+- After the last edit, review the diff, run affected repository checks and exercise the consumer journey. Read the output and pass/fail summary; tests alone do not prove a working feature.
+- Report what ran, what failed and what did not run.
 
 ### Rendered Surfaces
 
-- For a rendered page, inspect screenshots against each acceptance criterion, real data and every claimed viewport. Read `.agents/skills/validate-as-consumer/SKILL.md` before proceeding.
+- For rendered pages, use `validate-as-consumer`; inspect screenshots against each acceptance criterion with real data at every claimed viewport.
 
 ### Git Discipline
 
-- Run `git commit` as its own command. Do not chain `git push`, a tag or a tracker update after it, because a refused commit leaves the chain half done.
-- The `commit-msg` hooks require a Conventional Commits subject and a trailing record id. The `work-tracker` skill claims the record first, and the `conventional-commits` skill writes the message.
-- When a hook refuses a commit, fix the cause it names and commit again.
+- Run `git commit` alone; chaining push, tags or tracker writes after a refused commit leaves partial work.
+- Claim the record with `work-tracker`; use `conventional-commits` for the required Conventional Commits subject and trailing record id.
+- If a hook refuses, fix its named cause and commit again.
 
 ### Session Completion
 
-- Before you end a session, follow the `session-finish` skill. Leave the repository clean, with no partial edits and no stray files. Leave a final `[session handover <date>]` note on the root record.
-- Report what changed, what you verified and what is still open.
-- After a refusal or a corrected mistake, fix its cause within the approved scope and reuse that diagnosis at handover. Record further recommendations without expanding the task.
+- Use `session-finish` at session end: leave a clean repository, no partial edits or stray files, and a root `[session handover <date>]` note with changes, checks and open work.
+- After a refusal or correction, fix its cause within approved scope and carry the diagnosis into handover. Record further recommendations without expanding scope.
 
 ### Release Fragments
 
-- A change a consumer can see writes `changelog.d/<record-id>.<category>.md` before its record closes: one bullet line, under 400 characters. Example: `changelog.d/basicly-a3ab.4.changed.md`.
-- Write it in the same change. The release reads the tagged commit, and a closed record with a shipped scope and no fragment blocks the next commit on main.
+- Include `changelog.d/<record-id>.<category>.md` with each consumer-visible change before closing: one bullet under 400 characters, e.g. `basicly-a3ab.4.changed.md`.
+- Releases read the tagged commit. A closed shipped record without its fragment blocks the next main commit.

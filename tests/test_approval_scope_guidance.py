@@ -54,9 +54,7 @@ def test_a_nonblocking_adjacent_bug_is_recorded_without_implementation(target: s
     rule = _section(target, "Decision Protocol")
     assert "Record nonblocking adjacent findings in the tracker without implementing them" in rule
     ownership = _section(target, "Ownership")
-    assert (
-        "Implement only necessary blockers within scope or separately authorized work" in ownership
-    )
+    assert "Own the approved outcome and necessary harness fixes" in ownership
 
 
 @pytest.mark.parametrize("target", TARGETS)

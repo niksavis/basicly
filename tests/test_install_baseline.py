@@ -134,3 +134,41 @@ def test_force_replaces_the_hand_edited_kit_module_of_a_mixed_core(tmp_path: Pat
 
     assert result.returncode == 0, result.stderr
     assert _catalog(core) == _catalog(bundled_catalog_root())
+
+
+def test_guidance_install_and_upgrade_preserve_local_and_scoped_rules(tmp_path: Path) -> None:
+    provision_markdownlint_double(tmp_path)
+    overlay = tmp_path / ".basicly-local/fragments/user/project/consumer.fragment.yaml"
+    overlay.parent.mkdir(parents=True)
+    overlay.write_text(
+        "schema_version: 1\nid: consumer-contract\ndescription: Consumer contract.\n"
+        "category: project\napplies_to: [all]\nstatus: active\n"
+        "title: Consumer Contract\nbody: |\n  - Preserve the consumer-specific invariant.\n",
+        encoding="utf-8",
+    )
+    scoped = overlay.with_name("scoped.fragment.yaml")
+    scoped.write_text(
+        "schema_version: 1\nid: consumer-scoped\ndescription: Scoped consumer contract.\n"
+        "category: project\napplies_to: [all]\nstatus: active\n"
+        'scope:\n  paths: ["app/**/*.py"]\n'
+        "title: Consumer Scoped\nbody: |\n  - Preserve the path-specific invariant.\n",
+        encoding="utf-8",
+    )
+    local_before = {path: path.read_bytes() for path in (overlay, scoped)}
+
+    for _ in range(2):
+        result = _install(tmp_path)
+        assert result.returncode == 0, result.stdout + result.stderr
+        for relative in ("AGENTS.md", ".claude/CLAUDE.md", ".github/copilot-instructions.md"):
+            text = (tmp_path / relative).read_text(encoding="utf-8")
+            assert "Preserve the consumer-specific invariant." in text
+            assert "one responsible owner" in text
+            assert "unless the user explicitly requests observer repair" in text
+            assert "user task request authorizes its scope" in text
+            assert "read or write a `.env*` file" in text
+            assert "Do not skip or weaken a test, a lint or a type check" in text
+            assert ("Preserve the path-specific invariant." in text) is (relative == "AGENTS.md")
+        rule = (tmp_path / ".claude/rules/consumer-scoped.md").read_text(encoding="utf-8")
+        assert "app/**/*.py" in rule
+        assert "Preserve the path-specific invariant." in rule
+        assert {path: path.read_bytes() for path in (overlay, scoped)} == local_before
