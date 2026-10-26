@@ -70,7 +70,9 @@ AGENT_NAME_FLAG = "agent-name"
 AGENT_STYLES = (AGENT_NAME_FLAG,)
 
 RESUME_FORK_FLAGS = "resume-fork"
-RESUME_STYLES = (RESUME_FORK_FLAGS,)
+RESUME_FLAGS = "resume"
+CODEX_RESUME = "codex-exec-resume"
+RESUME_STYLES = (RESUME_FORK_FLAGS, RESUME_FLAGS, CODEX_RESUME)
 
 LOST_SESSION_MARKER = "No conversation found with session ID"
 
@@ -133,7 +135,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         ("claude", "-p", PROMPT_PLACEHOLDER),
         deny_style=DISALLOWED_TOOLS_FLAG,
         agent_style=AGENT_NAME_FLAG,
-        resume_style=RESUME_FORK_FLAGS,
+        resume_style=RESUME_FLAGS,
         usage_format=CLAUDE_STREAM_JSON,
         context_window=ADAPTER_WINDOWS["claude"].tokens,
         context_window_source=ADAPTER_WINDOW,
@@ -143,6 +145,7 @@ BUILTIN_RUNNERS: tuple[RunnerSpec, ...] = (
         HEADLESS,
         ("codex", "exec", PROMPT_PLACEHOLDER),
         usage_format=CODEX_JSONL,
+        resume_style=CODEX_RESUME,
         context_window=CODEX_FALLBACK_WINDOW,
         context_window_source=FALLBACK_WINDOW,
     ),
@@ -174,6 +177,7 @@ class RunResult:
     session_id: str | None = None
     model_resolution: models.ModelResolution | None = None
     seed: SessionSeed | None = None
+    context_action: str | None = None
 
 
 def format_command(  # noqa: PLR0913 — an argv fact each; a bundle hides which are optional
@@ -318,6 +322,12 @@ class SessionSeed:
     session_id: str
     exists: bool
 
+    def __post_init__(self) -> None:
+        try:
+            uuid.UUID(self.session_id)
+        except (ValueError, TypeError, AttributeError) as error:
+            raise ValueError("session_id must be an explicit UUID") from error
+
 
 SESSION_SEEDS_FILE = run_record.USAGE_DIR / "session-seeds.json"
 
@@ -336,11 +346,15 @@ def session_seed(repo_root: Path, feature_id: str, family: str) -> SessionSeed:
 
     known = _read_seeds(repo_root / SESSION_SEEDS_FILE).get(feature_id)
     if isinstance(known, dict) and isinstance(known.get(family), str) and known[family]:
-        return SessionSeed(known[family], exists=True)
+        try:
+            return SessionSeed(known[family], exists=True)
+        except ValueError:
+            pass
     return SessionSeed(str(uuid.uuid4()), exists=False)
 
 
 def record_session_seed(repo_root: Path, feature_id: str, family: str, session_id: str) -> None:
+    SessionSeed(session_id, exists=True)
     path = repo_root / SESSION_SEEDS_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     gitignore = path.parent / ".gitignore"
@@ -362,13 +376,22 @@ def _apply_seed(spec: RunnerSpec, argv: list[str], seed: SessionSeed | None) -> 
 
     if seed is None or spec.resume_style is None:
         return argv
-    if spec.resume_style != RESUME_FORK_FLAGS:
+    if spec.resume_style not in RESUME_STYLES:
         raise ValueError(
             f"runner {spec.name!r} has resume_style {spec.resume_style!r}; "
             f"known: {list(RESUME_STYLES)}"
         )
+    if spec.resume_style == CODEX_RESUME:
+        if not seed.exists:
+            return argv
+        try:
+            position = argv.index("exec") + 1
+        except ValueError as error:
+            raise ValueError("Codex continuation requires an exec command") from error
+        return [*argv[:position], "resume", seed.session_id, *argv[position:]]
     if seed.exists:
-        return [argv[0], "--resume", seed.session_id, "--fork-session", *argv[1:]]
+        fork = ["--fork-session"] if spec.resume_style == RESUME_FORK_FLAGS else []
+        return [argv[0], "--resume", seed.session_id, *fork, *argv[1:]]
     return [argv[0], "--session-id", seed.session_id, *argv[1:]]
 
 
@@ -976,6 +999,7 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
             _drain(proc)
         raise
     duration_s = time.perf_counter() - start
+    session_id = observed_session(spec, stdout) or session_id
     result = RunResult(
         spec.name,
         tuple(argv),
@@ -1003,6 +1027,27 @@ def run(  # noqa: PLR0913 — mirrors the CLI surface
         role=role,
         seed=SessionSeed(str(uuid.uuid4()), exists=False),
     )
+
+
+def observed_session(spec: RunnerSpec, stdout: str) -> str | None:
+    sessions: set[str] = set()
+    for event in stream_events(stdout):
+        value = None
+        if spec.usage_format == CODEX_JSONL and event.get("type") == "thread.started":
+            value = event.get("thread_id")
+        elif spec.usage_format in (CLAUDE_JSON, CLAUDE_STREAM_JSON) and (
+            event.get("type") == "result"
+            or (event.get("type") == "system" and event.get("subtype") == "init")
+        ):
+            value = event.get("session_id")
+        if value is not None:
+            try:
+                sessions.add(str(uuid.UUID(value)))
+            except (ValueError, TypeError, AttributeError) as error:
+                raise ValueError("invalid native session identifier") from error
+    if len(sessions) > 1:
+        raise ValueError("conflicting native session identifiers")
+    return next(iter(sessions), None)
 
 
 def _seed_was_lost(seed: SessionSeed | None, result: RunResult) -> bool:
@@ -1312,6 +1357,31 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
         scheduler_fallback_rank=scheduler_fallback_rank,
         scheduler_score=scheduler_score,
         scheduler_policy=scheduler_policy,
+    )
+    cumulative = (
+        usage.cost
+        if usage is not None
+        and spec.usage_format in (CLAUDE_JSON, CLAUDE_STREAM_JSON)
+        and result.session_id is not None
+        else None
+    )
+    cost = entry.cost
+    if cumulative is not None and result.context_action == "resumed":
+        history = (run_record.load_run_records(repo_root) or {}).get(issue_id, [])
+        previous = [
+            item["session_cost"]
+            for item in history
+            if item.get("session_id") == result.session_id
+            and isinstance(item.get("session_cost"), (int, float))
+            and not isinstance(item.get("session_cost"), bool)
+        ]
+        cost = cumulative - max(previous) if previous and cumulative >= max(previous) else None
+    entry = replace(
+        entry,
+        session_id=result.session_id,
+        context_action=result.context_action,
+        session_cost=cumulative,
+        cost=cost,
     )
     with contextlib.suppress(OSError):
         run_record.record(repo_root, issue_id, entry)

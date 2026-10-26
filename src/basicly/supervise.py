@@ -35,6 +35,7 @@ from . import (
     roles,
     run_record,
     runner,
+    task_context,
     tracker,
     wip,
     worktree,
@@ -1480,27 +1481,6 @@ def record_unstarted_dispatch(
     )
 
 
-def _lane_seed(
-    repo_root: Path, issue_id: str, spec: runner.RunnerSpec
-) -> runner.SessionSeed | None:
-
-    if spec.resume_style is None or not roles.phase_inherits_context("build"):
-        return None
-    return runner.session_seed(repo_root, issue_id, runner.model_family(spec))
-
-
-def _keep_lane_seed(
-    repo_root: Path,
-    issue_id: str,
-    spec: runner.RunnerSpec,
-    seed: runner.SessionSeed | None,
-    result: runner.RunResult,
-) -> None:
-
-    if seed is not None and not seed.exists and result.returncode == 0:
-        runner.record_session_seed(repo_root, issue_id, runner.model_family(spec), seed.session_id)
-
-
 def _finished_detail(
     result: runner.RunResult,
     refused: provider_limit.LimitRefusal | None,
@@ -1565,7 +1545,6 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         cwd = Path(record.worktree_path)
         bundle = build_bundle(repo_root, lane.issue_id, known_ids=known, cwd=cwd)
         runner_config = load_runner_config(repo_root)
-        seed = _lane_seed(repo_root, lane.issue_id, spec)
         stream = LaneStream(
             agent=spec.name, model=runner.resolve_model(spec, repo_root=cwd).model or ""
         )
@@ -1583,10 +1562,11 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         with (
             live_lane(lane.issue_id, stream),
             lane_log.lane_transcript(repo_root, session.log_session, lane.issue_id) as transcript,
-            runner.process_budget().slot(runner.LANE),
             watchdog,
         ):
-            result = runner.run(
+            result = task_context.run_task(
+                repo_root,
+                lane.issue_id,
                 spec,
                 bundle.prompt,
                 cwd,
@@ -1595,9 +1575,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
                 on_event=lane_log.fanout(stream, transcript),
                 bounds=bounds,
                 role=roles.resolve_role(repo_root, spec, "build"),
-                seed=seed,
             )
-        _keep_lane_seed(repo_root, lane.issue_id, spec, seed, result)
     except (RuntimeError, OSError, ValueError) as exc:
         record_unstarted_dispatch(repo_root, lane.issue_id, spec, exc)
         raise

@@ -1,0 +1,1 @@
+- Continue compatible Codex and Claude build/repair sessions by explicit native id, refresh changed context, refuse concurrent work in the same worktree, and record resumed Claude cost without counting prior turns again.

@@ -88,6 +88,9 @@ class RunRecord:
     scheduler_fallback_rank: int | None = None
     scheduler_score: int | None = None
     scheduler_policy: str | None = None
+    session_id: str | None = None
+    context_action: str | None = None
+    session_cost: float | None = None
 
 
 def outcome_of(*, handoff: bool, returncode: int | None, started: bool = True) -> str:
