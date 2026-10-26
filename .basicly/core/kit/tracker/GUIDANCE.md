@@ -7,7 +7,7 @@ description: Use the append-only work tracker as this repository's issue tracker
 
 The tracker is an append-only event ledger in `.basicly/ledger/`, committed with the code.
 Every command takes the ledger directory as its first argument and prints one JSON object.
-`.basicly/kit/tracker/REFERENCE.md` lists every command with one example.
+`.basicly/core/kit/tracker/REFERENCE.md` lists every command with one example.
 
 ## Rules
 
@@ -41,11 +41,11 @@ Every command takes the ledger directory as its first argument and prints one JS
 ## Read
 
 ```sh
-python3 .basicly/kit/tracker/cli.py ready .basicly/ledger        # workable now, ranked
-python3 .basicly/kit/tracker/cli.py blocked .basicly/ledger      # waiting, and on what
-python3 .basicly/kit/tracker/cli.py show .basicly/ledger <id>    # one record, its edges and dates
-python3 .basicly/kit/tracker/cli.py dor .basicly/ledger <id>     # exit 0 shaped, exit 1 with what is missing
-python3 .basicly/kit/tracker/cli.py ready .basicly/ledger --mine # the stories you hold
+python3 .basicly/core/kit/tracker/cli.py ready .basicly/ledger        # workable now, ranked
+python3 .basicly/core/kit/tracker/cli.py blocked .basicly/ledger      # waiting, and on what
+python3 .basicly/core/kit/tracker/cli.py show .basicly/ledger <id>    # one record, its edges and dates
+python3 .basicly/core/kit/tracker/cli.py dor .basicly/ledger <id>     # exit 0 shaped, exit 1 with what is missing
+python3 .basicly/core/kit/tracker/cli.py ready .basicly/ledger --mine # the stories you hold
 ```
 
 A `holder` marked `stale` had no event for `stale_days` (14 by default); ask the holder
@@ -56,31 +56,41 @@ branches; the two agree who keeps it, then run `resolve` to keep the current hol
 ## Write
 
 ```sh
-python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix <p> --title "<what>" \
+python3 .basicly/core/kit/tracker/cli.py create .basicly/ledger --prefix <p> --title "<what>" \
     --description "<the trigger>" --acceptance "<how it is checked>" --requirements "<the standard>"
-python3 .basicly/kit/tracker/cli.py assign .basicly/ledger <id>                 # reserve it for you
-python3 .basicly/kit/tracker/cli.py claim .basicly/ledger <id>                  # reserve it and start
-python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger <id>               # give it back
-python3 .basicly/kit/tracker/cli.py comment .basicly/ledger <id> "<what you learned>"
-python3 .basicly/kit/tracker/cli.py dep .basicly/ledger <id> <the-id-it-waits-on>
-python3 .basicly/kit/tracker/cli.py child .basicly/ledger <parent-id> --title "<a piece of it>"
-python3 .basicly/kit/tracker/cli.py close .basicly/ledger <id> --reason "<what shipped, and the evidence>"
+python3 .basicly/core/kit/tracker/cli.py assign .basicly/ledger <id>                 # reserve it for you
+python3 .basicly/core/kit/tracker/cli.py claim .basicly/ledger <id>                  # reserve it and start
+python3 .basicly/core/kit/tracker/cli.py unassign .basicly/ledger <id>               # give it back
+python3 .basicly/core/kit/tracker/cli.py comment .basicly/ledger <id> "<what you learned>"
+python3 .basicly/core/kit/tracker/cli.py dep .basicly/ledger <id> <the-id-it-waits-on>
+python3 .basicly/core/kit/tracker/cli.py child .basicly/ledger <parent-id> --title "<a piece of it>"
+python3 .basicly/core/kit/tracker/cli.py close .basicly/ledger <id> --reason "<what shipped, and the evidence>"
 ```
+
+## Read only what you need
+
+Use `list <ledger> --summary --query "<words>"` to search all current fields and
+comment history without downloading that prose for every match. `--status` and
+`--limit` still apply. Use `show <ledger> <id>` for the complete canonical record.
+The board uses the same summaries and retrieves full detail when a card opens.
+Its Show more action makes every result reachable; closed records remain searchable.
 
 ## Shape a record
 
-A shaped record carries three things:
+A shaped record carries Context and Acceptance criteria, plus Requirements when needed:
 
-1. **A trigger** in the description, in one of two voices. Situation: "When <situation>, I
-   want to <motivation>, so I can <outcome>." Persona: "As a <persona>, I want <goal>, so
-   that <benefit>." Do not invent a persona when a situation triggers the work.
+1. **Context** in the description: under `## Context`, state the problem and intended
+   outcome in plain language. Existing situation ("When…, I want…, so I can…") and persona
+   ("As a…, I want…, so that…") formats remain supported; neither formula is required.
 2. **Acceptance criteria** as `--acceptance`. Write one bullet per check: "When <event>, the
    <system> shall <response>."
-3. **Requirements** as `--requirements`. Name the standard that the result must obey, not
-   the method.
+3. **Requirements**, when distinct constraints apply, as `--requirements`. Do not repeat
+   the context or acceptance criteria as filler. An explicit project template can require
+   this field.
 
-Each trigger part needs text: the situation or persona, motivation or goal, and outcome
-or benefit. Empty parts, punctuation alone, and placeholders such as `<outcome>`, `TODO`
+Context needs meaningful text; review judges whether it states the problem and outcome.
+For a legacy trigger, each situation/persona, motivation/goal and outcome/benefit needs
+text. Empty parts, punctuation alone, and placeholders such as `<outcome>`, `TODO`
 or `TBD` cannot shape a trigger. Each criterion and requirement must be filled.
 
 Capture a raw idea with `create --title` even when these parts are unknown. The reply names
@@ -197,9 +207,9 @@ or an unfinished placeholder cannot confirm a criterion.
 ```
 
 ```sh
-python3 .basicly/kit/tracker/cli.py confirm .basicly/ledger <id> --evidence '<confirmation JSON>'
-python3 .basicly/kit/tracker/cli.py close .basicly/ledger <id> --reason "Saved tasks can be read again."
-python3 .basicly/kit/tracker/cli.py close .basicly/ledger <id> --resolution cancelled --reason "This work is no longer needed."
+python3 .basicly/core/kit/tracker/cli.py confirm .basicly/ledger <id> --evidence '<confirmation JSON>'
+python3 .basicly/core/kit/tracker/cli.py close .basicly/ledger <id> --reason "Saved tasks can be read again."
+python3 .basicly/core/kit/tracker/cli.py close .basicly/ledger <id> --resolution cancelled --reason "This work is no longer needed."
 ```
 
 The tracker computes the review revision and generic writer identity itself. Editing the
@@ -249,7 +259,7 @@ cause. It refuses:
 ## Show a person the state
 
 ```sh
-python3 .basicly/kit/tracker/cli.py board .basicly/ledger --out tracker-board.html
+python3 .basicly/core/kit/tracker/cli.py board .basicly/ledger --out tracker-board.html
 ```
 
 `board` writes one static page. The optional board kit serves a live page and an HTTP API

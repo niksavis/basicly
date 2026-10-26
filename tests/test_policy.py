@@ -153,9 +153,8 @@ def test_definition_of_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
     assert result.missing == ((
-        "## Trigger",
+        "## Context",
         "## Acceptance Criteria",
-        "## Requirements",
         *DEBTS,
     ))
 
@@ -168,9 +167,8 @@ def test_dor_requires_acceptance_criteria_whatever_the_work_type(
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
     assert result.missing == ((
-        "## Trigger",
+        "## Context",
         "## Acceptance Criteria",
-        "## Requirements",
         *COMPACT_DEBTS,
     ))
 
@@ -198,10 +196,9 @@ def test_dor_keeps_other_missing_sections_when_adding_the_requirement(
     _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.missing == ((
-        "## Trigger",
+        "## Context",
         "## Steps to Reproduce",
         "## Acceptance Criteria",
-        "## Requirements",
         *COMPACT_DEBTS,
     ))
 
@@ -215,10 +212,9 @@ def test_dor_reads_the_required_sections_from_configuration(
     _install(monkeypatch, _FakeBr(issue_type="bug", acceptance_criteria=None))
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.missing == ((
-        "## Trigger",
+        "## Context",
         "## Repro",
         "## Acceptance Criteria",
-        "## Requirements",
         *COMPACT_DEBTS,
     ))
 
@@ -239,10 +235,9 @@ def test_dor_reads_an_extending_ledger_template(
     result = policy.definition_of_ready(tmp_path, "i")
 
     assert result.missing == ((
-        "## Trigger",
+        "## Context",
         "## Steps to Reproduce",
         "## Acceptance Criteria",
-        "## Requirements",
         "## Risks",
         "## Impact",
         *COMPACT_DEBTS,
@@ -325,9 +320,8 @@ def test_dor_structured_field_does_not_mask_other_missing_sections(
     result = policy.definition_of_ready(tmp_path, "i")
     assert result.ready is False
     assert result.missing == ((
-        "## Trigger",
+        "## Context",
         "## Steps to Reproduce",
-        "## Requirements",
         *COMPACT_DEBTS,
     ))
 
@@ -343,26 +337,26 @@ def test_dor_empty_or_absent_acceptance_field_still_requires_the_section(
 
 def test_required_sections_derives_the_set_from_the_work_type() -> None:
     assert policy.required_sections("bug") == (
-        "## Trigger",
+        "## Context",
         "## Steps to Reproduce",
         "## Acceptance Criteria",
     )
     assert policy.required_sections("epic") == (
-        "## Trigger",
+        "## Context",
         "## Success Criteria",
         "## Acceptance Criteria",
     )
     for work_type in ("task", "chore", "feature"):
-        assert policy.required_sections(work_type) == ("## Trigger", "## Acceptance Criteria")
+        assert policy.required_sections(work_type) == ("## Context", "## Acceptance Criteria")
 
 
 def test_required_sections_of_an_unknown_type_still_owes_acceptance_criteria() -> None:
-    assert policy.required_sections("docs") == ("## Trigger", "## Acceptance Criteria")
+    assert policy.required_sections("docs") == ("## Context", "## Acceptance Criteria")
 
 
 def test_compose_body_emits_every_required_section_with_a_placeholder() -> None:
     body = policy.compose_body("bug")
-    assert body.startswith("## Trigger\n\n")
+    assert body.startswith("## Context\n\n")
     assert "## Steps to Reproduce\n\n" in body
     assert "## Acceptance Criteria" not in body
     assert body.count("TODO") == 2
@@ -378,7 +372,7 @@ def test_compose_body_appends_a_non_required_section_rather_than_dropping_it() -
 
     body = policy.compose_body("bug", {"## Scope": "- `src/basicly/cli.py`"})
     headings = [line for line in body.splitlines() if line.startswith("## ")]
-    assert headings == ["## Trigger", "## Steps to Reproduce", "## Scope"]
+    assert headings == ["## Context", "## Steps to Reproduce", "## Scope"]
     assert "- `src/basicly/cli.py`" in body
 
 
@@ -393,7 +387,7 @@ def test_scaffold_body_emits_scope_although_the_dor_never_requires_it() -> None:
 
     body = policy.scaffold_body("bug")
     headings = [line for line in body.splitlines() if line.startswith("## ")]
-    assert headings == ["## Trigger", "## Steps to Reproduce", "## Scope"]
+    assert headings == ["## Context", "## Steps to Reproduce", "## Scope"]
     assert "## Scope" not in policy.required_sections("bug")
 
 
@@ -403,7 +397,7 @@ def test_scaffold_body_shows_the_scope_line_format_rather_than_naming_it() -> No
 
 def test_compose_body_puts_a_preamble_above_the_first_heading() -> None:
     body = policy.compose_body("task", preamble="Continues basicly-x: it overran.")
-    assert body.startswith("Continues basicly-x: it overran.\n\n## Trigger\n\n")
+    assert body.startswith("Continues basicly-x: it overran.\n\n## Context\n\n")
 
 
 def test_gate_status_advances_when_required_pass(

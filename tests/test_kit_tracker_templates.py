@@ -51,7 +51,7 @@ def test_without_a_template_the_default_rule_holds(
 ) -> None:
     ledger = tmp_path / "ledger"
 
-    assert _create(ledger, capsys)["owed"] == ["## Acceptance Criteria", "## Requirements", *DEBTS]
+    assert _create(ledger, capsys)["owed"] == ["## Acceptance Criteria", *DEBTS]
     assert _create(ledger, capsys, *_shaped_args())["owed"] == list(DEBTS)
 
 
@@ -195,9 +195,9 @@ def test_the_template_command_prints_the_default_shape(
 
     assert cli.main(["scaffold", str(ledger)]) == cli.EXIT_OK
     shape = _report(capsys)
-    assert shape["required"] == ["## Trigger", "## Acceptance Criteria", "## Requirements"]
-    assert sorted(shape["flags"]) == ["--acceptance", "--requirements"]
-    assert shape["description"].startswith("When <situation>")
+    assert shape["required"] == ["## Context", "## Acceptance Criteria"]
+    assert sorted(shape["flags"]) == ["--acceptance"]
+    assert shape["description"].startswith("## Context")
 
 
 def test_the_template_command_prints_the_sections_a_type_owes(
@@ -240,3 +240,11 @@ def test_a_filled_template_passes_the_gate(
 
     recorded_review(cli.commands, ledger, record)
     assert cli.main(["dor", str(ledger), record]) == cli.EXIT_OK
+
+
+def test_a_project_can_require_distinct_constraints_explicitly(tmp_path: Path, capsys) -> None:
+    ledger = tmp_path / "ledger"
+    _template(ledger, {"sections": ["## Requirements"]})
+    record = _create(ledger, capsys, "--acceptance", "- The consumer sees the result.")
+    assert record["owed"] == ["## Requirements", *DEBTS]
+    assert "--requirements" in record["remedy"]

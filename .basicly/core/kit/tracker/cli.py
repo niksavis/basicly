@@ -324,7 +324,9 @@ def _run(
             "appended": bool(appended),
             **_owed_of(args.directory, record),
         }
-    records = query_records(args.directory, status=args.status, limit=args.limit)
+    records = query_records(
+        args.directory, status=args.status, limit=args.limit, query=args.query, summary=args.summary
+    )
     return EXIT_OK, {"count": len(records), "records": records}
 
 

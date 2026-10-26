@@ -99,7 +99,8 @@ directory:
 ```sh
 python3 .basicly/core/kit/tracker/cli.py ready .basicly/ledger
 python3 .basicly/core/kit/tracker/cli.py show .basicly/ledger <id>
-python3 .basicly/core/kit/tracker/cli.py list .basicly/ledger --status open --limit 20
+python3 .basicly/core/kit/tracker/cli.py list .basicly/ledger --status open --summary --limit 20
+python3 .basicly/core/kit/tracker/cli.py list .basicly/ledger --summary --query "<words>"
 python3 .basicly/core/kit/tracker/cli.py fields .basicly/ledger      # each field, its role and its reader
 ```
 
@@ -108,7 +109,9 @@ python3 .basicly/core/kit/tracker/cli.py fields .basicly/ledger      # each fiel
 Every write goes through the engine seam:
 
 ```sh
-basicly tracker write -- create "Title" -t task -p 2 -d "<the trigger>" --acceptance "<the check>" --requirements "<the standard>" --json
+basicly tracker write -- create "Title" -t task -p 2 -d "## Context
+
+<problem and intended outcome>" --acceptance "<the observable checks>" --json
 basicly tracker write -- update <id> --status in_progress       # claims it: you become the holder
 basicly tracker write -- update <id> --acceptance-criteria "When <event>, the <system> shall <response>."
 basicly tracker write -- update <id> --add-label <label>      # adds to the current set
@@ -135,7 +138,7 @@ replaces the value. A label selects lanes for a supervised pass
 
 ## What a record must carry
 
-`basicly policy dor <id>` refuses a record that has no trigger, no acceptance criteria, or
+`basicly policy dor <id>` refuses a record that has no meaningful Context, no acceptance criteria, or
 a section that `[policy.type_sections]` requires for its type.
 
 - A `template.json` in the ledger directory changes the rule for the engine and the kit.
@@ -144,6 +147,21 @@ a section that `[policy.type_sections]` requires for its type.
 - `tracker write` has no `--field`. Meet a template section with that heading and its
   content in the description.
 - The tracker refuses a write of a field that no code reads. `fields` prints the table.
+
+## Write a readable card
+
+Use `## Context` for a short problem statement and intended outcome. Avoid repeating
+the same facts as Trigger, Proposed work and Reason. Keep current activity, a concrete
+blocker and the next step concise; distinguish planned work from observed results.
+
+Acceptance criteria state observable completion conditions. Requirements add distinct
+constraints and invariants; avoid repeating the context or criteria as filler.
+Leave Requirements empty when no distinct constraints apply; an explicit project
+template can require them. Independent validation assesses Context, every Acceptance
+criterion and any Requirements together. Link concise evidence to the checks.
+
+Keep 3C/INVEST assessments and review protocol details in the review evidence, not in
+the card prose. Preserve historical events when updating the current description.
 
 ## Refine a record
 
@@ -165,7 +183,7 @@ python3 .basicly/core/kit/tracker/cli.py refine .basicly/ledger     # labelled r
 ```
 
 1. For each record, read it with `show`.
-2. Rewrite it with `update`: the trigger, the acceptance criteria, the requirements, the
+2. Rewrite it with `update`: Context, observable Acceptance criteria, any distinct Requirements, the
    type, the priority and the `dep` edges.
 3. Run `dor`. When it passes, remove the label with `--remove-label refine`.
 

@@ -13,7 +13,7 @@ from .catalog import bundled_catalog_root
 from .config import DEFAULT_TYPE_SECTIONS, load_type_sections
 from .plan_record import ACCEPTANCE_HEADING, has_heading
 
-TRIGGER_HEADING = "## Trigger"
+TRIGGER_HEADING = "## Context"
 
 
 @lru_cache(maxsize=1)
@@ -25,6 +25,10 @@ def _shaping() -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def contract_missing(record: Mapping[str, object], repo_root: Path) -> tuple[str, ...]:
+    return tuple(_shaping().owed(record, template=tracker.ledger_template(repo_root)))
 
 
 def unfilled(text: str) -> bool:

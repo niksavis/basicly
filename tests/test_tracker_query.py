@@ -295,3 +295,18 @@ def test_one_relation_stated_by_two_events_shows_as_one_row(
     assert [{key: row[key] for key in ("id", "dependency_type", "status")} for row in held] == [
         {"id": ROOT, "dependency_type": "parent-child", "status": "open"}
     ]
+
+
+@pytest.mark.usefixtures("backlog")
+def test_summary_search_uses_canonical_fields_and_fetches_detail_only_when_needed(capsys):
+    capsys.readouterr()
+    assert cli.main(["tracker", "list", "--summary", "--query", "parse it"]) == 0
+    report = _json_out(capsys)
+    assert report["count"] == 1
+    row = report["records"][0]
+    assert row["fields"]["title"] == "parse it"
+    assert "description" not in row["fields"] and "comments" not in row
+    assert cli.main(["tracker", "show", row["record"]]) == 0
+    shown = _json_out(capsys)
+    assert shown["fields"]["acceptance_criteria"] == "- it works"
+    assert "comment_log" in shown

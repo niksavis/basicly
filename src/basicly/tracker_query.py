@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from basicly import __version__, owned_store, redact, tracker, ui
+from basicly import __version__, owned_store, redact, ui
 
 QUERIES_KIT_MODULE = "queries"
 BOARD_KIT = "board"
@@ -106,11 +106,12 @@ def cmd_stats(args: argparse.Namespace) -> int:
 def cmd_show(args: argparse.Namespace) -> int:
 
     repo_root = Path.cwd()
-    found = tracker.read_snapshot(repo_root, args.record)
+    found = owned_store.packaged_kit("record_view").read_record(
+        owned_store.present_ledger(repo_root), args.record
+    )
     if found is None:
         _report({"record": args.record, "found": False})
         return 1
-    found.update(tracker.record_edges(repo_root, args.record))
     _report(found)
     return 0
 
@@ -121,6 +122,8 @@ def cmd_list(args: argparse.Namespace) -> int:
         owned_store.present_ledger(repo_root),
         status=getattr(args, "status", None),
         limit=getattr(args, "limit", None),
+        query=getattr(args, "query", ""),
+        summary=getattr(args, "summary", False),
     )
     _report({"count": len(records), "records": records})
     return 0
@@ -242,6 +245,10 @@ def add_parsers(tracker_sub: Any) -> None:
         "--status", action="append", default=None, help="Only records at this status; repeat it"
     )
     listing.add_argument("--limit", type=int, default=None, help="At most this many records")
+    listing.add_argument("--query", default="", help="Search current fields and comment history")
+    listing.add_argument(
+        "--summary", action="store_true", help="Fetch prose and history only with show"
+    )
 
     items = tracker_sub.add_parser(
         "items",

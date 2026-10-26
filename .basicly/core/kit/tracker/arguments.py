@@ -21,13 +21,24 @@ def _add_shape_arguments(parser: Any) -> None:
         "--requirements",
         default="",
         metavar="TEXT",
-        help="the requirements validation judges the built thing against",
+        help="optional distinct constraints; validation checks the whole task",
     )
     parser.add_argument(
         "--description",
         default="",
         metavar="TEXT",
         help="the record's body, which may carry the sections as headings instead",
+    )
+
+
+def _listing_filters(parser: Any) -> None:
+    parser.add_argument(
+        "--status", action="append", default=None, help="only records at this status; repeat it"
+    )
+    parser.add_argument("--limit", type=int, default=None, help="at most this many records")
+    parser.add_argument("--query", default="", help="search current fields and comment history")
+    parser.add_argument(
+        "--summary", action="store_true", help="omit prose and history; fetch detail with show"
     )
 
 
@@ -61,10 +72,7 @@ def parser() -> argparse.ArgumentParser:
 
     listing = sub.add_parser("list", help="query the records the ledger holds")
     listing.add_argument("directory", help=DIRECTORY_HELP)
-    listing.add_argument(
-        "--status", action="append", default=None, help="only records at this status; repeat it"
-    )
-    listing.add_argument("--limit", type=int, default=None, help="at most this many records")
+    _listing_filters(listing)
 
     compaction = sub.add_parser(
         "compact", help="fold every pending writer shard into the trunk log and unlink it"

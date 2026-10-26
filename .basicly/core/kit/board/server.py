@@ -62,7 +62,7 @@ ENDPOINTS = (
     "GET  /api/v1/fields",
     "GET  /api/v1/refine",
     "GET  /api/v1/scaffold?type=T",
-    "GET  /api/v1/records?status=S&limit=N",
+    "GET  /api/v1/records?status=S&limit=N&query=TEXT&summary=1",
     "GET  /api/v1/records/<id>",
     "GET  /api/v1/records/<id>/dor",
     "POST /api/v1/records  {title, description, acceptance, requirements, fields, parent, prefix}",
