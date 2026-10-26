@@ -181,7 +181,8 @@ def validate_prompt(issue_id: str) -> str:
     return (
         f"The change for {issue_id} has merged and its verify gate is green. Your job is "
         "the check verify cannot make: exercise it the way a consumer would, in this "
-        "checkout, against the requirement that asked for it. Run "
+        "checkout, against the whole user need: Context, every Acceptance criterion, "
+        "and any distinct Requirements. Do not judge only the Requirements field. Run "
         f"`basicly tracker show {issue_id}` for that requirement and its demonstration "
         "command. Follow "
         "the validate-as-consumer skill. Do NOT re-run the gate suite - it has already "

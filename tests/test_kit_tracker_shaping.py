@@ -46,15 +46,14 @@ def _create(capsys: pytest.CaptureFixture[str], ledger: Path, *extra: str) -> tu
     return report["record"], report
 
 
-def test_a_bare_record_owes_all_three_sections(
+def test_a_bare_record_owes_context_and_acceptance(
     ledger: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _, report = _create(capsys, ledger)
 
     assert report["owed"] == [
-        shaping.TRIGGER_HEADING,
+        shaping.CONTEXT_HEADING,
         shaping.ACCEPTANCE_HEADING,
-        shaping.REQUIREMENTS_HEADING,
         *DEBTS,
     ]
     assert report["remedy"]
@@ -124,7 +123,7 @@ def test_a_placeholder_is_absent_rather_than_present() -> None:
         "the example is all placeholders, so pasting it must not satisfy the trigger"
     )
     assert shaping.owed({"acceptance_criteria": "TODO", "requirements": "<fill me in>"}) == (
-        shaping.TRIGGER_HEADING,
+        shaping.CONTEXT_HEADING,
         shaping.ACCEPTANCE_HEADING,
         shaping.REQUIREMENTS_HEADING,
     )
@@ -233,27 +232,22 @@ LEGACY = {
 }
 
 
-def test_a_record_the_kit_minted_is_refused_for_missing_requirements(
+def test_a_record_without_distinct_constraints_can_be_ready_after_review(
     ledger: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     record, _ = _create(
         capsys, ledger, "--description", TRIGGER, "--acceptance", "the gate exits zero"
     )
-
+    recorded_review(cli, ledger, record)
     code, report = _run(capsys, "dor", str(ledger), record)
+    assert code == cli.EXIT_OK and report["ready"]
+    assert report["blocking"] == []
 
-    assert code == cli.EXIT_REFUSED
-    assert shaping.REQUIREMENTS_HEADING in report["blocking"]
 
-
-def test_a_record_minted_before_the_rule_is_refused_for_requirements() -> None:
-    assert shaping.REQUIREMENTS_HEADING in shaping.owed(LEGACY), (
-        "the debt stays visible, so a board still shows it"
-    )
-    assert shaping.refused(LEGACY) == (shaping.REQUIREMENTS_HEADING,), (
-        "the rule holds every record to the requirements, whenever it was minted"
-    )
-    assert not shaping.shaped(LEGACY)
+def test_legacy_records_do_not_need_filler_constraints() -> None:
+    assert shaping.owed(LEGACY) == ()
+    assert shaping.refused(LEGACY) == ()
+    assert shaping.shaped(LEGACY)
 
 
 def test_the_marker_is_absent_rather_than_dated_on_a_legacy_record() -> None:
@@ -267,9 +261,8 @@ def test_a_minted_record_still_owes_the_trigger_and_the_criteria(
     record, report = _create(capsys, ledger)
 
     assert report["blocking"] == [
-        shaping.TRIGGER_HEADING,
+        shaping.CONTEXT_HEADING,
         shaping.ACCEPTANCE_HEADING,
-        shaping.REQUIREMENTS_HEADING,
         *DEBTS,
     ]
     assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
@@ -328,7 +321,7 @@ def test_incomplete_story_intent_stays_captured_but_cannot_start(
         "--requirements",
         "standard library only",
     )
-    assert captured["owed"] == [shaping.TRIGGER_HEADING, *DEBTS]
+    assert captured["owed"] == [shaping.CONTEXT_HEADING, *DEBTS]
     assert shaping.trigger_voice(description) is None
     assert _run(capsys, "dor", str(ledger), record)[0] == cli.EXIT_REFUSED
     assert _run(capsys, "claim", str(ledger), record, "--to", "agent")[0] == cli.EXIT_REFUSED
@@ -411,3 +404,47 @@ def test_a_bare_marker_cannot_state_a_trigger_part(marker: str, part: str) -> No
     intent[part] = marker
     description = "When {situation}, I want {motivation}, so I can {outcome}.".format(**intent)
     assert shaping.trigger_voice(description) is None
+
+
+def test_plain_context_can_state_the_task_without_a_story_formula() -> None:
+    description = (
+        "## Context\n\nCards repeat process text and obscure current work. "
+        "Show the purpose, current activity and completion checks clearly."
+    )
+    record = {
+        "description": description,
+        "acceptance_criteria": "- The card shows purpose, activity and completion checks.",
+        "requirements": "- Preserve historical events.",
+    }
+    assert shaping.owed(record) == ()
+    assert shaping.trigger_sentence(description) == description.split("\n\n", 1)[1]
+
+
+@pytest.mark.parametrize("body", ["", "TODO", "<describe the problem>", "## Progress\nDone"])
+def test_plain_context_cannot_be_empty_or_borrow_text_from_another_section(body: str) -> None:
+    record = {
+        "description": "## Context\n\n" + body,
+        "acceptance_criteria": "- The card shows current activity.",
+        "requirements": "- Preserve history.",
+    }
+    assert shaping.CONTEXT_HEADING in shaping.owed(record)
+
+
+@pytest.mark.parametrize("requirements", [None, "", " "])
+def test_distinct_constraints_can_be_omitted(requirements) -> None:
+    record = {
+        "description": "## Context\n\nA consumer needs a readable table.",
+        "acceptance_criteria": "- The table shows current work.",
+        "requirements": requirements,
+    }
+    assert shaping.owed(record) == ()
+
+
+@pytest.mark.parametrize("requirements", ["TODO", "TBD", "- ", "<the constraint>"])
+def test_supplied_constraints_must_still_be_meaningful(requirements) -> None:
+    record = {
+        "description": "## Context\n\nA consumer needs a readable table.",
+        "acceptance_criteria": "- The table shows current work.",
+        "requirements": requirements,
+    }
+    assert shaping.owed(record) == (shaping.REQUIREMENTS_HEADING,)

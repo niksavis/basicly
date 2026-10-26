@@ -1,0 +1,1 @@
+- Accept plain Context and optional distinct Requirements, validate the whole task, preserve compatible historical evidence, and add compact tracker lists, history search and complete result navigation with collapsed detail.

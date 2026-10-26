@@ -52,7 +52,7 @@ TABLE = (
     Field(
         "description",
         REQUIRED,
-        "the trigger check of the definition of ready, and a brief",
+        "the context check of the definition of ready, and a brief",
         prose=True,
     ),
     Field("issue_type", REQUIRED, "the scaffold, the template types and the loop classification"),
@@ -61,7 +61,10 @@ TABLE = (
         "acceptance_criteria", READY, "the definition of ready, and the check at verify", prose=True
     ),
     Field(
-        "requirements", READY, "the definition of ready, and the judgement at validate", prose=True
+        "requirements",
+        OPTIONAL,
+        "distinct constraints checked at review and validation",
+        prose=True,
     ),
     Field(
         "close_reason",

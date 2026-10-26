@@ -41,6 +41,8 @@ def repo(tmp_path: Path) -> Path:
         root,
         RECORD,
         title="a unit that owes the consumer gate",
+        description="## Context\n\nA consumer needs the CLI table to show current work.",
+        acceptance_criteria="- The CLI prints current work and its state.",
         requirements="- A consumer runs the command and reads its table",
     )
     return root
@@ -151,7 +153,7 @@ def test_the_two_queue_sites_give_the_decision_kind_one_spelling() -> None:
         assert f'"{validate_gate.VALIDATE_DECISION_KIND}"' not in source
 
 
-def test_a_record_with_no_requirements_is_refused_before_the_validator_runs(
+def test_an_incomplete_task_contract_is_refused_before_the_validator_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
 
@@ -159,12 +161,20 @@ def test_a_record_with_no_requirements_is_refused_before_the_validator_runs(
     flipped_tracker.seed(root, RECORD, title="a unit that states no intended use")
 
     def never(*_a: object, **_k: object) -> None:
-        pytest.fail("the validator was dispatched for a record with no requirements")
+        pytest.fail("the validator was dispatched without context or acceptance criteria")
 
     monkeypatch.setattr(runner, "run", never)
 
     result = loop.advance(root, RECORD, config=CONFIG, inputs=loop.Inputs(execution="worker"))
 
     assert result.blocked and result.to_phase == "validate"
-    assert "states no `requirements`" in result.detail
-    assert "--requirements" in result.detail
+    assert "incomplete task contract" in result.detail
+    assert "## Context" in result.detail and "## Acceptance Criteria" in result.detail
+
+
+def test_whole_task_contract_is_validated_without_filler_requirements(repo, monkeypatch):
+    tracker.write(repo, ["update", RECORD, "--requirements", ""])
+    _validator_says(monkeypatch, "Observed the consumer table and current work.\nVALIDATION: PASS")
+    result = loop.advance(repo, RECORD, config=CONFIG, inputs=loop.Inputs(execution="worker"))
+    assert result.to_phase == "verify" and not result.blocked
+    assert len(gate_events(repo)) == 1

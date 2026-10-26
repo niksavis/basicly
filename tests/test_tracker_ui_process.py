@@ -29,6 +29,7 @@ const state = { me: 'operator' };
 const REFINE = 'refine';
 const labelsOf = value => String(value || '').split(',');
 const sectionOf = name => [name, name.replace(/^## /, '')];
+const writer = name => name;
 const open = () => {};
 const edit = () => {};
 const dependencyForm = () => {};
@@ -47,6 +48,9 @@ function find(node, predicate) {
         prelude
         + PAGE[PAGE.index("function doneBlock(") : PAGE.index("function needsList(")]
         + PAGE[PAGE.index("function since(") : PAGE.index("function dependencyVerdict(")]
+        + PAGE[PAGE.index("function contextParts(") : PAGE.index("function grow(")]
+        + PAGE[PAGE.index("function contextDescription(") : PAGE.index("function storyForm(")]
+        + PAGE[PAGE.index("function commentsBlock(") : PAGE.index("function refinementBlock(")]
         + PAGE[PAGE.index("function notices(") : PAGE.index("function titleBlock(")]
         + PAGE[PAGE.index("function busy()") : PAGE.index("async function watchVersion()")]
         + PAGE[PAGE.index("function kitBanner(") : PAGE.index("function toast(")]
@@ -182,4 +186,46 @@ assert.equal(kitBanner(node, 503, 'the kit files changed again'), true);
 assert.equal(kitBanner(node, 200, undefined), false);
 assert.equal(node.hidden, true);
 assert.equal(node.textContent, '');
+""")
+
+
+def test_conversation_history_is_collapsed_but_all_comments_remain_accessible() -> None:
+    _run(r"""
+const block = commentsBlock({comment_log:[
+  {text:'First decision',writer:'alice',at:'2026-10-26T10:00:00Z'},
+  {text:'Latest evidence',writer:'bob',at:'2026-10-26T11:00:00Z'}]});
+const history = find(block, node => node.tag === 'details');
+assert.ok(history);
+assert.ok(!history.open);
+assert.match(history.text, /First decision/);
+assert.match(history.text, /Latest evidence/);
+assert.match(history.text, /alice/);
+assert.match(history.text, /bob/);
+const draft = find(block, node => node.tag === 'textarea');
+assert.ok(!find(history, node => node === draft));
+draft.value = 'A new decision';
+find(block, node => node.tag === 'button' && node.text === 'Comment').onclick();
+assert.deepEqual(sent, {action:'comments',body:{text:'A new decision'}});
+""")
+
+
+def test_context_entry_is_plain_prose_without_rewriting_unchanged_legacy_cards() -> None:
+    _run(r"""
+assert.equal(contextDescription('A confusing list needs clear state.'),
+  '## Context\n\nA confusing list needs clear state.');
+assert.equal(contextDescription('A clear card.', '## Context\nA clear card.'),
+  '## Context\nA clear card.');
+const legacy = 'When work starts, I want its owner, so I can follow it.';
+assert.equal(contextDescription(legacy, legacy), legacy);
+""")
+
+
+def test_context_is_visible_while_supporting_details_stay_accessible() -> None:
+    _run(r"""
+const parts = contextParts('## Trigger\nA reader needs a short card.'
+  + '\n\n## Scope\nExact files\n\n## Reason\nSupporting evidence');
+assert.equal(parts.context, 'A reader needs a short card.');
+assert.match(parts.details, /Exact files/);
+assert.match(parts.details, /Supporting evidence/);
+assert.deepEqual(contextParts('A plain explanation.'), {context:'A plain explanation.',details:''});
 """)

@@ -217,7 +217,7 @@ def test_integrated_capture_ready_and_claim_use_shared_intent_rules(
     before = tracker.kit(tmp_path).read_ledger(tracker.ledger_dir(tmp_path))
     assert tracker.owed_of(tmp_path, record)["blocking"] == [invest.TRIGGER_HEADING, *DEBTS]
     assert tracker_query.ready_report(tmp_path)["count"] == 0
-    with pytest.raises(owned_store.TrackerDivergenceError, match="Trigger"):
+    with pytest.raises(owned_store.TrackerDivergenceError, match="Context"):
         owned_write.append(tmp_path, ["update", record, "--status", "in_progress"])
     assert tracker.kit(tmp_path).read_ledger(tracker.ledger_dir(tmp_path)) == before
     complete = "When a release starts, I want a patch, so I can ship safely."
