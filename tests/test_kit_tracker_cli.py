@@ -414,7 +414,7 @@ def test_a_refusal_and_a_blocking_section_use_different_keys(
     assert cli.main(["create", str(ledger), "--prefix", "acme", "--title", "a"]) == cli.EXIT_OK
     shaped = _report(capsys)
     assert shaped["schema"] == "basicly.tracker.create.v2"
-    assert "## Trigger" in shaped["blocking"]
+    assert "## Context" in shaped["blocking"]
     assert "refused" not in shaped
 
     assert cli.main(["show", str(ledger), "acme-zzzz"]) == cli.EXIT_REFUSED
