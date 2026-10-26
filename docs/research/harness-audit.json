@@ -2784,9 +2784,11 @@
       "path": ".basicly/core/skills/find-skills/LICENSE.txt",
       "sha256": "661142e53c313d2bb5e1b055f5c0a39001450ff1b5e27b89dc4bc7de9a6352ca",
       "bytes": 1069,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Preserve bundled license and attribution with retained or adapted resources; no runtime context cost unless explicitly loaded.",
+      "risk": "Do not strip attribution as prompt optimization."
     },
     {
       "path": ".basicly/core/skills/find-skills/evals.yaml",
@@ -2924,9 +2926,11 @@
       "path": ".basicly/core/skills/skill-creator/LICENSE.txt",
       "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362",
       "bytes": 11345,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Preserve bundled license and attribution with retained or adapted resources; no runtime context cost unless explicitly loaded.",
+      "risk": "Do not strip attribution as prompt optimization."
     },
     {
       "path": ".basicly/core/skills/skill-creator/assets/eval_review.html",
@@ -3181,17 +3185,21 @@
       "path": ".scripts/bootstrap.ps1",
       "sha256": "35e3080f459301005f81c0b8810adcf5c571997cf4a8be23921dd1f34e594ba4",
       "bytes": 1724,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Windows consumer bootstrap is needed for rollout. Preserve argument forwarding, explicit Git requirement and release-wheel pinning; changes require actual Windows consumer checks and coordination with artifact owner.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/bootstrap.sh",
       "sha256": "42297c46a63a59a9ab37edcb50c22bf12012f4262719d4ac627f5797fa996435",
       "bytes": 1787,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Consumer entrypoint pins a release wheel after latest resolution and preserves forwarded install arguments. Network/bootstrap work is install-only, not agent-loop overhead. Coordinate artifact owner and preserve dependency authorization; do not run during audit.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/build_lefthook_windows.py",
@@ -3215,25 +3223,31 @@
       "path": ".scripts/check_code_citations.py",
       "sha256": "7634d19c1bd285f5eb02ad9de0c42850f031efdd23119a486e609ecc35289c99",
       "bytes": 9300,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; caller discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Full tracked-source scan checks numeric section references against headings; does not prove cited claim. Strict never-delete-reference remedy can preserve obsolete references. Preserve useful link validation with source changes, not compulsory legacy prose.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/check_corpus_drift.py",
       "sha256": "2a2c9ca000ee075112779037f613905630594dfc575eaedd0c4cbad8306da5a5",
       "bytes": 5528,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; caller discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Reconciles epic problem bullets against children via engine heuristics and frozen debt. This can preserve stale classifier-oriented prose and duplicate graph bookkeeping. Evaluate actual requirement coverage before retaining/removing; preserve user intent and historical facts.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/check_declared_dependencies.py",
       "sha256": "c71d801ed544ad39a3b3d74365d0805d869c9c83610822c20f652b2aae793340",
       "bytes": 5281,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Checks textual dependencies against graph only for open records, and refuses valid empty populations as probe failures. Prefer graph as source of truth; preserve edge validation without requiring redundant prose or an artificial nonempty backlog.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/check_design_tokens.py",
@@ -3247,9 +3261,11 @@
       "path": ".scripts/check_docs_citations.py",
       "sha256": "7e7b43755cb96b0a70cce78a42b2ce7a2e98f2faed322cd052240d856b9487e4",
       "bytes": 8986,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "AST span validation catches stale Python line references but reparses targets for each citation and uses broad filename fallback scans. Cache per source revision; explicit missing/uncheckable states matter. Numeric line zero is not rejected before indexing.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/check_except_form.py",
@@ -3265,17 +3281,21 @@
       "path": ".scripts/check_ledger_fsck.py",
       "sha256": "e4e835652a4750f12fba5fab9eae929da4142e4c0f42772a8593a78697dafc87",
       "bytes": 5557,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve append-only corruption detection and explicit irrecoverable-history acknowledgment. Reuse standalone kit check and shared snapshot; do not replace corruption findings with silently regenerated history.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/check_marker_families.py",
       "sha256": "b7480aff0ddcd0dcc911c8dfdf54754cbe520ee721ef9aa44bc8a789609a8456",
       "bytes": 9557,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve compatibility with retired serialized marker families; full AST/ledger scans and spelled-count prose anchors add maintenance. Generate roster counts from one registry and scope checks by actual inputs; do not delete historical marker readers merely because producers retire.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/check_mermaid.py",
@@ -3304,9 +3324,11 @@
       "path": ".scripts/check_noqa_debt.py",
       "sha256": "42e65f0552773f223f91336b8db7ea229163fb77851680cf2c182e1a4a8da9b6",
       "bytes": 6575,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Retain narrow explained suppression accountability. Repeated full-tree tokenization and manual aggregate debt bookkeeping are potential simplification targets; use existing linter capability where equivalent without losing required checks.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/check_release_fragments.py",
@@ -3322,9 +3344,11 @@
       "path": ".scripts/check_release_notes.py",
       "sha256": "833e4e02f499d6fc6fa9c35341b7b2b647d02ac9cdba4847190037743b5236f6",
       "bytes": 8719,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve consumer-visible notes before landing, explicit exceptions and distinction between behind-base and missing-note debt. Optimize shared snapshot reads; keep closure obligations even when handoffs collapse.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/check_render_overflow.py",
@@ -3358,9 +3382,11 @@
       "path": ".scripts/check_tree_growth.py",
       "sha256": "2e72d160785652b1c315e899c19f0102f9081d29858bb2a2c4abe1c64428e423",
       "bytes": 5526,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Advisory always-success report rereads current and historical source trees. Keep available on demand or reuse measurement; it is not correctness evidence or model token usage, and should not add unconditional unrelated-commit cost without measured benefit.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/check_waivers.py",
@@ -3384,49 +3410,61 @@
       "path": ".scripts/docs_claim_layers.py",
       "sha256": "8ced1f2d6382d0ad5daf22bb7510f35011ff8b478de8a4b179ceba4896c87a77",
       "bytes": 6564,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Deterministically derives architecture diagram counts from import contract, with explicitly editorial grouping. Keep targeted regeneration; avoid forcing unrelated changes to reread/parse full source graph when inputs unchanged.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/docs_claim_sources.py",
       "sha256": "a72f91bb2f52382c40902cfb1754765b18b97538cc76a83014cd69d1fcdede51",
       "bytes": 828,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Small shared source loader and parser discovery; reuse with structured metadata to keep docs current. No independent runtime/model dispatch.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/docs_claim_status.py",
       "sha256": "066cba4caef683530ff8d1e5680132b13af69b95bec47b3cd81dfdd09170d05a",
       "bytes": 6597,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Generated status view is useful, but shipped/deferred rows bypass live record checks and status vocabulary is parsed from Markdown. Clarify what claims are actually verified and avoid duplicate status ownership with tracker/board.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/docs_claim_surfaces.py",
       "sha256": "abeb66122ae857e6c9069a445222e1cfbab9fe14765887c2fffdeac540dab577",
       "bytes": 2513,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Useful command-existence checks from real parser; regex only sees bounded command/subcommand shapes, not full flag semantics or runnable journeys. Retain while simplifying repeated parser construction.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/docs_claim_work_types.py",
       "sha256": "7629980b6a0a80a39855850a42d02bf918d4574e3762a09024142cf85d265230",
       "bytes": 1270,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Fixed prose anchors are searched only in concatenated skill.yaml sources. Moving detailed work types into references will break this check unless consumer/source lookup changes. Replace layout dependency with explicit source data or scoped referenced text while preserving consistency.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/docs_claims.py",
       "sha256": "51dce1abcefc2d4f3ceb5c0466bb12b1c3be0d3eed145f8912d2d9c973b7d2ad",
       "bytes": 13327,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "trim",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Useful derived docs generation and assertions. Rebuilds CLI parser repeatedly, reads overlapping source documents, and can rerun as fixer then check. Retain source consistency with scoped generation/shared validated inputs; audit tables escape cell content and reference-link migrations.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/eval_baseline_decisions.py",
@@ -3450,17 +3488,21 @@
       "path": ".scripts/generate_release_changelog.py",
       "sha256": "37c693902f29ff0e57cb43c5a5ffa60c3957f9b947fe08355bfe620de6c3603d",
       "bytes": 6987,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Deterministic changelog assembly preserves curated sections and supports fallback commit subjects. Keep explicit release scope; it is not routine agent overhead. Do not treat empty commit list as proof of no user-visible change without source checks.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/generate_release_notes.py",
       "sha256": "75d0155c144fce32c1166c1c44004656ec1e7ae5172fd487749e75e921c81945",
       "bytes": 4699,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Deterministic release page generation avoids a model handoff and preserves breaking notices. Test tag matching carefully: prefix startswith may encounter a different longer version before exact match. No release publication authorized by audit.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/headroom.py",
@@ -3560,9 +3602,11 @@
       "path": ".scripts/release_note_standing.py",
       "sha256": "cc4aac0b3f17aece0e3978be027a194e34aec9af761ca81fce085153a8e3caa8",
       "bytes": 3182,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Existing central release-note standing shared by gate and landing; reuse. Shipped-path inference comes from declared scope, so actual candidate change coverage still needs reconciliation. Repeated full tracker scans can use trusted snapshot.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/render_mermaid.mjs",
@@ -3586,9 +3630,11 @@
       "path": ".scripts/setup_git_identity.py",
       "sha256": "08a5e5c76c80badcd9d052331fa7a3c8299cf30e14587ac586dea607af929c1b",
       "bytes": 2642,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; caller discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Optional global configuration helper silently ignores Git write failures and does not validate explicit label/path input. It is not runtime harness overhead. Retire only after caller discovery; if kept, make result truthful and restrict writes to requested scope.",
+      "risk": "Caller discovery is not full test coverage. Preserve existing required gates and active-session ownership until intentional migration is validated."
     },
     {
       "path": ".scripts/validate_affected_consumer.py",
@@ -3710,5 +3756,9 @@
       },
       "result": "Nonzero launcher overhead even for unmatched Read, and higher Python-edit path cost. This is a local microbenchmark, not proof of overall task speed or the cause of Codex latency."
     }
-  ]
+  ],
+  "coordination": {
+    "shared_writes": "paused at user request pending clean-main window confirmation",
+    "pending_tracker_summary": "Reviewed 21 additional maintenance/docs/release scripts and two licenses locally. Found prose-anchor dependency that must change when skills move content to references; preserve derived docs and serialized history while reducing repeated scans. No main/shared-tracker write in this checkpoint."
+  }
 }
