@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlsplit
 from . import (
     board_action_surface,
     board_actions,
+    board_activity,
     board_asks,
     board_assets,
     board_backlog,
@@ -59,7 +60,7 @@ DEFAULT_PORT = 8787
 DEFAULT_REFRESH_S = supervise.HEARTBEAT_INTERVAL_S
 
 SNAPSHOT_ROUTE = "/snapshot.json"
-PAGE_ROUTES = ("/", "/index.html")
+PAGE_ROUTES = ("/wall", "/wall.html")
 
 KANBAN_ROUTES = ("/loop", "/loop.html")
 
@@ -152,6 +153,7 @@ class Board:
     ) -> None:
 
         self.repo_root = repo_root
+        self.activity_feed = board_activity.Feed(repo_root)
         self.refresh_s = refresh_s
         self._build = build
         self.actions = actions
@@ -328,7 +330,14 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         route = urlsplit(self.path).path
-        if route == SNAPSHOT_ROUTE:
+        if route in ("/", "/index.html", "/activity"):
+            self._send(
+                (board_render.root() / "board_activity.html").read_bytes(),
+                "text/html; charset=utf-8",
+            )
+        elif route == "/activity.json":
+            board_activity.respond(self, self.board.activity_feed)
+        elif route == SNAPSHOT_ROUTE:
             self._send(self.board.payload(), "application/json")
         elif route in PAGE_ROUTES:
             self._send(self.board.page(datetime.now(UTC)), "text/html; charset=utf-8", reload=True)

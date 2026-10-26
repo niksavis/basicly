@@ -70,17 +70,21 @@ def state_for(
     if status in PARKED_STATUSES:
         return supervise.LANE_PARKED, "the record is deferred"
     if changed and fresh:
-        return supervise.LANE_RUNNING, f"{len(changed)} file(s) changed in the last few minutes"
+        return "", f"{len(changed)} file(s) changed recently; runtime is unobserved"
     if changed:
-        return supervise.LANE_PARKED, (
-            f"{len(changed)} uncommitted file(s), none written recently - "
-            "a worktree standing open with no agent observed in it"
+        return "", (
+            f"{len(changed)} uncommitted file(s), none written recently; runtime is unobserved"
         )
     if ahead:
-        return supervise.LANE_WAITS_TO_LAND, LANDING_UNOBSERVABLE
+        return "", LANDING_UNOBSERVABLE
     if ahead == 0 and phase in PAST_BUILD_PHASES:
         return supervise.LANE_LANDED, MERGED_AWAITING_TEARDOWN
-    return supervise.LANE_QUEUED, "a worktree with no commits and no changes"
+    reason = (
+        "commit comparison unavailable; runtime is unobserved"
+        if ahead is None
+        else "no commits ahead and no file changes; runtime is unobserved"
+    )
+    return "", reason
 
 
 def lanes(
@@ -110,6 +114,7 @@ def lanes(
                 status=statuses.get(detail.id, ""),
                 state=state,
                 state_detail=why,
+                note=why if not state else "",
                 provisioned=True,
                 branch=detail.branch,
             )

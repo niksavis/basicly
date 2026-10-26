@@ -86,10 +86,10 @@ def test_live_is_never_claimed_because_this_producer_cannot_observe_it(tmp_path:
     [
         ((), False, 0, "deferred", supervise.LANE_PARKED),
         (("a.py",), True, 0, "deferred", supervise.LANE_PARKED),
-        (("a.py",), True, 0, "open", supervise.LANE_RUNNING),
-        (("a.py",), False, 0, "open", supervise.LANE_PARKED),
-        ((), False, 3, "open", supervise.LANE_WAITS_TO_LAND),
-        ((), False, 0, "open", supervise.LANE_QUEUED),
+        (("a.py",), True, 0, "open", ""),
+        (("a.py",), False, 0, "open", ""),
+        ((), False, 3, "open", ""),
+        ((), False, 0, "open", ""),
     ],
 )
 def test_each_state_has_an_observation_that_produces_it(
@@ -104,9 +104,11 @@ def test_zero_commits_reads_differently_past_build_than_before_it() -> None:
     fresh_state, fresh_why = board_unsupervised.state_for((), False, 0, "open", "build")
     assert merged_why != fresh_why
     assert merged_why == board_unsupervised.MERGED_AWAITING_TEARDOWN
-    assert "no commits" in fresh_why, "a worktree before build really has done nothing yet"
+    assert "no commits" in fresh_why, (
+        "the observation reports Git facts without claiming the agent is idle"
+    )
     assert merged_state == supervise.LANE_LANDED
-    assert fresh_state == supervise.LANE_QUEUED
+    assert fresh_state == ""
     assert merged_state != fresh_state, (
         "a detail under one badge is not a distinction a reader sees"
     )
@@ -115,7 +117,7 @@ def test_zero_commits_reads_differently_past_build_than_before_it() -> None:
 @pytest.mark.parametrize("phase", ["", "intake", "classify", "decompose", "build"])
 def test_a_phase_at_or_before_build_keeps_the_present_wording(phase: str) -> None:
     assert board_unsupervised.state_for((), False, 0, "open", phase)[1] == (
-        "a worktree with no commits and no changes"
+        "no commits ahead and no file changes; runtime is unobserved"
     )
 
 
@@ -129,7 +131,7 @@ def test_every_phase_after_build_reads_as_merged(phase: str) -> None:
 def test_git_refusing_to_answer_is_not_read_as_a_merge() -> None:
 
     assert board_unsupervised.state_for((), False, None, "open", "verify")[1] == (
-        "a worktree with no commits and no changes"
+        "commit comparison unavailable; runtime is unobserved"
     )
 
 
@@ -166,7 +168,7 @@ def test_an_untouched_worktree_before_build_still_reads_as_empty(tmp_path: Path)
         {"basicly-a": "open"},
         MOMENT,
     )
-    assert rows[0].state_detail == "a worktree with no commits and no changes"
+    assert rows[0].state_detail == "no commits ahead and no file changes; runtime is unobserved"
 
 
 def test_a_dirty_worktree_nobody_has_touched_is_not_a_running_pass() -> None:
@@ -174,7 +176,7 @@ def test_a_dirty_worktree_nobody_has_touched_is_not_a_running_pass() -> None:
     stale, _ = board_unsupervised.state_for(("a.py",) * 9, False, 0, "open", "build")
     live, _ = board_unsupervised.state_for(("a.py",) * 9, True, 0, "open", "build")
     assert stale != supervise.LANE_RUNNING
-    assert live == supervise.LANE_RUNNING
+    assert live == ""
 
 
 def test_recency_reads_the_files_git_says_differ(tmp_path: Path) -> None:
@@ -198,9 +200,10 @@ def test_every_lane_state_this_producer_can_reach_is_in_the_shipped_vocabulary()
         for status in ("open", "deferred")
         for phase in ("build", "verify")
     }
-    assert reachable <= board_sections.LANE_STATES
-    assert supervise.LANE_RUNNING in reachable, "no observation produces a running lane"
-    assert supervise.LANE_WAITS_TO_LAND in reachable, "no observation produces a landable lane"
+    assert reachable - {""} <= board_sections.LANE_STATES
+    assert supervise.LANE_RUNNING not in reachable, "file observations cannot prove a live process"
+    assert "" in reachable, "missing process observations remain unknown"
+    assert supervise.LANE_WAITS_TO_LAND not in reachable, "branch commits do not prove waiting"
 
 
 def test_a_directory_that_is_not_a_repository_reports_no_lanes(tmp_path: Path) -> None:
@@ -219,3 +222,9 @@ def test_the_landed_state_is_in_the_closed_set_and_the_consumer_can_colour_it() 
     assert palette != board_regions.LANE_MARKS[supervise.LANE_QUEUED][0], (
         "landed and queued sharing a colour is the defect this state was added to end"
     )
+
+
+def test_recent_edits_do_not_prove_a_process_is_running() -> None:
+    state, detail = board_unsupervised.state_for(("a.py",), True, 0, "in_progress", "build")
+    assert state == ""
+    assert "runtime is unobserved" in detail
