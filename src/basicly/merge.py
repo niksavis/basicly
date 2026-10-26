@@ -24,6 +24,7 @@ from . import (
     write_preflight,
 )
 from .config import PolicyConfig, load_policy_config, load_verify_config, load_worktree_config
+from .verify_artifact import infrastructure_failure
 from .worktree import Session, current_branch, git, load_session
 
 MERGE_GATE = "merge"
@@ -38,6 +39,8 @@ VERIFY_UNRELIABLE = "verify-unreliable"
 
 VERIFY_FOREIGN = "verify-foreign"
 
+VERIFY_UNAVAILABLE = "verify-unavailable"
+
 STALE_BRANCH = "stale-branch"
 
 MERGE_UNPROVEN = "merge-unproven"
@@ -46,6 +49,7 @@ ALREADY_LANDED = "already-landed"
 
 PRE_GATE_STATUSES = (
     "not-ready",
+    VERIFY_UNAVAILABLE,
     STALE_BRANCH,
     ALREADY_LANDED,
     "rebase-conflicts",
@@ -138,6 +142,8 @@ def _verify_for_landing(
         owed = verify.release_note_debt(clock.repo_root, worktree_path, verify_mode, clock.bead)
         detail = f"{verify.RELEASE_NOTES_CHECK} refuses this landing: {owed}"
         return MergeResult(name, "verify-failed", detail) if owed else None
+    if unavailable := infrastructure_failure(report):
+        return MergeResult(name, VERIFY_UNAVAILABLE, unavailable, checks=_failed_checks(report))
     failures = ", ".join(report.failures)
     if (defect := verify.dependency_defect(report)) is not None:
         return MergeResult(
@@ -680,6 +686,32 @@ def merge_worktree(  # noqa: PLR0913 — one keyword per independent landing inp
     return clock.close(landed)
 
 
+def _engine_preflight(
+    session: Session, subject: landing_guard.LandingSubject, clock: _Landing, verify_mode: str
+) -> MergeResult | None:
+    try:
+        landing_guard.require_stable_engine(clock.repo_root, subject)
+    except landing_guard.GuardUnavailableError as error:
+        recovery = shlex.join([
+            "uv",
+            "run",
+            "--project",
+            str(session.path),
+            "--directory",
+            str(clock.repo_root),
+            "basicly",
+            "worktree",
+            "merge",
+            session.name,
+            "--bead",
+            clock.bead,
+            "--mode",
+            verify_mode,
+        ])
+        return MergeResult(session.name, "not-ready", f"{error}; run `{recovery}`")
+    return None
+
+
 def _replay_verify_merge(
     session: Session, *, verify_mode: str, override_gate: bool, clock: _Landing
 ) -> MergeResult:
@@ -696,11 +728,12 @@ def _replay_verify_merge(
     clock.mark("regenerate")
 
     subject = landing_guard.capture(repo_root, session, verify_mode, record=bead)
-    if not override_gate:
+    gate = _engine_preflight(session, subject, clock, verify_mode)
+    if gate is None and not override_gate:
         gate = _verify_for_landing(name, worktree_path, verify_mode, clock)
         clock.mark("verify")
-        if gate is not None:
-            return gate
+    if gate is not None:
+        return gate
 
     if known_bead_ids(repo_root) is not None:
         results = clock.report.results if clock.report is not None else ()

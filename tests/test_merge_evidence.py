@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import merge, verify
+from basicly import landing_guard, merge, verify
 from tests.test_merge import (
     _HAS_WORK,
     _add_source,
@@ -53,6 +53,57 @@ def test_a_first_failure_carries_the_original_check_command_and_output(
     assert [(c.name, c.output, c.command) for c in result.checks] == [
         ("pyright", "src/a.py:1: error", ("pyright", "--strict"))
     ]
+
+
+@pytest.mark.parametrize(
+    "error", [FileNotFoundError(2, "missing tool"), PermissionError(13, "Permission denied")]
+)
+def test_a_tool_launch_failure_retains_its_cause_without_source_repair(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, error: OSError
+) -> None:
+    def unavailable(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(verify, "_spawn", unavailable)
+    check = verify.run_check(
+        verify.VerifyCheck("ruff", ("ruff", "check"), frozenset({"full"})), tmp_path, "full"
+    )
+    result = _landing(monkeypatch, tmp_path, verify.VerifyReport("full", (check,)))
+    assert result.status == "verify-unavailable"
+    assert check.detail in result.detail
+    assert result.checks == (check,)
+
+
+def test_a_started_check_with_exit_126_remains_a_source_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    check = verify.CheckResult("ruff", "fail", 126, "source check failed", command=("ruff",))
+    result = _landing(monkeypatch, tmp_path, verify.VerifyReport("full", (check,)))
+    assert result.status == "verify-failed"
+
+
+def test_an_unstable_engine_is_refused_before_running_candidate_checks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def unavailable(*_args, **_kwargs):
+        raise landing_guard.GuardUnavailableError("candidate engine required")
+
+    monkeypatch.setattr(landing_guard, "require_stable_engine", unavailable, raising=False)
+    called = []
+    _patch_git(monkeypatch, _FakeGit({**_HAS_WORK, "status": _Proc(0, ""), "rebase": _Proc(0)}))
+
+    def checked(*_args, **_kwargs):
+        called.append(True)
+        return verify.VerifyReport("full", ())
+
+    monkeypatch.setattr(verify, "run_verify", checked)
+    result = merge.merge_worktree(tmp_path, "feat", bead="basicly-onb.5")
+    assert result.status == "not-ready"
+    assert "candidate engine required" in result.detail
+    assert "uv run --project" in result.detail
+    assert "--directory" in result.detail
+    assert "basicly worktree merge feat --bead basicly-onb.5 --mode full" in result.detail
+    assert called == []
 
 
 def test_a_known_dependency_defect_carries_no_lane_repair_checks(

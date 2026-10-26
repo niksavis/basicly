@@ -25,6 +25,10 @@ def _prepare(root: Path, env: dict[str, str], call: Callable[..., float], uv: st
         encoding="utf-8",
     )
     call([uv, "sync", "--offline"])
+    repository = Path(__file__).resolve().parents[1]
+    for name in ("package.json", "package-lock.json"):
+        shutil.copyfile(repository / name, root / name)
+    call(["npm", "ci", "--offline", "--no-audit", "--no-fund"])
     binary = root / ".venv" / ("Scripts" if os.name == "nt" else "bin")
     env["PATH"] = str(binary) + os.pathsep + env.get("PATH", "")
     env["VIRTUAL_ENV"] = str(root / ".venv")
@@ -66,7 +70,7 @@ def _measure(
     run(reused=True)
     (root / ".basicly/usage/verify-cache.json").write_text("malformed", encoding="utf-8")
     run(reused=False)
-    env["BASICLY_CACHE_PROOF_CONTEXT"] = "changed"
+    env["TZ"] = "UTC" if env.get("TZ") != "UTC" else "Etc/GMT+7"
     run(reused=False)
     return {
         "default_fresh_s": default_fresh,

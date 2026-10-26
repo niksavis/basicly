@@ -53,6 +53,7 @@ from .config import (
 from .dispatch_brief import child_plan_prompt, work_type_prompt
 from .tracker import try_add_comment as _add_comment
 from .tracker import write as _write
+from .verify_artifact import infrastructure_failure
 
 if TYPE_CHECKING:
     from .decompose import ChildSpec
@@ -311,7 +312,7 @@ def _repair_from_validate(ctx: _Ctx, gate: str) -> AdvanceResult | None:
     changed = _changed_paths(ctx, binding.name)
     landed = merge.merge_worktree(ctx.repo_root, binding.name, bead=ctx.issue_id, verify_mode=mode)
     if not landed.merged:
-        return _rework(
+        return _no_evidence_landing_block(ctx, landed) or _rework(
             ctx,
             merge.MERGE_GATE,
             f"re-landing the repair failed: {landed.detail}",
@@ -978,6 +979,8 @@ def _shared_gate_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceR
 
 def _no_evidence_landing_block(ctx: _Ctx, result: merge.MergeResult) -> AdvanceResult | None:
 
+    if result.status == merge.VERIFY_UNAVAILABLE:
+        return _blocked(ctx, result.detail, landing=result, needs_input="verification-environment")
     if result.unreliable:
         return _unreliable_landing_block(ctx, result)
     if result.foreign:
@@ -1232,13 +1235,18 @@ def _run_subtask(
     if gate_error is not None:
         return _blocked(ctx, f"{where}: {gate_error}")
     if not report.passed:
-        return _rework(
-            ctx,
-            verify.DEFAULT_GATE,
-            f"{where}: verify {_SUBTASK_VERIFY_MODE} failed: {', '.join(report.failures)}",
-            issue_id=subtask_id,
-            findings=report.failures,
-            evidence=repair_brief.verify_evidence(report, cwd, _SUBTASK_VERIFY_MODE),
+        unavailable = infrastructure_failure(report)
+        return (
+            _blocked(ctx, unavailable, needs_input="verification-environment")
+            if unavailable
+            else _rework(
+                ctx,
+                verify.DEFAULT_GATE,
+                f"{where}: verify {_SUBTASK_VERIFY_MODE} failed: {', '.join(report.failures)}",
+                issue_id=subtask_id,
+                findings=report.failures,
+                evidence=repair_brief.verify_evidence(report, cwd, _SUBTASK_VERIFY_MODE),
+            )
         )
     refused = _close_record(ctx, subtask_id, f"lane sub-task verified in {ctx.issue_id}")
     result = AdvanceResult(
@@ -1406,6 +1414,8 @@ def _record_verify(
     if gate_error is not None:
         return _blocked(ctx, gate_error)
     if not report.passed:
+        if unavailable := infrastructure_failure(report):
+            return _blocked(ctx, unavailable, needs_input="verification-environment")
         return _rework(
             ctx,
             verify.DEFAULT_GATE,

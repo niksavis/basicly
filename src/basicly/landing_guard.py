@@ -195,9 +195,7 @@ class GuardUnavailableError(ValueError):
     pass
 
 
-def guarded_merge(
-    root: Path, subject: LandingSubject, command: list[str]
-) -> subprocess.CompletedProcess[str]:
+def require_stable_engine(root: Path, subject: LandingSubject) -> None:
     engine = Path(__file__).resolve().parent
     if (
         engine.is_relative_to(root.resolve())
@@ -218,6 +216,12 @@ def guarded_merge(
             "Landing changes the executing engine; rerun from the candidate worktree "
             "engine with the destination as the working directory"
         )
+
+
+def guarded_merge(
+    root: Path, subject: LandingSubject, command: list[str]
+) -> subprocess.CompletedProcess[str]:
+    require_stable_engine(root, subject)
     enabled = checkout.git(
         ["config", "--type=bool", "--get", "hook.reference-transaction.enabled"],
         cwd=root,

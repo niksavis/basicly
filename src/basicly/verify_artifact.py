@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ class CheckResult:
     reuse_reason: str = ""
     source_duration_s: float = 0.0
     input_fingerprint: str = ""
+    infrastructure_error: bool = False
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,33 @@ class VerifyReport:
     @property
     def failures(self) -> tuple[str, ...]:
         return tuple(r.name for r in self.results if r.status == "fail")
+
+
+def execution_failure(name: str, command: Sequence[str], error: OSError) -> CheckResult:
+    missing = isinstance(error, FileNotFoundError)
+    detail = (
+        f"command not found: {command[0]} — install it or edit [[verify.checks]] in basicly.toml"
+        if missing
+        else f"cannot run {command[0]} ({error.strerror or error}) — check "
+        "[[verify.checks]] in basicly.toml"
+    )
+    return CheckResult(
+        name,
+        "fail",
+        127 if missing else 126,
+        detail,
+        command=tuple(command),
+        infrastructure_error=True,
+    )
+
+
+def infrastructure_failure(report: VerifyReport) -> str:
+    failed = [result for result in report.results if result.status == "fail"]
+    if not failed or not all(result.infrastructure_error for result in failed):
+        return ""
+    return "verification environment unavailable: " + "; ".join(
+        f"{result.name}: {result.detail}" for result in failed
+    )
 
 
 def blocked_result(name: str, command: tuple[str, ...], failed: str) -> CheckResult:
@@ -173,6 +202,11 @@ def write_run_artifact(repo_root: Path, report: RunVerdict) -> Path | None:
                 "status": r.status,
                 "returncode": r.returncode,
                 "detail": recorded_detail(r),
+                **(
+                    {"infrastructure_error": True}
+                    if getattr(r, "infrastructure_error", False)
+                    else {}
+                ),
                 "disposition": "reused"
                 if r.reused_from
                 else "not-run"

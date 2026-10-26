@@ -1,0 +1,1 @@
+- Refuse unstable self-host engine handoffs before verification, show a command that supplies the candidate environment, and retain tool-launch errors without charging source rework.

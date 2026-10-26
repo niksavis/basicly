@@ -103,6 +103,29 @@ def test_a_passing_run_writes_a_non_empty_run_artifact(
     assert recorded["duration_s"] >= 0
 
 
+def test_a_launch_failure_remains_distinct_in_saved_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unavailable(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(verify, "_spawn", unavailable)
+    report = verify.run_verify(tmp_path, "full", VerifyConfig((_check("ruff", ("full",)),)))
+    recorded = json.loads((tmp_path / verify_artifact.RUN_ARTIFACT).read_text())
+    assert not report.passed
+    assert recorded["checks"][0]["infrastructure_error"] is True
+    assert "Permission denied" in recorded["checks"][0]["detail"]
+    assert "Permission denied" in verify_artifact.infrastructure_failure(report)
+
+
+def test_a_real_check_failure_is_not_hidden_by_an_unavailable_tool() -> None:
+    unavailable = verify_artifact.execution_failure("ruff", ("ruff",), FileNotFoundError())
+    failed = verify.CheckResult("pytest", "fail", 1, "assertion failed")
+    report = verify.VerifyReport("full", (unavailable, failed))
+    assert not report.passed
+    assert verify_artifact.infrastructure_failure(report) == ""
+
+
 def test_the_run_artifact_satisfies_a_declared_evidence_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

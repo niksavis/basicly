@@ -1419,6 +1419,35 @@ def test_an_unreliable_gate_spends_no_rework_and_records_the_flake(
     assert [(a[1], a[2]) for a in flakes] == [("i", merge.MERGE_GATE)]
 
 
+@pytest.mark.parametrize("destination", [False, True])
+def test_a_tool_launch_failure_does_not_spend_source_rework(
+    at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, destination: bool
+) -> None:
+    at(_state("build", worktree=WorktreeBinding("i", "harness/i")))
+    detail = "verification environment unavailable: cannot run ruff (Permission denied)"
+    attempt = merge.MergeResult("i", "merged" if destination else "verify-unavailable", detail)
+    monkeypatch.setattr(merge, "merge_worktree", lambda *_a, **_k: attempt)
+
+    def unavailable(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(verify, "_spawn", unavailable)
+    check = verify.run_check(
+        verify.VerifyCheck("ruff", ("ruff",), frozenset({"full"})), tmp_path, "full"
+    )
+    monkeypatch.setattr(
+        verify, "run_verify", lambda *_a, **_k: verify.VerifyReport("full", (check,))
+    )
+    monkeypatch.setattr(verify, "report_gate", lambda *_a, **_k: (True, "recorded"))
+    charged: list = []
+    monkeypatch.setattr(policy, "record_rework", lambda *a, **_k: charged.append(a) or 1)
+    _pin_finding_sets(monkeypatch)
+    result = _advance(tmp_path)
+    assert result.blocked and result.needs_input == "verification-environment"
+    assert "Permission denied" in result.detail
+    assert charged == []
+
+
 def test_build_leaf_reworks_on_failed_merge(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

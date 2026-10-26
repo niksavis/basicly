@@ -24,6 +24,7 @@ from .verify_artifact import (
     VerifyReport,
     blocked_result,
     cached_result,
+    execution_failure,
     receipt_result,
     write_run_artifact,
 )
@@ -145,6 +146,7 @@ def _run(
                 "git diff --cached failed — cannot determine staged files, "
                 "refusing to skip the check",
                 command=tuple(command),
+                infrastructure_error=True,
             )
         if not files:
             return CheckResult(name, "skip", 0)
@@ -157,24 +159,8 @@ def _run(
             proc = _spawn(command, repo_root, capture=capture, controlled="pytest")
         else:
             proc = _spawn(command, repo_root, capture=capture)
-    except FileNotFoundError:
-        return CheckResult(
-            name,
-            "fail",
-            127,
-            f"command not found: {command[0]} — install it or edit "
-            f"[[verify.checks]] in basicly.toml",
-            command=tuple(command),
-        )
     except OSError as exc:
-        return CheckResult(
-            name,
-            "fail",
-            126,
-            f"cannot run {command[0]} ({exc.strerror or exc}) — check "
-            f"[[verify.checks]] in basicly.toml",
-            command=tuple(command),
-        )
+        return execution_failure(name, command, exc)
     output = f"{proc.stdout or ''}{proc.stderr or ''}"
     failed = proc.returncode != 0
     detail = (
