@@ -6,7 +6,7 @@
   "status": "in_progress",
   "coverage": {
     "source_discovery": "Independent git ls-files and pathlib source walks agree. Positive controls AGENTS.md and .claude/CLAUDE.md are present.",
-    "semantic": "All 26 skill entry bodies, 12 agent bodies, 28 fragment bodies, 5 shared blocks and the output style have been read across the research and audit turns. Resource/script body and callsite review remains pending unless explicitly advanced.",
+    "semantic": "All inventoried 26 skill entry bodies, 12 agent bodies, 28 fragments, 5 shared blocks, output style and 146 resource/script bodies reviewed. Effective-loading inventory reconciliation, selected caller/test validation and concurrent-main reconciliation remain open; body coverage is not completion of the audit.",
     "runtime": "Static loading/dispatch code inspected. No host behavior trials or latency attribution yet. Project projection equality is checked by existing gates; personal/plugin precedence requires further inspection.",
     "counts": {
       "skills": 26,
@@ -2950,9 +2950,11 @@
       "path": ".basicly/core/skills/skill-creator/assets/viewer.html",
       "sha256": "ce8ddc2a87b4ab23eed9eb8d4ff00be815922f27a547b73f971f97e2de03a7c2",
       "bytes": 40540,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; caller discovery performed",
       "disposition": "investigate",
-      "kind": "skill-resource"
+      "kind": "skill-resource",
+      "reason": "Optional human review UI should remain on demand. Source shows fetch success handlers do not check HTTP status, concurrent saves can reorder, and closing the completion dialog calls an in_progress save. Empty runs fail in showRun; benchmark metadata/configuration strings enter innerHTML without consistent escaping, and text escaping is reused in quoted attributes. Missing pass rates become zero; positive time/token deltas share pass-rate success coloring. Correct before treating viewer as authoritative evaluation evidence; browser reproduction pending.",
+      "risk": "Static findings require focused controls before implementation. Caller discovery is not full test coverage or proof of absent external consumers."
     },
     {
       "path": ".basicly/core/skills/skill-creator/evals.yaml",
@@ -3205,9 +3207,11 @@
       "path": ".scripts/build_lefthook_windows.py",
       "sha256": "f8cc44cfb9a1120bbfacce693f0015e63e399c9f4eebd5310463dc463b1d3ca2",
       "bytes": 4612,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve reproducible pinned source/patch verification, isolated Go environment, deterministic compression and refusal to overwrite different artifacts. Owned by the Lefthook lane; reconcile its replacement before editing. Build-time consumer support is not routine agent-loop overhead.",
+      "risk": "Caller discovery is not full test coverage. Preserve required consumer guarantees and reconcile concurrent-session changes before implementation."
     },
     {
       "path": ".scripts/check_always_on_size.py",
@@ -3253,9 +3257,11 @@
       "path": ".scripts/check_design_tokens.py",
       "sha256": "8af7c4915cb468dd9afc481a08e7d8e7c35e7ca61d2f785db632d51fcc3ddcdb",
       "bytes": 11827,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve shared token and theme consistency for board work. Regex-based CSS extraction and limited named-color recognition are conventions checks, not complete CSS parsing or accessibility proof; maintain browser evidence. Repeated scans and manual file-count ratchets may be simplified with equivalent input coverage.",
+      "risk": "Static findings require focused controls before implementation. Caller discovery is not full test coverage or proof of absent external consumers."
     },
     {
       "path": ".scripts/check_docs_citations.py",
@@ -3301,9 +3307,11 @@
       "path": ".scripts/check_mermaid.py",
       "sha256": "a71c2dd1d1b24ae553668ecc4e0d3edf6795171d3382d21abe585d9a24736a27",
       "bytes": 5635,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve actual renderer refusal checks and explicit pinned-version mismatch. Default scans all tracked Markdown and launches Node; scope to affected documents when input completeness is proven. Unclosed fenced blocks are not emitted; this does not prove all intended diagrams render.",
+      "risk": "Caller discovery is not full test coverage. Preserve required consumer guarantees and reconcile concurrent-session changes before implementation."
     },
     {
       "path": ".scripts/check_module_size.py",
@@ -3354,9 +3362,11 @@
       "path": ".scripts/check_render_overflow.py",
       "sha256": "ec47af1b636a943ee0b1f0abfb23332a785edd6873d40dacf606a3b3433e4ae6",
       "bytes": 10686,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; caller discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Retain targeted geometry measurement but supplement with actual live board journeys: copying HTML into a temporary directory can break relative assets; no browser subprocess timeout; viewport correction is attempted once without enforcing requested final dimensions. Intentional ellipsis and positioned text are excluded, so passing is not proof all content is usable. Pairwise carrier comparison is quadratic.",
+      "risk": "Static findings require focused controls before implementation. Caller discovery is not full test coverage or proof of absent external consumers."
     },
     {
       "path": ".scripts/check_spend_accuracy.py",
@@ -3402,9 +3412,11 @@
       "path": ".scripts/compatibility_smoke.py",
       "sha256": "d1bb041d6b4e5309045a1165daa6f7914a8f9d030d40ebee29f5b9d84329e1e5",
       "bytes": 9904,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Reuse isolated wheel consumer install, repeat install, upgrade preservation, strict/ratchet and staged-versus-working-tree checks. This is meaningful integration evidence rather than routine agent overhead; preserve ownership of concurrent Lefthook changes. It does not cover board UX or model task outcomes.",
+      "risk": "Caller discovery is not full test coverage. Preserve required consumer guarantees and reconcile concurrent-session changes before implementation."
     },
     {
       "path": ".scripts/docs_claim_layers.py",
@@ -3480,9 +3492,11 @@
       "path": ".scripts/generate_model_map.py",
       "sha256": "b3a2e7a4af9b70c2664bfd9a4a79626ae36f2498b1407f35d854eb0c07705496",
       "bytes": 9824,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; caller discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Explicit offline payload supports reproducibility; --check compares tiers only, leaving other generated metadata outside that comparison. Fetch and metadata costs are not measured task costs; captured payload date needs clear provenance. Retain exact model identifiers and verify provider facts before changes.",
+      "risk": "Caller discovery is not full test coverage. Preserve required consumer guarantees and reconcile concurrent-session changes before implementation."
     },
     {
       "path": ".scripts/generate_release_changelog.py",
@@ -3533,9 +3547,11 @@
       "path": ".scripts/kit_deployment.py",
       "sha256": "52a7cb405a5f3f18397a7568f603b45c984498f7d31a9ff0f888a2f5c2bdeb3f",
       "bytes": 7426,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve append-only event byte attributes, union merges and derived-file ignore checks for no-engine consumers. Repeated per-sample git calls are a batching candidate. Two wildcard fills are deployment probes, not exhaustive coverage of every possible filename.",
+      "risk": "Caller discovery is not full test coverage. Preserve required consumer guarantees and reconcile concurrent-session changes before implementation."
     },
     {
       "path": ".scripts/ledger_bodies.py",
@@ -3571,17 +3587,21 @@
       "path": ".scripts/model_map_anchors.py",
       "sha256": "fa9bf7b2da05d6cf8a3089b9fa0fa8e2c39ad80db9a78b07cfee6c32f95bfc4c",
       "bytes": 8773,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve exact tier/anchor schema validation and general-model capability requirements. Numeric validation excludes booleans but does not establish finite nonnegative costs; editorial tiers are not measured task quality.",
+      "risk": "Caller discovery is not full test coverage. Preserve required consumer guarantees and reconcile concurrent-session changes before implementation."
     },
     {
       "path": ".scripts/model_map_resolve.py",
       "sha256": "2537d02258a70cd7aeff77cce216041455b2d05031d79335f1cb63cb19c9baa0",
       "bytes": 4676,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Preserve explicit unavailable outcomes and refusal of ambiguous display-name matches. Matching provider display names establishes metadata resolution, not behavioral equivalence or performance.",
+      "risk": "Caller discovery is not full test coverage. Preserve required consumer guarantees and reconcile concurrent-session changes before implementation."
     },
     {
       "path": ".scripts/ratchet.py",
@@ -3612,9 +3632,11 @@
       "path": ".scripts/render_mermaid.mjs",
       "sha256": "61eae625a8006e627b1266cf86272b805c552868476f50ef72a987f2beb706f7",
       "bytes": 2579,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Shared renderer supports parse and draw modes. JSDOM uses synthetic fixed-width geometry, so successful rendering is syntax/runtime evidence rather than visual layout or hosting fidelity. Preserve real browser inspection for user-visible diagrams.",
+      "risk": "Caller discovery is not full test coverage. Preserve required consumer guarantees and reconcile concurrent-session changes before implementation."
     },
     {
       "path": ".scripts/retention_eval.py",
@@ -3640,17 +3662,21 @@
       "path": ".scripts/validate_affected_consumer.py",
       "sha256": "772a3d9aad04df9d08c8eeafecfeed36c16015f462b1e2dd6f4dda503b6e5ef6",
       "bytes": 14745,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Reuse real installed hooks, staged failure controls, foreign-hook preservation, custom hooksPath and baseline/candidate wheel hashes. Three warm hook samples on a tiny Python graph do not measure cold or large-repository performance. Reconcile hardcoded Lefthook version with concurrent artifact lane before reuse.",
+      "risk": "Static findings require focused controls before implementation. Caller discovery is not full test coverage or proof of absent external consumers."
     },
     {
       "path": ".scripts/validate_check_cache.py",
       "sha256": "a3ff17ebdc4a9ff31cda4bacdb7c33b8ccfac324c6a7c1a14f2570a2b59c2a6f",
       "bytes": 7753,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "hook-or-maintenance-script",
+      "reason": "Reuse offline wheel upgrade fixture and cache invalidation controls for source errors, corrupt cache, environment changes and forced fresh runs. Thirty warm runs are compiler-only synthetic evidence; execution claims depend on verify dispositions plus an independent unscoped counter, not compiler process instrumentation. Do not extrapolate to whole-agent latency.",
+      "risk": "Static findings require focused controls before implementation. Caller discovery is not full test coverage or proof of absent external consumers."
     },
     {
       "path": ".scripts/waivers.py",
@@ -3666,9 +3692,11 @@
       "path": ".scripts/wired_or_deleted.py",
       "sha256": "861aa14789bbc5aae54ba192c994ae4838668c25323fd58210e05af6e941788c",
       "bytes": 14395,
-      "review": "pending-body-and-callsite-review",
+      "review": "body-reviewed; caller discovery performed",
       "disposition": "investigate",
-      "kind": "hook-or-maintenance-script"
+      "kind": "hook-or-maintenance-script",
+      "reason": "Dead-code discipline is useful, but name-only reference indexing and command spelling matches do not establish real reachability or safe deletion. Whole-tree AST scanning plus another Vulture invocation adds verification work; preserve required checks until scoped equivalents are validated. Manual baselines encode debt, not proven consumers.",
+      "risk": "Static findings require focused controls before implementation. Caller discovery is not full test coverage or proof of absent external consumers."
     }
   ],
   "next_checks": [
@@ -3759,6 +3787,6 @@
   ],
   "coordination": {
     "shared_writes": "paused at user request pending clean-main window confirmation",
-    "pending_tracker_summary": "Reviewed 21 additional maintenance/docs/release scripts and two licenses locally. Found prose-anchor dependency that must change when skills move content to references; preserve derived docs and serialized history while reducing repeated scans. No main/shared-tracker write in this checkpoint."
+    "pending_tracker_summary": "All 146 inventoried resource/script bodies now reviewed locally. Preserve real consumer fixtures; investigate viewer save-status errors and measurement limits. Source inventory expansion and effective loading reconciliation remain open. Main/shared tracker writes remain held for Lefthook."
   }
 }
