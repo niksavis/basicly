@@ -16,8 +16,8 @@ with `/hooks` before it runs them.
 
 Git launchers verify that the managed dispatcher completed. If Lefthook skips
 it because its native file selection is empty, the launcher runs only the
-managed job once; foreign job filters still apply. Original Git arguments are
-forwarded to consumer-owned Lefthook commands.
+managed job once; foreign job filters still apply. The launcher forwards the
+original Git argument list to Lefthook and to the managed dispatcher.
 
 Git pre-commit runs against an isolated index snapshot. Successful mechanical
 fixes update the index while preserving partially staged working files. Pre-push
