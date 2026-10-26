@@ -6,14 +6,14 @@
   "status": "in_progress",
   "coverage": {
     "source_discovery": "Independent git ls-files and pathlib source walks agree. Positive controls AGENTS.md and .claude/CLAUDE.md are present.",
-    "semantic": "All inventoried 26 skill entry bodies, 12 agent bodies, 28 fragments, 5 shared blocks, output style and 146 resource/script bodies reviewed. Effective-loading inventory reconciliation, selected caller/test validation and concurrent-main reconciliation remain open; body coverage is not completion of the audit.",
+    "semantic": "Main catalog bodies and 152 inventoried resource/script bodies reviewed, including six additional standalone tier-kit files discovered through hook consumers. The tier kit also projects a model-tier skill outside the 26 catalog entries. Effective-loading reconciliation and selected behavioral controls remain open; body coverage is not audit completion.",
     "runtime": "Static loading/dispatch code inspected. No host behavior trials or latency attribution yet. Project projection equality is checked by existing gates; personal/plugin precedence requires further inspection.",
     "counts": {
       "skills": 26,
       "agents": 12,
       "fragments": 28,
       "blocks": 5,
-      "resource_and_script_files": 146
+      "resource_and_script_files": 152
     },
     "unknown_usage": "No absence or zero-use claim follows from missing telemetry.",
     "missing_requested_locations": [
@@ -27,7 +27,8 @@
       "AGENTS.md",
       ".claude/CLAUDE.md",
       ".github/copilot-instructions.md"
-    ]
+    ],
+    "personal_skill_observation": "Personal Claude cli-tools entry differs from the project entry only by four additional terminal-tool rows (tmux, zsh, starship, wezterm) in the inspected diff. Projection checker warns it shadows project content. Personal references and native runtime precedence are not yet verified; no personal files were changed."
   },
   "skills": [
     {
@@ -3697,6 +3698,66 @@
       "kind": "hook-or-maintenance-script",
       "reason": "Dead-code discipline is useful, but name-only reference indexing and command spelling matches do not establish real reachability or safe deletion. Whole-tree AST scanning plus another Vulture invocation adds verification work; preserve required checks until scoped equivalents are validated. Manual baselines encode debt, not proven consumers.",
       "risk": "Static findings require focused controls before implementation. Caller discovery is not full test coverage or proof of absent external consumers."
+    },
+    {
+      "path": ".basicly/core/kit/tier/README.md",
+      "sha256": "835a79a9aa728d7beae839efeb1900caafbd15546e29c79ce514eb08de031cee",
+      "bytes": 11272,
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "standalone-tier-kit",
+      "reason": "Preserve standalone installation and explicit per-host limits. Documentation distinguishes fail-closed resolution from best-effort spawn injection; do not claim the hook enforces model selection. Refresh host-specific facts before migration.",
+      "risk": "Validate native host behavior and standalone consumers; do not infer routing enforcement from resolver unit checks."
+    },
+    {
+      "path": ".basicly/core/kit/tier/INSTRUCTION.md",
+      "sha256": "7302bdada33982d8261876ee1a41dd8467da443c9acbd961b32375b191ba18ca",
+      "bytes": 536,
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "trim",
+      "kind": "standalone-tier-kit",
+      "reason": "Optional always-loaded tier block duplicates the skill; keep resolution guidance discoverable for actual specialist dispatch rather than requiring it for ordinary tasks.",
+      "risk": "Validate native host behavior and standalone consumers; do not infer routing enforcement from resolver unit checks."
+    },
+    {
+      "path": ".basicly/core/kit/tier/GUIDANCE.md",
+      "sha256": "554b6b0d418a3f437f14a12a7e3c250c18b069b183abc1260dd78c9b44143e61",
+      "bytes": 3102,
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "rewrite",
+      "kind": "standalone-tier-kit",
+      "reason": "Standalone model-tier skill is an additional effective skill surface outside the main catalog count. Preserve explicit resolution and unavailable outcomes; avoid prescribing cheap model agents for deterministic sweeps that scripts can perform.",
+      "risk": "Validate native host behavior and standalone consumers; do not infer routing enforcement from resolver unit checks."
+    },
+    {
+      "path": ".basicly/core/kit/tier/claude_tier_hook.py",
+      "sha256": "208a19df9b3c39bb1290c49a7cc874e7dc5b4706cfe50bf47fa35d915edf3c01",
+      "bytes": 2195,
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "standalone-tier-kit",
+      "reason": "Best-effort Agent-only injection preserves input and explicit model overrides. It silently declines missing definitions/maps; no evidence this controls Codex. Resolve only actual dispatches and retain no-engine support.",
+      "risk": "Validate native host behavior and standalone consumers; do not infer routing enforcement from resolver unit checks."
+    },
+    {
+      "path": ".basicly/core/kit/tier/install_hook.py",
+      "sha256": "f316d3568ec9c184929e239cd40d917aaf38d6189fe32409807c1ac4b63d9c26",
+      "bytes": 9857,
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "investigate",
+      "kind": "standalone-tier-kit",
+      "reason": "Preserve idempotent standalone setup and refusal of invalid JSON. Hook ownership is identified by a filename substring and whole matching groups are removed, potentially dropping other commands in a mixed group; validate preservation before changes. Managed Lefthook installs already delegate configuration.",
+      "risk": "Validate native host behavior and standalone consumers; do not infer routing enforcement from resolver unit checks."
+    },
+    {
+      "path": ".basicly/core/kit/tier/tier_resolver.py",
+      "sha256": "5a8e9fe28f7200f09eec741ff07a8b46d0e856a4815211b5943fbc55206e9ede",
+      "bytes": 12187,
+      "review": "body-reviewed; caller discovery performed",
+      "disposition": "keep",
+      "kind": "standalone-tier-kit",
+      "reason": "Preserve exact unavailable outcomes and no neighboring-tier substitution. Definition search uses current root then home, not all parent/plugin/config roots; alias selection is tier-based rather than map-model-based. Reconcile with actual host precedence and official model aliases before claiming effective routing. Minimal frontmatter parsing is not full YAML.",
+      "risk": "Validate native host behavior and standalone consumers; do not infer routing enforcement from resolver unit checks."
     }
   ],
   "next_checks": [
@@ -3786,7 +3847,7 @@
     }
   ],
   "coordination": {
-    "shared_writes": "paused at user request pending clean-main window confirmation",
+    "shared_writes": "paused for Lefthook shipping window; S2 clean-main handoff received; user approved narrow CI edit and shipping, relayed directly",
     "pending_tracker_summary": "All 146 inventoried resource/script bodies now reviewed locally. Preserve real consumer fixtures; investigate viewer save-status errors and measurement limits. Source inventory expansion and effective loading reconciliation remain open. Main/shared tracker writes remain held for Lefthook."
   }
 }
