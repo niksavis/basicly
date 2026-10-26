@@ -32,7 +32,7 @@
     "consumer_mapping": "Every catalog/resource entry now carries consumer/projection evidence or explicitly limited textual consumer candidates, cost hypotheses and a follow-up record. No empty search is a deletion recommendation.",
     "fragment_projection": "Exact selected source-to-output map computed through configured loader/planner; all resulting rendered outputs equal committed files byte-for-byte. Excluded/replaced/inactive fragments have empty output lists for this repository selection.",
     "final_inventory_control": {
-      "source_records": 239,
+      "source_records": 236,
       "resource_and_script_files": 156,
       "target_files": 3,
       "configured_hook_entries": 28,
@@ -2725,36 +2725,6 @@
       "sha256": "3f3afad7d69ce72d44c726acd4c8d27674b64fe76a33a518562f9a847963533f",
       "bytes": 75,
       "review": "loading-configuration-inspected",
-      "disposition": "investigate",
-      "reason": "Generated or effective host surface; edit its source and validate the selected host output rather than patching generated content.",
-      "cost_hypothesis": "Separate prompt text cost from deterministic configuration execution; preserve actual host precedence when measuring.",
-      "risk": "Global/personal/plugin settings can alter effective behavior; project equality alone is insufficient."
-    },
-    {
-      "path": ".basicly/core/targets/claude.yaml",
-      "sha256": "ab761f21138b7dbcd9d5bd5148c8b83cdd526820e7e3a8d90feee1f5f43d7e55",
-      "bytes": 1720,
-      "review": "body-reviewed",
-      "disposition": "investigate",
-      "reason": "Generated or effective host surface; edit its source and validate the selected host output rather than patching generated content.",
-      "cost_hypothesis": "Separate prompt text cost from deterministic configuration execution; preserve actual host precedence when measuring.",
-      "risk": "Global/personal/plugin settings can alter effective behavior; project equality alone is insufficient."
-    },
-    {
-      "path": ".basicly/core/targets/codex.yaml",
-      "sha256": "f5c8fb2b5e8c7e408585a3b8bc7c38da2c34c1b19116d69c8f7cc800cedc2960",
-      "bytes": 1619,
-      "review": "body-reviewed",
-      "disposition": "investigate",
-      "reason": "Generated or effective host surface; edit its source and validate the selected host output rather than patching generated content.",
-      "cost_hypothesis": "Separate prompt text cost from deterministic configuration execution; preserve actual host precedence when measuring.",
-      "risk": "Global/personal/plugin settings can alter effective behavior; project equality alone is insufficient."
-    },
-    {
-      "path": ".basicly/core/targets/copilot.yaml",
-      "sha256": "5502a7139c94e28c4fc102d704a5a74d95cfb26fa6c29ef07764b186fba68c22",
-      "bytes": 1556,
-      "review": "body-reviewed",
       "disposition": "investigate",
       "reason": "Generated or effective host surface; edit its source and validate the selected host output rather than patching generated content.",
       "cost_hypothesis": "Separate prompt text cost from deterministic configuration execution; preserve actual host precedence when measuring.",
