@@ -2767,9 +2767,15 @@
       "path": ".basicly/core/skills/skill-creator/assets/eval_review.html",
       "sha256": "2fae8c5a7200c4c5d53ead70a697b0ebd54b10f2f7665323e4da6e640774285c",
       "bytes": 7087,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "keep",
+      "kind": "skill-resource",
+      "reason": "Optional human fixture editor, referenced by skill body. Preserve useful editing/export without forcing a manual checkpoint. Placeholder insertion needs HTML and script-context escaping; accessible input labels and new-row focus need consumer checks.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/assets/viewer.html",
@@ -2793,89 +2799,155 @@
       "path": ".basicly/core/skills/skill-creator/references/analyzer.md",
       "sha256": "72a0e0428c51522d996c95a716b4e5831fbad089cb68171a31475a27bd411805",
       "bytes": 10857,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Retain per-task patterns, uncertainty and evidence. Merge verbose role framing into an optional analysis procedure; a separate agent is justified only for useful independent analysis. Do not infer causal improvement from one comparison.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/references/comparator.md",
       "sha256": "f0497fa88b7b0ab38c3da18ada354a7d0aeb81fc3b5405954ea1be27c4924712",
       "bytes": 7650,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep blinded output comparison but freeze the task rubric before looking at outputs. Do not pressure the reviewer to choose a winner or let presentation averages override required acceptance outcomes. Include ties and insufficient evidence.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/references/grader.md",
       "sha256": "d0776d047c678ad315565642bf5137f7b263c50b180044282e47777996b0bf7d",
       "bytes": 9421,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep substantive evidence and critique of weak assertions. Separate observed metrics from model narrative; output characters are not tokens. Use deterministic checks for objective outcomes and independent judgment where needed, not a mandatory grader handoff for every case.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/references/schemas.md",
       "sha256": "673676e51e4b2f0a23062e6c89bccbe893255d4f5c3a78945ae69ec3c650d6f3",
       "bytes": 12592,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Keep explicit artifact contracts but reconcile behavior-eval and trigger-eval formats, exact units and missing/error states. Example timing mixes incompatible durations. Host notification availability is conditional, not a portable guarantee; avoid interpreting absent fields as zero.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/scripts/aggregate_benchmark.py",
       "sha256": "88028c4719b22cd3be9561b82f0be871a03efc54d9f251053bab32cf80f86db6",
       "bytes": 10771,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Verified token-unit corruption: nonzero grading timing skips timing.json token read and falls back to output_chars as tokens. Metadata hard-codes three runs despite one actual run. Missing data defaults to zero and malformed/missing grading may disappear from aggregates. Retain deterministic aggregation only with explicit units, observed counts, missing/error states and task pairing.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/scripts/generate_report.py",
       "sha256": "2630e75c8804158a7eab58640e89a5076e7b6b9ace2d0340425a3c9ad4f860f0",
       "bytes": 11489,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Useful optional deterministic report, but empty history crashes max(), some metadata interpolations are unescaped, and winner selection reinforces repeated test-set optimization. Keep report quality separate from evidence quality and validate data before display.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/scripts/generate_review.py",
       "sha256": "2cdb1c700f8de54ffaf9f99b3f4cb66dbb984e86a4e17a432c42de307bf1820e",
       "bytes": 12159,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Optional static review is useful. Dynamic server rescans/embeds all outputs on each request, follows directory links, has unbounded request/file input and only shallow feedback validation. Do not require a server or manual review for every simple skill edit; scope rendering and validate local inputs if retained.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/scripts/improve_description.py",
       "sha256": "40e9ac87f4c8e6fb22886ca2333e8790740b0cc918e8203460444dfd951f2ab9",
       "bytes": 9687,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Optional description optimization only. Uses Claude in inherited working context, full skill text and growing history; second shortening response is not validated against limit. Generic 100-200 word target creates avoidable listing burden. Validate output before application and distinguish optimizer overhead from task cost.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/scripts/run_eval.py",
       "sha256": "9c7274957191cabb3ff9d440ce48cede1b7cd5cdc3c3c69e2fb4663ee139b4f8",
       "bytes": 10484,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Process errors and timeouts become False, so a failed negative trial passes. Concurrent probes share the live project skill catalog and use a shared name prefix; original and sibling probes can affect routing. First unrelated tool stops observation. Preserve isolated repeated routing trials only with explicit errors, provenance and family-specific support.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/scripts/run_loop.py",
       "sha256": "fc2a5c6f0dabab0b6bb9ac5f554a2a6437a20f7daddc5f30237e9fb2178fdbf2",
       "bytes": 11229,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "trim",
+      "kind": "skill-resource",
+      "reason": "Uses test_passed to select the best iteration, making the advertised holdout a validation set rather than an untouched final test. Small stratified samples can leave no training cases. Validates neither positive iteration counts nor split bounds. Avoid compulsory optimization loops; separate training, selection and final evaluation.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/skill-creator/scripts/skill_md.py",
       "sha256": "4698515946e0c988cbb9e6cbe1c6e54d7c2986df3558941d432a382b55a678fe",
       "bytes": 1642,
-      "review": "pending-body-and-callsite-review",
-      "disposition": "investigate",
-      "kind": "skill-resource"
+      "review": "body-and-consumer-reviewed",
+      "disposition": "merge",
+      "kind": "skill-resource",
+      "reason": "Handwritten frontmatter parser does not decode YAML quoting and folds literal blocks into spaces. Reuse supported source metadata/parser where available without adding an unapproved standalone dependency; preserve no-engine consumer support.",
+      "consumers": [
+        ".basicly/core/skills/skill-creator/skill.yaml",
+        "tests/test_skill_creator_scripts.py"
+      ],
+      "risk": "Preserve licensing and standalone consumers. Synthetic controls establish named defects only; no live model performance measured."
     },
     {
       "path": ".basicly/core/skills/test-discipline/evals.yaml",
@@ -3363,6 +3435,38 @@
     {
       "record": "basicly-g5ic8mo",
       "handling": "Do not edit owned Lefthook packaging scope; use documented local prerequisite preparation."
+    }
+  ],
+  "local_controls": [
+    {
+      "subject": "skill-creator aggregate_benchmark",
+      "method": "Import source with python3 -B; temporary eval-1/with_skill/run-1 fixture with grading time=2, output_chars=123, timing total_tokens=456. Call generate_benchmark.",
+      "observed": {
+        "actual_runs": 1,
+        "reported_runs_per_configuration": 3,
+        "actual_tokens": 456,
+        "reported_tokens": 123
+      },
+      "result": "Confirmed invalid run count and token units; do not use unchanged for baseline."
+    },
+    {
+      "subject": "skill-creator run_eval",
+      "method": "Patch run_single_query to raise OSError; one negative query, one worker, one run. No model process started.",
+      "observed": {
+        "warning": "synthetic process failure",
+        "negative_case_pass": true
+      },
+      "result": "Confirmed infrastructure failure can become apparent routing success."
+    },
+    {
+      "subject": "skill-creator frontmatter and split",
+      "method": "Parse single-quoted YAML description with doubled apostrophe; split two cases, one per class, holdout=0.4.",
+      "observed": {
+        "parsed_description": "Checks the user''s input.",
+        "train_count": 0,
+        "test_count": 2
+      },
+      "result": "Confirmed parser mismatch and empty training split; no paid evaluation."
     }
   ]
 }
