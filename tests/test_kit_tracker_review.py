@@ -196,3 +196,69 @@ def test_cancelled_raw_card_does_not_authorize_a_code_commit(
     report = _run(capsys, "commit-check", str(ledger), str(message), "src/application.py")
     assert "cancelled" in report["refused"]
     assert "none of the records" in report["refused"]
+
+
+def test_starting_a_child_records_parent_progress_without_refining_the_anchor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AI_AGENT", "owner")
+    ledger = tmp_path / "ledger"
+    parent = _create(capsys, ledger, "--field", "issue_type=epic", "--field", "labels=refine")
+    child = _create(capsys, ledger, *SHAPED)
+    _run(capsys, "dep", str(ledger), child, parent, "--type", "parent-child")
+    recorded_review(cli, ledger, child)
+
+    started = _run(capsys, "claim", str(ledger), child, "--to", "sam")
+
+    assert "refused" not in started, started
+    parent_view = _run(capsys, "show", str(ledger), parent)
+    assert parent_view["status"] == "in_progress"
+    assert "refine" in parent_view["fields"]["labels"]
+    assert parent_view["process"]["review"] == {}
+    assert _run(capsys, "show", str(ledger), child)["status"] == "in_progress"
+    closed = _run(capsys, "close", str(ledger), parent, "--reason", "not delivered")
+    assert "cannot complete" in closed["refused"]
+
+
+@pytest.mark.parametrize("edge_type", ["parent-child", "related"])
+def test_parent_progress_uses_only_hierarchy_edges_and_does_not_repeat_events(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    edge_type: str,
+) -> None:
+    monkeypatch.setenv("AI_AGENT", "owner")
+    ledger = tmp_path / "ledger"
+    root = _create(capsys, ledger, "--field", "labels=refine")
+    parent = _create(capsys, ledger, "--field", "labels=refine")
+    child = _create(capsys, ledger, *SHAPED)
+    _run(capsys, "dep", str(ledger), parent, root, "--type", "parent-child")
+    _run(capsys, "dep", str(ledger), child, parent, "--type", edge_type)
+    recorded_review(cli, ledger, child)
+    started = _run(capsys, "claim", str(ledger), child, "--to", "sam")
+    assert "refused" not in started, started
+    expected = "in_progress" if edge_type == "parent-child" else "open"
+    before = {record: _run(capsys, "show", str(ledger), record) for record in (parent, root)}
+    assert all(record["status"] == expected for record in before.values())
+
+    _run(capsys, "comment", str(ledger), child, "Observed progress remains current.")
+
+    after = {record: _run(capsys, "show", str(ledger), record) for record in (parent, root)}
+    assert {record: view["max_seq"] for record, view in after.items()} == {
+        record: view["max_seq"] for record, view in before.items()
+    }
+
+
+def test_parent_progress_preserves_a_deliberately_deferred_parent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AI_AGENT", "owner")
+    ledger = tmp_path / "ledger"
+    parent = _create(capsys, ledger, "--field", "labels=refine")
+    child = _create(capsys, ledger, *SHAPED)
+    _run(capsys, "update", str(ledger), parent, "--status", "deferred")
+    _run(capsys, "dep", str(ledger), child, parent, "--type", "parent-child")
+    recorded_review(cli, ledger, child)
+
+    assert "refused" not in _run(capsys, "claim", str(ledger), child, "--to", "sam")
+    assert _run(capsys, "show", str(ledger), parent)["status"] == "deferred"

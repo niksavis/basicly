@@ -98,6 +98,50 @@ def _require(ledger: Path, record: str) -> Any:
     return state
 
 
+def _parent_progress(found: Sequence[Any], drafts: Sequence[Any]) -> tuple[list[Any], set[str]]:
+    views = differential.views_from_events(found)
+    children = differential.children_of(views, differential.DEFAULT_VOCABULARY)
+    statuses = {record: view.status for record, view in views.items() if not view.tombstoned}
+    explicit = set()
+    for draft in drafts:
+        if draft.kind == events.KIND_STATUS:
+            statuses[draft.record] = draft.payload.get("status")
+            explicit.add(draft.record)
+    active = {record for record, status in statuses.items() if status == "in_progress"}
+    parents = set()
+    while True:
+        added = {
+            parent
+            for parent, descendants in children.items()
+            if statuses.get(parent) in ("open", "in_progress")
+            and any(child in active for child in descendants)
+        } - parents
+        if not added:
+            break
+        parents.update(added)
+        active.update(added)
+    affected = {draft.record for draft in drafts}
+    result = list(drafts)
+    pending = set(parents)
+    while True:
+        reached = {
+            parent
+            for parent in pending
+            if parent in affected
+            or any(child in affected and child in active for child in children[parent])
+        }
+        if not reached:
+            break
+        result.extend(
+            events.Draft(parent, events.KIND_STATUS, {"status": "in_progress"})
+            for parent in sorted(reached)
+            if statuses[parent] == "open" and parent not in explicit
+        )
+        affected.update(reached)
+        pending.difference_update(reached)
+    return result, parents
+
+
 def _append(
     ledger: Path,
     drafts: Sequence[Any],
@@ -109,9 +153,19 @@ def _append(
     template = templates.load(ledger)
     found = events.read_events(ledger)[0]
     states = events.fold(found).records
+    drafts, progress_parents = _parent_progress(found, drafts)
     values.refuse(events, drafts, template, states, found)
     holders.refuse(states, drafts)
-    review.refuse(states, drafts, writers.writer_class(), template, found=found)
+    review_drafts = [
+        draft
+        for draft in drafts
+        if not (
+            draft.record in progress_parents
+            and draft.kind == events.KIND_STATUS
+            and draft.payload.get("status") == "in_progress"
+        )
+    ]
+    review.refuse(states, review_drafts, writers.writer_class(), template, found=found)
     resolved = recurrence.at_the_generation_this_write_needs(
         events, ledger, drafts, repeat=repeat, redact=redact
     )
