@@ -52,6 +52,19 @@ def test_corrupt_artifacts_do_not_replace_previously_prepared_assets(
     artifacts.validate_artifacts(destination)
 
 
+def test_preparation_removes_unpinned_files_from_the_cache(tmp_path: Path, supplied: Path) -> None:
+    destination = artifacts.prepare(tmp_path / "checkout", supplied)
+    stale = destination / "source.tar.gz.old"
+    stale.write_bytes(b"stale")
+
+    artifacts.prepare(tmp_path / "checkout", supplied)
+
+    assert not stale.exists()
+    assert {path.name for path in destination.iterdir()} == {
+        entry["name"] for entry in artifacts.MANIFEST["assets"]
+    }
+
+
 def test_missing_artifacts_refuse_with_preparation_remedy(tmp_path: Path, supplied: Path) -> None:
     with pytest.raises(FileNotFoundError, match=r"run python .*--from-dir"):
         artifacts.validate_artifacts(tmp_path)

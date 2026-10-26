@@ -59,9 +59,9 @@ def prepare(root: Path, source: Path | None) -> Path:
             else:
                 shutil.copyfile(source / name, staged / name)
         validate_artifacts(staged)
-        destination.mkdir(exist_ok=True)
-        for entry in MANIFEST["assets"]:
-            (staged / entry["name"]).replace(destination / entry["name"])
+        if destination.exists():
+            shutil.rmtree(destination)
+        staged.replace(destination)
     return destination
 
 
