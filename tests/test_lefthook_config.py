@@ -67,7 +67,7 @@ def test_consumer_cannot_overwrite_the_managed_dispatcher(tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize("filename", ["message with spaces.txt", "message's.txt"])
-def test_foreign_commit_message_job_receives_original_git_arguments(
+def test_commit_message_jobs_preserve_managed_arguments_and_fail_closed_on_windows(
     work_repo: Path, monkeypatch: pytest.MonkeyPatch, filename: str
 ) -> None:
     monkeypatch.setenv("UV_PYTHON", sys.executable)
@@ -75,14 +75,14 @@ def test_foreign_commit_message_job_receives_original_git_arguments(
     monkeypatch.setenv("UV_CACHE_DIR", str(work_repo.parent / "uv-cache"))
     subprocess.run(["git", "init", "-q"], cwd=work_repo, check=True)
     lefthook_binary.sync_binary(work_repo)
-    for script, result in (
-        ("foreign.py", "foreign-arguments"),
-        ("managed.py", "managed-arguments"),
-    ):
-        (work_repo / ".basicly/core/hooks" / script).write_text(
-            "import json,sys\nfrom pathlib import Path\n"
-            + f'Path("{result}").write_text(json.dumps(sys.argv[1:]))\n'
-        )
+    (work_repo / ".basicly/core/hooks/foreign.py").write_text(
+        "import json,sys\nfrom pathlib import Path\n"
+        'Path(sys.argv[1]).read_text()\nPath("foreign-arguments").write_text(json.dumps(sys.argv[1:]))\n'
+    )
+    (work_repo / ".basicly/core/hooks/managed.py").write_text(
+        "import json,sys\nfrom pathlib import Path\n"
+        'Path("managed-arguments").write_text(json.dumps(sys.argv[1:]))\n'
+    )
     (work_repo / "lefthook.yml").write_text(
         "commit-msg:\n  commands:\n    consumer-message:\n"
         "      run: uv run --no-project --no-python-downloads python "
@@ -104,9 +104,13 @@ def test_foreign_commit_message_job_receives_original_git_arguments(
         encoding="utf-8",
         check=False,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
-    for output in ("foreign-arguments", "managed-arguments"):
-        assert json.loads((work_repo / output).read_text()) == [str(message)]
+    assert json.loads((work_repo / "managed-arguments").read_text()) == [str(message)]
+    if sys.platform == "win32":
+        assert result.returncode != 0
+        assert not (work_repo / "foreign-arguments").exists()
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads((work_repo / "foreign-arguments").read_text()) == [str(message)]
 
 
 def test_release_regenerates_lefthook_commands_for_the_bumped_version(
