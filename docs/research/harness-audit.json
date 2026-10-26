@@ -3,17 +3,17 @@
   "record": "basicly-gtb19bg.1",
   "revision": "9300d9d9b1d964e5aa1ea6d8f4dcb9dec7f73c98",
   "date": "2026-10-26",
-  "status": "in_progress",
+  "status": "source-audit-complete",
   "coverage": {
     "source_discovery": "Independent git ls-files and pathlib source walks agree. Positive controls AGENTS.md and .claude/CLAUDE.md are present.",
-    "semantic": "Main catalog bodies and 152 inventoried resource/script bodies reviewed, including six additional standalone tier-kit files discovered through hook consumers. The tier kit also projects a model-tier skill outside the 26 catalog entries. Effective-loading reconciliation and selected behavioral controls remain open; body coverage is not audit completion.",
+    "semantic": "All inventoried source bodies reviewed; named catalog/overlay/hook/script/tier/target directories reconcile exactly against independent tracked-file listing and filesystem walks. Runtime and consumer outcome validation remains required in follow-up tasks.",
     "runtime": "Static loading/dispatch code inspected. No host behavior trials or latency attribution yet. Project projection equality is checked by existing gates; personal/plugin precedence requires further inspection.",
     "counts": {
       "skills": 26,
       "agents": 12,
       "fragments": 28,
       "blocks": 5,
-      "resource_and_script_files": 152
+      "resource_and_script_files": 156
     },
     "unknown_usage": "No absence or zero-use claim follows from missing telemetry.",
     "missing_requested_locations": [
@@ -30,7 +30,21 @@
     ],
     "personal_skill_observation": "Personal Claude cli-tools entry differs from the project entry only by four additional terminal-tool rows (tmux, zsh, starship, wezterm) in the inspected diff. Projection checker warns it shadows project content. Personal references and native runtime precedence are not yet verified; no personal files were changed.",
     "consumer_mapping": "Every catalog/resource entry now carries consumer/projection evidence or explicitly limited textual consumer candidates, cost hypotheses and a follow-up record. No empty search is a deletion recommendation.",
-    "fragment_projection": "Exact selected source-to-output map computed through configured loader/planner; all resulting rendered outputs equal committed files byte-for-byte. Excluded/replaced/inactive fragments have empty output lists for this repository selection."
+    "fragment_projection": "Exact selected source-to-output map computed through configured loader/planner; all resulting rendered outputs equal committed files byte-for-byte. Excluded/replaced/inactive fragments have empty output lists for this repository selection.",
+    "final_inventory_control": {
+      "source_records": 239,
+      "resource_and_script_files": 156,
+      "target_files": 3,
+      "configured_hook_entries": 28,
+      "rendered_instruction_outputs": 4,
+      "unmapped_tracked_files_in_declared_roots": 0,
+      "method": "git ls-files versus independent pathlib walk and audit path set; all source hashes verified; exact configured instruction render equality checked.",
+      "positive_controls": [
+        "AGENTS.md",
+        ".claude/CLAUDE.md",
+        ".basicly/core/kit/tier/claude_tier_hook.py"
+      ]
+    }
   },
   "skills": [
     {
@@ -2755,6 +2769,51 @@
       "reason": "Generated or effective host surface; edit its source and validate the selected host output rather than patching generated content.",
       "cost_hypothesis": "Separate prompt text cost from deterministic configuration execution; preserve actual host precedence when measuring.",
       "risk": "Global/personal/plugin settings can alter effective behavior; project equality alone is insufficient."
+    },
+    {
+      "path": ".basicly/core/targets/claude.yaml",
+      "sha256": "ab761f21138b7dbcd9d5bd5148c8b83cdd526820e7e3a8d90feee1f5f43d7e55",
+      "bytes": 1720,
+      "review": "body-reviewed; selected output plan checked",
+      "disposition": "trim",
+      "reason": "Preserve target selection and source ownership. Historical one-trial lexical retention does not establish a universal prompt-size performance threshold.",
+      "consumers": [
+        "src/basicly/loader.py",
+        "src/basicly/planner.py"
+      ],
+      "cost_hypothesis": "Target filters determine always-loaded bytes versus conditional instructions.",
+      "risk": "Changing scope selection can omit required guidance or double-load it.",
+      "replacement_record": "basicly-gtb19bg.3"
+    },
+    {
+      "path": ".basicly/core/targets/codex.yaml",
+      "sha256": "f5c8fb2b5e8c7e408585a3b8bc7c38da2c34c1b19116d69c8f7cc800cedc2960",
+      "bytes": 1619,
+      "review": "body-reviewed; selected output plan checked",
+      "disposition": "trim",
+      "reason": "Preserve target selection and source ownership. Historical one-trial lexical retention does not establish a universal prompt-size performance threshold.",
+      "consumers": [
+        "src/basicly/loader.py",
+        "src/basicly/planner.py"
+      ],
+      "cost_hypothesis": "Target filters determine always-loaded bytes versus conditional instructions.",
+      "risk": "Changing scope selection can omit required guidance or double-load it.",
+      "replacement_record": "basicly-gtb19bg.3"
+    },
+    {
+      "path": ".basicly/core/targets/copilot.yaml",
+      "sha256": "5502a7139c94e28c4fc102d704a5a74d95cfb26fa6c29ef07764b186fba68c22",
+      "bytes": 1556,
+      "review": "body-reviewed; selected output plan checked",
+      "disposition": "trim",
+      "reason": "Preserve target selection and source ownership. Historical one-trial lexical retention does not establish a universal prompt-size performance threshold.",
+      "consumers": [
+        "src/basicly/loader.py",
+        "src/basicly/planner.py"
+      ],
+      "cost_hypothesis": "Target filters determine always-loaded bytes versus conditional instructions.",
+      "risk": "Changing scope selection can omit required guidance or double-load it.",
+      "replacement_record": "basicly-gtb19bg.3"
     }
   ],
   "resources_and_scripts": [
@@ -5927,13 +5986,76 @@
       "consumer_evidence_limit": "Text references are discovery leads, not proof of runtime use; empty results do not establish no external callers.",
       "cost_hypothesis": "Configured stage/matcher determines execution frequency. Interpreter startup and repeated scans can dominate short tool calls; measure before consolidation.",
       "replacement_record": "basicly-gtb19bg.5"
+    },
+    {
+      "path": ".basicly/core/skills/README.md",
+      "sha256": "548b7dec1e847d8573c5dcbbfcd1a30d19c1622079fc7bffbe735071f2af80a7",
+      "bytes": 5829,
+      "review": "body-reviewed; manifest and generated-index consumers inspected",
+      "disposition": "keep",
+      "kind": "catalog-index-or-manifest",
+      "reason": "Derived catalog index; preserve single-source generation and update when skills are converted.",
+      "consumers": [
+        ".scripts/docs_claims.py",
+        "src/basicly/hooks.py"
+      ],
+      "cost_hypothesis": "Configuration determines invocation frequency; index prose is on demand, not startup instructions.",
+      "risk": "Keep generated tables synchronized and preserve per-host protocol behavior.",
+      "replacement_record": "basicly-gtb19bg.5"
+    },
+    {
+      "path": ".basicly/core/hooks/README.md",
+      "sha256": "b3ba2f755062e1b8b13cff57bff923537ea69777d5d55f5877192f9232d137f1",
+      "bytes": 7742,
+      "review": "body-reviewed; manifest and generated-index consumers inspected",
+      "disposition": "rewrite",
+      "kind": "catalog-index-or-manifest",
+      "reason": "Preserve operational contract, but vendored immutable artifact paragraph conflicts with current artifact preparation documentation; reconcile the Lefthook lane before rewriting.",
+      "consumers": [
+        ".scripts/docs_claims.py",
+        "src/basicly/hooks.py"
+      ],
+      "cost_hypothesis": "Configuration determines invocation frequency; index prose is on demand, not startup instructions.",
+      "risk": "Keep generated tables synchronized and preserve per-host protocol behavior.",
+      "replacement_record": "basicly-gtb19bg.5"
+    },
+    {
+      "path": ".basicly/core/hooks/hooks.yaml",
+      "sha256": "c909512727faf747263b0672e774b1c55e68f9b5451b96b69c02bfd6aa6db0c7",
+      "bytes": 13080,
+      "review": "body-reviewed; manifest and generated-index consumers inspected",
+      "disposition": "trim",
+      "kind": "catalog-index-or-manifest",
+      "reason": "Retain authoritative stage/matcher selection and blocking contracts; move historical anecdotes out of configuration after validating current mechanisms.",
+      "consumers": [
+        ".scripts/docs_claims.py",
+        "src/basicly/hooks.py"
+      ],
+      "cost_hypothesis": "Configuration determines invocation frequency; index prose is on demand, not startup instructions.",
+      "risk": "Keep generated tables synchronized and preserve per-host protocol behavior.",
+      "replacement_record": "basicly-gtb19bg.5"
+    },
+    {
+      "path": ".scripts/README.md",
+      "sha256": "14f2631172e55fca719628a257559a674e2203f81dcc89cc5e8eb9c57ad4e13f",
+      "bytes": 3320,
+      "review": "body-reviewed; manifest and generated-index consumers inspected",
+      "disposition": "keep",
+      "kind": "catalog-index-or-manifest",
+      "reason": "Useful on-demand maintenance index; preserve clear separation of authoring-time network work and offline consumer execution.",
+      "consumers": [
+        ".scripts/docs_claims.py",
+        "src/basicly/hooks.py"
+      ],
+      "cost_hypothesis": "Configuration determines invocation frequency; index prose is on demand, not startup instructions.",
+      "risk": "Keep generated tables synchronized and preserve per-host protocol behavior.",
+      "replacement_record": "basicly-gtb19bg.5"
     }
   ],
   "next_checks": [
-    "Reconcile configured hook scripts against inventoried sources and source-to-host projection paths; caller searches do not prove all consumers.",
-    "Validate selected effective loading and personal/plugin precedence without changing personal configuration.",
-    "Reconcile S1/S2 and Lefthook shipped revisions and related backlog before pinning the baseline.",
-    "Close audit only after its acceptance matrix is reconciled; then implement repeatable baseline fixtures and run measured trials before prompt changes."
+    "Publish .1 acceptance and refine/claim .2 when Lefthook returns shared writes.",
+    "Pin integrated baseline after S2/Lefthook and implement isolated trial fixtures.",
+    "Resolve investigate dispositions through measured baseline and focused behavioral checks before migrating each affected surface."
   ],
   "source_guidance": [
     "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices",
@@ -6422,7 +6544,7 @@
     }
   ],
   "audit_acceptance_checkpoint": {
-    "status": "source audit assembled; final inventory acceptance check pending",
+    "status": "source audit acceptance satisfied locally; tracker publication pending shared-write handoff",
     "dispositions": "Every inventoried entry has a disposition; investigate explicitly means unresolved and does not authorize deletion.",
     "evidence": "Source hashes, exact selected fragment projections, skill/agent output paths, configured hook matrix, candidate caller paths, static findings and targeted local controls.",
     "cost": "Cost hypotheses are separated from measurements. No body-size or telemetry-absence inference is treated as measured speed or zero usage.",
