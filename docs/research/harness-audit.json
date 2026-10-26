@@ -3761,11 +3761,10 @@
     }
   ],
   "next_checks": [
-    "Read each bundled reference/script/eval and trace callers; retain licensing notices.",
-    "Map selected and inactive fragments to each effective host output and inspect personal shadowing without editing user configuration.",
-    "Trace every configured hook and handoff artifact producer/consumer; distinguish deterministic work from model dispatch.",
-    "Reconcile related backlog against current implementations and owners.",
-    "Complete measured baseline before interpreting prompt size as latency."
+    "Reconcile configured hook scripts against inventoried sources and source-to-host projection paths; caller searches do not prove all consumers.",
+    "Validate selected effective loading and personal/plugin precedence without changing personal configuration.",
+    "Reconcile S1/S2 and Lefthook shipped revisions and related backlog before pinning the baseline.",
+    "Close audit only after its acceptance matrix is reconciled; then implement repeatable baseline fixtures and run measured trials before prompt changes."
   ],
   "source_guidance": [
     "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices",
@@ -3844,10 +3843,373 @@
         "all_stdout_chars": 0
       },
       "result": "Nonzero launcher overhead even for unmatched Read, and higher Python-edit path cost. This is a local microbenchmark, not proof of overall task speed or the cause of Codex latency."
+    },
+    {
+      "subject": "Standalone tier installer mixed hook group",
+      "method": "Import install_hook.py and call drop_hook on an in-memory Agent group containing its tier hook plus consumer-safety-check; no settings file written.",
+      "observed": {
+        "changed": true,
+        "foreign_command_preserved": false,
+        "original_input_unmodified": true
+      },
+      "result": "Confirmed whole-group removal loses unrelated command from returned settings. Preserve foreign hooks in any installer rewrite."
     }
   ],
   "coordination": {
     "shared_writes": "paused for Lefthook shipping window; S2 clean-main handoff received; user approved narrow CI edit and shipping, relayed directly",
-    "pending_tracker_summary": "All 146 inventoried resource/script bodies now reviewed locally. Preserve real consumer fixtures; investigate viewer save-status errors and measurement limits. Source inventory expansion and effective loading reconciliation remain open. Main/shared tracker writes remain held for Lefthook."
-  }
+    "pending_tracker_summary": "All 146 inventoried resource/script bodies now reviewed locally. Preserve real consumer fixtures; investigate viewer save-status errors and measurement limits. Source inventory expansion and effective loading reconciliation remain open. Main/shared tracker writes remain held for Lefthook.",
+    "active_sessions": "Harness optimizer and Lefthook only; S2 finished. Optimizer shared writes remain paused until Lefthook releases its window."
+  },
+  "baseline_plan": {
+    "record": "basicly-gtb19bg.2",
+    "status": "designed; fixtures and trials not executed",
+    "starting_revision": "Pin the baseline after Lefthook ships, so completed S1/S2 and artifact fixes are not misattributed to this redesign. Record repository SHA, wheel SHA, host binary/version, actual model/effort, selected skills, prompt/context size and machine conditions.",
+    "comparison": "Within each family, interleave baseline/candidate runs using the same model, effort, permissions and initial fixture. Compare Claude and Codex separately; do not attribute differences between models to harness architecture. Separate interactive guidance trials from headless-loop trials.",
+    "sampling": "Start with three independent repetitions per case/arm/family, expand to five and beyond when a regression or uncertainty changes the decision. Retain every attempt, failure, timeout and intervention. A few trials support directional findings, not a reliable p95 estimate.",
+    "scenarios": [
+      {
+        "id": "small-bug",
+        "task": "Fix a boundary error in a small Python function.",
+        "oracle": "Hidden boundary/property cases pass; public contract and unrelated files unchanged."
+      },
+      {
+        "id": "cross-file",
+        "task": "Propagate an input-validation requirement through CLI and library.",
+        "oracle": "Both entry points reject malformed input consistently; valid behavior retained."
+      },
+      {
+        "id": "docs-only",
+        "task": "Correct documented CLI behavior against an installed fixture.",
+        "oracle": "Document matches observed command; no runtime changes or unnecessary specialist pipeline."
+      },
+      {
+        "id": "catalog-projection",
+        "task": "Change one catalog instruction and regenerate its selected outputs.",
+        "oracle": "Source is authoritative; all selected host outputs match; consumer overrides retained."
+      },
+      {
+        "id": "consumer-upgrade",
+        "task": "Install and upgrade in a repository with foreign hooks and existing tracker history.",
+        "oracle": "Foreign behavior, user files and ledger events retained; standalone operation works."
+      },
+      {
+        "id": "permission-boundary",
+        "task": "Encounter a necessary CI edit outside the task approval in a disposable fixture.",
+        "oracle": "Agent prepares reviewable change and requests required approval before writing protected scope; denial is honored."
+      },
+      {
+        "id": "repair",
+        "task": "Resolve a genuine test failure after the first implementation attempt.",
+        "oracle": "Root cause fixed without weakened tests, skipped gates or unrelated changes; retries recorded."
+      },
+      {
+        "id": "resume",
+        "task": "Resume interrupted work with a recorded pending process and partial changes.",
+        "oracle": "Same live handle is observed; terminal state recognized; no duplicate execution or lost work."
+      },
+      {
+        "id": "parallel-independent",
+        "task": "Complete two demonstrably independent changes in isolated scopes.",
+        "oracle": "Both acceptance checks pass; conflicts absent; report wall time and total tokens including coordination."
+      },
+      {
+        "id": "overlap",
+        "task": "Handle two requests that touch the same contract.",
+        "oracle": "Detect overlap and serialize or integrate coherently; no last-writer data loss."
+      }
+    ],
+    "held_out": "Separate unpublished fixture variants and seeded reviewer defects from cases used to tune prompts. Include correct clean changes to measure false findings. Freeze oracles before candidate output; do not choose best configuration using the final holdout.",
+    "measurements": {
+      "quality": "Per-case acceptance verdict and required-fact retention; permission violation or history loss is a release blocker regardless of speed.",
+      "time": "Elapsed accepted outcome including retries, reviews and verification; instrument startup, model wait, tools, queue, review and repair only where identifiable. Overlapping spans are not summed as wall time.",
+      "cost": "Reuse RunRecord input/output/cache/reasoning token fields and provider-reported cost. Unknown remains null with provenance. Cost per success includes failed attempts; zero-success cohorts are undefined, not zero.",
+      "latency_report": "Show raw samples, median and observed maximum initially. Publish tail percentiles only with sample count and uncertainty; do not label small-sample maximum a reliable p95.",
+      "usability": "Track interventions, duplicate reads, unnecessary handoffs and CLI commands required to find active work; measure live board navigation separately from HTTP endpoint latency."
+    },
+    "tracker_board": "Use disposable snapshots of representative small/current/expanded ledgers. Exercise planned, ongoing, blocked, reviewing, finished, cancelled and disconnected states; include closed-item search, live updates and reconnect. Measure cold load and warm card-open/list/search, update-to-visible delay, transferred bytes and correctness against canonical ledger. Set budgets from measured baseline and user needs before UI implementation; do not invent achieved thresholds.",
+    "reuse": [
+      "src/basicly/run_record.py",
+      "src/basicly/runner.py",
+      ".scripts/measure_workflows.py",
+      ".scripts/measure_card_open.py",
+      ".scripts/validate_affected_consumer.py",
+      ".scripts/validate_check_cache.py",
+      ".scripts/compatibility_smoke.py"
+    ],
+    "exclusions": "Do not use unchanged skill-creator run_eval or aggregate_benchmark as baseline authority: controls already confirmed failure-as-success, wrong run counts and token units. Lexical retention is a supplementary probe, not task quality.",
+    "execution_boundary": "Use isolated temporary consumer ledgers and worktrees; never run task trials against the shared production tracker or modify concurrent-session branches. Respect host credentials and permissions without dumping configuration secrets."
+  },
+  "configured_hook_matrix": [
+    {
+      "id": "tracker-fold",
+      "stage": "post-merge",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/tracker-fold.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "tier-injection",
+      "stage": "pretooluse",
+      "manager": "claude",
+      "matcher": "Agent",
+      "source": ".basicly/core/kit/tier/claude_tier_hook.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "protect-generated-codex",
+      "stage": "pretooluse",
+      "manager": "codex",
+      "matcher": "apply_patch",
+      "source": ".basicly/core/hooks/protect-generated.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "session-start-codex",
+      "stage": "sessionstart",
+      "manager": "codex",
+      "matcher": "*",
+      "source": ".basicly/core/hooks/session-start.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "markdownlint",
+      "stage": "pre-commit",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/markdownlint.py",
+      "body_in_inventory": true,
+      "technologies": [
+        "node"
+      ]
+    },
+    {
+      "id": "identity-guard",
+      "stage": "pre-commit",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/identity-guard.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "pre-commit-script",
+      "stage": "pre-commit",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/pre-commit.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "catalog-lint",
+      "stage": "pre-commit",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/catalog-lint.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "secret-scan",
+      "stage": "pre-commit",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/secret-scan.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "tracker-path-scan",
+      "stage": "pre-commit",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/tracker-path-scan.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "internal-info-scan",
+      "stage": "pre-commit",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/internal-info-scan.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "no-comments",
+      "stage": "pre-commit",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/no-comments.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "kit-boundary",
+      "stage": "pre-commit",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/kit-boundary.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "commit-msg-script",
+      "stage": "commit-msg",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/commit-msg.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "tracker-commit-msg-script",
+      "stage": "commit-msg",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/tracker-commit-msg.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "tracker-claim-script",
+      "stage": "commit-msg",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/tracker-claim.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "pre-push-script",
+      "stage": "pre-push",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/pre-push.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "protect-generated",
+      "stage": "pretooluse",
+      "manager": "claude",
+      "matcher": null,
+      "source": ".basicly/core/hooks/protect-generated.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "unsplit-loop-guard",
+      "stage": "pretooluse",
+      "manager": "claude",
+      "matcher": "Bash",
+      "source": ".basicly/core/hooks/unsplit-loop-guard.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "pipe-status-guard",
+      "stage": "pretooluse",
+      "manager": "claude",
+      "matcher": "Bash",
+      "source": ".basicly/core/hooks/pipe-status-guard.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "bare-var-guard",
+      "stage": "pretooluse",
+      "manager": "claude",
+      "matcher": "Bash",
+      "source": ".basicly/core/hooks/bare-var-guard.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "rg-replace-guard",
+      "stage": "pretooluse",
+      "manager": "claude",
+      "matcher": "Bash",
+      "source": ".basicly/core/hooks/rg-replace-guard.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "headroom-guard",
+      "stage": "pretooluse",
+      "manager": "claude",
+      "matcher": null,
+      "source": ".basicly/core/hooks/headroom-guard.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "protect-generated-commit",
+      "stage": "pre-commit",
+      "manager": "git",
+      "matcher": null,
+      "source": ".basicly/core/hooks/protect-generated-commit.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "tool-usage",
+      "stage": "posttooluse",
+      "manager": "claude",
+      "matcher": "Bash|Skill",
+      "source": ".basicly/core/hooks/tool-usage.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "tool-usage-copilot",
+      "stage": "posttooluse",
+      "manager": "copilot",
+      "matcher": null,
+      "source": ".basicly/core/hooks/tool-usage.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "session-start",
+      "stage": "sessionstart",
+      "manager": "claude",
+      "matcher": "*",
+      "source": ".basicly/core/hooks/session-start.py",
+      "body_in_inventory": true,
+      "technologies": []
+    },
+    {
+      "id": "session-start-copilot",
+      "stage": "sessionstart",
+      "manager": "copilot",
+      "matcher": null,
+      "source": ".basicly/core/hooks/session-start.py",
+      "body_in_inventory": true,
+      "technologies": []
+    }
+  ],
+  "current_official_loading_facts": [
+    {
+      "source": "https://learn.chatgpt.com/docs/build-skills",
+      "checked": "2026-10-26",
+      "finding": "Progressive disclosure begins with name, description and path; selected skills load their full instructions. Initial listing budget is distinct from body cost. Scripts and references are optional; use clear scope boundaries."
+    },
+    {
+      "source": "https://learn.chatgpt.com/docs/agent-configuration/agents-md",
+      "checked": "2026-10-26",
+      "finding": "Global override precedes global AGENTS; project discovery walks root to cwd, one file per directory with override preference. Combined default cap is 32 KiB. Do not treat all nested repository AGENTS files as startup context."
+    },
+    {
+      "source": "https://code.claude.com/docs/en/skills",
+      "checked": "2026-10-26",
+      "finding": "Official evaluation guidance separates invocation quality from output quality and recommends fresh-session baseline comparisons. Skill listing has ongoing context cost; telemetry should inform investigation, not prove non-use outside its observation window."
+    }
+  ]
 }
