@@ -1,0 +1,1 @@
+- Deny remote ref deletion and GitHub release, repository and run deletion. Native checks cover colon refspecs, global Git options and read controls.

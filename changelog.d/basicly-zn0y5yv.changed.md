@@ -1,0 +1,1 @@
+- Explain repository-scoped public release pushes in Claude auto mode, user settings, preserving classifier defaults and the difference between classifier guidance and shell permissions.

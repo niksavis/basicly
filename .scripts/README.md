@@ -46,6 +46,12 @@ Cross-platform scripts for this repository.
   and `--check` it for upstream drift. Needs the network, so it runs at authoring and
   check time only — never in the dispatch path and not as a commit-time gate.
 
+## Native Claude permission probe
+
+On POSIX with Claude Code installed, run `uv run python .scripts/probe_claude_permissions.py --group <group>` for `git_options`, `remote_deletes`, `readonly_allow` and `tracker_allow`. Each group reads `tests/fixtures/permissions_native.json` and the catalog, uses a local Messages API fixture to supply exact Bash calls, and substitutes harmless Git, GitHub and basicly executables. No real destructive command or vendor API request runs. JSON reports and transcripts stay in the printed temporary directory.
+
+Deny groups grant their command families so a missing deny fails; allow groups grant only the catalog. Each has positive and negative controls. `--catalog <permissions-directory>` reruns the same matrix against a previous catalog. The probe uses native `dontAsk` permission matching, not an imitation glob matcher or an auto-mode classifier. Validate classifier policy separately with the real service; fixture API usage counters are synthetic. Recheck after Claude upgrades.
+
 ## Git hooks
 
 Git hook scripts moved to [`.basicly/core/hooks/`](../.basicly/core/hooks/) — they

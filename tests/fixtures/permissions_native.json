@@ -1,0 +1,290 @@
+{
+  "git_options": {
+    "kind": "deny",
+    "cases": [
+      {
+        "command": "git push origin --force",
+        "allowed": false
+      },
+      {
+        "command": "git -C . push origin --force",
+        "allowed": false
+      },
+      {
+        "command": "git -c color.ui=false push origin --force-with-lease",
+        "allowed": false
+      },
+      {
+        "command": "git push origin topic -f",
+        "allowed": false
+      },
+      {
+        "command": "git -C . push origin topic -f",
+        "allowed": false
+      },
+      {
+        "command": "git reset --hard",
+        "allowed": false
+      },
+      {
+        "command": "git -C . reset --hard",
+        "allowed": false
+      },
+      {
+        "command": "git -c color.ui=false reset --hard HEAD",
+        "allowed": false
+      },
+      {
+        "command": "git clean -fd",
+        "allowed": false
+      },
+      {
+        "command": "git -C . clean -fd",
+        "allowed": false
+      },
+      {
+        "command": "git -c color.ui=false clean -f",
+        "allowed": false
+      },
+      {
+        "command": "git status && git -C . reset --hard",
+        "allowed": false
+      },
+      {
+        "command": "git -C . push origin --force > result.txt",
+        "allowed": false
+      },
+      {
+        "command": "git commit -m \"document push --force safety\"",
+        "allowed": false
+      },
+      {
+        "command": "git status",
+        "allowed": true
+      },
+      {
+        "command": "git push origin topic",
+        "allowed": true
+      },
+      {
+        "command": "git -C . push origin topic",
+        "allowed": true
+      },
+      {
+        "command": "git reset --soft HEAD",
+        "allowed": true
+      },
+      {
+        "command": "git clean -n",
+        "allowed": true
+      },
+      {
+        "command": "git commit -m \"document ordinary push\"",
+        "allowed": true
+      }
+    ]
+  },
+  "remote_deletes": {
+    "kind": "deny",
+    "cases": [
+      {
+        "command": "git push origin --delete topic",
+        "allowed": false
+      },
+      {
+        "command": "git -C . push origin --delete topic",
+        "allowed": false
+      },
+      {
+        "command": "git push origin :topic",
+        "allowed": false
+      },
+      {
+        "command": "git -C . push origin :refs/tags/v1",
+        "allowed": false
+      },
+      {
+        "command": "git push origin +:topic",
+        "allowed": false
+      },
+      {
+        "command": "gh release delete v1",
+        "allowed": false
+      },
+      {
+        "command": "gh repo delete owner/example",
+        "allowed": false
+      },
+      {
+        "command": "gh run delete 123",
+        "allowed": false
+      },
+      {
+        "command": "git status && gh run delete 123",
+        "allowed": false
+      },
+      {
+        "command": "gh release delete v1 > result.txt",
+        "allowed": false
+      },
+      {
+        "command": "git push origin topic:topic",
+        "allowed": true
+      },
+      {
+        "command": "gh release view v1",
+        "allowed": true
+      },
+      {
+        "command": "gh repo view owner/example",
+        "allowed": true
+      },
+      {
+        "command": "gh run view 123",
+        "allowed": true
+      }
+    ]
+  },
+  "readonly_allow": {
+    "kind": "allow",
+    "cases": [
+      {
+        "command": "gh run list",
+        "allowed": true
+      },
+      {
+        "command": "gh run list --limit 2",
+        "allowed": true
+      },
+      {
+        "command": "gh run view",
+        "allowed": true
+      },
+      {
+        "command": "gh run view 123 --log",
+        "allowed": true
+      },
+      {
+        "command": "gh release view",
+        "allowed": true
+      },
+      {
+        "command": "gh release view v1",
+        "allowed": true
+      },
+      {
+        "command": "gh release list",
+        "allowed": true
+      },
+      {
+        "command": "gh release list --limit 2",
+        "allowed": true
+      },
+      {
+        "command": "gh workflow list",
+        "allowed": true
+      },
+      {
+        "command": "gh workflow list --all",
+        "allowed": true
+      },
+      {
+        "command": "gh workflow view",
+        "allowed": true
+      },
+      {
+        "command": "gh workflow view ci.yml",
+        "allowed": true
+      },
+      {
+        "command": "git ls-remote origin",
+        "allowed": true
+      },
+      {
+        "command": "git ls-remote --branches origin",
+        "allowed": true
+      },
+      {
+        "command": "git ls-remote --tags origin",
+        "allowed": true
+      },
+      {
+        "command": "gh run list && gh workflow list",
+        "allowed": true
+      },
+      {
+        "command": "gh run cancel 123",
+        "allowed": false
+      },
+      {
+        "command": "gh release create v1",
+        "allowed": false
+      },
+      {
+        "command": "gh workflow run ci.yml",
+        "allowed": false
+      },
+      {
+        "command": "git ls-remote --upload-pack=arbitrary origin",
+        "allowed": false
+      },
+      {
+        "command": "git ls-remote origin --upload-pack=arbitrary",
+        "allowed": false
+      },
+      {
+        "command": "gh run list && gh run cancel 123",
+        "allowed": false
+      },
+      {
+        "command": "gh run list > result.txt",
+        "allowed": false
+      }
+    ]
+  },
+  "tracker_allow": {
+    "kind": "allow",
+    "cases": [
+      {
+        "command": "basicly tracker write -- create demo",
+        "allowed": true
+      },
+      {
+        "command": "basicly tracker write -- update demo-1 --status in_progress",
+        "allowed": true
+      },
+      {
+        "command": "basicly tracker write -- review demo-1 --evidence \"{}\"",
+        "allowed": true
+      },
+      {
+        "command": "basicly tracker write -- confirm demo-1 --evidence \"{}\"",
+        "allowed": true
+      },
+      {
+        "command": "basicly tracker write -- close demo-1 --reason delivered",
+        "allowed": true
+      },
+      {
+        "command": "basicly tracker write -- comments add demo-1 observed",
+        "allowed": true
+      },
+      {
+        "command": "basicly tracker scrub",
+        "allowed": false
+      },
+      {
+        "command": "basicly tracker write -- dep remove demo-1 demo-2",
+        "allowed": false
+      },
+      {
+        "command": "basicly tracker write -- comments add demo-1 observed && gh run cancel 123",
+        "allowed": false
+      },
+      {
+        "command": "basicly tracker write -- update demo-1 --status in_progress > result.txt",
+        "allowed": false
+      }
+    ]
+  }
+}

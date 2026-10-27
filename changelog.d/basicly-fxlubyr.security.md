@@ -1,0 +1,1 @@
+- Deny force pushes, hard resets and force cleans with Git global options in Claude Code permissions.

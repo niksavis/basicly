@@ -11,6 +11,8 @@ A record is the fold of its events. The engine reads and writes the log directly
 
 ## Rules
 
+- **Prefer the installed engine for writes when `basicly` is on PATH.** Use `basicly tracker write --` before `create`, `update`, `review`, `confirm`, `close` or `comments add`; claim with `update <id> --status in_progress`. These narrow command rules survive Claude auto mode. The Python commands below remain available to standalone consumers, with their normal permission checks.
+
 - **Name a record by its title, with the id as the address.** A person cannot read a bare id.
 - **File or find the record before you do the work.** The `tracker-commit-msg` hook refuses
   a commit that names an id the ledger does not hold.
