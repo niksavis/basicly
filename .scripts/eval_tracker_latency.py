@@ -7,6 +7,7 @@ import json
 import math
 import shutil
 import statistics
+import sys
 import tempfile
 import threading
 import time
@@ -15,7 +16,7 @@ from typing import Any
 from urllib.parse import quote
 from uuid import uuid4
 
-from basicly import tracker, tracker_query
+from basicly import checkout, tracker, tracker_query
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -108,7 +109,36 @@ def _exercise(port: int, samples: int) -> dict[str, Any]:
     }
 
 
+_ISOLATED_MEASURE = """
+import json
+import runpy
+import sys
+from pathlib import Path
+module = runpy.run_path(sys.argv[1])
+result = module["_measure"](Path(sys.argv[2]), Path(sys.argv[3]), int(sys.argv[4]))
+print(json.dumps(result, allow_nan=False))
+"""
+
+
 def measure(repo: Path, ledger: Path, samples: int) -> dict[str, Any]:
+    if type(samples) is not int or not 1 <= samples <= 1000:
+        raise ValueError("samples must be an integer from 1 through 1000")
+    done = checkout.run(
+        [
+            sys.executable,
+            "-c",
+            _ISOLATED_MEASURE,
+            str(Path(__file__).resolve()),
+            str(repo.resolve()),
+            str(ledger.resolve()),
+            str(samples),
+        ],
+        cwd=repo,
+    )
+    return json.loads(done.stdout)
+
+
+def _measure(repo: Path, ledger: Path, samples: int) -> dict[str, Any]:
     if type(samples) is not int or not 1 <= samples <= 1000:
         raise ValueError("samples must be an integer from 1 through 1000")
     before = _inputs(ledger)

@@ -589,7 +589,7 @@ def test_a_supervisor_pass_runs_two_agent_processes_and_lands_both(
     first = _create_bead(repo, "lane one", parent=root)
     second = _create_bead(repo, "lane two", parent=root)
     for child in (first, second):
-        provisioned = _to_build(repo, child)
+        provisioned = _to_build(repo, child, execution="worker")
         assert provisioned.blocked, provisioned.detail
 
     assert policy.active_grant(repo, root) is None

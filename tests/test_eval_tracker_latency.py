@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -49,3 +51,31 @@ def test_tracker_latency_refuses_invalid_sample_counts_before_copying(
 ) -> None:
     with pytest.raises(ValueError, match="samples"):
         evaluator().measure(ROOT, tmp_path / "absent-ledger", samples)
+
+
+def test_latency_measurement_isolated_from_foreign_kits_in_its_callers_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    foreign = tmp_path / "foreign.py"
+    foreign.write_text("value = 1\n", encoding="utf-8")
+    module = ModuleType("basicly_tracker_kit_foreign")
+    module.__file__ = str(foreign)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    server = tracker_query.board_kit(ROOT)
+    ledger = tmp_path / "source"
+    assert (
+        server.tracker_cli().main([
+            "create",
+            str(ledger),
+            "--prefix",
+            "demo",
+            "--title",
+            "seed",
+        ])
+        == 0
+    )
+    result = evaluator().measure(ROOT, ledger, 1)
+    assert result["source_unchanged"] is True
+    assert result["api_python_sha256"]
+    assert all(name.startswith(".basicly/core/kit/") for name in result["api_python_sha256"])

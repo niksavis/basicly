@@ -3920,19 +3920,19 @@ The gates below hang off layer 3 rather than sitting in the stack.
 
 ### 36.2 The verify pipeline
 
-**Three modes, and the check counts differ per mode** [measured 2026-08-31,
+**Three modes, and the check counts differ per mode** [measured 2026-10-27,
 `config.load_verify_config`]. Re-derive from the assembled configuration rather than by
 counting the file, because the drop-in layer contributes: a `basicly.d` fragment's entries are
 appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 37 | pre-commit |
-| full | 42 | pre-push, continuous integration, and the loop's verify step |
-| staged | 3 | a staged-files-only subset |
+| fast | 38 | pre-commit |
+| full | 45 | pre-push, continuous integration, and the loop's verify step |
+| staged | 4 | a staged-files-only subset |
 
-The configuration declares 43 checks in total. They cover lint, format, three
-platform-specific type-check passes, a security scan, dead code, a wiring gate, the kit
+The configuration declares 47 checks in total. They cover lint, format, three
+platform-specific type-check passes, scoped hidden-tooling checks, a security scan, dead code, a wiring gate, the kit
 boundary, the layering contract, the test suite, all six projection drift checks, the
 documentation claim gates, and the ratchets.
 
