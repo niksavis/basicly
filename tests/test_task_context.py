@@ -312,7 +312,9 @@ def test_claude_resumed_cost_records_only_the_new_dispatch_cost(tmp_path, monkey
             }),
         )
         runner.record_dispatch(tmp_path, "task", spec, result)
-    history = run_record.load_run_records(tmp_path)["task"]
+    records = run_record.load_run_records(tmp_path)
+    assert records is not None
+    history = records["task"]
     assert [item["session_cost"] for item in history] == [1.0, 1.4, 1.9]
     assert [item["cost"] for item in history] == pytest.approx([1.0, 0.4, 0.5])
     assert run_record.cost_rollup(history).cost == pytest.approx(1.9)
@@ -336,7 +338,9 @@ def test_claude_resume_without_previous_cost_evidence_stays_unknown(tmp_path, mo
     runner.record_dispatch(
         tmp_path, "task", runner.RunnerSpec("claude", usage_format=runner.CLAUDE_JSON), result
     )
-    entry = run_record.load_run_records(tmp_path)["task"][0]
+    records = run_record.load_run_records(tmp_path)
+    assert records is not None
+    entry = records["task"][0]
     assert entry["cost"] is None and entry["session_cost"] == 1.4
 
 

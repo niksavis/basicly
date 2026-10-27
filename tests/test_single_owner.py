@@ -81,12 +81,15 @@ def test_repair_remains_durable_until_owner_changes_branch(tmp_path, monkeypatch
     monkeypatch.setattr(loop.merge, "branch_head", lambda *_a: head[0])
     brief = repair_brief.RepairBrief("task", "verify", "regression", branch_head="before")
     assert repair_brief.write_repair_brief(tmp_path, brief)
+    binding = ctx.state.worktree
+    assert binding is not None
     for _ in range(2):
-        result = loop._repair_in_place(ctx, ctx.state.worktree)
+        result = loop._repair_in_place(ctx, binding)
+        assert result is not None
         assert result.needs_input == "repair" and "regression" in result.detail
         assert repair_brief.read_repair_brief(tmp_path) == brief
     head[0] = "after"
-    assert loop._repair_in_place(ctx, ctx.state.worktree) is None
+    assert loop._repair_in_place(ctx, binding) is None
 
 
 @pytest.mark.parametrize("phase", ["validate", "ship"])
