@@ -6,9 +6,89 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release keeps ordinary agent work with one responsible owner and makes headless
+orchestration an explicit choice. It reduces repeated guidance, gives resumed work a
+focused recovery view, and makes tracker activity visible on the default board.
+
+- **One owner:** direct work and observer repair need no phase controller; select
+  `--execution worker` when headless orchestration is wanted (basicly-gtb19bg.7).
+- **Focused guidance and recovery:** skills load detailed procedures when needed;
+  current tracker views preserve task facts and attributed handoffs, with snapshot-bound
+  history and explicit source-loss warnings (basicly-gtb19bg.4, basicly-gtb19bg.6,
+  basicly-gtb19bg.11).
+- **Readable progress:** plain Context, observable acceptance and optional distinct
+  Requirements support shorter cards. The board shows tracker activity and marks missing
+  runtime evidence explicitly (basicly-gtb19bg.13, basicly-gtb19bg.14).
+- **Safer continuity:** compatible native sessions resume by explicit identity;
+  oversized new notes are refused before losing content (basicly-gtb19bg.8,
+  basicly-gtb19bg.13).
+
+- **Claude permissions:** backstops cover destructive Git commands with global options
+  and remote deletion. Narrow GitHub reads and tracker writes have native permission
+  tests; release guidance explains user-level auto-mode settings
+  (basicly-fxlubyr, basicly-u78gv5c, basicly-ed9b9iw, basicly-yvxd3r7,
+  basicly-zn0y5yv).
+
+The broader harness redesign remains in progress. These changes do not establish a
+whole-task speedup; repeated matched and held-out trials remain outstanding.
+
+### Added
+
+- Allow narrow GitHub CI, release and workflow reads plus fixed origin remote-ref reads. Arbitrary ls-remote options still require permission because upload-pack can run a program. (basicly-ed9b9iw)
+
+- Read current task facts, clarifications and latest attributed handoffs with `tracker show --view current`; retrieve omitted detail at its snapshot. Routine handoffs preserve new recovery facts without forced reports or duplicate commits. Source note loss stays explicit. (basicly-gtb19bg.11)
+
+- Add isolated harness trial tools with independent acceptance results and recorded runtime, permission and session evidence. (basicly-gtb19bg.2)
+
+### Changed
+
+- Bind landing to captured candidate and destination identities, add a command-local publication guard that preserves existing hooks, and explain verification-cache misses with input component hashes. (basicly-bl1y0ii)
+
+- Lefthook now comes only from the official upstream release. The repository holds no binary, archive or Windows source patch, and preparation downloads every pinned archive over HTTPS and verifies its SHA-256 hash. On Windows a consumer job expanding a filename with an apostrophe now gets upstream's behaviour and fails the hook; basicly's own jobs pass no filename on the command line. (basicly-g5ic8mo)
+
+- Record the harness source audit and keep one evidence-backed disposition per source, with regression checks for duplicate and missing targets. (basicly-gtb19bg.1)
+
+- Accept plain Context and optional distinct Requirements, validate the whole task, preserve compatible historical evidence, and add compact lists, history search and collapsed detail. Active children now mark open parents in progress without requiring a new parent review. (basicly-gtb19bg.13)
+
+- Show tracker activity on the default board with in-place updates, conditional reads, scoped tasks, owners, reported actions and bounded history. Keep runtime gaps explicit and stop inferring running or queued agents from worktree files. (basicly-gtb19bg.14)
+
+- Default agent guidance keeps one task owner, makes orchestration optional, supports user-requested observer repairs, and shortens repeated policies while preserving permission, verification and consumer contracts. Observer reporting remains compatible with advisory review. (basicly-gtb19bg.3)
+
+- Load detailed catalog, commit, loop, tracker and skill-authoring procedures from selective references. Keep routing descriptions unchanged and retain one owner, direct repair, whole-task validation and user-requested live services. (basicly-gtb19bg.4)
+
+- Worker dispatch lists declared skills as deferred references instead of pasting their bodies. Read projected entries with `basicly skill-read` and the manifest digest; changed or unavailable guidance fails explicitly. Recorded task facts remain delivered, with source note truncation disclosed. (basicly-gtb19bg.6)
+
+- Keep interactive task work with the current session owner by default; require `--execution worker` for headless dispatch and retain repair instructions across interrupted sessions. (basicly-gtb19bg.7)
+
+- Continue compatible Codex and Claude build/repair sessions by explicit native id, refresh changed context, refuse concurrent work in the same worktree, and record resumed Claude cost without counting prior turns again. (basicly-gtb19bg.8)
+
+- Allow supported basicly tracker write commands with narrow Claude permission rules. Prefer the engine when installed; standalone Python consumers keep their existing permission checks. (basicly-yvxd3r7)
+
+- Explain repository-scoped public release pushes in Claude auto mode, user settings, preserving classifier defaults and the difference between classifier guidance and shell permissions. (basicly-zn0y5yv)
+
+### Removed
+
+- Stop packaging the redundant Lefthook asset README and keep the Windows compatibility regression aligned with the official runner's fail-closed argument behavior. (basicly-pxpysk6)
+
+### Fixed
+
+- Refuse unstable self-host engine handoffs before verification, show a command that supplies the candidate environment, and retain tool-launch errors without charging source rework. (basicly-gtb19bg.12)
+
+- Refuse oversized new tracker notes after redaction before appending any events, with a remedy to shorten the note or link an artifact. Preserve older clipped notes and their source-loss warnings. (basicly-gtb19bg.13)
+
+- Restore hidden-tooling type coverage with Pyright 1.1.414, keep tracker reads behind the storage seam, preserve full historical prose during import, and start worker stall timers only after process admission. Keep archived trial copies out of production wiring checks. (basicly-gtb19bg)
+
+### Security
+
+- Deny force pushes, hard resets and force cleans with Git global options in Claude Code permissions. (basicly-fxlubyr)
+
+- Deny remote ref deletion and GitHub release, repository and run deletion. Native checks cover colon refspecs, global Git options and read controls. (basicly-u78gv5c)
+
 ## v0.30.0 - 2026-10-27
 
 Delta: v0.29.0..v0.30.0
+
+Unpublished cut. These changes first ship in v0.30.1.
 
 This release keeps ordinary agent work with one responsible owner and makes headless
 orchestration an explicit choice. It reduces repeated guidance, gives resumed work a
