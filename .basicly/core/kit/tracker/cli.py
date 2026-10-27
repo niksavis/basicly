@@ -213,7 +213,9 @@ _VIEWS: dict[
 
 
 def _shown(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
-    found = read_record(args.directory, args.record)
+    found = record_view.read_view(
+        args.directory, args.record, view=args.view, snapshot=args.snapshot
+    )
     if found is None:
         return EXIT_REFUSED, {"record": args.record, "found": False}
     return EXIT_OK, found

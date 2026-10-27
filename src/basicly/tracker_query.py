@@ -106,9 +106,16 @@ def cmd_stats(args: argparse.Namespace) -> int:
 def cmd_show(args: argparse.Namespace) -> int:
 
     repo_root = Path.cwd()
-    found = owned_store.packaged_kit("record_view").read_record(
-        owned_store.present_ledger(repo_root), args.record
-    )
+    try:
+        found = owned_store.packaged_kit("record_view").read_view(
+            owned_store.present_ledger(repo_root),
+            args.record,
+            view=getattr(args, "view", "full"),
+            snapshot=getattr(args, "snapshot", None),
+        )
+    except ValueError as error:
+        ui.fail(str(error))
+        return 1
     if found is None:
         _report({"record": args.record, "found": False})
         return 1
@@ -239,6 +246,7 @@ def add_parsers(tracker_sub: Any) -> None:
 
     show = tracker_sub.add_parser("show", help="Print one record's folded state")
     show.add_argument("record", help="The record id")
+    owned_store.packaged_kit("arguments").record_view_arguments(show)
 
     listing = tracker_sub.add_parser("list", help="Print the records the ledger holds")
     listing.add_argument(

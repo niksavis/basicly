@@ -42,6 +42,11 @@ def _listing_filters(parser: Any) -> None:
     )
 
 
+def record_view_arguments(parser: Any) -> None:
+    parser.add_argument("--view", choices=("full", "current", "history"), default="full")
+    parser.add_argument("--snapshot", help="refuse retrieval from a changed record snapshot")
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Create, read, query and advance work items in a tracker kit ledger."
@@ -69,6 +74,7 @@ def parser() -> argparse.ArgumentParser:
     show = sub.add_parser("show", help="read one record's folded state and both edge directions")
     show.add_argument("directory", help=DIRECTORY_HELP)
     show.add_argument("record", help="the record id")
+    record_view_arguments(show)
 
     listing = sub.add_parser("list", help="query the records the ledger holds")
     listing.add_argument("directory", help=DIRECTORY_HELP)

@@ -10,6 +10,7 @@ from . import (
     artifact_record,
     handoff,
     needs_input,
+    owned_store,
     plan_record,
     review,
     skill_coverage,
@@ -29,7 +30,9 @@ LANE_SCRATCH_DIR = Path(".basicly/usage/scratch")
 
 
 CURRENT_ENVELOPE_BYTES = 16 * 1024
-COMPLETE_COVERAGE = "Task facts, notes and admitted artifacts complete; audit events omitted."
+COMPLETE_COVERAGE = (
+    "Recorded task facts, note text and admitted artifacts delivered; source loss is explicit."
+)
 
 
 def _encoded(value: object) -> str:
@@ -59,6 +62,9 @@ def _task_contract(repo_root: Path, issue_id: str) -> tuple[dict, dict]:
             unusable.append(verdict.reason)
         elif (payload := artifact_record.read(repo_root, issue_id, kind)) is not None:
             artifacts[kind] = payload
+    losses = owned_store.packaged_kit("record_view").read_source_loss(
+        tracker.ledger_dir(repo_root), issue_id
+    )
     if before != tracker.read_snapshot(repo_root, issue_id):
         raise ValueError(
             f"{issue_id}: snapshot changed while assembling brief; retry basicly brief"
@@ -67,6 +73,7 @@ def _task_contract(repo_root: Path, issue_id: str) -> tuple[dict, dict]:
         "task": issue_id,
         **facts,
         "comments": before["comments"],
+        "source_loss": losses,
         "source_locations": plan_record.backticked_entries(
             str(record.get("description") or ""), "## Scope"
         ),
@@ -98,6 +105,7 @@ def _current_view(state: dict, contract: dict) -> dict:
         "comments",
         "artifacts",
         "unusable_artifacts",
+        "source_loss",
         "description",
         "source_locations",
         "requirements",
@@ -171,6 +179,13 @@ def task_prompt(repo_root: Path, issue_id: str, *, snapshot: str | None = None) 
         + (
             "\nUnusable recorded artifacts: " + "; ".join(contract["unusable_artifacts"])
             if contract["unusable_artifacts"]
+            else ""
+        )
+        + (
+            "\nSome notes were truncated by their writer; original content cannot be recovered "
+            "from the ledger. Resolve any required missing facts from their original source; "
+            "do not treat cut text as a complete original contract."
+            if contract["source_loss"]
             else ""
         )
         + "\nCompletion condition: commit this task within scope, report changed files and "

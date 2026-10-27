@@ -48,6 +48,13 @@ python3 .basicly/core/kit/tracker/cli.py dor .basicly/ledger <id>     # exit 0 s
 python3 .basicly/core/kit/tracker/cli.py ready .basicly/ledger --mine # the stories you hold
 ```
 
+Use `show <ledger> <id> --view current` for current fields, all clarifications and
+latest attributed handoffs. Older handoffs and process details remain accessible with
+`--view history --snapshot <snapshot_identity>`. The selective view is recovery guidance,
+not a complete original contract. Source loss is reported; a longer read cannot restore
+text already truncated by its writer. Preserve decisions, blockers, evidence, process
+ownership and next actions that cannot be derived; skip unchanged handover narration.
+
 A `holder` marked `stale` had no event for `stale_days` (14 by default); ask the holder
 before you take it. A story marked `contested` was reserved by two people on different
 branches; the two agree who keeps it, then run `resolve` to keep the current holder, or

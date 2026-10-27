@@ -246,6 +246,8 @@ other record. It also names the `holder`, any unresolved `conflicts`, and a `com
 that gives each comment with its writer class and time.
 
 ```sh
+python3 .basicly/kit/tracker/cli.py show .basicly/ledger acme-a1b2 --view current
+python3 .basicly/kit/tracker/cli.py show .basicly/ledger acme-a1b2 --view history --snapshot <snapshot_identity>
 python3 .basicly/kit/tracker/cli.py show .basicly/ledger acme-a1b2
 ```
 

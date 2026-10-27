@@ -16,8 +16,9 @@ The dispatch asks the owner to retrieve applicable procedures before using them,
 then follow their selective references. Required guidance that cannot be retrieved
 blocks work. An index is never described as already delivered instructions.
 
-Task descriptions, acceptance, requirements and comments retain their existing
-complete delivery. Historical comments can contain active corrections, so this
+All recorded task descriptions, acceptance, requirements and comment text retain
+their existing delivery. Pre-existing writer truncation is now reported explicitly;
+missing original note content is never presented as fully recovered. Historical comments can contain active corrections, so this
 change does not blindly truncate them. Oversized task envelopes still deliver the
 full contract. Further progressive delivery needs a proven current-facts contract
 before moving historical clarification out of immediate context.

@@ -14,11 +14,19 @@ Then ask one question at a time. These commands find the ledger themselves:
 basicly tracker ready --limit 10          # the ranked ready set: what to work on now
 basicly tracker blocked                   # each dispatchable record that is not ready, and why
 basicly tracker stats                     # totals by status
-basicly tracker show <id>                 # one record's folded state and dates, as JSON
+basicly tracker show <id> --view current  # current fields, clarifications and latest handoffs
+basicly tracker show <id>                 # full folded detail and note history, as JSON
 basicly tracker list --status open        # the set, as JSON
 basicly tracker items --json              # one slim item per record, for a tool that reads them
 basicly tracker describe --json           # the adapter description: watch globs, writes, statuses
 ```
+
+The current view keeps every ordinary clarification and the latest handoff per kind and
+writer, including concurrent handoffs. It does not assert a complete original contract.
+For omitted handoffs or process detail, run `basicly tracker show <id> --view history
+--snapshot <snapshot_identity>` with the identity the current view returned. A changed
+record refuses stale retrieval. Source truncation remains explicit and cannot be undone
+by a longer read. No new state store or summary note is written by these reads.
 
 These reads run no code from the repository. `write`, `import`, `scrub`, `fold` and
 `serve` run the repository's tracker kit.

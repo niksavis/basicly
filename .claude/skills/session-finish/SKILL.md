@@ -6,11 +6,13 @@ description: Closes a session with a usage report, a retro and a handover of wha
 
 # Session Finish
 
-Close a session in three steps: report what the session used, run the retro, and leave the repository clean for the next session. Run it after the work has landed. Use `work-tracker` for history and record closure and `conventional-commits` for commits. Use `harness-loop` only for loop-managed work.
+Finish landed work with current tracker facts, necessary recovery state and a clean repository. Usage reports and retrospectives are conditional, not phases that require new agents or commits. Use `work-tracker` for history and record closure and `conventional-commits` for commits. Use `harness-loop` only for explicitly loop-managed work.
 
 ## Rules
 
-- **Write the handover as a ledger note, never as a file.** `basicly session start` prints the newest note first, and nothing reads a `HANDOVER.md`.
+- **Keep recovery facts in the existing ledger.** Start with `basicly tracker show <id> --view current`. It preserves current fields, clarifications and latest attributed handoffs. Retrieve omitted history with `--view history --snapshot <snapshot_identity>` for unresolved or conflicting facts. The view is recovery guidance, not a complete contract.
+- **Write only new recovery facts.** Preserve decisions, changed assumptions, uncertainty, blockers, evidence references, owned process handles and the next action when they cannot be derived. Do not repeat current card fields, Git history or unchanged handoffs on routine transitions.
+- **Verify a recorded process handle before replacing it.** A polling timeout is not proof that a process stopped. Resume or inspect the same handle; do not launch a duplicate.
 - **Stop task-owned temporary processes before handover.** Preserve services the user explicitly asked to keep running; record their URLs and ownership. Never stop another session's process.
 - **Keep every durable artifact in the repository.** The host cleans the scratchpad without warning.
 - **Write scratch files to a subdirectory unique to your lane.** A concurrent lane can overwrite a file at a shared path.
@@ -74,10 +76,10 @@ basicly usage outcomes
 2. Check the state of records whose implementation changed. Close completed claimed work, or record its true state. Do not repeat gates or reopen closed work for a handover.
 3. List task-owned background processes; stop temporary ones and identify user-requested services left running.
 4. Before you restore a file from a backup, compare the backup with `git show HEAD:<path>`.
-5. Write the handover note on the root record of the session:
+5. If new recovery facts remain, write one concise handover note on the existing root record. Keep closed work explicitly closed; preserve facts needed after interruption and link full evidence rather than pasting it:
 
    ```sh
    basicly tracker write -- comments add <root-id> "[session handover $(date +%F)] STATE: ... NEXT: ..."
    ```
 
-6. End with a summary: what changed (with record ids), what you verified (the gates and their results), what is still open, and the main usage figures from step 1.
+6. End with changed outcomes, actual checks and open work. Include usage figures only when available and useful. Reuse an existing equivalent handoff; no extra report commit is needed solely because a phase changed.

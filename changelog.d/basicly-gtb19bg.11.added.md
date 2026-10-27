@@ -1,0 +1,1 @@
+- Read current task facts, clarifications and latest attributed handoffs with `tracker show --view current`; retrieve omitted detail at its snapshot. Routine handoffs preserve new recovery facts without forced reports or duplicate commits. Source note loss stays explicit.
