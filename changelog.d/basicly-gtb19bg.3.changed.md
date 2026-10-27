@@ -1,1 +1,1 @@
-- Default agent guidance keeps one task owner, makes orchestration optional, supports user-requested observer repairs, and shortens repeated policies while preserving permission, verification and consumer contracts.
+- Default agent guidance keeps one task owner, makes orchestration optional, supports user-requested observer repairs, and shortens repeated policies while preserving permission, verification and consumer contracts. Observer reporting remains compatible with advisory review.

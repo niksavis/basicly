@@ -40,9 +40,9 @@ Measured UTF-8 bytes on generated outputs, before `8619257d` and after this chan
 
 | Output | Before | After |
 | --- | ---: | ---: |
-| AGENTS.md | 10108 | 9432 |
-| .claude/CLAUDE.md | 9735 | 9132 |
-| .github/copilot-instructions.md | 9735 | 9132 |
+| AGENTS.md | 10108 | 9446 |
+| .claude/CLAUDE.md | 9735 | 9146 |
+| .github/copilot-instructions.md | 9735 | 9146 |
 
 These are file measurements, not model-token or task-speed measurements. Codex still
 inlines scoped rules; Claude and Copilot baselines retain the separate scoped-rule
@@ -68,3 +68,9 @@ These checks prove deterministic delivery, not model retrieval or task completio
 Task .3 remains open for representative instruction-retrieval evidence. Task .4 owns
 all-skill dispositions and selective references; .6 owns progressive runtime context.
 The full redesign remains open.
+
+The observer-reporting sentence was reworded on 2026-10-27 without changing its
+contract: bypassed checks remain explicitly bypassed. This avoids the advisory
+review lint misreading the sentence as suppressed findings. The existing review
+suppression controls remain enabled. The generated manifest was also refreshed
+from all four actual rendered outputs.
