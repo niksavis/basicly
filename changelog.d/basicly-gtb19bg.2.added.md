@@ -1,0 +1,1 @@
+- Add isolated harness trial tools with independent acceptance results and recorded runtime, permission and session evidence.
