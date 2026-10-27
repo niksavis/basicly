@@ -144,3 +144,15 @@ def test_this_repos_schemas_donate_their_keys_and_not_their_descriptions() -> No
 
     assert "schema_version" in names
     assert "packages" not in names
+
+
+def test_trial_evidence_does_not_wire_a_production_field(tmp_path: Path) -> None:
+    _repo_with_field(tmp_path)
+    evidence = tmp_path / ".basicly/usage/trial/consumer.py"
+    evidence.parent.mkdir(parents=True)
+    evidence.write_text(f"print(sample.{FIELD})\n", encoding="utf-8")
+    assert _field_keys(tmp_path) == [FINDING]
+    consumer = tmp_path / ".scripts/consumer.py"
+    consumer.parent.mkdir()
+    consumer.write_text(f"print(sample.{FIELD})\n", encoding="utf-8")
+    assert _field_keys(tmp_path) == []

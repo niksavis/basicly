@@ -113,7 +113,12 @@ class Finding:
 
 def _iter_files(root: Path, pattern: str) -> Iterator[Path]:
     for path in sorted(root.glob(pattern)):
-        if path.is_file() and not SKIP_DIRS & set(path.relative_to(root).parts):
+        relative = path.relative_to(root)
+        if (
+            path.is_file()
+            and not SKIP_DIRS & set(relative.parts)
+            and relative.parts[:2] != (".basicly", "usage")
+        ):
             yield path
 
 

@@ -1,1 +1,1 @@
-- Restore hidden-tooling type coverage with Pyright 1.1.414, keep tracker reads behind the storage seam, preserve full historical prose during import, and start worker stall timers only after process admission.
+- Restore hidden-tooling type coverage with Pyright 1.1.414, keep tracker reads behind the storage seam, preserve full historical prose during import, and start worker stall timers only after process admission. Keep archived trial copies out of production wiring checks.
