@@ -137,4 +137,4 @@ Inspect the consumer's effective classifier configuration:
 claude auto-mode config
 ```
 
-Settings scopes and precedence: https://code.claude.com/docs/en/auto-mode-config and https://code.claude.com/docs/en/permission-modes (checked 2026-10-27, Claude Code 2.1.312).
+Settings scopes and precedence: [auto-mode settings](https://code.claude.com/docs/en/auto-mode-config) and [permission modes](https://code.claude.com/docs/en/permission-modes) (checked 2026-10-27, Claude Code 2.1.312).
