@@ -173,4 +173,3 @@ downloads the file; ask the user where it is saved.
 
 An empty feedback means the user found the output fine. Improve the cases that have a
 complaint.
-

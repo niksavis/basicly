@@ -64,4 +64,3 @@ test workspaces and eval sets out of this directory.
 - Write a draft, then read it again with fresh eyes and improve it.
 - A skill contains no malware, no exploit code and nothing that would surprise the user
   if its purpose were described. Refuse a request for a misleading skill.
-

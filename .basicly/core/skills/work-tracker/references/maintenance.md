@@ -49,4 +49,3 @@ jq -r '.kind' .basicly/ledger/events-*.jsonl .basicly/ledger/pending-*.jsonl | s
 
 Run the positive control before you report a zero. An empty result can also mean a wrong
 key.
-

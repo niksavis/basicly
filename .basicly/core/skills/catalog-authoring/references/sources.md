@@ -45,4 +45,3 @@ instructions: |
 ```
 
 `technologies: [python]` limits a skill, fragment, agent or hook to one technology. The values come from a controlled vocabulary, and `basicly catalog lint` refuses any other value. A consumer selects with `basicly install --technologies ...`.
-

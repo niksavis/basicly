@@ -65,4 +65,3 @@ basicly tracker serve                     # page and HTTP API on 127.0.0.1:8765;
 When a board serves, write an id as a link to `/record/<id>` on it. Make sure that the
 port answers before you link, and name the port. A link to a dead port is worse than the
 bare id.
-
