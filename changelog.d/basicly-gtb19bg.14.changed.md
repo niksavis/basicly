@@ -1,1 +1,0 @@
-- Show tracker activity on the default board with in-place updates, conditional reads, scoped tasks, owners, reported actions and bounded history. Keep runtime gaps explicit and stop inferring running or queued agents from worktree files.

@@ -1,1 +1,0 @@
-- Allow narrow GitHub CI, release and workflow reads plus fixed origin remote-ref reads. Arbitrary ls-remote options still require permission because upload-pack can run a program.

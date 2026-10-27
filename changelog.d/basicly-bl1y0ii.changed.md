@@ -1,1 +1,0 @@
-- Bind landing to captured candidate and destination identities, add a command-local publication guard that preserves existing hooks, and explain verification-cache misses with input component hashes.

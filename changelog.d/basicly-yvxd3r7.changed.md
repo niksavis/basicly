@@ -1,1 +1,0 @@
-- Allow supported basicly tracker write commands with narrow Claude permission rules. Prefer the engine when installed; standalone Python consumers keep their existing permission checks.

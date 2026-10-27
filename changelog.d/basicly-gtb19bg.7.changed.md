@@ -1,1 +1,0 @@
-- Keep interactive task work with the current session owner by default; require `--execution worker` for headless dispatch and retain repair instructions across interrupted sessions.

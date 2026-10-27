@@ -1,1 +1,0 @@
-- Accept plain Context and optional distinct Requirements, validate the whole task, preserve compatible historical evidence, and add compact lists, history search and collapsed detail. Active children now mark open parents in progress without requiring a new parent review.
