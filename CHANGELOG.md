@@ -23,6 +23,12 @@ focused recovery view, and makes tracker activity visible on the default board.
   oversized new notes are refused before losing content (basicly-gtb19bg.8,
   basicly-gtb19bg.13).
 
+- **Claude permissions:** backstops cover destructive Git commands with global options
+  and remote deletion. Narrow GitHub reads and tracker writes have native permission
+  tests; release guidance explains user-level auto-mode settings
+  (basicly-fxlubyr, basicly-u78gv5c, basicly-ed9b9iw, basicly-yvxd3r7,
+  basicly-zn0y5yv).
+
 The broader harness redesign remains in progress. These changes do not establish a
 whole-task speedup; repeated matched and held-out trials remain outstanding.
 
