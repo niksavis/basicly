@@ -321,10 +321,12 @@ def test_loop_run_detach_prints_the_pid_and_log_and_drives_no_ceremony(
     assert "detached: pid 4242" in out
     assert str(log) in out
     assert "watch:    basicly loop status basicly-x" in out
-    assert argv[-7:] == [
+    assert argv[-9:] == [
         "loop",
         "run",
         "basicly-x",
+        "--execution",
+        "session",
         "--mode",
         "full",
         "--tier",

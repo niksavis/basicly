@@ -20,61 +20,6 @@ from basicly.runner import (
 CLAUDE = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == "claude")
 
 
-def _seeds(repo_root: Path) -> dict:
-    return json.loads((repo_root / runner.SESSION_SEEDS_FILE).read_text(encoding="utf-8"))
-
-
-def test_a_feature_with_no_seed_mints_one_and_reports_it_as_not_yet_created(
-    tmp_path: Path,
-) -> None:
-    seed = runner.session_seed(tmp_path, "basicly-2kh170", "claude")
-
-    assert seed.exists is False
-    assert len(seed.session_id) == 36
-
-
-def test_a_recorded_seed_comes_back_for_every_later_dispatch_on_that_feature(
-    tmp_path: Path,
-) -> None:
-    minted = runner.session_seed(tmp_path, "basicly-2kh170", "claude")
-
-    runner.record_session_seed(tmp_path, "basicly-2kh170", "claude", minted.session_id)
-
-    again = runner.session_seed(tmp_path, "basicly-2kh170", "claude")
-    assert again == SessionSeed(minted.session_id, exists=True)
-
-
-def test_one_familys_seed_is_never_offered_to_another(tmp_path: Path) -> None:
-    runner.record_session_seed(
-        tmp_path, "basicly-2kh170", "claude", "33333333-3333-4333-8333-333333333333"
-    )
-
-    assert runner.session_seed(tmp_path, "basicly-2kh170", "copilot").exists is False
-    assert runner.session_seed(tmp_path, "basicly-2kh170", "claude").exists is True
-
-
-def test_two_features_never_share_a_seed(tmp_path: Path) -> None:
-    runner.record_session_seed(
-        tmp_path, "basicly-aaa", "claude", "44444444-4444-4444-8444-444444444444"
-    )
-    runner.record_session_seed(
-        tmp_path, "basicly-bbb", "claude", "55555555-5555-4555-8555-555555555555"
-    )
-
-    assert _seeds(tmp_path) == {
-        "basicly-aaa": {"claude": "44444444-4444-4444-8444-444444444444"},
-        "basicly-bbb": {"claude": "55555555-5555-4555-8555-555555555555"},
-    }
-
-
-def test_an_unreadable_store_mints_rather_than_raising(tmp_path: Path) -> None:
-    path = tmp_path / runner.SESSION_SEEDS_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{not json", encoding="utf-8")
-
-    assert runner.session_seed(tmp_path, "basicly-2kh170", "claude").exists is False
-
-
 def test_an_uncreated_seed_mints_the_session_under_the_id_the_harness_chose() -> None:
     argv = format_command(
         CLAUDE, "go", seed=SessionSeed("11111111-1111-4111-8111-111111111111", exists=False)
@@ -212,11 +157,3 @@ def test_a_pruned_seed_costs_a_re_read_and_not_the_round(
     assert second[1] != "22222222-2222-4222-8222-222222222222"
     assert result.returncode == 0
     assert result.seed == SessionSeed(second[1], exists=False)
-
-
-def test_the_store_ignores_itself_on_creation(tmp_path: Path) -> None:
-    runner.record_session_seed(
-        tmp_path, "basicly-2kh170", "claude", "11111111-1111-4111-8111-111111111111"
-    )
-
-    assert (tmp_path / runner.SESSION_SEEDS_FILE).parent.joinpath(".gitignore").read_text() == "*\n"

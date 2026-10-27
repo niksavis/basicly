@@ -72,7 +72,7 @@ def test_a_create_that_owes_a_section_says_so_and_still_creates(
 
     out = capsys.readouterr()
     assert out.out.startswith("created: tw-")
-    assert "owes ## Trigger" in out.err
+    assert "owes ## Context" in out.err
     assert "so I can" in out.err
 
 

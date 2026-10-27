@@ -847,3 +847,19 @@ def test_import_dry_run_does_not_create_a_missing_ledger(tmp_path: Path) -> None
     report = _import(ledger, _snapshot(_record(RECORD_A)), dry_run=True)
     assert report.imported == [RECORD_A]
     assert not ledger.exists()
+
+
+def test_historical_prose_import_preserves_full_source_beyond_the_new_note_limit(
+    tmp_path: Path,
+) -> None:
+    text = "historical source " + "界" * 2000
+    snapshot = _snapshot(_record(RECORD_A, comments=[{"id": 7, "text": text}]))
+    report = _import(tmp_path, snapshot)
+    imported = [event for event in report.events if event.kind == events.KIND_COMMENT]
+    assert len(imported) == 1
+    assert imported[0].payload["text"] == text
+    assert "text_truncated" not in imported[0].payload
+    assert _import(tmp_path, snapshot).events == []
+    with pytest.raises(events.InvalidEventError, match="shorten"):
+        events.append(tmp_path, [events.Draft(RECORD_A, "comment", {"text": text})])
+    assert _fold_events(tmp_path) == report.events

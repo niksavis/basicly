@@ -1548,13 +1548,16 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         stream = LaneStream(
             agent=spec.name, model=runner.resolve_model(spec, repo_root=cwd).model or ""
         )
-        watchdog = runner.StallWatchdog(
-            runner_config.stall_after,
-            probe=lambda: f"{stream.fingerprint()} {lane_activity(cwd)}",
-            on_stall=lambda: flag_stalled_lane(
-                repo_root, lane.issue_id, runner_config.stall_after, runner_config.quiet_after
-            ),
-        )
+
+        def observe_execution() -> runner.StallWatchdog:
+            return runner.StallWatchdog(
+                runner_config.stall_after,
+                probe=lambda: f"{stream.fingerprint()} {lane_activity(cwd)}",
+                on_stall=lambda: flag_stalled_lane(
+                    repo_root, lane.issue_id, runner_config.stall_after, runner_config.quiet_after
+                ),
+            )
+
         bounds = runner.DispatchBounds(
             quiet_after=runner_config.quiet_after,
             token_ceiling=runner_config.lane_token_ceiling or None,
@@ -1562,7 +1565,6 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
         with (
             live_lane(lane.issue_id, stream),
             lane_log.lane_transcript(repo_root, session.log_session, lane.issue_id) as transcript,
-            watchdog,
         ):
             result = task_context.run_task(
                 repo_root,
@@ -1570,6 +1572,7 @@ def _dispatch_lane(  # noqa: PLR0913 — one parameter per independent lane inpu
                 spec,
                 bundle.prompt,
                 cwd,
+                execution_observer=observe_execution,
                 capture_usage=True,
                 timeout=runner_config.runner_timeout,
                 on_event=lane_log.fanout(stream, transcript),
@@ -1968,7 +1971,12 @@ def seed_lanes(
     if session.lane_label is not None:
         return _seed_selected_lanes(repo_root, session, skip=skip)
     try:
-        ceremony = loop.run_ceremony(repo_root, session.root_issue, grant_root=session.root_issue)
+        ceremony = loop.run_ceremony(
+            repo_root,
+            session.root_issue,
+            inputs=loop.Inputs(execution="worker"),
+            grant_root=session.root_issue,
+        )
     except (RuntimeError, OSError, ValueError) as exc:
         return (RoutedOutcome(session.root_issue, "error", f"seeding the root failed: {exc}"),)
     steps = list(ceremony.steps)
@@ -2416,6 +2424,7 @@ def _land_green(
     shipped = loop.run_until_blocked(
         repo_root,
         outcome.issue_id,
+        inputs=loop.Inputs(execution="worker"),
         grant_root=None if session.lane_label is not None else session.root_issue,
     )
     final = shipped[-1] if shipped else landing

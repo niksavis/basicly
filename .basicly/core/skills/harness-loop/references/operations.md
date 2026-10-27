@@ -27,6 +27,10 @@ Other skills own the mechanics of each phase: `work-tracker` (records), `worktre
 (worktrees), `decompose-plan` (child plans), `repair-in-place` (rework), `validate-as-consumer`
 (validate), `conventional-commits` (commit messages).
 
+For a deferred skill in a worker context manifest, read its declared path and digest
+with `basicly skill-read <path> --sha256 <digest>` before following it. A changed or
+unavailable entry requires a refreshed manifest; do not guess its contents.
+
 ## Rules
 
 - **Read the state first with `basicly loop status <issue>`.** The tracker ledger is the only state, so any agent can resume.

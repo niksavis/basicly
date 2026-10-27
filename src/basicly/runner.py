@@ -329,49 +329,6 @@ class SessionSeed:
             raise ValueError("session_id must be an explicit UUID") from error
 
 
-SESSION_SEEDS_FILE = run_record.USAGE_DIR / "session-seeds.json"
-
-_SEED_LOCK = threading.Lock()
-
-
-def _read_seeds(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except OSError, ValueError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def session_seed(repo_root: Path, feature_id: str, family: str) -> SessionSeed:
-
-    known = _read_seeds(repo_root / SESSION_SEEDS_FILE).get(feature_id)
-    if isinstance(known, dict) and isinstance(known.get(family), str) and known[family]:
-        try:
-            return SessionSeed(known[family], exists=True)
-        except ValueError:
-            pass
-    return SessionSeed(str(uuid.uuid4()), exists=False)
-
-
-def record_session_seed(repo_root: Path, feature_id: str, family: str, session_id: str) -> None:
-    SessionSeed(session_id, exists=True)
-    path = repo_root / SESSION_SEEDS_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    gitignore = path.parent / ".gitignore"
-    if not gitignore.exists():
-        gitignore.write_text("*\n", encoding="utf-8")
-    with _SEED_LOCK:
-        data = _read_seeds(path)
-        entry = data.get(feature_id)
-        if not isinstance(entry, dict):
-            entry = {}
-            data[feature_id] = entry
-        entry[family] = session_id
-        tmp = path.with_suffix(f".{os.getpid()}.json.tmp")
-        tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        tmp.replace(path)
-
-
 def _apply_seed(spec: RunnerSpec, argv: list[str], seed: SessionSeed | None) -> list[str]:
 
     if seed is None or spec.resume_style is None:
@@ -1365,8 +1322,9 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
         and result.session_id is not None
         else None
     )
+    entry = replace(entry, session_cost=cumulative)
     cost = entry.cost
-    if cumulative is not None and result.context_action == "resumed":
+    if entry.session_cost is not None and result.context_action == "resumed":
         history = (run_record.load_run_records(repo_root) or {}).get(issue_id, [])
         previous = [
             item["session_cost"]
@@ -1375,7 +1333,11 @@ def record_dispatch(  # noqa: PLR0913 — one parameter per recorded dispatch in
             and isinstance(item.get("session_cost"), (int, float))
             and not isinstance(item.get("session_cost"), bool)
         ]
-        cost = cumulative - max(previous) if previous and cumulative >= max(previous) else None
+        cost = (
+            entry.session_cost - max(previous)
+            if previous and entry.session_cost >= max(previous)
+            else None
+        )
     entry = replace(
         entry,
         session_id=result.session_id,

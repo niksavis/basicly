@@ -1305,6 +1305,8 @@ def test_route_green_lane_lands_and_ships_under_a_grant(
     grants: list[object] = []
 
     def fake_run(_r: Path, issue_id: str, **kwargs: object) -> list[loop.AdvanceResult]:
+        inputs = kwargs.get("inputs")
+        assert isinstance(inputs, loop.Inputs) and inputs.execution == "worker"
         grants.append(kwargs.get("grant_root"))
         return [_advance_result(issue_id, "tore-down", "done", "closed")]
 

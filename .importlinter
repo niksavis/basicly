@@ -26,6 +26,7 @@ layers =
     board_facts
     board_advance
     board_serve
+    board_activity
     board_asks
     board_action_surface
     board_actions
@@ -41,6 +42,7 @@ layers =
     classify | context_meter | decompose | loop_state | plan_entry | retrospective | rubrics
     validate_gate
     dispatch_brief
+    skill_reference
     catalog_emphasis | catalog_token_cost | listing_budget | skill_coverage | retention
     decisions
     handoff
@@ -56,6 +58,7 @@ layers =
     lane_log
     pytest_inputs
     pyright_inputs
+    task_context
     claude_settings | codex_hooks | codex_permissions | runner
     context_window
     markdownlint

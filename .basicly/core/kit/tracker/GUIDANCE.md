@@ -7,7 +7,7 @@ description: Use the append-only work tracker as this repository's issue tracker
 
 The tracker is an append-only event ledger in `.basicly/ledger/`, committed with the code.
 Every command takes the ledger directory as its first argument and prints one JSON object.
-`.basicly/core/kit/tracker/REFERENCE.md` lists every command with one example.
+`.basicly/kit/tracker/REFERENCE.md` lists every command with one example.
 
 ## Rules
 
@@ -41,11 +41,11 @@ Every command takes the ledger directory as its first argument and prints one JS
 ## Read
 
 ```sh
-python3 .basicly/core/kit/tracker/cli.py ready .basicly/ledger        # workable now, ranked
-python3 .basicly/core/kit/tracker/cli.py blocked .basicly/ledger      # waiting, and on what
-python3 .basicly/core/kit/tracker/cli.py show .basicly/ledger <id>    # one record, its edges and dates
-python3 .basicly/core/kit/tracker/cli.py dor .basicly/ledger <id>     # exit 0 shaped, exit 1 with what is missing
-python3 .basicly/core/kit/tracker/cli.py ready .basicly/ledger --mine # the stories you hold
+python3 .basicly/kit/tracker/cli.py ready .basicly/ledger        # workable now, ranked
+python3 .basicly/kit/tracker/cli.py blocked .basicly/ledger      # waiting, and on what
+python3 .basicly/kit/tracker/cli.py show .basicly/ledger <id>    # one record, its edges and dates
+python3 .basicly/kit/tracker/cli.py dor .basicly/ledger <id>     # exit 0 shaped, exit 1 with what is missing
+python3 .basicly/kit/tracker/cli.py ready .basicly/ledger --mine # the stories you hold
 ```
 
 Use `show <ledger> <id> --view current` for current fields, all clarifications and
@@ -63,15 +63,15 @@ branches; the two agree who keeps it, then run `resolve` to keep the current hol
 ## Write
 
 ```sh
-python3 .basicly/core/kit/tracker/cli.py create .basicly/ledger --prefix <p> --title "<what>" \
+python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix <p> --title "<what>" \
     --description "<the trigger>" --acceptance "<how it is checked>" --requirements "<the standard>"
-python3 .basicly/core/kit/tracker/cli.py assign .basicly/ledger <id>                 # reserve it for you
-python3 .basicly/core/kit/tracker/cli.py claim .basicly/ledger <id>                  # reserve it and start
-python3 .basicly/core/kit/tracker/cli.py unassign .basicly/ledger <id>               # give it back
-python3 .basicly/core/kit/tracker/cli.py comment .basicly/ledger <id> "<what you learned>"
-python3 .basicly/core/kit/tracker/cli.py dep .basicly/ledger <id> <the-id-it-waits-on>
-python3 .basicly/core/kit/tracker/cli.py child .basicly/ledger <parent-id> --title "<a piece of it>"
-python3 .basicly/core/kit/tracker/cli.py close .basicly/ledger <id> --reason "<what shipped, and the evidence>"
+python3 .basicly/kit/tracker/cli.py assign .basicly/ledger <id>                 # reserve it for you
+python3 .basicly/kit/tracker/cli.py claim .basicly/ledger <id>                  # reserve it and start
+python3 .basicly/kit/tracker/cli.py unassign .basicly/ledger <id>               # give it back
+python3 .basicly/kit/tracker/cli.py comment .basicly/ledger <id> "<what you learned>"
+python3 .basicly/kit/tracker/cli.py dep .basicly/ledger <id> <the-id-it-waits-on>
+python3 .basicly/kit/tracker/cli.py child .basicly/ledger <parent-id> --title "<a piece of it>"
+python3 .basicly/kit/tracker/cli.py close .basicly/ledger <id> --reason "<what shipped, and the evidence>"
 ```
 
 ## Read only what you need
@@ -193,8 +193,8 @@ criterion and planned argv. The tracker displays these commands; it does not exe
 Every criterion must appear once. Pass the JSON as one argument:
 
 ```sh
-python3 .basicly/core/kit/tracker/cli.py review .basicly/ledger <id> --evidence '<review JSON>'
-python3 .basicly/core/kit/tracker/cli.py claim .basicly/ledger <id>
+python3 .basicly/kit/tracker/cli.py review .basicly/ledger <id> --evidence '<review JSON>'
+python3 .basicly/kit/tracker/cli.py claim .basicly/ledger <id>
 ```
 
 After running the agreed check, `confirm` takes the following shape. Record only output
@@ -214,9 +214,9 @@ or an unfinished placeholder cannot confirm a criterion.
 ```
 
 ```sh
-python3 .basicly/core/kit/tracker/cli.py confirm .basicly/ledger <id> --evidence '<confirmation JSON>'
-python3 .basicly/core/kit/tracker/cli.py close .basicly/ledger <id> --reason "Saved tasks can be read again."
-python3 .basicly/core/kit/tracker/cli.py close .basicly/ledger <id> --resolution cancelled --reason "This work is no longer needed."
+python3 .basicly/kit/tracker/cli.py confirm .basicly/ledger <id> --evidence '<confirmation JSON>'
+python3 .basicly/kit/tracker/cli.py close .basicly/ledger <id> --reason "Saved tasks can be read again."
+python3 .basicly/kit/tracker/cli.py close .basicly/ledger <id> --resolution cancelled --reason "This work is no longer needed."
 ```
 
 The tracker computes the review revision and generic writer identity itself. Editing the
@@ -266,7 +266,7 @@ cause. It refuses:
 ## Show a person the state
 
 ```sh
-python3 .basicly/core/kit/tracker/cli.py board .basicly/ledger --out tracker-board.html
+python3 .basicly/kit/tracker/cli.py board .basicly/ledger --out tracker-board.html
 ```
 
 `board` writes one static page. The optional board kit serves a live page and an HTTP API

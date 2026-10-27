@@ -572,7 +572,7 @@ def test_the_cap_cuts_free_text_on_a_character_boundary_and_says_how_much(
     text = "a" * (events.MAX_TEXT_BYTES - 1) + "順" + "b" * 50
     minted = events.append(
         tmp_path,
-        [events.Draft(RECORD_A, "comment", {"text": text})],
+        [events.Draft(RECORD_A, "dispatch", {"text": text})],
         clock=lambda: CLOCK_EARLY,
     )
 
@@ -585,10 +585,10 @@ def test_the_cap_cuts_free_text_on_a_character_boundary_and_says_how_much(
     assert reread[0].payload["text"] == payload["text"]
 
 
-def test_the_cap_truncates_and_never_refuses(tmp_path: Path) -> None:
+def test_diagnostic_text_is_truncated_instead_of_refused(tmp_path: Path) -> None:
     minted = events.append(
         tmp_path,
-        [events.Draft(RECORD_A, "comment", {"text": "z" * (events.MAX_TEXT_BYTES * 4)})],
+        [events.Draft(RECORD_A, "dispatch", {"text": "z" * (events.MAX_TEXT_BYTES * 4)})],
         clock=lambda: CLOCK_EARLY,
     )
 
@@ -604,7 +604,7 @@ def test_redaction_runs_before_the_cap_and_the_length_is_the_redacted_one(
     raw = secret * 200
     minted = events.append(
         tmp_path,
-        [events.Draft(RECORD_A, "comment", {"text": raw})],
+        [events.Draft(RECORD_A, "dispatch", {"text": raw})],
         clock=lambda: CLOCK_EARLY,
         redact=lambda text: text.replace(secret, "[redacted-credential]"),
         max_text_bytes=64,
@@ -1498,3 +1498,50 @@ def test_fsck_reports_a_withdrawal_only_half_of_which_landed(
 
     assert code == 2
     assert expected in _broken_kinds(report)
+
+
+@pytest.mark.parametrize("kind", ["note", "comment"])
+@pytest.mark.parametrize("text", ["a" * 4097, "界" * 1366], ids=["ascii", "utf8"])
+def test_oversized_prose_is_refused_without_appending_or_changing_fold(
+    tmp_path: Path, kind: str, text: str
+) -> None:
+    events.append(tmp_path, [events.Draft(RECORD_A, "comment", {"text": "Original"})])
+    path = tmp_path / events.INITIAL_LOG_NAME
+    before = path.read_bytes()
+    folded = events.fold(events.read_events(tmp_path)[0])
+    with pytest.raises(events.InvalidEventError, match=r"shorten.*artifact"):
+        events.append(
+            tmp_path,
+            [
+                events.Draft(RECORD_A, "comment", {"text": "Must not be appended"}),
+                events.Draft(RECORD_A, kind, {"text": text}),
+            ],
+        )
+    assert path.read_bytes() == before
+    assert events.fold(events.read_events(tmp_path)[0]) == folded
+
+
+@pytest.mark.parametrize("kind", ["note", "comment"])
+def test_prose_accepts_the_exact_boundary_after_redaction(tmp_path: Path, kind: str) -> None:
+    text = "界" * 1365 + "a"
+    minted = events.append(
+        tmp_path,
+        [events.Draft(RECORD_A, kind, {"text": "TOKEN" * 1000})],
+        redact=lambda _value: text,
+    )
+    assert minted[0].payload == {"text": text}
+
+
+@pytest.mark.parametrize("kind", ["note", "comment"])
+def test_prose_refuses_expanding_redaction_without_exposing_content(
+    tmp_path: Path, kind: str
+) -> None:
+    with pytest.raises(events.InvalidEventError) as caught:
+        events.append(
+            tmp_path,
+            [events.Draft(RECORD_A, kind, {"text": "TOKEN"})],
+            redact=lambda _value: "private-content" * 1000,
+        )
+    assert "TOKEN" not in str(caught.value)
+    assert "private-content" not in str(caught.value)
+    assert events.read_events(tmp_path)[0] == []

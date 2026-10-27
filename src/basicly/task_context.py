@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -200,7 +201,8 @@ def _seed(path: Path, identity: dict, revision: str) -> runner.SessionSeed:
 
 
 def _dispatch(spec: runner.RunnerSpec, prompt: str, cwd: Path, **kwargs) -> runner.RunResult:
-    with runner.process_budget().slot(runner.LANE):
+    observer = kwargs.pop("execution_observer", contextlib.nullcontext)
+    with runner.process_budget().slot(runner.LANE), observer():
         return runner.run(spec, prompt, cwd, **kwargs)
 
 

@@ -217,6 +217,9 @@ def test_every_documented_command_runs_on_a_fresh_install(command: str, tmp_path
     confirmation = {"checks": shown["process"]["confirmation"]["checks"]}
     names.update({
         "<review JSON>": json.dumps(review),
+        "<snapshot_identity>": cli.record_view.read_view(
+            repo / ".basicly/ledger", first, view="current"
+        )["snapshot_identity"],
         "<confirmation JSON>": json.dumps(confirmation),
         "<what shipped, and the evidence>": "The seeded result is confirmed by its fixture check.",
     })

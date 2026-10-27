@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release keeps ordinary agent work with one responsible owner and makes headless
+orchestration an explicit choice. It reduces repeated guidance, gives resumed work a
+focused recovery view, and makes tracker activity visible on the default board.
+
+- **One owner:** direct work and observer repair need no phase controller; select
+  `--execution worker` when headless orchestration is wanted (basicly-gtb19bg.7).
+- **Focused guidance and recovery:** skills load detailed procedures when needed;
+  current tracker views preserve task facts and attributed handoffs, with snapshot-bound
+  history and explicit source-loss warnings (basicly-gtb19bg.4, basicly-gtb19bg.6,
+  basicly-gtb19bg.11).
+- **Readable progress:** plain Context, observable acceptance and optional distinct
+  Requirements support shorter cards. The board shows tracker activity and marks missing
+  runtime evidence explicitly (basicly-gtb19bg.13, basicly-gtb19bg.14).
+- **Safer continuity:** compatible native sessions resume by explicit identity;
+  oversized new notes are refused before losing content (basicly-gtb19bg.8,
+  basicly-gtb19bg.13).
+
+The broader harness redesign remains in progress. These changes do not establish a
+whole-task speedup; repeated matched and held-out trials remain outstanding.
+
 ## v0.29.0 - 2026-10-25
 
 Delta: v0.28.0..v0.29.0

@@ -74,3 +74,16 @@ contract: bypassed checks remain explicitly bypassed. This avoids the advisory
 review lint misreading the sentence as suppressed findings. The existing review
 suppression controls remain enabled. The generated manifest was also refreshed
 from all four actual rendered outputs.
+
+## Type checker coverage during stabilization
+
+Pyright 1.1.414 adds its default hidden-directory exclusions even when the repository
+sets an explicit exclude list. The upstream [coverage regression](https://github.com/microsoft/pyright/issues/11861)
+is reproduced by a bad typed module under `.scripts`; a bare root run reports zero files.
+The installed requested version stays 1.1.414. Additional configured checks scope each
+explicitly included hidden root through a temporary configuration that extends the
+repository configuration and retains its settings. Each temporary file is removed after
+the process returns. These checks run for the native fast/staged checks and for Linux,
+Darwin and Windows full checks. Ordinary root checks and required gates remain enabled.
+The regression control checks a bad hidden module, its repaired counterpart and excluded
+virtual-environment content; zero diagnostics alone do not establish coverage.

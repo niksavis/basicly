@@ -46,7 +46,13 @@ def record_marker(repo: Path, record: str, text: str) -> None:
     kit = tracker.kit(repo)
     kit.events.append(
         tracker.ledger_dir(repo),
-        [kit.events.Draft(record, kit.events.KIND_COMMENT, {tracker.COMMENT_TEXT_KEY: text})],
+        [
+            kit.events.Draft(
+                record,
+                kit.events.KIND_COMMENT,
+                kit.events.prepare_payload({tracker.COMMENT_TEXT_KEY: text}, kind="dispatch"),
+            )
+        ],
     )
 
 

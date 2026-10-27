@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tomllib
 from pathlib import Path, PurePosixPath
 
@@ -79,7 +80,7 @@ def test_the_coverage_sweep_reports_a_directory_the_default_exclude_drops() -> N
     assert unanalysed == [".scripts"]
 
 
-def test_pyright_fails_on_a_type_error_under_a_dot_directory(tmp_path: Path) -> None:
+def test_configured_type_checks_reject_a_type_error_under_a_dot_directory(tmp_path: Path) -> None:
 
     settings = _pyright_settings()
     probe = tmp_path / ".scripts/type_error_probe.py"
@@ -87,6 +88,9 @@ def test_pyright_fails_on_a_type_error_under_a_dot_directory(tmp_path: Path) -> 
         (tmp_path / entry).mkdir(parents=True, exist_ok=True)
     probe.parent.mkdir(parents=True, exist_ok=True)
     probe.write_text(_TYPE_ERROR_MODULE, encoding="utf-8")
+    excluded = tmp_path / ".scripts/nested/.venv/excluded.py"
+    excluded.parent.mkdir(parents=True)
+    excluded.write_text(_TYPE_ERROR_MODULE, encoding="utf-8")
 
     def check(table: dict[str, list[str] | str]) -> tuple[int, dict[str, object]]:
         (tmp_path / "pyproject.toml").write_text(_config(table), encoding="utf-8")
@@ -99,17 +103,40 @@ def test_pyright_fails_on_a_type_error_under_a_dot_directory(tmp_path: Path) -> 
         )
         return completed.returncode, json.loads(completed.stdout)["summary"]
 
-    returncode, summary = check(settings)
-    default_exclude = {key: value for key, value in settings.items() if key != "exclude"}
-    without_exclude_returncode, without_exclude = check(default_exclude)
-
-    assert returncode != 0, f"the bad module under .scripts passed the check: {summary}"
-    assert summary["errorCount"] == 1
-    assert without_exclude_returncode == 0
-    assert without_exclude["filesAnalyzed"] == 0, (
-        "the discriminator analysed files, so the exclude override is not what carries "
-        f"the coverage: {without_exclude}"
+    check(settings)
+    configured = subprocess.run(
+        [
+            sys.executable,
+            str(_REPO_ROOT / ".scripts/check_hidden_types.py"),
+            "--root",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
     )
+    assert configured.returncode != 0, configured.stdout + configured.stderr
+    assert "type_error_probe.py" in configured.stdout
+    assert "1 error" in configured.stdout
+    bare_returncode, bare = check(settings)
+    assert bare_returncode == 0 and bare["filesAnalyzed"] == 0
+    probe.write_text("def count() -> int:\n    return 1\n", encoding="utf-8")
+    repaired = subprocess.run(
+        [
+            sys.executable,
+            str(_REPO_ROOT / ".scripts/check_hidden_types.py"),
+            "--root",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert repaired.returncode == 0, repaired.stdout + repaired.stderr
+
+    assert not list(tmp_path.rglob("basicly-pyright-*.json"))
 
 
 def test_a_virtualenv_inside_an_included_tree_is_excluded() -> None:

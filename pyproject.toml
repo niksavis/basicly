@@ -60,30 +60,6 @@ tmp_path_retention_policy = "failed"
 # real ledger), so a dump means something is wrong rather than merely slow.
 faulthandler_timeout = "60"
 
-# Type checking (basicly-u2hl.15). Both `include` and `exclude` are spelled out
-# because pyright's defaults silently drop the two trees with the widest blast
-# radius: the default `exclude` is `["**/node_modules", "**/__pycache__", "**/.*"]`,
-# and that last pattern hides `.scripts` and `.basicly/core` — the hooks that ship
-# to consumers via `basicly install` and run in the dispatch path. `exclude` is
-# applied on top of `include` and wins, and it filters files named explicitly on
-# the command line too (`pyright .scripts/check_module_size.py` analysed 0 files),
-# so adding `include` alone would not have been enough — the default `exclude` has
-# to be replaced, not extended.
-#
-# Replacing it means re-stating the patterns worth keeping. `**/.*` is not among
-# them, so a dot-directory *inside* an included tree is no longer filtered for free.
-# That is why `**/.venv` is named explicitly: `packages` is on the include list, and
-# `uv run --project packages/basicly-tier` writes `packages/basicly-tier/.venv` there.
-# The directory is gitignored, so nothing warns, and pyright then reports three errors
-# in vendored `activate_this.py` files that are not this repository's code. Found
-# 2026-09-12 (basicly-4cy3b8t) by exercising the kits from their source trees.
-#
-# A nested worktree under `.claude/` still stays out by not being named, because only
-# `.claude/skills` is on the include list: it holds the projected copies of the skill scripts.
-#
-# `tests/test_type_checking.py` sweeps the tracked tree against both lists, so the
-# next directory of first-party Python fails there instead of being silently dropped,
-# and runs pyright over a bad module under `.scripts` to prove the coverage is real.
 [tool.pyright]
 venvPath = "."
 venv = ".venv"

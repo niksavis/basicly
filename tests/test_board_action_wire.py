@@ -21,7 +21,7 @@ def test_the_served_page_carries_the_pending_ask_prefilled_and_inside_the_layout
 ) -> None:
     surface = served.board.actions
     assert surface is not None
-    page = urllib.request.urlopen(served.url + "/", timeout=TIMEOUT_S).read().decode("utf-8")
+    page = urllib.request.urlopen(served.url + "/wall", timeout=TIMEOUT_S).read().decode("utf-8")
 
     assert page.count("<form") == 1
     assert page.count(f'value="{surface.token}"') == 1

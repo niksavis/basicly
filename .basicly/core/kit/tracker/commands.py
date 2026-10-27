@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,7 @@ def _load(file_name: str, module_name: str) -> Any:
     return module
 
 
+parent_progress = _load("parent_progress.py", "basicly_tracker_kit_parent_progress")
 queries = _load("queries.py", "basicly_tracker_kit_queries")
 label_shape = _load("label_shape.py", "basicly_tracker_kit_label_shape")
 templates = _load("templates.py", "basicly_tracker_kit_templates")
@@ -98,50 +99,6 @@ def _require(ledger: Path, record: str) -> Any:
     return state
 
 
-def _parent_progress(found: Sequence[Any], drafts: Sequence[Any]) -> tuple[list[Any], set[str]]:
-    views = differential.views_from_events(found)
-    children = differential.children_of(views, differential.DEFAULT_VOCABULARY)
-    statuses = {record: view.status for record, view in views.items() if not view.tombstoned}
-    explicit = set()
-    for draft in drafts:
-        if draft.kind == events.KIND_STATUS:
-            statuses[draft.record] = draft.payload.get("status")
-            explicit.add(draft.record)
-    active = {record for record, status in statuses.items() if status == "in_progress"}
-    parents = set()
-    while True:
-        added = {
-            parent
-            for parent, descendants in children.items()
-            if statuses.get(parent) in ("open", "in_progress")
-            and any(child in active for child in descendants)
-        } - parents
-        if not added:
-            break
-        parents.update(added)
-        active.update(added)
-    affected = {draft.record for draft in drafts}
-    result = list(drafts)
-    pending = set(parents)
-    while True:
-        reached = {
-            parent
-            for parent in pending
-            if parent in affected
-            or any(child in affected and child in active for child in children[parent])
-        }
-        if not reached:
-            break
-        result.extend(
-            events.Draft(parent, events.KIND_STATUS, {"status": "in_progress"})
-            for parent in sorted(reached)
-            if statuses[parent] == "open" and parent not in explicit
-        )
-        affected.update(reached)
-        pending.difference_update(reached)
-    return result, parents
-
-
 def _append(
     ledger: Path,
     drafts: Sequence[Any],
@@ -153,7 +110,7 @@ def _append(
     template = templates.load(ledger)
     found = events.read_events(ledger)[0]
     states = events.fold(found).records
-    drafts, progress_parents = _parent_progress(found, drafts)
+    drafts, progress_parents = parent_progress.progress(found, drafts)
     values.refuse(events, drafts, template, states, found)
     holders.refuse(states, drafts)
     review_drafts = [
@@ -172,25 +129,6 @@ def _append(
     return events.append(
         ledger, resolved, actor=writers.writer_class(), redact=redact, held_lock=lock
     )
-
-
-def _resolved_labels(state: Any, add: Iterable[str], remove: Iterable[str]) -> str:
-
-    labels = list(labels_of(state.fields.get(LABELS_FIELD)))
-    for name in _split_all(add):
-        if name not in labels:
-            labels.append(name)
-    for name in _split_all(remove):
-        if name in labels:
-            labels.remove(name)
-    return LABEL_SEPARATOR.join(labels)
-
-
-def _split_all(values: Iterable[str]) -> list[str]:
-    found: list[str] = []
-    for value in values:
-        found.extend(part.strip() for part in value.split(LABEL_SEPARATOR) if part.strip())
-    return found
 
 
 def update(  # noqa: PLR0913 — one argument per thing an update can set
@@ -220,7 +158,7 @@ def update(  # noqa: PLR0913 — one argument per thing an update can set
             for name, value in sorted(named.items())
         ]
         if add_labels or remove_labels:
-            resolved = _resolved_labels(state, add_labels, remove_labels)
+            resolved = label_shape.resolved_labels(state, add_labels, remove_labels)
             drafts.append(
                 events.Draft(record, events.KIND_FIELD, {"name": LABELS_FIELD, "value": resolved})
             )

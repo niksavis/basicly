@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -77,15 +78,32 @@ def _headings(fields: Mapping[str, object], template, legacy: bool) -> tuple:
     return tuple(dict.fromkeys((*(base if template.extends else ()), *template.sections, *extra)))
 
 
-def revision(  # noqa: PLR0913
+@dataclass(frozen=True)
+class RevisionContext:
+    fields: Mapping[str, object] | None = None
+    drafts: Sequence[Any] = ()
+    template: Any = None
+    legacy: bool = False
+
+
+def revision(
     found: Sequence[Any],
     record: str,
     fields: Mapping[str, object] | None = None,
     drafts: Sequence[Any] = (),
     *,
     template=None,
-    legacy: bool = False,
 ) -> str:
+    return _revision(found, record, RevisionContext(fields, drafts, template))
+
+
+def _revision(found: Sequence[Any], record: str, context: RevisionContext) -> str:
+    fields, drafts, template, legacy = (
+        context.fields,
+        context.drafts,
+        context.template,
+        context.legacy,
+    )
     states = events.fields_by_record(found)
     held = dict(fields) if fields is not None else dict(states[record])
     headings = _headings(held, template, legacy)
@@ -122,14 +140,13 @@ def revision(  # noqa: PLR0913
     return hashlib.sha256(packed.encode("utf-8")).hexdigest()
 
 
-def _current(saved, found, record, fields, drafts=(), *, template=None) -> bool:  # noqa: PLR0913
+def _current(saved, found, record, context: RevisionContext) -> bool:
     if not saved:
         return False
     value = saved.get("revision")
     order = (False, True) if saved.get("contract") == shaping.SHAPING_RULE else (True, False)
     return any(
-        value == revision(found, record, fields, drafts, template=template, legacy=legacy)
-        for legacy in order
+        value == _revision(found, record, replace(context, legacy=legacy)) for legacy in order
     )
 
 
@@ -201,7 +218,7 @@ def review_note(
     saved = _saved(found, record, fields, REVIEW_FIELD)
     if not saved:
         return "no review is recorded; run review --evidence"
-    if not _current(saved, found, record, fields, drafts, template=template):
+    if not _current(saved, found, record, RevisionContext(fields, drafts, template)):
         return "the recorded review is void because the record changed after it; run review again"
     return ""
 
@@ -220,7 +237,7 @@ def readiness(
     else:
         held = dict(fields)
     saved = _saved(found, record, held, REVIEW_FIELD)
-    current = _current(saved, found, record, held, drafts, template=template)
+    current = _current(saved, found, record, RevisionContext(held, drafts, template))
     if _compact_type(held) and (
         not current or set(saved) - {"contract"} == {"checks", "revision", "writer"}
     ):
@@ -313,14 +330,16 @@ def confirmation_report(found: Sequence[Any], record: str, *, template=None) -> 
         "revision": revision(found, record, fields, template=template),
         "owed": list(readiness(found, record, fields, template=template)),
         "review_current": _current(
-            _saved(found, record, fields, REVIEW_FIELD), found, record, fields, template=template
+            _saved(found, record, fields, REVIEW_FIELD),
+            found,
+            record,
+            RevisionContext(fields, template=template),
         ),
         "confirmation_current": _current(
             _saved(found, record, fields, CONFIRMATION_FIELD),
             found,
             record,
-            fields,
-            template=template,
+            RevisionContext(fields, template=template),
         ),
         "review": dict(_saved(found, record, fields, REVIEW_FIELD)),
         "confirmation": dict(_saved(found, record, fields, CONFIRMATION_FIELD)),
@@ -372,9 +391,9 @@ def closing_owed(
 ) -> tuple[str, ...]:
     missing = readiness(found, record, fields, drafts, template=template)
     saved = _saved(found, record, fields, CONFIRMATION_FIELD)
-    complete = _current(saved, found, record, fields, drafts, template=template) and _checks(
-        fields, saved.get("checks"), completed=True
-    )
+    complete = _current(
+        saved, found, record, RevisionContext(fields, drafts, template)
+    ) and _checks(fields, saved.get("checks"), completed=True)
     review = _saved(found, record, fields, REVIEW_FIELD)
     planned = {
         criterion_key(check["criterion"]): check["command"]

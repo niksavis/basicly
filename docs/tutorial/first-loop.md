@@ -172,9 +172,9 @@ basicly policy scaffold --type task
 ```
 
 ```text
-## Trigger
+## Context
 
-TODO: state a complete trigger with a situation/persona, motivation/goal and outcome/benefit; each part must contain text without placeholders. Use either voice - a situation, 'When <situation>, I want to <motivation>, so I can <outcome>.', or a persona, 'As a <persona>, I want <goal>, so that <benefit>.'. A persona is never required: where a situation triggers the work and no person wants it, inventing a persona is the defect
+TODO: state the problem and intended outcome under ## Context, or a complete trigger with a situation/persona, motivation/goal and outcome/benefit; each part must contain text without placeholders. Use either voice - a situation, 'When <situation>, I want to <motivation>, so I can <outcome>.', or a persona, 'As a <persona>, I want <goal>, so that <benefit>.'. A persona is never required: where a situation triggers the work and no person wants it, inventing a persona is the defect
 
 ## Scope
 
@@ -182,10 +182,9 @@ TODO: state a complete trigger with a situation/persona, motivation/goal and out
 also pass: --acceptance '- Given <state> when <action> then <result>' --requirements '- <the standard the result must obey>'
 ```
 
-The body goes in the description. The acceptance criteria and the requirements are
+The body goes in the description. Acceptance criteria and distinct requirements are
 fields, so they go in `--acceptance` and `--requirements`; a description that holds
-either heading is refused. Fill it all in and file it. A `## Trigger` is owed by every work
-type, and a persona is never required — where a situation triggers the work and
+either heading is refused. Fill it all in and file it. Use plain `## Context` prose or a complete legacy `## Trigger`; a persona is never required — where a situation triggers the work and
 nobody in particular wants it, inventing a persona is the defect. A `## Scope`
 entry must be a **backticked glob alone on its line** — a bare path parses to
 nothing, and everything downstream (sizing, parallel grouping) reads it.
@@ -341,8 +340,9 @@ basicly loop run myrepo-2i3r --work-type task --runner manual
 a `task` (or `bug`/`chore`) builds directly, a `feature` stops and demands a
 child plan. Classify by shape, not ambition — one coherent change is a `task`.
 
-`--runner manual` means **you** write the code in the worktree. Leave it off and
-the harness dispatches a headless coding agent instead. The task request authorizes
+`--runner manual` keeps this example independent of a native coding adapter.
+The default session execution keeps **you** as task owner. Explicit
+`--execution worker` selects headless orchestration. The task request authorizes
 normal phases without another grant or mandatory token budget; see
 [run several lanes in parallel](../how-to/run-parallel-lanes.md).
 
@@ -352,13 +352,12 @@ The command classifies the task and provisions its worktree without asking for a
 override: runner.default=manual
 Created worktree 'myrepo-2i3r'
   path:   /path/to/myrepo.worktrees/myrepo-2i3r
-  branch: harness/myrepo-2i3r  (base main @ 35284db)
+  branch: harness/myrepo-2i3r  (base main @ 94a79f0)
   .basicly/ledger/redirect: tracker shared with the base checkout
   node_modules: copied from myrepo (identical package-lock.json)
   hooks: post-merge, pre-commit, commit-msg, pre-push — repository-local Lefthook hooks installed
-  ...
 [classified] intake -> classify: recorded work type 'task'
-[blocked] classify -> classify: worktree 'myrepo-2i3r' provisioned; awaiting the agent's work
+[blocked] classify -> classify: continue as task owner in /path/to/myrepo.worktrees/myrepo-2i3r; worktree 'myrepo-2i3r' is provisioned (needs input: implementation)
 ```
 
 The task request already authorizes work within its scope. The same command works
@@ -410,11 +409,12 @@ the worktree is not the shared one.
 
 ```text
 override: runner.default=manual
-  ...
+Preserved 44 generated artifact(s), with inventory: /path/to/myrepo/.git/basicly-preserved/myrepo-2i3r-11247be64bb546f589a052d404f357d0/manifest.json
+  hooks: post-merge, pre-commit, commit-msg, pre-push — repository-local Lefthook hooks installed
 Cleaned up worktree 'myrepo-2i3r' (worktree + branch + metadata).
-[merged] build -> verify: merged harness/myrepo-2i3r @ b8d7b80790cd (1 commit(s)) into main @ 8b65704; landing 1.0s (tracker-commit 0.7s, merge 0.3s)
+[merged] build -> verify: merged harness/myrepo-2i3r @ 919b83d8348e (1 commit(s)) into main @ 947a0f9; landing 6.8s (merge 3.3s, verify 1.8s, probe 1.7s)
 [shipped] verify -> ship: ship checkpoint satisfied
-[tore-down] ship -> done: worktree torn down and issue closed; cost rollup recorded; the curator bound no claims; tracker state committed
+[tore-down] ship -> done: worktree torn down and issue closed; tracker state committed
 ```
 
 One command rebased the branch, ran the verify gate, recorded the result on the bead,
@@ -440,12 +440,12 @@ git log --oneline -6
 ```
 
 ```text
-58ba56c chore(tracker): close the shipped track (myrepo-2i3r)
-8b65704 chore(worktree): merge a harness worktree back to its base
-b8d7b80 docs: add a getting started note (myrepo-2i3r)
-5d37092 chore(tracker): sync tracker state for the harness loop (myrepo-2i3r)
-35284db chore(tracker): record the claim before provisioning (myrepo-2i3r)
-e1e08ac chore: install basicly (myrepo-2i3r)
+bed0451 chore(tracker): close the shipped track (myrepo-2i3r)
+947a0f9 chore(worktree): merge a harness worktree back to its base
+f8d40f0 chore(tracker): sync tracker state for the harness loop (myrepo-2i3r)
+919b83d docs: add a getting started note (myrepo-2i3r)
+94a79f0 chore(tracker): record the claim before provisioning (myrepo-2i3r)
+a175fd6 chore: install basicly (myrepo-2i3r)
 ```
 
 You wrote two of those six — the install commit and the change itself. The

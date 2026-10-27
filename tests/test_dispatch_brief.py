@@ -6,7 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from basicly import dispatch_brief, handoff, needs_input, review, roles, skill_coverage, tracker
+from basicly import (
+    dispatch_brief,
+    handoff,
+    needs_input,
+    review,
+    roles,
+    skill_coverage,
+    skill_reference,
+    tracker,
+)
 from basicly.config import WORK_TYPES, SizingConfig
 from basicly.skill_source import SKILLS_SOURCE_DIR
 from tests import flipped_tracker
@@ -182,15 +191,15 @@ def test_a_declared_skill_is_retrievable_without_eager_body_injection(tmp_path: 
         bodies={"python-guidelines": "# Guidelines\nCANARY-EY58-TOKEN\n"},
     )
     names = skill_coverage.role_skills(tmp_path, "claude", "implementer")
-    brief, missing = dispatch_brief.skill_brief(tmp_path, names)
+    brief, missing = skill_reference.skill_brief(tmp_path, names)
 
     assert names == ("python-guidelines",)
     assert missing == ()
-    assert "CANARY-EY58-TOKEN" not in dispatch_brief.with_skills("do the work", brief, missing)
+    assert "CANARY-EY58-TOKEN" not in skill_reference.with_skills("do the work", brief, missing)
     manifest = json.loads(brief)
     reference = manifest["skills"][0]
     assert reference["delivery"] == "deferred"
-    assert "CANARY-EY58-TOKEN" in dispatch_brief.read_skill_reference(
+    assert "CANARY-EY58-TOKEN" in skill_reference.read_skill_reference(
         tmp_path, reference["path"], reference["sha256"]
     )
 
@@ -199,10 +208,10 @@ def test_a_role_declaring_no_skills_leaves_the_prompt_unchanged(tmp_path: Path) 
 
     _project(tmp_path, role="curator", declares=[], bodies={})
     names = skill_coverage.role_skills(tmp_path, "claude", "curator")
-    brief, missing = dispatch_brief.skill_brief(tmp_path, names)
+    brief, missing = skill_reference.skill_brief(tmp_path, names)
 
     assert names == ()
-    assert dispatch_brief.with_skills("do the work", brief, missing) == "do the work"
+    assert skill_reference.with_skills("do the work", brief, missing) == "do the work"
 
 
 def test_an_unreadable_skill_is_named_and_the_readable_ones_still_travel(
@@ -215,8 +224,8 @@ def test_an_unreadable_skill_is_named_and_the_readable_ones_still_travel(
         bodies={"python-guidelines": "CANARY-EY58-TOKEN"},
     )
     names = skill_coverage.role_skills(tmp_path, "claude", "implementer")
-    brief, missing = dispatch_brief.skill_brief(tmp_path, names)
-    prompt = dispatch_brief.with_skills("do the work", brief, missing)
+    brief, missing = skill_reference.skill_brief(tmp_path, names)
+    prompt = skill_reference.with_skills("do the work", brief, missing)
 
     assert missing == ("never-projected",)
     assert "CANARY-EY58-TOKEN" not in prompt
@@ -245,11 +254,11 @@ def test_the_brief_names_a_skill_whose_declaration_matches_the_unit(tmp_path: Pa
     _declare_covers(tmp_path, "bug-only", "covers:\n  work_types: [bug]\n  phases: [build]\n")
     _declare_covers(tmp_path, "undeclared", "")
 
-    matched = dispatch_brief.brief_skills(tmp_path, "claude", "implementer", "bug", "build")
+    matched = skill_reference.brief_skills(tmp_path, "claude", "implementer", "bug", "build")
     assert matched == ("bug-only",)
 
-    brief, missing = dispatch_brief.skill_brief(tmp_path, matched)
-    prompt = dispatch_brief.with_skills("do the work", brief, missing)
+    brief, missing = skill_reference.skill_brief(tmp_path, matched)
+    prompt = skill_reference.with_skills("do the work", brief, missing)
     assert "CANARY-BUG-ONLY" not in prompt
     assert ".claude/skills/bug-only/SKILL.md" in prompt
     assert "undeclared" not in prompt
@@ -259,7 +268,7 @@ def test_the_brief_names_a_skill_by_unit_even_when_the_role_declares_none(
     tmp_path: Path,
 ) -> None:
     _declare_covers(tmp_path, "phase-only", "covers:\n  phases: [validate]\n")
-    assert dispatch_brief.brief_skills(tmp_path, "claude", None, "task", "validate") == (
+    assert skill_reference.brief_skills(tmp_path, "claude", None, "task", "validate") == (
         "phase-only",
     )
 
@@ -267,7 +276,7 @@ def test_the_brief_names_a_skill_by_unit_even_when_the_role_declares_none(
 def test_the_brief_names_a_skill_once_when_both_routes_declare_it(tmp_path: Path) -> None:
     _project(tmp_path, role="implementer", declares=["shared"], bodies={})
     _declare_covers(tmp_path, "shared", "covers:\n  phases: [build]\n")
-    assert dispatch_brief.brief_skills(tmp_path, "claude", "implementer", "bug", "build") == (
+    assert skill_reference.brief_skills(tmp_path, "claude", "implementer", "bug", "build") == (
         "shared",
     )
 
@@ -275,11 +284,11 @@ def test_the_brief_names_a_skill_once_when_both_routes_declare_it(tmp_path: Path
 def test_a_unit_matching_nothing_leaves_the_prompt_unchanged(tmp_path: Path) -> None:
 
     _declare_covers(tmp_path, "phase-only", "covers:\n  phases: [validate]\n")
-    names = dispatch_brief.brief_skills(tmp_path, "claude", None, "chore", "ship")
-    brief, missing = dispatch_brief.skill_brief(tmp_path, names)
+    names = skill_reference.brief_skills(tmp_path, "claude", None, "chore", "ship")
+    brief, missing = skill_reference.skill_brief(tmp_path, names)
 
     assert names == ()
-    assert dispatch_brief.with_skills("do the work", brief, missing) == "do the work"
+    assert skill_reference.with_skills("do the work", brief, missing) == "do the work"
 
 
 def test_reviews_do_not_claim_that_failed_validation_is_green() -> None:
@@ -344,66 +353,6 @@ def test_brief_refuses_a_record_changed_during_artifact_reads(
     monkeypatch.setattr(handoff, "adopted", concurrent_note)
     with pytest.raises(ValueError, match="snapshot changed while assembling"):
         dispatch_brief.task_prompt(repo, "basicly-task")
-
-
-def test_deferred_skill_refuses_changed_content_and_outside_paths(tmp_path: Path) -> None:
-    _project(tmp_path, role="implementer", declares=["safe"], bodies={"safe": "first"})
-    brief, _ = dispatch_brief.skill_brief(tmp_path, ["safe"])
-    ref = json.loads(brief)["skills"][0]
-    assert dispatch_brief.read_skill_reference(tmp_path, ref["path"], ref["sha256"]) == "first"
-    (tmp_path / ref["path"]).write_text("changed", encoding="utf-8")
-    with pytest.raises(ValueError, match="changed"):
-        dispatch_brief.read_skill_reference(tmp_path, ref["path"], ref["sha256"])
-    outside = tmp_path / "private.txt"
-    outside.write_text("private", encoding="utf-8")
-    with pytest.raises(ValueError, match="projected skill"):
-        dispatch_brief.read_skill_reference(tmp_path, "private.txt", ref["sha256"])
-
-
-def test_codex_skill_reference_uses_its_host_projection(tmp_path: Path) -> None:
-    _project(tmp_path, role="implementer", declares=["safe"], bodies={"safe": "claude"})
-    target = tmp_path / ".agents/skills/safe/SKILL.md"
-    target.parent.mkdir(parents=True)
-    target.write_text("codex", encoding="utf-8")
-    brief, missing = dispatch_brief.skill_brief(tmp_path, ["safe"], family="codex")
-    ref = json.loads(brief)["skills"][0]
-    assert not missing
-    assert ref["path"] == ".agents/skills/safe/SKILL.md"
-    assert dispatch_brief.read_skill_reference(tmp_path, ref["path"], ref["sha256"]) == "codex"
-
-
-@pytest.mark.parametrize("name", ["../private", "/private", "..", "a/b", "a\\b"])
-def test_declared_skill_names_cannot_escape_projection(tmp_path: Path, name: str) -> None:
-    with pytest.raises(ValueError, match="skill name"):
-        dispatch_brief.skill_brief(tmp_path, [name])
-
-
-def test_deferred_skill_cannot_read_a_symlink_outside_checkout(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    _project(repo, role="implementer", declares=[], bodies={})
-    external = tmp_path / "external"
-    external.mkdir()
-    (external / "SKILL.md").write_text("outside", encoding="utf-8")
-    (repo / ".claude/skills").mkdir()
-    try:
-        (repo / ".claude/skills/unsafe").symlink_to(external, target_is_directory=True)
-    except OSError, NotImplementedError:
-        pytest.skip("symlinks not available on this platform")
-    with pytest.raises(ValueError, match="inside its host"):
-        dispatch_brief.skill_brief(repo, ["unsafe"])
-
-
-def test_large_skill_manifest_does_not_grow_with_its_body(tmp_path: Path) -> None:
-    body = "Unique required procedure.\n" * 10000
-    _project(tmp_path, role="implementer", declares=["large"], bodies={"large": body})
-    brief, _ = dispatch_brief.skill_brief(tmp_path, ["large"])
-    reference = json.loads(brief)["skills"][0]
-    assert reference["bytes"] == len(body.encode("utf-8"))
-    assert len(brief.encode("utf-8")) < 1500
-    assert (
-        dispatch_brief.read_skill_reference(tmp_path, reference["path"], reference["sha256"])
-        == body
-    )
 
 
 def test_optional_requirements_do_not_invent_a_blocking_fact(tmp_path: Path) -> None:

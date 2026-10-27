@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from . import board_fields, owned_store
+from . import board_fields, tracker
 from .loop_state import parse_worktree_ref
 
 PREFIX = "[activity] "
@@ -179,24 +179,20 @@ class Feed:
         self._lock = threading.Lock()
         self._version: tuple | None = None
         self._events: list[Any] = []
+        self._kit: Any = None
         self._payloads: dict[str, tuple[bytes, str]] = {}
 
     def payload(self, root: str = "") -> tuple[bytes, str]:
-        ledger = owned_store.ledger_dir(self.repo_root)
         with self._lock:
-            files = sorted([*ledger.glob("events-*.jsonl"), *ledger.glob("pending-*.jsonl")])
-            version_parts = []
-            for path in files:
-                metadata = path.stat()
-                version_parts.append((path.name, metadata.st_mtime_ns, metadata.st_size))
-            version = tuple(version_parts)
-            kit = owned_store.kit(self.repo_root)
+            version = tracker.ledger_fingerprint(self.repo_root)
             if version != self._version:
-                self._events = kit.read_ledger(ledger)
+                self._events, self._kit = tracker.activity_source(self.repo_root)
                 self._payloads.clear()
                 self._version = version
             if root not in self._payloads:
-                body = json.dumps(document(self._events, kit, root), ensure_ascii=False).encode()
+                body = json.dumps(
+                    document(self._events, self._kit, root), ensure_ascii=False
+                ).encode()
                 if len(self._payloads) >= 8:
                     self._payloads.clear()
                 self._payloads[root] = body, '"' + hashlib.sha256(body).hexdigest() + '"'
@@ -214,7 +210,7 @@ def respond(handler: BaseHTTPRequestHandler, feed: Feed) -> None:
     except KeyError:
         handler.send_error(HTTPStatus.NOT_FOUND, "task not found")
         return
-    except OSError, ValueError, owned_store.TrackerDivergenceError:
+    except OSError, ValueError, tracker.TrackerDivergenceError:
         logging.getLogger(__name__).exception("Cannot read tracker activity")
         handler.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "activity unavailable")
         return

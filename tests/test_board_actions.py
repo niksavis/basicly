@@ -253,7 +253,7 @@ def test_a_read_only_board_answers_405_and_draws_no_panel(work_repo: Path) -> No
         assert board.board.actions is None
         status, _text = _post(f"{board.url}{board_actions.ROUTE}", b"", origin=None)
         assert status == HTTPStatus.METHOD_NOT_ALLOWED
-        page = urllib.request.urlopen(board.url + "/", timeout=TIMEOUT_S).read()
+        page = urllib.request.urlopen(board.url + "/wall", timeout=TIMEOUT_S).read()
         assert b"<form" not in page
         assert b'name="token"' not in page
 

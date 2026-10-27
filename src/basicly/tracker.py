@@ -102,6 +102,25 @@ def ledger_events(repo_root: Path) -> tuple[list[Any], list[Any]]:
     return kit(repo_root, "events").read_events(ledger_dir(repo_root))
 
 
+def source_loss(repo_root: Path, record: str) -> list[dict]:
+    return owned_store.packaged_kit("record_view").read_source_loss(ledger_dir(repo_root), record)
+
+
+def ledger_fingerprint(repo_root: Path) -> tuple:
+    directory = ledger_dir(repo_root)
+    files = sorted([*directory.glob("events-*.jsonl"), *directory.glob("pending-*.jsonl")])
+    version = []
+    for path in files:
+        metadata = path.stat()
+        version.append((path.name, metadata.st_mtime_ns, metadata.st_size))
+    return tuple(version)
+
+
+def activity_source(repo_root: Path) -> tuple[list[Any], Any]:
+    module = kit(repo_root)
+    return module.read_ledger(ledger_dir(repo_root)), module
+
+
 def confirmation_evidence(repo_root: Path, record: str) -> tuple[dict[str, Any], bool] | str:
 
     events = kit(repo_root, "events")
@@ -211,18 +230,6 @@ def _edge_title(states: Mapping[str, Any], issue_id: str) -> str:
 def _edge_status(views: Mapping[str, Any], issue_id: str) -> str:
     view = views.get(issue_id)
     return "unknown" if view is None else view.status or ""
-
-
-def record_edges(repo_root: Path, issue_id: str) -> dict[str, list]:
-
-    try:
-        kit_module = owned_store.packaged_kit()
-        found = kit_module.read_ledger(ledger_dir(repo_root))
-        states = kit_module.events.fold(found).records
-        views = kit_module.views_from_events(found)
-    except TrackerDivergenceError, OSError, ValueError:
-        return {"dependencies": [], "dependents": []}
-    return _edges(issue_id, views, states)
 
 
 COMMENT_TEXT_KEY = comment_rows.TEXT_KEY

@@ -35,6 +35,7 @@ from . import (
     rubrics,
     run_record,
     runner,
+    skill_reference,
     task_context,
     tracker,
     validate_gate,
@@ -705,11 +706,11 @@ def _with_role_skills(
         if portable:
             prompt = f"{portable}\n\n{prompt}"
             family, role = "claude", intended_role
-    names = dispatch_brief.brief_skills(ctx.repo_root, family, role, ctx.state.issue_type, phase)
+    names = skill_reference.brief_skills(ctx.repo_root, family, role, ctx.state.issue_type, phase)
     if not names:
         return prompt
-    brief, missing = dispatch_brief.skill_brief(ctx.repo_root, names, family=spec.name)
-    return dispatch_brief.with_skills(prompt, brief, missing)
+    brief, missing = skill_reference.skill_brief(ctx.repo_root, names, family=spec.name)
+    return skill_reference.with_skills(prompt, brief, missing)
 
 
 def sizing_at_dispatch(repo_root: Path, issue_id: str) -> dict[str, object]:

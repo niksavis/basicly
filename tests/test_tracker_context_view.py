@@ -39,6 +39,13 @@ def fixture(tmp_path: Path) -> Path:
     return repo
 
 
+def append_legacy_cut_note(repo: Path, text: str) -> None:
+    kit = tracker.kit(repo, "events")
+    payload = kit.prepare_payload({"text": text}, kind="dispatch")
+    assert payload["text_truncated"] is True
+    kit.append(tracker.ledger_dir(repo), [kit.Draft("basicly-task", "comment", payload)])
+
+
 def test_current_view_keeps_contract_clarifications_and_latest_attributed_handoffs(
     tmp_path: Path,
 ) -> None:
@@ -148,7 +155,7 @@ def test_engine_show_current_and_history_share_canonical_snapshot(
 
 def test_current_view_exposes_content_already_truncated_by_its_writer(tmp_path: Path) -> None:
     repo = fixture(tmp_path)
-    tracker.add_comment(repo, "basicly-task", "source-loss-witness " + "界" * 2000)
+    append_legacy_cut_note(repo, "source-loss-witness " + "界" * 2000)
     module = owned_store.packaged_kit("record_view")
     current = module.read_view(tracker.ledger_dir(repo), "basicly-task", view="current")
     cut = next(note for note in current["notes"] if note["text"].startswith("source-loss-witness"))
@@ -214,7 +221,7 @@ def test_dispatch_brief_discloses_source_loss_instead_of_claiming_full_recovery(
     tmp_path: Path,
 ) -> None:
     repo = fixture(tmp_path)
-    tracker.add_comment(repo, "basicly-task", "required-source-witness " + "界" * 2000)
+    append_legacy_cut_note(repo, "required-source-witness " + "界" * 2000)
     full = dispatch_brief.task_view(repo, "basicly-task", view="full")
     assert full["contract"]["source_loss"]
     prompt = dispatch_brief.task_prompt(repo, "basicly-task")

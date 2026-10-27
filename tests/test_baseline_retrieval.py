@@ -51,11 +51,11 @@ def test_specialist_triggers_reach_real_skills_without_host_scope_discovery(targ
     for heading, (trigger, skill) in ROUTES.items():
         section = text.split(f"### {heading}\n", 1)[1].split("\n### ", 1)[0]
         path = f".agents/skills/{skill}/SKILL.md"
-        assert trigger in section and path in section
+        assert trigger in section and skill in section
         assert (ROOT / path).is_file()
         assert (ROOT / f".claude/skills/{skill}/SKILL.md").is_file()
-    assert ".agents/skills/no-comments/SKILL.md" in text
-    assert ".agents/skills/test-discipline/SKILL.md" in text
+    assert "no-comments" in text
+    assert "test-discipline" in text
 
 
 @pytest.mark.parametrize("target", TARGETS)
@@ -63,10 +63,10 @@ def test_absence_controls_stay_always_on_and_risk_controls_route_to_falsify_firs
     target: str,
 ) -> None:
     text = (ROOT / target).read_text()
-    assert "known-match positive control through the same search" in text
-    assert "must also increase the examined-item count" in text
+    assert "known-match control through the same search" in text
+    assert "match must increase the examined count" in text
     facts = text.split("### External Facts\n", 1)[1].split("\n### ", 1)[0]
-    assert "high-risk number" in facts and ".agents/skills/falsify-first/SKILL.md" in facts
+    assert "high-risk number" in facts and "falsify-first" in facts
     skill = (ROOT / ".agents/skills/falsify-first/SKILL.md").read_text()
     assert "two paths that share no calculation step" in skill
     assert "name the list that the code reads" in skill

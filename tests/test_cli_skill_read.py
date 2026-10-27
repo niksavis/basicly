@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import cli, dispatch_brief
+from basicly import cli, skill_reference
 
 
 def test_skill_read_delivers_exact_procedure_and_refuses_stale_reference(
@@ -14,7 +14,7 @@ def test_skill_read_delivers_exact_procedure_and_refuses_stale_reference(
     path = tmp_path / ".agents/skills/example/SKILL.md"
     path.parent.mkdir(parents=True)
     path.write_text("# Required procedure\nPreserve [brackets].\n", encoding="utf-8")
-    manifest, _ = dispatch_brief.skill_brief(tmp_path, ["example"], family="codex")
+    manifest, _ = skill_reference.skill_brief(tmp_path, ["example"], family="codex")
     argv = json.loads(manifest)["skills"][0]["retrieve"][1:]
     monkeypatch.chdir(tmp_path)
     assert cli.main(argv) == 0

@@ -62,6 +62,7 @@ from . import (
     run_record,
     runner,
     shipped_core,
+    skill_reference,
     state,
     supervise,
     tracker,
@@ -2331,7 +2332,7 @@ def _cmd_usage_lane_split(_args: argparse.Namespace) -> int:
 
 def cmd_skill_read(args: argparse.Namespace) -> int:
     try:
-        body = dispatch_brief.read_skill_reference(_repo_root(), args.path, args.sha256)
+        body = skill_reference.read_skill_reference(_repo_root(), args.path, args.sha256)
     except ValueError as error:
         ui.fail(str(error))
         return 1

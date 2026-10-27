@@ -690,9 +690,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | size | cap | headroom | lines | line cap |
 | --- | --- | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 9735 characters | 12000 | 2265 | 176 | 200 |
-| `AGENTS.md` (codex) | 10108 bytes | 24576 | 14468 | 181 | 320 |
-| `.github/copilot-instructions.md` (copilot) | 9735 characters | 12000 | 2265 | 176 | 200 |
+| `.claude/CLAUDE.md` (claude) | 9146 characters | 12000 | 2854 | 169 | 200 |
+| `AGENTS.md` (codex) | 9446 bytes | 24576 | 15130 | 174 | 320 |
+| `.github/copilot-instructions.md` (copilot) | 9146 characters | 12000 | 2854 | 169 | 200 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -3742,7 +3742,7 @@ it in a tier.
 
 <!-- docs-claims:begin layering-contract -->
 
-The 77 tiers hold 168 modules and group into 9 bands. Every band may import every band below
+The 80 tiers hold 171 modules and group into 9 bands. Every band may import every band below
 it, and nothing above it. Every count here is derived from `.importlinter`. The band
 *boundaries* are not: 9 bands over the tier stack is an editorial reading the contract does not
 carry, so they are declared in `.scripts/docs_claim_layers.py` and the counts are derived
@@ -3751,10 +3751,10 @@ against them.
 ```mermaid
 flowchart TB
   b1["1 · entry — 1 module<br/>cli"]
-  b2["2 · drivers — 14<br/>supervise · loop · release · usage_report"]
-  b3["3 · loop mechanics — 42<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
+  b2["2 · drivers — 15<br/>supervise · loop · release · usage_report"]
+  b3["3 · loop mechanics — 43<br/>merge · decompose · policy · verify · board_snapshot · decisions · plan_gate"]
   b4["4 · configuration and isolation — 4<br/>config · worktree"]
-  b5["5 · agent runtime — 9<br/>runner · lane_log · lane_split · context_window · claude_settings"]
+  b5["5 · agent runtime — 10<br/>runner · lane_log · lane_split · context_window · claude_settings"]
   b6["6 · projection — 16<br/>loader · planner · renderers · skills · agents · hooks · permissions"]
   b7["7 · records and telemetry — 17<br/>run_record · artifact_record · lens_review · spend_calibration"]
   b8["8 · tracker seam — 26<br/>owned_store · mirror · dispatch_phase · board_schema · board_fields"]

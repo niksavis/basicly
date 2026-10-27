@@ -248,7 +248,7 @@ def test_the_work_tracker_skill_states_the_engines_own_work_types() -> None:
 def test_check_fails_when_the_skill_states_a_type_the_engine_rejects(
     work_repo: Path, capsys: pytest.CaptureFixture[str], old: str, new: str, expected: str
 ) -> None:
-    path = work_repo / ".basicly/core/skills/work-tracker/skill.yaml"
+    path = work_repo / ".basicly/core/skills/work-tracker/references/write.md"
     text = path.read_text(encoding="utf-8")
     assert old in text, "the fixture no longer matches the skill it mutates"
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
@@ -265,7 +265,7 @@ def test_the_claim_follows_a_renamed_skill_source_instead_of_a_path(work_repo: P
     (skills / "work-tracker").rename(skills / "work-ledger")
     assert claims.work_types.skill_work_types(work_repo) == []
 
-    source = skills / "work-ledger" / "skill.yaml"
+    source = skills / "work-ledger" / "references" / "write.md"
     stated = source.read_text(encoding="utf-8")
     source.write_text(
         stated.replace("`feature`, `task`;", "`feature`, `docs`;", 1), encoding="utf-8"
@@ -278,7 +278,7 @@ def test_prose_reworded_past_the_anchor_fails_loudly_rather_than_asserting_nothi
     work_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
-    path = work_repo / ".basicly/core/skills/work-tracker/skill.yaml"
+    path = work_repo / ".basicly/core/skills/work-tracker/references/write.md"
     text = path.read_text(encoding="utf-8")
     path.write_text(text.replace("the leaf types", "the buildable kinds", 1), encoding="utf-8")
 

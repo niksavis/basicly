@@ -215,6 +215,15 @@ source of current instructions. The
 states the admission rule for an always-on instruction, the workflow order and the
 accounting for each instruction that moved into a skill.
 
+The ongoing harness redesign keeps its bounded evidence in
+[harness-activity-board.md](../design/harness-activity-board.md),
+[harness-baseline-trials.md](../design/harness-baseline-trials.md),
+[harness-context-delivery.md](../design/harness-context-delivery.md),
+[harness-guidance.md](../design/harness-guidance.md),
+[harness-skill-dispositions.md](../design/harness-skill-dispositions.md), and
+[harness-task-state.md](../design/harness-task-state.md). The tracker retains remaining
+acceptance and rollout work; these documents do not declare the epic complete.
+
 **Three companion files sit beside the architecture document, and none is reference
 material.**
 

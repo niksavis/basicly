@@ -1,0 +1,1 @@
+- Refuse oversized new tracker notes after redaction before appending any events, with a remedy to shorten the note or link an artifact. Preserve older clipped notes and their source-loss warnings.

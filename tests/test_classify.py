@@ -119,9 +119,8 @@ def test_classify_reports_not_ready_dor(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert result.work_type == "feature"
     assert result.can_leave_classify is False
     assert result.dor.missing == (
-        "## Trigger",
+        "## Context",
         "## Acceptance Criteria",
-        "## Requirements",
         *DEBTS,
     )
 

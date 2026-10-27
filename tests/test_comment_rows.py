@@ -61,7 +61,8 @@ def test_a_tombstoned_record_answers_empty(tmp_path: Path) -> None:
 def _cut_comment(repo: Path, record: str) -> tuple[str, int]:
     kit = tracker.kit(repo)
     body = "[harness-artifact] kind=implementation-plan " + "y" * kit.events.MAX_TEXT_BYTES
-    _comment(repo, record, body)
+    payload = kit.events.prepare_payload({"text": body}, kind="dispatch")
+    kit.events.append(tracker.ledger_dir(repo), [kit.events.Draft(record, "comment", payload)])
     return body, len(body.encode("utf-8"))
 
 

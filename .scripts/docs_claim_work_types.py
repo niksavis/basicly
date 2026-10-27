@@ -23,7 +23,10 @@ def _types_after(text: str, anchor: str) -> tuple[str, ...]:
 
 
 def skill_work_types(root: Path) -> list[str]:
-    paths = sorted((root / SKILLS_DIR).glob("*/skill.yaml"))
+    paths = sorted([
+        *(root / SKILLS_DIR).glob("*/skill.yaml"),
+        *(root / SKILLS_DIR).glob("*/references/*.md"),
+    ])
     catalog = " ".join(" ".join(read_text(path) for path in paths).split())
 
     problems: list[str] = []
