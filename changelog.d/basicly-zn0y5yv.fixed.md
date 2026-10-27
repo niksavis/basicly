@@ -1,1 +1,0 @@
-- Use valid Markdown links in the projected release guidance so Markdown lint and release publication pass.

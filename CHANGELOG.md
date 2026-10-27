@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.30.1 - 2026-10-27
+
+Delta: v0.30.0..v0.30.1
+
 This release keeps ordinary agent work with one responsible owner and makes headless
 orchestration an explicit choice. It reduces repeated guidance, gives resumed work a
 focused recovery view, and makes tracker activity visible on the default board.
@@ -77,6 +81,8 @@ whole-task speedup; repeated matched and held-out trials remain outstanding.
 - Refuse oversized new tracker notes after redaction before appending any events, with a remedy to shorten the note or link an artifact. Preserve older clipped notes and their source-loss warnings. (basicly-gtb19bg.13)
 
 - Restore hidden-tooling type coverage with Pyright 1.1.414, keep tracker reads behind the storage seam, preserve full historical prose during import, and start worker stall timers only after process admission. Keep archived trial copies out of production wiring checks. (basicly-gtb19bg)
+
+- Use valid Markdown links in the projected release guidance so Markdown lint and release publication pass. (basicly-zn0y5yv)
 
 ### Security
 
