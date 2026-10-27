@@ -1,0 +1,1 @@
+- Worker dispatch lists declared skills as deferred references instead of pasting their bodies. Read projected entries with `basicly skill-read` and the manifest digest; changed or unavailable guidance fails explicitly. Complete task facts remain delivered.

@@ -708,7 +708,7 @@ def _with_role_skills(
     names = dispatch_brief.brief_skills(ctx.repo_root, family, role, ctx.state.issue_type, phase)
     if not names:
         return prompt
-    brief, missing = dispatch_brief.skill_brief(ctx.repo_root, names)
+    brief, missing = dispatch_brief.skill_brief(ctx.repo_root, names, family=spec.name)
     return dispatch_brief.with_skills(prompt, brief, missing)
 
 

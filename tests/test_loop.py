@@ -1660,7 +1660,7 @@ def test_a_collided_landing_records_no_finding_set_in_the_loop(
     assert recorded == [] and result.blocked
 
 
-def test_skill_canary_reaches_the_dispatched_prompt(
+def test_skill_reference_reaches_dispatch_without_eager_body(
     at, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
 
@@ -1686,7 +1686,9 @@ def test_skill_canary_reaches_the_dispatched_prompt(
     monkeypatch.setattr(runner, "run", _run)
     _advance(tmp_path)
 
-    assert "CANARY-EY58-DISPATCH" in seen["prompt"]
+    assert "CANARY-EY58-DISPATCH" not in seen["prompt"]
+    assert ".claude/skills/python-guidelines/SKILL.md" in seen["prompt"]
+    assert "skill-read" in seen["prompt"]
     assert "basicly tracker show i" in seen["prompt"]
 
 

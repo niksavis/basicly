@@ -2329,6 +2329,16 @@ def _cmd_usage_lane_split(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_skill_read(args: argparse.Namespace) -> int:
+    try:
+        body = dispatch_brief.read_skill_reference(_repo_root(), args.path, args.sha256)
+    except ValueError as error:
+        ui.fail(str(error))
+        return 1
+    sys.stdout.write(body)
+    return 0
+
+
 def cmd_brief(args: argparse.Namespace) -> int:
 
     repo_root = _repo_root()
@@ -5524,6 +5534,15 @@ def _add_tracker_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _add_brief_parser(subparsers: argparse._SubParsersAction) -> None:
+    skill_parser = subparsers.add_parser(
+        "skill-read", help="Read a projected skill at its recorded digest"
+    )
+    skill_parser.add_argument(
+        "path", help="Relative projected SKILL.md path from the context manifest"
+    )
+    skill_parser.add_argument(
+        "--sha256", required=True, help="Expected content digest; changed skills are refused"
+    )
     brief_parser = subparsers.add_parser(
         "brief", help="Print the dispatch brief the loop would send for one issue"
     )
@@ -5693,6 +5712,7 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
         "rubric": cmd_rubric,
         "usage": cmd_usage,
         "brief": cmd_brief,
+        "skill-read": cmd_skill_read,
         "board": board_cli.cmd_board,
         "tracker": cmd_tracker,
         "session": cmd_session,
