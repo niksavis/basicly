@@ -2126,6 +2126,7 @@ def advance_parked(
             steps = loop.run_until_blocked(
                 repo_root,
                 lane.issue_id,
+                inputs=loop.Inputs(execution="worker"),
                 grant_root=None if session.lane_label is not None else session.root_issue,
             )
         except (RuntimeError, OSError, ValueError) as exc:

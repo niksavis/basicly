@@ -622,3 +622,42 @@ def test_a_supervisor_pass_runs_two_agent_processes_and_lands_both(
             run_record.EXECUTED,
         ]
     assert len(_merge_commits(repo)) == 2
+
+
+def test_a_parked_supervised_mini_loop_preserves_worker_and_ship_guards(
+    standin_repo: Path,
+) -> None:
+    repo = standin_repo
+    lane = _create_bead(repo, "resume a parked lane")
+    _to_build(repo, lane)
+    plan = (
+        ChildSpec(
+            "finish the parked task",
+            ("Given the parked task when resumed then its committed work lands",),
+            ("*.txt",),
+            **_GATED,
+        ),
+    )
+    recorded = loop.advance(repo, lane, inputs=loop.Inputs(children=plan))
+    assert recorded.blocked, recorded.detail
+    subtasks = _subtasks_by_title(repo, lane)
+    subtask = subtasks[plan[0].title]
+    _review(repo, lane)
+    _review(repo, subtask)
+
+    owner_waits = loop.advance(repo, lane)
+    assert owner_waits.blocked, owner_waits.detail
+    assert _dispatches(repo, subtask) == []
+    assert _status(repo, subtask) == "in_progress"
+
+    session = supervise.derive_session(repo, _ROOT)
+    routed = supervise.advance_parked(repo, session)
+
+    assert _status(repo, subtask) == "closed", [item.detail for item in routed]
+    assert (repo / f"{subtask}.txt").read_text(encoding="utf-8") == f"work for {subtask}\n"
+    assert (repo / "app.txt").read_text(encoding="utf-8") == "start\n"
+    assert [item["outcome"] for item in _dispatches(repo, subtask)] == [run_record.EXECUTED]
+    assert [item.route for item in routed] == ["merged"]
+    assert loop_state.read_node_state(repo, lane).phase == "ship"
+    assert _status(repo, lane) == "in_progress"
+    assert _dispatches(repo, lane)[-1]["outcome"] == run_record.FAILED

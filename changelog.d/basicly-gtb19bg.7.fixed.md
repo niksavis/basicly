@@ -1,0 +1,1 @@
+- Preserve worker execution when the headless supervisor resumes a parked lane, while ordinary owner work and required ship checks keep their existing behavior.
