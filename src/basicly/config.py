@@ -343,7 +343,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
         tables={"regenerate_commands": _OPEN_TABLE},
     ),
     "verify": Table(
-        keys=frozenset({"cache", "fail_fast"}),
+        keys=frozenset({"cache", "fail_fast", "hook_jobs"}),
         arrays={"checks": _VERIFY_CHECK_TABLE},
         tables={"affected": Table(keys=frozenset({"command", "checks", "timeout_seconds"}))},
     ),

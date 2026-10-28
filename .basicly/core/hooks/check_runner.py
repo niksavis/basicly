@@ -117,14 +117,18 @@ def _mode_entries(repo_root: Path, mode: str | None) -> list[dict]:
     return entries
 
 
-def resolve_command(command: list[str], repo_root: Path) -> list[str]:
-    source = Path(__file__).with_name("command_paths.py")
-    spec = importlib.util.spec_from_file_location("basicly_hook_command_paths", source)
+def _hook_module(name: str) -> Any:
+    source = Path(__file__).with_name(f"{name}.py")
+    spec = importlib.util.spec_from_file_location(f"basicly_hook_{name}", source)
     if spec is None or spec.loader is None:
-        raise ValueError("check command path runtime is missing; run basicly install")
+        raise ValueError(f"hook runtime {name}.py is missing; run basicly install")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.resolve_command(command, repo_root)
+    return module
+
+
+def resolve_command(command: list[str], repo_root: Path) -> list[str]:
+    return _hook_module("command_paths").resolve_command(command, repo_root)
 
 
 def load_checks(repo_root: Path, mode: str) -> list[tuple[str, list[str]]]:
@@ -326,45 +330,9 @@ def run_checks(repo_root: Path, mode: str, *, scope_to_diff: bool = False) -> in
     home = interpreter_home(repo_root)
     interpreter_before = interpreter_target(home)
     total_start = time.perf_counter()
-    failed: list[str] = []
-    outcomes: list[dict] = []
-    for name, command in checks:
-        if name in skips:
-            print(f"==> {name} SKIPPED: {skips[name]}", flush=True)
-            outcomes.append({"name": name, "disposition": "not-selected", "reason": skips[name]})
-            continue
-        if fail_fast and failed:
-            outcomes.append(_blocked_outcome(name, failed[0]))
-            continue
-        print(f"==> {name}", flush=True)
-        start = time.perf_counter()
-        try:
-            result = subprocess.run(resolve_command(command, repo_root), cwd=repo_root, check=False)  # nosec B603
-            code = result.returncode
-        except FileNotFoundError:
-            print(
-                f"FAILED: {name} — command not found: {command[0]} "
-                f"(install it or edit [[verify.checks]] in {CONFIG_FILE})",
-                file=sys.stderr,
-            )
-            code = 127
-        except OSError as exc:
-            print(
-                f"FAILED: {name} — cannot run {command[0]} ({exc.strerror or exc})",
-                file=sys.stderr,
-            )
-            code = 126
-        elapsed = time.perf_counter() - start
-        outcomes.append({
-            "name": name,
-            "disposition": "executed",
-            "returncode": code,
-            "duration_s": elapsed,
-        })
-        if code != 0:
-            failed.append(name)
-            print(f"FAILED: {name} ({elapsed:.2f}s)", file=sys.stderr)
-
+    execution = _hook_module("check_execution")
+    plan = execution.Plan(checks, skips, fail_fast, load_hook_jobs(repo_root))
+    outcomes, failed = execution.run(repo_root, plan, resolve_command)
     total_elapsed = time.perf_counter() - total_start
     if selection is not None:
         _record_selection(repo_root, selection, outcomes)
@@ -390,6 +358,17 @@ def load_fail_fast(repo_root: Path) -> bool:
     return _boolean_option(repo_root, "fail_fast")
 
 
+def load_hook_jobs(repo_root: Path) -> int:
+    jobs: object = 1
+    for _, document in _documents(repo_root):
+        section = document.get("verify", {})
+        if isinstance(section, dict) and "hook_jobs" in section:
+            jobs = section["hook_jobs"]
+    if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
+        raise SystemExit("verify.hook_jobs must be a whole number of at least 1")
+    return jobs
+
+
 def load_cache(repo_root: Path) -> bool:
     return _boolean_option(repo_root, "cache")
 
@@ -403,9 +382,3 @@ def _boolean_option(repo_root: Path, name: str) -> bool:
     if not isinstance(enabled, bool):
         raise SystemExit(f"verify.{name} must be true or false")
     return enabled
-
-
-def _blocked_outcome(name: str, failed: str) -> dict:
-    reason = f"not run after failed check {failed}"
-    print(f"==> {name} NOT RUN: {reason}", flush=True)
-    return {"name": name, "disposition": "not-run", "reason": reason}

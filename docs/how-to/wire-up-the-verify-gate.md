@@ -334,6 +334,15 @@ original run instead of printing an execution marker. Streaming preserves check
 failures and the existing order of required checks; agent hook protocol output
 keeps its separate handling.
 
+Set `hook_jobs = <n>` in the `[verify]` table to let the installed Git hooks
+run up to `n` selected checks at the same time. It defaults to 1, which runs
+them one after another. With more than one job, each check prints its marker
+and its captured output in the configured order after it finishes, so the
+output does not stream. With `fail_fast = true`, a failure stops checks that
+have not started yet, and checks already running finish. Use it only for checks
+that do not write the same files. `basicly verify` ignores this key and runs
+its checks one after another.
+
 ```sh
 basicly verify --mode fast
 ```
