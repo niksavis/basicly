@@ -165,7 +165,7 @@ uv run basicly permissions-check
 
 ### Session Completion
 
-- Use `session-finish` at session end: leave a clean repository, no partial edits or stray files, and a root `[session handover <date>]` note with changes, checks and open work.
+- Use `session-finish` at session end: leave no partial edits or stray files. Add a root `[session handover <date>]` note only for open work or facts the ledger and Git lack.
 - After a refusal or correction, fix its cause within approved scope and carry the diagnosis into handover. Record further recommendations without expanding scope.
 
 ### Release Fragments

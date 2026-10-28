@@ -985,10 +985,13 @@ def _say_session_blocked(report: dict[str, Any], rows: int) -> None:
         ui.say(f"        {blocked['count'] - rows} more: `basicly tracker blocked`")
 
 
-def _say_session_grants(report: dict[str, Any]) -> None:
+def _say_session_grants(report: dict[str, Any], full: bool) -> None:
     grants = report["grants"]
     if not grants["count"]:
         ui.say("authority: task requests authorize work; no grant or budget is required")
+        return
+    if not full:
+        ui.say(f"grants: {grants['count']} historical - `basicly session start --full`")
         return
     ui.table(
         f"Historical grants ({grants['count']} readable)",
@@ -1014,10 +1017,16 @@ def _say_session_grants(report: dict[str, Any]) -> None:
             )
 
 
-def _say_session_decisions(report: dict[str, Any]) -> None:
+def _say_session_decisions(report: dict[str, Any], full: bool) -> None:
     decisions = report["decisions"]
     if not decisions["present"]:
         ui.say(f"decisions: no {decisions['document']} in this repository")
+        return
+    if not full:
+        ui.say(
+            f"decisions: {len(decisions['records'])} of {decisions['decisions']} not "
+            f"`{DECISION_IN_FORCE}` - `basicly session start --full`"
+        )
         return
     ui.table(
         f"Decision targets ({len(decisions['records'])} of {decisions['decisions']}, "
@@ -1039,12 +1048,12 @@ def cmd_session_start(args: argparse.Namespace) -> int:
         return 0
     if not report["tracker"]["present"]:
         ui.say("ledger: none - this repository has no owned tracker, so no backlog to read")
-        _say_session_decisions(report)
+        _say_session_decisions(report, args.full)
         return 0
     if not report["tracker"]["records"]:
         ui.say("ledger: empty - no records yet, so nothing is ready and nothing is blocked")
         ui.say("        `basicly tracker write -- create ...` files the first one")
-        _say_session_decisions(report)
+        _say_session_decisions(report, args.full)
         return 0
     records = report["tracker"]["records"]
     ui.say(
@@ -1054,8 +1063,8 @@ def cmd_session_start(args: argparse.Namespace) -> int:
     _say_session_handover(report)
     _say_session_ready(report, args.rows)
     _say_session_blocked(report, args.rows)
-    _say_session_grants(report)
-    _say_session_decisions(report)
+    _say_session_grants(report, args.full)
+    _say_session_decisions(report, args.full)
     return 0
 
 
@@ -5469,6 +5478,11 @@ def _add_session_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     start.add_argument(
         "--json", action="store_true", help="Emit the orientation as JSON (stable schema)"
+    )
+    start.add_argument(
+        "--full",
+        action="store_true",
+        help="Print the grant and decision-target tables instead of one summary line each",
     )
     start.add_argument(
         "--rows",

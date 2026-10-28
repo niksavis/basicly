@@ -81,13 +81,27 @@ def test_the_orientation_prints_ready_blocked_grants_and_decision_targets(
     repo = _seeded(tmp_path)
     _with_decisions(repo)
 
-    assert _run(repo, monkeypatch, "--rows", "5") == 0
+    assert _run(repo, monkeypatch, "--rows", "5", "--full") == 0
 
     out = capsys.readouterr().out
     assert "basicly-aaa" in out and "the ready one" in out
     assert "basicly-bbb" in out and "basicly-aaa (open)" in out
     assert "basicly-ccc" in out and "1,000,000" in out
     assert "D-34" in out and "**proposed**" in out
+
+
+def test_the_default_orientation_summarizes_grants_and_decision_targets_in_one_line_each(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _seeded(tmp_path)
+    _with_decisions(repo)
+
+    assert _run(repo, monkeypatch) == 0
+
+    out = capsys.readouterr().out
+    assert "grants: 1 historical - `basicly session start --full`" in out
+    assert "decisions: 2 of 3 not `accepted` - `basicly session start --full`" in out
+    assert "1,000,000" not in out and "**proposed**" not in out
 
 
 def test_the_ranking_policy_is_printed_beside_the_ready_set(
@@ -206,7 +220,7 @@ def test_a_checkout_that_holds_no_dispatch_reports_the_spend_unknown_not_zero(
 
     repo = _seeded(tmp_path)
 
-    assert _run(repo, monkeypatch) == 0
+    assert _run(repo, monkeypatch, "--full") == 0
 
     out = capsys.readouterr().out
     assert "unknown" in out
