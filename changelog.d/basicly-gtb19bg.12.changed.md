@@ -1,1 +1,0 @@
-- A local `git push` now runs only the `fast` checks whose inputs match a file that the pushed commits change, instead of the whole `full` suite; with the `CI` environment variable set, pre-push still runs the `full` checks.

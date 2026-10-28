@@ -1,1 +1,0 @@
-- `basicly release` no longer refuses a tag because a declared check has no recorded run on this machine, rewrites a tutorial line that names the current version, and stops asking a record closed as cancelled for a release note; the release skill drops the scratch-clone proof where the tag workflow runs the full checks.

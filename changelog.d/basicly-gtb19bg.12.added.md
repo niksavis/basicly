@@ -1,1 +1,0 @@
-- Set `jobs = <n>` or `jobs = "auto"` under `[verify]` to let `basicly verify` and the installed Git hooks run checks at the same time; `auto` sizes it from the CPU count. A `{workers}` argument in a check command receives each job's share of the cores, for example for `pytest -n`.

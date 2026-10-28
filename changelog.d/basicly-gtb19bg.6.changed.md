@@ -1,1 +1,0 @@
-- `basicly session start` now prints the historical grants and the open decision records as one summary line each, which cuts the session-start context by more than half; `--full` prints the old tables.

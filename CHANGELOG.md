@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.31.0 - 2026-10-28
+
+Delta: v0.30.1..v0.31.0
+
 This release makes the routine commit and push loop much faster and sizes parallel
 verification to the machine it runs on. A local push now checks only the files its
 commits change, while continuous integration keeps the full suite. Verification can
@@ -20,6 +24,26 @@ start with less context: session start and the always-on rules are shorter.
 - Fixes: landings on a system Python with linked library files, such as Ubuntu
   26.04, and worker execution for resumed parked lanes (basicly-gtb19bg.12,
   basicly-gtb19bg.7).
+
+### Added
+
+- Set `jobs = <n>` or `jobs = "auto"` under `[verify]` to let `basicly verify` and the installed Git hooks run checks at the same time; `auto` sizes it from the CPU count. A `{workers}` argument in a check command receives each job's share of the cores, for example for `pytest -n`. (basicly-gtb19bg.12)
+
+### Changed
+
+- A local `git push` now runs only the `fast` checks whose inputs match a file that the pushed commits change, instead of the whole `full` suite; with the `CI` environment variable set, pre-push still runs the `full` checks. (basicly-gtb19bg.12)
+
+- `basicly release` no longer refuses a tag because a declared check has no recorded run on this machine, rewrites a tutorial line that names the current version, and stops asking a record closed as cancelled for a release note; the release skill drops the scratch-clone proof where the tag workflow runs the full checks. (basicly-gtb19bg.15)
+
+- The always-on rules no longer restate general engineering practice, and the Quality Gate is three lines; its per-situation verification rules moved into the `harness-loop` skill as `references/verification.md`. (basicly-gtb19bg.3)
+
+- `basicly session start` now prints the historical grants and the open decision records as one summary line each, which cuts the session-start context by more than half; `--full` prints the old tables. (basicly-gtb19bg.6)
+
+### Fixed
+
+- A landing on a system Python whose standard library links a file outside its folder, such as Ubuntu 26.04 `sitecustomize.py`, no longer fails with "Cannot capture landing identity"; the linked file is fingerprinted by its target. (basicly-gtb19bg.12)
+
+- Preserve worker execution when the headless supervisor resumes a parked lane, while ordinary owner work and required ship checks keep their existing behavior. (basicly-gtb19bg.7)
 
 ## v0.30.1 - 2026-10-27
 

@@ -1,1 +1,0 @@
-- The always-on rules no longer restate general engineering practice, and the Quality Gate is three lines; its per-situation verification rules moved into the `harness-loop` skill as `references/verification.md`.
