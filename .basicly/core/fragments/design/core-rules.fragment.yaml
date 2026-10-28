@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../schemas/fragment.schema.json
 schema_version: 1
 token_cost:
-  claude: 133
-  codex: 133
-  copilot: 133
+  claude: 58
+  codex: 58
+  copilot: 58
 id: core-rules
 description: The engineering rules every change follows.
 category: design
@@ -15,7 +15,5 @@ tags:
 status: active
 title: Core Rules
 body: |
-  - Build the smallest requested change. Check consumer code for reuse before building; documentation or `--help` alone does not establish absence.
-  - Fix demonstrated causes across call sites; match local style and names. Leave no dead code, debug output or swallowed errors.
-  - Keep tests deterministic; bug fixes need regression tests. Read the `test-discipline` skill for isolation, ordering or platform-sensitive tests.
-  - Support claims with files, commands or passing tests; mark unread-code claims as assumptions.
+  - Before building, search the code that would call the capability; documentation or `--help` alone does not establish absence.
+  - Read the `test-discipline` skill for isolation, ordering or platform-sensitive tests.

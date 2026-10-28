@@ -690,9 +690,9 @@ Measured from the projected files, and regenerated and gated on every commit:
 
 | Surface | size | cap | headroom | lines | line cap |
 | --- | --- | --- | --- | --- | --- |
-| `.claude/CLAUDE.md` (claude) | 9143 characters | 12000 | 2857 | 169 | 200 |
-| `AGENTS.md` (codex) | 9443 bytes | 24576 | 15133 | 174 | 320 |
-| `.github/copilot-instructions.md` (copilot) | 9143 characters | 12000 | 2857 | 169 | 200 |
+| `.claude/CLAUDE.md` (claude) | 8675 characters | 12000 | 3325 | 166 | 200 |
+| `AGENTS.md` (codex) | 8975 bytes | 24576 | 15601 | 171 | 320 |
+| `.github/copilot-instructions.md` (copilot) | 8675 characters | 12000 | 3325 | 166 | 200 |
 
 <!-- docs-claims:end always-on-sizes -->
 
@@ -3892,8 +3892,10 @@ can be skipped. The order is strictly linear.
 | 4 · continuous integration | on push and on a tag | the full checks on Linux, focused consumer checks on Windows and macOS, and a fresh-consumer smoke install at a tag |
 
 Layer 3 runs the same `full` mode as continuous integration, so a green loop step predicts a
-green build. Layer 2 runs the narrower `fast` mode at commit and at a local push, scoped to
-the changed files, so a clean push predicts less than a green build does. [36.2](#362-the-verify-pipeline) carries
+green build. A local push runs the `fast` mode as layer 2's **pre-push** stage, scoped to the
+files that the pushed commits change; under continuous integration that stage runs `full`.
+Layer 2's **pre-commit** stage runs the narrower `fast` mode on the staged files, so a clean
+push predicts less than a green build does. [36.2](#362-the-verify-pipeline) carries
 the per-mode counts.
 
 **Layer 1 is structurally different from the three below it, and that is the point.** Every

@@ -1,0 +1,1 @@
+- The always-on instruction files no longer restate general engineering practice (smallest change, no dead code, deterministic tests, read the README first); the repository-specific rules, commands and approval list remain.

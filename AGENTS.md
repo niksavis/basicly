@@ -86,7 +86,6 @@ uv run basicly permissions-check
 
 ### Knowledge Priming
 
-- Read the README, local instructions and relevant architecture before non-trivial work. Follow repository evidence over general practice and explain the difference.
 - The current user's instruction overrides this file; path-scoped instructions override it for matching files.
 
 ### Harness Loop
@@ -120,10 +119,8 @@ uv run basicly permissions-check
 
 ### Core Rules
 
-- Build the smallest requested change. Check consumer code for reuse before building; documentation or `--help` alone does not establish absence.
-- Fix demonstrated causes across call sites; match local style and names. Leave no dead code, debug output or swallowed errors.
-- Keep tests deterministic; bug fixes need regression tests. Read the `test-discipline` skill for isolation, ordering or platform-sensitive tests.
-- Support claims with files, commands or passing tests; mark unread-code claims as assumptions.
+- Before building, search the code that would call the capability; documentation or `--help` alone does not establish absence.
+- Read the `test-discipline` skill for isolation, ordering or platform-sensitive tests.
 
 ### Mistake Proofing
 
