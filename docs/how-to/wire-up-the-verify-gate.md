@@ -41,8 +41,8 @@ modes = ["full"]
 | Mode | Runs | Put here |
 | --- | --- | --- |
 | `staged` | `basicly verify --mode staged`, with suffix-matching staged paths appended | file-local lint and format |
-| `fast` | pre-commit, or `basicly verify --mode fast` | lint, type check, a quick unit subset |
-| `full` | ordinary `basicly verify`, pre-push and loop landings | the whole suite |
+| `fast` | pre-commit, a local pre-push, or `basicly verify --mode fast` | lint, type check, a quick unit subset |
+| `full` | ordinary `basicly verify`, pre-push under continuous integration, and loop landings | the whole suite |
 
 A `staged` check without `staged_suffix` receives no filenames and uses its
 configured command's scope. Add `--affected` to validate index contents from the
@@ -105,7 +105,10 @@ This command reads configuration and executes checks in a temporary copy of the
 index. An unstaged repair cannot hide a staged failure. It preserves the original
 index and working tree. `--affected` cannot combine with `--fix` or `--issue`;
 use ordinary verification to repair files or record a required gate.
-Ordinary verification, pre-push and loop landings retain broad checks.
+Ordinary verification and loop landings retain broad checks. A local pre-push runs the
+`fast` checks whose inputs match a file that the pushed commits change; when it cannot
+name those files, it runs every `fast` check. With the `CI` environment variable set,
+pre-push runs the `full` checks.
 Existing installations need no configuration changes when upgrading.
 
 The provider receives one JSON document on stdin:

@@ -239,17 +239,17 @@ def diff_paths(repo_root: Path) -> list[str] | None:
     return None if out is None else [path for path in out.split("\0") if path]
 
 
-def scoped_skips(repo_root: Path, mode: str) -> dict[str, str]:
+def scoped_skips(repo_root: Path, mode: str, changed: list[str] | None = None) -> dict[str, str]:
 
     if not (declared := load_inputs(repo_root, mode)):
         return {}
-    changed = diff_paths(repo_root)
+    changed = diff_paths(repo_root) if changed is None else changed
     if not changed:
         return {}
     skips: dict[str, str] = {}
     for name, globs in declared.items():
         if not any(PurePosixPath(path).full_match(glob) for path in changed for glob in globs):
-            skips[name] = f"no staged path matches its inputs ({' '.join(globs)})"
+            skips[name] = f"no changed path matches its inputs ({' '.join(globs)})"
     return skips
 
 
@@ -309,8 +309,14 @@ def _restage_fixed(repo_root: Path, dirty_before: list[str], applied: list[str])
 
 
 def _planned_skips(
-    repo_root: Path, mode: str, checks: list[tuple[str, list[str]]], scope_to_diff: bool
+    repo_root: Path,
+    mode: str,
+    checks: list[tuple[str, list[str]]],
+    scope: tuple[bool, list[str] | None],
 ) -> tuple[dict | None, dict[str, str]]:
+    scope_to_diff, changed = scope
+    if changed is not None:
+        return None, scoped_skips(repo_root, mode, changed)
     selection = _selection(repo_root, checks) if scope_to_diff else None
     if selection is not None:
         skips = {
@@ -325,14 +331,16 @@ def _planned_skips(
     return selection, skips
 
 
-def run_checks(repo_root: Path, mode: str, *, scope_to_diff: bool = False) -> int:
+def run_checks(
+    repo_root: Path, mode: str, *, scope_to_diff: bool = False, changed: list[str] | None = None
+) -> int:
 
     fail_fast = load_fail_fast(repo_root)
     checks = load_checks(repo_root, mode)
     if not checks:
         print(f"No verify checks configured for mode '{mode}' in {CONFIG_FILE}; nothing to gate.")
         return 0
-    selection, skips = _planned_skips(repo_root, mode, checks, scope_to_diff)
+    selection, skips = _planned_skips(repo_root, mode, checks, (scope_to_diff, changed))
     if selection and selection["invalid_snapshot"]:
         print(f"affected checks failed: {selection['fallback']}", file=sys.stderr)
         _record_selection(repo_root, selection, [])

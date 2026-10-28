@@ -90,6 +90,7 @@ def test_progress_arrives_before_child_exit_and_preserves_all_checks(
         "PYTHONPATH": str(ROOT / "src"),
         "UV_PYTHON": sys.executable,
         "UV_PYTHON_DOWNLOADS": "never",
+        "CI": "true",
     }
     marker = threading.Event()
     output: list[str] = []

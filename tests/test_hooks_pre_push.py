@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -115,6 +116,7 @@ def test_a_quiet_tree_runs_the_checks_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ran: list[tuple[Path, str]] = []
+    monkeypatch.setenv("CI", "true")
     monkeypatch.setattr(hook, "project_root", lambda: tmp_path)
     monkeypatch.setattr(hook, "ledger_write_in_flight", lambda _root: False)
     monkeypatch.setattr(hook, "run_checks", lambda root, mode: ran.append((root, mode)) or 0)
@@ -273,3 +275,66 @@ def test_this_repo_ignores_the_ledger_lock_without_hiding_a_real_log() -> None:
     lock = f".basicly/ledger/{events.LOCK_NAME}"
     assert _ignored(lock), f"{lock} is unignored; a status sampled mid-append reads dirty"
     assert not _ignored(".basicly/ledger/events-0002.jsonl"), "the rule widened over the log"
+
+
+def _repository(tmp_path: Path) -> tuple[Path, str, str]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for args in (
+        ["init", "-q", "-b", "main"],
+        ["config", "user.email", "pusher@example.invalid"],
+        ["config", "user.name", "Pusher"],
+    ):
+        subprocess.run(["git", *args], cwd=repo, check=True)
+    shas = []
+    for name in ("notes.md", "tool.py"):
+        (repo / name).write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "add", name], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", name], cwd=repo, check=True)
+        shas.append(
+            subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+            ).stdout.strip()
+        )
+    return repo, shas[0], shas[1]
+
+
+def test_a_push_selects_the_files_its_commits_change(tmp_path: Path) -> None:
+    repo, first, second = _repository(tmp_path)
+
+    refs = f"refs/heads/main {second} refs/heads/main {first}\n"
+
+    assert hook.pushed_paths(repo, refs) == ["tool.py"]
+
+
+def test_a_branch_deletion_pushes_no_file(tmp_path: Path) -> None:
+    repo, first, _second = _repository(tmp_path)
+
+    assert hook.pushed_paths(repo, f"(delete) {'0' * 40} refs/heads/old {first}\n") == []
+
+
+def test_an_unknown_remote_commit_falls_back_to_every_check(tmp_path: Path) -> None:
+    repo, _first, second = _repository(tmp_path)
+
+    refs = f"refs/heads/main {second} refs/heads/main {'1' * 40}\n"
+
+    assert hook.pushed_paths(repo, refs) is None
+
+
+def test_a_local_push_runs_fast_checks_for_the_pushed_files_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, first, second = _repository(tmp_path)
+    calls: list[tuple[str, list[str] | None]] = []
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setattr(hook, "project_root", lambda: repo)
+    monkeypatch.setattr(hook, "ledger_write_in_flight", lambda _root: False)
+    monkeypatch.setattr(
+        hook, "run_checks", lambda _root, mode, changed: calls.append((mode, changed)) or 0
+    )
+    monkeypatch.setattr(
+        hook.sys, "stdin", io.StringIO(f"refs/heads/main {second} refs/heads/main {first}\n")
+    )
+
+    assert hook.main() == 0
+    assert calls == [("fast", ["tool.py"])]

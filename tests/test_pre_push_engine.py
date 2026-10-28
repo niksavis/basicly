@@ -28,6 +28,7 @@ def test_engine_failure_is_final_and_only_unavailable_engine_falls_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, result: int
 ) -> None:
     hook = load("pre-push")
+    monkeypatch.setenv("CI", "true")
     calls: list[str] = []
     (tmp_path / "basicly.toml").write_text("[verify]\ncache = true\n")
     monkeypatch.setattr(hook, "project_root", lambda: tmp_path)
@@ -46,6 +47,7 @@ def test_no_profitable_cache_does_not_start_engine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool
 ) -> None:
     hook = load("pre-push")
+    monkeypatch.setenv("CI", "true")
     (tmp_path / "basicly.toml").write_text(f"[verify]\ncache={str(enabled).lower()}\n")
     monkeypatch.setattr(hook, "project_root", lambda: tmp_path)
     monkeypatch.setattr(hook, "ledger_write_in_flight", lambda _: False)

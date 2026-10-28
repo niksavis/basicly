@@ -3891,9 +3891,9 @@ can be skipped. The order is strictly linear.
 | 3 · the verify runner | at the loop's verify step | one command, recorded as a tracker gate |
 | 4 · continuous integration | on push and on a tag | the full checks on Linux, focused consumer checks on Windows and macOS, and a fresh-consumer smoke install at a tag |
 
-Layer 3 runs the same `full` mode as layer 2's **pre-push** stage, so a green loop step
-predicts a green build. Layer 2's **pre-commit** stage runs the narrower `fast` mode, so a
-clean commit predicts less than a clean push does. [36.2](#362-the-verify-pipeline) carries
+Layer 3 runs the same `full` mode as continuous integration, so a green loop step predicts a
+green build. Layer 2 runs the narrower `fast` mode at commit and at a local push, scoped to
+the changed files, so a clean push predicts less than a green build does. [36.2](#362-the-verify-pipeline) carries
 the per-mode counts.
 
 **Layer 1 is structurally different from the three below it, and that is the point.** Every
@@ -3927,8 +3927,8 @@ appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 38 | pre-commit |
-| full | 45 | pre-push, continuous integration, and the loop's verify step |
+| fast | 38 | pre-commit and a local pre-push |
+| full | 45 | continuous integration, pre-push under it, and the loop's verify step |
 | staged | 4 | a staged-files-only subset |
 
 The configuration declares 47 checks in total. They cover lint, format, three
