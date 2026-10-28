@@ -24,6 +24,7 @@ OPEN = "is not closed"
 UNSCOPED = "declares no backticked `## Scope`, so nothing says what it touched"
 MACHINERY = "declares no shipped path"
 NOTED = "already has a release note"
+CANCELLED = "was closed as cancelled, so it shipped nothing"
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,8 @@ def _standing(
 ) -> Standing:
     if record.get("status") != CLOSED:
         return Standing(issue_id, False, OPEN)
+    if record.get("close_resolution") == "cancelled":
+        return Standing(issue_id, False, CANCELLED)
     return _note_standing(issue_id, str(record.get("description") or ""), accounted, behind)
 
 

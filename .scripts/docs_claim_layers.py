@@ -35,7 +35,7 @@ BANDS: tuple[Band, ...] = (
     Band("drivers", "release", ("supervise", "loop", "release", "usage_report")),
     Band(
         "loop mechanics",
-        "capability_proof",
+        "invest",
         ("merge", "decompose", "policy", "verify", "board_snapshot", "decisions", "plan_gate"),
     ),
     Band("configuration and isolation", "config", ("config", "worktree")),

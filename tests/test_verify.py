@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -182,8 +183,7 @@ def test_run_check_records_a_passing_check_as_an_execution(
     verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
     verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
 
-    recorded = usage.load_verify_checks(tmp_path)
-    assert recorded is not None
+    recorded = json.loads((tmp_path / usage.VERIFY_CHECKS_FILE).read_text(encoding="utf-8"))
     assert recorded["vulture"]["count"] == 2
 
 
@@ -213,7 +213,7 @@ def test_run_check_records_nothing_for_a_failure_or_a_skip(
     monkeypatch.setattr(verify, "staged_files", lambda _root, _suffix: [])
     verify.run_check(_check("skipped", ("staged",), ".py"), tmp_path, "staged")
 
-    assert usage.load_verify_checks(tmp_path) is None
+    assert not (tmp_path / usage.VERIFY_CHECKS_FILE).exists()
 
 
 def test_a_fix_run_is_not_an_execution_of_the_check(
@@ -229,7 +229,7 @@ def test_a_fix_run_is_not_an_execution_of_the_check(
 
     verify.run_fix(check, tmp_path, "full")
 
-    assert usage.load_verify_checks(tmp_path) is None
+    assert not (tmp_path / usage.VERIFY_CHECKS_FILE).exists()
 
 
 def test_recording_can_never_fail_the_check_it_records(

@@ -12,7 +12,6 @@ from pathlib import Path
 USAGE_FILE = Path(".basicly/usage/tool-usage.json")
 VERIFY_CHECKS_FILE = Path(".basicly/usage/verify-checks.json")
 SKILL_PREFIX = "skill:"
-VERIFY_CHECK_PREFIX = "verify-check:"
 
 LOCAL_BIN_DIRS = (
     Path("node_modules/.bin"),
@@ -52,11 +51,6 @@ def _load_counters(path: Path) -> dict[str, dict] | None:
 
 def load_usage(repo_root: Path) -> dict[str, dict] | None:
     return _load_counters(repo_root / USAGE_FILE)
-
-
-def load_verify_checks(repo_root: Path) -> dict[str, dict] | None:
-
-    return _load_counters(repo_root / VERIFY_CHECKS_FILE)
 
 
 def record_verify_check(repo_root: Path, name: str) -> None:

@@ -148,7 +148,6 @@ def test_the_ten_modules_this_gate_was_filed_for_are_covered_by_an_exact_name() 
     stems = gate.test_stems(gate._tracked(REPO_ROOT, gate.TEST_ROOT))
 
     assert {
-        "capability_proof",
         "catalog_source",
         "dispatch_phase",
         "mirror",

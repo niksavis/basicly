@@ -114,6 +114,12 @@ def test_a_closed_record_scoped_to_machinery_alone_owes_nothing(tmp_path: Path) 
     assert _findings(repo) == []
 
 
+def test_a_record_closed_as_cancelled_owes_nothing(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, [{**_closed("drop-1"), "close_resolution": "cancelled"}])
+    assert _findings(repo) == []
+    assert gate.standings(repo)["drop-1"].reason == standing.CANCELLED
+
+
 def test_an_open_record_owes_nothing_yet(tmp_path: Path) -> None:
     repo = _repo(tmp_path, [{"id": "wip-1", "status": "open", "description": SHIPPED_SCOPE}])
     assert _findings(repo) == []

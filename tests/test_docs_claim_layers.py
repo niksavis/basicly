@@ -112,8 +112,8 @@ def test_the_declared_exemptions_are_read_from_the_contract_not_from_the_diagram
 
 
 def test_a_band_boundary_the_contract_no_longer_declares_is_refused(work_repo: Path) -> None:
-    _edit_contract(work_repo, "\n    capability_proof\n", "\n    proof_of_capability\n")
-    with pytest.raises(layers.ClaimError, match="capability_proof"):
+    _edit_contract(work_repo, "\n    invest\n", "\n    investment\n")
+    with pytest.raises(layers.ClaimError, match="invest"):
         layers.grouped(layers.tiers(work_repo))
     assert _run(work_repo, "--check") == 1
     assert _run(work_repo, "--fix") == 1

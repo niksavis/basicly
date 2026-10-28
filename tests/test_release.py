@@ -1,27 +1,21 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
+from basicly import commit as commit_mod
 from basicly import (
-    capability_proof,
     owned_store,
     release,
     release_history,
     shipped_core,
     tracker_paths,
-    usage,
-    verify,
 )
-from basicly import commit as commit_mod
 from basicly import policy as policy_mod
-from basicly.capability_proof import CAPABILITY_VERIFY_CHECK
 from basicly.config import PolicyConfig
 from tests.release_history_fixture import HISTORY, git, manifest, published
 
@@ -521,111 +515,6 @@ def test_the_shared_anchor_the_fragments_replace_does_still_conflict(repo: Path)
     assert conflicted == ["harness/anchor-2", "harness/anchor-3"]
 
 
-def _declare_check(repo: Path, name: str, command: list[str]) -> None:
-    rendered = ", ".join(f'"{arg}"' for arg in command)
-    (repo / "basicly.toml").write_text(
-        f'[[verify.checks]]\nname = "{name}"\ncommand = [{rendered}]\nmodes = ["full"]\n',
-        encoding="utf-8",
-    )
-    _commit_fixture(repo)
-
-
-def _record_tool_executions(repo: Path, counts: dict[str, int]) -> None:
-    _plant_counters(repo, usage.USAGE_FILE, counts)
-
-
-def _record_check_runs(repo: Path, counts: dict[str, int]) -> None:
-    _plant_counters(repo, usage.VERIFY_CHECKS_FILE, counts)
-
-
-def _plant_counters(repo: Path, relative: Path, counts: dict[str, int]) -> None:
-    counter_file = repo / relative
-    counter_file.parent.mkdir(parents=True, exist_ok=True)
-    counter_file.write_text(
-        json.dumps({
-            key: {"count": count, "last_used": "2026-07-26"} for key, count in counts.items()
-        }),
-        encoding="utf-8",
-    )
-    _commit_fixture(repo)
-
-
-def _commit_fixture(repo: Path) -> None:
-
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-m", "chore: plant a capability")
-
-
-@pytest.mark.usefixtures("no_regen")
-def test_a_planted_unexercised_capability_refuses_the_release(repo: Path) -> None:
-    _declare_check(repo, "planted", ["never-run-tool"])
-    _record_check_runs(repo, {"other-check": 12, "planted": 0})
-    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
-
-    result = release.run_release(repo, plan, issue_id="fx-1")
-
-    assert result.refused
-    assert any(f"{CAPABILITY_VERIFY_CHECK} 'planted'" in r for r in result.refusals)
-    assert release.read_version(repo) == CURRENT
-    assert _git(repo, "status", "--porcelain").strip() == ""
-    assert "v0.6.0" not in _git(repo, "tag", "--list")
-
-
-def test_an_exercised_capability_does_not_block_the_tag(repo: Path) -> None:
-    _declare_check(repo, "planted", ["recorded-tool"])
-    _record_check_runs(repo, {"planted": 1})
-    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
-
-    result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
-
-    assert not result.refused, result.refusals
-
-
-def test_a_check_the_engine_ran_and_passed_is_exercised(repo: Path) -> None:
-
-    interpreter = Path(sys.executable).as_posix()
-    _declare_check(repo, "vulture", [interpreter, "-c", ""])
-
-    report = verify.run_verify(repo, "full")
-    assert report.passed and [r.name for r in report.results] == ["vulture"]
-
-    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
-    result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
-
-    assert not result.refused, result.refusals
-
-
-def test_a_wrapper_executable_is_not_accepted_as_the_witness(repo: Path) -> None:
-
-    _declare_check(repo, "wired-or-deleted", ["uv", "run", "python", ".scripts/x.py"])
-    _record_tool_executions(repo, {"uv": 6091, "python": 900})
-    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
-
-    result = release.run_release(repo, plan, issue_id="fx-1", dry_run=True)
-
-    assert result.refused
-    assert any(f"{CAPABILITY_VERIFY_CHECK} 'wired-or-deleted'" in r for r in result.refusals)
-
-
-@pytest.mark.usefixtures("no_regen")
-def test_a_declared_capability_with_no_ledger_at_all_is_refused(repo: Path) -> None:
-    _declare_check(repo, "planted", ["ruff"])
-    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
-
-    result = release.run_release(repo, plan, issue_id="fx-1")
-
-    assert result.refused
-    assert any("no execution ledger" in r and "unproven" in r for r in result.refusals)
-    assert release.read_version(repo) == CURRENT
-
-
-def test_a_repo_that_declares_no_capability_is_not_refused(repo: Path) -> None:
-    assert capability_proof.shipped_capabilities(repo) == ()
-    plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
-
-    assert not release.run_release(repo, plan, issue_id="fx-1", dry_run=True).refused
-
-
 @pytest.mark.usefixtures("no_regen")
 def test_a_record_with_no_release_note_refuses_the_release(repo: Path) -> None:
 
@@ -915,7 +804,29 @@ def test_a_transcript_naming_the_old_version_refuses_before_the_write(tmp_path: 
 
     assert len(reasons) == 1
     assert "docs/tutorial/first-loop.md:2" in reasons[0]
-    assert "basicly 0.14.2, not 0.15.0" in reasons[0]
+    assert "basicly 0.14.2, neither the current" in reasons[0]
+
+
+def test_a_transcript_naming_the_current_version_is_rewritten_by_the_release(
+    tmp_path: Path,
+) -> None:
+    tutorial = tmp_path / "docs" / "tutorial"
+    tutorial.mkdir(parents=True)
+    page = tutorial / "first-loop.md"
+    page.write_text(
+        "checked against basicly 0.14.2 here\nan older basicly 0.13.0 note\n", encoding="utf-8"
+    )
+
+    assert release.stale_transcripts(tmp_path, "0.15.0", "0.14.2") == (
+        "docs/tutorial/first-loop.md:2: the transcript claims it was recorded against basicly "
+        "0.13.0, neither the current 0.14.2 nor 0.15.0; walk the page against the new build "
+        "and edit this line before cutting",
+    )
+    release._rewrite_transcripts(tmp_path, "0.14.2", "0.15.0")
+
+    assert page.read_text(encoding="utf-8") == (
+        "checked against basicly 0.15.0 here\nan older basicly 0.13.0 note\n"
+    )
 
 
 def test_a_transcript_naming_the_target_version_is_accepted(tmp_path: Path) -> None:

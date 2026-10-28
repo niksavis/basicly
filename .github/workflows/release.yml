@@ -33,10 +33,13 @@ jobs:
         run: npx --no-install markdownlint-cli2
       - name: Lint catalog sources
         run: uv run python -m basicly.cli catalog lint
-      # The test suite is not run here: CI runs it on main for the same release commit,
-      # and a release must fit in ten minutes (basicly-8xwfe5a). The fast checks stay.
-      - name: Run pre-commit checks
-        run: uv run python .basicly/core/hooks/pre-commit.py
+      # The full checks run here so that publishing waits for them on the tagged tree;
+      # they run in parallel with the install smoke test, which keeps a release near
+      # ten minutes (basicly-8xwfe5a, basicly-gtb19bg.15).
+      - name: Run full checks
+        env:
+          CI: "true"
+        run: uv run python .basicly/core/hooks/pre-push.py < /dev/null
 
   smoke-install:
     name: Fresh-repo install smoke test

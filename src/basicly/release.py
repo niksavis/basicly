@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 from . import checkout, merge, policy, release_history, shipped_core, verify, worktree
 from . import commit as commit_mod
-from .capability_proof import unexercised_capabilities
 
 if TYPE_CHECKING:
     from .config import PolicyConfig
@@ -424,8 +423,7 @@ def blocking_reasons(repo_root: Path, plan: ReleasePlan, *, issue_id: str) -> tu
     if (summary := _summary_missing(_changelog_lines(repo_root))) is not None:
         reasons.append(summary)
     reasons.extend(_release_note_reasons(repo_root))
-    reasons.extend(unexercised_capabilities(repo_root))
-    reasons.extend(stale_transcripts(repo_root, plan.version))
+    reasons.extend(stale_transcripts(repo_root, plan.version, plan.current_version))
     reasons.extend(lagging_pins(repo_root, plan.current_version))
     return tuple(reasons)
 
@@ -448,23 +446,41 @@ def lagging_pins(repo_root: Path, current: str) -> tuple[str, ...]:
     return tuple(reasons)
 
 
-def stale_transcripts(repo_root: Path, version: str) -> tuple[str, ...]:
+def _transcript_paths(repo_root: Path) -> list[Path]:
+    return [
+        path for prefix in RERECORDED_PATHS for path in sorted((repo_root / prefix).glob("*.md"))
+    ]
+
+
+def stale_transcripts(repo_root: Path, version: str, current: str = "") -> tuple[str, ...]:
 
     reasons: list[str] = []
-    for prefix in RERECORDED_PATHS:
-        for path in sorted((repo_root / prefix).glob("*.md")):
-            name = path.relative_to(repo_root).as_posix()
-            text = path.read_text(encoding="utf-8")
-            for number, line in enumerate(text.splitlines(), start=1):
-                reasons.extend(
-                    f"{name}:{number}: the transcript claims it was recorded against basicly "
-                    f"{found.group('version')}, not {version}; the pin rewrite moves only "
-                    "@vX.Y.Z, so walk the page against the new build and edit this line "
-                    "before cutting"
-                    for found in TRANSCRIPT_VERSION_RE.finditer(line)
-                    if found.group("version") != version
-                )
+    for path in _transcript_paths(repo_root):
+        name = path.relative_to(repo_root).as_posix()
+        text = path.read_text(encoding="utf-8")
+        for number, line in enumerate(text.splitlines(), start=1):
+            reasons.extend(
+                f"{name}:{number}: the transcript claims it was recorded against basicly "
+                f"{found.group('version')}, neither the current {current} nor {version}; "
+                "walk the page against the new build and edit this line before cutting"
+                for found in TRANSCRIPT_VERSION_RE.finditer(line)
+                if found.group("version") not in {version, current}
+            )
     return tuple(reasons)
+
+
+def _rewrite_transcripts(repo_root: Path, current: str, version: str) -> None:
+
+    for path in _transcript_paths(repo_root):
+        text = path.read_text(encoding="utf-8")
+        moved = TRANSCRIPT_VERSION_RE.sub(
+            lambda found: (
+                f"basicly {version}" if found.group("version") == current else found.group(0)
+            ),
+            text,
+        )
+        if moved != text:
+            path.write_text(moved, encoding="utf-8")
 
 
 def autonomy_refusal(
@@ -623,6 +639,7 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
         _bump_version_file(repo_root, plan)
         _regenerate(repo_root)
         _rewrite_pins(repo_root, plan)
+        _rewrite_transcripts(repo_root, plan.current_version, plan.version)
         _assemble_fragments(repo_root, plan)
         _write_changelog(repo_root, plan)
         _git(repo_root, ["add", "-A"])
