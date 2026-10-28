@@ -112,6 +112,8 @@ def _mode_entries(repo_root: Path, mode: str | None) -> list[dict]:
             isinstance(inputs, list) and inputs and all(isinstance(g, str) and g for g in inputs)
         ):
             raise SystemExit(f"{source}: check {name!r} 'inputs' must be a list of glob strings")
+        if not isinstance(entry.get("exclusive", False), bool):
+            raise SystemExit(f"{source}: check {name!r} 'exclusive' must be true or false")
         if mode is None or mode in modes:
             entries.append(entry)
     return entries
@@ -136,6 +138,14 @@ def load_checks(repo_root: Path, mode: str) -> list[tuple[str, list[str]]]:
         (str(entry["name"]).strip(), list(entry["command"]))
         for entry in _mode_entries(repo_root, mode)
     ]
+
+
+def load_exclusive(repo_root: Path, mode: str) -> frozenset[str]:
+    return frozenset(
+        str(entry["name"]).strip()
+        for entry in _mode_entries(repo_root, mode)
+        if entry.get("exclusive", False)
+    )
 
 
 def load_fixes(repo_root: Path, mode: str) -> list[tuple[str, list[str], str | None]]:
@@ -331,8 +341,13 @@ def run_checks(repo_root: Path, mode: str, *, scope_to_diff: bool = False) -> in
     interpreter_before = interpreter_target(home)
     total_start = time.perf_counter()
     execution = _hook_module("check_execution")
-    plan = execution.Plan(checks, skips, fail_fast, load_jobs(repo_root))
-    outcomes, failed = execution.run(repo_root, plan, resolve_command)
+    share = _hook_module("cpu_share")
+    jobs = load_jobs(repo_root)
+    outcomes, failed = execution.run(
+        repo_root,
+        execution.Plan(checks, skips, fail_fast, jobs, load_exclusive(repo_root, mode)),
+        lambda command, root: share.expand(resolve_command(command, root), jobs),
+    )
     total_elapsed = time.perf_counter() - total_start
     if selection is not None:
         _record_selection(repo_root, selection, outcomes)
@@ -364,9 +379,10 @@ def load_jobs(repo_root: Path) -> int:
         section = document.get("verify", {})
         if isinstance(section, dict) and "jobs" in section:
             jobs = section["jobs"]
-    if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
-        raise SystemExit("verify.jobs must be a whole number of at least 1")
-    return jobs
+    try:
+        return _hook_module("cpu_share").resolve_jobs(jobs)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def load_cache(repo_root: Path) -> bool:

@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import NamedTuple
 
@@ -17,6 +17,7 @@ class Plan(NamedTuple):
     skips: dict[str, str]
     fail_fast: bool
     jobs: int
+    exclusive: frozenset[str] = frozenset()
 
 
 def run(repo_root: Path, plan: Plan, resolve: Resolve) -> tuple[list[dict], list[str]]:
@@ -109,9 +110,15 @@ def _run_parallel(repo_root: Path, plan: Plan, resolve: Resolve) -> tuple[list[d
     failed: list[str] = []
     outcomes: list[dict] = []
     with ThreadPoolExecutor(max_workers=plan.jobs) as pool:
-        futures = {
-            name: pool.submit(task, name, command) for name, command in checks if name not in skips
-        }
+        futures = {}
+        for name, command in checks:
+            if name in skips:
+                continue
+            if name in plan.exclusive:
+                wait(futures.values())
+            futures[name] = pool.submit(task, name, command)
+            if name in plan.exclusive:
+                wait([futures[name]])
         for name, _ in checks:
             if name in skips:
                 outcomes.append(_skipped(name, skips[name]))

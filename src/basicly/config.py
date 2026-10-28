@@ -295,7 +295,16 @@ class ProjectPaths:
 _OPEN_TABLE = Table(open_keys=True)
 
 _VERIFY_CHECK_TABLE = Table(
-    keys=frozenset({"name", "command", "modes", "staged_suffix", "fix_command", "inputs", "reuse"})
+    keys=frozenset({
+        "name",
+        "command",
+        "modes",
+        "staged_suffix",
+        "fix_command",
+        "inputs",
+        "reuse",
+        "exclusive",
+    })
 )
 
 _RATCHET_TABLE = Table(
@@ -789,6 +798,7 @@ class VerifyCheck:
     staged_suffix: str | None = None
     fix_command: tuple[str, ...] | None = None
     reuse: str | None = None
+    exclusive: bool = False
 
 
 @dataclass(frozen=True)
@@ -831,8 +841,7 @@ def load_verify_config(repo_root: Path) -> VerifyConfig:
         raise ValueError("verify.cache must be true or false")
     if not isinstance(fail_fast, bool):
         raise ValueError("verify.fail_fast must be true or false")
-    if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
-        raise ValueError("verify.jobs must be a whole number of at least 1")
+    resolved_jobs: int = hook_runtime.load("cpu_share").resolve_jobs(jobs)
     if "affected" in overrides:
         provider = overrides["affected"]
     override = overrides.get("checks")
@@ -844,7 +853,7 @@ def load_verify_config(repo_root: Path) -> VerifyConfig:
         affected.parse_provider(provider, [check.name for check in checks]),
         cache,
         fail_fast,
-        jobs,
+        resolved_jobs,
     )
 
 
@@ -884,6 +893,9 @@ def _parse_verify_check(entry: object) -> VerifyCheck:
     reuse = entry.get("reuse")
     if reuse is not None and reuse not in ("pyright", "pytest"):
         raise ValueError(f"verify check {name!r} 'reuse' must be 'pyright', 'pytest' or absent")
+    exclusive = entry.get("exclusive", False)
+    if not isinstance(exclusive, bool):
+        raise ValueError(f"verify check {name!r} 'exclusive' must be true or false")
 
     return VerifyCheck(
         name=name.strip(),
@@ -892,6 +904,7 @@ def _parse_verify_check(entry: object) -> VerifyCheck:
         staged_suffix=staged_suffix or None,
         fix_command=tuple(fix_command) if fix_command else None,
         reuse=reuse,
+        exclusive=exclusive,
     )
 
 

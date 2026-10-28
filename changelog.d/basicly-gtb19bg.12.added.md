@@ -1,1 +1,1 @@
-- Set `jobs = <n>` under `[verify]` to let `basicly verify` and the installed Git hooks run up to `n` checks at the same time. The default of 1 keeps the serial run. Size it to the machine: too many jobs on a small machine slows timing-sensitive tests.
+- Set `jobs = <n>` or `jobs = "auto"` under `[verify]` to let `basicly verify` and the installed Git hooks run checks at the same time; `auto` sizes it from the CPU count. A `{workers}` argument in a check command receives each job's share of the cores, for example for `pytest -n`.

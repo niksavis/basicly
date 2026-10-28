@@ -224,21 +224,25 @@ modes = ["full"]
 [[verify.checks]]
 name = "pyright-hidden"
 command = ["uv", "run", "python", ".scripts/check_hidden_types.py"]
+exclusive = true
 modes = ["fast", "staged"]
 
 [[verify.checks]]
 name = "pyright-hidden-linux"
 command = ["uv", "run", "python", ".scripts/check_hidden_types.py", "--pythonplatform", "Linux"]
+exclusive = true
 modes = ["full"]
 
 [[verify.checks]]
 name = "pyright-hidden-darwin"
 command = ["uv", "run", "python", ".scripts/check_hidden_types.py", "--pythonplatform", "Darwin"]
+exclusive = true
 modes = ["full"]
 
 [[verify.checks]]
 name = "pyright-hidden-windows"
 command = ["uv", "run", "python", ".scripts/check_hidden_types.py", "--pythonplatform", "Windows"]
+exclusive = true
 modes = ["full"]
 
 # Security scan of the Python this repo executes outside its own package (basicly-5gn2).
@@ -858,32 +862,16 @@ claude = 1_000_000
 [[verify.checks]]
 name = "pytest"
 # pytest-xdist parallelizes the subprocess-heavy CLI tests; this is the bulk of
-# the gate's wall time. Capped rather than `-n auto`, and the reason is lane
-# concurrency, not a lock: this gate runs *inside every lane*, so a supervised
-# pass multiplies it by the worktree concurrency cap, where `auto` would ask for
-# that many times 32.
-#
-# **The `concurrency x workers <= cores` rule this comment used to state no longer
-# holds, and that is a decision rather than an oversight.** At the raise to
-# concurrency 10 (2026-08-20) the worst case is 10 x 4 = 40 workers on 32 cores.
-# Workers were kept at 4 rather than cut to 3, because the rule's arithmetic treats
-# a worker as CPU-bound and these are not: this gate's bulk is the subprocess-heavy
-# CLI tests, so a worker spends much of its life waiting on a child. The worst case
-# also needs all ten lanes verifying in the same instant. **Re-measure before
-# raising either number again** — and note the comment previously named
-# `[loop] concurrency`, a setting that does not exist in this file; the lane cap is
-# `[worktree] concurrency`.
-#
-# The previous justification here — a machine-global tracker write lock whose 30s
-# timeout `auto` stampeded (basicly-9s59) — was STALE before that store was deleted
-# and is recorded as removed rather than left to mislead. Measured 2026-08-01 on 32
-# cores: `-n auto` ran 2119 passed in 17.5s with zero lock failures, and again in
-# 19.3s under 1297 concurrent writes against the same machine; the lock it named did
-# not exist. See basicly-m4zv.14. Re-measure before trusting either number elsewhere.
+# the gate's wall time. `{workers}` is filled in when the check starts: the machine's
+# usable cores divided by the checks that `[verify] jobs` runs at the same time, at
+# least 1 (`.basicly/core/hooks/cpu_share.py`). A fixed count was wrong somewhere:
+# 4 workers left a 32-core machine idle, and 16 workers next to other checks turned
+# the smaller CI runner red on 2026-10-28 (basicly-gtb19bg.12). The configured command
+# keeps the placeholder, so reuse receipts match on every machine.
 # `--durations` is an instrument, not a limit: it prints and changes nothing. It is here
 # rather than in a CI-only flag because the number it answers - which tests are slow, and
 # on which platform - is one no local run can produce for another. windows-latest took
 # 5h57m against ubuntu's 113s and no log said which test spent it (basicly-t31pvf).
-command = ["pytest", "-q", "-n", "4", "--durations=25", "-m", "not live_ledger and not fresh_runtime"]
+command = ["pytest", "-q", "-n", "{workers}", "--durations=25", "-m", "not live_ledger and not fresh_runtime"]
 reuse = "pytest"
 modes = ["full"]

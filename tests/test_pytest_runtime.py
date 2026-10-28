@@ -15,7 +15,7 @@ COMMAND = (
     "pytest",
     "-q",
     "-n",
-    "4",
+    "{workers}",
     "--durations=25",
     "-m",
     "not live_ledger and not fresh_runtime",

@@ -36,7 +36,7 @@ def test_a_check_that_never_spawned_is_not_recorded_as_a_fast_one(
     )
     monkeypatch.setattr(verify, "staged_files", lambda *_a: [])
 
-    result = verify._run(staged, ["ruff", "check"], tmp_path, "staged")
+    result = verify._run(staged, tmp_path, "staged")
 
     assert result.status == "skip"
     assert result.duration_s == 0.0

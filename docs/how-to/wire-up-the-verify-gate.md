@@ -269,7 +269,7 @@ reviewed full-mode command:
 ```toml
 [[verify.checks]]
 name = "pytest"
-command = ["pytest", "-q", "-n", "4", "--durations=25", "-m", "not live_ledger and not fresh_runtime"]
+command = ["pytest", "-q", "-n", "{workers}", "--durations=25", "-m", "not live_ledger and not fresh_runtime"]
 reuse = "pytest"
 modes = ["full"]
 ```
@@ -340,8 +340,16 @@ to 1, which runs them one after another. With more than one job, each check
 prints its marker and its captured output in the configured order after it
 finishes, so the output does not stream. With `fail_fast = true`, a failure
 stops checks that have not started yet, and checks already running finish.
-Reused and skipped checks are decided before any check starts. Use it only for
-checks that do not write the same files.
+Reused and skipped checks are decided before any check starts. Mark a check
+that writes into the working tree with `exclusive = true`: it waits until the
+running checks finish, and no other check starts until it is done.
+
+Set `jobs = "auto"` to size it from the machine: one job for every 8 usable
+cores, at least 1. A 4-core CI runner then runs checks one after another, and
+a 32-core workstation runs 4 at once. Write `{workers}` as a whole argument in
+a check command, for example `["pytest", "-n", "{workers}"]`, to receive the
+usable cores divided by the job count, at least 1. The configured command keeps
+the placeholder, so verification reuse matches on every machine.
 
 ```sh
 basicly verify --mode fast

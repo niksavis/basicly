@@ -68,12 +68,15 @@ def test_only_the_reviewed_full_suite_command_is_eligible() -> None:
         "pytest",
         "-q",
         "-n",
-        "4",
+        "{workers}",
         "--durations=25",
         "-m",
         "not live_ledger and not fresh_runtime",
     )
     assert pytest_inputs.supported_command(command, "full")
+    assert not pytest_inputs.supported_command(
+        tuple("4" if part == "{workers}" else part for part in command), "full"
+    )
     assert not pytest_inputs.supported_command(command, "fast")
     assert not pytest_inputs.supported_command(("pytest", "-q"), "full")
     assert not pytest_inputs.supported_command((*command, "-k", "one_test"), "full")

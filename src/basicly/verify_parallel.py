@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import replace
 from pathlib import Path
 
@@ -38,7 +38,12 @@ class ParallelChecks:
         self._pending: list[tuple[int, VerifyCheck, Annotation, Future[CheckResult | None]]] = []
 
     def submit(self, index: int, check: VerifyCheck, annotation: Annotation) -> CheckResult:
-        self._pending.append((index, check, annotation, self._pool.submit(self._task, check)))
+        if check.exclusive:
+            wait([future for *_, future in self._pending])
+        future = self._pool.submit(self._task, check)
+        self._pending.append((index, check, annotation, future))
+        if check.exclusive:
+            wait([future])
         return blocked_result(check.name, check.command, "a check still running")
 
     def fill(self, results: list[CheckResult]) -> None:

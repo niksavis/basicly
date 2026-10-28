@@ -11,10 +11,16 @@ from .runner import sanitised_project_env
 
 
 def spawn(
-    command: Sequence[str], repo_root: Path, *, capture: bool, controlled: str = ""
+    command: Sequence[str],
+    repo_root: Path,
+    *,
+    capture: bool,
+    controlled: str = "",
+    jobs: int = 1,
 ) -> subprocess.CompletedProcess[str]:
 
     command = _hook_runtime("command_paths").resolve_command(command, repo_root)
+    command = _hook_runtime("cpu_share").expand(command, jobs)
     env = sanitised_project_env(affected.environment(repo_root), repo_root)
     if controlled == "pyright":
         env = pyright_inputs.execution_environment(repo_root, env)

@@ -19,7 +19,7 @@ class _Proc:
 
 def _as_spawn(fake_run):
 
-    def spawn(command, repo_root, *, capture):
+    def spawn(command, repo_root, *, capture, **_kw):
         return fake_run(
             command,
             cwd=repo_root,

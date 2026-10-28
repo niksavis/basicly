@@ -114,3 +114,58 @@ def test_the_engine_accepts_jobs_in_its_configuration(tmp_path: Path) -> None:
     _configure(tmp_path, "[verify]\njobs = 4\n", [("made", _touch("made"))])
 
     assert [check.name for check in load_verify_config(tmp_path).checks] == ["made"]
+
+
+HOLD = (
+    "import time; from pathlib import Path; marker = Path({name!r}); marker.touch(); "
+    "time.sleep(0.5); marker.unlink()"
+)
+ALONE = (
+    "import sys; from pathlib import Path; sys.exit(3 if any(Path('.').glob('*-running')) else 0)"
+)
+
+SEES_OVERLAP = (
+    "import sys, time; from pathlib import Path; deadline = time.monotonic() + 30\n"
+    "while time.monotonic() < deadline:\n"
+    "    if any(Path('.').glob('*-running')):\n"
+    "        Path('seen').touch(); sys.exit(3)\n"
+    "    time.sleep(0.02)\n"
+)
+HOLD_UNTIL_SEEN = (
+    "import time; from pathlib import Path; marker = Path({name!r}); marker.touch(); "
+    "deadline = time.monotonic() + 30\n"
+    "while not Path('seen').exists() and time.monotonic() < deadline:\n"
+    "    time.sleep(0.02)\n"
+    "marker.unlink()\n"
+)
+
+
+def test_an_exclusive_check_waits_for_running_checks_and_runs_alone(tmp_path: Path) -> None:
+    _configure(
+        tmp_path,
+        "[verify]\njobs = 3\n",
+        [
+            ("before", HOLD.format(name="before-running")),
+            ("alone", ALONE),
+            ("after", HOLD.format(name="after-running")),
+        ],
+    )
+    toml = tmp_path / "basicly.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace(
+            'name = "alone"\n', 'name = "alone"\nexclusive = true\n'
+        ),
+        encoding="utf-8",
+    )
+
+    assert _runner().run_checks(tmp_path, "fast") == 0
+
+
+def test_without_the_exclusive_flag_the_same_checks_overlap(tmp_path: Path) -> None:
+    _configure(
+        tmp_path,
+        "[verify]\njobs = 3\n",
+        [("before", HOLD_UNTIL_SEEN.format(name="before-running")), ("alone", SEES_OVERLAP)],
+    )
+
+    assert _runner().run_checks(tmp_path, "fast") == 1

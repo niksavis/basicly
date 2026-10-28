@@ -114,7 +114,7 @@ def run_check(
     check: VerifyCheck, repo_root: Path, mode: str, *, capture: bool = False
 ) -> CheckResult:
 
-    result = _run(check, list(check.command), repo_root, mode, capture=capture)
+    result = _run(check, repo_root, mode, capture=capture)
     if result.status == "pass":
         usage.record_verify_check(repo_root, check.name)
     return result
@@ -124,19 +124,15 @@ def run_fix(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:
 
     if not check.fix_command:
         return CheckResult(check.name, "skip", 0)
-    return _run(check, list(check.fix_command), repo_root, mode)
+    return _run(replace(check, command=check.fix_command), repo_root, mode)
 
 
 def _run(
-    check: VerifyCheck,
-    command: list[str],
-    repo_root: Path,
-    mode: str,
-    *,
-    capture: bool = False,
+    check: VerifyCheck, repo_root: Path, mode: str, *, capture: bool = False, jobs: int = 1
 ) -> CheckResult:
 
     name = check.name
+    command = list(check.command)
     if mode == "staged" and check.staged_suffix:
         files = staged_files(repo_root, check.staged_suffix)
         if files is None:
@@ -155,11 +151,11 @@ def _run(
     started = time.perf_counter()
     try:
         if check.reuse == "pyright" and supported_command(tuple(command), mode):
-            proc = _spawn(command, repo_root, capture=capture, controlled="pyright")
+            proc = _spawn(command, repo_root, capture=capture, controlled="pyright", jobs=jobs)
         elif check.reuse == "pytest" and pytest_inputs.supported_command(tuple(command), mode):
-            proc = _spawn(command, repo_root, capture=capture, controlled="pytest")
+            proc = _spawn(command, repo_root, capture=capture, controlled="pytest", jobs=jobs)
         else:
-            proc = _spawn(command, repo_root, capture=capture)
+            proc = _spawn(command, repo_root, capture=capture, jobs=jobs)
     except OSError as exc:
         return execution_failure(name, command, exc)
     output = f"{proc.stdout or ''}{proc.stderr or ''}"
@@ -295,7 +291,7 @@ def run_verify(
     parallel = verify_parallel.start(
         repo_root,
         config,
-        lambda check: _run(check, list(check.command), repo_root, mode, capture=True),
+        lambda check: _run(check, repo_root, mode, capture=True, jobs=config.jobs),
     )
     for check in checks:
         if selection is not None and check.name not in selection["selected"]:
