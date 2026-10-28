@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -311,3 +312,42 @@ def test_external_standard_library_changes_invalidate_landing(
     module.write_text("after")
     after = pytest_inputs.landing_fingerprint(repository, ["python"], "a" * 40, {})
     assert after != before
+
+
+SYMLINKS = pytest.mark.skipif(
+    sys.platform == "win32", reason="creating a symlink needs a privilege Windows withholds"
+)
+
+
+@SYMLINKS
+def test_a_file_linked_outside_its_runtime_directory_is_fingerprinted_by_its_target(
+    tmp_path: Path,
+) -> None:
+    library = tmp_path / "lib"
+    library.mkdir()
+    target = tmp_path / "etc" / "sitecustomize.py"
+    target.parent.mkdir()
+    target.write_text("first\n", encoding="utf-8")
+    (library / "sitecustomize.py").symlink_to(target)
+
+    before = pytest_inputs._dependency(library)
+    target.write_text("second\n", encoding="utf-8")
+
+    assert pytest_inputs._dependency(library) != before
+
+
+@SYMLINKS
+@pytest.mark.parametrize("name", ["broken.py", "external.pth"])
+def test_a_broken_or_import_path_link_outside_its_directory_is_still_refused(
+    tmp_path: Path, name: str
+) -> None:
+    library = tmp_path / "lib"
+    library.mkdir()
+    target = tmp_path / "outside" / name
+    if name.endswith(".pth"):
+        target.parent.mkdir()
+        target.write_text(str(tmp_path) + "\n", encoding="utf-8")
+    (library / name).symlink_to(target)
+
+    with pytest.raises(pyright_inputs.UnsupportedInputsError, match="external pytest dependency"):
+        pytest_inputs._dependency(library)

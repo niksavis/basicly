@@ -63,8 +63,13 @@ def _dependency(root: Path, workspace: Path | None = None, *, engine: Path | Non
             path = directory / name
             if name.startswith(".env"):
                 raise pyright_inputs.UnsupportedInputsError("protected pytest dependency")
-            if not path.resolve().is_relative_to(root.resolve()):
-                raise pyright_inputs.UnsupportedInputsError("external pytest dependency")
+            resolved = path.resolve()
+            if not resolved.is_relative_to(root.resolve()):
+                if path.suffix == ".pth" or not resolved.is_file():
+                    raise pyright_inputs.UnsupportedInputsError("external pytest dependency")
+                digest.update(f"{path.relative_to(root).as_posix()}\0{resolved}\0".encode())
+                digest.update(hashlib.sha256(resolved.read_bytes()).digest())
+                continue
             if path.suffix == ".pth":
                 for line in path.read_text().splitlines():
                     if line.strip() and not line.startswith(("#", "import ", "import\t")):

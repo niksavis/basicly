@@ -1,0 +1,1 @@
+- A landing on a system Python whose standard library links a file outside its folder, such as Ubuntu 26.04 `sitecustomize.py`, no longer fails with "Cannot capture landing identity"; the linked file is fingerprinted by its target.
