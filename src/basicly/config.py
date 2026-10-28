@@ -343,7 +343,7 @@ CONFIG_SCHEMA: dict[str, Table] = {
         tables={"regenerate_commands": _OPEN_TABLE},
     ),
     "verify": Table(
-        keys=frozenset({"cache", "fail_fast", "hook_jobs"}),
+        keys=frozenset({"cache", "fail_fast", "jobs"}),
         arrays={"checks": _VERIFY_CHECK_TABLE},
         tables={"affected": Table(keys=frozenset({"command", "checks", "timeout_seconds"}))},
     ),
@@ -797,6 +797,7 @@ class VerifyConfig:
     affected: dict[str, Any] | None = None
     cache: bool = False
     fail_fast: bool = False
+    jobs: int = 1
 
     def for_mode(self, mode: str) -> tuple[VerifyCheck, ...]:
         return tuple(check for check in self.checks if mode in check.modes)
@@ -808,12 +809,15 @@ def load_verify_config(repo_root: Path) -> VerifyConfig:
     provider = None
     cache = False
     fail_fast = False
+    jobs: object = 1
     for filename, data in _validated_documents(repo_root).items():
         section = data.get("verify")
         if isinstance(section, dict) and "cache" in section:
             cache = section["cache"]
         if isinstance(section, dict) and "fail_fast" in section:
             fail_fast = section["fail_fast"]
+        if isinstance(section, dict) and "jobs" in section:
+            jobs = section["jobs"]
         if isinstance(section, dict) and "affected" in section:
             provider = section["affected"]
         checks = section.get("checks") if isinstance(section, dict) else None
@@ -822,10 +826,13 @@ def load_verify_config(repo_root: Path) -> VerifyConfig:
     overrides = session.overrides_for("verify")
     cache = overrides.get("cache", cache)
     fail_fast = overrides.get("fail_fast", fail_fast)
+    jobs = overrides.get("jobs", jobs)
     if not isinstance(cache, bool):
         raise ValueError("verify.cache must be true or false")
     if not isinstance(fail_fast, bool):
         raise ValueError("verify.fail_fast must be true or false")
+    if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
+        raise ValueError("verify.jobs must be a whole number of at least 1")
     if "affected" in overrides:
         provider = overrides["affected"]
     override = overrides.get("checks")
@@ -837,6 +844,7 @@ def load_verify_config(repo_root: Path) -> VerifyConfig:
         affected.parse_provider(provider, [check.name for check in checks]),
         cache,
         fail_fast,
+        jobs,
     )
 
 

@@ -48,7 +48,7 @@ layers =
     handoff
     process_confirmation
     plan_gate | policy | routing_evals | tuning | verify
-    verify_execution
+    verify_execution | verify_parallel
     capability_proof
     invest
     worktree

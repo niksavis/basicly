@@ -331,7 +331,7 @@ def run_checks(repo_root: Path, mode: str, *, scope_to_diff: bool = False) -> in
     interpreter_before = interpreter_target(home)
     total_start = time.perf_counter()
     execution = _hook_module("check_execution")
-    plan = execution.Plan(checks, skips, fail_fast, load_hook_jobs(repo_root))
+    plan = execution.Plan(checks, skips, fail_fast, load_jobs(repo_root))
     outcomes, failed = execution.run(repo_root, plan, resolve_command)
     total_elapsed = time.perf_counter() - total_start
     if selection is not None:
@@ -358,14 +358,14 @@ def load_fail_fast(repo_root: Path) -> bool:
     return _boolean_option(repo_root, "fail_fast")
 
 
-def load_hook_jobs(repo_root: Path) -> int:
+def load_jobs(repo_root: Path) -> int:
     jobs: object = 1
     for _, document in _documents(repo_root):
         section = document.get("verify", {})
-        if isinstance(section, dict) and "hook_jobs" in section:
-            jobs = section["hook_jobs"]
+        if isinstance(section, dict) and "jobs" in section:
+            jobs = section["jobs"]
     if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
-        raise SystemExit("verify.hook_jobs must be a whole number of at least 1")
+        raise SystemExit("verify.jobs must be a whole number of at least 1")
     return jobs
 
 

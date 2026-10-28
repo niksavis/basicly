@@ -50,12 +50,12 @@ def _touch(name: str, code: int = 0) -> str:
     )
 
 
-def test_hook_jobs_runs_independent_checks_at_the_same_time(
+def test_jobs_runs_independent_checks_at_the_same_time(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _configure(
         tmp_path,
-        "[verify]\nhook_jobs = 2\n",
+        "[verify]\njobs = 2\n",
         [("waiter", _wait("signal", 30, 3)), ("signaller", _touch("signal"))],
     )
 
@@ -67,7 +67,7 @@ def test_hook_jobs_runs_independent_checks_at_the_same_time(
     assert "checks passed: 2/2" in out
 
 
-def test_without_hook_jobs_checks_run_one_after_another(tmp_path: Path) -> None:
+def test_without_jobs_checks_run_one_after_another(tmp_path: Path) -> None:
     _configure(
         tmp_path,
         "",
@@ -82,7 +82,7 @@ def test_a_parallel_failure_under_fail_fast_starts_no_queued_check(
 ) -> None:
     _configure(
         tmp_path,
-        "[verify]\nfail_fast = true\nhook_jobs = 2\n",
+        "[verify]\nfail_fast = true\njobs = 2\n",
         [
             ("failing", _touch("failed", 7)),
             ("holding", _wait("failed", 30, 3) + "time.sleep(1)\n"),
@@ -100,17 +100,17 @@ def test_a_parallel_failure_under_fail_fast_starts_no_queued_check(
 
 
 @pytest.mark.parametrize("value", ["0", "true", '"2"', "1.5"])
-def test_hook_jobs_refuses_a_value_that_is_not_a_positive_whole_number(
+def test_jobs_refuses_a_value_that_is_not_a_positive_whole_number(
     tmp_path: Path, value: str
 ) -> None:
-    _configure(tmp_path, f"[verify]\nhook_jobs = {value}\n", [("made", _touch("made"))])
+    _configure(tmp_path, f"[verify]\njobs = {value}\n", [("made", _touch("made"))])
 
-    with pytest.raises(SystemExit, match=r"verify\.hook_jobs must be a whole number of at least 1"):
+    with pytest.raises(SystemExit, match=r"verify\.jobs must be a whole number of at least 1"):
         _runner().run_checks(tmp_path, "fast")
     assert not (tmp_path / "made").exists()
 
 
-def test_the_engine_accepts_hook_jobs_in_its_configuration(tmp_path: Path) -> None:
-    _configure(tmp_path, "[verify]\nhook_jobs = 4\n", [("made", _touch("made"))])
+def test_the_engine_accepts_jobs_in_its_configuration(tmp_path: Path) -> None:
+    _configure(tmp_path, "[verify]\njobs = 4\n", [("made", _touch("made"))])
 
     assert [check.name for check in load_verify_config(tmp_path).checks] == ["made"]

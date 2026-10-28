@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from .verify_receipt import CachedCheck, CheckReceipt
+from .verify_receipt import CachedCheck, CheckReceipt, changed_components
 
 RUN_ARTIFACT = Path(".basicly/usage/verify-run.json")
 
@@ -260,4 +260,38 @@ def cached_result(
         reuse_reason="matching local cache inputs",
         source_duration_s=previous.duration_s,
         input_fingerprint=inputs,
+    )
+
+
+def borrowed_result(
+    name: str,
+    command: tuple[str, ...],
+    identity: tuple[str, str],
+    reuse: VerifyReport | None,
+    cached: tuple[CachedCheck, ...],
+) -> CheckResult | None:
+    mode, before = identity
+    borrowed = receipt_result(name, command, mode, before, reuse)
+    if borrowed is None and before:
+        borrowed = cached_result(name, command, identity, cached)
+    return borrowed
+
+
+def reuse_explanation(
+    name: str,
+    proof: tuple[str, str, str],
+    reuse: VerifyReport | None,
+    cached: tuple[CachedCheck, ...],
+) -> str:
+    before, reason, cache_reason = proof
+    prior = (
+        next((r.components for r in reuse.receipts if r.name == name), ())
+        if reuse is not None
+        else next((r.components for r in cached if r.name == name), ())
+    )
+    return (
+        reason
+        or changed_components(before, prior)
+        or cache_reason
+        or ("missing or changed receipt inputs" if reuse else "executed to establish receipt")
     )

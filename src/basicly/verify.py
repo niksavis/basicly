@@ -16,6 +16,7 @@ from . import (
     usage,
     verify_cache,
     verify_log,
+    verify_parallel,
     worktree,
 )
 from .config import VERIFY_GATE_PROVIDER, VerifyCheck, VerifyConfig, load_verify_config
@@ -23,13 +24,13 @@ from .verify_artifact import (
     CheckResult,
     VerifyReport,
     blocked_result,
-    cached_result,
+    borrowed_result,
     execution_failure,
-    receipt_result,
+    reuse_explanation,
     write_run_artifact,
 )
 from .verify_execution import spawn as _spawn
-from .verify_receipt import CheckReceipt, changed_components, components, supported_command
+from .verify_receipt import CheckReceipt, components, supported_command
 
 DEFAULT_GATE = "verify"
 GATE_PROVIDER = VERIFY_GATE_PROVIDER
@@ -235,6 +236,12 @@ def _finish_input_proof(
     return False
 
 
+def _observe_blocked(results: list[CheckResult], check: VerifyCheck, blocked_by: str) -> None:
+    result = blocked_result(check.name, check.command, blocked_by)
+    print(f"==> {check.name} NOT RUN: {result.detail}", flush=True)
+    _observe_result(results, result)
+
+
 def _observe_result(results: list[CheckResult], result: CheckResult) -> None:
     if result.reuse_reason and not result.reused_from:
         print(f"{result.name}: {result.reuse_reason}", flush=True)
@@ -285,6 +292,11 @@ def run_verify(
     cached: tuple[verify_cache.CachedCheck, ...] = ()
     results: list[CheckResult] = []
     blocked_by = ""
+    parallel = verify_parallel.start(
+        repo_root,
+        config,
+        lambda check: _run(check, list(check.command), repo_root, mode, capture=True),
+    )
     for check in checks:
         if selection is not None and check.name not in selection["selected"]:
             _observe_result(
@@ -292,48 +304,42 @@ def run_verify(
             )
             continue
         if blocked_by:
-            result = blocked_result(check.name, check.command, blocked_by)
-            print(f"==> {check.name} NOT RUN: {result.detail}", flush=True)
-            _observe_result(results, result)
+            _observe_blocked(results, check, blocked_by)
             continue
         if check.name in eligible and (capture_receipts or reuse is not None or caching):
             before, reason = _proof_inputs(repo_root, check.reuse or "", proofs)
             cached, cache_reason = verify_cache.read(repo_root) if caching and before else ((), "")
-        borrowed = (
-            receipt_result(check.name, check.command, mode, before, reuse)
-            if check.name in eligible
-            else None
+        borrowed = borrowed_result(
+            check.name,
+            check.command,
+            (mode, before if check.name in eligible else ""),
+            reuse,
+            cached,
         )
-        if borrowed is None and check.name in eligible and before:
-            borrowed = cached_result(check.name, check.command, (mode, before), cached)
         if borrowed is not None:
             print(f"{check.name}: reused verified result from {borrowed.reused_from}", flush=True)
             _observe_result(results, borrowed)
             continue
+        annotation = (
+            (
+                reuse_explanation(check.name, (before, reason, cache_reason), reuse, cached)
+                if check.name in eligible
+                else "unsupported command or mode",
+                before,
+            )
+            if check.reuse and (capture_receipts or reuse is not None or caching)
+            else None
+        )
+        if parallel is not None:
+            results.append(parallel.submit(len(results), check, annotation))
+            continue
         print(f"==> {check.name}", flush=True)
-        result = run_check(check, repo_root, mode)
-        if check.reuse and (capture_receipts or reuse is not None or caching):
-            explanation = "unsupported command or mode"
-            if check.name in eligible:
-                explanation = (
-                    reason
-                    or changed_components(
-                        before,
-                        next((r.components for r in reuse.receipts if r.name == check.name), ())
-                        if reuse is not None
-                        else next((r.components for r in cached if r.name == check.name), ()),
-                    )
-                    or cache_reason
-                    or (
-                        "missing or changed receipt inputs"
-                        if reuse
-                        else "executed to establish receipt"
-                    )
-                )
-            result = replace(result, reuse_reason=explanation, input_fingerprint=before)
+        result = verify_parallel.annotated(run_check(check, repo_root, mode), annotation)
         _observe_result(results, result)
         if config.fail_fast and result.status == "fail":
             blocked_by = check.name
+    if parallel is not None:
+        parallel.fill(results)
     stable = {
         recipe: _finish_input_proof(repo_root, mode, config, results, (recipe, proof[0]))
         for recipe, proof in proofs.items()
