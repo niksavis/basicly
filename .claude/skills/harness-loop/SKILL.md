@@ -33,5 +33,6 @@ completed steps or create another owner merely because the session changed.
 ## Read only the procedure needed now
 
 - When using loop transitions to start a leaf, classify/decompose, land, validate, ship or recover a refusal, read [operations](references/operations.md). It includes exact commands, phase inputs, ledger handling and escalation rules.
+- Before deciding which checks to run or rerun, read [verification](references/verification.md).
 - Before running parallel lanes, read the **Many lanes** section of operations. For lane limits and spending observations, also read [many-lanes](references/many-lanes.md).
 - For ordinary implementation inside an existing lane, use the task facts and relevant implementation skills. Load the operational reference when a transition or failure requires it.

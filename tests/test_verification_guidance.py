@@ -5,6 +5,10 @@ from pathlib import Path
 
 import pytest
 
+VERIFICATION = (
+    Path(__file__).parent.parent / ".agents/skills/harness-loop/references/verification.md"
+).read_text(encoding="utf-8")
+
 
 @pytest.fixture(params=["AGENTS.md", ".claude/CLAUDE.md", ".github/copilot-instructions.md"])
 def baseline(request: pytest.FixtureRequest) -> str:
@@ -41,11 +45,17 @@ def test_commands_put_focused_checks_before_required_full_verification(baseline:
         ),
     ],
 )
-def test_quality_gate_states_the_required_action_for_each_scenario(
-    baseline: str, required: tuple[str, ...]
+def test_the_verification_reference_states_the_required_action_for_each_scenario(
+    required: tuple[str, ...],
+) -> None:
+    assert any(all(term in line for term in required) for line in VERIFICATION.splitlines())
+
+
+def test_the_quality_gate_points_each_scenario_at_the_verification_reference(
+    baseline: str,
 ) -> None:
     quality = re.split(r"\n#{2,3} ", baseline.split("### Quality Gate\n", 1)[1], maxsplit=1)[0]
-    assert any(all(term in line for term in required) for line in quality.splitlines())
+    assert "`harness-loop` skill's verification reference" in quality
 
 
 def test_verification_guidance_preserves_mandatory_gates(baseline: str) -> None:
@@ -54,5 +64,5 @@ def test_verification_guidance_preserves_mandatory_gates(baseline: str) -> None:
     assert "Do not skip or weaken a test, a lint or a type check" in baseline
     assert (
         "a commit or phase transition alone does not invalidate equivalent evidence"
-        in baseline.lower()
+        in VERIFICATION.lower()
     )
