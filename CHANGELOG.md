@@ -6,6 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the routine commit and push loop much faster and sizes parallel
+verification to the machine it runs on. A local push now checks only the files its
+commits change, while continuous integration keeps the full suite. Verification can
+run checks at the same time, with the worker count taken from the CPU count. Agents
+start with less context: session start and the always-on rules are shorter.
+
+- Faster pushes and checks: a local push runs the fast checks for the pushed files
+  (basicly-gtb19bg.12), and `[verify] jobs` with a `{workers}` placeholder runs checks
+  in parallel, sized to the CPU (basicly-gtb19bg.12).
+- Less context at session start and in the always-on rules (basicly-gtb19bg.6,
+  basicly-gtb19bg.3).
+- Fixes: landings on a system Python with linked library files, such as Ubuntu
+  26.04, and worker execution for resumed parked lanes (basicly-gtb19bg.12,
+  basicly-gtb19bg.7).
+
 ## v0.30.1 - 2026-10-27
 
 Delta: v0.30.0..v0.30.1
