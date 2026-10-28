@@ -25,14 +25,6 @@ ls changelog.d/ 2>/dev/null; grep -n "## \[Unreleased\]" CHANGELOG.md
 
 If either is missing, stop and follow the repository's own release document.
 
-The command also needs a single-sourced `__version__ = "X.Y.Z"` line and the release scripts. The dry run refuses without them, with one of these messages:
-
-- `no __version__ = "X.Y.Z" line found in ...`
-- `changelog generator missing: ...`
-- `release-note gate missing: ...`
-
-On any of these, stop and follow the repository's own release document.
-
 ## 2. Write the notes
 
 - Each change leaves its entry in `changelog.d/<record-id>.<category>.md`. The categories are `added`, `changed`, `deprecated`, `removed`, `fixed` and `security`. One file per change means that two lanes never collide on one anchor.
@@ -40,13 +32,6 @@ On any of these, stop and follow the repository's own release document.
 - Write a summary under `## [Unreleased]`, above its first `###` heading. Write one paragraph on what the release changes for a user, then themed bullets. Name the record id of a fragment in each highlight.
 
 The release folds each fragment into `## [Unreleased]` under its Keep a Changelog heading, sorted by category and then by file name. It moves that body into the dated `## vX.Y.Z - <date>` section, deletes the fragments in the same commit, and leaves `[Unreleased]` empty.
-
-The command refuses before the first write, and names the file, when it finds:
-
-- an empty fragment;
-- a file name that is not `<record-id>.<category>.md`;
-- fragments and no `## [Unreleased]` heading;
-- an `[Unreleased]` section that `carries no summary above its first ### heading`.
 
 ## 3. Wait for green CI
 
@@ -60,14 +45,7 @@ Choose major, minor or patch yourself. The command refuses a version that does n
 uv run basicly release <version> --issue <record-id> --dry-run
 ```
 
-The dry run writes nothing and reports every refusal at once. It lists the fragments in the order they assemble. It refuses on:
-
-- a dirty tree;
-- a version that does not move forward;
-- a tag that already exists;
-- a `--date` that is not `YYYY-MM-DD`;
-- an `--issue` id that the committed ledger does not hold;
-- a linked worktree, because tags are shared with the primary checkout.
+The dry run writes nothing and reports every refusal at once, each with the file or value it names. [refusals](references/refusals.md) lists them.
 
 A page under `docs/tutorial/` that names the current version as the one it was recorded against is rewritten to the new version by the release. A page that names any other version refuses: walk it against a build of this checkout and fix it first.
 
@@ -96,26 +74,4 @@ git push origin vX.Y.Z
 
 When a workflow publishes from the tag push, it reads `CHANGELOG.md` from the tagged commit. Confirm that the workflow run is green and that the release page matches the summary. Never edit the release page after publication. A page that disagrees with its changelog section is a defect.
 
-### Claude auto mode and release pushes
-
-When a public repository tag push is blocked as creating a public surface, review the classifier denial before retrying. A project `autoMode` block has no effect: Claude reads that block from user or managed settings, or explicit invocation settings. The consumer can merge this repository-scoped example into `~/.claude/settings.json`, replacing `owner/repo` with the intended repository:
-
-```json
-{
-  "autoMode": {
-    "allow": ["$defaults", "Bash(git push origin v*) in owner/repo"]
-  }
-}
-```
-
-Keep `$defaults` when extending the classifier's default allow list. These entries are classifier guidance, not deterministic shell permission patterns. Do not install them into a consumer's user settings automatically.
-
-Narrow `permissions.allow` rules normally resolve before the classifier and remain effective in auto mode. `autoMode.classifyAllShell` sends shell calls through the classifier even with a narrow allow; explicit deny and ask rules still take precedence. A project permission allow and a project `autoMode.allow` entry are different settings. This exception must not authorize force pushes, remote deletion or hook bypass.
-
-Inspect the consumer's effective classifier configuration:
-
-```sh
-claude auto-mode config
-```
-
-Settings scopes and precedence: [auto-mode settings](https://code.claude.com/docs/en/auto-mode-config) and [permission modes](https://code.claude.com/docs/en/permission-modes) (checked 2026-10-27, Claude Code 2.1.312).
+When a tag push is blocked by the Claude auto-mode classifier, read [auto-mode](references/auto-mode.md).
