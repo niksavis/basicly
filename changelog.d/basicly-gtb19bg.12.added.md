@@ -1,1 +1,1 @@
-- Set `jobs = <n>` under `[verify]` to let `basicly verify` and the installed Git hooks run up to `n` checks at the same time; this repository's pre-commit checks dropped from 41 to 12 seconds with 8 jobs. The default of 1 keeps the old serial run.
+- Set `jobs = <n>` under `[verify]` to let `basicly verify` and the installed Git hooks run up to `n` checks at the same time. The default of 1 keeps the serial run. Size it to the machine: too many jobs on a small machine slows timing-sensitive tests.
