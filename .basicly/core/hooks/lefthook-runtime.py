@@ -164,6 +164,8 @@ def launch(manager: str, stage: str, arguments: list[str]) -> int:
     agent = manager != "git"
     name = stage if not agent else f"basicly-{manager}-{stage}"
     raw = sys.stdin.buffer.read() if agent or stage == "pre-push" else None
+    if stage == "pre-push" and raw is not None:
+        env["BASICLY_PUSH_REFS"] = raw.decode("utf-8", "replace")
     if not agent:
         foreign_code = run_foreign_hook(root, arguments, raw)
         if foreign_code:

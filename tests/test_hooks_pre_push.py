@@ -338,3 +338,27 @@ def test_a_local_push_runs_fast_checks_for_the_pushed_files_only(
 
     assert hook.main() == 0
     assert calls == [("fast", ["tool.py"])]
+
+
+def test_no_ref_line_means_the_pushed_files_are_unknown(tmp_path: Path) -> None:
+    repo, _first, _second = _repository(tmp_path)
+
+    assert hook.pushed_paths(repo, "") is None
+
+
+def test_the_pushed_refs_arrive_through_the_environment_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, first, second = _repository(tmp_path)
+    calls: list[list[str] | None] = []
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("BASICLY_PUSH_REFS", f"refs/heads/main {second} refs/heads/main {first}\n")
+    monkeypatch.setattr(hook, "project_root", lambda: repo)
+    monkeypatch.setattr(hook, "ledger_write_in_flight", lambda _root: False)
+    monkeypatch.setattr(
+        hook, "run_checks", lambda _root, _mode, changed: calls.append(changed) or 0
+    )
+    monkeypatch.setattr(hook.sys, "stdin", io.StringIO(""))
+
+    assert hook.main() == 0
+    assert calls == [["tool.py"]]
