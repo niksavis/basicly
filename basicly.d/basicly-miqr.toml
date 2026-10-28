@@ -15,4 +15,5 @@
 [[verify.checks]]
 name = "docs-citations"
 command = ["uv", "run", "python", ".scripts/check_docs_citations.py"]
+inputs = ["docs/**/*.md", "**/*.py", ".scripts/check_docs_citations.py", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]

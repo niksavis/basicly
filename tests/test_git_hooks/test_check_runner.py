@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath
@@ -331,7 +332,18 @@ def test_malformed_inputs_is_a_loud_error(tmp_path: Path) -> None:
         module.load_inputs(tmp_path, "fast")
 
 
-def test_every_declared_input_set_matches_something_in_this_repo() -> None:
+TECHNOLOGY_GLOB = re.compile(r"\*\*/\*\.[a-z0-9]+")
+
+FORWARD_INPUTS = frozenset({
+    ".basicly/fragments/**",
+    ".codex/rules/**",
+    ".config/lefthook.*",
+    ".github/skills/**",
+    ".lefthook.*",
+})
+
+
+def test_every_declared_input_glob_matches_a_tracked_file() -> None:
 
     module = _load_check_runner()
     repo_root = Path(__file__).resolve().parents[2]
@@ -343,10 +355,19 @@ def test_every_declared_input_set_matches_something_in_this_repo() -> None:
     ).stdout.split("\0")
     paths = [PurePosixPath(name) for name in tracked if name]
 
+    declared: set[str] = set()
     for mode in ("fast", "full"):
         for name, globs in module.load_inputs(repo_root, mode).items():
-            matched = [g for g in globs if any(path.full_match(g) for path in paths)]
-            assert matched, f"{mode}: check {name!r} declares inputs matching no tracked file"
+            declared.update(globs)
+            unmatched = [
+                glob
+                for glob in globs
+                if glob not in FORWARD_INPUTS
+                and not TECHNOLOGY_GLOB.fullmatch(glob)
+                and not any(path.full_match(glob) for path in paths)
+            ]
+            assert not unmatched, f"{mode}: check {name!r} declares unmatched inputs {unmatched}"
+    assert declared >= FORWARD_INPUTS, f"stale forward inputs: {FORWARD_INPUTS - declared}"
 
 
 def test_every_declared_input_set_carries_the_lock() -> None:

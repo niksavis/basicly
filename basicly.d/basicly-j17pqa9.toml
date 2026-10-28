@@ -1,4 +1,5 @@
 [[verify.checks]]
 name = "retention-scorer"
 command = ["uv", "run", "python", ".scripts/retention_eval.py", "--self-check"]
+inputs = [".claude/CLAUDE.md", ".scripts/retention_eval.py", "src/basicly/**", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]

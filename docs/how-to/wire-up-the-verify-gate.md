@@ -79,7 +79,7 @@ than what the check really reads costs a bounced landing — the gate the commit
 skipped fails on the rebased tree instead. A glob that matches nothing is worse,
 because it skips the check on every commit there is; this repo pins its own lists
 against `git ls-files` in
-`tests/test_git_hooks/test_check_runner.py::test_every_declared_input_set_matches_something_in_this_repo`.
+`tests/test_git_hooks/test_check_runner.py::test_every_declared_input_glob_matches_a_tracked_file`.
 
 ## Select checks with a consumer-owned dependency graph
 

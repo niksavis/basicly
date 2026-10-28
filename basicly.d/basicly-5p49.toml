@@ -14,6 +14,7 @@
 [[verify.checks]]
 name = "tree-growth"
 command = ["uv", "run", "python", ".scripts/check_tree_growth.py"]
+inputs = ["src/**/*.py", "tests/**/*.py", ".scripts/**/*.py", ".basicly/core/**/*.py", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]
 
 # The one suppression the gate adds. `.scripts` is not a package, so a sibling script is

@@ -38,4 +38,5 @@ E402 = -5
 [[verify.checks]]
 name = "no-comments"
 command = ["uv", "run", "python", ".basicly/core/kit/comments/cli.py", "check", "."]
+inputs = ["**/*.bash", "**/*.c", "**/*.cc", "**/*.cjs", "**/*.cpp", "**/*.cs", "**/*.cshtml", "**/*.css", "**/*.cts", "**/*.cxx", "**/*.go", "**/*.h", "**/*.hpp", "**/*.htm", "**/*.html", "**/*.java", "**/*.js", "**/*.jsx", "**/*.ksh", "**/*.kt", "**/*.kts", "**/*.less", "**/*.m", "**/*.mjs", "**/*.mm", "**/*.mts", "**/*.php", "**/*.ps1", "**/*.psd1", "**/*.psm1", "**/*.py", "**/*.pyi", "**/*.razor", "**/*.rs", "**/*.sass", "**/*.scala", "**/*.scss", "**/*.sh", "**/*.sql", "**/*.svelte", "**/*.swift", "**/*.ts", "**/*.tsx", "**/*.vb", "**/*.vbs", "**/*.vue", "**/*.xhtml", "**/*.zsh", ".basicly/core/kit/comments/**", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]

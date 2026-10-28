@@ -1,4 +1,5 @@
 [[verify.checks]]
 name = "always-on-size"
 command = ["uv", "run", "python", ".scripts/check_always_on_size.py"]
+inputs = [".basicly/core/targets/*.yaml", "AGENTS.md", ".claude/CLAUDE.md", ".github/copilot-instructions.md", ".scripts/check_always_on_size.py", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]

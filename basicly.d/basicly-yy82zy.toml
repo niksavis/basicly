@@ -56,4 +56,5 @@
 [[verify.checks]]
 name = "mermaid"
 command = ["uv", "run", "python", ".scripts/check_mermaid.py"]
+inputs = ["**/*.md", ".scripts/check_mermaid.py", ".scripts/render_mermaid.mjs", "package.json", "package-lock.json", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]

@@ -17,6 +17,7 @@
 [[verify.checks]]
 name = "code-citations"
 command = ["uv", "run", "python", ".scripts/check_code_citations.py"]
+inputs = ["src/**/*.py", "tests/**/*.py", ".scripts/**/*.py", ".basicly/core/**/*.py", "**/*.md", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]
 
 # One suppression, the one `basicly-e2mz.37`, `basicly-a4q3.4` and `basicly-5p49` already

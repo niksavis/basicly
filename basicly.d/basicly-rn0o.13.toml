@@ -45,4 +45,5 @@ command = [
     "validate",
     "tests/fixtures/board/foreign/snapshot.json",
 ]
+inputs = ["tests/fixtures/board/foreign/**", ".basicly/core/schemas/**", "src/basicly/**", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]

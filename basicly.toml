@@ -190,6 +190,10 @@ inputs = [
   "tests/**/*.py",
   ".scripts/**/*.py",
   ".basicly/core/**/*.py",
+  "packages/**/*.py",
+  "hatch_build.py",
+  "**/*.pyi",
+  ".python-version",
   "pyproject.toml",
   "uv.lock",
 ]
@@ -224,6 +228,7 @@ modes = ["full"]
 [[verify.checks]]
 name = "pyright-hidden"
 command = ["uv", "run", "python", ".scripts/check_hidden_types.py"]
+inputs = [".scripts/**/*.py", ".basicly/core/**/*.py", ".claude/skills/**/*.py", ".agents/skills/**/*.py", "src/**/*.py", "**/*.pyi", ".python-version", "pyproject.toml", "uv.lock"]
 exclusive = true
 modes = ["fast", "staged"]
 
@@ -434,26 +439,31 @@ inputs = ["src/**/*.py", ".importlinter", "uv.lock"]
 [[verify.checks]]
 name = "projection-check"
 command = ["uv", "run", "basicly", "check"]
+inputs = [".basicly/core/**", ".basicly-local/**", ".basicly/fragments/**", ".basicly/generated-manifest.json", "AGENTS.md", ".claude/CLAUDE.md", ".claude/rules/**", ".github/copilot-instructions.md", ".ruff.toml", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "projection-skills"
 command = ["uv", "run", "basicly", "skills-check"]
+inputs = [".basicly/core/**", ".basicly-local/**", ".claude/skills/**", ".agents/skills/**", ".github/skills/**", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "projection-agents"
 command = ["uv", "run", "basicly", "agents-check"]
+inputs = [".basicly/core/**", ".basicly-local/**", ".claude/agents/**", ".github/agents/**", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "projection-hooks"
 command = ["uv", "run", "basicly", "hooks-check"]
+inputs = [".basicly/core/**", ".basicly-local/**", ".claude/settings.json", ".codex/hooks.json", ".github/hooks/**", "lefthook.*", ".lefthook.*", ".config/lefthook.*", ".basicly/lefthook.yml", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]
 
 [[verify.checks]]
 name = "projection-permissions"
 command = ["uv", "run", "basicly", "permissions-check"]
+inputs = [".basicly/core/**", ".basicly-local/**", ".claude/settings.json", ".codex/config.toml", ".codex/rules/**", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]
 
 # Derivable documentation claims (basicly-tcmy.31). A document that restates a fact
@@ -486,6 +496,7 @@ modes = ["fast", "full"]
 [[verify.checks]]
 name = "board-schema"
 command = ["uv", "run", "basicly", "board", "validate", "tests/fixtures/board/minimal-v1.json"]
+inputs = ["tests/fixtures/board/minimal-v1.json", ".basicly/core/schemas/**", "src/basicly/**", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]
 
 [[verify.checks]]

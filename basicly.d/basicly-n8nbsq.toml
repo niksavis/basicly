@@ -6,4 +6,5 @@
 [[verify.checks]]
 name = "release-fragments"
 command = ["uv", "run", "python", ".scripts/check_release_fragments.py"]
+inputs = ["changelog.d/*.md", ".scripts/check_release_fragments.py", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]

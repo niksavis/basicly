@@ -1,4 +1,5 @@
 [[verify.checks]]
 name = "projection-styles"
 command = ["uv", "run", "basicly", "styles-check"]
+inputs = [".basicly/core/**", ".basicly-local/**", ".claude/output-styles/**", "src/basicly/**", "basicly.toml", "basicly.d/*.toml", "pyproject.toml", "uv.lock"]
 modes = ["fast", "full"]
