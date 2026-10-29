@@ -1,1 +1,0 @@
-- The tracker list now refreshes while you edit a draft, keeps your scroll position and focused row, and says when the connection to the tracker drops and when it is back (`basicly-cmv2jgq.2`).

@@ -1,1 +1,0 @@
-- The tracker page header keeps the repository name on one line on a phone: below 600 px it drops the " · Tracker" suffix (`basicly-02nml8h.5`).

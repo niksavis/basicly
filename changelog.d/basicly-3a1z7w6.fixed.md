@@ -1,1 +1,0 @@
-- `basicly install --dry-run` over an older core now finishes and reports every step: it reads the ledger merge rules from the engine kit it would install, and a core that no longer validates counts as a step the sync rewrites (`basicly-3a1z7w6`).

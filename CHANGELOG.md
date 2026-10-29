@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.33.0 - 2026-10-29
+
+Delta: v0.32.0..v0.33.0
+
 This release makes the tracker page and the board wall work better for the people
 who watch them. The tracker list now updates while you edit and says when its
 connection drops, the board lets an operator change a priority from the ready list,
@@ -19,6 +23,22 @@ finishes.
   basicly-0mki2bn).
 - Upgrades: `basicly install --dry-run` over an older core reports every step
   (basicly-3a1z7w6).
+
+### Added
+
+- The board ready list lets an operator change a record priority from its own row; values other than 0 to 4 are refused before anything runs (`basicly-lc2bd3v.1`).
+
+### Changed
+
+- The tracker page header keeps the repository name on one line on a phone: below 600 px it drops the " · Tracker" suffix (`basicly-02nml8h.5`).
+
+- The tracker list now refreshes while you edit a draft, keeps your scroll position and focused row, and says when the connection to the tracker drops and when it is back (`basicly-cmv2jgq.2`).
+
+### Fixed
+
+- `basicly install --dry-run` over an older core now finishes and reports every step: it reads the ledger merge rules from the engine kit it would install, and a core that no longer validates counts as a step the sync rewrites (`basicly-3a1z7w6`).
+
+- The served board wall fits its screen: without a declared viewport it sizes the ready list for 1440x900, and the ready-list calibration no longer counts the claimed, parked and queue regions twice, so a tall wall shows the rows it has room for (`basicly-zj36jf0`, `basicly-0mki2bn`).
 
 ## v0.32.0 - 2026-10-29
 

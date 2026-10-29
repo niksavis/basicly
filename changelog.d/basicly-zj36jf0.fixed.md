@@ -1,1 +1,0 @@
-- The served board wall fits its screen: without a declared viewport it sizes the ready list for 1440x900, and the ready-list calibration no longer counts the claimed, parked and queue regions twice, so a tall wall shows the rows it has room for (`basicly-zj36jf0`, `basicly-0mki2bn`).
