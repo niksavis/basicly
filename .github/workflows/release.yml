@@ -7,6 +7,7 @@ name: release
       - "v*"
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -35,10 +36,16 @@ jobs:
         run: npx --no-install markdownlint-cli2
       - name: Lint catalog sources
         run: uv run python -m basicly.cli catalog lint
-      # The full checks run here so that publishing waits for them on the tagged tree;
-      # they run in parallel with the install smoke test, which keeps a release near
-      # ten minutes (basicly-8xwfe5a, basicly-gtb19bg.15).
+      # The full checks run here so that publishing waits for them on the tagged tree,
+      # unless main's quality-gates already passed and later commits touch only the
+      # ledger, CHANGELOG.md or the release commit (basicly-8xwfe5a, basicly-gbz3x8q).
+      - name: Reuse a green main run
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run python .scripts/release_reuse.py "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
       - name: Run full checks
+        if: steps.reuse.outputs.reuse != 'true'
         env:
           CI: "true"
         run: uv run python .basicly/core/hooks/pre-push.py < /dev/null

@@ -137,3 +137,17 @@ def test_permanent_installers_are_published_assets_and_pages_uses_releases() -> 
     assert "gh release download" in commands
     assert "--pattern 'install.*' --dir site" in commands
     assert "bootstrap.sh" not in commands
+
+
+def test_full_checks_run_unless_the_reuse_step_proves_a_green_main_run() -> None:
+    workflow = yaml.safe_load(_RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["verify"]["steps"]
+    names = [step.get("name") for step in steps]
+    reuse = steps[names.index("Reuse a green main run")]
+    full = steps[names.index("Run full checks")]
+
+    assert names.index("Reuse a green main run") < names.index("Run full checks")
+    assert ".scripts/release_reuse.py" in reuse["run"]
+    assert '>> "$GITHUB_OUTPUT"' in reuse["run"]
+    assert full["if"] == f"steps.{reuse['id']}.outputs.reuse != 'true'"
+    assert workflow["permissions"]["actions"] == "read"
