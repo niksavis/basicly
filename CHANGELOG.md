@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.35.0 - 2026-10-29
+
+Delta: v0.34.1..v0.35.0
+
 This release adds a map for an epic. It lists the open children in the order the work can
 run, so a reader sees what can start now and how many steps remain.
 
@@ -13,6 +17,14 @@ run, so a reader sees what can start now and how many steps remain.
   sets apart children that wait on each other and folds the done ones (basicly-tpr4xre.2).
 - Record view: a direct wait no longer says shown above when only a folded chain showed
   it (basicly-tpr4xre.3).
+
+### Added
+
+- An epic or any record with children has a map at #/record/<id>/map. It lists the open children in waves: wave 1 waits on nothing in the epic, each later wave waits only on earlier waves. Children that wait on each other in a circle are set apart, and done children are folded. (basicly-tpr4xre.2)
+
+### Fixed
+
+- The record view no longer marks a direct wait as shown above when another child's folded chain reached it first. The row now shows its own state. (basicly-tpr4xre.3)
 
 ## v0.34.1 - 2026-10-29
 

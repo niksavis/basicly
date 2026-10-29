@@ -1,1 +1,0 @@
-- The record view no longer marks a direct wait as shown above when another child's folded chain reached it first. The row now shows its own state.

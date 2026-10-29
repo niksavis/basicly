@@ -1,1 +1,0 @@
-- An epic or any record with children has a map at #/record/<id>/map. It lists the open children in waves: wave 1 waits on nothing in the epic, each later wave waits only on earlier waves. Children that wait on each other in a circle are set apart, and done children are folded.
