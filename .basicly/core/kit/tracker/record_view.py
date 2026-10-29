@@ -54,11 +54,11 @@ def _owed(found: list[Any], record: str, template: Any) -> dict[str, object]:
     debt = () if closed else process.readiness(found, record, held, template=template)
     missing = shaping.owed(held, closed=closed, template=template, process=debt)
     blocking = shaping.refused(held, closed=closed, template=template, process=debt)
-    return {
-        "owed": list(missing),
-        "blocking": list(blocking),
-        "remedy": shaping.remedy(blocking) if blocking else "",
-    }
+    remedy = shaping.remedy(blocking) if blocking else ""
+    note = process.review_note(found, record, held, template=template) if debt else ""
+    if note and note != process.NO_REVIEW:
+        remedy = f"{note}; {remedy}"
+    return {"owed": list(missing), "blocking": list(blocking), "remedy": remedy}
 
 
 def _title(states: Mapping[str, Any], record: str) -> str:

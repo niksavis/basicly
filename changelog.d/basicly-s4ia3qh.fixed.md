@@ -1,0 +1,1 @@
+- When a dependency edge voids a recorded review, `dep` now says the review is void and names `review --evidence`, so a record that drops out of the ready set explains why (`basicly-s4ia3qh`).

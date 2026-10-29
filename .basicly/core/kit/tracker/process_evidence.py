@@ -55,6 +55,7 @@ SEMANTIC_FIELDS = frozenset({
     "issue_type",
 })
 MANAGED_FIELDS = frozenset({REVIEW_FIELD, CONFIRMATION_FIELD})
+NO_REVIEW = "no review is recorded; run review --evidence"
 
 
 class ProcessEvidenceError(events.LedgerError):
@@ -219,7 +220,7 @@ def review_note(
 ) -> str:
     saved = _saved(found, record, fields, REVIEW_FIELD)
     if not saved:
-        return "no review is recorded; run review --evidence"
+        return NO_REVIEW
     if not _current(saved, found, record, RevisionContext(fields, drafts, template)):
         return "the recorded review is void because the record changed after it; run review again"
     return ""
