@@ -1309,14 +1309,7 @@ def _move_legacy_prefix(repo_root: Path, *, dry_run: bool) -> None:
 
 
 def _scaffold_ledger_attributes(repo_root: Path, *, dry_run: bool = False) -> None:
-    rules = owned_write.ledger_git_rules(repo_root)
-    if not rules:
-        if dry_run:
-            print(
-                "Would add the ledger union-merge rules to .gitattributes; the exact globs "
-                "are read off the tracker kit, which this run has not written yet"
-            )
-        return
+    rules = owned_write.ledger_git_rules()
     path = repo_root / ".gitattributes"
     try:
         text = path.read_text(encoding="utf-8") if path.exists() else ""
@@ -1779,7 +1772,12 @@ def _report_install_steps(
         if step == "permissions-build":
             namespace = argparse.Namespace(codex_user=getattr(_namespace, "codex_user", False))
         ui.heading(f"\n== basicly {probe} ==")
-        if handler(namespace) != 0:
+        try:
+            failed = handler(namespace) != 0
+        except ValidationError as exc:
+            print(f"the core on disk does not validate, so the sync replaces it: {exc}")
+            failed = True
+        if failed:
             would_rewrite.append(step)
     ui.say(
         "\nbasicly install --dry-run complete: nothing was written. "

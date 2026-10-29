@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import sys
 from collections.abc import Callable
@@ -121,6 +122,20 @@ def set_kit_version_reader(reader: Callable[[Path], str | None] | None) -> None:
 def packaged_kit_dir() -> Path:
 
     return catalog.bundled_catalog_root() / KIT_TRACKER_DIR.relative_to(CORE_ROOT)
+
+
+def packaged_constant(module_name: str, name: str) -> str:
+
+    source = packaged_kit_dir() / f"{module_name}.py"
+    for node in ast.parse(source.read_text(encoding="utf-8")).body:
+        if (
+            isinstance(node, ast.Assign)
+            and [getattr(target, "id", None) for target in node.targets] == [name]
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            return node.value.value
+    raise TrackerDivergenceError(f"the packaged tracker kit's {source.name} declares no {name}")
 
 
 def packaged_kit(module_name: str = DEFAULT_KIT_MODULE) -> Any:
