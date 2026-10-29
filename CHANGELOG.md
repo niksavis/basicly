@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes a push fast. The push hook no longer re-runs the checks the commit
+hook already passed for the same tree, so a typical push drops from about 26 seconds of
+checks to under 2. Continuous integration still runs the full suite.
+
+- Faster pushes: commit-time passes are reused at push for the same tree and
+  interpreter (basicly-zcs4p7f).
+
 ## v0.33.0 - 2026-10-29
 
 Delta: v0.32.0..v0.33.0
