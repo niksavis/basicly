@@ -1,1 +1,0 @@
-- A task, bug or chore marked `--field size=small` with exactly one acceptance criterion now starts without a review; close still needs one confirmed check, and a record that breaks a rule is refused by name (`basicly-pt3ofzo`).

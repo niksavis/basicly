@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.31.1 - 2026-10-29
+
+Delta: v0.31.0..v0.31.1
+
 This release publishes the v0.31.0 changes, because the v0.31.0 tag failed its
 release checks and was never published. It also makes a push check what it sends:
 the pre-push hook now runs on the pushed commits, so an unfinished edit in the working
@@ -18,6 +22,18 @@ more skills load less text.
 - Smaller skills: `interface-facts`, `find-skills`, `harness-client`, `tier-injection`
   and `root-cause` move tables and examples into references (basicly-qryvmrj).
 - For the v0.31.0 changes, read the v0.31.0 section below.
+
+### Added
+
+- A task, bug or chore marked `--field size=small` with exactly one acceptance criterion now starts without a review; close still needs one confirmed check, and a record that breaks a rule is refused by name (`basicly-pt3ofzo`).
+
+### Changed
+
+- Five more skills load less text: `interface-facts`, `find-skills`, `harness-client`, `tier-injection` and `root-cause` keep their steps in `SKILL.md` and move tables and examples into `references/` (`basicly-qryvmrj`).
+
+### Fixed
+
+- The pre-push hook now checks the commits you push, not your working tree, so an unfinished edit no longer refuses a push of finished commits (`basicly-330wf7i`).
 
 ## v0.31.0 - 2026-10-28
 

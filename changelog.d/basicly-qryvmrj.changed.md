@@ -1,1 +1,0 @@
-- Five more skills load less text: `interface-facts`, `find-skills`, `harness-client`, `tier-injection` and `root-cause` keep their steps in `SKILL.md` and move tables and examples into `references/` (`basicly-qryvmrj`).

@@ -1,1 +1,0 @@
-- The pre-push hook now checks the commits you push, not your working tree, so an unfinished edit no longer refuses a push of finished commits (`basicly-330wf7i`).
