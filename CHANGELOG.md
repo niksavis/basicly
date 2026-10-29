@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes the tracker page and the board wall work better for the people
+who watch them. The tracker list now updates while you edit and says when its
+connection drops, the board lets an operator change a priority from the ready list,
+and the served wall fits its screen. An upgrade dry run over an older core now
+finishes.
+
+- Tracker page: live list updates during an edit, a reconnect notice, and a phone
+  header that keeps the repository name (basicly-cmv2jgq.2, basicly-02nml8h.5).
+- Board wall: change a priority from a ready row (basicly-lc2bd3v.1), and a ready
+  list that fits 1440x900 and uses the room on taller screens (basicly-zj36jf0,
+  basicly-0mki2bn).
+- Upgrades: `basicly install --dry-run` over an older core reports every step
+  (basicly-3a1z7w6).
+
 ## v0.32.0 - 2026-10-29
 
 Delta: v0.31.1..v0.32.0
