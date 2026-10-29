@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release publishes the v0.31.0 changes, because the v0.31.0 tag failed its
+release checks and was never published. It also makes a push check what it sends:
+the pre-push hook now runs on the pushed commits, so an unfinished edit in the working
+tree no longer refuses a push. Five more skills load less text.
+
+- Pushes check the pushed commits, not the working tree (basicly-330wf7i).
+- Smaller skills: `interface-facts`, `find-skills`, `harness-client`, `tier-injection`
+  and `root-cause` move tables and examples into references (basicly-qryvmrj).
+- For the v0.31.0 changes, read the v0.31.0 section below.
+
 ## v0.31.0 - 2026-10-28
 
 Delta: v0.30.1..v0.31.0
