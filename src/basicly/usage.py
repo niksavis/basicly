@@ -6,11 +6,9 @@ import re
 import shutil
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 USAGE_FILE = Path(".basicly/usage/tool-usage.json")
-VERIFY_CHECKS_FILE = Path(".basicly/usage/verify-checks.json")
 SKILL_PREFIX = "skill:"
 
 LOCAL_BIN_DIRS = (
@@ -51,30 +49,6 @@ def _load_counters(path: Path) -> dict[str, dict] | None:
 
 def load_usage(repo_root: Path) -> dict[str, dict] | None:
     return _load_counters(repo_root / USAGE_FILE)
-
-
-def record_verify_check(repo_root: Path, name: str) -> None:
-
-    path = repo_root / VERIFY_CHECKS_FILE
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        gitignore = path.parent / ".gitignore"
-        if not gitignore.exists():
-            gitignore.write_text("*\n", encoding="utf-8")
-        counters = _load_counters(path) or {}
-        entry = counters.get(name)
-        count = entry.get("count") if isinstance(entry, dict) else None
-        if not isinstance(count, int) or isinstance(count, bool):
-            count = 0
-        counters[name] = {
-            "count": count + 1,
-            "last_used": datetime.now(UTC).date().isoformat(),
-        }
-        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(counters, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        tmp.replace(path)
-    except OSError:
-        return
 
 
 def catalog_commands(instruction_texts: Iterable[str]) -> frozenset[str]:

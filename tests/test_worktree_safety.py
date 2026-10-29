@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
-from basicly import usage, verify, verify_artifact, worktree
+from basicly import verify, verify_artifact, worktree
 from tests.test_worktree import _git, _init_repo
 
 
@@ -183,7 +183,6 @@ def test_cleanup_distinguishes_verification_output_from_adjacent_user_data(
     safety_repo: Path, user_file: bool
 ) -> None:
     session = worktree.create("verified", repo_root=safety_repo)
-    usage.record_verify_check(session.path, "consumer-check")
     artifact = verify_artifact.write_run_artifact(session.path, verify.VerifyReport("fast", ()))
     assert artifact is not None
     if user_file:

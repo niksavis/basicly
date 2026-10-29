@@ -17,6 +17,8 @@ from . import (
 )
 
 DEP_DIRS = (".venv", "node_modules")
+USAGE_DIR = verify_artifact.RUN_ARTIFACT.parent
+RETIRED_COUNTER = "verify-checks.json"
 
 
 @dataclass(frozen=True)
@@ -45,10 +47,10 @@ def classify_worktree_tree(returncode: int, stdout: str) -> RemovalVerdict:
         (tracker_paths.LEDGER_DIR_NAME / tracker_paths.REDIRECT_NAME).as_posix(),
     )
     known_artifacts = {
-        usage.VERIFY_CHECKS_FILE.as_posix(),
+        (USAGE_DIR / RETIRED_COUNTER).as_posix(),
         verify_artifact.RUN_ARTIFACT.as_posix(),
         verify_cache.CACHE_PATH.as_posix(),
-        (usage.VERIFY_CHECKS_FILE.parent / ".gitignore").as_posix(),
+        (USAGE_DIR / ".gitignore").as_posix(),
     }
     noise_prefixes = tuple(f"{d}/" for d in DEP_DIRS)
     pending: list[str] = []
@@ -171,11 +173,10 @@ def _cache_member(root: str, path: Path) -> bool:
 def _generated_tree(
     worktree: Path, relative: Path, failure_logs: tuple[str, ...]
 ) -> tuple[Path, str, set[str]] | None:
-    usage_root = usage.VERIFY_CHECKS_FILE.parent
-    if relative == usage_root or relative.is_relative_to(usage_root):
-        directory = worktree / usage_root
+    if relative == USAGE_DIR or relative.is_relative_to(USAGE_DIR):
+        directory = worktree / USAGE_DIR
         names = {
-            usage.VERIFY_CHECKS_FILE.name,
+            RETIRED_COUNTER,
             verify_artifact.RUN_ARTIFACT.name,
             verify_cache.CACHE_PATH.name,
             usage.USAGE_FILE.name,

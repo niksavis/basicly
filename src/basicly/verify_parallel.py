@@ -6,7 +6,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import replace
 from pathlib import Path
 
-from . import usage, verify_log
+from . import verify_log
 from .config import VerifyCheck, VerifyConfig
 from .verify_artifact import CheckResult, blocked_result
 
@@ -73,8 +73,6 @@ class ParallelChecks:
     def _report(self, result: CheckResult) -> CheckResult:
         print(f"==> {result.name}", flush=True)
         print(result.output, end="", flush=True)
-        if result.status == "pass":
-            usage.record_verify_check(self._root, result.name)
         if result.status != "fail" or result.detail:
             return result
         log = verify_log.write(self._root, result.name, result.output)

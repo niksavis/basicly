@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from basicly import hook_runtime, usage, verify
+from basicly import hook_runtime, verify
 from basicly.config import load_verify_config
 from basicly.verify_artifact import RUN_ARTIFACT
 
@@ -63,11 +63,7 @@ def test_jobs_run_independent_checks_at_the_same_time_and_report_in_order(
     ]
     out = capsys.readouterr().out
     assert out.index("==> waiter") < out.index("saw signal") < out.index("==> signaller")
-    counters = json.loads((tmp_path / usage.VERIFY_CHECKS_FILE).read_text(encoding="utf-8"))
-    assert {name: entry["count"] for name, entry in counters.items()} == {
-        "waiter": 1,
-        "signaller": 1,
-    }
+    assert not (tmp_path / ".basicly/usage/verify-checks.json").exists()
 
 
 def test_without_jobs_the_same_checks_run_one_after_another(tmp_path: Path) -> None:

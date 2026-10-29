@@ -13,7 +13,6 @@ from . import (
     pytest_inputs,
     tracker,
     tracker_paths,
-    usage,
     verify_cache,
     verify_log,
     verify_parallel,
@@ -114,10 +113,7 @@ def run_check(
     check: VerifyCheck, repo_root: Path, mode: str, *, capture: bool = False
 ) -> CheckResult:
 
-    result = _run(check, repo_root, mode, capture=capture)
-    if result.status == "pass":
-        usage.record_verify_check(repo_root, check.name)
-    return result
+    return _run(check, repo_root, mode, capture=capture)
 
 
 def run_fix(check: VerifyCheck, repo_root: Path, mode: str) -> CheckResult:

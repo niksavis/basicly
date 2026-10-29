@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import os
 import re
 import shutil
@@ -13,7 +12,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 import yaml
 
-from basicly import cli, dropin, policy, tracker, tracker_paths, usage, verify, verify_execution
+from basicly import cli, dropin, policy, tracker, tracker_paths, verify, verify_execution
 from basicly.config import (
     VerifyCheck,
     VerifyConfig,
@@ -173,74 +172,6 @@ def test_run_check_staged_appends_matching_files(
 
     verify.run_check(_check("ruff", ("staged",), ".py"), tmp_path, "staged")
     assert captured == ["ruff", "a.py", "b.py"]
-
-
-def test_run_check_records_a_passing_check_as_an_execution(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_k: _Proc(0)))
-
-    verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
-    verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
-
-    recorded = json.loads((tmp_path / usage.VERIFY_CHECKS_FILE).read_text(encoding="utf-8"))
-    assert recorded["vulture"]["count"] == 2
-
-
-def test_the_recorded_ledger_never_dirties_the_tree(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-
-    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
-    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_k: _Proc(0)))
-
-    verify.run_check(_check("vulture", ("full",)), tmp_path, "full")
-
-    assert (tmp_path / usage.VERIFY_CHECKS_FILE).exists()
-    status = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=tmp_path, check=True, capture_output=True, text=True
-    )
-    assert status.stdout.strip() == ""
-
-
-def test_run_check_records_nothing_for_a_failure_or_a_skip(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-
-    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_k: _Proc(1)))
-    verify.run_check(_check("failing", ("full",)), tmp_path, "full")
-
-    monkeypatch.setattr(verify, "staged_files", lambda _root, _suffix: [])
-    verify.run_check(_check("skipped", ("staged",), ".py"), tmp_path, "staged")
-
-    assert not (tmp_path / usage.VERIFY_CHECKS_FILE).exists()
-
-
-def test_a_fix_run_is_not_an_execution_of_the_check(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_k: _Proc(0)))
-    check = VerifyCheck(
-        name="ruff-format",
-        command=("ruff", "format", "--check"),
-        modes=frozenset({"full"}),
-        fix_command=("ruff", "format"),
-    )
-
-    verify.run_fix(check, tmp_path, "full")
-
-    assert not (tmp_path / usage.VERIFY_CHECKS_FILE).exists()
-
-
-def test_recording_can_never_fail_the_check_it_records(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    blocked = tmp_path / usage.VERIFY_CHECKS_FILE.parent
-    blocked.parent.mkdir(parents=True, exist_ok=True)
-    blocked.write_text("not a directory\n", encoding="utf-8")
-    monkeypatch.setattr(verify, "_spawn", _as_spawn(lambda *_a, **_k: _Proc(0)))
-
-    assert verify.run_check(_check("vulture", ("full",)), tmp_path, "full").status == "pass"
 
 
 def test_run_verify_filters_by_mode_and_aggregates(
