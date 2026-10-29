@@ -83,7 +83,7 @@ def _local_push(root: Path) -> int:
 
 def main() -> int:
     root = project_root()
-    if ledger_write_in_flight(root):
+    if ledger_write_in_flight(Path(os.environ.get("BASICLY_CHECKOUT") or root)):
         print(
             "pre-push: a ledger write is in flight, so this push would race it.\n"
             "Your commits and unstaged files are unchanged.\n"

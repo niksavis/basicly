@@ -112,6 +112,20 @@ def test_the_refusal_names_the_live_ledger_contention(
     assert "Your commits" in reported
 
 
+def test_a_snapshot_run_reads_the_ledger_lock_of_the_real_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout, snapshot = tmp_path / "checkout", tmp_path / "snapshot"
+    snapshot.mkdir()
+    seen: list[Path] = []
+    monkeypatch.setenv("BASICLY_CHECKOUT", str(checkout))
+    monkeypatch.setattr(hook, "project_root", lambda: snapshot)
+    monkeypatch.setattr(hook, "ledger_write_in_flight", lambda root: seen.append(root) or True)
+
+    assert hook.main() == 1
+    assert seen == [checkout]
+
+
 def test_a_quiet_tree_runs_the_checks_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -159,9 +173,8 @@ def _pushable_repo(tmp_path: Path) -> Path:
     (repo / LEDGER_FILE).write_bytes(b'{"seq": 1}\n')
     scripts = repo / ".basicly/core/hooks"
     scripts.mkdir(parents=True)
-    shutil.copyfile(
-        REPO_ROOT / ".basicly/core/hooks/lefthook-runtime.py", scripts / "lefthook-runtime.py"
-    )
+    for name in ("lefthook-runtime.py", "staged-snapshot.py"):
+        shutil.copyfile(REPO_ROOT / ".basicly/core/hooks" / name, scripts / name)
     (scripts / "slow.py").write_text(
         f"import pathlib, time\npathlib.Path({str(tmp_path / 'started')!r}).write_text('go')\n"
         "time.sleep(60)\n",

@@ -85,11 +85,27 @@ def normalize_checkout(root: Path, paths: list[bytes], env: dict, original_tree:
         )
 
 
-def prepare(root: Path, directory: Path) -> Snapshot:
+def pushed_commit(refs: str) -> str | None:
+    commits = {
+        parts[1]
+        for parts in (line.split() for line in refs.splitlines())
+        if len(parts) == 4 and set(parts[1]) != {"0"}
+    }
+    return commits.pop() if len(commits) == 1 else None
+
+
+def seed_index(root: Path, index: Path, temporary_index: Path, commit: str | None) -> None:
+    if commit is None:
+        shutil.copyfile(index, temporary_index)
+        return
+    git(root, "read-tree", commit, env={**os.environ, "GIT_INDEX_FILE": str(temporary_index)})
+
+
+def prepare(root: Path, directory: Path, commit: str | None = None) -> Snapshot:
     index = index_path(root)
     before = digest(index)
     temporary_index = directory / "index"
-    shutil.copyfile(index, temporary_index)
+    seed_index(root, index, temporary_index, commit)
     snapshot = directory / "tree"
     snapshot.mkdir()
     common = os.fsdecode(git(root, "rev-parse", "--absolute-git-dir")).strip()
@@ -98,6 +114,7 @@ def prepare(root: Path, directory: Path) -> Snapshot:
         "GIT_INDEX_FILE": str(temporary_index),
         "GIT_WORK_TREE": str(snapshot),
         "GIT_DIR": common,
+        "BASICLY_CHECKOUT": str(root),
         "PYTHONPATH": str(snapshot / "src") + os.pathsep + os.environ.get("PYTHONPATH", ""),
     }
     original_tree = git(root, "write-tree", env=env).strip()
