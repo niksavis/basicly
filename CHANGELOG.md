@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release shows how a record fits into the work around it. The tracker record view
+now names the epic that holds a record and what the record waits on, down to the blocker
+that can start now.
+
+- Record view: an epic path line above the title, and a Waits on / unblocks block with a
+  Show chain toggle and the parent's other waits (basicly-tpr4xre.1).
+
 ## v0.33.1 - 2026-10-29
 
 Delta: v0.33.0..v0.33.1
