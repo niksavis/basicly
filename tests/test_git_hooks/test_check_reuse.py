@@ -113,3 +113,20 @@ def test_reuse_is_off_outside_a_local_hook_snapshot(
     assert _runner().run_checks(repo, "fast") == 0
 
     assert _runs(counter) == 2
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a symlink needs a privilege on Windows")
+def test_the_environment_links_of_a_hook_snapshot_do_not_block_reuse(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    counter = tmp_path / "runs"
+    _configure(repo, counter)
+    (repo / ".gitignore").write_text(".basicly/usage/\n.venv/\n", encoding="utf-8")
+    _git(repo, "add", ".gitignore")
+    (repo / ".venv").symlink_to(tmp_path, target_is_directory=True)
+    monkeypatch.setenv("BASICLY_SNAPSHOT_LINKS", ".venv\n.basicly/usage")
+
+    assert _runner().run_checks(repo, "fast") == 0
+    assert _runner().run_checks(repo, "fast") == 0
+
+    assert _runs(counter) == 1

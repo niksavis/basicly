@@ -20,9 +20,10 @@ def _git(root: Path, *args: str) -> str | None:
 def key(root: Path, interpreter: str | None) -> str | None:
     if os.environ.get("CI") or not os.environ.get("BASICLY_SNAPSHOT_TREE") or not interpreter:
         return None
-    untracked = _git(root, "ls-files", "--others", "--exclude-standard")
+    listed = _git(root, "ls-files", "--others", "--exclude-standard")
     tree = _git(root, "write-tree")
-    if untracked is None or untracked.strip() or not tree:
+    linked = set(os.environ.get("BASICLY_SNAPSHOT_LINKS", "").splitlines())
+    if listed is None or set(listed.splitlines()) - linked or not tree:
         return None
     return f"{tree.strip()}:{interpreter}"
 
