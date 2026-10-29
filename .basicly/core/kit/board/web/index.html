@@ -483,7 +483,7 @@ function row(item) {
   const record = item.record || { fields: {}, dates: {} };
   const holder = person(record.fields.assignee);
   return el("li", {}, el("button", {
-    type: "button", "aria-current": String(Boolean(state.current) && state.current.record === item.id), onclick: () => go(item.id),
+    type: "button", "data-id": item.id, "aria-current": String(Boolean(state.current) && state.current.record === item.id), onclick: () => go(item.id),
   },
   statusMark(record.status, record),
   el("span", { class: "title" }, String(record.fields.title || item.id)),
@@ -1177,23 +1177,43 @@ function busy() {
     || [...pane.querySelectorAll("textarea")].some((area) => !area.readOnly && area.value.trim());
 }
 
+function keepPlace() {
+  const rows = document.getElementById("rows");
+  const top = rows.scrollTop;
+  const focused = rows.contains(document.activeElement) ? document.activeElement.closest("[data-id]") : null;
+  const id = focused ? focused.dataset.id : "";
+  return () => {
+    rows.scrollTop = top;
+    const again = id ? rows.querySelector(`[data-id="${CSS.escape(id)}"]`) : null;
+    if (again) again.focus({ preventScroll: true });
+  };
+}
+
 async function refreshQuietly() {
-  if (busy()) return;
+  if (document.hidden) return;
+  const editing = busy();
   try {
+    const restore = keepPlace();
     await load();
-    if (state.current && document.body.classList.contains("reading") && !busy()) await open(state.current.record, true);
+    restore();
+    if (!editing && state.current && document.body.classList.contains("reading") && !busy()) await open(state.current.record, true);
   } catch (error) {
     toast("the tracker server did not answer: " + error.message, true);
   }
 }
 
 async function watchVersion() {
-  if (document.hidden || !state.version || busy()) return;
+  if (document.hidden || !state.version) return;
   try {
     const { version } = await call("GET", "/version");
-    if (version !== state.version) await refreshQuietly();
+    if (state.offline) {
+      state.offline = false;
+      outage("");
+      await refreshQuietly();
+    } else if (version !== state.version) await refreshQuietly();
   } catch (error) {
-    return;
+    state.offline = true;
+    outage("the connection dropped (" + error.message + "); retrying every 2 seconds");
   }
 }
 

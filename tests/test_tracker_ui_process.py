@@ -145,9 +145,10 @@ assert.equal(notices({status:'closed',fields:{}},{blocking:[]}).length, 0);
 
 def test_readonly_refinement_handoff_does_not_block_background_refresh() -> None:
     _run(r"""
-const pane = {querySelector(){return null;},querySelectorAll(){return [
+const pane = {scrollTop:0,contains(){return false;},querySelector(){return null;},
+  querySelectorAll(){return [
   {readOnly:true,value:'Refine the selected card'}, {readOnly:false,value:''}];}};
-const document = {hidden:false,getElementById(){return pane;}};
+const document = {hidden:false,activeElement:null,getElementById(){return pane;}};
 let refreshed = 0;
 const load = async () => {refreshed++;};
 const toast = () => {};
@@ -159,17 +160,23 @@ const toast = () => {};
 """)
 
 
-def test_editable_comment_draft_still_blocks_detail_refresh() -> None:
+def test_an_editable_draft_refreshes_the_list_but_never_reopens_the_detail() -> None:
     _run(r"""
-const pane = {querySelector(){return null;},querySelectorAll(){return [
+const pane = {scrollTop:0,contains(){return false;},querySelector(){return null;},
+  querySelectorAll(){return [
   {readOnly:true,value:'Refine the selected card'}, {readOnly:false,value:'Unsaved comment'}];}};
-const document = {hidden:false,getElementById(){return pane;}};
+const document = {hidden:false,activeElement:null,getElementById(){return pane;},
+  body:{classList:{contains(){return true;}}}};
 let refreshed = 0;
+let detailReads = 0;
+Object.defineProperty(state, 'current', {get(){detailReads++; return {record:'x-1'};}});
 const load = async () => {refreshed++;};
+const toast = (message) => { throw new Error(message); };
 (async()=>{
   assert.equal(busy(), true);
   await refreshQuietly();
-  assert.equal(refreshed, 0);
+  assert.equal(refreshed, 1);
+  assert.equal(detailReads, 0);
 })();
 """)
 
