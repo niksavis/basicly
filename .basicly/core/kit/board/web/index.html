@@ -109,6 +109,17 @@
   .links { list-style: none; margin: 0; padding: 0; }
   .links li { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: baseline; padding: var(--space-0) 0; }
   .links .kind { width: 6.5rem; flex: none; color: var(--muted); font-size: var(--text-sm); }
+  .path { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); align-items: baseline; color: var(--muted); font-size: var(--text-sm); margin-top: var(--space-2); }
+  .waits ul { list-style: none; margin: 0; padding: 0; }
+  .waits ul ul { padding-left: var(--space-5); border-left: 1px solid var(--line); }
+  .waits:not(.deep) ul ul { display: none; }
+  .waits .line > span:nth-child(3) { flex: 1 1 12rem; min-width: 0; }
+  .waits li { padding: var(--space-0) 0; }
+  .waits .line { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: baseline; }
+  .waits .kind { width: 6.5rem; flex: none; color: var(--muted); font-size: var(--text-sm); }
+  .waits .start { color: var(--ok); font-size: var(--text-sm); }
+  .waits .held { color: var(--bad); font-size: var(--text-sm); }
+  .waits .aside { color: var(--muted); font-size: var(--text-sm); margin: var(--space-2) 0 0; }
   .comments { list-style: none; margin: 0 0 var(--space-3); padding: 0; }
   .comments li { border-left: 3px solid var(--line); padding: var(--space-0) 0 var(--space-0) var(--space-4); margin: var(--space-3) 0; }
   .comments .who { color: var(--muted); font-size: var(--text-sm); }
@@ -1025,6 +1036,53 @@ function titleBlock(shown) {
   return el("h2", { class: "story-title" }, String(shown.fields.title || shown.record));
 }
 
+function pathLine(shown) {
+  const path = shown.ancestors || [];
+  return path.length ? [el("nav", { class: "path", "aria-label": "epic path" }, path.flatMap((row, index) => [
+    index ? el("span", { "aria-hidden": "true" }, "›") : null,
+    el("button", { class: "link", type: "button", title: row.id, onclick: () => go(row.id) }, (row.issue_type ? row.issue_type + ": " : "") + (row.title || row.id))]))] : [];
+}
+
+function waitState(row) {
+  if (row.status === "unknown") return el("span", { class: "held" }, "missing");
+  if (row.close_resolution === "cancelled") return el("span", { class: "held" }, "cancelled");
+  if (row.startable) return el("span", { class: "start" }, "can start now");
+  if (row.repeat) return el("span", { class: "meta" }, "shown above");
+  return el("span", { class: "meta" }, STATUS_NAMES[row.status] || row.status);
+}
+
+function waitKind(row) {
+  return row.via === "child" ? "open child" : "waits on";
+}
+
+function waitItem(row, kind) {
+  const line = el("div", { class: "line" }, el("span", { class: "kind" }, kind),
+    el("button", { class: "link", type: "button", onclick: () => go(row.id) }, row.id), el("span", {}, row.title || ""), waitState(row));
+  const below = row.waits && row.waits.length ? el("ul", {}, row.waits.map((one) => waitItem(one, waitKind(one)))) : null;
+  return el("li", {}, line, below);
+}
+
+function waitsBlock(shown) {
+  const waits = shown.waits || [];
+  const unblocks = (shown.dependents || []).filter((edge) => edge.dependency_type === "blocks" && edge.status !== "closed");
+  const own = new Set(waits.map((row) => row.id));
+  const others = shown.parent_waits ? shown.parent_waits.waits.filter((row) => !own.has(row.id)) : [];
+  const aside = others.length ? el("p", { class: "aside" }, "Its parent " + shown.parent_waits.id + " waits on " + others.map((row) => row.id).join(", ") + ". That does not hold this record.") : null;
+  if (!waits.length && !unblocks.length && !aside) return [];
+  const block = el("section", { class: "block waits" });
+  const chain = waits.some((row) => row.waits && row.waits.length)
+    ? el("button", { class: "link chain", type: "button", "aria-expanded": "false", onclick: (event) => {
+      const deep = block.classList.toggle("deep");
+      event.currentTarget.setAttribute("aria-expanded", String(deep));
+      event.currentTarget.textContent = deep ? "Hide chain" : "Show chain";
+    } }, "Show chain") : null;
+  block.append(el("h3", {}, "Waits on / unblocks", chain),
+    waits.length ? el("ul", {}, waits.map((row) => waitItem(row, waitKind(row)))) : el("div", { class: "none" }, "waits on nothing"),
+    unblocks.length ? el("ul", {}, unblocks.map((row) => waitItem(row, "unblocks"))) : "",
+    aside || "");
+  return [block];
+}
+
 function crumbs(shown) {
   const f = shown.fields;
   const labels = String(f.labels || "").split(",").map((one) => one.trim()).filter(Boolean);
@@ -1056,9 +1114,11 @@ async function open(record, quiet) {
   pane.replaceChildren(
     el("button", { class: "link back", type: "button", onclick: back }, "← back to the list"),
     crumbs(shown),
+    ...pathLine(shown),
     titleBlock(shown),
     shown.status === "closed" ? el("div", { class: "notice" }, (f.close_resolution === "cancelled" ? "Cancelled: " : "Closed: ") + String(f.close_reason || "")) : actionsBar(shown, waitingReason(shown, dor)),
     ...cards.filter((card) => !reviewed(card)),
+    ...waitsBlock(shown),
     contextBlock(f.description),
     section("Acceptance criteria", f.acceptance_criteria, "Describe the observable conditions for completion."),
     ...(String(f.requirements || "").trim() ? [section("Requirements", f.requirements, "")] : []),

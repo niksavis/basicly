@@ -162,10 +162,9 @@ def _open_blockers(view: Any, views: Mapping[str, Any], vocabulary: Any) -> list
         if edge.type not in vocabulary.blocking_types:
             continue
         target = views.get(edge.target)
-        if target is None:
-            found.append({"record": edge.target, "status": "unknown"})
-        elif target.status not in vocabulary.closed_statuses or target.resolution == "cancelled":
-            found.append({"record": edge.target, "status": target.status or ""})
+        if differential.blocker_holds(target, vocabulary):
+            status = "unknown" if target is None else target.status or ""
+            found.append({"record": edge.target, "status": status})
     return sorted(found, key=lambda row: row["record"])
 
 
