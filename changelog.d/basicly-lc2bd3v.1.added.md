@@ -1,0 +1,1 @@
+- The board ready list lets an operator change a record priority from its own row; values other than 0 to 4 are refused before anything runs (`basicly-lc2bd3v.1`).

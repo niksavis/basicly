@@ -3,7 +3,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from . import board_record
-from .board_actions import ACTIONS, ROUTE, START_ACTION, Action, Field, asked, start_command
+from .board_actions import (
+    ACTIONS,
+    PRIORITIES,
+    PRIORITY_ACTION,
+    ROUTE,
+    START_ACTION,
+    Action,
+    Field,
+    asked,
+    start_command,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -136,8 +146,22 @@ def parking(
             "action": verb,
             "offer": action.label,
             "issue": ident,
+            "priority": _priority_form(ident, unit.get("priority"), token or ""),
         }
     return forms
+
+
+def _priority_form(ident: str, held: object, token: str) -> dict[str, Any]:
+
+    current = str(held or "").removeprefix("P")
+    action = ACTIONS[PRIORITY_ACTION]
+    return {
+        **_form(action, {"issue": ident, "priority": current}, token),
+        "action": PRIORITY_ACTION,
+        "offer": action.label,
+        "choices": PRIORITIES,
+        "current": current,
+    }
 
 
 START = START_ACTION

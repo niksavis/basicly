@@ -28,6 +28,7 @@ class Field:
     free: bool = False
     from_ask: str = ""
     optional: bool = False
+    choices: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,11 @@ def _start(form: Mapping[str, str]) -> tuple[str, ...]:
     return argv
 
 
+def _priority(form: Mapping[str, str]) -> tuple[str, ...]:
+
+    return ("tracker", "write", "--", "update", form["issue"], "-p", form["priority"])
+
+
 def _resume(form: Mapping[str, str]) -> tuple[str, ...]:
 
     return ("tracker", "write", "--", "update", form["issue"], "--status", "in_progress")
@@ -104,6 +110,8 @@ def _kill(form: Mapping[str, str]) -> tuple[str, ...]:
 
 
 START_ACTION = "record-start"
+PRIORITY_ACTION = "record-priority"
+PRIORITIES = ("0", "1", "2", "3", "4")
 
 
 def start_command(form: Mapping[str, str]) -> str:
@@ -147,6 +155,14 @@ ACTIONS: dict[str, Action] = {
         label="resume it",
         fields=(Field("issue", "record", from_ask="issue"),),
         build=_resume,
+    ),
+    PRIORITY_ACTION: Action(
+        label="set",
+        fields=(
+            Field("issue", "record", from_ask="issue"),
+            Field("priority", "priority", from_ask="priority", choices=PRIORITIES),
+        ),
+        build=_priority,
     ),
     "lane-kill": Action(
         label="Kill a lane",

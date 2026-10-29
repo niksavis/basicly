@@ -77,6 +77,11 @@ def _validated(action: Action, form: Mapping[str, list[str]]) -> dict[str, str] 
             continue
         if not raw:
             return _refused(HTTPStatus.BAD_REQUEST, f"{field.label} is empty; nothing was run")
+        if field.choices and raw not in field.choices:
+            allowed = ", ".join(field.choices)
+            return _refused(
+                HTTPStatus.BAD_REQUEST, f"{field.label} must be one of {allowed}; nothing was run"
+            )
         if field.free and len(raw) > MAX_TEXT:
             return _refused(HTTPStatus.BAD_REQUEST, f"{field.label} is over {MAX_TEXT} long")
         if not field.free and not _ID.fullmatch(raw):

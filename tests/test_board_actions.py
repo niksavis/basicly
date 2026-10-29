@@ -30,6 +30,7 @@ SUBMISSIONS = {
     "record-park": {"issue": "x-1"},
     "record-resume": {"issue": "x-1"},
     "record-start": {"issue": "x-1", "work_type": "bug", "root": "x-2"},
+    "record-priority": {"issue": "x-1", "priority": "1"},
 }
 VERBS = {
     "loop-answer": ("loop", "answer"),
@@ -38,6 +39,7 @@ VERBS = {
     "record-park": ("tracker", "write"),
     "record-resume": ("tracker", "write"),
     "record-start": ("loop", "run"),
+    "record-priority": ("tracker", "write"),
 }
 ORIGIN = "http://127.0.0.1:1"
 
@@ -121,9 +123,9 @@ def _post(url: str, body: bytes, *, origin: str | None) -> tuple[int, str]:
         return refused.code, refused.read().decode("utf-8")
 
 
-def test_the_action_table_holds_exactly_six_entries_and_names_them() -> None:
+def test_the_action_table_holds_exactly_seven_entries_and_names_them() -> None:
 
-    assert len(board_actions.ACTIONS) == 6
+    assert len(board_actions.ACTIONS) == 7
     assert set(board_actions.ACTIONS) == set(SUBMISSIONS) == set(VERBS)
 
 
