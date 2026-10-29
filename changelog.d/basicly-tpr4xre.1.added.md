@@ -1,1 +1,0 @@
-- The tracker record view shows the epic path above the title and a Waits on / unblocks block: what the record waits on, which blocker can start now, a Show chain toggle for the whole chain, and what its parent waits on that does not hold it. An epic lists its open children as what it waits on.
