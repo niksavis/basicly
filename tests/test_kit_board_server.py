@@ -328,7 +328,9 @@ def test_the_api_retracts_a_dependency_and_lists_edges_per_record(client: Client
 
     _, listed = client.call("GET", "/api/v1/records?status=open")
     edges = {row["record"]: row["dependencies"] for row in listed["records"]}
-    assert edges[second["record"]] == [{"id": first["record"], "dependency_type": "blocks"}]
+    assert edges[second["record"]] == [
+        {"id": first["record"], "dependency_type": "blocks", "holds": True}
+    ]
 
     body = {"target": first["record"], "type": "blocks"}
     status, _ = client.call("POST", f"/api/v1/records/{second['record']}/undep", body)

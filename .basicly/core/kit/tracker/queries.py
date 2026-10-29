@@ -96,10 +96,19 @@ def _summary(state: Any) -> dict[str, object]:
     }
 
 
-def _edges_of(views: Mapping[str, Any], record: str) -> list[dict[str, str]]:
+def _edges_of(views: Mapping[str, Any], record: str) -> list[dict[str, object]]:
     view = views.get(record)
     held = view.dependencies if view is not None else ()
-    return [{"id": edge.target, "dependency_type": edge.type} for edge in held]
+    vocabulary = differential.DEFAULT_VOCABULARY
+    return [
+        {"id": edge.target, "dependency_type": edge.type}
+        | (
+            {"holds": differential.blocker_holds(views.get(edge.target), vocabulary)}
+            if edge.type in vocabulary.blocking_types
+            else {}
+        )
+        for edge in held
+    ]
 
 
 def views_and_children(directory: Path | str) -> tuple:

@@ -425,7 +425,7 @@ function linksLine(item) {
   const theirs = state.dependents.get(item.id) || [];
   const typed = (list, type) => list.filter((edge) => edge.dependency_type === type).map((edge) => edge.id);
   const waiting = typed(own, "blocks");
-  const openWaits = waiting.filter((id) => state.records.has(id));
+  const openWaits = own.filter((edge) => edge.dependency_type === "blocks" && edge.holds).map((edge) => edge.id);
   const done = waiting.length - openWaits.length;
   const parts = [];
   if (openWaits.length) parts.push(el("span", { class: "open-blocker", title: named(waiting) }, "waits on " + few(openWaits) + (done ? " (+" + done + " done)" : "")));
@@ -474,7 +474,7 @@ function drawTabs() {
 const STATUS_NAMES = { open: "open", in_progress: "in progress", blocked: "blocked", deferred: "deferred", closed: "closed" };
 
 function statusMark(status, record) {
-  const waits = status === "open" && record ? (record.dependencies || []).filter((edge) => edge.dependency_type === "blocks" && state.records.has(edge.id)).map((edge) => edge.id) : [];
+  const waits = status === "open" && record ? (record.dependencies || []).filter((edge) => edge.dependency_type === "blocks" && edge.holds).map((edge) => edge.id) : [];
   const shown = waits.length ? "blocked" : status;
   const name = waits.length ? "open, waits on " + waits.join(", ") : STATUS_NAMES[status] || status || "unknown";
   return el("span", { class: "st st-" + shown, role: "img", "aria-label": "status: " + name, title: name });

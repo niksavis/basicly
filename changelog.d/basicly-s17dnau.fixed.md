@@ -1,0 +1,1 @@
+- The tracker list no longer counts a cancelled or missing blocker as done. The row and its status mark name it as a blocker that still holds the record, as the ready list already did.

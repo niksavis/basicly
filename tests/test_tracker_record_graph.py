@@ -176,3 +176,33 @@ def test_the_page_reads_the_fields_the_record_view_writes(
         assert f"shown.{field}" in page
     for field in ("startable", "repeat", "via", "close_resolution"):
         assert f"row.{field}" in page
+
+
+def test_the_list_marks_a_cancelled_or_missing_blocker_as_still_holding(
+    ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    record = _record(ledger, capsys, "record")
+    done = _record(ledger, capsys, "done")
+    dropped = _record(ledger, capsys, "dropped")
+    _link(ledger, capsys, record, done)
+    _link(ledger, capsys, record, dropped)
+    edge = {
+        cli.migrate.EDGE_FROM: record,
+        cli.migrate.EDGE_TO: "demo-ghost",
+        cli.migrate.EDGE_TYPE: "blocks",
+    }
+    cli.events.append(ledger, [cli.events.Draft(record, cli.migrate.KIND_EDGE, edge)])
+    _complete(ledger, capsys, done)
+    _cancel(ledger, capsys, dropped)
+
+    rows = cli.queries.query_records(ledger, summary=True)
+    edges = {
+        edge["id"]: edge for edge in next(r for r in rows if r["record"] == record)["dependencies"]
+    }
+
+    assert {name: edge["holds"] for name, edge in edges.items()} == {
+        done: False,
+        dropped: True,
+        "demo-ghost": True,
+    }
+    assert "edge.holds" in PAGE.read_text(encoding="utf-8")
