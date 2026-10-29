@@ -82,8 +82,8 @@ def test_the_rule_the_install_writes_makes_the_same_merge_clean(tmp_path: Path) 
         assert ident in kept
 
 
-def test_the_rule_is_derived_from_the_kit_and_not_spelled_again(work_repo: Path) -> None:
-    assert owned_write.ledger_git_rules(work_repo) == (RULE, SHARD_RULE), (
+def test_the_rule_is_derived_from_the_kit_and_not_spelled_again() -> None:
+    assert owned_write.ledger_git_rules() == (RULE, SHARD_RULE), (
         "a writer appends to a shard, and two clones on one branch share that shard's "
         "name, so the shard needs the union driver exactly as the trunk does"
     )
@@ -112,8 +112,8 @@ def test_the_same_shard_history_conflicts_without_the_shard_rule(tmp_path: Path)
     )
 
 
-def test_a_repository_with_no_kit_gets_no_rule(tmp_path: Path) -> None:
-    assert owned_write.ledger_git_rules(tmp_path) == ()
+def test_the_rules_come_from_the_engine_kit_that_install_writes() -> None:
+    assert owned_write.ledger_git_rules() == (RULE, SHARD_RULE)
 
 
 def test_the_scaffold_writes_the_rule_after_any_star_rule(work_repo: Path) -> None:

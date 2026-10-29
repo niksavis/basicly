@@ -12,12 +12,9 @@ from basicly.owned_store import TrackerDivergenceError
 OWNED_PROVENANCE = "engine"
 
 
-def ledger_git_rules(repo_root: Path) -> tuple[str, ...]:
-    try:
-        events = owned_store.kit(repo_root, "events")
-    except owned_store.TrackerDivergenceError:
-        return ()
-    return tuple(f"{glob} -text merge=union" for glob in (events.LOG_GLOB, events.PENDING_GLOB))
+def ledger_git_rules() -> tuple[str, ...]:
+    globs = (owned_store.packaged_constant("events", name) for name in ("LOG_GLOB", "PENDING_GLOB"))
+    return tuple(f"{glob} -text merge=union" for glob in globs)
 
 
 def _template(repo_root: Path) -> Any:
