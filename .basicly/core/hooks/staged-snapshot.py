@@ -136,7 +136,9 @@ def prepare(root: Path, directory: Path, commit: str | None = None) -> Snapshot:
     )
     normalize_checkout(root, paths, env, original_tree)
     (snapshot / ".git").write_text(f"gitdir: {common}\n", encoding="utf-8")
-    untracked = git(root, "ls-files", "--others", "--exclude-standard", "-z").split(b"\0")
+    untracked = (
+        [] if commit else git(root, "ls-files", "--others", "--exclude-standard", "-z").split(b"\0")
+    )
     for name in untracked:
         if not name:
             continue
