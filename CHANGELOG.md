@@ -17,6 +17,8 @@ walk the tutorial against the built wheel.
 - Several repositories on one machine: the tracker page and API name the repository
   (basicly-bdwjy4q), and a global tracker runs a repository's pinned copy
   (basicly-q2tb4qj).
+- Hooks: a Claude settings entry whose script is gone is reported and removed
+  (basicly-g5jpa59).
 
 ## v0.31.1 - 2026-10-29
 
