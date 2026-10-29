@@ -1,0 +1,1 @@
+- A global `basicly-tracker` of another version now runs the pinned tracker copy that a repository vendors, so one machine can serve repositories pinned to different versions; without a copy it still refuses and names the commands that align it (`basicly-q2tb4qj`).

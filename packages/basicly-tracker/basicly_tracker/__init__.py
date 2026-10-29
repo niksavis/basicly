@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import re
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -203,6 +205,33 @@ PACKAGE = modes.Package(
 )
 
 
+VERSION_LINE = re.compile(r'^KIT_VERSION = "([^"]+)"$', re.MULTILINE)
+
+
+def _pinned_copy(args: list) -> Path | None:
+    if len(args) < 2 or not (KIT.directory / "pin.py").is_file():
+        return None
+    pin = installer.load_kit_module(KIT.directory, "pin.py", "basicly_tracker_kit_pin")
+    held = pin.pinned(args[1])
+    if held is None or held == pin.KIT_VERSION:
+        return None
+    root = Path(args[1]).resolve().parent.parent
+    for place in PLACES:
+        version = (root / place).with_name("pin.py")
+        found = VERSION_LINE.search(version.read_text("utf-8")) if version.is_file() else None
+        if found and found.group(1) == held:
+            return root / place
+    return None
+
+
+def _run(kit, args: list, verbs: dict) -> int:
+    copy = _pinned_copy(args) if args and args[0] not in verbs else None
+    if copy is None:
+        return installer.run(kit, args, verbs)
+    done = subprocess.run([sys.executable, str(copy), *args], check=False)  # noqa: S603 # nosec B603 — the repository's own pinned tracker copy
+    return done.returncode
+
+
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[:1] in (["--help"], ["-h"]):
@@ -238,4 +267,4 @@ def main(argv=None) -> int:
         "update": lambda request: modes.install_mode(package, request, sandbox),
         "uninstall": lambda request: modes.uninstall_mode(package, request),
     }
-    return installer.run(kit, args, verbs)
+    return _run(kit, args, verbs)
