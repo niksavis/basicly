@@ -347,6 +347,10 @@ def run_checks(
         return 1
     home = interpreter_home(repo_root)
     interpreter_before = interpreter_target(home)
+    reuse = _hook_module("check_reuse")
+    at = reuse.key(repo_root, interpreter_before)
+    for name in reuse.passed(repo_root, at) & {name for name, _ in checks}:
+        skips.setdefault(name, "passed for this exact tree in an earlier hook run")
     total_start = time.perf_counter()
     execution = _hook_module("check_execution")
     share = _hook_module("cpu_share")
@@ -357,6 +361,11 @@ def run_checks(
         lambda command, root: share.expand(resolve_command(command, root), jobs),
     )
     total_elapsed = time.perf_counter() - total_start
+    reuse.record(
+        repo_root,
+        at,
+        [r["name"] for r in outcomes if r["disposition"] == "executed" and r["returncode"] == 0],
+    )
     if selection is not None:
         _record_selection(repo_root, selection, outcomes)
     blocked = [r["name"] for r in outcomes if r["disposition"] == "not-run"]

@@ -1,0 +1,1 @@
+- A push no longer re-runs the fast checks that the commit hook already passed for the same tree and interpreter; a changed tree, another interpreter or untracked files at commit time run them again (`basicly-zcs4p7f`).
