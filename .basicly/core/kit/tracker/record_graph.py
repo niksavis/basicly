@@ -8,6 +8,7 @@ from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 DEPTH = 8
+LAST = 99
 
 
 def _load(file_name: str, module_name: str) -> Any:
@@ -95,7 +96,15 @@ class Graph:
         )
 
     def waits(self, record: str) -> list[dict[str, Any]]:
-        return self._waits(record, DEPTH, {record})
+        direct = self.holding(record)
+        expanded = {record, *(target for target, _ in direct)}
+        rows = []
+        for target, via in direct:
+            row = node(target, self.views, self.states)
+            row.update(via=via, startable=self.startable(target), repeat=False)
+            row["waits"] = self._waits(target, DEPTH - 1, expanded)
+            rows.append(row)
+        return rows
 
     def _waits(self, record: str, depth: int, expanded: set[str]) -> list[dict[str, Any]]:
         rows = []
@@ -121,9 +130,48 @@ class Graph:
             "waits": [node(target, self.views, self.states) for target, _ in held],
         }
 
+    def _rank(self, record: str) -> tuple[int, str]:
+        state = self.states.get(record)
+        priority = str(state.fields.get("priority", "")) if state is not None else ""
+        return (int(priority) if priority.isdigit() else LAST, record)
+
+    def _planned(self, record: str, inside: set[str]) -> dict[str, Any]:
+        held = [target for target, _ in self.holding(record, children=False)]
+        row = node(record, self.views, self.states)
+        row.update(
+            startable=self.startable(record),
+            inside=sorted(target for target in held if target in inside),
+            outside=sorted(target for target in held if target not in inside),
+        )
+        return row
+
+    def plan(self, record: str) -> dict[str, Any] | None:
+        kids = [
+            child
+            for child in self.children.get(record, ())
+            if child in self.views and not self.views[child].tombstoned
+        ]
+        if not kids:
+            return None
+        live = {child for child in kids if _open(self.views[child])}
+        rows = {child: self._planned(child, live) for child in sorted(live, key=self._rank)}
+        waves: list[list[dict[str, Any]]] = []
+        placed: set[str] = set()
+        while wave := [
+            c for c, row in rows.items() if c not in placed and placed >= set(row["inside"])
+        ]:
+            waves.append([rows[child] for child in wave])
+            placed.update(wave)
+        return {
+            "waves": waves,
+            "circle": [row for child, row in sorted(rows.items()) if child not in placed],
+            "done": [node(c, self.views, self.states) for c in sorted(kids) if c not in live],
+        }
+
     def shown(self, record: str) -> dict[str, object]:
         return {
             "ancestors": self.ancestors(record),
             "waits": self.waits(record),
             "parent_waits": self.parent_waits(record),
+            "map": self.plan(record),
         }

@@ -119,7 +119,13 @@
   .waits .kind { width: 6.5rem; flex: none; color: var(--muted); font-size: var(--text-sm); }
   .waits .start { color: var(--ok); font-size: var(--text-sm); }
   .waits .held { color: var(--bad); font-size: var(--text-sm); }
-  .waits .aside { color: var(--muted); font-size: var(--text-sm); margin: var(--space-2) 0 0; }
+  .waits .aside, .map .aside { color: var(--muted); font-size: var(--text-sm); margin: var(--space-2) 0 0; }
+  .map ul { list-style: none; margin: 0; padding: 0; }
+  .map li { padding: var(--space-0) 0; }
+  .map .line { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: baseline; }
+  .map .line > span:nth-child(2) { flex: 1 1 12rem; min-width: 0; }
+  .map .start { color: var(--ok); font-size: var(--text-sm); }
+  .map > summary { cursor: pointer; color: var(--muted); font-size: var(--text-sm); text-transform: uppercase; letter-spacing: var(--track-label); }
   .comments { list-style: none; margin: 0 0 var(--space-3); padding: 0; }
   .comments li { border-left: 3px solid var(--line); padding: var(--space-0) 0 var(--space-0) var(--space-4); margin: var(--space-3) 0; }
   .comments .who { color: var(--muted); font-size: var(--text-sm); }
@@ -183,7 +189,7 @@ const STATUSES = ["open", "in_progress", "blocked", "deferred"];
 const EDGE_NAMES = { blocks: "waits on", "parent-child": "is a child of", related: "is related to", "discovered-from": "was discovered from" };
 const TABS = [["ready", "Ready"], ["working", "In progress"], ["refine", "Refine"], ["blocked", "Blocked"], ["mine", "Mine"], ["active", "All open"], ["closed", "Closed"]];
 const PAGE_SIZE = 100;
-const state = { dependents: new Map(), edgeTypes: ["blocks"], recordTypes: [], me: "", records: new Map(), closed: null, ready: [], refine: new Map(), blocked: new Map(), tab: "ready", type: "", sort: "rank", query: "", searchMatches: null, pageSize: PAGE_SIZE, current: null };
+const state = { dependents: new Map(), edgeTypes: ["blocks"], recordTypes: [], me: "", records: new Map(), closed: null, ready: [], refine: new Map(), blocked: new Map(), tab: "ready", type: "", sort: "rank", query: "", searchMatches: null, pageSize: PAGE_SIZE, current: null, map: false };
 
 function el(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -576,10 +582,10 @@ function markdown(text) {
   return root;
 }
 
-function go(record) {
-  const hash = routeHash(state.tab, record);
+function go(record, map) {
+  const hash = routeHash(state.tab, record, map);
   if (location.hash !== hash) location.hash = hash;
-  else open(record);
+  else open(record, false, map);
 }
 
 async function act(action, body, done) {
@@ -1083,6 +1089,44 @@ function waitsBlock(shown) {
   return [block];
 }
 
+function mapLink(shown) {
+  const plan = shown.map;
+  if (!plan) return [];
+  const count = plan.waves.reduce((sum, wave) => sum + wave.length, 0) + plan.circle.length;
+  const waves = plan.waves.length + (plan.waves.length === 1 ? " wave" : " waves");
+  return [el("button", { class: "link map-link", type: "button", onclick: () => go(shown.record, true) },
+    "Map of " + count + " open " + (count === 1 ? "child" : "children") + " in " + waves)];
+}
+
+function planState(row) {
+  if (row.status === "in_progress") return el("span", { class: "meta" }, "in progress");
+  if (row.startable) return el("span", { class: "start" }, "can start now");
+  const notes = [];
+  if (row.inside.length) notes.push("after " + few(row.inside));
+  if (row.outside.length) notes.push("waits outside on " + few(row.outside));
+  return el("span", { class: "meta" }, notes.join(" · ") || STATUS_NAMES[row.status] || row.status);
+}
+
+function planRow(row, mark) {
+  return el("li", {}, el("div", { class: "line" },
+    el("button", { class: "link", type: "button", onclick: () => go(row.id) }, row.id),
+    el("span", {}, row.title || ""), row.issue_type ? typePill(row.issue_type) : null, mark(row)));
+}
+
+function mapBlock(shown) {
+  const plan = shown.map;
+  const sections = plan.waves.map((wave, index) => el("section", { class: "block map" },
+    el("h3", {}, "Wave " + (index + 1) + (index ? " · after wave " + index : " · waits on nothing in this epic")),
+    el("ul", {}, wave.map((row) => planRow(row, planState)))));
+  if (!sections.length && !plan.circle.length) sections.push(el("div", { class: "none" }, "no open children"));
+  if (plan.circle.length) sections.push(el("section", { class: "block map" }, el("h3", {}, "Waits in a circle"),
+    el("p", { class: "aside" }, "These children wait on each other, so none of them can start. Remove one of their links to break the circle."),
+    el("ul", {}, plan.circle.map((row) => planRow(row, planState)))));
+  if (plan.done.length) sections.push(el("details", { class: "block map" }, el("summary", {}, plan.done.length + " done"),
+    el("ul", {}, plan.done.map((row) => planRow(row, (one) => el("span", { class: "meta" }, one.close_resolution === "cancelled" ? "cancelled" : "done"))))));
+  return sections;
+}
+
 function crumbs(shown) {
   const f = shown.fields;
   const labels = String(f.labels || "").split(",").map((one) => one.trim()).filter(Boolean);
@@ -1095,8 +1139,9 @@ function crumbs(shown) {
     el("span", { class: "id" }, shown.record));
 }
 
-async function open(record, quiet) {
+async function open(record, quiet, map = quiet ? state.map : false) {
   document.body.classList.add("reading");
+  state.map = Boolean(map);
   const pane = document.getElementById("detail-pane");
   const scrolled = pane.scrollTop;
   const path = "/records/" + encodeURIComponent(record);
@@ -1111,11 +1156,21 @@ async function open(record, quiet) {
   const f = shown.fields;
   const cards = notices(shown, dor);
   const reviewed = (card) => Boolean(card.classList && card.classList.contains("dod"));
+  if (state.map && shown.map) {
+    pane.replaceChildren(
+      el("button", { class: "link back", type: "button", onclick: () => go(record) }, "← back to the story"),
+      crumbs(shown), ...pathLine(shown), titleBlock(shown),
+      el("button", { class: "link map-link", type: "button", onclick: () => go(record) }, "Show the story"), ...mapBlock(shown));
+    pane.scrollTop = quiet ? scrolled : 0;
+    drawList();
+    return;
+  }
   pane.replaceChildren(
     el("button", { class: "link back", type: "button", onclick: back }, "← back to the list"),
     crumbs(shown),
     ...pathLine(shown),
     titleBlock(shown),
+    ...mapLink(shown),
     shown.status === "closed" ? el("div", { class: "notice" }, (f.close_resolution === "cancelled" ? "Cancelled: " : "Closed: ") + String(f.close_reason || "")) : actionsBar(shown, waitingReason(shown, dor)),
     ...cards.filter((card) => !reviewed(card)),
     ...waitsBlock(shown),
@@ -1192,20 +1247,20 @@ function blank() {
 }
 
 function parseRoute(hash) {
-  const match = String(hash || "").match(/^#\/(?:([a-z_]+)\/?)?(?:record\/(.+))?$/);
-  if (!match) return { view: null, record: null };
+  const match = String(hash || "").match(/^#\/(?:([a-z_]+)\/?)?(?:record\/([^/]+)(\/map)?)?$/);
+  if (!match) return { view: null, record: null, map: false };
   const view = TABS.some(([key]) => key === match[1]) ? match[1] : null;
-  return { view, record: match[2] ? decodeURIComponent(match[2]) : null };
+  return { view, record: match[2] ? decodeURIComponent(match[2]) : null, map: Boolean(match[3]) };
 }
 
-function routeHash(view, record) {
-  return "#/" + view + (record ? "/record/" + encodeURIComponent(record) : "");
+function routeHash(view, record, map) {
+  return "#/" + view + (record ? "/record/" + encodeURIComponent(record) + (map ? "/map" : "") : "");
 }
 
 async function routed() {
   const route = parseRoute(location.hash);
   if (route.view && route.view !== state.tab) await showView(route.view);
-  if (route.record && (!state.current || state.current.record !== route.record)) await open(route.record);
+  if (route.record && (!state.current || state.current.record !== route.record || state.map !== route.map)) await open(route.record, false, route.map);
   else if (!route.record) closeDetail();
 }
 

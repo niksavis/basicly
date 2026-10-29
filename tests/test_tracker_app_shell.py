@@ -69,10 +69,14 @@ state.tab = 'ready'; state.current = null;
 await routed();
 assert.equal(state.tab, 'working');
 assert.deepEqual(opened.at(-1), 'b-1');
-assert.deepEqual(parseRoute('#/record/b-2'), { view: null, record: 'b-2' });
-assert.deepEqual(parseRoute('#/bogus'), { view: null, record: null });
+assert.deepEqual(parseRoute('#/record/b-2'), { view: null, record: 'b-2', map: false });
+assert.deepEqual(parseRoute('#/bogus'), { view: null, record: null, map: false });
 assert.equal(routeHash('closed', 'a/b'), '#/closed/record/a%2Fb');
-assert.deepEqual(parseRoute(routeHash('closed', 'a/b')), { view: 'closed', record: 'a/b' });
+assert.deepEqual(parseRoute(routeHash('closed', 'a/b')),
+  { view: 'closed', record: 'a/b', map: false });
+assert.equal(routeHash('ready', 'b-2', true), '#/ready/record/b-2/map');
+assert.deepEqual(parseRoute(routeHash('ready', 'b-2', true)),
+  { view: 'ready', record: 'b-2', map: true });
 """)
 
 

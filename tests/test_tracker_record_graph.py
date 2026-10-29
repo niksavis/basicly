@@ -37,6 +37,15 @@ def _link(
     assert code == cli.EXIT_OK, saved
 
 
+def _raw_block(ledger: Path, record: str, target: str) -> None:
+    edge = {
+        cli.migrate.EDGE_FROM: record,
+        cli.migrate.EDGE_TO: target,
+        cli.migrate.EDGE_TYPE: "blocks",
+    }
+    cli.events.append(ledger, [cli.events.Draft(record, cli.migrate.KIND_EDGE, edge)])
+
+
 def _complete(ledger: Path, capsys: pytest.CaptureFixture[str], record: str) -> None:
     check = {"criterion": CRITERION, "command": ["uv", "run", "pytest", "tests/test_save.py"]}
     evidence = json.dumps({"checks": [{**check, "result": "1 passed", "exit_code": 0}]})
@@ -171,10 +180,10 @@ def test_the_page_reads_the_fields_the_record_view_writes(
     page = PAGE.read_text(encoding="utf-8")
     shown = _shown(ledger, _record(ledger, capsys, "record"))
 
-    for field in ("ancestors", "waits", "parent_waits"):
+    for field in ("ancestors", "waits", "parent_waits", "map"):
         assert field in shown
         assert f"shown.{field}" in page
-    for field in ("startable", "repeat", "via", "close_resolution"):
+    for field in ("startable", "repeat", "via", "close_resolution", "inside", "outside"):
         assert f"row.{field}" in page
 
 
@@ -186,12 +195,7 @@ def test_the_list_marks_a_cancelled_or_missing_blocker_as_still_holding(
     dropped = _record(ledger, capsys, "dropped")
     _link(ledger, capsys, record, done)
     _link(ledger, capsys, record, dropped)
-    edge = {
-        cli.migrate.EDGE_FROM: record,
-        cli.migrate.EDGE_TO: "demo-ghost",
-        cli.migrate.EDGE_TYPE: "blocks",
-    }
-    cli.events.append(ledger, [cli.events.Draft(record, cli.migrate.KIND_EDGE, edge)])
+    _raw_block(ledger, record, "demo-ghost")
     _complete(ledger, capsys, done)
     _cancel(ledger, capsys, dropped)
 
@@ -206,3 +210,67 @@ def test_the_list_marks_a_cancelled_or_missing_blocker_as_still_holding(
         "demo-ghost": True,
     }
     assert "edge.holds" in PAGE.read_text(encoding="utf-8")
+
+
+def test_an_epic_map_puts_each_open_child_in_the_wave_after_its_blockers(
+    ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    epic = _record(ledger, capsys, "epic", "epic")
+    first, second, third, done = (
+        _record(ledger, capsys, title) for title in ("first", "second", "third", "done")
+    )
+    outside = _record(ledger, capsys, "outside")
+    for child in (first, second, third, done):
+        _link(ledger, capsys, child, epic, "parent-child")
+    _link(ledger, capsys, second, first)
+    _link(ledger, capsys, third, second)
+    _link(ledger, capsys, third, first)
+    _link(ledger, capsys, first, outside)
+    _complete(ledger, capsys, done)
+
+    plan = _shown(ledger, epic)["map"]
+
+    assert [_ids(wave) for wave in plan["waves"]] == [[first], [second], [third]]
+    assert plan["waves"][0][0]["outside"] == [outside]
+    assert plan["waves"][0][0]["startable"] is False
+    assert _ids(plan["done"]) == [done]
+    assert plan["circle"] == []
+
+
+def test_an_epic_map_sets_children_that_wait_in_a_circle_apart(
+    ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    epic = _record(ledger, capsys, "epic", "epic")
+    free, left, right = (_record(ledger, capsys, title) for title in ("free", "left", "right"))
+    for child in (free, left, right):
+        _link(ledger, capsys, child, epic, "parent-child")
+    _link(ledger, capsys, left, right)
+    _raw_block(ledger, right, left)
+
+    plan = _shown(ledger, epic)["map"]
+
+    assert [_ids(wave) for wave in plan["waves"]] == [[free]]
+    assert plan["waves"][0][0]["startable"] is True
+    assert _ids(plan["circle"]) == sorted([left, right])
+
+
+def test_a_record_without_children_has_no_map(
+    ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _shown(ledger, _record(ledger, capsys, "leaf"))["map"] is None
+
+
+def test_a_direct_wait_is_never_marked_as_shown_above(
+    ledger: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    epic = _record(ledger, capsys, "epic", "epic")
+    first, second = (_record(ledger, capsys, title) for title in ("a first", "b second"))
+    for child in (first, second):
+        _link(ledger, capsys, child, epic, "parent-child")
+    _link(ledger, capsys, first, second)
+
+    waits = _shown(ledger, epic)["waits"]
+
+    rows = {row["id"]: row for row in waits}
+    assert {name: row["repeat"] for name, row in rows.items()} == {first: False, second: False}
+    assert [(row["id"], row["repeat"]) for row in rows[first]["waits"]] == [(second, True)]
