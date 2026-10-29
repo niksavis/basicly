@@ -1,1 +1,0 @@
-- The tracker page names its repository in the header and the browser tab, and `GET /api/v1` returns it as `repository`, so two open trackers are easy to tell apart (`basicly-bdwjy4q`).

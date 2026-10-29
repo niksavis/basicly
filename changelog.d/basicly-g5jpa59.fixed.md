@@ -1,1 +1,0 @@
-- `hooks-check` now names a Claude settings hook entry whose script under the managed hooks folder is gone, and `hooks-build` removes it; entries for scripts that exist stay (`basicly-g5jpa59`).

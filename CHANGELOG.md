@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.32.0 - 2026-10-29
+
+Delta: v0.31.1..v0.32.0
+
 This release removes four traps a tracker user meets on install and in daily use. The
 commit that installs basicly no longer needs a claimed record, a dependency edge that
 voids a review now says so, the tracker page names its repository, and one global
@@ -19,6 +23,20 @@ walk the tutorial against the built wheel.
   (basicly-q2tb4qj).
 - Hooks: a Claude settings entry whose script is gone is reported and removed
   (basicly-g5jpa59).
+
+### Added
+
+- The tracker page names its repository in the header and the browser tab, and `GET /api/v1` returns it as `repository`, so two open trackers are easy to tell apart (`basicly-bdwjy4q`).
+
+### Fixed
+
+- The commit that installs basicly no longer needs a claimed record: the claim hook lets through the commit that first adds the tracker, and every later code commit still needs a claim (`basicly-584ykwo`).
+
+- `hooks-check` now names a Claude settings hook entry whose script under the managed hooks folder is gone, and `hooks-build` removes it; entries for scripts that exist stay (`basicly-g5jpa59`).
+
+- A global `basicly-tracker` of another version now runs the pinned tracker copy that a repository vendors, so one machine can serve repositories pinned to different versions; without a copy it still refuses and names the commands that align it (`basicly-q2tb4qj`).
+
+- When a dependency edge voids a recorded review, `dep` now says the review is void and names `review --evidence`, so a record that drops out of the ready set explains why (`basicly-s4ia3qh`).
 
 ## v0.31.1 - 2026-10-29
 

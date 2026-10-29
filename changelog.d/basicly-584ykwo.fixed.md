@@ -1,1 +1,0 @@
-- The commit that installs basicly no longer needs a claimed record: the claim hook lets through the commit that first adds the tracker, and every later code commit still needs a claim (`basicly-584ykwo`).
