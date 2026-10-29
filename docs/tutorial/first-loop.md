@@ -409,7 +409,7 @@ the worktree is not the shared one.
 
 ```text
 override: runner.default=manual
-Preserved 45 generated artifact(s), with inventory: /path/to/myrepo/.git/basicly-preserved/myrepo-2i3r-11247be64bb546f589a052d404f357d0/manifest.json
+Preserved ... generated artifact(s), with inventory: /path/to/myrepo/.git/basicly-preserved/myrepo-2i3r-11247be64bb546f589a052d404f357d0/manifest.json
   hooks: post-merge, pre-commit, commit-msg, pre-push — repository-local Lefthook hooks installed
 Cleaned up worktree 'myrepo-2i3r' (worktree + branch + metadata).
 [merged] build -> verify: merged harness/myrepo-2i3r @ 919b83d8348e (1 commit(s)) into main @ 947a0f9; landing 6.8s (merge 3.3s, verify 1.8s, probe 1.7s)
