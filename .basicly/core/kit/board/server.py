@@ -87,6 +87,7 @@ def api_index(ledger: Path) -> dict:
         "schema": SCHEMA,
         "endpoints": list(ENDPOINTS),
         "holder": commands.holders.default_holder(ledger),
+        "repository": commands.git_layout.checkout_name(ledger),
         "edge_types": sorted(commands.differential.DEFAULT_VOCABULARY.edge_types),
         "record_types": list(commands.values.record_types.RECORD_TYPES),
         "child_types": {

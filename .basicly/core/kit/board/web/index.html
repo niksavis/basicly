@@ -314,6 +314,8 @@ async function load() {
   if (state.version && state.version !== version) state.closed = null;
   state.version = version;
   state.me = index.holder || "";
+  document.title = index.repository ? index.repository + " · Tracker" : "Tracker";
+  document.querySelector("header h1").textContent = document.title;
   state.edgeTypes = index.edge_types || state.edgeTypes;
   state.recordTypes = index.record_types || state.recordTypes;
   state.records = new Map(lists.flatMap((list) => list.records).map((one) => [one.record, one]));
