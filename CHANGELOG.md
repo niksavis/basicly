@@ -6,11 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.34.1 - 2026-10-29
+
+Delta: v0.34.0..v0.34.1
+
 This release fixes a wrong fact in the tracker list. A cancelled or missing blocker no
 longer counts as done, so a row no longer suggests that blocked work can start.
 
 - Tracker list: a cancelled or missing blocker shows as a blocker that still holds the
   record (basicly-s17dnau).
+
+### Fixed
+
+- The tracker list no longer counts a cancelled or missing blocker as done. The row and its status mark name it as a blocker that still holds the record, as the ready list already did. (basicly-s17dnau)
 
 ## v0.34.0 - 2026-10-29
 
