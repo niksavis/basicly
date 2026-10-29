@@ -87,6 +87,12 @@ TABLE = (
         PROCESS,
         "the shared completed close refusal; use confirm --evidence",
     ),
+    Field(
+        "size",
+        OPTIONAL,
+        "the definition of ready: size=small lets a task, bug or chore with one acceptance "
+        "criterion start without a review",
+    ),
     Field("labels", OPTIONAL, "label queries and the label shape check"),
     Field("assignee", OPTIONAL, "a person who asks who holds the record"),
     Field("external_ref", OPTIONAL, "the engine, which binds a record to its worktree"),

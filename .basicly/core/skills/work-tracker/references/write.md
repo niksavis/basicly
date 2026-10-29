@@ -70,6 +70,8 @@ the card prose. Preserve historical events when updating the current description
 ## Refine a record
 
 Only when a record needs refinement or its evidence contract changed, read the review forms in `.basicly/core/kit/tracker/GUIDANCE.md`.
+A task, bug or chore with `--field size=small` and exactly one acceptance criterion needs
+no review: claim it, then `confirm` one check before close.
 Explicit tasks, bugs and chores accept a compact checks-only review. Other types require
 the full review; existing full reviews stay valid. Keep intent, criteria, ownership and
 actual outcomes. Record real questions and decisions when needed. `dor` enforces recorded

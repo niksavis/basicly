@@ -167,6 +167,24 @@ stored review and confirmation evidence. For an explicit `task`, `bug` or `chore
 }
 ```
 
+A small task skips the review. A record is small when all three rules hold:
+
+1. `issue_type` is `task`, `bug` or `chore`.
+2. It carries `--field size=small`.
+3. It has exactly one acceptance criterion.
+
+A small record can be claimed once its Context and its one criterion are filled. Close
+still needs `confirm` with one check: the criterion, the command that ran, the observed
+result and exit code 0. No review plan has to match. When a rule breaks, `claim` refuses
+and names the rule. Fix it, or clear the flag with `--field size=` and record a review.
+Use `size=small` for one change that one check proves; split anything larger.
+
+```sh
+python3 .basicly/kit/tracker/cli.py create .basicly/ledger --prefix <p> --title "<what>" \
+    --description "<a ## Context section>" --acceptance "<the one check>" \
+    --field issue_type=bug --field size=small
+```
+
 The full shape remains available for every type and required for other types:
 
 ```json

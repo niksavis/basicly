@@ -29,6 +29,8 @@ events = _load("events")
 shaping = _load("shaping")
 labels = _load("labels")
 evidence_checks = _load("evidence_checks")
+small_task = _load("small_task")
+small = small_task.small
 _text = evidence_checks.filled_text
 _command = evidence_checks.filled_command
 _check_fault = evidence_checks.check_fault
@@ -236,6 +238,8 @@ def readiness(
         held = dict(state.fields) if state is not None else {}
     else:
         held = dict(fields)
+    if small(held):
+        return small_task.owed(held, len(criteria(held)))
     saved = _saved(found, record, held, REVIEW_FIELD)
     current = _current(saved, found, record, RevisionContext(held, drafts, template))
     if _compact_type(held) and (
@@ -365,8 +369,10 @@ def confirmation_draft(
     review = report["review"]
     if not isinstance(review, Mapping):
         raise ProcessEvidenceError("confirm requires a recorded review")
-    planned = {criterion_key(check["criterion"]): check["command"] for check in review["checks"]}
-    if any(
+    planned = {
+        criterion_key(check["criterion"]): check["command"] for check in review.get("checks", [])
+    }
+    if not small(state.fields) and any(
         planned[criterion_key(check["criterion"])] != check["command"]
         for check in payload["checks"]
     ):
@@ -400,9 +406,12 @@ def closing_owed(
         for check in review.get("checks", [])
         if isinstance(check, dict) and "criterion" in check and "command" in check
     }
-    complete = complete and all(
-        planned.get(criterion_key(check["criterion"])) == check["command"]
-        for check in saved.get("checks", [])
+    complete = complete and (
+        small(fields)
+        or all(
+            planned.get(criterion_key(check["criterion"])) == check["command"]
+            for check in saved.get("checks", [])
+        )
     )
     return (*missing, *((COMPLETION_HEADING,) if not complete else ()))
 

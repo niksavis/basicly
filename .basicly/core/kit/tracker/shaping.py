@@ -253,6 +253,11 @@ def remedy(missing: Sequence[str]) -> str:
             parts.append(
                 "use review --evidence: checks of criterion, command (an argv list) and expected"
             )
+        elif name.startswith("## Small Task"):
+            parts.append(
+                f"{name.partition(': ')[2]}; fix that, or clear size with --field size= and "
+                f"record a review"
+            )
         elif name == "## Completion Confirmation":
             parts.append(
                 "use confirm --evidence: checks of criterion, planned command, result, exit_code 0"

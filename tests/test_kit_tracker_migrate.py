@@ -760,6 +760,7 @@ def test_a_consumer_with_no_basicly_can_import_their_tracker(tmp_path: Path) -> 
         "locking.py",
         "process_evidence.py",
         "evidence_checks.py",
+        "small_task.py",
         "labels.py",
         "record_types.py",
     ):
