@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
+
 from basicly import board_advance, board_regions, board_wall
 from tests.test_board_wall import STAMPED, document, readings
 
@@ -159,12 +161,31 @@ def test_an_advance_ask_stops_the_band_reading_nothing_is_waiting() -> None:
 
 def test_ready_capacity_is_derived_from_the_viewport_actually_given_not_a_constant() -> None:
 
-    assert board_regions.ready_capacity(900, 1440) == 6
-    assert board_regions.ready_capacity(1200, 1600) == 18
-    assert board_regions.ready_capacity(1080, 1920) == 15
+    assert board_regions.ready_capacity(900, 1440) == 15
+    assert board_regions.ready_capacity(1200, 1600) == 28
+    assert board_regions.ready_capacity(1080, 1920) == 23
     assert board_regions.ready_capacity(1200, 1600) > board_regions.ready_capacity(900, 1440), (
         "a taller wall must fit more rows, not the same guessed count"
     )
+
+
+@pytest.mark.parametrize(
+    ("height", "width", "reserved", "fits"),
+    [
+        (900, 1440, 300, 3),
+        (900, 1440, 110, 11),
+        (1000, 1600, 300, 8),
+        (1000, 1600, 110, 16),
+        (1080, 1920, 300, 11),
+        (1080, 1920, 110, 19),
+    ],
+)
+def test_ready_capacity_never_exceeds_the_rows_a_browser_fitted(
+    height: int, width: int, reserved: int, fits: int
+) -> None:
+    capacity = board_regions.ready_capacity(height, width, reserved)
+
+    assert fits - 1 <= capacity <= fits
 
 
 def test_ready_capacity_falls_back_to_the_stated_default_when_the_viewport_is_unknown() -> None:

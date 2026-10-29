@@ -25,6 +25,7 @@ from . import (
     board_bodies,
     board_kanban,
     board_record,
+    board_regions,
     board_render,
     board_schema,
     board_snapshot,
@@ -278,6 +279,7 @@ class Board:
                 board_asks.parking(document.get("units"), token),
                 board_asks.starting(document, token),
             ),
+            viewport=board_regions.SHORTEST_VIEWPORT,
         )
         drawn = board_render.render(filled)
         return self._name_self_faults(drawn, filled.get("ready"), now).encode("utf-8")
