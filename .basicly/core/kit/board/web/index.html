@@ -12,7 +12,7 @@
   body { margin: 0; font: var(--text-base)/var(--leading-normal) var(--font-sans); background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
   button, input, select, textarea { font: inherit; color: inherit; }
   header { display: flex; align-items: center; gap: var(--space-5); padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--line); background: var(--panel); }
-  header h1 { font-size: var(--text-md); margin: 0; }
+  header h1 { font-size: var(--text-md); margin: 0; flex-shrink: 0; white-space: nowrap; }
   header .search-box { flex: 0 1 28rem; min-width: 0; }
   header #new { flex: none; white-space: nowrap; }
   #search { width: 100%; padding: var(--space-2) var(--space-4); border: 1px solid var(--edge); border-radius: var(--radius-3); background: var(--bg); }
@@ -131,6 +131,9 @@
     body:not(.reading) #detail-pane { display: none; }
     .back { display: inline-block; margin-bottom: var(--space-3); }
     #counts { display: none; }
+  }
+  @media (max-width: 600px) {
+    header h1 .suffix { display: none; }
   }
 </style>
 </head>
@@ -315,7 +318,8 @@ async function load() {
   state.version = version;
   state.me = index.holder || "";
   document.title = index.repository ? index.repository + " · Tracker" : "Tracker";
-  document.querySelector("header h1").textContent = document.title;
+  document.querySelector("header h1").replaceChildren(
+    ...(index.repository ? [index.repository, el("span", { class: "suffix" }, " · Tracker")] : ["Tracker"]));
   state.edgeTypes = index.edge_types || state.edgeTypes;
   state.recordTypes = index.record_types || state.recordTypes;
   state.records = new Map(lists.flatMap((list) => list.records).map((one) => [one.record, one]));
