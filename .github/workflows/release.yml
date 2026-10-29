@@ -78,6 +78,7 @@ jobs:
 
   tutorial-walk:
     name: Tutorial walk
+    needs: [release]
     if: |
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -91,6 +92,15 @@ jobs:
         run: python3 src/basicly/lefthook_artifacts.py --download
       - name: Build the wheel the tutorial installs
         run: uv build --wheel
+      - name: Put stand-in agent hosts on PATH, as on the machine the tutorial was recorded on
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/hosts"
+          for host in claude copilot; do
+            printf '#!/bin/sh\nexit 0\n' > "$RUNNER_TEMP/hosts/$host"
+            chmod +x "$RUNNER_TEMP/hosts/$host"
+          done
+          echo "$RUNNER_TEMP/hosts" >> "$GITHUB_PATH"
       - name: Run every tutorial command and compare its documented output
         shell: bash
         run: |
