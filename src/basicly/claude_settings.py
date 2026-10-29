@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -171,6 +172,25 @@ def _references_managed_script(group: object, script_paths: set[str]) -> bool:
     )
 
 
+def missing_scripts(repo_root: Path, settings: dict, hooks_relpath: str) -> set[str]:
+    named = re.compile(re.escape(hooks_relpath) + r"/[\w.-]+\.py")
+    commands = [
+        hook["command"]
+        for groups in (settings.get(HOOKS_KEY) or {}).values()
+        if isinstance(groups, list)
+        for group in groups
+        if isinstance(group, dict)
+        for hook in group.get("hooks", [])
+        if isinstance(hook, dict) and isinstance(hook.get("command"), str)
+    ]
+    return {
+        script
+        for command in commands
+        for script in named.findall(command)
+        if not (repo_root / script).is_file()
+    }
+
+
 def merge_agent_hooks(
     settings: dict,
     specs: list[HookSpec],
@@ -211,11 +231,22 @@ def merge_agent_hooks(
 
 
 def agent_hook_mismatches(repo_root: Path, specs: list[HookSpec], hooks_relpath: str) -> list[str]:
-    section = _load_settings(repo_root / CLAUDE_SETTINGS_PATH).get(HOOKS_KEY, {})
+    settings = _load_settings(repo_root / CLAUDE_SETTINGS_PATH)
+    section = settings.get(HOOKS_KEY, {})
+    current = {
+        f"{hooks_relpath}/lefthook-runtime.py",
+        *(f"{hooks_relpath}/{s.script}" for s in specs),
+    }
     return [
-        f"managed agent event {event!r} missing or out of sync"
-        for event, group in _event_groups(specs, hooks_relpath).items()
-        if group not in section.get(event, [])
+        *(
+            f"managed agent event {event!r} missing or out of sync"
+            for event, group in _event_groups(specs, hooks_relpath).items()
+            if group not in section.get(event, [])
+        ),
+        *(
+            f"hook script {script} is missing"
+            for script in sorted(missing_scripts(repo_root, settings, hooks_relpath) - current)
+        ),
     ]
 
 
@@ -243,6 +274,7 @@ def sync_agent_hooks(
     path = repo_root / CLAUDE_SETTINGS_PATH
     settings = _load_settings(path)
     scripts = {f"{hooks_relpath}/{spec.script}" for spec in (*specs, *(excluded_specs or []))}
+    scripts |= missing_scripts(repo_root, settings, hooks_relpath)
     merged = merge_agent_hooks(settings, specs, hooks_relpath, scripts)
     if settings == merged:
         return False
