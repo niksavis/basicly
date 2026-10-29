@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release removes four traps a tracker user meets on install and in daily use. The
+commit that installs basicly no longer needs a claimed record, a dependency edge that
+voids a review now says so, the tracker page names its repository, and one global
+`basicly-tracker` can serve repositories pinned to different versions. Releases also
+walk the tutorial against the built wheel.
+
+- Install and daily use: the install commit passes the claim gate (basicly-584ykwo),
+  and `dep` explains a voided review (basicly-s4ia3qh).
+- Several repositories on one machine: the tracker page and API name the repository
+  (basicly-bdwjy4q), and a global tracker runs a repository's pinned copy
+  (basicly-q2tb4qj).
+
 ## v0.31.1 - 2026-10-29
 
 Delta: v0.31.0..v0.31.1
