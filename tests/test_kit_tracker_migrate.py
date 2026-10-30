@@ -761,6 +761,7 @@ def test_a_consumer_with_no_basicly_can_import_their_tracker(tmp_path: Path) -> 
         "process_evidence.py",
         "evidence_checks.py",
         "small_task.py",
+        "conversation.py",
         "labels.py",
         "record_types.py",
     ):

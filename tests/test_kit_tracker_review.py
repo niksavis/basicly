@@ -171,7 +171,34 @@ def test_a_conversation_sequence_with_two_forked_comments_cannot_certify_review(
     before = cli.events.read_events(ledger)[0]
     report = _run(capsys, "review", str(ledger), record, "--evidence", json.dumps(evidence))
     assert "Conversation" in report["refused"]
+    assert "fork" in report["refused"]
     assert cli.events.read_events(ledger)[0] == before
+
+
+def test_a_cited_comment_with_a_placeholder_is_refused_by_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger = tmp_path / "ledger"
+    record = _create(capsys, ledger, *SHAPED)
+    _run(capsys, "comment", str(ledger), record, "Agree to open the map at #/record/<id>/map.")
+    seq = _run(capsys, "show", str(ledger), record)["comment_log"][-1]["seq"]
+    evidence = {
+        "invest": INVEST,
+        "conversation": [seq],
+        "checks": [
+            {
+                "criterion": "it is reviewed",
+                "command": ["fixture-check"],
+                "expected": "The result is reviewed.",
+            }
+        ],
+    }
+
+    report = _run(capsys, "review", str(ledger), record, "--evidence", json.dumps(evidence))
+
+    assert f"comment {seq}" in report["refused"]
+    assert "placeholder" in report["refused"]
+    assert "fork" not in report["refused"]
 
 
 def test_cancelled_raw_card_does_not_authorize_a_code_commit(

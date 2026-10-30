@@ -1,0 +1,1 @@
+- A refused tracker review now names the real fault in its Conversation: a missing comment, forked copies, a non-comment event, a repeated seq, or a comment whose angle-bracket text reads as an unfilled placeholder. It no longer blames forks for every case.
