@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release makes commits and pushes fast. A code commit spends about 6 s in its checks
+instead of 24 s, because the hooks pass the changed files to each check that declares a
+suffix. A push after a code commit and a ledger commit reuses every check instead of
+running them again. It also names the real fault when a tracker review is refused.
+
+- Hooks: a check is reused while its declared input files are unchanged
+  (basicly-gtb19bg.16).
+- Hooks: checks with a staged_suffix read only the changed files with that suffix
+  (basicly-gtb19bg.17).
+- Tracker: a refused review conversation names its real fault (basicly-bn1i1nh).
+
 ## v0.35.0 - 2026-10-29
 
 Delta: v0.34.1..v0.35.0
