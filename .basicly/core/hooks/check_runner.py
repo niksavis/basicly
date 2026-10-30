@@ -342,6 +342,9 @@ def run_checks(
         print(f"No verify checks configured for mode '{mode}' in {CONFIG_FILE}; nothing to gate.")
         return 0
     selection, skips = _planned_skips(repo_root, mode, checks, (scope_to_diff, changed))
+    known = changed if changed is not None else diff_paths(repo_root) if scope_to_diff else None
+    scope = _hook_module("change_scope")
+    checks = scope.file_scoped(repo_root, _mode_entries(repo_root, mode), checks, known, skips)
     if selection and selection["invalid_snapshot"]:
         print(f"affected checks failed: {selection['fallback']}", file=sys.stderr)
         _record_selection(repo_root, selection, [])

@@ -1,0 +1,1 @@
+- The pre-commit and pre-push hooks pass the changed files to every check that declares a staged_suffix, and skip it when no changed file has that suffix, so a check such as ruff reads only what the commit or push changes.

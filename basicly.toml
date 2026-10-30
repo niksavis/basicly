@@ -183,13 +183,15 @@ staged_suffix = ".py"
 
 [[verify.checks]]
 name = "pyright"
-command = ["pyright"]
+command = ["uv", "run", "python", ".scripts/check_changed_types.py"]
 modes = ["fast", "staged"]
 inputs = [
   "src/**/*.py",
   "tests/**/*.py",
   ".scripts/**/*.py",
   ".basicly/core/**/*.py",
+  ".claude/skills/**/*.py",
+  ".agents/skills/**/*.py",
   "packages/**/*.py",
   "hatch_build.py",
   "**/*.pyi",
@@ -230,7 +232,7 @@ name = "pyright-hidden"
 command = ["uv", "run", "python", ".scripts/check_hidden_types.py"]
 inputs = [".scripts/**/*.py", ".basicly/core/**/*.py", ".claude/skills/**/*.py", ".agents/skills/**/*.py", "src/**/*.py", "**/*.pyi", ".python-version", "pyproject.toml", "uv.lock"]
 exclusive = true
-modes = ["fast", "staged"]
+modes = ["staged"]
 
 [[verify.checks]]
 name = "pyright-hidden-linux"
