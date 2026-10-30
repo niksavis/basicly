@@ -42,10 +42,12 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
-def _configure(repo: Path, counter: Path, code: int = 0) -> None:
+def _configure(repo: Path, counter: Path, code: int = 0, inputs: str = "") -> None:
     command = [sys.executable, "-c", COUNT, str(counter), str(code)]
+    scope = f"inputs = {json.dumps([inputs])}\n" if inputs else ""
     (repo / "basicly.toml").write_text(
-        f'[[verify.checks]]\nname = "counted"\ncommand = {json.dumps(command)}\nmodes = ["fast"]\n',
+        f'[[verify.checks]]\nname = "counted"\ncommand = {json.dumps(command)}\nmodes = ["fast"]\n'
+        + scope,
         encoding="utf-8",
     )
     _git(repo, "add", "basicly.toml")
@@ -130,3 +132,21 @@ def test_the_environment_links_of_a_hook_snapshot_do_not_block_reuse(
     assert _runner().run_checks(repo, "fast") == 0
 
     assert _runs(counter) == 1
+
+
+def test_a_check_is_reused_while_its_declared_inputs_are_unchanged(
+    repo: Path, tmp_path: Path
+) -> None:
+    counter = tmp_path / "runs"
+    _configure(repo, counter, inputs="*.py")
+    assert _runner().run_checks(repo, "fast") == 0
+
+    (repo / "notes.txt").write_text("ledger-like change\n", encoding="utf-8")
+    _git(repo, "add", "notes.txt")
+    assert _runner().run_checks(repo, "fast") == 0
+    assert _runs(counter) == 1
+
+    (repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _git(repo, "add", "app.py")
+    assert _runner().run_checks(repo, "fast") == 0
+    assert _runs(counter) == 2
