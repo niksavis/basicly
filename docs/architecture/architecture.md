@@ -3929,7 +3929,7 @@ appended to `basicly.toml`'s own list rather than replacing it.
 
 | Mode | Checks | Where it runs |
 | --- | --- | --- |
-| fast | 38 | pre-commit and a local pre-push |
+| fast | 37 | pre-commit and a local pre-push |
 | full | 45 | continuous integration, pre-push under it, and the loop's verify step |
 | staged | 4 | a staged-files-only subset |
 
