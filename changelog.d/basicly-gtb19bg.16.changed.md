@@ -1,1 +1,0 @@
-- A push after a commit that changes only the tracker ledger no longer reruns the checks the code commit already passed. Each check is now reused while the files it declares as inputs are unchanged, instead of only while the whole tree is unchanged.

@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.35.1 - 2026-10-30
+
+Delta: v0.35.0..v0.35.1
+
 This release makes commits and pushes fast. A code commit spends about 6 s in its checks
 instead of 24 s, because the hooks pass the changed files to each check that declares a
 suffix. A push after a code commit and a ledger commit reuses every check instead of
@@ -16,6 +20,16 @@ running them again. It also names the real fault when a tracker review is refuse
 - Hooks: checks with a staged_suffix read only the changed files with that suffix
   (basicly-gtb19bg.17).
 - Tracker: a refused review conversation names its real fault (basicly-bn1i1nh).
+
+### Changed
+
+- A push after a commit that changes only the tracker ledger no longer reruns the checks the code commit already passed. Each check is now reused while the files it declares as inputs are unchanged, instead of only while the whole tree is unchanged. (basicly-gtb19bg.16)
+
+- The pre-commit and pre-push hooks pass the changed files to every check that declares a staged_suffix, and skip it when no changed file has that suffix, so a check such as ruff reads only what the commit or push changes. (basicly-gtb19bg.17)
+
+### Fixed
+
+- A refused tracker review now names the real fault in its Conversation: a missing comment, forked copies, a non-comment event, a repeated seq, or a comment whose angle-bracket text reads as an unfilled placeholder. It no longer blames forks for every case. (basicly-bn1i1nh)
 
 ## v0.35.0 - 2026-10-29
 
