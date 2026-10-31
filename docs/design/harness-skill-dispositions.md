@@ -1,6 +1,7 @@
 # Skill dispositions
 
 Task basicly-gtb19bg.4 accounts for all 26 catalog skills discovered in this checkout.
+The table records the initial extraction; later measurements follow below.
 No skill description or routing corpus is shortened. Five large entries gain selective
 procedural references; short or cohesive workflows stay simple. No skill is converted
 into a separate owner. Independent review and specialist capabilities remain available;
@@ -36,6 +37,23 @@ role topology is tracked separately by .7 and .10.
 | wsl | 1375 | 1375 | Retain short environment-specific entry and existing command reference; only selected consumers receive it. |
 
 ## Preservation and consumer boundaries
+
+### Follow-up on 2026-10-31
+
+Measured UTF-8 bytes of the generated `.agents/skills/*/SKILL.md` files with `wc -c`:
+
+| Skill | Before | After | Current disposition |
+| --- | ---: | ---: | --- |
+| conventional-commits | 3979 | 1835 | Keep commit safeguards in the entry; load command options and the exact subject format before composing a message. |
+| test-discipline | 4291 | 1738 | Keep isolation and regression rules in the entry; load fixture setup, mutation controls, seams and platform procedures when editing those tests. |
+
+The extracted prose and commands are unchanged in linked references; terminal blank lines
+are normalized for Markdown lint. Routing descriptions
+and all other skill dispositions remain unchanged by this follow-up. The session-finish
+closeout extraction belongs to basicly-gtb19bg.3. The catalog has 26 sources; this
+checkout projects 25 entries because its technology selection excludes the WSL skill.
+Fresh consumer checks exercise all references for both host roots, including the newly
+split entries. These are file-size and delivery measurements, not task-speed evidence.
 
 Conditional sections were moved intact before deliberate owner/observer corrections.
 The extraction checked that section concatenation recovered each original instruction

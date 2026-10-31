@@ -144,6 +144,8 @@ def test_selective_procedures_are_retrievable_in_a_fresh_consumer(
     for slug in (
         "catalog-authoring",
         "conventional-commits",
+        "test-discipline",
+        "session-finish",
         "harness-loop",
         "work-tracker",
         "skill-creator",

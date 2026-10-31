@@ -1,0 +1,1 @@
+- Commit and test-discipline skills load detailed procedures from linked references, reducing their combined entry size while retaining their routing descriptions and safeguards (basicly-gtb19bg.4).
