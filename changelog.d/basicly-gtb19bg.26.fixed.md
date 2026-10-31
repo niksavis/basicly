@@ -1,1 +1,0 @@
-- Correct the tutorial status transcript for the installed Git hook count and check tutorial manager counts against the shipped catalog before a release.

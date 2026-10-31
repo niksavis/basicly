@@ -6,10 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.37.1 - 2026-10-31
+
+Delta: v0.37.0..v0.37.1
+
 The tutorial now matches the hooks installed by the shared-contract preflight release.
 A local drift check catches stale tutorial counts when the catalog changes.
 
 - Tutorial: match installed hook counts and detect drift before publication (basicly-gtb19bg.26).
+
+### Fixed
+
+- Correct the tutorial status transcript for the installed Git hook count and check tutorial manager counts against the shipped catalog before a release. (basicly-gtb19bg.26)
 
 ## v0.37.0 - 2026-10-31
 
