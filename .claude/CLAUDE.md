@@ -92,7 +92,7 @@ uv run basicly permissions-check
 
 - Keep one responsible owner from task to completion; the tracker ledger and latest handover preserve shared history.
 - Delegate only for independent work, context pressure, independent review or specialist capabilities.
-- Use `basicly session start` when useful for orientation. Direct work needs no phase controller; `basicly loop` supports owner handoffs, and explicit `--execution worker` selects headless orchestration. Read the `harness-loop` skill when using that orchestration.
+- Use `basicly session start` when useful. Direct work needs no controller. Read `harness-loop` for optional owner handoffs or headless orchestration with `--execution worker`.
 - The user task request authorizes its scope. Do not request a grant or a mandatory token budget.
 - Keep verification gates and destructive-action protections enabled. Honor limits the user explicitly sets.
 
@@ -160,5 +160,4 @@ uv run basicly permissions-check
 
 ### Session Completion
 
-- Use `session-finish` at session end: leave no partial edits or stray files. Add a root `[session handover <date>]` note only for open work or facts the ledger and Git lack.
-- After a refusal or correction, fix its cause within approved scope and carry the diagnosis into handover. Record further recommendations without expanding scope.
+- At session end, use `session-finish` and its clean-handoff reference. Fix refusal causes within approved scope; carry unresolved facts and diagnosis into the handover.

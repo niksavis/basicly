@@ -1,0 +1,1 @@
+- Always-loaded guidance is shorter, with session closeout steps available through the session-finish reference and optional orchestration kept in its skill (basicly-gtb19bg.3).
