@@ -1,0 +1,1 @@
+- The cli-tools skill now links to bounded-wait guidance that keeps one execution handle, preserves completion and cancellation status, and distinguishes bounded waiting from native automatic wake-up.

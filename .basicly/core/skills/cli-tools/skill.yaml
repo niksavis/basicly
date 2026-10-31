@@ -38,6 +38,7 @@ instructions: |
   | Review and stage by hand | `lazygit` | [lazygit](references/lazygit.md) | `git` |
   | Pick a line from a list | `fzf` | [fzf](references/fzf.md) | `rg` |
   | Python projects and scripts | `uv` | [uv](references/uv.md) | `pip` |
+  | Wait for a command or CI | Host wait tools | [bounded waiting](references/waiting.md) | One CLI watcher and the same execution handle |
   | Sessions and panes | `tmux` | [tmux](references/tmux.md) | none |
   | Shell startup and config errors | `zsh` | [zsh](references/zsh.md) | none |
   | Shell prompt segments | `starship` | [starship](references/starship.md) | none |

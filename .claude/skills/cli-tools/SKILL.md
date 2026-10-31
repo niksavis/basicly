@@ -30,6 +30,7 @@ Pick the tool for the task, then read its reference for the flags, the rules and
 | Review and stage by hand | `lazygit` | [lazygit](references/lazygit.md) | `git` |
 | Pick a line from a list | `fzf` | [fzf](references/fzf.md) | `rg` |
 | Python projects and scripts | `uv` | [uv](references/uv.md) | `pip` |
+| Wait for a command or CI | Host wait tools | [bounded waiting](references/waiting.md) | One CLI watcher and the same execution handle |
 
 To give every repo on this machine this skill and its references, run `basicly skills-user cli-tools` once.
 

@@ -128,7 +128,7 @@ def test_the_cli_tools_table_links_every_reference_it_ships() -> None:
     linked = set(re.findall(r"\]\((references/[a-z-]+\.md)\)", cli_tools.instructions))
 
     assert shipped == linked
-    assert len(shipped) == 25
+    assert len(shipped) == 26
     assert {resource for resource, _ in cli_tools.resource_technologies} <= shipped
     assert not [s.slug for s in discover_skills(REPO_ROOT) if s.slug.startswith("tool-")]
 
@@ -143,6 +143,7 @@ def test_selective_procedures_are_retrievable_in_a_fresh_consumer(
     assert not pruned
     for slug in (
         "catalog-authoring",
+        "cli-tools",
         "conventional-commits",
         "test-discipline",
         "session-finish",
