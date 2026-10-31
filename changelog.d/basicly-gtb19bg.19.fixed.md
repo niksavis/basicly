@@ -1,1 +1,0 @@
-- Parents become ready when all children are closed; blocked lists name only unfinished children, while epic maps retain completed work (basicly-gtb19bg.19).

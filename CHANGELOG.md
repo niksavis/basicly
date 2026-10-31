@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.36.0 - 2026-10-31
+
+Delta: v0.35.1..v0.36.0
+
 Release dry runs now build the release candidate and run its commit hooks in a temporary
 checkout, so gate failures appear before the source checkout changes. Parents become ready
 when their children finish, comment scans avoid excluded trees, and refused releases keep
@@ -15,6 +19,20 @@ the failing checks visible.
 - Release errors: retain Lefthook failure lines and reported modified files (basicly-qrstlh).
 - Ready work: only unfinished children hold their parent (basicly-gtb19bg.19).
 - Check speed: prune excluded directories before scanning (basicly-gtb19bg.12).
+
+### Added
+
+- Release dry runs assemble the candidate in a temporary checkout and run the actual commit hooks, reporting refusals or runner gate counts before changing the source checkout. Git maintenance finishes before temporary checkout cleanup (basicly-vwh3aq).
+
+### Changed
+
+- Comment checks prune excluded directories before scanning, reducing time spent walking dependency and build trees (basicly-gtb19bg.12).
+
+### Fixed
+
+- Parents become ready when all children are closed; blocked lists name only unfinished children, while epic maps retain completed work (basicly-gtb19bg.19).
+
+- Release commit refusals recognize Lefthook summaries and retain every failing check and runner summary despite long passing output (basicly-qrstlh).
 
 ## v0.35.1 - 2026-10-30
 

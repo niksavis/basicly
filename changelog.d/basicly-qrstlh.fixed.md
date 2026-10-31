@@ -1,1 +1,0 @@
-- Release commit refusals recognize Lefthook summaries and retain every failing check and runner summary despite long passing output (basicly-qrstlh).
