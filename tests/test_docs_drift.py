@@ -3,15 +3,26 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import re
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
-from basicly import agents, cli, config, schema, tracker_paths
+from basicly import agents, cli, config, hooks, schema, tracker_paths
 
 ARCHITECTURE_MD = Path(__file__).parent.parent / "docs" / "architecture" / "architecture.md"
 CLI_MD = Path(__file__).parent.parent / "docs" / "reference" / "cli.md"
 FRAGMENT_SECTION = "## 13. The fragment model"
+
+
+def test_tutorial_status_hook_counts_match_the_shipped_catalog() -> None:
+    tutorial = (ARCHITECTURE_MD.parents[1] / "tutorial/first-loop.md").read_text(encoding="utf-8")
+    documented = {
+        manager: int(count)
+        for manager, count in re.findall(r"│ (git|claude|copilot)\s+│ (\d+)\s+│", tutorial)
+    }
+    counts = Counter(spec.manager for spec in hooks.load_hook_specs())
+    assert documented == {manager: counts[manager] for manager in ("git", "claude", "copilot")}
 
 
 def _section(text: str, heading: str) -> str:
