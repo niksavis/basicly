@@ -289,6 +289,12 @@ inputs = [
   "uv.lock",
 ]
 
+[[verify.checks]]
+name = "hook-contracts"
+command = ["uv", "run", "python", ".basicly/core/hooks/hook-contracts.py"]
+modes = ["full"]
+inputs = [".basicly/core/hooks/**/*.py"]
+
 # Dead code (basicly-uexy). `vulture` was declared at pyproject.toml:37 and called
 # from nowhere — not by a check, not by a script — so the dependency that finds
 # instruments nobody connected was itself an instrument nobody connected. That is the

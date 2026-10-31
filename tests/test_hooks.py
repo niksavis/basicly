@@ -76,6 +76,7 @@ def test_manifest_lists_every_catalog_hook() -> None:
     assert ids == {
         "markdownlint",
         "identity-guard",
+        "hook-contracts",
         "pre-commit-script",
         "catalog-lint",
         "secret-scan",
@@ -111,6 +112,17 @@ def test_manifest_ships_identity_guard_at_pre_commit() -> None:
     assert guard.script == "identity-guard.py"
     assert guard.stage == "pre-commit"
     assert guard.always_run is True
+
+
+def test_manifest_ships_hook_contracts_before_configured_checks() -> None:
+    specs = load_hook_specs()
+    guard = next(spec for spec in specs if spec.id == "hook-contracts")
+    assert guard.script == "hook-contracts.py"
+    assert guard.stage == "pre-commit"
+    assert guard.files == r"\.py$"
+    assert guard.pass_filenames is False
+    ids = [spec.id for spec in specs]
+    assert ids.index("hook-contracts") < ids.index("pre-commit-script")
 
 
 def test_manifest_ships_protect_generated_for_claude() -> None:

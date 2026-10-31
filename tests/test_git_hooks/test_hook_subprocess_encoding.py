@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import importlib.util
 import subprocess
 from pathlib import Path
@@ -9,16 +8,11 @@ HOOKS = Path(__file__).resolve().parents[2] / ".basicly" / "core" / "hooks"
 
 
 def _text_calls_without_encoding(path: Path) -> list[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    offenders = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        keywords = {keyword.arg: keyword.value for keyword in node.keywords}
-        text = keywords.get("text", keywords.get("universal_newlines"))
-        if isinstance(text, ast.Constant) and text.value is True and "encoding" not in keywords:
-            offenders.append(f"{path.name}:{node.lineno}")
-    return offenders
+    spec = importlib.util.spec_from_file_location("hook_contracts", HOOKS / "hook-contracts.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.findings(path)
 
 
 def test_every_text_mode_subprocess_call_in_a_hook_declares_its_encoding() -> None:

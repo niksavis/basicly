@@ -93,8 +93,11 @@ pre-commit:
           "\\.md$", "manager": "git", "technologies": ["node"], "matcher": ""}, {"id":
           "identity-guard", "script": ".basicly/core/hooks/identity-guard.py", "stage":
           "pre-commit", "pass_filenames": false, "always_run": true, "files": "",
-          "manager": "git", "technologies": [], "matcher": ""}, {"id": "pre-commit-script",
-          "script": ".basicly/core/hooks/pre-commit.py", "stage": "pre-commit", "pass_filenames":
+          "manager": "git", "technologies": [], "matcher": ""}, {"id": "hook-contracts",
+          "script": ".basicly/core/hooks/hook-contracts.py", "stage": "pre-commit",
+          "pass_filenames": false, "always_run": false, "files": "\\.py$", "manager":
+          "git", "technologies": [], "matcher": ""}, {"id": "pre-commit-script", "script":
+          ".basicly/core/hooks/pre-commit.py", "stage": "pre-commit", "pass_filenames":
           false, "always_run": true, "files": "", "manager": "git", "technologies":
           [], "matcher": ""}, {"id": "catalog-lint", "script": ".basicly/core/hooks/catalog-lint.py",
           "stage": "pre-commit", "pass_filenames": false, "always_run": false, "files":
