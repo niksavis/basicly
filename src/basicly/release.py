@@ -10,7 +10,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import checkout, merge, policy, release_history, shipped_core, verify, worktree
+from . import (
+    checkout,
+    merge,
+    policy,
+    release_history,
+    release_preview,
+    shipped_core,
+    verify,
+    worktree,
+)
 from . import commit as commit_mod
 
 if TYPE_CHECKING:
@@ -580,6 +589,16 @@ def _restore(repo_root: Path) -> None:
     _git(repo_root, ["checkout", "--", "."], check=False)
 
 
+def _assemble_release(repo_root: Path, plan: ReleasePlan, tags: dict[str, str]) -> None:
+    release_history.write(repo_root, tags)
+    _bump_version_file(repo_root, plan)
+    _regenerate(repo_root)
+    _rewrite_pins(repo_root, plan)
+    _rewrite_transcripts(repo_root, plan.current_version, plan.version)
+    _assemble_fragments(repo_root, plan)
+    _write_changelog(repo_root, plan)
+
+
 def run_release(  # noqa: PLR0913 — mirrors the CLI surface
     repo_root: Path,
     plan: ReleasePlan,
@@ -631,17 +650,23 @@ def run_release(  # noqa: PLR0913 — mirrors the CLI surface
         f"annotate tag {plan.tag} with '{plan.tag} ({plan.date})'",
     ])
     if dry_run:
+        try:
+            steps.extend(
+                release_preview.run(
+                    repo_root,
+                    lambda root: _assemble_release(root, plan, history.tags),
+                    commit_message(plan, issue_id),
+                )
+            )
+        except (RuntimeError, OSError, SystemExit, release_history.HistoryError) as exc:
+            return ReleaseResult(
+                plan=plan, steps=tuple(steps), dry_run=True, tagged=False, refusals=(str(exc),)
+            )
         steps.append("(dry run: nothing was written)")
         return ReleaseResult(plan=plan, steps=tuple(steps), dry_run=True, tagged=False)
 
     try:
-        release_history.write(repo_root, history.tags)
-        _bump_version_file(repo_root, plan)
-        _regenerate(repo_root)
-        _rewrite_pins(repo_root, plan)
-        _rewrite_transcripts(repo_root, plan.current_version, plan.version)
-        _assemble_fragments(repo_root, plan)
-        _write_changelog(repo_root, plan)
+        _assemble_release(repo_root, plan, history.tags)
         _git(repo_root, ["add", "-A"])
         _git(repo_root, ["commit", "-m", commit_message(plan, issue_id)])
     except (RuntimeError, OSError, SystemExit, release_history.HistoryError) as exc:

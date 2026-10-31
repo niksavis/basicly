@@ -49,7 +49,7 @@ The dry run writes nothing and reports every refusal at once, each with the file
 
 A page under `docs/tutorial/` that names the current version as the one it was recorded against is rewritten to the new version by the release. A page that names any other version refuses: walk it against a build of this checkout and fix it first.
 
-The dry run checks preconditions, not the commit gates on the release tree. Find out whether the tag workflow runs the full checks before it publishes; in basicly it does, and a failed tag stays unpublished until the next patch. When the tag workflow does not, run the full checks on the release commit before you push the tag.
+The dry run assembles the release in a temporary checkout and runs its actual commit hooks. It reports failing gates or the verify runner's gate count without changing this checkout. It shares prepared dependencies and uses the same hook configuration. Find out whether the tag workflow runs the full checks before publication; when it does not, run required full checks on the release commit before pushing the tag.
 
 ## 5. Cut the release
 

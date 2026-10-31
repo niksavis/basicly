@@ -123,6 +123,7 @@ def test_plan_refuses_a_version_that_is_not_semver(repo: Path) -> None:
         release.plan_release(repo, "0.6", date="2026-07-26")
 
 
+@pytest.mark.usefixtures("no_regen")
 def test_a_dry_run_reports_every_step_and_writes_nothing(repo: Path) -> None:
     plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
 
@@ -421,6 +422,7 @@ def test_a_changelog_with_nowhere_to_fold_the_fragments_is_refused(repo: Path) -
     assert any(release.UNRELEASED_HEADING in reason for reason in result.refusals)
 
 
+@pytest.mark.usefixtures("no_regen")
 def test_a_dry_run_names_the_fragments_in_assembly_order_and_deletes_none(repo: Path) -> None:
     _write_fragments(repo, {"lane-2.fixed.md": "- b\n", "lane-1.added.md": "- a\n"})
     plan = release.plan_release(repo, "0.6.0", date="2026-07-26")
@@ -679,6 +681,7 @@ def _patch_grant(
     "level",
     [None, "L1", "L2"],
 )
+@pytest.mark.usefixtures("no_regen")
 def test_a_verified_release_does_not_require_an_autonomy_grant(
     repo: Path, monkeypatch: pytest.MonkeyPatch, level: str | None
 ) -> None:
@@ -706,6 +709,7 @@ def test_an_autonomous_release_is_refused_when_l3_preconditions_are_not_green(
     assert any("preconditions not green" in reason for reason in result.refusals)
 
 
+@pytest.mark.usefixtures("no_regen")
 def test_an_autonomous_release_uses_the_requested_issue_when_no_root_is_supplied(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -724,6 +728,7 @@ def test_an_autonomous_release_uses_the_requested_issue_when_no_root_is_supplied
     assert checked == ["fx-1"]
 
 
+@pytest.mark.usefixtures("no_regen")
 def test_a_green_l3_grant_permits_an_autonomous_release(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -737,6 +742,7 @@ def test_a_green_l3_grant_permits_an_autonomous_release(
     assert not result.refused
 
 
+@pytest.mark.usefixtures("no_regen")
 def test_an_interactive_release_does_not_consult_the_grant(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -848,6 +854,7 @@ def _publish_earlier(root: Path) -> str:
     return commit
 
 
+@pytest.mark.usefixtures("no_regen")
 def test_release_dry_run_reports_published_additions_without_any_writes(repo: Path) -> None:
     _publish_earlier(repo)
     before = (repo / HISTORY).read_bytes()

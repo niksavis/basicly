@@ -101,6 +101,9 @@ is `basicly catalog dump`.
 | `basicly board serve [--port N] [--bind ADDR] [--refresh S] [--no-actions]` | Serve the board for a wall display. GET reads; **one POST route** runs a `basicly` command an operator submitted, behind a one-time confirm code the operator types and this server never holds. `--no-actions` registers no action route and every POST is then 405 — the recommended flag for an unattended wall. `--bind` takes a literal IPv4 interface address, refusing a wildcard or a hostname, and defaults to the loopback. While a supervisor lock is fresh it serves that producer's snapshot bytes and folds nothing; otherwise it folds for itself on `--refresh` and keeps the result in memory. It takes no lock and writes no file, so it blocks no gate |
 | `basicly release <version> --issue ID [--date D] [--dry-run] [--autonomous --root ID]` | Audit published tags on origin, refresh the committed release history and shipped-file inventory, bump the single-sourced version, regenerate version-stamped projections in a fresh interpreter, rewrite install pins on the consumer surfaces, fold the per-lane changelog fragments into a dated section, commit, and create the annotated tag. **Never pushes** |
 
+The release dry run assembles the candidate in a temporary checkout and runs the actual commit
+hooks. It reports gate failures or the verify runner's gate count without changing this checkout.
+
 Release preparation checks origin before it writes. `--dry-run` reports newly published earlier
 versions without changing files. A missing or moved published tag, an unavailable origin, or
 a missing or moved local canonical tag refuses the release. Fetch the published tags with

@@ -5023,7 +5023,7 @@ def _add_release_parser(subparsers: argparse._SubParsersAction) -> None:
     release_parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Report every step and write nothing (refusal checks still run)",
+        help="Assemble in a temporary checkout and run commit hooks without changing this checkout",
     )
     release_parser.add_argument(
         "--autonomous",
