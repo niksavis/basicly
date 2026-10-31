@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Coding agents load shorter guidance and skill entries. Detailed test controls, commit
+formats and clean-handoff steps now live in linked package references, ready to read
+when the task needs them.
+
+- Always-on guidance: shorten orchestration and session instructions (basicly-gtb19bg.3).
+- Skills: load detailed test and commit procedures on demand (basicly-gtb19bg.4).
+
 ## v0.36.0 - 2026-10-31
 
 Delta: v0.35.1..v0.36.0
