@@ -1,1 +1,1 @@
-- Commit and test-discipline skills load detailed procedures from linked references, reducing their combined entry size while retaining their routing descriptions and safeguards (basicly-gtb19bg.4).
+- Commit and test-discipline skills load detailed procedures from linked references while retaining routing and safeguards. Tracker guidance now says only open children hold a parent (basicly-gtb19bg.4).

@@ -12,6 +12,7 @@ when the task needs them.
 
 - Always-on guidance: shorten orchestration and session instructions (basicly-gtb19bg.3).
 - Skills: load detailed test and commit procedures on demand (basicly-gtb19bg.4).
+- Tracker guidance: describe parent holds in terms of open children (basicly-gtb19bg.4).
 
 ## v0.36.0 - 2026-10-31
 
