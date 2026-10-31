@@ -1,0 +1,1 @@
+- Comment checks prune excluded directories before scanning, reducing time spent walking dependency and build trees (basicly-gtb19bg.12).

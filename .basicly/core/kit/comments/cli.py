@@ -57,12 +57,17 @@ def covered_files(roots, skipped) -> list:
             if scan.is_covered(path) and not any(part in skipped for part in path.parts):
                 found.append(path)
             continue
-        for candidate in sorted(path.rglob("*")):
-            if not candidate.is_file() or not scan.is_covered(candidate):
-                continue
-            if any(part in skipped for part in candidate.parts):
-                continue
-            found.append(candidate)
+        if any(part in skipped for part in path.parts):
+            continue
+        candidates = []
+        for directory, folders, files in path.walk():
+            folders[:] = [name for name in folders if name not in skipped]
+            candidates.extend(directory / name for name in files if name not in skipped)
+        found.extend(
+            candidate
+            for candidate in sorted(candidates)
+            if candidate.is_file() and scan.is_covered(candidate)
+        )
     return found
 
 

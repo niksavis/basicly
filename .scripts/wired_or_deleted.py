@@ -112,14 +112,21 @@ class Finding:
 
 
 def _iter_files(root: Path, pattern: str) -> Iterator[Path]:
-    for path in sorted(root.glob(pattern)):
-        relative = path.relative_to(root)
-        if (
-            path.is_file()
-            and not SKIP_DIRS & set(relative.parts)
-            and relative.parts[:2] != (".basicly", "usage")
-        ):
-            yield path
+    found = []
+    for directory, folders, files in root.walk():
+        folders[:] = [
+            name
+            for name in folders
+            if name not in SKIP_DIRS and directory / name != root / ".basicly/usage"
+        ]
+        found.extend(
+            directory / name
+            for name in files
+            if name not in SKIP_DIRS
+            and (directory / name).relative_to(root).full_match(pattern)
+            and (directory / name).is_file()
+        )
+    yield from sorted(found)
 
 
 def _relative(root: Path, path: Path) -> str:
