@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -162,6 +163,9 @@ class Refusal:
 
 def _verdict(line: str) -> tuple[str, str] | None:
 
+    line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+    if line.startswith("✗ "):
+        return line[2:].split(" (", 1)[0], "Failed"
     for verdict in _VERDICTS:
         head = line.removesuffix(verdict)
         if head == line:
@@ -187,7 +191,9 @@ def _reason(block: list[str]) -> str:
         if line.strip() and not line.startswith(_ANNOTATIONS)
     ]
     if not body:
-        return "the hook reported no output"
+        return "no failing check was named; the hook reported no output"
+    if _MODIFIED in block and not _runner_verdicts("\n".join(block)):
+        return "no failing check was named; " + " · ".join(body)
     reason = " · ".join(line.strip() for line in _stated_lines(body)[-_REASON_LINES:])
     return reason if len(reason) <= _REASON_CHARS else reason[:_REASON_CHARS] + "…"
 
@@ -241,6 +247,7 @@ def _write_gate_output(repo_root: Path, output: str) -> Path | None:
 
 def gate_refusal(output: str, *, repo_root: Path | None = None) -> str | None:
 
+    output = re.sub(r"\x1b\[[0-9;]*m", "", output)
     if not ran_hooks(output):
         return None
     if refused := refusals(output):

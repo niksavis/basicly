@@ -222,7 +222,7 @@ def test_a_reformatting_hook_reports_the_only_line_it_printed() -> None:
         "- files were modified by this hook\n"
     )
     (refusal,) = checkout.refusals(chain)
-    assert refusal.reason == "files were modified by this hook"
+    assert refusal.reason == "no failing check was named; files were modified by this hook"
 
 
 _THREE_FAILURES = """identity-guard...........................................................Passed
@@ -269,3 +269,42 @@ def test_a_block_holding_only_warnings_still_names_what_refused() -> None:
     assert summary is not None
     assert "FAILED: release-notes" in summary
     assert "checks failed: 32/33" in summary
+
+
+def test_lefthook_failures_survive_a_long_passing_tail() -> None:
+    failures = [f"FAILED: check-{number} (0.01s)" for number in range(12)]
+    verdict = "checks failed: 0/12 passed in 1.00s"
+    output = "\n".join([
+        "┃ basicly-dispatch \u276f",
+        *failures,
+        verdict,
+        *("0 errors, 0 warnings, 0 informations" for _ in range(100)),
+        "\x1b[31m✗ basicly-dispatch (1.00 seconds)\x1b[0m",
+    ])
+    summary = checkout.gate_refusal(output)
+    assert summary is not None
+    assert all(line in summary for line in [*failures, verdict])
+    assert "0 errors" not in summary
+
+
+def test_a_lefthook_framework_refusal_names_the_hook_without_inventing_a_check() -> None:
+    summary = checkout.gate_refusal("┃ formatter \u276f\nexit status 1\n✗ formatter (0.01 seconds)")
+    assert summary is not None
+    assert "formatter" in summary
+    assert "no failing check" in summary
+
+
+def test_a_modifying_hook_keeps_each_reported_file() -> None:
+    paths = [f"src/changed_{number}.py" for number in range(8)]
+    summary = checkout.gate_refusal(
+        "\n".join([
+            "formatter........................................................Failed",
+            "- hook id: formatter",
+            "- files were modified by this hook",
+            *paths,
+        ])
+    )
+    assert summary is not None
+    assert "no failing check" in summary
+    assert "formatter" in summary
+    assert all(path in summary for path in paths)
