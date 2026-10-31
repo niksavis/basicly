@@ -6,12 +6,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.37.0 - 2026-10-31
+
+Delta: v0.36.1..v0.37.0
+
 Commits now catch Python hook syntax and encoding mistakes before a long CI run.
 Manual commit-message CI requires an explicit range, preventing accidental scans
 of a repository's entire history.
 
 - Hook preflight: validate shared contracts locally without pytest or the engine (basicly-gtb19bg.23).
 - CI scope: require bounded manual validation or explicit history-audit opt-in (basicly-gtb19bg.22).
+
+### Added
+
+- Check shipped Python hook syntax and text subprocess encodings before commits, catching shared contract failures locally without launching pytest or requiring the basicly engine in consumer repositories. (basicly-gtb19bg.23)
+
+### Fixed
+
+- Require explicit commit scope for manual CI runs in basicly and newly scaffolded consumer workflows; refuse missing or invalid ranges before message hooks run and require explicit opt-in for full-history audits. (basicly-gtb19bg.22)
 
 ## v0.36.1 - 2026-10-31
 

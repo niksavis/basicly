@@ -1,1 +1,0 @@
-- Check shipped Python hook syntax and text subprocess encodings before commits, catching shared contract failures locally without launching pytest or requiring the basicly engine in consumer repositories.
