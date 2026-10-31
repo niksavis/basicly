@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -60,9 +61,9 @@ def covered_files(roots, skipped) -> list:
         if any(part in skipped for part in path.parts):
             continue
         candidates = []
-        for directory, folders, files in path.walk():
+        for directory, folders, files in os.walk(path):
             folders[:] = [name for name in folders if name not in skipped]
-            candidates.extend(directory / name for name in files if name not in skipped)
+            candidates.extend(Path(directory) / name for name in files if name not in skipped)
         found.extend(
             candidate
             for candidate in sorted(candidates)

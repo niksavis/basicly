@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import runpy
 import sys
 from pathlib import Path
 from typing import Any
@@ -43,4 +44,17 @@ def test_excluded_directories_are_never_entered(
             if kind == "comments"
             else list(module._iter_files(tmp_path, "**/*.py"))
         )
+    assert found == [visible]
+
+
+def test_comments_scanning_works_without_path_walk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = Path(__file__).resolve().parents[1] / ".basicly/core/kit/comments/cli.py"
+    cli = runpy.run_path(str(source))
+    visible = tmp_path / "app.py"
+    visible.write_text("VALUE = 1\n", encoding="utf-8")
+    with monkeypatch.context() as patch:
+        patch.delattr(Path, "walk")
+        found = cli["covered_files"]([tmp_path], cli["SKIPPED_DIRECTORIES"])
     assert found == [visible]
