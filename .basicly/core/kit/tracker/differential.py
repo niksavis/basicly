@@ -110,6 +110,7 @@ gate_verdict = derivation.gate_verdict
 derive_phase = derivation.derive_phase
 is_dispatchable = derivation.is_dispatchable
 children_of = derivation.children_of
+open_children = derivation.open_children
 is_ready = derivation.is_ready
 blocker_holds = derivation.blocker_holds
 verdicts = derivation.verdicts

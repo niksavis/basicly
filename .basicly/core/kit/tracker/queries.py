@@ -160,7 +160,7 @@ def blocked(directory: Path | str) -> dict[str, object]:
             "title": str(states[record].fields.get("title") or ""),
             "status": view.status,
             "blocked_by": _open_blockers(view, views, vocabulary),
-            "children": sorted(children.get(record) or ()),
+            "children": differential.open_children(record, views, children, vocabulary),
         })
     return {"count": len(rows), "records": rows}
 

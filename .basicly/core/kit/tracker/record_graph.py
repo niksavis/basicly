@@ -84,8 +84,9 @@ class Graph:
         if children:
             found += [
                 (child, "child")
-                for child in self.children.get(record, ())
-                if _open(self.views[child])
+                for child in differential.open_children(
+                    record, self.views, self.children, VOCABULARY
+                )
             ]
         return found
 
