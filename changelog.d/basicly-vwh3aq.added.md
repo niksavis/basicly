@@ -1,1 +1,1 @@
-- Release dry runs assemble the candidate in a temporary checkout and run the actual commit hooks, reporting refusals or runner gate counts before changing the source checkout (basicly-vwh3aq).
+- Release dry runs assemble the candidate in a temporary checkout and run the actual commit hooks, reporting refusals or runner gate counts before changing the source checkout. Git maintenance finishes before temporary checkout cleanup (basicly-vwh3aq).

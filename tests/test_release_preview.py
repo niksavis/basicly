@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
 import shlex
+import subprocess
 import sys
+import time
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -80,3 +84,70 @@ def test_preview_environment_writes_do_not_reach_the_source(repo: Path) -> None:
 
     release_preview.run(repo, assemble, "chore: preview")
     assert marker.read_text(encoding="utf-8") == "original"
+
+
+def test_preview_waits_for_automatic_git_maintenance(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path / "gitconfig"
+    trace = tmp_path / "git-trace.jsonl"
+    for key, value in (
+        ("maintenance.strategy", "incremental"),
+        ("maintenance.commit-graph.enabled", "true"),
+        ("maintenance.commit-graph.auto", "1"),
+        ("maintenance.autoDetach", "true"),
+    ):
+        subprocess.run(["git", "config", "--file", str(config), key, value], check=True)
+    sanitise = release_preview.checkout.sanitised_git_env
+
+    def traced_env(env: Mapping[str, str]) -> dict[str, str]:
+        return {
+            **sanitise(env),
+            "GIT_CONFIG_GLOBAL": str(config),
+            "GIT_TRACE2_EVENT": str(trace),
+        }
+
+    monkeypatch.setattr(release_preview.checkout, "sanitised_git_env", traced_env)
+
+    def assemble(scratch: Path) -> None:
+        (scratch / "CHANGELOG.md").write_text("preview", encoding="utf-8")
+
+    release_preview.run(repo, assemble, "chore: preview")
+    deadline = time.monotonic() + 10
+    while True:
+        events = []
+        for line in trace.read_text(encoding="utf-8").splitlines():
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        graph = next(
+            (
+                event
+                for event in events
+                if event["event"] == "start" and "commit-graph" in event.get("argv", [])
+            ),
+            None,
+        )
+        finished = next(
+            (
+                event
+                for event in events
+                if graph and event["event"] == "exit" and event["sid"] == graph["sid"]
+            ),
+            None,
+        )
+        if finished:
+            break
+        assert time.monotonic() < deadline, "automatic commit-graph maintenance did not finish"
+        time.sleep(0.01)
+    commit = next(
+        event
+        for event in events
+        if event["event"] == "start" and event.get("argv", [])[:2] == ["git", "commit"]
+    )
+    committed = next(
+        event for event in events if event["event"] == "exit" and event["sid"] == commit["sid"]
+    )
+    assert events.index(finished) < events.index(committed)
+    assert finished["code"] == 0

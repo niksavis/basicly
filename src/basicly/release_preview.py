@@ -27,7 +27,16 @@ def _prepare(root: Path, scratch: Path) -> None:
     names = checkout.git(["ls-files", "-z"], cwd=root).stdout.split("\0")
     if any(Path(name).name.startswith(".env") for name in names if name):
         raise RuntimeError("release preview refuses tracked dotenv files")
-    checkout.git(["clone", "--shared", "--quiet", "--", str(root), str(scratch)])
+    checkout.git([
+        "clone",
+        "--shared",
+        "--quiet",
+        "--config",
+        "maintenance.autoDetach=false",
+        "--",
+        str(root),
+        str(scratch),
+    ])
     for key in CONFIG_KEYS:
         value = checkout.git(["config", "--get", key], cwd=root, check=False)
         if value.returncode == 0:
