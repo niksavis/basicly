@@ -20,10 +20,13 @@ CONFIG_KEYS = (
     "core.eol",
     "core.filemode",
 )
-SHARED_DIRECTORIES = (".venv", "node_modules", "build/lefthook")
+SHARED_DIRECTORIES = ("node_modules", "build/lefthook")
 
 
 def _prepare(root: Path, scratch: Path) -> None:
+    names = checkout.git(["ls-files", "-z"], cwd=root).stdout.split("\0")
+    if any(Path(name).name.startswith(".env") for name in names if name):
+        raise RuntimeError("release preview refuses tracked dotenv files")
     checkout.git(["clone", "--shared", "--quiet", "--", str(root), str(scratch)])
     for key in CONFIG_KEYS:
         value = checkout.git(["config", "--get", key], cwd=root, check=False)
@@ -33,8 +36,8 @@ def _prepare(root: Path, scratch: Path) -> None:
     hooks = hooks if hooks.is_absolute() else root / hooks
     if hooks.is_dir():
         shutil.copytree(hooks, scratch / ".git/hooks", dirs_exist_ok=True)
-    checkout.git(["config", "core.hooksPath", ".git/hooks"], cwd=scratch)
-    for name in (*SHARED_DIRECTORIES, ".basicly/bin"):
+    checkout.git(["config", "core.hooksPath", str(scratch / ".git/hooks")], cwd=scratch)
+    for name in (*SHARED_DIRECTORIES, ".venv", ".basicly/bin"):
         source, target = root / name, scratch / name
         if not source.is_dir() or target.exists():
             continue
@@ -45,7 +48,7 @@ def _prepare(root: Path, scratch: Path) -> None:
                 continue
             except OSError:
                 pass
-        shutil.copytree(source, target)
+        shutil.copytree(source, target, symlinks=True, ignore=shutil.ignore_patterns(".env*"))
     local = root / "basicly.local.toml"
     if local.is_file() and not (scratch / local.name).exists():
         shutil.copyfile(local, scratch / local.name)
