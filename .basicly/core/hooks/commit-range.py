@@ -8,7 +8,7 @@ import sys
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # nosec B603 B607
-        ["git", *args], capture_output=True, text=True, check=False
+        ["git", *args], capture_output=True, text=True, encoding="utf-8", check=False
     )
 
 
