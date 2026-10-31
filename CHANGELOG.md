@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.36.1 - 2026-10-31
+
+Delta: v0.36.0..v0.36.1
+
 Coding agents load shorter guidance and skill entries. Detailed test controls, commit
 formats and clean-handoff steps now live in linked package references, ready to read
 when the task needs them.
@@ -13,6 +17,12 @@ when the task needs them.
 - Always-on guidance: shorten orchestration and session instructions (basicly-gtb19bg.3).
 - Skills: load detailed test and commit procedures on demand (basicly-gtb19bg.4).
 - Tracker guidance: describe parent holds in terms of open children (basicly-gtb19bg.4).
+
+### Changed
+
+- Always-loaded guidance is shorter, with session closeout steps available through the session-finish reference and optional orchestration kept in its skill (basicly-gtb19bg.3).
+
+- Commit and test-discipline skills load detailed procedures from linked references while retaining routing and safeguards. Tracker guidance now says only open children hold a parent (basicly-gtb19bg.4).
 
 ## v0.36.0 - 2026-10-31
 
