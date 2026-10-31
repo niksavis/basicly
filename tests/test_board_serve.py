@@ -245,6 +245,8 @@ def test_a_stale_lock_hands_the_fold_back_to_the_viewer(board_repo: Path) -> Non
 def test_the_server_takes_no_lock_and_writes_nothing_at_all(
     board_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    owned_store.kit(board_repo)
+    owned_store.kit(board_repo, "templates")
 
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("the board server wrote state")
