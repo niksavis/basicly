@@ -1,0 +1,1 @@
+- Require explicit commit scope for manual CI runs in basicly and newly scaffolded consumer workflows; refuse missing or invalid ranges before message hooks run and require explicit opt-in for full-history audits.

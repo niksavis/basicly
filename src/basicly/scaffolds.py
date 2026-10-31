@@ -134,6 +134,16 @@ name: basicly-gates
     paths-ignore:
       - ".basicly/ledger/**"
   workflow_dispatch:
+    inputs:
+      base:
+        description: Full ancestor commit SHA for bounded manual validation
+        required: false
+        type: string
+      all_history:
+        description: Explicitly audit all commits reachable from this revision
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -147,21 +157,17 @@ jobs:
           fetch-depth: 0
       - name: Validate commit messages
         shell: bash
+        env:
+          BASICLY_CI_EVENT: ${{ github.event_name }}
+          BASICLY_CI_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASICLY_CI_BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
+          BASICLY_CI_BEFORE: ${{ github.event.before }}
+          BASICLY_CI_ALL_HISTORY: ${{ inputs.all_history }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            base_sha="${{ github.event.pull_request.base.sha }}"
-            head_sha="${{ github.event.pull_request.head.sha }}"
-            range="${base_sha}..${head_sha}"
-          else
-            before_sha="${{ github.event.before }}"
-            zeros="0000000000000000000000000000000000000000"
-            if [ -z "${before_sha}" ] || [ "${before_sha}" = "${zeros}" ]; then
-              range="${{ github.sha }}"
-            else
-              range="${before_sha}..${{ github.sha }}"
-            fi
-          fi
+          range="$(python3 .basicly/core/hooks/commit-range.py)"
           echo "Checking commit messages in range: ${range}"
+          commits_file="$(mktemp)"
+          git log --format='%H' "$range" > "$commits_file"
           failed=0
           while IFS= read -r sha; do
             [ -z "${sha}" ] && continue
@@ -170,7 +176,8 @@ jobs:
             python3 .basicly/core/hooks/commit-msg.py "${msg_file}" || failed=1
             python3 .basicly/core/hooks/tracker-commit-msg.py "${msg_file}" || failed=1
             rm -f "${msg_file}"
-          done < <(git log --format='%H' "${range}")
+          done < "$commits_file"
+          rm -f "$commits_file"
           exit "${failed}"
 
   gates:

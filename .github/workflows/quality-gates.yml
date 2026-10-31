@@ -14,6 +14,16 @@ name: quality-gates
     paths-ignore:
       - ".basicly/ledger/**"
   workflow_dispatch:
+    inputs:
+      base:
+        description: Full ancestor commit SHA for bounded manual validation
+        required: false
+        type: string
+      all_history:
+        description: Explicitly audit all commits reachable from this revision
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -29,23 +39,18 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - name: Validate conventional commit messages
         shell: bash
+        env:
+          BASICLY_CI_EVENT: ${{ github.event_name }}
+          BASICLY_CI_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASICLY_CI_BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
+          BASICLY_CI_BEFORE: ${{ github.event.before }}
+          BASICLY_CI_ALL_HISTORY: ${{ inputs.all_history }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            base_sha="${{ github.event.pull_request.base.sha }}"
-            head_sha="${{ github.event.pull_request.head.sha }}"
-            range="${base_sha}..${head_sha}"
-          else
-            before_sha="${{ github.event.before }}"
-            head_sha="${{ github.sha }}"
-            if [ -z "${before_sha}" ] || [ "${before_sha}" = "0000000000000000000000000000000000000000" ]; then
-              range="${head_sha}"
-            else
-              range="${before_sha}..${head_sha}"
-            fi
-          fi
-
+          range="$(uv run python .basicly/core/hooks/commit-range.py)"
           echo "Checking commit messages in range: ${range}"
 
+          commits_file="$(mktemp)"
+          git log --format='%H' "$range" > "$commits_file"
           failed=0
           count=0
           while IFS= read -r commit_sha; do
@@ -73,7 +78,8 @@ jobs:
             fi
 
             rm -f "${msg_file}"
-          done < <(git log --format='%H' "${range}")
+          done < "$commits_file"
+          rm -f "$commits_file"
 
           if [ "${count}" -eq 0 ]; then
             echo "No commits to validate."
