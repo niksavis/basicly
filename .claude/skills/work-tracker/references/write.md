@@ -117,7 +117,7 @@ A return to a status that the record held before is recorded.
 - **Statuses:** `open`, `in_progress`, `blocked`, `deferred`, `closed`. There is no rework
   status. A rework cycle stays `in_progress`, with a failed gate result and a comment.
 - **Ready set:** each record that is not closed or deferred, has no open blocker and has
-  no children. An `in_progress` record is in it.
+  no open children. An `in_progress` record is in it.
 - **Folded record:** `record`, `status`, `fields`, `comments`, `dates` (`created`,
   `updated`, `closed`, derived from the events), `max_seq`, `tombstoned`, `totals`,
   `dependencies`, `dependents`. The two edge keys are always present, and each edge names
