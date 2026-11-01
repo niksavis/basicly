@@ -27,7 +27,9 @@ class Measurement(Proof):
         self.last_output = ""
         self.log_lock = threading.Lock()
 
-    def run(self, argv: list[str | Path], cwd: Path) -> tuple[str, float, int]:
+    def run(
+        self, argv: list[str | Path], cwd: Path, *, combined: bool = False
+    ) -> tuple[str, float, int]:
         started = time.perf_counter()
         result = subprocess.run(  # nosec B603 # Arguments are fixture-owned argv, never shell syntax.
             [str(arg) for arg in argv],
@@ -53,10 +55,12 @@ class Measurement(Proof):
             self.commands.append(row)
             with (self.root / "commands.jsonl").open("a", encoding="utf-8") as output:
                 output.write(json.dumps(row) + "\n")
-        return result.stdout, duration, result.returncode
+        return result.stdout + (result.stderr if combined else ""), duration, result.returncode
 
-    def call(self, argv: list[str | Path], cwd: Path, expected: int = 0) -> tuple[str, float]:
-        stdout, duration, code = self.run(argv, cwd)
+    def call(
+        self, argv: list[str | Path], cwd: Path, expected: int = 0, *, combined: bool = False
+    ) -> tuple[str, float]:
+        stdout, duration, code = self.run(argv, cwd, combined=combined)
         if code != expected:
             raise RuntimeError(f"Expected exit {expected}, got {code}: {self.last_output[-2000:]}")
         return stdout, duration
