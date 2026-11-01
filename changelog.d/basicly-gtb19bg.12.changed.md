@@ -1,1 +1,0 @@
-- Make direct local verification check staged contents and declared inputs by default. Preserve snapshot context in parallel checks and keep prepared Python environments stable. Catch missing documentation-index entries locally.
