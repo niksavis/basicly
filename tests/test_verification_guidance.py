@@ -15,12 +15,14 @@ def baseline(request: pytest.FixtureRequest) -> str:
     return (Path(__file__).parent.parent / request.param).read_text(encoding="utf-8")
 
 
-def test_commands_put_focused_checks_before_required_full_verification(baseline: str) -> None:
+def test_commands_limit_local_verification_to_staged_changes(baseline: str) -> None:
     commands = baseline.split("## Commands\n", 1)[1].split("\n## ", 1)[0]
     assert "whole suite then one file" not in commands
     assert commands.index("uv run pytest tests/test_cli.py -q") < commands.index(
-        "uv run basicly verify --mode full"
+        "uv run basicly verify --mode staged --affected"
     )
+    assert "uv run basicly verify --mode full" not in commands
+    assert "Full verification runs in CI only" in commands
 
 
 @pytest.mark.parametrize(
@@ -40,8 +42,9 @@ def test_commands_put_focused_checks_before_required_full_verification(baseline:
             ("source or environment inputs change", "rerun affected checks"), id="changed-inputs"
         ),
         pytest.param(("check fails", "fix its cause", "rerun"), id="failed-check"),
+        pytest.param(("Before a local commit", "staged changes"), id="local-commit"),
         pytest.param(
-            ("required full verification", "integrated candidate"), id="release-candidate"
+            ("release candidate", "passing full verification from CI"), id="release-candidate"
         ),
     ],
 )
