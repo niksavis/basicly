@@ -265,10 +265,24 @@ def run_verify(
     config = config or load_verify_config(repo_root)
     checks = config.for_mode(mode)
     selection = (
-        affected.select(repo_root, config.affected, [check.name for check in checks])
+        affected.select(
+            repo_root,
+            config.affected,
+            [check.name for check in checks],
+            {check.name: check.inputs for check in checks},
+        )
         if affected.active(repo_root)
         else None
     )
+    if (
+        selection is not None
+        and mode == "staged"
+        and checks
+        and all("staged" not in check.modes for check in checks)
+    ):
+        selection["mode_fallback"] = (
+            "no staged definitions; using fast definitions on the staged candidate"
+        )
     if refusal := _selection_refusal(repo_root, mode, selection):
         return refusal
     subject_before = landing_guard.before_verification(repo_root, mode, config)

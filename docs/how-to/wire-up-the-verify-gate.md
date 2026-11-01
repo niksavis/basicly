@@ -40,16 +40,22 @@ modes = ["full"]
 
 | Mode | Runs | Put here |
 | --- | --- | --- |
-| `staged` | `basicly verify --mode staged`, with suffix-matching staged paths appended | file-local lint and format |
-| `fast` | pre-commit, a local pre-push, or `basicly verify --mode fast` | lint, type check, a quick unit subset |
-| `full` | ordinary `basicly verify`, pre-push under continuous integration, and loop landings | the whole suite |
+| `staged` | ordinary `basicly verify` | checks for the staged candidate |
+| `fast` | local Git hooks and explicit fast mode | lint, types and focused checks |
+| `full` | explicit full mode in CI | the whole suite |
 
-A `staged` check without `staged_suffix` receives no filenames and uses its
-configured command's scope. Add `--affected` to validate index contents from the
-CLI; ordinary verification reads the working tree. A configured command that is
-missing from `PATH` fails the run with a one-line
-message rather than being skipped — a check you cannot run is not a check that
-passed.
+Ordinary verification reads a temporary copy of the index.
+An unstaged repair cannot hide a staged failure.
+A check with `staged_suffix` receives matching staged filenames.
+A check without that field keeps its declared command scope.
+Missing tools fail the check.
+
+If no staged checks exist, basicly uses fast definitions against the staged candidate.
+It reports that fallback.
+A configuration with only full checks must declare local checks before local verification can pass.
+An empty check configuration still has no checks to run.
+Loop and merge commands retain their separate modes.
+Their migration remains separate work.
 
 ## Scope a check to what it reads
 
@@ -63,16 +69,15 @@ modes = ["fast", "full"]
 inputs = ["src/**/*.py", ".importlinter"]
 ```
 
-The pre-commit hook then skips that check, by name, on a commit whose staged diff
-matches none of its globs — a docs-only commit stops paying for the type checker.
-Nothing else reads the key: `full`, the mode a landing and a push run, runs every
-declared check whatever it says about its inputs, so a skip can never be what a
-green landing rested on.
-
-Two rules keep that safe. A check declaring no `inputs` always runs, so the key is
-opt-in per check and a repo that adds none keeps today's behaviour. And an
-undeterminable diff runs everything: git failing to report the staged paths, or an
-empty index, skips nothing.
+Local Git hooks and staged CLI verification use these input rules.
+A check runs when a staged path matches its globs.
+The CLI reports selected paths and checks.
+It records each selection reason in `.basicly/usage/verify-run.json`.
+Checks with undeclared inputs remain selected when staged changes exist.
+Changes to verification configuration select every local check.
+An unavailable scope retains the declared local check set and reports why.
+With no provider and no staged changes, the CLI runs no checks.
+Full CI verification runs every full-mode check.
 
 Derive the list from the tool's own scope rather than guessing it. A list *narrower*
 than what the check really reads costs a bounced landing — the gate the commit
@@ -101,15 +106,16 @@ snapshot. To request the same behavior explicitly:
 basicly verify --affected
 ```
 
-This command reads configuration and executes checks in a temporary copy of the
-index. An unstaged repair cannot hide a staged failure. It preserves the original
-index and working tree. `--affected` cannot combine with `--fix` or `--issue`;
-use ordinary verification to repair files or record a required gate.
-Ordinary verification and loop landings retain broad checks. A local pre-push runs the
-`fast` checks whose inputs match a file that the pushed commits change; when it cannot
-name those files, it runs every `fast` check. With the `CI` environment variable set,
-pre-push runs the `full` checks.
-Existing installations need no configuration changes when upgrading.
+The ordinary command now uses this staged behavior without requiring `--affected`.
+The flag remains available for explicit selection.
+The original index and working tree stay unchanged.
+Staged checks cannot repair files or record full gate evidence.
+Use `basicly verify --mode fast --fix` for working-tree repairs.
+Stage the repairs and rerun ordinary verification.
+Record full gate evidence in CI with `--mode full --issue ID`.
+A local pre-push runs fast checks for the pushed changes.
+With `CI` set, pre-push runs the full checks.
+Existing fast-only definitions remain usable through the reported staged fallback.
 
 The provider receives one JSON document on stdin:
 
@@ -186,7 +192,8 @@ reuse = "pyright"
 
 The loop carries the actual successful report from its pre-merge verification.
 During post-merge verification, it can reuse a matching compiler result.
-Ordinary `basicly verify` executes its checks afresh by default.
+Staged verification executes selected checks afresh.
+CI can request full verification explicitly.
 The `inputs` globs above select staged checks and cannot establish reusable proof.
 
 The initial recipe supports bundled Pyright 1.1.411 through its reviewed POSIX console launcher
@@ -254,6 +261,8 @@ verification writes cache entries. Isolated engine installations fingerprint
 the actual Pyright interpreter independently from the engine's interpreter.
 
 To execute every check freshly for one command:
+
+Use full mode in CI.
 
 ```sh
 basicly verify --mode full --no-cache
@@ -387,11 +396,10 @@ and reports the gate itself:
 [merged] build -> verify: merged harness/myrepo-etk @ 3f9c1ab07e42 (2 commit(s)) into main @ d605fb4
 ```
 
-Recording the gate out of band during build (`basicly verify --issue …`) makes
+Recording the gate out of band during build (`basicly verify --mode full --issue …`) makes
 the derived phase jump to verify **with the merge skipped**, and the loop then
 ships and closes the bead with the code stranded on the branch. Record it
-manually only *after* a landing has merged — re-verifying after rework, from the
-base checkout:
+manually in CI after landing, from the base checkout:
 
 ```sh
 basicly verify --mode full --issue myrepo-etk

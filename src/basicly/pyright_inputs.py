@@ -150,6 +150,7 @@ def execution_environment(root: Path, environment: Mapping[str, str]) -> dict[st
         "LANGUAGE",
         "TZ",
         "VIRTUAL_ENV",
+        "UV_NO_SYNC",
         "__PYVENV_LAUNCHER__",
     }
     env = {

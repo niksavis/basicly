@@ -87,15 +87,16 @@ def test_affected_cli_refuses_staged_failure_hidden_by_worktree_repair(
     assert "python: FAIL" in capsys.readouterr().out
 
 
-def test_ordinary_cli_still_checks_the_worktree_broadly(
+def test_ordinary_cli_checks_the_staged_candidate_by_default(
     consumer: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(consumer)
-    assert cli.main(["verify"]) == 0
-    assert _events(consumer) == ["python", "web", "guard"]
+    assert cli.main(["verify"]) == 1
+    assert _events(consumer) == ["python", "guard"]
     report = json.loads((consumer / ".basicly/usage/verify-run.json").read_text())
-    assert report["selection"] is None
+    assert report["mode"] == "staged"
+    assert report["selection"]["selected"] == ["python", "guard"]
 
 
 def test_standalone_git_runner_executes_the_same_selected_staged_checks(consumer: Path) -> None:
@@ -212,3 +213,113 @@ def test_snapshot_uses_staged_local_configuration_not_unstaged_invalid_copy(
     assert not report["selection"]["fallback"]
     assert local.read_text() == "invalid TOML [\n"
     assert _git(consumer, "diff", "--cached", "--binary") == original
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_declared_inputs_select_checks_without_a_provider(
+    consumer: Path, monkeypatch: pytest.MonkeyPatch, duplicate: bool
+) -> None:
+    config = consumer / "basicly.toml"
+    text = config.read_text()
+    text = text[text.index("[[verify.checks]]") :]
+    text = text.replace('name = "python"', 'name = "python"\ninputs = ["value.txt"]')
+    text = text.replace('name = "web"', 'name = "web"\ninputs = ["web/**"]')
+    if duplicate:
+        text = text.replace('name = "web"', 'name = "python"')
+    config.write_text(text)
+    _git(consumer, "add", "basicly.toml")
+    _git(consumer, "commit", "-qm", "input rules", "--only", "basicly.toml")
+    monkeypatch.chdir(consumer)
+    assert cli.main(["verify"]) == 1
+    assert _events(consumer) == (["python", "web", "guard"] if duplicate else ["python", "guard"])
+    report = json.loads((consumer / ".basicly/usage/verify-run.json").read_text())
+    assert report["selection"]["paths"] == ["value.txt"]
+    if duplicate:
+        assert report["selection"]["selected"] == ["python", "python", "guard"]
+        assert "duplicate" in report["selection"]["fallback"]
+    else:
+        assert report["selection"]["selected"] == ["python", "guard"]
+        assert "undeclared" in report["selection"]["reasons"]["guard"]
+        assert "inputs" in report["selection"]["reasons"]["web"]
+
+
+def test_documentation_index_failure_is_selected_locally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = Path(__file__).with_name("test_docs_index.py").read_text()
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.name", "Fixture")
+    _git(tmp_path, "config", "user.email", "fixture@example.invalid")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_docs_index.py").write_text(source)
+    (tmp_path / "docs/architecture").mkdir(parents=True)
+    index = tmp_path / "docs/architecture/conventions.md"
+    index.write_text("# Documentation\n")
+    (tmp_path / "basicly.toml").write_text(
+        '[[verify.checks]]\nname="docs-index"\nmodes=["staged"]\n'
+        'inputs=["docs/**/*.md"]\ncommand='
+        + json.dumps([sys.executable, "-m", "pytest", "tests/test_docs_index.py", "-q"])
+        + '\n[[verify.checks]]\nname="unrelated"\nmodes=["staged"]\n'
+        'inputs=["library.py"]\ncommand='
+        + json.dumps([sys.executable, "-c", "raise SystemExit(1)"])
+        + "\n"
+    )
+    _git(tmp_path, "add", "--all")
+    _git(tmp_path, "commit", "-qm", "baseline")
+    (tmp_path / "docs/unlisted.md").write_text("# New evidence\n")
+    _git(tmp_path, "add", "docs/unlisted.md")
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["verify"]) == 1
+    failed = json.loads((tmp_path / ".basicly/usage/verify-run.json").read_text())
+    assert failed["selection"]["selected"] == ["docs-index"]
+    assert failed["checks"][0]["status"] == "fail"
+    assert failed["checks"][1]["status"] == "skip"
+    index.write_text("# Documentation\n\nunlisted.md\n")
+    _git(tmp_path, "add", "docs/architecture/conventions.md")
+    assert cli.main(["verify"]) == 0
+
+
+def test_no_staged_changes_do_not_run_declared_checks(
+    consumer: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = consumer / "basicly.toml"
+    text = config.read_text()
+    config.write_text(text[text.index("[[verify.checks]]") :])
+    _git(consumer, "add", "--all")
+    _git(consumer, "commit", "-qm", "clean baseline")
+    monkeypatch.chdir(consumer)
+    assert cli.main(["verify"]) == 0
+    report = json.loads((consumer / ".basicly/usage/verify-run.json").read_text())
+    assert report["selection"]["selected"] == []
+    assert all(check["status"] == "skip" for check in report["checks"])
+
+
+def test_full_only_configuration_cannot_pass_default_local_verification(
+    consumer: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = consumer / "basicly.toml"
+    config.write_text(config.read_text().replace('["fast", "full"]', '["full"]'))
+    _git(consumer, "add", "basicly.toml")
+    monkeypatch.chdir(consumer)
+    assert cli.main(["verify"]) == 1
+    assert not (consumer / ".basicly/usage/executed").exists()
+
+
+@pytest.mark.parametrize("jobs", [1, 2])
+def test_parallel_checks_keep_their_snapshot_environment(
+    consumer: Path, monkeypatch: pytest.MonkeyPatch, jobs: int
+) -> None:
+    (consumer / ".venv").mkdir()
+    program = (
+        "import os; "
+        'assert os.environ.get("UV_NO_SYNC") == "1"; '
+        'assert os.environ.get("BASICLY_SNAPSHOT_TREE"); '
+        'assert os.environ.get("GIT_INDEX_FILE")'
+    )
+    (consumer / "basicly.toml").write_text(
+        f'[verify]\njobs={jobs}\n[[verify.checks]]\nname="context"\n'
+        'modes=["staged"]\ncommand=' + json.dumps([sys.executable, "-c", program]) + "\n"
+    )
+    _git(consumer, "add", "basicly.toml")
+    monkeypatch.chdir(consumer)
+    assert cli.main(["verify"]) == 0

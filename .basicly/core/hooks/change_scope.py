@@ -27,3 +27,15 @@ def file_scoped(
             skips.setdefault(name, f"no changed {suffix} file")
         scoped.append((name, [*command, *(f"./{p}" if p.startswith("-") else p for p in files)]))
     return scoped
+
+
+def parse_inputs(value: object, label: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if (
+        not isinstance(value, list)
+        or not value
+        or any(not isinstance(item, str) or not item for item in value)
+    ):
+        raise ValueError(f"{label} 'inputs' must be a list of glob strings")
+    return tuple(value)

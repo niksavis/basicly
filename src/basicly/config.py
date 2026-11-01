@@ -799,6 +799,7 @@ class VerifyCheck:
     fix_command: tuple[str, ...] | None = None
     reuse: str | None = None
     exclusive: bool = False
+    inputs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -810,7 +811,10 @@ class VerifyConfig:
     jobs: int = 1
 
     def for_mode(self, mode: str) -> tuple[VerifyCheck, ...]:
-        return tuple(check for check in self.checks if mode in check.modes)
+        selected = tuple(check for check in self.checks if mode in check.modes)
+        if not selected and mode == "staged":
+            return tuple(check for check in self.checks if "fast" in check.modes)
+        return selected
 
 
 def load_verify_config(repo_root: Path) -> VerifyConfig:
@@ -905,6 +909,7 @@ def _parse_verify_check(entry: object) -> VerifyCheck:
         fix_command=tuple(fix_command) if fix_command else None,
         reuse=reuse,
         exclusive=exclusive,
+        inputs=affected.parse_inputs(entry.get("inputs"), f"verify check {name!r}"),
     )
 
 

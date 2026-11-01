@@ -1,2 +1,8 @@
 [verify]
 jobs = "auto"
+
+[[verify.checks]]
+name = "docs-index"
+command = ["uv", "run", "python", "-m", "pytest", "tests/test_docs_index.py", "-q"]
+modes = ["fast", "staged"]
+inputs = ["docs/**/*.md", "tests/test_docs_index.py", "pyproject.toml", "uv.lock"]

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import statistics
 import subprocess  # nosec B404 # Native consumer commands require subprocess execution.
 import sys
@@ -60,7 +61,9 @@ class Proof:
             else repo / ".basicly/usage/calls"
         )
 
-    def call(self, argv: list[str | Path], cwd: Path, expected: int = 0) -> tuple[str, float]:
+    def call(
+        self, argv: list[str | Path], cwd: Path, expected: int = 0, *, combined: bool = False
+    ) -> tuple[str, float]:
         started = time.perf_counter()
         result = subprocess.run(  # nosec B603 # Fixed fixture argv avoids shell parsing.
             [str(arg) for arg in argv],
@@ -88,7 +91,7 @@ class Proof:
                 f"{argv[0]} returned {result.returncode}, expected {expected}: "
                 f"{result.stdout[-1500:]}{result.stderr[-1500:]}"
             )
-        return result.stdout, duration
+        return result.stdout + (result.stderr if combined else ""), duration
 
     def commit(self, repo: Path, record: str, description: str) -> None:
         self.call(["git", "add", "--all"], repo)
@@ -104,7 +107,9 @@ class Proof:
             ("core.hooksPath", ".githooks"),
         ]:
             self.call(["git", "config", key, value], repo)
-        (repo / ".gitignore").write_text(".basicly/usage/\n__pycache__/\n", encoding="utf-8")
+        (repo / ".gitignore").write_text(
+            ".basicly/usage/\n__pycache__/\nnode_modules/\n", encoding="utf-8"
+        )
         (repo / ".githooks").mkdir()
         hook = repo / ".githooks/pre-commit"
         hook.write_text(FOREIGN, encoding="utf-8")
@@ -144,6 +149,13 @@ class Proof:
                 + "\n"
             )
         (repo / "basicly.toml").write_text(config, encoding="utf-8")
+        shutil.copytree(Path(__file__).resolve().parents[1] / "node_modules", repo / "node_modules")
+        shutil.copyfile(
+            Path(__file__).resolve().parents[1] / ".markdownlint-cli2.yaml",
+            repo / ".markdownlint-cli2.yaml",
+        )
+        self.call(["git", "add", "--all"], repo)
+        self.call(["git", "commit", "-m", "chore: prepare consumer repository"], repo)
         _, install_duration = self.call([self.engine, "install"], repo)
         self.call(
             [
@@ -259,7 +271,7 @@ class Proof:
         assert len(foreign_path.read_text().splitlines()) == foreign_count + 1
         after, _ = self.call(["git", "diff", "--cached", "--binary"], repo)
         assert index == after and source.read_text() == "value = 1\n"
-        command = [self.engine, "verify"] + (["--affected"] if scoped else [])
+        command = [self.engine, "verify"]
         before = calls.read_text().splitlines()
         self.call(command, repo, 1 if scoped else 0)
         assert calls.read_text().splitlines()[len(before) :] == (
@@ -271,11 +283,23 @@ class Proof:
         samples = []
         for _ in range(3):
             before = calls.read_text().splitlines()
-            _, duration = self.call(["git", "hook", "run", "pre-commit"], repo)
-            assert calls.read_text().splitlines()[len(before) :] == selected
+            output, duration = self.call(["git", "hook", "run", "pre-commit"], repo, combined=True)
+            executed = calls.read_text().splitlines()[len(before) :]
+            assert executed == [name for name in selected if name in executed]
+            reused = [name for name in selected if name not in executed]
+            if reused:
+                tree, _ = self.call(["git", "write-tree"], repo)
+                interpreter, _ = self.call(
+                    [self.python, "-c", "import sys; print(sys.base_prefix)"], repo
+                )
+                receipts = json.loads((repo / ".basicly/usage/check-passes.json").read_text())
+                receipt = receipts[tree.strip() + ":" + interpreter.strip()]
+                for name in reused:
+                    assert name in receipt["checks"]
+                    assert f"{name} SKIPPED: passed with these inputs" in output
             samples.append(duration)
         return {
-            "commands_per_hook": len(selected),
+            "required_checks": len(selected),
             "selected": selected,
             "warm_hook_samples_s": samples,
             "warm_hook_median_s": statistics.median(samples),

@@ -107,11 +107,12 @@ def _mode_entries(repo_root: Path, mode: str | None) -> list[dict]:
             and all(isinstance(a, str) for a in fix_command)
         ):
             raise SystemExit(f"{source}: check {name!r} 'fix_command' must be a list of strings")
-        inputs = entry.get("inputs")
-        if inputs is not None and not (
-            isinstance(inputs, list) and inputs and all(isinstance(g, str) and g for g in inputs)
-        ):
-            raise SystemExit(f"{source}: check {name!r} 'inputs' must be a list of glob strings")
+        try:
+            _hook_module("change_scope").parse_inputs(
+                entry.get("inputs"), f"{source}: check {name!r}"
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
         if not isinstance(entry.get("exclusive", False), bool):
             raise SystemExit(f"{source}: check {name!r} 'exclusive' must be true or false")
         if mode is None or mode in modes:

@@ -239,3 +239,10 @@ def test_unavailable_tools_interpreter_refuses_reuse(
     monkeypatch.setattr(pyright_inputs.subprocess, "run", fail)
     with pytest.raises(pyright_inputs.UnsupportedInputsError, match="metadata unavailable"):
         pyright_inputs._interpreter_paths(tmp_path / "unknown-python", tmp_path, {})
+
+
+def test_controlled_checks_preserve_the_prepared_environment(tmp_path: Path) -> None:
+    source = {**os.environ, "UV_NO_SYNC": "1", "PYTHONPYCACHEPREFIX": "positive-control"}
+    selected = pyright_inputs.execution_environment(tmp_path, source)
+    assert selected["PYTHONPYCACHEPREFIX"] == "positive-control"
+    assert selected.get("UV_NO_SYNC") == "1"

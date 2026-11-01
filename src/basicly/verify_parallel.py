@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
+from contextvars import copy_context
 from dataclasses import replace
 from pathlib import Path
 
@@ -40,7 +41,7 @@ class ParallelChecks:
     def submit(self, index: int, check: VerifyCheck, annotation: Annotation) -> CheckResult:
         if check.exclusive:
             wait([future for *_, future in self._pending])
-        future = self._pool.submit(self._task, check)
+        future = self._pool.submit(copy_context().run, self._task, check)
         self._pending.append((index, check, annotation, future))
         if check.exclusive:
             wait([future])

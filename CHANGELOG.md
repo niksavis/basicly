@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Direct local verification now checks staged contents by default.
+Declared input rules select the relevant checks.
+Parallel checks preserve the staged environment.
+Full verification remains an explicit CI command.
+
+- Verification: retain fast-only consumer checks and reject configurations with no local checks (basicly-gtb19bg.12).
+- Reliability: preserve snapshot context and prepared environments during parallel checks (basicly-gtb19bg.12).
+
 ## v0.39.0 - 2026-11-01
 
 Delta: v0.38.0..v0.39.0

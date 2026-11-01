@@ -3312,11 +3312,11 @@ def _cmd_policy_rework(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
-    scoped = getattr(args, "affected", False)
+    scoped = getattr(args, "affected", False) or args.mode == "staged"
     if scoped and (args.fix or args.issue):
         ui.fail(
-            "--affected cannot combine with --fix or --issue; "
-            "use basicly verify --fix or basicly verify --issue ID"
+            "Staged checks cannot repair files or record full gate evidence. "
+            "Use --mode fast --fix for repairs. In CI, use --mode full --issue ID."
         )
         return 1
     if args.issue:
@@ -3326,11 +3326,23 @@ def cmd_verify(args: argparse.Namespace) -> int:
             return 1
     if scoped:
         with affected.snapshot(repo_root) as tree:
-            report = verify.run_verify(tree, args.mode, load_verify_config(tree))
+            config = load_verify_config(tree)
+            if args.mode == "staged" and config.checks and not config.for_mode("staged"):
+                ui.fail(
+                    "No local checks are configured. Declare staged or fast checks. "
+                    "Run full checks in CI."
+                )
+                return 1
+            report = verify.run_verify(tree, args.mode, config)
     else:
         report = _verify_working_tree(repo_root, args)
 
     print("\n" + "=" * 60)
+    if report.selection:
+        print(f"[staged] files: {', '.join(report.selection.get('paths', [])) or '(none)'}")
+        print(f"[staged] checks: {', '.join(report.selection['selected']) or '(none)'}")
+    if report.selection and report.selection.get("mode_fallback"):
+        print(f"[staged] {report.selection['mode_fallback']}")
     if report.selection and report.selection.get("fallback"):
         print(f"[affected] {report.selection['fallback']}")
     for result in report.results:
@@ -4930,13 +4942,13 @@ def _add_verify_parser(subparsers: argparse._SubParsersAction) -> None:
     verify_parser.add_argument(
         "--affected",
         action="store_true",
-        help="Run an optional consumer provider against staged contents",
+        help="Select checks against the staged candidate",
     )
     verify_parser.add_argument(
         "--mode",
         choices=VERIFY_MODES,
-        default="full",
-        help="Which configured check set to run (default: full)",
+        default="staged",
+        help="Which configured check set to run (default: staged)",
     )
     verify_parser.add_argument(
         "--fix",

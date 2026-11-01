@@ -26,9 +26,9 @@ def _prepare(root: Path, env: dict[str, str], call: Callable[..., float], uv: st
     )
     call([uv, "sync", "--offline"])
     repository = Path(__file__).resolve().parents[1]
-    for name in ("package.json", "package-lock.json"):
+    for name in ("package.json", "package-lock.json", ".markdownlint-cli2.yaml"):
         shutil.copyfile(repository / name, root / name)
-    call(["npm", "ci", "--offline", "--no-audit", "--no-fund"])
+    shutil.copytree(repository / "node_modules", root / "node_modules")
     binary = root / ".venv" / ("Scripts" if os.name == "nt" else "bin")
     env["PATH"] = str(binary) + os.pathsep + env.get("PATH", "")
     env["VIRTUAL_ENV"] = str(root / ".venv")
