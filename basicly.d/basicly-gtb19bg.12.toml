@@ -3,6 +3,6 @@ jobs = "auto"
 
 [[verify.checks]]
 name = "docs-index"
-command = ["uv", "run", "python", "-m", "pytest", "tests/test_docs_index.py", "-q"]
+command = ["uv", "run", "python", "-m", "pytest", "tests/test_docs_index.py", "tests/test_docs_drift.py", "tests/test_harness_loop_skill.py", "-q"]
 modes = ["fast", "staged"]
-inputs = ["docs/**/*.md", "tests/test_docs_index.py", "pyproject.toml", "uv.lock"]
+inputs = ["docs/**/*.md", ".basicly/core/skills/harness-loop/**", "basicly.toml", "basicly.d/*.toml", "tests/test_docs_index.py", "tests/test_docs_drift.py", "tests/test_harness_loop_skill.py", "pyproject.toml", "uv.lock"]

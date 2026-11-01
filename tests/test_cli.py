@@ -35,11 +35,14 @@ REPO_ROOT = Path(__file__).parent.parent
 
 
 @pytest.mark.parametrize("fresh", [True, False])
+@pytest.mark.parametrize("mode", ["staged", "fast"])
 def test_verify_cli_fresh_control_overrides_enabled_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh: bool, mode: str
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / CONFIG_FILE).write_text("[verify]\ncache=true\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", CONFIG_FILE], cwd=tmp_path, check=True)
     settings: list[bool] = []
 
     def run(_root, mode, config):
@@ -47,7 +50,7 @@ def test_verify_cli_fresh_control_overrides_enabled_cache(
         return verify.VerifyReport(mode, ())
 
     monkeypatch.setattr(verify, "run_verify", run)
-    assert cli.main(["verify", *(["--no-cache"] if fresh else [])]) == 0
+    assert cli.main(["verify", "--mode", mode, *(["--no-cache"] if fresh else [])]) == 0
     assert settings == [not fresh]
 
 

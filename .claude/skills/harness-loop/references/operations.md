@@ -144,8 +144,8 @@ The build-to-verify `loop advance` rebases, runs verify, records the required ga
 If you record the gate first (`basicly verify --mode full --issue`), the phase jumps to verify without the merge.
 Ship refuses to close an issue whose branch has not landed.
 After landing, reuse passing evidence only when the existing engine establishes equivalent trusted inputs.
-Run affected local checks after a failure.
-Record full gate evidence in CI after landing:
+Run affected checks locally after a failure.
+Record full gate evidence in CI from the base checkout only after landing:
 
 ```sh
 basicly verify --mode full --issue <id>

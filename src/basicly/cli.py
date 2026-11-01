@@ -3326,7 +3326,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
             return 1
     if scoped:
         with affected.snapshot(repo_root) as tree:
-            config = load_verify_config(tree)
+            declared = load_verify_config(tree)
+            config = replace(declared, cache=declared.cache and not args.no_cache)
             if args.mode == "staged" and config.checks and not config.for_mode("staged"):
                 ui.fail(
                     "No local checks are configured. Declare staged or fast checks. "
