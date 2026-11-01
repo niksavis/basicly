@@ -6,12 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.39.0 - 2026-11-01
+
+Delta: v0.38.0..v0.39.0
+
 The evaluator can compare plain agent use, Git gates and full basicly guidance.
 A published pilot reports acceptance, elapsed time and tokens for a prepared documentation task.
 It does not establish overall benefit or monetary cost.
 
 - Measurement: separate installation from task setup and verify native Codex loading (basicly-gtb19bg.2).
 - Reporting: keep failed attempts, setup time and unknown costs visible (basicly-gtb19bg.2).
+
+### Added
+
+- Add separate plain, gates-only and full-basicly evaluator modes. Verify native Codex loading and report cost per independently accepted task. Keep setup time separate and preserve unknown measurements. (basicly-gtb19bg.2)
 
 ## v0.38.0 - 2026-11-01
 
