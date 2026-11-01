@@ -1,1 +1,0 @@
-- Session startup and worker prompts use current task views. Handoffs marked `[new facts]` retain earlier recovery facts without repeated summaries. Oversized briefs deliver each fact once. Session-finish asks only for new recovery information. Local guidance scopes verification to staged changes and reserves full verification for CI.

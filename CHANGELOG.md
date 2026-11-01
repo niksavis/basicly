@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.38.0 - 2026-11-01
+
+Delta: v0.37.1..v0.38.0
+
 Agents can recover task state with less repeated reporting. New recovery facts
 remain visible across later handovers, and oversized worker briefs deliver each
 fact once. Local verification guidance scopes checks to staged changes and
@@ -13,6 +17,12 @@ reserves full verification for CI.
 
 - Recovery: preserve new facts and use current task views before retrieving history (basicly-gtb19bg.11).
 - Command waiting: keep the original execution handle and command status through bounded waits (basicly-gtb19bg.27).
+
+### Changed
+
+- Session startup and worker prompts use current task views. Handoffs marked `[new facts]` retain earlier recovery facts without repeated summaries. Oversized briefs deliver each fact once. Session-finish asks only for new recovery information. Local guidance scopes verification to staged changes and reserves full verification for CI. (basicly-gtb19bg.11)
+
+- The cli-tools skill now links to bounded-wait guidance that keeps one execution handle, preserves completion and cancellation status, and distinguishes bounded waiting from native automatic wake-up. (basicly-gtb19bg.27)
 
 ## v0.37.1 - 2026-10-31
 
