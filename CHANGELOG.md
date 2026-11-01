@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Agents can recover task state with less repeated reporting. New recovery facts
+remain visible across later handovers, and oversized worker briefs deliver each
+fact once. Local verification guidance scopes checks to staged changes and
+reserves full verification for CI.
+
+- Recovery: preserve new facts and use current task views before retrieving history (basicly-gtb19bg.11).
+- Command waiting: keep the original execution handle and command status through bounded waits (basicly-gtb19bg.27).
+
 ## v0.37.1 - 2026-10-31
 
 Delta: v0.37.0..v0.37.1
