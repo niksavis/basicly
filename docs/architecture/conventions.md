@@ -224,6 +224,9 @@ The ongoing harness redesign keeps its bounded evidence in
 [harness-task-state.md](../design/harness-task-state.md). The tracker retains remaining
 acceptance and rollout work; these documents do not declare the epic complete.
 
+The [value pilot](../research/harness-value-pilot.md) and its JSON record the measured comparison.
+They leave monetary cost and broader reliability unresolved.
+
 **Three companion files sit beside the architecture document, and none is reference
 material.**
 
