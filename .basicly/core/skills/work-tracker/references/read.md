@@ -21,8 +21,10 @@ basicly tracker items --json              # one slim item per record, for a tool
 basicly tracker describe --json           # the adapter description: watch globs, writes, statuses
 ```
 
-The current view keeps every ordinary clarification and the latest handoff per kind and
-writer, including concurrent handoffs. It does not assert a complete original contract.
+The current view keeps every ordinary clarification, every handoff marked `[new facts]`
+and the latest summary handoff per kind and writer, including concurrent handoffs.
+Put `[new facts]` immediately after a session or model handoff marker when a note adds
+recovery facts instead of replacing a summary. The view does not assert a complete original contract.
 For omitted handoffs or process detail, run `basicly tracker show <id> --view history
 --snapshot <snapshot_identity>` with the identity the current view returned. A changed
 record refuses stale retrieval. Source truncation remains explicit and cannot be undone

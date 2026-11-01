@@ -131,6 +131,11 @@ def _handoff_key(note: Mapping[str, Any]) -> tuple[str, str] | None:
     text, writer = note.get("text"), note.get("writer")
     if not isinstance(text, str) or not isinstance(writer, str) or not writer:
         return None
+    if re.match(
+        r"^\[(?:model handoff|session handover \d{4}-\d{2}-\d{2})\]\s+\[new facts\](?:\s|$)",
+        text,
+    ):
+        return None
     if text.startswith("[model handoff]"):
         return "model handoff", writer
     if re.match(r"^\[session handover \d{4}-\d{2}-\d{2}\]", text):
@@ -216,8 +221,9 @@ def read_view(
             "omitted_notes": len(notes) - len(retained),
         },
         "coverage_and_omissions": (
-            "Current fields, artifacts, all ordinary clarification notes and the latest "
-            "handoff per kind and writer. Older handoffs and process detail remain in "
+            "Current fields, artifacts, all ordinary clarification notes, every handoff "
+            "marked [new facts] and the latest summary handoff per kind and writer. "
+            "Older summaries and process detail remain in "
             "snapshot-checked history. Handoffs are recovery guidance, not a complete "
             "contract; retrieve history for unresolved or conflicting facts."
         ),

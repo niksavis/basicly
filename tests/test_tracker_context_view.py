@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,54 @@ import pytest
 
 from basicly import cli, dispatch_brief, owned_store, tracker
 from tests import flipped_tracker
+
+
+@pytest.mark.parametrize("phase", ["session", "validate", "curate", "review", "build"])
+@pytest.mark.parametrize("status", ["in_progress", "closed"])
+def test_runtime_recovery_reads_current_facts_without_replaying_old_handoffs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    phase: str,
+    status: str,
+) -> None:
+    repo = fixture(tmp_path)
+    kit = tracker.kit(repo, "events")
+    kit.append(
+        tracker.ledger_dir(repo),
+        [kit.Draft("basicly-task", kit.KIND_STATUS, {"status": status})],
+    )
+    monkeypatch.chdir(repo)
+    if phase == "session":
+        assert cli.main(["session", "start"]) == 0
+        prompt = capsys.readouterr().out
+    else:
+        prompt = {
+            "validate": dispatch_brief.validate_prompt("basicly-task"),
+            "curate": dispatch_brief.curate_prompt("basicly-task"),
+            "review": dispatch_brief.review_prompt("basicly-task", "correctness"),
+            "build": dispatch_brief.dispatch_prompt("basicly-task"),
+        }[phase]
+    command = re.search(r"`basicly (tracker show basicly-task[^`]*)`", prompt)
+    assert command is not None, prompt
+    before = kit.read_events(tracker.ledger_dir(repo))
+    assert cli.main(command[1].split()) == 0
+    current = json.loads(capsys.readouterr().out)
+    assert current["status"] == status
+    assert current["fields"]["requirements"] == "Preserve zero."
+    rendered = json.dumps(current)
+    for fact in (
+        "Active correction: reject strings too.",
+        "Keep negative numbers",
+        "preview running",
+        "consumer check",
+        "preserve empty input",
+    ):
+        assert fact in rendered
+    assert "Historical finished step" not in rendered
+    assert "Old session report" not in rendered
+    assert current["history_reference"]["omitted_notes"] == 2
+    assert before == kit.read_events(tracker.ledger_dir(repo))
 
 
 def fixture(tmp_path: Path) -> Path:
@@ -91,6 +140,49 @@ def test_current_history_retrieval_refuses_a_changed_snapshot(tmp_path: Path) ->
             view="history",
             snapshot=current["snapshot_identity"],
         )
+
+
+@pytest.mark.parametrize("marker", ["[model handoff]", "[session handover 2026-11-01]"])
+@pytest.mark.parametrize("standalone", [False, True])
+def test_new_recovery_facts_do_not_replace_previous_decisions_or_process_handles(
+    tmp_path: Path, marker: str, standalone: bool
+) -> None:
+    repo = fixture(tmp_path)
+    kit = tracker.kit(repo, "events")
+    for text in (
+        marker + " Previous summary: protected output already verified.",
+        marker + " [new facts] Decision: preserve the existing runner handle owned-handle-41.",
+        marker + " [new facts] Blocker: external approval remains pending.",
+    ):
+        kit.append(
+            tracker.ledger_dir(repo),
+            [kit.Draft("basicly-task", kit.KIND_COMMENT, {"text": text})],
+            actor="agent:owner",
+        )
+    if standalone:
+        command = [
+            sys.executable,
+            "-I",
+            "-S",
+            str(repo / tracker.KIT_TRACKER_DIR / "cli.py"),
+            "show",
+            str(tracker.ledger_dir(repo)),
+            "basicly-task",
+            "--view",
+            "current",
+        ]
+        result = subprocess.run(
+            command, capture_output=True, text=True, encoding="utf-8", check=True
+        )
+        current = json.loads(result.stdout)
+    else:
+        current = owned_store.packaged_kit("record_view").read_view(
+            tracker.ledger_dir(repo), "basicly-task", view="current"
+        )
+    rendered = json.dumps(current)
+    assert "protected output already verified" in rendered
+    assert "owned-handle-41" in rendered
+    assert "external approval remains pending" in rendered
 
 
 def test_current_view_does_not_truncate_ordinary_notes_or_unknown_markers(tmp_path: Path) -> None:

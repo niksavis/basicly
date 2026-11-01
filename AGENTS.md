@@ -50,18 +50,15 @@ While editing, run the affected test file (example):
 uv run pytest tests/test_cli.py -q
 ```
 
-On the integrated candidate, run required full verification:
+Before a local commit, verify the staged changes:
 
 ```sh
-uv run basicly verify --mode full
+uv run basicly verify --mode staged --affected
 ```
 
-Lint / format:
+Full verification runs in CI only. Do not run the full suite locally on routine edits or integration.
 
-```sh
-uv run ruff check
-uv run ruff format --check
-```
+The staged command includes lint, format and type checks. Do not repeat repository-wide lint or format checks for the same changes.
 
 Projection gates (after editing catalog sources):
 

@@ -317,7 +317,8 @@ def test_large_history_keeps_the_envelope_bounded_and_delivers_early_corrections
     assert current["snapshot_identity"] == full["snapshot_identity"] == history["snapshot_identity"]
     assert current["required_hydration"]
     prompt = dispatch_brief.task_prompt(repo, "basicly-task")
-    assert "Mandatory full contract delivery" in prompt
+    assert '"required_hydration": []' in prompt
+    assert prompt.count("bounded task") == 1
     assert "Active correction: preserve whitespace." in prompt
     assert "Historical note 999:" in prompt
     assert "界" * 6000 in prompt
@@ -338,6 +339,29 @@ def test_small_contract_is_inline_and_stale_snapshot_is_refused(tmp_path: Path) 
         dispatch_brief.task_view(
             repo, "basicly-task", view="full", snapshot=current["snapshot_identity"]
         )
+
+
+def test_oversized_dispatch_delivers_each_recorded_fact_once(tmp_path: Path) -> None:
+    repo = flipped_tracker.flipped_repo(tmp_path)
+    flipped_tracker.seed(
+        repo,
+        "basicly-task",
+        title="unique-task-title",
+        description="unique-task-context",
+        requirements="unique-task-requirement " + "界" * 6000,
+        acceptance_criteria="unique-task-acceptance",
+    )
+    tracker.add_comment(repo, "basicly-task", "unique-owner-correction")
+    prompt = dispatch_brief.task_prompt(repo, "basicly-task")
+    for fact in (
+        "unique-task-title",
+        "unique-task-context",
+        "unique-task-requirement",
+        "unique-task-acceptance",
+        "unique-owner-correction",
+    ):
+        assert prompt.count(fact) == 1, fact
+    assert "界" * 6000 in prompt
 
 
 def test_brief_refuses_a_record_changed_during_artifact_reads(

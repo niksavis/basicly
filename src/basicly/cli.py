@@ -939,10 +939,13 @@ def _say_session_handover(report: dict[str, Any]) -> None:
     if note is None:
         ui.say(
             f"handover: none - no note starts with `{handover['marker']}`; "
-            "the `session-finish` skill writes one on the root the session worked"
+            "use `session-finish` when new recovery facts need recording"
         )
         return
-    ui.say(f"Handover ({note['record']}, {note['at']}) - `basicly tracker show {note['record']}`")
+    ui.say(
+        f"Handover ({note['record']}, {note['at']}) - "
+        f"`basicly tracker show {note['record']} --view current`"
+    )
     ui.say(f"        {note['text']}")
 
 
