@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from harness_trial_arms import VALUE_MODES, select_setup
 from harness_trial_protocols import configuration_inputs
 from harness_trial_results import summarize
 from harness_trial_runner import execute_trial, schedule, validate_paths
@@ -36,7 +37,11 @@ def bind_case(case: dict[str, Any], parameters: dict[str, str]) -> dict[str, Any
     return {
         **case,
         "prompt": expand(case["prompt"]),
-        "setup": [[expand(arg) for arg in command] for command in case.get("setup", [])],
+        **{
+            name: [[expand(arg) for arg in command] for command in case[name]]
+            for name in ("setup", "task_setup", "harness_setup")
+            if name in case
+        },
         "check": [expand(arg) for arg in case["check"]],
     }
 
@@ -83,6 +88,7 @@ def runtime_manifest(spec: runner.RunnerSpec, configuration_files: list[Path]) -
             for name in (
                 "eval_harness_trials.py",
                 "harness_trial_results.py",
+                "harness_trial_arms.py",
                 "harness_trial_runner.py",
                 "harness_trial_protocols.py",
                 "harness_trial_transcripts.py",
@@ -91,7 +97,7 @@ def runtime_manifest(spec: runner.RunnerSpec, configuration_files: list[Path]) -
     }
 
 
-def load_arm(value: str) -> tuple[str, dict[str, str], str]:
+def load_arm(value: str) -> tuple[str, dict[str, str], str, str]:
     name, separator, filename = value.partition("=")
     if not separator or not name or not name.replace("-", "").isalnum():
         raise ValueError("arm must be NAME=SNAPSHOT.json with an alphanumeric or hyphenated name")
@@ -103,7 +109,12 @@ def load_arm(value: str) -> tuple[str, dict[str, str], str]:
     ):
         raise ValueError("arm snapshot requires a files object mapping paths to text")
     validate_paths(list(files))
-    return name, files, hashlib.sha256(raw).hexdigest()
+    mode = payload.get("mode", "guidance")
+    if mode not in {"guidance", *VALUE_MODES}:
+        raise ValueError("unknown arm mode")
+    if mode != "guidance" and files:
+        raise ValueError("value arms cannot replace guidance files")
+    return name, files, hashlib.sha256(raw).hexdigest(), mode
 
 
 def make_spec(family: str, model: str, effort: str) -> runner.RunnerSpec:
@@ -135,12 +146,25 @@ def validate_trial_location(output: Path) -> None:
             )
 
 
+def load_arms(values: list[str], family: str) -> list[tuple[str, dict[str, str], str, str]]:
+    loaded = [load_arm(value) for value in values]
+    modes = {name: mode for name, _, _, mode in loaded}
+    if len(modes) != len(loaded):
+        raise ValueError("duplicate arm names")
+    value_comparison = any(mode != "guidance" for mode in modes.values())
+    if value_comparison and (len(loaded) != 3 or set(modes.values()) != VALUE_MODES):
+        raise ValueError("value comparison requires plain, gates-only and full-basicly modes")
+    if value_comparison and family != "codex":
+        raise ValueError("value trials currently require Codex loading controls")
+    return loaded
+
+
 def run_batch(args: argparse.Namespace) -> list[dict[str, Any]]:
     validate_trial_location(args.output)
-    loaded = [load_arm(value) for value in args.arm]
-    arms = {name: files for name, files, _ in loaded}
-    if len(arms) != len(loaded):
-        raise ValueError("duplicate arm names")
+    loaded = load_arms(args.arm, args.family)
+    arms = {name: files for name, files, _, _ in loaded}
+    modes = {name: mode for name, _, _, mode in loaded}
+    value_comparison = any(mode != "guidance" for mode in modes.values())
     fixture_bytes = args.cases.read_bytes()
     cases = json.loads(fixture_bytes)["cases"]
     by_id = {case["id"]: case for case in cases}
@@ -151,6 +175,9 @@ def run_batch(args: argparse.Namespace) -> list[dict[str, Any]]:
         raise ValueError("unknown case selection")
     parameters, wheels = wheel_inputs(args)
     by_id = {name: bind_case(by_id[name], parameters) for name in requested}
+    for case in by_id.values():
+        for mode in modes.values():
+            select_setup(case, mode)
     planned = schedule(requested, list(arms), args.repetitions, seed=args.seed)
     spec = make_spec(args.family, args.model, args.effort)
     configuration_files = getattr(args, "host_config", [])
@@ -161,14 +188,18 @@ def run_batch(args: argparse.Namespace) -> list[dict[str, Any]]:
     args.output.mkdir(parents=True, exist_ok=False)
     metadata = {
         "schema_version": 1,
-        "experiment": "guidance snapshot comparison; not a whole-harness speed claim",
+        "experiment": "repository harness value comparison"
+        if value_comparison
+        else "guidance snapshot comparison; not a whole-harness speed claim",
+        "arm_modes": modes,
+        "stopping_limits": {"timeout_s": args.timeout, "repetitions": args.repetitions},
         "family": args.family,
         "model": args.model,
         "effort": args.effort,
         "seed": args.seed,
         "case_sha256": hashlib.sha256(fixture_bytes).hexdigest(),
         "wheel_sha256": wheels,
-        "arms": {name: digest for name, _, digest in loaded},
+        "arms": {name: digest for name, _, digest, _ in loaded},
         "schedule": planned,
         "dry_run": args.dry_run,
         "runtime": runtime_manifest(spec, configuration_files),
@@ -180,7 +211,8 @@ def run_batch(args: argparse.Namespace) -> list[dict[str, Any]]:
     reports = []
     for index, (repetition, case_id, arm) in enumerate(planned):
         case = {
-            **by_id[case_id],
+            **select_setup(by_id[case_id], modes[arm]),
+            "arm_mode": modes[arm],
             "guidance_files": arms[arm],
             "configuration_files": [str(path) for path in configuration_files],
         }

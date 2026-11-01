@@ -1,0 +1,1130 @@
+{
+  "schema_version": 1,
+  "source_base_commit": "7914bc48",
+  "scope": "Prepared documentation task with an evaluator-owned normal Git commit.",
+  "experiment": {
+    "schema_version": 1,
+    "experiment": "repository harness value comparison",
+    "arm_modes": {
+      "plain": "plain",
+      "gates-only": "gates-only",
+      "full-basicly": "full-basicly"
+    },
+    "stopping_limits": {
+      "timeout_s": 180.0,
+      "repetitions": 3
+    },
+    "family": "codex",
+    "model": "gpt-5.6-sol",
+    "effort": "medium",
+    "seed": 17,
+    "case_sha256": "426158cbe268d7bad8554296661d020a880c5b072fe488c5ac21344ad604e1b7",
+    "wheel_sha256": {},
+    "arms": {
+      "plain": "609949a232a14bb200f754c9434919f92ac11748d566ad5e1f80c529ca27f8e7",
+      "gates-only": "b5d7a39b8fe834ee13ed1ac7871b570c3a4dfc62017cd3aea78683941f79bf40",
+      "full-basicly": "0f578ceeab135000250c51e496fc949878183250a0168c8a69c3b2b58480c412"
+    },
+    "schedule": [
+      [
+        0,
+        "docs-only",
+        "plain"
+      ],
+      [
+        0,
+        "docs-only",
+        "gates-only"
+      ],
+      [
+        0,
+        "docs-only",
+        "full-basicly"
+      ],
+      [
+        1,
+        "docs-only",
+        "plain"
+      ],
+      [
+        1,
+        "docs-only",
+        "full-basicly"
+      ],
+      [
+        1,
+        "docs-only",
+        "gates-only"
+      ],
+      [
+        2,
+        "docs-only",
+        "full-basicly"
+      ],
+      [
+        2,
+        "docs-only",
+        "plain"
+      ],
+      [
+        2,
+        "docs-only",
+        "gates-only"
+      ]
+    ],
+    "dry_run": false,
+    "runtime": {
+      "adapter_version": "codex-cli 0.166.0",
+      "executable_sha256": "b8a11fedf24b2dfb59a70c9e52b030f9a508dcd49cd2dd0d41956f4c785156b8",
+      "harness_version": "0.38.0",
+      "python_version": "3.14.10",
+      "system": "Linux",
+      "machine": "x86_64",
+      "model": "gpt-5.6-sol",
+      "sandbox": "workspace-write",
+      "approval": "never",
+      "command": [
+        "codex",
+        "exec",
+        "{prompt}",
+        "-c",
+        "model_reasoning_effort=\"medium\""
+      ],
+      "host_configuration_verified": false,
+      "declared_configuration": {},
+      "configuration_limits": "Declared local inputs and argv only; remote policy and inherited loading remain unverified.",
+      "source_sha256": {
+        "eval_harness_trials.py": "14ce9f783aa8145cf0143b52b4ac62db3820173638697593fc359d1a7fae4476",
+        "harness_trial_results.py": "de43cbceada21ab37172085da1740bccf0fdec304405b3d03882072c897afbf5",
+        "harness_trial_arms.py": "380d8faea1220747b01e6bfcd94442ddcf8b014da386dc0dbd5b505fa1321437",
+        "harness_trial_runner.py": "478a5d1f5f273b9919c3cacd64f47d80c8c064fc07e5bc844159bc39a9384edd",
+        "harness_trial_protocols.py": "b6382736fb30f82335ee1a6acb18f28ad0cfbedca142d83f5fc14f0bdf7b0944",
+        "harness_trial_transcripts.py": "f3cb9315061647a9daef2ba8152a7c63b526c11cc8888a32ec4ad1cf9e0458a1"
+      }
+    },
+    "host_configuration": "Inherited host defaults; record and reconcile before causal claims."
+  },
+  "tier_resolution": {
+    "alias": null,
+    "model": "gpt-5.6-sol",
+    "reason": null,
+    "skipped": [],
+    "source": "argument",
+    "surface": "openai",
+    "tier": "high",
+    "vendor": "openai"
+  },
+  "model_map_sha256": "c73d9c611fecb7bcdb220cb5403179c7537138dfd952f8b372f4a929e3632ade",
+  "trials": [
+    {
+      "id": "trial-0000",
+      "arm": "plain",
+      "case": "docs-only",
+      "repetition": 0,
+      "outcome": "passed",
+      "duration_s": 21.879243279000548,
+      "agent_duration_s": 21.795294042000023,
+      "setup_duration_s": 0.9117096750005658,
+      "total_duration_s": 22.790954024000712,
+      "tokens": 116428,
+      "cost": null,
+      "cost_source": "unknown",
+      "usage": {
+        "tokens": 116428,
+        "cost": null,
+        "estimated": false,
+        "input_tokens": 115188,
+        "output_tokens": 1240,
+        "cache_read_tokens": 105728,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 468,
+        "credits": null,
+        "cache_write_5m_tokens": null,
+        "cache_write_1h_tokens": null
+      },
+      "session_id": "01a1977e-9865-7010-8e42-b03419ebb367",
+      "starting_revision": "8643fba3195fba57caf634c5d3f30c2f339a3bdb",
+      "task_files": {
+        "tool.py": "77ec3701f8211ca24c449f4f6b480f8b9967c1d70952a11cae95a5a1d004ec65",
+        "README.md": "e55af654fc28bc813e930227b0c8faa358504f311a668a567e30645a9ca61e48"
+      },
+      "arm_conditions": {
+        "mode": "plain",
+        "installed": false,
+        "repository_instructions": false,
+        "loading": {
+          "trace_sha256": "a50f7e1d559dc0aadcd65bd1acad816274854d8a4559915326aa3a2115480005",
+          "instructions_loaded": false,
+          "project_skills_loaded": [],
+          "native_model_verified": true,
+          "native_approval": [
+            "never"
+          ],
+          "native_effort": [
+            "medium"
+          ],
+          "native_sandbox": [
+            {
+              "exclude_slash_tmp": false,
+              "exclude_tmpdir_env_var": false,
+              "network_access": false,
+              "type": "workspace-write"
+            }
+          ]
+        },
+        "loading_verified": true
+      },
+      "acceptance_outcome": "passed"
+    },
+    {
+      "id": "trial-0001",
+      "arm": "gates-only",
+      "case": "docs-only",
+      "repetition": 0,
+      "outcome": "passed",
+      "duration_s": 30.513410350999948,
+      "agent_duration_s": 27.77446852799949,
+      "setup_duration_s": 3.20580391600015,
+      "total_duration_s": 33.719215527000415,
+      "tokens": 264667,
+      "cost": null,
+      "cost_source": "unknown",
+      "usage": {
+        "tokens": 264667,
+        "cost": null,
+        "estimated": false,
+        "input_tokens": 262854,
+        "output_tokens": 1813,
+        "cache_read_tokens": 233344,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 473,
+        "credits": null,
+        "cache_write_5m_tokens": null,
+        "cache_write_1h_tokens": null
+      },
+      "session_id": "01a1977e-fa39-7022-8cd6-d75e214fc46d",
+      "starting_revision": "8643fba3195fba57caf634c5d3f30c2f339a3bdb",
+      "task_files": {
+        "tool.py": "77ec3701f8211ca24c449f4f6b480f8b9967c1d70952a11cae95a5a1d004ec65",
+        "README.md": "e55af654fc28bc813e930227b0c8faa358504f311a668a567e30645a9ca61e48"
+      },
+      "arm_conditions": {
+        "mode": "gates-only",
+        "installed": true,
+        "repository_instructions": false,
+        "instructions_sha256": "e6b7117476c14261029e1d44b3b5880c9ae22a27deada7124cb336a45b190934",
+        "configuration_sha256": "71c9757025644e2e3249ac9d0c6b4586810c9de116b4f364edb68a28428dcef1",
+        "hook_sha256": {
+          "pre-commit": "1c1b9cf7dfff3220ff1209c892383c1d827bc8b47076074847a88eb671a53e54",
+          "commit-msg": "7ec56e1ef7664a7e47a83494b4eeb2cad651155783aebd83b66896b09c8e6fab"
+        },
+        "skill_sha256": {
+          ".agents/skills/best-practices-audit/SKILL.md": "b9a28ab8c6d80cf40f3ee302090d9038146aa62e7c87da3c667848a822ceab28",
+          ".agents/skills/catalog-authoring/SKILL.md": "500e55b2445f4c92b0a9dbec9362d64c779b69087299966b67eece353f6859d1",
+          ".agents/skills/cli-tools/SKILL.md": "a06b09d2c58ade0a83986bcea97b728184f7757c31228c8511c7a7607fc62ce3",
+          ".agents/skills/conventional-commits/SKILL.md": "19550aa9e3697bbb9d5dcc052adb834c2b805345a052b6673f7012da7e471bca",
+          ".agents/skills/decompose-plan/SKILL.md": "65b1d9b1d79e2560366a4ea5f0135aac26f6c64fc47d934ebf1f91b6185a2fab",
+          ".agents/skills/falsify-first/SKILL.md": "c66504f999bfb04af72cf3675c104d5beae3b730835b8f12925cd74ada3013f4",
+          ".agents/skills/find-skills/SKILL.md": "c17c472b1dc6ca97d36e269c32700e59435fed506b18187ff7b1519b55e920aa",
+          ".agents/skills/harness-client/SKILL.md": "e3287674e39d9a79585f609239bb0fee8324067ace4eea2b1b085eebfee85035",
+          ".agents/skills/harness-loop/SKILL.md": "e5ca99b56dc0a9a068ab75f7f0744cb808bcb529423aacae87f66a4be35e42f6",
+          ".agents/skills/interface-facts/SKILL.md": "1cf282d0a5e4ed0819cf04a16f87cdf9f389506705ba5ee8dabd337a82d0cbeb",
+          ".agents/skills/no-comments/SKILL.md": "b660cb424e04ffbfd8d576062a903df9d41748a1873721e673a329971da98188",
+          ".agents/skills/plain-english/SKILL.md": "c9df902810e0477c027f590ba58b11a12522e24a15c235a0498968d7c241cea8",
+          ".agents/skills/python/SKILL.md": "a16908dd7ef58586393c8949a34eb4f6bccca0f91f2cbc0268796bad8d98def2",
+          ".agents/skills/release-process/SKILL.md": "1a842749dc5880501fd9ee3d118d297b69d69109f37699f29b5e28c743eaefdf",
+          ".agents/skills/repair-in-place/SKILL.md": "5467ac5f66a5f7e23904ff98f6aeda41c3ad1498e164374bd025f389ae740e4b",
+          ".agents/skills/retention-probe/SKILL.md": "7baf8de7783a65a825c20baade592b22030254ac7919f933bb32693303853211",
+          ".agents/skills/root-cause/SKILL.md": "fcdf5a36ed56d7cb18057b848769537fcd2b21a03d11c71ad0c4d9fff69b33b1",
+          ".agents/skills/session-finish/SKILL.md": "54a43c18888bb072c726ba745f8f55cfa498033cf3b1e27bcb448d7c5f8c363c",
+          ".agents/skills/skill-creator/SKILL.md": "98c38f057ff9c35d61885e7ec9cf8968da17c65fcdd1b2043e61c547e201719d",
+          ".agents/skills/test-discipline/SKILL.md": "822020917398695c71bc55f38b505279324af5293e1cf7c73bb54a13d6fb4a46",
+          ".agents/skills/tier-injection/SKILL.md": "dd6ebdf4e718e1c2375bfbc1b692f3a81b660a4f5f4144799d25b1d80decaeb6",
+          ".agents/skills/validate-as-consumer/SKILL.md": "1c98b669461ec0858c01ec16485c14515f1c722befd9baea18ad247392f2d7e0",
+          ".agents/skills/work-tracker/SKILL.md": "05a4322762dd4eb0e19d7f9c81ccc7fe0941a3134b208905df0e52ef1e234ebf",
+          ".agents/skills/worktree-isolation/SKILL.md": "676d1af189fb2e11f7d1abe0604d3eae17a68ba837fb7448cd0f3145195dc872"
+        },
+        "loading_verified": true,
+        "loading": {
+          "trace_sha256": "4338dd072135a32dda4d95f8494314dfe896efb1bb8e410e44c7041b7b1df69d",
+          "instructions_loaded": false,
+          "project_skills_loaded": [],
+          "native_model_verified": true,
+          "native_approval": [
+            "never"
+          ],
+          "native_effort": [
+            "medium"
+          ],
+          "native_sandbox": [
+            {
+              "exclude_slash_tmp": false,
+              "exclude_tmpdir_env_var": false,
+              "network_access": false,
+              "type": "workspace-write"
+            }
+          ]
+        }
+      },
+      "acceptance_outcome": "passed"
+    },
+    {
+      "id": "trial-0002",
+      "arm": "full-basicly",
+      "case": "docs-only",
+      "repetition": 0,
+      "outcome": "passed",
+      "duration_s": 47.995317115000034,
+      "agent_duration_s": 45.35188856199966,
+      "setup_duration_s": 3.193567525000617,
+      "total_duration_s": 51.188885819999996,
+      "tokens": 272733,
+      "cost": null,
+      "cost_source": "unknown",
+      "usage": {
+        "tokens": 272733,
+        "cost": null,
+        "estimated": false,
+        "input_tokens": 269326,
+        "output_tokens": 3407,
+        "cache_read_tokens": 242688,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 955,
+        "credits": null,
+        "cache_write_5m_tokens": null,
+        "cache_write_1h_tokens": null
+      },
+      "session_id": "01a1977f-7d96-73f2-887b-f2f3524ca975",
+      "starting_revision": "8643fba3195fba57caf634c5d3f30c2f339a3bdb",
+      "task_files": {
+        "tool.py": "77ec3701f8211ca24c449f4f6b480f8b9967c1d70952a11cae95a5a1d004ec65",
+        "README.md": "e55af654fc28bc813e930227b0c8faa358504f311a668a567e30645a9ca61e48"
+      },
+      "arm_conditions": {
+        "mode": "full-basicly",
+        "installed": true,
+        "repository_instructions": true,
+        "instructions_sha256": "e6b7117476c14261029e1d44b3b5880c9ae22a27deada7124cb336a45b190934",
+        "configuration_sha256": "71c9757025644e2e3249ac9d0c6b4586810c9de116b4f364edb68a28428dcef1",
+        "hook_sha256": {
+          "pre-commit": "1c1b9cf7dfff3220ff1209c892383c1d827bc8b47076074847a88eb671a53e54",
+          "commit-msg": "7ec56e1ef7664a7e47a83494b4eeb2cad651155783aebd83b66896b09c8e6fab"
+        },
+        "skill_sha256": {
+          ".agents/skills/best-practices-audit/SKILL.md": "b9a28ab8c6d80cf40f3ee302090d9038146aa62e7c87da3c667848a822ceab28",
+          ".agents/skills/catalog-authoring/SKILL.md": "500e55b2445f4c92b0a9dbec9362d64c779b69087299966b67eece353f6859d1",
+          ".agents/skills/cli-tools/SKILL.md": "a06b09d2c58ade0a83986bcea97b728184f7757c31228c8511c7a7607fc62ce3",
+          ".agents/skills/conventional-commits/SKILL.md": "19550aa9e3697bbb9d5dcc052adb834c2b805345a052b6673f7012da7e471bca",
+          ".agents/skills/decompose-plan/SKILL.md": "65b1d9b1d79e2560366a4ea5f0135aac26f6c64fc47d934ebf1f91b6185a2fab",
+          ".agents/skills/falsify-first/SKILL.md": "c66504f999bfb04af72cf3675c104d5beae3b730835b8f12925cd74ada3013f4",
+          ".agents/skills/find-skills/SKILL.md": "c17c472b1dc6ca97d36e269c32700e59435fed506b18187ff7b1519b55e920aa",
+          ".agents/skills/harness-client/SKILL.md": "e3287674e39d9a79585f609239bb0fee8324067ace4eea2b1b085eebfee85035",
+          ".agents/skills/harness-loop/SKILL.md": "e5ca99b56dc0a9a068ab75f7f0744cb808bcb529423aacae87f66a4be35e42f6",
+          ".agents/skills/interface-facts/SKILL.md": "1cf282d0a5e4ed0819cf04a16f87cdf9f389506705ba5ee8dabd337a82d0cbeb",
+          ".agents/skills/no-comments/SKILL.md": "b660cb424e04ffbfd8d576062a903df9d41748a1873721e673a329971da98188",
+          ".agents/skills/plain-english/SKILL.md": "c9df902810e0477c027f590ba58b11a12522e24a15c235a0498968d7c241cea8",
+          ".agents/skills/python/SKILL.md": "a16908dd7ef58586393c8949a34eb4f6bccca0f91f2cbc0268796bad8d98def2",
+          ".agents/skills/release-process/SKILL.md": "1a842749dc5880501fd9ee3d118d297b69d69109f37699f29b5e28c743eaefdf",
+          ".agents/skills/repair-in-place/SKILL.md": "5467ac5f66a5f7e23904ff98f6aeda41c3ad1498e164374bd025f389ae740e4b",
+          ".agents/skills/retention-probe/SKILL.md": "7baf8de7783a65a825c20baade592b22030254ac7919f933bb32693303853211",
+          ".agents/skills/root-cause/SKILL.md": "fcdf5a36ed56d7cb18057b848769537fcd2b21a03d11c71ad0c4d9fff69b33b1",
+          ".agents/skills/session-finish/SKILL.md": "54a43c18888bb072c726ba745f8f55cfa498033cf3b1e27bcb448d7c5f8c363c",
+          ".agents/skills/skill-creator/SKILL.md": "98c38f057ff9c35d61885e7ec9cf8968da17c65fcdd1b2043e61c547e201719d",
+          ".agents/skills/test-discipline/SKILL.md": "822020917398695c71bc55f38b505279324af5293e1cf7c73bb54a13d6fb4a46",
+          ".agents/skills/tier-injection/SKILL.md": "dd6ebdf4e718e1c2375bfbc1b692f3a81b660a4f5f4144799d25b1d80decaeb6",
+          ".agents/skills/validate-as-consumer/SKILL.md": "1c98b669461ec0858c01ec16485c14515f1c722befd9baea18ad247392f2d7e0",
+          ".agents/skills/work-tracker/SKILL.md": "05a4322762dd4eb0e19d7f9c81ccc7fe0941a3134b208905df0e52ef1e234ebf",
+          ".agents/skills/worktree-isolation/SKILL.md": "676d1af189fb2e11f7d1abe0604d3eae17a68ba837fb7448cd0f3145195dc872"
+        },
+        "loading_verified": true,
+        "loading": {
+          "trace_sha256": "5bfcdc634b5a191881c5b4f1d812871e016747b533c9ec4537f22d29d91c5bc5",
+          "instructions_loaded": true,
+          "project_skills_loaded": [
+            ".agents/skills/best-practices-audit/SKILL.md",
+            ".agents/skills/catalog-authoring/SKILL.md",
+            ".agents/skills/cli-tools/SKILL.md",
+            ".agents/skills/conventional-commits/SKILL.md",
+            ".agents/skills/decompose-plan/SKILL.md",
+            ".agents/skills/falsify-first/SKILL.md",
+            ".agents/skills/find-skills/SKILL.md",
+            ".agents/skills/harness-client/SKILL.md",
+            ".agents/skills/harness-loop/SKILL.md",
+            ".agents/skills/interface-facts/SKILL.md",
+            ".agents/skills/no-comments/SKILL.md",
+            ".agents/skills/plain-english/SKILL.md",
+            ".agents/skills/python/SKILL.md",
+            ".agents/skills/release-process/SKILL.md",
+            ".agents/skills/repair-in-place/SKILL.md",
+            ".agents/skills/retention-probe/SKILL.md",
+            ".agents/skills/root-cause/SKILL.md",
+            ".agents/skills/session-finish/SKILL.md",
+            ".agents/skills/skill-creator/SKILL.md",
+            ".agents/skills/test-discipline/SKILL.md",
+            ".agents/skills/tier-injection/SKILL.md",
+            ".agents/skills/validate-as-consumer/SKILL.md",
+            ".agents/skills/work-tracker/SKILL.md",
+            ".agents/skills/worktree-isolation/SKILL.md"
+          ],
+          "native_model_verified": true,
+          "native_approval": [
+            "never"
+          ],
+          "native_effort": [
+            "medium"
+          ],
+          "native_sandbox": [
+            {
+              "exclude_slash_tmp": false,
+              "exclude_tmpdir_env_var": false,
+              "network_access": false,
+              "type": "workspace-write"
+            }
+          ]
+        }
+      },
+      "acceptance_outcome": "passed"
+    },
+    {
+      "id": "trial-0003",
+      "arm": "plain",
+      "case": "docs-only",
+      "repetition": 1,
+      "outcome": "passed",
+      "duration_s": 15.037438542999553,
+      "agent_duration_s": 14.934871589000068,
+      "setup_duration_s": 0.970449663999716,
+      "total_duration_s": 16.007889756999248,
+      "tokens": 85789,
+      "cost": null,
+      "cost_source": "unknown",
+      "usage": {
+        "tokens": 85789,
+        "cost": null,
+        "estimated": false,
+        "input_tokens": 84968,
+        "output_tokens": 821,
+        "cache_read_tokens": 74880,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 196,
+        "credits": null,
+        "cache_write_5m_tokens": null,
+        "cache_write_1h_tokens": null
+      },
+      "session_id": "01a19780-3d05-7502-922f-bbb64ca129ad",
+      "starting_revision": "8643fba3195fba57caf634c5d3f30c2f339a3bdb",
+      "task_files": {
+        "tool.py": "77ec3701f8211ca24c449f4f6b480f8b9967c1d70952a11cae95a5a1d004ec65",
+        "README.md": "e55af654fc28bc813e930227b0c8faa358504f311a668a567e30645a9ca61e48"
+      },
+      "arm_conditions": {
+        "mode": "plain",
+        "installed": false,
+        "repository_instructions": false,
+        "loading": {
+          "trace_sha256": "0c8959115ee6a164562b6a0fade88053e8e3b16ed3719179215b922c8a564859",
+          "instructions_loaded": false,
+          "project_skills_loaded": [],
+          "native_model_verified": true,
+          "native_approval": [
+            "never"
+          ],
+          "native_effort": [
+            "medium"
+          ],
+          "native_sandbox": [
+            {
+              "exclude_slash_tmp": false,
+              "exclude_tmpdir_env_var": false,
+              "network_access": false,
+              "type": "workspace-write"
+            }
+          ]
+        },
+        "loading_verified": true
+      },
+      "acceptance_outcome": "passed"
+    },
+    {
+      "id": "trial-0004",
+      "arm": "full-basicly",
+      "case": "docs-only",
+      "repetition": 1,
+      "outcome": "passed",
+      "duration_s": 51.81326211299984,
+      "agent_duration_s": 49.08750020500065,
+      "setup_duration_s": 3.7509549669994158,
+      "total_duration_s": 55.56421831999978,
+      "tokens": 226433,
+      "cost": null,
+      "cost_source": "unknown",
+      "usage": {
+        "tokens": 226433,
+        "cost": null,
+        "estimated": false,
+        "input_tokens": 223866,
+        "output_tokens": 2567,
+        "cache_read_tokens": 206080,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 894,
+        "credits": null,
+        "cache_write_5m_tokens": null,
+        "cache_write_1h_tokens": null
+      },
+      "session_id": "01a19780-8659-7a60-8da6-b0b96e17cbd6",
+      "starting_revision": "8643fba3195fba57caf634c5d3f30c2f339a3bdb",
+      "task_files": {
+        "tool.py": "77ec3701f8211ca24c449f4f6b480f8b9967c1d70952a11cae95a5a1d004ec65",
+        "README.md": "e55af654fc28bc813e930227b0c8faa358504f311a668a567e30645a9ca61e48"
+      },
+      "arm_conditions": {
+        "mode": "full-basicly",
+        "installed": true,
+        "repository_instructions": true,
+        "instructions_sha256": "e6b7117476c14261029e1d44b3b5880c9ae22a27deada7124cb336a45b190934",
+        "configuration_sha256": "71c9757025644e2e3249ac9d0c6b4586810c9de116b4f364edb68a28428dcef1",
+        "hook_sha256": {
+          "pre-commit": "1c1b9cf7dfff3220ff1209c892383c1d827bc8b47076074847a88eb671a53e54",
+          "commit-msg": "7ec56e1ef7664a7e47a83494b4eeb2cad651155783aebd83b66896b09c8e6fab"
+        },
+        "skill_sha256": {
+          ".agents/skills/best-practices-audit/SKILL.md": "b9a28ab8c6d80cf40f3ee302090d9038146aa62e7c87da3c667848a822ceab28",
+          ".agents/skills/catalog-authoring/SKILL.md": "500e55b2445f4c92b0a9dbec9362d64c779b69087299966b67eece353f6859d1",
+          ".agents/skills/cli-tools/SKILL.md": "a06b09d2c58ade0a83986bcea97b728184f7757c31228c8511c7a7607fc62ce3",
+          ".agents/skills/conventional-commits/SKILL.md": "19550aa9e3697bbb9d5dcc052adb834c2b805345a052b6673f7012da7e471bca",
+          ".agents/skills/decompose-plan/SKILL.md": "65b1d9b1d79e2560366a4ea5f0135aac26f6c64fc47d934ebf1f91b6185a2fab",
+          ".agents/skills/falsify-first/SKILL.md": "c66504f999bfb04af72cf3675c104d5beae3b730835b8f12925cd74ada3013f4",
+          ".agents/skills/find-skills/SKILL.md": "c17c472b1dc6ca97d36e269c32700e59435fed506b18187ff7b1519b55e920aa",
+          ".agents/skills/harness-client/SKILL.md": "e3287674e39d9a79585f609239bb0fee8324067ace4eea2b1b085eebfee85035",
+          ".agents/skills/harness-loop/SKILL.md": "e5ca99b56dc0a9a068ab75f7f0744cb808bcb529423aacae87f66a4be35e42f6",
+          ".agents/skills/interface-facts/SKILL.md": "1cf282d0a5e4ed0819cf04a16f87cdf9f389506705ba5ee8dabd337a82d0cbeb",
+          ".agents/skills/no-comments/SKILL.md": "b660cb424e04ffbfd8d576062a903df9d41748a1873721e673a329971da98188",
+          ".agents/skills/plain-english/SKILL.md": "c9df902810e0477c027f590ba58b11a12522e24a15c235a0498968d7c241cea8",
+          ".agents/skills/python/SKILL.md": "a16908dd7ef58586393c8949a34eb4f6bccca0f91f2cbc0268796bad8d98def2",
+          ".agents/skills/release-process/SKILL.md": "1a842749dc5880501fd9ee3d118d297b69d69109f37699f29b5e28c743eaefdf",
+          ".agents/skills/repair-in-place/SKILL.md": "5467ac5f66a5f7e23904ff98f6aeda41c3ad1498e164374bd025f389ae740e4b",
+          ".agents/skills/retention-probe/SKILL.md": "7baf8de7783a65a825c20baade592b22030254ac7919f933bb32693303853211",
+          ".agents/skills/root-cause/SKILL.md": "fcdf5a36ed56d7cb18057b848769537fcd2b21a03d11c71ad0c4d9fff69b33b1",
+          ".agents/skills/session-finish/SKILL.md": "54a43c18888bb072c726ba745f8f55cfa498033cf3b1e27bcb448d7c5f8c363c",
+          ".agents/skills/skill-creator/SKILL.md": "98c38f057ff9c35d61885e7ec9cf8968da17c65fcdd1b2043e61c547e201719d",
+          ".agents/skills/test-discipline/SKILL.md": "822020917398695c71bc55f38b505279324af5293e1cf7c73bb54a13d6fb4a46",
+          ".agents/skills/tier-injection/SKILL.md": "dd6ebdf4e718e1c2375bfbc1b692f3a81b660a4f5f4144799d25b1d80decaeb6",
+          ".agents/skills/validate-as-consumer/SKILL.md": "1c98b669461ec0858c01ec16485c14515f1c722befd9baea18ad247392f2d7e0",
+          ".agents/skills/work-tracker/SKILL.md": "05a4322762dd4eb0e19d7f9c81ccc7fe0941a3134b208905df0e52ef1e234ebf",
+          ".agents/skills/worktree-isolation/SKILL.md": "676d1af189fb2e11f7d1abe0604d3eae17a68ba837fb7448cd0f3145195dc872"
+        },
+        "loading_verified": true,
+        "loading": {
+          "trace_sha256": "7f45303e76649a09742c7e77e98832b8940e28f0a537376dd8756f7a5779988f",
+          "instructions_loaded": true,
+          "project_skills_loaded": [
+            ".agents/skills/best-practices-audit/SKILL.md",
+            ".agents/skills/catalog-authoring/SKILL.md",
+            ".agents/skills/cli-tools/SKILL.md",
+            ".agents/skills/conventional-commits/SKILL.md",
+            ".agents/skills/decompose-plan/SKILL.md",
+            ".agents/skills/falsify-first/SKILL.md",
+            ".agents/skills/find-skills/SKILL.md",
+            ".agents/skills/harness-client/SKILL.md",
+            ".agents/skills/harness-loop/SKILL.md",
+            ".agents/skills/interface-facts/SKILL.md",
+            ".agents/skills/no-comments/SKILL.md",
+            ".agents/skills/plain-english/SKILL.md",
+            ".agents/skills/python/SKILL.md",
+            ".agents/skills/release-process/SKILL.md",
+            ".agents/skills/repair-in-place/SKILL.md",
+            ".agents/skills/retention-probe/SKILL.md",
+            ".agents/skills/root-cause/SKILL.md",
+            ".agents/skills/session-finish/SKILL.md",
+            ".agents/skills/skill-creator/SKILL.md",
+            ".agents/skills/test-discipline/SKILL.md",
+            ".agents/skills/tier-injection/SKILL.md",
+            ".agents/skills/validate-as-consumer/SKILL.md",
+            ".agents/skills/work-tracker/SKILL.md",
+            ".agents/skills/worktree-isolation/SKILL.md"
+          ],
+          "native_model_verified": true,
+          "native_approval": [
+            "never"
+          ],
+          "native_effort": [
+            "medium"
+          ],
+          "native_sandbox": [
+            {
+              "exclude_slash_tmp": false,
+              "exclude_tmpdir_env_var": false,
+              "network_access": false,
+              "type": "workspace-write"
+            }
+          ]
+        }
+      },
+      "acceptance_outcome": "passed"
+    },
+    {
+      "id": "trial-0005",
+      "arm": "gates-only",
+      "case": "docs-only",
+      "repetition": 1,
+      "outcome": "passed",
+      "duration_s": 22.47021931600011,
+      "agent_duration_s": 19.5794108959999,
+      "setup_duration_s": 3.3718674050005575,
+      "total_duration_s": 25.84208801100067,
+      "tokens": 114870,
+      "cost": null,
+      "cost_source": "unknown",
+      "usage": {
+        "tokens": 114870,
+        "cost": null,
+        "estimated": false,
+        "input_tokens": 113828,
+        "output_tokens": 1042,
+        "cache_read_tokens": 92800,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 256,
+        "credits": null,
+        "cache_write_5m_tokens": null,
+        "cache_write_1h_tokens": null
+      },
+      "session_id": "01a19781-5de8-70a2-a5e9-18a693e78ad2",
+      "starting_revision": "8643fba3195fba57caf634c5d3f30c2f339a3bdb",
+      "task_files": {
+        "tool.py": "77ec3701f8211ca24c449f4f6b480f8b9967c1d70952a11cae95a5a1d004ec65",
+        "README.md": "e55af654fc28bc813e930227b0c8faa358504f311a668a567e30645a9ca61e48"
+      },
+      "arm_conditions": {
+        "mode": "gates-only",
+        "installed": true,
+        "repository_instructions": false,
+        "instructions_sha256": "e6b7117476c14261029e1d44b3b5880c9ae22a27deada7124cb336a45b190934",
+        "configuration_sha256": "71c9757025644e2e3249ac9d0c6b4586810c9de116b4f364edb68a28428dcef1",
+        "hook_sha256": {
+          "pre-commit": "1c1b9cf7dfff3220ff1209c892383c1d827bc8b47076074847a88eb671a53e54",
+          "commit-msg": "7ec56e1ef7664a7e47a83494b4eeb2cad651155783aebd83b66896b09c8e6fab"
+        },
+        "skill_sha256": {
+          ".agents/skills/best-practices-audit/SKILL.md": "b9a28ab8c6d80cf40f3ee302090d9038146aa62e7c87da3c667848a822ceab28",
+          ".agents/skills/catalog-authoring/SKILL.md": "500e55b2445f4c92b0a9dbec9362d64c779b69087299966b67eece353f6859d1",
+          ".agents/skills/cli-tools/SKILL.md": "a06b09d2c58ade0a83986bcea97b728184f7757c31228c8511c7a7607fc62ce3",
+          ".agents/skills/conventional-commits/SKILL.md": "19550aa9e3697bbb9d5dcc052adb834c2b805345a052b6673f7012da7e471bca",
+          ".agents/skills/decompose-plan/SKILL.md": "65b1d9b1d79e2560366a4ea5f0135aac26f6c64fc47d934ebf1f91b6185a2fab",
+          ".agents/skills/falsify-first/SKILL.md": "c66504f999bfb04af72cf3675c104d5beae3b730835b8f12925cd74ada3013f4",
+          ".agents/skills/find-skills/SKILL.md": "c17c472b1dc6ca97d36e269c32700e59435fed506b18187ff7b1519b55e920aa",
+          ".agents/skills/harness-client/SKILL.md": "e3287674e39d9a79585f609239bb0fee8324067ace4eea2b1b085eebfee85035",
+          ".agents/skills/harness-loop/SKILL.md": "e5ca99b56dc0a9a068ab75f7f0744cb808bcb529423aacae87f66a4be35e42f6",
+          ".agents/skills/interface-facts/SKILL.md": "1cf282d0a5e4ed0819cf04a16f87cdf9f389506705ba5ee8dabd337a82d0cbeb",
+          ".agents/skills/no-comments/SKILL.md": "b660cb424e04ffbfd8d576062a903df9d41748a1873721e673a329971da98188",
+          ".agents/skills/plain-english/SKILL.md": "c9df902810e0477c027f590ba58b11a12522e24a15c235a0498968d7c241cea8",
+          ".agents/skills/python/SKILL.md": "a16908dd7ef58586393c8949a34eb4f6bccca0f91f2cbc0268796bad8d98def2",
+          ".agents/skills/release-process/SKILL.md": "1a842749dc5880501fd9ee3d118d297b69d69109f37699f29b5e28c743eaefdf",
+          ".agents/skills/repair-in-place/SKILL.md": "5467ac5f66a5f7e23904ff98f6aeda41c3ad1498e164374bd025f389ae740e4b",
+          ".agents/skills/retention-probe/SKILL.md": "7baf8de7783a65a825c20baade592b22030254ac7919f933bb32693303853211",
+          ".agents/skills/root-cause/SKILL.md": "fcdf5a36ed56d7cb18057b848769537fcd2b21a03d11c71ad0c4d9fff69b33b1",
+          ".agents/skills/session-finish/SKILL.md": "54a43c18888bb072c726ba745f8f55cfa498033cf3b1e27bcb448d7c5f8c363c",
+          ".agents/skills/skill-creator/SKILL.md": "98c38f057ff9c35d61885e7ec9cf8968da17c65fcdd1b2043e61c547e201719d",
+          ".agents/skills/test-discipline/SKILL.md": "822020917398695c71bc55f38b505279324af5293e1cf7c73bb54a13d6fb4a46",
+          ".agents/skills/tier-injection/SKILL.md": "dd6ebdf4e718e1c2375bfbc1b692f3a81b660a4f5f4144799d25b1d80decaeb6",
+          ".agents/skills/validate-as-consumer/SKILL.md": "1c98b669461ec0858c01ec16485c14515f1c722befd9baea18ad247392f2d7e0",
+          ".agents/skills/work-tracker/SKILL.md": "05a4322762dd4eb0e19d7f9c81ccc7fe0941a3134b208905df0e52ef1e234ebf",
+          ".agents/skills/worktree-isolation/SKILL.md": "676d1af189fb2e11f7d1abe0604d3eae17a68ba837fb7448cd0f3145195dc872"
+        },
+        "loading_verified": true,
+        "loading": {
+          "trace_sha256": "231d3a06bf75a619094eedee0f746150c7c1a6b8339287982075901f72c8a660",
+          "instructions_loaded": false,
+          "project_skills_loaded": [],
+          "native_model_verified": true,
+          "native_approval": [
+            "never"
+          ],
+          "native_effort": [
+            "medium"
+          ],
+          "native_sandbox": [
+            {
+              "exclude_slash_tmp": false,
+              "exclude_tmpdir_env_var": false,
+              "network_access": false,
+              "type": "workspace-write"
+            }
+          ]
+        }
+      },
+      "acceptance_outcome": "passed"
+    },
+    {
+      "id": "trial-0006",
+      "arm": "full-basicly",
+      "case": "docs-only",
+      "repetition": 2,
+      "outcome": "passed",
+      "duration_s": 34.63511586599998,
+      "agent_duration_s": 31.16311341599976,
+      "setup_duration_s": 3.3015288540000256,
+      "total_duration_s": 37.936646129999644,
+      "tokens": 241751,
+      "cost": null,
+      "cost_source": "unknown",
+      "usage": {
+        "tokens": 241751,
+        "cost": null,
+        "estimated": false,
+        "input_tokens": 239684,
+        "output_tokens": 2067,
+        "cache_read_tokens": 206720,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 792,
+        "credits": null,
+        "cache_write_5m_tokens": null,
+        "cache_write_1h_tokens": null
+      },
+      "session_id": "01a19781-c282-7da0-9718-15f551eeec0d",
+      "starting_revision": "8643fba3195fba57caf634c5d3f30c2f339a3bdb",
+      "task_files": {
+        "tool.py": "77ec3701f8211ca24c449f4f6b480f8b9967c1d70952a11cae95a5a1d004ec65",
+        "README.md": "e55af654fc28bc813e930227b0c8faa358504f311a668a567e30645a9ca61e48"
+      },
+      "arm_conditions": {
+        "mode": "full-basicly",
+        "installed": true,
+        "repository_instructions": true,
+        "instructions_sha256": "e6b7117476c14261029e1d44b3b5880c9ae22a27deada7124cb336a45b190934",
+        "configuration_sha256": "71c9757025644e2e3249ac9d0c6b4586810c9de116b4f364edb68a28428dcef1",
+        "hook_sha256": {
+          "pre-commit": "1c1b9cf7dfff3220ff1209c892383c1d827bc8b47076074847a88eb671a53e54",
+          "commit-msg": "7ec56e1ef7664a7e47a83494b4eeb2cad651155783aebd83b66896b09c8e6fab"
+        },
+        "skill_sha256": {
+          ".agents/skills/best-practices-audit/SKILL.md": "b9a28ab8c6d80cf40f3ee302090d9038146aa62e7c87da3c667848a822ceab28",
+          ".agents/skills/catalog-authoring/SKILL.md": "500e55b2445f4c92b0a9dbec9362d64c779b69087299966b67eece353f6859d1",
+          ".agents/skills/cli-tools/SKILL.md": "a06b09d2c58ade0a83986bcea97b728184f7757c31228c8511c7a7607fc62ce3",
+          ".agents/skills/conventional-commits/SKILL.md": "19550aa9e3697bbb9d5dcc052adb834c2b805345a052b6673f7012da7e471bca",
+          ".agents/skills/decompose-plan/SKILL.md": "65b1d9b1d79e2560366a4ea5f0135aac26f6c64fc47d934ebf1f91b6185a2fab",
+          ".agents/skills/falsify-first/SKILL.md": "c66504f999bfb04af72cf3675c104d5beae3b730835b8f12925cd74ada3013f4",
+          ".agents/skills/find-skills/SKILL.md": "c17c472b1dc6ca97d36e269c32700e59435fed506b18187ff7b1519b55e920aa",
+          ".agents/skills/harness-client/SKILL.md": "e3287674e39d9a79585f609239bb0fee8324067ace4eea2b1b085eebfee85035",
+          ".agents/skills/harness-loop/SKILL.md": "e5ca99b56dc0a9a068ab75f7f0744cb808bcb529423aacae87f66a4be35e42f6",
+          ".agents/skills/interface-facts/SKILL.md": "1cf282d0a5e4ed0819cf04a16f87cdf9f389506705ba5ee8dabd337a82d0cbeb",
+          ".agents/skills/no-comments/SKILL.md": "b660cb424e04ffbfd8d576062a903df9d41748a1873721e673a329971da98188",
+          ".agents/skills/plain-english/SKILL.md": "c9df902810e0477c027f590ba58b11a12522e24a15c235a0498968d7c241cea8",
+          ".agents/skills/python/SKILL.md": "a16908dd7ef58586393c8949a34eb4f6bccca0f91f2cbc0268796bad8d98def2",
+          ".agents/skills/release-process/SKILL.md": "1a842749dc5880501fd9ee3d118d297b69d69109f37699f29b5e28c743eaefdf",
+          ".agents/skills/repair-in-place/SKILL.md": "5467ac5f66a5f7e23904ff98f6aeda41c3ad1498e164374bd025f389ae740e4b",
+          ".agents/skills/retention-probe/SKILL.md": "7baf8de7783a65a825c20baade592b22030254ac7919f933bb32693303853211",
+          ".agents/skills/root-cause/SKILL.md": "fcdf5a36ed56d7cb18057b848769537fcd2b21a03d11c71ad0c4d9fff69b33b1",
+          ".agents/skills/session-finish/SKILL.md": "54a43c18888bb072c726ba745f8f55cfa498033cf3b1e27bcb448d7c5f8c363c",
+          ".agents/skills/skill-creator/SKILL.md": "98c38f057ff9c35d61885e7ec9cf8968da17c65fcdd1b2043e61c547e201719d",
+          ".agents/skills/test-discipline/SKILL.md": "822020917398695c71bc55f38b505279324af5293e1cf7c73bb54a13d6fb4a46",
+          ".agents/skills/tier-injection/SKILL.md": "dd6ebdf4e718e1c2375bfbc1b692f3a81b660a4f5f4144799d25b1d80decaeb6",
+          ".agents/skills/validate-as-consumer/SKILL.md": "1c98b669461ec0858c01ec16485c14515f1c722befd9baea18ad247392f2d7e0",
+          ".agents/skills/work-tracker/SKILL.md": "05a4322762dd4eb0e19d7f9c81ccc7fe0941a3134b208905df0e52ef1e234ebf",
+          ".agents/skills/worktree-isolation/SKILL.md": "676d1af189fb2e11f7d1abe0604d3eae17a68ba837fb7448cd0f3145195dc872"
+        },
+        "loading_verified": true,
+        "loading": {
+          "trace_sha256": "6c177d6c78a523612f2897cd5b5ae3f3ada82cfc98e2113e5284d3fdff20e384",
+          "instructions_loaded": true,
+          "project_skills_loaded": [
+            ".agents/skills/best-practices-audit/SKILL.md",
+            ".agents/skills/catalog-authoring/SKILL.md",
+            ".agents/skills/cli-tools/SKILL.md",
+            ".agents/skills/conventional-commits/SKILL.md",
+            ".agents/skills/decompose-plan/SKILL.md",
+            ".agents/skills/falsify-first/SKILL.md",
+            ".agents/skills/find-skills/SKILL.md",
+            ".agents/skills/harness-client/SKILL.md",
+            ".agents/skills/harness-loop/SKILL.md",
+            ".agents/skills/interface-facts/SKILL.md",
+            ".agents/skills/no-comments/SKILL.md",
+            ".agents/skills/plain-english/SKILL.md",
+            ".agents/skills/python/SKILL.md",
+            ".agents/skills/release-process/SKILL.md",
+            ".agents/skills/repair-in-place/SKILL.md",
+            ".agents/skills/retention-probe/SKILL.md",
+            ".agents/skills/root-cause/SKILL.md",
+            ".agents/skills/session-finish/SKILL.md",
+            ".agents/skills/skill-creator/SKILL.md",
+            ".agents/skills/test-discipline/SKILL.md",
+            ".agents/skills/tier-injection/SKILL.md",
+            ".agents/skills/validate-as-consumer/SKILL.md",
+            ".agents/skills/work-tracker/SKILL.md",
+            ".agents/skills/worktree-isolation/SKILL.md"
+          ],
+          "native_model_verified": true,
+          "native_approval": [
+            "never"
+          ],
+          "native_effort": [
+            "medium"
+          ],
+          "native_sandbox": [
+            {
+              "exclude_slash_tmp": false,
+              "exclude_tmpdir_env_var": false,
+              "network_access": false,
+              "type": "workspace-write"
+            }
+          ]
+        }
+      },
+      "acceptance_outcome": "passed"
+    },
+    {
+      "id": "trial-0007",
+      "arm": "plain",
+      "case": "docs-only",
+      "repetition": 2,
+      "outcome": "passed",
+      "duration_s": 21.73201865900046,
+      "agent_duration_s": 21.645623264999813,
+      "setup_duration_s": 0.9299300220000077,
+      "total_duration_s": 22.66194988100051,
+      "tokens": 86021,
+      "cost": null,
+      "cost_source": "unknown",
+      "usage": {
+        "tokens": 86021,
+        "cost": null,
+        "estimated": false,
+        "input_tokens": 85076,
+        "output_tokens": 945,
+        "cache_read_tokens": 78336,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 211,
+        "credits": null,
+        "cache_write_5m_tokens": null,
+        "cache_write_1h_tokens": null
+      },
+      "session_id": "01a19782-4d7f-7e90-9791-ae370df65392",
+      "starting_revision": "8643fba3195fba57caf634c5d3f30c2f339a3bdb",
+      "task_files": {
+        "tool.py": "77ec3701f8211ca24c449f4f6b480f8b9967c1d70952a11cae95a5a1d004ec65",
+        "README.md": "e55af654fc28bc813e930227b0c8faa358504f311a668a567e30645a9ca61e48"
+      },
+      "arm_conditions": {
+        "mode": "plain",
+        "installed": false,
+        "repository_instructions": false,
+        "loading": {
+          "trace_sha256": "fc6544abdb0ce41ffa2539156bc414634b2345dd178e6b66e13a42cc29d43ecb",
+          "instructions_loaded": false,
+          "project_skills_loaded": [],
+          "native_model_verified": true,
+          "native_approval": [
+            "never"
+          ],
+          "native_effort": [
+            "medium"
+          ],
+          "native_sandbox": [
+            {
+              "exclude_slash_tmp": false,
+              "exclude_tmpdir_env_var": false,
+              "network_access": false,
+              "type": "workspace-write"
+            }
+          ]
+        },
+        "loading_verified": true
+      },
+      "acceptance_outcome": "passed"
+    },
+    {
+      "id": "trial-0008",
+      "arm": "gates-only",
+      "case": "docs-only",
+      "repetition": 2,
+      "outcome": "passed",
+      "duration_s": 27.803679098999964,
+      "agent_duration_s": 25.007100739000634,
+      "setup_duration_s": 3.305153132999294,
+      "total_duration_s": 31.108833441999195,
+      "tokens": 186255,
+      "cost": null,
+      "cost_source": "unknown",
+      "usage": {
+        "tokens": 186255,
+        "cost": null,
+        "estimated": false,
+        "input_tokens": 184587,
+        "output_tokens": 1668,
+        "cache_read_tokens": 162944,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 397,
+        "credits": null,
+        "cache_write_5m_tokens": null,
+        "cache_write_1h_tokens": null
+      },
+      "session_id": "01a19782-af3f-7510-abe2-69d9a26cfe82",
+      "starting_revision": "8643fba3195fba57caf634c5d3f30c2f339a3bdb",
+      "task_files": {
+        "tool.py": "77ec3701f8211ca24c449f4f6b480f8b9967c1d70952a11cae95a5a1d004ec65",
+        "README.md": "e55af654fc28bc813e930227b0c8faa358504f311a668a567e30645a9ca61e48"
+      },
+      "arm_conditions": {
+        "mode": "gates-only",
+        "installed": true,
+        "repository_instructions": false,
+        "instructions_sha256": "e6b7117476c14261029e1d44b3b5880c9ae22a27deada7124cb336a45b190934",
+        "configuration_sha256": "71c9757025644e2e3249ac9d0c6b4586810c9de116b4f364edb68a28428dcef1",
+        "hook_sha256": {
+          "pre-commit": "1c1b9cf7dfff3220ff1209c892383c1d827bc8b47076074847a88eb671a53e54",
+          "commit-msg": "7ec56e1ef7664a7e47a83494b4eeb2cad651155783aebd83b66896b09c8e6fab"
+        },
+        "skill_sha256": {
+          ".agents/skills/best-practices-audit/SKILL.md": "b9a28ab8c6d80cf40f3ee302090d9038146aa62e7c87da3c667848a822ceab28",
+          ".agents/skills/catalog-authoring/SKILL.md": "500e55b2445f4c92b0a9dbec9362d64c779b69087299966b67eece353f6859d1",
+          ".agents/skills/cli-tools/SKILL.md": "a06b09d2c58ade0a83986bcea97b728184f7757c31228c8511c7a7607fc62ce3",
+          ".agents/skills/conventional-commits/SKILL.md": "19550aa9e3697bbb9d5dcc052adb834c2b805345a052b6673f7012da7e471bca",
+          ".agents/skills/decompose-plan/SKILL.md": "65b1d9b1d79e2560366a4ea5f0135aac26f6c64fc47d934ebf1f91b6185a2fab",
+          ".agents/skills/falsify-first/SKILL.md": "c66504f999bfb04af72cf3675c104d5beae3b730835b8f12925cd74ada3013f4",
+          ".agents/skills/find-skills/SKILL.md": "c17c472b1dc6ca97d36e269c32700e59435fed506b18187ff7b1519b55e920aa",
+          ".agents/skills/harness-client/SKILL.md": "e3287674e39d9a79585f609239bb0fee8324067ace4eea2b1b085eebfee85035",
+          ".agents/skills/harness-loop/SKILL.md": "e5ca99b56dc0a9a068ab75f7f0744cb808bcb529423aacae87f66a4be35e42f6",
+          ".agents/skills/interface-facts/SKILL.md": "1cf282d0a5e4ed0819cf04a16f87cdf9f389506705ba5ee8dabd337a82d0cbeb",
+          ".agents/skills/no-comments/SKILL.md": "b660cb424e04ffbfd8d576062a903df9d41748a1873721e673a329971da98188",
+          ".agents/skills/plain-english/SKILL.md": "c9df902810e0477c027f590ba58b11a12522e24a15c235a0498968d7c241cea8",
+          ".agents/skills/python/SKILL.md": "a16908dd7ef58586393c8949a34eb4f6bccca0f91f2cbc0268796bad8d98def2",
+          ".agents/skills/release-process/SKILL.md": "1a842749dc5880501fd9ee3d118d297b69d69109f37699f29b5e28c743eaefdf",
+          ".agents/skills/repair-in-place/SKILL.md": "5467ac5f66a5f7e23904ff98f6aeda41c3ad1498e164374bd025f389ae740e4b",
+          ".agents/skills/retention-probe/SKILL.md": "7baf8de7783a65a825c20baade592b22030254ac7919f933bb32693303853211",
+          ".agents/skills/root-cause/SKILL.md": "fcdf5a36ed56d7cb18057b848769537fcd2b21a03d11c71ad0c4d9fff69b33b1",
+          ".agents/skills/session-finish/SKILL.md": "54a43c18888bb072c726ba745f8f55cfa498033cf3b1e27bcb448d7c5f8c363c",
+          ".agents/skills/skill-creator/SKILL.md": "98c38f057ff9c35d61885e7ec9cf8968da17c65fcdd1b2043e61c547e201719d",
+          ".agents/skills/test-discipline/SKILL.md": "822020917398695c71bc55f38b505279324af5293e1cf7c73bb54a13d6fb4a46",
+          ".agents/skills/tier-injection/SKILL.md": "dd6ebdf4e718e1c2375bfbc1b692f3a81b660a4f5f4144799d25b1d80decaeb6",
+          ".agents/skills/validate-as-consumer/SKILL.md": "1c98b669461ec0858c01ec16485c14515f1c722befd9baea18ad247392f2d7e0",
+          ".agents/skills/work-tracker/SKILL.md": "05a4322762dd4eb0e19d7f9c81ccc7fe0941a3134b208905df0e52ef1e234ebf",
+          ".agents/skills/worktree-isolation/SKILL.md": "676d1af189fb2e11f7d1abe0604d3eae17a68ba837fb7448cd0f3145195dc872"
+        },
+        "loading_verified": true,
+        "loading": {
+          "trace_sha256": "fa322626d728e368a5f7f318cab735855a4fe2f7f339e947fd1f16dd6c72cfa8",
+          "instructions_loaded": false,
+          "project_skills_loaded": [],
+          "native_model_verified": true,
+          "native_approval": [
+            "never"
+          ],
+          "native_effort": [
+            "medium"
+          ],
+          "native_sandbox": [
+            {
+              "exclude_slash_tmp": false,
+              "exclude_tmpdir_env_var": false,
+              "network_access": false,
+              "type": "workspace-write"
+            }
+          ]
+        }
+      },
+      "acceptance_outcome": "passed"
+    }
+  ],
+  "summary": [
+    {
+      "family": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "medium",
+      "arm": "full-basicly",
+      "case": "docs-only",
+      "attempts": 3,
+      "passed": 3,
+      "accepted": 3,
+      "outcomes": {
+        "passed": 3
+      },
+      "acceptance_outcomes": {
+        "passed": 3
+      },
+      "acceptance_missing": 0,
+      "cost_sources": {
+        "unknown": 3
+      },
+      "attempt_ids": [
+        "trial-0002",
+        "trial-0004",
+        "trial-0006"
+      ],
+      "duration_s": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 134.44369509399985,
+        "median": 47.995317115000034,
+        "observed_max": 51.81326211299984
+      },
+      "setup_duration_s": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 10.246051346000058,
+        "median": 3.3015288540000256,
+        "observed_max": 3.7509549669994158
+      },
+      "total_duration_s": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 144.68975026999942,
+        "median": 51.188885819999996,
+        "observed_max": 55.56421831999978
+      },
+      "tokens": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 740917,
+        "median": 241751,
+        "observed_max": 272733
+      },
+      "cost": {
+        "observed": 0,
+        "missing": 3,
+        "known_sum": null,
+        "median": null,
+        "observed_max": null
+      },
+      "cost_per_success": null,
+      "cost_per_accepted": null,
+      "tokens_per_success": 246972.33333333334,
+      "tokens_per_accepted": 246972.33333333334
+    },
+    {
+      "family": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "medium",
+      "arm": "gates-only",
+      "case": "docs-only",
+      "attempts": 3,
+      "passed": 3,
+      "accepted": 3,
+      "outcomes": {
+        "passed": 3
+      },
+      "acceptance_outcomes": {
+        "passed": 3
+      },
+      "acceptance_missing": 0,
+      "cost_sources": {
+        "unknown": 3
+      },
+      "attempt_ids": [
+        "trial-0001",
+        "trial-0005",
+        "trial-0008"
+      ],
+      "duration_s": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 80.78730876600002,
+        "median": 27.803679098999964,
+        "observed_max": 30.513410350999948
+      },
+      "setup_duration_s": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 9.882824454000001,
+        "median": 3.305153132999294,
+        "observed_max": 3.3718674050005575
+      },
+      "total_duration_s": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 90.67013698000028,
+        "median": 31.108833441999195,
+        "observed_max": 33.719215527000415
+      },
+      "tokens": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 565792,
+        "median": 186255,
+        "observed_max": 264667
+      },
+      "cost": {
+        "observed": 0,
+        "missing": 3,
+        "known_sum": null,
+        "median": null,
+        "observed_max": null
+      },
+      "cost_per_success": null,
+      "cost_per_accepted": null,
+      "tokens_per_success": 188597.33333333334,
+      "tokens_per_accepted": 188597.33333333334
+    },
+    {
+      "family": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "medium",
+      "arm": "plain",
+      "case": "docs-only",
+      "attempts": 3,
+      "passed": 3,
+      "accepted": 3,
+      "outcomes": {
+        "passed": 3
+      },
+      "acceptance_outcomes": {
+        "passed": 3
+      },
+      "acceptance_missing": 0,
+      "cost_sources": {
+        "unknown": 3
+      },
+      "attempt_ids": [
+        "trial-0000",
+        "trial-0003",
+        "trial-0007"
+      ],
+      "duration_s": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 58.64870048100056,
+        "median": 21.73201865900046,
+        "observed_max": 21.879243279000548
+      },
+      "setup_duration_s": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 2.8120893610002895,
+        "median": 0.9299300220000077,
+        "observed_max": 0.970449663999716
+      },
+      "total_duration_s": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 61.46079366200047,
+        "median": 22.66194988100051,
+        "observed_max": 22.790954024000712
+      },
+      "tokens": {
+        "observed": 3,
+        "missing": 0,
+        "known_sum": 288238,
+        "median": 86021,
+        "observed_max": 116428
+      },
+      "cost": {
+        "observed": 0,
+        "missing": 3,
+        "known_sum": null,
+        "median": null,
+        "observed_max": null
+      },
+      "cost_per_success": null,
+      "cost_per_accepted": null,
+      "tokens_per_success": 96079.33333333333,
+      "tokens_per_accepted": 96079.33333333333
+    }
+  ],
+  "limits": [
+    "One prepared task with three repetitions per arm.",
+    "Prior invalid and exploratory controls remain separate.",
+    "No monetary cost measurement.",
+    "No complete provider-request, retry or human-intervention instrumentation.",
+    "Inherited host configuration and remote policy are not fully reconciled.",
+    "Automatic loading is measured. Tool reads can discover installed harness files.",
+    "The evaluator commits outputs because native Git metadata is read-only."
+  ]
+}

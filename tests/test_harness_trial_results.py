@@ -105,3 +105,19 @@ def test_harness_trial_results_reject_duplicate_attempts() -> None:
 def test_harness_trial_results_reject_empty_evidence() -> None:
     with pytest.raises(ValueError, match="no trials"):
         load_results().summarize([])
+
+
+def test_harness_trial_results_measure_cost_per_independent_acceptance() -> None:
+    result = load_results().summarize([
+        trial("one", outcome="timed_out", acceptance={"outcome": "passed"}, cost=0.1),
+        trial("two", outcome="failed", acceptance={"outcome": "failed"}, cost=0.2),
+    ])[0]
+    assert result["accepted"] == 1
+    assert result["cost_per_accepted"] == pytest.approx(0.3)
+    assert result["cost_per_success"] is None
+
+
+def test_harness_trial_results_missing_acceptance_has_unknown_accepted_cost() -> None:
+    result = load_results().summarize([trial("one")])[0]
+    assert result["accepted"] == 0
+    assert result["cost_per_accepted"] is None

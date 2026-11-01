@@ -50,3 +50,71 @@ and complete cold/warm UI measurements still belong to the existing epic. Inheri
 host defaults and remote policy remain explicitly unverified in experiment metadata;
 no causal speed claim follows from the current smoke evidence. Client-reported cost
 is an estimate, and multi-stage resumed usage remains unknown until reconciled.
+
+## Compare repository harness use
+
+The evaluator also accepts these modes in each arm snapshot.
+The mode names come from `.scripts/harness_trial_arms.py`.
+
+| Mode | Install basicly | Load project guidance |
+| --- | --- | --- |
+| `plain` | No | No |
+| `gates-only` | Yes | No |
+| `full-basicly` | Yes | Yes |
+
+Supply all modes in the same batch.
+A value comparison currently requires Codex.
+Claude needs separate controls for instruction loading before this mode can support it.
+Existing snapshots without a mode retain the guidance comparison behavior.
+
+A snapshot contains the mode and an empty `files` object.
+For example, the plain snapshot contains this JSON.
+
+```json
+{"mode": "plain", "files": {}}
+```
+
+Each case must separate `task_setup` from `harness_setup`.
+Both fields contain lists of command argument lists.
+Remove the legacy `setup` field from these cases.
+The evaluator runs task setup for every arm.
+It runs harness setup for the installed arms.
+Setup must preserve the task input files.
+Create the same initial Git commit during task setup.
+Keep the task brief, model, effort, acceptance command and stopping limits identical.
+
+The installed arms require projected instructions, skills and Git hooks.
+They also require configured verification checks.
+The gates-only arm preserves those files and hooks.
+It uses Codex settings to suppress automatic instruction and skill loading.
+The [official configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+describes `project_doc_max_bytes` and `skills.config`.
+The [official skill guide](https://learn.chatgpt.com/docs/build-skills)
+shows how to disable a skill.
+
+The evaluator checks the native session trace after each attempt.
+It binds the trace to the session, workspace and model.
+It checks the effective effort, approval policy and sandbox.
+It checks which project instructions and skills loaded before the first assistant response.
+An unsupported trace or a loading mismatch invalidates the attempt.
+Inherited personal instructions and remote policy still need separate assessment.
+Suppression stops automatic loading.
+It does not prevent an agent from reading a repository file through a tool.
+
+Keep raw traces outside tracked files.
+They can contain private host details.
+Publish the experiment hashes and a summary that contains no private paths.
+Keep setup time separate from task time.
+Include failed attempts in cost per accepted task.
+Leave that value unknown when any attempt lacks cost or acceptance data.
+An arm with no accepted task has no cost per accepted task.
+The legacy `cost_per_success` field still requires successful process completion.
+The `cost_per_accepted` field uses the independent acceptance result.
+
+Codex can protect Git metadata under its workspace sandbox.
+A commit task can then fail in every arm for the same host restriction.
+For such a fixture, tell the agent that the evaluator will commit its output.
+Run the normal Git commit through the installed hooks during acceptance.
+Apply that same finish step to every arm.
+This measures prepared work under that finish protocol.
+It does not measure autonomous task intake or publication.

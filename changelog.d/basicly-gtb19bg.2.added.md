@@ -1,0 +1,1 @@
+- Add separate plain, gates-only and full-basicly evaluator modes. Verify native Codex loading and report cost per independently accepted task. Keep setup time separate and preserve unknown measurements.

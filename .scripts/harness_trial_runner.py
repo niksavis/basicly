@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 
+from harness_trial_arms import configure_value_arm, verify_value_loading
 from harness_trial_protocols import (
     Checkpoint,
     bind_resume,
@@ -321,6 +322,7 @@ def _save_execution(
     if error := report.get("protocol", {}).get("error"):
         raise ValueError(error)
     report["session_id"] = observed_session(spec, result)
+    verify_value_loading(spec, directory / "workspace", report)
     report["model_resolution"] = (
         dataclasses.asdict(result.model_resolution) if result.model_resolution else None
     )
@@ -331,6 +333,29 @@ def _save_execution(
     report["cost_source"] = "client-side CLI estimate" if report["cost"] is not None else "unknown"
     if report.get("protocol", {}).get("kind") == "resume":
         report.update(tokens=None, cost=None, cost_source="unreconciled multi-stage usage")
+
+
+def bind_value_arm(
+    spec: runner.RunnerSpec,
+    workspace: Path,
+    case: dict[str, Any],
+    report: dict[str, Any],
+    *,
+    timeout: float,
+) -> runner.RunnerSpec:
+    selected, conditions = configure_value_arm(spec, case.get("arm_mode", "guidance"), workspace)
+    if not conditions:
+        return selected
+    if fingerprint(workspace, list(case["files"])) != report["task_files"]:
+        raise ValueError("value arm setup changed task input files")
+    revision = grade(workspace, ["git", "rev-parse", "HEAD"], timeout)
+    if revision["outcome"] != "passed":
+        raise ValueError("value arm requires a starting Git commit")
+    report.update(
+        arm_conditions=conditions,
+        starting_revision=revision["stdout"].strip(),
+    )
+    return selected
 
 
 def execute_trial(
@@ -364,8 +389,10 @@ def execute_trial(
     result = None
     preserved = None
     try:
+        report["task_files"] = fingerprint(workspace, list(case["files"]))
         if not prepare_case(workspace, case, report, timeout):
             return report
+        spec = bind_value_arm(spec, workspace, case, report, timeout=timeout)
         preserved = fingerprint(workspace, case.get("preserve", []))
         report["setup_duration_s"] = time.perf_counter() - preparation_started
         started = time.perf_counter()

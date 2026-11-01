@@ -206,3 +206,56 @@ def test_eval_harness_trials_refuses_inherited_repository_instructions(
     with pytest.raises(ValueError, match="inherits"):
         module.run_batch(args)
     assert not args.output.exists()
+
+
+def test_value_comparison_requires_separate_task_and_harness_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = load_driver(monkeypatch)
+    args = arguments(tmp_path)
+    for name, mode in [("plain", "plain"), ("gates", "gates-only"), ("full", "full-basicly")]:
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps({"files": {}, "mode": mode}))
+    args.arm = [f"{name}={tmp_path / (name + '.json')}" for name in ["plain", "gates", "full"]]
+    with pytest.raises(ValueError, match=r"task_setup.*harness_setup"):
+        module.run_batch(args)
+    assert not args.output.exists()
+
+
+@pytest.mark.parametrize(
+    "modes", [["plain"], ["plain", "gates-only", "guidance"], ["plain", "plain", "full-basicly"]]
+)
+def test_value_comparison_refuses_missing_conditions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, modes: list[str]
+) -> None:
+    module = load_driver(monkeypatch)
+    args = arguments(tmp_path)
+    args.arm = []
+    for index, mode in enumerate(modes):
+        path = tmp_path / f"arm-{index}.json"
+        path.write_text(json.dumps({"files": {}, "mode": mode}))
+        args.arm.append(f"arm-{index}={path}")
+    with pytest.raises(ValueError, match="requires plain, gates-only and full-basicly"):
+        module.run_batch(args)
+    assert not args.output.exists()
+
+
+def test_value_comparison_records_modes_and_shared_acceptance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = load_driver(monkeypatch)
+    args = arguments(tmp_path)
+    payload = json.loads(args.cases.read_text())
+    payload["cases"][0].update(task_setup=[], harness_setup=[])
+    args.cases.write_text(json.dumps(payload))
+    args.arm = []
+    for mode in ["plain", "gates-only", "full-basicly"]:
+        path = tmp_path / f"{mode}.json"
+        path.write_text(json.dumps({"files": {}, "mode": mode}))
+        args.arm.append(f"{mode}={path}")
+    module.run_batch(args)
+    experiment = json.loads((args.output / "experiment.json").read_text())
+    assert experiment["experiment"] == "repository harness value comparison"
+    assert set(experiment["arm_modes"].values()) == {"plain", "gates-only", "full-basicly"}
+    assert experiment["case_sha256"] == hashlib.sha256(args.cases.read_bytes()).hexdigest()
+    assert experiment["stopping_limits"]["timeout_s"] == args.timeout

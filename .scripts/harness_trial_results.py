@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 GROUP_FIELDS = ("family", "model", "effort", "arm", "case")
-MEASUREMENTS = ("duration_s", "tokens", "cost")
+MEASUREMENTS = ("duration_s", "setup_duration_s", "total_duration_s", "tokens", "cost")
 OUTCOMES = frozenset({"passed", "failed", "timed_out", "infrastructure_error", "interrupted"})
 ACCEPTANCE_OUTCOMES = frozenset({"passed", "failed", "infrastructure_error"})
 
@@ -75,9 +75,11 @@ def summarize(trials: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
             **dict(zip(GROUP_FIELDS, group, strict=True)),
             "attempts": len(rows),
             "passed": passed,
+            "accepted": acceptance["passed"],
             "outcomes": dict(sorted(outcomes.items())),
             "acceptance_outcomes": dict(sorted(acceptance.items())),
             "acceptance_missing": len(rows) - acceptance.total(),
+            "cost_sources": dict(Counter(row.get("cost_source", "unspecified") for row in rows)),
             "attempt_ids": [row["id"] for row in rows],
             **metrics,
         }
@@ -85,6 +87,12 @@ def summarize(trials: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
             metric = metrics[key]
             summary[f"{key}_per_success"] = (
                 metric["known_sum"] / passed if passed and not metric["missing"] else None
+            )
+            accepted = acceptance["passed"]
+            summary[f"{key}_per_accepted"] = (
+                metric["known_sum"] / accepted
+                if accepted and not metric["missing"] and acceptance.total() == len(rows)
+                else None
             )
         summaries.append(summary)
     return summaries
