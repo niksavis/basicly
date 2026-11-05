@@ -1,9 +1,9 @@
 {
   "version": "1",
-  "generated_at": "2026-11-05T10:10:11.343446+00:00",
+  "generated_at": "2026-11-05T10:57:44.985654+00:00",
   "outputs": {
     ".claude/CLAUDE.md": {
-      "hash": "sha256:7f787279bdf580bfba205fc955afafe2319c0be64090a9b9a89f5703a240b5ba",
+      "hash": "sha256:24f2750a29d7e8b496be06ad5c915b8987bc493ffafd1b399852ed5a2f35a46e",
       "source_fragments": [
         "code-is-authoritative",
         "secure-coding",
@@ -28,13 +28,13 @@
       ]
     },
     ".claude/rules/release-fragments.md": {
-      "hash": "sha256:5e9c1a71880752605a1cceda8f0381937f272dec61455f47ff91c6c72bd0ec22",
+      "hash": "sha256:856e258ff6bfa0ab28a06bec6aaa01cfde1793e2ca3d7641a899e2d1ca040b33",
       "source_fragments": [
         "release-fragments"
       ]
     },
     "AGENTS.md": {
-      "hash": "sha256:cef48aff12f23d871220df46978498e4474305b9673d67603be0f3baf459c32a",
+      "hash": "sha256:a33f05eac69d64ad350136546080189e921986eaba8da59c446e4844f3f12421",
       "source_fragments": [
         "code-is-authoritative",
         "secure-coding",
@@ -60,7 +60,7 @@
       ]
     },
     ".github/copilot-instructions.md": {
-      "hash": "sha256:7f787279bdf580bfba205fc955afafe2319c0be64090a9b9a89f5703a240b5ba",
+      "hash": "sha256:24f2750a29d7e8b496be06ad5c915b8987bc493ffafd1b399852ed5a2f35a46e",
       "source_fragments": [
         "code-is-authoritative",
         "secure-coding",

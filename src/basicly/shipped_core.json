@@ -1038,6 +1038,7 @@
    "sha256:39dd81be2e829276b52ecb3bbded0a3f9a5819627ec3bb78ed2585d987fc45db"
   ],
   "kit/tracker/pin.py": [
+   "sha256:04c90d12fe0f826ac1259c9c72048691e150b98dfacbf3d0646e62158be26078",
    "sha256:0a3f4dc734d09d93cac496423851af31c6c5ef4053b3b4926b1121b7f87b2ce1",
    "sha256:0d8d68485a9af073df3f426f00c6b85355257858fb5b2ccf1925ab984f3c3aab",
    "sha256:0ddc8f5463b44de00eec9ddc43453e1c5b743d7c339bd4ac5d9100dc26718310",
@@ -2064,7 +2065,8 @@
   ],
   "skills/work-tracker/references/read.md": [
    "sha256:3beb275093f0a27ae9d169a3353757340c1d6e534b3efdf584212cdaa67ba10d",
-   "sha256:446b911139b523ad7364a69ba2abe2ba444313fa758d4a74ea703e8c3c4d19ce"
+   "sha256:446b911139b523ad7364a69ba2abe2ba444313fa758d4a74ea703e8c3c4d19ce",
+   "sha256:f60640aace4cb4430572863f070e592de77f4f554855c3e35cc09a21af090840"
   ],
   "skills/work-tracker/references/write.md": [
    "sha256:00fbdd33e58d38eb1a3f0b6119fc826f8fb633eb5d24900e286a74da3b4c431d",
@@ -2342,6 +2344,7 @@
   "v0.38.0",
   "v0.39.0",
   "v0.40.0",
-  "v0.40.1"
+  "v0.40.1",
+  "v0.41.0"
  ]
 }

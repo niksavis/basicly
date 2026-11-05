@@ -6,12 +6,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.42.0 - 2026-11-05
+
+Delta: v0.41.0..v0.42.0
+
 This release removes `basicly policy grant`, which v0.41.0 deprecated.
 Past grants stay readable in `basicly session start --full`, on the board and in the spend JSON.
 Five commands with no recorded use now warn and name their replacement.
 
 - Policy: `basicly policy grant` is removed; use `policy budget` for a token limit (basicly-gtb19bg.30.7).
 - CLI: `catalog review`, `health`, `rubric eval`, `runner run` and `usage forecast` are deprecated (basicly-gtb19bg.30.6).
+
+### Deprecated
+
+- Five commands with no recorded use are deprecated and now warn with their replacement: `basicly catalog review` (use `catalog verify`), `basicly health` (use `board`), `basicly rubric eval` (no replacement), `basicly runner run` (use `loop run`) and `basicly usage forecast` (use `usage outcomes`). A later release removes them. (basicly-gtb19bg.30.6)
+
+### Removed
+
+- `basicly policy grant` is removed after its v0.41.0 deprecation. Set a token limit with `basicly policy budget <id> --tokens N`, and read past grants with `basicly session start --full`; the board and the spend JSON still show them. (basicly-gtb19bg.30.7)
 
 ## v0.41.0 - 2026-11-05
 

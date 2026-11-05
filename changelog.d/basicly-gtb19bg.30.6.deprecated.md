@@ -1,1 +1,0 @@
-- Five commands with no recorded use are deprecated and now warn with their replacement: `basicly catalog review` (use `catalog verify`), `basicly health` (use `board`), `basicly rubric eval` (no replacement), `basicly runner run` (use `loop run`) and `basicly usage forecast` (use `usage outcomes`). A later release removes them. (basicly-gtb19bg.30.6)
