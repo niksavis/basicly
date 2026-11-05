@@ -898,7 +898,7 @@ def test_active_grant_last_marker_wins_and_revocation_turns_it_off(
     fake.comments.append("[harness-policy] grant level=L2 budget=100")
     assert policy.active_grant(tmp_path, "root") == policy.Grant(level="L2", token_budget=100)
 
-    policy.revoke_grant(tmp_path, "root")
+    fake.comments.append("[harness-policy] grant revoked")
     assert policy.active_grant(tmp_path, "root") is None
 
     fake.comments.append("[harness-policy] grant level=L1")
@@ -918,55 +918,6 @@ def test_parse_grant_skips_malformed_markers(
         "plain comment",
     ]
     assert policy.active_grant(tmp_path, "root") is None
-
-
-def test_legacy_grant_command_records_only_an_explicit_limit(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-    result = policy.issue_grant_guarded(tmp_path, "root", "L2", 50_000, L3_CONFIG, interactive=True)
-    assert result.status == "approved" and result.code is None
-    assert policy.active_grant(tmp_path, "root") is None
-    limit = policy.active_token_limit(tmp_path, "root")
-    assert limit is not None and limit.token_budget == 50_000
-    assert not any("grant level=" in text for text in fake.comments)
-
-
-def test_old_autonomy_ceiling_does_not_restrict_task_authorization(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _install(monkeypatch, _FakeBr())
-    config = PolicyConfig(required_gates=("verify",), max_rework=2)
-    result = policy.issue_grant_guarded(tmp_path, "root", "L1", None, config, interactive=True)
-    assert result.status == "approved"
-    assert policy.active_grant(tmp_path, "root") is None
-    assert policy.active_token_limit(tmp_path, "root") is None
-
-
-def test_no_old_level_requires_an_invented_token_budget(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _install(monkeypatch, _FakeBr())
-    for level in ("L2", "L3"):
-        result = policy.issue_grant_guarded(
-            tmp_path, "root", level, None, L3_CONFIG, interactive=True
-        )
-        assert result.status == "approved" and result.code is None
-        assert policy.active_token_limit(tmp_path, "root") is None
-        assert policy.active_grant(tmp_path, "root") is None
-
-
-def test_legacy_grant_invocation_does_not_create_a_reconfirmation_ceremony(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-    monkeypatch.setattr(policy, "_new_code", lambda: pytest.fail("no grant challenge is needed"))
-    result = policy.issue_grant_guarded(tmp_path, "root", "L1", None, L3_CONFIG, interactive=False)
-    assert result.status == "approved" and result.code is None
-    assert policy.active_grant(tmp_path, "root") is None
-    assert policy.active_token_limit(tmp_path, "root") is None
 
 
 def test_old_grant_levels_do_not_restrict_task_authorized_phases(
@@ -1694,16 +1645,6 @@ def test_a_gating_dependent_stays_outside_the_session(
     assert "outside requested task root" in result.detail
 
 
-def test_session_coverage_counts_the_whole_track(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _install(monkeypatch, _gating_track())
-    assert policy.session_coverage(tmp_path, "root") == 4
-
-    _install(monkeypatch, _FakeBr())
-    assert policy.session_coverage(tmp_path, "root") == 1
-
-
 def test_gating_spend_counts_toward_the_budget(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1713,22 +1654,6 @@ def test_gating_spend_counts_toward_the_budget(
     )
     run_record.record(tmp_path, "standalone", entry)
     assert policy.session_spend(tmp_path, "root").measured_tokens == 70
-
-
-def test_legacy_grant_arguments_record_the_explicit_cap_without_issuing_levels(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    fake = _FakeBr()
-    _install(monkeypatch, fake)
-    for level, budget in (("L2", 5_000), ("L3", 9_000)):
-        result = policy.issue_grant_guarded(
-            tmp_path, "root", level, budget, L3_CONFIG, interactive=False
-        )
-        assert result.status == "approved" and result.code is None
-        limit = policy.active_token_limit(tmp_path, "root")
-        assert limit is not None and limit.token_budget == budget
-        assert policy.active_grant(tmp_path, "root") is None
-    assert not any("grant level=" in text for text in fake.comments)
 
 
 def test_an_unreliable_gate_event_is_recorded_and_counted(

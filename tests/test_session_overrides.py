@@ -7,7 +7,6 @@ import pytest
 
 from basicly import cli, run_record, runner, session
 from basicly.config import load_policy_config, load_runner_config
-from tests import flipped_tracker
 
 CONFIG = """\
 [runner]
@@ -177,58 +176,6 @@ def test_the_grant_ceiling_can_be_pinned_for_one_issuance(repo: Path) -> None:
 def test_the_grant_reads_the_committed_ceiling_without_the_flag(repo: Path) -> None:
     cli._apply_session_overrides(repo, _grant_args(level="L1"))
     assert load_policy_config(repo).autonomy == "L0"
-
-
-def test_the_grant_parser_exposes_the_autonomy_flag() -> None:
-    args = cli._build_parser().parse_args([
-        "policy",
-        "grant",
-        "basicly-x",
-        "--level",
-        "L1",
-        "--token-budget",
-        "1000",
-        "--autonomy",
-        "L1",
-    ])
-    assert args.autonomy == "L1" and args.level == "L1" and args.token_budget == 1000
-
-
-def test_a_legacy_grant_request_sets_only_its_explicit_limit_without_a_challenge(
-    monkeypatch: pytest.MonkeyPatch, repo: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-
-    monkeypatch.chdir(repo)
-    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
-    flipped_tracker.flipped_repo(repo)
-    flipped_tracker.seed(repo, "basicly-root", title="requested task")
-
-    def unexpected_challenge() -> str:
-        pytest.fail("task authorization must not generate a grant challenge")
-
-    monkeypatch.setattr(cli.policy, "_new_code", unexpected_challenge)
-
-    assert (
-        cli.main([
-            "policy",
-            "grant",
-            "basicly-root",
-            "--level",
-            "L1",
-            "--token-budget",
-            "1000000",
-            "--autonomy",
-            "L1",
-        ])
-        == 0
-    )
-
-    captured = capsys.readouterr()
-    assert "--confirm" not in captured.out + captured.err
-    assert cli.policy.active_grant(repo, "basicly-root") is None
-    limit = cli.policy.active_token_limit(repo, "basicly-root")
-    assert limit is not None and limit.token_budget == 1_000_000
-    assert session.overrides_for("policy")["autonomy"] == "L1"
 
 
 @pytest.mark.parametrize("command", ["advance", "run", "supervise"])

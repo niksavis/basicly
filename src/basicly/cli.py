@@ -3066,7 +3066,6 @@ def cmd_policy(args: argparse.Namespace) -> int:
         "scaffold": _cmd_policy_scaffold,
         "gate": _cmd_policy_gate,
         "checkpoint": _cmd_policy_checkpoint,
-        "grant": _cmd_policy_grant,
         "budget": _cmd_policy_budget,
         "rework": _cmd_policy_rework,
     }
@@ -3209,21 +3208,6 @@ def _approve_checkpoint(repo_root: Path, args: argparse.Namespace) -> int:
     return 1
 
 
-def _report_active_grant(repo_root: Path, issue: str) -> int:
-
-    grant = policy.active_grant(repo_root, issue)
-    if grant is None:
-        print(f"grant: no historical grant ({issue}); task requests require no permission level")
-        return 1
-    budget = f", token budget {grant.token_budget}" if grant.token_budget is not None else ""
-    print(
-        f"grant: historical {grant.level} ({issue}){budget}; "
-        f"{policy.session_coverage(repo_root, issue)} recorded task(s) in the session graph"
-    )
-    print("       permission levels no longer control task authorization")
-    return 0
-
-
 def _cmd_policy_budget(args: argparse.Namespace) -> int:
 
     repo_root = _repo_root()
@@ -3246,54 +3230,6 @@ def _cmd_policy_budget(args: argparse.Namespace) -> int:
             f"({args.issue})"
         )
     return 0
-
-
-GRANT_DEPRECATION = (
-    "grant: deprecated, removed in a later release; set a token limit with "
-    "`basicly policy budget <id> --tokens N` and read past grants with "
-    "`basicly session start --full`"
-)
-
-
-def _cmd_policy_grant(args: argparse.Namespace) -> int:
-
-    print(GRANT_DEPRECATION, file=sys.stderr)
-    repo_root = _repo_root()
-    try:
-        overrides = _apply_session_overrides(repo_root, args)
-    except ValueError as exc:
-        print(f"grant: refused - {exc}", file=sys.stderr)
-        return 1
-    if overrides:
-        print(f"override: {', '.join(overrides)}")
-    if args.revoke:
-        policy.revoke_grant(repo_root, args.issue)
-        print(f"grant: REVOKED ({args.issue})")
-        return 0
-    if args.level is None:
-        return _report_active_grant(repo_root, args.issue)
-    result = policy.issue_grant_guarded(
-        repo_root,
-        args.issue,
-        args.level,
-        args.token_budget,
-        load_policy_config(repo_root),
-        interactive=sys.stdin.isatty(),
-        confirm=args.confirm,
-    )
-    if result.status == "approved":
-        print(f"grant: compatibility request accepted ({args.issue}); no level grant issued")
-        return 0
-    if result.status == "challenge":
-        rerun = (
-            f"basicly policy grant {args.issue} --level {args.level}"
-            + (f" --token-budget {args.token_budget}" if args.token_budget is not None else "")
-            + (f" --autonomy {args.autonomy}" if args.autonomy else "")
-            + f" --confirm {result.code}"
-        )
-        return _print_challenge("grant", args.issue, rerun)
-    print(f"grant: REFUSED ({args.issue}) - {result.detail}", file=sys.stderr)
-    return 1
 
 
 def _cmd_policy_rework(args: argparse.Namespace) -> int:
@@ -5107,32 +5043,6 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
         "--confirm",
         metavar="CODE",
         help="Compatibility code from a prior checkpoint request; ordinary work needs no code",
-    )
-    p_gr = policy_sub.add_parser(
-        "grant",
-        help="Deprecated: use policy budget for a limit and session start --full for past grants",
-    )
-    p_gr.add_argument("issue", help="The session root issue carrying the grant ledger")
-    p_gr.add_argument(
-        "--level", choices=[lvl for lvl in AUTONOMY_LEVELS if lvl != "L0"], help="Level to issue"
-    )
-    p_gr.add_argument(
-        "--token-budget",
-        type=int,
-        metavar="TOKENS",
-        help="Optional explicit token limit; prefer policy budget --tokens",
-    )
-    p_gr.add_argument("--revoke", action="store_true", help="Revoke the active grant")
-    p_gr.add_argument(
-        "--autonomy",
-        choices=AUTONOMY_LEVELS,
-        help="Grantable ceiling for this issuance only, overriding [policy] autonomy "
-        "without editing any committed config (still gated by the confirm challenge)",
-    )
-    p_gr.add_argument(
-        "--confirm",
-        metavar="CODE",
-        help="One-time confirm code for non-interactive issuance",
     )
     p_rw = policy_sub.add_parser("rework", help="Show, record, or forgive a rework attempt")
     p_rw.add_argument("issue")

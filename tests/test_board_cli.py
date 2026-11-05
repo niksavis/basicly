@@ -178,11 +178,7 @@ def test_the_caller_supplies_every_derivation_the_producer_refuses(tmp_path: Pat
         repo, "bd-1", "checkpoint", "approve the ship checkpoint for bd-1?", human_required=False
     )
     config = loop_state.load_policy_config(repo)
-    lights_out = policy.PolicyConfig(required_gates=("verify",), max_rework=2, autonomy="L3")
-    granted = policy.issue_grant_guarded(
-        repo, "bd-1", "L2", 8_000_000, lights_out, interactive=True
-    )
-    assert granted.status == "approved"
+    policy.set_token_limit(repo, "bd-1", 8_000_000)
     _lock(repo, "bd-1")
 
     document: dict[str, Any] = board_facts.document(repo)

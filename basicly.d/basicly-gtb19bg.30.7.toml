@@ -1,0 +1,2 @@
+[ratchet.noqa_debt.frozen]
+PLR0913 = -1

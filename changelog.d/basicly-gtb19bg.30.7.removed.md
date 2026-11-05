@@ -1,0 +1,1 @@
+- `basicly policy grant` is removed after its v0.41.0 deprecation. Set a token limit with `basicly policy budget <id> --tokens N`, and read past grants with `basicly session start --full`; the board and the spend JSON still show them. (basicly-gtb19bg.30.7)

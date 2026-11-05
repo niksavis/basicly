@@ -53,8 +53,6 @@ basicly session start --full              # past grants and explicit limits
 basicly policy checkpoint <id> classify
 ```
 
-`basicly policy grant <id>` is deprecated, and a later release removes it. It warns and names the two reads above.
-
 The user task request authorizes normal work; do not issue another grant to resume it.
 
 The kit CLI does the same with no engine. Its first positional is always the ledger

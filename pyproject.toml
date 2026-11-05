@@ -202,7 +202,6 @@ waiver_count = 1
 "tests/test_catalog_lint.py" = 6558
 "tests/test_cli.py" = 20699
 "tests/test_cli_loop.py" = 13355
-"tests/test_cli_policy.py" = 7121
 "tests/test_commit.py" = 6613
 "tests/test_config.py" = 17954
 "tests/test_decisions.py" = 11767

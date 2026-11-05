@@ -914,50 +914,6 @@ def active_grant(repo_root: Path, root_issue: str) -> Grant | None:
     return grant
 
 
-def _grant_refusal(level: str, token_budget: int | None, _config: PolicyConfig) -> str | None:
-
-    if level not in AUTONOMY_LEVELS or level == "L0":
-        grantable = [lvl for lvl in AUTONOMY_LEVELS if lvl != "L0"]
-        return f"grant level must be one of {grantable}"
-    if token_budget is not None and (type(token_budget) is not int or token_budget <= 0):
-        return "token budget must be a positive whole number"
-    return None
-
-
-def issue_grant_guarded(  # noqa: PLR0913 — mirrors the CLI surface
-    repo_root: Path,
-    root_issue: str,
-    level: str,
-    token_budget: int | None,
-    config: PolicyConfig,
-    *,
-    interactive: bool,
-    confirm: str | None = None,
-) -> ApprovalResult:
-
-    refusal = _grant_refusal(level, token_budget, config)
-    if refusal is not None:
-        return ApprovalResult("rejected", detail=refusal)
-    if confirm is not None and (
-        interactive
-        or not _consume_confirm_code(
-            repo_root, root_issue, f"grant-{level}-{token_budget}", confirm
-        )
-    ):
-        return ApprovalResult("rejected", detail="invalid or expired legacy confirm code")
-    if tracker.read_record(repo_root, root_issue) is None:
-        return ApprovalResult("rejected", detail=f"task {root_issue} does not exist")
-    if token_budget is not None:
-        set_token_limit(repo_root, root_issue, token_budget)
-    return ApprovalResult(
-        "approved", detail="legacy levels are no longer required for task requests"
-    )
-
-
-def revoke_grant(repo_root: Path, root_issue: str) -> None:
-    _add_comment(repo_root, root_issue, _REVOKE_MARKER)
-
-
 PROPOSAL_KINDS = ("work_type", "children")
 
 
@@ -1010,11 +966,6 @@ def session_issue_ids(
                     seen[str(dep["id"])] = None
                     queue.append(str(dep["id"]))
     return tuple(seen)
-
-
-def session_coverage(repo_root: Path, root_issue: str) -> int:
-
-    return len(session_issue_ids(repo_root, root_issue))
 
 
 @dataclass(frozen=True)
