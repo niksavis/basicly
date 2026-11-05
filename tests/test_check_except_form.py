@@ -182,3 +182,20 @@ def test_the_gate_is_wired_to_something_that_runs_it() -> None:
     checks = config.get("verify", {}).get("checks", [])
     (entry,) = [check for check in checks if check["name"] == "except-form"]
     assert entry["command"][-1].endswith("check_except_form.py")
+
+
+def test_a_module_ruff_holds_below_the_house_version_keeps_its_parentheses(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".ruff.toml").write_text(
+        'target-version = "py314"\n\n[per-file-target-version]\n"kit/old/*.py" = "py39"\n'
+        '"kit/new/*.py" = "py314"\n',
+        encoding="utf-8",
+    )
+
+    held = gate.held_back(tmp_path)
+
+    assert held == ("kit/old/*.py",)
+    assert not gate.in_house("kit/old/jsx.py", held)
+    assert gate.in_house("kit/new/jsx.py", held)
+    assert gate.in_house("src/app.py", held)

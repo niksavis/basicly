@@ -1,0 +1,1 @@
+- The standalone comments CLI runs again on its declared Python 3.9 floor. A 3.14-only except clause broke its import, and the formatter now keeps the kit at Python 3.9 so the clause cannot come back.

@@ -2,6 +2,9 @@ target-version = "py314"
 line-length = 100
 indent-width = 4
 
+[per-file-target-version]
+".basicly/core/kit/comments/*.py" = "py39"
+
 [lint]
 select = [
     "E",   # pycodestyle errors

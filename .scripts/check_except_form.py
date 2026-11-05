@@ -3,9 +3,10 @@ from __future__ import annotations
 import io
 import sys
 import tokenize
+import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
@@ -19,6 +20,7 @@ from ratchet import (  # noqa: E402 - the path above comes first
 )
 
 _LABEL = "except-form"
+_HOUSE_VERSION = (3, 14)
 
 _NOISE = frozenset({
     tokenize.NL,
@@ -143,9 +145,28 @@ def collect(sources: Iterable[tuple[str, str]]) -> tuple[list[Finding], int]:
     return findings, seen
 
 
+def held_back(root: Path) -> tuple[str, ...]:
+    config = root / ".ruff.toml"
+    if not config.is_file():
+        return ()
+    targets = tomllib.loads(config.read_text(encoding="utf-8")).get("per-file-target-version", {})
+    return tuple(
+        glob
+        for glob, version in targets.items()
+        if (int(version[2]), int(version[3:])) < _HOUSE_VERSION
+    )
+
+
+def in_house(path: str, held: tuple[str, ...]) -> bool:
+    return not any(PurePosixPath(path).full_match(glob) for glob in held)
+
+
 def main() -> int:
+    held = held_back(REPO_ROOT)
     try:
-        sources = list(tracked_sources(REPO_ROOT))
+        sources = [
+            (path, text) for path, text in tracked_sources(REPO_ROOT) if in_house(path, held)
+        ]
     except RatchetError as exc:
         print(f"{_LABEL}: {exc}", file=sys.stderr)
         return 1

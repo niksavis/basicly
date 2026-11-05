@@ -4,6 +4,7 @@ import ast
 import importlib.util
 import subprocess  # nosec B404
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -361,3 +362,22 @@ def test_jsx_shapes_report_exactly_their_prose_and_keep_regex_literals(
 def test_an_unclosed_regex_in_tsx_is_still_refused(tmp_path: Path) -> None:
     with pytest.raises(scan.LexError, match="regex literal never closes"):
         _prose("d.tsx", "const re = /never closed;\n// prose\n", tmp_path)
+
+
+def test_every_comments_kit_module_parses_at_its_declared_python_floor() -> None:
+    root = Path(__file__).resolve().parents[1]
+    declared = tomllib.loads(
+        (root / "packages" / "basicly-comments" / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["requires-python"]
+    major, minor = (int(part) for part in declared.removeprefix(">=").split(".")[:2])
+    modules = sorted((root / ".basicly" / "core" / "kit" / "comments").glob("*.py"))
+
+    refused = []
+    for module in modules:
+        try:
+            ast.parse(module.read_text(encoding="utf-8"), feature_version=(major, minor))
+        except SyntaxError as error:
+            refused.append(f"{module.name}:{error.lineno}: {error.msg}")
+
+    assert modules
+    assert refused == []

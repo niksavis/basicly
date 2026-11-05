@@ -72,16 +72,25 @@ def covered_files(roots, skipped) -> list:
     return found
 
 
+def _check_one(path, stream) -> int | None:
+    try:
+        findings = scan.findings(path, path.read_text(encoding="utf-8"))
+    except (scan.LexError, UnicodeDecodeError) as err:
+        stream.write(f"{path}: cannot be read with certainty, so it is left alone: {err}\n")
+        return None
+    for finding in findings:
+        stream.write(f"{path}:{finding.line}: {_one_line(finding.text)}\n")
+    return len(findings)
+
+
 def check(paths, stream) -> int:
     found = unreadable = 0
     for path in paths:
-        try:
-            for finding in scan.findings(path, path.read_text(encoding="utf-8")):
-                stream.write(f"{path}:{finding.line}: {_one_line(finding.text)}\n")
-                found += 1
-        except (scan.LexError, UnicodeDecodeError) as err:
-            stream.write(f"{path}: cannot be read with certainty, so it is left alone: {err}\n")
+        count = _check_one(path, stream)
+        if count is None:
             unreadable += 1
+        else:
+            found += count
     stream.write(
         f"comments: {found} prose comments in {len(paths)} files, {unreadable} unreadable\n"
     )
