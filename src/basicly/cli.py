@@ -3248,8 +3248,16 @@ def _cmd_policy_budget(args: argparse.Namespace) -> int:
     return 0
 
 
+GRANT_DEPRECATION = (
+    "grant: deprecated, removed in a later release; set a token limit with "
+    "`basicly policy budget <id> --tokens N` and read past grants with "
+    "`basicly session start --full`"
+)
+
+
 def _cmd_policy_grant(args: argparse.Namespace) -> int:
 
+    print(GRANT_DEPRECATION, file=sys.stderr)
     repo_root = _repo_root()
     try:
         overrides = _apply_session_overrides(repo_root, args)
@@ -5101,7 +5109,8 @@ def _add_policy_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Compatibility code from a prior checkpoint request; ordinary work needs no code",
     )
     p_gr = policy_sub.add_parser(
-        "grant", help="Inspect historical grants or accept legacy optional-limit requests"
+        "grant",
+        help="Deprecated: use policy budget for a limit and session start --full for past grants",
     )
     p_gr.add_argument("issue", help="The session root issue carrying the grant ledger")
     p_gr.add_argument(

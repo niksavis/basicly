@@ -213,7 +213,7 @@ def test_no_budget_is_required_for_a_legacy_noninteractive_invocation(
     assert cli.main(["policy", "grant", "root", "--level", "L1"]) == 0
     captured = capsys.readouterr()
     assert "no level grant issued" in captured.out
-    assert not captured.err
+    assert captured.err == cli.GRANT_DEPRECATION + "\n"
     assert policy.active_grant(tmp_path, "root") is None
     assert policy.active_token_limit(tmp_path, "root") is None
 
@@ -469,3 +469,26 @@ def test_dor_refusal_still_offers_the_scaffold_when_the_type_is_unreadable(
 
     assert cli.main(["policy", "dor", "basicly-x"]) == 1
     assert "basicly policy scaffold --type <work-type>" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "request_args",
+    [
+        ["policy", "grant", "root"],
+        ["policy", "grant", "root", "--level", "L2"],
+        ["policy", "grant", "root", "--token-budget", "5000", "--level", "L1"],
+        ["policy", "grant", "root", "--revoke"],
+    ],
+)
+def test_every_grant_form_warns_that_it_is_deprecated_and_names_the_replacements(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], request_args: list[str]
+) -> None:
+    _no_tty(monkeypatch)
+    fake = _FakeBr()
+    monkeypatch.setattr(policy, "_write", fake)
+    fake_tracker.install(monkeypatch, fake)
+    cli.main(request_args)
+    err = capsys.readouterr().err
+    assert err.count("grant: deprecated") == 1
+    assert "basicly policy budget" in err
+    assert "basicly session start --full" in err

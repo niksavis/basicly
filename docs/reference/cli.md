@@ -79,7 +79,7 @@ is `basicly catalog dump`.
 | `basicly worktree merge\|merge-queue\|bg-isolation` | Land one finished worktree on its base; land several serially in a given topological order; turn off the host's own background isolation so the loop isolates itself |
 | `basicly verify [--mode fast\|full\|staged] [--issue ID] [--gate NAME] [--fix]` | Run the consumer's configured checks for a mode and optionally record a tracker gate; the fix flag applies mechanical repairs first |
 | `basicly policy dor\|scaffold\|gate\|rework` | Report the definition-of-ready, emit a body with every required heading, and read or record gate and rework state |
-| `basicly policy checkpoint\|grant` | Inspect phase checkpoints and historical grant compatibility. Normal task transitions use the user request without another grant ceremony |
+| `basicly policy checkpoint\|grant` | Inspect phase checkpoints. `grant` is deprecated and warns: set a token limit with `policy budget` and read past grants with `session start --full`. Normal task transitions use the user request without another grant ceremony |
 | `basicly policy budget <issue> [--tokens N\|--clear]` | Record an explicit user token limit, show it, or clear it when the user withdraws it. A task needs no default budget |
 | `basicly decompose` | Turn a feature into child issues plus a computed dependency graph |
 | `basicly loop status\|advance\|run <issue>` | Drive one issue through the loop; a blocked step exits nonzero and names the input it needs |

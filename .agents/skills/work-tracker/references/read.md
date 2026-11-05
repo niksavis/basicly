@@ -5,7 +5,7 @@ task, read its current record and latest handover directly. Its first line is th
 tagged `[session handover <date>]`:
 
 ```sh
-basicly session start                     # last handover, ready, blocked, live grants, decision targets
+basicly session start                     # last handover, ready, blocked, past grants, decision targets
 ```
 
 Then ask one question at a time. These commands find the ledger themselves:
@@ -49,9 +49,11 @@ basicly policy dor <id>                   # Definition of Ready
 For an older run, inspect compatibility state only when needed. These reads are not authorization prerequisites:
 
 ```sh
-basicly policy grant <id>
+basicly session start --full              # past grants and explicit limits
 basicly policy checkpoint <id> classify
 ```
+
+`basicly policy grant <id>` is deprecated, and a later release removes it. It warns and names the two reads above.
 
 The user task request authorizes normal work; do not issue another grant to resume it.
 
