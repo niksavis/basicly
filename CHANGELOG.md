@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This patch release fixes two regressions found after v0.40.0.
+The standalone comments kit imports again on Python 3.9.
+Ordinary worktree cleanup no longer refuses the hook pass cache.
+
+- Comments kit: restore the Python 3.9 floor and guard it with ruff and a test (basicly-gtb19bg.20).
+- Worktrees: accept a well-formed hook pass cache during cleanup (basicly-gtb19bg.21).
+
 ## v0.40.0 - 2026-11-01
 
 Delta: v0.39.0..v0.40.0
