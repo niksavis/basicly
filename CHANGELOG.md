@@ -6,12 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.40.1 - 2026-11-05
+
+Delta: v0.40.0..v0.40.1
+
 This patch release fixes two regressions found after v0.40.0.
 The standalone comments kit imports again on Python 3.9.
 Ordinary worktree cleanup no longer refuses the hook pass cache.
 
 - Comments kit: restore the Python 3.9 floor and guard it with ruff and a test (basicly-gtb19bg.20).
 - Worktrees: accept a well-formed hook pass cache during cleanup (basicly-gtb19bg.21).
+
+### Fixed
+
+- The standalone comments CLI runs again on its declared Python 3.9 floor. A 3.14-only except clause broke its import, and the formatter now keeps the kit at Python 3.9 so the clause cannot come back. (basicly-gtb19bg.20)
+
+- Ordinary worktree cleanup now accepts the hook pass cache .basicly/usage/check-passes.json when its entries have the cache's own shape, and still refuses a malformed or unknown artifact. (basicly-gtb19bg.21)
 
 ## v0.40.0 - 2026-11-01
 
