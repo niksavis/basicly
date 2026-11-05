@@ -38,6 +38,14 @@ def write_if_changed(path: Path, content: bytes) -> bool:
     return True
 
 
+def resolve_roots(
+    repo_root: Path, roots: list[str] | None, defaults: tuple[Path, ...] | list[Path]
+) -> list[Path]:
+    candidates = [Path(item) for item in roots] if roots else list(defaults)
+    absolute = [root if root.is_absolute() else repo_root / root for root in candidates]
+    return list({str(root): root for root in absolute}.values())
+
+
 def sync_file(path: Path, content: bytes, result: SyncResult) -> None:
     (result.written if write_if_changed(path, content) else result.unchanged).append(path)
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from .projection import SyncResult, sync_file
+from .projection import SyncResult, resolve_roots, sync_file
 from .schema import ValidationError, technology_selected
 
 STYLES_SOURCE_DIR = Path(".basicly/core/output-styles")
@@ -92,17 +92,7 @@ def render_style_md(style: StyleDefinition) -> str:
 
 
 def resolve_style_roots(repo_root: Path, roots: list[str] | None) -> list[Path]:
-    candidates = [Path(item) for item in roots] if roots else list(DEFAULT_STYLE_ROOTS)
-    resolved: list[Path] = []
-    seen: set[str] = set()
-    for root in candidates:
-        absolute = root if root.is_absolute() else repo_root / root
-        key = str(absolute)
-        if key in seen:
-            continue
-        seen.add(key)
-        resolved.append(absolute)
-    return resolved
+    return resolve_roots(repo_root, roots, DEFAULT_STYLE_ROOTS)
 
 
 def _is_generated_style(path: Path) -> bool:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from .projection import SyncResult, sync_file, write_if_changed
+from .projection import SyncResult, resolve_roots, sync_file, write_if_changed
 from .schema import ValidationError, technology_selected
 from .skill_source import (
     EVAL_SOURCE_FILE,
@@ -113,20 +113,7 @@ def render_skill_md(
 
 
 def resolve_skill_roots(repo_root: Path, roots: list[str] | None) -> list[Path]:
-    candidates = [Path(item) for item in roots] if roots else list(DEFAULT_SKILL_ROOTS)
-
-    resolved: list[Path] = []
-    seen: set[str] = set()
-
-    for root in candidates:
-        absolute_root = root if root.is_absolute() else repo_root / root
-        key = str(absolute_root)
-        if key in seen:
-            continue
-        seen.add(key)
-        resolved.append(absolute_root)
-
-    return resolved
+    return resolve_roots(repo_root, roots, DEFAULT_SKILL_ROOTS)
 
 
 def root_emits_claude_block(skill_root: Path) -> bool:

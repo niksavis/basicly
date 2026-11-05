@@ -58,3 +58,14 @@ def test_atomic_write_leaves_no_tmp_and_replaces_content(tmp_path: Path) -> None
     projection.atomic_write_text(target, '{"a": 2}\n')
     assert target.read_text(encoding="utf-8") == '{"a": 2}\n'
     assert list(tmp_path.rglob("*.basicly-tmp")) == []
+
+
+def test_resolved_roots_keep_their_order_and_drop_a_repeated_root(tmp_path: Path) -> None:
+    absolute = tmp_path / "elsewhere"
+    roots = [".claude/skills", str(absolute), ".claude/skills", ".agents/skills"]
+    assert projection.resolve_roots(tmp_path, roots, ()) == [
+        tmp_path / ".claude/skills",
+        absolute,
+        tmp_path / ".agents/skills",
+    ]
+    assert projection.resolve_roots(tmp_path, None, (Path("a"), Path("a"))) == [tmp_path / "a"]

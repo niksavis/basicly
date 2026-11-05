@@ -143,14 +143,6 @@ def _is_write(dispatch: Dispatch) -> bool:
     return run_record.is_write_phase(dispatch.entry.get("phase"))
 
 
-def _positive_number(entry: Mapping[str, object], key: str) -> float | None:
-
-    value = entry.get(key)
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-        return None
-    return float(value)
-
-
 def _ran(dispatch: Dispatch) -> bool:
 
     return dispatch.entry.get("outcome") in (run_record.EXECUTED, run_record.FAILED)
@@ -159,7 +151,7 @@ def _ran(dispatch: Dispatch) -> bool:
 def _duration(dispatch: Dispatch) -> float | None:
     if not (_is_write(dispatch) and _ran(dispatch)):
         return None
-    return _positive_number(dispatch.entry, "duration_s")
+    return run_record.positive_number(dispatch.entry, "duration_s")
 
 
 def _context_tokens(dispatch: Dispatch) -> float | None:

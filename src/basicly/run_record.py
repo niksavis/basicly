@@ -579,8 +579,8 @@ def forecast_errors(repo_root: Path) -> ForecastErrorReport:
                     forecast_source=_text(entry, "forecast_source"),
                     phase=_text(entry, "phase"),
                     estimated=entry.get("estimated") is True,
-                    actual_cost=_positive_float(entry, "cost"),
-                    actual_wall_clock_s=_positive_float(entry, "duration_s"),
+                    actual_cost=positive_number(entry, "cost"),
+                    actual_wall_clock_s=positive_number(entry, "duration_s"),
                 )
             )
     return ForecastErrorReport(
@@ -596,7 +596,7 @@ def _text(entry: Mapping[str, object], key: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _positive_float(entry: Mapping[str, object], key: str) -> float | None:
+def positive_number(entry: Mapping[str, object], key: str) -> float | None:
 
     value = entry.get(key)
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
