@@ -1,1 +1,0 @@
-- `basicly policy grant` is deprecated and now warns on every run. It has issued no grant since v0.27.0. Set a token limit with `basicly policy budget <id> --tokens N`, and read past grants with `basicly session start --full`. A later release removes the command. (basicly-gtb19bg.30.5)

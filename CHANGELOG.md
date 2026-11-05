@@ -6,11 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.41.0 - 2026-11-05
+
+Delta: v0.40.1..v0.41.0
+
 This release deprecates `basicly policy grant`.
 The command has issued no grant since v0.27.0, and a later release removes it.
 It now warns on every run and names the commands that replace it.
 
 - Policy: `basicly policy grant` warns that it is deprecated and names `policy budget` and `session start --full` (basicly-gtb19bg.30.5).
+
+### Deprecated
+
+- `basicly policy grant` is deprecated and now warns on every run. It has issued no grant since v0.27.0. Set a token limit with `basicly policy budget <id> --tokens N`, and read past grants with `basicly session start --full`. A later release removes the command. (basicly-gtb19bg.30.5)
 
 ## v0.40.1 - 2026-11-05
 
