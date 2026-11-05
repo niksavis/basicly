@@ -5667,10 +5667,31 @@ def _handlers() -> dict[str, Callable[[argparse.Namespace], int]]:
     }
 
 
+DEPRECATED_COMMANDS: dict[tuple[str, ...], str] = {
+    ("catalog", "review"): "basicly catalog verify",
+    ("health",): "basicly board",
+    ("rubric", "eval"): "",
+    ("runner", "run"): "basicly loop run <id>",
+    ("usage", "forecast"): "basicly usage outcomes",
+}
+
+
+def deprecation_warning(args: argparse.Namespace) -> str | None:
+    sub = getattr(args, f"{args.command}_command", None)
+    path = (args.command, sub) if sub else (args.command,)
+    if path not in DEPRECATED_COMMANDS:
+        return None
+    replacement = DEPRECATED_COMMANDS[path]
+    hint = f"; use `{replacement}` instead" if replacement else "; no replacement is planned"
+    return f"basicly {' '.join(path)}: deprecated, removed in a later release{hint}"
+
+
 def main(argv: list[str] | None = None) -> int:
     _tolerate_narrow_consoles()
     _line_buffer_stdout()
     args = _build_parser().parse_args(argv)
+    if warning := deprecation_warning(args):
+        print(warning, file=sys.stderr)
     return guarded(lambda: _dispatch(args, "command", _handlers()))
 
 

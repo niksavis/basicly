@@ -56,12 +56,9 @@ _VULTURE_FINDING = re.compile(r"^.+?:\d+: unused \w+ '(?P<name>[^']+)'")
 _GLOB_CHARS = frozenset("*?[")
 
 BASELINE: frozenset[str] = frozenset({
-    "command:catalog list",
     "command:catalog review",
-    "command:catalog verify",
     "command:health",
     "command:rubric eval",
-    "command:runner list",
     "command:runner run",
     "command:usage forecast",
     "record-field:basicly.agents.AgentOutputRoot.claude_passthrough",

@@ -17,7 +17,7 @@ instructions: |
   - **Apply the deletion test to each bullet.** If its removal causes no mistake, leave it out.
   - **Tag a source with `technologies` only when it is useless outside that technology.** An untagged source ships everywhere.
   - **Keep local sources out of `.basicly/core/` in a consumer repository.** `basicly install` overwrites `.basicly/core/`. Put a fragment in `.basicly-local/fragments/`.
-  - **Edit a generated file through its source.** `.claude/skills/`, `.claude/rules/*.md`, `.agents/skills/` and the always-on files are projections. Start a source with `basicly catalog new <fragment|skill> <name>`, check it with `basicly catalog lint`, then run `basicly build`.
+  - **Edit a generated file through its source.** `.claude/skills/`, `.claude/rules/*.md`, `.agents/skills/` and the always-on files are projections. Start a source with `basicly catalog new <fragment|skill> <name>`, check it with `basicly catalog lint`, then run `basicly build`. List the sources of one kind with `basicly catalog list skill`, and run `basicly catalog verify` for duplicates, contradictions and scope before a catalog commit.
   - **Put a Claude-only prompt, command or runbook in `.claude/*.md`.** No catalog source projects it.
   - **Add no copy under `.github/instructions/`.** Copilot then loads the same rule twice. Prefer a skill to a prompt file, and put a custom agent in `.github/agents/*.agent.md`.
 

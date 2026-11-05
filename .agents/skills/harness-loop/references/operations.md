@@ -63,6 +63,7 @@ Use it to inspect one transition. Both commands exit non-zero when the track sto
 Pass the input that `loop status` or `loop advance` names as `needs input`.
 Both also accept `--execution {session,worker}`; `session` is the default.
 Other flags on both: `--runner <agent>` (`manual` gives a handoff), `--autonomy`, `--tier`.
+`basicly runner list` shows which runners are available and which one `auto` selects.
 `loop run` also takes `--confirm <code>`, `--root <epic>` and `--detach`.
 
 ## Task authorization and safety
