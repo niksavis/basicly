@@ -48,6 +48,46 @@ def test_cleanup_reclaims_generated_verification_cache(safety_repo: Path) -> Non
     assert not session.path.exists()
 
 
+def _hook_pass_store() -> Path:
+    path = Path(__file__).resolve().parents[1] / ".basicly" / "core" / "hooks" / "check_reuse.py"
+    spec = importlib.util.spec_from_file_location("check_reuse_cleanup_test", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.STORE
+
+
+def test_cleanup_names_the_store_the_hook_pass_cache_writes() -> None:
+    assert _hook_pass_store() == worktree_contents.CHECK_PASSES
+
+
+@pytest.mark.parametrize(
+    ("body", "removed"),
+    [
+        ({"inputs:abc": {"checks": ["ruff", "pyright"], "at": "2026-11-05T00:00:00+00:00"}}, True),
+        ({"inputs:abc": {"checks": "ruff", "at": "2026-11-05T00:00:00+00:00"}}, False),
+        ({"inputs:abc": {"checks": ["ruff"]}}, False),
+        (["ruff"], False),
+    ],
+)
+def test_cleanup_reclaims_only_a_valid_hook_pass_cache(
+    safety_repo: Path, body: object, removed: bool
+) -> None:
+    session = worktree.create("pass-cache", repo_root=safety_repo)
+    path = session.path / worktree_contents.CHECK_PASSES
+    path.parent.mkdir(parents=True)
+    path.with_name(".gitignore").write_text("*\n", encoding="utf-8")
+    path.write_text(json.dumps(body), encoding="utf-8")
+
+    if removed:
+        worktree.cleanup("pass-cache", repo_root=safety_repo)
+    else:
+        with pytest.raises(SystemExit):
+            worktree.cleanup("pass-cache", repo_root=safety_repo)
+
+    assert session.path.exists() is not removed
+
+
 @pytest.mark.parametrize("contents", ["bytecode", "unexpected", "symlink", "outside", "directory"])
 def test_cleanup_recognizes_only_regular_bytecode_in_owned_python_cache(
     safety_repo: Path, contents: str

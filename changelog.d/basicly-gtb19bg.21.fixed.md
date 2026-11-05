@@ -1,0 +1,1 @@
+- Ordinary worktree cleanup now accepts the hook pass cache .basicly/usage/check-passes.json when its entries have the cache's own shape, and still refuses a malformed or unknown artifact.

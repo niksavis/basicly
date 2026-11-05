@@ -19,6 +19,7 @@ from . import (
 DEP_DIRS = (".venv", "node_modules")
 USAGE_DIR = verify_artifact.RUN_ARTIFACT.parent
 RETIRED_COUNTER = "verify-checks.json"
+CHECK_PASSES = USAGE_DIR / "check-passes.json"
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ def classify_worktree_tree(returncode: int, stdout: str) -> RemovalVerdict:
         (USAGE_DIR / RETIRED_COUNTER).as_posix(),
         verify_artifact.RUN_ARTIFACT.as_posix(),
         verify_cache.CACHE_PATH.as_posix(),
+        CHECK_PASSES.as_posix(),
         (USAGE_DIR / ".gitignore").as_posix(),
     }
     noise_prefixes = tuple(f"{d}/" for d in DEP_DIRS)
@@ -179,6 +181,7 @@ def _generated_tree(
             RETIRED_COUNTER,
             verify_artifact.RUN_ARTIFACT.name,
             verify_cache.CACHE_PATH.name,
+            CHECK_PASSES.name,
             usage.USAGE_FILE.name,
             ".gitignore",
         }
@@ -241,6 +244,8 @@ def _validate_generated(directory: Path, kind: str, files: tuple[Path, ...]) -> 
                     raise ValueError("unknown usage ignore marker")
             elif path.suffix != ".log" and not isinstance(json.loads(path.read_bytes()), dict):
                 raise ValueError("unrecognized usage artifact shape")
+            elif path.name == CHECK_PASSES.name and not _check_passes(path):
+                raise ValueError("unrecognized hook pass cache entry")
     else:
         with (directory / "CACHEDIR.TAG").open("rb") as marker:
             if marker.readline(100).rstrip(b"\r\n") != _CACHE_TAG:
@@ -250,6 +255,16 @@ def _validate_generated(directory: Path, kind: str, files: tuple[Path, ...]) -> 
         for path in files:
             if path.suffix == ".json" or path.parent.name == "cache":
                 json.loads(path.read_bytes())
+
+
+def _check_passes(path: Path) -> bool:
+    return all(
+        isinstance(entry, dict)
+        and isinstance(entry.get("at"), str)
+        and isinstance(entry.get("checks"), list)
+        and all(isinstance(name, str) for name in entry["checks"])
+        for entry in json.loads(path.read_bytes()).values()
+    )
 
 
 def generated_files(
