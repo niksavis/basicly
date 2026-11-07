@@ -22,11 +22,13 @@ field: every skill root advertises its first body paragraph instead.
 | `catalog-authoring` | `model` | any | Authors catalog sources (skills, fragments, styles) in YAML and projects them. Use when adding a new skill or fragment to the catalog, or before editing a generated file. |
 | `cli-tools` | `model` | any | Picks the fast tool for a shell task: rg to find each file that mentions a word, fd to list files, jq or yq for a JSON or YAML field, curl for an HTTP endpoint. |
 | `conventional-commits` | `model` | any | Writes a commit subject that passes the hooks: type, scope, breaking-change marker, record id. Use for a commit message or after a hook refused one. |
+| `council` | `model` | any | Decides one closed question by independent votes of fresh agents with different stances, and reports the majority with the dissent. Use when asked to let a council, a panel or several agents vote on a choice. |
 | `decompose-plan` | `model` | any | Cuts work into children the plan gate accepts: EARS criteria, scope globs, dependencies, a demo command. Use at DECOMPOSE or when a plan gate refuses a child. |
 | `falsify-first` | `model` | any | Tries to break a claim, invariant or measurement with a concrete counterexample. Use before it enters a plan, a design or a gate, or before a high-risk number, root cause or coverage claim enters a report. |
 | `find-skills` | `model` | any | Searches the catalog, then skills.sh, for an existing community skill out there, and installs one only after the user agrees. Use when asking: is there a skill for this? |
 | `harness-client` | `model` | any | Attaches to a running supervisor: shows what the factory does and records answers to its decisions. Use while a supervisor runs or a lane waits on a human judgment. |
 | `harness-loop` | `model` | any | Drives tracked work through the basicly loop, intake to ship. Use to start or resume work, or to move an issue past a checkpoint or gate. |
+| `hill-climb` | `model` | any | Improves a plan, design, code or skill in graded rounds: fresh reviewers grade fixed properties 0 to 10, the author revises, and a script decides when to stop. Use when asked to hill-climb, iterate to a better version or improve something in rounds. |
 | `interface-facts` | `model` | any | Establishes a third-party CLI flag, API field, model, price or limit from the tool and live vendor docs. Use before code depends on it. |
 | `no-comments` | `model` | any | Edits code in a repo that bans prose comments: where a fact goes, which directives stay. Use when editing code or when the no-comments gate refuses. |
 | `node` | `model` | `node` | Runs Node and npm for the markdownlint hook and other tools. Use when npm or npx fails or resolves the wrong node binary, often on WSL. |
@@ -38,6 +40,8 @@ field: every skill root advertises its first body paragraph instead.
 | `root-cause` | `model` | any | Finds the demonstrated cause of a defect, using deeper analysis for recurring or unclear failures. Use when a repair needs causal evidence. |
 | `session-finish` | `model` | any | Summarizes what changed and what is still open. Use to wrap up a session or run a retro. Write only new recovery facts. |
 | `skill-creator` | `model` | any | Writes a new skill or improves one with evals, a benchmark, graded versions and trigger tuning. Use when turning a workflow into a skill or when a skill never gets picked up. |
+| `swarm` | `model` | any | Runs several fresh agents on one artifact, one lens each, and merges their evidence into a verdict table. Use when asked for an agent swarm, several reviewers or a multi-agent review of a plan, design, diff or document. |
+| `teardown` | `model` | any | Finds every defect in one artifact with fresh agents on fixed lenses, proposes a fix for each, and answers every finding. Use when asked to tear down, rip apart or find everything wrong with a diff, plan, design, skill or document. |
 | `test-discipline` | `model` | any | Writes isolated, order-independent tests that assert what the caller sees, not private helpers. Use for tests with shared fixtures, leaked state, run order or platform differences. |
 | `tier-injection` | `model` | any | Installs the tier kit so a subagent runs on the model its tier names. Use when a host must pin the model of a spawn or a subagent ignores its tier. |
 | `validate-as-consumer` | `model` | any | Runs a verified change the way a consumer does, against its requirement. Use at VALIDATE or before a README claims a capability. |

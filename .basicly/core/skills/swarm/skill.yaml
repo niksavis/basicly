@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../schemas/skill.schema.json
+schema_version: 1
+token_cost:
+  listing: 56
+name: swarm
+invocation: model
+description: "Runs several fresh agents on one artifact, one lens each, and merges their evidence into a verdict table. Use when asked for an agent swarm, several reviewers or a multi-agent review of a plan, design, diff or document."
+instructions: |
+  # Swarm
+
+  Run fresh agents on one artifact, one lens each. Merge only what they prove. The `council`, `teardown` and `hill-climb` skills use these steps.
+
+  The script is `${CLAUDE_SKILL_DIR}/scripts/swarm.py`, in the folder of this SKILL.md. `DIR` is a new folder per run in the session scratchpad, such as `swarm-merge-review-1`.
+
+  ## Steps
+
+  1. **Frame.** Name the artifact, the question and 3 to 6 lenses that do not overlap, with rubrics from [lenses](references/lenses.md). When the user names fewer than 3 lenses, add the closest lenses from the table to reach 3 and say which. For one claim, propose `falsify-first`; run the swarm when the user still asks for it.
+  2. **Brief.** Fill [the brief](assets/brief.md) once per lens: its rubric, a reading list of at most 6 items, a word cap of 400 unless the user sets one. Pass the artifact, never your own conclusion.
+  3. **Launch.** Start all agents in one message so they run in parallel, with the agent that [lenses](references/lenses.md) names for each lens. Use lower effort for a mechanical lens.
+  4. **Collect.** Save each reply as `DIR/LENS.md`. Wait for each agent's completion notice; never write a reply for an agent that has not returned. An agent that fails or stops without a reply has not returned.
+  5. **Check.** Run:
+
+     ```sh
+     python3 ${CLAUDE_SKILL_DIR}/scripts/swarm.py check --lenses a,b,c --dir DIR
+     ```
+
+     Exit 1 names each lens that is not run or malformed. Rerun that lens once with the same brief into the same `DIR`, then run the check again. If it still fails, report it as not run.
+  6. **Verify.** Give each important finding that rests on a number, a root cause or an absence claim to `falsify-first`, run by an agent that did not write it. Drop what it refutes.
+  7. **Report.** Give the user the script table, the verified important findings and numbered decisions with one recommendation each. Mark every unverified finding as unverified. Say which fresh agent verified each claim and that it did not write the claim.
+
+  ## Rules
+
+  - Each agent is fresh: it sees the artifact, its brief and its reading list, never another agent's reply.
+  - A missing report is "not run", never a pass.
+  - Two lenses on one `path:line` raise confidence; every claim at that line stays in the report.
+  - Ask the user before more than 8 agents at once.
+
+  ## Read when needed
+
+  - [Report format](references/report-format.md) for the json block and the merge rules.

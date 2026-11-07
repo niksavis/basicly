@@ -32,6 +32,10 @@ UNPAIRED_EXEMPTIONS: dict[str, str] = {
     "cli-tools": "environment: reached from the listing by whichever role runs a shell task",
     "node": "environment: reached from the listing by whichever role needs the platform",
     "wsl": "environment: reached from the listing by whichever role needs the platform",
+    "swarm": "operator: the driving session starts and merges the fresh agents",
+    "council": "operator: the driving session runs the vote and reports to the user",
+    "teardown": "operator: the driving session runs the reviewers and answers each finding",
+    "hill-climb": "operator: the driving session revises between graded rounds",
 }
 
 

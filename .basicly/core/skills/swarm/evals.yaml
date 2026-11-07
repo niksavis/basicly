@@ -1,0 +1,25 @@
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "put an agent swarm on this plan and tell me what they find"
+    - prompt: "get several independent reviewers to look at the design doc from different angles"
+    - prompt: "run a multi agent review of the new merge module"
+  negative:
+    - prompt: "let three agents vote on whether we use postgres or sqlite"
+      owner: council
+    - prompt: "improve this plan in graded rounds until it stops getting better"
+      owner: hill-climb
+tasks:
+  - query: "Run a swarm on docs/architecture/architecture.md with the lenses facts, wording and architecture."
+    expected_behavior:
+      - "Starts three fresh agents in one message, one per lens, each with its own rubric from references/lenses.md"
+      - "Saves each reply as DIR/LENS.md and runs scripts/swarm.py check with all three lenses"
+      - "Reports the script table and marks every finding without path:line or command output as unverified"
+  - query: "Swarm review this diff with correctness and security; the security agent timed out."
+    expected_behavior:
+      - "Reports the security lens as not run, never as a pass"
+      - "Reruns the missing lens once or states that the review is incomplete"
+  - query: "Use a swarm to check my claim that no test covers the merge queue."
+    expected_behavior:
+      - "Treats the absence claim as needing falsify-first by an agent that did not make the claim"
+      - "Requires a positive control in the search before the claim is reported as verified"

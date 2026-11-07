@@ -63,6 +63,7 @@ from . import (
     runner,
     shipped_core,
     skill_reference,
+    skill_standard,
     state,
     supervise,
     tracker,
@@ -2621,6 +2622,10 @@ def cmd_skills_check(args: argparse.Namespace) -> int:
     )
     if _report_mismatches(mismatches, repo_root, stale_message=_skills_stale_message(mismatches)):
         return 1
+    if _report_gate_failures(
+        "skills-check: a skill breaks the skill standard:", skill_standard.violations(repo_root)
+    ):
+        return 1
 
     for line in user_skills.shadows(repo_root / user_skills.USER_SKILLS, user_skills.home_skills()):
         ui.say(line, style="warn")
@@ -2779,7 +2784,7 @@ def cmd_fragment_new(args: argparse.Namespace) -> int:
 
 def cmd_catalog_lint(_args: argparse.Namespace) -> int:
     repo_root = _repo_root()
-    violations = catalog_lint.lint_catalog(repo_root)
+    violations = catalog_lint.lint_catalog(repo_root) + skill_standard.violations(repo_root)
     try:
         for warning in catalog_lint.skill_warnings(repo_root):
             print(f"catalog lint: warning: {warning}", file=sys.stderr)
@@ -2796,7 +2801,11 @@ def cmd_catalog_lint(_args: argparse.Namespace) -> int:
 
 
 def _deterministic_gate(repo_root: Path, fragments: list[Any]) -> list[str]:
-    return catalog_lint.lint_catalog(repo_root) + catalog_verify.verify_catalog(fragments)
+    return (
+        catalog_lint.lint_catalog(repo_root)
+        + skill_standard.violations(repo_root)
+        + catalog_verify.verify_catalog(fragments)
+    )
 
 
 def _report_gate_failures(header: str, violations: list[str]) -> bool:

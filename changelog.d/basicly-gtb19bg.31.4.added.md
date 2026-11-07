@@ -1,0 +1,1 @@
+- New skills `swarm`, `council`, `teardown` and `hill-climb` run fresh agents on lenses, votes and graded rounds, with one shared script that marks a missing report as not run. `skills-check`, `catalog lint` and `check` now refuse a skill with no `evals.yaml`, fewer than three task cases, a broken resource link or an oversize SKILL.md; existing skills are listed as debt.

@@ -30,10 +30,67 @@ def _catalog(tmp_path: Path, skills: dict[str, str]) -> Path:
     return tmp_path
 
 
-def test_a_clean_catalog_passes_the_command(
+_EVALS = """\
+schema_version: 1
+trigger:
+  positive:
+    - prompt: "{own} one"
+    - prompt: "{own} two"
+    - prompt: "{own} three"
+  negative:
+    - prompt: "{other} please"
+      owner: {owner}
+    - prompt: "{other} now"
+      owner: {owner}
+tasks:
+  - query: q1
+    expected_behavior: [b1]
+  - query: q2
+    expected_behavior: [b2]
+  - query: q3
+    expected_behavior: [b3]
+"""
+
+
+def _standard_catalog(tmp_path: Path) -> Path:
+    words = {"parse": "Parse json documents in pipelines.", "draw": "Draw directory trees."}
+    root = _catalog(
+        tmp_path,
+        {
+            slug: _VALID.replace("name: s", f"name: {slug}").replace(
+                "description: d", f"description: {text}"
+            )
+            for slug, text in words.items()
+        },
+    )
+    (root / ".basicly/core/schemas/evals.schema.json").write_text(
+        (REPO / ".basicly/core/schemas/evals.schema.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    for slug, other, owner in (
+        ("parse", "draw directory trees", "draw"),
+        ("draw", "parse json documents", "parse"),
+    ):
+        own = words[slug].lower().rstrip(".")
+        (root / ".basicly/core/skills" / slug / "evals.yaml").write_text(
+            _EVALS.format(own=own, other=other, owner=owner), encoding="utf-8"
+        )
+    return root
+
+
+def test_a_skill_with_no_evals_fails_the_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(_catalog(tmp_path, {"s": _VALID}))
+
+    assert cmd_catalog_lint(argparse.Namespace()) == 1
+    assert "s/skill.yaml: has no evals.yaml" in capsys.readouterr().err
+
+
+def test_a_clean_catalog_passes_the_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(_standard_catalog(tmp_path))
 
     exit_code = cmd_catalog_lint(argparse.Namespace())
 
