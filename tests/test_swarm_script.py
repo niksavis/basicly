@@ -64,44 +64,36 @@ def test_evidence_needs_a_location_or_a_command(evidence: str, expected: bool) -
     assert swarm.verified({"evidence": evidence}) is expected
 
 
-def test_two_lenses_on_one_line_merge_and_keep_the_higher_severity(tmp_path: Path) -> None:
+def test_two_lenses_on_one_line_note_each_other(tmp_path: Path) -> None:
     _reply(tmp_path, "a", {"findings": [_finding("nit", "src/x.py:3")]})
     _reply(tmp_path, "b", {"findings": [_finding("important", "src/x.py:3")]})
     merged = swarm.merge([swarm.read_report(tmp_path, "a"), swarm.read_report(tmp_path, "b")])
-    assert [(m["severity"], m["lenses"], len(m["items"])) for m in merged] == [
-        ("important", ["a", "b"], 2)
+    assert [(m["lens"], m["severity"], m["also"]) for m in merged] == [
+        ("b", "important", ["a"]),
+        ("a", "nit", ["b"]),
     ]
 
 
-def test_two_claims_on_one_line_are_both_kept(
+def test_findings_citing_a_shared_line_stay_separate(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _reply(
-        tmp_path, "facts", {"findings": [_finding("important", "doc.md:40", claim="wrong version")]}
-    )
-    _reply(tmp_path, "wording", {"findings": [_finding("nit", "doc.md:40", claim="two terms")]})
-    swarm.main(["check", "--lenses", "facts,wording", "--dir", str(tmp_path)])
-    out = capsys.readouterr().out
-    assert "wrong version" in out
-    assert "two terms" in out
-
-
-def test_command_evidence_never_merges_different_findings(tmp_path: Path) -> None:
-    _reply(
-        tmp_path,
-        "correctness",
-        {
-            "findings": [
-                _finding("important", "ran: pytest a", "one"),
-                _finding("nit", "ran: ruff", "two"),
-            ]
-        },
-    )
-    merged = swarm.merge([swarm.read_report(tmp_path, "correctness")])
-    assert [(m["lenses"], len(m["items"])) for m in merged] == [
-        (["correctness"], 1),
-        (["correctness"], 1),
+    shared = "src/registry.py:18"
+    findings = [
+        _finding("important", shared, "x: delete"),
+        _finding("important", shared, "y: keep"),
     ]
+    _reply(tmp_path, "usage", {"findings": findings})
+    swarm.main(["check", "--lenses", "usage", "--dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert "- [important] usage: x: delete\n" in out
+    assert "- [important] usage: y: keep\n" in out
+
+
+def test_command_evidence_never_links_findings(tmp_path: Path) -> None:
+    _reply(tmp_path, "a", {"findings": [_finding("important", "ran: pytest a", "one")]})
+    _reply(tmp_path, "b", {"findings": [_finding("nit", "ran: ruff", "two")]})
+    merged = swarm.merge([swarm.read_report(tmp_path, "a"), swarm.read_report(tmp_path, "b")])
+    assert [m["also"] for m in merged] == [[], []]
 
 
 def test_the_verdict_is_shown_in_the_table(
@@ -117,7 +109,7 @@ def test_an_unverified_finding_is_marked_in_the_report(
 ) -> None:
     _reply(tmp_path, "a", {"findings": [_finding("important", "trust me", claim="bad")]})
     assert swarm.main(["check", "--lenses", "a", "--dir", str(tmp_path)]) == 0
-    assert "a (important UNVERIFIED): bad" in capsys.readouterr().out
+    assert "- [important UNVERIFIED] a: bad" in capsys.readouterr().out
 
 
 def _vote(directory: Path, voter: str, vote: str) -> None:

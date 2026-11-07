@@ -30,7 +30,7 @@ The script is `${CLAUDE_SKILL_DIR}/scripts/swarm.py`, in the folder of this SKIL
 
 - Each agent is fresh: it sees the artifact, its brief and its reading list, never another agent's reply.
 - A missing report is "not run", never a pass.
-- Two lenses on one `path:line` raise confidence; every claim at that line stays in the report.
+- Two lenses citing one `path:line` raise confidence; every claim stays on its own line.
 - Ask the user before more than 8 agents at once.
 
 ## Read when needed

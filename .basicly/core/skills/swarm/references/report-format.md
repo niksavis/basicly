@@ -15,7 +15,6 @@ The script rules:
 - A missing file is "not run". A file with no json block is "malformed". Both make `check` exit 1.
 - Evidence counts as verified when it holds a `path:line`, `ran:`, or a dollar sign and a space, at the start or after a space.
 - A `verdict` other than pass or fail is malformed.
-- A group heading shows the highest severity; each claim under it keeps its own.
-- Findings with the same `path:line` are grouped. The group keeps every claim, lists every lens that found one, and takes the highest severity. Agreement of two lenses raises confidence.
-- Command evidence (a dollar prompt or `ran:`) verifies a finding but never groups it, because two commands rarely point at one defect.
+- Every finding is listed on its own line, highest severity first. When another lens cites a `path:line` that this finding also cites, the line says "also cited by" that lens. Agreement of two lenses raises confidence; it never hides a claim.
+- Command evidence (a dollar prompt or `ran:`) verifies a finding but never links it to another.
 - The `verdict` column shows each lens's pass or fail.

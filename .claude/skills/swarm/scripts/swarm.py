@@ -76,28 +76,24 @@ def verified(finding: dict) -> bool:
 
 
 def merge(reports: list[Report]) -> list[dict]:
-    groups: dict[str, dict] = {}
-    loose: list[dict] = []
-    for report in reports:
-        for finding in report.data.get("findings", []):
-            entry = {**finding, "lens": report.lens, "verified": verified(finding)}
-            match = LOCATION.search(str(finding.get("evidence", "")))
-            if not match:
-                loose.append({"severity": finding["severity"], "items": [entry]})
-                continue
-            group = groups.setdefault(
-                match.group(0), {"severity": finding["severity"], "items": []}
-            )
-            group["items"].append(entry)
-            if SEVERITIES.index(finding["severity"]) < SEVERITIES.index(group["severity"]):
-                group["severity"] = finding["severity"]
-    for anchor, group in groups.items():
-        group["anchor"] = anchor
-    for group in [*groups.values(), *loose]:
-        group["lenses"] = sorted({item["lens"] for item in group["items"]})
+    entries = [
+        {
+            **finding,
+            "lens": report.lens,
+            "verified": verified(finding),
+            "places": set(LOCATION.findall(str(finding.get("evidence", "")))),
+        }
+        for report in reports
+        for finding in report.data.get("findings", [])
+    ]
+    for entry in entries:
+        entry["also"] = sorted({
+            other["lens"]
+            for other in entries
+            if other["lens"] != entry["lens"] and other["places"] & entry["places"]
+        })
     return sorted(
-        [*groups.values(), *loose],
-        key=lambda group: (SEVERITIES.index(group["severity"]), -len(group["lenses"])),
+        entries, key=lambda item: (SEVERITIES.index(item["severity"]), -len(item["also"]))
     )
 
 
@@ -116,16 +112,13 @@ def cmd_check(args: argparse.Namespace) -> int:
             f"{' | '.join(map(str, counts))} | {unverified} |"
         )
     print()
-    for group in merge([report for report in reports if report.status == "ok"]):
-        where = group.get("anchor", "no location")
-        agreed = f", {len(group['lenses'])} lenses agree" if len(group["lenses"]) > 1 else ""
-        print(f"- [{group['severity']}] {where}{agreed}")
-        for item in group["items"]:
-            mark = "" if item["verified"] else " UNVERIFIED"
-            print(f"  - {item['lens']} ({item['severity']}{mark}): {item.get('claim', '')}")
-            print(f"    evidence: {item.get('evidence', '')}")
-            if item.get("fix"):
-                print(f"    fix: {item['fix']}")
+    for item in merge([report for report in reports if report.status == "ok"]):
+        mark = "" if item["verified"] else " UNVERIFIED"
+        also = f" (also cited by {', '.join(item['also'])})" if item["also"] else ""
+        print(f"- [{item['severity']}{mark}] {item['lens']}: {item.get('claim', '')}{also}")
+        print(f"  evidence: {item.get('evidence', '')}")
+        if item.get("fix"):
+            print(f"  fix: {item['fix']}")
     missing = [report.lens for report in reports if report.status != "ok"]
     if missing:
         print(
@@ -257,7 +250,7 @@ def cmd_climb_round(args: argparse.Namespace) -> int:
         print(f"round refused: no reviewer graded {', '.join(ungraded)}")
         return 1
     graded = [report for report in reports if report.status == "ok"]
-    important = sum(group["severity"] == "important" for group in merge(graded))
+    important = sum(item["severity"] == "important" for item in merge(graded))
     state["rounds"].append({
         "lenses": [report.lens for report in graded],
         "scores": {p: min(values) for p, values in grades.items()},
