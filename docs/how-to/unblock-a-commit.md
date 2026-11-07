@@ -29,7 +29,7 @@ hits, because the install output itself is a commit.
 ## `no rank-1 floor declared`
 
 ```text
-catalog lint: routing: rank-1 rate 80/87 = 92.0% (no floor declared)
+catalog lint: routing: rank-1 rate 92/99 = 92.9% (no floor declared)
 catalog lint: FAILED
   no rank-1 floor declared — set `[catalog] rank1_floor` in basicly.toml below
   the measured baseline (currently 92.0%)
