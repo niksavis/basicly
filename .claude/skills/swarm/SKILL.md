@@ -23,7 +23,7 @@ The script is `${CLAUDE_SKILL_DIR}/scripts/swarm.py`, in the folder of this SKIL
    ```
 
    Exit 1 names each lens that is not run or malformed. Rerun that lens once with the same brief into the same `DIR`, then run the check again. If it still fails, report it as not run.
-6. **Verify.** Give each important finding that rests on a number, a root cause or an absence claim to `falsify-first`, run by an agent that did not write it. Drop what it refutes.
+6. **Verify.** Give each important finding that rests on a number, a root cause or an absence claim to `falsify-first`, run by an agent that did not write it. Drop what it refutes. An absence claim stays unverified until a positive control, a known match run through the same search, is found by it.
 7. **Report.** Give the user the script table, the verified important findings and numbered decisions with one recommendation each. Mark every unverified finding as unverified. Say which fresh agent verified each claim and that it did not write the claim.
 
 ## Rules
