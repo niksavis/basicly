@@ -10,7 +10,7 @@
 [![quality gates](https://github.com/niksavis/basicly/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/niksavis/basicly/actions/workflows/quality-gates.yml)
 [![projection gate](https://github.com/niksavis/basicly/actions/workflows/basicly.yml/badge.svg)](https://github.com/niksavis/basicly/actions/workflows/basicly.yml)
 [![python 3.14+](https://img.shields.io/badge/python-3.14%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![license](https://img.shields.io/github/license/niksavis/basicly)](LICENSE)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 </div>
 
