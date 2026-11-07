@@ -10,16 +10,14 @@ Construct a one-line commit subject that passes the `commit-msg` and `tracker-co
 
 ## Rules
 
-- **Use `basicly commit` by default.** It derives the type, the scope and the record id, so only the description is yours.
+- **Use `basicly commit` by default.**
 - **Write the description in lowercase letters, digits, spaces and hyphens only.** The hook rejects every other character, also in proper nouns and acronyms.
 - **Put a version, a file name or a capitalised name in the body.** The hooks check only the subject line.
-- **Use the id of a record the ledger holds.** The hook reads the staged `.basicly/ledger` files, so stage the ledger with the code; `work-tracker` files and claims the record.
+- **Use the id of a record the ledger holds;** `work-tracker` files it and stages the ledger.
+- **After a refusal, read the hook's output first.** It names the offending character or the missing record; fix that, not a guess.
 - **Read `git status --short` column 1 before you commit.** `git commit` takes the whole index, including a file staged by a refused attempt.
-- **In a worktree, create it with `basicly worktree create`,** which installs the hooks; a hook that is not installed lets a bad message through to CI.
-- **When a hook rejects the commit, read its error output.** It names the offending characters.
 
 ## Read when needed
 
 - Before composing a subject by hand or using command overrides, read [message format and command options](references/message-format.md).
 - For valid/invalid subjects, a refusal or hook installation details, read [examples and enforcement](references/examples-and-enforcement.md).
-- Completion means the intended staged diff is committed with the real record id; read the commit result before any push or tracker write.

@@ -121,16 +121,72 @@ def test_an_out_that_names_a_file_is_refused_by_name(
 ) -> None:
     target = tmp_path / "notes.txt"
     target.write_text("x", encoding="utf-8")
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as refused:
         _module().main(["--out", str(target)], get=lambda url: url.encode())
+    assert refused.value.code == 2
     assert "--out names a file" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("marker", ["dir", "file"])
 def test_an_out_inside_a_git_tree_is_refused(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], marker: str
 ) -> None:
-    (tmp_path / ".git").mkdir()
-    with pytest.raises(SystemExit):
+    if marker == "dir":
+        (tmp_path / ".git").mkdir()
+    else:
+        (tmp_path / ".git").write_text("gitdir: x\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as refused:
         _module().main(["--out", str(tmp_path / "docs")], get=lambda url: url.encode())
+    assert refused.value.code == 2
     assert "inside a git working tree" in capsys.readouterr().err
     assert not (tmp_path / "docs").exists()
+
+
+def test_a_relative_out_inside_a_git_tree_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".git").mkdir()
+    inner = tmp_path / "a" / "b"
+    inner.mkdir(parents=True)
+    monkeypatch.chdir(inner)
+    with pytest.raises(SystemExit):
+        _module().main(["--out", "docs"], get=lambda url: url.encode())
+    assert not (inner / "docs").exists()
+
+
+class _Response:
+    status = 404
+    reason = "Not Found"
+
+    def read(self) -> bytes:
+        return b"<html>missing</html>"
+
+
+class _Connection:
+    def __init__(self, host: str, timeout: float) -> None:
+        self.host = host
+        self.timeout = timeout
+
+    def request(self, method: str, path: str, headers: dict[str, str]) -> None:
+        self.sent = (method, path, headers)
+
+    def getresponse(self) -> _Response:
+        return _Response()
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_an_error_page_is_a_failure_not_a_doc() -> None:
+    with pytest.raises(OSError, match="HTTP 404"):
+        _module().fetch("https://code.claude.com/docs/en/x.md", connect=_Connection)
+
+
+def test_a_page_that_returns_an_error_is_not_saved(tmp_path: Path) -> None:
+    module = _module()
+
+    def get(url: str) -> bytes:
+        return module.fetch(url, connect=_Connection)
+
+    assert module.main(["--out", str(tmp_path)], get=get) == module.OFFLINE
+    assert not (tmp_path / "skills-best-practices.md").exists()

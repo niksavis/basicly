@@ -1,0 +1,1 @@
+- Every catalog skill now meets the skill standard, and its task evals were graded by an independent agent. The skills no-comments, work-tracker, decompose-plan, catalog-authoring, session-finish and cli-tools have numbered steps and corrected facts.

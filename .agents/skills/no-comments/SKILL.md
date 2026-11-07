@@ -6,9 +6,16 @@ description: 'Keeps prose comments and docstrings out of code: where a fact goes
 
 # No comments in code
 
-A code file carries no prose: no comment and no docstring. The code is the only source of
-truth, so a change cannot leave a stale claim beside it. The `no-comments` hook refuses a
-commit that adds prose.
+The code is the only source of truth, so a change cannot leave a stale claim beside it.
+
+## Steps
+
+1. Run `python3 .basicly/core/kit/comments/cli.py check <path>` on each refused or edited file. It lists each prose comment and docstring.
+2. Move each fact to the place the table below names. Fix the code when the fact says what it does.
+3. Before step 4, turn a plain licence header, such as `# Copyright 2026 X`, into
+   `SPDX-License-Identifier` and `SPDX-FileCopyrightText` lines, because `fix` removes a plain header.
+4. Run `python3 .basicly/core/kit/comments/cli.py fix <path>` for the prose that is left. Run `check` again until it reports 0.
+5. Stage the files and commit again.
 
 ## Rules
 
@@ -34,12 +41,13 @@ commit that adds prose.
 
 ## Directives that stay
 
-The gate never reports a directive, and `fix` never removes one:
+`check` never reports a directive, and `fix` never removes one. Among them:
 
 `noqa` · `nosec` · `type: ignore` · `pragma: no cover` · `fmt: off` / `fmt: on` / `fmt: skip`
 · a shebang · `eslint-disable` · `prettier-ignore` · `@ts-expect-error` · `@ts-nocheck`
 · `stylelint-disable` · `go:build` · `CHECKSTYLE:` · `NOSONAR` · `SPDX-License-Identifier`
-· a `/*!` licence banner · an HTML conditional comment.
+· `SPDX-FileCopyrightText` · a `/*!` licence banner · an HTML conditional comment.
+`.basicly/core/kit/comments/directives.py` holds the full list.
 
 ## Commands
 
@@ -50,23 +58,15 @@ python3 .basicly/core/kit/comments/cli.py languages         # each file extensio
 ```
 
 - `check` never writes.
-- `fix` writes only a change it can prove. A second strip must change nothing, and every
+- `fix` writes only a change it can prove. A second `fix` run must change nothing, and every
   string literal must stay. A Python file must parse to the same syntax tree.
 - `fix` reports a file that it cannot read with certainty and leaves the file unchanged.
 
 ## Scope
 
 YAML, TOML, JSON and Markdown keep their comments, because no code beside them is the
-source of truth. The kit skips vendored directories such as `vendor` and `node_modules`.
+source of truth. `check` and `fix` skip vendored directories such as `vendor` and `node_modules`.
 Run `languages` for the current list.
 
-## Transition existing code
-
-Strict `no-comments` is the default and goal. When a repository explicitly selects
-`[hooks.comments] policy = "no-comment-ratchet"`, leave unrelated legacy prose alone.
-Add no new prose. The hook compares complete parsed comments and docstrings in HEAD
-and the staged index. Rewritten or duplicated prose is new prose.
-
-Run `python3 .basicly/core/hooks/comment_ratchet.py PATHS` for the Git-backed check in a basicly repository. The existing
-`check` command stays strict. Remove the transition setting once the repository has
-no prose comments.
+When `basicly.toml` sets `[hooks.comments] policy = "no-comment-ratchet"`, read
+[ratchet](references/ratchet.md) before you edit a file with legacy prose.

@@ -6,20 +6,20 @@ description: Isolates work in a sibling git worktree, then merges and cleans up.
 
 # Worktree Isolation
 
-Isolate a unit of work in a sibling Git worktree, then merge it from the base and clean up. For records see `work-tracker`; for commit subjects see `conventional-commits`.
+Isolate a change in a sibling Git worktree, then merge it from the main checkout and clean up. For records see `work-tracker`; for commit subjects see `conventional-commits`.
 
 ## Steps
 
 ```sh
 basicly worktree create NAME [--base BRANCH]          # add and provision .venv, node_modules and hooks
-basicly worktree merge NAME --bead RECORD-ID          # from the base: rebase, verify, --no-ff merge
+basicly worktree merge NAME --bead RECORD-ID          # from the main checkout; --bead is the old flag name for the record id
 basicly worktree cleanup NAME                         # remove the worktree and its merged branch
 ```
 
 1. **Create** the worktree when the work will commit. A plain `git worktree add ../REPO.worktrees/NAME -b BRANCH` leaves the hooks and environments missing, so it suits read-only work only.
 2. **Work and commit** inside the worktree.
-3. **Merge from the base checkout.** Git refuses to update a branch that another worktree has checked out.
-4. **Clean up.** Cleanup without `--force` refuses while unmerged work remains.
+3. **Merge from the main checkout.** Git refuses to update a branch that another worktree has checked out.
+4. **Clean up.** Without `--force`, cleanup refuses uncommitted changes and keeps an unmerged branch.
 
 ## Rules
 

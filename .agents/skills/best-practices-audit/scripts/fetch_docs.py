@@ -54,11 +54,13 @@ USER_AGENT = "basicly-best-practices-audit"
 Fetch = Callable[[str], bytes]
 
 
-def fetch(url: str) -> bytes:
+def fetch(
+    url: str, connect: Callable[..., http.client.HTTPConnection] = http.client.HTTPSConnection
+) -> bytes:
     parts = urllib.parse.urlsplit(url)
     if parts.scheme != "https" or not parts.hostname:
         raise ValueError(f"refusing {url!r}: only https sources are fetched")
-    connection = http.client.HTTPSConnection(parts.hostname, timeout=TIMEOUT_S)
+    connection = connect(parts.hostname, timeout=TIMEOUT_S)
     try:
         connection.request("GET", parts.path, headers={"User-Agent": USER_AGENT})
         response = connection.getresponse()

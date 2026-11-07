@@ -16,6 +16,7 @@ CAP = 5
 RISE = 1.0
 CLEAN_ROUNDS = 2
 LENS_RANGE = (3, 6)
+PROPERTY_RANGE = (3, 9)
 COUNCIL_SIZES = (3, 5)
 
 
@@ -55,11 +56,34 @@ def _shape_problem(data: object, lens: str, required: str) -> str:
         return "the json block is not an object"
     if data.get("lens") != lens:
         return f"the json block's lens is {data.get('lens')!r}, not {lens!r}"
-    if required not in data:
-        return f"the json block has no {required!r} field"
+    for field_name in dict.fromkeys((required, "findings")):
+        if field_name not in data and not (field_name == "findings" and required == "vote"):
+            return f"the json block has no {field_name!r} field"
     if data.get("verdict", "pass") not in ("pass", "fail"):
         return "verdict must be pass or fail"
     return _findings_problem(data.get("findings", []))
+
+
+def unlisted_replies(directory: Path, names: list[str]) -> list[str]:
+    if not directory.is_dir():
+        return []
+    return sorted(path.name for path in directory.glob("*.md") if path.stem not in names)
+
+
+def refuse_unlisted(directory: Path, names: list[str], flag: str) -> None:
+    extra = unlisted_replies(directory, names)
+    if extra:
+        raise SystemExit(
+            f"swarm: {directory} holds {', '.join(extra)}, not named in {flag}; "
+            f"add it to {flag}, or move it out of the folder and say so in the report"
+        )
+
+
+def lens_count_refusal(lenses: list[str]) -> str:
+    low, high = LENS_RANGE
+    if low <= len(lenses) <= high:
+        return ""
+    return f"use {low} to {high} lenses; add the closest lenses to reach {low}"
 
 
 def read_report(directory: Path, lens: str, required: str = "verdict") -> Report:
@@ -107,7 +131,12 @@ def merge(reports: list[Report]) -> list[dict]:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    reports = [read_report(args.dir, lens) for lens in _names(args.lenses, "lens")]
+    lenses = _names(args.lenses, "lens")
+    refusal = lens_count_refusal(lenses)
+    if refusal:
+        raise SystemExit(f"swarm: {refusal}")
+    refuse_unlisted(args.dir, lenses, "--lenses")
+    reports = [read_report(args.dir, lens) for lens in lenses]
     print("| lens | status | verdict | important | nit | pre-existing | uncited |")
     print("|---|---|---|---|---|---|---|")
     for report in reports:
@@ -158,6 +187,7 @@ def cmd_tally(args: argparse.Namespace) -> int:
         )
     if not 2 <= len(options) <= 4:
         raise SystemExit("council: give 2 to 4 options, e.g. --options per-event,shards")
+    refuse_unlisted(args.dir, voters, "--voters")
     reports = [read_report(args.dir, voter, "vote") for voter in voters]
     votes = {report.lens: _vote(report, options) for report in reports}
     for report in reports:
@@ -189,18 +219,25 @@ def cmd_tally(args: argparse.Namespace) -> int:
 
 
 def _load_state(path: Path) -> dict:
+    start = "start a new climb with: climb-init --state NEW.json --properties a,b,c"
     if not path.is_file():
-        raise SystemExit(
-            f"hill-climb: no state at {path}; "
-            f"start with: climb-init --state {path} --properties a,b"
-        )
-    return json.loads(path.read_text(encoding="utf-8"))
+        raise SystemExit(f"hill-climb: no state at {path}; {start}")
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        raise SystemExit(f"hill-climb: {path} is not a climb state file; {start}") from None
+    if not isinstance(state, dict) or not {"properties", "cap", "rounds"} <= set(state):
+        raise SystemExit(f"hill-climb: {path} is not a climb state file; {start}")
+    return state
 
 
 def cmd_climb_init(args: argparse.Namespace) -> int:
     if args.state.exists():
         raise SystemExit(f"hill-climb: {args.state} exists; one state file per climb")
     properties = _names(args.properties, "property")
+    low, high = PROPERTY_RANGE
+    if not low <= len(properties) <= high:
+        raise SystemExit(f"hill-climb: fix {low} to {high} properties in round 0")
     args.state.parent.mkdir(parents=True, exist_ok=True)
     state = {"properties": properties, "cap": args.cap, "rounds": []}
     args.state.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
@@ -243,9 +280,8 @@ def _round_refusal(state: dict, args: argparse.Namespace, lenses: list[str]) -> 
         )
     if args.past_stop and not stopped:
         return "--past-stop is only for a round after a stop; this climb has not stopped"
-    low, high = LENS_RANGE
-    if not low <= len(lenses) <= high:
-        return f"use {low} to {high} lenses per round"
+    if lens_count_refusal(lenses):
+        return lens_count_refusal(lenses)
     if state["rounds"] and set(lenses) <= set(state["rounds"][-1]["lenses"]):
         return "use at least one lens not used in the last round"
     if str(args.dir.resolve()) in {r.get("dir") for r in state["rounds"]}:
@@ -259,12 +295,19 @@ def cmd_climb_round(args: argparse.Namespace) -> int:
     refusal = _round_refusal(state, args, lenses)
     if refusal:
         raise SystemExit(f"hill-climb: {refusal}")
+    refuse_unlisted(args.dir, lenses, "--lenses")
     reports = [read_report(args.dir, lens, "grades") for lens in lenses]
     broken = [report for report in reports if report.status != "ok"]
     if broken:
         for report in broken:
             print(f"- {report.lens}: {report.status} ({report.problem})")
-        print("round refused: rerun those lenses once, or drop them from --lenses")
+        left = len(lenses) - len(broken)
+        advice = (
+            "rerun those lenses once, or drop them from --lenses"
+            if left >= LENS_RANGE[0]
+            else f"rerun those lenses once; dropping them leaves {left}, below {LENS_RANGE[0]}"
+        )
+        print(f"round refused: {advice}")
         return 1
     grades: dict[str, list[float]] = {p: [] for p in state["properties"]}
     for report in reports:

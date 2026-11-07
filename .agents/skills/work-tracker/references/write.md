@@ -122,8 +122,8 @@ A return to a status that the record held before is recorded.
   `updated`, `closed`, derived from the events), `max_seq`, `tombstoned`, `totals`,
   `dependencies`, `dependents`. The two edge keys are always present, and each edge names
   its type and the status of the other record.
-- **Ids:** `<prefix>-<code>`, with one hyphen. The commit hook refuses a slug id with more
-  hyphens. Let the tracker make the id.
+- **Ids:** `<prefix>-<code>`. A prefix holds no hyphen, because the commit gate reads the first
+  hyphen as the prefix boundary. Let the tracker make the id.
 - **Priority:** 0 critical to 4 backlog, default 2. Use 0 and 1 only for release-blocking
   or next work.
 - **Types:** the harness work types are `bug`, `chore`, `epic`, `feature`, `task`; the default is `task`. The field accepts

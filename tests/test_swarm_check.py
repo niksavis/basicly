@@ -7,11 +7,18 @@ import pytest
 from tests.swarm_fixtures import _finding, _reply, swarm
 
 
+def _quiet(directory: Path, *lenses: str) -> None:
+    for lens in lenses:
+        _reply(directory, lens, {"findings": []})
+
+
 def test_a_missing_reply_is_not_run_and_fails_the_check(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _reply(tmp_path, "correctness", {"lens": "correctness", "findings": []})
-    assert swarm.main(["check", "--lenses", "correctness,security", "--dir", str(tmp_path)]) == 1
+    _reply(tmp_path, "correctness", {"findings": []})
+    _reply(tmp_path, "tests", {"findings": []})
+    args = ["check", "--lenses", "correctness,security,tests", "--dir", str(tmp_path)]
+    assert swarm.main(args) == 1
     out = capsys.readouterr().out
     assert "| security | not run: no security.md |" in out
     assert "incomplete: security not run or malformed" in out
@@ -55,7 +62,8 @@ def test_findings_citing_a_shared_line_stay_separate(
         _finding("important", shared, "y: keep"),
     ]
     _reply(tmp_path, "usage", {"findings": findings})
-    swarm.main(["check", "--lenses", "usage", "--dir", str(tmp_path)])
+    _quiet(tmp_path, "b", "c")
+    swarm.main(["check", "--lenses", "usage,b,c", "--dir", str(tmp_path)])
     out = capsys.readouterr().out
     assert "- [important] usage: x: delete\n" in out
     assert "- [important] usage: y: keep\n" in out
@@ -72,7 +80,8 @@ def test_the_verdict_is_shown_in_the_table(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _reply(tmp_path, "a", {"verdict": "fail", "findings": []})
-    swarm.main(["check", "--lenses", "a", "--dir", str(tmp_path)])
+    _quiet(tmp_path, "b", "c")
+    swarm.main(["check", "--lenses", "a,b,c", "--dir", str(tmp_path)])
     assert "| a | ok | fail |" in capsys.readouterr().out
 
 
@@ -80,7 +89,8 @@ def test_an_unverified_finding_is_marked_in_the_report(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _reply(tmp_path, "a", {"findings": [_finding("important", "trust me", claim="bad")]})
-    assert swarm.main(["check", "--lenses", "a", "--dir", str(tmp_path)]) == 0
+    _quiet(tmp_path, "b", "c")
+    assert swarm.main(["check", "--lenses", "a,b,c", "--dir", str(tmp_path)]) == 0
     assert "- [important UNCITED] a: bad" in capsys.readouterr().out
 
 
@@ -107,6 +117,11 @@ def test_a_lens_named_twice_is_refused(tmp_path: Path) -> None:
         ("{bad", "json error at line 1"),
         ("[]", "the json block is not an object"),
         ('{"lens": "a", "verdict": "pass", "findings": {}}', "findings is not a list of objects"),
+        (
+            '{"lens": "a", "verdict": "pass", "findings": ["x"]}',
+            "findings is not a list of objects",
+        ),
+        ('{"lens": "a", "findings": []}', "the json block has no 'verdict' field"),
     ],
 )
 def test_a_broken_json_block_is_malformed_with_its_reason(
@@ -125,3 +140,22 @@ def test_two_lenses_on_one_line_note_each_other(tmp_path: Path) -> None:
         ("b", "important", ["a"]),
         ("a", "nit", ["b"]),
     ]
+
+
+@pytest.mark.parametrize("lenses", ["a,b", "a,b,c,d,e,f,g"])
+def test_check_needs_three_to_six_lenses(tmp_path: Path, lenses: str) -> None:
+    with pytest.raises(SystemExit, match="use 3 to 6 lenses"):
+        swarm.main(["check", "--lenses", lenses, "--dir", str(tmp_path)])
+
+
+def test_a_reply_not_named_in_lenses_is_refused(tmp_path: Path) -> None:
+    _quiet(tmp_path, "a", "b", "c", "stray")
+    with pytest.raises(SystemExit, match=r"stray\.md, not named in --lenses"):
+        swarm.main(["check", "--lenses", "a,b,c", "--dir", str(tmp_path)])
+
+
+def test_a_reply_without_findings_is_malformed(tmp_path: Path) -> None:
+    (tmp_path / "a.md").write_text(
+        '```json\n{"lens": "a", "verdict": "pass"}\n```\n', encoding="utf-8"
+    )
+    assert swarm.read_report(tmp_path, "a").problem == "the json block has no 'findings' field"

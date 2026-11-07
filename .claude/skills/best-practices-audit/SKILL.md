@@ -18,8 +18,6 @@ A live page overrides it.
 - **Cite the page for every finding.** A finding with no source is an opinion.
 - **Mark an API-only rule "not applicable"** when the repository does not call the Messages API.
   Name that reason once in the report.
-- **Fix the catalog YAML, never the projected file.** In a basicly repository, edit the catalog YAML and
-  project it again.
 
 ## Workflow
 
@@ -45,6 +43,7 @@ python3 scripts/fetch_docs.py
 | --- | --- | --- |
 | 0 | Every page arrived | Continue |
 | 1 | Some pages failed | Continue, and name each failed page in the report |
+| 2 | Refused: `--out` is a file or inside a git tree | Omit `--out` |
 | 3 | Offline, nothing arrived | Audit against the checklist only, and put "docs not refreshed" in the first line of the report |
 
 `python3 scripts/fetch_docs.py --list` prints the sources.
@@ -69,24 +68,13 @@ same subjects. Name them in the report.
 
 Measure a size on the projected file, not on the catalog YAML.
 
-**4 Run the gates.** In a basicly repository, run each command and read its summary line:
+**4 Run the gates.** In a basicly repository, run the projection gates that `CLAUDE.md` lists, plus `basicly catalog lint`, and read each summary line. A gate that fails is a finding.
 
-```sh
-basicly catalog lint
-basicly skills-check
-basicly check
-basicly hooks-check
-basicly agents-check
-basicly permissions-check
-```
-
-A gate that fails is a finding. Fix its cause, never the gate.
-
-**5 Report and fix.** Report one row per finding:
+**5 Report and fix.** A finding is a checklist row that fails, a stale checklist rule or a failed gate. Report one row per finding, and the count of passing and not-applicable rows in one line:
 
 | Rule | Source | Evidence | Verdict | Fix |
 | --- | --- | --- | --- | --- |
 
-Put the findings that fail first. File one tracker record for each class of finding, then fix it.
+File one tracker record for each class of finding, then fix it. Fix a skill, fragment or agent in its catalog YAML as `catalog-authoring` shows, never the projected file.
 When the checklist is stale, update `references/checklist.md` in the same change. When a mistake
 can repeat, propose a lint or a test that refuses it.

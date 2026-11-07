@@ -16,7 +16,7 @@ instructions: |
   ## Rules
 
   - **Every link cites an observation.** A link that you reasoned to is where the chain becomes a story.
-  - **Stop at a cause you control.** A vendor decision or "the model was wrong" gives you nothing to build a control against.
+  - **Stop at a cause this repository owns.** A vendor decision or "the model was wrong" gives you nothing to build a Control against.
   - **Never stop on a person.** "Someone forgot" means the chain stopped early. Ask what let the mistake reach a commit.
 
   ## 1. Reproduce the defect
@@ -25,7 +25,7 @@ instructions: |
 
   ## 2. Ask why
 
-  Ask why until the answer is a cause this repository controls. Each link cites a `file:line`, a command and its output, a ledger row or a recorded verdict. When the next why leaves this repository, go back one link and build the control there.
+  Ask why until the answer is a cause this repository controls. Each link cites a `file:line`, a command and its output, a ledger row or a recorded verdict. When the next why leaves this repository, go back one link and name the Control there.
 
   At each link where a second answer was available, name it and say why you took the other one.
 
@@ -40,7 +40,8 @@ instructions: |
 
   | Field | Content |
   | --- | --- |
-  | Control | A check, a gate, a schema field or a refusal that would have refused this defect |
+  | Chain | Each why with its cited observation, in order, ending at the cause this repository owns |
+  | Control | The check, gate, schema field, refusal or document that would have stopped this defect; its Tier says how strongly |
   | Tier | How strongly the Control acts, in the engine's terms: `control` (a gate fails), `warning` (it reports and continues) or `documentation` (a person must read it). Record a `documentation` tier as a downgrade, with the reason that no stronger control was available |
   | Covers | The observed defect and related call paths established by evidence |
   | Branch not taken | One line |

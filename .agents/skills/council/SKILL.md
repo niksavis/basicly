@@ -12,13 +12,13 @@ The script is `${CLAUDE_SKILL_DIR}/../swarm/scripts/swarm.py`, in the `swarm` sk
 
 ## Steps
 
-1. **Ask one question.** Write the decision, 2 to 4 option labels and the facts with sources, as [the question guide](references/question.md) says. An open question goes to `swarm` first to produce the options. A closed question with no labels: ask the user for them.
+1. **Ask one question.** Write the decision, 2 to 4 option labels and the facts with sources, as [the question guide](references/question.md) says. For an open question, run `swarm` on the goal with the lenses feasibility, spec and simplicity, and take its numbered decisions as the 2 to 4 labels. A closed question with no labels: ask the user for them.
 2. **Pick voters.** Choose 3 stances from [stances](assets/stances.md), one voter each. Choose 5 when the decision is hard to undo.
 3. **Vote.** Run the `swarm` steps Brief, Launch and Collect; the tally replaces the swarm Check. Each brief carries the question, the exact labels and the stance as its lens. No voter sees another vote. Rerun once each voter that is not run.
 4. **Tally.** Run:
 
    ```sh
-   python3 ${CLAUDE_SKILL_DIR}/../swarm/scripts/swarm.py tally --voters user,safety,skeptic --options per-event,shards --dir DIR
+   python3 -B ${CLAUDE_SKILL_DIR}/../swarm/scripts/swarm.py tally --voters user,safety,skeptic --options per-event,shards --dir DIR
    ```
 
    Replace the voters, options and folder with yours. Exit 0 prints the decision and each dissenting vote with its reason. Exit 2 means no option has a majority of all voters; the user decides.

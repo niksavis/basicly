@@ -5,7 +5,7 @@ basicly commit "<description>"
 basicly commit "<description>" --body "Bump to 1.2.0 in README.md." --dry-run
 ```
 
-It derives the type from the work class of the record, the scope from the staged paths and the record id from the branch. It refuses a description that the character rules reject, names the character, and does not commit.
+It derives the type from the work type of the record and the staged paths, the scope from the staged paths and the record id from the branch. It refuses a description that the character rules reject, names the character, and does not commit.
 
 | Flag | Effect |
 | --- | --- |

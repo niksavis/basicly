@@ -20,7 +20,7 @@ field: every skill root advertises its first body paragraph instead.
 | --- | --- | --- | --- |
 | `best-practices-audit` | `model` | any | Audits skills, instructions, hooks, agents and permissions against the newest vendor docs. Use after a Claude Code release, or when asked if the harness still follows Anthropic guidance. |
 | `catalog-authoring` | `model` | any | Authors catalog sources in YAML (always-on fragments, output styles and the skill.yaml format) and projects them. Use before editing a generated file such as SKILL.md, CLAUDE.md or AGENTS.md, or when adding a fragment or output style. |
-| `cli-tools` | `model` | any | Picks the fast tool for a shell task: rg to find each file that mentions a word, fd to list files, jq or yq for a JSON or YAML field, curl for an HTTP endpoint. |
+| `cli-tools` | `model` | any | Picks the shell tool and its flags: rg, fd, jq, yq, curl, shellcheck, sd, ast-grep, typos, git, uv or tmux. Use to find files that mention a word, list files, read a JSON or YAML field, call an HTTP endpoint and show the response, or replace text. |
 | `conventional-commits` | `model` | any | Writes a commit subject that passes the hooks: type, scope, breaking-change marker, record id. Use for a commit message or after a hook refused one. |
 | `council` | `model` | any | Decides one closed question by independent votes of fresh agents with different stances, and reports the majority with the dissent. Use when asked to let a council, a panel or several agents vote on a choice. |
 | `decompose-plan` | `model` | any | Splits an epic or feature into child tasks a build can check: EARS criteria, scope, dependencies and a demonstration command. Use to split work into tasks, or when the plan gate refuses a child. |
@@ -39,12 +39,12 @@ field: every skill root advertises its first body paragraph instead.
 | `retention-probe` | `model` | any | Tests if this session still holds the always-on instruction file. Use when a repo rule seems missing, in a new subagent or after compaction. |
 | `root-cause` | `model` | any | Finds the cause of a failure, a bug that came back or a test that fails intermittently, link by link with evidence, to a control this repository owns. Use when asked why something broke, keeps breaking or fails, and the cause is unclear. |
 | `session-finish` | `model` | any | Summarizes what changed and what is still open. Use to wrap up a session or run a retro. Write only new recovery facts. |
-| `skill-creator` | `model` | any | Writes a new skill or improves one with evals, a benchmark, graded versions and trigger tuning. Use when turning a workflow into a skill or when a skill never gets picked up. |
+| `skill-creator` | `model` | any | Writes a new skill or improves one with evals, a benchmark, graded versions and description tuning. Use when adding a new skill to the catalog, turning a workflow into a skill, comparing runs with and without a skill, or when a skill never gets picked up. |
 | `swarm` | `model` | any | Runs several fresh agents on one artifact, one lens each, and merges their evidence into a verdict table; in teardown mode it also verifies, answers and fixes every finding. Use when asked for an agent swarm, several reviewers, a multi-agent review, or to tear down or find everything wrong with a diff, plan, design or document. |
 | `test-discipline` | `model` | any | Writes isolated, order-independent tests that assert what the caller sees, not private helpers. Use for tests with shared fixtures, leaked state, run order or platform differences. |
 | `tier-injection` | `model` | any | Installs the tier kit so a subagent runs on the model its tier names. Use when a host must pin the model of a spawn or a subagent ignores its tier. |
 | `validate-as-consumer` | `model` | any | Runs a verified change the way a consumer does, against its requirement. Use at VALIDATE or before a README claims a capability. |
-| `work-tracker` | `model` | any | Reads, files, claims and closes records in the ledger tracker. Use to plan work, check what is ready, file a bug, or claim an issue before work starts. |
+| `work-tracker` | `model` | any | Reads, files, claims and closes records in the ledger tracker. Use to plan work, check what is ready, file a bug, or claim a record before work starts. |
 | `worktree-isolation` | `model` | any | Isolates work in a sibling git worktree, then merges and cleans up. Use to keep a change out of the main checkout or when parallel tracks collide. |
 | `wsl` | `model` | `wsl` | Operates WSL: wsl.exe, interop, PATH, slow /mnt/c. Use when crossing Windows and Linux, or when a tool works in a terminal but not from a script. |
 

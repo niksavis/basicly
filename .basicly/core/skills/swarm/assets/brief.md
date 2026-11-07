@@ -13,6 +13,7 @@ Out of scope: WHAT OTHER LENSES OWN
 
 Rules:
 - Report only on your lens.
+- Edit no file; write only your reply.
 - Every finding names its evidence: a path:line, or a command you ran with its output, written as "ran: COMMAND -> OUTPUT".
 - A finding with no evidence is marked uncited. Do not guess.
 - Severity: important (wrong result, data loss, security, a refused rule broken), nit (style, wording), pre-existing (true before this change).

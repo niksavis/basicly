@@ -10,9 +10,9 @@ trigger:
     - prompt: "try to prove this coverage claim wrong"
       owner: falsify-first
 tasks:
-  - query: "Validate basicly-x: the record says 'basicly flag add refuses a flag with no expiry'."
+  - query: "Validate basicly-x: the record says 'basicly decompose refuses a plan child with no demonstration'."
     expected_behavior:
-      - "Runs the command as a consumer would, without an expiry, and pastes its real output"
+      - "Runs basicly decompose as a consumer would, on a plan whose child has no demonstration, and pastes its real output"
       - "Checks the output against the acceptance criterion, not only that it ran without error"
   - query: "The tests pass, so the board page change is validated."
     expected_behavior:

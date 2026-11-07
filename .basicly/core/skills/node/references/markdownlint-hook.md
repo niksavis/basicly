@@ -31,5 +31,6 @@ enabled = false
 ```
 
 The hook reads `basicly.toml`, sorted `basicly.d/*.toml`, then `basicly.local.toml`.
-Later settings win. A malformed setting refuses. A technology selection excluding Node
+Later settings win. Put a repository-wide opt-out in `basicly.toml`, and a machine-only opt-out in `basicly.local.toml`.
+A malformed setting refuses. A technology selection excluding Node
 does not install the markdown gate or require its runtime.

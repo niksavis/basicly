@@ -27,10 +27,10 @@ def _graded(directory: Path, lenses: str, grades: dict, severity: str | None = N
         findings = (
             [_finding(severity, f"plan.md:{lens}1")] if severity and lens == lenses[0] else []
         )
-        _reply(directory, lens, {"grades": grades, "findings": findings})
+        _reply(directory, lens, {"grades": {"w": 5, **grades}, "findings": findings})
 
 
-def _climb(tmp_path: Path, properties: str = "x,y", cap: int = 5) -> Path:
+def _climb(tmp_path: Path, properties: str = "x,y,w", cap: int = 5) -> Path:
     state = tmp_path / "climb.json"
     args = ["climb-init", "--state", str(state), "--properties", properties, "--cap", str(cap)]
     assert swarm.main(args) == 0
@@ -49,11 +49,11 @@ def _decision(state: Path) -> str:
 def test_the_lowest_grade_is_the_property_score(tmp_path: Path) -> None:
     state = _climb(tmp_path)
     _graded(tmp_path / "r1", "a,b", {"x": 4, "y": 9}, "important")
-    _reply(tmp_path / "r1", "c", {"grades": {"x": 6, "y": 7}, "findings": []})
+    _reply(tmp_path / "r1", "c", {"grades": {"x": 6, "y": 7, "w": 5}, "findings": []})
     assert _round(state, tmp_path / "r1", "a,b,c") == 0
     assert _decision(state).startswith("continue")
     scores = json.loads(state.read_text(encoding="utf-8"))["rounds"][0]["scores"]
-    assert scores == {"x": 4, "y": 7}
+    assert scores == {"x": 4, "y": 7, "w": 5}
 
 
 def test_no_rise_of_a_full_point_stops_the_climb(tmp_path: Path) -> None:
@@ -75,10 +75,10 @@ def test_two_clean_rounds_stop_the_climb(tmp_path: Path) -> None:
 
 
 def test_the_cap_stops_a_climb_that_keeps_rising(tmp_path: Path) -> None:
-    state = _climb(tmp_path, "x", cap=2)
-    _graded(tmp_path / "r1", LENSES[0], {"x": 1}, "important")
+    state = _climb(tmp_path, cap=2)
+    _graded(tmp_path / "r1", LENSES[0], {"x": 1, "y": 1}, "important")
     _round(state, tmp_path / "r1", LENSES[0])
-    _graded(tmp_path / "r2", LENSES[1], {"x": 5}, "important")
+    _graded(tmp_path / "r2", LENSES[1], {"x": 5, "y": 5}, "important")
     _round(state, tmp_path / "r2", LENSES[1])
     assert _decision(state) == "stop: the cap of 2 rounds is reached"
 
@@ -95,10 +95,11 @@ def test_a_property_no_reviewer_graded_refuses_the_round(
 def test_a_partial_reviewer_still_counts_for_what_it_graded(tmp_path: Path) -> None:
     state = _climb(tmp_path)
     _graded(tmp_path / "r1", "a,b", {"x": 5, "y": 6})
-    _reply(tmp_path / "r1", "c", {"grades": {"x": 3}, "findings": []})
+    _reply(tmp_path / "r1", "c", {"grades": {"x": 3, "w": 5}, "findings": []})
     _round(state, tmp_path / "r1", "a,b,c")
     round_one = json.loads(state.read_text(encoding="utf-8"))["rounds"][0]
-    assert (round_one["scores"], round_one["highs"]) == ({"x": 3, "y": 6}, {"x": 5, "y": 6})
+    assert round_one["scores"] == {"x": 3, "y": 6, "w": 5}
+    assert round_one["highs"] == {"x": 5, "y": 6, "w": 5}
 
 
 def test_a_round_after_the_stop_needs_the_past_stop_flag(tmp_path: Path) -> None:
@@ -175,8 +176,8 @@ def test_a_second_climb_on_the_same_state_is_refused(tmp_path: Path) -> None:
 def test_a_grade_outside_zero_to_ten_does_not_count(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], bad: object
 ) -> None:
-    state = _climb(tmp_path, "x")
-    _graded(tmp_path / "r1", LENSES[0], {"x": bad})
+    state = _climb(tmp_path)
+    _graded(tmp_path / "r1", LENSES[0], {"x": bad, "y": 5})
     assert _round(state, tmp_path / "r1", LENSES[0]) == 1
     out = capsys.readouterr().out
     assert "no 0-10 grade for x" in out
@@ -207,3 +208,43 @@ def test_a_round_whose_lenses_are_a_subset_of_the_last_is_refused(tmp_path: Path
     _graded(tmp_path / "r2", "a,b,c", {"x": 7, "y": 7})
     with pytest.raises(SystemExit, match="at least one lens not used"):
         _round(state, tmp_path / "r2", "a,b,c")
+
+
+@pytest.mark.parametrize("properties", ["x,y", "a,b,c,d,e,f,g,h,i,j"])
+def test_a_climb_needs_three_to_nine_properties(tmp_path: Path, properties: str) -> None:
+    with pytest.raises(SystemExit, match="fix 3 to 9 properties"):
+        swarm.main(["climb-init", "--state", str(tmp_path / "s.json"), "--properties", properties])
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        (None, "no state at"),
+        ("{not json", "is not a climb state file"),
+        ('{"rounds": []}', "is not a climb state file"),
+    ],
+)
+def test_a_missing_or_wrong_state_file_is_refused_by_name(
+    tmp_path: Path, content: str | None, message: str
+) -> None:
+    state = tmp_path / "climb.json"
+    if content is not None:
+        state.write_text(content, encoding="utf-8")
+    with pytest.raises(SystemExit, match=message):
+        _round(state, tmp_path / "r1", LENSES[0])
+
+
+def test_a_round_with_an_unlisted_reply_is_refused(tmp_path: Path) -> None:
+    state = _climb(tmp_path)
+    _graded(tmp_path / "r1", "a,b,c,d", {"x": 5, "y": 5})
+    with pytest.raises(SystemExit, match=r"d\.md, not named in --lenses"):
+        _round(state, tmp_path / "r1", "a,b,c")
+
+
+def test_dropping_a_lens_below_three_is_not_advised(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    state = _climb(tmp_path)
+    _graded(tmp_path / "r1", "a,b", {"x": 5, "y": 5})
+    assert _round(state, tmp_path / "r1", "a,b,c") == 1
+    assert "dropping them leaves 2, below 3" in capsys.readouterr().out

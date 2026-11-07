@@ -24,7 +24,7 @@ tasks:
     expected_behavior:
       - "Fetches the price from the vendor's own host, not an aggregator"
       - "Does not cache or commit the fetched page"
-  - query: "Our design doc says Codex has no config file deny rules; confirm it."
+  - query: "docs/notes.md says: Codex has no config file deny rules. Confirm it before we rely on it."
     expected_behavior:
       - "Reads our own adapter code for the interface before the design doc"
-      - "States the claim at the precision the evidence supports and corrects the doc in place if it is wrong"
+      - "States the claim at the precision the evidence supports and says how it would correct the sentence in docs/notes.md if it is wrong"

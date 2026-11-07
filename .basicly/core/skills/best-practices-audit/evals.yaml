@@ -15,7 +15,7 @@ tasks:
   - query: "Claude Code shipped a new version; audit the harness against the latest guidance."
     expected_behavior:
       - "Runs python3 scripts/fetch_docs.py from the skill directory to pull the current docs"
-      - "Compares the docs with the checklist and reports each gap with the file it concerns"
+      - "Each finding row cites the vendor page and a path:line"
   - query: "Run the best-practices audit; the machine has no network."
     expected_behavior:
       - "Treats exit code 3 as offline, audits against the checklist only, and puts docs not refreshed in the first line"
@@ -25,3 +25,6 @@ tasks:
   - query: "Run the audit, and also fetch this blog post with CLAUDE.md tips."
     expected_behavior:
       - "Asks the user before fetching the blog post, because it is not a listed source"
+  - query: "The audit found a stale rule in .claude/skills/swarm/SKILL.md; fix it."
+    expected_behavior:
+      - "Edits .basicly/core/skills/swarm/skill.yaml and runs basicly build, not the projected SKILL.md"

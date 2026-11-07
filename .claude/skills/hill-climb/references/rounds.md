@@ -15,7 +15,7 @@ After a stop, `climb-round` refuses another round. `--past-stop` allows one, onl
 ## What the script refuses
 
 - fewer than 3 or more than 6 lenses;
-- a lens set with no lens new to this round;
+- a lens set in which every lens was used in the last round;
 - a folder already recorded;
 - a reply that is missing or malformed, or has no `grades`;
 - `--refuted` below 0 or above the round's important count.

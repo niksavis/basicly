@@ -5,6 +5,8 @@ trigger:
     - prompt: "iterate on the design in rounds with fresh graders each time"
     - prompt: "keep improving the skill text round by round and show me the score table"
   negative:
+    - prompt: "improve this skill's trigger rate with evals and a benchmark"
+      owner: skill-creator
     - prompt: "find every defect in this diff and propose fixes"
       owner: swarm
     - prompt: "let a panel vote between option a and option b"
@@ -23,4 +25,4 @@ tasks:
       - "Keeps the properties fixed after round 0 and offers a new climb for the added property"
   - query: "Record climb round 2; one of the three reviewers did not reply."
     expected_behavior:
-      - "Reruns that lens once or drops it from --lenses explicitly, and never records the round with the missing reply"
+      - "Reruns the missing lens once with the same brief, does not drop it because 2 lenses is below 3, and never records the round with the missing reply"

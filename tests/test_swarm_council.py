@@ -96,3 +96,31 @@ def test_a_duplicate_option_label_is_refused(tmp_path: Path) -> None:
 def test_a_council_needs_two_to_four_options(tmp_path: Path, options: str) -> None:
     with pytest.raises(SystemExit, match="give 2 to 4 options"):
         swarm.main(["tally", "--voters", "a,b,c", "--options", options, "--dir", str(tmp_path)])
+
+
+def test_a_plurality_without_a_majority_of_all_voters_decides_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _vote(tmp_path, "a", "x")
+    _vote(tmp_path, "b", "x")
+    _vote(tmp_path, "c", "y")
+    args = ["tally", "--voters", "a,b,c,d,e", "--options", "x,y", "--dir", str(tmp_path)]
+    assert swarm.main(args) == 2
+    assert "the user decides" in capsys.readouterr().out
+
+
+def test_a_tally_with_an_unlisted_reply_is_refused(tmp_path: Path) -> None:
+    for voter in ("a", "b", "c", "x"):
+        _vote(tmp_path, voter, "p")
+    with pytest.raises(SystemExit, match=r"x\.md, not named in --voters"):
+        swarm.main(["tally", "--voters", "a,b,c", "--options", "p,q", "--dir", str(tmp_path)])
+
+
+def test_a_vote_that_is_not_text_does_not_count(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _reply(tmp_path, "a", {"vote": 3})
+    _vote(tmp_path, "b", "p")
+    _vote(tmp_path, "c", "p")
+    swarm.main(["tally", "--voters", "a,b,c", "--options", "p,q", "--dir", str(tmp_path)])
+    assert "a: not run (no vote field)" in capsys.readouterr().out

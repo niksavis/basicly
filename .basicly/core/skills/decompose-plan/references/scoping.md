@@ -21,10 +21,10 @@ Name the file that the child creates:
 
 | Output | Scope entry |
 | --- | --- |
-| changelog fragment | `changelog.d/<epic-id>.<n>.<category>.md` |
-| config fragment | `basicly.d/<epic-id>.<n>.toml` |
+| changelog fragment | `changelog.d/<parent-id>.<n>.<category>.md` |
+| config fragment | `basicly.d/<parent-id>.<n>.toml` |
 | projected skill | `.claude/skills/<name>/SKILL.md` |
 
-`<n>` is the child's position in the plan, because children get the ids `<epic-id>.1`, `<epic-id>.2`, and so on.
+`<n>` is the parent's highest existing child number plus the child's position in the plan; read the existing children with `basicly tracker show PARENT-ID` first.
 A glob such as `changelog.d/*.md` or `.claude/skills/**` collides with every other child that matches it.
 If a glob matches more than a few files, say why in the plan.

@@ -11,7 +11,7 @@ Answer every finding before a teardown ends. Copy this table into the report. Ev
 
 Responses:
 
-- **fixed**: the change is made and the check that proves it ran.
-- **contested**: counter-evidence is attached. The author may contest. A fresh agent decides each contest once; its answer stands.
-- **declined**: for nit and pre-existing findings. An important finding is declined only when the user says so, marked "declined by the user".
-- **escalated**: the user decides. Give one recommendation.
+- **fixed**: the change is made and its check ran.
+- **contested**: counter-evidence is attached.
+- **declined**: the cost is higher than the gain. Decline an important finding only when the user says so; write "declined by the user" and the rule the user overrode.
+- **escalated**: the user decides; give one recommendation.

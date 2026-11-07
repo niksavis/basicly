@@ -12,15 +12,15 @@ The skill covers CLI flags and output formats, API fields and endpoints, model i
 
 ## Steps
 
-Stop at the first step that answers the question. Go further only when two steps disagree.
+Do steps 1 to 4 in order and stop at the first one that answers the question. If an earlier step contradicts that answer, take the vendor's answer and say what disagreed. Always do step 5.
 
-1. **Read our own code that touches the interface:** `rg -n TOOL src/ .basicly/`. An adapter, a parser or a hook was written against a real probe and is under test. Read it before our own prose.
+1. **Read our own code that touches the interface:** `git grep -n TOOL`; an empty result counts as absence only after the same search finds a known match. An adapter, a parser or a hook was written against a real probe and is under test. Read it before our own prose.
 2. **Run the installed binary:** `TOOL --help`, `TOOL --version`, `--dry-run`, or an invalid flag whose error names the valid set. For a default behaviour, run the command itself; a flag list does not show a default.
 3. **Fetch the vendor's current documentation** from the route in [routes](references/routes.md). Limit any search to the vendor's own host; an aggregator, a mirror or a summary is not a source. Ask a narrow question: the exact flag or field name. Use browser tools only when a page needs JavaScript.
 4. **Read the vendor's changelog** when a version matters, and the vendor's source or issue tracker when a documented feature does not work.
 5. **Record the fact**, as shown below.
 
-Third-party writing is the weakest evidence and never enough alone. A landing page or a feature grid is marketing. A README is a claim.
+Writing by anyone other than the vendor is the weakest evidence and never enough alone. A landing page or a feature grid is marketing. A README is a claim.
 
 ## State the claim precisely
 
@@ -29,17 +29,7 @@ Third-party writing is the weakest evidence and never enough alone. A landing pa
 
 ## Record the fact
 
-Put the fact on the tracker record, with the version, the date and the URL. Never cache or commit the fetched page; its licence is not ours to give.
-
-```sh
-basicly tracker write -- comments add RECORD-ID "verified DATE against URL (TOOL VERSION): ..."
-```
-
-Without the engine, use the kit:
-
-```sh
-python3 .basicly/core/kit/tracker/cli.py comment .basicly/ledger RECORD-ID "verified DATE against URL (TOOL VERSION): ..."
-```
+Comment on the tracker record, as `work-tracker` shows, with `verified DATE against URL (TOOL VERSION): ...`. Never cache or commit the fetched page; its licence is not ours to give.
 
 When a repo document and the vendor disagree, the vendor decides what the interface does. The repo decides what we chose to do. Correct the document in place and name what refuted it.
 

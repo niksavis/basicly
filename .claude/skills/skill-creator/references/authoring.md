@@ -1,6 +1,6 @@
 ## Write the source
 
-The `catalog-authoring` skill owns the `skill.yaml` format, the scaffold command and the projection checks. This file adds what makes a skill work.
+This file adds what makes a skill work.
 
 ### Anatomy of a skill
 

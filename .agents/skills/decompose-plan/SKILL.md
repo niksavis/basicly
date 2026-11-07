@@ -6,7 +6,7 @@ description: 'Splits an epic or feature into child tasks a build can check: EARS
 
 # Decompose a plan the gate accepts
 
-Cut one unit into children that each do something a consumer can see. The plan gate refuses an incomplete child before any build starts.
+Cut one parent record, an epic or a feature, into children that each do something a consumer can see. The plan gate refuses an incomplete child before any build starts.
 
 ## Rules
 
@@ -24,16 +24,16 @@ Cut one unit into children that each do something a consumer can see. The plan g
    [[children]]
    title = "Refuse a flag with no expiry"
    acceptance = ["When basicly flag add runs without --expires, the command shall exit 2 and name the flag."]
-   scope = ["src/basicly/flags.py", "tests/test_flags.py", "changelog.d/EPIC.1.added.md"]
+   scope = ["src/basicly/flags.py", "tests/test_flags.py", "changelog.d/PARENT-ID.1.added.md"]
    depends_on = []
    demonstration = "`basicly flag add beta --owner me` exits 2 and prints the missing --expires"
    ```
 
-3. Preview, read each path the dry run says collapsed the grouping, then create:
+3. Preview it with `--dry-run`. A line that reads `` `PATH`: collapses the grouping `` means more than one child writes that path. Give the path to one child, or list it under `shared` when each child only appends to it. Then run without `--dry-run`:
 
    ```sh
-   basicly decompose FEATURE --plan plan.toml --dry-run
-   basicly decompose FEATURE --plan plan.toml
+   basicly decompose PARENT-ID --plan plan.toml --dry-run
+   basicly decompose PARENT-ID --plan plan.toml
    ```
 
 ## The plan fields
@@ -46,4 +46,5 @@ Cut one unit into children that each do something a consumer can see. The plan g
 | `depends_on` | absent, or cyclic | An empty list is a declaration; an absent key is not. A cycle is refused with its members before any record is created. |
 | `demonstration` | absent, no backticked runnable span, or spread over several lines | A command, a request or a test through the consumer surface. |
 | `shared` | optional | Paths from `scope` that each child only appends its own entry to, such as a lockfile. |
+| `type` | empty, or not a string | Optional. An absent `type` makes the child a `task`. |
 | `budget_tokens`, `integrity` | present but invalid | Optional. Omit them when the user sets no limit. |
