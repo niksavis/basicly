@@ -175,7 +175,7 @@ def cmd_tally(args: argparse.Namespace) -> int:
         if vote is None:
             print(f"dissent ({report.lens}): did not vote")
         elif vote != winner:
-            print(f"dissent ({report.lens}): {report.data.get('strongest_counter', '')}")
+            print(f"dissent ({report.lens}, {vote}): {report.data.get('reason', '')}")
     return 0
 
 

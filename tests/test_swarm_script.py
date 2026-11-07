@@ -136,7 +136,7 @@ def test_a_majority_of_all_voters_decides_and_shows_the_dissent(
     )
     out = capsys.readouterr().out
     assert "decision: a" in out
-    assert "dissent (skeptic): against b" in out
+    assert "dissent (skeptic, b): r" in out
 
 
 def test_a_missing_vote_counts_against_every_option(

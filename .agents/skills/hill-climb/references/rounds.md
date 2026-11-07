@@ -12,7 +12,7 @@
 ## Each round
 
 1. Pick 3 to 6 lenses. Use at least one lens not used in the last round.
-2. Brief each reviewer with the current version, the property scale and the swarm brief. The json block holds `grades` for every property and `findings`.
+2. Brief each reviewer with the current version, the property scale and the swarm brief. The json block holds `grades` for every property and `findings`; each finding's severity is important, nit or pre-existing, and the script refuses any other.
 3. Collect replies in a new folder per round, `DIR/rN/LENS.md`.
 4. Record the round:
 

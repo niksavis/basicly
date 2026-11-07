@@ -23,7 +23,7 @@ instructions: |
      python3 ${CLAUDE_SKILL_DIR}/../swarm/scripts/swarm.py tally --voters user,safety,skeptic --options per-event,shards --dir DIR
      ```
 
-     Replace the voters, options and folder with yours. Exit 0 prints the decision and each dissent with its `strongest_counter`. Exit 2 means no option has a majority of all voters; the user decides.
+     Replace the voters, options and folder with yours. Exit 0 prints the decision and each dissenting vote with its reason. Exit 2 means no option has a majority of all voters; the user decides.
   5. **Verify.** When the winning reason rests on a number or a root cause, run `falsify-first` on it with an agent that did not vote.
   6. **Report.** Give the vote table, the decision, the strongest dissent, each voter that did not vote, and how the decision can fail. State that each voter voted blind, without seeing another vote.
 

@@ -1,13 +1,13 @@
 # Findings and responses
 
-Answer every finding before the teardown ends. Copy this table into the report.
+Answer every finding before the teardown ends. Copy this table into the report. Every row carries the finding's evidence, also when it is declined, so the user sees what was set aside.
 
-| # | Severity | Finding (path:line) | Response | Detail |
-| --- | --- | --- | --- | --- |
-| 1 | important | ... | fixed | commit or diff that fixes it |
-| 2 | important | ... | contested | the evidence that the finding is wrong |
-| 3 | nit | ... | declined | why the cost is higher than the gain |
-| 4 | important | ... | escalated | the decision the user must make |
+| # | Severity | Finding | Evidence | Response | Detail |
+| --- | --- | --- | --- | --- | --- |
+| 1 | important | ... | path:line or ran: ... | fixed | commit or diff that fixes it |
+| 2 | important | ... | path:line or ran: ... | contested | the evidence that the finding is wrong |
+| 3 | nit | ... | path:line or ran: ... | declined | why the cost is higher than the gain |
+| 4 | important | ... | path:line or ran: ... | escalated | the decision the user must make |
 
 Responses:
 
