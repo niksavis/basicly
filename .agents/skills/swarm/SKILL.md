@@ -12,7 +12,7 @@ The script is `${CLAUDE_SKILL_DIR}/scripts/swarm.py`, in the folder of this SKIL
 
 ## Steps
 
-1. **Frame.** Name the artifact, the question and 3 to 6 lenses that do not overlap, with rubrics from [lenses](references/lenses.md). When the user names fewer than 3 lenses, add the closest lenses from the table to reach 3 and say which. For one claim, propose `falsify-first`; run the swarm when the user still asks for it.
+1. **Frame.** Name the artifact, the question and 3 to 6 lenses that do not overlap, with rubrics from [lenses](references/lenses.md). When the user names fewer than 3 lenses, add the closest lenses from the table to reach 3 and say which. For one claim, propose `falsify-first`, run by a fresh agent that did not make the claim; run the swarm when the user still asks for it.
 2. **Brief.** Fill [the brief](assets/brief.md) once per lens: its rubric, a reading list of at most 6 items, a word cap of 400 unless the user sets one. Pass the artifact, never your own conclusion.
 3. **Launch.** Start all agents in one message so they run in parallel, with the agent that [lenses](references/lenses.md) names for each lens. Use lower effort for a mechanical lens.
 4. **Collect.** Save each reply as `DIR/LENS.md`. Wait for each agent's completion notice; never write a reply for an agent that has not returned. An agent that fails or stops without a reply has not returned.

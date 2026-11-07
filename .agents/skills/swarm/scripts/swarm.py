@@ -201,6 +201,8 @@ def cmd_climb_init(args: argparse.Namespace) -> int:
 
 def decide(state: dict) -> str:
     rounds = state["rounds"]
+    if rounds and rounds[-1].get("past_stop"):
+        return "stop: this round ran past the stop rule; run another only when the user asks"
     if len(rounds) >= CLEAN_ROUNDS and all(r["important"] == 0 for r in rounds[-CLEAN_ROUNDS:]):
         return f"stop: {CLEAN_ROUNDS} rounds in a row with no important finding"
     if len(rounds) >= 2:

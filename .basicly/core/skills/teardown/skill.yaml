@@ -21,6 +21,6 @@ instructions: |
 
   ## Rules
 
-  - The author may contest a finding with evidence, but never decides it. A fresh agent decides each contest once. When the user insists on confirming findings, follow the user and mark them "confirmed by the user".
+  - The author never confirms or refutes a finding; a fresh agent does, and decides each contest once. When the user wants to confirm findings, name this rule, still run the fresh agent, and list the user's answers beside it.
   - An important finding is fixed, contested or escalated. When the user tells you to decline one, decline it, and mark it "declined by the user" in the table.
   - A round is one teardown of one version. After 3 rounds on one artifact, report what is still open. Use `hill-climb` when the goal is a higher grade, not a defect list.

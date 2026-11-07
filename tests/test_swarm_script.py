@@ -294,7 +294,9 @@ def test_a_round_after_the_stop_needs_the_past_stop_flag(tmp_path: Path) -> None
     with pytest.raises(SystemExit, match="add --past-stop only when the user asked"):
         swarm.main(args)
     assert swarm.main([*args, "--past-stop"]) == 0
-    assert json.loads(state.read_text(encoding="utf-8"))["rounds"][-1]["past_stop"] is True
+    after = json.loads(state.read_text(encoding="utf-8"))
+    assert after["rounds"][-1]["past_stop"] is True
+    assert swarm.decide(after).startswith("stop: this round ran past the stop rule")
 
 
 def test_a_second_climb_on_the_same_state_is_refused(tmp_path: Path) -> None:
