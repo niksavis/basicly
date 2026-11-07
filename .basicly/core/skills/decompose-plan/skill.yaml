@@ -51,4 +51,7 @@ instructions: |
   | `demonstration` | absent, no backticked runnable span, or spread over several lines | A command, a request or a test through the consumer surface. |
   | `shared` | optional | Paths from `scope` that each child only appends its own entry to, such as a lockfile. |
   | `type` | empty, or not a string | Optional. An absent `type` makes the child a `task`. |
-  | `budget_tokens`, `integrity` | present but invalid | Optional. Omit them when the user sets no limit. |
+  | `budget_tokens` | present but invalid | Optional. Omit it when the user sets no limit. |
+  | `integrity` | present but invalid | Optional. |
+
+  Spending limits and historical integrity fields are optional.

@@ -30,7 +30,7 @@ field: every skill root advertises its first body paragraph instead.
 | `harness-loop` | `model` | any | Drives tracked work through the basicly loop, intake to ship. Use to start or resume work, or to move an issue past a checkpoint or gate. |
 | `hill-climb` | `model` | any | Improves a plan, design, code or skill in graded rounds: fresh reviewers grade fixed properties 0 to 10, the author revises, and a script decides when to stop. Use when asked to hill-climb, iterate to a better version or improve something in rounds. |
 | `interface-facts` | `model` | any | Establishes a third-party CLI flag, API field, model, price or limit from the tool and live vendor docs. Use before code depends on it. |
-| `no-comments` | `model` | any | Keeps prose comments and docstrings out of code: where a fact goes instead and which tool directives stay. Use before writing a comment or docstring, or when the no-comments gate refuses a commit. |
+| `no-comments` | `model` | any | Keeps prose comments and docstrings out of code: where a fact goes instead and which tool directives stay. Use when writing a comment or docstring, or when the no-comments gate refuses a commit. |
 | `node` | `model` | `node` | Runs Node and npm for the markdownlint hook and other tools. Use when npm or npx fails or resolves the wrong node binary, often on WSL. |
 | `plain-english` | `model` | any | Writes plain prose for readers of any language: READMEs, release notes, design docs, records. Use when writing text for a person. |
 | `python` | `model` | `python` | Writes typed Python with pathlib and Windows-safe subprocesses, and judges if an abstraction earns its keep. Use for .py edits, an except clause, a size gate or a silenced warning. |

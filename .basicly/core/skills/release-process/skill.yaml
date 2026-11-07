@@ -18,6 +18,7 @@ instructions: |
   - **Never clear a refusal by a manual run of the named tool.** That records a witness for a check that the gate did not see pass.
   - **Never delete a changelog fragment to clear a refusal.** A release note must not disappear without notice.
   - **The command never pushes.** Push only when the user release request includes publication.
+  - **The user release request authorizes the requested cut and publication.** No grant is needed. Required release gates must still pass.
 
   ## 1. Check that the repository uses it
 

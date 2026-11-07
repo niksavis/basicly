@@ -42,7 +42,6 @@ uv run basicly release <version> --issue <record-id>
 
 It bumps `__version__`, regenerates the projections, rewrites the `vX.Y.Z` install pins in `README.md` and the other pin files, assembles the changelog, commits and creates the annotated tag. Add `--date YYYY-MM-DD` to set the changelog date. The default is today.
 
-The user release request authorizes the requested cut and publication. No L-level grant or mandatory budget is needed.
 Required release gates must still pass. Use `--shipping <node>` when the verified shipping node differs from the root.
 Keep publication inside the version and scope the user requested.
 
