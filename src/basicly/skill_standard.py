@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from .catalog_source import SKILLS_DIR, load_mapping, rel
+from .integrity import VALIDATE_GATE
 from .skill_source import EVAL_SOURCE_FILE, SKILL_SOURCE_FILE
 
 MAX_BODY_LINES = 500
@@ -37,7 +38,7 @@ DEBT: frozenset[str] = frozenset({
     "skill-creator",
     "test-discipline",
     "tier-injection",
-    "validate-as-consumer",
+    VALIDATE_GATE,
     "work-tracker",
     "worktree-isolation",
     "wsl",
