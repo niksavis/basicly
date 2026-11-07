@@ -48,8 +48,24 @@ def test_cli_usage_report_separates_unexercised_from_unwanted(work_repo: Path) -
     assert "root-cause" not in unreachable
 
 
-def test_cli_usage_report_names_the_bucket_the_unparsed_heads_go_to(work_repo: Path) -> None:
+def _catalog_names_rg(work_repo: Path) -> None:
+    skill = work_repo / ".basicly" / "core" / "skills" / "rg-probe"
+    skill.mkdir(parents=True)
+    (skill / "skill.yaml").write_text(
+        "schema_version: 1\n"
+        "name: rg-probe\n"
+        "invocation: model\n"
+        'description: "Searches text. Use when a test needs a catalog command."\n'
+        "instructions: |\n"
+        "  ```sh\n"
+        "  rg -n word\n"
+        "  ```\n",
+        encoding="utf-8",
+    )
 
+
+def test_cli_usage_report_names_the_bucket_the_unparsed_heads_go_to(work_repo: Path) -> None:
+    _catalog_names_rg(work_repo)
     usage_dir = work_repo / ".basicly" / "usage"
     shutil.rmtree(usage_dir, ignore_errors=True)
     usage_dir.mkdir(parents=True)
