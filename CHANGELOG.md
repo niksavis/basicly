@@ -6,10 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.43.0 - 2026-11-07
+
+Delta: v0.42.0..v0.43.0
+
 This release adds three skills for multi-agent review: `swarm`, `council` and `hill-climb`. Every catalog skill now meets the skill standard, with evals that an independent agent graded. `skills-check`, `catalog lint` and `check` now refuse a skill that breaks the standard.
 
 - Multi-agent review: `swarm` runs fresh agents on lenses and has a teardown mode, `council` decides by blind vote, and `hill-climb` improves an artifact in graded rounds (basicly-gtb19bg.31.4).
 - Skill standard: every skill has evals with at least three task cases, and the gate refuses a broken link or an oversize body (basicly-gtb19bg.31.4).
+
+### Added
+
+- New skills `swarm`, `council` and `hill-climb` run fresh agents on lenses, blind votes and graded rounds. The planned `teardown` skill is merged into `swarm` as its teardown mode, which verifies, answers and fixes every finding. `skills-check`, `catalog lint` and `check` refuse a skill with no evals, too few task cases, a broken link or an oversize body. (basicly-gtb19bg.31.4)
+
+### Changed
+
+- Every catalog skill now meets the skill standard, and its task evals were graded by an independent agent. The skills no-comments, work-tracker, decompose-plan, catalog-authoring, session-finish and cli-tools have numbered steps and corrected facts. (basicly-gtb19bg.31.4)
 
 ## v0.42.0 - 2026-11-05
 

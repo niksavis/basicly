@@ -1,1 +1,0 @@
-- New skills `swarm`, `council` and `hill-climb` run fresh agents on lenses, blind votes and graded rounds. The planned `teardown` skill is merged into `swarm` as its teardown mode, which verifies, answers and fixes every finding. `skills-check`, `catalog lint` and `check` refuse a skill with no evals, too few task cases, a broken link or an oversize body.
