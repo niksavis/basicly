@@ -8,19 +8,30 @@ description: 'Improves a plan, design, code or skill in graded rounds: fresh rev
 
 Improve one artifact in graded rounds until the grades stop rising. This skill uses the `swarm` steps; read that skill first.
 
-The script is `${CLAUDE_SKILL_DIR}/../swarm/scripts/swarm.py`. `DIR` is a new folder per climb in the session scratchpad.
+The script is `${CLAUDE_SKILL_DIR}/../swarm/scripts/swarm.py`, in the `swarm` skill folder beside this one. `DIR` is a new folder per climb in the session scratchpad.
 
 ## Steps
 
-1. **Round 0.** Fix 3 to 9 properties from [property sets](assets/properties.md), a subset or your own, named in lowercase with hyphens. Write one line per property that says what a 10 means. Start the state as [rounds](references/rounds.md) shows.
-2. **Grade.** Save the version as `DIR/vN` and run `swarm` steps 2 to 6 on it with 3 to 6 lenses, at least one not used in the last round. Each brief's rubric holds the 10-lines, and each reply grades every property.
-3. **Record.** Run `climb-round` as [rounds](references/rounds.md) shows. It prints the grade table and the decision.
+1. **Round 0.** Choose 3 to 9 properties from [property sets](assets/properties.md), a subset or your own, named in lowercase with hyphens. Write one line per property that says what a 10 means. Start the state:
+
+   ```sh
+   python3 ${CLAUDE_SKILL_DIR}/../swarm/scripts/swarm.py climb-init --state DIR/climb.json --properties coverage,done-states,poka-yoke
+   ```
+
+2. **Grade.** Save the version as `DIR/vN` and run the `swarm` steps Brief, Launch, Collect and Verify on it with 3 to 6 lenses, at least one not used in the last round. Each brief's rubric holds the 10-lines; each reply holds `lens`, `grades` for every property and `findings`. `climb-round` replaces the swarm Check.
+3. **Record.** Put the round's replies in a new folder `DIR/rN` and run:
+
+   ```sh
+   python3 ${CLAUDE_SKILL_DIR}/../swarm/scripts/swarm.py climb-round --state DIR/climb.json --lenses a,b,c --dir DIR/rN --refuted 0
+   ```
+
+   Set `--refuted` to the number of important findings Verify refuted. The script prints the grade table and the decision, and refuses a round with a missing reply, no new lens or a reused folder.
 4. **Revise or stop.** On continue, revise the artifact from the findings, note what changed, and go to step 2. On stop, report.
-5. **Report.** Give the grade table, the final version, the changes per round and the open decisions, each with one recommendation. State that only fresh reviewers graded, never the author.
+5. **Report.** Give the grade table, the final version, the changes per round and the open decisions, each with one recommendation.
 
 ## Rules
 
 - The author never grades its own version. Grades come only from reviewer replies.
-- The properties do not change after round 0. For a new property, start a new climb.
+- The properties stay the same after round 0. For a new property, start a new climb.
 - The script owns the stop rule. Run past a stop only when the user asks, with `--past-stop` on each extra round, and say so in the report.
 - Ask the user only after the climb, unless a finding needs a fact only the user has.

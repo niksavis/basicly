@@ -13,4 +13,3 @@ Split a question with two decisions into two councils. Put an open question ("wh
 
 - The script counts a majority of all invited voters, not of the votes cast. A voter that did not return, or voted a label not in `--options`, counts against every option and shows as dissent.
 - With no majority, the decision goes to the user with the vote table and each side's strongest counter.
-- The council recommends. The user decides anything on the ask-first list.

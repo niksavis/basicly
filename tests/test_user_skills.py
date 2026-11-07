@@ -54,7 +54,7 @@ def test_the_user_home_gets_every_reference_that_the_cli_tools_table_links(
         for path in (root / "cli-tools" / "references").glob("*.md")
     }
     assert projected == _linked_references(root / "cli-tools" / "SKILL.md")
-    assert len(projected) == 26
+    assert len(projected) == 22
     assert {"references/zsh.md", "references/uv.md", "references/git.md"} <= projected
 
 

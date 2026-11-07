@@ -13,3 +13,13 @@ trigger:
       owner: work-tracker
     - prompt: "the commit-msg hook rejected my message"
       owner: conventional-commits
+tasks:
+  - query: "Find every file that mentions retention_probe and tell me if none exist."
+    expected_behavior:
+      - "Uses rg, and before reporting none runs the same search for a word that must match"
+  - query: "Let me pick the branch with fzf and then open lazygit to stage."
+    expected_behavior:
+      - "Does not start fzf or lazygit itself and gives the user the commands to run"
+  - query: "Read the version field from pyproject.toml."
+    expected_behavior:
+      - "Uses yq or a parser for the TOML field instead of a regex over the file"

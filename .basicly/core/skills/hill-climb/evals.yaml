@@ -6,7 +6,7 @@ trigger:
     - prompt: "keep improving the skill text round by round and show me the score table"
   negative:
     - prompt: "find every defect in this diff and propose fixes"
-      owner: teardown
+      owner: swarm
     - prompt: "let a panel vote between option a and option b"
       owner: council
 tasks:
@@ -21,3 +21,6 @@ tasks:
   - query: "Hill climb the README, and add a new property for tone in round 2."
     expected_behavior:
       - "Keeps the properties fixed after round 0 and offers a new climb for the added property"
+  - query: "Record climb round 2; one of the three reviewers did not reply."
+    expected_behavior:
+      - "Reruns that lens once or drops it from --lenses explicitly, and never records the round with the missing reply"

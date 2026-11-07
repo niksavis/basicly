@@ -15,6 +15,8 @@ NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 CAP = 5
 RISE = 1.0
 CLEAN_ROUNDS = 2
+LENS_RANGE = (3, 6)
+COUNCIL_SIZES = (3, 5)
 
 
 @dataclass
@@ -40,20 +42,27 @@ def _names(raw: str, kind: str) -> list[str]:
     return names
 
 
-def _shape_problem(data: object) -> str:
-    if not isinstance(data, dict):
-        return "the json block is not an object"
-    findings = data.get("findings", [])
+def _findings_problem(findings: object) -> str:
     if not isinstance(findings, list) or not all(isinstance(item, dict) for item in findings):
         return "findings is not a list of objects"
     if any(item.get("severity") not in SEVERITIES for item in findings):
         return f"severity must be one of {', '.join(SEVERITIES)}"
-    if data.get("verdict", "pass") not in ("pass", "fail"):
-        return "verdict must be pass or fail"
     return ""
 
 
-def read_report(directory: Path, lens: str) -> Report:
+def _shape_problem(data: object, lens: str, required: str) -> str:
+    if not isinstance(data, dict):
+        return "the json block is not an object"
+    if data.get("lens") != lens:
+        return f"the json block's lens is {data.get('lens')!r}, not {lens!r}"
+    if required not in data:
+        return f"the json block has no {required!r} field"
+    if data.get("verdict", "pass") not in ("pass", "fail"):
+        return "verdict must be pass or fail"
+    return _findings_problem(data.get("findings", []))
+
+
+def read_report(directory: Path, lens: str, required: str = "verdict") -> Report:
     path = directory / f"{lens}.md"
     if not path.is_file():
         return Report(lens, "not run", problem=f"no {path.name}")
@@ -64,13 +73,13 @@ def read_report(directory: Path, lens: str) -> Report:
         data = json.loads(blocks[-1])
     except json.JSONDecodeError as exc:
         return Report(lens, "malformed", problem=f"json error at line {exc.lineno}")
-    problem = _shape_problem(data)
+    problem = _shape_problem(data, lens, required)
     if problem:
         return Report(lens, "malformed", problem=problem)
     return Report(lens, "ok", data)
 
 
-def verified(finding: dict) -> bool:
+def cited(finding: dict) -> bool:
     evidence = str(finding.get("evidence", ""))
     return bool(LOCATION.search(evidence) or COMMAND.search(evidence))
 
@@ -80,7 +89,7 @@ def merge(reports: list[Report]) -> list[dict]:
         {
             **finding,
             "lens": report.lens,
-            "verified": verified(finding),
+            "cited": cited(finding),
             "places": set(LOCATION.findall(str(finding.get("evidence", "")))),
         }
         for report in reports
@@ -99,21 +108,20 @@ def merge(reports: list[Report]) -> list[dict]:
 
 def cmd_check(args: argparse.Namespace) -> int:
     reports = [read_report(args.dir, lens) for lens in _names(args.lenses, "lens")]
-    print("| lens | status | verdict | important | nit | pre-existing | unverified |")
+    print("| lens | status | verdict | important | nit | pre-existing | uncited |")
     print("|---|---|---|---|---|---|---|")
     for report in reports:
         findings = report.data.get("findings", [])
         counts = [sum(item["severity"] == level for item in findings) for level in SEVERITIES]
-        unverified = sum(not verified(item) for item in findings)
+        uncited = sum(not cited(item) for item in findings)
         status = report.status if not report.problem else f"{report.status}: {report.problem}"
         verdict = str(report.data.get("verdict", "-"))
         print(
-            f"| {report.lens} | {status} | {verdict} | "
-            f"{' | '.join(map(str, counts))} | {unverified} |"
+            f"| {report.lens} | {status} | {verdict} | {' | '.join(map(str, counts))} | {uncited} |"
         )
     print()
     for item in merge([report for report in reports if report.status == "ok"]):
-        mark = "" if item["verified"] else " UNVERIFIED"
+        mark = "" if item["cited"] else " UNCITED"
         also = f" (also cited by {', '.join(item['also'])})" if item["also"] else ""
         print(f"- [{item['severity']}{mark}] {item['lens']}: {item.get('claim', '')}{also}")
         print(f"  evidence: {item.get('evidence', '')}")
@@ -142,14 +150,15 @@ def _vote(report: Report, options: list[str]) -> tuple[str | None, str]:
 
 def cmd_tally(args: argparse.Namespace) -> int:
     voters = _names(args.voters, "voter")
-    options = [option.strip() for option in args.options.split(",") if option.strip()]
-    if len(voters) % 2 == 0:
+    options = _names(args.options, "option")
+    if len(voters) not in COUNCIL_SIZES:
         raise SystemExit(
-            "council: use an odd number of voters, 3 or 5, so a tie cannot hide a majority"
+            "council: use 3 voters, or 5 when the decision is hard to undo, "
+            "so a tie cannot hide a majority"
         )
     if not 2 <= len(options) <= 4:
         raise SystemExit("council: give 2 to 4 options, e.g. --options per-event,shards")
-    reports = [read_report(args.dir, voter) for voter in voters]
+    reports = [read_report(args.dir, voter, "vote") for voter in voters]
     votes = {report.lens: _vote(report, options) for report in reports}
     for report in reports:
         vote, problem = votes[report.lens]
@@ -225,20 +234,41 @@ def _grade(report: Report, prop: str) -> float | None:
     return float(value)
 
 
-def cmd_climb_round(args: argparse.Namespace) -> int:
-    state = _load_state(args.state)
-    if state["rounds"] and decide(state).startswith("stop") and not args.past_stop:
-        raise SystemExit(
-            f"hill-climb: the climb has stopped ({decide(state)}); "
+def _round_refusal(state: dict, args: argparse.Namespace, lenses: list[str]) -> str:
+    stopped = bool(state["rounds"]) and decide(state).startswith("stop")
+    if stopped and not args.past_stop:
+        return (
+            f"the climb has stopped ({decide(state)}); "
             "add --past-stop only when the user asked for another round"
         )
-    reports = [read_report(args.dir, lens) for lens in _names(args.lenses, "lens")]
+    if args.past_stop and not stopped:
+        return "--past-stop is only for a round after a stop; this climb has not stopped"
+    low, high = LENS_RANGE
+    if not low <= len(lenses) <= high:
+        return f"use {low} to {high} lenses per round"
+    if state["rounds"] and set(lenses) <= set(state["rounds"][-1]["lenses"]):
+        return "use at least one lens not used in the last round"
+    if str(args.dir.resolve()) in {r.get("dir") for r in state["rounds"]}:
+        return f"{args.dir} is already recorded; put each round's replies in a new folder"
+    return ""
+
+
+def cmd_climb_round(args: argparse.Namespace) -> int:
+    state = _load_state(args.state)
+    lenses = _names(args.lenses, "lens")
+    refusal = _round_refusal(state, args, lenses)
+    if refusal:
+        raise SystemExit(f"hill-climb: {refusal}")
+    reports = [read_report(args.dir, lens, "grades") for lens in lenses]
+    broken = [report for report in reports if report.status != "ok"]
+    if broken:
+        for report in broken:
+            print(f"- {report.lens}: {report.status} ({report.problem})")
+        print("round refused: rerun those lenses once, or drop them from --lenses")
+        return 1
     grades: dict[str, list[float]] = {p: [] for p in state["properties"]}
     for report in reports:
         missing = [p for p in state["properties"] if _grade(report, p) is None]
-        if report.status != "ok":
-            print(f"- {report.lens}: not graded ({report.problem})")
-            continue
         if missing:
             print(
                 f"- {report.lens}: no 0-10 grade for {', '.join(missing)}; its other grades count"
@@ -251,13 +281,16 @@ def cmd_climb_round(args: argparse.Namespace) -> int:
     if ungraded:
         print(f"round refused: no reviewer graded {', '.join(ungraded)}")
         return 1
-    graded = [report for report in reports if report.status == "ok"]
-    important = sum(item["severity"] == "important" for item in merge(graded))
+    important = sum(item["severity"] == "important" for item in merge(reports))
+    if not 0 <= args.refuted <= important:
+        raise SystemExit(f"hill-climb: --refuted must be 0 to {important}, the important count")
     state["rounds"].append({
-        "lenses": [report.lens for report in graded],
+        "lenses": lenses,
+        "dir": str(args.dir.resolve()),
+        "refuted": args.refuted,
         "scores": {p: min(values) for p, values in grades.items()},
         "highs": {p: max(values) for p, values in grades.items()},
-        "important": important,
+        "important": important - args.refuted,
         "past_stop": bool(args.past_stop),
     })
     args.state.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
@@ -298,6 +331,7 @@ def parser() -> argparse.ArgumentParser:
     step.add_argument("--lenses", required=True)
     step.add_argument("--dir", type=Path, required=True)
     step.add_argument("--past-stop", action="store_true")
+    step.add_argument("--refuted", type=int, default=0)
     step.set_defaults(run=cmd_climb_round)
     return root
 

@@ -6,8 +6,8 @@ trigger:
     - prompt: "put the eight open decisions to a vote"
   negative:
     - prompt: "find everything that is wrong with this design"
-      owner: teardown
-    - prompt: "get several reviewers to look at the plan from different angles"
+      owner: swarm
+    - prompt: "run a multi agent review of the plan, one lens per agent"
       owner: swarm
 tasks:
   - query: "Council: should the tracker store events as one file per event or keep the jsonl shards? Options: per-event, shards."
@@ -22,3 +22,6 @@ tasks:
   - query: "Council: what should we build next?"
     expected_behavior:
       - "Treats the open question as unfit for a council and proposes a swarm first to produce 2 to 4 options"
+  - query: "Run a council of two agents on whether to keep the shards."
+    expected_behavior:
+      - "Uses 3 voters, or 5 for a decision that is hard to undo, and does not run a council of two"

@@ -1,6 +1,6 @@
 # Property sets
 
-Pick a row, a subset of it, or your own list. Names are lowercase with hyphens, because the script refuses spaces. Fix the properties in round 0 and never change them during the climb. Each is graded 0 to 10 by every reviewer.
+Pick a row, a subset of it, or your own list. Names are lowercase with hyphens; the script refuses spaces.
 
 | Artifact | Properties |
 | --- | --- |
@@ -10,4 +10,4 @@ Pick a row, a subset of it, or your own list. Names are lowercase with hyphens, 
 | skill | trigger-accuracy, brevity, clear-steps, poka-yoke, evals, facts |
 | document | coverage, facts, wording, ux |
 
-Write one line per property that says what a 10 means. Put those lines in every brief, so every reviewer grades against the same scale.
+Put the line that says what a 10 means for each property in every brief, so every reviewer grades on the same scale.

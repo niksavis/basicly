@@ -1,6 +1,6 @@
 # Voter stances
 
-Give each voter a different stance so the votes are independent. Pick an odd number: 3, or 5 when the decision is hard to undo. The script refuses an even number.
+Give each voter a different stance so the votes are independent.
 
 | Stance | The voter argues from |
 | --- | --- |
@@ -11,4 +11,4 @@ Give each voter a different stance so the votes are independent. Pick an odd num
 | evidence | Only measured or sourced facts. A claim with no source does not count. |
 | vendor | Current vendor and community practice, read from live docs. |
 
-Brief each voter with [the swarm brief](../../swarm/assets/brief.md). Its lens is the stance. Its json block holds `vote`, `reason` and `strongest_counter`. The vote must be one option label exactly as written; the script refuses any other.
+Brief each voter with [the swarm brief](../../swarm/assets/brief.md); its lens is the stance.

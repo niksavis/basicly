@@ -12,3 +12,13 @@ trigger:
       owner: work-tracker
     - prompt: "advance this issue past its checkpoint"
       owner: harness-loop
+tasks:
+  - query: "Make a worktree for the flags work and commit there."
+    expected_behavior:
+      - "Uses basicly worktree create so the hooks and environments are provisioned"
+  - query: "Merge the flags worktree; I am inside it right now."
+    expected_behavior:
+      - "Runs the merge from the base checkout, not from inside the worktree"
+  - query: "The commit hooks do not run in my linked worktree; set core.hooksPath to .basicly/hooks there."
+    expected_behavior:
+      - "Refuses a relative core.hooksPath in a linked worktree and explains it silently skips hooks"

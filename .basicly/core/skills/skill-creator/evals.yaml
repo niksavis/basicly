@@ -8,8 +8,20 @@ trigger:
     - prompt: "does my skill actually help, compare runs with it and without it"
     - prompt: "the skill never gets picked up when people ask for it, fix its trigger"
     - prompt: "grade the outputs of the new skill version against the old one"
+    - prompt: "I want to add a new skill to the catalog"
   negative:
     - prompt: "add an always-on fragment to the instruction files"
       owner: catalog-authoring
     - prompt: "is there a community skill on skills.sh for terraform"
       owner: find-skills
+tasks:
+  - query: "Turn the release checklist we just used into a skill."
+    expected_behavior:
+      - "Takes the steps and corrections from the conversation before asking questions"
+      - "Writes trigger cases and at least three task cases in evals.yaml before tuning the description"
+  - query: "My new skill never triggers; make its description longer with every keyword."
+    expected_behavior:
+      - "Tunes the description against routing evals with realistic prompts, not by stuffing keywords"
+  - query: "Edit .claude/skills/swarm/SKILL.md to fix a typo."
+    expected_behavior:
+      - "Edits the skill.yaml source and rebuilds instead of the projected SKILL.md"

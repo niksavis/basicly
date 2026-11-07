@@ -1,6 +1,6 @@
 # Findings and responses
 
-Answer every finding before the teardown ends. Copy this table into the report. Every row carries the finding's evidence, also when it is declined, so the user sees what was set aside.
+Answer every finding before a teardown ends. Copy this table into the report. Every row carries the finding's evidence, also when it is declined, so the user sees what was set aside.
 
 | # | Severity | Finding | Evidence | Response | Detail |
 | --- | --- | --- | --- | --- | --- |

@@ -7,7 +7,6 @@ from pathlib import Path
 import yaml
 
 from .catalog_source import SKILLS_DIR, load_mapping, rel
-from .integrity import VALIDATE_GATE
 from .skill_source import EVAL_SOURCE_FILE, SKILL_SOURCE_FILE
 
 MAX_BODY_LINES = 500
@@ -15,34 +14,7 @@ MIN_TASK_CASES = 3
 TOC_LINE_THRESHOLD = 100
 TOC_WINDOW = 20
 
-DEBT: frozenset[str] = frozenset({
-    "best-practices-audit",
-    "catalog-authoring",
-    "cli-tools",
-    "conventional-commits",
-    "decompose-plan",
-    "falsify-first",
-    "find-skills",
-    "harness-client",
-    "harness-loop",
-    "interface-facts",
-    "no-comments",
-    "node",
-    "plain-english",
-    "python",
-    "release-process",
-    "repair-in-place",
-    "retention-probe",
-    "root-cause",
-    "session-finish",
-    "skill-creator",
-    "test-discipline",
-    "tier-injection",
-    VALIDATE_GATE,
-    "work-tracker",
-    "worktree-isolation",
-    "wsl",
-})
+DEBT: frozenset[str] = frozenset()
 
 _RESOURCE = r"(?:\.\./[a-z0-9-]+/)?(?:references|scripts|assets)/[A-Za-z0-9_.\-/]+\.[A-Za-z0-9]+"
 _LINK_RE = re.compile(r"\]\(([^)#\s]+)\)")

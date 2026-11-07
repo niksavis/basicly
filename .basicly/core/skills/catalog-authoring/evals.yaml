@@ -4,11 +4,23 @@
 schema_version: 1
 trigger:
   positive:
-    - prompt: "I want to add a new skill to the catalog"
+    - prompt: "the CLAUDE.md says it is generated, where do I change the rule"
     - prompt: "should this guidance be an always-on fragment or an on-demand skill"
     - prompt: "edit the yaml source behind a fragment and rebuild the projection"
   negative:
+    - prompt: "turn this workflow into a new skill and test it"
+      owner: skill-creator
     - prompt: "format the subject line of my commit"
       owner: conventional-commits
     - prompt: "what phase is this tracked issue in"
       owner: harness-loop
+tasks:
+  - query: "Change the wording of a rule in .claude/CLAUDE.md."
+    expected_behavior:
+      - "Edits the fragment YAML source, not the generated CLAUDE.md, then runs basicly build and the check"
+  - query: "Add an always-on rule for this consumer repository only."
+    expected_behavior:
+      - "Puts the fragment in .basicly-local/fragments/, not in .basicly/core/, because install overwrites core"
+  - query: "Add a Copilot copy of our testing rule under .github/instructions/."
+    expected_behavior:
+      - "Does not add the copy, because Copilot would load the same rule twice"

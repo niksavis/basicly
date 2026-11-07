@@ -37,7 +37,7 @@ Match the words to the user. "Evaluation" and "benchmark" are usually fine. Expl
 
 The conversation may already hold the workflow, for example "turn this into a skill".
 Then take the answers from it first: the tools used, the order of steps, the corrections
-the user made, the input and output formats. Ask only for missing facts that change the result; reuse existing intent and approval.
+the user made, the input and output formats. Ask only for missing facts that change the result.
 
 1. What does the skill let the agent do?
 2. When does it trigger: which phrases and situations?
@@ -57,4 +57,4 @@ already does the job: the `find-skills` skill does that search.
 - For routing tests, real task trials, grading and timing, read [evaluation](references/evaluation.md). Independent isolated arms can run in parallel; ordinary authoring stays with the owner.
 - For feedback, blind comparison, description tuning or evaluator script commands, read [improvement](references/improvement.md). Execute the scripts; do not paste their source into the prompt.
 - Specialist grading, comparison, analysis and JSON details remain in [grader](references/grader.md), [comparator](references/comparator.md), [analyzer](references/analyzer.md) and [schemas](references/schemas.md); read only the relevant procedure.
-- Completion means representative tasks work, references are installed and retrieved, and routing changes are evidenced. Reuse already-given intent and approvals.
+- Completion means representative tasks work, references are installed and retrieved, and routing changes are evidenced.

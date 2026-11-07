@@ -41,7 +41,7 @@ def test_no_network_exits_offline_and_names_the_fallback(
 
     code = module.main(["--out", str(tmp_path)], get=_offline)
 
-    assert code == module.OFFLINE
+    assert code == module.OFFLINE == 3
     err = capsys.readouterr().err
     assert "references/checklist.md" in err
     assert "docs were not refreshed" in err
@@ -100,3 +100,37 @@ def test_the_fetcher_refuses_a_scheme_other_than_https() -> None:
 
     with pytest.raises(ValueError, match="only https sources are fetched"):
         module.fetch("file:///etc/passwd")
+
+
+def test_a_failed_page_leaves_no_stale_copy_from_an_earlier_run(tmp_path: Path) -> None:
+    module = _module()
+    stale = tmp_path / "skills-best-practices.md"
+    stale.write_bytes(b"old page")
+
+    def flaky(url: str) -> bytes:
+        if url.endswith("best-practices.md"):
+            raise OSError("down")
+        return url.encode()
+
+    module.main(["--out", str(tmp_path)], get=flaky)
+    assert not stale.exists()
+
+
+def test_an_out_that_names_a_file_is_refused_by_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "notes.txt"
+    target.write_text("x", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        _module().main(["--out", str(target)], get=lambda url: url.encode())
+    assert "--out names a file" in capsys.readouterr().err
+
+
+def test_an_out_inside_a_git_tree_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / ".git").mkdir()
+    with pytest.raises(SystemExit):
+        _module().main(["--out", str(tmp_path / "docs")], get=lambda url: url.encode())
+    assert "inside a git working tree" in capsys.readouterr().err
+    assert not (tmp_path / "docs").exists()

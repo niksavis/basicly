@@ -128,7 +128,7 @@ def test_the_cli_tools_table_links_every_reference_it_ships() -> None:
     linked = set(re.findall(r"\]\((references/[a-z-]+\.md)\)", cli_tools.instructions))
 
     assert shipped == linked
-    assert len(shipped) == 26
+    assert len(shipped) == 22
     assert {resource for resource, _ in cli_tools.resource_technologies} <= shipped
     assert not [s.slug for s in discover_skills(REPO_ROOT) if s.slug.startswith("tool-")]
 

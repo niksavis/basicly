@@ -20,25 +20,22 @@ instructions: |
   | --- | --- | --- | --- |
   | Search text in files | `rg` | [ripgrep](references/ripgrep.md) | `grep -rn` |
   | Find files by name or type | `fd` | [fd](references/fd.md) | `find` |
-  | Read a file with line numbers | `bat` | [bat](references/bat.md) | `cat -n` |
   | Read or reshape JSON | `jq` | [jq](references/jq.md) | a script |
   | Read or reshape YAML or TOML | `yq` | [yq](references/yq.md) | a script |
   | Replace text in files | `sd` | [sd](references/sd.md) | `sed` |
   | Search or rewrite code structure | `ast-grep` | [ast-grep](references/ast-grep.md) | `rg` |
   | Call an HTTP API | `xh`, `curl` | [xh](references/xh.md), [curl](references/curl.md) | `curl` |
-  | Download a file | `wget` | [wget](references/wget.md) | `curl -O` |
+  | Download a file | `curl -O` | [curl](references/curl.md) | none |
   | Read a diff | `delta` | [git-delta](references/git-delta.md) | `git diff` |
   | Run a project recipe | `just` | [just](references/just.md) | the README command |
   | Run with the project variables | `direnv exec .` | [direnv](references/direnv.md) | set them by hand |
   | Large binary files in git | `git lfs` | [git-lfs](references/git-lfs.md) | none |
   | Check a shell script | `shellcheck` | [shellcheck](references/shellcheck.md) | none |
   | Find spelling mistakes | `typos` | [typos](references/typos.md) | none |
-  | Show a directory tree | `tree` | [tree](references/tree.md) | `fd` |
   | Git commands | `git` | [git](references/git.md) | none |
   | Review and stage by hand | `lazygit` | [lazygit](references/lazygit.md) | `git` |
   | Pick a line from a list | `fzf` | [fzf](references/fzf.md) | `rg` |
   | Python projects and scripts | `uv` | [uv](references/uv.md) | `pip` |
-  | Wait for a command or CI | Host wait tools | [bounded waiting](references/waiting.md) | One CLI watcher and the same execution handle |
   | Sessions and panes | `tmux` | [tmux](references/tmux.md) | none |
   | Shell startup and config errors | `zsh` | [zsh](references/zsh.md) | none |
   | Shell prompt segments | `starship` | [starship](references/starship.md) | none |
@@ -50,4 +47,3 @@ instructions: |
 
   - **Never start an interactive tool.** `fzf`, `lazygit` and `tmux` wait for a person; their references say which forms are safe.
   - **Prefer the tool over a custom script.** It is faster, and a person can read the command.
-  - **Read the output before you act on it.** An empty result is not proof of absence; run a search that must match first.
