@@ -7,6 +7,60 @@ installation or separate binary download, and preserves consumer-owned hook
 configuration. Lefthook follows the basicly release you selected; it does not
 silently switch to an unreviewed upstream version.
 
+## Install options
+
+The [README](../../README.md#install) gives the default install. It runs the latest
+release script through a pipe. The scripts install `uv` when it is missing, select
+Python 3.14 or later, and run `basicly install` from a versioned release wheel. They
+never install unreleased code from `main`, never prompt, and add no project
+dependency. A failed install exits with a nonzero status. In the pipe form, a failed
+download can still exit 0, so save the script first when you need to see that failure.
+
+### A pinned release or explicit failure handling
+
+Save the script first. Then you can see a download failure and pass arguments:
+
+```sh
+installer=$(mktemp)
+curl -fsSL https://niksavis.github.io/basicly/install.sh -o "$installer"
+sh "$installer" --ref v0.43.0
+rm -f "$installer"
+```
+
+```powershell
+$installer = Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString()) + '.ps1')
+Invoke-WebRequest https://niksavis.github.io/basicly/install.ps1 -OutFile $installer -ErrorAction Stop
+& ([scriptblock]::Create((Get-Content -Raw $installer))) -Ref v0.43.0
+```
+
+Leave out `--ref` or `-Ref` to install the latest release. The PowerShell form runs the
+saved script as a script block, so a restrictive execution policy does not block it.
+
+### The release wheel, with uv already installed
+
+```sh
+uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.43.0/basicly-0.43.0-py3-none-any.whl basicly install
+```
+
+### Offline
+
+Copy the [release wheel](https://github.com/niksavis/basicly/releases) to the machine.
+Run the same `uvx` command once on that machine while it is online, so uv caches the
+Python dependencies. Then run it offline:
+
+```sh
+uvx --offline --python '>=3.14' --from ./basicly-0.43.0-py3-none-any.whl basicly install
+```
+
+The package carries the pinned Lefthook binaries for each platform. Install writes only
+the executable for this machine, with its MIT license, into the ignored `.basicly/bin/`.
+Neither the package build nor `basicly install` downloads Lefthook.
+
+### From a source checkout
+
+Release wheels replace direct Git installs of the engine. To develop basicly itself,
+follow [the development setup](../../CONTRIBUTING.md#development-setup).
+
 ## Upgrade
 
 ### Markdown gate prerequisites
@@ -211,6 +265,9 @@ hooks. Your overlay, `basicly.toml`, and your own content survive.
 
 Add `--purge` to also remove the overlay, `basicly.toml`, and the scaffolded VS
 Code tasks and CI workflow — the last two only while still unedited.
+
+Uninstall does not remove the basicly lines in `.gitignore` and `.gitattributes`, or the
+agent settings and output styles in `.claude/` and `.codex/`. Remove those by hand.
 
 The tracker is not basicly's to delete: `.basicly/ledger/` and your record history stay
 either way.

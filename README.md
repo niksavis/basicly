@@ -4,364 +4,170 @@
 
 # basicly
 
-**A coding-agent harness. One catalog projected into every agent's config, a deterministic loop that runs on it, and git gates at commit time.**
+**basicly writes the instruction files for Claude Code, Codex and Copilot from one catalog of rules. It adds git hooks that check every commit.**
+
+Use it when one or more coding agents work in your git repository. Every agent then follows the same rules and passes the same gates.
 
 [![latest release](https://img.shields.io/github/v/release/niksavis/basicly?label=release)](https://github.com/niksavis/basicly/releases/latest)
 [![quality gates](https://github.com/niksavis/basicly/actions/workflows/quality-gates.yml/badge.svg)](https://github.com/niksavis/basicly/actions/workflows/quality-gates.yml)
-[![projection gate](https://github.com/niksavis/basicly/actions/workflows/basicly.yml/badge.svg)](https://github.com/niksavis/basicly/actions/workflows/basicly.yml)
 [![python 3.14+](https://img.shields.io/badge/python-3.14%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 </div>
 
-## What is basicly?
+## Install
 
-Most agent harnesses ship instructions and skills. `basicly` also ships the
-**workflow** and the **state** — a deterministic development loop, the work
-graph it derives progress from, and git gates that hold whether or not the model
-read the guidance.
-
-Four pillars:
-
-- **01 Guidance** — one versioned YAML catalog, projected into what each tool
-  natively reads: `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`,
-  skills, subagents, permissions. Edit one fragment and every target regenerates
-  consistently. Your overrides live in an overlay that upgrades never touch.
-- **02 Gates** — git hooks across pre-commit, commit-msg and pre-push, plus
-  agent hooks and a verify pipeline. **Enforcement is at commit time, not only in
-  CI**: a hook that refuses the commit is a different guarantee from a check that
-  fails the build afterwards.
-- **03 The loop** — one way to drive work, shipped as commands: intake, classify,
-  decompose, build, verify, validate, ship — driven the same way under Claude,
-  Codex or Copilot, and not the only way work gets done here. Work builds in an
-  isolated worktree; run one track at a time, or fan out parallel lanes behind a
-  serial merge queue.
-- **04 The work graph** — issues, dependencies, gate results, checkpoints and
-  evidence live in a tracked graph. The loop keeps no side-state: the phase a
-  track sits in is *derived* from that graph, so a session can crash, compact, or
-  hand over to a different agent family mid-track and the next command picks it
-  up by re-reading it.
-
-**The pillars are not a bundle of files.** The loop, and every headless agent it
-dispatches, reads the artifacts pillar 01 emits — so the config layer's output
-*is* the orchestrator's contract. That is why the same track can start on one
-agent and finish on another, and it is what a projector alone or an orchestrator
-alone cannot offer.
-
-## Quick start
-
-### Install
-
-basicly requires **Python 3.14+** — for the CLI and for the projected hook
-scripts that run inside your repo; older interpreters are not supported.
-The default markdown gate also needs Node and a local `markdownlint-cli2` package before
-install. If your repository already locks the package, run `npm ci`. Otherwise, get the
-repository owner's approval, then run `npm install --save-dev markdownlint-cli2` and commit
-the package files. Install and `--dry-run` refuse missing tools before writing files.
-They do not add dependencies automatically. Before the first commit, select Markdown
-inputs in your repository-owned `.markdownlint-cli2` configuration. A style-only
-`.markdownlint.json` configuration does not select inputs. Keep existing input and rule choices.
-See [markdown gate prerequisites](docs/how-to/upgrade-and-check-drift.md#markdown-gate-prerequisites)
-for an explicit scratch setup and the opt-out.
-
-From inside a git repository, install the latest release on Linux, WSL or macOS:
+Run this inside your git repository. On Linux, macOS or the Windows Subsystem for Linux
+(WSL):
 
 ```sh
 curl -fsSL https://niksavis.github.io/basicly/install.sh | sh
 ```
 
-Windows (PowerShell):
+On Windows (PowerShell):
 
 ```powershell
 irm https://niksavis.github.io/basicly/install.ps1 | iex
 ```
 
-These permanent URLs serve scripts from the latest published release. They install `uv`
-when needed and select Python 3.14 or later. They resolve a versioned release wheel before
-running `basicly install`. They do not install unreleased code from `main`.
-Re-run the same command to upgrade. The scripts do not prompt or add project dependencies.
-Install failures return a nonzero exit status.
+You need git and [uv](https://docs.astral.sh/uv/). The script installs uv when it is
+missing, and uv gets Python 3.14 or later. You also need Node.js and the
+`markdownlint-cli2` package in the repository, for the markdown gate. Without them,
+install stops before it writes a file.
+[Markdown gate prerequisites](docs/how-to/upgrade-and-check-drift.md#markdown-gate-prerequisites)
+shows how to add the package, choose the files it checks, or turn the gate off.
 
-Agents that need explicit download-failure handling, arguments or a pinned version can
-save the script first:
+The script installs the latest release. To read the script before you run it, or to pick
+a version, see [install options](docs/how-to/upgrade-and-check-drift.md#install-options).
+
+### What install changes
+
+Install writes the instruction files (`.claude/CLAUDE.md`, `AGENTS.md` and
+`.github/copilot-instructions.md`), the skills, the subagents and the `.basicly/` folder.
+It writes the git and agent hooks, `basicly.toml`, `.basicly-local/`, a continuous
+integration (CI) workflow and
+`.vscode/tasks.json`. It also adds lines to `.gitignore` and `.gitattributes`.
+
+Install does not commit. Run `git status` to review the files. Every person who commits
+needs the same tools, as
+[keep every committer working](docs/how-to/upgrade-and-check-drift.md#keep-every-committer-working)
+explains.
+
+## What you get
+
+- **Rules.** The catalog is a set of YAML files that hold the rules for your agents.
+  basicly writes them into the files each agent reads. A skill is a set of steps that
+  an agent loads when a task needs it. A subagent is a helper agent with one job. Your
+  own rules live in `.basicly-local/`, and an upgrade never changes them.
+- **Gates.** A gate is a check that refuses a commit when it fails. basicly runs the
+  gates in git hooks and in agent hooks. An agent hook is a command that a coding agent
+  runs before or after it acts. CI runs the gates again.
+- **A tracker.** The tracker stores records of work, their dependencies and the result
+  of each gate. It keeps them in a log in `.basicly/ledger/`. basicly adds to the log and
+  never changes old lines. You commit the log with your code.
+- **A loop.** The `loop` command takes one record from creation to a merged change. It
+  builds each record in its own git worktree, which is a second working copy of the
+  repository. The loop reads the state of each record from the tracker, so another
+  agent can continue the work.
+
+## First use
+
+1. Open your coding agent in the repository. It now reads the rules in its instruction
+   file.
+2. Follow the [tutorial](docs/tutorial/first-loop.md) to make the first commit. Each
+   commit needs a [Conventional Commits](https://www.conventionalcommits.org) subject
+   and the id of a tracker record that you claimed. To claim a record marks it as your
+   work. The tutorial shows both on a test
+   repository that you can delete. It sends no request to a paid AI model.
+
+[Unblock a commit](docs/how-to/unblock-a-commit.md) explains each refusal and its fix.
+
+## Run basicly commands
+
+Install adds no `basicly` command to your `PATH`. Add this function to your shell
+startup file, such as `~/.bashrc` or `~/.zshrc`. Put the version you installed in the URL;
+the [releases page](https://github.com/niksavis/basicly/releases) lists each version:
 
 ```sh
-installer=$(mktemp) && curl -fsSL https://niksavis.github.io/basicly/install.sh -o "$installer" && sh "$installer"
+basicly() { uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.43.0/basicly-0.43.0-py3-none-any.whl basicly "$@"; }
 ```
+
+In PowerShell, add this function to your profile:
 
 ```powershell
-$installer = Join-Path ([IO.Path]::GetTempPath()) (([guid]::NewGuid().ToString()) + '.ps1')
-Invoke-WebRequest https://niksavis.github.io/basicly/install.ps1 -OutFile $installer -ErrorAction Stop
-& $installer
+function basicly { uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.43.0/basicly-0.43.0-py3-none-any.whl basicly @args }
 ```
 
-Append `--ref v0.43.0` (POSIX) or `-Ref v0.43.0` (PowerShell) to select a release.
-
-The versioned wheel remains available for reproducible installs with `uv` already installed:
+After you edit a rule in `.basicly-local/`, write the instruction files again, then check
+that they match the catalog:
 
 ```sh
-uvx --python '>=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.43.0/basicly-0.43.0-py3-none-any.whl basicly install
+basicly build
+basicly check
 ```
 
-`uv run basicly install` works inside a basicly source checkout. A bare `basicly install`
-works after `uv tool install` puts it on `PATH`. Install syncs the catalog into your repo;
-it does not put the executable on `PATH`.
+## Upgrade and uninstall
 
-For offline installation, transfer the
-[release wheel](https://github.com/niksavis/basicly/releases) and pre-provision
-its Python dependencies, then run
-`uvx --offline --from ./basicly-0.43.0-py3-none-any.whl basicly install`.
-Lefthook's pinned platform binaries ship inside the package; install extracts
-only this checkout's executable and MIT license into ignored `.basicly/bin/`.
+To upgrade, run the install script again. It is safe to run more than once. basicly is
+before version 1.0, so a minor release can change a command. The [changelog](CHANGELOG.md)
+names each change.
 
-Direct Git installations are replaced by release wheels. To develop from a
-source checkout, follow [the preparation steps](CONTRIBUTING.md#development-setup).
-Package builds and `basicly install` never download Lefthook implicitly.
-
-### Upgrade
-
-Re-run the latest-release install command — install is idempotent and
-converges the repo to the selected version. There is no separate `update`
-command.
-
-### Uninstall
-
-One command removes everything basicly manages; your overlay and
-`basicly.toml` survive:
+To remove the files that basicly generated, run:
 
 ```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.43.0/basicly-0.43.0-py3-none-any.whl basicly uninstall
+basicly uninstall
 ```
 
-Add `--purge` to also remove the user overlay, `basicly.toml`, and the
-scaffolded VS Code tasks/CI workflow (only when still unedited).
+Uninstall keeps your rules in `.basicly-local/`, `basicly.toml` and your tracker records.
+[Uninstall](docs/how-to/upgrade-and-check-drift.md#uninstall) explains `--purge`, which
+also deletes your rules, and the files that you remove by hand.
 
-## What install gives you
+## Install one kit alone
 
-- The managed core catalog under `.basicly/` (fragments, skills, subagents, hook
-  scripts).
-- A model map at `.basicly/core/models/` — a subagent source declares a portable
-  model tier (`low`, `medium`, `high`, `maximum`) rather than a provider model id,
-  and the map records which concrete model that tier is per vendor and per
-  surface, with that surface's own published cost and token limits. Plain JSON
-  beside its schema, so any tool can read it.
-- Generated agent instruction files (`CLAUDE.md`, `AGENTS.md`,
-  `.github/copilot-instructions.md`) rendered from shared fragments.
-- Projected skills at `.claude/skills/` and `.agents/skills/`, and subagents at
-  `.claude/agents/` and `.github/agents/`.
-- Activated Git, Claude, Codex and Copilot hooks, orchestrated through shared
-  Lefthook configuration. The harness ships the official Lefthook 2.2.2 release
-  for Linux, macOS and Windows on x86_64 and arm64. Install materializes
-  `.basicly/bin/lefthook[.exe]` with its MIT license without a separate download
-  or global installation.
-- An owned work tracker — an append-only event ledger under `.basicly/ledger/`, read
-  and written by `basicly tracker` — plus VS Code tasks and a CI gates workflow.
-- A gate that refuses a prose comment in a code file. The code is the source of truth, so
-  changing it can never leave a stale claim beside it; a directive a tool reads (`noqa`,
-  `nosec`, `type: ignore`, a shebang, a licence banner) is not prose and stays.
-- Model tiers wired to the spawn, on Claude. Each projected subagent carries the `tier:` its
-  source declares, and install adds the hook that rewrites a spawn to the model that tier
-  resolves to — so `tier: low` runs on the cheap model without any agent file naming one.
-  Copilot is not wired: it selects a subagent's model in configuration rather than through a
-  hook. [`docs/reference/kits.md`](docs/reference/kits.md) has the detail.
+A kit is a part of basicly that installs without the rest. There are four kits. Each has
+no dependencies and needs Python 3.9 or later.
 
-Customize via YAML fragments in `.basicly-local/fragments/user/` — install
-never touches them. Scope the catalog to your stack with
-`--technologies` (for example `--technologies python,zsh`).
-
-A repository with existing comments can opt into `no-comment-ratchet`. It permits unchanged
-legacy prose and refuses new, rewritten or duplicated prose. Strict `no-comments` remains
-the default and goal. See [the transition policy](docs/reference/kits.md#transition-with-no-comment-ratchet).
-
-## Take one piece without the harness
-
-**Three parts of basicly are packaged to stand alone**, for a repository that wants one of
-them and not the workflow around it. Each is its own distribution with no dependencies and a
-Python 3.9 floor, built from the same source this repo uses, so there is no second copy to
-drift.
-
-| Kit | What it gives a repository that has no basicly |
+| Kit | What it adds to a repository |
 | --- | --- |
-| [`basicly-tracker`](packages/basicly-tracker) | an append-only work tracker whose ledger merges cleanly when two people or two agents append in parallel — no server, no database, no binary |
-| [`basicly-comments`](packages/basicly-comments) | a gate that refuses a prose comment in a code file, and a prover that removes them safely across nine language families |
-| [`basicly-tier`](packages/basicly-tier) | a portable model tier a subagent declares instead of a provider model id, resolved per host |
+| [`basicly-tracker`](packages/basicly-tracker) | the tracker alone. Two people or agents can add records at the same time, and git still merges the log |
+| [`basicly-board`](packages/basicly-board) | a web page and an HTTP API for the tracker, on your own computer. It needs the tracker kit |
+| [`basicly-comments`](packages/basicly-comments) | a gate that refuses a prose comment in a code file, and a tool that removes such comments safely |
+| [`basicly-tier`](packages/basicly-tier) | a model tier (`low`, `medium`, `high`, `maximum`) that a subagent names instead of a model. The kit maps each tier to a model |
 
-Each one installs with a single line. Copy the one you want:
+For example, to add the tracker:
 
 ```sh
-# an append-only work tracker, installed once per machine
 uv tool install 'git+https://github.com/niksavis/basicly@v0.43.0#subdirectory=packages/basicly-tracker'
 basicly-tracker init
-
-# a gate that refuses a prose comment in a code file
-uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-comments basicly-comments init
-
-# a portable model tier a subagent declares instead of a model id
-uvx --from git+https://github.com/niksavis/basicly#subdirectory=packages/basicly-tier basicly-tier init
 ```
 
-To let a coding agent install the tracker and its board, give it the [agent install prompt](packages/basicly-tracker/README.md#install-with-a-coding-agent).
-
-**The tracker and its board run from a user install.** `basicly-tracker init` writes only the
-ledger, the version pin, the git rules and the commit hook into the repository, and it
-refuses with the install command when no user install exists. `init --sandbox` writes one
-`.basicly/tracker.pyz` file instead, and needs no user install. To trial the tracker beside
-br, see [Trial the tracker beside br](docs/how-to/trial-the-tracker-beside-br.md).
-
-For the comments and tier kits, `init` **vendors** the kit into `.basicly/kit/<name>`, so
-plain `python3` runs it afterwards with no `uvx`, no network and nothing on `PATH`. It also writes the kit's **skill** into
-`.claude/skills/` and `.agents/skills/`, so an agent in that repository
-knows the kit exists and when to use it — a kit nothing calls is a kit nobody has. Add
-`--with-instructions` to place a short always-on block in the instruction files you already
-have, inside a marked region `uninstall` removes byte for byte.
-
-**`init` also configures the repository where the kit needs it.** The tracker writes the
-`merge=union` git attribute its parallel-append promise rests on, **before** the first kit
-file, and refuses to install at all if it cannot. The tier kit wires the host hook that makes
-a declared tier reach a spawn. The comments kit needs no wiring.
-
-**`uninstall` takes back exactly what `init` wrote** — the vendored tree, both skill roots,
-the tier hook, and the tracker's own `.gitignore` and `.gitattributes` lines — and leaves an
-`Agent` hook somebody else wrote alone.
-
-**Every command each kit ships, with its flags, is in
-[`docs/reference/kits.md`](docs/reference/kits.md).**
-
-### Committer requirements
-
-The projected git hooks run `uv run python ...`, so **every committer** to a
-basicly-managed repo needs [uv](https://docs.astral.sh/uv/) on `PATH` and
-Python 3.14+ — not just the person who ran install. `basicly hooks-check`
-diagnoses a missing uv before it bites at commit time. The harness loop
-(`basicly loop`) needs nothing further: the work tracker is an append-only event
-ledger this repository owns and commits, so there is no binary to install and no
-version to pin.
-
-basicly writes no Codex permission policy. `basicly install` removes the profiles,
-the selection and the command rules that an earlier version generated, and Codex
-then runs on its own defaults. `basicly permissions-build --codex-user` also cleans
-the machine-local Codex configuration. See
-[Remove the generated Codex permission policy](docs/how-to/configure-codex-permissions.md).
-
-## How it works
-
-```mermaid
-flowchart TB
-    subgraph sources["One source of truth"]
-        core[".basicly/core/<br>managed catalog"]
-        local[".basicly-local/<br>your overlay"]
-    end
-    cli{{"basicly install / build"}}
-    core --> cli
-    local --> cli
-    subgraph outputs["Projected into your repo"]
-        agents["Agent instructions<br>CLAUDE.md / AGENTS.md<br>copilot-instructions.md"]
-        skills["Skills<br>.claude/skills<br>.agents/skills"]
-        hooks["Hooks<br>git stages<br>Claude Code / Copilot"]
-    end
-    cli --> agents
-    cli --> skills
-    cli --> hooks
-    gate["basicly check<br>drift gate, run by CI"] -. verifies .-> outputs
-    loop{{"basicly loop / supervise"}}
-    outputs -- "the contract the agents read" --> loop
-    tracker[("work graph<br>issues, gates, evidence")]
-    loop <-- "reads phase, writes gates" --> tracker
-```
-
-The edge from the projected outputs into `basicly loop` is the part that is easy
-to miss, and it is drawn solid because it is load-bearing rather than advisory:
-the loop does not carry its own copy of the rules. It dispatches headless agents
-that read the same projected artifacts, so **the projection is the contract** —
-and because the loop stores no side-state, phase is always re-derived from the
-work graph.
-
-The full design — directory contract, catalog model, verification pipeline —
-lives in [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
+The [board README](packages/basicly-board/README.md) gives the board's commands. The kits
+reference below gives the commands of the other three kits.
 
 ## Documentation
 
-Start with the tutorial if you have just installed; it is the only page that
-assumes nothing:
-
-- **[Tutorial — from install to your first shipped bead](docs/tutorial/first-loop.md)**
-  — a walkthrough on a scratch repo, no agent spend: file a bead, build it in its
-  own worktree, land it, close it.
-
-Task-focused guides for the recurring operations:
-
-| How to | Covers |
+| Page | What it covers |
 | --- | --- |
-| [Customize the guidance your agents read](docs/how-to/customize-the-catalog.md) | overlay fragments, path-scoped rules, what never to hand-edit |
-| [Wire up the verify gate](docs/how-to/wire-up-the-verify-gate.md) | declare your checks; an empty gate passes vacuously |
-| [Unblock a commit a hook refused](docs/how-to/unblock-a-commit.md) | the refusals you will actually meet, and the one-line fixes |
-| [Upgrade, check drift, uninstall](docs/how-to/upgrade-and-check-drift.md) | re-running install *is* the upgrade |
-| [Run several lanes in parallel](docs/how-to/run-parallel-lanes.md) | decompose, preflight, optional spending limits, the serial merge queue |
-| [Resume or hand over a track](docs/how-to/resume-a-track.md) | after a crash, or onto a different agent family |
-| [Trial the tracker beside br](docs/how-to/trial-the-tracker-beside-br.md) | before you retire br, with br as the source of truth |
-
-Reference:
-
-| Page | Covers |
-| --- | --- |
-| [`docs/reference/cli.md`](docs/reference/cli.md) | every `basicly` command and its flags |
-| [`docs/reference/kits.md`](docs/reference/kits.md) | every kit command and its flags, and what each kit writes and removes |
-| [`docs/architecture/architecture.md`](docs/architecture/architecture.md) | the system, and the decision behind each part of it |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | developing basicly itself |
-
-## Everyday commands
-
-Day-to-day use needs nothing beyond `install` above. The scaffolded VS Code
-tasks wrap the same pinned commands. To inspect or re-sync by hand, run these
-from the consumer repo root with the same pin used to install:
-
-```sh
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.43.0/basicly-0.43.0-py3-none-any.whl basicly check   # exit non-zero when generated files drifted
-uvx --from https://github.com/niksavis/basicly/releases/download/v0.43.0/basicly-0.43.0-py3-none-any.whl basicly build   # regenerate agent instruction files
-```
-
-## Roadmap
-
-There are no dates here on purpose — this is a status map, not a schedule. Every
-capability sits under the pillar it belongs to, grouped by what it currently is:
-
-- `✓` **shipped** — running code in the current release, exercised on this repo's
-  own development.
-- `▶` **building** — sequenced into a phase being worked now, with an open work
-  package and written exit criteria.
-- `◐` **partial** — code exists and nothing reaches it, or it covers only part of
-  what it claims. A closed work item proves the code was written; it is not evidence
-  that anything calls it.
-- `◇` **designed** — settled in a design document but sequenced behind a later
-  phase, and **nothing is built**; a recorded decision is not evidence that anything
-  enforces it.
-- `?` **researching** — the deliverable is a number, not a capability: a measurement
-  whose result is allowed to cancel the work.
-
-| Pillar | `✓` shipped | `▶` building | `◐` partial · `◇` designed · `?` researching |
-| --- | --- | --- | --- |
-| **01 · guidance** | one catalog → 3 agent families<br>drift gate in CI<br>path-scoped rules tier<br>invocation axis per entry<br>model tiers · committed model map<br>lexical routing evals · rank-1 floor<br>tutorial and how-to layer | an eval case per entry<br>always-on baseline relief | `?` do entries change behaviour |
-| **02 · gates** | git hooks · commit · push<br>agent hooks · Claude · Copilot<br>verify pipeline · 3 modes<br>severity on judged output<br>rework convergence check | gate taxonomy by type<br>install reports its tier | `◇` enforcement at the tool-call boundary<br>`◇` a plan gate that runs its demonstration |
-| **03 · the loop** | single-track loop<br>worktree isolation<br>parallel lanes · merge queue<br>task authorization · optional spend cap<br>release automation<br>scope sized by what a lane reads<br>measured context per dispatch<br>a named role per judgment step | per-model spend forecast<br>unattended multi-lane run | `◇` the judged-output contract<br>`?` cost per landed package<br>`?` deterministic AST localisation |
-| **04 · the work graph** | issues · deps · gates<br>phase derived from state<br>atomic shared-export publish<br>dispatch score and rank recorded | owned in-process event log | `◐` provenance on every edge<br>`◐` fsck and rebuild |
-
-Some things are **not planned**, so absence here is not an oversight: an LLM
-orchestrator in control of the tracker, an agent-writable catalog, a maintained TUI,
-an external database or daemon, and agent-to-agent messaging. The reasons are in
-[architecture — non-goals](docs/architecture/architecture.md#non-goals).
-
-The authoritative copy of this table — with the evidence each status requires — is
-[`docs/architecture/status.md`](docs/architecture/status.md), and it is updated in the
-change that lands a capability. The order the unbuilt rows get built in is the work
-tracker: `uv run basicly session start` prints it, and the ledger it reads is committed
-with the code.
+| [Tutorial](docs/tutorial/first-loop.md) | install to your first finished record, on a test repository |
+| [Customize the rules](docs/how-to/customize-the-catalog.md) | your own rules, rules for some paths only, files you must not edit |
+| [Set up the verify gate](docs/how-to/wire-up-the-verify-gate.md) | declare your checks. A gate with no checks always passes |
+| [Unblock a commit](docs/how-to/unblock-a-commit.md) | the refusals you will meet, and the fix for each |
+| [Upgrade, check for changed files, uninstall](docs/how-to/upgrade-and-check-drift.md) | install options, `--purge` |
+| [Build several records in parallel](docs/how-to/run-parallel-lanes.md) | one git worktree per record |
+| [Resume work or give it to another agent](docs/how-to/resume-a-track.md) | continue after a crash, or with a different agent |
+| [Command reference](docs/reference/cli.md) | every `basicly` command and its flags |
+| [Kits reference](docs/reference/kits.md) | the commands of the tracker, comments and tier kits, and what each kit writes |
+| [Trial the tracker beside br](docs/how-to/trial-the-tracker-beside-br.md) | run the tracker beside br, an earlier tracker, before you retire br |
+| [Architecture](docs/architecture/architecture.md) | how basicly works, and why |
+| [Status](docs/architecture/status.md) | what is shipped, what is being built, and what is planned |
+| [Codex permissions](docs/how-to/configure-codex-permissions.md) | remove the Codex permission policy that an earlier version wrote |
 
 ## Contributing
 
-Bug reports and ideas are welcome as GitHub issues. For development setup,
-contributor commands, commit conventions, and the quality gates a change must
-pass, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Open a GitHub issue to report a bug or suggest an idea.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) explains the development setup, the commit rules
+and the checks a change must pass.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+basicly uses the [MIT License](LICENSE).

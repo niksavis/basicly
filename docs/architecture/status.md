@@ -151,8 +151,9 @@ A row changes state in the change that lands the behaviour, never in a later cle
 That rule is now gated for this file: the table and its source cannot disagree, and a
 capability cannot be graded twice, because `docs-claims` refuses both.
 
-Two hand-maintained copies remain, on the README roadmap and on the landing page, and
-**nothing gates those two**. Rendering them from `status.yaml` is the rest of D-30 and is
-not built; until it is, a stale row is possible there and never here.
+One hand-maintained copy remains, on the landing page, and **nothing gates it**. The
+README links to this page instead of copying the table. Rendering the landing page from
+`status.yaml` is the rest of D-30 and is not built; until it is, a stale row is possible
+there and never here.
 
 Architecture decision **D-30** carries the argument and the state of the work.
