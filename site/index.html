@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>basicly — a coding-agent harness that ships its own SDLC</title>
+    <title>basicly — one set of rules and gates for every coding agent</title>
     <meta
       name="description"
-      content="Most agent harnesses ship instructions and skills. basicly also ships the workflow and the state: a deterministic development loop, a work graph it derives phase from, and git gates that block a bad change whether or not the model read the guidance."
+      content="basicly writes the instruction files for Claude Code, Codex and Copilot from one catalog of rules, and adds git hooks that check every commit."
     />
     <meta
       name="keywords"
@@ -17,11 +17,11 @@
     <meta property="og:url" content="https://niksavis.github.io/basicly/" />
     <meta
       property="og:title"
-      content="basicly — a coding-agent harness that ships its own SDLC"
+      content="basicly — one set of rules and gates for every coding agent"
     />
     <meta
       property="og:description"
-      content="Guidance, deterministic gates, a development loop, and the work graph it runs on — projected from one catalog by one command."
+      content="One catalog of rules for Claude Code, Codex and Copilot, git hooks that check every commit, a tracker and a loop."
     />
     <meta property="og:image" content="assets/logo.svg" />
     <meta name="twitter:card" content="summary" />
@@ -180,17 +180,6 @@
         font-family: var(--mono);
         font-size: 0.78rem;
       }
-      .pillbar span {
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        padding: 0.28rem 0.8rem;
-        color: var(--text-dim);
-        background: var(--bg-raise);
-      }
-      .pillbar span b {
-        color: var(--indigo);
-        font-weight: 600;
-      }
 
       /* ---------- sections ---------- */
       section {
@@ -293,165 +282,6 @@
         border-left: 2px solid var(--indigo-deep);
       }
 
-      /* ---------- contrast table ---------- */
-      .compare {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 1.5rem;
-        font-size: 0.93rem;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        overflow: hidden;
-      }
-      .compare th,
-      .compare td {
-        text-align: left;
-        padding: 0.7rem 1rem;
-        border-bottom: 1px solid var(--border);
-        vertical-align: top;
-      }
-      .compare thead th {
-        background: var(--bg-raise);
-        color: var(--text-bright);
-        font-size: 0.8rem;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        font-family: var(--mono);
-        font-weight: 600;
-      }
-      .compare tbody tr:last-child th,
-      .compare tbody tr:last-child td {
-        border-bottom: 0;
-      }
-      .compare tbody th {
-        font-weight: 600;
-        color: var(--text);
-        width: 26%;
-      }
-      .compare td.them {
-        color: var(--text-dim);
-      }
-      .compare td.us {
-        color: var(--text);
-        background: rgba(99, 102, 241, 0.05);
-      }
-      @media (max-width: 720px) {
-        .compare thead {
-          display: none;
-        }
-        .compare,
-        .compare tbody,
-        .compare tr,
-        .compare th,
-        .compare td {
-          display: block;
-          width: 100%;
-        }
-        .compare tbody tr {
-          border-bottom: 1px solid var(--border);
-          padding: 0.4rem 0;
-        }
-        .compare td::before {
-          font-family: var(--mono);
-          font-size: 0.72rem;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          color: var(--amber);
-          display: block;
-        }
-        .compare td.them::before {
-          content: "guidance-only harness";
-        }
-        .compare td.us::before {
-          content: "basicly";
-        }
-      }
-
-      /* ---------- diagrams ---------- */
-      .diagram {
-        margin-top: 1.5rem;
-        background: var(--bg-raise);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 1.5rem 1.25rem;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-      }
-      .diagram figcaption {
-        font-family: var(--mono);
-        font-size: 0.74rem;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: var(--text-dim);
-        margin-bottom: 0.85rem;
-        align-self: flex-start;
-      }
-      .stage {
-        display: flex;
-        gap: 0.7rem;
-        justify-content: center;
-        width: 100%;
-        flex-wrap: wrap;
-      }
-      .node {
-        flex: 1 1 0;
-        min-width: 8.5rem;
-        background: var(--bg-sunk);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 0.55rem 0.85rem;
-        text-align: center;
-      }
-      .node b {
-        display: block;
-        color: var(--text);
-        font-weight: 600;
-        font-size: 0.92rem;
-      }
-      .node span {
-        display: block;
-        font-family: var(--mono);
-        font-size: 0.72rem;
-        color: var(--text-dim);
-        margin-top: 0.2rem;
-      }
-      .node.cmd {
-        flex: 0 0 auto;
-        min-width: 0;
-        font-family: var(--mono);
-        font-weight: 600;
-        color: var(--amber);
-        border-color: var(--amber);
-        padding: 0.5rem 1.15rem;
-      }
-      .node.gate {
-        flex: 0 0 auto;
-        width: 100%;
-        border-style: dashed;
-        border-color: var(--amber);
-      }
-      .node.gate b {
-        color: var(--amber);
-      }
-      .node.human {
-        border-color: var(--orange);
-      }
-      .node.human span {
-        color: var(--orange);
-      }
-      .arrow {
-        color: var(--amber);
-        font-size: 0.85rem;
-        line-height: 1;
-      }
-      @media (max-width: 700px) {
-        .stage {
-          flex-direction: column;
-        }
-      }
-
       ul.plain {
         padding-left: 1.15rem;
         margin-top: 1.35rem;
@@ -485,32 +315,7 @@
       #roadmap .grid + h2 {
         margin-top: 2.75rem;
       }
-      .st.todo {
-        color: var(--amber);
-      }
-      .st.partial {
-        color: var(--amber);
-      }
-      .st.later {
-        color: var(--text-dim);
-      }
-      .st.ask {
-        color: var(--orange);
-      }
-      ul.chips {
-        margin-top: 0.75rem;
-        padding: 0;
-        list-style: none;
-        display: grid;
-        gap: 0.45rem;
-      }
-      ul.chips li {
-        display: flex;
-        gap: 0.75rem;
-        align-items: baseline;
-        font-size: 0.9rem;
-        color: var(--text-dim);
-      }
+
       /* Cards hug their content: the four pillars hold different numbers of
          rows, and a stretched card leaves dead space inside its border. */
       #roadmap .grid.two {
@@ -532,771 +337,201 @@
         <img src="assets/logo.svg" alt="basicly logo" width="88" height="88" />
         <h1><span>basicly</span></h1>
         <p class="tag">
-          Most agent harnesses ship instructions and skills. basicly also ships
-          <strong>the workflow and the state</strong> — a deterministic
-          development loop, the work graph it derives progress from, and git
-          gates that hold whether or not the model read the guidance.
+          basicly writes the instruction files for Claude Code, Codex and
+          Copilot from one catalog of rules. It adds git hooks that check every
+          commit.
+        </p>
+        <p class="tag">
+          Use it when one or more coding agents work in your git repository.
+          Every agent then follows the same rules and passes the same gates.
         </p>
         <div class="links">
-          <a class="btn primary" href="#install">Get started</a>
-          <a class="btn ghost" href="#roadmap">Status</a>
-          <a class="btn ghost" href="https://github.com/niksavis/basicly"
-            >GitHub</a
-          >
-          <a
-            class="btn ghost"
-            href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md"
-            >Architecture</a
-          >
-        </div>
-        <div class="pillbar" aria-label="The four pillars">
-          <span><b>01</b> guidance</span>
-          <span><b>02</b> gates</span>
-          <span><b>03</b> the loop</span>
-          <span><b>04</b> the work graph</span>
+          <a class="btn primary" href="#install">Install</a>
+          <a class="btn ghost" href="https://github.com/niksavis/basicly">GitHub</a>
+          <a class="btn ghost" href="https://github.com/niksavis/basicly/blob/main/docs/tutorial/first-loop.md">Tutorial</a>
+          <a class="btn ghost" href="https://github.com/niksavis/basicly/blob/main/docs/architecture/status.md">Status</a>
         </div>
       </div>
     </header>
 
-    <section id="pillars">
+    <section id="install">
       <div class="wrap">
-        <p class="kicker">What it is</p>
-        <h2>Four pillars</h2>
+        <p class="kicker">Install</p>
+        <h2>Install into a git repository</h2>
         <p class="lead">
-          Guidance and gates are the classic harness bargain: prose a model may
-          ignore, plus checks that do not care whether it did. The other two are
-          the difference — basicly owns the process the work moves through and
-          the state that process reads.
+          Run this inside your git repository. On Linux, macOS or the Windows
+          Subsystem for Linux (WSL):
         </p>
-        <p class="lead">
-          And they are not four separate things. The loop, and every headless
-          agent it dispatches, reads the artifacts pillar 01 emits — so the
-          config layer's output <em>is</em> the orchestrator's contract. That is
-          why one track can start on Claude and finish on Codex, and it is what a
-          projector alone or an orchestrator alone cannot offer.
+        <pre><span class="p">$ </span>curl -fsSL https://niksavis.github.io/basicly/install.sh | sh</pre>
+        <p class="muted">On Windows (PowerShell):</p>
+        <pre><span class="p">&gt; </span>irm https://niksavis.github.io/basicly/install.ps1 | iex</pre>
+        <p class="muted">
+          You need git and uv. The script installs uv when it is missing, and uv
+          gets Python 3.14 or later. You also need Node.js and the
+          <code>markdownlint-cli2</code> package in the repository, for the
+          markdown gate. Without them, install stops before it writes a file.
+          The script installs the latest release. To read the script before you
+          run it, or to pick a version, see the
+          <a href="https://github.com/niksavis/basicly/blob/main/docs/how-to/upgrade-and-check-drift.md#install-options">install options</a>.
         </p>
+        <ul class="plain">
+          <li>
+            <strong>Install does not commit.</strong> It writes the instruction
+            files, the skills, the subagents, the hooks and the
+            <code>.basicly/</code> folder. Run <code>git status</code> to review
+            them.
+          </li>
+          <li>
+            <strong>To upgrade, run the install script again.</strong> It is safe
+            to run more than once.
+          </li>
+          <li>
+            <strong>Your rules stay yours.</strong> They live in
+            <code>.basicly-local/</code>, and an upgrade never changes them.
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="what">
+      <div class="wrap">
+        <p class="kicker">What you get</p>
+        <h2>Rules, gates, a tracker and a loop</h2>
         <div class="grid two">
           <div class="card accent">
-            <h3><i>01</i> Guidance</h3>
+            <h3>Rules</h3>
             <p>
-              One versioned YAML catalog, projected into what each tool
-              natively reads: <code>CLAUDE.md</code>, <code>AGENTS.md</code>,
-              <code>copilot-instructions.md</code>, skills, subagents,
-              output styles, permissions.
-            </p>
-            <p>
-              Edit one fragment and every target regenerates consistently. Your
-              overrides live in an overlay that upgrades never touch.
+              The catalog is a set of YAML files that hold the rules for your
+              agents. basicly writes them into the files each agent reads:
+              <code>CLAUDE.md</code>, <code>AGENTS.md</code>,
+              <code>copilot-instructions.md</code>, skills and subagents.
             </p>
           </div>
           <div class="card accent">
-            <h3><i>02</i> Gates</h3>
+            <h3>Gates</h3>
             <p>
-              Git hooks across pre-commit, commit-msg and pre-push, plus agent
-              hooks for Claude Code and Copilot, and a verify pipeline with
-              <code>fast</code>, <code>full</code> and <code>staged</code>
-              modes.
-            </p>
-            <p>
-              The model choosing to run a formatter is a different thing from
-              the formatter running automatically. Where a hook can enforce a
-              rule, the rule is a hook.
+              A gate is a check that refuses a commit when it fails. basicly runs
+              the gates in git hooks and in agent hooks. Continuous integration
+              (CI) runs them again.
             </p>
           </div>
           <div class="card accent">
-            <h3><i>03</i> The loop</h3>
+            <h3>A tracker</h3>
             <p>
-              A development process shipped as commands: intake, classify,
-              decompose, build, verify, ship, teardown, retro — driven the same
-              way under Claude, Codex or Copilot.
-            </p>
-            <p>
-              Work builds in an isolated worktree. Run one track at a time, or
-              fan out parallel lanes behind a supervisor and a serial merge
-              queue.
+              The tracker stores records of work, their dependencies and the
+              result of each gate. It keeps them in a log in
+              <code>.basicly/ledger/</code>, which you commit with your code.
             </p>
           </div>
           <div class="card accent">
-            <h3><i>04</i> The work graph</h3>
+            <h3>A loop</h3>
             <p>
-              Issues, dependencies, gate results, checkpoints and evidence live
-              in a tracked graph. The loop keeps no side-state: the phase a
-              track sits in is <em>derived</em> from that graph.
-            </p>
-            <p>
-              So a session can crash, compact, or hand over to a different
-              agent family mid-track, and the next command picks it up by
-              re-reading the graph.
+              The <code>loop</code> command takes one record from creation to a
+              merged change. It builds each record in its own git worktree, a
+              second working copy of the repository. Another agent can continue
+              the work, because the loop reads the state from the tracker.
             </p>
           </div>
         </div>
       </div>
     </section>
 
-    <section id="different">
+    <section id="first">
       <div class="wrap">
-        <p class="kicker">What makes it different</p>
-        <h2>The workflow and the gates are code</h2>
+        <p class="kicker">First use</p>
+        <h2>Make the first commit</h2>
         <p class="lead">
-          Many harnesses describe the workflow as prose for a model to follow.
-          Here the workflow is engine code with one command per phase. The gates
-          it runs are the same gates your commits already pass.
+          Open your coding agent in the repository. It now reads the rules in its
+          instruction file. Each commit needs a Conventional Commits subject and
+          the id of a tracker record that you claimed.
         </p>
-        <table class="compare">
-          <thead>
-            <tr>
-              <th scope="col">Concern</th>
-              <th scope="col">A guidance-only harness</th>
-              <th scope="col">basicly</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <th scope="row">The workflow</th>
-              <td class="them">
-                Markdown describing the steps an agent should take
-              </td>
-              <td class="us">
-                Engine code with one command per phase boundary; anything fully
-                deterministic is a command, never a procedure to remember
-              </td>
-            </tr>
-            <tr>
-              <th scope="row">Enforcement</th>
-              <td class="them">
-                Asks the model nicely; compliance depends on the prompt
-              </td>
-              <td class="us">
-                Git hooks and a verify runner. A required gate is never passed
-                by a model, at any autonomy level
-              </td>
-            </tr>
-            <tr>
-              <th scope="row">Progress state</th>
-              <td class="them">
-                Plan files and conversation memory, which compaction loses
-              </td>
-              <td class="us">
-                A dependency graph the phase is derived from, so resume is a
-                read rather than a replay
-              </td>
-            </tr>
-            <tr>
-              <th scope="row">Authority</th>
-              <td class="them">
-                An orchestrator agent decides what happens next
-              </td>
-              <td class="us">
-                Agents propose, the engine disposes. Every agent runs as a pure
-                function of state and returns a proposal the engine validates
-              </td>
-            </tr>
-            <tr>
-              <th scope="row">Autonomy</th>
-              <td class="them">Usually all-or-nothing</td>
-              <td class="us">
-                Opt-in, four levels, granted only from a real terminal and
-                recorded with a spend ceiling. Human checkpoints hold by default
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <p class="muted">
+          The <a href="https://github.com/niksavis/basicly/blob/main/docs/tutorial/first-loop.md">tutorial</a> shows both on
+          a test repository that you can delete. It sends no request to a paid AI
+          model. <a href="https://github.com/niksavis/basicly/blob/main/docs/how-to/unblock-a-commit.md">Unblock a commit</a>
+          explains each refusal and its fix.
+        </p>
+        <p class="muted">
+          Install adds no <code>basicly</code> command to your
+          <code>PATH</code>. Add this function to your shell startup file, with
+          the version you installed:
+        </p>
+        <pre>basicly() { uvx --python '&gt;=3.14' --from https://github.com/niksavis/basicly/releases/download/v0.43.0/basicly-0.43.0-py3-none-any.whl basicly "$@"; }</pre>
       </div>
     </section>
 
-    <section id="install">
+    <section id="kits">
       <div class="wrap">
-        <p class="kicker">Install</p>
-        <h2>Install into any git repo</h2>
-        <p class="lead">Latest release on Linux, WSL or macOS:</p>
-        <pre><span class="p">$ </span>curl -fsSL https://niksavis.github.io/basicly/install.sh | sh</pre>
-        <p class="muted">Windows (PowerShell):</p>
-        <pre><span class="p">&gt; </span>irm https://niksavis.github.io/basicly/install.ps1 | iex</pre>
-        <p class="muted">
-          These permanent URLs serve released installers. They install uv when needed,
-          select Python 3.14 or later, and install the latest published wheel.
-          Run inside a git repository. The default Markdown gate needs Node and a
-          repository-owned markdownlint-cli2 dependency before install.
-          Missing prerequisites fail explicitly. The installers do not prompt or add
-          project dependencies. See the <a href="https://github.com/niksavis/basicly#install">installation guide</a>
-          for pinned, offline and unattended commands.
-        </p>
-        <ul class="plain">
-          <li>
-            <strong>Upgrading is the same command</strong> to use the latest release —
-            install is an idempotent converge, not a separate migration path.
-          </li>
-          <li>
-            <strong>Scoped to your stack.</strong>
-            <code>--technologies python,zsh</code> ships only the catalog
-            content that matches.
-          </li>
-          <li>
-            <strong>Reversible.</strong> <code>basicly uninstall</code> removes
-            everything managed; your overlay survives.
-          </li>
-        </ul>
-        <h2 style="margin-top:2.5rem">Take one piece without the harness</h2>
+        <p class="kicker">Kits</p>
+        <h2>Install one kit alone</h2>
         <p class="lead">
-          Three parts are packaged to stand alone, for a repository that wants
-          one of them and not the workflow around it. Each has no dependencies
-          and a Python 3.9 floor, and is built from the same source this repo
-          uses, so there is no second copy to drift.
+          A kit is a part of basicly that installs without the rest. There are
+          four kits. Each has no dependencies and needs Python 3.9 or later.
         </p>
         <ul class="plain">
           <li>
-            <strong><code>basicly-tracker</code></strong> — an append-only work
-            tracker whose ledger merges cleanly when two people or two agents
-            append in parallel. No server, no database, no binary to install.
+            <strong><code>basicly-tracker</code></strong>: the tracker alone. Two
+            people or agents can add records at the same time, and git still
+            merges the log.
           </li>
           <li>
-            <strong><code>basicly-comments</code></strong> — a gate that refuses
-            a prose comment in a code file, and a prover that removes them
-            safely across nine language families.
+            <strong><code>basicly-board</code></strong>: a web page and an HTTP
+            API for the tracker, on your own computer. It needs the tracker kit.
           </li>
           <li>
-            <strong><code>basicly-tier</code></strong> — a portable model tier a
-            subagent declares instead of a provider model id, resolved per host.
+            <strong><code>basicly-comments</code></strong>: a gate that refuses a
+            prose comment in a code file, and a tool that removes such comments
+            safely.
+          </li>
+          <li>
+            <strong><code>basicly-tier</code></strong>: a model tier
+            (<code>low</code>, <code>medium</code>, <code>high</code>,
+            <code>maximum</code>) that a subagent names instead of a model. The
+            kit maps each tier to a model.
           </li>
         </ul>
         <pre><span class="p">$ </span>uv tool install 'git+https://github.com/niksavis/basicly@v0.43.0#subdirectory=packages/basicly-tracker'
 <span class="p">$ </span>basicly-tracker init</pre>
         <p class="muted">
-          The tracker installs once per machine and writes only its ledger,
-          version pin, git rules and commit hook into a repository.
-          <code>init --sandbox</code> keeps one <code>.basicly/tracker.pyz</code>
-          file per repository instead, and <code>init --mirror beads</code>
-          runs it beside br while br stays the source of truth. The other kits
-          vendor into <code>.basicly/kit/&lt;name&gt;</code>. Each kit also
-          writes its <strong>skill</strong>, so an agent knows the kit exists
-          and when to use it. <code>uninstall</code> removes exactly what it
-          wrote.
+          The <a href="https://github.com/niksavis/basicly/blob/main/docs/reference/kits.md">kits reference</a> gives the
+          commands of the tracker, comments and tier kits. The
+          <a href="https://github.com/niksavis/basicly/blob/main/packages/basicly-board/README.md">board README</a> gives the
+          board's commands.
         </p>
-      </div>
-    </section>
-
-    <section id="how">
-      <div class="wrap">
-        <p class="kicker">How it works</p>
-        <h2>Two planes that meet at the gates</h2>
-        <p class="lead">
-          The distribution plane turns authored sources into the files your
-          agents read. The execution plane drives a unit of work through the
-          loop. They meet in exactly two places: a dispatched agent's context is
-          the projected guidance, and the loop's verify step runs the same
-          checks the hooks run.
-        </p>
-
-        <figure
-          class="diagram"
-          aria-label="Distribution plane: the managed catalog and your overlay are merged by basicly install or build into instructions, skills, subagents, permissions and hooks, and the basicly check drift gate verifies the result in CI."
-        >
-          <figcaption>Distribution plane</figcaption>
-          <div class="stage">
-            <div class="node">
-              <b>.basicly/core/</b><span>managed catalog</span>
-            </div>
-            <div class="node">
-              <b>.basicly-local/</b><span>your overlay</span>
-            </div>
-          </div>
-          <div class="arrow" aria-hidden="true">▼</div>
-          <div class="node cmd">basicly install / build</div>
-          <div class="arrow" aria-hidden="true">▼</div>
-          <div class="stage">
-            <div class="node">
-              <b>instructions</b
-              ><span>CLAUDE.md · AGENTS.md · copilot-instructions</span>
-            </div>
-            <div class="node">
-              <b>skills</b><span>.claude/skills · .agents/skills</span>
-            </div>
-            <div class="node">
-              <b>subagents</b><span>.claude/agents · .github/agents</span>
-            </div>
-            <div class="node">
-              <b>permissions</b><span>settings.json deny-list</span>
-            </div>
-            <div class="node">
-              <b>hooks</b><span>git stages · Claude Code · Copilot</span>
-            </div>
-          </div>
-          <div class="arrow" aria-hidden="true">▲</div>
-          <div class="node gate">
-            <b>basicly check</b><span>drift gate · CI</span>
-          </div>
-        </figure>
-
-        <figure
-          class="diagram"
-          aria-label="Execution plane: a unit of work moves through intake, classify, decompose, build, verify and ship, then teardown. Classify, decompose and ship are human checkpoints. Build runs in an isolated worktree and verify is the deterministic gate."
-        >
-          <figcaption>Execution plane · one track</figcaption>
-          <div class="stage">
-            <div class="node"><b>intake</b><span>propose type</span></div>
-            <div class="node human">
-              <b>classify</b><span>checkpoint · DoR</span>
-            </div>
-            <div class="node human">
-              <b>decompose</b><span>checkpoint · sizing</span>
-            </div>
-            <div class="node"><b>build</b><span>isolated worktree</span></div>
-            <div class="node"><b>verify</b><span>deterministic gate</span></div>
-            <div class="node human">
-              <b>ship</b><span>checkpoint · merge</span>
-            </div>
-          </div>
-        </figure>
-        <p class="muted">
-          Orange nodes are human checkpoints. Scale out with
-          <code>basicly loop supervise</code>: one worktree per work package,
-          landed serially through a merge queue in dependency order, with
-          conflicts bounced back to the lane that owns them rather than resolved
-          at merge time.
-        </p>
-
-        <ul class="plain">
-          <li>
-            <strong>Yours stays yours.</strong> Overrides and additions live in
-            <code>.basicly-local/</code>; installs and upgrades never touch
-            them.
-          </li>
-          <li>
-            <strong>Deterministic first.</strong> Plain git-tracked files — no
-            daemon, no hidden state, no network calls at build time.
-          </li>
-          <li>
-            <strong>Blocked beats guessing.</strong> An agent that cannot
-            resolve a required fact stops and surfaces the missing fact instead
-            of inventing an answer.
-          </li>
-        </ul>
-      </div>
-    </section>
-
-    <section id="roadmap">
-      <div class="wrap">
-        <p class="kicker">Status</p>
-        <h2>What has shipped</h2>
-        <p class="lead">
-          Running code only, along the same four pillars: every line below is in
-          the tree today and exercised on this project's own development. What
-          is <em>not</em> built is listed separately further down and never
-          mixed in here, so a check mark on this page always means working code.
-          There are no dates anywhere — this is a status map, not a schedule.
-          Both lists move as features land.
-        </p>
-
-        <div class="grid one">
-          <div class="card accent">
-            <h3><i>01</i> Guidance</h3>
-            <ul class="chips">
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >One catalog projected to Claude, Codex and Copilot</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span>Drift gate run by CI</span>
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Path-scoped rules, so conditional guidance loads on a
-                  matching file instead of always</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >An invocation axis per entry: only model-invoked entries pay
-                  context load</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >A subagent's capability level is a portable tier —
-                  <code>low</code>, <code>medium</code>, <code>high</code>,
-                  <code>maximum</code> — never a provider model id. Pinning an id
-                  is refused at lint, because the same model is spelled
-                  differently on every surface that serves it</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >A committed model map that <code>basicly install</code> ships
-                  into your repo resolves that tier: 32 cells — four tiers across
-                  four vendors, each on the two surfaces that serve it, the
-                  vendor's own API and GitHub Copilot — every cell carrying that
-                  surface's own published cost and token limits. Five record a
-                  tier a surface does not serve and carry no model at all, so a
-                  lookup fails loudly instead of quietly running a different
-                  tier</span
-                >
-              </li>
-            </ul>
-          </div>
-
-          <div class="card accent">
-            <h3><i>02</i> Gates</h3>
-            <ul class="chips">
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Git hook floor across pre-commit, commit-msg and
-                  pre-push</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span>Agent hooks for Claude Code and Copilot</span>
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Verify pipeline with <code>fast</code>, <code>full</code> and
-                  <code>staged</code> modes</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >A check may declare a repair, so a mechanically fixable
-                  failure is fixed rather than reported</span
-                >
-              </li>
-            </ul>
-          </div>
-
-          <div class="card accent">
-            <h3><i>03</i> The loop</h3>
-            <ul class="chips">
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span>Single-track loop, intake to retro, any agent</span>
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span>Worktree isolation per unit of work</span>
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Parallel lanes behind a supervisor and a serial merge
-                  queue</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Autonomy grants with a spend ceiling, a decision queue and a
-                  confined decider</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >A checkpoint a grant declined says why it declined, so "no
-                  grant covers this" reads differently from "a covering grant
-                  refused over a wrinkle elsewhere in the session"</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Token telemetry read from each adapter's own usage report —
-                  including Copilot's AI-credit spend, and a cached-versus-reasoning
-                  split for Codex, so a cached token is not priced as a fresh
-                  one</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span>Release automation up to the annotated tag</span>
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Work is sized by the material a lane actually reads, not by
-                  the size of the files it names — measured over 185 (lane,
-                  file) pairs, a file under ~4,000 tokens is read whole and
-                  above that a lane takes out roughly 1,500 however large it
-                  is. A three-line fix in a 90,000-token module is dispatchable
-                  instead of refused</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Every dispatch records the context it actually consumed
-                  beside the forecast that predicted it, so the estimator is
-                  checked against a measurement rather than against its own
-                  output</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >A named role per judgment step — decider, decomposer,
-                  implementer, validator, reviewer, retrospector, curator — each
-                  with its own instructions, tool policy and output contract,
-                  and every one of the seven reached by the phase that
-                  dispatches it. The tier a role declares is still inert at
-                  spawn</span
-                >
-              </li>
-            </ul>
-          </div>
-
-          <div class="card accent">
-            <h3><i>04</i> The work graph</h3>
-            <ul class="chips">
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Issues, dependencies, gate results, checkpoints and evidence
-                  in a tracked graph</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Phase derived from that state, so resume is a read rather
-                  than a replay</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >Why a lane went when it did, recorded on its run marker: the
-                  dispatch rank always, plus the scheduler's score and rank
-                  whenever the scheduler ranked that lane</span
-                >
-              </li>
-              <li>
-                <span class="st" aria-hidden="true">&#10003;</span>
-                <span
-                  >The shared tracker export is published atomically, so
-                  concurrent lanes cannot read it half-written, and a storage
-                  error is charged to the store rather than to the lane's rework
-                  budget</span
-                >
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <h2>What is coming</h2>
-        <p class="lead">
-          Sequenced, not promised, and deliberately without dates. Nothing below
-          is a working capability yet, and each card says why: a
-          <strong>designed</strong> row has no code at all and a settled design
-          is not evidence that anything enforces it, while a
-          <strong>partial</strong> row has code that nothing reaches — a closed
-          work item proves the code was written, never that it is called. The
-          order lives in the implementation plan; the evidence each status
-          requires is in the architecture reference.
-        </p>
-
-        <div class="grid one">
-          <div class="card">
-            <h3>Building now</h3>
-            <ul class="chips">
-              <li>
-                <span class="st todo" aria-hidden="true">&#9654;</span>
-                <span
-                  >A supervised multi-lane run with zero human interventions
-                  caused by a harness defect</span
-                >
-              </li>
-              <li>
-                <span class="st todo" aria-hidden="true">&#9654;</span>
-                <span
-                  >A spend and wall-clock forecast per model, enforced when a
-                  pass is admitted. Today's forecast models the working set, and
-                  measurement says that is the weaker predictor: declared scope
-                  explains 9.5% of a lane's real context use, turn count
-                  86.3%</span
-                >
-              </li>
-              <li>
-                <span class="st todo" aria-hidden="true">&#9654;</span>
-                <span
-                  >Deterministic routing evals with a rank-1 rate in CI, and an
-                  eval case for every catalog entry</span
-                >
-              </li>
-              <li>
-                <span class="st todo" aria-hidden="true">&#9654;</span>
-                <span
-                  >Every gate classified by type, severity required on judged
-                  output, and rework convergence detected from the open-finding
-                  set rather than the count</span
-                >
-              </li>
-              <li>
-                <span class="st todo" aria-hidden="true">&#9654;</span>
-                <span
-                  >A tutorial and how-to layer, so a new consumer has a path
-                  from install to first shipped unit, and
-                  <code>basicly install</code> reports the capability tier it
-                  actually delivered</span
-                >
-              </li>
-              <li>
-                <span class="st todo" aria-hidden="true">&#9654;</span>
-                <span
-                  >An owned in-process append-only event log, removing the
-                  external tracker binary from the critical path. This
-                  repository already writes both stores on every engine write
-                  and compares them read-only; the flip to reading out of the
-                  owned log waits on that comparison coming back clean over work
-                  created after the cutover began</span
-                >
-              </li>
-            </ul>
-          </div>
-
-          <div class="card">
-            <h3>Built, nothing calls it</h3>
-            <ul class="chips">
-              <li>
-                <span class="st partial" aria-hidden="true">&#9680;</span>
-                <span
-                  >An <code>fsck</code> and rebuild that would make "the log is
-                  the truth" a checkable claim. The module and its unit tests are
-                  in the tree; no command and no engine path calls either, so
-                  nothing has ever checked a real ledger</span
-                >
-              </li>
-              <li>
-                <span class="st partial" aria-hidden="true">&#9680;</span>
-                <span
-                  >Provenance on every edge — extracted, inferred, ambiguous —
-                  so an inferred dependency never silently gates a lane. Same
-                  shape: written, tested, and called from nowhere</span
-                >
-              </li>
-            </ul>
-          </div>
-
-          <div class="card">
-            <h3>Designed, nothing built</h3>
-            <ul class="chips">
-              <li>
-                <span class="st later" aria-hidden="true">&#9671;</span>
-                <span
-                  >Enforcement at the tool-call boundary rather than only at the
-                  commit boundary</span
-                >
-              </li>
-              <li>
-                <span class="st later" aria-hidden="true">&#9671;</span>
-                <span
-                  >A plan gate that runs the demonstration it admits, instead of
-                  checking that the field has the right shape</span
-                >
-              </li>
-            </ul>
-          </div>
-
-          <div class="card">
-            <h3>Being measured — the result may cancel the work</h3>
-            <ul class="chips">
-              <li>
-                <span class="st ask" aria-hidden="true">?</span>
-                <span
-                  >Whether an individual guidance entry changes behaviour. Recall
-                  is measured; adherence is not, and recall is an upper bound on
-                  it</span
-                >
-              </li>
-              <li>
-                <span class="st ask" aria-hidden="true">?</span>
-                <span>Cost per landed package</span>
-              </li>
-              <li>
-                <span class="st ask" aria-hidden="true">?</span>
-                <span
-                  >Whether deterministic AST localisation cuts what an
-                  implementer spends before its first edit</span
-                >
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <ul class="plain">
-          <li>
-            <strong>Some things are not planned</strong>, so absence above is not
-            an oversight: an LLM orchestrator in control of the tracker, an
-            agent-writable catalog, a maintained TUI, an external database or
-            daemon, and agent-to-agent messaging. Each refusal has a recorded
-            reason.
-          </li>
-          <li>
-            <strong>The evidence behind each line</strong> — what the capability
-            is and where it lives in the code — is in the
-            <a
-              href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md"
-              >architecture reference</a
-            >, and every release is itemized in the
-            <a href="https://github.com/niksavis/basicly/blob/main/CHANGELOG.md"
-              >changelog</a
-            >.
-          </li>
-        </ul>
       </div>
     </section>
 
     <section id="more">
       <div class="wrap">
         <p class="kicker">Learn more</p>
-        <h2>Read the design</h2>
+        <h2>Documentation</h2>
         <ul class="plain">
           <li>
-            <a href="https://github.com/niksavis/basicly#readme">README</a> —
-            quick start and command reference
+            <a href="https://github.com/niksavis/basicly#readme">README</a>: install, first use, upgrade and
+            uninstall
           </li>
           <li>
-            <a
-              href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md"
-              >Architecture</a
-            >
-            — the authoritative reference for the system as it exists in code,
-            and for where it is going
+            <a href="https://github.com/niksavis/basicly/blob/main/docs/tutorial/first-loop.md">Tutorial</a>: install to your
+            first finished record, on a test repository
           </li>
           <li>
-            <a
-              href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md#38-decision-records"
-              >Decision records</a
-            >
-            — one record per design decision, each the sole home of its argument
-            and its measurement
+            <a href="https://github.com/niksavis/basicly/blob/main/docs/reference/cli.md">Command reference</a>: every
+            <code>basicly</code> command and its flags
           </li>
           <li>
-            <a
-              href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md#d-44--the-field-review-of-2026-07-26-leads-kept-one-matched-eight-gaps-placed-rejections-recorded"
-              >State-of-the-art review</a
-            >
-            — eleven comparable projects read at pinned revisions, with what was
-            taken and what was refused
+            <a href="https://github.com/niksavis/basicly/blob/main/docs/architecture/status.md">Status</a>: what is shipped,
+            what is being built, and what is planned
           </li>
           <li>
-            <a href="https://github.com/niksavis/basicly/blob/main/CHANGELOG.md"
-              >Changelog</a
-            >
+            <a href="https://github.com/niksavis/basicly/blob/main/docs/architecture/architecture.md">Architecture</a>: how
+            basicly works, and why
+          </li>
+          <li>
+            <a href="https://github.com/niksavis/basicly/blob/main/CHANGELOG.md">Changelog</a>
             ·
             <a href="https://github.com/niksavis/basicly/releases">releases</a>
             ·
-            <a
-              href="https://github.com/niksavis/basicly/blob/main/CONTRIBUTING.md"
-              >contributing</a
-            >
+            <a href="https://github.com/niksavis/basicly/blob/main/CONTRIBUTING.md">contributing</a>
           </li>
         </ul>
       </div>
@@ -1305,10 +540,8 @@
     <footer>
       <div class="wrap">
         <p>
-          MIT licensed. Built in the open at
-          <a href="https://github.com/niksavis/basicly"
-            >github.com/niksavis/basicly</a
-          >.
+          basicly uses the MIT License. The source is at
+          <a href="https://github.com/niksavis/basicly">github.com/niksavis/basicly</a>.
         </p>
       </div>
     </footer>
