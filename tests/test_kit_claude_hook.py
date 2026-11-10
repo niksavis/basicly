@@ -331,19 +331,19 @@ def test_a_vendored_kit_leaves_a_project_it_was_not_installed_into_alone(tmp_pat
     assert result.stdout == ""
 
 
-def test_the_subagent_model_environment_override_disables_the_rewrite(
+def test_a_declared_tier_still_pins_the_spawn_when_the_subagent_model_variable_is_set(
     tmp_path: Path,
 ) -> None:
     consumer = _consumer_repo(tmp_path)
-    payload = _payload(consumer)
 
-    assert _run_hook(payload, cwd=consumer, tmp_path=tmp_path).stdout != ""
-
-    silenced = _run_hook(
-        payload, cwd=consumer, tmp_path=tmp_path, env_extra={"CLAUDE_CODE_SUBAGENT_MODEL": "haiku"}
+    result = _run_hook(
+        _payload(consumer),
+        cwd=consumer,
+        tmp_path=tmp_path,
+        env_extra={"CLAUDE_CODE_SUBAGENT_MODEL": "haiku"},
     )
-    assert silenced.returncode == 0, silenced.stderr
-    assert silenced.stdout == ""
+
+    assert _updated_input(result)["model"] == kit.HOST_MODEL_ALIASES["claude"][DECLARED_TIER]
 
 
 def test_a_definition_that_pins_its_own_model_is_left_alone(tmp_path: Path) -> None:

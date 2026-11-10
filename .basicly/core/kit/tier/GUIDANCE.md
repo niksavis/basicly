@@ -59,7 +59,8 @@ definition yourself.
 
 ## Two traps
 
-- **When `CLAUDE_CODE_SUBAGENT_MODEL` is set, the hook does nothing.** Examine that variable
-  first when an injection seems to have no effect.
+- **On Claude Code before 2.1.251, `CLAUDE_CODE_SUBAGENT_MODEL` outranks the hook.** Since
+  2.1.251 the model the hook writes wins, and the variable is the default for a spawn that the
+  hook leaves alone. Examine the version first when an injection seems to have no effect.
 - **The hook writes the short alias, not the full model id.** The resolver prints both
   `alias` and `model`. Use the one that the surface uses.

@@ -40,7 +40,12 @@ def _untiered_spawn(cwd: Path, **tool_input: object) -> dict:
         ({}, {}, None, None),
         ({}, {DEFAULT_TIER_ENV: "huge"}, None, "huge"),
         ({}, {DEFAULT_TIER_ENV: "maximum"}, None, "maximum"),
-        ({}, {DEFAULT_TIER_ENV: "medium", "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"}, None, None),
+        (
+            {},
+            {DEFAULT_TIER_ENV: "medium", "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"},
+            WORKER_ALIAS,
+            None,
+        ),
         ({"subagent_type": "Explore"}, {DEFAULT_TIER_ENV: "medium"}, None, None),
     ],
     ids=[
@@ -50,7 +55,7 @@ def _untiered_spawn(cwd: Path, **tool_input: object) -> dict:
         "variable-unset",
         "invalid-value-warns-and-changes-nothing",
         "maximum-warns-and-changes-nothing",
-        "subagent-model-override-set",
+        "default-applied-with-subagent-model-variable-set",
         "another-agent-type-left-alone",
     ],
 )

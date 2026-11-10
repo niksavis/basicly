@@ -10,7 +10,7 @@ A subagent definition declares a portable `tier`: `low`, `medium`, `high` or `ma
 
 ## Rules
 
-- **Check `CLAUDE_CODE_SUBAGENT_MODEL` first when a spawn ignores its tier.** It outranks the value the hook writes, and the hook stays silent.
+- **Set `CLAUDE_CODE_SUBAGENT_MODEL` as a machine-wide default.** Then no untiered subagent inherits the session model. Since Claude Code 2.1.251 a model the hook writes outranks the variable; on an older Claude Code the variable wins.
 - **Relaunch the whole CLI process after a first install.** The host does not watch a directory that did not exist at startup. `/clear` reloads neither hooks nor agents.
 - **Remove a `model` pin to let the tier decide.** The hook leaves a definition that pins its own `model`, and a spawn that names one.
 - **Commit `.basicly/core/models/model-map.json` in the repository.** A repository with no map in its own tree gets no rewrite.

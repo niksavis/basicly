@@ -1,0 +1,1 @@
+- **The Claude tier hook now keeps writing the tier model when `CLAUDE_CODE_SUBAGENT_MODEL` is set.** Since Claude Code 2.1.251 that model outranks the variable, so the variable can serve as a machine-wide default for subagents the hook leaves alone.

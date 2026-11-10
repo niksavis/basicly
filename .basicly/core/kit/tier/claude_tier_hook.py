@@ -17,8 +17,6 @@ HOOK_EVENT = "PreToolUse"
 SUBAGENT_KEY = "subagent_type"
 INPUT_MODEL_KEY = "model"
 
-OVERRIDE_ENV = "CLAUDE_CODE_SUBAGENT_MODEL"
-
 DEFAULT_TIER_AGENT_TYPE = "general-purpose"
 WORKER_TIERS = ("low", "medium", "high")
 
@@ -77,8 +75,6 @@ def resolve_alias(
 
 def rewrite(payload: dict) -> dict | None:
     if payload.get("tool_name") != AGENT_TOOL:
-        return None
-    if os.environ.get(OVERRIDE_ENV, "").strip():
         return None
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
