@@ -1,1 +1,0 @@
-- The README is rewritten for a first-time reader: who basicly is for, requirements, install, first steps and the kits, with detail moved to the docs. Pinned, offline and saved-script installs are now in docs/how-to/upgrade-and-check-drift.md under Install options.

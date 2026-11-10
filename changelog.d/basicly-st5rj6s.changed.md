@@ -1,1 +1,0 @@
-- The landing page at niksavis.github.io/basicly matches the rewritten README: install, what you get, first use and the four kits, with a link to the status page instead of a copied table.

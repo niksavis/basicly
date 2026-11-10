@@ -6,7 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.44.0 - 2026-11-10
+
+Delta: v0.43.0..v0.44.0
+
 This release adapts basicly to the Claude 5 family. The `tier-injection` skill now states the role of each model: Opus owns a task, delegated work names a tier, and Fable advises or orchestrates and is never a delegated worker. The Claude tier hook can give an untiered agent start a default tier. Three always-on lines no longer send a small task to a skill.
+
+### Added
+
+- **The Claude tier hook can give an untiered agent start a default tier.** Set `BASICLY_DEFAULT_TIER` to `low`, `medium` or `high` in the `env` block of a Claude settings file: a `general-purpose` start that names no model then runs on that tier. Unset, nothing changes. Another value shows a warning and changes nothing. (basicly-gtb19bg.47.1)
+
+### Changed
+
+- **The `tier-injection` skill states the role of each model.** Opus 5.5 owns a task, delegated work names a tier, and Fable advises or orchestrates and is never a delegated worker; `references/roles.md` gives the measured costs. The `architect` agent moves from tier `maximum` to `high`. The council brief tells a voter to keep `findings` empty. (basicly-gtb19bg.47.1)
+
+- **Three always-on lines no longer send a small task to a skill.** The Harness Loop, Quality Gate and Session Completion lines now name `harness-loop` and `session-finish` only for an owner handoff, a failed check, a release candidate or the end of a session. In a pilot run the agent stopped opening those skills for a one-file change. (basicly-gtb19bg.47.3)
+
+- The README is rewritten for a first-time reader: who basicly is for, requirements, install, first steps and the kits, with detail moved to the docs. Pinned, offline and saved-script installs are now in docs/how-to/upgrade-and-check-drift.md under Install options. (basicly-kg1huyp)
+
+- The landing page at niksavis.github.io/basicly matches the rewritten README: install, what you get, first use and the four kits, with a link to the status page instead of a copied table. (basicly-st5rj6s)
 
 ## v0.43.0 - 2026-11-07
 

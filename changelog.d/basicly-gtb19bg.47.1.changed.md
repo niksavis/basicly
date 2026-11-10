@@ -1,1 +1,0 @@
-- **The `tier-injection` skill states the role of each model.** Opus 5.5 owns a task, delegated work names a tier, and Fable advises or orchestrates and is never a delegated worker; `references/roles.md` gives the measured costs. The `architect` agent moves from tier `maximum` to `high`. The council brief tells a voter to keep `findings` empty.

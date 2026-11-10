@@ -663,6 +663,7 @@
   "kit/comments/GUIDANCE.md": [
    "sha256:d28bbff0f6862281da84d40a410c35794059c1f8fea91d93dc43f19ac38fedef",
    "sha256:d35568ead4181f7de050e9cb992140144a84a8fa74a08f27c67a10f9bf97dc50",
+   "sha256:daf07d675840347490a4cdc949b5fbb100f9ba4e9cd32641f9bea088d97410ee",
    "sha256:e559d4f21727db549ced5bb0cd7aa5b35913eacd8c3a23c14037700fbab4850f",
    "sha256:e69f2512cab031ceaf0b309c5961acf01555fdf070a6f9474b81780fa824000d"
   ],
@@ -1073,6 +1074,7 @@
    "sha256:8e8838849cb9380708cb425435ffbafd738e184edff1bf517343311c626e4016",
    "sha256:8e9ece96d7fb0f8580d2ce960442a2658ed2a55065c242df023a2e54da5d0f1c",
    "sha256:960a8be24dd2322820473be6a8faa07fbce936c137dcb5fb35932ab043fd88ac",
+   "sha256:9d224684ffac776c1102a5b29563826de952fadfda0d0186009ea1a44f2cb3bb",
    "sha256:9d9d2a8aabd754c1035f8be5571d92149c04c90019237733dd0dafbb84267d40",
    "sha256:a47d362a9cc6de39d53b3ad7524693debd558527081dcda6f917ab8ceb809329",
    "sha256:ad7a00ffd706745527fb78c247b8b6cdb22c9f33c2b4b43ea7e4c3043255975e",
@@ -1311,7 +1313,8 @@
    "sha256:d047b5cabb29c8d1c13f41340747820724eb85f6a4bb10f914e34cf13237f80d"
   ],
   "schemas/evals.schema.json": [
-   "sha256:c59d60a9423d0a91567440025a3ad6349d7182d3feb131479f430bd26b47bb98"
+   "sha256:c59d60a9423d0a91567440025a3ad6349d7182d3feb131479f430bd26b47bb98",
+   "sha256:cf442de0d4dbed83f9938ccbe27ea4a810ea321c2ad958b46749ddd47ea353b9"
   ],
   "schemas/fragment.schema.json": [
    "sha256:09e519233930817de556a76dd13a18953856b5736fd33a092ec565d79ea7d34d",
@@ -1362,6 +1365,7 @@
    "sha256:917acca0edd1bc89edf6abaf740c2f3dbb44fb7019e6c0239d24c97acf8c560e",
    "sha256:92616894cb731291b929fa8c2cf421aac7ca51314b819c92d0ed371699449efb",
    "sha256:9880c8e8c3945d83ea6dd426802418850a9b44b1e3aeb191d7a1cda1259939a2",
+   "sha256:a307ba06cb102db40220167003cbcae16be5f06015aa4aeea944282bced653ff",
    "sha256:b27201b974d813318e93931030e776f0b7e3c5a38c549b520c47c673785b6c12",
    "sha256:c9d0f08feada23b7d0d233e2f95b1571fbd5c410204774c42809e27872b30e0c",
    "sha256:d30979f862c994b84e166d1d081ad7e18e6a4da37315e2c5a13697af451ae6ff",
@@ -1369,18 +1373,22 @@
    "sha256:f84b250054d979ddeca52835f9829d10652e154c45b918d9bb9ce48d9e56a2f2"
   ],
   "skills/best-practices-audit/evals.yaml": [
+   "sha256:90a67cfef472f1f371773edb1d416831501ba59663535e060edf2dfe99e70d8e",
    "sha256:9be9dad9471f99240c4462a412889f457d5c9fcbf2bc5a3cd70291fab9a1f1aa"
   ],
   "skills/best-practices-audit/references/checklist.md": [
    "sha256:a90829fb5e79641228f64a370f24310b8951bf8c9e554d437fc977117e68cf31"
   ],
   "skills/best-practices-audit/scripts/fetch_docs.py": [
+   "sha256:0f64d56be95bf4e12ce4c81ae34160ff977906eb5d74d680f4e81b374432f264",
    "sha256:495db887e274fc75e34f7ee2cc9a947745d47f128111de6eb3dc215ba582d6d0"
   ],
   "skills/best-practices-audit/skill.yaml": [
-   "sha256:511f22ede3cf39e3c7d0e87d1e1655f7569cccff285907ad61ce156e60d18257"
+   "sha256:511f22ede3cf39e3c7d0e87d1e1655f7569cccff285907ad61ce156e60d18257",
+   "sha256:dd04b2701142922c1f0d1a95f6e29e474e97d5c23e2e7ca620255521a82b97ec"
   ],
   "skills/catalog-authoring/evals.yaml": [
+   "sha256:ab18f501528a3e3f302646fac16b911ccbe305058490665131cc3cfa4e276f5c",
    "sha256:dc5c6560e714fc9e484a05fa8d484c1ad6fb66b081625e13d095661b2f6f4f57"
   ],
   "skills/catalog-authoring/references/projection.md": [
@@ -1397,6 +1405,7 @@
    "sha256:39b46eacf59d8a312d75ff38a4f4ae2b771b771210056ebb0012180a7f073b03",
    "sha256:3de22ac277f9f8019c5ae25c52c1300797ee341560552ad14069c847b7919acf",
    "sha256:4252f8d3101d90c2efb12dfae5c6ed88fa0ecc7beb05ccef337554c0995bb028",
+   "sha256:6d15c7a67726c467da7dbd5e5eb91bf3fd697a639ce37cc64610982fd17fbf7c",
    "sha256:705c3c5d6c8c38e62b0db5673584955650a1edd04ed81c9af07c72b306be9b8d",
    "sha256:72d32e26bdbd5f3a7ebdc040f9d0a02b6709de62fd35b44da2037b504a52e4c2",
    "sha256:75f98a6f6b7cfda99d5b5b0dc6d942e4d1ce6940d7d6586b536198471eae7776",
@@ -1405,9 +1414,11 @@
    "sha256:f68a850e54eadef05816034ae2fb54440fb26b23bed6a5498a45420722860983"
   ],
   "skills/cli-tools/evals.yaml": [
+   "sha256:93c079a9a2c2f9f05bdc3e5b141082d021cf4a9595e304904a74d296b93a0b9b",
    "sha256:b017af0acc2410df2392c0da391e7f565de75b3fbae35905927c8fcf0ed467aa"
   ],
   "skills/cli-tools/references/ast-grep.md": [
+   "sha256:840b9292292f3a211a9438bf03b0d71713d38ac5c99c48b5dbf8c1c37743c47f",
    "sha256:f85166140112c162ba6d97727d9aa5fed2ff6ebd379ee146da0ba062d5fe90d7"
   ],
   "skills/cli-tools/references/bat.md": [
@@ -1432,21 +1443,25 @@
    "sha256:269f1dabaa51f8e9c170be514bb665bcd9a3c3c225e0130ab68d0dd073c3c52e"
   ],
   "skills/cli-tools/references/git.md": [
-   "sha256:5426df087d36ea8a30c91f0af2057ca5778844db0dcd05241d9b999461af6c8c"
+   "sha256:5426df087d36ea8a30c91f0af2057ca5778844db0dcd05241d9b999461af6c8c",
+   "sha256:59db6b7b9c32c9ac438ff0353a98fd75dbb011b8f19b7d62069b437bb18ca11f"
   ],
   "skills/cli-tools/references/jq.md": [
    "sha256:d39e4238e9cf6c90ab33d90024a03c07e1f29ca03a24f612180336c881045202"
   ],
   "skills/cli-tools/references/just.md": [
-   "sha256:7a2d6a0a016edaa9614483fe6f0b1b41a37cd5ba06304f9b0b4d497ab32f6126"
+   "sha256:7a2d6a0a016edaa9614483fe6f0b1b41a37cd5ba06304f9b0b4d497ab32f6126",
+   "sha256:affccc5ddcd4ce9f7f243eddf3f8b0e5454807b4718dfc3777c945c46f87f7d8"
   ],
   "skills/cli-tools/references/lazygit.md": [
    "sha256:c9138a7adc6304ac5c63e7f5487955e76f872d8f7aeb5e4bb9dd940255ea302e"
   ],
   "skills/cli-tools/references/ripgrep.md": [
-   "sha256:b557a7422f3a449c58578a755560e62dff4f027f41ac1ee7c0535bfa0a141cf4"
+   "sha256:b557a7422f3a449c58578a755560e62dff4f027f41ac1ee7c0535bfa0a141cf4",
+   "sha256:bf5115ddce92ddf1056d0b46b763092f5c12072c0c3629fb0eff944f352723f0"
   ],
   "skills/cli-tools/references/sd.md": [
+   "sha256:685efbbb62e4ab03a730596d1fafccb3be8724ad746ee9d3d82194b5b27ff61e",
    "sha256:8459abb7161e1ee9ef902d4344838ec1166fe3fbb98c3f2a3d99d25783190b92"
   ],
   "skills/cli-tools/references/shellcheck.md": [
@@ -1456,6 +1471,7 @@
    "sha256:26112fb990ae11f5551e97774585e73b7709fda854a02b37dbc367dd011bf3a5"
   ],
   "skills/cli-tools/references/tmux.md": [
+   "sha256:7a68b220bfb2d0c925f54bc517f8064c17a43d67c71f0e2dcabfe57dd6f30b61",
    "sha256:94f2e507a44d4e852610f2d5249f003b5ec6b49ea8c5b3a71b4fe5d79228d8e8"
   ],
   "skills/cli-tools/references/tree.md": [
@@ -1481,26 +1497,30 @@
   ],
   "skills/cli-tools/references/yq.md": [
    "sha256:956ffe6492eee3f1e901e06af7ea7f55b759157b8bd7f331a0fa40edd7b2ff0f",
-   "sha256:9b0c5f727a6480def9915d26151577841577202c6d1c1ba5be4256e3f03cfed3"
+   "sha256:9b0c5f727a6480def9915d26151577841577202c6d1c1ba5be4256e3f03cfed3",
+   "sha256:b60c7ace3612eacd2ad8742903102e16682a2679666479b637460b5df5569d85"
   ],
   "skills/cli-tools/references/zsh.md": [
    "sha256:5c5d66d41f5867cfc026df63b79701423e9111b3e02d5e082a862b1d5a47a4c4"
   ],
   "skills/cli-tools/skill.yaml": [
    "sha256:0921d1ec8a6794079815c27a49c4121345059f4d324fe8de85f50e6055677584",
+   "sha256:6803ded7ffc7166f1527e365074b206f17c8f16fec51091d6b52ca2d7c8da5bc",
    "sha256:7a60b0377d6d82d9736e60e31b197d177681c43276990efbae011e3acfa5a1fc",
    "sha256:a35405a91f8549ad131c879635195b45c52392812e5a5859c55f703de6ebbd52",
    "sha256:b5551a3aa96e01d1c16ffc7c2a2e76d1ab1572abf557edf4a355bcfdbf648c01"
   ],
   "skills/conventional-commits/evals.yaml": [
    "sha256:038b912fec8749c9731ecb2213df1d101e6f1dd92eec1e519ee59d27754ce7d8",
-   "sha256:622e88852694914446d0eb5c49c8fd0a51a4acece901c07dac89099a2aaad009"
+   "sha256:622e88852694914446d0eb5c49c8fd0a51a4acece901c07dac89099a2aaad009",
+   "sha256:d76d51fff0fbbcb78220c487681fb7d1cd083f2dc349375b8d55065f86843631"
   ],
   "skills/conventional-commits/references/examples-and-enforcement.md": [
    "sha256:6bcf6a6118b50ce86afd513c0293081d1a7bde8ba6ce0baf08b987a901582553"
   ],
   "skills/conventional-commits/references/message-format.md": [
-   "sha256:0de2920c7fbb4f150484ad0157bf43ddfdbe27bd8b2162b2ec8230e61b6c4f80"
+   "sha256:0de2920c7fbb4f150484ad0157bf43ddfdbe27bd8b2162b2ec8230e61b6c4f80",
+   "sha256:7edb3f198a8ddde18b784c376cf675f840ee1b6929a1346e14971c2ffba468f6"
   ],
   "skills/conventional-commits/skill.yaml": [
    "sha256:0d3dd8b4366f48cf28026d3d4c278e48e28e4b97b7609316b8d182f1d7964990",
@@ -1509,6 +1529,7 @@
    "sha256:30711e3af087d91e8bf7c7684844ac7a45f3dc065c52db35074463e78243a5c3",
    "sha256:775c135b8c2dab1ffdef12e3b9837f374b1cad7227ae94e676d836ae4d3e2d40",
    "sha256:79bb7a38d1a85ccfc8f20a409c171aee3384319c8b89fe50800cbcd4b88a6567",
+   "sha256:88e2b808d37e16e812f0258b888d88202a3e64827607506f3d65bebca73e7e9b",
    "sha256:aeca57549b40df09de96ecad0f6bf74172c4280e89d958c48885c5a3094529d3",
    "sha256:c2e199b45edd16d1be77b917ea6d06c4cffd1db8a681ff15e6fbee9aef8e57bc",
    "sha256:c841b593f77d25c5c7401b073594e4b121fe9d2a245526e5a71af67133fefef0",
@@ -1516,6 +1537,24 @@
    "sha256:eb82957135e445d9c3b8813ad986e3e524c5d109cd3f2014d5a0197726d754c9",
    "sha256:f333f364cd79bb18e86519609482c8f171ca8b76b0ad63e55e97830b44a5a08c",
    "sha256:fdb393a47a9f7c02fc6bfab9191c0b31758bfc6280042122bf9ce43ec954981c"
+  ],
+  "skills/council/assets/stances.md": [
+   "sha256:e26eedcb390878d04b8f32a5cffc68a9702721598f77a3bc6ba01358ff5bf310"
+  ],
+  "skills/council/evals.yaml": [
+   "sha256:54572cb27ea46a3e3be41aba04e1c46188c78e1462f51adcf1edb316b78b153e"
+  ],
+  "skills/council/references/question.md": [
+   "sha256:d1b72b993bf74bc9dafd3563199cac9a9361e71b14d93ce037be8ec5b1a5051d"
+  ],
+  "skills/council/skill.yaml": [
+   "sha256:db303583a0b32d1223839d41263e8ae8c4e7019d3f535dd1043f302e7da92626"
+  ],
+  "skills/decompose-plan/evals.yaml": [
+   "sha256:472962291645266d416ab39774f0a2320049ed1aac2e13484f6523abc270fc32"
+  ],
+  "skills/decompose-plan/references/scoping.md": [
+   "sha256:78899b3a3227296125bd50ae2f35e822b2157ec31243a7da99b7903e4b10ae73"
   ],
   "skills/decompose-plan/skill.yaml": [
    "sha256:21f008cb6e54cfa522e52317c863b0519ca58055f1aa8c6680f497ca4be7451c",
@@ -1525,7 +1564,11 @@
    "sha256:6ac76da5d2a92059bd84b216bd98a3508e175793aa6cc346c7f85a3d555fbd9b",
    "sha256:c68a3c2d9de38ea5b758d6401b369e952461dd94a15923578da7853d2601642f",
    "sha256:d977e024463d79f32e8adb900b97011089230ecd796e1c54c1e4ae8ff0cd630d",
-   "sha256:e15b46a819a56d59659ce1b8a3045bf21dd4769d1f4f1ba4bfade97eca92bcc1"
+   "sha256:e15b46a819a56d59659ce1b8a3045bf21dd4769d1f4f1ba4bfade97eca92bcc1",
+   "sha256:ef96da4e5dec9a043d158b9c513779ad4ff919556c6375a4acbabc346bd7af7d"
+  ],
+  "skills/falsify-first/evals.yaml": [
+   "sha256:b3d1a1e0dd5fa3047f87fa02c3c515f3966e7fcf481ecf1b98a40e9af85bf9a8"
   ],
   "skills/falsify-first/references/measurement.md": [
    "sha256:a19b01cb61e4e87288feabc5d2124a4afabd3b0933d4a0a9f5ee9806edceeda5"
@@ -1547,6 +1590,7 @@
    "sha256:661142e53c313d2bb5e1b055f5c0a39001450ff1b5e27b89dc4bc7de9a6352ca"
   ],
   "skills/find-skills/evals.yaml": [
+   "sha256:084e6149a79bf72889535b61131596aef3f72764986149cf3f7d161c6101c70d",
    "sha256:8b8a62a744572ffeee04534251aa09c802940a9963253f5ebd20c4d2a5495b31"
   ],
   "skills/find-skills/references/search.md": [
@@ -1557,7 +1601,8 @@
    "sha256:ec28d3d6d7c1f10ee4757cadfe623be3cbdd4a651ee012435337002d48b8462f"
   ],
   "skills/harness-client/evals.yaml": [
-   "sha256:200e94ac6ef0b9eb80a4d31d2b0d14869295ac3974cb090cf0911c28dd0ef179"
+   "sha256:200e94ac6ef0b9eb80a4d31d2b0d14869295ac3974cb090cf0911c28dd0ef179",
+   "sha256:bfb655ebb65d26c2ada64ab15a712c3c30243c2fb6591d5e3254df4e2d03eb59"
   ],
   "skills/harness-client/references/wall-display.md": [
    "sha256:1686e6ae53ff8380cb84790e949a34a6d8622a1f2763c028d8e8d13cc7157c44"
@@ -1573,6 +1618,7 @@
    "sha256:fecf85aea83da1d929e79e64eb1bb060c8895e19b8c922fb4c33f8b490bb405c"
   ],
   "skills/harness-loop/evals.yaml": [
+   "sha256:4991751f13f9b6d8dfab2b7f4257ca90215eebdc3590769396c7de5f444944bf",
    "sha256:8de01af3530ad46b76b18598518862489d75b7857ab1046f407ea43465899db1"
   ],
   "skills/harness-loop/references/many-lanes.md": [
@@ -1588,9 +1634,13 @@
    "sha256:52b5fa37128dedcc1d32ea86777c188ada4e236464a773ae96faa90db407dff9",
    "sha256:53fafe521c2da4873003f866a8bf9b236397ab3b45d477a1ab4a62db61a87c12"
   ],
+  "skills/harness-loop/references/waiting.md": [
+   "sha256:102876259c6fed2a0666d909b2edec0491b0511f4016e4d50daad9ceca659d64"
+  ],
   "skills/harness-loop/skill.yaml": [
    "sha256:1d2a4543e46ebd20d9945642144704874e12222a75855e3850f386982a0cbf00",
    "sha256:22171c54f1859362f7a21c4d66645de4c8cd941d9a2204fc0a34ed77f53736f7",
+   "sha256:32d24c34e74bf2d3d8f96c3e6dc13d986116a4dc76f0bab1f58d7aa520474b95",
    "sha256:3347fb2bb8938f648e26ead8b863b4496c1e179c9ce9819a96300d110d333e47",
    "sha256:4b1f7607f022f278750a15d710f440a7109ca5783e2bd5ca0484a7beea1aa0b3",
    "sha256:50e4128042639d2bc27c1c53a0520fd9271eda889262b072a508080cb5308e8e",
@@ -1609,7 +1659,20 @@
    "sha256:def095776a63cde8be06d79b57cdd4182828cf438bc34402da67ca5273f9cbab",
    "sha256:e724f57a7e6abb17f0c54944a278755394bf4ef45c9911a4b5bf45949749326b"
   ],
+  "skills/hill-climb/assets/properties.md": [
+   "sha256:a95bd613702d8a0552de4d4813427c1854612c0bbf178d33fff3cfc72d9ebed5"
+  ],
+  "skills/hill-climb/evals.yaml": [
+   "sha256:bad2b1fc3ca021062f45d8dc32f73305a646d0abe321c96c3cc6c594c2610a19"
+  ],
+  "skills/hill-climb/references/rounds.md": [
+   "sha256:c8b183979769e8fad84038e8215fd5f3f912ac5f68ecb8f857979401ec363823"
+  ],
+  "skills/hill-climb/skill.yaml": [
+   "sha256:117da95f94036462b10daf7dc24d597fac0487537c4b13d485390600286b5c4c"
+  ],
   "skills/interface-facts/evals.yaml": [
+   "sha256:353966e0b6169db16f7961d13c7adba75ae24c83b04273e85eac5c8f6c283326",
    "sha256:99b1813636fc62fd8184cb2cf32ab614db9890886c6373eba96b4a33c092cd94",
    "sha256:a77a074d393a1a5b73af09cd12892e74acdd265fc0a5dc39fcf7b9baeec761a5"
   ],
@@ -1623,16 +1686,25 @@
    "sha256:83d05e15c822452fa16a6401897b5ec48e6609dcd463ab7169eb2c4f4566d072",
    "sha256:a2772db6e523486eb455a6d3c01bdebaa1605afc6a8a06c44e6ceb41eda51121",
    "sha256:ad77bbbd2dd978c7eeebf2a4f70a5bcb85c5eef05841f4db499f8f76d9e7952a",
+   "sha256:c89f7bc34a121b8d9466bcfa9e1618970cd7d6744f9f05f5d37eb4ad9bf18e36",
    "sha256:f16f40e89c78674473971455da12a99b82077b68a60d7826cc1529b4d04763ae"
   ],
+  "skills/no-comments/evals.yaml": [
+   "sha256:216c77e512b2b5d76c842ec8674d037ce9b85edc032c73469c803e16113c93e0"
+  ],
   "skills/no-comments/skill.yaml": [
+   "sha256:06c182ac8d869619480c074026551ed0c43ac5a7ef5eb3423bca3a234a1a84ea",
    "sha256:8d43543144e41e775f165b9ce4c28ed4cd718eecc01e756412e273318e5fc3a0",
    "sha256:924bb452415bfa3f06a739ebf7b142d88a1733b7a4a4da6f3542ab155f48d47a",
    "sha256:b7b6b541e4cf738ce980781bd95f4b1720115448b28b9c55b1662e1d28b05445",
    "sha256:ce566b2860e7e0d56a271537b51984dde3814c5c9f0595ace238a4bbaa7cc2b7"
   ],
   "skills/node/evals.yaml": [
-   "sha256:9451d2454bdc498d743afaec7fb36a6129c2e8a9b25d7feef7802650cc408a94"
+   "sha256:9451d2454bdc498d743afaec7fb36a6129c2e8a9b25d7feef7802650cc408a94",
+   "sha256:c04ff818d224e6c9fe1cd64a7cdcb0c00aa648e7b32519757ede783fe1ebb65f"
+  ],
+  "skills/node/references/markdownlint-hook.md": [
+   "sha256:e103232a8848d263124ab596b350169789aa15a59e0295742d94e64de3da8a8b"
   ],
   "skills/node/references/wsl-node-path.md": [
    "sha256:9ae44f5fdc7c8486ae61d19e3dd754ef12908cb7bc70d36697bb1d05eb0f7d3e",
@@ -1641,11 +1713,15 @@
   "skills/node/skill.yaml": [
    "sha256:1fb8a73fb6bdb12d52b599781d064c4520c67c90d86a249a241902d034f1c62b",
    "sha256:24fd3c5d44116007253b1c92ab66cc95d610fd05bedbd84fc6425d9a43034202",
+   "sha256:34ccc7223c8948926166461d77c1a69bbc6e28863e44ba0474284114329f0047",
    "sha256:4e423c3147e07ea86272e35f1084d085ecd0dee5abc35a059bc49b273818b58b",
    "sha256:8542ef6418ce8e48b83d7ee10cd36d4158a237ef1072e6d99bd16f37d7de58b2",
    "sha256:a67fc60ccbb461ddea27cd8a9712e85242cb5c871a99acb4810de659e9266d0c",
    "sha256:e1e5bd3c7fd11ffb5b6357604cf7624c1808f2644c0ea57cfbb650b11bc23afb",
    "sha256:f20cd134b72dbd07e02f0b25bc5b053fc7029081cc26dcbabb8338a18a413e4e"
+  ],
+  "skills/plain-english/evals.yaml": [
+   "sha256:38539a459cd6f2210fd1ae836787b376080f081292a3c9341f78ec3078bef1ea"
   ],
   "skills/plain-english/skill.yaml": [
    "sha256:145ae4aad925b3d832e83b1317b571d3b8a8556e7d68ce93a05850f067baf39f",
@@ -1664,6 +1740,7 @@
   ],
   "skills/python/evals.yaml": [
    "sha256:7320a5fbac97f12aa6354d33c07a91cdf7ff8d8afac38e8efb857cf36acb02a7",
+   "sha256:c74ef93d0ecf1ed71724722808690542a133ef9fc2e775f0ed9f79bf36da6f3b",
    "sha256:ed6dd8b45d80bbf30bd03ce4cd3309fb7d26ff7edccf9b6705dca45e6158f2e1"
   ],
   "skills/python/references/cross-platform.md": [
@@ -1685,10 +1762,14 @@
    "sha256:fc7b686a489860ab1225ef5ea5e4888ff92b7a168f815707790ea634a6056ee4"
   ],
   "skills/release-process/evals.yaml": [
-   "sha256:27ffbe106b019554561624372d0ee76339067f477a036a89a56ae339e84cd963"
+   "sha256:27ffbe106b019554561624372d0ee76339067f477a036a89a56ae339e84cd963",
+   "sha256:a908c450c445932ea66b8c93de4358df81d1c6b0e99f1c2b41794e35bceff42e"
   ],
   "skills/release-process/references/auto-mode.md": [
    "sha256:933ac34a7c39fc160edb78c5c9d3e3e9749dc3e9c8d9cab30868a91eabc16424"
+  ],
+  "skills/release-process/references/procedure.md": [
+   "sha256:07db1466824363a583c22d11a2db104275257027a9034344e4029a1ffcd01842"
   ],
   "skills/release-process/references/refusals.md": [
    "sha256:c364950c4e7d105ca94868c9ebfa229622a85ef07857929e1ca7256deb57abd4"
@@ -1697,6 +1778,7 @@
    "sha256:14894ead555cd9b5d49b27fee5e0a96165cbb6417eb44db72e9b0a9669a421ad",
    "sha256:2a8cbbd29363f9d421c8faceff9a69c99d233999cec2b15b37c52fadfbf6364a",
    "sha256:37b8f882951f15c00a776502d020abef8e875c0fd9b24025c032ae03c6b02884",
+   "sha256:458477c29d7994dff65d188d9b31fd5e0d2320922a24bcba57836da25e069609",
    "sha256:4fd599a324c0a14c5bc1be1e51a4138c4da330468c2c45a27393732c83ea7a94",
    "sha256:5266bbce4310914f3ef48a3eff14e76195b40703467b26e3bb0d193a51cd35ec",
    "sha256:7d53f5a67c777d133d5186ab22534fce43f871545dddbc9872d045e35fb2cb70",
@@ -1710,7 +1792,11 @@
    "sha256:d37fcc2458c99ed6ba79239a6d6111cdad51cec9b0afa3e4089164447aebb185",
    "sha256:f538e06fe0f5f5e9c7a6a8eeba0b5bfbd8f5e6c2817ee98b5006227cef5def00"
   ],
+  "skills/repair-in-place/evals.yaml": [
+   "sha256:cc8d6774851a3d40aecd20a2f16e2382b97e77559a3cc3f84d545f493b3e59de"
+  ],
   "skills/repair-in-place/skill.yaml": [
+   "sha256:20e9482dbcddd1365759734ba6321405415fb944dcff99be9d5e32e6a9a0efe6",
    "sha256:38bc4b77ed8d72ff1b576c05d8ee5a170f666046a04001c35b0b600ebb4190ea",
    "sha256:425e28654c45e036ff0aa9775f6c6850923d5d8c810e6d9d2c63c4204262d8ae",
    "sha256:4373ce3c4d27a8229883220ea23822e97ffbdb7ef6a94fd71677144a51e1f1d0",
@@ -1718,10 +1804,16 @@
    "sha256:9e4049913b11e413b81c09b8ed7c763486dcd7a43fc6198aa38c92fde517d89b",
    "sha256:d7f9e4fde4d39595840f3b940b68b368890edee2c5cc25e01c361bfa873d2632"
   ],
+  "skills/retention-probe/evals.yaml": [
+   "sha256:23a2fb8887fe688c63f7f68f85a458fad2d9f5f952cf9c3e77a0943963554995"
+  ],
   "skills/retention-probe/skill.yaml": [
    "sha256:5f016b53671964df9a2323e902b80f55a4c4cfba09ee4f141673d4685d4e044e",
    "sha256:d262f32d0c52269ab3a4bca9292a36110ee99f2121a2227966907bde7e1310b9",
    "sha256:e4086347702f0c1cd3c9546e02fd3329e3c49ecbd4688a6430772bdc27b1eb6f"
+  ],
+  "skills/root-cause/evals.yaml": [
+   "sha256:eac5d04743fe88c493dbcb7a7447730fbc6e75a34d1deb58d6ba9c081b3fa691"
   ],
   "skills/root-cause/references/example.md": [
    "sha256:1a8469ac25ed01f46d5bccce8b306adbcb35af2a781bc2f3252ea1c7a21ad33d"
@@ -1732,10 +1824,12 @@
    "sha256:34e8864d367bcd7036db6969739a175c4e3461afc45b2ed2cf9ccae4110192e1",
    "sha256:6bf3ae21faedd4a9f9c68af2ecee9bd181a31dd9ab9168d93f0d65b0ef010b0a",
    "sha256:783ee3ce22b5f31ba858af025da80f03e3f42b4a8dd3469e30a7380dea09939e",
+   "sha256:a9f44a1f0570c325496608fc486be25fd630dfb5023d74d02f814e2bcd534f29",
    "sha256:c3af731084a3475c8d6e53c99eed6ff6ad4397036fc1c12fbe146ebc275ac435",
    "sha256:d8bf627ed89213cc2cc2831f6eb21cc17c9811ef4d5b36889f3f4b79fa443990"
   ],
   "skills/session-finish/evals.yaml": [
+   "sha256:bfd50eb53bf763514a72dcd088e5328b7ffa7002e5a853bb9c16a1b191e4032a",
    "sha256:dc557e3c0e6fbf0927f13bd409591ad34af5db87710677222cdcdf7f5a82f2f4"
   ],
   "skills/session-finish/references/clean-handoff.md": [
@@ -1762,6 +1856,7 @@
    "sha256:bbff36879a500367c99371472db5d2b57e55fe72f4ebea78872be5e4a1b9303f",
    "sha256:bf6e4dc4b7562b60ebff4768dadcf0fbd73e93b415a52e9de9ba7b8e9d3e6432",
    "sha256:c0edd1c5064a0c23283f633ac7fc5c277faa43d835c2d009aa747de6cf1dd560",
+   "sha256:d36dd16a5fb535df7159057c28476634c6990a3cb80e523a5f8402c3e1da0618",
    "sha256:eab83f7c10d8a452325eb1cc76d69d74bc65b34bde89d0942628b6923db51b10"
   ],
   "skills/skill-creator/LICENSE.txt": [
@@ -1774,13 +1869,15 @@
    "sha256:ce8ddc2a87b4ab23eed9eb8d4ff00be815922f27a547b73f971f97e2de03a7c2"
   ],
   "skills/skill-creator/evals.yaml": [
-   "sha256:75b7b2b6dc1f06fc88050bc958c0570657f4b2fb1dcee773d9fd09b3e3a881b9"
+   "sha256:75b7b2b6dc1f06fc88050bc958c0570657f4b2fb1dcee773d9fd09b3e3a881b9",
+   "sha256:d2ef926060dca1c9d59dcdf3525e24b694de29818edf26ec03aac40588ce2f0a"
   ],
   "skills/skill-creator/references/analyzer.md": [
    "sha256:72a0e0428c51522d996c95a716b4e5831fbad089cb68171a31475a27bd411805"
   ],
   "skills/skill-creator/references/authoring.md": [
-   "sha256:ab1fddddf3b975f56429527fd710c1345989df22c3fcdbf47366af230aafdb8c"
+   "sha256:ab1fddddf3b975f56429527fd710c1345989df22c3fcdbf47366af230aafdb8c",
+   "sha256:cfc49cc3d80264aff059a5c0c1c140de2e7a63855742fad9638843ecc65a2607"
   ],
   "skills/skill-creator/references/comparator.md": [
    "sha256:f0497fa88b7b0ab38c3da18ada354a7d0aeb81fc3b5405954ea1be27c4924712"
@@ -1823,9 +1920,32 @@
   "skills/skill-creator/skill.yaml": [
    "sha256:1a9591dbf21831ffcabde8a416492f5070ab1af7aaa3458d2e9411be85684a91",
    "sha256:43f01556337a3b5f8f1d0307307e7cb72f3029a561de3cd876aad7f98efaf433",
-   "sha256:74d3a203e996d2aeddf95e9e11d8336e15f2cb82d834d4473da8ae352ed0b0a0"
+   "sha256:74d3a203e996d2aeddf95e9e11d8336e15f2cb82d834d4473da8ae352ed0b0a0",
+   "sha256:b8ab4195aaf0f94cf8db267e9d5d25c6842466becee378fafab5aa862571e44b"
+  ],
+  "skills/swarm/assets/brief.md": [
+   "sha256:ca16f1474503ce9aeb3e3a47a4be3a3774f03788b3d4ea12c432f446246b6fb4"
+  ],
+  "skills/swarm/assets/responses.md": [
+   "sha256:3682fed67fa9fe9e79d10e3c26fde493ac9d3f4a9d0f52bfeafa334149292dc0"
+  ],
+  "skills/swarm/evals.yaml": [
+   "sha256:fd11e4f96e5def2890d7763ef193317c87948a2f0acc0bb312a44351b0ac9158"
+  ],
+  "skills/swarm/references/lenses.md": [
+   "sha256:d3cce0a539131b232476a8316f706d9ffeea7f1a8e3ca8869c2ac0e6c39beea0"
+  ],
+  "skills/swarm/references/report-format.md": [
+   "sha256:697e061c065df9fb80138f549ff909eb995dd2711ab607e8e8877c9e2e15823e"
+  ],
+  "skills/swarm/scripts/swarm.py": [
+   "sha256:8f6ef56dbfdae4b9d52dec6f92c9a2c2c57ad0f47aeea2ed6260c0038f68f3b8"
+  ],
+  "skills/swarm/skill.yaml": [
+   "sha256:40eb04f482a8116bf7ec640dcbb90d94e87a42e65d41722feb0f9eba3a43f80a"
   ],
   "skills/test-discipline/evals.yaml": [
+   "sha256:1abf12fdf79cc8ae56af46fd18621728be9029419a13ddeb26c956b8053f86e6",
    "sha256:3f031d640fbd368e9817288eee110b2300ab45a320960432696e71f245685047"
   ],
   "skills/test-discipline/references/test-controls.md": [
@@ -1843,6 +1963,7 @@
    "sha256:ee1401cee9c3a2fbd6e54b89cec9e96f1d69123119403f8b254d98bd60fd978b"
   ],
   "skills/tier-injection/evals.yaml": [
+   "sha256:22346e9d1b1bffc65aa501627ba1ad361eb3ade01d65174037e5e72a070d78ab",
    "sha256:27e5f5cab7940c5fe5f99beaa7833f3b26b8f4b0d572fbb44882d123009181fe"
   ],
   "skills/tier-injection/references/install.md": [
@@ -2051,6 +2172,9 @@
    "sha256:743e679bbd42994e87ecd9f32d496d72b24ba2f8254d8dc48d3a54515886b196",
    "sha256:8efe020fccb18adadc54a91e7d06b68a871e79fd8dc5ec6f75fbb3ce65bbde12"
   ],
+  "skills/validate-as-consumer/evals.yaml": [
+   "sha256:4f30a0d525cbbeeb8bb920c1c3cdd4aa9f71330a7ec8827ab9197d86ed8c7396"
+  ],
   "skills/validate-as-consumer/skill.yaml": [
    "sha256:1eeabf92f717fa0668b27c222d3689b0f5d17443c6cfe686b056d8ff558aa87b",
    "sha256:5338d88f6999eda1f3f095a8676796c32c091904c86482520184e6787b6b727d",
@@ -2061,10 +2185,12 @@
    "sha256:ae4d5b4d78b330825c0192662978afac591f34c19bdc45c26fb225b7a2fff5d4"
   ],
   "skills/work-tracker/evals.yaml": [
+   "sha256:65d590dcb0bd3e8ae37fd4935611aaa897ebc206e2068b40bf0b81b5f9756249",
    "sha256:bea7f46863d86a650d98122be3bc503132ef1e88ef475cfb402834b0245e8e8d"
   ],
   "skills/work-tracker/references/maintenance.md": [
-   "sha256:138a3b0c26a1e1dd5e79c4e85308608151dfc5dd72c9c8a45979878aab74cd95"
+   "sha256:138a3b0c26a1e1dd5e79c4e85308608151dfc5dd72c9c8a45979878aab74cd95",
+   "sha256:36fb97be81034ba03fad0e2df7fccd1e1712a9b26babb9de6943b527f66e9054"
   ],
   "skills/work-tracker/references/read.md": [
    "sha256:3beb275093f0a27ae9d169a3353757340c1d6e534b3efdf584212cdaa67ba10d",
@@ -2075,9 +2201,11 @@
   "skills/work-tracker/references/write.md": [
    "sha256:00fbdd33e58d38eb1a3f0b6119fc826f8fb633eb5d24900e286a74da3b4c431d",
    "sha256:1e741d9e64855b4440ea92439fdd4e169a174b08ec55d1f4f21c0433e6d29b20",
-   "sha256:4568cb3917c86aa3b1771d30a57e4281dc74a48d1618beeab077d004c4116655"
+   "sha256:4568cb3917c86aa3b1771d30a57e4281dc74a48d1618beeab077d004c4116655",
+   "sha256:7efac1723a104c1f87c22dbe1459da6d1cf8a3d6fc38122bd1872db9c7215efc"
   ],
   "skills/work-tracker/skill.yaml": [
+   "sha256:05ca63b8c430d82534fa4f9c2bf70713fe8c0598de41877778f05111b0d93f9a",
    "sha256:15a85f12bcf01d620590047fb1cad25e0d7e87cc8199c78469af0ccd9102c0aa",
    "sha256:28e4c171e0b4f0cab933c21a4267993002d8bccbf00bf63c83a6cc5342c34851",
    "sha256:38f2c3d20512d0be3cb6848e94ab61ef242f354a2e71879b1f5287a3bce7f2ad",
@@ -2096,10 +2224,12 @@
    "sha256:e1e8435b9bcbbebb2135f6d34d11de1254b5186237ce0577e6aad8b8c0963a35"
   ],
   "skills/worktree-isolation/evals.yaml": [
+   "sha256:9b1e790f57ae91ca569f7c04d9c68e2feec1383a8d1dad54aaa07dbc5e3bf181",
    "sha256:df153a006c5547c112dae6f3755752fd02835f765d54b608b3903bbadf97729e",
    "sha256:ed4b7523b84306b5d0c5c057d50056d147ff9a903d8e69fc6fa581fd511b75ea"
   ],
   "skills/worktree-isolation/references/lifecycle.md": [
+   "sha256:86182f0687192ca10b4010e7e9772bb8982fdd1289100a270b8f924c097ab9bb",
    "sha256:fe90eae974cfa3abe9086095958f1a0a0feadd8f7bc5506a747fe21c34179ce0"
   ],
   "skills/worktree-isolation/skill.yaml": [
@@ -2113,10 +2243,12 @@
    "sha256:8c7a2329a3200a5f216ee688822e2e46a42611942dbc1dfc74c30daad5b63bd3",
    "sha256:95d475e5164bb6fba6da1d20e33ba47b99e97544fd33963c4b87dc0d4f2e755e",
    "sha256:a942d23e277fbe00a47a7ba9b277c4d9d28fbdaaa4c8fb979d54e83bca2f81d1",
+   "sha256:c287d8edf7df2af0db1ae9ad2a0afa43c2debc0d8db5da839eb3a66cafd2ab8b",
    "sha256:ed6fa65394ffa02e433a649427913f5ab2a6f8eb74771e989992712a9c711389"
   ],
   "skills/wsl/evals.yaml": [
-   "sha256:0f3aeed286c125354b17d65a8348986fe8bbc3135a0db09b40cd20c81819ddf8"
+   "sha256:0f3aeed286c125354b17d65a8348986fe8bbc3135a0db09b40cd20c81819ddf8",
+   "sha256:7049009c8ab9528cd372bc459f2ab607128d18f7166abff2aa4ac9a6c05d6b26"
   ],
   "skills/wsl/references/commands.md": [
    "sha256:711fe07fce88a7f01e30f64b26644e53fc1fb154b59ad0992964c1e19127ea43",
@@ -2350,6 +2482,7 @@
   "v0.40.0",
   "v0.40.1",
   "v0.41.0",
-  "v0.42.0"
+  "v0.42.0",
+  "v0.43.0"
  ]
 }
