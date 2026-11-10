@@ -6,7 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## v0.44.1 - 2026-11-10
+
+Delta: v0.44.0..v0.44.1
+
 This patch lets `CLAUDE_CODE_SUBAGENT_MODEL` serve as a machine-wide default model for subagents. The Claude tier hook used to do nothing when that variable was set; it now keeps writing the model of each tier, so an agent with a declared tier runs on its tier and every other subagent runs on the default.
+
+### Fixed
+
+- **The Claude tier hook now keeps writing the tier model when `CLAUDE_CODE_SUBAGENT_MODEL` is set.** Since Claude Code 2.1.251 that model outranks the variable, so the variable can serve as a machine-wide default for subagents the hook leaves alone. (basicly-gtb19bg.47.5)
 
 ## v0.44.0 - 2026-11-10
 
