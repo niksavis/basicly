@@ -1,0 +1,1 @@
+- **The Claude tier hook can give an untiered agent start a default tier.** Set `BASICLY_DEFAULT_TIER` to `low`, `medium` or `high` in the `env` block of a Claude settings file: a `general-purpose` start that names no model then runs on that tier. Unset, nothing changes. Another value shows a warning and changes nothing.

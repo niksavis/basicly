@@ -195,6 +195,28 @@ output is the contract.
    restart notice in [Install the spawn hook](#install-the-spawn-hook). A dry run or a run
    that changes nothing does not print the notice, because there is nothing to reload.
 
+## Give an untiered spawn a default tier
+
+Set `BASICLY_DEFAULT_TIER` to `low`, `medium` or `high` to give a worker tier to a spawn
+that has none:
+
+```console
+$ printf '%s' '{"tool_name":"Agent","cwd":"'"$PWD"'","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}' \
+    | BASICLY_DEFAULT_TIER=medium python3 .basicly/kit/tier/claude_tier_hook.py
+{"hookSpecificOutput": {"hookEventName": "PreToolUse",
+ "updatedInput": {"model": "sonnet", "prompt": "x", "subagent_type": "general-purpose"}}}
+```
+
+- **The default applies only to a `general-purpose` spawn, or to a spawn with no
+  `subagent_type`.** Another type with no definition, such as `Explore` or `Plan`, keeps the
+  host default model.
+- The rules above still apply. A spawn that names a model, a set
+  `CLAUDE_CODE_SUBAGENT_MODEL` and a repository with no map are left alone.
+- **`maximum` is not a worker tier.** For `maximum` or any other value, the hook changes
+  nothing and returns a `systemMessage` warning that names the variable, the value and the
+  allowed values. The host shows that warning to you. It does not show the stderr of a hook
+  that exits 0.
+
 ## Debug an injection
 
 Give the hook a `PreToolUse` payload on stdin, as the host does:

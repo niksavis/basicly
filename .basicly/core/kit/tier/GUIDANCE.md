@@ -22,7 +22,7 @@ Choose the tier by the work, not by caution:
 | `low` | mechanical, checkable, high volume: a sweep, a format, a count |
 | `medium` | usual implementation with a clear specification |
 | `high` | design judgment, an unclear requirement, a review that must find small faults |
-| `maximum` | never a delegated worker: the advisor a smaller model asks about a decision that costs much when wrong, or the session model that orchestrates work larger than one context window |
+| `maximum` | never a delegated worker: the advisor a smaller model asks about a decision that costs much when wrong, or the session model that orchestrates work larger than one context window or routine work with a long cost tail |
 
 If all work gets `high`, you use too much budget. If all work gets `low`, you must do the
 work again. The tier is the decision.

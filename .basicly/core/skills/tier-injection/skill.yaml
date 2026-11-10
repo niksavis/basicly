@@ -51,10 +51,10 @@ instructions: |
 
   ## Choose the model by role
 
-  - **Owner.** One model owns a task from start to finish. Start on Opus 5.5 (`high`).
+  - **Owner.** One model owns a task from start to finish. Start on the `high` model.
   - **Delegated work names a tier.** Use `medium` by default, `high` for a judgement the owner would otherwise repeat, and `low` only to run a test suite or a mechanical search. A dispatch never names a provider model id; the model map resolves the tier.
   - **`maximum` is Fable, and Fable is never a delegated worker.** It has two roles. As advisor (`/advisor fable`), ask it when a problem survived two failed approaches or a decision is hard to undo. As orchestrator, make it the session model for work larger than one context window, or for routine work with a long cost tail.
   - **Raise the effort level before you add a second model.**
-  - A start with no tier inherits the session model. Set `BASICLY_DEFAULT_TIER=medium` so the hook gives an untiered `general-purpose` start that tier.
+  - A start with no tier and no `model` runs on the session model. Name the model in the call. As a net, set `BASICLY_DEFAULT_TIER=medium` in the `env` block of a Claude settings file: the hook then gives an untiered `general-purpose` start that tier.
 
   For the measured cost of each choice, read [roles](references/roles.md).
