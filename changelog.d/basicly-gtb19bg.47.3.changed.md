@@ -1,0 +1,1 @@
+- **Three always-on lines no longer send a small task to a skill.** The Harness Loop, Quality Gate and Session Completion lines now name `harness-loop` and `session-finish` only for an owner handoff, a failed check, a release candidate or the end of a session. In a pilot run the agent stopped opening those skills for a one-file change.

@@ -15,4 +15,4 @@ tags:
 status: active
 title: Session Completion
 body: |
-  - At session end, use `session-finish` and its clean-handoff reference. Fix refusal causes within approved scope; carry unresolved facts and diagnosis into the handover.
+  - Use `session-finish` only when a session or long run ends, not for one small task. Fix refusal causes within approved scope; carry unresolved facts and diagnosis into the handover.
