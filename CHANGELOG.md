@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+This release adapts basicly to the Claude 5 family. The `tier-injection` skill now states the role of each model: Opus owns a task, delegated work names a tier, and Fable advises or orchestrates and is never a delegated worker. The Claude tier hook can give an untiered agent start a default tier. Three always-on lines no longer send a small task to a skill.
+
 ## v0.43.0 - 2026-11-07
 
 Delta: v0.42.0..v0.43.0
