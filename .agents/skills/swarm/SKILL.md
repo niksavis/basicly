@@ -16,7 +16,7 @@ The script is `${CLAUDE_SKILL_DIR}/scripts/swarm.py`, in the folder of this SKIL
 
 1. **Frame.** Name the artifact, the question and 3 to 6 lenses that do not overlap, with rubrics from [lenses](references/lenses.md). In teardown mode the question is "what is wrong with this artifact?" and the lenses are the preset for its type. When the user names fewer than 3 lenses, add the closest lenses to reach 3 and say which. For one claim, propose `falsify-first`, run by a fresh agent that did not make the claim; run the swarm when the user still asks for it.
 2. **Brief.** Fill [the brief](assets/brief.md) once per lens: its rubric, a reading list of at most 6 items, a word cap of 400 unless the user sets one. Pass the artifact, never your own conclusion.
-3. **Launch.** Start all agents in one message so they run in parallel, with the agent that [lenses](references/lenses.md) names for each lens. Use lower effort for a mechanical lens.
+3. **Launch.** Start all agents in one message so they run in parallel, with the agent that [lenses](references/lenses.md) names for each lens. A named agent runs on the tier of its definition, and a general-purpose agent on the repository default tier; for a lens that needs more judgement, pass as `model` the `alias` that `python3 .basicly/core/kit/tier/tier_resolver.py --host claude --tier high` prints. Never start a reviewer on `maximum`. Use lower effort for a mechanical lens.
 4. **Collect.** Save each reply as `DIR/LENS.md`. Wait for each agent's completion notice; never write a reply for an agent that has not returned. An agent that fails or stops without a reply has not returned.
 5. **Check.** Run:
 

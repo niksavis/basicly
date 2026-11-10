@@ -27,4 +27,4 @@ End your reply with exactly one json block:
 Changes per skill:
 
 - **hill-climb**: the rubric holds one line per property saying what a 10 means. Add `"grades": {"PROPERTY": 0-10}` with every property.
-- **council**: the lens is the stance. Drop `verdict`. Add `"vote": "LABEL", "reason": "...", "strongest_counter": "..."`, where LABEL is copied exactly from the question. `findings` may stay empty.
+- **council**: the lens is the stance. Drop `verdict`. Add `"vote": "LABEL", "reason": "...", "strongest_counter": "..."`, where LABEL is copied exactly from the question. Keep `findings` as the empty list `[]`: the tally refuses a vote whose `findings` holds a sentence or a severity other than `important`, `nit` or `pre-existing`.

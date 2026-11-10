@@ -274,3 +274,16 @@ def test_every_wired_artifact_kind_declares_who_composes_it() -> None:
     wired = {kind for kind in handoff.PRODUCERS if handoff.wired(kind)}
 
     assert wired == set(REPLY_COMPOSED) | ENGINE_DERIVED
+
+
+def test_no_catalog_agent_declares_the_maximum_tier() -> None:
+    root = Path(__file__).resolve().parents[1]
+    offenders = sorted(
+        path.parent.name
+        for path in (root / ".basicly/core/agents").glob("*/agent.yaml")
+        if "\ntier: maximum\n" in path.read_text(encoding="utf-8")
+    )
+    assert not offenders, (
+        f"{offenders} declare tier: maximum; use tier: high, because Fable advises "
+        "or orchestrates and is never a delegated worker"
+    )
