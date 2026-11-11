@@ -216,3 +216,34 @@ def test_a_timeout_stops_git_and_its_children_and_raises_by_name(tmp_path: Path)
     while _alive(pid) and time.monotonic() < deadline:
         time.sleep(0.05)
     assert not _alive(pid)
+
+
+def test_a_refused_url_never_echoes_a_credential() -> None:
+    token = "ghp" + "_" + "A" * 20
+
+    with pytest.raises(runner.GitValueError) as caught:
+        runner.remote_url(f"https://user:{token}@github.com/owner/repo.git")
+
+    assert token not in str(caught.value)
+
+
+@pytest.mark.parametrize("override", ["environment", "global-config"])
+def test_an_inherited_protocol_override_cannot_enable_ext(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, override: str
+) -> None:
+    repo = _init_repo(tmp_path / "repo")
+    marker = tmp_path / "pwned"
+    if override == "environment":
+        monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "ext:file:https:ssh")
+    else:
+        config = tmp_path / "gitconfig"
+        config.write_text('[protocol "ext"]\n\tallow = always\n', encoding="utf-8")
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+
+    with pytest.raises(runner.GitCommandError):
+        runner.run(
+            ["ls-remote", runner.END_OF_OPTIONS, f"ext::sh -c touch% {marker.as_posix()}"],
+            repo,
+        )
+
+    assert not marker.exists()

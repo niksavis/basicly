@@ -83,28 +83,34 @@ def new_writer_id() -> str:
 
 
 def remote_url(value: str, *, allow_file: bool = False) -> str:
-    rule = "use an https://, ssh:// or user@host:path address"
-    if not isinstance(value, str) or value.startswith("-") or _UNSAFE.search(value):
-        raise _refuse("backlog URL", value, rule)
-    if _SCHEME_URL.fullmatch(value) or _SCP_URL.fullmatch(value):
-        return value
-    if allow_file and _FILE_URL.fullmatch(value):
-        return value
-    raise _refuse("backlog URL", value, rule)
+    if isinstance(value, str) and not value.startswith("-") and not _UNSAFE.search(value):
+        if _SCHEME_URL.fullmatch(value) or _SCP_URL.fullmatch(value):
+            return value
+        if allow_file and _FILE_URL.fullmatch(value):
+            return value
+    raise GitValueError(
+        "refused a backlog URL: use an https://, ssh:// or user@host:path address "
+        "with no password or token in it"
+    )
+
+
+def _protocols(allow_file: bool) -> list[str]:
+    return ["https", "ssh", *(["file"] if allow_file else [])]
 
 
 def _protocol_config(allow_file: bool) -> list[str]:
-    allowed = ["https", "ssh", *(["file"] if allow_file else [])]
+    allowed = _protocols(allow_file)
     config = ["-c", "protocol.allow=never"]
     for name in allowed:
         config += ["-c", f"protocol.{name}.allow=always"]
     return config
 
 
-def _child_env(extra: Mapping[str, str] | None) -> dict[str, str]:
+def _child_env(extra: Mapping[str, str] | None, allow_file: bool) -> dict[str, str]:
     env = {name: value for name, value in os.environ.items() if name not in _REPOSITORY_VARIABLES}
-    env["GIT_TERMINAL_PROMPT"] = "0"
     env.update(extra or {})
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_ALLOW_PROTOCOL"] = ":".join(_protocols(allow_file))
     return env
 
 
@@ -142,7 +148,7 @@ def run(
         process = subprocess.Popen(  # nosec B603
             argv,
             cwd=str(cwd),
-            env=_child_env(env),
+            env=_child_env(env, allow_file),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
