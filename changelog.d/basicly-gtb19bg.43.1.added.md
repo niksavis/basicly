@@ -1,0 +1,1 @@
+- **The tracker kit gets one module that may run git.** `tracker/git_runner.py` checks commit ids, writer ids and backlog URLs before git runs, allows only the https and ssh protocols, and stops git and its children at a deadline. The `kit-boundary` gate exempts this one file and still refuses `subprocess` in every other kit module (basicly-gtb19bg.43.1).

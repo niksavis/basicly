@@ -56,7 +56,8 @@ These bind **every** kit, and each one is cited from the modules it governs.
   its own siblings, nothing else. `kit-boundary` enforces the first half; the rest is on the
   author. The one exception is the board kit: it may import `http.server`, `http` and
   `urllib.parse` to listen on loopback when a person serves it, and nothing else that
-  reaches outside.
+  reaches outside. The tracker kit's `git_runner.py` alone may import `subprocess`, to run
+  `git` for a shared backlog.
 - **Parseable by an interpreter older than this repo's 3.14 floor**: no syntax newer than
   3.9, and **one exception class per handler**. This repo's `ruff format` targets 3.14 and
   will rewrite a parenthesized multi-exception `except` into syntax a consumer's Python may

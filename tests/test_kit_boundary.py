@@ -280,3 +280,26 @@ def test_only_the_board_kit_may_listen_and_only_through_http_server(
     _seed(tmp_path / "kit" / kit, "module.py", source)
 
     assert _rules(tmp_path / "kit") == expected
+
+
+@pytest.mark.parametrize(
+    ("place", "source", "expected"),
+    [
+        (("tracker", "git_runner.py"), "import subprocess\n", []),
+        (("tracker", "git_runner.py"), "from subprocess import run\n", []),
+        (("tracker", "git_runner.py"), "import socket\n", ["reaches-outside"]),
+        (("tracker", "git_runner.py"), "from urllib.request import urlopen\n", ["reaches-outside"]),
+        (("tracker", "git_runner.py"), "import multiprocessing\n", ["reaches-outside"]),
+        (("tracker", "events.py"), "import subprocess\n", ["reaches-outside"]),
+        (("tracker", "nested", "git_runner.py"), "import subprocess\n", ["reaches-outside"]),
+        (("board", "git_runner.py"), "import subprocess\n", ["reaches-outside"]),
+        (("tier", "git_runner.py"), "import subprocess\n", ["reaches-outside"]),
+    ],
+)
+def test_only_the_tracker_git_runner_may_spawn_and_only_through_subprocess(
+    tmp_path: Path, place: tuple[str, ...], source: str, expected: list[str]
+) -> None:
+    *folders, name = place
+    _seed(tmp_path.joinpath("kit", *folders), name, source)
+
+    assert _rules(tmp_path / "kit") == expected

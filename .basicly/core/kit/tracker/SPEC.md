@@ -151,8 +151,11 @@ available.
 nothing.** The kit does not read the engine's configuration, logging, session state or
 policy. It reads its own committed data and takes everything else as arguments. Redaction is
 also an argument: each entry point accepts a redactor and imports none. The kit uses only the standard
-library, with no third-party package, no network and no subprocess. It uses no syntax newer
-than Python 3.9, because a consumer's Python can be older.
+library, with no third-party package, no network and no subprocess. The one exception is
+`git_runner.py`: it alone may start `git`, through `subprocess` with an argument list. It
+checks commit ids, writer ids and URLs before git runs, allows only the `https` and `ssh`
+protocols, and stops git at a deadline. The kit uses no syntax newer than Python 3.9,
+because a consumer's Python can be older.
 
 The `kit-boundary` commit hook enforces this direction. It ships with the kit and also runs in
 the authoring repository's full verify run. An import linter cannot enforce it. The kit is
