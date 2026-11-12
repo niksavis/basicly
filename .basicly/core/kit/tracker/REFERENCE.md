@@ -252,6 +252,18 @@ holds. It warns when `.beads/beads.db` is newer than the export, and names
 python3 .basicly/kit/tracker/cli.py sync .basicly/ledger --dry-run
 ```
 
+With `--vault`, `sync` shares the vault queue instead. It fetches, drops queued events the
+vault already holds, appends the rest to this writer's segment as one commit on the fetched
+head, and pushes it without force. A refused push fetches and rebuilds, at most 5 times; with
+`--urgent` it retries until `--deadline` seconds pass. After a push, `refs/basicly/seen` moves
+and the shared events leave the queue. If the vault holds a valid `ended` event, nothing is
+pushed, the queue is kept, and the reason and successor are printed. A share that stops at any
+step leaves each event in the vault once after the next `sync`.
+
+```sh
+python3 .basicly/kit/tracker/cli.py sync --vault path/to/vault.git
+```
+
 ## Read
 
 ### ready

@@ -46,6 +46,7 @@ vault_shapes = _load("vault_shapes.py", "basicly_tracker_kit_vault_shapes")
 vault_fold = _load("vault_fold.py", "basicly_tracker_kit_vault_fold")
 vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
 vault_queue = _load("vault_queue.py", "basicly_tracker_kit_vault_queue")
+vault_share = _load("vault_share.py", "basicly_tracker_kit_vault_share")
 events = snapshot.events
 ids = events.ids
 
@@ -335,6 +336,11 @@ _VAULT: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
     "vault-show": _vault_show,
     "fetch": _fetch_vault,
     "comment-vault": _queue_comment,
+    "sync-vault": lambda a: vault_share.share(
+        vault_clone.locate(_state(a), a.vault),
+        _state(a),
+        plan=vault_share.Plan(urgent=a.urgent, deadline_s=a.deadline),
+    ),
 }
 
 
@@ -399,8 +405,8 @@ def invoke(args: argparse.Namespace, redact: Callable[[str], str] | None = None)
 def main(argv: Sequence[str] | None = None, *, redact: Callable[[str], str] | None = None) -> int:
 
     argv = list(sys.argv[1:] if argv is None else argv)
-    vault = argv[:1] == ["comment"] and "--vault" in argv
-    args = (arguments.vault_comment() if vault else arguments.parser()).parse_args(argv)
+    form = arguments.VAULT_FORMS.get(argv[0]) if argv and "--vault" in argv else None
+    args = (form or arguments.parser)().parse_args(argv)
     code, report = invoke(args, redact)
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:

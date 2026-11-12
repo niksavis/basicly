@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import os
 import shutil
 import sys
@@ -38,6 +39,11 @@ FETCH_REFSPEC = "+refs/heads/main:refs/remotes/origin/main"
 HEAD_REF = "refs/remotes/origin/main"
 SEEN_REF = "refs/basicly/seen"
 FETCHED_NAME = "fetched"
+VALID_NAME = "valid.ids"
+COVERS_NAME = "valid.at"
+QUARANTINE_NAME = "quarantine.jsonl"
+ENDED_NAME = "ended.json"
+AFTER_ENDED = "ended: nothing after a valid end counts"
 LOCK_WAIT = 2 * git_runner.DEFAULT_TIMEOUT + 10
 
 Runner = Callable[..., str]
@@ -129,22 +135,79 @@ def _fetch_twice(clone: Clone, runner: Runner, timeout: float) -> bool:
     return False
 
 
-def _advance_seen(clone: Clone, head: str, runner: Runner, timeout: float) -> dict[str, object]:
+def durable(path: Path, text: str, *, append: bool = False) -> None:
+
+    target = path if append else path.with_name(path.name + ".tmp")
+    with target.open("a" if append else "w", encoding="utf-8") as stream:
+        stream.write(text)
+        stream.flush()
+        os.fsync(stream.fileno())
+    if not append:
+        target.replace(path)
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def ended(clone: Clone) -> dict[str, object] | None:
+    text = _read(clone.folder / ENDED_NAME)
+    return json.loads(text) if text else None
+
+
+def valid_ids(clone: Clone) -> set[str]:
+    return set(_read(clone.folder / VALID_NAME).split())
+
+
+def quarantine(clone: Clone) -> list[dict[str, object]]:
+    found = [json.loads(line) for line in _read(clone.folder / QUARANTINE_NAME).splitlines()]
+    return list({entry["commit"]: entry for entry in found}.values())
+
+
+def _verdicts(clone: Clone, commits: list[str], stop: dict | None) -> tuple:
+
+    ids: list[str] = []
+    held: list[dict[str, object]] = []
+    for commit in commits:
+        verdict = None if stop else vault_shapes.classify(clone.bare, commit)
+        if verdict is None or not verdict.valid:
+            held.append({"commit": commit, "rule": verdict.rule if verdict else AFTER_ENDED})
+            continue
+        ids += [str(event["id"]) for event in verdict.events if event.get("id")]
+        stop = next((e for e in verdict.events if e.get("kind") == vault_shapes.STOP_KIND), None)
+    return ids, held, stop
+
+
+def _advance(clone: Clone, head: str, runner: Runner, timeout: float) -> dict[str, object]:
 
     seen = _ref(clone, SEEN_REF, runner, timeout)
     chain = vault_shapes.first_parent_chain(clone.bare, head)
     if seen and seen not in chain:
         return {"seen": seen, "moved": False, "retracted": True, "quarantined": []}
-    new = chain[chain.index(seen) + 1 :] if seen else chain
-    verdicts = [vault_shapes.classify(clone.bare, commit) for commit in new]
+    whole = not seen or _read(clone.folder / COVERS_NAME).strip() != seen
+    new = chain if whole else chain[chain.index(seen) + 1 :]
+    ids, held, stop = _verdicts(clone, new, None if whole else ended(clone))
+    durable(clone.folder / VALID_NAME, "".join(f"{i}\n" for i in ids), append=not whole)
+    lines = "".join(json.dumps(entry, sort_keys=True) + "\n" for entry in held)
+    durable(clone.folder / QUARANTINE_NAME, lines, append=not whole)
+    if stop is not None or whole:
+        durable(clone.folder / ENDED_NAME, json.dumps(stop) if stop else "")
+    durable(clone.folder / COVERS_NAME, f"{head}\n")
     if head != seen:
         runner(["update-ref", SEEN_REF, head, seen or "0" * len(head)], clone.bare, timeout=timeout)
-    return {
-        "seen": head,
-        "moved": head != seen,
-        "retracted": False,
-        "quarantined": [{"commit": v.commit, "rule": v.rule} for v in verdicts if not v.valid],
-    }
+    return {"seen": head, "moved": head != seen, "retracted": False, "quarantined": held}
+
+
+def settle(
+    clone: Clone,
+    *,
+    runner: Runner = git_runner.run,
+    timeout: float = git_runner.DEFAULT_TIMEOUT,
+    lock_wait: float = LOCK_WAIT,
+) -> dict[str, object]:
+
+    with events.LedgerLock(clone.folder / "fetch", timeout_s=lock_wait):
+        return _advance(clone, _ref(clone, HEAD_REF, runner, timeout), runner, timeout)
 
 
 def fetch(
@@ -167,14 +230,15 @@ def fetch(
             raise CloneError(f"could not fetch {clone.url} and no earlier fetch exists; retry")
         if fetched:
             stamp.write_text(f"{clock()}\n", encoding="utf-8")
-            seen = _advance_seen(clone, head, runner, timeout)
+            seen = _advance(clone, head, runner, timeout)
         else:
             seen = {"seen": _ref(clone, SEEN_REF, runner, timeout), "moved": False}
-    age = max(0.0, clock() - float(stamp.read_text(encoding="utf-8")))
+    stamped = _read(stamp).strip()
+    age = round(max(0.0, clock() - float(stamped)), 1) if stamped else None
     return {
         "clone": str(clone.bare),
         "head": head,
         "fetched": fetched,
-        "age_s": round(age, 1),
+        "age_s": age,
         **seen,
     }
