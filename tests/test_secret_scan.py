@@ -144,7 +144,7 @@ def _install_hook(repo: Path) -> None:
     _git(repo, "config", "core.hooksPath", ".git/hooks")
     hook = repo / ".git" / "hooks" / "pre-commit"
     script = SCRIPT.as_posix()
-    hook.write_text(f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" "{script}"\n')
+    hook.write_text(f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" "{script}"\n', newline="")
     hook.chmod(0o755)
 
 
