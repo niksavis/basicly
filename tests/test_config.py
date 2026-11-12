@@ -520,14 +520,14 @@ def test_the_gate_names_the_key_when_nothing_declares_a_tier(tmp_path: Path) -> 
     assert "manual" not in report
 
 
-def test_the_declared_tier_pins_the_model_this_repos_lanes_already_ran() -> None:
+def test_the_declared_tier_pins_the_current_high_tier_model() -> None:
 
     resolution = runner.resolve_model(_repo_runner_specs()["claude"], repo_root=REPO_ROOT)
 
     assert resolution.tier == "high"
     assert resolution.source == FAMILY_DEFAULT_TIER
     assert resolution.honoured
-    assert resolution.model == _OBSERVED_LANE_MODEL
+    assert resolution.model == "claude-opus-5-5"
 
 
 def test_a_roles_own_tier_outranks_the_pass_default_on_the_headless_path() -> None:
@@ -540,7 +540,7 @@ def test_a_roles_own_tier_outranks_the_pass_default_on_the_headless_path() -> No
     assert cheap.tier == "low", "tester declares low; the pass default is high"
     assert cheap.source == runner.ROLE_TIER
     assert cheap.honoured
-    assert cheap.model != _OBSERVED_LANE_MODEL
+    assert cheap.model != "claude-opus-5-5"
 
 
 def test_no_role_still_falls_back_to_the_pass_default() -> None:
@@ -550,7 +550,7 @@ def test_no_role_still_falls_back_to_the_pass_default() -> None:
     )
 
     assert resolution.source == FAMILY_DEFAULT_TIER
-    assert resolution.model == _OBSERVED_LANE_MODEL
+    assert resolution.model == "claude-opus-5-5"
 
 
 def test_a_role_the_catalog_does_not_declare_falls_back_rather_than_failing() -> None:
@@ -560,7 +560,7 @@ def test_a_role_the_catalog_does_not_declare_falls_back_rather_than_failing() ->
     )
 
     assert resolution.source == FAMILY_DEFAULT_TIER
-    assert resolution.model == _OBSERVED_LANE_MODEL
+    assert resolution.model == "claude-opus-5-5"
 
 
 @pytest.mark.live_ledger
