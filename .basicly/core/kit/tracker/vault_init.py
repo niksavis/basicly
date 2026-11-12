@@ -32,12 +32,15 @@ FIX = 1
 REFUSED = 2
 NO_GENESIS = 8
 PERMISSIONS = [
-    "Make the repository private; whoever can read it reads every project in it.",
+    "Private or public: whoever can read the vault reads every project in it; choose public "
+    "only when every project in it is public.",
     "Give each team member write access to it; nobody needs rights on a code repository's main.",
-    "GitHub Pro, Team or Enterprise: protect main with a branch protection rule or a ruleset, "
-    "which blocks force-push and deletion, and turn on 'Do not allow bypassing'.",
-    "GitHub Free: a private repository offers no branch protection, so skip that step.",
-    "Bitbucket: add a branch restriction on main that denies rewriting history and deleting.",
+    "Protect its main against force-push and deletion where your host offers it: GitHub offers "
+    "a ruleset or branch protection on public repositories on every plan, and on private "
+    "repositories only on Pro, Team or Enterprise (GitHub docs, read 2026-11-12); Bitbucket "
+    "offers a branch restriction.",
+    "On GitHub Free that means a private vault cannot be protected on the host and a public one "
+    "can; you choose.",
     "The tracker checks the vault history itself and stops on a rewrite, with or without that.",
 ]
 
