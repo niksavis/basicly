@@ -49,6 +49,7 @@ def claim() -> argparse.ArgumentParser:
     parser = _form("claim", "claim a record in the vault within 30 s", "claim-vault")
     parser.add_argument("record", help="the record id")
     parser.add_argument("--session", help="the session (default: BASICLY_TRACKER_SESSION)")
+    parser.add_argument("--deadline", type=float, default=30.0, help="seconds for the whole claim")
     return parser
 
 

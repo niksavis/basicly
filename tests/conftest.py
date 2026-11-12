@@ -120,6 +120,20 @@ def _ambient_git_env_stays_scrubbed() -> Iterator[None]:
     )
 
 
+VAULT_RUN_VARIABLES = ("CI", "BASICLY_TRACKER_EPHEMERAL", "BASICLY_TRACKER_SESSION")
+
+
+@pytest.fixture(autouse=True)
+def _vault_tests_start_the_same_on_ci_and_locally(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    name = Path(str(request.node.fspath)).name
+    if name.startswith(("test_kit_vault", "test_claim_load")):
+        for variable in VAULT_RUN_VARIABLES:
+            monkeypatch.delenv(variable, raising=False)
+
+
 @pytest.fixture(autouse=True)
 def _hide_ambient_agent_cli(monkeypatch: pytest.MonkeyPatch) -> None:
 

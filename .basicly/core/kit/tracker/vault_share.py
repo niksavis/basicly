@@ -181,8 +181,8 @@ def share(
 
     started = clock()
     writer = vault_queue.writer_of(state)
-    wait = (
-        _budget(plan, started, clock) if plan.urgent else (plan.lock_wait or vault_clone.LOCK_WAIT)
+    wait = plan.lock_wait or (
+        _budget(plan, started, clock) if plan.urgent else vault_clone.LOCK_WAIT
     )
     asked = time.monotonic()
     with events.LedgerLock(clone.folder / SHARE_LOCK, timeout_s=wait):

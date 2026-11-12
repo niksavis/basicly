@@ -86,9 +86,14 @@ def _cut_torn(queue: Path) -> dict[str, object] | None:
 
     if not queue.exists():
         return None
+    with queue.open("rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        if stream.tell() == 0:
+            return None
+        stream.seek(-1, os.SEEK_END)
+        if stream.read(1) == b"\n":
+            return None
     data = queue.read_bytes()
-    if not data or data.endswith(b"\n"):
-        return None
     keep = data.rfind(b"\n") + 1
     lost = data[keep:].decode("utf-8", errors="replace")
     with queue.open("r+b") as stream:
@@ -167,7 +172,7 @@ def write(
         waited = time.monotonic() - asked
         torn = _cut_torn(queue)
         _append(queue, lines)
-        waiting = pending(queue)
+    waiting = pending(queue)
     times = [at for line in waiting if isinstance(at := line.get("at"), (int, float))]
     return {
         "queued": len(lines),

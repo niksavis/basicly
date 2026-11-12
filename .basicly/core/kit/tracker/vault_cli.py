@@ -87,7 +87,8 @@ HANDLERS: dict[str, Callable[[argparse.Namespace, Clock], dict[str, object]]] = 
             a.record,
             a.session or os.environ.get("BASICLY_TRACKER_SESSION", ""),
             c,
-        )
+        ),
+        deadline=a.deadline,
     ),
     "sync-vault": lambda a, c: vault_share.share(
         _clone(a), _state(a), plan=vault_share.Plan(c, urgent=a.urgent, deadline_s=a.deadline)

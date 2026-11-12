@@ -47,6 +47,12 @@ class CrashError(Exception):
     pass
 
 
+@pytest.fixture(autouse=True)
+def _no_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("CI", "BASICLY_TRACKER_EPHEMERAL", "BASICLY_TRACKER_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def bare(tmp_path: Path) -> Path:
     source = Vault(tmp_path / "source")

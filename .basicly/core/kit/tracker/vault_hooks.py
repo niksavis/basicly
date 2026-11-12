@@ -32,6 +32,7 @@ vault_share = _load("vault_share.py", "basicly_tracker_kit_vault_share")
 FETCH_EVERY = 20.0
 HOOK_DEADLINE = 3.0
 BULK_SLOT = 180.0
+WRITE_LOCK_WAIT = 0.2
 END_LOCK_WAIT = 0.9
 STARTS = ("session-start", "prompt")
 ENDS = ("stop", "session-end")
@@ -72,7 +73,9 @@ def due_share(clone: Any, state: Path, clock: Clock, *, now: bool = False) -> di
 
     if not _queued(clone) or not (now or slot_due(clone, clock)):
         return None
-    plan = vault_share.Plan(clock, urgent=not now, deadline_s=HOOK_DEADLINE)
+    plan = vault_share.Plan(
+        clock, urgent=not now, deadline_s=HOOK_DEADLINE, lock_wait=WRITE_LOCK_WAIT
+    )
     try:
         return vault_share.share(clone, state, plan=plan)
     except _KEPT as exc:
