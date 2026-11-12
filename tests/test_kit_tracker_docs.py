@@ -33,6 +33,7 @@ REFUSED_ON_A_FRESH_LEDGER = {
     "sync": "mirrors no other tracker",
     "vault-check": "vault-check could not read",
     "vault-show": "vault-check could not read",
+    "fetch": "is neither a local repository folder",
 }
 LEFT_BEHIND = frozenset({".basicly", ".git", ".gitattributes", ".gitignore", ".agents", ".claude"})
 LEFT_BEHIND |= {"issues.jsonl", "tracker-board.html"}

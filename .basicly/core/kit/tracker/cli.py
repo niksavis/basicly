@@ -43,6 +43,7 @@ settings = _load("settings.py", "basicly_tracker_kit_settings")
 beans = _load("beans.py", "basicly_tracker_kit_beans")
 vault_shapes = _load("vault_shapes.py", "basicly_tracker_kit_vault_shapes")
 vault_fold = _load("vault_fold.py", "basicly_tracker_kit_vault_fold")
+vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
 events = snapshot.events
 ids = events.ids
 
@@ -303,9 +304,15 @@ def _vault_show(args: argparse.Namespace) -> dict[str, object]:
     return vault_fold.view(vault_fold.fold(found).record(args.record))
 
 
+def _fetch_vault(args: argparse.Namespace) -> dict[str, object]:
+    state = args.state or vault_clone.state_root(os.environ, Path.home(), windows=os.name == "nt")
+    return vault_clone.fetch(vault_clone.locate(Path(state), args.vault), timeout=args.timeout)
+
+
 _VAULT: dict[str, Callable[[argparse.Namespace], dict[str, object]]] = {
     "vault-check": lambda a: vault_shapes.report(a.vault, a.ref),
     "vault-show": _vault_show,
+    "fetch": _fetch_vault,
 }
 
 

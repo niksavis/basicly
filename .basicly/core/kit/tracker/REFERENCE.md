@@ -166,6 +166,21 @@ The first valid claim wins; only the holder can give a record back.
 python3 .basicly/kit/tracker/cli.py vault-show path/to/vault.git acme-a1b2
 ```
 
+### fetch
+
+Clone a vault bare into the machine state folder the first time, then fetch its `main` into
+`refs/remotes/origin/main`. One lock per clone makes a second fetch wait. A failed fetch is
+retried once; after that the command shows the last fetched state and its age. After a fetch,
+every new commit is sorted as `vault-check` does, quarantined commits are listed, and
+`refs/basicly/seen` moves to the head. If the head no longer contains the seen commit, `seen`
+stays and the report says `retracted`. The state folder is `--state`, else
+`BASICLY_TRACKER_STATE`, else `basicly-tracker` under `XDG_STATE_HOME` (`LOCALAPPDATA` on
+Windows), else under `~/.local/state`.
+
+```sh
+python3 .basicly/kit/tracker/cli.py fetch --vault path/to/vault.git
+```
+
 ### delete
 
 Tombstone a record. Its id is never reused.

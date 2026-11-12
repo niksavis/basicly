@@ -281,6 +281,10 @@ def _add_vault_parsers(sub: Any) -> None:
     shown.add_argument("vault", help="the vault repository, bare or not")
     shown.add_argument("record", help="the record id")
     shown.add_argument("--ref", default="HEAD", help="the branch or commit to read")
+    fetched = sub.add_parser("fetch", help="clone a vault bare once, then fetch it under a lock")
+    fetched.add_argument("--vault", required=True, help="the vault URL or local repository")
+    fetched.add_argument("--state", help="the machine state folder (default: per user)")
+    fetched.add_argument("--timeout", type=float, default=30.0, help="seconds per git call")
 
 
 def _add_sync_parser(sub: Any) -> None:
