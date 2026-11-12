@@ -23,6 +23,8 @@ SETTLE_LIMIT_S = 60.0
 CLAIM_DEADLINE_S = 30.0
 ENDED = (0, 3)
 CPU_EVERY_S = 3.0
+FOREIGN_CPU_LIMIT = 0.03
+NOT_COUNTED = 3
 
 _SHIM = """#!{python}
 import os, subprocess, sys, time
@@ -33,7 +35,7 @@ fetching = "fetch" in args or "ls-remote" in args
 verb = "push" if "push" in args else ("fetch" if fetching else "local")
 if verb == "push":
     with open(os.environ["CLAIM_LOAD_PUSHES"], "a", encoding="utf-8") as log:
-        log.write(f"{{time.time()}}\\n")
+        log.write(f"{{time.time()}} {{os.environ.get('CLAIM_LOAD_TAG', '-')}}\\n")
     time.sleep(float(os.environ["CLAIM_LOAD_PUSH_S"]) / scale)
 elif verb == "fetch":
     time.sleep(float(os.environ["CLAIM_LOAD_FETCH_S"]) / scale)
@@ -94,6 +96,7 @@ class Run:
     won: dict[str, str] = field(default_factory=dict)
     count: int = 0
     cpu: list[float] = field(default_factory=list)
+    foreign: list[float] = field(default_factory=list)
 
 
 def _git(*args: str, cwd: Path) -> str:
@@ -209,17 +212,26 @@ def _percentile(values: list[float], share: float) -> float:
 def _per_minute(pushes: Path, config: Config) -> tuple[float, int]:
     if not pushes.exists():
         return 0.0, 0
-    stamps = [float(line) for line in pushes.read_text(encoding="utf-8").split()]
+    lines = pushes.read_text(encoding="utf-8").splitlines()
+    stamps = [float(line.split(" ", 1)[0]) for line in lines if line.strip()]
     minutes = Counter(int((stamp - min(stamps)) * config.scale // 60) for stamp in stamps)
     span = max(1.0, config.minutes)
     return round(len(stamps) / span, 2), max(minutes.values(), default=0)
 
 
-def _untagged(pushes: Path, calls: dict[str, dict[str, float]]) -> int:
-    if not pushes.exists():
-        return 0
-    total = len(pushes.read_text(encoding="utf-8").split())
-    return max(0, total - int(sum(c["pushes"] for c in calls.values())))
+def _cut(pushes: Path, calls: dict[str, dict[str, float]]) -> dict[str, int]:
+    started: Counter[str] = Counter()
+    if pushes.exists():
+        for line in pushes.read_text(encoding="utf-8").splitlines():
+            parts = line.split(" ", 1)
+            started[parts[1] if len(parts) > 1 else "-"] += 1
+    ended = {tag: int(found["pushes"]) for tag, found in calls.items()}
+    return {
+        "outside_claims": started.get("-", 0),
+        "cut_by_timeout": sum(
+            max(0, count - ended.get(tag, 0)) for tag, count in started.items() if tag != "-"
+        ),
+    }
 
 
 def _calls(calls: Path, config: Config) -> dict[str, dict[str, float]]:
@@ -241,16 +253,36 @@ def _busy() -> tuple[int, int] | None:
     return sum(fields) - idle, sum(fields)
 
 
+def _own_s() -> float:
+    spent = os.times()
+    return spent.user + spent.system + spent.children_user + spent.children_system
+
+
 def _sample_cpu(run: Run, stop: threading.Event, every: float) -> None:
-    before = _busy()
+    tick = float(os.sysconf("SC_CLK_TCK")) if hasattr(os, "sysconf") else 100.0
+    before, own = _busy(), _own_s()
     while before is not None and not stop.wait(every):
-        after = _busy()
+        after, mine = _busy(), _own_s()
         if after is None:
             return
         spent = after[1] - before[1]
         if spent:
-            run.cpu.append(round((after[0] - before[0]) / spent, 3))
-        before = after
+            busy = (after[0] - before[0]) / spent
+            run.cpu.append(round(busy, 3))
+            share = (mine - own) * tick / spent
+            run.foreign.append(round(max(0.0, busy - share), 3))
+        before, own = after, mine
+
+
+def counted(shown: dict[str, object]) -> str | None:
+    foreign = shown.get("cpu_foreign")
+    mean = float(foreign.get("mean", 0.0)) if isinstance(foreign, dict) else 0.0
+    if mean > FOREIGN_CPU_LIMIT:
+        return (
+            f"not counted: other processes used {mean:.3f} of the machine on average, "
+            f"above {FOREIGN_CPU_LIMIT}; rerun in a quiet window"
+        )
+    return None
 
 
 def _phases(results: list[Result]) -> dict[str, dict[str, float]]:
@@ -288,7 +320,9 @@ def report(run: Run, pushes: Path, config: Config) -> dict[str, object]:
         "waiting_s_per_claim": _spread(waiting),
         "phases_s_per_claim": _phases(run.results),
         "cpu_busy": _spread(run.cpu),
-        "pushes_outside_claims": _untagged(pushes, calls),
+        "cpu_foreign": _spread(run.foreign),
+        "foreign_cpu_limit": FOREIGN_CPU_LIMIT,
+        "pushes_unfinished": _cut(pushes, calls),
         "p99_s": round(_percentile(seconds, 0.99), 2),
         "max_s": round(max(seconds, default=0.0), 2),
         "records": len({r.record for r in run.results}),
@@ -358,8 +392,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     with tempfile.TemporaryDirectory(prefix="claim-load-") as folder:
         shown = run_load(config, Path(folder))
+    refused = counted(shown)
     failed = gate(shown)
-    print(json.dumps({**shown, "gate": failed or "pass"}, indent=2, sort_keys=True))
+    verdict: object = refused if refused is not None else (failed or "pass")
+    print(json.dumps({**shown, "gate": verdict}, indent=2, sort_keys=True))
+    if refused is not None:
+        return NOT_COUNTED if args.gate else 0
     return 1 if args.gate and failed else 0
 
 

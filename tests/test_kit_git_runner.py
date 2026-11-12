@@ -191,8 +191,13 @@ def _alive(pid: int) -> bool:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    stat = Path(f"/proc/{pid}/stat")
-    return not (stat.is_file() and stat.read_text().split(") ", 1)[1].startswith("Z"))
+    if not Path("/proc").is_dir():
+        return True
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1]
+    except FileNotFoundError, ProcessLookupError:
+        return False
+    return not state.startswith("Z")
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups are POSIX; Windows kills git")

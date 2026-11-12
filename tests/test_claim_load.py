@@ -55,6 +55,17 @@ def test_the_gate_names_each_broken_limit(override: dict[str, object], reason: s
     assert any(reason in line for line in failed)
 
 
+def test_a_run_with_foreign_cpu_above_the_limit_is_not_counted() -> None:
+    noisy = _report(cpu_foreign={"mean": claim_load.FOREIGN_CPU_LIMIT + 0.01})
+    quiet = _report(cpu_foreign={"mean": claim_load.FOREIGN_CPU_LIMIT})
+
+    refused = claim_load.counted(noisy)
+    assert refused is not None
+    assert "not counted" in refused
+    assert str(claim_load.FOREIGN_CPU_LIMIT) in refused
+    assert claim_load.counted(quiet) is None
+
+
 def test_a_small_real_load_makes_claims_in_every_session_and_one_holder_per_record(
     tmp_path: Path,
 ) -> None:
