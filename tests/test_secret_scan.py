@@ -315,3 +315,20 @@ def test_intended_difference_only_the_hook_honours_the_pragma() -> None:
     assert scan.rule_hit(line) is None
     assert GITHUB not in engine_redact.redact_secrets(line)
     assert GITHUB not in KIT_REDACT.text(line)
+
+
+def test_a_value_under_twelve_characters_cannot_be_allowed_by_an_entry(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _install_hook(repo)
+    short = 'password = "' + "k9" + "Qz7mWp1" + '"'
+    _stage(repo, "app.py", short + "\n")
+    _allow(repo, "app.py", short)
+
+    refused = _commit(repo, "short value")
+
+    assert len("k9Qz7mWp1") == scan.MIN_ALLOWED - 3
+    assert refused.returncode == 1
+    assert f"under {scan.MIN_ALLOWED} characters cannot be allowed" in refused.stderr
+    assert "sha256:" not in refused.stderr
+    assert scan.allowable('token: "' + "github_" + 'webhook"')
+    assert not scan.allowable('token: "' + "eleven1char" + '"')

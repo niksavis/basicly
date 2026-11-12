@@ -14,6 +14,8 @@ PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
 ALLOW_FILE = ".secret-scan-allow.toml"
 
 _GENERIC_RULE = "generic-secret-assignment"
+MIN_ALLOWED = 12
+_QUOTED = re.compile(r"['\"]([^'\"]*)['\"]$")
 
 _RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("private-key", re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----")),
@@ -90,6 +92,15 @@ def excluded_paths() -> re.Pattern[str] | None:
         return None
     source = precommit_exclude(config.read_text(encoding="utf-8"))
     return re.compile(source) if source else None
+
+
+def allowable(text: str) -> bool:
+    generic = dict(_RULES)[_GENERIC_RULE]
+    for match in generic.finditer(text):
+        quoted = _QUOTED.search(match.group(0))
+        if quoted is None or len(quoted.group(1)) < MIN_ALLOWED:
+            return False
+    return True
 
 
 def line_hash(text: str) -> str:
@@ -190,14 +201,18 @@ def staged_added_lines() -> list[tuple[str, int, str]]:
 def _report(findings: list[tuple[str, int, str, str]]) -> None:
     print("secret-scan: possible secret(s) in staged content — commit blocked.", file=sys.stderr)
     for path, lineno, rule, digest in findings:
-        shown = f" sha256:{digest}" if rule == _GENERIC_RULE else ""
+        shown = f" sha256:{digest}" if rule == _GENERIC_RULE and digest else ""
+        if rule == _GENERIC_RULE and not digest:
+            shown = f" (a value under {MIN_ALLOWED} characters cannot be allowed by an entry)"
         print(f"  {path}:{lineno}: {rule}{shown}", file=sys.stderr)
     print(
         f"Remove the secret, or if it is a false positive add a "
         f"'{ALLOWLIST_PRAGMA}' comment on the line.",
         file=sys.stderr,
     )
-    generic = [(path, digest) for path, _, rule, digest in findings if rule == _GENERIC_RULE]
+    generic = [
+        (path, digest) for path, _, rule, digest in findings if rule == _GENERIC_RULE and digest
+    ]
     if not generic:
         return
     print(
@@ -223,7 +238,7 @@ def main() -> int:
     for error in errors:
         print(f"secret-scan: {error}", file=sys.stderr)
     findings = [
-        (path, lineno, rule, line_hash(text))
+        (path, lineno, rule, line_hash(text) if rule != _GENERIC_RULE or allowable(text) else "")
         for path, lineno, text in staged_added_lines()
         if (rule := rule_hit(text, generic=not (excluded and excluded.search(path))))
     ]
