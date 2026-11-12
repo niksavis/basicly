@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -268,8 +269,11 @@ def settle(
     lock_wait: float = LOCK_WAIT,
 ) -> dict[str, object]:
 
+    asked = time.monotonic()
     with events.LedgerLock(clone.folder / "fetch", timeout_s=lock_wait):
-        return _advance(clone, ref(clone, HEAD_REF, runner, timeout), runner, timeout)
+        waited = round(time.monotonic() - asked, 3)
+        shown = _advance(clone, ref(clone, HEAD_REF, runner, timeout), runner, timeout)
+    return {**shown, "fetch_lock_wait_s": waited}
 
 
 def fetch(
@@ -284,7 +288,9 @@ def fetch(
     private(clone.folder.parent.parent)
     private(clone.folder)
     stamp = clone.folder / FETCHED_NAME
+    asked = time.monotonic()
     with events.LedgerLock(clone.folder / "fetch", timeout_s=lock_wait):
+        waited = round(time.monotonic() - asked, 3)
         _ensure(clone, runner, timeout)
         fetched = _fetch_twice(clone, runner, timeout)
         head = ref(clone, HEAD_REF, runner, timeout)
@@ -302,5 +308,6 @@ def fetch(
         "head": head,
         "fetched": fetched,
         "age_s": age,
+        "fetch_lock_wait_s": waited,
         **seen,
     }

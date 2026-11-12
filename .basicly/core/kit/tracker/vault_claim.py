@@ -75,6 +75,14 @@ class _Budget:
     def __init__(self, deadline: float, ticks: Clock) -> None:
         self._end = ticks() + deadline
         self._ticks = ticks
+        self.timing: dict[str, float] = {}
+
+    def add(self, key: str, seconds: object) -> None:
+        value = float(seconds) if isinstance(seconds, (int, float)) else 0.0
+        self.timing[key] = round(self.timing.get(key, 0.0) + value, 3)
+
+    def now(self) -> float:
+        return self._ticks()
 
     def left(self, cap: float | None = None) -> float:
         remaining = max(0.01, self._end - self._ticks())
@@ -122,6 +130,7 @@ def _check(ask: Ask, budget: _Budget, writer: str) -> dict[str, object] | None:
         )
     except vault_clone.CloneError:
         fetched = {"fetched": False}
+    budget.add("fetch_lock_wait_s", fetched.get("fetch_lock_wait_s"))
     if not fetched.get("fetched"):
         return {"exit": UNREACHABLE, "record": ask.record, "check": check}
     held = holder(clone, ask.record)
@@ -145,16 +154,21 @@ def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
             keep_going=False,
             unlocked=stalled,
         )
+        asked = budget.now()
         try:
-            vault_share.share(ask.clone, ask.state, plan=plan, runner=ask.runner)
+            shared = vault_share.share(ask.clone, ask.state, plan=plan, runner=ask.runner)
         except events.LockUnavailableError:
+            budget.add("joined_wait_s", budget.now() - asked)
             joined_at = budget.left() if joined_at is None else joined_at
             if made in vault_clone.valid_ids(ask.clone):
                 return True
             if budget.left() <= POLL:
                 raise
             time.sleep(POLL)
+            budget.add("joined_wait_s", POLL)
             continue
+        budget.add("share_lock_wait_s", shared.get("lock_wait_s"))
+        budget.add("fetch_lock_wait_s", shared.get("fetch_lock_wait_s"))
         return joined_at is not None
 
 
@@ -182,9 +196,12 @@ def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[s
 
 
 def _attempt(ask: Ask, budget: _Budget) -> dict[str, object]:
+    started = budget.now()
     writer = vault_queue.writer_of(ask.state)
     early = _check(ask, budget, writer)
-    return early if early is not None else _land(ask, budget, writer, budget.left())
+    shown = early if early is not None else _land(ask, budget, writer, budget.left())
+    budget.add("claim_s", budget.now() - started)
+    return {**shown, "timing": dict(budget.timing)}
 
 
 def claim(

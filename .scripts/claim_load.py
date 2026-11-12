@@ -22,6 +22,7 @@ P99_LIMIT_S = 10.0
 SETTLE_LIMIT_S = 60.0
 CLAIM_DEADLINE_S = 30.0
 ENDED = (0, 3)
+CPU_EVERY_S = 3.0
 
 _SHIM = """#!{python}
 import os, subprocess, sys, time
@@ -74,6 +75,7 @@ class Result:
     code: int
     seconds: float
     tag: str = ""
+    timing: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,7 @@ class Run:
     recent: list[str] = field(default_factory=list)
     won: dict[str, str] = field(default_factory=dict)
     count: int = 0
+    cpu: list[float] = field(default_factory=list)
 
 
 def _git(*args: str, cwd: Path) -> str:
@@ -149,13 +152,24 @@ def _pick(run: Run, rng: random.Random, config: Config, session: str) -> str:
         return record
 
 
-def _claim(setup: Setup, state: Path, session: str, record: str, tag: str) -> int:
+def _timing(stdout: str) -> dict[str, float]:
+    try:
+        shown = json.loads(stdout)
+    except ValueError:
+        return {}
+    found = shown.get("timing") if isinstance(shown, dict) else None
+    return {str(k): float(v) for k, v in found.items()} if isinstance(found, dict) else {}
+
+
+def _claim(
+    setup: Setup, state: Path, session: str, record: str, tag: str
+) -> tuple[int, dict[str, float]]:
     deadline = CLAIM_DEADLINE_S / setup.config.scale
     argv = [sys.executable, str(CLI), "claim", record, "--vault", str(setup.bare)]
     argv += ["--state", str(state), "--session", session, "--deadline", str(deadline)]
     env = {**setup.env, "CLAIM_LOAD_TAG": tag}
     done = subprocess.run(argv, env=env, capture_output=True, text=True, check=False)  # nosec B603
-    return done.returncode
+    return done.returncode, _timing(done.stdout)
 
 
 def _session(n: int, setup: Setup, run: Run) -> None:
@@ -175,10 +189,12 @@ def _session(n: int, setup: Setup, run: Run) -> None:
         record = _pick(run, rng, config, session)
         tag = f"{session}-{record}-{time.monotonic()}"
         started = time.monotonic()
-        code = _claim(setup, state, session, record, tag)
+        code, timing = _claim(setup, state, session, record, tag)
         seconds = (time.monotonic() - started) * config.scale
+        timing["startup_s"] = max(0.0, seconds / config.scale - timing.get("claim_s", 0.0))
+        scaled = {key: value * config.scale for key, value in timing.items()}
         with run.lock:
-            run.results.append(Result(session, record, code, seconds, tag))
+            run.results.append(Result(session, record, code, seconds, tag, scaled))
             if code == 0:
                 run.won[record] = session
 
@@ -199,6 +215,13 @@ def _per_minute(pushes: Path, config: Config) -> tuple[float, int]:
     return round(len(stamps) / span, 2), max(minutes.values(), default=0)
 
 
+def _untagged(pushes: Path, calls: dict[str, dict[str, float]]) -> int:
+    if not pushes.exists():
+        return 0
+    total = len(pushes.read_text(encoding="utf-8").split())
+    return max(0, total - int(sum(c["pushes"] for c in calls.values())))
+
+
 def _calls(calls: Path, config: Config) -> dict[str, dict[str, float]]:
     found: dict[str, dict[str, float]] = defaultdict(lambda: {"pushes": 0.0, "git_s": 0.0})
     if calls.exists():
@@ -207,6 +230,32 @@ def _calls(calls: Path, config: Config) -> dict[str, dict[str, float]]:
             found[tag]["git_s"] += float(spent) * config.scale
             found[tag]["pushes"] += verb == "push"
     return found
+
+
+def _busy() -> tuple[int, int] | None:
+    stat = Path("/proc/stat")
+    if not stat.exists():
+        return None
+    fields = [int(v) for v in stat.read_text(encoding="utf-8").split("\n", 1)[0].split()[1:]]
+    idle = fields[3] + (fields[4] if len(fields) > 4 else 0)
+    return sum(fields) - idle, sum(fields)
+
+
+def _sample_cpu(run: Run, stop: threading.Event, every: float) -> None:
+    before = _busy()
+    while before is not None and not stop.wait(every):
+        after = _busy()
+        if after is None:
+            return
+        spent = after[1] - before[1]
+        if spent:
+            run.cpu.append(round((after[0] - before[0]) / spent, 3))
+        before = after
+
+
+def _phases(results: list[Result]) -> dict[str, dict[str, float]]:
+    names = ("claim_s", "startup_s", "share_lock_wait_s", "fetch_lock_wait_s", "joined_wait_s")
+    return {name: _spread([r.timing.get(name, 0.0) for r in results]) for name in names}
 
 
 def _spread(values: list[float]) -> dict[str, float]:
@@ -237,6 +286,9 @@ def report(run: Run, pushes: Path, config: Config) -> dict[str, object]:
         "push_retries_per_claim": _spread(retries),
         "git_work_s_per_claim": _spread([c["git_s"] for c in per]),
         "waiting_s_per_claim": _spread(waiting),
+        "phases_s_per_claim": _phases(run.results),
+        "cpu_busy": _spread(run.cpu),
+        "pushes_outside_claims": _untagged(pushes, calls),
         "p99_s": round(_percentile(seconds, 0.99), 2),
         "max_s": round(max(seconds, default=0.0), 2),
         "records": len({r.record for r in run.results}),
@@ -272,10 +324,15 @@ def run_load(config: Config, root: Path) -> dict[str, object]:
     threads = [
         threading.Thread(target=_session, args=(n, setup, run)) for n in range(config.sessions)
     ]
+    stop = threading.Event()
+    sampler = threading.Thread(target=_sample_cpu, args=(run, stop, CPU_EVERY_S))
+    sampler.start()
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
+    stop.set()
+    sampler.join()
     return report(run, root / "pushes.log", config)
 
 
@@ -286,9 +343,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scale", type=float, default=4.0)
     parser.add_argument("--minutes", type=float, default=30.0)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--push-s", type=float, default=Config.push_s)
+    parser.add_argument("--fetch-s", type=float, default=Config.fetch_s)
     parser.add_argument("--gate", action="store_true", help="exit 1 when a D1 limit fails")
     args = parser.parse_args(argv)
-    config = Config(args.sessions, args.machines, args.scale, args.minutes, args.seed)
+    config = Config(
+        args.sessions,
+        args.machines,
+        args.scale,
+        args.minutes,
+        args.seed,
+        args.push_s,
+        args.fetch_s,
+    )
     with tempfile.TemporaryDirectory(prefix="claim-load-") as folder:
         shown = run_load(config, Path(folder))
     failed = gate(shown)

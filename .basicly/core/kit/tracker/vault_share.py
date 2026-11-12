@@ -195,6 +195,7 @@ def share(
         if not prune(clone):
             return {"shared": 0, "pending": 0, "lock_wait_s": waited}
         attempt = total = 0
+        fetch_waits = 0.0
         while True:
             attempt += 1
             budget = _budget(plan, started, clock)
@@ -205,6 +206,7 @@ def share(
                     clone, clock=plan.wall, runner=runner, timeout=budget, lock_wait=budget
                 )
             head = str(fetched["head"])
+            fetch_waits += float(fetched.get("fetch_lock_wait_s") or 0.0)
             if fetched.get("retracted") or vault_clone.unrepaired(clone, runner, budget):
                 raise ShareError(
                     "the vault head dropped commits this clone had seen; "
@@ -215,7 +217,13 @@ def share(
                 return _stopped(head, stop, clone)
             batch = [line for line in prune(clone) if line.get("writer") == writer]
             if not batch:
-                return {"shared": total, "head": head, "pending": 0, "lock_wait_s": waited}
+                return {
+                    "shared": total,
+                    "head": head,
+                    "pending": 0,
+                    "lock_wait_s": waited,
+                    "fetch_lock_wait_s": round(fetch_waits, 3),
+                }
 
             def git(args: list[str], budget: float = budget, **options: Any) -> str:
                 return runner(args, clone.bare, timeout=budget, **options)
@@ -233,9 +241,16 @@ def share(
                     f"{len(batch)} events stay queued; run sync again"
                 ) from None
             vault_clone.durable(clone.folder / SHARED_AT, f"{plan.wall()}\n")
-            vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
+            settled = vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
+            fetch_waits += float(settled.get("fetch_lock_wait_s") or 0.0)
             total += len(batch)
             left = len(prune(clone))
             if left and plan.keep_going and _again(plan, attempt, started, clock):
                 continue
-            return {"shared": total, "head": commit, "pending": left, "lock_wait_s": waited}
+            return {
+                "shared": total,
+                "head": commit,
+                "pending": left,
+                "lock_wait_s": waited,
+                "fetch_lock_wait_s": round(fetch_waits, 3),
+            }
