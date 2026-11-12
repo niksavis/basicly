@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,8 @@ edges = _load("edges.py", "basicly_tracker_kit_edges")
 review = _load("review.py", "basicly_tracker_kit_review")
 claims = _load("claims.py", "basicly_tracker_kit_claims")
 git_layout = _load("git_layout.py", "basicly_tracker_kit_git_layout")
+vault_write = _load("vault_write.py", "basicly_tracker_kit_vault_write")
+holder_writes = _load("holder_writes.py", "basicly_tracker_kit_holder_writes")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -52,6 +54,10 @@ CLOSE_REASON_FIELD = "close_reason"
 
 class TrackerCommandError(events.LedgerError):
     pass
+
+
+def environment() -> Mapping[str, str]:
+    return os.environ
 
 
 def _is_repository(path: Path) -> bool:
@@ -103,32 +109,13 @@ def _require(ledger: Path, record: str) -> Any:
 def _append(
     ledger: Path,
     drafts: Sequence[Any],
-    redact: Callable[[str], str] | None,
+    context: Any,
     lock: Any,
     *,
     repeat: bool = False,
 ) -> list:
-    template = templates.load(ledger)
-    found = events.read_events(ledger)[0]
-    states = events.fold(found).records
-    drafts, progress_parents = parent_progress.progress(found, drafts)
-    values.refuse(events, drafts, template, states, found)
-    holders.refuse(states, drafts)
-    review_drafts = [
-        draft
-        for draft in drafts
-        if not (
-            draft.record in progress_parents
-            and draft.kind == events.KIND_STATUS
-            and draft.payload.get("status") == "in_progress"
-        )
-    ]
-    actor = writers.writer_class(os.environ)
-    review.refuse(states, review_drafts, actor, template, found=found)
-    resolved = recurrence.at_the_generation_this_write_needs(
-        events, ledger, drafts, repeat=repeat, redact=redact
-    )
-    return events.append(ledger, resolved, actor=actor, redact=redact, held_lock=lock)
+    write = vault_write.Write(ledger, context, lock, os.environ)
+    return vault_write.land(write, drafts, repeat=repeat)
 
 
 def update(  # noqa: PLR0913 — one argument per thing an update can set
@@ -139,7 +126,7 @@ def update(  # noqa: PLR0913 — one argument per thing an update can set
     status: str = "",
     add_labels: Sequence[str] = (),
     remove_labels: Sequence[str] = (),
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
     if_seq: int | None = None,
     claimant: str = "",
 ) -> list:
@@ -165,7 +152,7 @@ def update(  # noqa: PLR0913 — one argument per thing an update can set
         if status:
             drafts.append(events.Draft(record, events.KIND_STATUS, {"status": status}))
         drafts = holders.claimed_by({record: state}, drafts, claimant)
-        return _append(ledger, drafts, redact, lock)
+        return _append(ledger, drafts, context, lock)
 
 
 STATUS_NAME = "status"
@@ -196,7 +183,7 @@ def close(
     *,
     reason: str = "",
     resolution: str = "completed",
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
 ) -> list:
 
     ledger = _ledger(directory)
@@ -220,7 +207,7 @@ def close(
                 )
             )
             drafts.append(events.Draft(record, events.KIND_STATUS, {"status": CLOSED_STATUS}))
-        return _append(ledger, drafts, redact, lock)
+        return _append(ledger, drafts, context, lock)
 
 
 def comment(
@@ -228,7 +215,7 @@ def comment(
     record: str,
     text: str,
     *,
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
 ) -> list:
 
     ledger = _ledger(directory)
@@ -237,7 +224,7 @@ def comment(
     with events.LedgerLock(ledger) as lock:
         _require(ledger, record)
         return _append(
-            ledger, [events.Draft(record, events.KIND_NOTE, {"text": text})], redact, lock
+            ledger, [events.Draft(record, events.KIND_NOTE, {"text": text})], context, lock
         )
 
 
@@ -247,7 +234,7 @@ def add_dependency(
     target: str,
     *,
     edge_type: str = "",
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
 ) -> list:
 
     ledger = _ledger(directory)
@@ -259,7 +246,7 @@ def add_dependency(
         edges.refuse_edge(ledger, record, target, edge_type)
         edges.refuse_cycle(ledger, record, target, edge_type)
         payload = {migrate.EDGE_FROM: record, migrate.EDGE_TO: target, migrate.EDGE_TYPE: edge_type}
-        return _append(ledger, [events.Draft(record, migrate.KIND_EDGE, payload)], redact, lock)
+        return _append(ledger, [events.Draft(record, migrate.KIND_EDGE, payload)], context, lock)
 
 
 def remove_dependency(
@@ -268,7 +255,7 @@ def remove_dependency(
     target: str,
     *,
     edge_type: str = "blocks",
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
 ) -> list:
 
     ledger = _ledger(directory)
@@ -277,20 +264,20 @@ def remove_dependency(
         edges.refuse_retraction(queries.views_and_children(ledger)[0], record, target, edge_type)
         payload = {migrate.EDGE_FROM: record, migrate.EDGE_TO: target, migrate.EDGE_TYPE: edge_type}
         drafts = [events.Draft(record, events.KIND_EDGE_RETRACTED, payload)]
-        return _append(ledger, drafts, redact, lock)
+        return _append(ledger, drafts, context, lock)
 
 
 def delete(
     directory: Path | str,
     record: str,
     *,
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
 ) -> list:
 
     ledger = _ledger(directory)
     with events.LedgerLock(ledger) as lock:
         _require(ledger, record)
-        return _append(ledger, [events.Draft(record, events.KIND_TOMBSTONE, {})], redact, lock)
+        return _append(ledger, [events.Draft(record, events.KIND_TOMBSTONE, {})], context, lock)
 
 
 def create_root(
@@ -299,7 +286,7 @@ def create_root(
     *,
     prefix: str,
     status: str = "open",
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
 ) -> list:
 
     ledger = Path(directory)
@@ -307,7 +294,7 @@ def create_root(
     with events.LedgerLock(ledger) as lock:
         folded = events.fold(events.read_events(ledger)[0])
         record = ids.mint_root_id(
-            prefix,
+            vault_write.prefix(ledger, prefix),
             ids.minted_ever(
                 [key for key, state in folded.records.items() if not state.tombstoned],
                 [key for key, state in folded.records.items() if state.tombstoned],
@@ -317,7 +304,7 @@ def create_root(
             events.Draft(record, events.KIND_CREATED, dict(fields)),
             events.Draft(record, events.KIND_STATUS, {"status": status}),
         ]
-        return _append(ledger, drafts, redact, lock)
+        return _append(ledger, drafts, context, lock)
 
 
 def create_child(
@@ -326,7 +313,7 @@ def create_child(
     fields: Mapping[str, object],
     *,
     status: str = "open",
-    redact: Callable[[str], str] | None = None,
+    context: Any = None,
 ) -> list:
 
     ledger = _ledger(directory)
@@ -344,10 +331,10 @@ def create_child(
             events.Draft(record, events.KIND_STATUS, {"status": status}),
             events.Draft(record, migrate.KIND_EDGE, edge),
         ]
-        return _append(ledger, drafts, redact, lock)
+        return _append(ledger, drafts, context, lock)
 
 
-def migrate_fields(directory: Path | str, *, redact: Callable[[str], str] | None = None) -> list:
+def migrate_fields(directory: Path | str, *, context: Any = None) -> list:
 
     ledger = _ledger(directory)
     shaping = values.fields.shaping
@@ -368,72 +355,7 @@ def migrate_fields(directory: Path | str, *, redact: Callable[[str], str] | None
                     value = "\n".join(f"- {entry}" for entry in entries)
                     payload = {"name": name, "value": value}
                     drafts.append(events.Draft(record, events.KIND_FIELD, payload))
-        return _append(ledger, drafts, redact, lock) if drafts else []
-
-
-def _holder_draft(record: str, holder: str, take: bool) -> Any:
-
-    if not holder:
-        raise TrackerCommandError(
-            "no holder name: set git config user.name, or name the holder with --to"
-        )
-    payload: dict[str, object] = {"name": holders.HOLDER_FIELD, "value": holder}
-    if take:
-        payload[holders.TAKE_KEY] = True
-    return events.Draft(record, events.KIND_FIELD, payload)
-
-
-def assign(
-    directory: Path | str,
-    record: str,
-    holder: str,
-    *,
-    take: bool = False,
-    redact: Callable[[str], str] | None = None,
-) -> list:
-
-    ledger = _ledger(directory)
-    drafts = [_holder_draft(record, holder, take)]
-    with events.LedgerLock(ledger) as lock:
-        _require(ledger, record)
-        return _append(ledger, drafts, redact, lock)
-
-
-def claim(
-    directory: Path | str,
-    record: str,
-    holder: str,
-    *,
-    take: bool = False,
-    redact: Callable[[str], str] | None = None,
-) -> list:
-
-    ledger = _ledger(directory)
-    drafts = [
-        _holder_draft(record, holder, take),
-        events.Draft(record, events.KIND_STATUS, {"status": "in_progress"}),
-    ]
-    with events.LedgerLock(ledger) as lock:
-        holders.refuse_a_claim_on_a_closed_record(_require(ledger, record), ledger, record)
-        return _append(ledger, drafts, redact, lock)
-
-
-def unassign(
-    directory: Path | str,
-    record: str,
-    by: str,
-    *,
-    take: bool = False,
-    redact: Callable[[str], str] | None = None,
-) -> list:
-
-    ledger = _ledger(directory)
-    with events.LedgerLock(ledger) as lock:
-        holders.refuse_a_release_by_another(_require(ledger, record), record, by, take)
-        payload: dict[str, object] = {"name": holders.HOLDER_FIELD, "value": ""}
-        if take:
-            payload[holders.TAKE_KEY] = True
-        return _append(ledger, [events.Draft(record, events.KIND_FIELD, payload)], redact, lock)
+        return _append(ledger, drafts, context, lock) if drafts else []
 
 
 def _restated(record: str, state: Any, key: str) -> list:
@@ -450,9 +372,7 @@ def _restated(record: str, state: Any, key: str) -> list:
     return [events.Draft(record, events.KIND_FIELD, payload)]
 
 
-def resolve(
-    directory: Path | str, record: str, *, redact: Callable[[str], str] | None = None
-) -> list:
+def resolve(directory: Path | str, record: str, *, context: Any = None) -> list:
 
     ledger = _ledger(directory)
     with events.LedgerLock(ledger) as lock:
@@ -462,10 +382,13 @@ def resolve(
         if not keys:
             raise TrackerCommandError(f"{record} has no unresolved conflict to resolve")
         drafts = [draft for key in keys for draft in _restated(record, state, str(key))]
-        appended = _append(ledger, drafts, redact, lock, repeat=True)
+        appended = _append(ledger, drafts, context, lock, repeat=True)
         if not appended:
             raise TrackerCommandError(f"resolve {record} appended nothing, so the fork stays")
         return appended
 
 
 record_process = review.process.record_process
+assign = holder_writes.assign
+claim = holder_writes.claim
+unassign = holder_writes.unassign

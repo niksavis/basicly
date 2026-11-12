@@ -1,0 +1,1 @@
+- **Write tracker records through the vault.** When `.basicly-tracker.toml` names a vault, create, update, close, comment, review, confirm and dep queue each ledger event as a vault line of kind `ledger` and leave `.basicly/ledger` unchanged. A new id takes the prefix from that file, and claim and unassign answer with the vault claim exit codes (basicly-gtb19bg.43.28).

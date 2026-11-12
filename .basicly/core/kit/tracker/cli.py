@@ -120,54 +120,54 @@ _owed_of = record_view.owed_of
 
 
 _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
-    "child": lambda a, r: commands.create_child(
+    "child": lambda a, c: commands.create_child(
         a.directory,
         a.parent,
         _minting(_fields(a.title, a.field, a)),
         status=a.status,
-        redact=r,
+        context=c,
     ),
-    "update": lambda a, r: commands.update(
+    "update": lambda a, c: commands.update(
         a.directory,
         a.record,
         fields=_fields("", a.field, a),
         status=a.status,
         add_labels=a.add_label,
         remove_labels=a.remove_label,
-        redact=r,
+        context=c,
         if_seq=a.if_seq,
         claimant=_holder(a),
     ),
-    "close": lambda a, r: commands.close(
-        a.directory, a.record, reason=a.reason, resolution=a.resolution, redact=r
+    "close": lambda a, c: commands.close(
+        a.directory, a.record, reason=a.reason, resolution=a.resolution, context=c
     ),
-    "review": lambda a, r: commands.record_process(
-        a.directory, a.record, json.loads(a.evidence), redact=r
+    "review": lambda a, c: commands.record_process(
+        a.directory, a.record, json.loads(a.evidence), redact=c
     ),
-    "confirm": lambda a, r: commands.record_process(
-        a.directory, a.record, json.loads(a.evidence), completed=True, redact=r
+    "confirm": lambda a, c: commands.record_process(
+        a.directory, a.record, json.loads(a.evidence), completed=True, redact=c
     ),
-    "comment": lambda a, r: commands.comment(a.directory, a.record, a.text, redact=r),
-    "dep": lambda a, r: commands.add_dependency(
-        a.directory, a.record, a.target, edge_type=a.edge_type, redact=r
+    "comment": lambda a, c: commands.comment(a.directory, a.record, a.text, context=c),
+    "dep": lambda a, c: commands.add_dependency(
+        a.directory, a.record, a.target, edge_type=a.edge_type, context=c
     ),
-    "undep": lambda a, r: commands.remove_dependency(
-        a.directory, a.record, a.target, edge_type=a.edge_type, redact=r
+    "undep": lambda a, c: commands.remove_dependency(
+        a.directory, a.record, a.target, edge_type=a.edge_type, context=c
     ),
-    "delete": lambda a, r: commands.delete(a.directory, a.record, redact=r),
-    "assign": lambda a, r: commands.assign(
-        a.directory, a.record, _holder(a), take=a.take, redact=r
+    "delete": lambda a, c: commands.delete(a.directory, a.record, context=c),
+    "assign": lambda a, c: commands.assign(
+        a.directory, a.record, _holder(a), take=a.take, context=c
     ),
-    "claim": lambda a, r: commands.claim(a.directory, a.record, _holder(a), take=a.take, redact=r),
-    "unassign": lambda a, r: commands.unassign(
-        a.directory, a.record, _releaser(a), take=a.take, redact=r
+    "claim": lambda a, c: commands.claim(a.directory, a.record, _holder(a), take=a.take, context=c),
+    "unassign": lambda a, c: commands.unassign(
+        a.directory, a.record, _releaser(a), take=a.take, context=c
     ),
-    "resolve": lambda a, r: commands.resolve(a.directory, a.record, redact=r),
-    "acknowledge-loss": lambda a, r: fsck.recovery.acknowledge(
+    "resolve": lambda a, c: commands.resolve(a.directory, a.record, context=c),
+    "acknowledge-loss": lambda a, c: fsck.recovery.acknowledge(
         a.directory,
         a.record,
         fsck.recovery.Request(tuple(a.sequence), a.reason, tuple(a.evidence)),
-        redact=r,
+        redact=c.redactor,
     ),
 }
 
@@ -190,9 +190,7 @@ def _compacted(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
-_VIEWS: dict[
-    str, Callable[[argparse.Namespace, Callable[[str], str] | None], dict[str, object]]
-] = {
+_VIEWS: dict[str, Callable[[argparse.Namespace, Any], dict[str, object]]] = {
     "ready": lambda a, _r: queries.ready(
         a.directory, limit=a.limit, mine=_holder(a) if a.mine else ""
     ),
@@ -201,18 +199,18 @@ _VIEWS: dict[
     "compact": lambda a, _r: _compacted(a),
     "shards": lambda a, _r: fsck.shards_report(a.directory),
     "board": lambda a, _r: {"written": board.write(a.directory, a.out).as_posix()},
-    "import": lambda a, r: beans.import_backlog(
+    "import": lambda a, c: beans.import_backlog(
         a.directory,
         beans.Source(a.source_format, Path(a.export), a.source or None),
-        redact=r,
+        redact=c.redactor,
         dry_run=a.dry_run,
     ),
     "sync": lambda a, _r: mirror.sync(a.directory, a.root, dry_run=a.dry_run),
     "scaffold": lambda a, _r: record_view.scaffold_of(a.directory, a.type),
     "fields": lambda a, _r: fields.table(record_view.templates.load(a.directory)),
     "refine": lambda a, _r: record_view.refine_queue(a.directory),
-    "migrate-fields": lambda a, r: {
-        "appended": [event.record for event in commands.migrate_fields(a.directory, redact=r)]
+    "migrate-fields": lambda a, c: {
+        "appended": [event.record for event in commands.migrate_fields(a.directory, context=c)]
     },
     "config": lambda a, _r: (
         settings.write(a.directory, a.name, a.value)
@@ -302,20 +300,22 @@ _REFUSABLE: dict[str, Callable[[argparse.Namespace], tuple[int, dict[str, object
 def _run(
     args: argparse.Namespace, redact: Callable[[str], str] | None
 ) -> tuple[int, dict[str, object]]:
+    clock = events.wall_clock()
     if (vault := vault_cli.HANDLERS.get(args.command)) is not None:
-        report = vault(args, events.wall_clock())
+        report = vault(args, clock)
         code = report.pop("exit", EXIT_OK)
         return (code if isinstance(code, int) else EXIT_OK), report
     starts = args.command in _STARTS_A_LEDGER and not getattr(args, "dry_run", False)
     args.directory = commands.resolve_ledger(args.directory, starts=starts)
     pin.require(args.directory)
+    context = commands.vault_write.WriteContext(redact, clock)
     if args.command == "create":
         written = create_record(
             args.directory,
             _minting(_fields(args.title, args.field, args)),
             prefix=settings.create_prefix(args.directory, args.prefix),
             status=args.status,
-            redact=redact,
+            context=context,
         )
         record = written[0].record
         return EXIT_OK, {
@@ -326,9 +326,9 @@ def _run(
     if (gate := _REFUSABLE.get(args.command)) is not None:
         return gate(args)
     if (view := _VIEWS.get(args.command)) is not None:
-        return EXIT_OK, view(args, redact)
+        return EXIT_OK, view(args, context)
     if (write := _WRITES.get(args.command)) is not None:
-        appended = write(args, redact)
+        appended = write(args, context)
         if appended:
             record = appended[0].record
         else:
