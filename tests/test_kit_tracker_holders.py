@@ -41,6 +41,17 @@ def _run(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, dict[str,
     return code, json.loads(capsys.readouterr().out)
 
 
+@pytest.fixture(autouse=True)
+def _no_developer_git_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "developer-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    for variable in ("XDG_CONFIG_HOME", "BASICLY_HOLDER", "GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+
 @pytest.fixture
 def story(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> tuple[Path, str]:
     ledger = tmp_path / "ledger"
