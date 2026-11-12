@@ -30,6 +30,7 @@ git_runner = _load("git_runner.py", "basicly_tracker_kit_git_runner")
 events = _load("events.py", "basicly_tracker_kit_events")
 ids = _load("ids.py", "basicly_tracker_kit_ids")
 templates = _load("templates.py", "basicly_tracker_kit_templates")
+snapshot = _load("snapshot.py", "basicly_tracker_kit_snapshot")
 vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
 vault_fold = _load("vault_fold.py", "basicly_tracker_kit_vault_fold")
 
@@ -37,7 +38,9 @@ LEDGER_KIND = "ledger"
 LEDGER_FIELD = "ledger"
 VIEW_FORMAT = "1"
 VIEW_PREFIX = "view-"
-ALL_PROJECTS = "all"
+ALL_PROJECTS_FOLDER = "view.all"
+TRIED_NAME = "view.tried"
+PROBE_S = 5.0
 KEY_NAME = "view.key"
 HOLDER_ACTOR = "vault"
 FRESH_S = 30.0
@@ -65,8 +68,12 @@ def holder_name(holder: Sequence[str] | None) -> str:
     return f"{writer}/{session}" if session else str(writer)
 
 
+def unshallow_argv(clone: Any) -> list[str]:
+    return ["git", "-C", str(clone.bare), "fetch", "--unshallow", "origin"]
+
+
 def unshallow_command(clone: Any) -> str:
-    return f"git -C {clone.bare} fetch --unshallow origin"
+    return " ".join(f'"{part}"' if " " in part else part for part in unshallow_argv(clone))
 
 
 def refuse_shallow(clone: Any, runner: Runner, timeout: float) -> None:
@@ -98,6 +105,7 @@ def carried(vault_events: Iterable[Mapping[str, object]], want: Want) -> list[An
             continue
         try:
             event = events.from_json(json.dumps(body))
+            events.accumulate(events.Totals(), event.kind, event.payload)
         except events.InvalidEventError:
             continue
         if event.id in seen or not _in_scope(event.record, want) or _holder_event(event):
@@ -156,7 +164,7 @@ def _template(want: Want) -> dict[str, object]:
 
 
 def view_folder(clone: Any, want: Want) -> Path:
-    return clone.folder / f"{VIEW_PREFIX}{ALL_PROJECTS if want.all_projects else want.prefix}"
+    return clone.folder / (ALL_PROJECTS_FOLDER if want.all_projects else VIEW_PREFIX + want.prefix)
 
 
 def build(clone: Any, want: Want, key: str, template: Mapping[str, object]) -> Path:
@@ -171,6 +179,7 @@ def build(clone: Any, want: Want, key: str, template: Mapping[str, object]) -> P
     }
     shown = renumbered(carried(valid, want), held)
     with events.LedgerLock(folder):
+        snapshot.snapshot_path(folder).unlink(missing_ok=True)
         lines = "".join(events.to_json(event) + "\n" for event in shown)
         vault_clone.durable(folder / events.INITIAL_LOG_NAME, lines)
         text = json.dumps(template, indent=2, sort_keys=True) + "\n"
@@ -181,12 +190,20 @@ def build(clone: Any, want: Want, key: str, template: Mapping[str, object]) -> P
 
 def _stale(clone: Any, clock: Callable[[], float]) -> bool:
 
-    stamp = clone.folder / vault_clone.FETCHED_NAME
+    stamp = clone.folder / TRIED_NAME
     text = stamp.read_text(encoding="utf-8").strip() if stamp.is_file() else ""
     try:
         return clock() - float(text) >= FRESH_S
     except ValueError:
         return True
+
+
+def _fetch(clone: Any, clock: Callable[[], float], runner: Runner) -> None:
+
+    tried = clone.folder / TRIED_NAME
+    probe = PROBE_S if tried.is_file() else git_runner.DEFAULT_TIMEOUT
+    vault_clone.fetch(clone, clock=clock, runner=runner, timeout=probe)
+    vault_clone.durable(tried, f"{clock()}\n")
 
 
 def _key(clone: Any, template: Mapping[str, object]) -> str:
@@ -202,8 +219,9 @@ def present(
 
     timeout = git_runner.DEFAULT_TIMEOUT
     try:
+        ids.validate_prefix(want.prefix)
         if _stale(clone, clock):
-            vault_clone.fetch(clone, clock=clock, runner=runner, timeout=timeout)
+            _fetch(clone, clock, runner)
         template = _template(want)
         key = _key(clone, template)
         marker = view_folder(clone, want) / KEY_NAME
@@ -214,6 +232,8 @@ def present(
             vault_clone.settle(clone, runner=runner, timeout=timeout)
             key = _key(clone, template)
         return build(clone, want, key, template)
+    except ids.IdError as exc:
+        raise ViewError(f"the tracker prefix cannot name a record here: {exc}") from None
     except (vault_clone.CloneError, git_runner.GitRunnerError, events.LedgerError) as exc:
         raise ViewError(f"the tracker could not read the vault {clone.url}: {exc}") from None
 

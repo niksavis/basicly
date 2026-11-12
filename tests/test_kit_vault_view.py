@@ -32,6 +32,7 @@ def _load(name: str, file_name: str) -> ModuleType:
 vault_view = _load("basicly_tracker_kit_vault_view", "vault_view.py")
 queries = _load("basicly_tracker_kit_queries", "queries.py")
 cli = _load("tracker_cli_vault_view", "cli.py")
+snapshot = _load("basicly_tracker_kit_snapshot", "snapshot.py")
 events = vault_view.events
 WANT = vault_view.Want("acme")
 TRIGGER = "When a team shares a backlog, I want to see who holds a story, so I can avoid it."
@@ -76,7 +77,9 @@ def test_the_view_holds_valid_carried_events_in_vault_order_and_ready_reads_it(
     first, second = _record("acme-a1"), _record("acme-b2")
     _push(tmp_path, bare, "m1", _carry(first))
     broken = {"kind": "ledger", "record": "acme-b2", "ledger": {"id": "x"}}
-    _push(tmp_path, bare, "m2", [*_carry(second), broken, vault_queue.comment("acme-b2", "hi")])
+    unfoldable = _carry([_ev("acme-b2", "status", {"status": 5}, 3)])
+    comment = vault_queue.comment("acme-b2", "hi")
+    _push(tmp_path, bare, "m2", [*_carry(second), broken, *unfoldable, comment])
 
     _reader, folder = _view(tmp_path, bare)
 
@@ -149,7 +152,7 @@ def test_a_shallow_clone_refuses_by_name_and_its_printed_command_fixes_it(
         vault_view.present(reader, WANT, clock=time.time)
     command = str(refused.value).split("`")[1]
     assert command == vault_view.unshallow_command(reader)
-    subprocess.run(command.split(), check=True, capture_output=True)
+    subprocess.run(vault_view.unshallow_argv(reader), check=True, capture_output=True)
 
     folder = vault_view.present(reader, WANT, clock=time.time)
     assert [e.record for e in _read(folder)] == ["acme-a1", "acme-a1"]
@@ -219,3 +222,43 @@ def test_present_ledger_reads_the_view_when_the_repository_names_a_vault(
     (repo / ".basicly-tracker.toml").write_text('vault = "not a vault"\nprefix = "acme"\n')
     with pytest.raises(owned_store.VaultViewError, match="--vault"):
         owned_store.present_ledger(repo)
+
+
+def test_a_holder_change_reaches_a_reader_of_the_snapshot_cache(tmp_path: Path, bare: Path) -> None:
+    claims: list[dict[str, object]] = [
+        {"kind": "claim", "record": r} for r in ("acme-a1", "acme-b2")
+    ]
+    _push(tmp_path, bare, "m1", [*_carry(_record("acme-a1") + _record("acme-b2")), *claims])
+    _reader, folder = _view(tmp_path, bare)
+    snapshot.load(folder)
+    taker = _push(tmp_path, bare, "m2", [{"kind": "take", "record": "acme-a1"}])
+
+    _reader, moved = _view(tmp_path, bare, clock=lambda: time.time() + vault_view.FRESH_S)
+
+    assert snapshot.load(moved).records["acme-a1"].fields["assignee"] == f"{taker}/s1"
+
+
+def test_an_unreachable_vault_serves_the_last_view_and_waits_before_it_asks_again(
+    tmp_path: Path, bare: Path
+) -> None:
+    _push(tmp_path, bare, "m1", _carry(_record("acme-a1")))
+    reader, folder = _view(tmp_path, bare)
+    asked: list[float] = []
+
+    def silent(args: list[str], cwd: Path, **options: Any) -> str:
+        if args[0] == "fetch":
+            asked.append(options["timeout"])
+            raise vault_view.git_runner.GitTimeoutError("no answer")
+        return vault_view.git_runner.run(args, cwd, **options)
+
+    later = time.time() + vault_view.FRESH_S
+    for _ in range(2):
+        assert vault_view.present(reader, WANT, clock=lambda: later, runner=silent) == folder
+    assert asked == [vault_view.PROBE_S] * 2
+
+
+def test_a_prefix_that_cannot_name_a_record_is_refused_by_name(tmp_path: Path, bare: Path) -> None:
+    reader, _state = _machine(tmp_path, bare, "reader")
+
+    with pytest.raises(vault_view.ViewError, match="acme-x"):
+        vault_view.present(reader, vault_view.Want("acme-x"), clock=time.time)
