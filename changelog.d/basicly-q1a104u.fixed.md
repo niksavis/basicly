@@ -1,0 +1,1 @@
+- **A ledger merge keeps who holds each record.** The `tracker-path-scan` hook and `basicly tracker scrub` accept the holder name in the assignee field and still refuse or redact it everywhere else, so a compaction or worktree merge is no longer refused (basicly-q1a104u).
