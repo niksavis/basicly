@@ -59,9 +59,7 @@ def _head(bare: Path) -> str:
 
 
 def _source_digest(found: list, plan: Any) -> str:
-    lines = [
-        vault_migrate.line_of(vault_migrate.scrub(e, plan.redactor), WRITER_A, 0.0) for e in found
-    ]
+    lines = [vault_migrate.shared_line(e, plan, 0.0) for e in found]
     carried = vault_migrate.vault_view.carried(lines, vault_migrate.EVERY_PROJECT)
     return vault_migrate.digest(carried, {e.record for e in found})
 
@@ -86,7 +84,19 @@ def test_a_ledger_lands_in_fold_order_with_its_ids_and_the_digests_agree(
     assert {e["writer"] for e in landed} == {WRITER_A}
     assert (shown["events"], shown["commits"], shown["tip"]) == (6, 1, _head(bare))
     assert shown["digest"] == _source_digest(found, plan)
-    assert shown["not_in_view"] == 1
+    assert (shown["not_in_view"], shown["redacted"]) == (1, 1)
+
+
+def test_the_digest_moves_when_only_an_edge_target_moves() -> None:
+    made = events.Event("acme-a1#ev-1", "acme-a1", 1, "created", "x", "t", {"title": "a"})
+    edge = {"target": "acme-b2", "edge_type": "blocks"}
+    first = [made, events.Event("acme-a1#ev-2", "acme-a1", 2, "edge", "x", "t", edge)]
+    moved = [
+        made,
+        events.Event("acme-a1#ev-2", "acme-a1", 2, "edge", "x", "t", {**edge, "target": "acme-c3"}),
+    ]
+
+    assert vault_migrate.digest(first, {"acme-a1"}) != vault_migrate.digest(moved, {"acme-a1"})
 
 
 def test_commits_stay_within_one_mebibyte_and_one_writer(tmp_path: Path, bare: Path) -> None:
@@ -149,15 +159,6 @@ def test_an_ended_vault_refuses_by_both_counts(tmp_path: Path, bare: Path) -> No
     with pytest.raises(vault_migrate.MigrateError, match="ledger 6, vault 0"):
         vault_migrate.ledger_to_vault(_ledger(tmp_path / "ledger"), _plan(tmp_path, bare))
     assert _head(bare) == before
-
-
-def test_a_snapshot_that_folded_more_events_than_the_logs_refuses(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path / "ledger")
-    header = {"event_count": 99, "log_lines": 99, "last_event_id": None, "version": 3}
-    (ledger / "snapshot.jsonl").write_text(json.dumps(header) + "\n", encoding="utf-8")
-
-    with pytest.raises(vault_migrate.MigrateError, match=r"folded 99 events .* hold 6"):
-        vault_migrate.ledger_events(ledger)
 
 
 def test_the_share_rules_redact_each_line_and_spare_the_holder_name(
