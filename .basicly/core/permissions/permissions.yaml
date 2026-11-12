@@ -27,8 +27,8 @@
 # Fixed origin reads above leave that option subject to ordinary permission checks.
 # Tracker writes use basicly on PATH; claiming uses write -- update --status in_progress.
 # Standalone tracker consumers keep their Python CLI and its normal permission checks.
-# Remote deletion uses :** deliberately: a terminal :* is Claude's legacy prefix syntax,
-# and Bash(git *push* :*) did not deny a colon refspec in the native 2.1.312 probe.
+# Remote deletion uses :** deliberately: a terminal :* is Claude's legacy prefix syntax.
+# The comment above the colon refspec rules in remote-delete gives the reason.
 # Infix Git denies also match quoted commit-message text; this partial backstop retains
 # that conservative behavior (basicly-4uxidwg), rather than claiming argument parsing.
 #
@@ -154,6 +154,10 @@ deny:
     description: block deletion of remote refs and GitHub releases repositories or runs
     claude:
       - "Bash(git *push*--delete*)"
+      # Claude Code 2.1.322 warns at session start about both colon refspec rules.
+      # The warning is accepted: in the native probe, each quiet form that denies both
+      # colon refspecs also denies ordinary pushes, and the terminal :* forms deny
+      # nothing and warn too (basicly-s3yqg13).
       - "Bash(git *push* :**)"
       - "Bash(git *push* +:**)"
       - "Bash(gh release delete*)"
