@@ -67,6 +67,16 @@
         "allowed": false
       },
       {
+        "command": "git push -o \"see origin +1\" origin main",
+        "allowed": false,
+        "note": "accepted false deny: the remote-anchored rule also matches quoted text that holds the remote name (basicly-f2zwd26)"
+      },
+      {
+        "command": "git push origin main -o \"ask origin +1\"",
+        "allowed": false,
+        "note": "accepted false deny: the remote-anchored rule also matches quoted text that holds the remote name (basicly-f2zwd26)"
+      },
+      {
         "command": "git status",
         "allowed": true
       },
@@ -162,6 +172,11 @@
       {
         "command": "git push origin +main",
         "allowed": false
+      },
+      {
+        "command": "git push -o \"see origin -d x\" origin main",
+        "allowed": false,
+        "note": "accepted false deny: the remote-anchored rule also matches quoted text that holds the remote name (basicly-f2zwd26)"
       },
       {
         "command": "git push origin topic:topic",
