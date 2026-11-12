@@ -239,7 +239,7 @@ def test_a_share_that_crashes_at_any_step_leaves_each_event_once_after_the_next_
 def test_sync_vault_prints_the_shared_count_and_the_new_head(
     tmp_path: Path, bare: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cli.vault_hooks, "slot_due", lambda *_: False)
+    monkeypatch.setattr(cli.vault_cli.vault_hooks, "slot_due", lambda *_: False)
     state = tmp_path / "s"
     cli.main(["comment", "acme-a1b2", "--vault", str(bare), "--text", "hi", "--state", str(state)])
     capsys.readouterr()

@@ -48,12 +48,17 @@ class ShareError(ValueError):
     pass
 
 
+class DeadlineError(ShareError):
+    pass
+
+
 @dataclass(frozen=True)
 class Plan:
     wall: Callable[[], float]
     urgent: bool = False
     deadline_s: float = 10.0
     attempts: int = BULK_ATTEMPTS
+    lock_wait: float | None = None
 
 
 def _text(lines: Sequence[Mapping[str, object]]) -> str:
@@ -142,7 +147,7 @@ def _budget(plan: Plan, started: float, clock: Callable[[], float]) -> float:
         return git_runner.DEFAULT_TIMEOUT
     left = plan.deadline_s - (clock() - started)
     if left <= 0:
-        raise ShareError(
+        raise DeadlineError(
             f"the urgent share passed its {plan.deadline_s:g} s deadline; run sync again"
         )
     return left
@@ -176,13 +181,15 @@ def share(
 
     started = clock()
     writer = vault_queue.writer_of(state)
-    wait = _budget(plan, started, clock) if plan.urgent else vault_clone.LOCK_WAIT
+    wait = (
+        _budget(plan, started, clock) if plan.urgent else (plan.lock_wait or vault_clone.LOCK_WAIT)
+    )
     asked = time.monotonic()
     with events.LedgerLock(clone.folder / SHARE_LOCK, timeout_s=wait):
         waited = round(time.monotonic() - asked, 3)
         if not prune(clone):
             return {"shared": 0, "pending": 0, "lock_wait_s": waited}
-        attempt = 0
+        attempt = total = 0
         while True:
             attempt += 1
             budget = _budget(plan, started, clock)
@@ -200,7 +207,7 @@ def share(
                 return _stopped(head, stop, clone)
             batch = [line for line in prune(clone) if line.get("writer") == writer]
             if not batch:
-                return {"shared": 0, "head": head, "pending": 0, "lock_wait_s": waited}
+                return {"shared": total, "head": head, "pending": 0, "lock_wait_s": waited}
 
             def git(args: list[str], budget: float = budget, **options: Any) -> str:
                 return runner(args, clone.bare, timeout=budget, **options)
@@ -213,11 +220,14 @@ def share(
                     raise ShareError(SIGNED_ONLY) from None
                 if _again(plan, attempt, started, clock):
                     continue
-                raise ShareError(
+                raise (DeadlineError if plan.urgent else ShareError)(
                     f"the vault refused the share {attempt} times; "
                     f"{len(batch)} events stay queued; run sync again"
                 ) from None
             vault_clone.durable(clone.folder / SHARED_AT, f"{plan.wall()}\n")
             vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
+            total += len(batch)
             left = len(prune(clone))
-            return {"shared": len(batch), "head": commit, "pending": left, "lock_wait_s": waited}
+            if left and _again(plan, attempt, started, clock):
+                continue
+            return {"shared": total, "head": commit, "pending": left, "lock_wait_s": waited}

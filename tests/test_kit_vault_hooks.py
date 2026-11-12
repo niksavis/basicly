@@ -284,3 +284,38 @@ def test_a_write_whose_share_fails_still_succeeds_and_says_the_share_was_skipped
     assert code == cli.EXIT_OK
     assert shown["queued"] == 1
     assert "skipped" in shown["shared"]
+
+
+def test_a_stop_hook_never_waits_a_second_for_a_share_already_running(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    _write(clone, state, 1, "a")
+    clone.folder.mkdir(parents=True, exist_ok=True)
+
+    with vault_hooks.events.LedgerLock(clone.folder / vault_share.SHARE_LOCK):
+        started = time.monotonic()
+        shown = _hook("stop", clone, state)
+        spent = time.monotonic() - started
+
+    assert spent < 1.0
+    assert "deferred" in shown["shared"]
+    assert _hook("stop", clone, state)["shared"]["shared"] == 1
+
+
+def test_a_running_share_keeps_pushing_while_events_arrive(tmp_path: Path, bare: Path) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    _write(clone, state, 1, "first")
+    late: list[str] = []
+
+    def arriving(args: list[str], cwd: Path, **options: Any) -> str:
+        out = vault_share.git_runner.run(args, cwd, **options)
+        if "push" in args and not late:
+            late.extend(_write(clone, state, 1, "late"))
+        return out
+
+    shown = vault_share.share(clone, state, plan=vault_share.Plan(time.time), runner=arriving)
+
+    assert shown["shared"] == 2
+    assert shown["pending"] == 0
+    assert late[0] in _ids(bare)

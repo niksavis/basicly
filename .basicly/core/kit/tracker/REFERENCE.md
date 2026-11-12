@@ -132,6 +132,18 @@ first.
 python3 .basicly/kit/tracker/cli.py claim .basicly/ledger acme-a1b2 --to alex
 ```
 
+With `--vault`, `claim` reserves the record in the vault for this session (`--session`, else
+`BASICLY_TRACKER_SESSION`) within one 30 s deadline that every git call shares. The first valid
+claim in the vault wins. Exit codes: 0 the claim landed; 1 a session, a record id or a repair is
+missing, and the fix is printed; 3 another session holds the record or won it, and the take
+command is printed; 4 the deadline passed and the claim is unsettled, with `--wait` and
+`--cancel` named; 5 `git ls-remote` gave no answer within 5 s, nothing is queued and the command
+is printed; 6 an internal error, with the log path and `sync`; 7 this session already holds it.
+
+```sh
+python3 .basicly/kit/tracker/cli.py claim acme-a1b2 --vault path/to/vault.git --session s1
+```
+
 ### resolve
 
 Two branches can write the same record, and the merge keeps both events. When they set one

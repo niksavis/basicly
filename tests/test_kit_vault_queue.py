@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -40,9 +41,7 @@ def origin(tmp_path: Path) -> Vault:
 
 @pytest.fixture(autouse=True)
 def _slot_never_due(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        sys.modules["basicly_tracker_kit_vault_hooks"], "slot_due", lambda *_: False
-    )
+    monkeypatch.setattr(cli.vault_cli.vault_hooks, "slot_due", lambda *_: False)
 
 
 @pytest.fixture(autouse=True)
@@ -162,3 +161,25 @@ def test_comment_without_vault_still_writes_the_ledger(
 
     assert shown["schema"].startswith("basicly.tracker.comment.")
     assert code == cli.EXIT_REFUSED or "appended" in shown
+
+
+def test_many_processes_starting_at_once_agree_on_one_writer_id(tmp_path: Path) -> None:
+    script = (
+        "import importlib.util, sys; "
+        f"spec = importlib.util.spec_from_file_location('q', {str(KIT / 'vault_queue.py')!r}); "
+        "q = importlib.util.module_from_spec(spec); sys.modules['q'] = q; "
+        "spec.loader.exec_module(q); "
+        "print(q.writer_of(__import__('pathlib').Path(sys.argv[1])))"
+    )
+    state = tmp_path / "state"
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-c", script, str(state)], stdout=subprocess.PIPE, text=True
+        )
+        for _ in range(12)
+    ]
+    seen = {proc.communicate(timeout=60)[0].strip() for proc in procs}
+
+    assert [proc.returncode for proc in procs] == [0] * 12
+    assert len(seen) == 1
+    assert sorted(p.name for p in state.iterdir()) == ["writer.id"]

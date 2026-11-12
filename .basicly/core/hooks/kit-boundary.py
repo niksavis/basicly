@@ -43,6 +43,7 @@ ENVIRONMENT_ADAPTERS = frozenset({
     "process_evidence.py",
     "settings.py",
     "git_runner.py",
+    "vault_cli.py",
 })
 _ENVIRONMENT_NAMES = frozenset({"environ", "environb", "getenv", "getenvb", "putenv", "unsetenv"})
 

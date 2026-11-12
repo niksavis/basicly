@@ -45,6 +45,13 @@ def hook() -> argparse.ArgumentParser:
     return parser
 
 
+def claim() -> argparse.ArgumentParser:
+    parser = _form("claim", "claim a record in the vault within 30 s", "claim-vault")
+    parser.add_argument("record", help="the record id")
+    parser.add_argument("--session", help="the session (default: BASICLY_TRACKER_SESSION)")
+    return parser
+
+
 def status() -> argparse.ArgumentParser:
     return _form("status", "show the data age without a network call", "status-vault")
 
@@ -56,4 +63,5 @@ FORMS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     "reclone": reclone,
     "hook": hook,
     "status": status,
+    "claim": claim,
 }

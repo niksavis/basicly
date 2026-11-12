@@ -32,6 +32,7 @@ vault_share = _load("vault_share.py", "basicly_tracker_kit_vault_share")
 FETCH_EVERY = 20.0
 HOOK_DEADLINE = 3.0
 BULK_SLOT = 180.0
+END_LOCK_WAIT = 0.9
 STARTS = ("session-start", "prompt")
 ENDS = ("stop", "session-end")
 EVENTS = STARTS + ENDS
@@ -95,7 +96,11 @@ def hook(event: str, clone: Any, state: Path, *, clock: Clock) -> dict[str, obje
             shared = due_share(clone, state, clock)
         else:
             fetched = None
-            shared = vault_share.share(clone, state, plan=vault_share.Plan(clock))
+            plan = vault_share.Plan(clock, lock_wait=END_LOCK_WAIT)
+            try:
+                shared = vault_share.share(clone, state, plan=plan)
+            except events.LockUnavailableError:
+                shared = {"deferred": "another share in this clone is running and takes the queue"}
     except _KEPT as exc:
         return {"hook": event, "skipped": str(exc), "queued": len(_queued(clone))}
     return {"hook": event, "fetched": fetched, "shared": shared, "queued": len(_queued(clone))}

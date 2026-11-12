@@ -38,17 +38,11 @@ board = _load("board.py", "basicly_tracker_kit_board")
 fields = _load("fields.py", "basicly_tracker_kit_fields")
 arguments = _load("arguments.py", "basicly_tracker_kit_arguments")
 vault_arguments = _load("vault_arguments.py", "basicly_tracker_kit_vault_arguments")
+vault_cli = _load("vault_cli.py", "basicly_tracker_kit_vault_cli")
 pin = _load("pin.py", "basicly_tracker_kit_pin")
 mirror = _load("mirror.py", "basicly_tracker_kit_mirror")
 settings = _load("settings.py", "basicly_tracker_kit_settings")
 beans = _load("beans.py", "basicly_tracker_kit_beans")
-vault_shapes = _load("vault_shapes.py", "basicly_tracker_kit_vault_shapes")
-vault_fold = _load("vault_fold.py", "basicly_tracker_kit_vault_fold")
-vault_clone = _load("vault_clone.py", "basicly_tracker_kit_vault_clone")
-vault_queue = _load("vault_queue.py", "basicly_tracker_kit_vault_queue")
-vault_share = _load("vault_share.py", "basicly_tracker_kit_vault_share")
-vault_repair = _load("vault_repair.py", "basicly_tracker_kit_vault_repair")
-vault_hooks = _load("vault_hooks.py", "basicly_tracker_kit_vault_hooks")
 events = snapshot.events
 ids = events.ids
 
@@ -304,62 +298,13 @@ _REFUSABLE: dict[str, Callable[[argparse.Namespace], tuple[int, dict[str, object
 }
 
 
-def _vault_show(args: argparse.Namespace) -> dict[str, object]:
-    found = vault_shapes.valid_events(vault_shapes.read(args.vault, args.ref))
-    return vault_fold.view(vault_fold.fold(found).record(args.record))
-
-
-def _state(args: argparse.Namespace) -> Path:
-    return Path(
-        args.state or vault_clone.state_root(os.environ, Path.home(), windows=os.name == "nt")
-    )
-
-
-Clock = Callable[[], float]
-
-
-def _fetch_vault(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
-    state = _state(args)
-    clone = vault_clone.locate(state, args.vault)
-    fetched = vault_clone.fetch(clone, clock=clock, timeout=args.timeout)
-    return {**fetched, "shared": vault_hooks.due_share(clone, state, clock)}
-
-
-def _queue_comment(args: argparse.Namespace, clock: Clock) -> dict[str, object]:
-    state = _state(args)
-    clone = vault_clone.locate(state, args.vault)
-    now = any(os.environ.get(name) for name in ("CI", "BASICLY_TRACKER_EPHEMERAL"))
-    origin = vault_queue.Origin(os.environ.get("BASICLY_TRACKER_SESSION", ""), now, clock)
-    queued = vault_queue.write(
-        clone, [vault_queue.comment(args.record, args.text)], state=state, origin=origin
-    )
-    return {**queued, "shared": vault_hooks.due_share(clone, state, clock, now=now)}
-
-
-def _clone(args: argparse.Namespace) -> Any:
-    return vault_clone.locate(_state(args), args.vault)
-
-
-_VAULT: dict[str, Callable[[argparse.Namespace, Clock], dict[str, object]]] = {
-    "vault-check": lambda a, _c: vault_shapes.report(a.vault, a.ref),
-    "vault-show": lambda a, _c: _vault_show(a),
-    "fetch": _fetch_vault,
-    "comment-vault": _queue_comment,
-    "hook-vault": lambda a, c: vault_hooks.hook(a.event, _clone(a), _state(a), clock=c),
-    "status-vault": lambda a, c: vault_hooks.status(_clone(a), clock=c),
-    "fsck-vault": lambda a, c: vault_repair.check(_clone(a), _state(a), vars(a), c),
-    "reclone-vault": lambda a, c: vault_repair.reclone(_clone(a), clock=c),
-    "sync-vault": lambda a, c: vault_share.share(
-        _clone(a), _state(a), plan=vault_share.Plan(c, urgent=a.urgent, deadline_s=a.deadline)
-    ),
-}
-
-
 def _run(
     args: argparse.Namespace, redact: Callable[[str], str] | None
 ) -> tuple[int, dict[str, object]]:
-    if (vault := _VAULT.get(args.command)) is not None:
-        return EXIT_OK, vault(args, events.wall_clock())
+    if (vault := vault_cli.HANDLERS.get(args.command)) is not None:
+        report = vault(args, events.wall_clock())
+        code = report.pop("exit", EXIT_OK)
+        return (code if isinstance(code, int) else EXIT_OK), report
     starts = args.command in _STARTS_A_LEDGER and not getattr(args, "dry_run", False)
     args.directory = commands.resolve_ledger(args.directory, starts=starts)
     pin.require(args.directory)

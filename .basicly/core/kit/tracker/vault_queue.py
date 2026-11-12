@@ -55,10 +55,18 @@ def writer_of(state: Path) -> str:
     vault_clone.private(state)
     path = state / WRITER_NAME
     if not path.exists():
-        made = git_runner.new_writer_id()
-        handle = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        draft = state / f"{WRITER_NAME}.{uuid.uuid4().hex}"
+        handle = os.open(str(draft), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(f"{made}\n")
+            stream.write(f"{git_runner.new_writer_id()}\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(draft, path)
+        except FileExistsError:
+            pass
+        finally:
+            draft.unlink()
     try:
         return git_runner.writer_id(path.read_text(encoding="utf-8").strip())
     except git_runner.GitValueError:
