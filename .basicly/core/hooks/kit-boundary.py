@@ -36,6 +36,16 @@ LISTENER_IMPORTS = frozenset({"http", "http.server", "urllib.parse"})
 GIT_RUNNER = ("tracker", "git_runner.py")
 GIT_RUNNER_IMPORTS = frozenset({"subprocess"})
 
+ENVIRONMENT_KIT = "tracker"
+ENVIRONMENT_ADAPTERS = frozenset({
+    "cli.py",
+    "commands.py",
+    "process_evidence.py",
+    "settings.py",
+    "git_runner.py",
+})
+_ENVIRONMENT_NAMES = frozenset({"environ", "environb", "getenv", "getenvb", "putenv", "unsetenv"})
+
 _PATH_CALLS = frozenset({"Path", "PurePath", "PurePosixPath", "PureWindowsPath"})
 _JOIN_CALLS = frozenset({"join", "joinpath"})
 
@@ -195,6 +205,29 @@ def _dedupe(findings: list[Finding]) -> list[Finding]:
     return unique
 
 
+def _environment_findings(rel: str, tree: ast.Module) -> list[Finding]:
+    findings: list[Finding] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "os"
+            and node.attr in _ENVIRONMENT_NAMES
+        ):
+            findings.append(Finding(rel, node.lineno, "reads-environment", f"os.{node.attr}"))
+        elif isinstance(node, ast.ImportFrom) and node.module == "os":
+            findings += [
+                Finding(rel, node.lineno, "reads-environment", f"from os import {alias.name}")
+                for alias in node.names
+                if alias.name in _ENVIRONMENT_NAMES
+            ]
+    return findings
+
+
+def reads_environment_allowed(place: tuple[str, ...]) -> bool:
+    return place[:1] != (ENVIRONMENT_KIT,) or (len(place) == 2 and place[1] in ENVIRONMENT_ADAPTERS)
+
+
 def allowed_imports(place: tuple[str, ...]) -> frozenset[str]:
     if place[:1] == (LISTENER_KIT,):
         return LISTENER_IMPORTS
@@ -210,7 +243,10 @@ def module_findings(module: Path, rel: str, place: tuple[str, ...] = ()) -> list
         tree = ast.parse(source, filename=str(module))
     except SyntaxError as exc:
         return [Finding(rel, exc.lineno or 1, "unparseable", exc.msg)]
-    return _import_findings(rel, tree, allowed_imports(place)) + _path_findings(rel, tree)
+    findings = _import_findings(rel, tree, allowed_imports(place)) + _path_findings(rel, tree)
+    if not reads_environment_allowed(place):
+        findings += _environment_findings(rel, tree)
+    return findings
 
 
 def scan(kit_root: Path, repo_root: Path | None = None) -> list[Finding]:

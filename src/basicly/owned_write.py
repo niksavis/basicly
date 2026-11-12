@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -22,7 +23,7 @@ def _template(repo_root: Path) -> Any:
 
 
 def resolved_actor(repo_root: Path) -> str:
-    return str(owned_store.kit(repo_root, "writers").writer_class())
+    return str(owned_store.kit(repo_root, "writers").writer_class(os.environ))
 
 
 def _stamped(kit_module: Any, drafts: Sequence[Any]) -> list[Any]:
@@ -126,7 +127,7 @@ def _admitted(repo_root: Path, args: Sequence[str], kit_module: Any, repeat: boo
     _refuse_a_retraction_of_an_absent_edge(kit_module, repo_root, ledger, drafts)
     held = events.fold(events.read_events(ledger)[0]).records if ledger.is_dir() else {}
     holders = owned_store.kit(repo_root, "holders")
-    drafts = holders.claimed_by(held, drafts, holders.default_holder(repo_root))
+    drafts = holders.claimed_by(held, drafts, holders.default_holder(repo_root, os.environ))
     holders.refuse(held, drafts)
     owned_store.kit(repo_root, "review").refuse(
         held,

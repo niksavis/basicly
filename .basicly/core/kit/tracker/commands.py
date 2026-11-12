@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -122,13 +123,12 @@ def _append(
             and draft.payload.get("status") == "in_progress"
         )
     ]
-    review.refuse(states, review_drafts, writers.writer_class(), template, found=found)
+    actor = writers.writer_class(os.environ)
+    review.refuse(states, review_drafts, actor, template, found=found)
     resolved = recurrence.at_the_generation_this_write_needs(
         events, ledger, drafts, repeat=repeat, redact=redact
     )
-    return events.append(
-        ledger, resolved, actor=writers.writer_class(), redact=redact, held_lock=lock
-    )
+    return events.append(ledger, resolved, actor=actor, redact=redact, held_lock=lock)
 
 
 def update(  # noqa: PLR0913 — one argument per thing an update can set

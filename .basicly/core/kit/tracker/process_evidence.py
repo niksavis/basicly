@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -414,7 +415,7 @@ def record_process(
             found,
             record,
             evidence,
-            commands.writers.writer_class(),
+            commands.writers.writer_class(os.environ),
             template=commands.templates.load(ledger),
         )
         return commands._append(ledger, [draft], redact, lock)

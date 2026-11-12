@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -101,7 +102,9 @@ def test_a_legacy_link_still_folds_and_a_new_one_is_refused(tmp_path: Path) -> N
     (inner,) = set(queries.folded(ledger)) - {outer}
     with events.LedgerLock(ledger) as lock:
         draft = events.Draft(inner, events.KIND_FIELD, {"name": "issue_type", "value": "epic"})
-        events.append(ledger, [draft], actor=commands.writers.writer_class(), held_lock=lock)
+        events.append(
+            ledger, [draft], actor=commands.writers.writer_class(os.environ), held_lock=lock
+        )
 
     _views, children = queries.views_and_children(ledger)
 

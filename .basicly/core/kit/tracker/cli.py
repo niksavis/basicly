@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -171,11 +172,11 @@ _WRITES: dict[str, Callable[[argparse.Namespace, Any], Sequence[Any]]] = {
 
 
 def _holder(args: argparse.Namespace) -> str:
-    return getattr(args, "to", "") or commands.holders.default_holder(Path.cwd())
+    return getattr(args, "to", "") or commands.holders.default_holder(Path.cwd(), os.environ)
 
 
 def _releaser(args: argparse.Namespace) -> str:
-    return getattr(args, "by", "") or commands.holders.default_holder(Path.cwd())
+    return getattr(args, "by", "") or commands.holders.default_holder(Path.cwd(), os.environ)
 
 
 def _compacted(args: argparse.Namespace) -> dict[str, object]:
@@ -274,7 +275,7 @@ def _commit_check(args: argparse.Namespace) -> tuple[int, dict[str, object]]:
         )
     found, unreadable = events.read_events(args.directory)
     states = events.fold(found).records
-    committer = commands.holders.default_holder(Path.cwd())
+    committer = commands.holders.default_holder(Path.cwd(), os.environ)
     ledger = Path(args.directory).resolve()
     here = Path(__file__).resolve()
     runner = args.runner or f"python3 {_relative(here)}"

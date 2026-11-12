@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import calendar
 import importlib.util
-import os
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -73,11 +72,9 @@ def _config_files(start: Path, environ: Mapping[str, str]) -> list[Path]:
     return found
 
 
-def holder_and_source(
-    start: Path | str, environ: Mapping[str, str] | None = None
-) -> tuple[str, str]:
+def holder_and_source(start: Path | str, environ: Mapping[str, str]) -> tuple[str, str]:
 
-    values = os.environ if environ is None else environ
+    values = environ
     if values.get(HOLDER_VARIABLE, "").strip():
         return values[HOLDER_VARIABLE].strip(), f"env {HOLDER_VARIABLE}"
     files = _config_files(Path(start).resolve(), values)
@@ -95,7 +92,7 @@ def holder_and_source(
     return "", "default"
 
 
-def default_holder(start: Path | str, environ: Mapping[str, str] | None = None) -> str:
+def default_holder(start: Path | str, environ: Mapping[str, str]) -> str:
 
     return holder_and_source(start, environ)[0]
 

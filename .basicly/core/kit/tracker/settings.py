@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shlex
 import sys
 from collections.abc import Callable, Mapping
@@ -116,7 +117,7 @@ def report(
         _row(name, value, LEDGER_FILE if name in held else DEFAULT_SOURCE, TEMPLATE_HOME)
         for name, value in _template_values(template).items()
     ]
-    holder, source = holders.holder_and_source(start, environ)
+    holder, source = holders.holder_and_source(start, os.environ if environ is None else environ)
     folds = _folds_on_merge(ledger)
     pinned = pin.pinned(ledger)
     rows += [

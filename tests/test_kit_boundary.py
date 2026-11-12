@@ -303,3 +303,29 @@ def test_only_the_tracker_git_runner_may_spawn_and_only_through_subprocess(
     _seed(tmp_path.joinpath("kit", *folders), name, source)
 
     assert _rules(tmp_path / "kit") == expected
+
+
+@pytest.mark.parametrize(
+    ("place", "source", "expected"),
+    [
+        (("tracker", "writers.py"), "import os\nos.environ.get('X')\n", ["reads-environment"]),
+        (("tracker", "holders.py"), "import os\nos.getenv('X')\n", ["reads-environment"]),
+        (("tracker", "fold.py"), "from os import environ\n", ["reads-environment"]),
+        (("tracker", "vault", "x.py"), "import os\nos.environ\n", ["reads-environment"]),
+        (("tracker", "cli.py"), "import os\nos.environ.get('X')\n", []),
+        (("tracker", "settings.py"), "import os\nos.getenv('X')\n", []),
+        (("tracker", "writers.py"), "import os\nos.sep\n", []),
+        (("board", "server.py"), "import os\nos.environ.get('X')\n", []),
+    ],
+)
+def test_only_the_tracker_adapters_may_read_the_environment(
+    tmp_path: Path, place: tuple[str, ...], source: str, expected: list[str]
+) -> None:
+    *folders, name = place
+    _seed(tmp_path.joinpath("kit", *folders), name, source)
+
+    assert _rules(tmp_path / "kit") == expected
+
+
+def test_the_shipped_tracker_kit_reads_the_environment_only_in_its_adapters() -> None:
+    assert [f for f in gate.scan(KIT_ROOT) if f.rule == "reads-environment"] == []

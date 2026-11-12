@@ -1,0 +1,1 @@
+- The kit-boundary gate refuses an environment read (`os.environ`, `os.getenv`) in a tracker kit module outside its adapters (cli, commands, process_evidence, settings, git_runner). Writer and holder resolution now take the environment as an argument, so a fold or a check never reads process state.
