@@ -79,6 +79,7 @@ for record, kinds in sorted(records.items()):
 """
 
 Runner = Callable[..., str]
+_PROBE_ERRORS = (git_runner.GitRunnerError, vault_clone.CloneError)
 
 
 def genesis_files() -> dict[str, str]:
@@ -152,5 +153,5 @@ def no_genesis(text: str, runner: Runner = git_runner.run) -> bool:
         url, allow_file = vault_clone.vault_source(text)
         with tempfile.TemporaryDirectory(prefix="basicly-vault-probe-") as folder:
             return not heads(url, allow_file, runner, Path(folder))
-    except git_runner.GitRunnerError, vault_clone.CloneError:
+    except _PROBE_ERRORS:
         return False

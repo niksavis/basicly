@@ -1,0 +1,1 @@
+- **The standalone tracker package parses on its Python floor again.** `vault_init.py` used an except form that Python 3.9 refuses; it now uses a tuple, and a test parses every kit file at the package floor (basicly-6zgw26a).
