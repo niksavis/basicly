@@ -45,7 +45,11 @@ It exits 0 with a `model` and an `alias`, or exits 1 with the `reason` that noth
 ## Behaviour to expect
 
 - The hook writes an alias such as `opus`, not a model id. The `model` field of the Agent tool takes an alias. The frontmatter of a definition takes a full model id.
-- A tier that the map marks `unavailable` resolves to nothing, never to the model of another tier.
+- An unresolved tier declared by an agent refuses its spawn where this kit has an installed model map.
+  Repair the map or explicitly select a supported model.
+  An optional default does not block a spawn.
+- The map records a concrete model version. Claude aliases select a family through the host's model settings.
+  Compare resolved and observed models before using a run as evidence for a specific version.
 
 ## Choose the model by role
 

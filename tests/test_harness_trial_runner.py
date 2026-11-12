@@ -64,64 +64,6 @@ def test_harness_trial_runner_grades_real_fixture_changes(tmp_path: Path) -> Non
     assert (tmp_path / "one/trial.json").is_file()
 
 
-@pytest.mark.parametrize("conflicting", [False, True])
-@pytest.mark.parametrize(
-    "usage_format,event_kind,key",
-    [
-        (runner.CODEX_JSONL, "thread.started", "thread_id"),
-        (runner.CLAUDE_JSON, "result", "session_id"),
-        (runner.CLAUDE_STREAM_JSON, "result", "session_id"),
-        (runner.CLAUDE_STREAM_JSON, "system", "session_id"),
-    ],
-)
-def test_harness_trial_runner_records_unambiguous_native_session(
-    tmp_path: Path, conflicting: bool, usage_format: str, event_kind: str, key: str
-) -> None:
-    session = "00000000-0000-0000-0000-000000000001"
-    events = [{"type": event_kind, "subtype": "init", key: session}]
-    if conflicting:
-        events.append({
-            "type": event_kind,
-            "subtype": "init",
-            key: "00000000-0000-0000-0000-000000000002",
-        })
-    script = (
-        "import json; from pathlib import Path; Path('value.txt').write_text('after'); "
-        f"[print(json.dumps(event)) for event in {events!r}]"
-    )
-    spec = runner.RunnerSpec(
-        "fixture",
-        command=(sys.executable, "-c", script, runner.PROMPT_PLACEHOLDER),
-        usage_format=usage_format,
-    )
-    report = load_trial_runner().execute_trial(spec, case(), tmp_path / "one", identity())
-    if conflicting:
-        assert report["outcome"] == "infrastructure_error"
-        assert "conflicting native session" in report["error"]
-    else:
-        assert report["outcome"] == "passed"
-        assert report["session_id"] == session
-
-
-@pytest.mark.parametrize("session", ["", 42, "not-a-session-id"])
-def test_harness_trial_runner_rejects_malformed_native_session(
-    tmp_path: Path, session: Any
-) -> None:
-    script = (
-        "import json; from pathlib import Path; Path('value.txt').write_text('after'); "
-        f"print(json.dumps({{'type': 'thread.started', 'thread_id': {session!r}}}))"
-    )
-    spec = runner.RunnerSpec(
-        "fixture",
-        command=(sys.executable, "-c", script, runner.PROMPT_PLACEHOLDER),
-        usage_format=runner.CODEX_JSONL,
-    )
-    report = load_trial_runner().execute_trial(spec, case(), tmp_path / "one", identity())
-    assert report["outcome"] == "infrastructure_error"
-    assert "invalid native session identifier" in report["error"]
-    assert report["acceptance"]["outcome"] == "passed"
-
-
 def test_harness_trial_runner_rejects_successful_agent_with_wrong_output(tmp_path: Path) -> None:
     spec = runner.RunnerSpec(
         "fixture", command=(sys.executable, "-c", "pass", runner.PROMPT_PLACEHOLDER)

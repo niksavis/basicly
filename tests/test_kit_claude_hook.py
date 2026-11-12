@@ -386,21 +386,6 @@ def test_a_subagent_with_no_definition_at_all_is_left_alone(tmp_path: Path) -> N
     assert result.stdout == ""
 
 
-def test_a_tier_the_map_marks_unavailable_pins_nothing(tmp_path: Path) -> None:
-    consumer = _consumer_repo(tmp_path)
-    installed = consumer / ".basicly" / "core" / "models" / MAP.name
-    doctored = json.loads(json.dumps(REFERENCE_MAP))
-    cell = doctored["tiers"][DECLARED_TIER]["vendors"]["anthropic"]["surfaces"]["anthropic"]
-    cell["status"] = "unavailable"
-    cell.pop("model", None)
-    installed.write_text(json.dumps(doctored), encoding="utf-8")
-
-    result = _run_hook(_payload(consumer), cwd=consumer, tmp_path=tmp_path)
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout == ""
-
-
 @pytest.mark.parametrize("tool_name", ["Read", "Bash", "Write"], ids=["read", "bash", "write"])
 def test_a_call_that_is_not_an_agent_spawn_is_left_alone(tool_name: str, tmp_path: Path) -> None:
     consumer = _consumer_repo(tmp_path)

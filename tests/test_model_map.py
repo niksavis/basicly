@@ -101,8 +101,8 @@ def test_the_fixture_reproduces_the_committed_tiers(committed: dict, anchors) ->
 def test_each_surface_spells_the_same_model_its_own_way(payload: dict, anchors) -> None:
     tiers = generator.resolve_tiers(payload, anchors)
     surfaces = tiers["low"]["vendors"]["anthropic"]["surfaces"]
-    assert surfaces["anthropic"]["model"] == "claude-haiku-4-5"
-    assert surfaces[BROKER_SURFACE]["model"] == "claude-haiku-4.5"
+    assert surfaces["anthropic"]["model"] == "claude-haiku-5-5"
+    assert surfaces[BROKER_SURFACE]["model"] == "claude-haiku-5.5"
 
 
 def test_the_broker_now_prices_every_matched_model_as_its_native_surface(
@@ -150,9 +150,11 @@ def test_the_broker_gaps_are_exactly_the_measured_ones(payload: dict, anchors) -
     )
     assert gaps == [
         ("high", "google"),
+        ("high", "moonshotai"),
         ("low", "google"),
         ("low", "moonshotai"),
         ("maximum", "google"),
+        ("maximum", "moonshotai"),
     ]
 
 

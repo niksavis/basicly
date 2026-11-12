@@ -1,0 +1,1 @@
+- Specialist instructions now permit bounded recovery from ordinary errors. Repair agents can reread requirements while preserving their approved plan, scope, and gates.

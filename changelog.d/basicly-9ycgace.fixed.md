@@ -1,0 +1,1 @@
+- Refuse an agent spawn when its declared tier cannot resolve against the installed model map. The refusal names the agent and tier. Optional defaults and explicit model choices retain their behavior.

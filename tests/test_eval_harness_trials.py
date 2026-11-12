@@ -78,6 +78,81 @@ def test_eval_harness_trials_dry_run_records_plan_without_dispatch(
     assert not (args.output / "trials.jsonl").exists()
 
 
+@pytest.mark.parametrize("effort", ["medium", "high", "xhigh", "max"])
+def test_claude_comparisons_support_the_reviewed_effort_levels(
+    effort: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = load_driver(monkeypatch).make_spec("claude", "claude-fable-5-2", effort)
+    assert spec.model == "claude-fable-5-2"
+    assert spec.command[-2:] == ("--effort", effort)
+
+
+@pytest.mark.parametrize(
+    "family,model,effort",
+    [
+        ("claude", "claude-opus-4-6", "xhigh"),
+        ("claude", "claude-haiku-4-5", "max"),
+        ("codex", "gpt-5", "xhigh"),
+        ("claude", "opus[1m]", "high"),
+        ("claude", "opus", "high"),
+        ("claude", "unreviewed-model", "xhigh"),
+    ],
+)
+def test_comparisons_refuse_unsupported_or_ambiguous_model_settings(
+    family: str, model: str, effort: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ValueError, match=r"model|effort"):
+        load_driver(monkeypatch).make_spec(family, model, effort)
+
+
+def test_comparisons_record_explicit_advisor_configuration_without_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = load_driver(monkeypatch)
+    args = arguments(tmp_path)
+    args.family = "claude"
+    args.model = "claude-opus-5-5"
+    args.advisor_model = "claude-fable-5-2"
+    monkeypatch.delenv("CLAUDE_CODE_DISABLE_ADVISOR_TOOL", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_EFFORT_LEVEL", raising=False)
+
+    assert module.run_batch(args) == []
+
+    experiment = json.loads((args.output / "experiment.json").read_text())
+    assert experiment["advisor_model"] == "claude-fable-5-2"
+    assert "--advisor" in experiment["runtime"]["command"]
+
+
+def test_comparisons_refuse_an_inherited_effort_override_before_creating_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = load_driver(monkeypatch)
+    args = arguments(tmp_path)
+    args.family = "claude"
+    args.model = "claude-fable-5-2"
+    monkeypatch.setenv("CLAUDE_CODE_EFFORT_LEVEL", "max")
+
+    with pytest.raises(ValueError, match="CLAUDE_CODE_EFFORT_LEVEL"):
+        module.run_batch(args)
+    assert not args.output.exists()
+
+
+def test_an_explicitly_disabled_advisor_cannot_be_counted_as_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = load_driver(monkeypatch)
+    args = arguments(tmp_path)
+    args.family = "claude"
+    args.model = "claude-opus-5-5"
+    args.advisor_model = "claude-fable-5-2"
+    monkeypatch.setenv("CLAUDE_CODE_DISABLE_ADVISOR_TOOL", "1")
+    monkeypatch.delenv("CLAUDE_CODE_EFFORT_LEVEL", raising=False)
+
+    with pytest.raises(ValueError, match="CLAUDE_CODE_DISABLE_ADVISOR_TOOL"):
+        module.run_batch(args)
+    assert not args.output.exists()
+
+
 def test_eval_harness_trials_refuses_missing_upgrade_inputs_before_dispatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -259,3 +334,13 @@ def test_value_comparison_records_modes_and_shared_acceptance(
     assert set(experiment["arm_modes"].values()) == {"plain", "gates-only", "full-basicly"}
     assert experiment["case_sha256"] == hashlib.sha256(args.cases.read_bytes()).hexdigest()
     assert experiment["stopping_limits"]["timeout_s"] == args.timeout
+
+
+@pytest.mark.parametrize("model", ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-astra"])
+@pytest.mark.parametrize("effort", ["xhigh", "max"])
+def test_codex_comparisons_support_reviewed_current_models(
+    model: str, effort: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = load_driver(monkeypatch).make_spec("codex", model, effort)
+    assert spec.model == model
+    assert spec.command[-2:] == ("-c", f'model_reasoning_effort="{effort}"')

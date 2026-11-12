@@ -13,7 +13,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 
-from harness_trial_arms import configure_value_arm, verify_value_loading
+from harness_trial_arms import configure_value_arm
+from harness_trial_evidence import save_execution
 from harness_trial_protocols import (
     Checkpoint,
     bind_resume,
@@ -297,42 +298,14 @@ def _save_acceptance(
     timeout: float,
 ) -> None:
     checked = grade_preserved(workspace, case, preserved, timeout)
+    if report.get("model_mismatch"):
+        checked.update(model_matches=False, outcome="failed")
     if "protocol" in report:
         checked["protocol_satisfied"] = report["protocol"]["satisfied"]
         if not checked["protocol_satisfied"]:
             checked["outcome"] = "failed"
     report["acceptance"] = checked
     (workspace.parent / "grading.json").write_text(json.dumps(checked, indent=2) + "\n")
-
-
-def _save_execution(
-    spec: runner.RunnerSpec,
-    result: runner.RunResult,
-    directory: Path,
-    report: dict[str, Any],
-) -> None:
-    (directory / "agent.stdout").write_text(result.stdout, encoding="utf-8")
-    (directory / "agent.stderr").write_text(result.stderr, encoding="utf-8")
-    report.update(agent_duration_s=result.duration_s, returncode=result.returncode)
-    if stages := report.get("stages"):
-        times = [stage["duration_s"] for stage in stages]
-        report["agent_duration_s"] = (
-            sum(times) if all(value is not None for value in times) else None
-        )
-    if error := report.get("protocol", {}).get("error"):
-        raise ValueError(error)
-    report["session_id"] = observed_session(spec, result)
-    verify_value_loading(spec, directory / "workspace", report)
-    report["model_resolution"] = (
-        dataclasses.asdict(result.model_resolution) if result.model_resolution else None
-    )
-    usage = runner.extract_usage(spec, result)
-    report["usage"] = dataclasses.asdict(usage) if usage is not None else None
-    if usage is not None and not usage.estimated:
-        report.update(tokens=usage.tokens, cost=usage.cost)
-    report["cost_source"] = "client-side CLI estimate" if report["cost"] is not None else "unknown"
-    if report.get("protocol", {}).get("kind") == "resume":
-        report.update(tokens=None, cost=None, cost_source="unreconciled multi-stage usage")
 
 
 def bind_value_arm(
@@ -397,7 +370,7 @@ def execute_trial(
         report["setup_duration_s"] = time.perf_counter() - preparation_started
         started = time.perf_counter()
         result = _run_trial_agent(spec, case, directory, report, timeout)
-        _save_execution(spec, result, directory, report)
+        save_execution(spec, result, directory, report)
         if result.executed and not result.handoff:
             _save_acceptance(workspace, case, report, preserved, timeout)
         if result.timed_out:

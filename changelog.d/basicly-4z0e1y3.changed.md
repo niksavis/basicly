@@ -1,0 +1,1 @@
+- Offline evaluations support reviewed effort levels and explicit Fable advisor comparisons. Results record observed models and separate advisor arrangements. A model mismatch prevents acceptance.

@@ -31,10 +31,10 @@ def test_the_committed_map_resolves_every_tier_the_vocabulary_declares() -> None
 
 def test_a_surface_decides_the_spelling() -> None:
     mapping = models.load_map(Path())
-    assert models.model_for("low", "anthropic", "anthropic", mapping=mapping) == "claude-haiku-4-5"
+    assert models.model_for("low", "anthropic", "anthropic", mapping=mapping) == "claude-haiku-5-5"
     assert (
         models.model_for("low", "anthropic", "github-copilot", mapping=mapping)
-        == "claude-haiku-4.5"
+        == "claude-haiku-5.5"
     )
 
 

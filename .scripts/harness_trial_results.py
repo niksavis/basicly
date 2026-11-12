@@ -9,7 +9,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-GROUP_FIELDS = ("family", "model", "effort", "arm", "case")
+GROUP_FIELDS = ("family", "model", "effort", "arm", "case", "advisor_model")
 MEASUREMENTS = ("duration_s", "setup_duration_s", "total_duration_s", "tokens", "cost")
 OUTCOMES = frozenset({"passed", "failed", "timed_out", "infrastructure_error", "interrupted"})
 ACCEPTANCE_OUTCOMES = frozenset({"passed", "failed", "infrastructure_error"})
@@ -17,7 +17,8 @@ ACCEPTANCE_OUTCOMES = frozenset({"passed", "failed", "infrastructure_error"})
 
 def validate(row: Mapping[str, Any]) -> None:
     for key in ("id", *GROUP_FIELDS):
-        if not isinstance(row.get(key), str) or not row[key].strip():
+        value = row.get(key, "inherited" if key == "advisor_model" else None)
+        if not isinstance(value, str) or not value.strip():
             raise ValueError(f"trial requires a nonempty {key}")
     if row.get("outcome") not in OUTCOMES:
         raise ValueError(f"trial {row['id']} has an invalid outcome")
@@ -26,6 +27,11 @@ def validate(row: Mapping[str, Any]) -> None:
         not isinstance(acceptance, Mapping) or acceptance.get("outcome") not in ACCEPTANCE_OUTCOMES
     ):
         raise ValueError(f"trial {row['id']} has invalid acceptance")
+    if row.get("model_mismatch") and (
+        row.get("outcome") == "passed"
+        or (isinstance(acceptance, Mapping) and acceptance.get("outcome") == "passed")
+    ):
+        raise ValueError(f"trial {row['id']} accepts output after a model mismatch")
     for key in MEASUREMENTS:
         value = row.get(key)
         if value is None:
@@ -60,7 +66,7 @@ def summarize(trials: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
         if identifier in seen:
             raise ValueError(f"duplicate trial id: {identifier}")
         seen.add(identifier)
-        grouped[tuple(row[key] for key in GROUP_FIELDS)].append(row)
+        grouped[tuple(row.get(key, "inherited") for key in GROUP_FIELDS)].append(row)
     if not seen:
         raise ValueError("no trials to summarize")
     summaries = []

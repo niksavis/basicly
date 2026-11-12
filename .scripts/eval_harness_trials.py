@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import hashlib
 import json
+import os
 import platform
 import shutil
 from pathlib import Path
 from typing import Any
 
 from harness_trial_arms import VALUE_MODES, select_setup
+from harness_trial_models import EFFORT_LEVELS, make_spec, validate_environment
 from harness_trial_protocols import configuration_inputs
 from harness_trial_results import summarize
 from harness_trial_runner import execute_trial, schedule, validate_paths
@@ -87,6 +88,8 @@ def runtime_manifest(spec: runner.RunnerSpec, configuration_files: list[Path]) -
             name: hashlib.sha256((ROOT / ".scripts" / name).read_bytes()).hexdigest()
             for name in (
                 "eval_harness_trials.py",
+                "harness_trial_models.py",
+                "harness_trial_evidence.py",
                 "harness_trial_results.py",
                 "harness_trial_arms.py",
                 "harness_trial_runner.py",
@@ -115,16 +118,6 @@ def load_arm(value: str) -> tuple[str, dict[str, str], str, str]:
     if mode != "guidance" and files:
         raise ValueError("value arms cannot replace guidance files")
     return name, files, hashlib.sha256(raw).hexdigest(), mode
-
-
-def make_spec(family: str, model: str, effort: str) -> runner.RunnerSpec:
-    spec = next(spec for spec in runner.BUILTIN_RUNNERS if spec.name == family)
-    if family == "codex":
-        command = (*spec.command, "-c", f'model_reasoning_effort="{effort}"')
-        return dataclasses.replace(
-            spec, command=command, model=model, sandbox="workspace-write", approval="never"
-        )
-    return dataclasses.replace(spec, command=(*spec.command, "--effort", effort), model=model)
 
 
 def validate_trial_location(output: Path) -> None:
@@ -160,6 +153,8 @@ def load_arms(values: list[str], family: str) -> list[tuple[str, dict[str, str],
 
 
 def run_batch(args: argparse.Namespace) -> list[dict[str, Any]]:
+    advisor_model = getattr(args, "advisor_model", None)
+    validate_environment(args.family, args.effort, advisor_model, os.environ)
     validate_trial_location(args.output)
     loaded = load_arms(args.arm, args.family)
     arms = {name: files for name, files, _, _ in loaded}
@@ -179,7 +174,7 @@ def run_batch(args: argparse.Namespace) -> list[dict[str, Any]]:
         for mode in modes.values():
             select_setup(case, mode)
     planned = schedule(requested, list(arms), args.repetitions, seed=args.seed)
-    spec = make_spec(args.family, args.model, args.effort)
+    spec = make_spec(args.family, args.model, args.effort, advisor_model)
     configuration_files = getattr(args, "host_config", [])
     for case_id in requested:
         for files in arms.values():
@@ -196,6 +191,7 @@ def run_batch(args: argparse.Namespace) -> list[dict[str, Any]]:
         "family": args.family,
         "model": args.model,
         "effort": args.effort,
+        "advisor_model": advisor_model or "inherited",
         "seed": args.seed,
         "case_sha256": hashlib.sha256(fixture_bytes).hexdigest(),
         "wheel_sha256": wheels,
@@ -222,6 +218,7 @@ def run_batch(args: argparse.Namespace) -> list[dict[str, Any]]:
             "family": args.family,
             "model": args.model,
             "effort": args.effort,
+            "advisor_model": advisor_model or "inherited",
             "arm": arm,
         }
         interrupted = False
@@ -261,7 +258,10 @@ def main() -> int:
     )
     parser.add_argument("--family", choices=["codex", "claude"], required=True)
     parser.add_argument("--model", required=True)
-    parser.add_argument("--effort", choices=["low", "medium", "high"], required=True)
+    parser.add_argument("--effort", choices=EFFORT_LEVELS, required=True)
+    parser.add_argument(
+        "--advisor-model", help="reviewed Fable model id, or off with the advisor disabled"
+    )
     parser.add_argument("--arm", action="append", required=True)
     parser.add_argument("--cases", type=Path, default=ROOT / "tests/fixtures/harness-trials.json")
     parser.add_argument("--case", action="append")

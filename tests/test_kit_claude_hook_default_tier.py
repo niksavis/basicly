@@ -115,6 +115,30 @@ def test_a_resolver_fault_never_blocks_an_agent_start(
     assert capsys.readouterr().out == ""
 
 
+def test_a_resolver_fault_refuses_an_explicit_agent_tier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    consumer = _consumer_repo(tmp_path)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.setitem(sys.modules, "tier_resolver", kit)
+    spec = importlib.util.spec_from_file_location("required_tier_hook_under_test", HOOK)
+    assert spec and spec.loader
+    hook: ModuleType = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hook)
+
+    def broken_map(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("resolver fault")
+
+    monkeypatch.setattr(hook.tier_resolver.TierResolver, "from_map_path", broken_map)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(_payload(consumer))))
+
+    assert hook.main() == 0
+    output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "high" in output["permissionDecisionReason"]
+    assert "resolver fault" not in output["permissionDecisionReason"]
+
+
 def test_an_invalid_default_never_cancels_a_tier_the_definition_declares(tmp_path: Path) -> None:
     consumer = _consumer_repo(tmp_path)
     _definition(consumer / ".claude/agents/general-purpose.md", tier="high")

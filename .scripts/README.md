@@ -52,6 +52,43 @@ On POSIX with Claude Code installed, run `uv run python .scripts/probe_claude_pe
 
 Deny groups grant their command families so a missing deny fails; allow groups grant only the catalog. Each has positive and negative controls. `--catalog <permissions-directory>` reruns the same matrix against a previous catalog. The probe uses native `dontAsk` permission matching, not an imitation glob matcher or an auto-mode classifier. Validate classifier policy separately with the real service; fixture API usage counters are synthetic. Recheck after Claude upgrades.
 
+## Model comparisons
+
+The evaluator prepares guidance comparisons without a model request when you pass `--dry-run`.
+Use a scratch directory outside repositories and instruction trees.
+Set `BASICLY_PROJECT` to the checkout path.
+Prepare the before and after snapshots described in [the trial design](../docs/design/harness-baseline-trials.md).
+
+Prepare an Opus owner comparison with the advisor disabled.
+
+```sh
+CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 uv run --project "$BASICLY_PROJECT" python "$BASICLY_PROJECT/.scripts/eval_harness_trials.py" --family claude --model claude-opus-5-5 --effort high --advisor-model off --case small-bug --arm before=before.json --arm after=after.json --output opus --dry-run
+```
+
+Prepare the same comparison with a Fable advisor.
+
+```sh
+CLAUDE_CODE_DISABLE_ADVISOR_TOOL=0 uv run --project "$BASICLY_PROJECT" python "$BASICLY_PROJECT/.scripts/eval_harness_trials.py" --family claude --model claude-opus-5-5 --effort high --advisor-model claude-fable-5-2 --case small-bug --arm before=before.json --arm after=after.json --output advised-opus --dry-run
+```
+
+Prepare a Fable owner comparison with the advisor disabled.
+
+```sh
+CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 uv run --project "$BASICLY_PROJECT" python "$BASICLY_PROJECT/.scripts/eval_harness_trials.py" --family claude --model claude-fable-5-2 --effort high --advisor-model off --case small-bug --arm before=before.json --arm after=after.json --output fable --dry-run
+```
+
+An inherited effort override must match the requested effort.
+Advisor arrangements remain separate in summaries.
+Completed trials record observed models and reject mismatched model results.
+Missing model evidence remains unverified.
+Managed effort caps and advisor availability still need live verification.
+Complete Claude harness comparisons remain tracked in `basicly-gtb19bg.49`.
+
+Codex effort follows [the configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference#model_reasoning_effort) and [current model capabilities](https://developers.openai.com/api/docs/guides/deployment-checklist).
+The Claude effort policy follows [Claude's model configuration](https://code.claude.com/docs/en/model-config#adjust-effort-level).
+Advisor configuration follows [Claude's advisor documentation](https://code.claude.com/docs/en/advisor).
+The general evaluation method follows [Anthropic's Fable prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2).
+
 ## Git hooks
 
 Git hook scripts moved to [`.basicly/core/hooks/`](../.basicly/core/hooks/) — they

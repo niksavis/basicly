@@ -23,6 +23,10 @@ WORKER_TIERS = ("low", "medium", "high")
 LOGGER = logging.getLogger("claude_tier_hook")
 
 
+class TierResolutionError(ValueError):
+    pass
+
+
 def takes_default_tier(tool_input: dict) -> bool:
     if tool_input.get(INPUT_MODEL_KEY):
         return False
@@ -55,22 +59,32 @@ def resolve_alias(
         return None, False
     wants_default = takes_default_tier(tool_input)
     fallback = default_tier if wants_default else None
-    resolver = tier_resolver.TierResolver.from_map_path(map_path, default_tier=fallback)
-    if resolver is None:
-        return None, False
     name = tool_input.get(SUBAGENT_KEY)
     definition = None
     if isinstance(name, str) and name.strip():
         definition = tier_resolver.find_definition(
             name.strip(), HOST, roots=tier_resolver.default_roots(cwd)
         )
-    if definition is None:
-        return (resolver.resolve(HOST).alias if fallback else None), wants_default
-    if tier_resolver.declared_value(definition, tier_resolver.MODEL_KEY):
+    if definition is not None and tier_resolver.declared_value(definition, tier_resolver.MODEL_KEY):
         return None, False
-    declares_tier = bool(tier_resolver.declared_value(definition, tier_resolver.TIER_KEY))
-    alias = resolver.resolve(HOST, definition=definition).alias
-    return alias, wants_default and not declares_tier
+    declared = tier_resolver.declared_tier(definition) if definition is not None else None
+    failure = TierResolutionError(
+        f"Agent {name!r} declares tier {declared!r}, but its model cannot resolve. "
+        "Repair the model map or explicitly select a supported model."
+    )
+    try:
+        resolver = tier_resolver.TierResolver.from_map_path(map_path, default_tier=fallback)
+        alias = (
+            resolver.resolve(HOST, definition=definition).alias if resolver is not None else None
+        )
+    except Exception:
+        if not declared:
+            raise
+        LOGGER.exception("model resolution failed for an explicit agent tier")
+        raise failure from None
+    if declared and alias is None:
+        raise failure
+    return alias, wants_default and not declared
 
 
 def rewrite(payload: dict) -> dict | None:
@@ -84,7 +98,16 @@ def rewrite(payload: dict) -> dict | None:
     default_tier, warning = (
         default_tier_setting() if takes_default_tier(tool_input) else (None, None)
     )
-    alias, default_wanted = resolve_alias(tool_input, cwd, default_tier)
+    try:
+        alias, default_wanted = resolve_alias(tool_input, cwd, default_tier)
+    except TierResolutionError as error:
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": HOOK_EVENT,
+                "permissionDecision": "deny",
+                "permissionDecisionReason": str(error),
+            }
+        }
     if alias is None:
         if warning is not None and default_wanted:
             return {"systemMessage": warning}

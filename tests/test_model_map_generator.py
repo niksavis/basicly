@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +94,9 @@ def test_reasoning_is_recorded_but_not_required(payload: dict, anchors) -> None:
 
 
 def test_resolution_keeps_the_latest_suffix_in_the_join_key(payload: dict, anchors) -> None:
+    vendor = anchors.vendors[0]
+    legacy = replace(vendor, tiers={**vendor.tiers, "low": "claude-haiku-4-5"})
+    anchors = replace(anchors, vendors=(legacy, *anchors.vendors[1:]))
     tiers = generator.resolve_tiers(payload, anchors)
     entry = tiers["low"]["vendors"]["anthropic"]
     assert entry["model_name"] == "Claude Haiku 4.5 (latest)"
@@ -102,6 +106,9 @@ def test_resolution_keeps_the_latest_suffix_in_the_join_key(payload: dict, ancho
 
 
 def test_resolution_treats_the_provider_input_limit_as_optional(payload: dict, anchors) -> None:
+    payload["anthropic"]["models"]["claude-haiku-5-5"]["limit"].pop("input", None)
+    payload[BROKER_SURFACE]["models"]["claude-haiku-5.5"]["limit"]["input"] = 136000
+    payload[BROKER_SURFACE]["models"]["claude-sonnet-5.5"]["limit"].pop("input", None)
     tiers = generator.resolve_tiers(payload, anchors)
     low = tiers["low"]["vendors"]["anthropic"]["surfaces"]
     assert low[BROKER_SURFACE]["limit_tokens"]["input"] == 136000
@@ -121,23 +128,23 @@ def test_resolution_fails_naming_an_anchor_that_no_longer_resolves(payload: dict
 
 def test_resolution_rejects_an_ambiguous_name_match(payload: dict, anchors) -> None:
     models = payload[BROKER_SURFACE]["models"]
-    models["claude-haiku-4.5-alias"] = copy.deepcopy(models["claude-haiku-4.5"])
+    models["claude-haiku-5.5-alias"] = copy.deepcopy(models["claude-haiku-5.5"])
     with pytest.raises(generator.ResolutionError) as excinfo:
         generator.resolve_tiers(payload, anchors)
-    assert "claude-haiku-4.5-alias" in str(excinfo.value)
+    assert "claude-haiku-5.5-alias" in str(excinfo.value)
 
 
 def test_resolution_rejects_a_non_numeric_upstream_cost(payload: dict, anchors) -> None:
-    payload["anthropic"]["models"]["claude-sonnet-5"]["cost"]["input"] = "two dollars"
+    payload["anthropic"]["models"]["claude-sonnet-5-5"]["cost"]["input"] = "two dollars"
     with pytest.raises(generator.ResolutionError) as excinfo:
         generator.resolve_tiers(payload, anchors)
-    assert "cost" in str(excinfo.value) and "claude-sonnet-5" in str(excinfo.value)
+    assert "cost" in str(excinfo.value) and "claude-sonnet-5-5" in str(excinfo.value)
 
 
 def test_cost_is_read_per_surface_not_per_vendor(payload: dict, anchors) -> None:
 
-    broker = payload[BROKER_SURFACE]["models"]["gpt-5.6-luna"]
-    native = payload["openai"]["models"]["gpt-5.6-luna"]
+    broker = payload[BROKER_SURFACE]["models"]["gpt-6-luna"]
+    native = payload["openai"]["models"]["gpt-6-luna"]
     priced = ("input", "output")
     assert {k: native["cost"][k] for k in priced} == {k: broker["cost"][k] for k in priced}, (
         "precondition: the surfaces agree before the edit, so the assertion below "
@@ -147,7 +154,7 @@ def test_cost_is_read_per_surface_not_per_vendor(payload: dict, anchors) -> None
 
     surfaces = generator.resolve_tiers(payload, anchors)["low"]["vendors"]["openai"]["surfaces"]
 
-    assert surfaces["openai"]["cost_usd_per_mtok"] == {"input": 0.2, "output": 1.2}
+    assert surfaces["openai"]["cost_usd_per_mtok"] == {"input": 0.1, "output": 0.5}
     assert surfaces[BROKER_SURFACE]["cost_usd_per_mtok"] == {"input": 1, "output": 6}
 
 
@@ -161,14 +168,14 @@ def test_check_fails_naming_the_id_and_the_change_when_a_cost_moves(
     map_path = workspace / "model-map.json"
     document = json.loads(map_path.read_text(encoding="utf-8"))
     cell = document["tiers"]["medium"]["vendors"]["anthropic"]["surfaces"]["anthropic"]
-    cell["cost_usd_per_mtok"]["input"] = 3
+    cell["cost_usd_per_mtok"]["input"] = 99
     map_path.write_text(generator.render(document), encoding="utf-8")
 
     assert _run(workspace, "--check") == 1
     err = capsys.readouterr().err
     assert "medium.vendors.anthropic.surfaces.anthropic.cost_usd_per_mtok.input" in err
-    assert "3 -> 2" in err
-    assert "anthropic/claude-sonnet-5" in err
+    assert "99 -> 2" in err
+    assert "anthropic/claude-sonnet-5-5" in err
 
 
 def test_check_reports_a_surface_that_stopped_serving_a_tier(
@@ -215,7 +222,7 @@ def test_check_names_a_changed_model_id(
     map_path.write_text(generator.render(document), encoding="utf-8")
 
     assert _run(workspace, "--check") == 1
-    assert "'claude-haiku-9.9' -> 'claude-haiku-4.5'" in capsys.readouterr().err
+    assert "'claude-haiku-9.9' -> 'claude-haiku-5.5'" in capsys.readouterr().err
 
 
 def test_check_ignores_provenance_drift(workspace: Path) -> None:

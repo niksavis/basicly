@@ -89,6 +89,21 @@ def test_harness_trial_results_keep_models_cases_and_arms_separate() -> None:
     assert len(load_results().summarize(rows)) == 4
 
 
+def test_harness_trial_results_keep_advisor_arrangements_separate() -> None:
+    rows = [
+        trial("one", advisor_model="off"),
+        trial("two", advisor_model="claude-fable-5-2"),
+    ]
+    assert len(load_results().summarize(rows)) == 2
+
+
+@pytest.mark.parametrize("acceptance", [None, {"outcome": "failed"}, {"outcome": "passed"}])
+def test_harness_trial_results_refuse_acceptance_after_a_model_mismatch(acceptance: Any) -> None:
+    row = trial("one", model_mismatch="unexpected model", acceptance=acceptance)
+    with pytest.raises(ValueError, match="model"):
+        load_results().summarize([row])
+
+
 @pytest.mark.parametrize(
     "field,value", [("cost", -1), ("tokens", True), ("duration_s", float("nan"))]
 )
