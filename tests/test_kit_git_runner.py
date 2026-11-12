@@ -247,3 +247,23 @@ def test_an_inherited_protocol_override_cannot_enable_ext(
         )
 
     assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "https://{token}@github.com/owner/repo.git",
+        "https://git@github.com/owner/repo.git",
+        "ssh://{token}@github.com/owner/repo.git",
+        "{token}@github.com:owner/repo.git",
+        "ssh://{long}@github.com/owner/repo.git",
+    ],
+)
+def test_a_url_whose_user_part_can_carry_a_token_is_refused(template: str) -> None:
+    token = "ghp" + "_" + "A" * 36
+    value = template.format(token=token, long="a" * 33)
+
+    with pytest.raises(runner.GitValueError) as caught:
+        runner.remote_url(value)
+
+    assert token not in str(caught.value)

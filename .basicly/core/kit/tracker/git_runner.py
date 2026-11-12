@@ -18,9 +18,10 @@ END_OF_OPTIONS = "--end-of-options"
 _COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _WRITER_ID = re.compile(r"[0-9a-f]{32}")
 _HOST = r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?"
-_USER = r"[A-Za-z0-9][A-Za-z0-9._~-]*"
+_USER = r"[a-z_][a-z0-9_.-]{0,31}"
 _PATH = r"[A-Za-z0-9._~/%+-]+"
-_SCHEME_URL = re.compile(rf"(?:https|ssh)://(?:{_USER}@)?{_HOST}(?::[0-9]{{1,5}})?/{_PATH}")
+_HTTPS_URL = re.compile(rf"https://{_HOST}(?::[0-9]{{1,5}})?/{_PATH}")
+_SSH_URL = re.compile(rf"ssh://(?:{_USER}@)?{_HOST}(?::[0-9]{{1,5}})?/{_PATH}")
 _SCP_URL = re.compile(rf"{_USER}@{_HOST}:(?!-){_PATH}")
 _FILE_URL = re.compile(r"file:///[^\x00-\x1f\x7f]+")
 _UNSAFE = re.compile(r"[\x00-\x20\x7f]")
@@ -84,7 +85,7 @@ def new_writer_id() -> str:
 
 def remote_url(value: str, *, allow_file: bool = False) -> str:
     if isinstance(value, str) and not value.startswith("-") and not _UNSAFE.search(value):
-        if _SCHEME_URL.fullmatch(value) or _SCP_URL.fullmatch(value):
+        if any(form.fullmatch(value) for form in (_HTTPS_URL, _SSH_URL, _SCP_URL)):
             return value
         if allow_file and _FILE_URL.fullmatch(value):
             return value
