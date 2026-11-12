@@ -47,7 +47,7 @@ MESSAGES = {
 
 def _message(tmp_path: Path, text: str) -> Path:
     path = tmp_path / "COMMIT_EDITMSG"
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="")
     return path
 
 
