@@ -37,6 +37,7 @@ edges = _load("edges.py", "basicly_tracker_kit_edges")
 review = _load("review.py", "basicly_tracker_kit_review")
 claims = _load("claims.py", "basicly_tracker_kit_claims")
 git_layout = _load("git_layout.py", "basicly_tracker_kit_git_layout")
+vault_write = _load("vault_write.py", "basicly_tracker_kit_vault_write")
 differential = queries.differential
 events = differential.events
 migrate = differential.migrate
@@ -108,27 +109,8 @@ def _append(
     *,
     repeat: bool = False,
 ) -> list:
-    template = templates.load(ledger)
-    found = events.read_events(ledger)[0]
-    states = events.fold(found).records
-    drafts, progress_parents = parent_progress.progress(found, drafts)
-    values.refuse(events, drafts, template, states, found)
-    holders.refuse(states, drafts)
-    review_drafts = [
-        draft
-        for draft in drafts
-        if not (
-            draft.record in progress_parents
-            and draft.kind == events.KIND_STATUS
-            and draft.payload.get("status") == "in_progress"
-        )
-    ]
-    actor = writers.writer_class(os.environ)
-    review.refuse(states, review_drafts, actor, template, found=found)
-    resolved = recurrence.at_the_generation_this_write_needs(
-        events, ledger, drafts, repeat=repeat, redact=redact
-    )
-    return events.append(ledger, resolved, actor=actor, redact=redact, held_lock=lock)
+    write = vault_write.Write(ledger, redact, lock, os.environ)
+    return vault_write.land(write, drafts, repeat=repeat)
 
 
 def update(  # noqa: PLR0913 — one argument per thing an update can set
@@ -307,7 +289,7 @@ def create_root(
     with events.LedgerLock(ledger) as lock:
         folded = events.fold(events.read_events(ledger)[0])
         record = ids.mint_root_id(
-            prefix,
+            vault_write.prefix(ledger, prefix),
             ids.minted_ever(
                 [key for key, state in folded.records.items() if not state.tombstoned],
                 [key for key, state in folded.records.items() if state.tombstoned],
@@ -409,6 +391,8 @@ def claim(
 ) -> list:
 
     ledger = _ledger(directory)
+    if (landed := vault_write.claim(ledger, record, os.environ, take=take)) is not None:
+        return landed
     drafts = [
         _holder_draft(record, holder, take),
         events.Draft(record, events.KIND_STATUS, {"status": "in_progress"}),
@@ -428,6 +412,8 @@ def unassign(
 ) -> list:
 
     ledger = _ledger(directory)
+    if (landed := vault_write.unassign(ledger, record, os.environ, take=take)) is not None:
+        return landed
     with events.LedgerLock(ledger) as lock:
         holders.refuse_a_release_by_another(_require(ledger, record), record, by, take)
         payload: dict[str, object] = {"name": holders.HOLDER_FIELD, "value": ""}
