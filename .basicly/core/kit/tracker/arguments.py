@@ -53,7 +53,7 @@ def record_view_arguments(parser: Any) -> None:
     parser.add_argument("--view", choices=("full", "current", "history"), default="full")
     parser.add_argument("--snapshot", help="refuse retrieval from a changed record snapshot")
     parser.add_argument(
-        "--json", action="store_true", help="the vault's id, status, holder and links of it"
+        "--json", action="store_true", help="print the id, status, holder and links the vault holds"
     )
 
 

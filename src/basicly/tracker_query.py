@@ -62,7 +62,9 @@ def blocked_report(repo_root: Path) -> dict[str, Any]:
 def cmd_ready(args: argparse.Namespace) -> int:
     try:
         report = ready_report(
-            Path.cwd(), getattr(args, "limit", None), all_projects=args.all_projects
+            Path.cwd(),
+            getattr(args, "limit", None),
+            all_projects=getattr(args, "all_projects", False),
         )
     except ValueError as error:
         ui.fail(str(error))
@@ -151,7 +153,7 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 def cmd_list(args: argparse.Namespace) -> int:
     try:
-        ledger = _vault_ledger(Path.cwd(), args.all_projects)
+        ledger = _vault_ledger(Path.cwd(), getattr(args, "all_projects", False))
     except ValueError as error:
         ui.fail(str(error))
         return 1

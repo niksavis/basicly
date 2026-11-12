@@ -355,8 +355,28 @@ def _review_evidence(kit: Any, ledger: Path, record: str) -> str:
     return json.dumps(review_payload(kit.review.process.criteria(state.fields), reference))
 
 
-def test_engine_review_in_a_vault_repository_queues_through_the_vault(
-    tmp_path: Path, bare: Path
+def _engine_evidence(commands: Any, ledger: Path, record: str, verb: str) -> str:
+    review = _review_evidence(commands, ledger, record)
+    if verb == "review":
+        return review
+    payload = json.loads(review)
+    commands.record_process(ledger, record, payload)
+    commands.comment(ledger, record, "The fixture confirms the seeded criterion.")
+    checks = [
+        {
+            "criterion": check["criterion"],
+            "command": check["command"],
+            "result": check["expected"],
+            "exit_code": 0,
+        }
+        for check in payload["checks"]
+    ]
+    return json.dumps({"checks": checks})
+
+
+@pytest.mark.parametrize("verb", ["review", "confirm"])
+def test_engine_review_and_confirm_in_a_vault_repository_queue_through_the_vault(
+    tmp_path: Path, bare: Path, verb: str
 ) -> None:
     root = _owned_repo(tmp_path)
     ledger = owned_store.ledger_dir(root)
@@ -369,12 +389,12 @@ def test_engine_review_in_a_vault_repository_queues_through_the_vault(
     }
     record = commands.create_root(ledger, fields, prefix=VAULT_PREFIX)[0].record
     commands.comment(ledger, record, "The fixture agrees each criterion and its check.")
-    evidence = _review_evidence(commands, ledger, record)
+    evidence = _engine_evidence(commands, ledger, record, verb)
     _configure(root, bare)
     clone = _hold_the_share_slot(tmp_path, bare)
     before = {path.name: path.read_bytes() for path in ledger.glob("*.jsonl")}
 
-    stamped, _landed = owned_write.append(root, ["review", record, "--evidence", evidence])
+    stamped, _landed = owned_write.append(root, [verb, record, "--evidence", evidence])
 
     assert stamped
     assert {line["record"] for line in _queued_ledger_lines(clone)} == {record}

@@ -221,7 +221,7 @@ _VIEWS: dict[str, Callable[[argparse.Namespace, Any], dict[str, object]]] = {
 
 
 def _shown(args: argparse.Namespace, clock: Callable[[], float]) -> tuple[int, Any]:
-    if args.json:
+    if getattr(args, "json", False):
         shown = vault_cli.shown(args.directory, [args.record], clock)
         return (EXIT_OK if all(one.get("found", True) for one in shown) else EXIT_REFUSED), shown
     found = record_view.read_view(
