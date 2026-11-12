@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import json
 import sys
@@ -60,6 +61,8 @@ class Plan:
     attempts: int = BULK_ATTEMPTS
     lock_wait: float | None = None
     fresh: bool = False
+    keep_going: bool = True
+    unlocked: bool = False
 
 
 def _text(lines: Sequence[Mapping[str, object]]) -> str:
@@ -186,7 +189,8 @@ def share(
         _budget(plan, started, clock) if plan.urgent else vault_clone.LOCK_WAIT
     )
     asked = time.monotonic()
-    with events.LedgerLock(clone.folder / SHARE_LOCK, timeout_s=wait):
+    lock = events.LedgerLock(clone.folder / SHARE_LOCK, timeout_s=wait)
+    with contextlib.nullcontext() if plan.unlocked else lock:
         waited = round(time.monotonic() - asked, 3)
         if not prune(clone):
             return {"shared": 0, "pending": 0, "lock_wait_s": waited}
@@ -232,6 +236,6 @@ def share(
             vault_clone.settle(clone, runner=runner, timeout=budget, lock_wait=budget)
             total += len(batch)
             left = len(prune(clone))
-            if left and _again(plan, attempt, started, clock):
+            if left and plan.keep_going and _again(plan, attempt, started, clock):
                 continue
             return {"shared": total, "head": commit, "pending": left, "lock_wait_s": waited}

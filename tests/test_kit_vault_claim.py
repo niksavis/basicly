@@ -289,3 +289,89 @@ def test_an_uncontended_claim_fetches_once_and_never_probes_with_ls_remote(
     assert verbs.count("fetch") == 1
     assert "ls-remote" not in verbs
     assert verbs.count("push") == 1
+
+
+_HOLDER = (
+    "import importlib.util, sys, time; "
+    "spec = importlib.util.spec_from_file_location('ev', sys.argv[1]); "
+    "ev = importlib.util.module_from_spec(spec); sys.modules['ev'] = ev; "
+    "spec.loader.exec_module(ev); "
+    "ev.LedgerLock(sys.argv[2]).acquire(); print('held', flush=True); time.sleep(120)"
+)
+
+
+def _hold_share_lock(clone: Any) -> subprocess.Popen[str]:
+    clone.folder.mkdir(parents=True, exist_ok=True)
+    lock = clone.folder / vault_claim.vault_share.SHARE_LOCK
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _HOLDER, str(KIT / "events.py"), str(lock)],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert proc.stdout is not None
+    assert proc.stdout.readline().strip() == "held"
+    return proc
+
+
+def test_a_lone_claim_never_waits_for_a_window(tmp_path: Path, bare: Path) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+
+    shown = vault_claim.claim(_ask(clone, state, "s1"))
+
+    assert shown["exit"] == vault_claim.LANDED
+    assert shown["joined"] is False
+
+
+def test_a_joined_claim_takes_over_when_the_sharing_process_dies(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    vault_claim.vault_clone.fetch(clone, clock=time.time)
+    holder = _hold_share_lock(clone)
+    answers: list[tuple[dict, float]] = []
+
+    def claim() -> None:
+        started = time.monotonic()
+        answers.append((
+            vault_claim.claim(_ask(clone, state, "s2", "r-joined"), deadline=10),
+            time.monotonic() - started,
+        ))
+
+    thread = threading.Thread(target=claim)
+    thread.start()
+    time.sleep(1.0)
+    holder.kill()
+    holder.wait(10)
+    thread.join(20)
+
+    shown, spent = answers[0]
+    landed = Counter(_ids_of(bare, "r-joined"))
+    assert shown["exit"] == vault_claim.LANDED
+    assert shown["joined"] is True
+    assert spent < 10
+    assert sum(landed.values()) == 1
+
+
+def test_a_joined_claim_takes_over_without_the_lock_when_the_holder_stalls(
+    tmp_path: Path, bare: Path
+) -> None:
+    clone, state = _machine(tmp_path, bare, "m")
+    vault_claim.vault_clone.fetch(clone, clock=time.time)
+    holder = _hold_share_lock(clone)
+    try:
+        started = time.monotonic()
+        shown = vault_claim.claim(_ask(clone, state, "s2", "r-stalled"), deadline=12)
+        spent = time.monotonic() - started
+    finally:
+        holder.kill()
+        holder.wait(10)
+
+    assert shown["exit"] == vault_claim.LANDED
+    assert vault_claim.STALL <= spent < 12
+    assert sum(Counter(_ids_of(bare, "r-stalled")).values()) == 1
+
+
+def _ids_of(bare: Path, record: str) -> list[str]:
+    shapes = vault_claim.vault_clone.vault_shapes
+    events = shapes.valid_events(shapes.check(bare, "main"))
+    return [str(e["id"]) for e in events if e.get("kind") == "claim" and e.get("record") == record]

@@ -126,3 +126,34 @@ def test_proof_t_exclusive_fold_shows_one_holder_and_ten_void_claims(
     assert code == cli.EXIT_OK
     assert shown["holder"] == {"writer": "a" * 32, "session": "s1"}
     assert len(shown["void"]) == 10
+
+
+def test_two_claims_for_one_record_in_one_commit_fold_in_order_and_only_the_first_holds(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    vault = Vault(tmp_path / "vault")
+    vault.genesis()
+    writer = "a" * 32
+    first: dict[str, object] = {
+        "kind": "claim",
+        "writer": writer,
+        "session": "s1",
+        "record": "r",
+        "id": "1",
+    }
+    second: dict[str, object] = {
+        "kind": "claim",
+        "writer": writer,
+        "session": "s2",
+        "record": "r",
+        "id": "2",
+    }
+    vault.write(f"log/{writer}/00001.jsonl", _segment(writer, first, second))
+    vault.commit("one batch with two claims")
+
+    code = cli.main(["vault-show", str(vault.root), "r"])
+    shown = json.loads(capsys.readouterr().out)
+
+    assert code == cli.EXIT_OK
+    assert shown["holder"] == {"writer": writer, "session": "s1"}
+    assert [v["id"] for v in shown["void"]] == ["2"]

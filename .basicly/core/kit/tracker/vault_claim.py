@@ -36,6 +36,9 @@ vault_fold = _load("vault_fold.py", "basicly_tracker_kit_vault_fold")
 DEADLINE = 30.0
 PROBE = 5.0
 FRESH = 1.0
+JOIN_WAIT = 0.05
+STALL = 5.0
+POLL = 0.1
 LANDED = 0
 FIX = 1
 LOST = 3
@@ -128,6 +131,33 @@ def _check(ask: Ask, budget: _Budget, writer: str) -> dict[str, object] | None:
     return None if held is None else _held_elsewhere(ask.record, clone.url, held)
 
 
+def _share_or_join(ask: Ask, budget: _Budget, made: str, fresh: bool) -> bool:
+
+    joined_at = None
+    while True:
+        stalled = joined_at is not None and joined_at - budget.left() >= STALL
+        plan = vault_share.Plan(
+            ask.clock,
+            urgent=True,
+            deadline_s=budget.left(),
+            fresh=fresh and joined_at is None,
+            lock_wait=JOIN_WAIT,
+            keep_going=False,
+            unlocked=stalled,
+        )
+        try:
+            vault_share.share(ask.clone, ask.state, plan=plan, runner=ask.runner)
+        except events.LockUnavailableError:
+            joined_at = budget.left() if joined_at is None else joined_at
+            if made in vault_clone.valid_ids(ask.clone):
+                return True
+            if budget.left() <= POLL:
+                raise
+            time.sleep(POLL)
+            continue
+        return joined_at is not None
+
+
 def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[str, object]:
 
     clone, record = ask.clone, ask.record
@@ -135,9 +165,8 @@ def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[s
     draft = {"kind": "claim", "record": record}
     made = vault_queue.write(clone, [draft], state=ask.state, origin=origin)["events"][0]
     fresh = fetched_left - budget.left() < FRESH
-    plan = vault_share.Plan(ask.clock, urgent=True, deadline_s=budget.left(), fresh=fresh)
     try:
-        vault_share.share(clone, ask.state, plan=plan, runner=ask.runner)
+        joined = _share_or_join(ask, budget, made, fresh)
     except (
         vault_share.DeadlineError,
         git_runner.GitTimeoutError,
@@ -146,7 +175,7 @@ def _land(ask: Ask, budget: _Budget, writer: str, fetched_left: float) -> dict[s
         return {**_unsettled(record, clone.url, str(exc)), "claim": made}
     held = holder(clone, record)
     if held == (writer, ask.session):
-        return {"exit": LANDED, "record": record, "claim": made}
+        return {"exit": LANDED, "record": record, "claim": made, "joined": joined}
     if held is None:
         return {**_unsettled(record, clone.url, "the claim has not landed yet"), "claim": made}
     return _held_elsewhere(record, clone.url, held)
