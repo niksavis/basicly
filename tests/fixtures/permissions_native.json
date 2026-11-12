@@ -59,6 +59,14 @@
         "allowed": false
       },
       {
+        "command": "git push -u origin +main",
+        "allowed": false
+      },
+      {
+        "command": "git -C . push upstream +main",
+        "allowed": false
+      },
+      {
         "command": "git status",
         "allowed": true
       },
@@ -80,6 +88,18 @@
       },
       {
         "command": "git commit -m \"document ordinary push\"",
+        "allowed": true
+      },
+      {
+        "command": "git push origin c++fix",
+        "allowed": true
+      },
+      {
+        "command": "git push ./repo+x main",
+        "allowed": true
+      },
+      {
+        "command": "git push -o \"ci.note=fix +1\" origin main",
         "allowed": true
       }
     ]
@@ -128,6 +148,22 @@
         "allowed": false
       },
       {
+        "command": "git push -d origin branch",
+        "allowed": false
+      },
+      {
+        "command": "git push origin -d branch",
+        "allowed": false
+      },
+      {
+        "command": "git push -q origin -d branch",
+        "allowed": false
+      },
+      {
+        "command": "git push origin +main",
+        "allowed": false
+      },
+      {
         "command": "git push origin topic:topic",
         "allowed": true
       },
@@ -141,6 +177,18 @@
       },
       {
         "command": "gh run view 123",
+        "allowed": true
+      },
+      {
+        "command": "git push origin branch",
+        "allowed": true
+      },
+      {
+        "command": "git push -o \"ci.note=fix -d x\" origin main",
+        "allowed": true
+      },
+      {
+        "command": "git push origin main && git branch -d topic",
         "allowed": true
       }
     ]

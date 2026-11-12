@@ -146,6 +146,11 @@ deny:
       - "Bash(git push*--force*)"
       - "Bash(git *push*--force*)"
       - "Bash(git *push* -f*)"
+      # A + refspec is a force push. The rule names the remote, because the native probe on
+      # Claude Code 2.1.322 showed Bash(git *push* +*) also denies an ordinary push whose
+      # quoted argument holds " +" (basicly-f2zwd26).
+      - "Bash(git *push* origin +*)"
+      - "Bash(git *push* upstream +*)"
     copilot:
       - "shell(git push --force)"
       - "shell(git push --force-with-lease)"
@@ -154,6 +159,10 @@ deny:
     description: block deletion of remote refs and GitHub releases repositories or runs
     claude:
       - "Bash(git *push*--delete*)"
+      # -d is anchored on push or on the remote for the same reason as the + refspec rules.
+      - "Bash(git *push -d *)"
+      - "Bash(git *push* origin -d *)"
+      - "Bash(git *push* upstream -d *)"
       # Claude Code 2.1.322 warns at session start about both colon refspec rules.
       # The warning is accepted: in the native probe, each quiet form that denies both
       # colon refspecs also denies ordinary pushes, and the terminal :* forms deny
