@@ -259,7 +259,7 @@ def _own_s() -> float:
 
 
 def _sample_cpu(run: Run, stop: threading.Event, every: float) -> None:
-    tick = float(os.sysconf("SC_CLK_TCK")) if hasattr(os, "sysconf") else 100.0
+    tick = 100.0 if sys.platform == "win32" else float(os.sysconf("SC_CLK_TCK"))
     before, own = _busy(), _own_s()
     while before is not None and not stop.wait(every):
         after, mine = _busy(), _own_s()
