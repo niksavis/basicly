@@ -33,6 +33,7 @@ vault_share = _load("vault_share.py", "basicly_tracker_kit_vault_share")
 vault_repair = _load("vault_repair.py", "basicly_tracker_kit_vault_repair")
 vault_hooks = _load("vault_hooks.py", "basicly_tracker_kit_vault_hooks")
 vault_claim = _load("vault_claim.py", "basicly_tracker_kit_vault_claim")
+vault_commit_hook = _load("vault_commit_hook.py", "basicly_tracker_kit_vault_commit_hook")
 
 
 def _vault_show(args: argparse.Namespace) -> dict[str, object]:
@@ -92,5 +93,14 @@ HANDLERS: dict[str, Callable[[argparse.Namespace, Clock], dict[str, object]]] = 
     ),
     "sync-vault": lambda a, c: vault_share.share(
         _clone(a), _state(a), plan=vault_share.Plan(c, urgent=a.urgent, deadline_s=a.deadline)
+    ),
+    "commit-msg-vault": lambda a, c: vault_commit_hook.check(
+        vault_commit_hook.Commit(
+            _clone(a),
+            _state(a),
+            Path(a.message),
+            a.session or os.environ.get("BASICLY_TRACKER_SESSION", ""),
+            c,
+        )
     ),
 }
